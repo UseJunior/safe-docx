@@ -735,15 +735,21 @@ def parseXmlEventsForRootBoundedTyped (xml expectedRootUri expectedRootLocalName
   if segments.isEmpty then
     throw (xmlEventParseFailure empty .invalidXml "XML has no root element")
   let initial : XmlEventParseState := { declarationAllowed := leadingText.isEmpty }
-  let final ← segments.foldlM (fun state segment => do
-    let next ← parseXmlEventSegment expectedRootUri expectedRootLocalName state segment
-    if next.eventCount > eventLimit then
-      throw (xmlEventParseFailure state .eventLimit "XML event limit exceeded"
-        next.eventCount next.maxDepthSeen)
-    if next.maxDepthSeen > depthLimit then
-      throw (xmlEventParseFailure state .depthLimit "XML depth limit exceeded"
-        next.eventCount next.maxDepthSeen)
-    return next) initial
+  let rec parseSegments (state : XmlEventParseState) :
+      List String → Except XmlEventParseFailure XmlEventParseState
+    | [] => .ok state
+    | segment :: rest =>
+      match parseXmlEventSegment expectedRootUri expectedRootLocalName state segment with
+      | .error failure => .error failure
+      | .ok next =>
+        if next.eventCount > eventLimit then
+          .error (xmlEventParseFailure state .eventLimit
+            "XML event limit exceeded" next.eventCount next.maxDepthSeen)
+        else if next.maxDepthSeen > depthLimit then
+          .error (xmlEventParseFailure state .depthLimit
+            "XML depth limit exceeded" next.eventCount next.maxDepthSeen)
+        else parseSegments next rest
+  let final ← parseSegments initial segments
   if !final.rootSeen then
     throw (xmlEventParseFailure final .invalidXml "XML has no root element")
   if !final.stack.isEmpty then

@@ -130,11 +130,14 @@ reference recursively, or discover a new story. Comments content remains a
 definition story and is not a range/reference source.
 
 The current `sourceEvents` construction through `realizations.zipIdx.map` is
-not the v7 execution path. V7 folds directly over retained realizations in
-source order, carrying the source ordinal explicitly and walking each retained
-`visitedEvents` sequence once. Any typed mirror may represent the same evidence
-structurally, but production may not build copied whole-event lists merely to
-assign ordinals.
+not the v7 execution path. V7 uses tail-recursive loops directly over retained
+realizations in source order, carrying source and event ordinals explicitly
+and walking each retained `visitedEvents` sequence at most once. A crossing
+returns immediately from the current event loop and prevents entry into later
+stories. The retained evidence records processed event/story counts so this
+early stop is structurally witnessed rather than inferred from timing. Any
+typed mirror may represent the same evidence structurally, but production may
+not build copied whole-event lists merely to assign ordinals.
 
 ### 3. One bounded event-order scan collects all source markers
 
@@ -292,6 +295,8 @@ typedDefinitionsV7 :
   TypedRequestV7 → Side → List TypedCommentDefinition
 evaluateTypedCommentSideV7 :
   TypedRequestV7 → Side → TypedSideCommentEvaluationV7
+typedAllCommentRangeSidesPassV7 :
+  TypedRequestV7 → Bool
 canonicalTypedResponseV7 :
   TypedRequestV7 → TypedProtocolV7Response
 independentProtocolV7Projection :
@@ -363,9 +368,8 @@ theorem typed_admitted_comment_source_set_v7_complete
 theorem typed_comment_marker_scan_evidence_exact
     (request : TypedRequestV7) (side : Side) :
     TypedCommentMarkerScanOf request side
-      (scanTypedCommentMarkersV7 (typedMarkerScanInputV7 request side)) ∧
-    (scanTypedCommentMarkersV7
-      (typedMarkerScanInputV7 request side)).inputStories =
+      (retainedOrIndependentTypedMarkerScanV7 request side) ∧
+    (retainedOrIndependentTypedMarkerScanV7 request side).inputStories =
         canonicalTypedCommentSourcesV7 request side
 
 theorem typed_package_comment_range_integrity_sound
@@ -373,11 +377,10 @@ theorem typed_package_comment_range_integrity_sound
     (hCheck :
       checkTypedPackageCommentRangeIntegrity
         (typedDefinitionsV7 request side)
-        (scanTypedCommentMarkersV7
-          (typedMarkerScanInputV7 request side)) = true) :
+        (retainedOrIndependentTypedMarkerScanV7 request side) = true) :
     TypedPackageCommentRangeIntegrity
       (typedDefinitionsV7 request side)
-      (scanTypedCommentMarkersV7 (typedMarkerScanInputV7 request side))
+      (retainedOrIndependentTypedMarkerScanV7 request side)
 
 theorem typed_incomplete_comment_range_zero_evidence_sound
     (request : TypedRequestV7) (side : Side)
@@ -387,7 +390,8 @@ theorem typed_incomplete_comment_range_zero_evidence_sound
       (evaluateTypedCommentSideV7 request side)
 
 theorem typed_comment_range_aggregate_pass_sound
-    (request : TypedRequestV7) :
+    (request : TypedRequestV7)
+    (hPass : typedAllCommentRangeSidesPassV7 request = true) :
     let response := canonicalTypedResponseV7 request
     let bytes := independentProtocolV7Projection response
     TypedCommentRangeAggregatePassOf request response ∧
@@ -395,12 +399,24 @@ theorem typed_comment_range_aggregate_pass_sound
 ```
 
 `TypedCommentRangeAggregatePassOf` includes, for every side, the exact
-request-bound package relation, selector/realization relation, complete source
-relation when evaluated, marker-scan relation, definition projection, side
-evaluation, and inherited v6 obligations. Thus the aggregate theorem cannot
-pass by constructing an unrelated response. Each target and its complete
-transitive dependency closure must print an empty normalized axiom set. The
-repository remains zero-`sorry`.
+request-bound package relation, selector/realization relation, passed status,
+complete source relation, marker-scan relation, definition projection,
+`TypedPackageCommentRangeIntegrity`, and inherited v6 obligations. The
+`hPass` premise is the canonical Boolean evaluation of those three side
+statuses; it is required because the former unconditional proposition was
+inconsistent with invalid request values. Adversarial theorems instantiate
+concrete canonical requests whose main/header event sequences produce
+duplicate-reference, orphan-endpoint, reversed-range, and cross-story scans,
+and prove without scan-equality premises that the aggregate predicate cannot
+hold for each. A compiled inhabitance witness equates every retained
+`inputStories` value to that request's canonical source sequence. Thus the
+aggregate theorem cannot pass by constructing an unrelated response or by
+omitting topology integrity. Each target and its complete transitive
+dependency closure must print an empty normalized axiom set. The repository
+remains zero-`sorry`. The four aggregate rejection witnesses and their
+canonical inhabitance witness are exact empty-axiom audit targets and use only
+kernel-checked proof reduction; `native_decide` is forbidden throughout the
+protocol-v7 semantic and witness artifacts.
 
 The five executable bridges and one production refinement have these exact
 signatures and complete propositions:
@@ -431,7 +447,10 @@ theorem executable_comment_marker_scan_v7_refines_typed
         (request.noteEvaluation side) = set)
     (hScans : request.retainedSourceScans side = scans)
     (hRun :
-      scanRetainedCommentMarkersV7 set scans = .ok evidence)
+      retainedCommentMarkerScanForRelationshipV7
+        ((request.core.packageRecord
+          (noteSideOfCommentSide side)).commentEvidence.identity.isSome)
+        set scans = .ok evidence)
     (hRetained :
       request.retainedCommentRangeScanResult side = .ok evidence ∧
       request.commentRangeScanInvocationCount side = 1)
@@ -525,12 +544,30 @@ to the corresponding fields derived from `typedRequest`. The protocol bridge
 constructs its expected response only with `canonicalTypedResponseV7
 typedRequest`; it never decodes `response` to obtain expected values.
 
+`ProductionRunRequestV7RefinesSemanticOf` contains concrete source-set,
+marker-scan, and definition-realization bridge instances for each actual side
+of the request. `ProductionCommentEvidenceOf` retains the actual
+`RetainedCommentMarkerScanRun`, including its exact source set, retained
+scans, result equation, one-call invocation count, marker evidence, and
+processed event/story counts. The production theorem obtains the bridge
+instances from those retained operands and the selected Comments realization,
+then binds them to the canonical typed response and bytes. Merely storing the
+five bridge theorems as universally quantified implications does not satisfy
+the production refinement.
+
 Each executable bridge and the production theorem may use exactly the existing
 foundational set `[propext, Classical.choice, Quot.sound]`, with the repository's
 existing normalized six-name whole-file allowlist unchanged. Exact-signature,
 module-provenance, recursive dependency, missing-required, forbidden-extra,
 no-LeanSpike, and no-residual audits remain mandatory. No new axiom,
 `opaque` shortcut, native oracle, or admitted theorem is allowed.
+
+Every comment dependency or axiom audit entry point first builds the imported
+project module from current source. Invoking an audit against a previously
+compiled `.olean` without that build is not an accepted gate. A temporary
+Lake-project regression must demonstrate that a stale direct import can pass
+after its source is invalidated while the freshness-safe audit entry point
+fails during its mandatory build.
 
 Negative semantic witnesses reject an omitted story, substituted
 `visitedEvents`, copied or reordered story identity, detached selected Comments
@@ -587,7 +624,10 @@ An absent Comments relationship is checked before this sequence. The first
 start, end, or reference in global source-event order produces
 `COMMENT_RELATIONSHIP_REQUIRED` without reading its ID. Its `ordinalSpace` is
 the actual marker kind, its `firstOccurrenceOrdinal` is zero, and its source
-and source-set/event ordinals identify that first element.
+and source-set/event ordinals identify that first element. Relationship
+presence is carried into the retained event traversal, so this failure returns
+directly from that event loop and prevents entry into later events or stories;
+it is not derived by first completing a relationship-present marker scan.
 
 After a complete scan, at most one topology code is selected per source ID by
 this precedence:

@@ -534,7 +534,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeEnd",
-      "claimRationale": "The comment range closes after the paragraph's last run, before the\nreference run, so the anchored extent is exactly the paragraph content.\nCross-paragraph ranges and repair of malformed or orphaned anchors are outside\nthis generation claim.",
+      "claimRationale": "The comment range closes after the paragraph's last run, before the\nreference run, so the anchored extent is exactly the paragraph content.\nThe compiled checker recognizes the schema-bound decimal `w:id` on this\n`CT_MarkupRange` element in every retained physical story. Safe-DOCX\nadditionally rejects an orphan end under its stronger paired-or-point\nverification profile; ECMA-376 does not require that pairing.",
       "evidence": [
         {
           "kind": "source",
@@ -543,6 +543,22 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/generation/generation-drafting-notes.test.ts"
+        },
+        {
+          "kind": "formal-verification",
+          "path": "verification/lean/Tier2/CommentReferenceIntegrity/TypedSemantics.lean"
+        },
+        {
+          "kind": "formal-verification",
+          "path": "verification/lean/LeanDocxChecker.lean"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
         }
       ]
     },
@@ -558,7 +574,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeStart",
-      "claimRationale": "A noted paragraph opens its comment range before its first run; range\nids always match an emitted comment, and the disabled-notes compile emits\nno anchors at all, keeping the body byte-identical to a never-noted spec.\nCross-paragraph ranges and repair of malformed or orphaned anchors are outside\nthis generation claim.",
+      "claimRationale": "A noted paragraph opens its comment range before its first run; range\nids always match an emitted comment, and the disabled-notes compile emits\nno anchors at all, keeping the body byte-identical to a never-noted spec.\nThe compiled checker recognizes the schema-bound decimal `w:id` on this\n`CT_MarkupRange` element in every retained physical story. It accepts\ncross-paragraph and crossing ranges. Safe-DOCX additionally rejects an orphan\nstart under its stronger paired-or-point verification profile; ECMA-376 does\nnot require that pairing.",
       "evidence": [
         {
           "kind": "source",
@@ -567,6 +583,22 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/generation/generation-drafting-notes.test.ts"
+        },
+        {
+          "kind": "formal-verification",
+          "path": "verification/lean/Tier2/CommentReferenceIntegrity/TypedSemantics.lean"
+        },
+        {
+          "kind": "formal-verification",
+          "path": "verification/lean/LeanDocxChecker.lean"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
         }
       ]
     },
@@ -582,7 +614,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentReference",
-      "claimRationale": "The trailing reference run carries `w:commentReference` with the same id\nas its range anchors; the existing deleteComment editing path removes the\ntrio cleanly, which the strip scenario verifies on generated output.\nThe compiled Lean checker collects references from admitted main, note,\nheader, and footer physical stories and requires exactly one direct definition\nwith the same canonical decimal ID. It does not prove range-anchor pairing,\nrange topology, or Microsoft threaded-comment extension integrity.",
+      "claimRationale": "The trailing reference run carries `w:commentReference` with the same id\nas its range anchors; the existing deleteComment editing path removes the\ntrio cleanly, which the strip scenario verifies on generated output.\nThe compiled Lean checker collects references from admitted main, note,\nheader, and footer physical stories and requires exactly one direct definition\nwith the same canonical decimal ID. It also verifies the stronger Safe-DOCX\npaired-or-point topology profile without presenting orphan rejection as an\nECMA-376 requirement. Microsoft threaded-comment extension integrity remains\noutside scope.",
       "evidence": [
         {
           "kind": "source",
@@ -595,6 +627,18 @@
         {
           "kind": "formal-verification",
           "path": "verification/lean/Tier2/CommentReferenceIntegrity/Semantics.lean"
+        },
+        {
+          "kind": "formal-verification",
+          "path": "verification/lean/Tier2/CommentReferenceIntegrity/TypedSemantics.lean"
+        },
+        {
+          "kind": "formal-verification",
+          "path": "verification/lean/LeanDocxChecker.lean"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts"
         },
         {
           "kind": "test",
@@ -718,6 +762,26 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-13-5-14",
+      "title": "Deleted run content",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.13.5.14"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del",
+      "claimRationale": "Part 1 §17.13.5.14 defines `w:del` as deleted inline run content.\nsafe-docx emits this ordinary run-level revision form inside supported VML\ntext-box stories and validates that rejecting the assembled comparison\nrecovers the original story text.",
+      "evidence": [
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-13-5-15",
       "title": "Deleted paragraph mark (w:del under w:pPr/w:rPr)",
       "classification": "targeted",
@@ -742,6 +806,26 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-13-5-18",
+      "title": "Inserted run content",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.13.5.18"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins",
+      "claimRationale": "Part 1 §17.13.5.18 defines `w:ins` as inserted inline run content.\nsafe-docx emits this ordinary run-level revision form inside supported VML\ntext-box stories and validates that accepting the assembled comparison\nrecovers the revised story text.",
+      "evidence": [
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts"
         }
       ]
     },
@@ -772,8 +856,16 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins",
-      "claimRationale": "ECMA-376 Part 1 §17.13.5.20 defines `w:ins` inside `w:pPr/w:rPr` as a tracked\ninsertion of the *paragraph mark*, not of the paragraph's contents. Rejecting\nthe revision removes the inserted paragraph break, so the paragraph's\nsurviving content merges into the following paragraph; the contents disappear\nonly where they carry their own run-level `w:ins` wrappers. safe-docx's reject\npaths implement this merge in\n`packages/docx-core/src/primitives/reject_changes.ts` and\n`packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.",
+      "claimRationale": "ECMA-376 Part 1 §17.13.5.20 defines `w:ins` inside `w:pPr/w:rPr` as a tracked\ninsertion of the *paragraph mark*, not of the paragraph's contents. Rejecting\nthe revision removes the inserted paragraph break, so the paragraph's\nsurviving content merges into the following paragraph; the contents disappear\nonly where they carry their own run-level `w:ins` wrappers. safe-docx's reject\npaths implement this merge in\n`packages/docx-core/src/primitives/reject_changes.ts` and\n`packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.\nSection-break insertion uses the same paragraph-mark form on a dedicated empty\nboundary paragraph so rejecting removes the new topology and accepting retains\nthe boundary.",
       "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/sections.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/sections_insert_break.test.ts"
+        },
         {
           "kind": "source",
           "path": "packages/docx-core/src/primitives/reject_changes.ts"
@@ -785,6 +877,10 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-mcp/src/tools/insert_section_break.test.ts"
         }
       ]
     },
@@ -1123,7 +1219,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange",
-      "claimRationale": "safe-docx emits bounded page-number restart snapshots and consumes existing\n`w:sectPrChange` records: accept removes the prior snapshot and reject restores\nit. The authoring claim is limited to `w:pgNumType/@w:start`; header/footer part\nediting, relationship mutation, general pagination, and Lean are outside the\nclaim.",
+      "claimRationale": "safe-docx emits bounded page-number/page-setup snapshots and consumes existing\n`w:sectPrChange` records: accept removes the prior snapshot and reject restores\nit. Section-break insertion uses one such snapshot when the following section's\nnon-relationship properties change. Header/footer references remain live\nbecause `CT_SectPrChange` carries `CT_SectPrBase`; header/footer part editing,\nrelationship mutation, general pagination, and Lean are outside the claim.",
       "evidence": [
         {
           "kind": "source",
@@ -1147,6 +1243,10 @@
         },
         {
           "kind": "test",
+          "path": "packages/docx-core/src/primitives/sections_insert_break.test.ts"
+        },
+        {
+          "kind": "test",
           "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
         },
         {
@@ -1156,6 +1256,10 @@
         {
           "kind": "test",
           "path": "packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-mcp/src/tools/insert_section_break.test.ts"
         }
       ]
     },
@@ -1842,6 +1946,18 @@
           "path": "verification/lean/Tier2/CommentReferenceIntegrity/Semantics.lean"
         },
         {
+          "kind": "formal-verification",
+          "path": "verification/lean/Tier2/CommentReferenceIntegrity/TypedSemantics.lean"
+        },
+        {
+          "kind": "formal-verification",
+          "path": "verification/lean/LeanDocxChecker.lean"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts"
+        },
+        {
           "kind": "test",
           "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
         }
@@ -1952,6 +2068,34 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-3-2-26",
+      "title": "Run fonts and theme-font references",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.2.26"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Fonts",
+      "claimRationale": "`w:rFonts` may select concrete typefaces directly or through the document\ntheme's major/minor font scheme. Effective formatting dereferences the supported\nASCII, high-ANSI, East Asian, and complex-script theme attributes and retains\ndirect attributes as the fallback when the theme part or referenced face is\nunavailable.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/styles.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/styles-theme.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "scripts/check_docx_formatting_loss.test.mjs"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-3-2-28",
       "title": "w:rPr direct-property uniqueness",
       "classification": "targeted",
@@ -1980,6 +2124,34 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/generation/generation-styles-formatting.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-2-6",
+      "title": "Run color and theme transforms",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.2.6"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Color",
+      "claimRationale": "`w:color/@themeColor` selects a color from the document theme. Optional\n`themeTint` and `themeShade` byte transforms produce the concrete display color.\nEffective formatting resolves the theme value and falls back to `w:val` when\nthe theme cannot supply it.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/styles.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/styles-theme.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "scripts/check_docx_formatting_loss.test.mjs"
         }
       ]
     },
@@ -2487,7 +2659,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgMar",
-      "claimRationale": "`w:pgMar` declares the page margins plus header/footer offsets and\ngutter for a section, all in twips. The generation section emitter\nalways emits the full attribute set (top, right, bottom, left, header,\nfooter, gutter) because readers diverge in their defaults when\nattributes are omitted; spec values fill in unspecified members from\nthe standard one-inch/half-inch defaults.",
+      "claimRationale": "`w:pgMar` declares the page margins plus header/footer offsets and\ngutter for a section, all in twips. The generation section emitter\nalways emits the full attribute set (top, right, bottom, left, header,\nfooter, gutter) because readers diverge in their defaults when\nattributes are omitted; spec values fill in unspecified members from\nthe standard one-inch/half-inch defaults.\nThe section editing primitive permits partial updates of an existing complete\nmargin record, supports the signed top/bottom domains, and requires all seven\nattributes before creating a missing `w:pgMar`.",
       "evidence": []
     },
     {
@@ -2542,7 +2714,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgSz",
-      "claimRationale": "`w:pgSz` carries the page width/height in twentieths of a point and an\noptional orientation. The generation section emitter\n(`packages/docx-core/src/generation/emit/section.ts`) emits explicit\n`w:w`/`w:h` for every section (defaulting to US Letter) and sets\n`w:orient=\"landscape\"` with swapped dimensions when the spec requests\nlandscape, so readers never fall back to printer-driver defaults.",
+      "claimRationale": "`w:pgSz` carries the page width/height in twentieths of a point and an\noptional orientation. The generation section emitter\n(`packages/docx-core/src/generation/emit/section.ts`) emits explicit\n`w:w`/`w:h` for every section (defaulting to US Letter) and sets\n`w:orient=\"landscape\"` with swapped dimensions when the spec requests\nlandscape, so readers never fall back to printer-driver defaults.\nThe section editing primitive updates explicit width, height, and orientation\nattributes atomically, preserves untargeted attributes such as paper code, and\nrequires both dimensions before creating a missing `w:pgSz`.",
       "evidence": []
     },
     {
@@ -2572,8 +2744,81 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr",
-      "claimRationale": "A non-final section's properties bind through a `w:sectPr` inside the\n`w:pPr` of a dedicated break paragraph — the shape Word itself produces on\nInsert → Section Break, and the one that sidesteps the trailing-table case\n(a table cannot carry section properties). The generation document emitter\nappends such a break paragraph after every non-final section's blocks;\n`auditSectPr` verifies the pPr-only placement on the way back out.",
-      "evidence": []
+      "claimRationale": "A non-final section's properties bind through a `w:sectPr` inside the\n`w:pPr` of a dedicated break paragraph — the shape Word itself produces on\nInsert → Section Break, and the one that sidesteps the trailing-table case\n(a table cannot carry section properties). The generation document emitter\nappends such a break paragraph after every non-final section's blocks;\n`auditSectPr` verifies the pPr-only placement on the way back out. The editing\nprimitive inserts the same dedicated shape after a stable direct-body paragraph,\npreserves the containing `w:sectPr`, and verifies that exactly one ordered live\nsection is added.",
+      "evidence": [
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-sections-fields.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/sections.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/sections_insert_break.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-mcp/src/tools/insert_section_break.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-6-22",
+      "title": "w:type section start kind",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.6.22"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SectType",
+      "claimRationale": "The inserted paragraph-level section properties carry exactly one `w:type`\nwhose `w:val` is one of the schema's `nextPage`, `nextColumn`, `continuous`,\n`evenPage`, or `oddPage` section marks. Invalid values fail before document\nmutation. This claim covers emitted section-start markup, not pagination or\nreader layout behavior.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/sections.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/sections_insert_break.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-mcp/src/tools/insert_section_break.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-7-3",
+      "title": "Toggle-property evaluation",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.7.3"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_RPr",
+      "claimRationale": "Run toggle properties accumulate differently from ordinary properties. An on\ndeclaration in a style hierarchy inverts the previously effective value, an\noff declaration leaves that value unchanged, and direct run formatting sets\nthe absolute result. The effective-formatting resolver evaluates the supported\ntoggle set independently and retains nearest-declaration resolution for\nordinary properties.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/styles.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/styles-toggle.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "scripts/check_docx_formatting_loss.test.mjs"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-7-4-17",
@@ -2856,9 +3101,78 @@
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlJc",
       "claimRationale": "Level justification is authorable per level via `NumberingSpec` (`left`,\n`center`, or `right`, the transitional ST_Jc subset) and is always emitted\ndeterministically, defaulting to `left` when omitted. `right` aligns labels of\ndiffering widths on their right edge — the standard legal-outline convention.",
       "evidence": []
+    },
+    {
+      "id": "ECMA-PART4-14-9-1-1",
+      "title": "VML rich text-box content (w:txbxContent)",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 4,
+        "section": "14.9.1.1"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent",
+      "claimRationale": "Part 4 §14.9.1.1 defines `w:txbxContent` as the rich\nWordprocessingML-content container inside a VML drawing object. It prohibits\nreferences to comments, footnotes, and endnotes, as well as nested\n`w:txbxContent`. safe-docx compares a bounded main-document subset as an\nindependent story, preserves its surrounding VML scaffold, and rejects those\nprohibited nested forms before comparison. This claim does not cover\nDrawingML text boxes, ancillary-part text boxes, inserted/deleted text-box\ntopology, or changes to the containing VML scaffold or relationship closure.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART4-19-1-2-22",
+      "title": "VML text-box host (v:textbox)",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 4,
+        "section": "19.1.2.22"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox",
+      "claimRationale": "Part 4 §19.1.2.22 defines the Transitional VML `v:textbox` host. For the\naccepted comparison subset, safe-docx requires a stable containing\n`v:shape`/`v:textbox` scaffold and places tracked changes only in the hosted\nWordprocessingML story, never around the drawing object.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts"
+        }
+      ]
     }
   ],
   "schemaDeclarations": [
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/vml-main.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "urn:schemas-microsoft-com:vml",
+      "kind": "type",
+      "name": "CT_Textbox",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Textbox"
+        }
+      ]
+    },
     {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:abstractNum",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
@@ -4593,6 +4907,20 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "txbxContent",
+      "occurrences": [
+        {
+          "contextPath": "schema/element:txbxContent",
+          "declaredType": "CT_TxbxContent"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:vAlign",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -4628,6 +4956,32 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Color",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "type",
+      "name": "CT_Color",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Color"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Fonts",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "type",
+      "name": "CT_Fonts",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Fonts"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_FtnEdn",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -4650,6 +5004,19 @@
       "occurrences": [
         {
           "contextPath": "schema/type:CT_FtnEdnRef"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_RPr",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "type",
+      "name": "CT_RPr",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_RPr"
         }
       ]
     },
@@ -4741,6 +5108,19 @@
       "occurrences": [
         {
           "contextPath": "schema/type:CT_SdtRun"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SectType",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "type",
+      "name": "CT_SectType",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_SectType"
         }
       ]
     },

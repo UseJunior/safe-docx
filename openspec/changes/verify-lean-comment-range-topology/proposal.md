@@ -66,6 +66,13 @@ conformance gap, not as an ECMA pairing requirement.
   exposed only through optional `checkerProtocolVersion: 7`, optional topology
   profile evidence, optional inventory counts, and bounded failures.
   Downstream users still do not install Lean
+- Correct the aggregate semantic theorem proposition to require the computed
+  all-side pass check. The previously approved unconditional proposition would
+  assert range integrity for every request, including concrete duplicate,
+  orphan, reversed, and cross-story counterexamples. The new premise is
+  produced by the canonical evaluator and preserves non-vacuity: the aggregate
+  predicate itself includes exact per-side package, source, scan, definition,
+  passed-status, and `TypedPackageCommentRangeIntegrity` evidence.
 - Retained scope: Transitional legacy comments in admitted main,
   header/footer, footnote, and endnote physical stories for inplace comparison
 - Explicit exclusions: modern/threaded comments and their extension parts;

@@ -136,17 +136,27 @@ def xmlEventEq (left right : XmlEvent) : Bool :=
   xmlEventSelfClosing left == xmlEventSelfClosing right &&
   xmlEventText left == xmlEventText right
 
-def xmlEventListEq (left right : List XmlEvent) : Bool :=
-  left.length == right.length &&
-  (left.zip right).all fun pair => xmlEventEq pair.1 pair.2
+def xmlEventListEq : List XmlEvent → List XmlEvent → Bool
+  | [], right => right.isEmpty
+  | left :: leftRest, right =>
+      match right with
+      | [] => false
+      | right :: rightRest =>
+        if xmlEventEq left right then xmlEventListEq leftRest rightRest
+        else false
 
 def byteArrayByte? (bytes : ByteArray) (offset : Nat) : Option UInt8 :=
   if h : offset < bytes.size then some bytes[offset] else none
 
+def byteArrayEqLoop (left right : ByteArray) : Nat → Nat → Bool
+  | _, 0 => true
+  | offset, fuel + 1 =>
+      if byteArrayByte? left offset == byteArrayByte? right offset then
+        byteArrayEqLoop left right (offset + 1) fuel
+      else false
+
 def byteArrayEq (left right : ByteArray) : Bool :=
-  left.size == right.size &&
-  (List.range left.size).all fun offset =>
-    byteArrayByte? left offset == byteArrayByte? right offset
+  left.size == right.size && byteArrayEqLoop left right 0 left.size
 
 inductive SelectionFailure
   | ambiguous (firstOrdinal : Nat)

@@ -375,7 +375,7 @@ part: 1
 section: "17.18.10"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_DecimalNumber
-verifiedBy: verification/lean/Tier2/NoteReferenceIntegrity.lean; verification/lean/Tier2/CommentReferenceIntegrity/Semantics.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
+verifiedBy: verification/lean/Tier2/NoteReferenceIntegrity.lean; verification/lean/Tier2/CommentReferenceIntegrity/Semantics.lean; verification/lean/Tier2/CommentReferenceIntegrity/TypedSemantics.lean; verification/lean/LeanDocxChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
 Note and legacy comment IDs are admitted only after a 64-byte raw lexical bound, XML Schema
@@ -1637,14 +1637,17 @@ part: 1
 section: "17.13.4.4"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeStart
-verifiedBy: packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts; verification/lean/Tier2/CommentReferenceIntegrity/TypedSemantics.lean; verification/lean/LeanDocxChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
 A noted paragraph opens its comment range before its first run; range
 ids always match an emitted comment, and the disabled-notes compile emits
 no anchors at all, keeping the body byte-identical to a never-noted spec.
-Cross-paragraph ranges and repair of malformed or orphaned anchors are outside
-this generation claim.
+The compiled checker recognizes the schema-bound decimal `w:id` on this
+`CT_MarkupRange` element in every retained physical story. It accepts
+cross-paragraph and crossing ranges. Safe-DOCX additionally rejects an orphan
+start under its stronger paired-or-point verification profile; ECMA-376 does
+not require that pairing.
 
 ## [ECMA-PART1-17-13-4-3] w:commentRangeEnd comment anchor closing
 
@@ -1654,13 +1657,15 @@ part: 1
 section: "17.13.4.3"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeEnd
-verifiedBy: packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts; verification/lean/Tier2/CommentReferenceIntegrity/TypedSemantics.lean; verification/lean/LeanDocxChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
 The comment range closes after the paragraph's last run, before the
 reference run, so the anchored extent is exactly the paragraph content.
-Cross-paragraph ranges and repair of malformed or orphaned anchors are outside
-this generation claim.
+The compiled checker recognizes the schema-bound decimal `w:id` on this
+`CT_MarkupRange` element in every retained physical story. Safe-DOCX
+additionally rejects an orphan end under its stronger paired-or-point
+verification profile; ECMA-376 does not require that pairing.
 
 ## [ECMA-PART1-17-13-4-5] w:commentReference comment reference mark
 
@@ -1670,7 +1675,7 @@ part: 1
 section: "17.13.4.5"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentReference
-verifiedBy: packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts; verification/lean/Tier2/CommentReferenceIntegrity/Semantics.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts; verification/lean/Tier2/CommentReferenceIntegrity/Semantics.lean; verification/lean/Tier2/CommentReferenceIntegrity/TypedSemantics.lean; verification/lean/LeanDocxChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
 The trailing reference run carries `w:commentReference` with the same id
@@ -1678,8 +1683,10 @@ as its range anchors; the existing deleteComment editing path removes the
 trio cleanly, which the strip scenario verifies on generated output.
 The compiled Lean checker collects references from admitted main, note,
 header, and footer physical stories and requires exactly one direct definition
-with the same canonical decimal ID. It does not prove range-anchor pairing,
-range topology, or Microsoft threaded-comment extension integrity.
+with the same canonical decimal ID. It also verifies the stronger Safe-DOCX
+paired-or-point topology profile without presenting orphan rejection as an
+ECMA-376 requirement. Microsoft threaded-comment extension integrity remains
+outside scope.
 
 ## [ECMA-PART1-17-13-5-15] Deleted paragraph mark (w:del under w:pPr/w:rPr)
 
@@ -2111,7 +2118,7 @@ or rendering.
 
 Within Part 1 §17.11 and §17.13.4, safe-docx targets document-order note
 display numbering for Word-conventional packages plus generated
-single-paragraph root comments. For inplace comparison, the bounded Lean v6
+single-paragraph root comments. For inplace comparison, the bounded Lean v7
 checker additionally validates Transitional footnote/endnote relationship
 selection, typed definition classification, and package-local reference to
 exactly-one-definition integrity while permitting unreferenced definitions.
@@ -2121,11 +2128,14 @@ admissible internal relationship selects the part, and malformed, ambiguous,
 external, unsafe, missing, over-limit, extraction, UTF-8, XML, root, source,
 and package-resource failures stop all later comment-side evidence. Every
 admitted `w:commentReference` resolves to exactly one unique direct
-`w:comment` definition; unreferenced direct definitions are permitted.
+`w:comment` definition; unreferenced direct definitions are permitted. The
+same request-bound pass verifies point comments and the stronger Safe-DOCX
+paired-or-point range profile across retained physical stories, accepting
+cross-paragraph and crossing ranges.
 It does not claim arbitrary numeric note-ID assignment, rendering or numbering
 semantics for `w:type` or `w:customMarkFollows`, full OPC/content-type
-validation, Strict namespaces, arbitrary cross-paragraph comment ranges,
-threaded-comment semantics, resolution-state semantics, or repair of malformed
+validation, Strict namespaces, threaded-comment semantics,
+resolution-state semantics, or repair of malformed
 third-party comment parts.
 Comparison's integer-canonical note-ID validation, rejection of invalid or
 numeric-equivalent duplicate direct IDs, contributor-aware post-collision
@@ -2135,9 +2145,8 @@ claim. Unused merge-source note parts are outside the selected assembly
 evidence boundary.
 The compiled Lean checker independently covers fixed-story text projection and
 field-marker structure in `word/footnotes.xml` and `word/endnotes.xml`, plus the
-bounded legacy comment definition/reference integrity claim above. Comment
-range pairing/topology and Microsoft threaded-comment extension semantics
-remain excluded.
+bounded legacy comment definition/reference/range integrity claim above.
+Microsoft threaded-comment extension semantics remain excluded.
 
 Within Part 1 §17.6 and §17.10, safe-docx targets generated section-property
 placement, explicit page-setup values, and explicit first/default/even

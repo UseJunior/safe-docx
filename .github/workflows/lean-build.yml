@@ -12,6 +12,9 @@ on:
       - 'scripts/check_lean_empty_axiom_targets.mjs'
       - 'scripts/check_lean_note_semantics_dependencies.mjs'
       - 'scripts/check_lean_comment_semantics_dependencies.mjs'
+      - 'scripts/check_lean_audit_freshness.mjs'
+      - 'scripts/lean_audit_runner.mjs'
+      - 'scripts/run_lean_axiom_audit.mjs'
       - 'scripts/check_lean_production_axiom_target.mjs'
       - 'scripts/check_lean_xml_checker_coverage.mjs'
       - 'scripts/check_lean_comment_memory.mjs'
@@ -43,6 +46,9 @@ on:
       - 'scripts/check_lean_empty_axiom_targets.mjs'
       - 'scripts/check_lean_note_semantics_dependencies.mjs'
       - 'scripts/check_lean_comment_semantics_dependencies.mjs'
+      - 'scripts/check_lean_audit_freshness.mjs'
+      - 'scripts/lean_audit_runner.mjs'
+      - 'scripts/run_lean_axiom_audit.mjs'
       - 'scripts/check_lean_production_axiom_target.mjs'
       - 'scripts/check_lean_xml_checker_coverage.mjs'
       - 'scripts/check_lean_comment_memory.mjs'
@@ -138,10 +144,10 @@ jobs:
           lake build
           lake env lean Tier2/NoteReferenceIntegrityWitnesses.lean
           lake env lean ProtocolV5StructuralChargeAudit.lean
-          lake env lean ProtocolV6ProjectionDriftWitnesses.lean
-          lake env lean ProtocolV6StructuralChargeAudit.lean
-          lake env lean ProtocolV6OrdinaryEnvelopeWitness.lean
-          lake env lean ProtocolV6CanonicalTerminalShapes.lean
+          lake env lean ProtocolV7ProjectionDriftWitnesses.lean
+          lake env lean ProtocolV7StructuralChargeAudit.lean
+          lake env lean ProtocolV7OrdinaryEnvelopeWitness.lean
+          lake env lean ProtocolV7CanonicalTerminalShapes.lean
           lake env lean TypedCommentStackSafetyWitnesses.lean
           node ../../scripts/check_lean_note_semantics_dependencies.mjs
           node ../../scripts/check_lean_comment_semantics_dependencies.mjs
@@ -149,7 +155,8 @@ jobs:
       - name: Audit Lean axiom allowlist
         working-directory: verification/lean
         run: |
-          lake env lean AxiomAudit.lean > /tmp/axiom-audit-raw.txt
+          node ../../scripts/run_lean_axiom_audit.mjs /tmp/axiom-audit-raw.txt
+          node ../../scripts/check_lean_audit_freshness.mjs
           node ../../scripts/check_lean_empty_axiom_targets.mjs /tmp/axiom-audit-raw.txt
           node ../../scripts/check_lean_production_axiom_target.mjs /tmp/axiom-audit-raw.txt
           node ../../scripts/normalize_lean_axioms.mjs /tmp/axiom-audit-raw.txt > /tmp/axiom-audit-observed.txt
@@ -210,7 +217,7 @@ jobs:
           done
           echo "npm ci failed after 3 attempts"
           exit 1
-      - name: Compiled Lean relationship-story protocol v6
+      - name: Compiled Lean relationship-story protocol v7
         env:
           SAFE_DOCX_REQUIRE_LEAN_CHECKER: '1'
         run: npm run test:run -w @usejunior/docx-compare -- src/baselines/atomizer/leanXmlVerifier.test.ts

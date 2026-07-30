@@ -32,11 +32,11 @@ const PROJECT_ROOT = join(TEST_DIR, '../../../../..');
 const LEAN_EXE = join(PROJECT_ROOT, 'verification/lean/.lake/build/bin/leanDocxChecker');
 const NEAR_ENVELOPE_EXE = join(
   PROJECT_ROOT,
-  'verification/lean/.lake/build/bin/protocolV6OrdinaryEnvelopeWitness',
+  'verification/lean/.lake/build/bin/protocolV7OrdinaryEnvelopeWitness',
 );
 const TERMINAL_SHAPES_EXE = join(
   PROJECT_ROOT,
-  'verification/lean/.lake/build/bin/protocolV6CanonicalTerminalShapes',
+  'verification/lean/.lake/build/bin/protocolV7CanonicalTerminalShapes',
 );
 
 async function runNearEnvelopeProducer(): Promise<string> {
@@ -139,7 +139,7 @@ describeWithLean('Lean XML triple verifier certificate', () => {
         expect(result.documentIntegrity?.status, result.documentIntegrity?.reason).toBe('passed');
         expect(result.documentIntegrity?.protocolVersion).toBe(1);
         expect(result.documentIntegrity?.scope).toBe('word/document.xml');
-        expect(result.documentIntegrity?.checkerProtocolVersion).toBe(6);
+        expect(result.documentIntegrity?.checkerProtocolVersion).toBe(7);
         expect(result.documentIntegrity?.fixedStoryScope).toBeUndefined();
         expect(result.documentIntegrity?.referenceSourcePartitions).toHaveLength(3);
         expect(result.documentIntegrity?.noteStories?.map((story) => story.kind)).toEqual([
@@ -637,12 +637,15 @@ async function noteIntegrityDocx(options: {
 
 /**
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.3
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.4
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.6
  * @conformance ECMA-376 edition 5, Part 1 § 17.18.10
  */
 async function commentIntegrityDocx(options: {
   referenceId?: string;
+  bodyXml?: string;
   commentsPath?: string;
   commentsTarget?: string;
   commentsXml?: string | Buffer;
@@ -652,10 +655,9 @@ async function commentIntegrityDocx(options: {
   omitCommentsPart?: boolean;
 } = {}): Promise<Buffer> {
   const referenceId = options.referenceId ?? '7';
-  const base = await buildDocxFromBodyXml(
-    `<w:p><w:r><w:t>Commented</w:t></w:r>` +
-    `<w:r><w:commentReference w:id="${referenceId}"/></w:r></w:p>`,
-  );
+  const base = await buildDocxFromBodyXml(options.bodyXml ??
+    (`<w:p><w:r><w:t>Commented</w:t></w:r>` +
+    `<w:r><w:commentReference w:id="${referenceId}"/></w:r></w:p>`));
   const zip = await JSZip.loadAsync(base);
   const commentsPath = options.commentsPath ?? 'word/comments.xml';
   zip.file(
@@ -708,9 +710,12 @@ function deterministicXmlPayload(length: number, seed: number): string {
 async function commentIntegrityAllStoriesDocx(
   omitDefinition?: string,
 ): Promise<Buffer> {
-  const reference = (id: string) =>
-    `<w:p><w:r><w:commentReference w:id="${id}"/></w:r></w:p>`;
-  const base = await buildDocxFromBodyXml(reference('1'), [], {
+  const rangedReference = (id: string) =>
+    `<w:p><w:commentRangeStart w:id="${id}"/>` +
+    `<w:r><w:t>Range ${id}</w:t></w:r>` +
+    `<w:commentRangeEnd w:id="${id}"/>` +
+    `<w:r><w:commentReference w:id="${id}"/></w:r></w:p>`;
+  const base = await buildDocxFromBodyXml(rangedReference('1'), [], {
     namespaces: { r: R_NS },
   });
   const zip = await JSZip.loadAsync(base);
@@ -740,25 +745,25 @@ async function commentIntegrityAllStoriesDocx(
   );
   zip.file(
     'word/header-legal.xml',
-    `<w:hdr xmlns:w="${W_NS}">${reference('2')}</w:hdr>`,
+    `<w:hdr xmlns:w="${W_NS}">${rangedReference('2')}</w:hdr>`,
     { createFolders: false },
   );
   zip.file(
     'word/footer-legal.xml',
-    `<w:ftr xmlns:w="${W_NS}">${reference('3')}</w:ftr>`,
+    `<w:ftr xmlns:w="${W_NS}">${rangedReference('3')}</w:ftr>`,
     { createFolders: false },
   );
   zip.file(
     'word/footnotes.xml',
     `<w:footnotes xmlns:w="${W_NS}">` +
-    `<w:footnote w:id="10">${reference('4')}</w:footnote>` +
+    `<w:footnote w:id="10">${rangedReference('4')}</w:footnote>` +
     `</w:footnotes>`,
     { createFolders: false },
   );
   zip.file(
     'word/endnotes.xml',
     `<w:endnotes xmlns:w="${W_NS}">` +
-    `<w:endnote w:id="11">${reference('5')}</w:endnote>` +
+    `<w:endnote w:id="11">${rangedReference('5')}</w:endnote>` +
     `</w:endnotes>`,
     { createFolders: false },
   );
@@ -829,7 +834,7 @@ describeWithLean('Lean conventional comment-reference integrity', () => {
       const certificate = await run(docx);
 
       expect(certificate.status, certificate.reason).toBe('passed');
-      expect(certificate.checkerProtocolVersion).toBe(6);
+      expect(certificate.checkerProtocolVersion).toBe(7);
       expect(certificate.commentInventories).toHaveLength(3);
       expect(certificate.commentInventories?.every((inventory) =>
         inventory.status === 'passed' && inventory.definitions === 1,
@@ -847,7 +852,7 @@ describeWithLean('Lean conventional comment-reference integrity', () => {
       });
       const certificate = await run(docx);
       expect(certificate.status, certificate.reason).toBe('passed');
-      expect(certificate.checkerProtocolVersion).toBe(6);
+      expect(certificate.checkerProtocolVersion).toBe(7);
       expect(certificate.commentStory?.original.status).toBe('passed');
       expect(certificate.commentStory?.original.relationship?.normalizedPartPath)
         .toBe('word/annotations/legal-comments.xml');
@@ -859,6 +864,126 @@ describeWithLean('Lean conventional comment-reference integrity', () => {
         unreferencedDefinitions: 1,
       });
     },
+  );
+
+  test
+    .openspec('[LEAN-COMMENT-RANGE-01] Point and paired comment ranges are accepted')
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.3' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.4' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.5' })(
+    'accepts same-paragraph, cross-paragraph, and crossing comment ranges',
+    async () => {
+      const commentsXml =
+        `<w:comments xmlns:w="${W_NS}">` +
+        ['1', '2', '3'].map((id) =>
+          `<w:comment w:id="${id}"><w:p/></w:comment>`).join('') +
+        `</w:comments>`;
+      const bodyXml =
+        `<w:p><w:commentRangeStart w:id="1"/><w:r><w:t>A</w:t></w:r>` +
+        `<w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r>` +
+        `<w:commentRangeStart w:id="2"/></w:p>` +
+        `<w:p><w:commentRangeStart w:id="3"/><w:r><w:t>B</w:t></w:r>` +
+        `<w:commentRangeEnd w:id="2"/><w:r><w:commentReference w:id="2"/></w:r>` +
+        `<w:commentRangeEnd w:id="3"/><w:r><w:commentReference w:id="3"/></w:r></w:p>`;
+      const certificate = await run(await commentIntegrityDocx({ bodyXml, commentsXml }));
+
+      expect(certificate.status, certificate.reason).toBe('passed');
+      expect(certificate.commentInventories?.every((inventory) =>
+        inventory.referenceOccurrences === 3 &&
+        inventory.rangeStartOccurrences === 3 &&
+        inventory.rangeEndOccurrences === 3)).toBe(true);
+      expect(certificate.commentRangeTopology).toMatchObject({
+        checkerProtocolVersion: 7,
+        crossingRanges: true,
+        crossParagraphRanges: true,
+        profile: 'safe-docx-paired-or-point',
+        status: 'passed',
+      });
+    },
+  );
+
+  test
+    .openspec('[LEAN-COMMENT-RANGE-02] Safe-DOCX rejects unmatched range anchors')(
+    'rejects an orphaned comment range start as a Safe-DOCX profile failure',
+    async () => {
+      const bodyXml =
+        `<w:p><w:commentRangeStart w:id="7"/><w:r><w:t>A</w:t></w:r>` +
+        `<w:r><w:commentReference w:id="7"/></w:r></w:p>`;
+      const certificate = await run(await commentIntegrityDocx({ bodyXml }));
+
+      expect(certificate.status, certificate.reason).toBe('failed');
+      expect(certificate.commentIntegrityFailures).toContainEqual(
+        expect.objectContaining({
+          code: 'COMMENT_RANGE_START_ORPHANED',
+          ordinalSpace: 'rangeStart',
+          sourceSetOrdinal: 0,
+        }),
+      );
+      expect(certificate.commentRangeTopology?.status).toBe('failed');
+    },
+  );
+
+  test
+    .openspec('[LEAN-COMMENT-RANGE-03] Comment topology failures are deterministic')(
+    'rejects duplicate, missing, orphaned, reversed, and undefined associations',
+    async () => {
+      const cases = [
+        {
+          code: 'COMMENT_REFERENCE_DUPLICATE',
+          body:
+            `<w:p><w:r><w:commentReference w:id="7"/></w:r>` +
+            `<w:r><w:commentReference w:id="7"/></w:r></w:p>`,
+        },
+        {
+          code: 'COMMENT_REFERENCE_MISSING',
+          body:
+            `<w:p><w:commentRangeStart w:id="7"/>` +
+            `<w:commentRangeEnd w:id="7"/></w:p>`,
+        },
+        {
+          code: 'COMMENT_RANGE_START_DUPLICATE',
+          body:
+            `<w:p><w:commentRangeStart w:id="7"/>` +
+            `<w:commentRangeStart w:id="7"/><w:commentRangeEnd w:id="7"/>` +
+            `<w:r><w:commentReference w:id="7"/></w:r></w:p>`,
+        },
+        {
+          code: 'COMMENT_RANGE_END_DUPLICATE',
+          body:
+            `<w:p><w:commentRangeStart w:id="7"/>` +
+            `<w:commentRangeEnd w:id="7"/><w:commentRangeEnd w:id="7"/>` +
+            `<w:r><w:commentReference w:id="7"/></w:r></w:p>`,
+        },
+        {
+          code: 'COMMENT_RANGE_END_ORPHANED',
+          body:
+            `<w:p><w:commentRangeEnd w:id="7"/>` +
+            `<w:r><w:commentReference w:id="7"/></w:r></w:p>`,
+        },
+        {
+          code: 'COMMENT_RANGE_REVERSED',
+          body:
+            `<w:p><w:commentRangeEnd w:id="7"/>` +
+            `<w:commentRangeStart w:id="7"/>` +
+            `<w:r><w:commentReference w:id="7"/></w:r></w:p>`,
+        },
+        {
+          code: 'COMMENT_DEFINITION_MISSING',
+          body: `<w:p><w:r><w:commentReference w:id="8"/></w:r></w:p>`,
+        },
+      ] as const;
+
+      for (const fixture of cases) {
+        const certificate = await run(await commentIntegrityDocx({
+          bodyXml: fixture.body,
+        }));
+        expect(certificate.status, fixture.code).toBe('failed');
+        expect(certificate.commentIntegrityFailures?.[0]?.code, fixture.code)
+          .toBe(fixture.code);
+        expect(certificate.commentRangeTopology?.status, fixture.code).toBe('failed');
+      }
+    },
+    120_000,
   );
 
   test
@@ -890,7 +1015,7 @@ describeWithLean('Lean conventional comment-reference integrity', () => {
           `<w:comment w:id="+007"><w:p/></w:comment></w:comments>`,
       });
       const certificate = await run(valid, valid, compared);
-      expect(certificate.status).toBe('failed');
+      expect(certificate.status, certificate.reason).toBe('failed');
       expect(certificate.commentIntegrityFailures).toEqual(expect.arrayContaining([
         expect.objectContaining({
           side: 'compared',
@@ -1075,8 +1200,10 @@ describeWithLean('Lean conventional comment-reference integrity', () => {
 
   test
     .openspec('[LEAN-COMMENT-06] Every admitted physical story contributes references')
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.3' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.4' })
     .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.5' })(
-    'collects main, header, footer, footnote, and endnote references in canonical order',
+    'collects ranged references from every retained story class in canonical order',
     async () => {
       const valid = await commentIntegrityAllStoriesDocx();
       const certificate = await run(valid);
@@ -1084,13 +1211,15 @@ describeWithLean('Lean conventional comment-reference integrity', () => {
       expect(certificate.commentInventories?.[0]).toMatchObject({
         status: 'passed',
         referenceOccurrences: 5,
+        rangeStartOccurrences: 5,
+        rangeEndOccurrences: 5,
         uniqueReferenceIds: 5,
         definitions: 5,
       });
 
       const compared = await commentIntegrityAllStoriesDocx('5');
       const mutated = await run(valid, valid, compared);
-      expect(mutated.status).toBe('failed');
+      expect(mutated.status, mutated.reason).toBe('failed');
       expect(mutated.commentIntegrityFailures).toEqual(expect.arrayContaining([
         expect.objectContaining({
           side: 'compared',
@@ -1183,6 +1312,7 @@ describeWithLean('Lean conventional comment-reference integrity', () => {
         type: 'nodebuffer',
         compression: 'DEFLATE',
       }));
+      expect(incompleteSource.status, incompleteSource.reason).toBe('failed');
       expect(incompleteSource.commentIntegrityFailures).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -1586,7 +1716,7 @@ describeWithLean('Lean fixed-story package protocol', () => {
         code: 'COMMENT_ISSUE_LIMIT_EXCEEDED',
         side: 'original',
         kind: 'comments',
-        detail: 'protocol v6 aggregate ordinary issue limit exceeded',
+        detail: 'protocol v7 aggregate ordinary issue limit exceeded',
         ordinalSpace: 'aggregate',
         firstOccurrenceOrdinal: 0,
         occurrenceCount: 1,
@@ -2054,7 +2184,7 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
       const docx = await relationshipDocx({ includeAllRoles: true });
       const certificate = await run(docx);
       expect(certificate.status).toBe('passed');
-      expect(certificate.checkerProtocolVersion).toBe(6);
+      expect(certificate.checkerProtocolVersion).toBe(7);
       expect(certificate.relationshipSlots).toHaveLength(6);
       expect(certificate.relationshipSlots?.map(({ kind, role }) => `${kind}:${role}`)).toEqual([
         'header:first', 'header:default', 'header:even',
@@ -2498,8 +2628,8 @@ const validDefinitionStory = (kind: 'footnotes' | 'endnotes') => ({
   partPresent: false,
 });
 const validProtocolReport = {
-  protocolVersion: 6,
-  checker: 'safe-docx-lean-conventional-main-comment-integrity-checker',
+  protocolVersion: 7,
+  checker: 'safe-docx-lean-conventional-main-comment-range-integrity-checker',
   passed: true,
   fixedStories: [{
     name: 'main',
@@ -2583,6 +2713,8 @@ const validProtocolReport = {
     status: 'passed',
     relationship: null,
     referenceOccurrences: 0,
+    rangeStartOccurrences: 0,
+    rangeEndOccurrences: 0,
     uniqueReferenceIds: 0,
     definitions: 0,
     unreferencedDefinitions: 0,
@@ -2601,9 +2733,15 @@ test('rejects duplicate and non-canonical raw JSON object keys before parsing', 
     .toThrow(/canonical order/);
   expect(() => validateCanonicalProtocolJson('{"a":{"b":1,"a":2}}'))
     .toThrow(/canonical order/);
+  expect(() => validateCanonicalProtocolJson('{"a":7e0}'))
+    .toThrow();
+  expect(() => validateCanonicalProtocolJson('{"a":7.0}'))
+    .toThrow();
+  expect(() => validateCanonicalProtocolJson('{"a":"\\u0061"}'))
+    .toThrow(/canonical wire encoding/);
 });
 
-test('strictly decodes protocol-v6 comment identities, counts, issues, and status equations', () => {
+test('strictly decodes protocol-v7 comment identities, counts, issues, and status equations', () => {
   const relationship = {
     relationshipId: 'rIdComments',
     relationshipRecordOrdinal: 0,
@@ -2659,6 +2797,8 @@ test('strictly decodes protocol-v6 comment identities, counts, issues, and statu
     firstOccurrenceOrdinal: 0,
     occurrenceCount: 1,
     source: { sourceStory: 'main', sourceStoryOrdinal: 0 },
+    sourceSetOrdinal: 0,
+    sourceEventOrdinal: 0,
     canonicalId: '7',
   };
   const failed = {
@@ -2691,18 +2831,22 @@ test('strictly decodes protocol-v6 comment identities, counts, issues, and statu
   })).toBe(false);
 });
 
-test('enforces the canonical equation table for all 40 comment issue codes', () => {
+test('enforces the canonical equation table for all protocol-v7 comment issue codes', () => {
   type IssueSpec = {
     code: string;
-    space: 'relationship' | 'source' | 'reference' | 'definition' | 'aggregate';
+    space: 'relationship' | 'source' | 'rangeStart' | 'rangeEnd' |
+      'reference' | 'definition' | 'aggregate';
     ordinal: number;
     source?: { sourceStory: string; sourceStoryOrdinal: number };
     status: 'failed' | 'not_evaluated';
     selected?: boolean;
     extras?: Record<string, unknown>;
-    coalesced?: 'definitions' | 'references';
+    coalesced?: 'definitions' | 'references' |
+      'duplicateReferences' | 'duplicateStarts' | 'duplicateEnds';
     counts?: Partial<{
       referenceOccurrences: number;
+      rangeStartOccurrences: number;
+      rangeEndOccurrences: number;
       uniqueReferenceIds: number;
       definitions: number;
       unreferencedDefinitions: number;
@@ -2745,7 +2889,23 @@ test('enforces the canonical equation table for all 40 comment issue codes', () 
     { code: 'COMMENT_REFERENCE_ID_MALFORMED', space: 'reference', ordinal: 0, source: main, status: 'failed', selected: true, extras: { rawId: 'bad' }, counts: { referenceOccurrences: 1 } },
     { code: 'COMMENT_REFERENCE_ID_TOO_LONG', space: 'reference', ordinal: 0, source: main, status: 'failed', selected: true, extras: { rawIdByteLength: 65 }, counts: { referenceOccurrences: 1 } },
     { code: 'COMMENT_REFERENCE_OCCURRENCE_LIMIT_EXCEEDED', space: 'reference', ordinal: 4096, source: main, status: 'not_evaluated', selected: true },
-    { code: 'COMMENT_UNIQUE_REFERENCE_ID_LIMIT_EXCEEDED', space: 'reference', ordinal: 4095, source: main, status: 'not_evaluated', selected: true, extras: { canonicalId: '4096' } },
+    { code: 'COMMENT_UNIQUE_REFERENCE_OR_RANGE_ID_LIMIT_EXCEEDED', space: 'reference', ordinal: 4095, source: main, status: 'not_evaluated', selected: true, extras: { canonicalId: '4096' } },
+    { code: 'COMMENT_RANGE_START_ID_MISSING', space: 'rangeStart', ordinal: 0, source: main, status: 'failed', selected: true, counts: { rangeStartOccurrences: 1 } },
+    { code: 'COMMENT_RANGE_START_ID_MALFORMED', space: 'rangeStart', ordinal: 0, source: main, status: 'failed', selected: true, extras: { rawId: 'bad' }, counts: { rangeStartOccurrences: 1 } },
+    { code: 'COMMENT_RANGE_START_ID_TOO_LONG', space: 'rangeStart', ordinal: 0, source: main, status: 'failed', selected: true, extras: { rawIdByteLength: 65 }, counts: { rangeStartOccurrences: 1 } },
+    { code: 'COMMENT_RANGE_END_ID_MISSING', space: 'rangeEnd', ordinal: 0, source: main, status: 'failed', selected: true, counts: { rangeEndOccurrences: 1 } },
+    { code: 'COMMENT_RANGE_END_ID_MALFORMED', space: 'rangeEnd', ordinal: 0, source: main, status: 'failed', selected: true, extras: { rawId: 'bad' }, counts: { rangeEndOccurrences: 1 } },
+    { code: 'COMMENT_RANGE_END_ID_TOO_LONG', space: 'rangeEnd', ordinal: 0, source: main, status: 'failed', selected: true, extras: { rawIdByteLength: 65 }, counts: { rangeEndOccurrences: 1 } },
+    { code: 'COMMENT_RANGE_START_OCCURRENCE_LIMIT_EXCEEDED', space: 'rangeStart', ordinal: 4096, source: main, status: 'not_evaluated', selected: true },
+    { code: 'COMMENT_RANGE_END_OCCURRENCE_LIMIT_EXCEEDED', space: 'rangeEnd', ordinal: 4096, source: main, status: 'not_evaluated', selected: true },
+    { code: 'COMMENT_REFERENCE_DUPLICATE', space: 'reference', ordinal: 1, source: main, status: 'failed', selected: true, extras: { canonicalId: '7' }, coalesced: 'duplicateReferences', counts: { referenceOccurrences: 2, uniqueReferenceIds: 1, definitions: 1 } },
+    { code: 'COMMENT_REFERENCE_MISSING', space: 'rangeStart', ordinal: 0, source: main, status: 'failed', selected: true, extras: { canonicalId: '7' }, counts: { rangeStartOccurrences: 1, uniqueReferenceIds: 1, definitions: 1 } },
+    { code: 'COMMENT_RANGE_START_DUPLICATE', space: 'rangeStart', ordinal: 1, source: main, status: 'failed', selected: true, extras: { canonicalId: '7' }, coalesced: 'duplicateStarts', counts: { referenceOccurrences: 1, rangeStartOccurrences: 2, rangeEndOccurrences: 1, uniqueReferenceIds: 1, definitions: 1 } },
+    { code: 'COMMENT_RANGE_END_DUPLICATE', space: 'rangeEnd', ordinal: 1, source: main, status: 'failed', selected: true, extras: { canonicalId: '7' }, coalesced: 'duplicateEnds', counts: { referenceOccurrences: 1, rangeStartOccurrences: 1, rangeEndOccurrences: 2, uniqueReferenceIds: 1, definitions: 1 } },
+    { code: 'COMMENT_RANGE_START_ORPHANED', space: 'rangeStart', ordinal: 0, source: main, status: 'failed', selected: true, extras: { canonicalId: '7' }, counts: { referenceOccurrences: 1, rangeStartOccurrences: 1, uniqueReferenceIds: 1, definitions: 1 } },
+    { code: 'COMMENT_RANGE_END_ORPHANED', space: 'rangeEnd', ordinal: 0, source: main, status: 'failed', selected: true, extras: { canonicalId: '7' }, counts: { referenceOccurrences: 1, rangeEndOccurrences: 1, uniqueReferenceIds: 1, definitions: 1 } },
+    { code: 'COMMENT_RANGE_CROSS_STORY', space: 'rangeStart', ordinal: 0, source: main, status: 'failed', selected: true, extras: { canonicalId: '7', relatedSource: { sourceStory: 'header', sourceStoryOrdinal: 0 }, relatedSourceSetOrdinal: 1, relatedSourceEventOrdinal: 0 }, counts: { referenceOccurrences: 1, rangeStartOccurrences: 1, rangeEndOccurrences: 1, uniqueReferenceIds: 1, definitions: 1 } },
+    { code: 'COMMENT_RANGE_REVERSED', space: 'rangeStart', ordinal: 0, source: main, status: 'failed', selected: true, extras: { canonicalId: '7', rangeEndEventOrdinal: 0 }, counts: { referenceOccurrences: 1, rangeStartOccurrences: 1, rangeEndOccurrences: 1, uniqueReferenceIds: 1, definitions: 1 } },
     { code: 'COMMENT_DEFINITION_ID_MISSING', space: 'definition', ordinal: 0, source: comments, status: 'failed', selected: true },
     { code: 'COMMENT_DEFINITION_ID_MALFORMED', space: 'definition', ordinal: 0, source: comments, status: 'failed', selected: true, extras: { rawId: 'bad' } },
     { code: 'COMMENT_DEFINITION_ID_TOO_LONG', space: 'definition', ordinal: 0, source: comments, status: 'failed', selected: true, extras: { rawIdByteLength: 65 } },
@@ -2753,27 +2913,57 @@ test('enforces the canonical equation table for all 40 comment issue codes', () 
     { code: 'COMMENT_DEFINITION_NOT_DIRECT', space: 'definition', ordinal: 0, source: comments, status: 'failed', selected: true, extras: { canonicalId: '7' }, counts: { nonDirectDefinitions: 1 } },
     { code: 'COMMENT_NON_DIRECT_DEFINITION_LIMIT_EXCEEDED', space: 'definition', ordinal: 4096, source: comments, status: 'not_evaluated', selected: true },
     { code: 'COMMENT_DEFINITION_DUPLICATE', space: 'definition', ordinal: 1, source: comments, status: 'failed', selected: true, extras: { canonicalId: '7' }, coalesced: 'definitions', counts: { definitions: 2 } },
-    { code: 'COMMENT_DEFINITION_MISSING', space: 'reference', ordinal: 0, source: main, status: 'failed', selected: true, extras: { canonicalId: '7' }, coalesced: 'references', counts: { referenceOccurrences: 1, uniqueReferenceIds: 1 } },
+    { code: 'COMMENT_DEFINITION_MISSING', space: 'reference', ordinal: 0, source: main, status: 'failed', selected: true, extras: { canonicalId: '7' }, counts: { referenceOccurrences: 1, uniqueReferenceIds: 1 } },
     { code: 'COMMENT_ISSUE_LIMIT_EXCEEDED', space: 'aggregate', ordinal: 0, status: 'not_evaluated' },
     { code: 'COMMENT_EVIDENCE_STRING_BUDGET_EXCEEDED', space: 'aggregate', ordinal: 0, status: 'not_evaluated' },
   ];
-  expect(specs).toHaveLength(40);
-  expect(new Set(specs.map(({ code }) => code)).size).toBe(40);
+  expect(specs).toHaveLength(56);
+  expect(new Set(specs.map(({ code }) => code)).size).toBe(56);
 
   const relationship = {
     relationshipId: 'rIdComments',
     relationshipRecordOrdinal: 0,
     normalizedPartPath: 'word/comments.xml',
   };
+  const headerIdentity = {
+    relationshipId: 'rIdHeader1',
+    normalizedPartPath: 'word/header1.xml',
+  };
+  const headerSlot = {
+    slotOrdinal: 0,
+    sectionOrdinal: 0,
+    kind: 'header',
+    role: 'default',
+    original: headerIdentity,
+    revised: headerIdentity,
+    compared: headerIdentity,
+    physicalStoryOrdinal: 0,
+  };
+  const headerStory = {
+    physicalStoryOrdinal: 0,
+    kind: 'header',
+    originalPartPath: 'word/header1.xml',
+    revisedPartPath: 'word/header1.xml',
+    comparedPartPath: 'word/header1.xml',
+    selectingSlotOrdinals: [0],
+    parsedTokenCounts: { original: 1, revised: 1, combined: 1 },
+    report: validProtocolReport.fixedStories[0]!.report,
+  };
   const issueFor = (spec: IssueSpec, occurrenceCount = 1): Record<string, unknown> => ({
     code: spec.code,
     side: 'original',
     kind: 'comments',
-    detail: 'bounded mutation fixture',
+    detail: spec.code === 'COMMENT_ISSUE_LIMIT_EXCEEDED'
+      ? 'protocol v7 aggregate ordinary issue limit exceeded'
+      : spec.code === 'COMMENT_EVIDENCE_STRING_BUDGET_EXCEEDED'
+        ? 'protocol v7 escaped evidence string budget exceeded'
+        : 'bounded mutation fixture',
     ordinalSpace: spec.space,
     firstOccurrenceOrdinal: spec.ordinal,
     occurrenceCount,
     ...(spec.source ? { source: spec.source } : {}),
+    ...(['rangeStart', 'rangeEnd', 'reference'].includes(spec.space)
+      ? { sourceSetOrdinal: 0, sourceEventOrdinal: 0 } : {}),
     ...spec.extras,
   });
   const reportFor = (spec: IssueSpec, issue: Record<string, unknown>) => {
@@ -2820,6 +3010,8 @@ test('enforces the canonical equation table for all 40 comment issue codes', () 
     const occurrenceCount = issue.occurrenceCount as number;
     const counts = {
       referenceOccurrences: 0,
+      rangeStartOccurrences: 0,
+      rangeEndOccurrences: 0,
       uniqueReferenceIds: 0,
       definitions: 0,
       unreferencedDefinitions: 0,
@@ -2829,6 +3021,12 @@ test('enforces the canonical equation table for all 40 comment issue codes', () 
         ? { definitions: occurrenceCount + 1 } : {}),
       ...(spec.coalesced === 'references'
         ? { referenceOccurrences: occurrenceCount, uniqueReferenceIds: 1 } : {}),
+      ...(spec.coalesced === 'duplicateReferences'
+        ? { referenceOccurrences: occurrenceCount + 1 } : {}),
+      ...(spec.coalesced === 'duplicateStarts'
+        ? { rangeStartOccurrences: occurrenceCount + 1 } : {}),
+      ...(spec.coalesced === 'duplicateEnds'
+        ? { rangeEndOccurrences: occurrenceCount + 1 } : {}),
     };
     const inventory = {
       side: 'original',
@@ -2837,9 +3035,26 @@ test('enforces the canonical equation table for all 40 comment issue codes', () 
       ...counts,
     };
     if (spec.status === 'failed') {
+      const crossStory = spec.code === 'COMMENT_RANGE_CROSS_STORY';
       return {
         ...validProtocolReport,
         passed: false,
+        relationshipSlots: crossStory ? [headerSlot] : [],
+        relationshipStories: crossStory ? [headerStory] : [],
+        referenceSourcePartitions: crossStory
+          ? validProtocolReport.referenceSourcePartitions.map((partition) => ({
+              ...partition,
+              sources: [
+                ...partition.sources,
+                {
+                  sourceOrdinal: 1,
+                  sourceStory: 'header',
+                  physicalStoryOrdinal: 0,
+                  normalizedPartPath: 'word/header1.xml',
+                },
+              ],
+            }))
+          : validProtocolReport.referenceSourcePartitions,
         commentStory: {
           ...validProtocolReport.commentStory,
           status: 'failed',
@@ -2876,6 +3091,8 @@ test('enforces the canonical equation table for all 40 comment issue codes', () 
         relationship: index === 0 && spec.selected
           ? relationship : null,
         referenceOccurrences: 0,
+        rangeStartOccurrences: 0,
+        rangeEndOccurrences: 0,
         uniqueReferenceIds: 0,
         definitions: 0,
         unreferencedDefinitions: 0,
@@ -2914,6 +3131,10 @@ test('enforces the canonical equation table for all 40 comment issue codes', () 
         `${spec.code}: coalesced count 2`).toBe(true);
       expect(isLeanVerifierJson(reportFor(spec, coalesced)),
         `${spec.code}: coalesced count equations`).toBe(true);
+      if (spec.coalesced?.startsWith('duplicate')) {
+        expect(isCommentIssue({ ...coalesced, occurrenceCount: 4096 }),
+          `${spec.code}: duplicate count cannot equal the occurrence cap`).toBe(false);
+      }
     }
     expect(isCommentIssue({
       ...issue,
@@ -2976,6 +3197,23 @@ test('enforces the canonical equation table for all 40 comment issue codes', () 
     }
     const report = reportFor(spec, issue);
     expect(isLeanVerifierJson(report), `${spec.code}: valid report`).toBe(true);
+    if (spec.code === 'COMMENT_RANGE_CROSS_STORY') {
+      expect(isCommentIssue({
+        ...issue,
+        relatedSource: issue.source,
+      }), `${spec.code}: related physical story must differ`).toBe(false);
+      expect(isCommentIssue({
+        ...issue,
+        relatedSourceSetOrdinal: issue.sourceSetOrdinal,
+        relatedSourceEventOrdinal: issue.sourceEventOrdinal,
+      }), `${spec.code}: related marker must be later`).toBe(false);
+    }
+    if (spec.code === 'COMMENT_RANGE_REVERSED') {
+      expect(isCommentIssue({
+        ...issue,
+        rangeEndEventOrdinal: (issue.sourceEventOrdinal as number) + 1,
+      }), `${spec.code}: end after start is not reversed`).toBe(false);
+    }
     const wrongStatus = structuredClone(report);
     if (spec.space === 'aggregate') {
       wrongStatus.commentStory.status = 'failed';
@@ -3063,7 +3301,12 @@ describe('Lean fixed-story protocol and security hardening', () => {
         'utf8',
       );
 
-      expect(workflow).toContain('lake env lean AxiomAudit.lean');
+      expect(workflow).toContain(
+        'node ../../scripts/run_lean_axiom_audit.mjs /tmp/axiom-audit-raw.txt',
+      );
+      expect(workflow).toContain(
+        'node ../../scripts/check_lean_audit_freshness.mjs',
+      );
       expect(workflow).toContain('grep -nwH "sorry"');
       expect(workflow).toContain('lake build');
       expect(workflow).toContain('leanXmlVerifier.test.ts');
@@ -3094,7 +3337,7 @@ describe('Lean fixed-story protocol and security hardening', () => {
       });
       expect(result.status).toBe('passed');
       expect(result.checks.acceptingAllTrackedChangesMatchesRevisedText.status).toBe('passed');
-      expect(result.checkerProtocolVersion).toBe(6);
+      expect(result.checkerProtocolVersion).toBe(7);
       expect(result.fixedStoryScope).toBeUndefined();
       expect(result.noteStoryScope?.alignment).toBe('semantic-note-kind');
       expect(result.relationshipStoryScope?.inheritedRoles).toBe(false);
@@ -3199,7 +3442,7 @@ describe('Lean fixed-story protocol and security hardening', () => {
 
   describeWithNearEnvelope('compiled near-envelope response constructors', () => {
     test.openspec('[LEAN-REL-22] Every legal response fits the output cap')(
-      'strict-decodes a realizable near-envelope ordinary protocol-v6 response', async () => {
+      'strict-decodes a realizable near-envelope ordinary protocol-v7 response', async () => {
       const raw = await runNearEnvelopeProducer();
       const parsed = JSON.parse(raw);
       expect(isLeanVerifierJson(parsed)).toBe(true);
@@ -3551,7 +3794,7 @@ describe('Lean fixed-story protocol and security hardening', () => {
       code: 'COMMENT_EVIDENCE_STRING_BUDGET_EXCEEDED',
       side: 'original',
       kind: 'comments',
-      detail: 'protocol v6 escaped evidence string budget exceeded',
+      detail: 'protocol v7 escaped evidence string budget exceeded',
       ordinalSpace: 'aggregate',
       firstOccurrenceOrdinal: 0,
       occurrenceCount: 1,
@@ -3604,10 +3847,14 @@ describe('Lean fixed-story protocol and security hardening', () => {
       {
         ...terminalIssue,
         code: 'COMMENT_ISSUE_LIMIT_EXCEEDED',
-        detail: 'protocol v6 aggregate ordinary issue limit exceeded',
+        detail: 'protocol v7 aggregate ordinary issue limit exceeded',
       },
     ];
     for (const candidate of terminalIssues) {
+      expect(isLeanVerifierJson({
+        ...terminal,
+        commentIntegrityIssues: [{ ...candidate, detail: `${candidate.detail}!` }],
+      }), `${candidate.code} mutated terminal detail`).toBe(false);
       for (const [key, extra] of Object.entries(forbiddenTerminalExtras)) {
         expect(isLeanVerifierJson({
           ...terminal,

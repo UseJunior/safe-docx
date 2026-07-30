@@ -1,37 +1,39 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { runFreshLeanAudit } from './lean_audit_runner.mjs';
 
 const leanDirectory = fileURLToPath(
   new URL('../verification/lean/', import.meta.url),
 );
 const semanticTargets = [
-  'Tier2.CommentReferenceIntegrity.Typed.typedByteArrayEqCheck_true_iff',
-  'Tier2.CommentReferenceIntegrity.Typed.typedXmlEventListEqCheck_true_iff',
-  'Tier2.CommentReferenceIntegrity.Typed.typed_comment_selector_result_sound',
-  'Tier2.CommentReferenceIntegrity.Typed.typed_comment_selection_to_realization_sound',
-  'Tier2.CommentReferenceIntegrity.Typed.typed_admitted_comment_source_set_complete',
-  'Tier2.CommentReferenceIntegrity.Typed.typed_parsed_comment_inventory_evidence_exact',
-  'Tier2.CommentReferenceIntegrity.Typed.typed_package_comment_reference_integrity_sound',
-  'Tier2.CommentReferenceIntegrity.Typed.typed_incomplete_comment_partition_zero_evidence_sound',
-  'Tier2.CommentReferenceIntegrity.Typed.typed_comment_integrity_aggregate_pass_sound',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_comment_selector_result_v7_sound',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_comment_selection_to_realization_v7_sound',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_admitted_comment_source_set_v7_complete',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_comment_marker_scan_evidence_exact',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_package_comment_range_integrity_sound',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_incomplete_comment_range_zero_evidence_sound',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_comment_range_aggregate_pass_sound',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_invalid_topology_witnesses_are_canonical',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_duplicate_reference_aggregate_witness_rejected',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_orphan_endpoint_aggregate_witness_rejected',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_reversed_range_aggregate_witness_rejected',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_cross_story_range_aggregate_witness_rejected',
 ];
 const executableBridgeTargets = [
-  'executable_comment_selector_refines_typed',
-  'executable_comment_realization_refines_typed',
-  'executable_comment_source_set_refines_typed',
-  'executable_comment_incomplete_refines_typed',
-  'executable_protocol_utf8_json_refines_typed',
+  'executable_comment_source_set_v7_refines_typed',
+  'executable_comment_marker_scan_v7_refines_typed',
+  'executable_comment_definition_realization_v7_refines_typed',
+  'executable_comment_incomplete_v7_refines_typed',
+  'executable_protocol_v7_utf8_json_refines_typed',
 ];
 const productionTarget =
-  'Tier2.NoteReferenceIntegrity.production_run_request_core_v6_refinement_sound';
+  'Tier2.NoteReferenceIntegrity.production_run_request_core_v7_refinement_sound';
 
-const result = spawnSync(
-  'lake',
-  ['env', 'lean', 'CommentSemanticDependencyAudit.lean'],
-  { cwd: leanDirectory, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 },
-);
-if (result.error) throw result.error;
+const result = runFreshLeanAudit({
+  leanDirectory,
+  buildTargets: ['LeanDocxChecker'],
+  auditFile: 'CommentSemanticDependencyAudit.lean',
+});
 if (result.status !== 0) {
   process.stderr.write(result.stderr);
   process.stdout.write(result.stdout);

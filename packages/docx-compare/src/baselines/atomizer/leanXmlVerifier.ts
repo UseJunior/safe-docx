@@ -22,7 +22,7 @@ import type {
   ReconstructionMode,
 } from '../../compare-types.js';
 
-const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_EXECUTABLE = 'verification/lean/.lake/build/bin/leanDocxChecker';
 const MAX_RESPONSE_BYTES = 2_626_369;
 const MAX_RESPONSE_JSON_BYTES = MAX_RESPONSE_BYTES - 1;
@@ -70,8 +70,8 @@ interface LeanRelationshipStoryJson {
 }
 
 interface LeanVerifierJson {
-  protocolVersion: 6;
-  checker: 'safe-docx-lean-conventional-main-comment-integrity-checker';
+  protocolVersion: 7;
+  checker: 'safe-docx-lean-conventional-main-comment-range-integrity-checker';
   passed: boolean;
   fixedStories: LeanStoryJson[];
   presenceMismatches: [];
@@ -173,11 +173,21 @@ const COMMENT_ISSUE_CODES = new Set([
   'COMMENT_PART_ROOT_MISMATCH', 'COMMENT_REFERENCE_ID_MISSING',
   'COMMENT_REFERENCE_ID_MALFORMED', 'COMMENT_REFERENCE_ID_TOO_LONG',
   'COMMENT_REFERENCE_OCCURRENCE_LIMIT_EXCEEDED',
-  'COMMENT_UNIQUE_REFERENCE_ID_LIMIT_EXCEEDED', 'COMMENT_DEFINITION_ID_MISSING',
+  'COMMENT_RANGE_START_ID_MISSING', 'COMMENT_RANGE_START_ID_MALFORMED',
+  'COMMENT_RANGE_START_ID_TOO_LONG', 'COMMENT_RANGE_END_ID_MISSING',
+  'COMMENT_RANGE_END_ID_MALFORMED', 'COMMENT_RANGE_END_ID_TOO_LONG',
+  'COMMENT_RANGE_START_OCCURRENCE_LIMIT_EXCEEDED',
+  'COMMENT_RANGE_END_OCCURRENCE_LIMIT_EXCEEDED',
+  'COMMENT_UNIQUE_REFERENCE_OR_RANGE_ID_LIMIT_EXCEEDED',
+  'COMMENT_DEFINITION_ID_MISSING',
   'COMMENT_DEFINITION_ID_MALFORMED', 'COMMENT_DEFINITION_ID_TOO_LONG',
   'COMMENT_DEFINITION_LIMIT_EXCEEDED', 'COMMENT_DEFINITION_NOT_DIRECT',
   'COMMENT_NON_DIRECT_DEFINITION_LIMIT_EXCEEDED', 'COMMENT_DEFINITION_DUPLICATE',
-  'COMMENT_DEFINITION_MISSING', 'COMMENT_ISSUE_LIMIT_EXCEEDED',
+  'COMMENT_DEFINITION_MISSING', 'COMMENT_REFERENCE_DUPLICATE',
+  'COMMENT_REFERENCE_MISSING', 'COMMENT_RANGE_START_DUPLICATE',
+  'COMMENT_RANGE_END_DUPLICATE', 'COMMENT_RANGE_START_ORPHANED',
+  'COMMENT_RANGE_END_ORPHANED', 'COMMENT_RANGE_REVERSED',
+  'COMMENT_RANGE_CROSS_STORY', 'COMMENT_ISSUE_LIMIT_EXCEEDED',
   'COMMENT_EVIDENCE_STRING_BUDGET_EXCEEDED',
 ]);
 
@@ -471,6 +481,72 @@ function noteIssueCoalesceIdentity(
     record.rawTarget ?? null,
     record.normalizedPartPath ?? null,
   ]);
+}
+
+const COMMENT_SOURCE_CODE_ORDER = [
+  'COMMENT_RANGE_START_ID_MISSING', 'COMMENT_RANGE_START_ID_TOO_LONG',
+  'COMMENT_RANGE_START_ID_MALFORMED', 'COMMENT_RANGE_END_ID_MISSING',
+  'COMMENT_RANGE_END_ID_TOO_LONG', 'COMMENT_RANGE_END_ID_MALFORMED',
+  'COMMENT_RANGE_START_OCCURRENCE_LIMIT_EXCEEDED',
+  'COMMENT_RANGE_END_OCCURRENCE_LIMIT_EXCEEDED',
+  'COMMENT_UNIQUE_REFERENCE_OR_RANGE_ID_LIMIT_EXCEEDED',
+] as const;
+const COMMENT_TOPOLOGY_CODE_ORDER = [
+  'COMMENT_REFERENCE_DUPLICATE', 'COMMENT_REFERENCE_MISSING',
+  'COMMENT_RANGE_START_DUPLICATE', 'COMMENT_RANGE_END_DUPLICATE',
+  'COMMENT_RANGE_START_ORPHANED', 'COMMENT_RANGE_END_ORPHANED',
+  'COMMENT_RANGE_CROSS_STORY', 'COMMENT_RANGE_REVERSED',
+] as const;
+
+function commentIssuePhase(code: string): number {
+  if (code === 'COMMENT_SOURCE_PARTITION_INCOMPLETE') return 1;
+  if (code.startsWith('COMMENT_DEFINITION_') ||
+      code === 'COMMENT_NON_DIRECT_DEFINITION_LIMIT_EXCEEDED') return 2;
+  if (COMMENT_SOURCE_CODE_ORDER.includes(code as never) ||
+      code.startsWith('COMMENT_REFERENCE_ID_') ||
+      code === 'COMMENT_REFERENCE_OCCURRENCE_LIMIT_EXCEEDED' ||
+      code === 'COMMENT_RELATIONSHIP_REQUIRED') return 3;
+  if (COMMENT_TOPOLOGY_CODE_ORDER.includes(code as never)) return 4;
+  if (code === 'COMMENT_ISSUE_LIMIT_EXCEEDED' ||
+      code === 'COMMENT_EVIDENCE_STRING_BUDGET_EXCEEDED') return 5;
+  return 0;
+}
+
+function commentIssueOrder(issue: DocumentIntegrityCommentFailure): string {
+  const source = issue.source;
+  const codeOrder = commentIssuePhase(issue.code) === 3
+    ? COMMENT_SOURCE_CODE_ORDER.indexOf(issue.code as never)
+    : commentIssuePhase(issue.code) === 4
+      ? COMMENT_TOPOLOGY_CODE_ORDER.indexOf(issue.code as never)
+      : -1;
+  const rank = (values: readonly string[], value: string | undefined) => {
+    const index = value === undefined ? -1 : values.indexOf(value);
+    return String(index < 0 ? values.length : index).padStart(2, '0');
+  };
+  return [
+    rank(SIDES, issue.side),
+    String(commentIssuePhase(issue.code)).padStart(2, '0'),
+    String(issue.sourceSetOrdinal ?? 0).padStart(3, '0'),
+    rank(['main', 'header', 'footer', 'footnotes', 'endnotes', 'comments'],
+      source?.sourceStory),
+    String(source?.sourceStoryOrdinal ?? 0).padStart(3, '0'),
+    String(issue.sourceEventOrdinal ?? 0).padStart(6, '0'),
+    rank(['rangeStart', 'rangeEnd', 'reference', 'relationship', 'source',
+      'definition', 'aggregate'], issue.ordinalSpace),
+    String(issue.firstOccurrenceOrdinal).padStart(4, '0'),
+    String(codeOrder < 0 ? 999 : codeOrder).padStart(3, '0'),
+    issue.code,
+    issue.canonicalId ?? '',
+  ].join('\0');
+}
+
+function commentIssueCoalesceIdentity(issue: DocumentIntegrityCommentFailure): string {
+  const identity = { ...issue } as Record<string, unknown>;
+  delete identity.detail;
+  delete identity.firstOccurrenceOrdinal;
+  delete identity.sourceEventOrdinal;
+  delete identity.occurrenceCount;
+  return JSON.stringify(identity);
 }
 
 function isStrictlyOrdered<T>(values: readonly T[], key: (value: T) => string): boolean {
@@ -819,22 +895,35 @@ function isCommentInventory(
   if (!isRecord(value) ||
       !hasExactKeys(value, [
         'side', 'status', 'relationship', 'referenceOccurrences',
-        'uniqueReferenceIds', 'definitions', 'unreferencedDefinitions',
-        'nonDirectDefinitions',
+        'rangeStartOccurrences', 'rangeEndOccurrences', 'uniqueReferenceIds',
+        'definitions', 'unreferencedDefinitions', 'nonDirectDefinitions',
       ]) ||
       value.side !== expectedSide ||
       !['passed', 'failed', 'not_evaluated'].includes(value.status as string) ||
       !(value.relationship === null || isCommentIdentity(value.relationship)) ||
       !isNonnegativeInteger(value.referenceOccurrences, 4_096) ||
+      !isNonnegativeInteger(value.rangeStartOccurrences, 4_096) ||
+      !isNonnegativeInteger(value.rangeEndOccurrences, 4_096) ||
       !isNonnegativeInteger(value.uniqueReferenceIds, 4_096) ||
       !isNonnegativeInteger(value.definitions, 4_096) ||
       !isNonnegativeInteger(value.unreferencedDefinitions, 4_096) ||
       !isNonnegativeInteger(value.nonDirectDefinitions, 4_096)) return false;
-  if ((value.uniqueReferenceIds as number) > (value.referenceOccurrences as number) ||
+  if ((value.uniqueReferenceIds as number) >
+        (value.referenceOccurrences as number) +
+        (value.rangeStartOccurrences as number) +
+        (value.rangeEndOccurrences as number) ||
       (value.unreferencedDefinitions as number) > (value.definitions as number)) return false;
+  if (value.status === 'passed' &&
+      ((value.uniqueReferenceIds as number) !== (value.referenceOccurrences as number) ||
+        (value.rangeStartOccurrences as number) !== (value.rangeEndOccurrences as number) ||
+        (value.rangeStartOccurrences as number) > (value.uniqueReferenceIds as number) ||
+        (value.definitions as number) !==
+          (value.uniqueReferenceIds as number) + (value.unreferencedDefinitions as number) ||
+        value.nonDirectDefinitions !== 0)) return false;
   return value.status !== 'not_evaluated' ||
-    [value.referenceOccurrences, value.uniqueReferenceIds, value.definitions,
-      value.unreferencedDefinitions, value.nonDirectDefinitions].every((count) => count === 0);
+    [value.referenceOccurrences, value.rangeStartOccurrences, value.rangeEndOccurrences,
+      value.uniqueReferenceIds, value.definitions, value.unreferencedDefinitions,
+      value.nonDirectDefinitions].every((count) => count === 0);
 }
 
 function isCanonicalDecimalId(value: unknown): value is string {
@@ -848,26 +937,46 @@ export function isCommentIssue(value: unknown): value is DocumentIntegrityCommen
         'code', 'side', 'kind', 'detail', 'ordinalSpace',
         'firstOccurrenceOrdinal', 'occurrenceCount',
       ], [
-        'source', 'canonicalId', 'rawId', 'rawIdByteLength',
-        'relationshipId', 'rawTarget', 'rawTargetByteLength', 'targetMode',
-        'normalizedPartPath',
+        'source', 'sourceSetOrdinal', 'sourceEventOrdinal', 'relatedSource',
+        'relatedSourceSetOrdinal', 'relatedSourceEventOrdinal', 'canonicalId',
+        'rawId', 'rawIdByteLength', 'relationshipId', 'rawTarget',
+        'rawTargetByteLength', 'targetMode', 'normalizedPartPath',
+        'rangeEndEventOrdinal',
       ]) ||
       !COMMENT_ISSUE_CODES.has(value.code as string) ||
       !SIDES.includes(value.side as never) || value.kind !== 'comments' ||
       !isBoundedString(value.detail, 256) ||
-      !['relationship', 'source', 'definition', 'reference', 'aggregate']
+      !['relationship', 'source', 'definition', 'rangeStart', 'rangeEnd', 'reference', 'aggregate']
         .includes(value.ordinalSpace as string) ||
       !isNonnegativeInteger(value.firstOccurrenceOrdinal, 4_096) ||
       !isNonnegativeInteger(value.occurrenceCount, 4_096) ||
       value.occurrenceCount === 0) return false;
-  if ('source' in value && (!isRecord(value.source) ||
-      !hasExactKeys(value.source, ['sourceStory', 'sourceStoryOrdinal']) ||
-      !['main', 'header', 'footer', 'footnotes', 'endnotes', 'comments']
-        .includes(value.source.sourceStory as string) ||
-      !isNonnegativeInteger(value.source.sourceStoryOrdinal, 386))) return false;
+  const isSource = (source: unknown, comments: boolean): source is Record<string, unknown> =>
+    isRecord(source) &&
+    hasExactKeys(source, ['sourceStory', 'sourceStoryOrdinal']) &&
+    [...(comments ? ['comments'] : []), 'main', 'header', 'footer', 'footnotes', 'endnotes']
+      .includes(source.sourceStory as string) &&
+    isNonnegativeInteger(source.sourceStoryOrdinal, 383) &&
+    (source.sourceStory === 'header' || source.sourceStory === 'footer'
+      ? true
+      : source.sourceStoryOrdinal === 0);
+  if ('source' in value && !isSource(value.source, true)) return false;
+  if ('relatedSource' in value && !isSource(value.relatedSource, false)) return false;
+  if ('sourceSetOrdinal' in value &&
+      !isNonnegativeInteger(value.sourceSetOrdinal, 386)) return false;
+  if ('relatedSourceSetOrdinal' in value &&
+      !isNonnegativeInteger(value.relatedSourceSetOrdinal, 386)) return false;
+  if ('sourceEventOrdinal' in value &&
+      !isNonnegativeInteger(value.sourceEventOrdinal, 499_999)) return false;
+  if ('relatedSourceEventOrdinal' in value &&
+      !isNonnegativeInteger(value.relatedSourceEventOrdinal, 499_999)) return false;
+  if ('rangeEndEventOrdinal' in value &&
+      !isNonnegativeInteger(value.rangeEndEventOrdinal, 499_999)) return false;
   if ('canonicalId' in value && !isCanonicalDecimalId(value.canonicalId)) return false;
   if ('rawId' in value && !isBoundedString(value.rawId, 64)) return false;
-  if ('rawIdByteLength' in value && !isNonnegativeInteger(value.rawIdByteLength)) return false;
+  if ('rawIdByteLength' in value &&
+      (!isNonnegativeInteger(value.rawIdByteLength, 16_777_216) ||
+        value.rawIdByteLength < 65)) return false;
   if ('relationshipId' in value && !isRelationshipId(value.relationshipId)) return false;
   if ('rawTarget' in value && !isBoundedString(value.rawTarget, 256)) return false;
   if ('rawTargetByteLength' in value &&
@@ -877,11 +986,18 @@ export function isCommentIssue(value: unknown): value is DocumentIntegrityCommen
   const terminal = value.code === 'COMMENT_ISSUE_LIMIT_EXCEEDED' ||
     value.code === 'COMMENT_EVIDENCE_STRING_BUDGET_EXCEEDED';
   if (terminal) {
+    const expectedDetail = value.code === 'COMMENT_ISSUE_LIMIT_EXCEEDED'
+      ? 'protocol v7 aggregate ordinary issue limit exceeded'
+      : 'protocol v7 escaped evidence string budget exceeded';
     const terminalExtras = [
-      'source', 'canonicalId', 'rawId', 'rawIdByteLength', 'relationshipId',
-      'rawTarget', 'rawTargetByteLength', 'targetMode', 'normalizedPartPath',
+      'source', 'sourceSetOrdinal', 'sourceEventOrdinal', 'relatedSource',
+      'relatedSourceSetOrdinal', 'relatedSourceEventOrdinal', 'canonicalId',
+      'rawId', 'rawIdByteLength', 'relationshipId', 'rawTarget',
+      'rawTargetByteLength', 'targetMode', 'normalizedPartPath',
+      'rangeEndEventOrdinal',
     ] as const;
     return value.ordinalSpace === 'aggregate' && value.side === 'original' &&
+      value.detail === expectedDetail &&
       value.firstOccurrenceOrdinal === 0 && value.occurrenceCount === 1 &&
       terminalExtras.every((key) => !(key in value));
   }
@@ -893,16 +1009,18 @@ export function isCommentIssue(value: unknown): value is DocumentIntegrityCommen
       sourceStory === 'endnotes' || sourceStory === 'comments') &&
       sourceOrdinal !== 0) return false;
   const optionalKeys = [
-    'canonicalId', 'rawId', 'rawIdByteLength', 'relationshipId', 'rawTarget',
+    'sourceSetOrdinal', 'sourceEventOrdinal', 'relatedSource',
+    'relatedSourceSetOrdinal', 'relatedSourceEventOrdinal', 'canonicalId',
+    'rawId', 'rawIdByteLength', 'relationshipId', 'rawTarget',
     'rawTargetByteLength', 'targetMode', 'normalizedPartPath',
+    'rangeEndEventOrdinal',
   ] as const;
   const hasExactExtras = (required: readonly string[]) =>
     required.every((key) => key in value) &&
     optionalKeys.every((key) => required.includes(key) || !(key in value));
   const noExtras = new Set([
     'COMMENT_RELATIONSHIP_AMBIGUOUS', 'COMMENT_SOURCE_PARTITION_INCOMPLETE',
-    'COMMENT_RELATIONSHIP_REQUIRED', 'COMMENT_REFERENCE_ID_MISSING',
-    'COMMENT_REFERENCE_OCCURRENCE_LIMIT_EXCEEDED', 'COMMENT_DEFINITION_ID_MISSING',
+    'COMMENT_DEFINITION_ID_MISSING',
     'COMMENT_DEFINITION_LIMIT_EXCEEDED',
     'COMMENT_NON_DIRECT_DEFINITION_LIMIT_EXCEEDED',
   ]);
@@ -936,8 +1054,26 @@ export function isCommentIssue(value: unknown): value is DocumentIntegrityCommen
     'COMMENT_RELATIONSHIP_REQUIRED', 'COMMENT_REFERENCE_ID_MISSING',
     'COMMENT_REFERENCE_ID_MALFORMED', 'COMMENT_REFERENCE_ID_TOO_LONG',
     'COMMENT_REFERENCE_OCCURRENCE_LIMIT_EXCEEDED',
-    'COMMENT_UNIQUE_REFERENCE_ID_LIMIT_EXCEEDED',
-    'COMMENT_DEFINITION_MISSING',
+  ]);
+  const markerCodeSpace = new Map<string, 'rangeStart' | 'rangeEnd' | 'reference'>([
+    ['COMMENT_REFERENCE_ID_MISSING', 'reference'],
+    ['COMMENT_REFERENCE_ID_MALFORMED', 'reference'],
+    ['COMMENT_REFERENCE_ID_TOO_LONG', 'reference'],
+    ['COMMENT_REFERENCE_OCCURRENCE_LIMIT_EXCEEDED', 'reference'],
+    ['COMMENT_RANGE_START_ID_MISSING', 'rangeStart'],
+    ['COMMENT_RANGE_START_ID_MALFORMED', 'rangeStart'],
+    ['COMMENT_RANGE_START_ID_TOO_LONG', 'rangeStart'],
+    ['COMMENT_RANGE_START_OCCURRENCE_LIMIT_EXCEEDED', 'rangeStart'],
+    ['COMMENT_RANGE_END_ID_MISSING', 'rangeEnd'],
+    ['COMMENT_RANGE_END_ID_MALFORMED', 'rangeEnd'],
+    ['COMMENT_RANGE_END_ID_TOO_LONG', 'rangeEnd'],
+    ['COMMENT_RANGE_END_OCCURRENCE_LIMIT_EXCEEDED', 'rangeEnd'],
+  ]);
+  const topologyCodes = new Set([
+    'COMMENT_REFERENCE_DUPLICATE', 'COMMENT_REFERENCE_MISSING',
+    'COMMENT_RANGE_START_DUPLICATE', 'COMMENT_RANGE_END_DUPLICATE',
+    'COMMENT_RANGE_START_ORPHANED', 'COMMENT_RANGE_END_ORPHANED',
+    'COMMENT_RANGE_CROSS_STORY', 'COMMENT_RANGE_REVERSED',
   ]);
   const relationshipOrdinalCodes = new Set([
     ...relationshipCodes,
@@ -953,6 +1089,9 @@ export function isCommentIssue(value: unknown): value is DocumentIntegrityCommen
   const coalescedSemanticCodes = new Set([
     'COMMENT_DEFINITION_DUPLICATE',
     'COMMENT_DEFINITION_MISSING',
+    'COMMENT_REFERENCE_DUPLICATE',
+    'COMMENT_RANGE_START_DUPLICATE',
+    'COMMENT_RANGE_END_DUPLICATE',
   ]);
   if (relationshipOrdinalCodes.has(value.code as string) &&
       (value.ordinalSpace !== 'relationship' ||
@@ -963,6 +1102,7 @@ export function isCommentIssue(value: unknown): value is DocumentIntegrityCommen
         value.firstOccurrenceOrdinal > 386 ||
         value.occurrenceCount !== 1)) return false;
   if (referenceCodes.has(value.code as string) &&
+      value.code !== 'COMMENT_RELATIONSHIP_REQUIRED' &&
       (value.ordinalSpace !== 'reference' ||
         (referenceLimitCodes.has(value.code as string)
           ? value.firstOccurrenceOrdinal !== 4_096
@@ -980,6 +1120,8 @@ export function isCommentIssue(value: unknown): value is DocumentIntegrityCommen
       (!('rawTargetByteLength' in value) ||
         (value.rawTargetByteLength as number) <= 256)) return false;
   if ((value.code === 'COMMENT_REFERENCE_ID_TOO_LONG' ||
+      value.code === 'COMMENT_RANGE_START_ID_TOO_LONG' ||
+      value.code === 'COMMENT_RANGE_END_ID_TOO_LONG' ||
       value.code === 'COMMENT_DEFINITION_ID_TOO_LONG') &&
       (!('rawIdByteLength' in value) ||
         (value.rawIdByteLength as number) <= 64)) return false;
@@ -989,6 +1131,71 @@ export function isCommentIssue(value: unknown): value is DocumentIntegrityCommen
       definitionCodes.has(value.code as string)) &&
       (sourceStory !== 'comments' || sourceOrdinal !== 0)) return false;
   if (referenceCodes.has(value.code as string) && sourceStory === 'comments') return false;
+  const code = value.code as string;
+  const markerSpace = markerCodeSpace.get(code);
+  const markerLimit = code.endsWith('_OCCURRENCE_LIMIT_EXCEEDED');
+  if (markerSpace !== undefined &&
+      (value.ordinalSpace !== markerSpace ||
+        (markerLimit
+          ? value.firstOccurrenceOrdinal !== 4_096
+          : value.firstOccurrenceOrdinal >= 4_096) ||
+        value.occurrenceCount !== 1)) return false;
+  if (value.code === 'COMMENT_RELATIONSHIP_REQUIRED' &&
+      (!['rangeStart', 'rangeEnd', 'reference'].includes(value.ordinalSpace as string) ||
+        value.firstOccurrenceOrdinal !== 0 || value.occurrenceCount !== 1)) return false;
+  if (value.code === 'COMMENT_UNIQUE_REFERENCE_OR_RANGE_ID_LIMIT_EXCEEDED' &&
+      (!['rangeStart', 'rangeEnd', 'reference'].includes(value.ordinalSpace as string) ||
+        value.firstOccurrenceOrdinal >= 4_096 || value.occurrenceCount !== 1)) return false;
+  if (value.code === 'COMMENT_DEFINITION_MISSING' &&
+      (!['rangeStart', 'rangeEnd', 'reference'].includes(value.ordinalSpace as string) ||
+        value.firstOccurrenceOrdinal >= 4_096 || value.occurrenceCount !== 1)) return false;
+  if (topologyCodes.has(code)) {
+    const expectedSpace = code === 'COMMENT_REFERENCE_DUPLICATE'
+      ? 'reference'
+      : code === 'COMMENT_REFERENCE_MISSING'
+        ? value.ordinalSpace
+        : code.includes('START') || code === 'COMMENT_RANGE_REVERSED'
+          ? 'rangeStart'
+          : code.includes('END') ? 'rangeEnd' : value.ordinalSpace;
+    if (value.ordinalSpace !== expectedSpace ||
+        !['rangeStart', 'rangeEnd', 'reference'].includes(value.ordinalSpace as string) ||
+        value.firstOccurrenceOrdinal >= 4_096 ||
+        (!coalescedSemanticCodes.has(value.code as string) && value.occurrenceCount !== 1)) return false;
+    if ([
+      'COMMENT_REFERENCE_DUPLICATE',
+      'COMMENT_RANGE_START_DUPLICATE',
+      'COMMENT_RANGE_END_DUPLICATE',
+    ].includes(code) && value.occurrenceCount > 4_095) return false;
+    if (code === 'COMMENT_RANGE_CROSS_STORY') {
+      if (!isRecord(value.source) || !isRecord(value.relatedSource) ||
+          !isNonnegativeInteger(value.sourceSetOrdinal, 386) ||
+          !isNonnegativeInteger(value.relatedSourceSetOrdinal, 386) ||
+          !isNonnegativeInteger(value.sourceEventOrdinal, 499_999) ||
+          !isNonnegativeInteger(value.relatedSourceEventOrdinal, 499_999)) return false;
+      const source = value.source as Record<string, unknown>;
+      const related = value.relatedSource as Record<string, unknown>;
+      const sourceSetOrdinal = value.sourceSetOrdinal as number;
+      const relatedSourceSetOrdinal = value.relatedSourceSetOrdinal as number;
+      const sourceEventOrdinal = value.sourceEventOrdinal as number;
+      const relatedSourceEventOrdinal = value.relatedSourceEventOrdinal as number;
+      if (source.sourceStory === related.sourceStory &&
+          source.sourceStoryOrdinal === related.sourceStoryOrdinal) return false;
+      if (relatedSourceSetOrdinal < sourceSetOrdinal ||
+          (relatedSourceSetOrdinal === sourceSetOrdinal &&
+            relatedSourceEventOrdinal <= sourceEventOrdinal)) return false;
+    }
+    if (code === 'COMMENT_RANGE_REVERSED' &&
+        (value.rangeEndEventOrdinal as number) >
+          (value.sourceEventOrdinal as number)) return false;
+  }
+  const markerOrTopology = markerSpace !== undefined ||
+    topologyCodes.has(value.code as string) ||
+    value.code === 'COMMENT_RELATIONSHIP_REQUIRED' ||
+    value.code === 'COMMENT_UNIQUE_REFERENCE_OR_RANGE_ID_LIMIT_EXCEEDED' ||
+    value.code === 'COMMENT_DEFINITION_MISSING';
+  if (markerOrTopology &&
+      (!('sourceSetOrdinal' in value) || !('sourceEventOrdinal' in value) ||
+        sourceStory === 'comments')) return false;
   if (noExtras.has(value.code as string)) return hasExactExtras([]);
   if (identityPathCodes.has(value.code as string)) {
     return hasExactExtras(['relationshipId', 'normalizedPartPath']);
@@ -1002,15 +1209,49 @@ export function isCommentIssue(value: unknown): value is DocumentIntegrityCommen
     case 'COMMENT_RELATIONSHIP_TARGET_LIMIT_EXCEEDED':
       return hasExactExtras(['relationshipId', 'rawTargetByteLength']);
     case 'COMMENT_REFERENCE_ID_MALFORMED':
+    case 'COMMENT_RANGE_START_ID_MALFORMED':
+    case 'COMMENT_RANGE_END_ID_MALFORMED':
     case 'COMMENT_DEFINITION_ID_MALFORMED':
-      return hasExactExtras(['rawId']);
+      return hasExactExtras(markerSpace === undefined
+        ? ['rawId']
+        : ['sourceSetOrdinal', 'sourceEventOrdinal', 'rawId']);
     case 'COMMENT_REFERENCE_ID_TOO_LONG':
+    case 'COMMENT_RANGE_START_ID_TOO_LONG':
+    case 'COMMENT_RANGE_END_ID_TOO_LONG':
     case 'COMMENT_DEFINITION_ID_TOO_LONG':
-      return hasExactExtras(['rawIdByteLength']);
-    case 'COMMENT_UNIQUE_REFERENCE_ID_LIMIT_EXCEEDED':
+      return hasExactExtras(markerSpace === undefined
+        ? ['rawIdByteLength']
+        : ['sourceSetOrdinal', 'sourceEventOrdinal', 'rawIdByteLength']);
+    case 'COMMENT_REFERENCE_ID_MISSING':
+    case 'COMMENT_RANGE_START_ID_MISSING':
+    case 'COMMENT_RANGE_END_ID_MISSING':
+    case 'COMMENT_REFERENCE_OCCURRENCE_LIMIT_EXCEEDED':
+    case 'COMMENT_RANGE_START_OCCURRENCE_LIMIT_EXCEEDED':
+    case 'COMMENT_RANGE_END_OCCURRENCE_LIMIT_EXCEEDED':
+    case 'COMMENT_RELATIONSHIP_REQUIRED':
+      return hasExactExtras(['sourceSetOrdinal', 'sourceEventOrdinal']);
+    case 'COMMENT_UNIQUE_REFERENCE_OR_RANGE_ID_LIMIT_EXCEEDED':
+    case 'COMMENT_REFERENCE_DUPLICATE':
+    case 'COMMENT_REFERENCE_MISSING':
+    case 'COMMENT_RANGE_START_DUPLICATE':
+    case 'COMMENT_RANGE_END_DUPLICATE':
+    case 'COMMENT_RANGE_START_ORPHANED':
+    case 'COMMENT_RANGE_END_ORPHANED':
     case 'COMMENT_DEFINITION_DUPLICATE':
     case 'COMMENT_DEFINITION_MISSING':
-      return hasExactExtras(['canonicalId']);
+      return hasExactExtras(markerOrTopology
+        ? ['sourceSetOrdinal', 'sourceEventOrdinal', 'canonicalId']
+        : ['canonicalId']);
+    case 'COMMENT_RANGE_CROSS_STORY':
+      return hasExactExtras([
+        'sourceSetOrdinal', 'sourceEventOrdinal', 'relatedSource',
+        'relatedSourceSetOrdinal', 'relatedSourceEventOrdinal', 'canonicalId',
+      ]);
+    case 'COMMENT_RANGE_REVERSED':
+      return hasExactExtras([
+        'sourceSetOrdinal', 'sourceEventOrdinal', 'canonicalId',
+        'rangeEndEventOrdinal',
+      ]);
     case 'COMMENT_DEFINITION_NOT_DIRECT':
       return hasExactExtras('canonicalId' in value ? ['canonicalId'] : []);
     default:
@@ -1025,8 +1266,8 @@ export function isLeanVerifierJson(value: unknown): value is LeanVerifierJson {
     'referenceSourcePartitions', 'noteStories', 'noteInventories', 'noteIntegrityIssues',
     'commentStory', 'commentInventories', 'commentIntegrityIssues',
   ])) return false;
-  if (value.protocolVersion !== 6 ||
-      value.checker !== 'safe-docx-lean-conventional-main-comment-integrity-checker' ||
+  if (value.protocolVersion !== 7 ||
+      value.checker !== 'safe-docx-lean-conventional-main-comment-range-integrity-checker' ||
       typeof value.passed !== 'boolean') return false;
   if (!Array.isArray(value.fixedStories) || !value.fixedStories.every(isFixedStory)) return false;
   const fixedNames = value.fixedStories.map((story) => story.name);
@@ -1099,11 +1340,11 @@ export function isLeanVerifierJson(value: unknown): value is LeanVerifierJson {
   if (new Set(value.selectionIssues.map(issueIdentity)).size !== value.selectionIssues.length ||
       new Set(value.noteIntegrityIssues.map(noteIssueCoalesceIdentity)).size !==
         value.noteIntegrityIssues.length ||
-      new Set(value.commentIntegrityIssues.map(noteIssueCoalesceIdentity)).size !==
+      new Set(value.commentIntegrityIssues.map(commentIssueCoalesceIdentity)).size !==
         value.commentIntegrityIssues.length) return false;
   if (!isStrictlyOrdered(value.selectionIssues, selectionIssueOrder) ||
       !isStrictlyOrdered(value.noteIntegrityIssues, noteIssueOrder) ||
-      !isStrictlyOrdered(value.commentIntegrityIssues, noteIssueOrder)) return false;
+      !isStrictlyOrdered(value.commentIntegrityIssues, commentIssueOrder)) return false;
   const terminalIssues = value.commentIntegrityIssues.filter((issue) =>
     issue.code === 'COMMENT_ISSUE_LIMIT_EXCEEDED' ||
     issue.code === 'COMMENT_EVIDENCE_STRING_BUDGET_EXCEEDED');
@@ -1254,7 +1495,8 @@ export function isLeanVerifierJson(value: unknown): value is LeanVerifierJson {
       : JSON.stringify(storySide.relationship) !== JSON.stringify(inventory.relationship)) return false;
     if (storySide.status === 'absent' &&
         (inventory.status !== 'passed' || inventory.relationship !== null ||
-          inventory.referenceOccurrences !== 0 || inventory.definitions !== 0)) return false;
+          inventory.referenceOccurrences !== 0 || inventory.rangeStartOccurrences !== 0 ||
+          inventory.rangeEndOccurrences !== 0 || inventory.definitions !== 0)) return false;
     if (storySide.status !== 'absent' && storySide.status !== inventory.status) return false;
     if (inventory.status === 'failed' &&
         !value.commentIntegrityIssues.some((issue) => issue.side === side)) return false;
@@ -1264,9 +1506,16 @@ export function isLeanVerifierJson(value: unknown): value is LeanVerifierJson {
   const semanticCommentCodes = new Set([
     'COMMENT_REFERENCE_ID_MISSING', 'COMMENT_REFERENCE_ID_MALFORMED',
     'COMMENT_REFERENCE_ID_TOO_LONG',
+    'COMMENT_RANGE_START_ID_MISSING', 'COMMENT_RANGE_START_ID_MALFORMED',
+    'COMMENT_RANGE_START_ID_TOO_LONG', 'COMMENT_RANGE_END_ID_MISSING',
+    'COMMENT_RANGE_END_ID_MALFORMED', 'COMMENT_RANGE_END_ID_TOO_LONG',
     'COMMENT_DEFINITION_ID_MISSING', 'COMMENT_DEFINITION_ID_MALFORMED',
     'COMMENT_DEFINITION_ID_TOO_LONG', 'COMMENT_DEFINITION_NOT_DIRECT',
     'COMMENT_DEFINITION_DUPLICATE', 'COMMENT_DEFINITION_MISSING',
+    'COMMENT_REFERENCE_DUPLICATE', 'COMMENT_REFERENCE_MISSING',
+    'COMMENT_RANGE_START_DUPLICATE', 'COMMENT_RANGE_END_DUPLICATE',
+    'COMMENT_RANGE_START_ORPHANED', 'COMMENT_RANGE_END_ORPHANED',
+    'COMMENT_RANGE_REVERSED', 'COMMENT_RANGE_CROSS_STORY',
   ]);
   for (const issue of value.commentIntegrityIssues) {
     if (issue.code === 'COMMENT_ISSUE_LIMIT_EXCEEDED' ||
@@ -1293,6 +1542,17 @@ export function isLeanVerifierJson(value: unknown): value is LeanVerifierJson {
           : [];
       }),
     ];
+    if ('sourceSetOrdinal' in issue) {
+      const exact = canonicalSources[issue.sourceSetOrdinal!];
+      if (!exact || exact.sourceStory !== source.sourceStory ||
+          exact.sourceStoryOrdinal !== source.sourceStoryOrdinal) return false;
+    }
+    if ('relatedSourceSetOrdinal' in issue) {
+      const exact = canonicalSources[issue.relatedSourceSetOrdinal!];
+      if (!exact || !issue.relatedSource ||
+          exact.sourceStory !== issue.relatedSource.sourceStory ||
+          exact.sourceStoryOrdinal !== issue.relatedSource.sourceStoryOrdinal) return false;
+    }
     if (issue.code === 'COMMENT_SOURCE_PARTITION_INCOMPLETE') {
       const exact = canonicalSources[issue.firstOccurrenceOrdinal];
       if (!exact || exact.sourceStory !== source.sourceStory ||
@@ -1305,7 +1565,8 @@ export function isLeanVerifierJson(value: unknown): value is LeanVerifierJson {
     if (issue.code === 'COMMENT_DEFINITION_DUPLICATE' &&
         issue.occurrenceCount > Math.max(0, inventory.definitions - 1)) return false;
     if (issue.code === 'COMMENT_DEFINITION_MISSING' &&
-        issue.occurrenceCount > inventory.referenceOccurrences) return false;
+        issue.occurrenceCount > inventory.referenceOccurrences +
+          inventory.rangeStartOccurrences! + inventory.rangeEndOccurrences!) return false;
   }
   const expectedPassed = value.selectionIssues.length === 0 && value.noteIntegrityIssues.length === 0 &&
     value.commentIntegrityIssues.length === 0 &&
@@ -1440,7 +1701,7 @@ class CanonicalJsonScanner {
 
   private parseNumber(): void {
     const rest = this.input.slice(this.offset);
-    const match = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(rest);
+    const match = /^-?(?:0|[1-9]\d*)/.exec(rest);
     if (!match) throw new Error(`Lean verifier JSON has an invalid number at byte ${this.offset}`);
     this.offset += match[0].length;
   }
@@ -1448,6 +1709,10 @@ class CanonicalJsonScanner {
 
 export function validateCanonicalProtocolJson(raw: string): void {
   new CanonicalJsonScanner(raw).parse();
+  const parsed = JSON.parse(raw) as unknown;
+  if (JSON.stringify(parsed) !== raw) {
+    throw new Error('Lean verifier JSON is not in the canonical wire encoding');
+  }
 }
 
 function runExecutable(
@@ -1527,7 +1792,7 @@ function runExecutable(
         if (stdoutBuffer.at(-1) !== 0x0a ||
             stdoutBuffer.length - 1 > MAX_RESPONSE_JSON_BYTES ||
             stdoutBytes !== stdoutBuffer.length) {
-          reject(new Error('Lean relationship-story checker violated the protocol-v6 stdout envelope'));
+          reject(new Error('Lean relationship-story checker violated the protocol-v7 stdout envelope'));
         } else {
           resolve(stdout);
         }
@@ -1580,7 +1845,7 @@ function baseCertificate(input: LeanVerifierInput): Omit<
       comparedDocx: sha256(input.comparedDocx),
     },
     exclusions: [
-      'comment range pairing/topology and Microsoft threaded-comment extensions',
+      'ECMA-permitted unmatched comment endpoint point anchors and Microsoft threaded-comment extensions',
       'inherited header/footer role semantics and unselected package parts',
       'complete relationship, OPC, content-type, and XML Schema validation',
       'association of individual moveFrom or moveTo wrapper revision IDs with move ranges',
@@ -1628,7 +1893,7 @@ async function runLeanXmlTripleVerifierWithDependencies(
       writeFile(comparedDocxPath, snapshot.comparedDocx),
     ]);
     const payload = JSON.stringify({
-      protocolVersion: 6, originalDocxPath, revisedDocxPath, comparedDocxPath,
+      protocolVersion: 7, originalDocxPath, revisedDocxPath, comparedDocxPath,
     });
     if (Buffer.byteLength(payload, 'utf8') > 64 * 1024) throw new Error('Lean verifier request exceeds 64 KiB');
     const stdout = await runExecutable(executablePath, payload, timeoutMs, scratch);
@@ -1643,7 +1908,7 @@ async function runLeanXmlTripleVerifierWithDependencies(
     const main = stories[0]!;
     return {
       ...base,
-      checkerProtocolVersion: 6,
+      checkerProtocolVersion: 7,
       status: parsed.passed ? 'passed' : 'failed',
       stories,
       checks: {
@@ -1709,6 +1974,15 @@ async function runLeanXmlTripleVerifierWithDependencies(
         rangeTopology: false,
         threadedComments: false,
       },
+      commentRangeTopology: {
+        checkerProtocolVersion: 7,
+        crossParagraphRanges: true,
+        crossingRanges: true,
+        ecmaUnmatchedEndpointPointAnchorsAccepted: false,
+        profile: 'safe-docx-paired-or-point',
+        samePhysicalStoryRequired: true,
+        status: parsed.commentStory.status,
+      },
       commentStory: {
         status: parsed.commentStory.status,
         original: parsed.commentStory.original,
@@ -1749,6 +2023,18 @@ async function runLeanXmlTripleVerifierWithDependencies(
   }
 }
 
+/**
+ * Runs the compiled verifier for decimal comment IDs, range anchors, and
+ * reference marks across retained physical WordprocessingML stories.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.3
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.4
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.18.10
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.13.4.3 — Safe-DOCX rejects orphan endpoints under its stronger paired-or-point verification profile
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.13.4.4 — Safe-DOCX rejects orphan range starts under its stronger paired-or-point verification profile
+ * @see https://github.com/UseJunior/safe-docx/issues/729
+ */
 export function runLeanXmlTripleVerifier(
   input: LeanVerifierInput,
 ): Promise<DocumentIntegrityCertificate> {

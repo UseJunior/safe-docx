@@ -18,10 +18,16 @@ const typedCommentAxiomAuditPath = join(root,
   'verification/lean/TypedCommentAxiomAudit.lean');
 const commentMemoryPath = join(root,
   'scripts/check_lean_comment_memory.mjs');
+const commentDependencyAuditPath = join(root,
+  'scripts/check_lean_comment_semantics_dependencies.mjs');
+const auditFreshnessPath = join(root,
+  'scripts/check_lean_audit_freshness.mjs');
+const axiomAuditRunnerPath = join(root,
+  'scripts/run_lean_axiom_audit.mjs');
 const leanWorkflowPath = join(root, '.github/workflows/lean-build.yml');
 const noteWitnessesPath = join(root, 'verification/lean/Tier2/NoteReferenceIntegrityWitnesses.lean');
 const executablePath = join(root, 'verification/lean/LeanDocxChecker.lean');
-const ordinaryEnvelopePath = join(root, 'verification/lean/ProtocolV6OrdinaryEnvelopeWitness.lean');
+const ordinaryEnvelopePath = join(root, 'verification/lean/ProtocolV7OrdinaryEnvelopeWitness.lean');
 const decoderPath = join(root, 'packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts');
 
 const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8'));
@@ -33,6 +39,9 @@ const typedCommentIntegrity = readFileSync(typedCommentIntegrityPath, 'utf8');
 const typedCommentStackWitness = readFileSync(typedCommentStackWitnessPath, 'utf8');
 const typedCommentAxiomAudit = readFileSync(typedCommentAxiomAuditPath, 'utf8');
 const commentMemory = readFileSync(commentMemoryPath, 'utf8');
+const commentDependencyAudit = readFileSync(commentDependencyAuditPath, 'utf8');
+const auditFreshness = readFileSync(auditFreshnessPath, 'utf8');
+const axiomAuditRunner = readFileSync(axiomAuditRunnerPath, 'utf8');
 const leanWorkflow = readFileSync(leanWorkflowPath, 'utf8');
 const noteWitnesses = readFileSync(noteWitnessesPath, 'utf8');
 const executable = readFileSync(executablePath, 'utf8');
@@ -80,7 +89,8 @@ for (const element of ledger.parsedWordprocessingML?.elements ?? []) {
       !selector.includes(`localName == "${localName}"`) &&
       !noteIntegrity.includes(`localName == "${localName}"`) &&
       !noteIntegrity.includes(`=> "${localName}"`) &&
-      !commentIntegrity.includes(`localName == "${localName}"`)) {
+      !commentIntegrity.includes(`localName == "${localName}"`) &&
+      !executable.includes(`localName == "${localName}"`)) {
     errors.push(`ledger element ${element} is not referenced by the Lean parser or selector`);
   }
 }
@@ -133,8 +143,17 @@ if (!ledger.scope?.reconstructionModes?.outOfScope?.includes('rebuild')) {
   errors.push('ledger must mark rebuild as out of scope');
 }
 
-if (ledger.protocolVersion !== 6 || !executable.includes('protocolVersion != 6')) {
-  errors.push('ledger and Lean executable must agree on protocol version 6');
+if (ledger.protocolVersion !== 7 || !executable.includes('protocolVersion != 7')) {
+  errors.push('ledger and Lean executable must agree on protocol version 7');
+}
+for (const marker of ['w:commentRangeStart', 'w:commentRangeEnd']) {
+  if (!ledger.parsedWordprocessingML?.elements?.includes(marker)) {
+    errors.push(`protocol-v7 coverage ledger omits ${marker}`);
+  }
+}
+if (ledger.scope?.documentSurfaces?.outOfScope?.some((entry) =>
+  entry.includes('comment range'))) {
+  errors.push('protocol-v7 coverage ledger still describes comment ranges as out of scope');
 }
 if (!executable.includes('String.fromUTF8?')) {
   errors.push('accepted XML subset requires strict UTF-8 package-part decoding');
@@ -243,7 +262,7 @@ if (!selector.includes('if isDirectory then throw')) {
   errors.push('classic ZIP policy must explicitly reject directory records');
 }
 if (ledger.limits?.ordinaryEnvelopeEvidence?.producer !==
-    'verification/lean/ProtocolV6OrdinaryEnvelopeWitness.lean' ||
+    'verification/lean/ProtocolV7OrdinaryEnvelopeWitness.lean' ||
     !ordinaryEnvelope.includes('ordinaryLegalUpperEnvelope') ||
     !decoder.includes('.size > 256')) {
   errors.push('ordinary-envelope ledger evidence must match the compiled producer and strict 256-path decoder');
@@ -373,13 +392,93 @@ for (const required of [
 }
 for (const required of [
   'PAYLOAD_BYTES = 16_775_168',
+  "SAFE_DOCX_IRRELEVANT_EVENT_COUNT ?? '200000'",
+  'IRRELEVANT_EVENT_COUNT / 8',
   'MAX_RSS_BYTES = 1.5 * 1024 * 1024 * 1024',
   'TIMEOUT_MS = 120_000',
-  "['text', 'attribute']",
+  "'nvca-comment-topology',",
+  'tests/test_documents/nvca-regression/source.docx',
+  "'maximum-markers',",
+  "'irrelevant-events',",
+  "'missing-relationship-early',",
+  'COMMENT_RELATIONSHIP_REQUIRED',
+  "'early-crossing',",
+  "'late-crossing',",
+  'ulimit -s 8192',
 ]) {
   if (!commentMemory.includes(required)) {
     errors.push(`near-limit memory acceptance requires ${required}`);
   }
+}
+
+const retainedMarkerScannerBody = executable.slice(
+  executable.indexOf('def scanRetainedCommentStoryEventsV7'),
+  executable.indexOf('structure RetainedCommentMarkerScanRun'),
+);
+for (const forbidden of ['zipIdx', '.toList', '.filter ', '.filterMap ']) {
+  if (retainedMarkerScannerBody.includes(forbidden)) {
+    errors.push(`protocol-v7 retained marker scanner contains forbidden ${forbidden}`);
+  }
+}
+const productionCommentEvidenceBody = executable.slice(
+  executable.indexOf('def productionCommentEvidencePass'),
+  executable.indexOf('def commentSelectionResultEq'),
+);
+if (productionCommentEvidenceBody.includes(
+  'retainedCommentMarkerScanForRelationshipV7')) {
+  errors.push('production comment admission must consume the retained exact run without rescanning sources');
+}
+for (const required of [
+  'structure RetainedCommentMarkerScanRun',
+  'setExact',
+  'resultExact',
+  'markerScanRun',
+  'processedEventCount',
+  'processedStoryCount',
+  'retained_comment_event_scan_stops_at_crossing_witness',
+  'retained_comment_story_scan_does_not_enter_later_stories',
+  'retained_missing_relationship_scan_stops_at_first_marker_witness',
+  'commentMarkerKindCandidateV7',
+  'scanRetainedCommentMarkersForRelationshipV7',
+  'retained_marker_scan_run_result_substitution_rejected',
+  'executable_marker_scan_invocation_substitution_rejected',
+  'executable_marker_scan_retained_evidence_substitution_rejected',
+]) {
+  if (!executable.includes(required)) {
+    errors.push(`single-pass protocol-v7 retained evidence requires ${required}`);
+  }
+}
+for (const required of [
+  'typed_duplicate_reference_aggregate_witness_rejected',
+  'typed_orphan_endpoint_aggregate_witness_rejected',
+  'typed_reversed_range_aggregate_witness_rejected',
+  'typed_cross_story_range_aggregate_witness_rejected',
+  'typed_invalid_topology_witnesses_are_canonical',
+  'typedTopologyDefinitionRealization',
+]) {
+  if (!typedCommentIntegrity.includes(required)) {
+    errors.push(`non-vacuous protocol-v7 aggregate witness requires ${required}`);
+  }
+}
+for (const theorem of [
+  'typed_duplicate_reference_aggregate_witness_rejected',
+  'typed_orphan_endpoint_aggregate_witness_rejected',
+  'typed_reversed_range_aggregate_witness_rejected',
+  'typed_cross_story_range_aggregate_witness_rejected',
+]) {
+  const start = typedCommentIntegrity.indexOf(`theorem ${theorem}`);
+  const end = typedCommentIntegrity.indexOf('\ntheorem ', start + 1);
+  const body = typedCommentIntegrity.slice(start, end);
+  if (start < 0 || body.includes('(hScan') || body.includes('(hDefinitions')) {
+    errors.push(`${theorem} must reject a concrete canonical request without premises`);
+  }
+}
+const runRequestCoreV7Body = executable.slice(
+  executable.indexOf('def runRequestCoreV7'),
+  executable.indexOf('def ProductionRunRequestV7RefinesSemanticOf'),
+);
+if (runRequestCoreV7Body.includes('typedProtocolV6ResponseOfJson')) {
+  errors.push('protocol-v7 production adapter must not use the protocol-v6 JSON decoder');
 }
 for (const theorem of [
   'typedByteArrayEqCheck_true_iff',
@@ -390,8 +489,43 @@ for (const theorem of [
   }
 }
 if (!typedCommentStackWitness.includes('stackWitnessPayloadSize : Nat := 400000') ||
-    !typedCommentStackWitness.includes('native_decide')) {
-  errors.push('native typed comment stack witness must execute 400000-byte payloads');
+    !typedCommentStackWitness.includes('typedByteListEqCheck_true_iff') ||
+    !typedCommentStackWitness.includes('typedXmlEventListEqCheck_true_iff') ||
+    typedCommentStackWitness.includes('native_decide')) {
+  errors.push('typed comment stack witness must be kernel-checked over 400000-byte payloads');
+}
+const typedProtocolV7Body = typedCommentIntegrity.slice(
+  typedCommentIntegrity.indexOf('/- Protocol v7 independently models'),
+);
+if (typedProtocolV7Body.includes('native_decide')) {
+  errors.push('protocol-v7 typed semantics and witnesses must not use native_decide');
+}
+const missingRelationshipWitnessBody = executable.slice(
+  executable.indexOf('def retainedMissingRelationshipEarlyStopCheckV7'),
+  executable.indexOf('def retainedCommentMarkerSourceSetV7'),
+);
+if (missingRelationshipWitnessBody.includes('native_decide')) {
+  errors.push('missing-relationship structural witness must not use native_decide');
+}
+for (const target of [
+  'typed_invalid_topology_witnesses_are_canonical',
+  'typed_duplicate_reference_aggregate_witness_rejected',
+  'typed_orphan_endpoint_aggregate_witness_rejected',
+  'typed_reversed_range_aggregate_witness_rejected',
+  'typed_cross_story_range_aggregate_witness_rejected',
+]) {
+  if (!typedCommentAxiomAudit.includes(
+    `#print axioms Tier2.CommentReferenceIntegrity.Typed.${target}`)) {
+    errors.push(`typed comment axiom audit omits concrete witness ${target}`);
+  }
+}
+if (!commentDependencyAudit.includes("buildTargets: ['LeanDocxChecker']") ||
+    !commentDependencyAudit.includes('runFreshLeanAudit')) {
+  errors.push('comment dependency audit must build current project sources before audit import');
+}
+if (!axiomAuditRunner.includes("buildTargets: ['LeanDocxChecker']") ||
+    !auditFreshness.includes('stale direct-import acceptance')) {
+  errors.push('Lean axiom audit freshness runner/regression is incomplete');
 }
 for (const command of [
   'lake env lean TypedCommentStackSafetyWitnesses.lean',
@@ -404,8 +538,8 @@ for (const command of [
   }
 }
 
-if (!executable.includes('production_run_request_core_v6_refinement_sound')) {
-  errors.push('protocol v6 production refinement theorem is missing from LeanDocxChecker');
+if (!executable.includes('production_run_request_core_v7_refinement_sound')) {
+  errors.push('protocol v7 production refinement theorem is missing from LeanDocxChecker');
 }
 
 for (const required of [

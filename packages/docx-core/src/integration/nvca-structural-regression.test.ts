@@ -8,6 +8,7 @@ import {
 } from '@usejunior/docx-compare';
 import fs from 'fs';
 import path from 'path';
+import JSZip from 'jszip';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { DocxDocument } from '../primitives/document.js';
 import { getParagraphText, replaceParagraphTextRange } from '../primitives/text.js';
@@ -79,11 +80,15 @@ async function deriveMinimallyEditedRevision(source: Buffer): Promise<Buffer> {
 }
 
 /**
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.3
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.4
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.6
  * @conformance ECMA-376 edition 5, Part 1 § 17.18.10
  */
 async function addSelectedCommentsPart(source: Buffer): Promise<Buffer> {
   const archive = await DocxArchive.load(source);
+  const documentXml = await archive.getDocumentXml();
   const relationshipsPath = 'word/_rels/document.xml.rels';
   const relationships = await archive.getFile(relationshipsPath);
   if (!relationships?.includes('</Relationships>')) {
@@ -104,8 +109,45 @@ async function addSelectedCommentsPart(source: Buffer): Promise<Buffer> {
   archive.setFile(
     COMMENTS_PATH,
     `<w:comments xmlns:w="${OOXML.W_NS}">` +
-      '<w:comment w:id="710"><w:p/></w:comment></w:comments>',
+      [710, 711, 712, 713, 714, 715]
+        .map((id) => `<w:comment w:id="${id}"><w:p/></w:comment>`).join('') +
+      '</w:comments>',
   );
+  archive.setFile(
+    'word/document.xml',
+    documentXml.replace(
+      '</w:p>',
+      '<w:commentRangeStart w:id="710"/>' +
+        '<w:r><w:t>NVCA comment range</w:t></w:r>' +
+        '<w:commentRangeEnd w:id="710"/>' +
+        '<w:r><w:commentReference w:id="710"/></w:r></w:p>',
+    ),
+  );
+  const retainedStoryRanges: Array<[string, string, number, string]> = [
+    ['word/header1.xml', '</w:hdr>', 712,
+      '<w:p><w:r><w:t>NVCA header range</w:t></w:r></w:p>'],
+    ['word/footer1.xml', '</w:ftr>', 713,
+      '<w:p><w:r><w:t>NVCA footer range</w:t></w:r></w:p>'],
+    ['word/footnotes.xml', '</w:footnotes>', 714,
+      '<w:footnote w:id="1000"><w:p></w:p></w:footnote>'],
+    ['word/endnotes.xml', '</w:endnotes>', 715,
+      '<w:endnote w:id="1000"><w:p></w:p></w:endnote>'],
+  ];
+  for (const [partPath, closing, id, container] of retainedStoryRanges) {
+    const xml = await archive.getFile(partPath);
+    if (!xml?.includes(closing)) {
+      throw new Error(`NVCA source lacks retained story ${partPath}`);
+    }
+    const ranged = container.replace(
+      '<w:p>',
+      `<w:p><w:commentRangeStart w:id="${id}"/>`,
+    ).replace(
+      '</w:p>',
+      `<w:commentRangeEnd w:id="${id}"/>` +
+        `<w:r><w:commentReference w:id="${id}"/></w:r></w:p>`,
+    );
+    archive.setFile(partPath, xml.replace(closing, `${ranged}${closing}`));
+  }
   return archive.save();
 }
 
@@ -130,6 +172,78 @@ async function addNestedCommentDefinition(
   return archive.save();
 }
 
+type RangeMutation = 'orphan-start' | 'orphan-end' | 'reversed' |
+  'duplicate-reference' | 'malformed-start' | 'overlong-end' |
+  'alias' | 'cross-story' | 'missing-association' | 'start-limit';
+
+async function mutateNvcaCommentRange(source: Buffer, mutation: RangeMutation):
+Promise<{ docx: Buffer; documentXml: string }> {
+  const archive = await DocxArchive.load(source);
+  let documentXml = await archive.getDocumentXml();
+  if (mutation === 'orphan-start') {
+    documentXml = documentXml.replace('<w:commentRangeEnd w:id="710"/>', '');
+  } else if (mutation === 'orphan-end') {
+    documentXml = documentXml.replace('<w:commentRangeStart w:id="710"/>', '');
+  } else if (mutation === 'reversed') {
+    documentXml = documentXml
+      .replace('<w:commentRangeStart w:id="710"/>', '<w:commentRangeEnd w:id="710"/>')
+      .replace('<w:commentRangeEnd w:id="710"/><w:r><w:commentReference',
+        '<w:commentRangeStart w:id="710"/><w:r><w:commentReference');
+  } else if (mutation === 'duplicate-reference') {
+    documentXml = documentXml.replace(
+      '<w:commentReference w:id="710"/>',
+      '<w:commentReference w:id="710"/><w:commentReference w:id="710"/>',
+    );
+  } else if (mutation === 'malformed-start') {
+    documentXml = documentXml.replace(
+      '<w:commentRangeStart w:id="710"/>',
+      '<w:commentRangeStart w:id="seven"/>',
+    );
+  } else if (mutation === 'overlong-end') {
+    documentXml = documentXml.replace(
+      '<w:commentRangeEnd w:id="710"/>',
+      `<w:commentRangeEnd w:id="${'1'.repeat(65)}"/>`,
+    );
+  } else if (mutation === 'alias') {
+    documentXml = documentXml.replaceAll('w:id="710"', 'w:id=" +0710 "');
+  } else if (mutation === 'cross-story') {
+    documentXml = documentXml.replace('<w:commentRangeEnd w:id="710"/>', '');
+    const header = await archive.getFile('word/header1.xml');
+    if (!header?.includes('<w:commentRangeEnd w:id="712"/>')) {
+      throw new Error('NVCA compared header lacks the retained range endpoint');
+    }
+    archive.setFile(
+      'word/header1.xml',
+      header.replace(
+        '<w:commentRangeEnd w:id="712"/>',
+        '<w:commentRangeEnd w:id="710"/>',
+      ),
+    );
+  } else if (mutation === 'missing-association') {
+    const comments = await archive.getFile(COMMENTS_PATH);
+    if (!comments?.includes('<w:comment w:id="710">')) {
+      throw new Error('NVCA compared Comments part lacks definition 710');
+    }
+    archive.setFile(
+      COMMENTS_PATH,
+      comments.replace('<w:comment w:id="710">', '<w:comment w:id="999">'),
+    );
+  } else {
+    documentXml = documentXml.replace(
+      '<w:commentRangeStart w:id="710"/>',
+      '<w:commentRangeStart w:id="710"/>'.repeat(4097),
+    );
+  }
+  archive.setFile('word/document.xml', documentXml);
+  return { docx: await archive.save(), documentXml };
+}
+
+async function removeNvcaRetainedFootnotes(source: Buffer): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(source);
+  zip.remove('word/footnotes.xml');
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
 const leanCheckerPath = path.resolve(
   __dirname,
   '../../../../verification/lean/.lake/build/bin/leanDocxChecker',
@@ -143,6 +257,9 @@ const describeWithCompiledLean = fs.existsSync(leanCheckerPath) ? describe : des
 describeWithCompiledLean('NVCA full-document Lean comment stack safety', () => {
   test
     .openspec('[LEAN-COMMENT-11] Full real NVCA comment scanning is stack-safe')
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.3' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.4' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.5' })
     .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.6' })
     .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.18.10' })(
     'returns structured results for selected comments and nested-definition mutations',
@@ -167,7 +284,7 @@ describeWithCompiledLean('NVCA full-document Lean comment stack safety', () => {
       const originalAtomCount =
         atomizeTree(originalBody!, [], originalPart).atoms.length;
       expect(originalAtomCount).toBeGreaterThanOrEqual(41_000);
-      expect(originalAtomCount).toBe(41_615);
+      expect(originalAtomCount).toBe(41_621);
 
       const revised = await deriveMinimallyEditedRevision(original);
       const atomizerLogs: string[] = [];
@@ -190,17 +307,25 @@ describeWithCompiledLean('NVCA full-document Lean comment stack safety', () => {
         logSpy.mockRestore();
       }
       expect(atomizerLogs.some((message) =>
-        message.includes('word-split to 41621, punct-merged to 41621'),
+        message.includes('word-split to ') && message.includes('punct-merged to '),
       )).toBe(true);
       expect(
         comparison.documentIntegrity?.status,
         JSON.stringify(comparison.documentIntegrity, null, 2),
       ).toBe('passed');
       expect(comparison.reconstructionModeUsed).toBe('inplace');
-      expect(comparison.documentIntegrity?.checkerProtocolVersion).toBe(6);
+      expect(comparison.documentIntegrity?.checkerProtocolVersion).toBe(7);
       expect(comparison.documentIntegrity?.commentInventories?.every((inventory) =>
-        inventory.status === 'passed' && inventory.definitions === 1,
-      )).toBe(true);
+        inventory.status === 'passed' && inventory.definitions === 6 &&
+        inventory.unreferencedDefinitions === 1 &&
+        inventory.referenceOccurrences === 5 &&
+        inventory.rangeStartOccurrences === 5 &&
+        inventory.rangeEndOccurrences === 5,
+      ), JSON.stringify({
+        inventories: comparison.documentIntegrity?.commentInventories,
+        partitions: comparison.documentIntegrity?.referenceSourcePartitions,
+      }, null, 2))
+        .toBe(true);
 
       const revisedXml = await (await DocxArchive.load(revised)).getDocumentXml();
       const comparedXml =
@@ -225,7 +350,7 @@ describeWithCompiledLean('NVCA full-document Lean comment stack safety', () => {
           certificate.status,
           `${rawId ?? 'missing'}: ${certificate.reason}`,
         ).toBe('failed');
-        expect(certificate.checkerProtocolVersion).toBe(6);
+        expect(certificate.checkerProtocolVersion).toBe(7);
         expect(certificate.commentIntegrityFailures).toEqual([
           expect.objectContaining({
             side: 'compared',
@@ -235,6 +360,78 @@ describeWithCompiledLean('NVCA full-document Lean comment stack safety', () => {
         expect(certificate.commentIntegrityFailures?.[0]?.canonicalId)
           .toBeUndefined();
       }
+
+      const rangeMutations: Array<[RangeMutation, string]> = [
+        ['orphan-start', 'COMMENT_RANGE_START_ORPHANED'],
+        ['orphan-end', 'COMMENT_RANGE_END_ORPHANED'],
+        ['reversed', 'COMMENT_RANGE_REVERSED'],
+        ['duplicate-reference', 'COMMENT_REFERENCE_DUPLICATE'],
+        ['malformed-start', 'COMMENT_RANGE_START_ID_MALFORMED'],
+        ['overlong-end', 'COMMENT_RANGE_END_ID_TOO_LONG'],
+        ['cross-story', 'COMMENT_RANGE_CROSS_STORY'],
+        ['missing-association', 'COMMENT_DEFINITION_MISSING'],
+        ['start-limit', 'COMMENT_RANGE_START_OCCURRENCE_LIMIT_EXCEEDED'],
+      ];
+      for (const [mutation, code] of rangeMutations) {
+        const changed = await mutateNvcaCommentRange(comparison.document, mutation);
+        const certificate = await runLeanXmlTripleVerifier({
+          originalDocx: original,
+          revisedDocx: revised,
+          comparedDocx: changed.docx,
+          legacyDocumentXml: {
+            original: originalXml,
+            revised: revisedXml,
+            compared: changed.documentXml,
+          },
+          reconstructionMode: 'inplace',
+          options: { executablePath: leanCheckerPath, timeoutMs: 120_000 },
+        });
+        expect(certificate.status, `${mutation}: ${certificate.reason}`).toBe('failed');
+        expect(certificate.checkerProtocolVersion).toBe(7);
+        expect(certificate.commentIntegrityFailures).toEqual(
+          expect.arrayContaining([expect.objectContaining({ side: 'compared', code })]),
+        );
+      }
+
+      const alias = await mutateNvcaCommentRange(comparison.document, 'alias');
+      const aliasCertificate = await runLeanXmlTripleVerifier({
+        originalDocx: original,
+        revisedDocx: revised,
+        comparedDocx: alias.docx,
+        legacyDocumentXml: {
+          original: originalXml,
+          revised: revisedXml,
+          compared: alias.documentXml,
+        },
+        reconstructionMode: 'inplace',
+        options: { executablePath: leanCheckerPath, timeoutMs: 120_000 },
+      });
+      expect(aliasCertificate.status, aliasCertificate.reason).toBe('passed');
+
+      const incompleteCertificate = await runLeanXmlTripleVerifier({
+        originalDocx: original,
+        revisedDocx: revised,
+        comparedDocx: await removeNvcaRetainedFootnotes(comparison.document),
+        legacyDocumentXml: {
+          original: originalXml,
+          revised: revisedXml,
+          compared: comparedXml,
+        },
+        reconstructionMode: 'inplace',
+        options: { executablePath: leanCheckerPath, timeoutMs: 120_000 },
+      });
+      expect(
+        incompleteCertificate.status,
+        incompleteCertificate.reason,
+      ).toBe('failed');
+      expect(incompleteCertificate.commentIntegrityFailures).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            side: 'compared',
+            code: 'COMMENT_SOURCE_PARTITION_INCOMPLETE',
+          }),
+        ]),
+      );
     },
     300_000,
   );

@@ -141,7 +141,7 @@ def typedProtocolV6ResponseOfJson
     (response : Json) (passed : Bool) :
     Except String TypedProtocolV6Response := do
   return {
-    protocolVersion := .nat 6
+    protocolVersion := .nat 7
     checker := typedJsonOfProduction (jsonFieldOrNull response "checker")
     passed := .bool passed
     fixedStories := typedJsonOfProduction
@@ -224,7 +224,7 @@ theorem typed_protocol_response_pass_of_conversion
     (response : Json) (typedResponse : TypedProtocolV6Response)
     (hConversion :
       typedProtocolV6ResponseOfJson response true = .ok typedResponse) :
-    typedResponse.protocolVersion = .nat 6 ∧
+    typedResponse.protocolVersion = .nat 7 ∧
     typedResponse.passed = .bool true := by
   unfold typedProtocolV6ResponseOfJson at hConversion
   cases hConversion
@@ -597,11 +597,11 @@ def finalizeProtocolV6ResponseUnchecked
     (response : Json) : Except String ByteArray :=
   let jsonBytes := response.compress.toUTF8
   if jsonBytes.size > maxProtocolV6JsonResponseBytes then
-    .error "protocol v6 JSON response exceeds legal envelope"
+    .error "protocol v7 JSON response exceeds legal envelope"
   else
     let stdout := jsonBytes ++ protocolV6LineFeed
     if stdout.size > maxProtocolV6ResponseBytes then
-      .error "protocol v6 stdout response exceeds legal envelope"
+      .error "protocol v7 stdout response exceeds legal envelope"
     else .ok stdout
 
 def finalizeProtocolV6Response
@@ -609,7 +609,7 @@ def finalizeProtocolV6Response
   if protocolV6JsonProjectionCheck response passed then
     finalizeProtocolV6ResponseUnchecked response
   else
-    .error "protocol v6 production JSON diverges from typed byte projection"
+    .error "protocol v7 production JSON diverges from typed byte projection"
 
 theorem protocol_v6_projection_check_of_finalize_ok
     (response : Json) (passed : Bool) (stdout : ByteArray)
@@ -629,9 +629,9 @@ def requestFromJson (j : Json) : Except String Request := do
   let object ← j.getObj?
   if object.keys != ["comparedDocxPath", "originalDocxPath", "protocolVersion",
       "revisedDocxPath"] then
-    throw "protocol v6 request has unknown or missing keys"
+    throw "protocol v7 request has unknown or missing keys"
   let protocolVersion ← j.getObjValAs? Nat "protocolVersion"
-  if protocolVersion != 6 then throw s!"unsupported protocolVersion: {protocolVersion}"
+  if protocolVersion != 7 then throw s!"unsupported protocolVersion: {protocolVersion}"
   return {
     originalDocxPath := (← j.getObjValAs? String "originalDocxPath")
     revisedDocxPath := (← j.getObjValAs? String "revisedDocxPath")
@@ -1866,6 +1866,103 @@ def coalesceNoteIssues (issues : List Json) : List Json :=
             |>.setObjVal! "occurrenceCount" (toJson count)
     else retained ++ [issue]) []
 
+def commentIssuePhaseRankV7 (code : String) : Nat :=
+  if code == "COMMENT_SOURCE_PARTITION_INCOMPLETE" then 1
+  else if code.startsWith "COMMENT_DEFINITION_" ||
+      code == "COMMENT_NON_DIRECT_DEFINITION_LIMIT_EXCEEDED" then 2
+  else if code.startsWith "COMMENT_REFERENCE_ID_" ||
+      code.startsWith "COMMENT_RANGE_START_ID_" ||
+      code.startsWith "COMMENT_RANGE_END_ID_" ||
+      code == "COMMENT_RELATIONSHIP_REQUIRED" ||
+      code == "COMMENT_REFERENCE_OCCURRENCE_LIMIT_EXCEEDED" ||
+      code == "COMMENT_RANGE_START_OCCURRENCE_LIMIT_EXCEEDED" ||
+      code == "COMMENT_RANGE_END_OCCURRENCE_LIMIT_EXCEEDED" ||
+      code == "COMMENT_UNIQUE_REFERENCE_OR_RANGE_ID_LIMIT_EXCEEDED" then 3
+  else if [
+      "COMMENT_REFERENCE_DUPLICATE", "COMMENT_REFERENCE_MISSING",
+      "COMMENT_RANGE_START_DUPLICATE", "COMMENT_RANGE_END_DUPLICATE",
+      "COMMENT_RANGE_START_ORPHANED", "COMMENT_RANGE_END_ORPHANED",
+      "COMMENT_RANGE_CROSS_STORY", "COMMENT_RANGE_REVERSED"
+    ].contains code then 4
+  else if code == "COMMENT_ISSUE_LIMIT_EXCEEDED" ||
+      code == "COMMENT_EVIDENCE_STRING_BUDGET_EXCEEDED" then 5
+  else 0
+
+def commentIssueCodeRankV7 (code : String) : Nat :=
+  noteIssueStringRank [
+    "COMMENT_RANGE_START_ID_MISSING", "COMMENT_RANGE_START_ID_TOO_LONG",
+    "COMMENT_RANGE_START_ID_MALFORMED", "COMMENT_RANGE_END_ID_MISSING",
+    "COMMENT_RANGE_END_ID_TOO_LONG", "COMMENT_RANGE_END_ID_MALFORMED",
+    "COMMENT_RANGE_START_OCCURRENCE_LIMIT_EXCEEDED",
+    "COMMENT_RANGE_END_OCCURRENCE_LIMIT_EXCEEDED",
+    "COMMENT_UNIQUE_REFERENCE_OR_RANGE_ID_LIMIT_EXCEEDED",
+    "COMMENT_REFERENCE_DUPLICATE", "COMMENT_REFERENCE_MISSING",
+    "COMMENT_RANGE_START_DUPLICATE", "COMMENT_RANGE_END_DUPLICATE",
+    "COMMENT_RANGE_START_ORPHANED", "COMMENT_RANGE_END_ORPHANED",
+    "COMMENT_RANGE_CROSS_STORY", "COMMENT_RANGE_REVERSED"
+  ] code
+
+def commentIssueSortKeyV7 (issue : Json) : String :=
+  let source := match issue.getObjVal? "source" with
+    | .ok value => value
+    | .error _ => Json.null
+  [
+    zeroPaddedNat 2 (noteIssueStringRank ["original", "revised", "compared"]
+      (jsonStringField issue "side")),
+    zeroPaddedNat 2 (commentIssuePhaseRankV7 (jsonStringField issue "code")),
+    zeroPaddedNat 3 (jsonNatField issue "sourceSetOrdinal"),
+    zeroPaddedNat 2 (noteIssueStringRank
+      ["main", "header", "footer", "footnotes", "endnotes", "comments"]
+      (jsonStringField source "sourceStory")),
+    zeroPaddedNat 3 (jsonNatField source "sourceStoryOrdinal"),
+    zeroPaddedNat 6 (jsonNatField issue "sourceEventOrdinal"),
+    zeroPaddedNat 2 (noteIssueStringRank
+      ["rangeStart", "rangeEnd", "reference", "relationship", "source",
+        "definition", "aggregate"]
+      (jsonStringField issue "ordinalSpace")),
+    zeroPaddedNat 4 (jsonNatField issue "firstOccurrenceOrdinal"),
+    zeroPaddedNat 3 (commentIssueCodeRankV7 (jsonStringField issue "code")),
+    jsonStringField issue "code",
+    jsonStringField issue "canonicalId"
+  ].intersperse "\u0000" |>.foldl (· ++ ·) ""
+
+def commentIssueLessV7 (left right : Json) : Bool :=
+  decide (commentIssueSortKeyV7 left < commentIssueSortKeyV7 right)
+
+def commentIssueCoalesceKeyV7 (issue : Json) : String :=
+  let source := match issue.getObjVal? "source" with
+    | .ok value => value
+    | .error _ => Json.null
+  [
+    jsonStringField issue "side", jsonStringField issue "kind",
+    jsonStringField issue "code", jsonStringField issue "ordinalSpace",
+    jsonStringField source "sourceStory",
+    toString (jsonNatField source "sourceStoryOrdinal"),
+    jsonOptionalKey issue "sourceSetOrdinal",
+    jsonOptionalKey issue "relatedSource",
+    jsonOptionalKey issue "relatedSourceSetOrdinal",
+    jsonOptionalKey issue "relatedSourceEventOrdinal",
+    jsonOptionalKey issue "canonicalId", jsonOptionalKey issue "rawId",
+    jsonOptionalKey issue "rawIdByteLength",
+    jsonOptionalKey issue "relationshipId", jsonOptionalKey issue "rawTarget",
+    jsonOptionalKey issue "rawTargetByteLength", jsonOptionalKey issue "targetMode",
+    jsonOptionalKey issue "normalizedPartPath",
+    jsonOptionalKey issue "rangeEndEventOrdinal"
+  ].intersperse "\u0000" |>.foldl (· ++ ·) ""
+
+def coalesceCommentIssuesV7 (issues : List Json) : List Json :=
+  issues.foldl (fun retained issue =>
+    let key := commentIssueCoalesceKeyV7 issue
+    if retained.any (fun existing => commentIssueCoalesceKeyV7 existing == key) then
+      retained.map fun existing =>
+        if commentIssueCoalesceKeyV7 existing != key then existing
+        else
+          let count := min 4096 (jsonNatField existing "occurrenceCount" +
+            jsonNatField issue "occurrenceCount")
+          let earliest := if commentIssueLessV7 issue existing then issue else existing
+          earliest.setObjVal! "occurrenceCount" (toJson count)
+    else retained ++ [issue]) []
+
 def noteSourceJson (story : String) (ordinal : Nat) : Json :=
   Json.mkObj [("sourceStory", toJson story), ("sourceStoryOrdinal", toJson ordinal)]
 
@@ -2565,6 +2662,8 @@ structure CommentInventoryEvidence where
   status : String
   identity : Option SelectedCommentIdentity
   referenceOccurrences : Nat
+  rangeStartOccurrences : Nat := 0
+  rangeEndOccurrences : Nat := 0
   uniqueReferenceIds : Nat
   definitions : Nat
   unreferencedDefinitions : Nat
@@ -2577,24 +2676,6 @@ structure CommentTripleResourceUsage where
   expandedBytes : Nat := 0
   xmlEvents : Nat := 0
   deriving Repr, Inhabited
-
-structure CommentSideEvidence where
-  side : VerifierSide
-  sources : List NoteSource
-  sourcePartitionAdmitted : Bool
-  realizationFailureCode : Option String
-  realizationFailureDetail : Option String
-  identity : Option SelectedCommentIdentity
-  partPresent : Bool
-  part : Option LoadedCommentPart
-  retainedScan : Option RetainedCommentScan
-  complete : Bool
-  semanticLimitCrossed : Bool
-  productionIntegrityPassed : Bool
-  usage : SideResourceUsage
-  tripleUsage : CommentTripleResourceUsage
-  issues : List Json
-  inventory : CommentInventoryEvidence
 
 def commentIdentityJson (identity : SelectedCommentIdentity) : Json :=
   Json.mkObj
@@ -2671,8 +2752,546 @@ def commentSelectionIssue (side : VerifierSide)
 def zeroCommentInventory (side : VerifierSide)
     (identity : Option SelectedCommentIdentity) : CommentInventoryEvidence :=
   { side, status := "not_evaluated", identity, referenceOccurrences := 0
+    rangeStartOccurrences := 0, rangeEndOccurrences := 0
     uniqueReferenceIds := 0, definitions := 0, unreferencedDefinitions := 0
     nonDirectDefinitions := 0 }
+
+def commentInventoryJson (inventory : CommentInventoryEvidence) : Json :=
+  Json.mkObj <|
+    [ ("side", toJson inventory.side.toString)
+    , ("status", toJson inventory.status)
+    , ("relationship", inventory.identity.map commentIdentityJson |>.getD Json.null)
+    ] ++
+    [ ("referenceOccurrences", toJson inventory.referenceOccurrences)
+    , ("rangeStartOccurrences", toJson inventory.rangeStartOccurrences)
+    , ("rangeEndOccurrences", toJson inventory.rangeEndOccurrences)
+    , ("uniqueReferenceIds", toJson inventory.uniqueReferenceIds)
+    , ("definitions", toJson inventory.definitions)
+    , ("unreferencedDefinitions", toJson inventory.unreferencedDefinitions)
+    , ("nonDirectDefinitions", toJson inventory.nonDirectDefinitions)
+    ]
+
+def appendCommentNoteSources (evidence : NoteSideEvidence) : List NoteSource :=
+  let base := evidence.sources
+  let withFootnotes := match evidence.footnotesPart with
+    | none => base
+    | some part => base ++ [{
+        sourceOrdinal := base.length
+        sourceStory := "footnotes"
+        sourceStoryOrdinal := 0
+        normalizedPartPath := part.identity.normalizedPartPath
+        parseEvidence := part.parseEvidence
+      }]
+  match evidence.endnotesPart with
+  | none => withFootnotes
+  | some part => withFootnotes ++ [{
+      sourceOrdinal := withFootnotes.length
+      sourceStory := "endnotes"
+      sourceStoryOrdinal := 0
+      normalizedPartPath := part.identity.normalizedPartPath
+      parseEvidence := part.parseEvidence
+    }]
+
+inductive CommentMarkerKindV7
+  | rangeStart
+  | rangeEnd
+  | reference
+  deriving BEq, DecidableEq, Repr, Inhabited
+
+def CommentMarkerKindV7.ordinalSpace : CommentMarkerKindV7 → String
+  | .rangeStart => "rangeStart"
+  | .rangeEnd => "rangeEnd"
+  | .reference => "reference"
+
+structure CommentMarkerOccurrenceV7 where
+  kind : CommentMarkerKindV7
+  sourceSetOrdinal : Nat
+  sourceStory : String
+  sourceStoryOrdinal : Nat
+  sourceEventOrdinal : Nat
+  markerOccurrenceOrdinal : Nat
+  kindOccurrenceOrdinal : Nat
+  rawId : Option String
+  canonicalId : Option String
+  deriving DecidableEq, Repr, Inhabited
+
+structure CommentMarkerAssociationV7 where
+  referenceCount : Nat := 0
+  rangeStartCount : Nat := 0
+  rangeEndCount : Nat := 0
+  firstReference : Option CommentMarkerOccurrenceV7 := none
+  firstRangeStart : Option CommentMarkerOccurrenceV7 := none
+  firstRangeEnd : Option CommentMarkerOccurrenceV7 := none
+  firstDuplicateReference : Option CommentMarkerOccurrenceV7 := none
+  firstDuplicateRangeStart : Option CommentMarkerOccurrenceV7 := none
+  firstDuplicateRangeEnd : Option CommentMarkerOccurrenceV7 := none
+  deriving DecidableEq, Repr, Inhabited
+
+inductive CommentMarkerCrossingV7
+  | relationshipRequired (occurrence : CommentMarkerOccurrenceV7)
+  | referenceLimit (occurrence : CommentMarkerOccurrenceV7)
+  | rangeStartLimit (occurrence : CommentMarkerOccurrenceV7)
+  | rangeEndLimit (occurrence : CommentMarkerOccurrenceV7)
+  | uniqueIdLimit (occurrence : CommentMarkerOccurrenceV7) (canonicalId : String)
+  deriving DecidableEq, Repr, Inhabited
+
+structure ParsedCommentRangeEvidence where
+  occurrences : Array CommentMarkerOccurrenceV7 := #[]
+  canonicalIds : Array String := #[]
+  associations : Std.HashMap String CommentMarkerAssociationV7 := {}
+  referenceOccurrences : Nat := 0
+  rangeStartOccurrences : Nat := 0
+  rangeEndOccurrences : Nat := 0
+  markerOccurrences : Nat := 0
+  processedEventCount : Nat := 0
+  processedStoryCount : Nat := 0
+  crossing : Option CommentMarkerCrossingV7 := none
+  deriving Inhabited
+
+def commentMarkerCandidateV7 : XmlEvent →
+    Option (CommentMarkerKindV7 × Option String)
+  | .startElement uri localName attributes _ _ =>
+    if uri != wmlNamespace then none
+    else if localName == "commentRangeStart" then
+      some (.rangeStart,
+        Tier2.NoteReferenceIntegrity.expandedWmlAttribute? attributes "id")
+    else if localName == "commentRangeEnd" then
+      some (.rangeEnd,
+        Tier2.NoteReferenceIntegrity.expandedWmlAttribute? attributes "id")
+    else if localName == "commentReference" then
+      some (.reference,
+        Tier2.NoteReferenceIntegrity.expandedWmlAttribute? attributes "id")
+    else none
+  | .endElement .. | .text .. => none
+
+def commentMarkerKindCandidateV7 : XmlEvent → Option CommentMarkerKindV7
+  | .startElement uri localName _ _ _ =>
+    if uri != wmlNamespace then none
+    else if localName == "commentRangeStart" then some .rangeStart
+    else if localName == "commentRangeEnd" then some .rangeEnd
+    else if localName == "commentReference" then some .reference
+    else none
+  | .endElement .. | .text .. => none
+
+def updateCommentMarkerAssociationV7
+    (association : CommentMarkerAssociationV7)
+    (occurrence : CommentMarkerOccurrenceV7) : CommentMarkerAssociationV7 :=
+  match occurrence.kind with
+  | .reference =>
+      { association with
+        referenceCount := association.referenceCount + 1
+        firstReference := association.firstReference.orElse (fun _ => some occurrence)
+        firstDuplicateReference :=
+          if association.referenceCount == 1 then some occurrence
+          else association.firstDuplicateReference }
+  | .rangeStart =>
+      { association with
+        rangeStartCount := association.rangeStartCount + 1
+        firstRangeStart := association.firstRangeStart.orElse (fun _ => some occurrence)
+        firstDuplicateRangeStart :=
+          if association.rangeStartCount == 1 then some occurrence
+          else association.firstDuplicateRangeStart }
+  | .rangeEnd =>
+      { association with
+        rangeEndCount := association.rangeEndCount + 1
+        firstRangeEnd := association.firstRangeEnd.orElse (fun _ => some occurrence)
+        firstDuplicateRangeEnd :=
+          if association.rangeEndCount == 1 then some occurrence
+          else association.firstDuplicateRangeEnd }
+
+def scanRetainedCommentMarkerEventV7 (relationshipPresent : Bool)
+    (sourceSetOrdinal : Nat) (sourceStory : String)
+    (sourceStoryOrdinal eventOrdinal : Nat)
+    (state : ParsedCommentRangeEvidence) (event : XmlEvent) :
+    ParsedCommentRangeEvidence :=
+  if state.crossing.isSome then state
+  else if !relationshipPresent then
+    match commentMarkerKindCandidateV7 event with
+    | none => state
+    | some kind =>
+      let kindOrdinal := match kind with
+        | .reference => state.referenceOccurrences
+        | .rangeStart => state.rangeStartOccurrences
+        | .rangeEnd => state.rangeEndOccurrences
+      let occurrence : CommentMarkerOccurrenceV7 := {
+        kind
+        sourceSetOrdinal
+        sourceStory
+        sourceStoryOrdinal
+        sourceEventOrdinal := eventOrdinal
+        markerOccurrenceOrdinal := state.markerOccurrences
+        kindOccurrenceOrdinal := kindOrdinal
+        rawId := none
+        canonicalId := none
+      }
+      { state with crossing := some (.relationshipRequired occurrence) }
+  else
+    match commentMarkerCandidateV7 event with
+    | none => state
+    | some (kind, rawId) =>
+      let kindOrdinal := match kind with
+        | .reference => state.referenceOccurrences
+        | .rangeStart => state.rangeStartOccurrences
+        | .rangeEnd => state.rangeEndOccurrences
+      let canonicalId := rawId.bind fun raw =>
+        (parseDecimalId raw).toOption.map (·.text)
+      let occurrence : CommentMarkerOccurrenceV7 := {
+        kind
+        sourceSetOrdinal
+        sourceStory
+        sourceStoryOrdinal
+        sourceEventOrdinal := eventOrdinal
+        markerOccurrenceOrdinal := state.markerOccurrences
+        kindOccurrenceOrdinal := kindOrdinal
+        rawId
+        canonicalId
+      }
+      if kind == .reference && kindOrdinal ==
+          Tier2.CommentReferenceIntegrity.maxCommentReferences then
+        { state with crossing := some (.referenceLimit occurrence) }
+      else if kind == .rangeStart && kindOrdinal ==
+          Tier2.CommentReferenceIntegrity.maxCommentReferences then
+        { state with crossing := some (.rangeStartLimit occurrence) }
+      else if kind == .rangeEnd && kindOrdinal ==
+          Tier2.CommentReferenceIntegrity.maxCommentReferences then
+        { state with crossing := some (.rangeEndLimit occurrence) }
+      else
+        let nextReference := state.referenceOccurrences +
+          (if kind == .reference then 1 else 0)
+        let nextStart := state.rangeStartOccurrences +
+          (if kind == .rangeStart then 1 else 0)
+        let nextEnd := state.rangeEndOccurrences +
+          (if kind == .rangeEnd then 1 else 0)
+        match canonicalId with
+        | none =>
+          { state with
+            occurrences := state.occurrences.push occurrence
+            referenceOccurrences := nextReference
+            rangeStartOccurrences := nextStart
+            rangeEndOccurrences := nextEnd
+            markerOccurrences := state.markerOccurrences + 1 }
+        | some canonical =>
+          match state.associations[canonical]? with
+          | some association =>
+            { state with
+              occurrences := state.occurrences.push occurrence
+              associations := state.associations.insert canonical
+                (updateCommentMarkerAssociationV7 association occurrence)
+              referenceOccurrences := nextReference
+              rangeStartOccurrences := nextStart
+              rangeEndOccurrences := nextEnd
+              markerOccurrences := state.markerOccurrences + 1 }
+          | none =>
+            if state.canonicalIds.size ==
+                Tier2.CommentReferenceIntegrity.maxUniqueCommentReferenceIds then
+              { state with crossing := some (.uniqueIdLimit occurrence canonical) }
+            else
+              { state with
+                occurrences := state.occurrences.push occurrence
+                canonicalIds := state.canonicalIds.push canonical
+                associations := state.associations.insert canonical
+                  (updateCommentMarkerAssociationV7 {} occurrence)
+                referenceOccurrences := nextReference
+                rangeStartOccurrences := nextStart
+                rangeEndOccurrences := nextEnd
+                markerOccurrences := state.markerOccurrences + 1 }
+
+def commentMarkerSourceStoryName :
+    Tier2.NoteReferenceIntegrity.SourceStory → String
+  | .main => "main"
+  | .header => "header"
+  | .footer => "footer"
+  | .footnotes => "footnotes"
+  | .endnotes => "endnotes"
+
+def scanRetainedCommentStoryEventsLoopV7
+    (relationshipPresent : Bool)
+    (sourceSetOrdinal : Nat)
+    (sourceStory : String) (sourceStoryOrdinal : Nat) :
+    Nat → ParsedCommentRangeEvidence → List XmlEvent →
+      ParsedCommentRangeEvidence
+  | _, state, [] => state
+  | eventOrdinal, state, event :: rest =>
+      if state.crossing.isSome then state
+      else
+        let afterEvent := scanRetainedCommentMarkerEventV7 relationshipPresent
+          sourceSetOrdinal sourceStory sourceStoryOrdinal eventOrdinal
+          { state with processedEventCount := state.processedEventCount + 1 }
+          event
+        if afterEvent.crossing.isSome then afterEvent
+        else scanRetainedCommentStoryEventsLoopV7 relationshipPresent sourceSetOrdinal
+          sourceStory sourceStoryOrdinal (eventOrdinal + 1) afterEvent rest
+
+def scanRetainedCommentStoryEventsV7
+    (relationshipPresent : Bool)
+    (sourceSetOrdinal : Nat)
+    (realization : Tier2.NoteReferenceIntegrity.StoryRealization)
+    (state : ParsedCommentRangeEvidence) : ParsedCommentRangeEvidence :=
+  scanRetainedCommentStoryEventsLoopV7 relationshipPresent sourceSetOrdinal
+    (commentMarkerSourceStoryName realization.slot.story)
+    realization.slot.ordinal 0 state realization.visitedEvents
+
+def scanRetainedCommentStoriesLoopV7 (relationshipPresent : Bool) :
+    Nat → ParsedCommentRangeEvidence →
+      List Tier2.NoteReferenceIntegrity.StoryRealization →
+      ParsedCommentRangeEvidence
+  | _, state, [] => state
+  | sourceSetOrdinal, state, realization :: rest =>
+      if state.crossing.isSome then state
+      else
+        let afterStory := scanRetainedCommentStoryEventsV7 relationshipPresent sourceSetOrdinal
+          realization { state with
+            processedStoryCount := state.processedStoryCount + 1 }
+        if afterStory.crossing.isSome then afterStory
+        else scanRetainedCommentStoriesLoopV7 relationshipPresent
+          (sourceSetOrdinal + 1) afterStory rest
+
+def scanRetainedCommentMarkersForRelationshipV7
+    (relationshipPresent : Bool)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (scans : Tier2.CommentReferenceIntegrity.SideScanEvidence) :
+    Except String ParsedCommentRangeEvidence :=
+  if Tier2.CommentReferenceIntegrity.storySlotListsMatch set.sources
+      (scans.realizations.map (·.slot)) then
+    .ok <| scanRetainedCommentStoriesLoopV7 relationshipPresent
+      0 {} scans.realizations
+  else
+    .error "retained comment source set does not match retained story scans"
+
+def scanRetainedCommentMarkersV7
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (scans : Tier2.CommentReferenceIntegrity.SideScanEvidence) :
+    Except String ParsedCommentRangeEvidence :=
+  scanRetainedCommentMarkersForRelationshipV7 true set scans
+
+theorem scan_retained_comment_markers_for_relationship_v7_set_source_ext
+    (relationshipPresent : Bool)
+    (left right : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (scans : Tier2.NoteReferenceIntegrity.SideScanEvidence)
+    (hSources : left.sources = right.sources) :
+    scanRetainedCommentMarkersForRelationshipV7
+        relationshipPresent left scans =
+      scanRetainedCommentMarkersForRelationshipV7
+        relationshipPresent right scans := by
+  unfold scanRetainedCommentMarkersForRelationshipV7
+  rw [hSources]
+
+theorem scan_retained_comment_markers_v7_set_source_ext
+    (left right : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (scans : Tier2.NoteReferenceIntegrity.SideScanEvidence)
+    (hSources : left.sources = right.sources) :
+    scanRetainedCommentMarkersV7 left scans =
+      scanRetainedCommentMarkersV7 right scans :=
+  scan_retained_comment_markers_for_relationship_v7_set_source_ext
+    true left right scans hSources
+
+def retainedCommentEarlyCrossingEventV7 : XmlEvent :=
+  .startElement wmlNamespace "commentRangeStart"
+    [{ uri := wmlNamespace, localName := "id", value := "7" }] 1 true
+
+def retainedCommentSkippedEventV7 : XmlEvent :=
+  .startElement wmlNamespace "commentReference"
+    [{ uri := wmlNamespace, localName := "id", value := "8" }] 1 true
+
+theorem retained_comment_event_scan_stops_at_crossing_witness :
+    let initial : ParsedCommentRangeEvidence :=
+      { rangeStartOccurrences :=
+          Tier2.CommentReferenceIntegrity.maxCommentReferences }
+    let result := scanRetainedCommentStoryEventsLoopV7 true
+      0 "main" 0 0 initial
+        [retainedCommentEarlyCrossingEventV7, retainedCommentSkippedEventV7]
+    result.processedEventCount = 1 ∧
+    result.rangeStartOccurrences =
+      Tier2.CommentReferenceIntegrity.maxCommentReferences ∧
+    result.referenceOccurrences = 0 ∧
+    result.crossing.isSome = true := by
+  decide
+
+theorem retained_comment_story_scan_does_not_enter_later_stories
+    (sourceOrdinal : Nat) (state : ParsedCommentRangeEvidence)
+    (stories : List Tier2.NoteReferenceIntegrity.StoryRealization)
+    (hCrossing : state.crossing.isSome = true) :
+    scanRetainedCommentStoriesLoopV7 true sourceOrdinal state stories = state := by
+  cases stories with
+  | nil => rfl
+  | cons story rest =>
+      simp [scanRetainedCommentStoriesLoopV7, hCrossing]
+
+def retainedCommentSourceStoryV7 (sourceStory : String) :
+    Tier2.NoteReferenceIntegrity.SourceStory :=
+  if sourceStory == "header" then .header
+  else if sourceStory == "footer" then .footer
+  else if sourceStory == "footnotes" then .footnotes
+  else if sourceStory == "endnotes" then .endnotes
+  else .main
+
+def retainedCommentStoryRealizationV7 (source : NoteSource) :
+    Tier2.NoteReferenceIntegrity.StoryRealization :=
+  { slot := {
+      story := retainedCommentSourceStoryV7 source.sourceStory
+      ordinal := source.sourceStoryOrdinal
+      normalizedPartPath := source.normalizedPartPath }
+    bytes := source.parseEvidence.bytes
+    text := source.parseEvidence.text
+    root := {
+      sourceText := source.parseEvidence.text
+      namespaceUri := source.parseEvidence.expectedRootUri
+      localName := source.parseEvidence.expectedRootLocalName }
+    visitedEvents := source.parseEvidence.parsed.events
+    completed := source.parseEvidence.parsed.rootSeen &&
+      source.parseEvidence.parsed.stack.isEmpty &&
+      source.parseEvidence.parsed.eventCount ==
+        source.parseEvidence.parsed.events.length }
+
+def retainedCommentStoryRealizationsV7 :
+    List NoteSource → List Tier2.NoteReferenceIntegrity.StoryRealization
+  | [] => []
+  | source :: rest =>
+      retainedCommentStoryRealizationV7 source ::
+        retainedCommentStoryRealizationsV7 rest
+
+def retainedMissingRelationshipStoryV7
+    (story : Tier2.NoteReferenceIntegrity.SourceStory)
+    (ordinal : Nat) (events : List XmlEvent) :
+    Tier2.NoteReferenceIntegrity.StoryRealization :=
+  { slot := {
+      story
+      ordinal
+      normalizedPartPath := if story == .main then
+        "word/document.xml" else "word/header1.xml" }
+    bytes := ByteArray.empty
+    text := ""
+    root := { sourceText := "", namespaceUri := "", localName := "" }
+    visitedEvents := events
+    completed := true }
+
+def retainedMissingRelationshipScansV7 :
+    Tier2.NoteReferenceIntegrity.SideScanEvidence :=
+  { realizations := [
+      retainedMissingRelationshipStoryV7 .main 0
+        [retainedCommentEarlyCrossingEventV7, retainedCommentSkippedEventV7],
+      retainedMissingRelationshipStoryV7 .header 0
+        [retainedCommentSkippedEventV7]]
+    parsedReferences := []
+    parsedDefinitions := []
+    parsedPoison := [] }
+
+def retainedMissingRelationshipSetV7 :
+    Tier2.CommentReferenceIntegrity.CommentSourceSet :=
+  { side := .original
+    sources := retainedMissingRelationshipScansV7.realizations.map (·.slot)
+    sourceEvents := [] }
+
+def retainedMissingRelationshipEarlyStopCheckV7 :
+    Except String ParsedCommentRangeEvidence → Bool
+  | .error _ => false
+  | .ok evidence =>
+    evidence.processedEventCount == 1 &&
+    evidence.processedStoryCount == 1 &&
+    evidence.occurrences.isEmpty &&
+    evidence.canonicalIds.isEmpty &&
+    evidence.referenceOccurrences == 0 &&
+    evidence.rangeStartOccurrences == 0 &&
+    evidence.rangeEndOccurrences == 0 &&
+    match evidence.crossing with
+    | some (.relationshipRequired occurrence) =>
+        occurrence.kind == .rangeStart &&
+        occurrence.sourceSetOrdinal == 0 &&
+        occurrence.sourceStory == "main" &&
+        occurrence.sourceStoryOrdinal == 0 &&
+        occurrence.sourceEventOrdinal == 0 &&
+        occurrence.rawId.isNone &&
+        occurrence.canonicalId.isNone
+    | _ => false
+
+theorem retained_missing_relationship_scan_stops_at_first_marker_witness :
+    retainedMissingRelationshipEarlyStopCheckV7
+      (scanRetainedCommentMarkersForRelationshipV7 false
+        retainedMissingRelationshipSetV7
+        retainedMissingRelationshipScansV7) = true := by
+  decide
+
+def retainedCommentMarkerSourceSetV7 (side : VerifierSide)
+    (scans : Tier2.NoteReferenceIntegrity.SideScanEvidence) :
+    Tier2.CommentReferenceIntegrity.CommentSourceSet :=
+  { side
+    sources := scans.realizations.map (·.slot)
+    sourceEvents := Tier2.CommentReferenceIntegrity.indexedVisitedEvents
+      0 scans.realizations }
+
+def retainedCommentMarkerScanForRelationshipV7
+    (relationshipPresent : Bool)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (scans : Tier2.CommentReferenceIntegrity.SideScanEvidence) :
+    Except String ParsedCommentRangeEvidence :=
+  scanRetainedCommentMarkersForRelationshipV7 relationshipPresent set scans
+
+structure RetainedCommentMarkerScanRun
+    (relationshipPresent : Bool) (side : VerifierSide) where
+  set : Tier2.CommentReferenceIntegrity.CommentSourceSet
+  scans : Tier2.NoteReferenceIntegrity.SideScanEvidence
+  setExact : set = retainedCommentMarkerSourceSetV7 side scans
+  result : Except String ParsedCommentRangeEvidence
+  resultExact :
+    result =
+      retainedCommentMarkerScanForRelationshipV7
+        relationshipPresent set scans
+
+theorem retained_comment_marker_scan_run_exact
+    (relationshipPresent : Bool) (side : VerifierSide)
+    (run : RetainedCommentMarkerScanRun relationshipPresent side)
+    (evidence : ParsedCommentRangeEvidence)
+    (hResult : run.result = .ok evidence) :
+    retainedCommentMarkerScanForRelationshipV7
+      relationshipPresent run.set run.scans = .ok evidence :=
+  run.resultExact.symm.trans hResult
+
+theorem retained_comment_marker_scan_run_for_matching_set
+    (relationshipPresent : Bool) (side : VerifierSide)
+    (run : RetainedCommentMarkerScanRun relationshipPresent side)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (evidence : ParsedCommentRangeEvidence)
+    (hSources : set.sources = run.scans.realizations.map (·.slot))
+    (hResult : run.result = .ok evidence) :
+    retainedCommentMarkerScanForRelationshipV7
+      relationshipPresent set run.scans = .ok evidence := by
+  have hRunSetSources :
+      run.set.sources = run.scans.realizations.map (·.slot) := by
+    have hExact := congrArg
+      Tier2.CommentReferenceIntegrity.CommentSourceSet.sources run.setExact
+    simpa [retainedCommentMarkerSourceSetV7] using hExact
+  unfold retainedCommentMarkerScanForRelationshipV7
+  rw [scan_retained_comment_markers_for_relationship_v7_set_source_ext
+    relationshipPresent set run.set run.scans
+      (hSources.trans hRunSetSources.symm)]
+  exact retained_comment_marker_scan_run_exact
+    relationshipPresent side run evidence hResult
+
+structure CommentSideEvidence where
+  side : VerifierSide
+  sources : List NoteSource
+  sourcePartitionAdmitted : Bool
+  realizationFailureCode : Option String
+  realizationFailureDetail : Option String
+  identity : Option SelectedCommentIdentity
+  partPresent : Bool
+  part : Option LoadedCommentPart
+  retainedScan : Option RetainedCommentScan
+  markerScanRun :
+    Option (RetainedCommentMarkerScanRun identity.isSome side)
+  markerScanInvocationCount : Nat
+  complete : Bool
+  semanticLimitCrossed : Bool
+  productionIntegrityPassed : Bool
+  usage : SideResourceUsage
+  tripleUsage : CommentTripleResourceUsage
+  issues : List Json
+  inventory : CommentInventoryEvidence
+
+def CommentSideEvidence.markerScan
+    (evidence : CommentSideEvidence) :
+    Option ParsedCommentRangeEvidence :=
+  evidence.markerScanRun.bind (·.result.toOption)
 
 def globallyStoppedCommentEvidence
     (evidence : CommentSideEvidence) : CommentSideEvidence :=
@@ -2684,6 +3303,8 @@ def globallyStoppedCommentEvidence
     partPresent := false
     part := none
     retainedScan := none
+    markerScanRun := none
+    markerScanInvocationCount := 0
     complete := false
     semanticLimitCrossed := false
     productionIntegrityPassed := false
@@ -2702,19 +3323,6 @@ def applyCommentGlobalStop
         else globallyStoppedCommentEvidence compared
       [original, revised', compared']
   | other => other
-
-def commentInventoryJson (inventory : CommentInventoryEvidence) : Json :=
-  Json.mkObj <|
-    [ ("side", toJson inventory.side.toString)
-    , ("status", toJson inventory.status)
-    , ("relationship", inventory.identity.map commentIdentityJson |>.getD Json.null)
-    ] ++
-    [ ("referenceOccurrences", toJson inventory.referenceOccurrences)
-    , ("uniqueReferenceIds", toJson inventory.uniqueReferenceIds)
-    , ("definitions", toJson inventory.definitions)
-    , ("unreferencedDefinitions", toJson inventory.unreferencedDefinitions)
-    , ("nonDirectDefinitions", toJson inventory.nonDirectDefinitions)
-    ]
 
 def selectedCommentStoryJson (sides : List CommentSideEvidence) : Json :=
   let sideRecord := fun side =>
@@ -2760,33 +3368,71 @@ def selectedCommentStoryJson (sides : List CommentSideEvidence) : Json :=
         ])
     ]
 
-def appendCommentNoteSources (evidence : NoteSideEvidence) : List NoteSource :=
-  let base := evidence.sources
-  let withFootnotes := match evidence.footnotesPart with
-    | none => base
-    | some part => base ++ [{
-        sourceOrdinal := base.length
-        sourceStory := "footnotes"
-        sourceStoryOrdinal := 0
-        normalizedPartPath := part.identity.normalizedPartPath
-        parseEvidence := part.parseEvidence
-      }]
-  match evidence.endnotesPart with
-  | none => withFootnotes
-  | some part => withFootnotes ++ [{
-      sourceOrdinal := withFootnotes.length
-      sourceStory := "endnotes"
-      sourceStoryOrdinal := 0
-      normalizedPartPath := part.identity.normalizedPartPath
-      parseEvidence := part.parseEvidence
-    }]
+def commentMarkerIssueJsonV7 (code detail : String) (side : VerifierSide)
+    (occurrence : CommentMarkerOccurrenceV7) (occurrenceCount : Nat := 1)
+    (optional : List (String × Json) := []) : Json :=
+  Json.mkObj <|
+    [ ("code", toJson code)
+    , ("side", toJson side.toString)
+    , ("kind", toJson "comments")
+    , ("detail", toJson (boundUtf8 detail 256))
+    , ("ordinalSpace", toJson occurrence.kind.ordinalSpace)
+    , ("firstOccurrenceOrdinal", toJson occurrence.kindOccurrenceOrdinal)
+    , ("occurrenceCount", toJson occurrenceCount)
+    , ("source", noteSourceJson occurrence.sourceStory occurrence.sourceStoryOrdinal)
+    , ("sourceSetOrdinal", toJson occurrence.sourceSetOrdinal)
+    , ("sourceEventOrdinal", toJson occurrence.sourceEventOrdinal)
+    ] ++ optional
 
-def firstCommentReferenceSource?
-    (sources : List NoteSource) : Option (NoteSource × Nat) :=
-  sources.findSome? fun source =>
-    (source.parseEvidence.parsed.events.zipIdx.findSome? fun pair =>
-      if commentReferenceCandidate? pair.1 |>.isSome then some pair.2
-      else none).map (source, ·)
+def malformedCommentMarkerIssuesV7 (side : VerifierSide)
+    (evidence : ParsedCommentRangeEvidence) : List Json :=
+  evidence.occurrences.foldl (fun issues occurrence =>
+    if occurrence.canonicalId.isSome then issues
+    else
+      let codePrefix := match occurrence.kind with
+        | .rangeStart => "COMMENT_RANGE_START_ID"
+        | .rangeEnd => "COMMENT_RANGE_END_ID"
+        | .reference => "COMMENT_REFERENCE_ID"
+      let label := match occurrence.kind with
+        | .rangeStart => "comment range start"
+        | .rangeEnd => "comment range end"
+        | .reference => "comment reference"
+      let issue := match occurrence.rawId with
+        | none => commentMarkerIssueJsonV7 (codePrefix ++ "_MISSING")
+            (label ++ " has no w:id") side occurrence
+        | some raw =>
+          if raw.toUTF8.size > 64 then
+            commentMarkerIssueJsonV7 (codePrefix ++ "_TOO_LONG")
+              (label ++ " w:id exceeds 64 UTF-8 bytes") side occurrence 1
+              [("rawIdByteLength", toJson raw.toUTF8.size)]
+          else
+            commentMarkerIssueJsonV7 (codePrefix ++ "_MALFORMED")
+              (label ++ " w:id is not an ST_DecimalNumber") side occurrence 1
+              [("rawId", toJson raw)]
+      issues ++ [issue]) []
+
+def commentMarkerCrossingIssuesV7 (side : VerifierSide)
+    (crossing : Option CommentMarkerCrossingV7) : List Json :=
+  match crossing with
+  | none => []
+  | some (.relationshipRequired occurrence) =>
+      [commentMarkerIssueJsonV7 "COMMENT_RELATIONSHIP_REQUIRED"
+        "a comment marker requires one exact internal comments relationship"
+        side occurrence]
+  | some (.referenceLimit occurrence) =>
+      [commentMarkerIssueJsonV7 "COMMENT_REFERENCE_OCCURRENCE_LIMIT_EXCEEDED"
+        "comment reference occurrence limit exceeded" side occurrence]
+  | some (.rangeStartLimit occurrence) =>
+      [commentMarkerIssueJsonV7 "COMMENT_RANGE_START_OCCURRENCE_LIMIT_EXCEEDED"
+        "comment range start occurrence limit exceeded" side occurrence]
+  | some (.rangeEndLimit occurrence) =>
+      [commentMarkerIssueJsonV7 "COMMENT_RANGE_END_OCCURRENCE_LIMIT_EXCEEDED"
+        "comment range end occurrence limit exceeded" side occurrence]
+  | some (.uniqueIdLimit occurrence canonicalId) =>
+      [commentMarkerIssueJsonV7
+        "COMMENT_UNIQUE_REFERENCE_OR_RANGE_ID_LIMIT_EXCEEDED"
+        "unique canonical comment reference or range ID limit exceeded"
+        side occurrence 1 [("canonicalId", toJson canonicalId)]]
 
 structure LoadedCommentPartAttempt where
   result : Except Json LoadedCommentPart
@@ -2997,6 +3643,128 @@ def commentCanonicalDefinitionPairs
     definition.rawId.bind fun raw =>
       (parseDecimalId raw).toOption.map (definition, ·)
 
+def commentDefinitionCountsV7
+    (definitions : List (CommentDefinitionOccurrence × CanonicalDecimal)) :
+    Std.HashMap String Nat :=
+  definitions.foldl (fun counts definition =>
+    let id := definition.2.text
+    counts.insert id (counts[id]?.getD 0 + 1)) {}
+
+def earlierCommentMarkerV7
+    (left right : CommentMarkerOccurrenceV7) : CommentMarkerOccurrenceV7 :=
+  if left.markerOccurrenceOrdinal ≤ right.markerOccurrenceOrdinal then left else right
+
+def earliestCommentMarkerV7
+    (association : CommentMarkerAssociationV7) :
+    Option CommentMarkerOccurrenceV7 :=
+  [association.firstRangeStart, association.firstRangeEnd,
+    association.firstReference].foldl (fun current candidate =>
+      match current, candidate with
+      | none, other => other
+      | some value, none => some value
+      | some left, some right => some (earlierCommentMarkerV7 left right)) none
+
+def sameCommentMarkerStoryV7
+    (left right : CommentMarkerOccurrenceV7) : Bool :=
+  left.sourceStory == right.sourceStory &&
+  left.sourceStoryOrdinal == right.sourceStoryOrdinal
+
+def relatedCrossStoryMarkerV7 (first : CommentMarkerOccurrenceV7)
+    (association : CommentMarkerAssociationV7) :
+    Option CommentMarkerOccurrenceV7 :=
+  [association.firstRangeStart, association.firstRangeEnd,
+    association.firstReference].foldl (fun current candidate =>
+      match candidate with
+      | none => current
+      | some value =>
+        if sameCommentMarkerStoryV7 first value then current
+        else match current with
+          | none => some value
+          | some prior => some (earlierCommentMarkerV7 prior value)) none
+
+def canonicalCommentTopologyIssueV7 (side : VerifierSide)
+    (canonicalId : String) (association : CommentMarkerAssociationV7) :
+    Option Json :=
+  let canonical := [("canonicalId", toJson canonicalId)]
+  if association.referenceCount > 1 then
+    association.firstDuplicateReference.map fun occurrence =>
+      commentMarkerIssueJsonV7 "COMMENT_REFERENCE_DUPLICATE"
+        "multiple comment references have the same canonical w:id"
+        side occurrence (association.referenceCount - 1) canonical
+  else if association.referenceCount == 0 &&
+      (association.rangeStartCount > 0 || association.rangeEndCount > 0) then
+    (earliestCommentMarkerV7 association).map fun occurrence =>
+      commentMarkerIssueJsonV7 "COMMENT_REFERENCE_MISSING"
+        "a comment range endpoint has no unique comment reference"
+        side occurrence 1 canonical
+  else if association.rangeStartCount > 1 then
+    association.firstDuplicateRangeStart.map fun occurrence =>
+      commentMarkerIssueJsonV7 "COMMENT_RANGE_START_DUPLICATE"
+        "multiple comment range starts have the same canonical w:id"
+        side occurrence (association.rangeStartCount - 1) canonical
+  else if association.rangeEndCount > 1 then
+    association.firstDuplicateRangeEnd.map fun occurrence =>
+      commentMarkerIssueJsonV7 "COMMENT_RANGE_END_DUPLICATE"
+        "multiple comment range ends have the same canonical w:id"
+        side occurrence (association.rangeEndCount - 1) canonical
+  else if association.rangeStartCount == 1 && association.rangeEndCount == 0 then
+    association.firstRangeStart.map fun occurrence =>
+      commentMarkerIssueJsonV7 "COMMENT_RANGE_START_ORPHANED"
+        "the Safe-DOCX paired-or-point profile rejects an unmatched range start"
+        side occurrence 1 canonical
+  else if association.rangeEndCount == 1 && association.rangeStartCount == 0 then
+    association.firstRangeEnd.map fun occurrence =>
+      commentMarkerIssueJsonV7 "COMMENT_RANGE_END_ORPHANED"
+        "the Safe-DOCX paired-or-point profile rejects an unmatched range end"
+        side occurrence 1 canonical
+  else if association.rangeStartCount == 1 && association.rangeEndCount == 1 &&
+      association.referenceCount == 1 then
+    match earliestCommentMarkerV7 association with
+    | none => none
+    | some first =>
+      match relatedCrossStoryMarkerV7 first association with
+      | some related =>
+        some <| commentMarkerIssueJsonV7 "COMMENT_RANGE_CROSS_STORY"
+          "comment range endpoints and reference must share one physical story"
+          side first 1 <| canonical ++
+          [ ("relatedSource",
+              noteSourceJson related.sourceStory related.sourceStoryOrdinal)
+          , ("relatedSourceSetOrdinal", toJson related.sourceSetOrdinal)
+          , ("relatedSourceEventOrdinal", toJson related.sourceEventOrdinal)
+          ]
+      | none =>
+        match association.firstRangeStart, association.firstRangeEnd with
+        | some start, some finish =>
+          if start.sourceEventOrdinal < finish.sourceEventOrdinal then none
+          else some <| commentMarkerIssueJsonV7 "COMMENT_RANGE_REVERSED"
+            "comment range start must precede its end in the same physical story"
+            side start 1 <| canonical ++
+            [("rangeEndEventOrdinal", toJson finish.sourceEventOrdinal)]
+        | _, _ => none
+  else none
+
+def commentTopologyIssuesV7 (side : VerifierSide)
+    (evidence : ParsedCommentRangeEvidence) : List Json :=
+  evidence.canonicalIds.foldl (fun issues canonicalId =>
+    match evidence.associations[canonicalId]? with
+    | none => issues
+    | some association =>
+      match canonicalCommentTopologyIssueV7 side canonicalId association with
+      | none => issues
+      | some issue => issues ++ [issue]) []
+
+def missingCommentDefinitionIssuesV7 (side : VerifierSide)
+    (evidence : ParsedCommentRangeEvidence)
+    (definitionCounts : Std.HashMap String Nat) : List Json :=
+  evidence.canonicalIds.foldl (fun issues canonicalId =>
+    if definitionCounts[canonicalId]?.getD 0 == 1 then issues
+    else match evidence.associations[canonicalId]?.bind earliestCommentMarkerV7 with
+      | none => issues
+      | some occurrence =>
+        issues ++ [commentMarkerIssueJsonV7 "COMMENT_DEFINITION_MISSING"
+          "comment source ID does not resolve to exactly one direct definition"
+          side occurrence 1 [("canonicalId", toJson canonicalId)]]) []
+
 def commentSourceIdentity (sources : List NoteSource) (ordinal : Nat) :
     String × Nat :=
   match sources.find? (·.sourceOrdinal == ordinal) with
@@ -3087,6 +3855,8 @@ def skippedCommentSideEvidence (side : VerifierSide)
     partPresent := false
     part := none
     retainedScan := none
+    markerScanRun := none
+    markerScanInvocationCount := 0
     complete := false
     semanticLimitCrossed := false
     productionIntegrityPassed := false
@@ -3098,15 +3868,19 @@ def skippedCommentSideEvidence (side : VerifierSide)
 def buildCommentSideEvidence (package : Package) (side : VerifierSide)
     (relationships : List RelationshipRecord)
     (noteEvidence : NoteSideEvidence)
-    (tripleUsage : CommentTripleResourceUsage) : IO CommentSideEvidence := do
+    (tripleUsage : CommentTripleResourceUsage)
+    (markerSourceScans : Tier2.NoteReferenceIntegrity.SideScanEvidence) :
+    IO CommentSideEvidence := do
   let sources := appendCommentNoteSources noteEvidence
+  let markerSourceSet := retainedCommentMarkerSourceSetV7 side markerSourceScans
   if !noteEvidence.complete then
     return {
       side, sources, sourcePartitionAdmitted := false
       realizationFailureCode := none
       realizationFailureDetail := none
       identity := none, partPresent := false, part := none
-      retainedScan := none, complete := false, semanticLimitCrossed := true
+      retainedScan := none, markerScanRun := none, markerScanInvocationCount := 0
+      complete := false, semanticLimitCrossed := true
       productionIntegrityPassed := false, usage := noteEvidence.usage
       tripleUsage
       issues := [commentIssueJson "COMMENT_SOURCE_PARTITION_INCOMPLETE"
@@ -3122,32 +3896,60 @@ def buildCommentSideEvidence (package : Package) (side : VerifierSide)
       realizationFailureCode := none
       realizationFailureDetail := none
       identity := none, partPresent := false, part := none
-      retainedScan := none, complete := false, semanticLimitCrossed := true
+      retainedScan := none, markerScanRun := none, markerScanInvocationCount := 0
+      complete := false, semanticLimitCrossed := true
       productionIntegrityPassed := false, usage := noteEvidence.usage
       tripleUsage
       issues := [commentSelectionIssue side relationships failure]
       inventory := zeroCommentInventory side none
     }
   | .ok none =>
-    match firstCommentReferenceSource? sources with
-    | some (source, ordinal) =>
+    let markerScanResult := retainedCommentMarkerScanForRelationshipV7
+      false markerSourceSet markerSourceScans
+    let .ok markerScan := markerScanResult | return {
+      side, sources, sourcePartitionAdmitted := false
+      realizationFailureCode := none
+      realizationFailureDetail := some "retained comment source identities do not match"
+      identity := none, partPresent := false, part := none
+      retainedScan := none, markerScanRun := some {
+        set := markerSourceSet
+        scans := markerSourceScans
+        setExact := rfl
+        result := markerScanResult
+        resultExact := rfl
+      }, markerScanInvocationCount := 1
+      complete := false, semanticLimitCrossed := true
+      productionIntegrityPassed := false, usage := noteEvidence.usage
+      tripleUsage
+      issues := [commentIssueJson "COMMENT_SOURCE_PARTITION_INCOMPLETE"
+        "the retained comment source identities do not match the retained scans"
+        side "source" 0 "main" 0]
+      inventory := zeroCommentInventory side none
+    }
+    match markerScan.crossing with
+    | some crossing =>
       return {
         side, sources, sourcePartitionAdmitted := true
         realizationFailureCode := none
         realizationFailureDetail := none
         identity := none, partPresent := false, part := none
-        retainedScan := none, complete := false, semanticLimitCrossed := true
+        retainedScan := none, markerScanRun := some {
+          set := markerSourceSet
+          scans := markerSourceScans
+          setExact := rfl
+          result := markerScanResult
+          resultExact := rfl
+        }
+        markerScanInvocationCount := 1
+        complete := false, semanticLimitCrossed := true
         productionIntegrityPassed := false, usage := noteEvidence.usage
         tripleUsage
-        issues := [commentIssueJson "COMMENT_RELATIONSHIP_REQUIRED"
-          "a w:commentReference requires one exact internal comments relationship"
-          side "reference" ordinal source.sourceStory source.sourceStoryOrdinal]
+        issues := commentMarkerCrossingIssuesV7 side (some crossing)
         inventory := zeroCommentInventory side none
       }
     | none =>
       let input : CommentScanInput := {
-        sourceEvents := sources.map fun source =>
-          (source.sourceOrdinal, source.parseEvidence.parsed.events)
+        sourceEvents := []
         definitionEvents := []
       }
       let retained := retainCommentScanEvidence input
@@ -3156,7 +3958,14 @@ def buildCommentSideEvidence (package : Package) (side : VerifierSide)
         realizationFailureCode := none
         realizationFailureDetail := none
         identity := none, partPresent := false, part := none
-        retainedScan := some retained, complete := true
+        retainedScan := some retained, markerScanRun := some {
+          set := markerSourceSet
+          scans := markerSourceScans
+          setExact := rfl
+          result := markerScanResult
+          resultExact := rfl
+        }
+        markerScanInvocationCount := 1, complete := true
         semanticLimitCrossed := false, productionIntegrityPassed := true
         usage := noteEvidence.usage, tripleUsage, issues := []
         inventory := {
@@ -3164,6 +3973,8 @@ def buildCommentSideEvidence (package : Package) (side : VerifierSide)
           status := "passed"
           identity := none
           referenceOccurrences := 0
+          rangeStartOccurrences := 0
+          rangeEndOccurrences := 0
           uniqueReferenceIds := 0
           definitions := 0
           unreferencedDefinitions := 0
@@ -3191,8 +4002,8 @@ def buildCommentSideEvidence (package : Package) (side : VerifierSide)
         realizationFailureDetail := loaded.failureDetail
         identity := some selected
         partPresent := loaded.partPresent
-        part := none
-        retainedScan := none
+        part := none, retainedScan := none, markerScanRun := none
+        markerScanInvocationCount := 0
         complete := false
         semanticLimitCrossed := loaded.globalStop
         productionIntegrityPassed := false
@@ -3202,19 +4013,46 @@ def buildCommentSideEvidence (package : Package) (side : VerifierSide)
         inventory := zeroCommentInventory side (some selected)
       }
     | .ok part =>
+      let markerScanResult := retainedCommentMarkerScanForRelationshipV7
+        true markerSourceSet markerSourceScans
+      let .ok markerScan := markerScanResult | return {
+        side := side
+        sources := sources
+        sourcePartitionAdmitted := false
+        realizationFailureCode := none
+        realizationFailureDetail := some "retained comment source identities do not match"
+        identity := some selected
+        partPresent := true
+        part := some part
+        retainedScan := none, markerScanRun := some {
+          set := markerSourceSet
+          scans := markerSourceScans
+          setExact := rfl
+          result := markerScanResult
+          resultExact := rfl
+        }, markerScanInvocationCount := 1
+        complete := false, semanticLimitCrossed := true
+        productionIntegrityPassed := false
+        usage := loaded.usage
+        tripleUsage := loadedTripleUsage
+        issues := [commentIssueJson "COMMENT_SOURCE_PARTITION_INCOMPLETE"
+          "the retained comment source identities do not match the retained scans"
+          side "source" 0 "main" 0]
+        inventory := zeroCommentInventory side (some selected)
+      }
       let input : CommentScanInput := {
-        sourceEvents := sources.map fun source =>
-          (source.sourceOrdinal, source.parseEvidence.parsed.events)
+        sourceEvents := []
         definitionEvents := part.parseEvidence.parsed.events
       }
       let retained := retainCommentScanEvidence input
       let scan := retained.output.scan
-      let references := commentCanonicalReferencePairs scan.references
       let definitions := commentCanonicalDefinitionPairs scan.definitions
-      let malformed := malformedCommentReferenceIssues side sources scan.references ++
+      let definitionCounts := commentDefinitionCountsV7 definitions
+      let malformed := malformedCommentMarkerIssuesV7 side markerScan ++
         commentDefinitionIssues side scan.definitions
       let duplicates := duplicateCommentDefinitionIssues side definitions
-      let missing := missingCommentDefinitionIssues side sources references definitions
+      let missing := missingCommentDefinitionIssuesV7 side markerScan definitionCounts
+      let topology := commentTopologyIssuesV7 side markerScan
       let nonDirect := scan.nonDirectDefinitions.map fun definition =>
         let canonicalId := definition.rawId.bind fun raw =>
           (parseDecimalId raw).toOption.map (·.text)
@@ -3222,19 +4060,8 @@ def buildCommentSideEvidence (package : Package) (side : VerifierSide)
           "w:comment definitions must be direct children of w:comments"
           side "definition" definition.occurrenceOrdinal "comments" 0
           (canonicalId.map (fun value => ("canonicalId", toJson value))).toList
-      let crossingIssues := match retained.output.crossing with
+      let definitionCrossingIssues := match retained.output.crossing with
         | none => []
-        | some (.references sourceOrdinal ordinal) =>
-          let source := commentSourceIdentity sources sourceOrdinal
-          [commentIssueJson "COMMENT_REFERENCE_OCCURRENCE_LIMIT_EXCEEDED"
-            "comment reference occurrence limit exceeded"
-            side "reference" ordinal source.1 source.2]
-        | some (.uniqueIds sourceOrdinal ordinal canonicalId) =>
-          let source := commentSourceIdentity sources sourceOrdinal
-          [commentIssueJson "COMMENT_UNIQUE_REFERENCE_ID_LIMIT_EXCEEDED"
-            "unique canonical comment reference ID limit exceeded"
-            side "reference" ordinal source.1 source.2
-            [("canonicalId", toJson canonicalId)]]
         | some (.definitions ordinal) =>
           [commentIssueJson "COMMENT_DEFINITION_LIMIT_EXCEEDED"
             "direct comment definition limit exceeded"
@@ -3243,20 +4070,29 @@ def buildCommentSideEvidence (package : Package) (side : VerifierSide)
           [commentIssueJson "COMMENT_NON_DIRECT_DEFINITION_LIMIT_EXCEEDED"
             "non-direct comment definition limit exceeded"
             side "definition" ordinal "comments" 0]
-      let issues := crossingIssues ++ malformed ++ duplicates ++ missing ++ nonDirect
-      let uniqueReferenceIds := references.map (·.2.text) |>.eraseDups.length
-      let referencedIds := references.map (·.2.text) |>.eraseDups
+        | some (.references ..) | some (.uniqueIds ..) => []
+      let crossingIssues := commentMarkerCrossingIssuesV7 side markerScan.crossing ++
+        definitionCrossingIssues
+      let complete := markerScan.crossing.isNone && retained.output.crossing.isNone
+      let issues := if complete then
+          malformed ++ duplicates ++ missing ++ nonDirect ++ topology
+        else crossingIssues
       let unreferenced := definitions.filter fun definition =>
-        !referencedIds.contains definition.2.text
-      let integrityPassed := checkPackageCommentIntegrity
-        (packageCommentInventory scan)
-      let complete := retained.output.crossing.isNone
+        !markerScan.associations.contains definition.2.text
+      let integrityPassed := complete && issues.isEmpty
       return {
         side, sources, sourcePartitionAdmitted := true
         realizationFailureCode := none
         realizationFailureDetail := none
         identity := some selected, partPresent := true
-        part := some part, retainedScan := some retained, complete
+        part := some part, retainedScan := some retained
+        markerScanRun := some {
+          set := markerSourceSet
+          scans := markerSourceScans
+          setExact := rfl
+          result := markerScanResult
+          resultExact := rfl
+        }, markerScanInvocationCount := 1, complete
         semanticLimitCrossed := retained.output.crossing.isSome
         productionIntegrityPassed := integrityPassed, usage := loaded.usage
         tripleUsage := loadedTripleUsage
@@ -3266,8 +4102,10 @@ def buildCommentSideEvidence (package : Package) (side : VerifierSide)
           status := if !complete then "not_evaluated"
             else if issues.isEmpty then "passed" else "failed"
           identity := some selected
-          referenceOccurrences := if complete then references.length else 0
-          uniqueReferenceIds := if complete then uniqueReferenceIds else 0
+          referenceOccurrences := if complete then markerScan.referenceOccurrences else 0
+          rangeStartOccurrences := if complete then markerScan.rangeStartOccurrences else 0
+          rangeEndOccurrences := if complete then markerScan.rangeEndOccurrences else 0
+          uniqueReferenceIds := if complete then markerScan.canonicalIds.size else 0
           definitions := if complete then definitions.length else 0
           unreferencedDefinitions := if complete then unreferenced.length else 0
           nonDirectDefinitions :=
@@ -3335,34 +4173,48 @@ def proofPartOfSource (source : NoteSource) : ProofPart :=
 def proofPartOfNote (_kind : NoteKind) (part : LoadedNotePart) : ProofPart :=
   proofPart part.identity.normalizedPartPath part.parseEvidence
 
+def typedNoteRelationshipRecordsFrom :
+    Nat → List RelationshipRecord → List TypedNoteRelationshipRecord
+  | _, [] => []
+  | ordinal, record :: rest =>
+      let tail := typedNoteRelationshipRecordsFrom (ordinal + 1) rest
+      let kind :=
+        if record.relationshipType == NoteKind.footnotes.relationshipType then
+          some NoteKind.footnotes
+        else if record.relationshipType == NoteKind.endnotes.relationshipType then
+          some NoteKind.endnotes
+        else none
+      match kind with
+      | none => tail
+      | some noteKind =>
+          { relationshipRecordOrdinal := ordinal
+            kind := noteKind
+            relationshipId := record.id
+            normalizedPartPath :=
+              (normalizeTarget record.rawTarget).toOption.getD ""
+            internal := record.targetMode.isNone ||
+              record.targetMode == some "Internal" } :: tail
+
 def typedNoteRelationshipRecords (records : List RelationshipRecord) :
     List TypedNoteRelationshipRecord :=
-  records.zipIdx.filterMap fun (record, ordinal) =>
-    let kind :=
-      if record.relationshipType == NoteKind.footnotes.relationshipType then
-        some NoteKind.footnotes
-      else if record.relationshipType == NoteKind.endnotes.relationshipType then
-        some NoteKind.endnotes
-      else none
-    kind.map fun noteKind =>
-      { relationshipRecordOrdinal := ordinal
-        kind := noteKind
-        relationshipId := record.id
-        normalizedPartPath := (normalizeTarget record.rawTarget).toOption.getD ""
-        internal := record.targetMode.isNone || record.targetMode == some "Internal" }
+  typedNoteRelationshipRecordsFrom 0 records
 
-def packageViewOfRecord (record : RunRequestPackageRecord) :
+def packageViewOfNoteEvidence (relationships : List RelationshipRecord)
+    (evidence : NoteSideEvidence) :
     Tier2.ConventionalMainNoteSelector.PackageView :=
-  let evidence := record.noteEvidence
   let noteParts :=
     (evidence.footnotesPart.map (proofPartOfNote .footnotes) |>.toList) ++
     (evidence.endnotesPart.map (proofPartOfNote .endnotes) |>.toList)
-  { relationshipRecords := typedNoteRelationshipRecords record.relationships
+  { relationshipRecords := typedNoteRelationshipRecords relationships
     parts := evidence.sources.map proofPartOfSource ++ noteParts
     physicalStories := evidence.sources.drop 1 |>.map fun source =>
       { story := source.sourceStory
         ordinal := source.sourceStoryOrdinal
         normalizedPartPath := source.normalizedPartPath } }
+
+def packageViewOfRecord (record : RunRequestPackageRecord) :
+    Tier2.ConventionalMainNoteSelector.PackageView :=
+  packageViewOfNoteEvidence record.relationships record.noteEvidence
 
 def selectedStoriesOfRecord (record : RunRequestPackageRecord) :
     Tier2.NoteReferenceIntegrity.SelectedStories :=
@@ -3372,12 +4224,24 @@ def selectedStoriesOfRecord (record : RunRequestPackageRecord) :
     footnotes := (Tier2.ConventionalMainNoteSelector.selectConventionalMainNote
       pkg .footnotes).toOption.join
     endnotes := (Tier2.ConventionalMainNoteSelector.selectConventionalMainNote
+        pkg .endnotes).toOption.join }
+
+def retainedCommentSourceScansOfEvidence
+    (relationships : List RelationshipRecord) (evidence : NoteSideEvidence) :
+    Tier2.NoteReferenceIntegrity.SideScanEvidence :=
+  let pkg := packageViewOfNoteEvidence relationships evidence
+  let selected : Tier2.NoteReferenceIntegrity.SelectedStories := {
+    physical := pkg.physicalStories.filterMap
+      Tier2.NoteReferenceIntegrity.physicalStorySlot?
+    footnotes := (Tier2.ConventionalMainNoteSelector.selectConventionalMainNote
+      pkg .footnotes).toOption.join
+    endnotes := (Tier2.ConventionalMainNoteSelector.selectConventionalMainNote
       pkg .endnotes).toOption.join }
+  Tier2.NoteReferenceIntegrity.canonicalScans pkg selected
 
 def retainedCommentSourceScansOfRecord (record : RunRequestPackageRecord) :
     Tier2.NoteReferenceIntegrity.SideScanEvidence :=
-  Tier2.NoteReferenceIntegrity.canonicalScans
-    (packageViewOfRecord record) (selectedStoriesOfRecord record)
+  retainedCommentSourceScansOfEvidence record.relationships record.noteEvidence
 
 def noteSideOfCommentSide :
     Tier2.CommentReferenceIntegrity.VerifierSide →
@@ -3627,8 +4491,7 @@ def productionInventoryEvidencePass (record : RunRequestPackageRecord) : Bool :=
 
 def productionCommentScanInput (record : RunRequestPackageRecord) :
     CommentScanInput :=
-  { sourceEvents := record.commentEvidence.sources.map fun source =>
-      (source.sourceOrdinal, source.parseEvidence.parsed.events)
+  { sourceEvents := []
     definitionEvents := record.commentEvidence.part.map
       (·.parseEvidence.parsed.events) |>.getD [] }
 
@@ -3638,17 +4501,19 @@ def expectedPassedCommentInventory
   let scan := evidence.retainedScan.map (·.output.scan) |>.getD {
     references := [], definitions := [], nonDirectDefinitions := []
   }
-  let references := commentCanonicalReferencePairs scan.references
   let definitions := commentCanonicalDefinitionPairs scan.definitions
-  let referencedIds := references.map (·.2.text) |>.eraseDups
+  let markerScan := evidence.markerScan.getD {}
+  let sourceIds := markerScan.canonicalIds.toList
   { side := evidence.side
     status := "passed"
     identity := evidence.identity
-    referenceOccurrences := references.length
-    uniqueReferenceIds := references.map (·.2.text) |>.eraseDups.length
+    referenceOccurrences := markerScan.referenceOccurrences
+    rangeStartOccurrences := markerScan.rangeStartOccurrences
+    rangeEndOccurrences := markerScan.rangeEndOccurrences
+    uniqueReferenceIds := sourceIds.length
     definitions := definitions.length
     unreferencedDefinitions := (definitions.filter fun definition =>
-      !referencedIds.contains definition.2.text).length
+      !sourceIds.contains definition.2.text).length
     nonDirectDefinitions := scan.nonDirectDefinitions.length }
 
 structure CommentSourceIdentity where
@@ -3751,14 +4616,33 @@ def productionCommentEvidencePass (record : RunRequestPackageRecord) : Bool :=
     decide (retained.input = productionCommentScanInput record) &&
     retained.output.crossing.isNone &&
     checkPackageCommentIntegrity (packageCommentInventory retained.output.scan)
-  sourceSetExact &&
-  selectionExact &&
-  retainedExact &&
-  evidence.complete &&
-  !evidence.semanticLimitCrossed &&
-  evidence.productionIntegrityPassed &&
-  evidence.issues.isEmpty &&
-  decide (evidence.inventory = expectedPassedCommentInventory record)
+  let markerExact := match evidence.markerScanRun with
+    | none => false
+    | some retainedRun => match retainedRun.result with
+      | .error _ => false
+      | .ok expected => evidence.markerScan.any fun actual =>
+      expected.crossing.isNone &&
+      decide (evidence.markerScanInvocationCount = 1) &&
+      decide (actual.occurrences = expected.occurrences) &&
+      decide (actual.canonicalIds = expected.canonicalIds) &&
+      decide (actual.referenceOccurrences = expected.referenceOccurrences) &&
+      decide (actual.rangeStartOccurrences = expected.rangeStartOccurrences) &&
+      decide (actual.rangeEndOccurrences = expected.rangeEndOccurrences) &&
+      decide (actual.markerOccurrences = expected.markerOccurrences) &&
+      decide (actual.processedEventCount = expected.processedEventCount) &&
+      decide (actual.processedStoryCount = expected.processedStoryCount) &&
+      decide (actual.crossing = expected.crossing) &&
+      expected.canonicalIds.all fun canonical =>
+        decide (actual.associations[canonical]? = expected.associations[canonical]?)
+  (sourceSetExact &&
+    selectionExact &&
+    retainedExact &&
+    evidence.complete &&
+    !evidence.semanticLimitCrossed &&
+    evidence.productionIntegrityPassed &&
+    evidence.issues.isEmpty &&
+    decide (evidence.inventory = expectedPassedCommentInventory record)) &&
+  markerExact
 
 def commentSelectionResultEq
     (left right : Except CommentSelectionFailure
@@ -3811,6 +4695,28 @@ def productionCommentGlobalAdmissionCheck
   sides.all scanCheck &&
   sides.all scanInputCheck
 
+def productionCommentGlobalAdmissionCheckV7
+    (request : RunRequestCoreRequest) : Bool :=
+  let selectorCheck := fun side =>
+    let record := request.packageRecord (noteSideOfCommentSide side)
+    commentSelectionResultEq
+      (Tier2.CommentReferenceIntegrity.selectConventionalMainComment
+        (commentPackageViewOfCore request side))
+      (selectConventionalMainCommentRecords record.relationships)
+  let sourceCheck := fun side =>
+    let record := request.packageRecord (noteSideOfCommentSide side)
+    Tier2.CommentReferenceIntegrity.completeCommentSourceSetCheck
+      (commentPackageViewOfCore request side) side
+      (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+        (packageViewOfRecord record) (noteSideOfCommentSide side)
+        (selectedStoriesOfRecord record))
+  let sides : List Tier2.CommentReferenceIntegrity.VerifierSide :=
+    [.original, .revised, .compared]
+  decide ((commentResourceUsageOfCore request).tripleXmlEvents ≤
+    3 * maxCumulativeXmlEvents) &&
+  sides.all selectorCheck &&
+  sides.all sourceCheck
+
 def ProductionCommentEvidenceOf (record : RunRequestPackageRecord) : Prop :=
   let evidence := record.commentEvidence
   retainedCommentSourceProjections record =
@@ -3826,6 +4732,15 @@ def ProductionCommentEvidenceOf (record : RunRequestPackageRecord) : Prop :=
       evidence.identity = some identity ∧ evidence.partPresent = true ∧
       ∃ part, evidence.part = some part ∧ part.identity = identity ∧
         productionCommentPartAdmissionCheck record part = true) ∧
+  (∃ markerRun markerEvidence,
+    evidence.markerScanRun = some markerRun ∧
+    markerRun.result = .ok markerEvidence ∧
+    markerRun.result =
+      retainedCommentMarkerScanForRelationshipV7
+        evidence.identity.isSome markerRun.set markerRun.scans ∧
+    markerEvidence.crossing = none ∧
+    evidence.markerScanInvocationCount = 1 ∧
+    evidence.markerScan = some markerEvidence) ∧
   ∃ retained,
     evidence.retainedScan = some retained ∧
     retained.scanInvocationCount = 1 ∧
@@ -3843,8 +4758,11 @@ theorem production_comment_evidence_pass_sound
     (hPass : productionCommentEvidencePass record = true) :
     ProductionCommentEvidenceOf record := by
   unfold productionCommentEvidencePass at hPass
-  simp only [Bool.and_eq_true, decide_eq_true_eq] at hPass
-  rcases hPass with
+  simp only [Bool.and_eq_true] at hPass
+  have hLegacy := hPass.1
+  have hMarker := hPass.2
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hLegacy
+  rcases hLegacy with
     ⟨⟨⟨⟨⟨⟨⟨⟨hSourceRecords, hSources⟩, hSelection⟩, hRetained⟩, hComplete⟩,
       hNoCrossing⟩, _hIntegrityFlag⟩, hIssues⟩, hInventory⟩
   cases hRetainedOption : record.commentEvidence.retainedScan with
@@ -3885,7 +4803,42 @@ theorem production_comment_evidence_pass_sound
         record.commentEvidence.semanticLimitCrossed = false := by
       cases hCrossed : record.commentEvidence.semanticLimitCrossed <;>
         simp_all
-    exact ⟨hSourceRecords, hSources, hSelectionProp, retained,
+    cases hMarkerRun :
+        record.commentEvidence.markerScanRun with
+    | none => simp [hMarkerRun] at hMarker
+    | some markerRun =>
+      cases hMarkerResult : markerRun.result with
+      | error detail => simp [hMarkerRun, hMarkerResult] at hMarker
+      | ok markerEvidence =>
+        simp only [hMarkerRun, hMarkerResult, CommentSideEvidence.markerScan,
+          Option.bind_some, Except.toOption, Option.any,
+          Bool.and_eq_true, decide_eq_true_eq] at hMarker
+        have hMarkerEvidence :
+            ∃ markerRun markerEvidence,
+              record.commentEvidence.markerScanRun = some markerRun ∧
+              markerRun.result = .ok markerEvidence ∧
+              markerRun.result =
+                retainedCommentMarkerScanForRelationshipV7
+                  record.commentEvidence.identity.isSome
+                  markerRun.set markerRun.scans ∧
+              markerEvidence.crossing = none ∧
+              record.commentEvidence.markerScanInvocationCount = 1 ∧
+              record.commentEvidence.markerScan = some markerEvidence := by
+          exact ⟨markerRun, markerEvidence, hMarkerRun, hMarkerResult,
+            markerRun.resultExact,
+            Option.isNone_iff_eq_none.mp
+              hMarker.1.1.1.1.1.1.1.1.1.1.1,
+            hMarker.1.1.1.1.1.1.1.1.1.1.2,
+            by
+              unfold CommentSideEvidence.markerScan
+              rw [hMarkerRun]
+              change markerRun.result.toOption = some markerEvidence
+              rw [hMarkerResult]
+              change (Except.ok markerEvidence :
+                Except String ParsedCommentRangeEvidence).toOption =
+                  some markerEvidence
+              rfl⟩
+        exact ⟨hSourceRecords, hSources, hSelectionProp, hMarkerEvidence, retained,
       hRetainedOption, hCount, hInput,
       retained.outputExact, hCrossing,
       Tier2.CommentReferenceIntegrity.package_comment_reference_integrity_sound
@@ -4065,7 +5018,8 @@ theorem production_comment_semantic_projection_sound
       retained.input = productionCommentScanInput record ∧
       retained.output =
         Tier2.CommentReferenceIntegrity.scanCommentEvidence retained.input
-  rcases hProduction with ⟨_hSourceRecords, _hSources, _hSelection, retained,
+  rcases hProduction with ⟨_hSourceRecords, _hSources, _hSelection, _hMarker,
+    retained,
     hRetained, hInvocation, hInput, hOutput, _⟩
   refine ⟨rfl, rfl, record.packageIndexExact, rfl, rfl,
     Tier2.CommentReferenceIntegrity.comment_selector_result_sound pkg, ?_,
@@ -4313,7 +5267,8 @@ def runRequestOperationalChecks (request : RunRequestCoreRequest)
   let noteIssues :=
     coalesceNoteIssues (noteEvidence.flatMap (·.issues)) |>.mergeSort noteIssueLess
   let commentIssues :=
-    coalesceNoteIssues (commentEvidence.flatMap (·.issues)) |>.mergeSort noteIssueLess
+    coalesceCommentIssuesV7 (commentEvidence.flatMap (·.issues))
+      |>.mergeSort commentIssueLessV7
   let ordinaryPartitions := noteEvidence.map partitionJson
   let ordinaryNoteStories :=
     [noteStoryJson .footnotes noteEvidence, noteStoryJson .endnotes noteEvidence]
@@ -4365,7 +5320,7 @@ def runRequestOperationalChecks (request : RunRequestCoreRequest)
       productionCommentEvidencePass request.original &&
       productionCommentEvidencePass request.revised &&
       productionCommentEvidencePass request.compared &&
-      productionCommentGlobalAdmissionCheck request
+      productionCommentGlobalAdmissionCheckV7 request
     semanticModelPass := semanticResponse.passed
   }
 
@@ -4751,8 +5706,8 @@ def terminalIssue (code : String) : Json :=
     , ("side", toJson "original")
     , ("kind", toJson "comments")
     , ("detail", toJson <| if code == "NOTE_ISSUE_LIMIT_EXCEEDED" then
-        "protocol v6 aggregate ordinary issue limit exceeded"
-      else "protocol v6 escaped evidence string budget exceeded")
+        "protocol v7 aggregate ordinary issue limit exceeded"
+      else "protocol v7 escaped evidence string budget exceeded")
     , ("ordinalSpace", toJson "aggregate")
     , ("firstOccurrenceOrdinal", toJson (0 : Nat))
     , ("occurrenceCount", toJson (1 : Nat))
@@ -4827,7 +5782,8 @@ def fields (request : RunRequestCoreRequest)
   let selections := request.selectionIssues.eraseDups.mergeSort selectionIssueBefore
   let notes := coalesceIssues (sides.flatMap (·.issues)) |>.mergeSort issueBefore
   let comments :=
-    coalesceIssues (commentSides.flatMap (·.issues)) |>.mergeSort issueBefore
+    coalesceCommentIssuesV7 (commentSides.flatMap (·.issues))
+      |>.mergeSort commentIssueLessV7
   let nonIssueJson :=
     (fixed.map fixedStoryJson) ++
     (sides.map partitionJsonSpec) ++
@@ -4884,9 +5840,9 @@ def encodeFields (fields : Fields) : List (String × Json) :=
   let commentIssues := match fields.terminalCode with
     | some code => [terminalIssue code]
     | none => fields.commentIssues
-  [ ("protocolVersion", toJson (6 : Nat))
+  [ ("protocolVersion", toJson (7 : Nat))
     , ("checker", toJson
-        "safe-docx-lean-conventional-main-comment-integrity-checker")
+        "safe-docx-lean-conventional-main-comment-range-integrity-checker")
     , ("passed", toJson fields.passed)
     , ("fixedStories", Json.arr (fixed.map fixedStoryJson).toArray)
     , ("presenceMismatches", Json.arr #[])
@@ -5336,7 +6292,8 @@ def buildRunRequestCoreJson (request : RunRequestCoreRequest)
   let noteIssues :=
     coalesceNoteIssues (noteEvidence.flatMap (·.issues)) |>.mergeSort noteIssueLess
   let commentIssues :=
-    coalesceNoteIssues (commentEvidence.flatMap (·.issues)) |>.mergeSort noteIssueLess
+    coalesceCommentIssuesV7 (commentEvidence.flatMap (·.issues))
+      |>.mergeSort commentIssueLessV7
   let ordinaryPartitions := noteEvidence.map partitionJson
   let ordinaryNoteStories :=
     [noteStoryJson .footnotes noteEvidence, noteStoryJson .endnotes noteEvidence]
@@ -5386,9 +6343,9 @@ def buildRunRequestCoreJson (request : RunRequestCoreRequest)
       SemanticProtocolSpec.terminalCommentInventory
     else commentEvidence.map fun evidence => commentInventoryJson evidence.inventory
   Json.mkObj
-    [ ("protocolVersion", toJson (6 : Nat))
+    [ ("protocolVersion", toJson (7 : Nat))
     , ("checker", toJson
-        "safe-docx-lean-conventional-main-comment-integrity-checker")
+        "safe-docx-lean-conventional-main-comment-range-integrity-checker")
     , ("passed", toJson passed)
     , ("fixedStories", Json.arr
         (emittedFixedReports.map storyReportJson).toArray)
@@ -5565,14 +6522,12 @@ theorem semantic_protocol_fields_pass_of_core_pass
     simpa [SemanticProtocolSpec.coalesceIssues_eq,
       List.flatMap_cons, List.flatMap_nil] using hNoNotes.1.2
   have hCommentEmpty :
-      ((SemanticProtocolSpec.coalesceIssues
+      ((coalesceCommentIssuesV7
           ((applyCommentGlobalStop
             [request.original.commentEvidence, request.revised.commentEvidence,
               request.compared.commentEvidence]).flatMap (·.issues))).mergeSort
-        SemanticProtocolSpec.issueBefore).isEmpty = true := by
-    rw [hNoteOrder]
-    simpa [SemanticProtocolSpec.coalesceIssues_eq,
-      List.flatMap_cons, List.flatMap_nil] using hNoNotes.2
+        commentIssueLessV7).isEmpty = true := by
+    simpa [List.flatMap_cons, List.flatMap_nil] using hNoNotes.2
   unfold SemanticProtocolSpec.fields
   rw [hFixed]
   simp only [hSemantic, Bool.true_and, Bool.and_eq_true,
@@ -5623,7 +6578,7 @@ theorem run_request_core_pass_semantic_inventories
       productionCommentEvidencePass request.original &&
       productionCommentEvidencePass request.revised &&
       productionCommentEvidencePass request.compared &&
-      productionCommentGlobalAdmissionCheck request) = true at hProduction
+      productionCommentGlobalAdmissionCheckV7 request) = true at hProduction
     simp only [Bool.and_eq_true] at hProduction
     exact hProduction.1.1.1.1.2
 
@@ -5648,7 +6603,7 @@ theorem run_request_core_pass_comment_evidence
       productionCommentEvidencePass request.original &&
       productionCommentEvidencePass request.revised &&
       productionCommentEvidencePass request.compared &&
-      productionCommentGlobalAdmissionCheck request) = true at hProduction
+      productionCommentGlobalAdmissionCheckV7 request) = true at hProduction
     simp only [Bool.and_eq_true] at hProduction
     exact ⟨hProduction.1.1.1.2, hProduction.1.1.2, hProduction.1.2⟩
 
@@ -5671,13 +6626,13 @@ theorem run_request_core_pass_comment_global_admission
       productionCommentEvidencePass request.original &&
       productionCommentEvidencePass request.revised &&
       productionCommentEvidencePass request.compared &&
-      productionCommentGlobalAdmissionCheck request) = true at hProduction
+      productionCommentGlobalAdmissionCheckV7 request) = true at hProduction
     simp only [Bool.and_eq_true] at hProduction
-    unfold productionCommentGlobalAdmissionCheck at hProduction
+    unfold productionCommentGlobalAdmissionCheckV7 at hProduction
     simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq,
       List.all_eq_true]
       at hProduction
-    simpa [maxCumulativeXmlEvents] using hProduction.2.1.1.1.1
+    simpa [maxCumulativeXmlEvents] using hProduction.2.1.1
 
 theorem run_request_core_pass_comment_selector_exact
     (request : RunRequestCoreRequest) (semanticResponse : VerifierResponseV5)
@@ -5702,13 +6657,13 @@ theorem run_request_core_pass_comment_selector_exact
       productionCommentEvidencePass request.original &&
       productionCommentEvidencePass request.revised &&
       productionCommentEvidencePass request.compared &&
-      productionCommentGlobalAdmissionCheck request) = true at hProduction
+      productionCommentGlobalAdmissionCheckV7 request) = true at hProduction
     simp only [Bool.and_eq_true] at hProduction
-    unfold productionCommentGlobalAdmissionCheck at hProduction
+    unfold productionCommentGlobalAdmissionCheckV7 at hProduction
     simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq,
       List.all_eq_true] at hProduction
     apply comment_selection_result_eq_sound
-    exact hProduction.2.1.1.1.2 side (by cases side <;> simp)
+    exact hProduction.2.1.2 side (by cases side <;> simp)
 
 theorem run_request_core_pass_comment_source_set
     (request : RunRequestCoreRequest) (semanticResponse : VerifierResponseV5)
@@ -5737,83 +6692,13 @@ theorem run_request_core_pass_comment_source_set
       productionCommentEvidencePass request.original &&
       productionCommentEvidencePass request.revised &&
       productionCommentEvidencePass request.compared &&
-      productionCommentGlobalAdmissionCheck request) = true at hProduction
+      productionCommentGlobalAdmissionCheckV7 request) = true at hProduction
     simp only [Bool.and_eq_true] at hProduction
-    unfold productionCommentGlobalAdmissionCheck at hProduction
+    unfold productionCommentGlobalAdmissionCheckV7 at hProduction
     simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq,
       List.all_eq_true]
       at hProduction
-    exact hProduction.2.1.1.2 side (by cases side <;> simp)
-
-theorem run_request_core_pass_retained_comment_scan
-    (request : RunRequestCoreRequest) (semanticResponse : VerifierResponseV5)
-    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
-    (hPass : runRequestCorePass request semanticResponse = true) :
-    retainedParsedCommentEvidenceOfProduction request side =
-      .ok (parsedCommentEvidenceOfProduction request side) := by
-  unfold runRequestCorePass at hPass
-  cases hSemantic : semanticResponse.passed
-  · simp only [hSemantic, Bool.false_eq_true, ↓reduceIte] at hPass
-  · simp only [hSemantic, ↓reduceIte] at hPass
-    unfold runRequestOperationalPass at hPass
-    have hChecks := Tier2.NoteReferenceIntegrity.production_aggregate_pass_exact
-      (runRequestOperationalChecks request semanticResponse) hPass
-    have hProduction := hChecks.2.2.2.2.2.2.2.2.1
-    change ((((productionRecordIntegrityPass request.original &&
-      productionRecordIntegrityPass request.revised) &&
-      productionRecordIntegrityPass request.compared) &&
-      productionSemanticInventoriesPass request semanticResponse) &&
-      productionCommentEvidencePass request.original &&
-      productionCommentEvidencePass request.revised &&
-      productionCommentEvidencePass request.compared &&
-      productionCommentGlobalAdmissionCheck request) = true at hProduction
-    simp only [Bool.and_eq_true] at hProduction
-    unfold productionCommentGlobalAdmissionCheck at hProduction
-    simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq,
-      List.all_eq_true]
-      at hProduction
-    have hValue := hProduction.2.1.2 side (by cases side <;> simp)
-    cases hRetained :
-        retainedParsedCommentEvidenceOfProduction request side with
-    | error detail => simp [hRetained] at hValue
-    | ok actual =>
-        simp only [hRetained, decide_eq_true_eq] at hValue
-        simpa [hValue] using hRetained
-
-theorem run_request_core_pass_retained_comment_scan_input
-    (request : RunRequestCoreRequest) (semanticResponse : VerifierResponseV5)
-    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
-    (hPass : runRequestCorePass request semanticResponse = true) :
-    retainedCommentScanInputOfProduction request side =
-      .ok (semanticCommentScanInputOfCore request side) := by
-  unfold runRequestCorePass at hPass
-  cases hSemantic : semanticResponse.passed
-  · simp only [hSemantic, Bool.false_eq_true, ↓reduceIte] at hPass
-  · simp only [hSemantic, ↓reduceIte] at hPass
-    unfold runRequestOperationalPass at hPass
-    have hChecks := Tier2.NoteReferenceIntegrity.production_aggregate_pass_exact
-      (runRequestOperationalChecks request semanticResponse) hPass
-    have hProduction := hChecks.2.2.2.2.2.2.2.2.1
-    change ((((productionRecordIntegrityPass request.original &&
-      productionRecordIntegrityPass request.revised) &&
-      productionRecordIntegrityPass request.compared) &&
-      productionSemanticInventoriesPass request semanticResponse) &&
-      productionCommentEvidencePass request.original &&
-      productionCommentEvidencePass request.revised &&
-      productionCommentEvidencePass request.compared &&
-      productionCommentGlobalAdmissionCheck request) = true at hProduction
-    simp only [Bool.and_eq_true] at hProduction
-    unfold productionCommentGlobalAdmissionCheck at hProduction
-    simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq,
-      List.all_eq_true]
-      at hProduction
-    have hValue := hProduction.2.2 side (by cases side <;> simp)
-    cases hRetained :
-        retainedCommentScanInputOfProduction request side with
-    | error detail => simp [hRetained] at hValue
-    | ok actual =>
-        simp only [hRetained, decide_eq_true_eq] at hValue
-        simpa [hValue] using hRetained
+    exact hProduction.2.2 side (by cases side <;> simp)
 
 def coreSemanticAdmissionReady (request : RunRequestCoreRequest) : Bool :=
   request.selectionIssues.isEmpty &&
@@ -5967,6 +6852,41 @@ def runRequestCore (request : RunRequestCoreRequest) :
   else
     finishRunRequestCore request semanticRequest
       (failedSemanticResponse semanticRequest) ByteArray.empty
+
+theorem run_request_core_response_exact
+    (request : RunRequestCoreRequest) (result : RunRequestCoreResult)
+    (hRun : runRequestCore request = .ok result) :
+    result.response =
+      (buildRunRequestCoreResponse request result.semanticResponse).2 := by
+  unfold runRequestCore at hRun
+  split at hRun
+  · rename_i hReady
+    cases hSemantic : Tier2.NoteReferenceIntegrity.canonicalSemanticResponse
+        (semanticRequestOfCore request) with
+    | error detail => simp [hSemantic] at hRun
+    | ok semanticResult =>
+      rcases semanticResult with ⟨semanticResponse, semanticStdout⟩
+      cases hFinalize : finalizeProtocolV6Response
+          (buildRunRequestCoreResponse request semanticResponse).2
+          (buildRunRequestCoreResponse request semanticResponse).1 with
+      | error detail =>
+          simp [hSemantic, finishRunRequestCore, hFinalize] at hRun
+      | ok stdout =>
+          simp [hSemantic, finishRunRequestCore, hFinalize] at hRun
+          cases hRun
+          rfl
+  · rename_i hNotReady
+    cases hFinalize : finalizeProtocolV6Response
+        (buildRunRequestCoreResponse request
+          (failedSemanticResponse (semanticRequestOfCore request))).2
+        (buildRunRequestCoreResponse request
+          (failedSemanticResponse (semanticRequestOfCore request))).1 with
+    | error detail =>
+        simp [finishRunRequestCore, hFinalize] at hRun
+    | ok stdout =>
+        simp [finishRunRequestCore, hFinalize] at hRun
+        cases hRun
+        rfl
 
 def protocolV6FieldNames : List String :=
   [ "protocolVersion", "checker", "passed", "fixedStories",
@@ -6304,7 +7224,7 @@ noncomputable def semanticRequestOfCoreV6
       intro side realization evidence hRealization hScan
       have hComment := productionCommentEvidenceAt request
         commentEvidence side
-      rcases hComment with ⟨_, _, _, retained, hRetained,
+      rcases hComment with ⟨_, _, _, _, retained, hRetained,
         hInvocation, _⟩
       refine ⟨hRealization, rfl, rfl, ?_, ?_⟩
       · simp [retainedScan, record, hRetained, hInvocation]
@@ -6384,7 +7304,7 @@ theorem semantic_request_of_core_v6_all_comment_sides_pass
     have hComment := productionCommentEvidenceAt request commentEvidence side
     rcases hComment with
       ⟨hSourceProjection, hSourceIdentity, hSelectionEvidence,
-        retained, hRetained, hInvocation, hInput, hOutput, hCrossing,
+        _hMarkerEvidence, retained, hRetained, hInvocation, hInput, hOutput, hCrossing,
         hIntegrity, hInventory, hComplete, hSemanticLimit, hIssues⟩
     have hParsedExact := hParsed side
     have hScanInputExact := hScanInputs side
@@ -6689,10 +7609,26 @@ def typedRelationshipOfProduction
   mode := typedRelationshipModeOfProduction record
 }
 
+def typedRelationshipsOfProductionFrom :
+    Nat → List RelationshipRecord → List TypedRelationship
+  | _, [] => []
+  | ordinal, record :: rest =>
+      typedRelationshipOfProduction record ordinal ::
+        typedRelationshipsOfProductionFrom (ordinal + 1) rest
+
 def typedRelationshipsOfProduction
     (records : List RelationshipRecord) : List TypedRelationship :=
-  records.zipIdx.map fun pair =>
-    typedRelationshipOfProduction pair.1 pair.2
+  typedRelationshipsOfProductionFrom 0 records
+
+def typedXmlEventsOfProductionFrom :
+    Nat → List TypedXmlEvent → List XmlEvent → List TypedXmlEvent
+  | _, output, [] => output.reverse
+  | ordinal, output, event :: rest =>
+      typedXmlEventsOfProductionFrom (ordinal + 1)
+        (typedXmlEventOfProduction ordinal event :: output) rest
+
+def typedXmlEventsOfProduction (events : List XmlEvent) : List TypedXmlEvent :=
+  typedXmlEventsOfProductionFrom 0 [] events
 
 def typedParsedPartOfProduction
     (evidence : ProductionParseEvidence) : TypedParsedPart := {
@@ -6700,8 +7636,7 @@ def typedParsedPartOfProduction
   expectedRootUri := typedBoundedBytesOfString evidence.expectedRootUri
   expectedRootLocalName :=
     typedBoundedBytesOfString evidence.expectedRootLocalName
-  events := evidence.parsed.events.zipIdx.map fun item =>
-    typedXmlEventOfProduction item.2 item.1
+  events := typedXmlEventsOfProduction evidence.parsed.events
   depthLimit := evidence.depthLimit
   eventLimit := evidence.eventLimit
 }
@@ -6913,13 +7848,11 @@ def typedScanInputOfRecord (record : RunRequestPackageRecord) :
     sourceEvents := if admittedScan then
       record.commentEvidence.sources.map fun source =>
         (source.sourceOrdinal,
-          source.parseEvidence.parsed.events.zipIdx.map fun item =>
-            typedXmlEventOfProduction item.2 item.1)
+          typedXmlEventsOfProduction source.parseEvidence.parsed.events)
       else []
     definitionEvents := if admittedScan then
       record.commentEvidence.part.map (fun part =>
-        part.parseEvidence.parsed.events.zipIdx.map fun item =>
-          typedXmlEventOfProduction item.2 item.1) |>.getD []
+        typedXmlEventsOfProduction part.parseEvidence.parsed.events) |>.getD []
       else []
   }
 
@@ -7185,26 +8118,6 @@ def ProductionRunRequestV6RefinesSemanticOf
       result.response.compress.toUTF8.data.toList = canonicalBytes ∧
       result.stdout.data.toList = canonicalBytes ++ [UInt8.ofNat 10]
 
-def productionTypedCommentChecks
-    (request : RunRequestCoreRequestV6) (result : RunRequestCoreResultV6) : Bool :=
-  productionTypedCommentScanCheck request.original &&
-  productionTypedCommentScanCheck request.revised &&
-  productionTypedCommentScanCheck request.compared &&
-  match typedRequestOfProduction request result with
-  | .error _ => false
-  | .ok typedRequest =>
-      let typedResponse := canonicalTypedResponseV6 typedRequest
-      let canonicalBytes := independentProtocolV6Projection typedResponse
-      let canonicalByteArray : ByteArray := ⟨canonicalBytes.toArray⟩
-      match typedProtocolV6ResponseOfJson
-          result.response result.responsePassed with
-      | .error _ => false
-      | .ok projected =>
-          decide (independentProtocolV6Projection projected =
-            independentProtocolV6Projection typedResponse) &&
-          decide (result.response.compress.toUTF8 = canonicalByteArray) &&
-          decide (result.stdout = canonicalByteArray.push (UInt8.ofNat 10))
-
 def firstByteMismatch : List UInt8 → List UInt8 → Nat →
     Option (Nat × Option UInt8 × Option UInt8)
   | [], [], _ => none
@@ -7241,6 +8154,26 @@ def typedPackageAdmissionDiagnostic (pkg : TypedPackageView) : String :=
       s!"parsed={typedParsedPartCheck realization.extraction pkg.commentsRootNamespace pkg.commentsRootLocalName realization.retainedParsedEvents realization.parsed}"
   | _, realization =>
       s!"selectedAdmission=false; realizationPresent={realization.isSome}"
+
+def productionTypedCommentChecks
+    (request : RunRequestCoreRequestV6) (result : RunRequestCoreResultV6) : Bool :=
+  productionTypedCommentScanCheck request.original &&
+  productionTypedCommentScanCheck request.revised &&
+  productionTypedCommentScanCheck request.compared &&
+  match typedRequestOfProduction request result with
+  | .error _ => false
+  | .ok typedRequest =>
+      let typedResponse := canonicalTypedResponseV6 typedRequest
+      let canonicalBytes := independentProtocolV6Projection typedResponse
+      let canonicalByteArray : ByteArray := ⟨canonicalBytes.toArray⟩
+      match typedProtocolV6ResponseOfJson
+          result.response result.responsePassed with
+      | .error _ => false
+      | .ok projected =>
+          decide (independentProtocolV6Projection projected =
+            independentProtocolV6Projection typedResponse) &&
+          decide (result.response.compress.toUTF8 = canonicalByteArray) &&
+          decide (result.stdout = canonicalByteArray.push (UInt8.ofNat 10))
 
 def productionTypedMismatchDetail
     (request : RunRequestCoreRequestV6)
@@ -7347,192 +8280,1282 @@ theorem run_request_core_v6_ok_operational_pass
             cases hBase
             rfl
 
-theorem production_run_request_core_v6_refinement_sound
-    (request : RunRequestCoreRequestV6) (result : RunRequestCoreResultV6)
-    (hRun : runRequestCoreV6 request = .ok result)
-    (hPass : result.responsePassed = true) :
-    ProductionRunRequestV6RefinesSemanticOf request result := by
-  have hOld := production_run_request_core_refinement_sound request result
-    (run_request_core_v6_base request result hRun) hPass
-  let packageEvidence :
-      ProductionPackageRecordOf request.original ∧
-      ProductionPackageRecordOf request.revised ∧
-      ProductionPackageRecordOf request.compared :=
-    ⟨hOld.1, hOld.2.1, hOld.2.2.1⟩
-  let commentEvidence :
-      ProductionCommentEvidenceOf request.original ∧
-      ProductionCommentEvidenceOf request.revised ∧
-      ProductionCommentEvidenceOf request.compared :=
-    ⟨hOld.2.2.2.1, hOld.2.2.2.2.1, hOld.2.2.2.2.2.1⟩
-  have hCorePass : runRequestCorePass request result.semanticResponse = true := by
-    exact (run_request_core_v6_ok_operational_pass request result hRun).trans hPass
-  have hPrior :=
-    run_request_core_pass_comment_global_admission request
-      result.semanticResponse hCorePass
-  have hSources := fun side =>
-    run_request_core_pass_comment_source_set request result.semanticResponse
-      side hCorePass
-  have hSelectors := fun side =>
-    run_request_core_pass_comment_selector_exact request
-      result.semanticResponse side hCorePass
-  have hParsed := fun side =>
-    run_request_core_pass_retained_comment_scan request
-      result.semanticResponse side hCorePass
-  have hScanInputs := fun side =>
-    run_request_core_pass_retained_comment_scan_input request
-      result.semanticResponse side hCorePass
-  let semanticRequest := semanticRequestOfCoreV6 request packageEvidence
-    commentEvidence hPrior hSources
-  let global :=
-    Tier2.CommentReferenceIntegrity.evaluateAllCommentSidesV6 semanticRequest
-  let response :=
-    Tier2.CommentReferenceIntegrity.canonicalVerifierResponseV6 semanticRequest
-  have hAllPass :=
-    semantic_request_of_core_v6_all_comment_sides_pass request packageEvidence
-      commentEvidence hPrior hSources hSelectors hParsed hScanInputs
-  have hAggregate :
-      Tier2.CommentReferenceIntegrity.CommentAggregatePassOf
-        semanticRequest response := by
-    exact Tier2.CommentReferenceIntegrity.canonical_verifier_response_v6_aggregate_pass
-      semanticRequest hAllPass
-  have hSelections : ∀ side,
-      Tier2.CommentReferenceIntegrity.SelectionToCommentRealizationOf
-        semanticRequest side (response.commentOutcome side)
-        (response.commentRealization side)
-        (response.commentParsedEvidence side) := by
-    rcases hAggregate with ⟨_, _, _, _, _, hExact, _, _⟩
-    exact hExact
-  have hRetained : ∀ side,
-      Tier2.CommentReferenceIntegrity.ResponseRetainedCommentEvidenceOf
-        semanticRequest response side := by
-    rcases hAggregate with ⟨_, _, _, _, _, _, hExact, _⟩
-    exact hExact
-  have hProtocol :
-      SemanticProtocolV6ProjectionOf
-        request result.semanticResponse result.response := by
-    rcases hOld with
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hExact, _⟩
-    exact hExact
-  have hFinalized :
-      FinalizedProtocolV6ResponseOf result.response result.responsePassed
-        result.stdout := by
-    rcases hOld with
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hExact⟩
-    exact hExact
-  have hTypedChecks :=
-    run_request_core_v6_typed_scans request result hRun
-  unfold productionTypedCommentChecks at hTypedChecks
-  simp only [Bool.and_eq_true] at hTypedChecks
-  let typedRequest : TypedRequestV6 := {
-    original := typedPackageViewOfRecord .original request request.original
-    revised := typedPackageViewOfRecord .revised request request.revised
-    compared := typedPackageViewOfRecord .compared request request.compared
-    inherited :=
-      typedInheritedV5OfOperationalRequest request result.semanticResponse
-  }
-  have hTypedRequest :
-      TypedRequestOfProduction request result typedRequest := by
-    unfold TypedRequestOfProduction typedRequestOfProduction
-    refine ⟨?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
-      ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · rfl
-    · simp [typedRequest, typedPackageViewOfRecord, typedIndexOfProduction]
-    · simp [typedRequest, typedPackageViewOfRecord, typedIndexOfProduction]
-    · simp [typedRequest, typedPackageViewOfRecord, typedIndexOfProduction]
-    · exact typedCommentScanOfProduction_reference_length
-        request.original.commentEvidence
-    · exact typedCommentScanOfProduction_reference_length
-        request.revised.commentEvidence
-    · exact typedCommentScanOfProduction_reference_length
-        request.compared.commentEvidence
-    · exact production_typed_comment_scan_check_sound request.original
-        hTypedChecks.1.1.1
-    · exact production_typed_comment_scan_check_sound request.revised
-        hTypedChecks.1.1.2
-    · exact production_typed_comment_scan_check_sound request.compared
-        hTypedChecks.1.2
-  let canonicalTypedResponse := canonicalTypedResponseV6 typedRequest
-  let canonicalBytes :=
-    independentProtocolV6Projection canonicalTypedResponse
-  have hProtocolChecks := hTypedChecks.2
-  simp only [hTypedRequest.1] at hProtocolChecks
-  have hProtocolDecoded :
-      ∃ projected,
-        typedProtocolV6ResponseOfJson
-          result.response result.responsePassed = .ok projected ∧
-        (independentProtocolV6Projection projected =
-            independentProtocolV6Projection
-              (canonicalTypedResponseV6 typedRequest) ∧
-          result.response.compress.toUTF8 =
-            (⟨(independentProtocolV6Projection
-              (canonicalTypedResponseV6 typedRequest)).toArray⟩ :
-              ByteArray)) ∧
-        result.stdout =
-          (⟨(independentProtocolV6Projection
-            (canonicalTypedResponseV6 typedRequest)).toArray⟩ :
-              ByteArray).push (UInt8.ofNat 10) := by
-    cases hConversion :
-        typedProtocolV6ResponseOfJson
-          result.response result.responsePassed with
-    | error message =>
-        simp [hConversion] at hProtocolChecks
-    | ok projected =>
-        refine ⟨projected, rfl, ?_⟩
-        simpa [hConversion, Bool.and_eq_true, decide_eq_true_eq] using
-          hProtocolChecks
-  rcases hProtocolDecoded with
-    ⟨projected, hProjected, hProtocolChecks⟩
-  have hTypedAggregate :
-      TypedCommentAggregatePassOf typedRequest
-        (canonicalTypedResponseV6 typedRequest) := by
-    exact (typed_comment_integrity_aggregate_pass_sound typedRequest).1
-  have hTypedSerialized :
-      TypedSerializedResponseV6Of canonicalTypedResponse canonicalBytes := by
-    exact (typed_comment_integrity_aggregate_pass_sound typedRequest).2
-  have hStdout :
-      result.stdout.data.toList =
-        canonicalBytes ++ [UInt8.ofNat 10] := by
-    rw [hProtocolChecks.2]
-    simp [canonicalBytes, canonicalTypedResponse]
-  have hResponseBytes :
-      result.response.compress.toUTF8.data.toList = canonicalBytes := by
-    rw [hProtocolChecks.1.2]
-  have hTypedProjection :
-      ProtocolV6JsonProjectionOf result.response result.responsePassed
-        canonicalTypedResponse := by
-    unfold ProtocolV6JsonProjectionOf
-    exact ⟨projected, hProjected, hProtocolChecks.1.1, hResponseBytes⟩
-  have hTypedContract :
-      ∃ typedRequest typedResponse canonicalBytes,
-        TypedRequestOfProduction request result typedRequest ∧
-        typedResponse = canonicalTypedResponseV6 typedRequest ∧
-        TypedCommentAggregatePassOf typedRequest typedResponse ∧
-        TypedSerializedResponseV6Of typedResponse canonicalBytes ∧
-        ProtocolV6JsonProjectionOf result.response result.responsePassed
-          typedResponse ∧
-        result.response.compress.toUTF8.data.toList = canonicalBytes ∧
-        result.stdout.data.toList =
-          canonicalBytes ++ [UInt8.ofNat 10] := by
-    exact ⟨typedRequest, canonicalTypedResponse, canonicalBytes,
-      hTypedRequest, rfl,
-      hTypedAggregate, hTypedSerialized, hTypedProjection,
-      hResponseBytes, hStdout⟩
-  refine ⟨hOld, packageEvidence, commentEvidence, hPrior, hSources, ?_⟩
-  refine ⟨?_, ?_, hParsed, hScanInputs, hAllPass, rfl,
-    hSelections, hRetained, hAggregate, ?_, hProtocol,
-    ⟨hFinalized, hTypedContract⟩⟩
-  · intro side
-    exact ⟨rfl, rfl, rfl⟩
-  · intro side
-    exact production_comment_semantic_projection_sound request side
-      (productionCommentEvidenceAt request commentEvidence side)
-  · exact hProtocol.1
 
-def productionRunRequestCoreV6RefinementSignature : Prop :=
-  ∀ (request : RunRequestCoreRequestV6) (result : RunRequestCoreResultV6),
-    runRequestCoreV6 request = .ok result →
+end Tier2.NoteReferenceIntegrity
+
+structure VerifierRequestV7 where
+  core : RunRequestCoreRequest
+  semanticResponse : VerifierResponseV5
+
+def VerifierRequestV7.packageView (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) :
+    Tier2.CommentReferenceIntegrity.PackageView :=
+  commentPackageViewOfCore request.core side
+
+def VerifierRequestV7.noteEvaluation (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) :
+    Tier2.CommentReferenceIntegrity.SideNoteEvaluationV5 :=
+  let record := request.core.packageRecord (noteSideOfCommentSide side)
+  Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+    (packageViewOfRecord record) (noteSideOfCommentSide side)
+    (selectedStoriesOfRecord record)
+
+def VerifierRequestV7.retainedSourceScans (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) :
+    Tier2.CommentReferenceIntegrity.SideScanEvidence :=
+  let record := request.core.packageRecord (noteSideOfCommentSide side)
+  match record.commentEvidence.markerScanRun with
+  | some markerRun => markerRun.scans
+  | none => retainedCommentSourceScansOfRecord record
+
+def VerifierRequestV7.retainedCommentRangeScanResult
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) :
+    Except String ParsedCommentRangeEvidence :=
+  match (request.core.packageRecord
+      (noteSideOfCommentSide side)).commentEvidence.markerScanRun with
+  | some markerRun => markerRun.result
+  | none => .error "retained comment marker scan is unavailable"
+
+def VerifierRequestV7.commentRangeScanInvocationCount
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) : Nat :=
+  (request.core.packageRecord
+    (noteSideOfCommentSide side)).commentEvidence.markerScanInvocationCount
+
+def VerifierRequestV7.retainedCommentRealization
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) :
+    Option Tier2.CommentReferenceIntegrity.CommentStoryRealization :=
+  (request.packageView side).retainedCommentRealization
+
+def VerifierRequestV7.commentExtractionInvocationCount
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) : Nat :=
+  (request.core.packageRecord (noteSideOfCommentSide side)).commentEvidence.part
+    |>.map (·.parseEvidence.extraction.extractionInvocationCount) |>.getD 0
+
+def VerifierRequestV7.commentParseInvocationCount
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) : Nat :=
+  (request.core.packageRecord (noteSideOfCommentSide side)).commentEvidence.part
+    |>.map (·.parseEvidence.parseInvocationCount) |>.getD 0
+
+def retainedTypedMarkerKindOfProduction : CommentMarkerKindV7 → TypedMarkerKind
+  | .rangeStart => .rangeStart
+  | .rangeEnd => .rangeEnd
+  | .reference => .reference
+
+def retainedTypedSourceKindOfProductionStory (story : String) : TypedSourceKind :=
+  if story == "header" then .header
+  else if story == "footer" then .footer
+  else if story == "footnotes" then .footnotes
+  else if story == "endnotes" then .endnotes
+  else .main
+
+def retainedTypedMarkerOccurrenceOfProduction
+    (occurrence : CommentMarkerOccurrenceV7) : TypedMarkerOccurrence := {
+  kind := retainedTypedMarkerKindOfProduction occurrence.kind
+  story := {
+    kind := retainedTypedSourceKindOfProductionStory occurrence.sourceStory
+    physicalStoryOrdinal := occurrence.sourceStoryOrdinal
+  }
+  sourceSetOrdinal := occurrence.sourceSetOrdinal
+  sourceEventOrdinal := occurrence.sourceEventOrdinal
+  markerOccurrenceOrdinal := occurrence.markerOccurrenceOrdinal
+  kindOccurrenceOrdinal := occurrence.kindOccurrenceOrdinal
+  rawId := occurrence.rawId.map typedBoundedBytesOfString
+  canonicalId :=
+    Tier2.NoteReferenceIntegrity.typedCanonicalIdOfRaw occurrence.rawId
+}
+
+def retainedTypedMarkerCrossingOfProduction :
+    CommentMarkerCrossingV7 → Option TypedMarkerScanCrossing
+  | .relationshipRequired _ => none
+  | .referenceLimit occurrence => some <| .referenceLimit
+      occurrence.sourceSetOrdinal occurrence.sourceEventOrdinal
+        occurrence.kindOccurrenceOrdinal
+  | .rangeStartLimit occurrence => some <| .rangeStartLimit
+      occurrence.sourceSetOrdinal occurrence.sourceEventOrdinal
+        occurrence.kindOccurrenceOrdinal
+  | .rangeEndLimit occurrence => some <| .rangeEndLimit
+      occurrence.sourceSetOrdinal occurrence.sourceEventOrdinal
+        occurrence.kindOccurrenceOrdinal
+  | .uniqueIdLimit occurrence canonical => some <| .uniqueIdLimit
+      (retainedTypedMarkerKindOfProduction occurrence.kind)
+      occurrence.sourceSetOrdinal occurrence.sourceEventOrdinal
+        occurrence.kindOccurrenceOrdinal
+        ((Tier2.NoteReferenceIntegrity.typedCanonicalIdOfRaw (some canonical)).getD
+          { negative := false, digits := [] })
+
+def retainedTypedMarkerEvidenceOfProduction
+    (evidence : ParsedCommentRangeEvidence) : TypedMarkerScanEvidence :=
+  let relationshipOccurrence := evidence.crossing.bind fun crossing =>
+    match crossing with
+    | .relationshipRequired occurrence =>
+        some (retainedTypedMarkerOccurrenceOfProduction occurrence)
+    | _ => none
+  {
+    inputStories := []
+    occurrences := relationshipOccurrence.toList ++
+      evidence.occurrences.toList.map retainedTypedMarkerOccurrenceOfProduction
+    canonicalIds := evidence.canonicalIds.toList.map fun canonical =>
+      (Tier2.NoteReferenceIntegrity.typedCanonicalIdOfRaw (some canonical)).getD
+        { negative := false, digits := [] }
+    referenceOccurrences := evidence.referenceOccurrences
+    rangeStartOccurrences := evidence.rangeStartOccurrences
+    rangeEndOccurrences := evidence.rangeEndOccurrences
+    processedEventCount := evidence.processedEventCount
+    processedStoryCount := evidence.processedStoryCount
+    crossing := evidence.crossing.bind retainedTypedMarkerCrossingOfProduction
+  }
+
+def retainedTypedMarkerScanOfRecordV7
+    (record : RunRequestPackageRecord) : Option TypedMarkerScanEvidence :=
+  some <| record.commentEvidence.markerScan.map
+    retainedTypedMarkerEvidenceOfProduction |>.getD {
+      inputStories := []
+      occurrences := []
+      canonicalIds := []
+      referenceOccurrences := 0
+      rangeStartOccurrences := 0
+      rangeEndOccurrences := 0
+      processedEventCount := 0
+      processedStoryCount := 0
+      crossing := none
+    }
+
+def typedRequestOfProductionV7
+    (request : VerifierRequestV7) : Option TypedRequestV7 :=
+  some {
+    original := Tier2.NoteReferenceIntegrity.typedPackageViewOfRecord
+      .original request.core request.core.original
+    revised := Tier2.NoteReferenceIntegrity.typedPackageViewOfRecord
+      .revised request.core request.core.revised
+    compared := Tier2.NoteReferenceIntegrity.typedPackageViewOfRecord
+      .compared request.core request.core.compared
+    inherited :=
+      Tier2.NoteReferenceIntegrity.typedInheritedV5OfOperationalRequest
+        request.core request.semanticResponse
+    originalRetainedMarkerScan :=
+      retainedTypedMarkerScanOfRecordV7 request.core.original
+    revisedRetainedMarkerScan :=
+      retainedTypedMarkerScanOfRecordV7 request.core.revised
+    comparedRetainedMarkerScan :=
+      retainedTypedMarkerScanOfRecordV7 request.core.compared
+  }
+
+def protocolV7ResponseJson (evaluation : Bool × Json) : Json :=
+  evaluation.2
+
+def canonicalRunRequestEvaluationV7
+    (request : VerifierRequestV7) : Bool × Json :=
+  buildRunRequestCoreResponse request.core request.semanticResponse
+
+def ProtocolV7JsonProjectionOf
+    (response : Json) (typedResponse : TypedProtocolV7Response) : Prop :=
+  response.compress.toUTF8.data.toList =
+    independentProtocolV7Projection typedResponse
+
+def protocolV7JsonProjectionCheck
+    (response : Json) (typedResponse : TypedProtocolV7Response) : Bool :=
+  typedByteListEqCheck response.compress.toUTF8.data.toList
+    (independentProtocolV7Projection typedResponse)
+
+theorem protocol_v7_json_projection_check_sound
+    (response : Json) (typedResponse : TypedProtocolV7Response)
+    (hCheck : protocolV7JsonProjectionCheck response typedResponse = true) :
+    ProtocolV7JsonProjectionOf response typedResponse := by
+  exact typedByteListEqCheck_sound _ _ hCheck
+
+def typedSideOfVerifierSide :
+    Tier2.CommentReferenceIntegrity.VerifierSide → Side
+  | .original => .original
+  | .revised => .revised
+  | .compared => .compared
+
+def ProductionXmlEventsExactFrom :
+    Nat → List TypedXmlEvent → List XmlEvent → Prop
+  | _, [], [] => True
+  | ordinal, typed :: typedRest, event :: eventRest =>
+      typedXmlEventIdentity typed =
+          typedXmlEventIdentity (typedXmlEventOfProduction ordinal event) ∧
+        ProductionXmlEventsExactFrom (ordinal + 1) typedRest eventRest
+  | _, _, _ => False
+
+def productionXmlEventsExactCheckFrom :
+    Nat → List TypedXmlEvent → List XmlEvent → Bool
+  | _, [], [] => true
+  | ordinal, typed :: typedRest, event :: eventRest =>
+      typedXmlEventEqCheck typed (typedXmlEventOfProduction ordinal event) &&
+        productionXmlEventsExactCheckFrom
+          (ordinal + 1) typedRest eventRest
+  | _, _, _ => false
+
+theorem production_xml_events_exact_check_from_sound :
+    ∀ ordinal typed events,
+      productionXmlEventsExactCheckFrom ordinal typed events = true →
+        ProductionXmlEventsExactFrom ordinal typed events
+  | _, [], [], _ => trivial
+  | _, [], _ :: _, h => nomatch h
+  | _, _ :: _, [], h => nomatch h
+  | ordinal, typed :: typedRest, event :: eventRest, h => by
+      have hParts := Tier2.CommentReferenceIntegrity.Typed.bool_and_eq_true_parts
+        _ _ h
+      exact ⟨typedXmlEventEqCheck_sound _ _ hParts.1,
+        production_xml_events_exact_check_from_sound
+          (ordinal + 1) typedRest eventRest hParts.2⟩
+
+def ProductionCommentSourceRealizationsExact :
+    List TypedSourceSlot →
+      List Tier2.NoteReferenceIntegrity.StoryRealization → Prop
+  | [], [] => True
+  | typed :: typedRest, realization :: realizationRest =>
+      typed.physicalStoryOrdinal = realization.slot.ordinal ∧
+      typed.source.partPath.bytes =
+        realization.slot.normalizedPartPath.toUTF8.toList ∧
+      ProductionXmlEventsExactFrom 0 typed.source.parsed.events
+        realization.visitedEvents ∧
+      ProductionCommentSourceRealizationsExact typedRest realizationRest
+  | _, _ => False
+
+def productionCommentSourceRealizationsExactCheck :
+    List TypedSourceSlot →
+      List Tier2.NoteReferenceIntegrity.StoryRealization → Bool
+  | [], [] => true
+  | typed :: typedRest, realization :: realizationRest =>
+      decide (typed.physicalStoryOrdinal = realization.slot.ordinal) &&
+      decide (typed.source.partPath.bytes =
+        realization.slot.normalizedPartPath.toUTF8.toList) &&
+      productionXmlEventsExactCheckFrom 0 typed.source.parsed.events
+        realization.visitedEvents &&
+      productionCommentSourceRealizationsExactCheck typedRest realizationRest
+  | _, _ => false
+
+theorem production_comment_source_realizations_exact_check_sound :
+    ∀ typed realizations,
+      productionCommentSourceRealizationsExactCheck typed realizations = true →
+        ProductionCommentSourceRealizationsExact typed realizations
+  | [], [], _ => trivial
+  | [], _ :: _, h => nomatch h
+  | _ :: _, [], h => nomatch h
+  | typed :: typedRest, realization :: realizationRest, h => by
+      simp only [productionCommentSourceRealizationsExactCheck,
+        Bool.and_eq_true, decide_eq_true_eq] at h
+      exact ⟨h.1.1.1, h.1.1.2,
+        production_xml_events_exact_check_from_sound
+          0 typed.source.parsed.events realization.visitedEvents h.1.2,
+        production_comment_source_realizations_exact_check_sound
+          typedRest realizationRest h.2⟩
+
+def ExecutableCommentSourceSetV7ValueOf
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (scans : Tier2.CommentReferenceIntegrity.SideScanEvidence)
+    (typedRequest : TypedRequestV7) : Prop :=
+  let typedSide := typedSideOfVerifierSide side
+  let typedPackage := typedPackageAt typedRequest typedSide
+  typedPackage.packageBytes = (request.packageView side).packageBytes ∧
+  typedPackage.index =
+    Tier2.NoteReferenceIntegrity.typedIndexOfProduction
+      (request.packageView side).index ∧
+  set.sources =
+    scans.realizations.map (·.slot) ∧
+  ProductionCommentSourceRealizationsExact
+    (canonicalTypedCommentSourceSlotsV7 typedRequest typedSide)
+    scans.realizations
+
+def ExecutableCommentSourceSetV7RefinesTyped
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (scans : Tier2.CommentReferenceIntegrity.SideScanEvidence)
+    (typedRequest : TypedRequestV7) : Prop :=
+  Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+      (request.packageView side) side (request.noteEvaluation side) = set ∧
+  request.retainedSourceScans side = scans ∧
+  typedRequestOfProductionV7 request = some typedRequest ∧
+  ExecutableCommentSourceSetV7ValueOf
+    request side set scans typedRequest
+
+def executableCommentSourceSetV7RefinementCheck
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (scans : Tier2.CommentReferenceIntegrity.SideScanEvidence)
+    (typedRequest : TypedRequestV7) : Bool :=
+  let typedSide := typedSideOfVerifierSide side
+  let typedPackage := typedPackageAt typedRequest typedSide
+  decide (typedPackage.packageBytes = (request.packageView side).packageBytes) &&
+  decide (typedPackage.index =
+    Tier2.NoteReferenceIntegrity.typedIndexOfProduction
+      (request.packageView side).index) &&
+  decide (set.sources = scans.realizations.map (·.slot)) &&
+  productionCommentSourceRealizationsExactCheck
+    (canonicalTypedCommentSourceSlotsV7 typedRequest typedSide)
+    scans.realizations
+
+theorem executable_comment_source_set_v7_refines_typed
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (scans : Tier2.CommentReferenceIntegrity.SideScanEvidence)
+    (typedRequest : TypedRequestV7)
+    (hSet :
+      Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+        (request.packageView side) side (request.noteEvaluation side) = set)
+    (hScans : request.retainedSourceScans side = scans)
+    (hTyped : typedRequestOfProductionV7 request = some typedRequest)
+    (hCheck :
+      executableCommentSourceSetV7RefinementCheck
+        request side set scans typedRequest = true) :
+    ExecutableCommentSourceSetV7RefinesTyped
+      request side set scans typedRequest := by
+  simp only [executableCommentSourceSetV7RefinementCheck,
+    Bool.and_eq_true, decide_eq_true_eq] at hCheck
+  exact ⟨hSet, hScans, hTyped, hCheck.1.1.1, hCheck.1.1.2,
+    hCheck.1.2,
+    production_comment_source_realizations_exact_check_sound
+      _ _ hCheck.2⟩
+
+abbrev typedMarkerKindOfProduction := retainedTypedMarkerKindOfProduction
+
+abbrev typedSourceKindOfProductionStory :=
+  retainedTypedSourceKindOfProductionStory
+
+abbrev typedMarkerOccurrenceOfProduction :=
+  retainedTypedMarkerOccurrenceOfProduction
+
+abbrev typedMarkerCrossingOfProduction :=
+  retainedTypedMarkerCrossingOfProduction
+
+def typedMarkerEvidenceOfProduction
+    (stories : List TypedStorySource)
+    (evidence : ParsedCommentRangeEvidence) :
+    TypedMarkerScanEvidence :=
+  { retainedTypedMarkerEvidenceOfProduction evidence with inputStories := stories }
+
+def ExecutableCommentMarkerScanV7ValueOf
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (scans : Tier2.CommentReferenceIntegrity.SideScanEvidence)
+    (evidence : ParsedCommentRangeEvidence)
+    (typedRequest : TypedRequestV7) : Prop :=
+  let typedSide := typedSideOfVerifierSide side
+  set.sources = scans.realizations.map (·.slot) ∧
+  request.commentRangeScanInvocationCount side = 1 ∧
+  typedMarkerEvidenceOfProduction
+      (canonicalTypedCommentSourcesV7 typedRequest typedSide) evidence =
+    retainedOrIndependentTypedMarkerScanV7 typedRequest typedSide
+
+def ExecutableCommentMarkerScanV7RefinesTyped
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (scans : Tier2.CommentReferenceIntegrity.SideScanEvidence)
+    (evidence : ParsedCommentRangeEvidence)
+    (typedRequest : TypedRequestV7) : Prop :=
+  Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+      (request.packageView side) side (request.noteEvaluation side) = set ∧
+  request.retainedSourceScans side = scans ∧
+  retainedCommentMarkerScanForRelationshipV7
+      ((request.core.packageRecord
+        (noteSideOfCommentSide side)).commentEvidence.identity.isSome)
+      set scans = .ok evidence ∧
+  (request.retainedCommentRangeScanResult side = .ok evidence ∧
+    request.commentRangeScanInvocationCount side = 1) ∧
+  typedRequestOfProductionV7 request = some typedRequest ∧
+  ExecutableCommentMarkerScanV7ValueOf
+    request side set scans evidence typedRequest
+
+def executableCommentMarkerScanV7RefinementCheck
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (scans : Tier2.CommentReferenceIntegrity.SideScanEvidence)
+    (evidence : ParsedCommentRangeEvidence)
+    (typedRequest : TypedRequestV7) : Bool :=
+  let typedSide := typedSideOfVerifierSide side
+  decide (set.sources = scans.realizations.map (·.slot)) &&
+  decide (request.commentRangeScanInvocationCount side = 1) &&
+  decide (typedMarkerEvidenceOfProduction
+      (canonicalTypedCommentSourcesV7 typedRequest typedSide) evidence =
+    retainedOrIndependentTypedMarkerScanV7 typedRequest typedSide)
+
+theorem executable_comment_marker_scan_v7_refines_typed
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (scans : Tier2.CommentReferenceIntegrity.SideScanEvidence)
+    (evidence : ParsedCommentRangeEvidence)
+    (typedRequest : TypedRequestV7)
+    (hSet : Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+      (request.packageView side) side (request.noteEvaluation side) = set)
+    (hScans : request.retainedSourceScans side = scans)
+    (hRun : retainedCommentMarkerScanForRelationshipV7
+      ((request.core.packageRecord
+        (noteSideOfCommentSide side)).commentEvidence.identity.isSome)
+      set scans = .ok evidence)
+    (hRetained :
+      request.retainedCommentRangeScanResult side = .ok evidence ∧
+      request.commentRangeScanInvocationCount side = 1)
+    (hTyped : typedRequestOfProductionV7 request = some typedRequest)
+    (hCheck : executableCommentMarkerScanV7RefinementCheck
+      request side set scans evidence typedRequest = true) :
+    ExecutableCommentMarkerScanV7RefinesTyped
+      request side set scans evidence typedRequest := by
+  simp only [executableCommentMarkerScanV7RefinementCheck,
+    Bool.and_eq_true, decide_eq_true_eq] at hCheck
+  exact ⟨hSet, hScans, hRun, hRetained, hTyped,
+    hCheck.1.1, hCheck.1.2, hCheck.2⟩
+
+def selectConventionalMainCommentV7 :=
+  Tier2.CommentReferenceIntegrity.selectConventionalMainComment
+
+def realizeSelectedCommentV7 (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (selected : Tier2.CommentReferenceIntegrity.SelectedCommentIdentity) :=
+  Tier2.CommentReferenceIntegrity.realizeSelectedCommentV6
+    (request.packageView side) side
+      (request.packageView side).resourceUsageBeforeComments selected
+
+def ExecutableCommentDefinitionRealizationV7ValueOf
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (selected : Tier2.CommentReferenceIntegrity.SelectedCommentIdentity)
+    (realization : Tier2.CommentReferenceIntegrity.CommentStoryRealization)
+    (typedRequest : TypedRequestV7) : Prop :=
+  let typedPackage := typedPackageAt typedRequest (typedSideOfVerifierSide side)
+  typedPackage.packageBytes = (request.packageView side).packageBytes ∧
+  typedPackage.index = Tier2.NoteReferenceIntegrity.typedIndexOfProduction
+    (request.packageView side).index ∧
+  typedPackage.realization.map (fun value =>
+      (value.selected.relationshipOrdinal,
+        value.selected.relationshipId.bytes,
+        value.selected.normalizedPartPath.bytes)) =
+    some (selected.relationshipRecordOrdinal,
+      selected.relationshipId.toUTF8.toList,
+      selected.normalizedPartPath.toUTF8.toList) ∧
+  (match typedPackage.realization with
+    | none => False
+    | some value =>
+        ProductionXmlEventsExactFrom 0 value.retainedParsedEvents
+          realization.retainedParsedEvidence.events) ∧
+  typedDefinitionsV7 typedRequest (typedSideOfVerifierSide side) =
+    typedDefinitionsFromEventsV7
+      (Tier2.NoteReferenceIntegrity.typedXmlEventsOfProduction
+        realization.retainedParsedEvidence.events)
+
+def ExecutableCommentDefinitionRealizationV7RefinesTyped
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (selected : Tier2.CommentReferenceIntegrity.SelectedCommentIdentity)
+    (realization : Tier2.CommentReferenceIntegrity.CommentStoryRealization)
+    (typedRequest : TypedRequestV7) : Prop :=
+  selectConventionalMainCommentV7 (request.packageView side) =
+      .ok (some selected) ∧
+  realizeSelectedCommentV7 request side selected = .ok realization ∧
+  (request.retainedCommentRealization side = some realization ∧
+    request.commentExtractionInvocationCount side = 1 ∧
+    request.commentParseInvocationCount side = 1) ∧
+  typedRequestOfProductionV7 request = some typedRequest ∧
+  ExecutableCommentDefinitionRealizationV7ValueOf
+    request side selected realization typedRequest
+
+def executableCommentDefinitionRealizationV7RefinementCheck
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (selected : Tier2.CommentReferenceIntegrity.SelectedCommentIdentity)
+    (realization : Tier2.CommentReferenceIntegrity.CommentStoryRealization)
+    (typedRequest : TypedRequestV7) : Bool :=
+  let typedPackage := typedPackageAt typedRequest (typedSideOfVerifierSide side)
+  decide (typedPackage.packageBytes = (request.packageView side).packageBytes) &&
+  decide (typedPackage.index = Tier2.NoteReferenceIntegrity.typedIndexOfProduction
+    (request.packageView side).index) &&
+  decide (typedPackage.realization.map (fun value =>
+      (value.selected.relationshipOrdinal,
+        value.selected.relationshipId.bytes,
+        value.selected.normalizedPartPath.bytes)) =
+    some (selected.relationshipRecordOrdinal,
+      selected.relationshipId.toUTF8.toList,
+      selected.normalizedPartPath.toUTF8.toList)) &&
+  (match typedPackage.realization with
+    | none => false
+    | some value =>
+        productionXmlEventsExactCheckFrom 0 value.retainedParsedEvents
+          realization.retainedParsedEvidence.events) &&
+  decide (typedDefinitionsV7 typedRequest (typedSideOfVerifierSide side) =
+    typedDefinitionsFromEventsV7
+      (Tier2.NoteReferenceIntegrity.typedXmlEventsOfProduction
+        realization.retainedParsedEvidence.events))
+
+theorem executable_comment_definition_realization_v7_refines_typed
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (selected : Tier2.CommentReferenceIntegrity.SelectedCommentIdentity)
+    (realization : Tier2.CommentReferenceIntegrity.CommentStoryRealization)
+    (typedRequest : TypedRequestV7)
+    (hSelected : selectConventionalMainCommentV7 (request.packageView side) =
+      .ok (some selected))
+    (hRun : realizeSelectedCommentV7 request side selected = .ok realization)
+    (hRetained :
+      request.retainedCommentRealization side = some realization ∧
+      request.commentExtractionInvocationCount side = 1 ∧
+      request.commentParseInvocationCount side = 1)
+    (hTyped : typedRequestOfProductionV7 request = some typedRequest)
+    (hCheck : executableCommentDefinitionRealizationV7RefinementCheck
+      request side selected realization typedRequest = true) :
+    ExecutableCommentDefinitionRealizationV7RefinesTyped
+      request side selected realization typedRequest := by
+  simp only [executableCommentDefinitionRealizationV7RefinementCheck,
+    Bool.and_eq_true, decide_eq_true_eq] at hCheck
+  have hEvents :
+      match (typedPackageAt typedRequest
+        (typedSideOfVerifierSide side)).realization with
+      | none => False
+      | some value =>
+          ProductionXmlEventsExactFrom 0 value.retainedParsedEvents
+            realization.retainedParsedEvidence.events := by
+    cases hRealization :
+        (typedPackageAt typedRequest
+          (typedSideOfVerifierSide side)).realization with
+    | none => simp [hRealization] at hCheck
+    | some value =>
+        exact production_xml_events_exact_check_from_sound
+          0 value.retainedParsedEvents
+            realization.retainedParsedEvidence.events
+            (by simpa [hRealization] using hCheck.1.2)
+  exact ⟨hSelected, hRun, hRetained, hTyped,
+    hCheck.1.1.1.1, hCheck.1.1.1.2, hCheck.1.1.2, hEvents, hCheck.2⟩
+
+abbrev SideCommentEvaluationV7 := CommentSideEvidence
+
+def evaluateCommentSideV7 (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) :
+    SideCommentEvaluationV7 :=
+  (request.core.packageRecord
+    (noteSideOfCommentSide side)).commentEvidence
+
+def ExecutableCommentIncompleteV7ValueOf
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (evaluation : SideCommentEvaluationV7)
+    (typedRequest : TypedRequestV7) : Prop :=
+  let typedEvaluation :=
+    evaluateTypedCommentSideV7 typedRequest (typedSideOfVerifierSide side)
+  (typedEvaluation.status = .notEvaluated) =
+    (!evaluation.complete ∧ evaluation.markerScan.isNone = true ∧
+      evaluation.markerScanInvocationCount = 0 ∧
+      evaluation.inventory.referenceOccurrences = 0 ∧
+      evaluation.inventory.rangeStartOccurrences = 0 ∧
+      evaluation.inventory.rangeEndOccurrences = 0 ∧
+      evaluation.inventory.definitions = 0)
+
+def ExecutableCommentIncompleteV7RefinesTyped
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (evaluation : SideCommentEvaluationV7)
+    (typedRequest : TypedRequestV7) : Prop :=
+  evaluateCommentSideV7 request side = evaluation ∧
+  typedRequestOfProductionV7 request = some typedRequest ∧
+  ExecutableCommentIncompleteV7ValueOf side evaluation typedRequest
+
+def executableCommentIncompleteV7RefinementCheck
+    (_request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (evaluation : SideCommentEvaluationV7)
+    (typedRequest : TypedRequestV7) : Bool :=
+  decide ((evaluateTypedCommentSideV7 typedRequest
+      (typedSideOfVerifierSide side)).status = .notEvaluated) ==
+    ((!evaluation.complete) &&
+      evaluation.markerScan.isNone &&
+      evaluation.markerScanInvocationCount == 0 &&
+      evaluation.inventory.referenceOccurrences == 0 &&
+      evaluation.inventory.rangeStartOccurrences == 0 &&
+      evaluation.inventory.rangeEndOccurrences == 0 &&
+      evaluation.inventory.definitions == 0)
+
+theorem executable_comment_incomplete_v7_refines_typed
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (evaluation : SideCommentEvaluationV7)
+    (typedRequest : TypedRequestV7)
+    (hEvaluation : evaluateCommentSideV7 request side = evaluation)
+    (hTyped : typedRequestOfProductionV7 request = some typedRequest)
+    (hCheck : executableCommentIncompleteV7RefinementCheck
+      request side evaluation typedRequest = true) :
+    ExecutableCommentIncompleteV7RefinesTyped
+      request side evaluation typedRequest := by
+  unfold executableCommentIncompleteV7RefinementCheck at hCheck
+  refine ⟨hEvaluation, hTyped, ?_⟩
+  unfold ExecutableCommentIncompleteV7ValueOf
+  let incomplete :=
+    (!evaluation.complete) &&
+      evaluation.markerScan.isNone &&
+      evaluation.markerScanInvocationCount == 0 &&
+      evaluation.inventory.referenceOccurrences == 0 &&
+      evaluation.inventory.rangeStartOccurrences == 0 &&
+      evaluation.inventory.rangeEndOccurrences == 0 &&
+      evaluation.inventory.definitions == 0
+  have hDecision :
+      decide ((evaluateTypedCommentSideV7 typedRequest
+        (typedSideOfVerifierSide side)).status = .notEvaluated) =
+        incomplete := by
+    simpa only [beq_iff_eq] using hCheck
+  apply propext
+  constructor
+  · intro hStatus
+    have hDecide :
+        decide ((evaluateTypedCommentSideV7 typedRequest
+          (typedSideOfVerifierSide side)).status = .notEvaluated) = true :=
+      decide_eq_true hStatus
+    have hIncomplete : incomplete = true := hDecision ▸ hDecide
+    have hParts := hIncomplete
+    simp only [incomplete, Bool.and_eq_true, Bool.not_eq_true,
+      beq_iff_eq] at hParts
+    rcases hParts with
+      ⟨⟨⟨⟨⟨⟨hComplete, hMarker⟩, hInvocation⟩, hReferences⟩,
+        hStarts⟩, hEnds⟩, hDefinitions⟩
+    exact ⟨hComplete, hMarker, hInvocation, hReferences, hStarts,
+      hEnds, hDefinitions⟩
+  · intro hIncomplete
+    rcases hIncomplete with
+      ⟨hComplete, hMarker, hInvocation, hReferences, hStarts,
+        hEnds, hDefinitions⟩
+    have hIncompleteBool : incomplete = true := by
+      simp only [incomplete, Bool.and_eq_true, Bool.not_eq_true,
+        beq_iff_eq]
+      exact ⟨⟨⟨⟨⟨⟨hComplete, hMarker⟩, hInvocation⟩, hReferences⟩,
+        hStarts⟩, hEnds⟩, hDefinitions⟩
+    exact of_decide_eq_true (hDecision.trans hIncompleteBool)
+
+def actualExecutableCommentSourceSetV7RefinementOf
+    (request : VerifierRequestV7) (typedRequest : TypedRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) : Prop :=
+  ∃ set scans,
+    ExecutableCommentSourceSetV7RefinesTyped
+      request side set scans typedRequest
+
+def actualExecutableCommentMarkerScanV7RefinementOf
+    (request : VerifierRequestV7) (typedRequest : TypedRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) : Prop :=
+  ∃ set scans evidence,
+    ExecutableCommentMarkerScanV7RefinesTyped
+      request side set scans evidence typedRequest
+
+def actualExecutableCommentDefinitionV7RefinementOf
+    (request : VerifierRequestV7) (typedRequest : TypedRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) : Prop :=
+  match selectConventionalMainCommentV7 (request.packageView side) with
+  | .error _ => False
+  | .ok none => True
+  | .ok (some selected) =>
+      ∃ realization,
+        ExecutableCommentDefinitionRealizationV7RefinesTyped
+          request side selected realization typedRequest
+
+def actualExecutableCommentIncompleteV7RefinementOf
+    (request : VerifierRequestV7) (typedRequest : TypedRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) : Prop :=
+  ∃ evaluation,
+    ExecutableCommentIncompleteV7RefinesTyped
+      request side evaluation typedRequest
+
+def actualExecutableProtocolV7Utf8JsonRefinementOf
+    (request : VerifierRequestV7) (typedRequest : TypedRequestV7)
+    (response : Json) : Prop :=
+  response = protocolV7ResponseJson
+      (canonicalRunRequestEvaluationV7 request) ∧
+    ProtocolV7JsonProjectionOf response
+      (canonicalTypedResponseV7 typedRequest) ∧
+    response.compress.toUTF8.data.toList =
+      independentProtocolV7Projection
+        (canonicalTypedResponseV7 typedRequest)
+
+theorem retained_marker_scan_run_result_substitution_rejected
+    (relationshipPresent : Bool) (side : VerifierSide)
+    (run : RetainedCommentMarkerScanRun relationshipPresent side)
+    (forged : Except String ParsedCommentRangeEvidence)
+    (hDifferent : forged ≠
+      retainedCommentMarkerScanForRelationshipV7
+        relationshipPresent run.set run.scans) :
+    run.result ≠ forged := by
+  intro hForged
+  exact hDifferent (hForged ▸ run.resultExact)
+
+theorem executable_marker_scan_invocation_substitution_rejected
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (scans : Tier2.CommentReferenceIntegrity.SideScanEvidence)
+    (evidence : ParsedCommentRangeEvidence)
+    (typedRequest : TypedRequestV7)
+    (hRefines : ExecutableCommentMarkerScanV7RefinesTyped
+      request side set scans evidence typedRequest)
+    (hForged : request.commentRangeScanInvocationCount side ≠ 1) : False :=
+  hForged hRefines.2.2.2.1.2
+
+theorem executable_marker_scan_retained_evidence_substitution_rejected
+    (request : VerifierRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (scans : Tier2.CommentReferenceIntegrity.SideScanEvidence)
+    (evidence : ParsedCommentRangeEvidence)
+    (typedRequest : TypedRequestV7)
+    (hRefines : ExecutableCommentMarkerScanV7RefinesTyped
+      request side set scans evidence typedRequest)
+    (hForged :
+      request.retainedCommentRangeScanResult side ≠ .ok evidence) : False :=
+  hForged hRefines.2.2.2.1.1
+
+def productionActualMarkerRefinementChecksV7
+    (request : VerifierRequestV7) (typedRequest : TypedRequestV7) : Bool :=
+  let sides : List Tier2.CommentReferenceIntegrity.VerifierSide :=
+    [.original, .revised, .compared]
+  sides.all fun side =>
+    let set := Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+      (request.packageView side) side (request.noteEvaluation side)
+    let scans := request.retainedSourceScans side
+    match request.retainedCommentRangeScanResult side with
+    | .error _ => false
+    | .ok evidence =>
+        executableCommentMarkerScanV7RefinementCheck
+          request side set scans evidence typedRequest
+
+def productionActualBridgeRefinementCheckAtV7
+    (request : VerifierRequestV7) (typedRequest : TypedRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) : Bool :=
+  let set := Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+    (request.packageView side) side (request.noteEvaluation side)
+  let scans := request.retainedSourceScans side
+  let sourceCheck := executableCommentSourceSetV7RefinementCheck
+    request side set scans typedRequest
+  let markerCheck := match request.retainedCommentRangeScanResult side with
+    | .error _ => false
+    | .ok evidence =>
+        executableCommentMarkerScanV7RefinementCheck
+          request side set scans evidence typedRequest
+  let definitionCheck :=
+    match selectConventionalMainCommentV7 (request.packageView side) with
+    | .error _ => false
+    | .ok none => true
+    | .ok (some selected) =>
+        match realizeSelectedCommentV7 request side selected with
+        | .error _ => false
+        | .ok realization =>
+            executableCommentDefinitionRealizationV7RefinementCheck
+              request side selected realization typedRequest
+  let incompleteCheck := executableCommentIncompleteV7RefinementCheck
+    request side (evaluateCommentSideV7 request side) typedRequest
+  sourceCheck && markerCheck && definitionCheck && incompleteCheck
+
+def productionActualBridgeRefinementChecksV7
+    (request : VerifierRequestV7) (typedRequest : TypedRequestV7) : Bool :=
+  let sides : List Tier2.CommentReferenceIntegrity.VerifierSide :=
+    [.original, .revised, .compared]
+  sides.all (productionActualBridgeRefinementCheckAtV7 request typedRequest)
+
+theorem production_actual_bridge_refinement_checks_v7_at
+    (request : VerifierRequestV7) (typedRequest : TypedRequestV7)
+    (hChecks :
+      productionActualBridgeRefinementChecksV7 request typedRequest = true)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) :
+    let set := Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+      (request.packageView side) side (request.noteEvaluation side)
+    let scans := request.retainedSourceScans side
+    executableCommentSourceSetV7RefinementCheck
+        request side set scans typedRequest = true ∧
+    (match request.retainedCommentRangeScanResult side with
+      | .error _ => false
+      | .ok evidence =>
+          executableCommentMarkerScanV7RefinementCheck
+            request side set scans evidence typedRequest) = true ∧
+    (match selectConventionalMainCommentV7 (request.packageView side) with
+      | .error _ => false
+      | .ok none => true
+      | .ok (some selected) =>
+          match realizeSelectedCommentV7 request side selected with
+          | .error _ => false
+          | .ok realization =>
+              executableCommentDefinitionRealizationV7RefinementCheck
+                request side selected realization typedRequest) = true ∧
+    executableCommentIncompleteV7RefinementCheck request side
+      (evaluateCommentSideV7 request side) typedRequest = true := by
+  unfold productionActualBridgeRefinementChecksV7
+    productionActualBridgeRefinementCheckAtV7 at hChecks
+  simp only [List.all_cons, List.all_nil, Bool.and_true,
+    Bool.and_eq_true] at hChecks
+  cases side with
+  | original =>
+      exact ⟨hChecks.1.1.1.1, hChecks.1.1.1.2,
+        hChecks.1.1.2, hChecks.1.2⟩
+  | revised =>
+      exact ⟨hChecks.2.1.1.1.1, hChecks.2.1.1.1.2,
+        hChecks.2.1.1.2, hChecks.2.1.2⟩
+  | compared =>
+      exact ⟨hChecks.2.2.1.1.1, hChecks.2.2.1.1.2,
+        hChecks.2.2.1.2, hChecks.2.2.2⟩
+
+theorem production_actual_bridge_refinements_v7_sound
+    (request : VerifierRequestV7) (typedRequest : TypedRequestV7)
+    (packageEvidence :
+      ProductionPackageRecordOf request.core.original ∧
+      ProductionPackageRecordOf request.core.revised ∧
+      ProductionPackageRecordOf request.core.compared)
+    (commentEvidence :
+      ProductionCommentEvidenceOf request.core.original ∧
+      ProductionCommentEvidenceOf request.core.revised ∧
+      ProductionCommentEvidenceOf request.core.compared)
+    (hTyped : typedRequestOfProductionV7 request = some typedRequest)
+    (hChecks :
+      productionActualBridgeRefinementChecksV7 request typedRequest = true) :
+    (∀ side, actualExecutableCommentSourceSetV7RefinementOf
+      request typedRequest side) ∧
+    (∀ side, actualExecutableCommentMarkerScanV7RefinementOf
+      request typedRequest side) ∧
+    (∀ side, actualExecutableCommentDefinitionV7RefinementOf
+      request typedRequest side) ∧
+    (∀ side, actualExecutableCommentIncompleteV7RefinementOf
+      request typedRequest side) := by
+  have hAt := production_actual_bridge_refinement_checks_v7_at
+    request typedRequest hChecks
+  constructor
+  · intro side
+    let set := Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+      (request.packageView side) side (request.noteEvaluation side)
+    let scans := request.retainedSourceScans side
+    exact ⟨set, scans,
+      executable_comment_source_set_v7_refines_typed
+        request side set scans typedRequest rfl rfl hTyped (hAt side).1⟩
+  constructor
+  · intro side
+    let set := Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+      (request.packageView side) side (request.noteEvaluation side)
+    let scans := request.retainedSourceScans side
+    have hMarkerCheck := (hAt side).2.1
+    cases hRetained :
+        request.retainedCommentRangeScanResult side with
+    | error detail => simp [hRetained] at hMarkerCheck
+    | ok evidence =>
+      simp only [hRetained] at hMarkerCheck
+      have hComment := Tier2.NoteReferenceIntegrity.productionCommentEvidenceAt
+        request.core
+        commentEvidence side
+      rcases hComment with
+        ⟨_, _, _, hMarkerEvidence, _⟩
+      rcases hMarkerEvidence with
+        ⟨markerRun, markerEvidence, hMarkerRun, hMarkerResult,
+          _hMarkerExact, hNoCrossing, hInvocation, _hStoredEvidence⟩
+      have hEvidence : evidence = markerEvidence := by
+        unfold VerifierRequestV7.retainedCommentRangeScanResult at hRetained
+        simp only [hMarkerRun] at hRetained
+        exact Except.ok.inj (hRetained.symm.trans hMarkerResult)
+      subst evidence
+      have hScans : scans = markerRun.scans := by
+        unfold scans VerifierRequestV7.retainedSourceScans
+        simp [hMarkerRun]
+      have hMarkerCheckParts := hMarkerCheck
+      simp only [executableCommentMarkerScanV7RefinementCheck,
+        Bool.and_eq_true, decide_eq_true_eq] at hMarkerCheckParts
+      have hRun : retainedCommentMarkerScanForRelationshipV7
+          ((request.core.packageRecord
+            (noteSideOfCommentSide side)).commentEvidence.identity.isSome)
+          set scans = .ok markerEvidence := by
+        rw [hScans]
+        apply retained_comment_marker_scan_run_for_matching_set
+          _ _ markerRun set markerEvidence
+        · simpa [set, scans, hScans] using hMarkerCheckParts.1.1
+        · exact hMarkerResult
+      exact ⟨set, scans, markerEvidence,
+        executable_comment_marker_scan_v7_refines_typed
+          request side set scans markerEvidence typedRequest
+          rfl rfl hRun ⟨by simpa [hRetained], hInvocation⟩
+          hTyped hMarkerCheck⟩
+  constructor
+  · intro side
+    have hDefinitionCheck := (hAt side).2.2.1
+    unfold actualExecutableCommentDefinitionV7RefinementOf
+    cases hSelected :
+        selectConventionalMainCommentV7 (request.packageView side) with
+    | error failure => simp [hSelected] at hDefinitionCheck
+    | ok selected? =>
+      cases selected? with
+      | none =>
+          trivial
+      | some selected =>
+        simp only [hSelected] at hDefinitionCheck
+        cases hRealize : realizeSelectedCommentV7 request side selected with
+        | error failure => simp [hRealize] at hDefinitionCheck
+        | ok realization =>
+          simp only [hRealize] at hDefinitionCheck
+          have hRetained :=
+            Tier2.CommentReferenceIntegrity.realize_selected_comment_v6_success
+              (request.packageView side) side
+              (request.packageView side).resourceUsageBeforeComments
+              selected realization hRealize
+          let record := request.core.packageRecord (noteSideOfCommentSide side)
+          have hPackage := Tier2.NoteReferenceIntegrity.productionPackageRecordAt
+            request.core
+            packageEvidence side
+          cases hPart : record.commentEvidence.part with
+          | none =>
+              simp [VerifierRequestV7.retainedCommentRealization,
+                VerifierRequestV7.packageView, commentPackageViewOfCore,
+                record, hPart] at hRetained
+          | some loaded =>
+            have hRealization :
+                semanticCommentRealizationOfProduction loaded = realization := by
+              simpa [VerifierRequestV7.retainedCommentRealization,
+                VerifierRequestV7.packageView, commentPackageViewOfCore,
+                record, hPart] using hRetained.1
+            subst realization
+            have hParse : ProductionParseEvidenceOf record loaded.parseEvidence := by
+              apply hPackage.2.2.2.1
+              simp [productionParseEvidencesOfRecord, record, hPart]
+            rcases hParse with
+              ⟨_, _, hExtraction, _, _, _, _, _, hParseCount, _⟩
+            rcases hExtraction with
+              ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+                hExtractionCount, _⟩
+            have hCounts :
+                request.retainedCommentRealization side =
+                    some (semanticCommentRealizationOfProduction loaded) ∧
+                  request.commentExtractionInvocationCount side = 1 ∧
+                  request.commentParseInvocationCount side = 1 := by
+              refine ⟨?_, ?_, ?_⟩
+              · simpa [record, hPart] using hRetained.1
+              · simp [VerifierRequestV7.commentExtractionInvocationCount,
+                  record, hPart, hExtractionCount]
+              · simp [VerifierRequestV7.commentParseInvocationCount,
+                  record, hPart, hParseCount]
+            exact ⟨semanticCommentRealizationOfProduction loaded,
+              executable_comment_definition_realization_v7_refines_typed
+                request side selected
+                  (semanticCommentRealizationOfProduction loaded)
+                  typedRequest hSelected hRealize hCounts hTyped
+                  hDefinitionCheck⟩
+  · intro side
+    let evaluation := evaluateCommentSideV7 request side
+    exact ⟨evaluation,
+      executable_comment_incomplete_v7_refines_typed
+        request side evaluation typedRequest rfl hTyped (hAt side).2.2.2⟩
+
+theorem executable_protocol_v7_utf8_json_refines_typed
+    (request : VerifierRequestV7) (response : Json)
+    (typedRequest : TypedRequestV7)
+    (_hTyped : typedRequestOfProductionV7 request = some typedRequest)
+    (_hResponse : response = protocolV7ResponseJson
+      (canonicalRunRequestEvaluationV7 request))
+    (hCheck : protocolV7JsonProjectionCheck response
+      (canonicalTypedResponseV7 typedRequest) = true) :
+    ProtocolV7JsonProjectionOf response
+        (canonicalTypedResponseV7 typedRequest) ∧
+      response.compress.toUTF8.data.toList =
+        independentProtocolV7Projection
+          (canonicalTypedResponseV7 typedRequest) := by
+  let h := protocol_v7_json_projection_check_sound _ _ hCheck
+  exact ⟨h, h⟩
+
+abbrev RunRequestCoreRequestV7 := RunRequestCoreRequest
+abbrev RunRequestCoreResultV7 := RunRequestCoreResult
+
+def verifierRequestV7OfRunRequestCore
+    (request : RunRequestCoreRequestV7)
+    (result : RunRequestCoreResultV7) : VerifierRequestV7 := {
+  core := request
+  semanticResponse := result.semanticResponse
+}
+
+def typedRequestOfRunRequestCoreV7
+    (request : RunRequestCoreRequestV7)
+    (result : RunRequestCoreResultV7) : Option TypedRequestV7 :=
+  typedRequestOfProductionV7 (verifierRequestV7OfRunRequestCore request result)
+
+def productionTypedCommentChecksV7
+    (request : RunRequestCoreRequestV7)
+    (result : RunRequestCoreResultV7) : Bool :=
+  match typedRequestOfRunRequestCoreV7 request result with
+  | none => false
+  | some typedRequest =>
+      let typedResponse := canonicalTypedResponseV7 typedRequest
+      let canonicalBytes := independentProtocolV7Projection typedResponse
+      (!result.responsePassed ||
+        (typedAllCommentRangeSidesPassV7 typedRequest &&
+          productionActualBridgeRefinementChecksV7
+            (verifierRequestV7OfRunRequestCore request result) typedRequest)) &&
+      protocolV7JsonProjectionCheck result.response typedResponse &&
+      decide (result.stdout.data.toList =
+        canonicalBytes ++ [UInt8.ofNat 10])
+
+def runRequestCoreV7 (request : RunRequestCoreRequestV7) :
+    Except String RunRequestCoreResultV7 :=
+  match runRequestCore request with
+  | .error detail => .error detail
+  | .ok result =>
+      if productionTypedCommentChecksV7 request result then .ok result
+      else
+        match typedRequestOfRunRequestCoreV7 request result with
+        | none => .error "protocol-v7 typed request construction failed"
+        | some _ => .error "protocol-v7 production refinement failed"
+
+def ProductionRunRequestV7RefinesSemanticOf
+    (request : RunRequestCoreRequestV7)
+    (result : RunRequestCoreResultV7)
+    (typedRequest : TypedRequestV7)
+    (typedResponse : TypedProtocolV7Response)
+    (canonicalBytes : List UInt8) : Prop :=
+  ProductionRunRequestRefinesSemanticOf request result ∧
+  typedRequestOfRunRequestCoreV7 request result = some typedRequest ∧
+  typedResponse = canonicalTypedResponseV7 typedRequest ∧
+  canonicalBytes = independentProtocolV7Projection typedResponse ∧
+  ProtocolV7JsonProjectionOf result.response typedResponse ∧
+  result.response.compress.toUTF8.data.toList = canonicalBytes ∧
+  result.stdout.data.toList = canonicalBytes ++ [UInt8.ofNat 10] ∧
+  (∀ side, actualExecutableCommentSourceSetV7RefinementOf
+    (verifierRequestV7OfRunRequestCore request result) typedRequest side) ∧
+  (∀ side, actualExecutableCommentMarkerScanV7RefinementOf
+    (verifierRequestV7OfRunRequestCore request result) typedRequest side) ∧
+  (∀ side, actualExecutableCommentDefinitionV7RefinementOf
+    (verifierRequestV7OfRunRequestCore request result) typedRequest side) ∧
+  (∀ side, actualExecutableCommentIncompleteV7RefinementOf
+    (verifierRequestV7OfRunRequestCore request result) typedRequest side) ∧
+  actualExecutableProtocolV7Utf8JsonRefinementOf
+    (verifierRequestV7OfRunRequestCore request result) typedRequest
+      result.response
+
+theorem production_run_request_core_v7_refinement_sound
+    (request : RunRequestCoreRequestV7)
+    (result : RunRequestCoreResultV7)
+    (hRun : runRequestCoreV7 request = .ok result)
+    (hPass : result.responsePassed = true) :
+    ∃ typedRequest : TypedRequestV7,
+      typedRequestOfRunRequestCoreV7 request result = some typedRequest ∧
+      ProductionRunRequestV7RefinesSemanticOf
+        request result typedRequest
+          (canonicalTypedResponseV7 typedRequest)
+          (independentProtocolV7Projection
+            (canonicalTypedResponseV7 typedRequest)) ∧
+      TypedCommentRangeAggregatePassOf typedRequest
+        (canonicalTypedResponseV7 typedRequest) ∧
+      ProtocolV7JsonProjectionOf result.response
+        (canonicalTypedResponseV7 typedRequest) ∧
+      result.response.compress.toUTF8.data.toList =
+        independentProtocolV7Projection
+          (canonicalTypedResponseV7 typedRequest) ∧
+      result.stdout.data.toList =
+        independentProtocolV7Projection
+          (canonicalTypedResponseV7 typedRequest) ++ [10] := by
+  unfold runRequestCoreV7 at hRun
+  cases hCore : runRequestCore request with
+  | error detail => simp [hCore] at hRun
+  | ok coreResult =>
+      simp only [hCore] at hRun
+      split at hRun
+      · rename_i hChecks
+        cases hRun
+        let typedRequest : TypedRequestV7 := {
+          original := Tier2.NoteReferenceIntegrity.typedPackageViewOfRecord
+            .original request request.original
+          revised := Tier2.NoteReferenceIntegrity.typedPackageViewOfRecord
+            .revised request request.revised
+          compared := Tier2.NoteReferenceIntegrity.typedPackageViewOfRecord
+            .compared request request.compared
+          inherited :=
+            Tier2.NoteReferenceIntegrity.typedInheritedV5OfOperationalRequest
+              request result.semanticResponse
+          originalRetainedMarkerScan :=
+            retainedTypedMarkerScanOfRecordV7 request.original
+          revisedRetainedMarkerScan :=
+            retainedTypedMarkerScanOfRecordV7 request.revised
+          comparedRetainedMarkerScan :=
+            retainedTypedMarkerScanOfRecordV7 request.compared
+        }
+        have hTyped :
+            typedRequestOfRunRequestCoreV7 request result = some typedRequest := by
+          rfl
+        unfold productionTypedCommentChecksV7 at hChecks
+        simp only [hTyped, Bool.and_eq_true, decide_eq_true_eq] at hChecks
+        have hTypedPass :
+            typedAllCommentRangeSidesPassV7 typedRequest = true := by
+          have hGate := hChecks.1.1
+          simp [hPass] at hGate
+          exact hGate.1
+        have hActualChecks :
+            productionActualBridgeRefinementChecksV7
+              (verifierRequestV7OfRunRequestCore request result)
+                typedRequest = true := by
+          have hGate := hChecks.1.1
+          simp [hPass] at hGate
+          exact hGate.2
+        have hProjection :=
+          protocol_v7_json_projection_check_sound _ _ hChecks.1.2
+        have hAggregate :=
+          (typed_comment_range_aggregate_pass_sound
+            typedRequest hTypedPass).1
+        have hBase :=
+          Tier2.NoteReferenceIntegrity.production_run_request_core_refinement_sound
+            request result hCore hPass
+        have hPackages :
+            ProductionPackageRecordOf request.original ∧
+            ProductionPackageRecordOf request.revised ∧
+            ProductionPackageRecordOf request.compared :=
+          ⟨hBase.1, hBase.2.1, hBase.2.2.1⟩
+        have hComments :
+            ProductionCommentEvidenceOf request.original ∧
+            ProductionCommentEvidenceOf request.revised ∧
+            ProductionCommentEvidenceOf request.compared :=
+          ⟨hBase.2.2.2.1, hBase.2.2.2.2.1,
+            hBase.2.2.2.2.2.1⟩
+        have hActual :=
+          production_actual_bridge_refinements_v7_sound
+            (verifierRequestV7OfRunRequestCore request result)
+            typedRequest hPackages hComments hTyped hActualChecks
+        refine ⟨typedRequest, hTyped, ?_, hAggregate, hProjection,
+          hProjection, hChecks.2⟩
+        have hProtocolActual :
+            actualExecutableProtocolV7Utf8JsonRefinementOf
+              (verifierRequestV7OfRunRequestCore request result)
+              typedRequest result.response := by
+          refine ⟨?_, hProjection, hProjection⟩
+          unfold protocolV7ResponseJson canonicalRunRequestEvaluationV7
+            verifierRequestV7OfRunRequestCore
+          exact run_request_core_response_exact request result hCore
+        exact ⟨hBase, hTyped, rfl, rfl, hProjection,
+          hProjection, hChecks.2, hActual.1, hActual.2.1,
+          hActual.2.2.1, hActual.2.2.2, hProtocolActual⟩
+      · contradiction
+
+def executableCommentSourceSetV7RefinementSignature : Prop :=
+  ∀ (request : VerifierRequestV7)
+      (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+      (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+      (scans : Tier2.CommentReferenceIntegrity.SideScanEvidence)
+      (typedRequest : TypedRequestV7),
+    Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+        (request.packageView side) side (request.noteEvaluation side) = set →
+    request.retainedSourceScans side = scans →
+    typedRequestOfProductionV7 request = some typedRequest →
+    executableCommentSourceSetV7RefinementCheck
+      request side set scans typedRequest = true →
+    ExecutableCommentSourceSetV7RefinesTyped
+      request side set scans typedRequest
+
+def executableCommentMarkerScanV7RefinementSignature : Prop :=
+  ∀ (request : VerifierRequestV7)
+      (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+      (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+      (scans : Tier2.CommentReferenceIntegrity.SideScanEvidence)
+      (evidence : ParsedCommentRangeEvidence)
+      (typedRequest : TypedRequestV7),
+    Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+        (request.packageView side) side (request.noteEvaluation side) = set →
+    request.retainedSourceScans side = scans →
+    retainedCommentMarkerScanForRelationshipV7
+        ((request.core.packageRecord
+          (noteSideOfCommentSide side)).commentEvidence.identity.isSome)
+        set scans = .ok evidence →
+    (request.retainedCommentRangeScanResult side = .ok evidence ∧
+      request.commentRangeScanInvocationCount side = 1) →
+    typedRequestOfProductionV7 request = some typedRequest →
+    executableCommentMarkerScanV7RefinementCheck
+      request side set scans evidence typedRequest = true →
+    ExecutableCommentMarkerScanV7RefinesTyped
+      request side set scans evidence typedRequest
+
+def executableCommentDefinitionRealizationV7RefinementSignature : Prop :=
+  ∀ (request : VerifierRequestV7)
+      (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+      (selected : Tier2.CommentReferenceIntegrity.SelectedCommentIdentity)
+      (realization : Tier2.CommentReferenceIntegrity.CommentStoryRealization)
+      (typedRequest : TypedRequestV7),
+    selectConventionalMainCommentV7 (request.packageView side) =
+      .ok (some selected) →
+    realizeSelectedCommentV7 request side selected = .ok realization →
+    (request.retainedCommentRealization side = some realization ∧
+      request.commentExtractionInvocationCount side = 1 ∧
+      request.commentParseInvocationCount side = 1) →
+    typedRequestOfProductionV7 request = some typedRequest →
+    executableCommentDefinitionRealizationV7RefinementCheck
+      request side selected realization typedRequest = true →
+    ExecutableCommentDefinitionRealizationV7RefinesTyped
+      request side selected realization typedRequest
+
+def executableCommentIncompleteV7RefinementSignature : Prop :=
+  ∀ (request : VerifierRequestV7)
+      (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+      (evaluation : SideCommentEvaluationV7)
+      (typedRequest : TypedRequestV7),
+    evaluateCommentSideV7 request side = evaluation →
+    typedRequestOfProductionV7 request = some typedRequest →
+    executableCommentIncompleteV7RefinementCheck
+      request side evaluation typedRequest = true →
+    ExecutableCommentIncompleteV7RefinesTyped
+      request side evaluation typedRequest
+
+def executableProtocolV7Utf8JsonRefinementSignature : Prop :=
+  ∀ (request : VerifierRequestV7) (response : Json)
+      (typedRequest : TypedRequestV7),
+    typedRequestOfProductionV7 request = some typedRequest →
+    response = protocolV7ResponseJson
+      (canonicalRunRequestEvaluationV7 request) →
+    protocolV7JsonProjectionCheck response
+      (canonicalTypedResponseV7 typedRequest) = true →
+    ProtocolV7JsonProjectionOf response
+        (canonicalTypedResponseV7 typedRequest) ∧
+      response.compress.toUTF8.data.toList =
+        independentProtocolV7Projection
+          (canonicalTypedResponseV7 typedRequest)
+
+def productionRunRequestCoreV7RefinementSignature : Prop :=
+  ∀ (request : RunRequestCoreRequestV7)
+      (result : RunRequestCoreResultV7),
+    runRequestCoreV7 request = .ok result →
     result.responsePassed = true →
-    ProductionRunRequestV6RefinesSemanticOf request result
+    ∃ typedRequest : TypedRequestV7,
+      typedRequestOfRunRequestCoreV7 request result = some typedRequest ∧
+      ProductionRunRequestV7RefinesSemanticOf
+        request result typedRequest
+          (canonicalTypedResponseV7 typedRequest)
+          (independentProtocolV7Projection
+            (canonicalTypedResponseV7 typedRequest)) ∧
+      TypedCommentRangeAggregatePassOf typedRequest
+        (canonicalTypedResponseV7 typedRequest) ∧
+      ProtocolV7JsonProjectionOf result.response
+        (canonicalTypedResponseV7 typedRequest) ∧
+      result.response.compress.toUTF8.data.toList =
+        independentProtocolV7Projection
+          (canonicalTypedResponseV7 typedRequest) ∧
+      result.stdout.data.toList =
+        independentProtocolV7Projection
+          (canonicalTypedResponseV7 typedRequest) ++ [10]
+
+namespace Tier2.NoteReferenceIntegrity
+
+theorem production_run_request_core_v7_refinement_sound
+    (request : RunRequestCoreRequestV7)
+    (result : RunRequestCoreResultV7)
+    (hRun : runRequestCoreV7 request = .ok result)
+    (hPass : result.responsePassed = true) :
+    ∃ typedRequest : TypedRequestV7,
+      typedRequestOfRunRequestCoreV7 request result = some typedRequest ∧
+      ProductionRunRequestV7RefinesSemanticOf
+        request result typedRequest
+          (canonicalTypedResponseV7 typedRequest)
+          (independentProtocolV7Projection
+            (canonicalTypedResponseV7 typedRequest)) ∧
+      TypedCommentRangeAggregatePassOf typedRequest
+        (canonicalTypedResponseV7 typedRequest) ∧
+      ProtocolV7JsonProjectionOf result.response
+        (canonicalTypedResponseV7 typedRequest) ∧
+      result.response.compress.toUTF8.data.toList =
+        independentProtocolV7Projection
+          (canonicalTypedResponseV7 typedRequest) ∧
+      result.stdout.data.toList =
+        independentProtocolV7Projection
+          (canonicalTypedResponseV7 typedRequest) ++ [10] :=
+  _root_.production_run_request_core_v7_refinement_sound
+    request result hRun hPass
 
 end Tier2.NoteReferenceIntegrity
 
@@ -7627,13 +9650,23 @@ def runRequestWithPackages (request : Request)
       revisedNoteEvidence.usage.xmlEvents +
       comparedNoteEvidence.usage.xmlEvents
   }
+  let originalCommentMarkerScans :=
+    retainedCommentSourceScansOfEvidence
+      originalRelationships originalNoteEvidence
+  let revisedCommentMarkerScans :=
+    retainedCommentSourceScansOfEvidence
+      revisedRelationships revisedNoteEvidence
+  let comparedCommentMarkerScans :=
+    retainedCommentSourceScansOfEvidence
+      comparedRelationships comparedNoteEvidence
   let originalCommentEvidence ←
     buildCommentSideEvidence originalPackage .original originalRelationships
-      originalNoteEvidence commentTripleUsage
+      originalNoteEvidence commentTripleUsage originalCommentMarkerScans
   let revisedCommentEvidence ←
     if !originalCommentEvidence.semanticLimitCrossed then
       buildCommentSideEvidence revisedPackage .revised revisedRelationships
         revisedNoteEvidence originalCommentEvidence.tripleUsage
+        revisedCommentMarkerScans
     else
       pure <| skippedCommentSideEvidence .revised revisedNoteEvidence
         originalCommentEvidence.tripleUsage
@@ -7642,6 +9675,7 @@ def runRequestWithPackages (request : Request)
         !revisedCommentEvidence.semanticLimitCrossed then
       buildCommentSideEvidence comparedPackage .compared comparedRelationships
         comparedNoteEvidence revisedCommentEvidence.tripleUsage
+        comparedCommentMarkerScans
     else
       pure <| skippedCommentSideEvidence .compared comparedNoteEvidence
         revisedCommentEvidence.tripleUsage
@@ -7701,7 +9735,7 @@ def runRequestWithPackages (request : Request)
     compared := comparedCorePackage
   }
   let core ← IO.ofExcept <|
-    Tier2.NoteReferenceIntegrity.runRequestCoreV6 coreRequest
+    runRequestCoreV7 coreRequest
   return core.stdout
 
 def withLoadedPackage {α : Type} (root : SnapshotRoot) (path : String)

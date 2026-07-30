@@ -54,8 +54,10 @@ def stackWitnessEventsB : List TypedXmlEvent :=
   ]
 
 example : typedByteListEqCheck stackWitnessBytesA stackWitnessBytesB = true := by
-  native_decide
+  apply (typedByteListEqCheck_true_iff _ _).2
+  rfl
 
 example :
     typedXmlEventListEqCheck stackWitnessEventsA stackWitnessEventsB = true := by
-  native_decide
+  apply (typedXmlEventListEqCheck_true_iff _ _).2
+  rfl

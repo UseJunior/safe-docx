@@ -259,7 +259,7 @@ describeWithCompiledLean('NVCA COI Lean relationship-story evidence', () => {
         comparison.documentIntegrity?.status,
         JSON.stringify(comparison.documentIntegrity, null, 2),
       ).toBe('passed');
-      expect(comparison.documentIntegrity?.checkerProtocolVersion).toBe(6);
+      expect(comparison.documentIntegrity?.checkerProtocolVersion).toBe(7);
       expect(comparison.documentIntegrity?.noteInventories?.every((inventory) =>
         inventory.referenceOccurrences > 0 && inventory.definitions.user > 0,
       )).toBe(true);
@@ -407,7 +407,7 @@ describeWithCompiledLean('NVCA COI Lean relationship-story evidence', () => {
       });
       const evidence = baseline.documentIntegrity;
       expect(evidence?.status).toBe('passed');
-      expect(evidence?.checkerProtocolVersion).toBe(6);
+      expect(evidence?.checkerProtocolVersion).toBe(7);
       expect(evidence?.relationshipSlots?.length).toBeGreaterThan(0);
       expect(evidence?.relationshipStories?.length).toBeGreaterThan(0);
 

@@ -781,8 +781,9 @@ def typedXmlEventListEqCheck :
     List TypedXmlEvent → List TypedXmlEvent → Bool
   | [], [] => true
   | left :: leftRest, right :: rightRest =>
-      typedXmlEventEqCheck left right &&
+      if typedXmlEventEqCheck left right then
         typedXmlEventListEqCheck leftRest rightRest
+      else false
   | _, _ => false
 
 theorem typedXmlAttributeEqCheck_sound
@@ -1070,14 +1071,18 @@ theorem typedXmlEventListEqCheck_sound : ∀ left right,
       | nil => intro h; nomatch h
       | cons rightEvent rightRest =>
           intro h
-          have parts := typedBoolAndTrueParts _ _ h
-          have head := typedXmlEventEqCheck_sound event rightEvent parts.1
-          have tail := ih rightRest parts.2
-          change typedXmlEventIdentity event ::
-              rest.map typedXmlEventIdentity =
-            typedXmlEventIdentity rightEvent ::
-              rightRest.map typedXmlEventIdentity
-          rw [head, tail]
+          cases hHead : typedXmlEventEqCheck event rightEvent with
+          | false => simp [typedXmlEventListEqCheck, hHead] at h
+          | true =>
+            have head := typedXmlEventEqCheck_sound event rightEvent hHead
+            have hTail : typedXmlEventListEqCheck rest rightRest = true := by
+              simpa [typedXmlEventListEqCheck, hHead] using h
+            have tail := ih rightRest hTail
+            change typedXmlEventIdentity event ::
+                rest.map typedXmlEventIdentity =
+              typedXmlEventIdentity rightEvent ::
+                rightRest.map typedXmlEventIdentity
+            rw [head, tail]
 
 theorem typedXmlEventListEqCheck_complete : ∀ left right,
     left.map typedXmlEventIdentity = right.map typedXmlEventIdentity →
@@ -1099,8 +1104,7 @@ theorem typedXmlEventListEqCheck_complete : ∀ left right,
           have headCheck :=
             typedXmlEventEqCheck_complete event rightEvent head
           have tailCheck := ih rightRest tail
-          rw [typedXmlEventListEqCheck, headCheck, tailCheck]
-          rfl
+          simp [typedXmlEventListEqCheck, headCheck, tailCheck]
 
 theorem typedXmlEventListEqCheck_true_iff (left right) :
     typedXmlEventListEqCheck left right = true ↔
@@ -1176,7 +1180,7 @@ def selectTypedComment (commentType : BoundedBytes)
     Except TypedSelectionFailure (Option TypedSelectedComment) :=
   selectTypedCommentSpec commentType relationships
 
-def TypedCommentSelectionResultOf (commentType : BoundedBytes)
+def TypedCommentSelectionResultV6Of (commentType : BoundedBytes)
     (relationships : List TypedRelationship)
     (result : Except TypedSelectionFailure (Option TypedSelectedComment)) : Prop :=
   result = selectTypedCommentSpec commentType relationships ∧
@@ -1189,7 +1193,7 @@ def TypedCommentSelectionResultOf (commentType : BoundedBytes)
 
 theorem typed_comment_selector_result_sound
     (commentType : BoundedBytes) (relationships : List TypedRelationship) :
-    TypedCommentSelectionResultOf commentType relationships
+    TypedCommentSelectionResultV6Of commentType relationships
       (selectTypedComment commentType relationships) := by
   constructor
   · rfl
@@ -3855,9 +3859,9 @@ def typedTerminalIssue (evidenceBudget : Bool) : TypedJson :=
         else
           typedAscii [67,79,77,77,69,78,84,95,73,83,83,85,69,95,76,73,77,73,84,95,69,88,67,69,69,68,69,68])
     , (key [100,101,116,97,105,108], if evidenceBudget then
-          typedAscii [112,114,111,116,111,99,111,108,32,118,54,32,101,115,99,97,112,101,100,32,101,118,105,100,101,110,99,101,32,115,116,114,105,110,103,32,98,117,100,103,101,116,32,101,120,99,101,101,100,101,100]
+          typedAscii [112,114,111,116,111,99,111,108,32,118,55,32,101,115,99,97,112,101,100,32,101,118,105,100,101,110,99,101,32,115,116,114,105,110,103,32,98,117,100,103,101,116,32,101,120,99,101,101,100,101,100]
         else
-          typedAscii [112,114,111,116,111,99,111,108,32,118,54,32,97,103,103,114,101,103,97,116,101,32,111,114,100,105,110,97,114,121,32,105,115,115,117,101,32,108,105,109,105,116,32,101,120,99,101,101,100,101,100])
+          typedAscii [112,114,111,116,111,99,111,108,32,118,55,32,97,103,103,114,101,103,97,116,101,32,111,114,100,105,110,97,114,121,32,105,115,115,117,101,32,108,105,109,105,116,32,101,120,99,101,101,100,101,100])
     , (key [102,105,114,115,116,79,99,99,117,114,114,101,110,99,101,79,114,100,105,110,97,108],
         .nat 0)
     , (key [107,105,110,100], typedAscii [99,111,109,109,101,110,116,115])
@@ -4115,7 +4119,7 @@ theorem injected_comment_inventory_rejected :
 
 def typedCommentSelectorResultSoundSignature : Prop :=
   ∀ (commentType : BoundedBytes) (relationships : List TypedRelationship),
-    TypedCommentSelectionResultOf commentType relationships
+    TypedCommentSelectionResultV6Of commentType relationships
       (selectTypedComment commentType relationships)
 
 def typedCommentSelectionToRealizationSoundSignature : Prop :=
@@ -4163,5 +4167,1844 @@ theorem inherited_field_drift_changes_projection :
         { projectionWitnessResponse with fixedStories := .array [] } ≠
       independentProtocolV6Projection projectionWitnessResponse := by
   native_decide
+
+/- Protocol v7 independently models marker topology over the exact typed package
+   views. This section intentionally stays byte-native and does not import the
+   executable checker. -/
+
+abbrev CanonicalDecimalId := TypedCanonicalId
+abbrev TypedSelectedCommentIdentity := TypedSelectedComment
+abbrev TypedCommentSelectionFailure := TypedSelectionFailure
+abbrev TypedCommentRealizationFailure := TypedRealizationFailure
+abbrev TypedCommentDefinition := TypedDefinition
+
+inductive TypedMarkerKind
+  | rangeStart
+  | rangeEnd
+  | reference
+  deriving DecidableEq
+
+structure TypedPhysicalStoryIdentity where
+  kind : TypedSourceKind
+  physicalStoryOrdinal : Nat
+  deriving DecidableEq
+
+structure TypedMarkerOccurrence where
+  kind : TypedMarkerKind
+  story : TypedPhysicalStoryIdentity
+  sourceSetOrdinal : Nat
+  sourceEventOrdinal : Nat
+  markerOccurrenceOrdinal : Nat
+  kindOccurrenceOrdinal : Nat
+  rawId : Option BoundedBytes
+  canonicalId : Option CanonicalDecimalId
+  deriving DecidableEq
+
+inductive TypedMarkerScanCrossing
+  | referenceLimit (sourceSetOrdinal sourceEventOrdinal occurrenceOrdinal : Nat)
+  | rangeStartLimit (sourceSetOrdinal sourceEventOrdinal occurrenceOrdinal : Nat)
+  | rangeEndLimit (sourceSetOrdinal sourceEventOrdinal occurrenceOrdinal : Nat)
+  | uniqueIdLimit (kind : TypedMarkerKind)
+      (sourceSetOrdinal sourceEventOrdinal occurrenceOrdinal : Nat)
+      (canonicalId : CanonicalDecimalId)
+  deriving DecidableEq
+
+structure TypedMarkerScanInput where
+  stories : List TypedStorySource
+  slots : List TypedSourceSlot
+  wmlNamespace : BoundedBytes
+  idLocalName : BoundedBytes
+  rangeStartLocalName : BoundedBytes
+  rangeEndLocalName : BoundedBytes
+  referenceLocalName : BoundedBytes
+
+structure TypedMarkerScanEvidence where
+  inputStories : List TypedStorySource
+  occurrences : List TypedMarkerOccurrence
+  canonicalIds : List CanonicalDecimalId
+  referenceOccurrences : Nat
+  rangeStartOccurrences : Nat
+  rangeEndOccurrences : Nat
+  processedEventCount : Nat
+  processedStoryCount : Nat
+  crossing : Option TypedMarkerScanCrossing
+  deriving DecidableEq
+
+structure TypedRequestV7 where
+  original : TypedPackageView
+  revised : TypedPackageView
+  compared : TypedPackageView
+  inherited : TypedInheritedV5Evaluation
+  originalRetainedMarkerScan : Option TypedMarkerScanEvidence := none
+  revisedRetainedMarkerScan : Option TypedMarkerScanEvidence := none
+  comparedRetainedMarkerScan : Option TypedMarkerScanEvidence := none
+
+def typedPackageAt (request : TypedRequestV7) : Side → TypedPackageView
+  | .original => request.original
+  | .revised => request.revised
+  | .compared => request.compared
+
+def retainedTypedMarkerScanAt
+    (request : TypedRequestV7) : Side → Option TypedMarkerScanEvidence
+  | .original => request.originalRetainedMarkerScan
+  | .revised => request.revisedRetainedMarkerScan
+  | .compared => request.comparedRetainedMarkerScan
+
+def selectTypedCommentV7 (pkg : TypedPackageView) :
+    Except TypedCommentSelectionFailure (Option TypedSelectedCommentIdentity) :=
+  selectTypedComment pkg.commentType pkg.relationships
+
+def TypedCommentSelectionResultOf (pkg : TypedPackageView)
+    (result : Except TypedCommentSelectionFailure
+      (Option TypedSelectedCommentIdentity)) : Prop :=
+  result = selectTypedCommentV7 pkg
+
+def realizeTypedCommentV7 (request : TypedRequestV7) (side : Side) :
+    Except TypedCommentRealizationFailure (Option TypedCommentRealization) :=
+  let pkg := typedPackageAt request side
+  match selectTypedCommentV7 pkg with
+  | .error _ => .error .partMissing
+  | .ok none => .ok none
+  | .ok (some selected) =>
+      match pkg.realizationFailure with
+      | some failure => .error failure
+      | none =>
+        match pkg.realization with
+        | some realization =>
+          if typedAdmittedCommentRealizationCheck pkg selected realization then
+            .ok (some realization)
+          else .error .extractionFailed
+        | none => .error .partMissing
+
+def canonicalTypedCommentSourceSlotsV7
+    (request : TypedRequestV7) (side : Side) : List TypedSourceSlot :=
+  let pkg := typedPackageAt request side
+  let main : TypedSourceSlot := {
+    kind := .main, physicalStoryOrdinal := 0, source := pkg.mainSource }
+  let physical := pkg.headerFooterStories.filterMap fun story =>
+    story.source.map fun source => {
+      kind := story.kind
+      physicalStoryOrdinal := story.physicalStoryOrdinal
+      source }
+  let notes := pkg.noteSelections.filterMap fun selection =>
+    selection.source.map fun source => {
+      kind := selection.kind, physicalStoryOrdinal := 0, source }
+  main :: physical ++ notes
+
+def canonicalTypedCommentSourcesV7
+    (request : TypedRequestV7) (side : Side) : List TypedStorySource :=
+  (canonicalTypedCommentSourceSlotsV7 request side).map (·.source)
+
+inductive TypedCanonicalIdTrie where
+  | empty
+  | node (terminal : Bool) (children : List (UInt8 × TypedCanonicalIdTrie))
+
+def typedCanonicalIdTrieKey (id : CanonicalDecimalId) : List UInt8 :=
+  (if id.negative then 1 else 0) :: id.digits
+
+def typedCanonicalIdTrieContains :
+    TypedCanonicalIdTrie → List UInt8 → Bool
+  | .empty, _ => false
+  | .node terminal _, [] => terminal
+  | .node _ children, byte :: rest =>
+      match children.find? (fun child => child.1 == byte) with
+      | none => false
+      | some child => typedCanonicalIdTrieContains child.2 rest
+
+def typedCanonicalIdTrieInsertChild (byte : UInt8)
+    (value : TypedCanonicalIdTrie) :
+    List (UInt8 × TypedCanonicalIdTrie) →
+      List (UInt8 × TypedCanonicalIdTrie)
+  | [] => [(byte, value)]
+  | child :: rest =>
+      if child.1 == byte then (byte, value) :: rest
+      else child :: typedCanonicalIdTrieInsertChild byte value rest
+
+def typedCanonicalIdTrieInsert :
+    TypedCanonicalIdTrie → List UInt8 → TypedCanonicalIdTrie
+  | .empty, [] => .node true []
+  | .empty, byte :: rest =>
+      .node false [(byte, typedCanonicalIdTrieInsert .empty rest)]
+  | .node _ children, [] => .node true children
+  | .node terminal children, byte :: rest =>
+      let child := (children.find? fun item => item.1 == byte).map (·.2)
+        |>.getD .empty
+      .node terminal (typedCanonicalIdTrieInsertChild byte
+        (typedCanonicalIdTrieInsert child rest) children)
+
+def typedCanonicalIdTrieHas (trie : TypedCanonicalIdTrie)
+    (id : CanonicalDecimalId) : Bool :=
+  typedCanonicalIdTrieContains trie (typedCanonicalIdTrieKey id)
+
+def typedCanonicalIdTrieAdd (trie : TypedCanonicalIdTrie)
+    (id : CanonicalDecimalId) : TypedCanonicalIdTrie :=
+  typedCanonicalIdTrieInsert trie (typedCanonicalIdTrieKey id)
+
+structure TypedMarkerScanState where
+  occurrences : List TypedMarkerOccurrence := []
+  canonicalIds : List CanonicalDecimalId := []
+  canonicalIdTrie : TypedCanonicalIdTrie := .empty
+  referenceOccurrences : Nat := 0
+  rangeStartOccurrences : Nat := 0
+  rangeEndOccurrences : Nat := 0
+  markerOccurrences : Nat := 0
+  processedEventCount : Nat := 0
+  processedStoryCount : Nat := 0
+  crossing : Option TypedMarkerScanCrossing := none
+
+def typedMarkerScanInputV7
+    (request : TypedRequestV7) (side : Side) : TypedMarkerScanInput :=
+  { stories := canonicalTypedCommentSourcesV7 request side
+    slots := canonicalTypedCommentSourceSlotsV7 request side
+    wmlNamespace := typedWmlNamespace
+    idLocalName := typedLiteral [105,100]
+    rangeStartLocalName :=
+      typedLiteral [99,111,109,109,101,110,116,82,97,110,103,101,83,116,97,114,116]
+    rangeEndLocalName :=
+      typedLiteral [99,111,109,109,101,110,116,82,97,110,103,101,69,110,100]
+    referenceLocalName :=
+      typedLiteral [99,111,109,109,101,110,116,82,101,102,101,114,101,110,99,101] }
+
+def typedMarkerAttributeValue? (input : TypedMarkerScanInput)
+    (attributes : List TypedXmlAttribute) : Option BoundedBytes :=
+  (attributes.find? fun item =>
+    decide (item.namespaceUri.bytes = input.wmlNamespace.bytes) &&
+    decide (item.localName.bytes = input.idLocalName.bytes)).map fun item =>
+      { bytes := item.value.bytes.data.toList
+        limit := item.value.limit
+        admitted := by
+          simpa only [Array.length_toList, ByteArray.size_data] using
+            item.value.admitted }
+
+def typedMarkerCandidateV7 (input : TypedMarkerScanInput) :
+    TypedXmlEvent → Option (TypedMarkerKind × Option BoundedBytes)
+  | .startElement namespaceUri localName attributes _ _ _ =>
+    if namespaceUri.bytes != input.wmlNamespace.bytes then none
+    else if localName.bytes = input.rangeStartLocalName.bytes then
+      some (.rangeStart, typedMarkerAttributeValue? input attributes)
+    else if localName.bytes = input.rangeEndLocalName.bytes then
+      some (.rangeEnd, typedMarkerAttributeValue? input attributes)
+    else if localName.bytes = input.referenceLocalName.bytes then
+      some (.reference, typedMarkerAttributeValue? input attributes)
+    else none
+  | .endElement .. | .text .. => none
+
+def typedMarkerKindCount (kind : TypedMarkerKind)
+    (state : TypedMarkerScanState) : Nat :=
+  match kind with
+  | .reference => state.referenceOccurrences
+  | .rangeStart => state.rangeStartOccurrences
+  | .rangeEnd => state.rangeEndOccurrences
+
+def typedMarkerStoryAt (input : TypedMarkerScanInput) (ordinal : Nat) :
+    TypedPhysicalStoryIdentity :=
+  match typedListGet? input.slots ordinal with
+  | some slot => { kind := slot.kind, physicalStoryOrdinal := slot.physicalStoryOrdinal }
+  | none => { kind := .main, physicalStoryOrdinal := 0 }
+
+def scanTypedMarkerEventV7 (input : TypedMarkerScanInput)
+    (sourceSetOrdinal sourceEventOrdinal : Nat)
+    (state : TypedMarkerScanState) (event : TypedXmlEvent) :
+    TypedMarkerScanState :=
+  if state.crossing.isSome then state
+  else match typedMarkerCandidateV7 input event with
+  | none => state
+  | some (kind, rawId) =>
+    let kindOrdinal := typedMarkerKindCount kind state
+    let canonicalId := rawId.bind parseTypedDecimalId
+    let occurrence : TypedMarkerOccurrence := {
+      kind
+      story := typedMarkerStoryAt input sourceSetOrdinal
+      sourceSetOrdinal
+      sourceEventOrdinal
+      markerOccurrenceOrdinal := state.markerOccurrences
+      kindOccurrenceOrdinal := kindOrdinal
+      rawId
+      canonicalId }
+    if kind == .reference && kindOrdinal == 4096 then
+      { state with crossing := Option.some <|
+          .referenceLimit sourceSetOrdinal sourceEventOrdinal kindOrdinal }
+    else if kind == .rangeStart && kindOrdinal == 4096 then
+      { state with crossing := Option.some <|
+          .rangeStartLimit sourceSetOrdinal sourceEventOrdinal kindOrdinal }
+    else if kind == .rangeEnd && kindOrdinal == 4096 then
+      { state with crossing := Option.some <|
+          .rangeEndLimit sourceSetOrdinal sourceEventOrdinal kindOrdinal }
+    else
+      let referenceOccurrences := state.referenceOccurrences +
+        (if kind == .reference then 1 else 0)
+      let rangeStartOccurrences := state.rangeStartOccurrences +
+        (if kind == .rangeStart then 1 else 0)
+      let rangeEndOccurrences := state.rangeEndOccurrences +
+        (if kind == .rangeEnd then 1 else 0)
+      match canonicalId with
+      | some canonical =>
+        if !typedCanonicalIdTrieHas state.canonicalIdTrie canonical &&
+            state.canonicalIds.length == 4096 then
+          let crossing := TypedMarkerScanCrossing.uniqueIdLimit kind
+            sourceSetOrdinal sourceEventOrdinal kindOrdinal canonical
+          { state with crossing := some crossing }
+        else
+          { state with
+            occurrences := occurrence :: state.occurrences
+            canonicalIds := if typedCanonicalIdTrieHas state.canonicalIdTrie canonical then
+                state.canonicalIds else canonical :: state.canonicalIds
+            canonicalIdTrie := typedCanonicalIdTrieAdd state.canonicalIdTrie canonical
+            referenceOccurrences
+            rangeStartOccurrences
+            rangeEndOccurrences
+            markerOccurrences := state.markerOccurrences + 1 }
+      | none =>
+        { state with
+          occurrences := occurrence :: state.occurrences
+          referenceOccurrences
+          rangeStartOccurrences
+          rangeEndOccurrences
+          markerOccurrences := state.markerOccurrences + 1 }
+
+def scanTypedStoryEventsV7 (input : TypedMarkerScanInput)
+    (sourceSetOrdinal : Nat) : Nat → Nat → TypedMarkerScanState →
+    List TypedXmlEvent → TypedMarkerScanState
+  | _, 0, state, _ => state
+  | _, _, state, [] => state
+  | eventOrdinal, fuel + 1, state, event :: rest =>
+      if state.crossing.isSome then state
+      else
+        let afterEvent := scanTypedMarkerEventV7 input sourceSetOrdinal
+          eventOrdinal { state with
+            processedEventCount := state.processedEventCount + 1 } event
+        if afterEvent.crossing.isSome then afterEvent
+        else scanTypedStoryEventsV7 input sourceSetOrdinal
+          (eventOrdinal + 1) fuel afterEvent rest
+
+def scanTypedStoriesV7 (input : TypedMarkerScanInput) :
+    Nat → Nat → TypedMarkerScanState → List TypedStorySource → TypedMarkerScanState
+  | _, 0, state, _ => state
+  | _, _, state, [] => state
+  | sourceOrdinal, fuel + 1, state, story :: rest =>
+      if state.crossing.isSome then state
+      else
+        let afterStory := scanTypedStoryEventsV7 input sourceOrdinal 0
+          (story.parsed.events.length + 1)
+          { state with processedStoryCount := state.processedStoryCount + 1 }
+          story.parsed.events
+        if afterStory.crossing.isSome then afterStory
+        else scanTypedStoriesV7 input (sourceOrdinal + 1) fuel afterStory rest
+
+def scanTypedCommentMarkersV7
+    (input : TypedMarkerScanInput) : TypedMarkerScanEvidence :=
+  let state := scanTypedStoriesV7 input 0 (input.stories.length + 1) {} input.stories
+  { inputStories := input.stories
+    occurrences := state.occurrences.reverse
+    canonicalIds := state.canonicalIds.reverse
+    referenceOccurrences := state.referenceOccurrences
+    rangeStartOccurrences := state.rangeStartOccurrences
+    rangeEndOccurrences := state.rangeEndOccurrences
+    processedEventCount := state.processedEventCount
+    processedStoryCount := state.processedStoryCount
+    crossing := state.crossing }
+
+def retainedOrIndependentTypedMarkerScanV7
+    (request : TypedRequestV7) (side : Side) : TypedMarkerScanEvidence :=
+  match retainedTypedMarkerScanAt request side with
+  | some evidence =>
+      { evidence with inputStories := canonicalTypedCommentSourcesV7 request side }
+  | none => scanTypedCommentMarkersV7 (typedMarkerScanInputV7 request side)
+
+theorem retained_or_independent_typed_marker_scan_v7_input_stories
+    (request : TypedRequestV7) (side : Side) :
+    (retainedOrIndependentTypedMarkerScanV7 request side).inputStories =
+      canonicalTypedCommentSourcesV7 request side := by
+  unfold retainedOrIndependentTypedMarkerScanV7
+  cases hRetained : retainedTypedMarkerScanAt request side with
+  | none =>
+      change
+        (scanTypedCommentMarkersV7
+          (typedMarkerScanInputV7 request side)).inputStories =
+            canonicalTypedCommentSourcesV7 request side
+      rfl
+  | some evidence => rfl
+
+theorem retained_or_independent_typed_marker_scan_v7_of_none
+    (request : TypedRequestV7) (side : Side)
+    (hNone : retainedTypedMarkerScanAt request side = none) :
+    retainedOrIndependentTypedMarkerScanV7 request side =
+      scanTypedCommentMarkersV7 (typedMarkerScanInputV7 request side) := by
+  simp [retainedOrIndependentTypedMarkerScanV7, hNone]
+
+def typedDefinitionsFromEventsV7 (events : List TypedXmlEvent) :
+    List TypedCommentDefinition :=
+  let input : TypedScanInput := {
+    wmlNamespace := typedWmlNamespace
+    idLocalName := typedLiteral [105,100]
+    referenceLocalName := typedLiteral []
+    definitionLocalName := typedLiteral [99,111,109,109,101,110,116]
+    sourceEvents := []
+    definitionEvents := events }
+  let scan := scanTypedCommentEvidence input
+  scan.definitions ++ scan.nonDirectDefinitions
+
+set_option backward.match.sparseCases false in
+def typedDefinitionsV7
+    (request : TypedRequestV7) (side : Side) : List TypedCommentDefinition :=
+  match realizeTypedCommentV7 request side with
+  | .ok (some realization) =>
+      typedDefinitionsFromEventsV7 realization.retainedParsedEvents
+  | _ => []
+
+def typedOccurrencesForIdV7 (kind : TypedMarkerKind)
+    (scan : TypedMarkerScanEvidence) (id : CanonicalDecimalId) :
+    List TypedMarkerOccurrence :=
+  scan.occurrences.filter fun occurrence =>
+    occurrence.kind = kind && occurrence.canonicalId = some id
+
+def typedDefinitionsForIdV7 (definitions : List TypedCommentDefinition)
+    (id : CanonicalDecimalId) : List TypedCommentDefinition :=
+  definitions.filter fun definition =>
+    definition.direct && definition.canonicalId = some id
+
+def typedSourceOccurrencesForIdV7 (scan : TypedMarkerScanEvidence)
+    (id : CanonicalDecimalId) : List TypedMarkerOccurrence :=
+  scan.occurrences.filter fun occurrence => occurrence.canonicalId = some id
+
+def TypedCommentIdTopologyOf
+    (definitions : List TypedCommentDefinition) (scan : TypedMarkerScanEvidence)
+    (id : CanonicalDecimalId) : Prop :=
+  let references := typedOccurrencesForIdV7 .reference scan id
+  let starts := typedOccurrencesForIdV7 .rangeStart scan id
+  let ends := typedOccurrencesForIdV7 .rangeEnd scan id
+  (typedDefinitionsForIdV7 definitions id).length = 1 ∧
+  match references, starts, ends with
+  | [_], [], [] => True
+  | [reference], [start], [finish] =>
+      start.story = finish.story ∧ finish.story = reference.story ∧
+      start.sourceEventOrdinal < finish.sourceEventOrdinal
+  | _, _, _ => False
+
+def typedAllCommentIdsV7 (definitions : List TypedCommentDefinition)
+    (scan : TypedMarkerScanEvidence) : List CanonicalDecimalId :=
+  ((definitions.filterMap (·.canonicalId)) ++
+    (scan.occurrences.filterMap (·.canonicalId))).eraseDups
+
+set_option backward.match.sparseCases false in
+def checkTypedCommentIdTopologyV7
+    (definitions : List TypedCommentDefinition)
+    (scan : TypedMarkerScanEvidence) (id : CanonicalDecimalId) : Bool :=
+  let references := typedOccurrencesForIdV7 .reference scan id
+  let starts := typedOccurrencesForIdV7 .rangeStart scan id
+  let ends := typedOccurrencesForIdV7 .rangeEnd scan id
+  typedNatEqCheck (typedDefinitionsForIdV7 definitions id).length 1 &&
+  match references, starts, ends with
+  | [_], [], [] => true
+  | [reference], [start], [finish] =>
+      (match start.story.kind, finish.story.kind with
+       | .main, .main | .header, .header | .footer, .footer
+       | .footnotes, .footnotes | .endnotes, .endnotes => true
+       | _, _ => false) &&
+      typedNatEqCheck start.story.physicalStoryOrdinal
+        finish.story.physicalStoryOrdinal &&
+      (match finish.story.kind, reference.story.kind with
+       | .main, .main | .header, .header | .footer, .footer
+       | .footnotes, .footnotes | .endnotes, .endnotes => true
+       | _, _ => false) &&
+      typedNatEqCheck finish.story.physicalStoryOrdinal
+        reference.story.physicalStoryOrdinal &&
+      typedNatLtCheck start.sourceEventOrdinal finish.sourceEventOrdinal
+  | _, _, _ => false
+
+def checkTypedCommentIdsTopologyV7
+    (definitions : List TypedCommentDefinition)
+    (scan : TypedMarkerScanEvidence) : List CanonicalDecimalId → Bool
+  | [] => true
+  | id :: rest =>
+      let source := typedSourceOccurrencesForIdV7 scan id
+      let valid := if source.isEmpty then
+        typedNatEqCheck (typedDefinitionsForIdV7 definitions id).length 1
+      else checkTypedCommentIdTopologyV7 definitions scan id
+      valid && checkTypedCommentIdsTopologyV7 definitions scan rest
+
+def TypedPackageCommentRangeIntegrity
+    (definitions : List TypedCommentDefinition)
+    (scan : TypedMarkerScanEvidence) : Prop :=
+  scan.crossing.isNone = true ∧
+  checkTypedCommentIdsTopologyV7 definitions scan
+    (typedAllCommentIdsV7 definitions scan) = true
+
+def checkTypedPackageCommentRangeIntegrity
+    (definitions : List TypedCommentDefinition)
+    (scan : TypedMarkerScanEvidence) : Bool :=
+  scan.crossing.isNone &&
+  checkTypedCommentIdsTopologyV7 definitions scan
+    (typedAllCommentIdsV7 definitions scan)
+
+inductive TypedSideCommentStatusV7
+  | passed | failed | notEvaluated
+  deriving DecidableEq
+
+def typedSideCommentPassedV7 : TypedSideCommentStatusV7 → Bool
+  | .passed => true
+  | .failed | .notEvaluated => false
+
+def typedSideCommentNotEvaluatedV7 : TypedSideCommentStatusV7 → Bool
+  | .notEvaluated => true
+  | .passed | .failed => false
+
+set_option backward.match.sparseCases false in
+def typedPriorSourceAdmittedV7 : TypedPriorSourceAdmission → Bool
+  | .admitted => true
+  | _ => false
+
+def typedSelectionResolvedV7 :
+    Except TypedCommentSelectionFailure
+      (Option TypedSelectedCommentIdentity) → Bool
+  | .ok _ => true
+  | .error _ => false
+
+def typedRealizationResolvedV7 :
+    Except TypedCommentRealizationFailure
+      (Option TypedCommentRealization) → Bool
+  | .ok _ => true
+  | .error _ => false
+
+structure TypedSideCommentEvaluationV7 where
+  side : Side
+  status : TypedSideCommentStatusV7
+  partPresent : Bool
+  selection :
+    Except TypedCommentSelectionFailure (Option TypedSelectedCommentIdentity)
+  realization :
+    Except TypedCommentRealizationFailure (Option TypedCommentRealization)
+  sources : List TypedStorySource
+  markerScan : TypedMarkerScanEvidence
+  definitions : List TypedCommentDefinition
+
+def emptyTypedMarkerScanEvidenceV7 : TypedMarkerScanEvidence :=
+  { inputStories := [], occurrences := [], canonicalIds := []
+    referenceOccurrences := 0, rangeStartOccurrences := 0
+    rangeEndOccurrences := 0, processedEventCount := 0
+    processedStoryCount := 0, crossing := none }
+
+def globallyStoppedTypedCommentEvaluationV7
+    (side : Side) : TypedSideCommentEvaluationV7 :=
+  { side, status := .notEvaluated, partPresent := false, selection := .ok none
+    realization := .ok none, sources := []
+    markerScan := emptyTypedMarkerScanEvidenceV7, definitions := [] }
+
+def typedCommentPrerequisitesV7
+    (request : TypedRequestV7) (side : Side) : Bool :=
+  let pkg := typedPackageAt request side
+  let selection := selectTypedCommentV7 pkg
+  let realization := realizeTypedCommentV7 request side
+  let sources := canonicalTypedCommentSourcesV7 request side
+  let markerScan := retainedOrIndependentTypedMarkerScanV7 request side
+  let selectionMarkerCompatible := match selection with
+    | .ok none => markerScan.occurrences.isEmpty
+    | .ok (some _) => true
+    | .error _ => false
+  typedPriorSourceAdmittedV7 pkg.priorSourceAdmission &&
+    typedSelectionResolvedV7 selection &&
+    typedRealizationResolvedV7 realization &&
+    selectionMarkerCompatible &&
+    markerScan.crossing.isNone &&
+    typedNatLeCheck sources.length 387
+
+set_option backward.match.sparseCases false in
+def evaluateTypedCommentSideV7
+    (request : TypedRequestV7) (side : Side) : TypedSideCommentEvaluationV7 :=
+  let pkg := typedPackageAt request side
+  let inheritedEvaluation := evaluateTypedCommentSide side pkg
+  let selection := selectTypedCommentV7 pkg
+  let realization := realizeTypedCommentV7 request side
+  let sources := canonicalTypedCommentSourcesV7 request side
+  let markerScan := retainedOrIndependentTypedMarkerScanV7 request side
+  let definitions := typedDefinitionsV7 request side
+  if !typedCommentPrerequisitesV7 request side then
+    { side, status := .notEvaluated
+      partPresent := inheritedEvaluation.partPresent
+      selection, realization, sources := []
+      markerScan := emptyTypedMarkerScanEvidenceV7, definitions := [] }
+  else
+    let status := if inheritedEvaluation.status == .failed ||
+          !checkTypedPackageCommentRangeIntegrity definitions markerScan then
+        .failed else .passed
+    { side, status, partPresent := inheritedEvaluation.partPresent
+      selection, realization, sources, markerScan, definitions }
+
+abbrev TypedProtocolV7Response := TypedProtocolV6Response
+
+def typedRequestV6OfV7 (request : TypedRequestV7) : TypedRequestV6 :=
+  { original := request.original, revised := request.revised
+    compared := request.compared, inherited := request.inherited }
+
+def typedCommentInventoryOfEvaluationV7
+    (evaluation : TypedSideCommentEvaluationV7) : TypedJson :=
+  let side := evaluation.side
+  let scan := evaluation.markerScan
+  let definitions := evaluation.definitions.filter fun definition =>
+    definition.direct && definition.canonicalId.isSome
+  let sourceIds := scan.canonicalIds
+  let unreferenced := definitions.filter fun definition =>
+    match definition.canonicalId with
+    | some id => !sourceIds.contains id
+    | none => false
+  let zero := typedSideCommentNotEvaluatedV7 evaluation.status
+  .object
+    [ (key [100,101,102,105,110,105,116,105,111,110,115],
+        .nat (if zero then 0 else definitions.length))
+    , (key [110,111,110,68,105,114,101,99,116,68,101,102,105,110,105,116,105,111,110,115],
+        .nat (if zero then 0 else
+          evaluation.definitions.filter (fun definition => !definition.direct) |>.length))
+    , (key [114,97,110,103,101,69,110,100,79,99,99,117,114,114,101,110,99,101,115],
+        .nat (if zero then 0 else scan.rangeEndOccurrences))
+    , (key [114,97,110,103,101,83,116,97,114,116,79,99,99,117,114,114,101,110,99,101,115],
+        .nat (if zero then 0 else scan.rangeStartOccurrences))
+    , (key [114,101,102,101,114,101,110,99,101,79,99,99,117,114,114,101,110,99,101,115],
+        .nat (if zero then 0 else scan.referenceOccurrences))
+    , (key [114,101,108,97,116,105,111,110,115,104,105,112],
+        match evaluation.selection with
+        | .ok (some selected) => typedSelectedIdentityJson selected
+        | .ok none | .error _ => .null)
+    , (key [115,105,100,101], typedSideName side)
+    , (key [115,116,97,116,117,115], match evaluation.status with
+        | .passed => typedAscii [112,97,115,115,101,100]
+        | .failed => typedAscii [102,97,105,108,101,100]
+        | .notEvaluated =>
+          typedAscii [110,111,116,95,101,118,97,108,117,97,116,101,100])
+    , (key [117,110,105,113,117,101,82,101,102,101,114,101,110,99,101,73,100,115],
+        .nat (if zero then 0 else scan.canonicalIds.length))
+    , (key [117,110,114,101,102,101,114,101,110,99,101,100,68,101,102,105,110,105,116,105,111,110,115],
+        .nat (if zero then 0 else unreferenced.length))
+    ]
+
+def typedCommentInventoryV7 (request : TypedRequestV7) (side : Side) :
+    TypedJson :=
+  typedCommentInventoryOfEvaluationV7
+    (evaluateTypedCommentSideV7 request side)
+
+inductive TypedTopologyIssueCodeV7
+  | referenceDuplicate | referenceMissing
+  | rangeStartDuplicate | rangeEndDuplicate
+  | rangeStartOrphaned | rangeEndOrphaned
+  | rangeCrossStory | rangeReversed
+
+def typedTopologyIssueCodeV7 : TypedTopologyIssueCodeV7 → TypedJson
+  | .referenceDuplicate =>
+      typedAscii [67,79,77,77,69,78,84,95,82,69,70,69,82,69,78,67,69,95,68,85,80,76,73,67,65,84,69]
+  | .referenceMissing =>
+      typedAscii [67,79,77,77,69,78,84,95,82,69,70,69,82,69,78,67,69,95,77,73,83,83,73,78,71]
+  | .rangeStartDuplicate =>
+      typedAscii [67,79,77,77,69,78,84,95,82,65,78,71,69,95,83,84,65,82,84,95,68,85,80,76,73,67,65,84,69]
+  | .rangeEndDuplicate =>
+      typedAscii [67,79,77,77,69,78,84,95,82,65,78,71,69,95,69,78,68,95,68,85,80,76,73,67,65,84,69]
+  | .rangeStartOrphaned =>
+      typedAscii [67,79,77,77,69,78,84,95,82,65,78,71,69,95,83,84,65,82,84,95,79,82,80,72,65,78,69,68]
+  | .rangeEndOrphaned =>
+      typedAscii [67,79,77,77,69,78,84,95,82,65,78,71,69,95,69,78,68,95,79,82,80,72,65,78,69,68]
+  | .rangeCrossStory =>
+      typedAscii [67,79,77,77,69,78,84,95,82,65,78,71,69,95,67,82,79,83,83,95,83,84,79,82,89]
+  | .rangeReversed =>
+      typedAscii [67,79,77,77,69,78,84,95,82,65,78,71,69,95,82,69,86,69,82,83,69,68]
+
+def typedTopologyIssueDetailV7 : TypedTopologyIssueCodeV7 → TypedJson
+  | .referenceDuplicate =>
+      typedAscii [109,117,108,116,105,112,108,101,32,99,111,109,109,101,110,116,32,114,101,102,101,114,101,110,99,101,115,32,104,97,118,101,32,116,104,101,32,115,97,109,101,32,99,97,110,111,110,105,99,97,108,32,119,58,105,100]
+  | .referenceMissing =>
+      typedAscii [97,32,99,111,109,109,101,110,116,32,114,97,110,103,101,32,101,110,100,112,111,105,110,116,32,104,97,115,32,110,111,32,117,110,105,113,117,101,32,99,111,109,109,101,110,116,32,114,101,102,101,114,101,110,99,101]
+  | .rangeStartDuplicate =>
+      typedAscii [109,117,108,116,105,112,108,101,32,99,111,109,109,101,110,116,32,114,97,110,103,101,32,115,116,97,114,116,115,32,104,97,118,101,32,116,104,101,32,115,97,109,101,32,99,97,110,111,110,105,99,97,108,32,119,58,105,100]
+  | .rangeEndDuplicate =>
+      typedAscii [109,117,108,116,105,112,108,101,32,99,111,109,109,101,110,116,32,114,97,110,103,101,32,101,110,100,115,32,104,97,118,101,32,116,104,101,32,115,97,109,101,32,99,97,110,111,110,105,99,97,108,32,119,58,105,100]
+  | .rangeStartOrphaned =>
+      typedAscii [116,104,101,32,83,97,102,101,45,68,79,67,88,32,112,97,105,114,101,100,45,111,114,45,112,111,105,110,116,32,112,114,111,102,105,108,101,32,114,101,106,101,99,116,115,32,97,110,32,117,110,109,97,116,99,104,101,100,32,114,97,110,103,101,32,115,116,97,114,116]
+  | .rangeEndOrphaned =>
+      typedAscii [116,104,101,32,83,97,102,101,45,68,79,67,88,32,112,97,105,114,101,100,45,111,114,45,112,111,105,110,116,32,112,114,111,102,105,108,101,32,114,101,106,101,99,116,115,32,97,110,32,117,110,109,97,116,99,104,101,100,32,114,97,110,103,101,32,101,110,100]
+  | .rangeCrossStory =>
+      typedAscii [99,111,109,109,101,110,116,32,114,97,110,103,101,32,101,110,100,112,111,105,110,116,115,32,97,110,100,32,114,101,102,101,114,101,110,99,101,32,109,117,115,116,32,115,104,97,114,101,32,111,110,101,32,112,104,121,115,105,99,97,108,32,115,116,111,114,121]
+  | .rangeReversed =>
+      typedAscii [99,111,109,109,101,110,116,32,114,97,110,103,101,32,115,116,97,114,116,32,109,117,115,116,32,112,114,101,99,101,100,101,32,105,116,115,32,101,110,100,32,105,110,32,116,104,101,32,115,97,109,101,32,112,104,121,115,105,99,97,108,32,115,116,111,114,121]
+
+def typedMarkerSourceJsonV7 (occurrence : TypedMarkerOccurrence) : TypedJson :=
+  .object
+    [ (key [115,111,117,114,99,101,83,116,111,114,121],
+        typedSourceKindName occurrence.story.kind)
+    , (key [115,111,117,114,99,101,83,116,111,114,121,79,114,100,105,110,97,108],
+        .nat occurrence.story.physicalStoryOrdinal)
+    ]
+
+def typedMarkerOrdinalSpaceV7 (kind : TypedMarkerKind) : TypedJson :=
+  match kind with
+  | .rangeStart => typedAscii [114,97,110,103,101,83,116,97,114,116]
+  | .rangeEnd => typedAscii [114,97,110,103,101,69,110,100]
+  | .reference => typedAscii [114,101,102,101,114,101,110,99,101]
+
+def typedMarkerCrossingOccurrenceV7 (request : TypedRequestV7) (side : Side)
+    (kind : TypedMarkerKind) (sourceSetOrdinal sourceEventOrdinal
+      occurrenceOrdinal : Nat)
+    (canonicalId : Option CanonicalDecimalId := none) :
+    TypedMarkerOccurrence :=
+  { kind
+    story := typedMarkerStoryAt (typedMarkerScanInputV7 request side)
+      sourceSetOrdinal
+    sourceSetOrdinal, sourceEventOrdinal
+    markerOccurrenceOrdinal := 0
+    kindOccurrenceOrdinal := occurrenceOrdinal
+    rawId := none, canonicalId }
+
+def typedMarkerCrossingCodeV7 (kind : TypedMarkerKind)
+    (unique : Bool) : TypedJson :=
+  if unique then
+    typedAscii [67,79,77,77,69,78,84,95,85,78,73,81,85,69,95,82,69,70,69,82,69,78,67,69,95,79,82,95,82,65,78,71,69,95,73,68,95,76,73,77,73,84,95,69,88,67,69,69,68,69,68]
+  else match kind with
+  | .reference =>
+      typedAscii [67,79,77,77,69,78,84,95,82,69,70,69,82,69,78,67,69,95,79,67,67,85,82,82,69,78,67,69,95,76,73,77,73,84,95,69,88,67,69,69,68,69,68]
+  | .rangeStart =>
+      typedAscii [67,79,77,77,69,78,84,95,82,65,78,71,69,95,83,84,65,82,84,95,79,67,67,85,82,82,69,78,67,69,95,76,73,77,73,84,95,69,88,67,69,69,68,69,68]
+  | .rangeEnd =>
+      typedAscii [67,79,77,77,69,78,84,95,82,65,78,71,69,95,69,78,68,95,79,67,67,85,82,82,69,78,67,69,95,76,73,77,73,84,95,69,88,67,69,69,68,69,68]
+
+def typedMarkerCrossingDetailV7 (kind : TypedMarkerKind)
+    (unique : Bool) : TypedJson :=
+  if unique then
+    typedAscii [117,110,105,113,117,101,32,99,97,110,111,110,105,99,97,108,32,99,111,109,109,101,110,116,32,114,101,102,101,114,101,110,99,101,32,111,114,32,114,97,110,103,101,32,73,68,32,108,105,109,105,116,32,101,120,99,101,101,100,101,100]
+  else match kind with
+  | .reference =>
+      typedAscii [99,111,109,109,101,110,116,32,114,101,102,101,114,101,110,99,101,32,111,99,99,117,114,114,101,110,99,101,32,108,105,109,105,116,32,101,120,99,101,101,100,101,100]
+  | .rangeStart =>
+      typedAscii [99,111,109,109,101,110,116,32,114,97,110,103,101,32,115,116,97,114,116,32,111,99,99,117,114,114,101,110,99,101,32,108,105,109,105,116,32,101,120,99,101,101,100,101,100]
+  | .rangeEnd =>
+      typedAscii [99,111,109,109,101,110,116,32,114,97,110,103,101,32,101,110,100,32,111,99,99,117,114,114,101,110,99,101,32,108,105,109,105,116,32,101,120,99,101,101,100,101,100]
+
+def typedMarkerCrossingIssueJsonV7 (side : Side)
+    (occurrence : TypedMarkerOccurrence) (unique : Bool) : TypedJson :=
+  .object <| typedStableSortBy (fun left right =>
+    typedByteListLess left.1.bytes right.1.bytes) <|
+    [ (key [99,111,100,101], typedMarkerCrossingCodeV7 occurrence.kind unique)
+    , (key [100,101,116,97,105,108],
+        typedMarkerCrossingDetailV7 occurrence.kind unique)
+    , (key [102,105,114,115,116,79,99,99,117,114,114,101,110,99,101,79,114,100,105,110,97,108],
+        .nat occurrence.kindOccurrenceOrdinal)
+    , (key [107,105,110,100], typedAscii [99,111,109,109,101,110,116,115])
+    , (key [111,99,99,117,114,114,101,110,99,101,67,111,117,110,116], .nat 1)
+    , (key [111,114,100,105,110,97,108,83,112,97,99,101],
+        typedMarkerOrdinalSpaceV7 occurrence.kind)
+    , (key [115,105,100,101], typedSideName side)
+    , (key [115,111,117,114,99,101], typedMarkerSourceJsonV7 occurrence)
+    , (key [115,111,117,114,99,101,69,118,101,110,116,79,114,100,105,110,97,108],
+        .nat occurrence.sourceEventOrdinal)
+    , (key [115,111,117,114,99,101,83,101,116,79,114,100,105,110,97,108],
+        .nat occurrence.sourceSetOrdinal) ] ++
+      (if unique then
+        (occurrence.canonicalId.map (fun id =>
+          [(key [99,97,110,111,110,105,99,97,108,73,100],
+            .bytes (typedCanonicalIdBytes id))])).getD []
+       else [])
+
+def typedMarkerCrossingIssuesV7 (request : TypedRequestV7)
+    (side : Side) : List TypedJson :=
+  let scan := retainedOrIndependentTypedMarkerScanV7 request side
+  match scan.crossing with
+  | none => []
+  | some (.referenceLimit source event ordinal) =>
+      [typedMarkerCrossingIssueJsonV7 side
+        (typedMarkerCrossingOccurrenceV7 request side .reference
+          source event ordinal) false]
+  | some (.rangeStartLimit source event ordinal) =>
+      [typedMarkerCrossingIssueJsonV7 side
+        (typedMarkerCrossingOccurrenceV7 request side .rangeStart
+          source event ordinal) false]
+  | some (.rangeEndLimit source event ordinal) =>
+      [typedMarkerCrossingIssueJsonV7 side
+        (typedMarkerCrossingOccurrenceV7 request side .rangeEnd
+          source event ordinal) false]
+  | some (.uniqueIdLimit kind source event ordinal canonicalId) =>
+      [typedMarkerCrossingIssueJsonV7 side
+        (typedMarkerCrossingOccurrenceV7 request side kind source event ordinal
+          (some canonicalId)) true]
+
+def typedTopologyIssueJsonV7 (side : Side) (id : CanonicalDecimalId)
+    (code : TypedTopologyIssueCodeV7) (occurrence : TypedMarkerOccurrence)
+    (count : Nat)
+    (extras : List (BoundedBytes × TypedJson) := []) : TypedJson :=
+  .object <| typedStableSortBy (fun left right =>
+    typedByteListLess left.1.bytes right.1.bytes) <|
+    [ (key [99,97,110,111,110,105,99,97,108,73,100],
+        .bytes (typedCanonicalIdBytes id))
+    , (key [99,111,100,101], typedTopologyIssueCodeV7 code)
+    , (key [100,101,116,97,105,108], typedTopologyIssueDetailV7 code)
+    , (key [102,105,114,115,116,79,99,99,117,114,114,101,110,99,101,79,114,100,105,110,97,108],
+        .nat occurrence.kindOccurrenceOrdinal)
+    , (key [107,105,110,100], typedAscii [99,111,109,109,101,110,116,115])
+    , (key [111,99,99,117,114,114,101,110,99,101,67,111,117,110,116],
+        .nat count)
+    , (key [111,114,100,105,110,97,108,83,112,97,99,101],
+        typedMarkerOrdinalSpaceV7 occurrence.kind)
+    , (key [115,105,100,101], typedSideName side)
+    , (key [115,111,117,114,99,101], typedMarkerSourceJsonV7 occurrence)
+    , (key [115,111,117,114,99,101,69,118,101,110,116,79,114,100,105,110,97,108],
+        .nat occurrence.sourceEventOrdinal)
+    , (key [115,111,117,114,99,101,83,101,116,79,114,100,105,110,97,108],
+        .nat occurrence.sourceSetOrdinal)
+    ] ++ extras
+
+def typedEarlierMarkerV7 (left right : TypedMarkerOccurrence) :
+    TypedMarkerOccurrence :=
+  if typedNatLeCheck left.markerOccurrenceOrdinal right.markerOccurrenceOrdinal
+  then left else right
+
+def typedEarliestMarkerV7 : List TypedMarkerOccurrence →
+    Option TypedMarkerOccurrence
+  | [] => none
+  | first :: rest => some (rest.foldl typedEarlierMarkerV7 first)
+
+set_option backward.match.sparseCases false in
+def typedSameMarkerStoryV7 (left right : TypedMarkerOccurrence) : Bool :=
+  (match left.story.kind, right.story.kind with
+   | .main, .main | .header, .header | .footer, .footer
+   | .footnotes, .footnotes | .endnotes, .endnotes => true
+   | _, _ => false) &&
+  typedNatEqCheck left.story.physicalStoryOrdinal
+    right.story.physicalStoryOrdinal
+
+set_option backward.match.sparseCases false in
+def typedTopologyIssueForIdV7 (side : Side)
+    (scan : TypedMarkerScanEvidence) (id : CanonicalDecimalId) :
+    Option TypedJson :=
+  let references := typedOccurrencesForIdV7 .reference scan id
+  let starts := typedOccurrencesForIdV7 .rangeStart scan id
+  let ends := typedOccurrencesForIdV7 .rangeEnd scan id
+  if references.length > 1 then
+    match references with
+    | _ :: occurrence :: _ =>
+        some <| typedTopologyIssueJsonV7 side id .referenceDuplicate
+          occurrence (references.length - 1)
+    | _ => none
+  else if references.isEmpty && (!starts.isEmpty || !ends.isEmpty) then
+    (typedEarliestMarkerV7 (starts ++ ends)).map fun occurrence =>
+      typedTopologyIssueJsonV7 side id .referenceMissing occurrence 1
+  else if starts.length > 1 then
+    match starts with
+    | _ :: occurrence :: _ =>
+        some <| typedTopologyIssueJsonV7 side id .rangeStartDuplicate
+          occurrence (starts.length - 1)
+    | _ => none
+  else if ends.length > 1 then
+    match ends with
+    | _ :: occurrence :: _ =>
+        some <| typedTopologyIssueJsonV7 side id .rangeEndDuplicate
+          occurrence (ends.length - 1)
+    | _ => none
+  else match starts, ends with
+  | [start], [] =>
+      some (typedTopologyIssueJsonV7 side id .rangeStartOrphaned start 1)
+  | [], [finish] =>
+      some (typedTopologyIssueJsonV7 side id .rangeEndOrphaned finish 1)
+  | [start], [finish] =>
+      match references with
+      | [reference] =>
+        let all := [start, finish, reference]
+        match typedEarliestMarkerV7 all with
+        | none => none
+        | some first =>
+          match all.find? fun occurrence =>
+              !typedSameMarkerStoryV7 first occurrence with
+          | some related =>
+            some <| typedTopologyIssueJsonV7 side id .rangeCrossStory first 1
+              [ (key [114,101,108,97,116,101,100,83,111,117,114,99,101],
+                  typedMarkerSourceJsonV7 related)
+              , (key [114,101,108,97,116,101,100,83,111,117,114,99,101,69,118,101,110,116,79,114,100,105,110,97,108],
+                  .nat related.sourceEventOrdinal)
+              , (key [114,101,108,97,116,101,100,83,111,117,114,99,101,83,101,116,79,114,100,105,110,97,108],
+                  .nat related.sourceSetOrdinal) ]
+          | none =>
+            if typedNatLtCheck start.sourceEventOrdinal
+                finish.sourceEventOrdinal then none
+            else some <| typedTopologyIssueJsonV7 side id .rangeReversed
+              start 1
+              [ (key [114,97,110,103,101,69,110,100,69,118,101,110,116,79,114,100,105,110,97,108],
+                  .nat finish.sourceEventOrdinal) ]
+      | _ => none
+  | _, _ => none
+
+def typedTopologyIssuesV7 (request : TypedRequestV7) (side : Side) :
+    List TypedJson :=
+  let scan := retainedOrIndependentTypedMarkerScanV7 request side
+  scan.canonicalIds.filterMap (typedTopologyIssueForIdV7 side scan)
+
+def typedRelationshipRequiredIssueV7 (side : Side)
+    (occurrence : TypedMarkerOccurrence) : TypedJson :=
+  .object
+    [ (key [99,111,100,101],
+        typedAscii [67,79,77,77,69,78,84,95,82,69,76,65,84,73,79,78,83,72,73,80,95,82,69,81,85,73,82,69,68])
+    , (key [100,101,116,97,105,108],
+        typedAscii [97,32,99,111,109,109,101,110,116,32,109,97,114,107,101,114,32,114,101,113,117,105,114,101,115,32,111,110,101,32,101,120,97,99,116,32,105,110,116,101,114,110,97,108,32,99,111,109,109,101,110,116,115,32,114,101,108,97,116,105,111,110,115,104,105,112])
+    , (key [102,105,114,115,116,79,99,99,117,114,114,101,110,99,101,79,114,100,105,110,97,108],
+        .nat 0)
+    , (key [107,105,110,100], typedAscii [99,111,109,109,101,110,116,115])
+    , (key [111,99,99,117,114,114,101,110,99,101,67,111,117,110,116], .nat 1)
+    , (key [111,114,100,105,110,97,108,83,112,97,99,101],
+        typedMarkerOrdinalSpaceV7 occurrence.kind)
+    , (key [115,105,100,101], typedSideName side)
+    , (key [115,111,117,114,99,101], typedMarkerSourceJsonV7 occurrence)
+    , (key [115,111,117,114,99,101,69,118,101,110,116,79,114,100,105,110,97,108],
+        .nat occurrence.sourceEventOrdinal)
+    , (key [115,111,117,114,99,101,83,101,116,79,114,100,105,110,97,108],
+        .nat occurrence.sourceSetOrdinal)
+    ]
+
+def typedRelationshipRequiredIssuesV7
+    (request : TypedRequestV7) (side : Side) : List TypedJson :=
+  match selectTypedCommentV7 (typedPackageAt request side) with
+  | .ok none =>
+    match (retainedOrIndependentTypedMarkerScanV7 request side).occurrences with
+    | first :: _ => [typedRelationshipRequiredIssueV7 side first]
+    | [] => []
+  | .ok (some _) | .error _ => []
+
+def typedMalformedMarkerCodeV7 (kind : TypedMarkerKind)
+    (rawId : Option BoundedBytes) : TypedJson :=
+  let suffix := match rawId with
+    | none => 0
+    | some raw => if raw.bytes.length > 64 then 1 else 2
+  match kind, suffix with
+  | .rangeStart, 0 =>
+      typedAscii [67,79,77,77,69,78,84,95,82,65,78,71,69,95,83,84,65,82,84,95,73,68,95,77,73,83,83,73,78,71]
+  | .rangeStart, 1 =>
+      typedAscii [67,79,77,77,69,78,84,95,82,65,78,71,69,95,83,84,65,82,84,95,73,68,95,84,79,79,95,76,79,78,71]
+  | .rangeStart, _ =>
+      typedAscii [67,79,77,77,69,78,84,95,82,65,78,71,69,95,83,84,65,82,84,95,73,68,95,77,65,76,70,79,82,77,69,68]
+  | .rangeEnd, 0 =>
+      typedAscii [67,79,77,77,69,78,84,95,82,65,78,71,69,95,69,78,68,95,73,68,95,77,73,83,83,73,78,71]
+  | .rangeEnd, 1 =>
+      typedAscii [67,79,77,77,69,78,84,95,82,65,78,71,69,95,69,78,68,95,73,68,95,84,79,79,95,76,79,78,71]
+  | .rangeEnd, _ =>
+      typedAscii [67,79,77,77,69,78,84,95,82,65,78,71,69,95,69,78,68,95,73,68,95,77,65,76,70,79,82,77,69,68]
+  | .reference, 0 =>
+      typedAscii [67,79,77,77,69,78,84,95,82,69,70,69,82,69,78,67,69,95,73,68,95,77,73,83,83,73,78,71]
+  | .reference, 1 =>
+      typedAscii [67,79,77,77,69,78,84,95,82,69,70,69,82,69,78,67,69,95,73,68,95,84,79,79,95,76,79,78,71]
+  | .reference, _ =>
+      typedAscii [67,79,77,77,69,78,84,95,82,69,70,69,82,69,78,67,69,95,73,68,95,77,65,76,70,79,82,77,69,68]
+
+def typedMalformedMarkerDetailV7 (kind : TypedMarkerKind)
+    (rawId : Option BoundedBytes) : TypedJson :=
+  let suffix := match rawId with
+    | none => 0
+    | some raw => if raw.bytes.length > 64 then 1 else 2
+  match kind, suffix with
+  | .rangeStart, 0 =>
+      typedAscii [99,111,109,109,101,110,116,32,114,97,110,103,101,32,115,116,97,114,116,32,104,97,115,32,110,111,32,119,58,105,100]
+  | .rangeStart, 1 =>
+      typedAscii [99,111,109,109,101,110,116,32,114,97,110,103,101,32,115,116,97,114,116,32,119,58,105,100,32,101,120,99,101,101,100,115,32,54,52,32,85,84,70,45,56,32,98,121,116,101,115]
+  | .rangeStart, _ =>
+      typedAscii [99,111,109,109,101,110,116,32,114,97,110,103,101,32,115,116,97,114,116,32,119,58,105,100,32,105,115,32,110,111,116,32,97,110,32,83,84,95,68,101,99,105,109,97,108,78,117,109,98,101,114]
+  | .rangeEnd, 0 =>
+      typedAscii [99,111,109,109,101,110,116,32,114,97,110,103,101,32,101,110,100,32,104,97,115,32,110,111,32,119,58,105,100]
+  | .rangeEnd, 1 =>
+      typedAscii [99,111,109,109,101,110,116,32,114,97,110,103,101,32,101,110,100,32,119,58,105,100,32,101,120,99,101,101,100,115,32,54,52,32,85,84,70,45,56,32,98,121,116,101,115]
+  | .rangeEnd, _ =>
+      typedAscii [99,111,109,109,101,110,116,32,114,97,110,103,101,32,101,110,100,32,119,58,105,100,32,105,115,32,110,111,116,32,97,110,32,83,84,95,68,101,99,105,109,97,108,78,117,109,98,101,114]
+  | .reference, 0 =>
+      typedAscii [99,111,109,109,101,110,116,32,114,101,102,101,114,101,110,99,101,32,104,97,115,32,110,111,32,119,58,105,100]
+  | .reference, 1 =>
+      typedAscii [99,111,109,109,101,110,116,32,114,101,102,101,114,101,110,99,101,32,119,58,105,100,32,101,120,99,101,101,100,115,32,54,52,32,85,84,70,45,56,32,98,121,116,101,115]
+  | .reference, _ =>
+      typedAscii [99,111,109,109,101,110,116,32,114,101,102,101,114,101,110,99,101,32,119,58,105,100,32,105,115,32,110,111,116,32,97,110,32,83,84,95,68,101,99,105,109,97,108,78,117,109,98,101,114]
+
+def typedMalformedMarkerIssueV7 (side : Side)
+    (occurrence : TypedMarkerOccurrence) : TypedJson :=
+  let rawField := match occurrence.rawId with
+    | none => []
+    | some raw =>
+      if raw.bytes.length > 64 then
+        [(key [114,97,119,73,100,66,121,116,101,76,101,110,103,116,104],
+          .nat raw.bytes.length)]
+      else [(key [114,97,119,73,100], .bytes raw)]
+  .object <| typedStableSortBy (fun left right =>
+    typedByteListLess left.1.bytes right.1.bytes) <|
+    [ (key [99,111,100,101],
+        typedMalformedMarkerCodeV7 occurrence.kind occurrence.rawId)
+    , (key [100,101,116,97,105,108],
+        typedMalformedMarkerDetailV7 occurrence.kind occurrence.rawId)
+    , (key [102,105,114,115,116,79,99,99,117,114,114,101,110,99,101,79,114,100,105,110,97,108],
+        .nat occurrence.kindOccurrenceOrdinal)
+    , (key [107,105,110,100], typedAscii [99,111,109,109,101,110,116,115])
+    , (key [111,99,99,117,114,114,101,110,99,101,67,111,117,110,116], .nat 1)
+    , (key [111,114,100,105,110,97,108,83,112,97,99,101],
+        typedMarkerOrdinalSpaceV7 occurrence.kind)
+    , (key [115,105,100,101], typedSideName side)
+    , (key [115,111,117,114,99,101], typedMarkerSourceJsonV7 occurrence)
+    , (key [115,111,117,114,99,101,69,118,101,110,116,79,114,100,105,110,97,108],
+        .nat occurrence.sourceEventOrdinal)
+    , (key [115,111,117,114,99,101,83,101,116,79,114,100,105,110,97,108],
+        .nat occurrence.sourceSetOrdinal)
+    ] ++ rawField
+
+def typedMalformedMarkerIssuesV7
+    (evaluation : TypedSideCommentEvaluationV7) : List TypedJson :=
+  evaluation.markerScan.occurrences.filterMap fun occurrence =>
+    if occurrence.canonicalId.isSome then none
+    else some (typedMalformedMarkerIssueV7 evaluation.side occurrence)
+
+def typedMarkerDefinitionMissingIssueV7 (side : Side)
+    (id : CanonicalDecimalId) (occurrence : TypedMarkerOccurrence) : TypedJson :=
+  .object
+    [ (key [99,97,110,111,110,105,99,97,108,73,100],
+        .bytes (typedCanonicalIdBytes id))
+    , (key [99,111,100,101],
+        typedAscii [67,79,77,77,69,78,84,95,68,69,70,73,78,73,84,73,79,78,95,77,73,83,83,73,78,71])
+    , (key [100,101,116,97,105,108],
+        typedAscii [99,111,109,109,101,110,116,32,115,111,117,114,99,101,32,73,68,32,100,111,101,115,32,110,111,116,32,114,101,115,111,108,118,101,32,116,111,32,101,120,97,99,116,108,121,32,111,110,101,32,100,105,114,101,99,116,32,100,101,102,105,110,105,116,105,111,110])
+    , (key [102,105,114,115,116,79,99,99,117,114,114,101,110,99,101,79,114,100,105,110,97,108],
+        .nat occurrence.kindOccurrenceOrdinal)
+    , (key [107,105,110,100], typedAscii [99,111,109,109,101,110,116,115])
+    , (key [111,99,99,117,114,114,101,110,99,101,67,111,117,110,116], .nat 1)
+    , (key [111,114,100,105,110,97,108,83,112,97,99,101],
+        typedMarkerOrdinalSpaceV7 occurrence.kind)
+    , (key [115,105,100,101], typedSideName side)
+    , (key [115,111,117,114,99,101], typedMarkerSourceJsonV7 occurrence)
+    , (key [115,111,117,114,99,101,69,118,101,110,116,79,114,100,105,110,97,108],
+        .nat occurrence.sourceEventOrdinal)
+    , (key [115,111,117,114,99,101,83,101,116,79,114,100,105,110,97,108],
+        .nat occurrence.sourceSetOrdinal)
+    ]
+
+def typedDefinitionMissingIssuesV7
+    (request : TypedRequestV7) (side : Side) : List TypedJson :=
+  match realizeTypedCommentV7 request side with
+  | .ok (some _) =>
+    let scan := retainedOrIndependentTypedMarkerScanV7 request side
+    let definitions := typedDefinitionsV7 request side
+    scan.canonicalIds.filterMap fun id =>
+      if (typedDefinitionsForIdV7 definitions id).length = 1 then none
+      else (typedEarliestMarkerV7
+        (typedSourceOccurrencesForIdV7 scan id)).map
+          (typedMarkerDefinitionMissingIssueV7 side id)
+  | .ok none | .error _ => []
+
+set_option backward.match.sparseCases false in
+def typedInheritedDefinitionIssuesV7
+    (request : TypedRequestV7) (side : Side) : List TypedJson :=
+  let pkg := typedPackageAt request side
+  let evaluation := evaluateTypedCommentSide side pkg
+  evaluation.issues.filterMap fun issue =>
+    match issue.code with
+    | .definitionIdMissing | .definitionIdMalformed | .definitionIdTooLong
+    | .definitionNotDirect | .definitionDuplicate =>
+        some (typedCommentIssueJson pkg issue)
+    | _ => none
+
+set_option backward.match.sparseCases false in
+def typedCommentSideStoryV7
+    (evaluation : TypedSideCommentEvaluationV7) : TypedJson :=
+  let relationship := match evaluation.selection with
+    | .ok (some selected) => typedSelectedIdentityJson selected
+    | .ok none | .error _ => .null
+  let status := match evaluation.status, evaluation.selection with
+    | .notEvaluated, _ =>
+        typedAscii [110,111,116,95,101,118,97,108,117,97,116,101,100]
+    | .failed, _ => typedAscii [102,97,105,108,101,100]
+    | .passed, .ok none => typedAscii [97,98,115,101,110,116]
+    | .passed, _ => typedAscii [112,97,115,115,101,100]
+  .object
+    [ (key [112,97,114,116,80,114,101,115,101,110,116],
+        .bool evaluation.partPresent)
+    , (key [114,101,108,97,116,105,111,110,115,104,105,112], relationship)
+    , (key [115,116,97,116,117,115], status)
+    ]
+
+def typedCommentParsedCountV7
+    (evaluation : TypedSideCommentEvaluationV7) : Nat :=
+  match evaluation.realization with
+  | .ok (some realization) => realization.retainedParsedEvents.length
+  | .ok none | .error _ => 0
+
+def typedCommentStoryV7 (original revised compared :
+    TypedSideCommentEvaluationV7) : TypedJson :=
+  let evaluations := [original, revised, compared]
+  let status :=
+    if evaluations.any fun evaluation =>
+        typedSideCommentNotEvaluatedV7 evaluation.status then
+      typedAscii [110,111,116,95,101,118,97,108,117,97,116,101,100]
+    else if evaluations.any fun evaluation =>
+        !typedSideCommentPassedV7 evaluation.status then
+      typedAscii [102,97,105,108,101,100]
+    else typedAscii [112,97,115,115,101,100]
+  .object
+    [ (key [99,111,109,112,97,114,101,100],
+        typedCommentSideStoryV7 compared)
+    , (key [111,114,105,103,105,110,97,108],
+        typedCommentSideStoryV7 original)
+    , (key [112,97,114,115,101,100,84,111,107,101,110,67,111,117,110,116,115],
+        .object
+          [ (key [99,111,109,98,105,110,101,100],
+              .nat (typedCommentParsedCountV7 compared))
+          , (key [111,114,105,103,105,110,97,108],
+              .nat (typedCommentParsedCountV7 original))
+          , (key [114,101,118,105,115,101,100],
+              .nat (typedCommentParsedCountV7 revised))
+          ])
+    , (key [114,101,118,105,115,101,100],
+        typedCommentSideStoryV7 revised)
+    , (key [115,116,97,116,117,115], status)
+    ]
+
+def typedProtocolResponseHasTerminalIssueV7
+    (response : TypedProtocolV6Response) : Bool :=
+  decide (encodeTypedJson response.commentIntegrityIssues =
+      encodeTypedJson (.array [typedTerminalIssue false])) ||
+  decide (encodeTypedJson response.commentIntegrityIssues =
+      encodeTypedJson (.array [typedTerminalIssue true]))
+
+def canonicalTypedResponseV7
+    (request : TypedRequestV7) : TypedProtocolV7Response :=
+  let base := canonicalTypedResponseV6 (typedRequestV6OfV7 request)
+  let checker := typedAscii
+    [115,97,102,101,45,100,111,99,120,45,108,101,97,110,45,99,111,110,
+     118,101,110,116,105,111,110,97,108,45,109,97,105,110,45,99,111,109,
+     109,101,110,116,45,114,97,110,103,101,45,105,110,116,101,103,114,105,
+     116,121,45,99,104,101,99,107,101,114]
+  let evaluatedOriginal := evaluateTypedCommentSideV7 request .original
+  let original :=
+    if !typedPriorSourceAdmittedV7 request.original.priorSourceAdmission then
+      globallyStoppedTypedCommentEvaluationV7 .original
+    else evaluatedOriginal
+  let revised := if typedSideCommentNotEvaluatedV7 original.status ||
+      !typedPriorSourceAdmittedV7 request.revised.priorSourceAdmission then
+      globallyStoppedTypedCommentEvaluationV7 .revised
+    else evaluateTypedCommentSideV7 request .revised
+  let compared := if typedSideCommentNotEvaluatedV7 original.status ||
+      typedSideCommentNotEvaluatedV7 revised.status ||
+      !typedPriorSourceAdmittedV7 request.compared.priorSourceAdmission then
+      globallyStoppedTypedCommentEvaluationV7 .compared
+    else evaluateTypedCommentSideV7 request .compared
+  let evaluations := [original, revised, compared]
+  let passed := request.inherited.passed &&
+    evaluations.all fun evaluation =>
+      typedSideCommentPassedV7 evaluation.status
+  let originalRelationshipIssues :=
+    if typedPriorSourceAdmittedV7 request.original.priorSourceAdmission then
+      typedRelationshipRequiredIssuesV7 request .original
+    else []
+  let revisedRelationshipIssues :=
+    if typedSideCommentNotEvaluatedV7 original.status then []
+    else typedRelationshipRequiredIssuesV7 request .revised
+  let comparedRelationshipIssues :=
+    if typedSideCommentNotEvaluatedV7 original.status ||
+        typedSideCommentNotEvaluatedV7 revised.status then []
+    else typedRelationshipRequiredIssuesV7 request .compared
+  let relationshipIssues := originalRelationshipIssues ++
+    revisedRelationshipIssues ++ comparedRelationshipIssues
+  let originalCrossingIssues :=
+    if typedPriorSourceAdmittedV7 request.original.priorSourceAdmission then
+      typedMarkerCrossingIssuesV7 request .original
+    else []
+  let revisedCrossingIssues :=
+    if typedSideCommentNotEvaluatedV7 original.status then []
+    else typedMarkerCrossingIssuesV7 request .revised
+  let comparedCrossingIssues :=
+    if typedSideCommentNotEvaluatedV7 original.status ||
+        typedSideCommentNotEvaluatedV7 revised.status then []
+    else typedMarkerCrossingIssuesV7 request .compared
+  let originalIssues := if !originalCrossingIssues.isEmpty then
+      originalCrossingIssues
+    else if typedSideCommentNotEvaluatedV7 original.status then []
+    else typedDefinitionMissingIssuesV7 request .original ++
+      typedInheritedDefinitionIssuesV7 request .original ++
+      typedMalformedMarkerIssuesV7 original ++
+      typedTopologyIssuesV7 request .original
+  let revisedIssues := if !revisedCrossingIssues.isEmpty then
+      revisedCrossingIssues
+    else if typedSideCommentNotEvaluatedV7 revised.status then []
+    else typedDefinitionMissingIssuesV7 request .revised ++
+      typedInheritedDefinitionIssuesV7 request .revised ++
+      typedMalformedMarkerIssuesV7 revised ++
+      typedTopologyIssuesV7 request .revised
+  let comparedIssues := if !comparedCrossingIssues.isEmpty then
+      comparedCrossingIssues
+    else if typedSideCommentNotEvaluatedV7 compared.status then []
+    else typedDefinitionMissingIssuesV7 request .compared ++
+      typedInheritedDefinitionIssuesV7 request .compared ++
+      typedMalformedMarkerIssuesV7 compared ++
+      typedTopologyIssuesV7 request .compared
+  let semanticIssues := originalIssues ++ revisedIssues ++ comparedIssues
+  let candidate := if typedProtocolResponseHasTerminalIssueV7 base then
+    { base with
+      commentStory := typedTerminalCommentStory
+      commentInventories := .array
+        [ typedCommentInventoryOfEvaluationV7
+            (globallyStoppedTypedCommentEvaluationV7 .original)
+        , typedCommentInventoryOfEvaluationV7
+            (globallyStoppedTypedCommentEvaluationV7 .revised)
+        , typedCommentInventoryOfEvaluationV7
+            (globallyStoppedTypedCommentEvaluationV7 .compared) ] }
+  else { base with
+    passed := .bool passed
+    commentStory := typedCommentStoryV7 original revised compared
+    commentInventories := .array
+      [ typedCommentInventoryOfEvaluationV7 original
+      , typedCommentInventoryOfEvaluationV7 revised
+      , typedCommentInventoryOfEvaluationV7 compared ]
+    commentIntegrityIssues := .array <|
+      if !relationshipIssues.isEmpty then relationshipIssues
+      else if !semanticIssues.isEmpty then semanticIssues
+      else typedJsonArrayValues base.commentIntegrityIssues }
+  { candidate with protocolVersion := .nat 7, checker }
+
+def independentProtocolV7Projection :
+    TypedProtocolV7Response → List UInt8 :=
+  independentProtocolV6Projection
+
+def TypedRequestBoundPackageOf (request : TypedRequestV7) (side : Side)
+    (pkg : TypedPackageView) : Prop :=
+  pkg = typedPackageAt request side
+
+def TypedSelectionToRealizationV7Of (request : TypedRequestV7) (side : Side)
+    (evaluation : TypedSideCommentEvaluationV7) : Prop :=
+  evaluation = evaluateTypedCommentSideV7 request side ∧
+  evaluation.selection = selectTypedCommentV7 (typedPackageAt request side) ∧
+  evaluation.realization = realizeTypedCommentV7 request side
+
+def TypedCompleteCommentSourceSetV7Of (request : TypedRequestV7) (side : Side)
+    (sources : List TypedStorySource) : Prop :=
+  sources = canonicalTypedCommentSourcesV7 request side ∧
+  (evaluateTypedCommentSideV7 request side).status ≠ .notEvaluated ∧
+  (typedMarkerScanInputV7 request side).stories = sources
+
+def TypedCommentMarkerScanOf (request : TypedRequestV7) (side : Side)
+    (evidence : TypedMarkerScanEvidence) : Prop :=
+  evidence = retainedOrIndependentTypedMarkerScanV7 request side ∧
+  evidence.inputStories = canonicalTypedCommentSourcesV7 request side
+
+def TypedIncompleteCommentRangeZeroOf (side : Side)
+    (evaluation : TypedSideCommentEvaluationV7) : Prop :=
+  evaluation.side = side ∧ evaluation.status = .notEvaluated ∧
+  evaluation.sources = [] ∧
+  evaluation.markerScan = emptyTypedMarkerScanEvidenceV7 ∧
+  evaluation.definitions = []
+
+def TypedCommentRangeAggregatePassOf (request : TypedRequestV7)
+    (response : TypedProtocolV7Response) : Prop :=
+  response = canonicalTypedResponseV7 request ∧ response.protocolVersion = .nat 7 ∧
+  TypedCommentAggregatePassOf (typedRequestV6OfV7 request)
+    (canonicalTypedResponseV6 (typedRequestV6OfV7 request)) ∧
+  ∀ side,
+    TypedRequestBoundPackageOf request side (typedPackageAt request side) ∧
+    TypedSelectionToRealizationV7Of request side
+      (evaluateTypedCommentSideV7 request side) ∧
+    (evaluateTypedCommentSideV7 request side).status = .passed ∧
+    TypedCompleteCommentSourceSetV7Of request side
+      (canonicalTypedCommentSourcesV7 request side) ∧
+    TypedCommentMarkerScanOf request side
+      (retainedOrIndependentTypedMarkerScanV7 request side) ∧
+    (evaluateTypedCommentSideV7 request side).definitions =
+      typedDefinitionsV7 request side ∧
+    TypedPackageCommentRangeIntegrity
+      (typedDefinitionsV7 request side)
+      (retainedOrIndependentTypedMarkerScanV7 request side)
+
+def typedAllCommentRangeSidesPassV7 (request : TypedRequestV7) : Bool :=
+  typedSideCommentPassedV7
+      (evaluateTypedCommentSideV7 request .original).status &&
+    typedSideCommentPassedV7
+      (evaluateTypedCommentSideV7 request .revised).status &&
+    typedSideCommentPassedV7
+      (evaluateTypedCommentSideV7 request .compared).status
+
+def TypedSerializedResponseV7Of
+    (response : TypedProtocolV7Response) (bytes : List UInt8) : Prop :=
+  bytes = independentProtocolV7Projection response
+
+theorem typed_comment_selector_result_v7_sound
+    (request : TypedRequestV7) (side : Side) :
+    TypedRequestBoundPackageOf request side (typedPackageAt request side) ∧
+    TypedCommentSelectionResultOf (typedPackageAt request side)
+      (selectTypedCommentV7 (typedPackageAt request side)) := by
+  exact ⟨rfl, rfl⟩
+
+theorem typed_comment_selection_to_realization_v7_sound
+    (request : TypedRequestV7) (side : Side) :
+    TypedSelectionToRealizationV7Of request side
+      (evaluateTypedCommentSideV7 request side) := by
+  unfold TypedSelectionToRealizationV7Of
+  refine ⟨rfl, ?_, ?_⟩
+  · unfold evaluateTypedCommentSideV7
+    dsimp only
+    split <;> rfl
+  · unfold evaluateTypedCommentSideV7
+    dsimp only
+    split <;> rfl
+
+theorem typed_admitted_comment_source_set_v7_complete
+    (request : TypedRequestV7) (side : Side)
+    (hEvaluated :
+      (evaluateTypedCommentSideV7 request side).status ≠ .notEvaluated) :
+    TypedCompleteCommentSourceSetV7Of request side
+      (canonicalTypedCommentSourcesV7 request side) ∧
+    (typedMarkerScanInputV7 request side).stories =
+      canonicalTypedCommentSourcesV7 request side := by
+  exact ⟨⟨rfl, hEvaluated, rfl⟩, rfl⟩
+
+theorem typed_comment_marker_scan_evidence_exact
+    (request : TypedRequestV7) (side : Side) :
+    TypedCommentMarkerScanOf request side
+      (retainedOrIndependentTypedMarkerScanV7 request side) ∧
+    (retainedOrIndependentTypedMarkerScanV7 request side).inputStories =
+        canonicalTypedCommentSourcesV7 request side := by
+  refine ⟨?_, ?_⟩
+  · unfold TypedCommentMarkerScanOf
+    exact ⟨rfl,
+      retained_or_independent_typed_marker_scan_v7_input_stories request side⟩
+  · exact retained_or_independent_typed_marker_scan_v7_input_stories request side
+
+theorem typed_package_comment_range_integrity_sound
+    (request : TypedRequestV7) (side : Side)
+    (hCheck :
+      checkTypedPackageCommentRangeIntegrity
+        (typedDefinitionsV7 request side)
+        (retainedOrIndependentTypedMarkerScanV7 request side) = true) :
+    TypedPackageCommentRangeIntegrity
+      (typedDefinitionsV7 request side)
+      (retainedOrIndependentTypedMarkerScanV7 request side) := by
+  exact bool_and_eq_true_parts _ _ hCheck
+
+set_option backward.match.sparseCases false in
+theorem typed_incomplete_comment_range_zero_evidence_sound
+    (request : TypedRequestV7) (side : Side)
+    (hIncomplete :
+      (evaluateTypedCommentSideV7 request side).status = .notEvaluated) :
+    TypedIncompleteCommentRangeZeroOf side
+      (evaluateTypedCommentSideV7 request side) := by
+  unfold evaluateTypedCommentSideV7 at hIncomplete ⊢
+  dsimp only at hIncomplete ⊢
+  by_cases hPrerequisite :
+      (!typedCommentPrerequisitesV7 request side) = true
+  · rw [if_pos hPrerequisite] at hIncomplete ⊢
+    unfold TypedIncompleteCommentRangeZeroOf
+    exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+  · rw [if_neg hPrerequisite] at hIncomplete
+    split at hIncomplete <;> contradiction
+
+theorem typed_evaluated_comment_definitions_v7_exact
+    (request : TypedRequestV7) (side : Side)
+    (hEvaluated :
+      (evaluateTypedCommentSideV7 request side).status ≠ .notEvaluated) :
+    (evaluateTypedCommentSideV7 request side).definitions =
+      typedDefinitionsV7 request side := by
+  unfold evaluateTypedCommentSideV7 at hEvaluated ⊢
+  dsimp only at hEvaluated ⊢
+  by_cases hPrerequisite :
+      (!typedCommentPrerequisitesV7 request side) = true
+  · rw [if_pos hPrerequisite] at hEvaluated
+    exact False.elim (hEvaluated rfl)
+  · rw [if_neg hPrerequisite]
+
+theorem typed_comment_side_pass_integrity_v7
+    (request : TypedRequestV7) (side : Side)
+    (hPassed :
+      (evaluateTypedCommentSideV7 request side).status = .passed) :
+    checkTypedPackageCommentRangeIntegrity
+      (typedDefinitionsV7 request side)
+      (retainedOrIndependentTypedMarkerScanV7 request side) = true := by
+  unfold evaluateTypedCommentSideV7 at hPassed
+  dsimp only at hPassed
+  split at hPassed
+  · contradiction
+  · split at hPassed
+    · contradiction
+    · rename_i hStatus
+      cases hCheck :
+          checkTypedPackageCommentRangeIntegrity
+            (typedDefinitionsV7 request side)
+            (retainedOrIndependentTypedMarkerScanV7 request side) with
+      | false =>
+          have hImpossible :
+              ((evaluateTypedCommentSide side
+                  (typedPackageAt request side)).status == .failed ||
+                !checkTypedPackageCommentRangeIntegrity
+                  (typedDefinitionsV7 request side)
+                  (retainedOrIndependentTypedMarkerScanV7 request side)) = true := by
+            rw [hCheck]
+            cases hInherited :
+                ((evaluateTypedCommentSide side
+                  (typedPackageAt request side)).status == .failed) <;> rfl
+          exact False.elim (hStatus hImpossible)
+      | true => rfl
+
+theorem typed_side_comment_passed_v7_eq_true
+    (status : TypedSideCommentStatusV7)
+    (hPass : typedSideCommentPassedV7 status = true) :
+    status = .passed := by
+  cases status with
+  | passed => rfl
+  | failed => nomatch hPass
+  | notEvaluated => nomatch hPass
+
+theorem typed_all_comment_range_sides_pass_v7_sound
+    (request : TypedRequestV7)
+    (hPass : typedAllCommentRangeSidesPassV7 request = true) :
+    ∀ side, (evaluateTypedCommentSideV7 request side).status = .passed := by
+  intro side
+  unfold typedAllCommentRangeSidesPassV7 at hPass
+  have hParts := bool_and_eq_true_parts _ _ hPass
+  have hEarlier := bool_and_eq_true_parts _ _ hParts.1
+  cases side with
+  | original =>
+      exact typed_side_comment_passed_v7_eq_true _ hEarlier.1
+  | revised =>
+      exact typed_side_comment_passed_v7_eq_true _ hEarlier.2
+  | compared =>
+      exact typed_side_comment_passed_v7_eq_true _ hParts.2
+
+theorem canonical_typed_response_v7_protocol
+    (request : TypedRequestV7) :
+    (canonicalTypedResponseV7 request).protocolVersion = .nat 7 := by
+  change TypedJson.nat 7 = TypedJson.nat 7
+  rfl
+
+theorem typed_comment_range_aggregate_pass_sound
+    (request : TypedRequestV7)
+    (hPass : typedAllCommentRangeSidesPassV7 request = true) :
+    let response := canonicalTypedResponseV7 request
+    let bytes := independentProtocolV7Projection response
+    TypedCommentRangeAggregatePassOf request response ∧
+    TypedSerializedResponseV7Of response bytes := by
+  dsimp only
+  constructor
+  · refine ⟨rfl, canonical_typed_response_v7_protocol request,
+      (typed_comment_integrity_aggregate_pass_sound
+        (typedRequestV6OfV7 request)).1, ?_⟩
+    intro side
+    have hSidePassed :=
+      typed_all_comment_range_sides_pass_v7_sound request hPass side
+    have hEvaluated :
+        (evaluateTypedCommentSideV7 request side).status ≠ .notEvaluated := by
+      intro hNotEvaluated
+      rw [hSidePassed] at hNotEvaluated
+      contradiction
+    refine ⟨rfl, typed_comment_selection_to_realization_v7_sound request side,
+      hSidePassed,
+      (typed_admitted_comment_source_set_v7_complete
+        request side hEvaluated).1,
+      (typed_comment_marker_scan_evidence_exact request side).1,
+      typed_evaluated_comment_definitions_v7_exact request side hEvaluated,
+      ?_⟩
+    exact typed_package_comment_range_integrity_sound request side
+      (typed_comment_side_pass_integrity_v7 request side hSidePassed)
+  · rfl
+
+def typedNegativeRequestV7 : TypedRequestV7 :=
+  { original := typedNegativePackageViewForSide .original
+    revised := typedNegativePackageViewForSide .revised
+    compared := typedNegativePackageViewForSide .compared
+    inherited := typedNegativeInheritedV5 }
+
+def typedTopologyWitnessId : CanonicalDecimalId :=
+  { negative := false, digits := [55] }
+
+def typedTopologyWitnessStory (kind : TypedSourceKind := .main)
+    (ordinal : Nat := 0) : TypedPhysicalStoryIdentity :=
+  { kind, physicalStoryOrdinal := ordinal }
+
+def typedTopologyWitnessAttribute : TypedXmlAttribute :=
+  { namespaceUri := typedWmlNamespace
+    localName := typedLiteral [105,100]
+    value := {
+      bytes := ByteArray.mk #[55]
+      limit := 1
+      admitted := by decide } }
+
+def typedTopologyWitnessEvent (kind : TypedMarkerKind)
+    (eventOrdinal : Nat) : TypedXmlEvent :=
+  let localName := match kind with
+    | .rangeStart =>
+        typedLiteral [99,111,109,109,101,110,116,82,97,110,103,101,83,116,97,114,116]
+    | .rangeEnd =>
+        typedLiteral [99,111,109,109,101,110,116,82,97,110,103,101,69,110,100]
+    | .reference =>
+        typedLiteral [99,111,109,109,101,110,116,82,101,102,101,114,101,110,99,101]
+  .startElement typedWmlNamespace localName
+    [typedTopologyWitnessAttribute] 1 true eventOrdinal
+
+def typedTopologyDefinitionEvent : TypedXmlEvent :=
+  .startElement typedWmlNamespace
+    (typedLiteral [99,111,109,109,101,110,116])
+    [typedTopologyWitnessAttribute] 1 false 0
+
+def typedTopologyDefinitionParsedPart : TypedParsedPart :=
+  { typedNegativeParsedPart with
+    expectedRootUri := typedWmlNamespace
+    expectedRootLocalName :=
+      typedLiteral [99,111,109,109,101,110,116,115]
+    events := [typedTopologyDefinitionEvent] }
+
+def typedTopologyDefinitionRealization : TypedCommentRealization :=
+  { typedNegativeRealization with
+    retainedParsedEvents := [typedTopologyDefinitionEvent]
+    parsed := typedTopologyDefinitionParsedPart }
+
+def typedTopologyWitnessSource (side : Side) (sourceOrdinal : Nat)
+    (partPath : BoundedBytes) (events : List TypedXmlEvent) :
+    TypedStorySource :=
+  { typedNegativeSource with
+    side
+    sourceOrdinal
+    partPath
+    parsed := { typedNegativeParsedPart with events, eventLimit := 32 } }
+
+def typedTopologyWitnessPackage (side : Side)
+    (mainEvents headerEvents : List TypedXmlEvent) : TypedPackageView :=
+  let main := typedTopologyWitnessSource side 0
+    (typedLiteral [119,111,114,100,47,100,111,99,117,109,101,110,116,46,120,109,108])
+    mainEvents
+  let headerPath :=
+    typedLiteral [119,111,114,100,47,104,101,97,100,101,114,49,46,120,109,108]
+  let header := typedTopologyWitnessSource side 1 headerPath headerEvents
+  { typedSelectedPackageView with
+    commentsRootNamespace := typedWmlNamespace
+    commentsRootLocalName :=
+      typedLiteral [99,111,109,109,101,110,116,115]
+    realization := some typedTopologyDefinitionRealization
+    mainSource := main
+    headerFooterStories := if headerEvents.isEmpty then [] else [{
+      physicalStoryOrdinal := 0
+      kind := .header
+      partPath := headerPath
+      originalPartPath := headerPath
+      revisedPartPath := headerPath
+      comparedPartPath := headerPath
+      selectingSlotOrdinals := [0]
+      source := some header }] }
+
+def typedTopologyWitnessRequest (mainEvents : List TypedXmlEvent)
+    (headerEvents : List TypedXmlEvent := []) : TypedRequestV7 :=
+  { typedNegativeRequestV7 with
+    original := typedTopologyWitnessPackage .original mainEvents headerEvents }
+
+def typedPointTopologyRequestV7 : TypedRequestV7 :=
+  typedTopologyWitnessRequest [typedTopologyWitnessEvent .reference 0]
+
+def typedRangeTopologyRequestV7 : TypedRequestV7 :=
+  typedTopologyWitnessRequest
+    [ typedTopologyWitnessEvent .rangeStart 0
+    , typedTopologyWitnessEvent .rangeEnd 1
+    , typedTopologyWitnessEvent .reference 2 ]
+
+def typedDuplicateReferenceRequestV7 : TypedRequestV7 :=
+  typedTopologyWitnessRequest
+    [ typedTopologyWitnessEvent .reference 0
+    , typedTopologyWitnessEvent .reference 1 ]
+
+def typedOrphanEndpointRequestV7 : TypedRequestV7 :=
+  typedTopologyWitnessRequest
+    [ typedTopologyWitnessEvent .rangeStart 0
+    , typedTopologyWitnessEvent .reference 1 ]
+
+def typedReversedRangeRequestV7 : TypedRequestV7 :=
+  typedTopologyWitnessRequest
+    [ typedTopologyWitnessEvent .rangeEnd 0
+    , typedTopologyWitnessEvent .rangeStart 1
+    , typedTopologyWitnessEvent .reference 2 ]
+
+def typedCrossStoryRangeRequestV7 : TypedRequestV7 :=
+  typedTopologyWitnessRequest
+    [ typedTopologyWitnessEvent .rangeStart 0
+    , typedTopologyWitnessEvent .reference 1 ]
+    [typedTopologyWitnessEvent .rangeEnd 0]
+
+def typedTopologyWitnessDefinition : TypedCommentDefinition :=
+  { occurrenceOrdinal := 0, rawId := some (typedLiteral [55])
+    canonicalId := some typedTopologyWitnessId, direct := true }
+
+def typedPointTopologyWitness : TypedMarkerScanEvidence :=
+  retainedOrIndependentTypedMarkerScanV7 typedPointTopologyRequestV7 .original
+
+def typedRangeTopologyWitness : TypedMarkerScanEvidence :=
+  retainedOrIndependentTypedMarkerScanV7 typedRangeTopologyRequestV7 .original
+
+theorem typed_point_comment_topology_witness_passes :
+    checkTypedPackageCommentRangeIntegrity
+      [typedTopologyWitnessDefinition] typedPointTopologyWitness = true := by decide
+
+theorem typed_ranged_comment_topology_witness_passes :
+    checkTypedPackageCommentRangeIntegrity
+      [typedTopologyWitnessDefinition] typedRangeTopologyWitness = true := by decide
+
+set_option maxRecDepth 100000 in
+theorem typed_duplicate_reference_witness_rejected :
+    checkTypedPackageCommentRangeIntegrity [typedTopologyWitnessDefinition]
+      (retainedOrIndependentTypedMarkerScanV7
+        typedDuplicateReferenceRequestV7 .original) =
+      false := by decide
+
+set_option maxRecDepth 100000 in
+theorem typed_orphan_endpoint_witness_rejected :
+    checkTypedPackageCommentRangeIntegrity [typedTopologyWitnessDefinition]
+      (retainedOrIndependentTypedMarkerScanV7
+        typedOrphanEndpointRequestV7 .original) =
+      false := by decide
+
+set_option maxRecDepth 100000 in
+theorem typed_reversed_range_witness_rejected :
+    checkTypedPackageCommentRangeIntegrity [typedTopologyWitnessDefinition]
+      (retainedOrIndependentTypedMarkerScanV7
+        typedReversedRangeRequestV7 .original) =
+      false := by decide
+
+set_option maxRecDepth 100000 in
+theorem typed_cross_story_range_witness_rejected :
+    checkTypedPackageCommentRangeIntegrity [typedTopologyWitnessDefinition]
+      (retainedOrIndependentTypedMarkerScanV7
+        typedCrossStoryRangeRequestV7 .original) =
+      false := by decide
+
+set_option maxRecDepth 100000 in
+theorem typed_duplicate_reference_witness_definitions_exact :
+    typedDefinitionsV7 typedDuplicateReferenceRequestV7 .original =
+      [typedTopologyWitnessDefinition] := by decide
+
+set_option maxRecDepth 100000 in
+theorem typed_orphan_endpoint_witness_definitions_exact :
+    typedDefinitionsV7 typedOrphanEndpointRequestV7 .original =
+      [typedTopologyWitnessDefinition] := by decide
+
+set_option maxRecDepth 100000 in
+theorem typed_reversed_range_witness_definitions_exact :
+    typedDefinitionsV7 typedReversedRangeRequestV7 .original =
+      [typedTopologyWitnessDefinition] := by decide
+
+set_option maxRecDepth 100000 in
+theorem typed_cross_story_range_witness_definitions_exact :
+    typedDefinitionsV7 typedCrossStoryRangeRequestV7 .original =
+      [typedTopologyWitnessDefinition] := by decide
+
+theorem typed_invalid_topology_witnesses_are_canonical :
+    typedDefinitionsV7 typedDuplicateReferenceRequestV7 .original =
+        [typedTopologyWitnessDefinition] ∧
+    typedDefinitionsV7 typedOrphanEndpointRequestV7 .original =
+        [typedTopologyWitnessDefinition] ∧
+    typedDefinitionsV7 typedReversedRangeRequestV7 .original =
+        [typedTopologyWitnessDefinition] ∧
+    typedDefinitionsV7 typedCrossStoryRangeRequestV7 .original =
+        [typedTopologyWitnessDefinition] ∧
+    typedPointTopologyWitness.inputStories =
+        canonicalTypedCommentSourcesV7 typedPointTopologyRequestV7 .original ∧
+    typedRangeTopologyWitness.inputStories =
+        canonicalTypedCommentSourcesV7 typedRangeTopologyRequestV7 .original ∧
+    (retainedOrIndependentTypedMarkerScanV7
+      typedDuplicateReferenceRequestV7 .original).inputStories =
+        canonicalTypedCommentSourcesV7 typedDuplicateReferenceRequestV7 .original ∧
+    (retainedOrIndependentTypedMarkerScanV7
+      typedOrphanEndpointRequestV7 .original).inputStories =
+        canonicalTypedCommentSourcesV7 typedOrphanEndpointRequestV7 .original ∧
+    (retainedOrIndependentTypedMarkerScanV7
+      typedReversedRangeRequestV7 .original).inputStories =
+        canonicalTypedCommentSourcesV7 typedReversedRangeRequestV7 .original ∧
+    (retainedOrIndependentTypedMarkerScanV7
+      typedCrossStoryRangeRequestV7 .original).inputStories =
+        canonicalTypedCommentSourcesV7 typedCrossStoryRangeRequestV7 .original := by
+  exact ⟨typed_duplicate_reference_witness_definitions_exact,
+    typed_orphan_endpoint_witness_definitions_exact,
+    typed_reversed_range_witness_definitions_exact,
+    typed_cross_story_range_witness_definitions_exact,
+    retained_or_independent_typed_marker_scan_v7_input_stories _ _,
+    retained_or_independent_typed_marker_scan_v7_input_stories _ _,
+    retained_or_independent_typed_marker_scan_v7_input_stories _ _,
+    retained_or_independent_typed_marker_scan_v7_input_stories _ _,
+    retained_or_independent_typed_marker_scan_v7_input_stories _ _,
+    retained_or_independent_typed_marker_scan_v7_input_stories _ _⟩
+
+theorem typed_missing_definition_association_witness_rejected :
+    checkTypedPackageCommentRangeIntegrity [] typedPointTopologyWitness = false := by decide
+
+theorem typed_comment_range_aggregate_pass_requires_integrity
+    (request : TypedRequestV7) (response : TypedProtocolV7Response)
+    (hAggregate : TypedCommentRangeAggregatePassOf request response)
+    (side : Side) :
+    TypedPackageCommentRangeIntegrity
+      (typedDefinitionsV7 request side)
+      (retainedOrIndependentTypedMarkerScanV7 request side) :=
+  (hAggregate.2.2.2 side).2.2.2.2.2.2
+
+theorem typed_package_comment_range_integrity_check_true
+    (definitions : List TypedCommentDefinition)
+    (scan : TypedMarkerScanEvidence)
+    (hIntegrity : TypedPackageCommentRangeIntegrity definitions scan) :
+    checkTypedPackageCommentRangeIntegrity definitions scan = true := by
+  unfold TypedPackageCommentRangeIntegrity at hIntegrity
+  unfold checkTypedPackageCommentRangeIntegrity
+  exact (congrArg
+    (fun crossingNone =>
+      crossingNone &&
+        checkTypedCommentIdsTopologyV7 definitions scan
+          (typedAllCommentIdsV7 definitions scan))
+    hIntegrity.1).trans hIntegrity.2
+
+set_option maxRecDepth 100000 in
+theorem typed_duplicate_reference_aggregate_witness_rejected
+    (response : TypedProtocolV7Response) :
+    ¬TypedCommentRangeAggregatePassOf
+      typedDuplicateReferenceRequestV7 response := by
+  intro hAggregate
+  have hIntegrity :=
+    typed_comment_range_aggregate_pass_requires_integrity
+      typedDuplicateReferenceRequestV7 response hAggregate .original
+  have hAccepted :=
+    typed_package_comment_range_integrity_check_true _ _ hIntegrity
+  cases typed_duplicate_reference_witness_definitions_exact
+  have hRejected := typed_duplicate_reference_witness_rejected
+  change checkTypedPackageCommentRangeIntegrity [typedTopologyWitnessDefinition]
+    (scanTypedCommentMarkersV7
+      (typedMarkerScanInputV7 typedDuplicateReferenceRequestV7 .original)) = false at hRejected
+  exact Bool.false_ne_true (hRejected.symm.trans hAccepted)
+
+set_option maxRecDepth 100000 in
+theorem typed_orphan_endpoint_aggregate_witness_rejected
+    (response : TypedProtocolV7Response) :
+    ¬TypedCommentRangeAggregatePassOf
+      typedOrphanEndpointRequestV7 response := by
+  intro hAggregate
+  have hIntegrity :=
+    typed_comment_range_aggregate_pass_requires_integrity
+      typedOrphanEndpointRequestV7 response hAggregate .original
+  have hAccepted :=
+    typed_package_comment_range_integrity_check_true _ _ hIntegrity
+  cases typed_orphan_endpoint_witness_definitions_exact
+  have hRejected := typed_orphan_endpoint_witness_rejected
+  change checkTypedPackageCommentRangeIntegrity [typedTopologyWitnessDefinition]
+    (scanTypedCommentMarkersV7
+      (typedMarkerScanInputV7 typedOrphanEndpointRequestV7 .original)) = false at hRejected
+  exact Bool.false_ne_true (hRejected.symm.trans hAccepted)
+
+set_option maxRecDepth 100000 in
+theorem typed_reversed_range_aggregate_witness_rejected
+    (response : TypedProtocolV7Response) :
+    ¬TypedCommentRangeAggregatePassOf
+      typedReversedRangeRequestV7 response := by
+  intro hAggregate
+  have hIntegrity :=
+    typed_comment_range_aggregate_pass_requires_integrity
+      typedReversedRangeRequestV7 response hAggregate .original
+  have hAccepted :=
+    typed_package_comment_range_integrity_check_true _ _ hIntegrity
+  cases typed_reversed_range_witness_definitions_exact
+  have hRejected := typed_reversed_range_witness_rejected
+  change checkTypedPackageCommentRangeIntegrity [typedTopologyWitnessDefinition]
+    (scanTypedCommentMarkersV7
+      (typedMarkerScanInputV7 typedReversedRangeRequestV7 .original)) = false at hRejected
+  exact Bool.false_ne_true (hRejected.symm.trans hAccepted)
+
+set_option maxRecDepth 100000 in
+theorem typed_cross_story_range_aggregate_witness_rejected
+    (response : TypedProtocolV7Response) :
+    ¬TypedCommentRangeAggregatePassOf
+      typedCrossStoryRangeRequestV7 response := by
+  intro hAggregate
+  have hIntegrity :=
+    typed_comment_range_aggregate_pass_requires_integrity
+      typedCrossStoryRangeRequestV7 response hAggregate .original
+  have hAccepted :=
+    typed_package_comment_range_integrity_check_true _ _ hIntegrity
+  cases typed_cross_story_range_witness_definitions_exact
+  have hRejected := typed_cross_story_range_witness_rejected
+  change checkTypedPackageCommentRangeIntegrity [typedTopologyWitnessDefinition]
+    (scanTypedCommentMarkersV7
+      (typedMarkerScanInputV7 typedCrossStoryRangeRequestV7 .original)) = false at hRejected
+  exact Bool.false_ne_true (hRejected.symm.trans hAccepted)
+
+def typedInjectedMarkerEvidenceV7 : TypedMarkerScanEvidence :=
+  { typedPointTopologyWitness with
+    inputStories := canonicalTypedCommentSourcesV7 typedNegativeRequestV7 .original }
+
+theorem typed_injected_marker_inventory_v7_rejected :
+    ¬TypedCommentMarkerScanOf typedNegativeRequestV7 .original
+      typedInjectedMarkerEvidenceV7 := by
+  intro h
+  have hDifferent : typedInjectedMarkerEvidenceV7 ≠
+      scanTypedCommentMarkersV7
+        (typedMarkerScanInputV7 typedNegativeRequestV7 .original) := by decide
+  exact hDifferent h.1
+
+theorem typed_omitted_story_v7_rejected :
+    ¬TypedCompleteCommentSourceSetV7Of typedNegativeRequestV7 .original [] := by
+  intro h
+  have hDifferent : [] ≠
+      canonicalTypedCommentSourcesV7 typedNegativeRequestV7 .original := by decide
+  exact hDifferent h.1
+
+theorem typed_copied_story_identity_v7_rejected :
+    ¬TypedCompleteCommentSourceSetV7Of typedNegativeRequestV7 .original
+      [typedInjectedSource] := by
+  intro h
+  have hDifferent : [typedInjectedSource] ≠
+      canonicalTypedCommentSourcesV7 typedNegativeRequestV7 .original := by decide
+  exact hDifferent h.1
+
+def typedSubstitutedEventsRequestV7 : TypedRequestV7 :=
+  { typedNegativeRequestV7 with
+    original := { (typedNegativePackageViewForSide .original) with
+      mainSource := { typedNegativeSource with
+        parsed := typedSubstitutedParsedPart } } }
+
+theorem typed_substituted_visited_events_v7_rejected :
+    ¬TypedCompleteCommentSourceSetV7Of typedSubstitutedEventsRequestV7 .original
+      (canonicalTypedCommentSourcesV7 typedNegativeRequestV7 .original) := by
+  intro h
+  have hDifferent : canonicalTypedCommentSourcesV7 typedNegativeRequestV7 .original ≠
+      canonicalTypedCommentSourcesV7 typedSubstitutedEventsRequestV7 .original := by decide
+  exact hDifferent h.1
+
+def typedDetachedRealizationEvaluationV7 : TypedSideCommentEvaluationV7 :=
+  { evaluateTypedCommentSideV7 typedNegativeRequestV7 .original with
+    realization := .ok (some typedNegativeRealization) }
+
+theorem typed_detached_selected_realization_v7_rejected :
+    ¬TypedSelectionToRealizationV7Of typedNegativeRequestV7 .original
+      typedDetachedRealizationEvaluationV7 := by
+  intro h
+  have hRealization := congrArg TypedSideCommentEvaluationV7.realization h.1
+  have hCanonical :
+      (evaluateTypedCommentSideV7 typedNegativeRequestV7 .original).realization =
+        .ok none := by rfl
+  rw [hCanonical] at hRealization
+  change Except.ok (some typedNegativeRealization) = Except.ok none at hRealization
+  injection hRealization with hOption
+  cases hOption
+
+def typedForgedCompleteEvaluationV7 : TypedSideCommentEvaluationV7 :=
+  { evaluateTypedCommentSideV7 typedNegativeRequestV7 .original with
+    status := .passed
+    sources := canonicalTypedCommentSourcesV7 typedNegativeRequestV7 .original
+    markerScan := typedInjectedMarkerEvidenceV7
+    definitions := [typedTopologyWitnessDefinition] }
+
+theorem typed_forged_completion_v7_rejected :
+    ¬TypedSelectionToRealizationV7Of typedNegativeRequestV7 .original
+      typedForgedCompleteEvaluationV7 := by
+  intro h
+  have hMarker := congrArg TypedSideCommentEvaluationV7.markerScan h.1
+  have hCanonical :
+      (evaluateTypedCommentSideV7 typedNegativeRequestV7 .original).markerScan =
+        scanTypedCommentMarkersV7
+          (typedMarkerScanInputV7 typedNegativeRequestV7 .original) := by rfl
+  rw [hCanonical] at hMarker
+  have hDifferent : typedInjectedMarkerEvidenceV7 ≠
+      scanTypedCommentMarkersV7
+        (typedMarkerScanInputV7 typedNegativeRequestV7 .original) := by decide
+  exact hDifferent hMarker
+
+def typedV7ProjectionWitnessResponse : TypedProtocolV7Response :=
+  canonicalTypedResponseV7 typedNegativeRequestV7
+
+set_option maxRecDepth 100000 in
+theorem typed_v7_inherited_field_drift_changes_projection :
+    independentProtocolV7Projection
+        { typedV7ProjectionWitnessResponse with fixedStories := .array [.nat 1] } ≠
+      independentProtocolV7Projection typedV7ProjectionWitnessResponse := by decide
+
+set_option maxRecDepth 100000 in
+theorem typed_v7_encoder_drift_changes_projection :
+    independentProtocolV7Projection
+        { typedV7ProjectionWitnessResponse with protocolVersion := .nat 6 } ≠
+      independentProtocolV7Projection typedV7ProjectionWitnessResponse := by decide
 
 end Tier2.CommentReferenceIntegrity.Typed

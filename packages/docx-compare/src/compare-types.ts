@@ -615,10 +615,17 @@ export interface DocumentIntegrityCommentInventory {
   status: Exclude<DocumentIntegrityCommentStatus, 'absent'>;
   relationship: DocumentIntegrityCommentRelationshipIdentity | null;
   referenceOccurrences: number;
+  rangeStartOccurrences?: number;
+  rangeEndOccurrences?: number;
   uniqueReferenceIds: number;
   definitions: number;
   nonDirectDefinitions: number;
   unreferencedDefinitions: number;
+}
+
+export interface DocumentIntegrityCommentMarkerSource {
+  sourceStory: 'main' | 'header' | 'footer' | 'footnotes' | 'endnotes';
+  sourceStoryOrdinal: number;
 }
 
 export interface DocumentIntegrityCommentFailure {
@@ -626,13 +633,26 @@ export interface DocumentIntegrityCommentFailure {
   side: DocumentIntegrityVerifierSide;
   kind: 'comments';
   detail: string;
-  ordinalSpace: 'relationship' | 'source' | 'definition' | 'reference' | 'aggregate';
+  ordinalSpace:
+    | 'relationship'
+    | 'source'
+    | 'definition'
+    | 'rangeStart'
+    | 'rangeEnd'
+    | 'reference'
+    | 'aggregate';
   firstOccurrenceOrdinal: number;
   occurrenceCount: number;
   source?: {
     sourceStory: 'main' | 'header' | 'footer' | 'footnotes' | 'endnotes' | 'comments';
     sourceStoryOrdinal: number;
   };
+  sourceSetOrdinal?: number;
+  sourceEventOrdinal?: number;
+  relatedSource?: DocumentIntegrityCommentMarkerSource;
+  relatedSourceSetOrdinal?: number;
+  relatedSourceEventOrdinal?: number;
+  rangeEndEventOrdinal?: number;
   canonicalId?: string;
   rawId?: string;
   rawIdByteLength?: number;
@@ -652,6 +672,16 @@ export interface DocumentIntegrityCommentScope {
   reconstructionMode: 'inplace';
   rangeTopology: false;
   threadedComments: false;
+}
+
+export interface DocumentIntegrityCommentRangeTopology {
+  checkerProtocolVersion: 7;
+  crossParagraphRanges: true;
+  crossingRanges: true;
+  ecmaUnmatchedEndpointPointAnchorsAccepted: false;
+  profile: 'safe-docx-paired-or-point';
+  samePhysicalStoryRequired: true;
+  status: Exclude<DocumentIntegrityCommentStatus, 'absent'>;
 }
 
 export interface DocumentIntegrityCertificate {
@@ -687,7 +717,7 @@ export interface DocumentIntegrityCertificate {
   /** Stable v1 main-story token counts. */
   parsedTokenCounts?: { original: number; revised: number; compared: number };
   /** Internal executable protocol used for package-level verification. */
-  checkerProtocolVersion?: 3 | 4 | 5 | 6;
+  checkerProtocolVersion?: 3 | 4 | 5 | 6 | 7;
   fixedStoryScope?: readonly ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml'];
   inputPackageSha256?: { originalDocx: string; revisedDocx: string; comparedDocx: string };
   stories?: DocumentIntegrityStoryCertificate[];
@@ -708,6 +738,7 @@ export interface DocumentIntegrityCertificate {
   noteInventories?: DocumentIntegrityNoteInventory[];
   noteIntegrityFailures?: DocumentIntegrityNoteFailure[];
   commentStoryScope?: DocumentIntegrityCommentScope;
+  commentRangeTopology?: DocumentIntegrityCommentRangeTopology;
   commentStory?: DocumentIntegrityCommentStory;
   commentInventories?: DocumentIntegrityCommentInventory[];
   commentIntegrityFailures?: DocumentIntegrityCommentFailure[];
