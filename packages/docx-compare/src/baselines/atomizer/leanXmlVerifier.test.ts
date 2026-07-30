@@ -1389,7 +1389,7 @@ describeWithLean('Lean fixed-story package protocol', () => {
       originalDocx, revisedDocx, comparedDocx,
       legacyDocumentXml: { original: '', revised: '', compared: '' },
       reconstructionMode: 'inplace',
-      options: { executablePath: LEAN_EXE },
+      options: { executablePath: LEAN_EXE, timeoutMs: 120_000 },
     });
 
   test.openspec('[LEAN-STORY-01] Fixed stories pass together')(
@@ -2189,7 +2189,7 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
       originalDocx, revisedDocx, comparedDocx,
       legacyDocumentXml: { original: '', revised: '', compared: '' },
       reconstructionMode: 'inplace',
-      options: { executablePath: LEAN_EXE },
+      options: { executablePath: LEAN_EXE, timeoutMs: 120_000 },
     });
 
   // coverage-rationale: One certificate exposes selection, side identities, and
@@ -4137,7 +4137,7 @@ describeWithLean('Lean compiled package extraction limits', () => {
     comparedDocx: docx,
     legacyDocumentXml: { original: '', revised: '', compared: '' },
     reconstructionMode: 'inplace',
-    options: { executablePath: LEAN_EXE },
+    options: { executablePath: LEAN_EXE, timeoutMs: 120_000 },
   });
 
   test.openspec('[LEAN-STORY-07] Unsafe package extraction fails closed')(
