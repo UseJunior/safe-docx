@@ -28,32 +28,35 @@ def fixtureExtraction : Except String SnapshotExtractionEvidence :=
     match hFind : index.find? "word/document.xml" with
     | none => .error "fixture lacks word/document.xml"
     | some entry =>
-      if hSize : fixtureXml.toUTF8.size = entry.expandedSize then
-        if hCrc : crc32 fixtureXml.toUTF8 = entry.crc32 then
-          .ok {
-            packageBytes := fixturePackageBytes
-            snapshotBytes := fixturePackageBytes
-            snapshotPath := "/supervisor-owned/package-fixture/package.docx"
-            snapshotWriteCount := 1
-            zipIndex := index
-            zipIndexExact := hIndex
-            selectedPartPath := "word/document.xml"
-            entry
-            selectedEntryExact := hFind
-            centralOffset := index.centralOffset
-            centralSize := index.centralSize
-            compressedPayload :=
-              fixturePackageBytes.extract entry.dataOffset entry.localSpanEnd
-            decompressedBytes := fixtureXml.toUTF8
-            extractionInvocationCount := 1
-            externalDecompressionTrusted := true
-            snapshotBytesExact := rfl
-            compressedPayloadExact := rfl
-            decompressedSizeExact := hSize
-            decompressedCrcExact := hCrc
-          }
-        else .error "fixture CRC mismatch"
-      else .error "fixture size mismatch"
+      if hRegular : entry.isDirectory = false then
+        if hSize : fixtureXml.toUTF8.size = entry.expandedSize then
+          if hCrc : crc32 fixtureXml.toUTF8 = entry.crc32 then
+            .ok {
+              packageBytes := fixturePackageBytes
+              snapshotBytes := fixturePackageBytes
+              snapshotPath := "/supervisor-owned/package-fixture/package.docx"
+              snapshotWriteCount := 1
+              zipIndex := index
+              zipIndexExact := hIndex
+              selectedPartPath := "word/document.xml"
+              entry
+              selectedEntryExact := hFind
+              selectedEntryRegular := hRegular
+              centralOffset := index.centralOffset
+              centralSize := index.centralSize
+              compressedPayload :=
+                fixturePackageBytes.extract entry.dataOffset entry.localSpanEnd
+              decompressedBytes := fixtureXml.toUTF8
+              extractionInvocationCount := 1
+              externalDecompressionTrusted := true
+              snapshotBytesExact := rfl
+              compressedPayloadExact := rfl
+              decompressedSizeExact := hSize
+              decompressedCrcExact := hCrc
+            }
+          else .error "fixture CRC mismatch"
+        else .error "fixture size mismatch"
+      else .error "fixture selected entry is not a regular file"
 
 def fixtureParseEvidence : Except String ProductionParseEvidence := do
   let extraction ← fixtureExtraction

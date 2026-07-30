@@ -20,7 +20,8 @@ import {
 
 registerCleanup();
 
-const test = testAllure.epic('Document Editing').withLabels({ feature: 'CLI Comparison' });
+const TEST_FEATURE = 'add-verified-comparison-cli';
+const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
 
 const zeroStats = {
   insertions: 0,
