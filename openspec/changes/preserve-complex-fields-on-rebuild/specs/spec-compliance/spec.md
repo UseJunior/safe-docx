@@ -12,7 +12,10 @@ be labeled as a SafeDocX metamorphic invariant rather than an ECMA requirement.
 
 - **WHEN** REF and PAGEREF are added to the targeted registry
 - **THEN** their entries SHALL describe classification and unchanged rebuild preservation
-- **AND** SHALL NOT claim field evaluation, pagination, cached-result correctness, or complete field-engine equivalence
+- **AND** the unchanged-rebuild claim SHALL NOT imply field evaluation,
+  pagination, cached-result correctness, or complete field-engine equivalence
+- **AND** separately specified, independently tested field capabilities MAY be
+  documented without broadening the rebuild claim
 
 #### Scenario: [SDX-FIELD-CONFORMANCE-02] Executable evidence names the verification boundary
 

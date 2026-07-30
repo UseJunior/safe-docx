@@ -4,6 +4,7 @@ export * from './generated/ecma-376-vocabulary.js';
 export * from './shared/ooxml/types.js';
 export * from './shared/docx/DocxArchive.js';
 export * from './shared/field-structure.js';
+export * from './shared/field-semantics.js';
 export * from './shared/validators/structural.js';
 
 // Re-export core WmlComparer types

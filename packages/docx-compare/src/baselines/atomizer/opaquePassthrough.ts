@@ -3,6 +3,7 @@ import { posix } from 'node:path';
 import type { ComparisonUnitAtom, DocxArchive, OpaquePassthroughNode } from '@usejunior/docx-core';
 import {
   CorrelationStatus,
+  classifyFieldInstruction as classifySharedFieldInstruction,
   getW14ParaId,
   OOXML,
   normalizeOpcRelationshipTarget,
@@ -832,57 +833,6 @@ function hasTrackedParagraphOwnership(atom: ComparisonUnitAtom, paragraph: Eleme
   return false;
 }
 
-function tokenizeFieldInstruction(instruction: string): string[] | null {
-  const tokens: string[] = [];
-  let index = 0;
-  while (index < instruction.length) {
-    while (index < instruction.length && /\s/.test(instruction[index]!)) index++;
-    if (index >= instruction.length) break;
-    if (instruction[index] === '"') {
-      index++;
-      let value = '';
-      let closed = false;
-      while (index < instruction.length) {
-        const character = instruction[index++]!;
-        if (character === '"') {
-          closed = true;
-          break;
-        }
-        if (character === '\r' || character === '\n') return null;
-        value += character;
-      }
-      if (!closed || (index < instruction.length && !/\s/.test(instruction[index]!))) return null;
-      tokens.push(value);
-      continue;
-    }
-    const start = index;
-    while (index < instruction.length && !/\s/.test(instruction[index]!)) {
-      if (instruction[index] === '"') return null;
-      index++;
-    }
-    tokens.push(instruction.slice(start, index));
-  }
-  return tokens;
-}
-
-function validFieldSwitches(
-  tokens: readonly string[],
-  allowed: ReadonlySet<string>,
-  argumentSwitches: ReadonlySet<string> = new Set(['*', '#', '@']),
-): boolean {
-  for (let index = 0; index < tokens.length; index++) {
-    const token = tokens[index]!;
-    if (!token.startsWith('\\') || token.length !== 2) return false;
-    const name = token[1]!.toLowerCase();
-    if (!allowed.has(name)) return false;
-    if (argumentSwitches.has(name)) {
-      const argument = tokens[++index];
-      if (!argument || argument.startsWith('\\')) return false;
-    }
-  }
-  return true;
-}
-
 function supportedFieldKeyword(instruction: string): SupportedComplexField | null {
   const match = /^\s*([A-Za-z]+)/.exec(instruction);
   if (!match) return null;
@@ -894,25 +844,17 @@ function supportedFieldKeyword(instruction: string): SupportedComplexField | nul
 }
 
 export function classifyFieldInstruction(instruction: string): SupportedComplexField | null {
-  const tokens = tokenizeFieldInstruction(instruction);
-  if (!tokens || tokens.length === 0) return null;
-  const keyword = tokens[0]!.toUpperCase();
-  if (keyword === 'PAGE') {
-    return validFieldSwitches(tokens.slice(1), new Set(['*', '#'])) ? 'PAGE' : null;
+  const classification = classifySharedFieldInstruction(instruction);
+  if (
+    classification.preservationSupported &&
+    (classification.kind === 'PAGE' ||
+      classification.kind === 'NUMPAGES' ||
+      classification.kind === 'REF' ||
+      classification.kind === 'PAGEREF')
+  ) {
+    return classification.kind;
   }
-  if (keyword === 'NUMPAGES') {
-    return validFieldSwitches(tokens.slice(1), new Set(['*', '#'])) ? 'NUMPAGES' : null;
-  }
-  if (keyword !== 'REF' && keyword !== 'PAGEREF') return null;
-  const bookmark = tokens[1];
-  if (!bookmark || bookmark.startsWith('\\')) return null;
-  const allowed = keyword === 'REF'
-    ? new Set(['d', 'f', 'h', 'n', 'p', 'r', 't', 'w', '*'])
-    : new Set(['h', 'p', '*']);
-  const argumentSwitches = keyword === 'REF'
-    ? new Set(['*', 'd'])
-    : new Set(['*']);
-  return validFieldSwitches(tokens.slice(2), allowed, argumentSwitches) ? keyword : null;
+  return null;
 }
 
 function materializeOrderedRange(elements: readonly Element[]): {

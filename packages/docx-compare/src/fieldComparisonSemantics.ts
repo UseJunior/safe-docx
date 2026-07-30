@@ -1,4 +1,8 @@
-import { OOXML, parseXml } from '@usejunior/docx-core';
+import {
+  OOXML,
+  classifyFieldInstruction,
+  parseXml,
+} from '@usejunior/docx-core';
 
 /**
  * Stable comparison identity for volatile PAGEREF cached results.
@@ -7,9 +11,17 @@ import { OOXML, parseXml } from '@usejunior/docx-core';
  * @see https://github.com/UseJunior/safe-docx/issues/716
  */
 export function pagerefComparisonIdentity(instructionText: string): string | undefined {
-  const instruction = instructionText.trim().replace(/\s+/gu, ' ');
-  if (!/^PAGEREF(?:\s|$)/iu.test(instruction)) return undefined;
-  return `__safe_docx_pageref__|${instruction.replace(/^PAGEREF/iu, 'PAGEREF')}`;
+  const classification = classifyFieldInstruction(instructionText);
+  if (
+    classification.kind !== 'PAGEREF' ||
+    classification.evaluationClass !== 'layout-dependent'
+  ) {
+    return undefined;
+  }
+  return `__safe_docx_pageref__|${classification.normalizedInstruction.replace(
+    /^PAGEREF/iu,
+    'PAGEREF',
+  )}`;
 }
 
 /** True for the built-in TOC paragraph style identifiers used by Word. */
