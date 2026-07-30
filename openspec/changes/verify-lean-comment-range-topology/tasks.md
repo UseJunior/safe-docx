@@ -29,10 +29,10 @@
   aggregate/serialization soundness.
 - [x] 2.2 Prove all seven semantic targets and their recursive closures
   axiom-free; keep the repository at zero `sorry`.
-- [ ] 2.3 Implement typed package/source/event adapters and prove direct
+- [x] 2.3 Implement typed package/source/event adapters and prove direct
   retained `visitedEvents` projection equivalent to the independent scan
   without copied whole-event lists.
-- [ ] 2.4 Add separately named source, marker-scan, definition-realization,
+- [x] 2.4 Add separately named source, marker-scan, definition-realization,
   incomplete, UTF-8/JSON, and production refinements with the six exact
   propositions pinned in the design, using exactly
   `[propext, Classical.choice, Quot.sound]` and the existing normalized

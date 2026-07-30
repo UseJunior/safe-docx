@@ -140,22 +140,22 @@ theorem typed_xml_name_of_production_bytes (value : String) :
       value.toUTF8.data.toList := by
   by_cases hWml : value = wmlNamespace
   · subst value
-    native_decide
+    decide
   · by_cases hId : value = "id"
     · subst value
-      native_decide
+      decide
     · by_cases hComment : value = "comment"
       · subst value
-        native_decide
+        decide
       · by_cases hStart : value = "commentRangeStart"
         · subst value
-          native_decide
+          decide
         · by_cases hEnd : value = "commentRangeEnd"
           · subst value
-            native_decide
+            decide
           · by_cases hReference : value = "commentReference"
             · subst value
-              native_decide
+              decide
             · simp [typedXmlNameOfProduction, hWml, hId, hComment,
                 hStart, hEnd, hReference, typedBoundedBytesOfString]
 
@@ -193,11 +193,11 @@ theorem mapTR_eq_map {α β : Type} (f : α → β) (values : List α) :
 theorem typed_wml_namespace_adapter :
     typedWmlNamespace =
       typedXmlNameOfProduction wmlNamespace := by
-  native_decide
+  decide
 
 theorem typed_id_local_name_adapter :
     typedLiteral [105, 100] = typedXmlNameOfProduction "id" := by
-  native_decide
+  decide
 
 theorem typed_attribute_match_of_production
     (item : ExpandedXmlAttribute) :
@@ -281,7 +281,7 @@ theorem typed_attribute_value_of_production
 theorem typed_comment_local_name_adapter :
     typedLiteral [99,111,109,109,101,110,116] =
       typedXmlNameOfProduction "comment" := by
-  native_decide
+  decide
 
 theorem typed_definition_match_of_production
     (uri localName : String) :
@@ -11207,8 +11207,18 @@ def productionCommentSourceBindingCheckV7
     (request : RunRequestCoreRequestV7)
     (side : Tier2.CommentReferenceIntegrity.VerifierSide)
     (record : RunRequestPackageRecord) : Bool :=
+  commentSelectionResultEq
+    (Tier2.CommentReferenceIntegrity.selectConventionalMainComment
+      (commentPackageViewOfCore request side))
+    (selectConventionalMainCommentRecords record.relationships) &&
   productionCommentSourceDomainMetadataCheckAtV7 request side &&
   record.commentEvidence.markerScanRun.any fun run =>
+    decide ((Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+      (commentPackageViewOfCore request side) side
+      (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+        (packageViewOfRecord record) (noteSideOfCommentSide side)
+        (selectedStoriesOfRecord record))).sources =
+      run.scans.realizations.map (·.slot)) &&
     productionCommentSourceEventsExactCheckV7
       record.commentEvidence.sources run.scans.realizations
 
@@ -11218,21 +11228,33 @@ theorem production_comment_source_binding_check_v7_sound
     (record : RunRequestPackageRecord)
     (hCheck : productionCommentSourceBindingCheckV7
       request side record = true) :
+    Tier2.CommentReferenceIntegrity.selectConventionalMainComment
+        (commentPackageViewOfCore request side) =
+      selectConventionalMainCommentRecords record.relationships ∧
     ProductionCommentSourceDomainMetadataV7Of request side ∧
     ∃ run, record.commentEvidence.markerScanRun = some run ∧
+      (Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+        (commentPackageViewOfCore request side) side
+        (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+          (packageViewOfRecord record) (noteSideOfCommentSide side)
+          (selectedStoriesOfRecord record))).sources =
+        run.scans.realizations.map (·.slot) ∧
       ProductionCommentSourceEventsExactV7
         record.commentEvidence.sources run.scans.realizations := by
   unfold productionCommentSourceBindingCheckV7 at hCheck
   simp only [Bool.and_eq_true] at hCheck
-  refine ⟨production_comment_source_domain_metadata_check_at_v7_sound
-    request side hCheck.1, ?_⟩
+  refine ⟨comment_selection_result_eq_sound _ _ hCheck.1.1,
+    production_comment_source_domain_metadata_check_at_v7_sound
+      request side hCheck.1.2, ?_⟩
   cases hRun : record.commentEvidence.markerScanRun with
   | none => simp [hRun] at hCheck
   | some run =>
-      refine ⟨run, rfl, ?_⟩
-      simp [hRun] at hCheck
+      have hRunChecks := hCheck.2
+      simp [hRun] at hRunChecks
+      refine ⟨run, rfl, ?_, ?_⟩
+      exact hRunChecks.1
       exact production_comment_source_events_exact_check_v7_sound
-        _ _ hCheck.2
+        _ _ hRunChecks.2
 
 def productionTypedCommentAdmissionCheckAtV7
     (request : RunRequestCoreRequestV7)
@@ -11252,7 +11274,12 @@ def productionTypedCommentAdmissionCheckAtV7
           (Tier2.NoteReferenceIntegrity.typedSelectedCommentOfProduction
             selected)
           (Tier2.NoteReferenceIntegrity.typedCommentRealizationOfProduction
-            part)
+            part) &&
+        match Tier2.CommentReferenceIntegrity.realizeSelectedCommentV6
+            (commentPackageViewOfCore request side) side
+            (commentResourceUsageOfCore request) selected with
+        | .ok _ => true
+        | .error _ => false
 
 theorem production_typed_comment_admission_check_at_v7_sound
     (request : RunRequestCoreRequestV7)
@@ -11264,7 +11291,7 @@ theorem production_typed_comment_admission_check_at_v7_sound
         record.relationships = .ok (some selected))
     (hCheck :
       productionTypedCommentAdmissionCheckAtV7 request side record = true) :
-    ∃ part,
+    ∃ part realization,
       record.commentEvidence.part = some part ∧
       part.identity = selected ∧
       (Tier2.NoteReferenceIntegrity.typedPackageViewOfRecord
@@ -11276,7 +11303,11 @@ theorem production_typed_comment_admission_check_at_v7_sound
         (Tier2.NoteReferenceIntegrity.typedSelectedCommentOfProduction
           selected)
         (Tier2.NoteReferenceIntegrity.typedCommentRealizationOfProduction
-          part) = true := by
+          part) = true ∧
+      Tier2.CommentReferenceIntegrity.realizeSelectedCommentV6
+        (commentPackageViewOfCore request side) side
+        (commentResourceUsageOfCore request) selected =
+          .ok realization := by
   unfold productionTypedCommentAdmissionCheckAtV7 at hCheck
   rw [hSelected] at hCheck
   cases hPart : record.commentEvidence.part with
@@ -11284,8 +11315,15 @@ theorem production_typed_comment_admission_check_at_v7_sound
   | some part =>
       simp only [hPart, Option.any, Bool.and_eq_true,
         decide_eq_true_eq, Option.isNone_iff_eq_none] at hCheck
-      refine ⟨part, rfl, hCheck.1.1, hCheck.1.2, ?_⟩
-      simpa only [hCheck.1.1] using hCheck.2
+      cases hRealize :
+          Tier2.CommentReferenceIntegrity.realizeSelectedCommentV6
+            (commentPackageViewOfCore request side) side
+            (commentResourceUsageOfCore request) selected with
+      | error failure => simp [hRealize] at hCheck
+      | ok realization =>
+          refine ⟨part, realization, rfl, hCheck.1.1.1,
+            hCheck.1.1.2, ?_, rfl⟩
+          simpa only [hCheck.1.1.1, hRealize] using hCheck.1.2
 
 theorem production_typed_definitions_retained_v7
     (request : VerifierRequestV7)
@@ -11344,7 +11382,8 @@ theorem production_typed_definitions_retained_v7
           simp only [hSelected] at hSelection
           rcases production_typed_comment_admission_check_at_v7_sound
               request.core side record selected hSelected hAdmissionCheck with
-            ⟨part, hPart, hIdentity, hFailure, hAdmission⟩
+            ⟨part, realization, hPart, hIdentity, hFailure,
+              hAdmission, hOperationalRealization⟩
           have hRealize := typed_realization_success_of_production_v7
             request typedRequest side selected part hTyped hSelected hPart
               hIdentity hFailure hAdmission
@@ -11497,11 +11536,25 @@ theorem production_comment_outcome_checks_v7_at
     productionCommentOutcomeCheckAtV7
         (request.packageRecord
           (noteSideOfCommentSide side)).commentEvidence = true ∧
+      Tier2.CommentReferenceIntegrity.selectConventionalMainComment
+          (commentPackageViewOfCore request side) =
+        selectConventionalMainCommentRecords
+          (request.packageRecord
+            (noteSideOfCommentSide side)).relationships ∧
       ProductionCommentSourceDomainMetadataV7Of request side ∧
       ∃ run,
         (request.packageRecord
           (noteSideOfCommentSide side)).commentEvidence.markerScanRun =
             some run ∧
+        (Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+          (commentPackageViewOfCore request side) side
+          (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+            (packageViewOfRecord (request.packageRecord
+              (noteSideOfCommentSide side)))
+            (noteSideOfCommentSide side)
+            (selectedStoriesOfRecord (request.packageRecord
+              (noteSideOfCommentSide side))))).sources =
+          run.scans.realizations.map (·.slot) ∧
         ProductionCommentSourceEventsExactV7
           (request.packageRecord
             (noteSideOfCommentSide side)).commentEvidence.sources
@@ -11902,7 +11955,7 @@ theorem typed_marker_candidate_none_of_production_kind_none_v7
                   (typedXmlNameOfProduction uri).bytes =
                     typedWmlNamespace.bytes := by
                 subst uri
-                native_decide
+                decide
               have hStartBytes :
                   (typedXmlNameOfProduction localName).bytes ≠
                     (typedLiteral
@@ -11912,7 +11965,7 @@ theorem typed_marker_candidate_none_of_production_kind_none_v7
                 apply hStart
                 apply (typed_xml_name_of_production_reflects_equality
                   localName "commentRangeStart").mp
-                exact h.trans (by native_decide)
+                exact h.trans (by decide)
               have hEndBytes :
                   (typedXmlNameOfProduction localName).bytes ≠
                     (typedLiteral
@@ -11922,7 +11975,7 @@ theorem typed_marker_candidate_none_of_production_kind_none_v7
                 apply hEnd
                 apply (typed_xml_name_of_production_reflects_equality
                   localName "commentRangeEnd").mp
-                exact h.trans (by native_decide)
+                exact h.trans (by decide)
               have hReferenceBytes :
                   (typedXmlNameOfProduction localName).bytes ≠
                     (typedLiteral
@@ -11932,7 +11985,7 @@ theorem typed_marker_candidate_none_of_production_kind_none_v7
                 apply hReference
                 apply (typed_xml_name_of_production_reflects_equality
                   localName "commentReference").mp
-                exact h.trans (by native_decide)
+                exact h.trans (by decide)
               simpa [hNamespace,
                 hStartBytes, hEndBytes, hReferenceBytes]
       · have hNamespace :
@@ -11946,7 +11999,7 @@ theorem typed_marker_candidate_none_of_production_kind_none_v7
               typedWmlNamespace =
                 typedXmlNameOfProduction
                   Tier2.XmlTripleChecker.wmlNamespace := by
-            native_decide
+            decide
           simpa only [hWml] using hEqual
         simp [hNamespace]
   | endElement => rfl
@@ -12407,7 +12460,7 @@ theorem production_canonical_typed_marker_scan_v7
     production_comment_outcome_checks_v7_at
       request.core side hComment hChecks
   rcases hAt with
-    ⟨hOutcome, hDomain, run, hRunStored, hExact⟩
+    ⟨hOutcome, hSelector, hDomain, run, hRunStored, hSourceSlots, hExact⟩
   rcases hComment with
     ⟨hSources, hIdentities, hSelection,
       ⟨markerRun, markerEvidence, hMarkerRun, hMarkerResult,
@@ -12470,7 +12523,7 @@ theorem production_canonical_typed_topology_v7
     production_comment_admission_checks_v7_at
       request.core side hComment hChecks
   rcases hAt with
-    ⟨hOutcome, hDomain, run, hRunStored, hExact⟩
+    ⟨hOutcome, hSelector, hDomain, run, hRunStored, hSourceSlots, hExact⟩
   rcases hComment with
     ⟨hSources, hIdentities, hSelection,
       ⟨markerRun, markerEvidence, hMarkerRun, hMarkerResult,
@@ -12580,7 +12633,8 @@ theorem production_typed_selection_and_realization_resolved_v7
               request.core side hComment hChecks
           rcases production_typed_comment_admission_check_at_v7_sound
               request.core side record selected hSelected hAdmission with
-            ⟨part, hPart, hIdentity, hFailure, hAdmitted⟩
+            ⟨part, realization, hPart, hIdentity, hFailure,
+              hAdmitted, hOperationalRealization⟩
           have hTypedSelection :
               selectTypedCommentV7
                   (typedPackageAt typedRequest
@@ -12625,7 +12679,7 @@ theorem production_typed_marker_prerequisites_v7
   have hAt :=
     production_comment_outcome_checks_v7_at
       request.core side hComment hChecks
-  have hDomain := hAt.2.1
+  have hDomain := hAt.2.2.1
   have hSourceLength :
       (canonicalTypedCommentSourcesV7 typedRequest
         (typedSideOfVerifierSide side)).length ≤ 387 := by
@@ -12770,6 +12824,329 @@ theorem production_typed_all_comment_range_sides_pass_v7
         exact production_canonical_typed_topology_v7
           request typedRequest .compared hTyped commentEvidence.2.2 hChecks
 
+theorem production_actual_comment_source_set_refinement_v7
+    (request : VerifierRequestV7)
+    (typedRequest : TypedRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (hTyped : typedRequestOfProductionV7 request = some typedRequest)
+    (hComment : ProductionCommentEvidenceOf
+      (request.core.packageRecord (noteSideOfCommentSide side)))
+    (hChecks : productionCommentOutcomeChecksV7 request.core = true) :
+    actualExecutableCommentSourceSetV7RefinementOf
+      request typedRequest side := by
+  have hAt :=
+    production_comment_outcome_checks_v7_at
+      request.core side hComment hChecks
+  rcases hAt with
+    ⟨hOutcome, hSelector, hDomain, run, hRunStored, hSourceSlots, hExact⟩
+  rcases hComment.2.2.2.1 with
+    ⟨markerRun, markerEvidence, hMarkerRun, hMarkerResult,
+      hMarkerExact, hMarkerNoCross, hMarkerInvocation,
+      hMarkerStored⟩
+  have hRunEq : run = markerRun := by
+    exact Option.some.inj (hRunStored.symm.trans hMarkerRun)
+  subst run
+  let set := Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+    (request.packageView side) side (request.noteEvaluation side)
+  let scans := markerRun.scans
+  refine ⟨set, scans, rfl, ?_, hTyped, ?_⟩
+  · unfold VerifierRequestV7.retainedSourceScans
+    simp [hMarkerRun, scans]
+  · have hPackage :=
+      typed_package_at_of_production_v7 request typedRequest side hTyped
+    unfold ExecutableCommentSourceSetV7ValueOf
+    dsimp only
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · rw [hPackage]
+      rfl
+    · rw [hPackage]
+      rfl
+    · unfold set scans
+      simpa [VerifierRequestV7.packageView,
+        VerifierRequestV7.noteEvaluation] using hSourceSlots
+    · exact production_comment_source_events_exact_v7_to_realizations
+        request side typedRequest markerRun.scans.realizations
+          hTyped hDomain hExact
+
+theorem production_actual_comment_marker_scan_refinement_v7
+    (request : VerifierRequestV7)
+    (typedRequest : TypedRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (hTyped : typedRequestOfProductionV7 request = some typedRequest)
+    (hComment : ProductionCommentEvidenceOf
+      (request.core.packageRecord (noteSideOfCommentSide side)))
+    (hChecks : productionCommentOutcomeChecksV7 request.core = true) :
+    actualExecutableCommentMarkerScanV7RefinementOf
+      request typedRequest side := by
+  have hAt :=
+    production_comment_outcome_checks_v7_at
+      request.core side hComment hChecks
+  rcases hAt with
+    ⟨hOutcome, hSelector, hDomain, run, hRunStored, hSourceSlots, hExact⟩
+  rcases hComment.2.2.2.1 with
+    ⟨markerRun, markerEvidence, hMarkerRun, hMarkerResult,
+      hMarkerExact, hMarkerNoCross, hMarkerInvocation,
+      hMarkerStored⟩
+  have hRunEq : run = markerRun := by
+    exact Option.some.inj (hRunStored.symm.trans hMarkerRun)
+  subst run
+  rcases production_canonical_typed_marker_scan_v7
+      request typedRequest side hTyped hComment hChecks with
+    ⟨typedMarker, hTypedMarkerStored, hTypedMarker⟩
+  have hMarkerEq : typedMarker = markerEvidence := by
+    exact Option.some.inj (hTypedMarkerStored.symm.trans hMarkerStored)
+  subst typedMarker
+  let set := Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+    (request.packageView side) side (request.noteEvaluation side)
+  let scans := markerRun.scans
+  refine ⟨set, scans, markerEvidence, rfl, ?_, ?_, ?_, hTyped, ?_⟩
+  · unfold VerifierRequestV7.retainedSourceScans
+    simp [hMarkerRun, scans]
+  · apply retained_comment_marker_scan_run_for_matching_set
+      _ _ markerRun set markerEvidence
+    · simpa [set, VerifierRequestV7.packageView,
+        VerifierRequestV7.noteEvaluation] using hSourceSlots
+    · exact hMarkerResult
+  · constructor
+    · unfold VerifierRequestV7.retainedCommentRangeScanResult
+      simp [hMarkerRun, hMarkerResult]
+    · exact hMarkerInvocation
+  · unfold ExecutableCommentMarkerScanV7ValueOf
+    dsimp only
+    refine ⟨?_, hMarkerInvocation, hTypedMarker⟩
+    simpa [set, scans, VerifierRequestV7.packageView,
+      VerifierRequestV7.noteEvaluation] using hSourceSlots
+
+theorem production_actual_comment_definition_refinement_v7
+    (request : VerifierRequestV7)
+    (typedRequest : TypedRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (hTyped : typedRequestOfProductionV7 request = some typedRequest)
+    (hPackage : ProductionPackageRecordOf
+      (request.core.packageRecord (noteSideOfCommentSide side)))
+    (hComment : ProductionCommentEvidenceOf
+      (request.core.packageRecord (noteSideOfCommentSide side)))
+    (hChecks : productionCommentOutcomeChecksV7 request.core = true) :
+    actualExecutableCommentDefinitionV7RefinementOf
+      request typedRequest side := by
+  let record :=
+    request.core.packageRecord (noteSideOfCommentSide side)
+  have hAt :=
+    production_comment_outcome_checks_v7_at
+      request.core side hComment hChecks
+  have hSelector :
+      selectConventionalMainCommentV7 (request.packageView side) =
+        selectConventionalMainCommentRecords record.relationships := by
+    simpa [selectConventionalMainCommentV7,
+      VerifierRequestV7.packageView, record] using hAt.2.1
+  unfold actualExecutableCommentDefinitionV7RefinementOf
+  rw [hSelector]
+  have hSelection := hComment.2.2.1
+  cases hSelected :
+      selectConventionalMainCommentRecords record.relationships with
+  | error failure =>
+      simp only [record, hSelected] at hSelection
+  | ok selected? =>
+      cases selected? with
+      | none => trivial
+      | some selected =>
+          have hAdmission :=
+            production_comment_admission_checks_v7_at
+              request.core side hComment hChecks
+          rcases production_typed_comment_admission_check_at_v7_sound
+              request.core side record selected hSelected hAdmission with
+            ⟨part, realization, hPart, hIdentity, hFailure,
+              hTypedAdmission, hRun⟩
+          have hRetained :=
+            Tier2.CommentReferenceIntegrity.realize_selected_comment_v6_success
+              (request.packageView side) side
+              (commentResourceUsageOfCore request.core)
+              selected realization hRun
+          have hRealization :
+              realization = semanticCommentRealizationOfProduction part := by
+            have hStored :
+                (request.packageView side).retainedCommentRealization =
+                  some (semanticCommentRealizationOfProduction part) := by
+              simp [VerifierRequestV7.packageView, commentPackageViewOfCore,
+                record, hPart]
+            exact Option.some.inj (hRetained.1.symm.trans hStored)
+          subst realization
+          have hParse : ProductionParseEvidenceOf record part.parseEvidence := by
+            apply hPackage.2.2.2.1
+            simp [productionParseEvidencesOfRecord, record, hPart]
+          rcases hParse with
+            ⟨_, _, hExtraction, _, _, _, _, _, hParseCount, _⟩
+          rcases hExtraction with
+            ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+              hExtractionCount, _⟩
+          have hCounts :
+              request.retainedCommentRealization side =
+                  some (semanticCommentRealizationOfProduction part) ∧
+                request.commentExtractionInvocationCount side = 1 ∧
+                request.commentParseInvocationCount side = 1 := by
+            refine ⟨?_, ?_, ?_⟩
+            · simpa [record, hPart] using hRetained.1
+            · simp [VerifierRequestV7.commentExtractionInvocationCount,
+                record, hPart, hExtractionCount]
+            · simp [VerifierRequestV7.commentParseInvocationCount,
+                record, hPart, hParseCount]
+          refine ⟨semanticCommentRealizationOfProduction part,
+            hSelector.trans hSelected, hRun, hCounts, hTyped, ?_⟩
+          unfold ExecutableCommentDefinitionRealizationV7ValueOf
+          dsimp only
+          have hTypedPackage :=
+            typed_package_at_of_production_v7
+              request typedRequest side hTyped
+          rcases hComment.2.2.2.2 with
+            ⟨retained, hRetainedScan, hScanCount, hInput, hOutput,
+              hCrossing, hIntegrity, hInventory, hComplete, hLimit,
+              hIssues⟩
+          have hInputPart : retained.input = {
+              sourceEvents := []
+              definitionEvents := part.parseEvidence.parsed.events
+            } := by
+            rw [hInput]
+            unfold productionCommentScanInput
+            rw [hPart]
+            rfl
+          have hDefinitionEvents :=
+            retained_comment_definitions_refine_typed_v7
+              retained part.parseEvidence.parsed.events hInputPart hOutput
+          rcases production_typed_definitions_retained_v7
+              request typedRequest side hTyped hComment hAdmission with
+            ⟨definitionRetained, hDefinitionRetained, hTypedDefinitions⟩
+          have hRetainedEq : definitionRetained = retained := by
+            exact Option.some.inj
+              (hDefinitionRetained.symm.trans hRetainedScan)
+          subst definitionRetained
+          refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+          · rw [hTypedPackage]
+            rfl
+          · rw [hTypedPackage]
+            rfl
+          · rw [hTypedPackage]
+            simp [Tier2.NoteReferenceIntegrity.typedPackageViewOfRecord,
+              record, hPart, hIdentity,
+              Tier2.NoteReferenceIntegrity.typedCommentRealizationOfProduction,
+              Tier2.NoteReferenceIntegrity.typedSelectedCommentOfProduction,
+              typedBoundedBytesOfString]
+          · rw [hTypedPackage]
+            simp only [Tier2.NoteReferenceIntegrity.typedPackageViewOfRecord,
+              record, hPart, Option.map]
+            exact production_xml_events_exact_check_from_sound 0 _ _
+              (production_xml_events_exact_check_from_production _)
+          · exact hTypedDefinitions.trans hDefinitionEvents.symm
+          · exact ⟨retained, hRetainedScan, hScanCount, hInput, hOutput,
+              hTypedDefinitions⟩
+
+theorem production_actual_comment_incomplete_refinement_v7
+    (request : VerifierRequestV7)
+    (typedRequest : TypedRequestV7)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (hTyped : typedRequestOfProductionV7 request = some typedRequest)
+    (hComment : ProductionCommentEvidenceOf
+      (request.core.packageRecord (noteSideOfCommentSide side)))
+    (hChecks : productionCommentOutcomeChecksV7 request.core = true) :
+    actualExecutableCommentIncompleteV7RefinementOf
+      request typedRequest side := by
+  have hPrerequisites :=
+    production_typed_comment_prerequisites_v7
+      request typedRequest side hTyped hComment hChecks
+  have hTopology :=
+    production_canonical_typed_topology_v7
+      request typedRequest side hTyped hComment hChecks
+  have hStatus :=
+    typed_comment_side_pass_v7_of_checks
+      typedRequest (typedSideOfVerifierSide side)
+        hPrerequisites hTopology
+  rcases hComment.2.2.2.2 with
+    ⟨retained, hRetained, hScanCount, hInput, hOutput, hCrossing,
+      hIntegrity, hInventory, hComplete, hLimit, hIssues⟩
+  let evaluation := evaluateCommentSideV7 request side
+  refine ⟨evaluation, rfl, hTyped, ?_⟩
+  unfold ExecutableCommentIncompleteV7ValueOf
+  dsimp only
+  rw [hStatus]
+  simp [evaluation, evaluateCommentSideV7, hComplete]
+
+theorem production_actual_comment_refinements_v7
+    (request : VerifierRequestV7)
+    (typedRequest : TypedRequestV7)
+    (hTyped : typedRequestOfProductionV7 request = some typedRequest)
+    (packageEvidence :
+      ProductionPackageRecordOf request.core.original ∧
+      ProductionPackageRecordOf request.core.revised ∧
+      ProductionPackageRecordOf request.core.compared)
+    (commentEvidence :
+      ProductionCommentEvidenceOf request.core.original ∧
+      ProductionCommentEvidenceOf request.core.revised ∧
+      ProductionCommentEvidenceOf request.core.compared)
+    (hChecks : productionCommentOutcomeChecksV7 request.core = true) :
+    (∀ side, actualExecutableCommentSourceSetV7RefinementOf
+      request typedRequest side) ∧
+    (∀ side, actualExecutableCommentMarkerScanV7RefinementOf
+      request typedRequest side) ∧
+    (∀ side, actualExecutableCommentDefinitionV7RefinementOf
+      request typedRequest side) ∧
+    (∀ side, actualExecutableCommentIncompleteV7RefinementOf
+      request typedRequest side) := by
+  constructor
+  · intro side
+    exact production_actual_comment_source_set_refinement_v7
+      request typedRequest side hTyped
+        (Tier2.NoteReferenceIntegrity.productionCommentEvidenceAt
+          request.core commentEvidence side) hChecks
+  constructor
+  · intro side
+    exact production_actual_comment_marker_scan_refinement_v7
+      request typedRequest side hTyped
+        (Tier2.NoteReferenceIntegrity.productionCommentEvidenceAt
+          request.core commentEvidence side) hChecks
+  constructor
+  · intro side
+    exact production_actual_comment_definition_refinement_v7
+      request typedRequest side hTyped
+        (Tier2.NoteReferenceIntegrity.productionPackageRecordAt
+          request.core packageEvidence side)
+        (Tier2.NoteReferenceIntegrity.productionCommentEvidenceAt
+          request.core commentEvidence side) hChecks
+  · intro side
+    exact production_actual_comment_incomplete_refinement_v7
+      request typedRequest side hTyped
+        (Tier2.NoteReferenceIntegrity.productionCommentEvidenceAt
+          request.core commentEvidence side) hChecks
+
+def productionPassingProtocolV7ProjectionCheck
+    (request : RunRequestCoreRequestV7)
+    (result : RunRequestCoreResultV7) : Bool :=
+  if result.responsePassed then
+    match typedRequestOfRunRequestCoreV7 request result with
+    | none => false
+    | some typedRequest =>
+        protocolV7JsonProjectionCheck result.response
+          (canonicalTypedResponseV7 typedRequest)
+  else true
+
+theorem production_passing_protocol_v7_projection_check_sound
+    (request : RunRequestCoreRequestV7)
+    (result : RunRequestCoreResultV7)
+    (hPass : result.responsePassed = true)
+    (hCheck :
+      productionPassingProtocolV7ProjectionCheck request result = true) :
+    ∃ typedRequest,
+      typedRequestOfRunRequestCoreV7 request result = some typedRequest ∧
+      ProtocolV7JsonProjectionOf result.response
+        (canonicalTypedResponseV7 typedRequest) := by
+  unfold productionPassingProtocolV7ProjectionCheck at hCheck
+  simp only [hPass, ↓reduceIte] at hCheck
+  cases hTyped :
+      typedRequestOfRunRequestCoreV7 request result with
+  | none => simp [hTyped] at hCheck
+  | some typedRequest =>
+      refine ⟨typedRequest, rfl, ?_⟩
+      simp only [hTyped] at hCheck
+      exact protocol_v7_json_projection_check_sound _ _ hCheck
+
 def productionTypedCommentChecksV7
     (request : RunRequestCoreRequestV7)
     (result : RunRequestCoreResultV7) : Bool :=
@@ -12779,6 +13156,7 @@ def productionTypedCommentChecksV7
     productionFailedCommentOutcomeChecksV7 request) &&
   result.typedProjectionCheck &&
   protocolV6JsonProjectionCheck result.response result.responsePassed &&
+  productionPassingProtocolV7ProjectionCheck request result &&
   decide (result.stdout.data.toList =
     result.response.compress.toUTF8.data.toList ++ [UInt8.ofNat 10])
 
@@ -12793,29 +13171,50 @@ def runRequestCoreV7 (request : RunRequestCoreRequestV7) :
 def ProductionRunRequestV7RefinesSemanticOf
     (request : RunRequestCoreRequestV7)
     (result : RunRequestCoreResultV7)
+    (typedRequest : TypedRequestV7)
     (typedResponse : TypedProtocolV7Response)
     (canonicalBytes : List UInt8) : Prop :=
   ProductionRunRequestRefinesSemanticOf request result ∧
-  productionCommentOutcomeChecksV7 request = true ∧
-  ProtocolV6JsonProjectionOf result.response result.responsePassed typedResponse ∧
+  typedRequestOfRunRequestCoreV7 request result = some typedRequest ∧
+  typedResponse = canonicalTypedResponseV7 typedRequest ∧
   canonicalBytes = independentProtocolV7Projection typedResponse ∧
+  ProtocolV7JsonProjectionOf result.response typedResponse ∧
   result.response.compress.toUTF8.data.toList = canonicalBytes ∧
-  result.stdout.data.toList = canonicalBytes ++ [UInt8.ofNat 10]
+  result.stdout.data.toList = canonicalBytes ++ [UInt8.ofNat 10] ∧
+  (∀ side, actualExecutableCommentSourceSetV7RefinementOf
+    (verifierRequestV7OfRunRequestCore request result) typedRequest side) ∧
+  (∀ side, actualExecutableCommentMarkerScanV7RefinementOf
+    (verifierRequestV7OfRunRequestCore request result) typedRequest side) ∧
+  (∀ side, actualExecutableCommentDefinitionV7RefinementOf
+    (verifierRequestV7OfRunRequestCore request result) typedRequest side) ∧
+  (∀ side, actualExecutableCommentIncompleteV7RefinementOf
+    (verifierRequestV7OfRunRequestCore request result) typedRequest side) ∧
+  actualExecutableProtocolV7Utf8JsonRefinementOf
+    (verifierRequestV7OfRunRequestCore request result) typedRequest
+      result.response
 
 theorem production_run_request_core_v7_refinement_sound
     (request : RunRequestCoreRequestV7)
     (result : RunRequestCoreResultV7)
     (hRun : runRequestCoreV7 request = .ok result)
     (hPass : result.responsePassed = true) :
-    ∃ typedResponse : TypedProtocolV7Response,
+    ∃ typedRequest : TypedRequestV7,
+      typedRequestOfRunRequestCoreV7 request result = some typedRequest ∧
       ProductionRunRequestV7RefinesSemanticOf
-        request result typedResponse
-          (independentProtocolV7Projection typedResponse) ∧
-      ProtocolV6JsonProjectionOf result.response true typedResponse ∧
+        request result typedRequest
+          (canonicalTypedResponseV7 typedRequest)
+          (independentProtocolV7Projection
+            (canonicalTypedResponseV7 typedRequest)) ∧
+      TypedCommentRangeAggregatePassOf typedRequest
+        (canonicalTypedResponseV7 typedRequest) ∧
+      ProtocolV7JsonProjectionOf result.response
+        (canonicalTypedResponseV7 typedRequest) ∧
       result.response.compress.toUTF8.data.toList =
-        independentProtocolV7Projection typedResponse ∧
+        independentProtocolV7Projection
+          (canonicalTypedResponseV7 typedRequest) ∧
       result.stdout.data.toList =
-        independentProtocolV7Projection typedResponse ++ [10] := by
+        independentProtocolV7Projection
+          (canonicalTypedResponseV7 typedRequest) ++ [10] := by
   unfold runRequestCoreV7 at hRun
   cases hCore : runRequestCore request with
   | error detail => simp [hCore] at hRun
@@ -12830,31 +13229,56 @@ theorem production_run_request_core_v7_refinement_sound
         have hBase :=
           Tier2.NoteReferenceIntegrity.production_run_request_core_refinement_sound
             request result hCore hPass
-        obtain ⟨typedResponse, hProjection⟩ :=
-          executable_protocol_utf8_json_refines_typed
-            result.response true hChecks.1.2
-        have hResponseBytes :=
-          hProjection.choose_spec.2.2
-        have hProjectionTrue :
-            ProtocolV6JsonProjectionOf result.response true typedResponse := by
-          simpa only [hPass] using hProjection
-        have hProjectionResult :
-            ProtocolV6JsonProjectionOf
-              result.response result.responsePassed typedResponse := by
-          simpa only [hPass] using hProjection
-        have hResponseBytesV7 :
-            result.response.compress.toUTF8.data.toList =
-              independentProtocolV7Projection typedResponse := by
-          simpa only [independentProtocolV7Projection] using hResponseBytes
+        obtain ⟨typedRequest, hTyped, hProjection⟩ :=
+          production_passing_protocol_v7_projection_check_sound
+            request result hPass hChecks.1.2
+        have hTypedProduction :
+            typedRequestOfProductionV7
+              (verifierRequestV7OfRunRequestCore request result) =
+                some typedRequest := by
+          exact hTyped
+        have hPackages :
+            ProductionPackageRecordOf request.original ∧
+            ProductionPackageRecordOf request.revised ∧
+            ProductionPackageRecordOf request.compared :=
+          ⟨hBase.1, hBase.2.1, hBase.2.2.1⟩
+        have hComments :
+            ProductionCommentEvidenceOf request.original ∧
+            ProductionCommentEvidenceOf request.revised ∧
+            ProductionCommentEvidenceOf request.compared :=
+          ⟨hBase.2.2.2.1, hBase.2.2.2.2.1,
+            hBase.2.2.2.2.2.1⟩
+        have hTypedPass :=
+          production_typed_all_comment_range_sides_pass_v7
+            (verifierRequestV7OfRunRequestCore request result)
+              typedRequest hTypedProduction hComments hChecks.1.1.1.1
+        have hAggregate :=
+          (typed_comment_range_aggregate_pass_sound
+            typedRequest hTypedPass).1
+        have hActual :=
+          production_actual_comment_refinements_v7
+            (verifierRequestV7OfRunRequestCore request result)
+              typedRequest hTypedProduction hPackages hComments
+                hChecks.1.1.1.1
         have hStdoutV7 :
             result.stdout.data.toList =
-              independentProtocolV7Projection typedResponse ++ [10] := by
-          rw [← hResponseBytesV7]
+              independentProtocolV7Projection
+                (canonicalTypedResponseV7 typedRequest) ++ [10] := by
+          rw [← hProjection]
           exact hChecks.2
-        refine ⟨typedResponse, ?_, hProjectionTrue,
-          hResponseBytesV7, hStdoutV7⟩
-        exact ⟨hBase, hChecks.1.1.1, hProjectionResult, rfl,
-          hResponseBytesV7, hStdoutV7⟩
+        have hProtocolActual :
+            actualExecutableProtocolV7Utf8JsonRefinementOf
+              (verifierRequestV7OfRunRequestCore request result)
+              typedRequest result.response := by
+          refine ⟨?_, hProjection, hProjection⟩
+          unfold protocolV7ResponseJson canonicalRunRequestEvaluationV7
+            verifierRequestV7OfRunRequestCore
+          exact run_request_core_response_exact request result hCore
+        refine ⟨typedRequest, hTyped, ?_, hAggregate, hProjection,
+          hProjection, hStdoutV7⟩
+        exact ⟨hBase, hTyped, rfl, rfl, hProjection,
+          hProjection, hStdoutV7, hActual.1, hActual.2.1,
+          hActual.2.2.1, hActual.2.2.2, hProtocolActual⟩
       · contradiction
 
 def executableCommentSourceSetV7RefinementSignature : Prop :=
@@ -12943,15 +13367,23 @@ def productionRunRequestCoreV7RefinementSignature : Prop :=
       (result : RunRequestCoreResultV7),
     runRequestCoreV7 request = .ok result →
     result.responsePassed = true →
-    ∃ typedResponse : TypedProtocolV7Response,
+    ∃ typedRequest : TypedRequestV7,
+      typedRequestOfRunRequestCoreV7 request result = some typedRequest ∧
       ProductionRunRequestV7RefinesSemanticOf
-        request result typedResponse
-          (independentProtocolV7Projection typedResponse) ∧
-      ProtocolV6JsonProjectionOf result.response true typedResponse ∧
+        request result typedRequest
+          (canonicalTypedResponseV7 typedRequest)
+          (independentProtocolV7Projection
+            (canonicalTypedResponseV7 typedRequest)) ∧
+      TypedCommentRangeAggregatePassOf typedRequest
+        (canonicalTypedResponseV7 typedRequest) ∧
+      ProtocolV7JsonProjectionOf result.response
+        (canonicalTypedResponseV7 typedRequest) ∧
       result.response.compress.toUTF8.data.toList =
-        independentProtocolV7Projection typedResponse ∧
+        independentProtocolV7Projection
+          (canonicalTypedResponseV7 typedRequest) ∧
       result.stdout.data.toList =
-        independentProtocolV7Projection typedResponse ++ [10]
+        independentProtocolV7Projection
+          (canonicalTypedResponseV7 typedRequest) ++ [10]
 
 namespace Tier2.NoteReferenceIntegrity
 
@@ -12960,15 +13392,23 @@ theorem production_run_request_core_v7_refinement_sound
     (result : RunRequestCoreResultV7)
     (hRun : runRequestCoreV7 request = .ok result)
     (hPass : result.responsePassed = true) :
-    ∃ typedResponse : TypedProtocolV7Response,
+    ∃ typedRequest : TypedRequestV7,
+      typedRequestOfRunRequestCoreV7 request result = some typedRequest ∧
       ProductionRunRequestV7RefinesSemanticOf
-        request result typedResponse
-          (independentProtocolV7Projection typedResponse) ∧
-      ProtocolV6JsonProjectionOf result.response true typedResponse ∧
+        request result typedRequest
+          (canonicalTypedResponseV7 typedRequest)
+          (independentProtocolV7Projection
+            (canonicalTypedResponseV7 typedRequest)) ∧
+      TypedCommentRangeAggregatePassOf typedRequest
+        (canonicalTypedResponseV7 typedRequest) ∧
+      ProtocolV7JsonProjectionOf result.response
+        (canonicalTypedResponseV7 typedRequest) ∧
       result.response.compress.toUTF8.data.toList =
-        independentProtocolV7Projection typedResponse ∧
+        independentProtocolV7Projection
+          (canonicalTypedResponseV7 typedRequest) ∧
       result.stdout.data.toList =
-        independentProtocolV7Projection typedResponse ++ [10] :=
+        independentProtocolV7Projection
+          (canonicalTypedResponseV7 typedRequest) ++ [10] :=
   _root_.production_run_request_core_v7_refinement_sound
     request result hRun hPass
 

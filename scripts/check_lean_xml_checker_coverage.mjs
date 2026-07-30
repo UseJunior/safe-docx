@@ -501,6 +501,12 @@ const productionTypedCommentChecksV7Body = executable.slice(
   executable.indexOf('def productionTypedCommentChecksV7'),
   executable.indexOf('def runRequestCoreV7'),
 );
+const productionPassingProtocolV7ProjectionCheckBody = executable.slice(
+  executable.indexOf('def productionPassingProtocolV7ProjectionCheck'),
+  executable.indexOf(
+    'theorem production_passing_protocol_v7_projection_check_sound',
+  ),
+);
 for (const forbidden of [
   'typedRequestOfRunRequestCoreV7',
   'typedRequestOfProductionV7',
@@ -516,9 +522,33 @@ for (const forbidden of [
   }
 }
 for (const required of [
+  'typedRequestOfRunRequestCoreV7',
+  'protocolV7JsonProjectionCheck',
+  'canonicalTypedResponseV7',
+]) {
+  if (!productionPassingProtocolV7ProjectionCheckBody.includes(required)) {
+    errors.push(`passing protocol-v7 projection gate omits ${required}`);
+  }
+}
+for (const forbidden of [
+  'productionActualBridgeRefinementChecksV7',
+  'productionXmlEventsExactCheckFrom',
+  'typedXmlEventsOfProduction',
+  'typedAllCommentRangeSidesPassV7',
+  'retainedCommentMarkerScanForRelationshipV7',
+  '.visitedEvents.toList',
+]) {
+  if (productionPassingProtocolV7ProjectionCheckBody.includes(forbidden)) {
+    errors.push(
+      `passing protocol-v7 projection gate must not copy or rescan evidence via ${forbidden}`,
+    );
+  }
+}
+for (const required of [
   'productionCommentOutcomeChecksV7',
   'result.typedProjectionCheck',
   'protocolV6JsonProjectionCheck result.response result.responsePassed',
+  'productionPassingProtocolV7ProjectionCheck request result',
   'result.response.compress.toUTF8.data.toList',
 ]) {
   if (!productionTypedCommentChecksV7Body.includes(required)) {
