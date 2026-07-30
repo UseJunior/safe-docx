@@ -28,6 +28,8 @@ const leanWorkflowPath = join(root, '.github/workflows/lean-build.yml');
 const noteWitnessesPath = join(root, 'verification/lean/Tier2/NoteReferenceIntegrityWitnesses.lean');
 const executablePath = join(root, 'verification/lean/LeanDocxChecker.lean');
 const ordinaryEnvelopePath = join(root, 'verification/lean/ProtocolV7OrdinaryEnvelopeWitness.lean');
+const protocolV7ProjectionDriftWitnessesPath = join(
+  root, 'verification/lean/ProtocolV7ProjectionDriftWitnesses.lean');
 const decoderPath = join(root, 'packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts');
 
 const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8'));
@@ -46,6 +48,8 @@ const leanWorkflow = readFileSync(leanWorkflowPath, 'utf8');
 const noteWitnesses = readFileSync(noteWitnessesPath, 'utf8');
 const executable = readFileSync(executablePath, 'utf8');
 const ordinaryEnvelope = readFileSync(ordinaryEnvelopePath, 'utf8');
+const protocolV7ProjectionDriftWitnesses = readFileSync(
+  protocolV7ProjectionDriftWitnessesPath, 'utf8');
 const decoder = readFileSync(decoderPath, 'utf8');
 
 const errors = [];
@@ -324,7 +328,7 @@ const typedParsedPartBody = typedCommentIntegrity.slice(
   typedCommentIntegrity.indexOf('def TypedParsedPartOf'),
 );
 const typedProductionEventBody = executable.slice(
-  executable.indexOf('def typedXmlEventOfProduction'),
+  executable.indexOf('def typedXmlAttributeOfProduction'),
   executable.indexOf('def typedJsonOfProductionFuel'),
 );
 if (/\.data\.toList\s*=\s*/u.test(typedExtractionBody) ||
@@ -449,6 +453,19 @@ for (const required of [
   }
 }
 for (const required of [
+  '"outcome-pass"',
+  '"outcome-evaluated-fail"',
+  '"outcome-incomplete-before-scan"',
+  '"outcome-incomplete-after-scan"',
+  '"outcome-forged-pass"',
+  '"outcome-forged-fail"',
+  '"outcome-forged-incomplete"',
+]) {
+  if (!protocolV7ProjectionDriftWitnesses.includes(required)) {
+    errors.push(`protocol-v7 production drift witnesses omit ${required}`);
+  }
+}
+for (const required of [
   'typed_duplicate_reference_aggregate_witness_rejected',
   'typed_orphan_endpoint_aggregate_witness_rejected',
   'typed_reversed_range_aggregate_witness_rejected',
@@ -479,6 +496,85 @@ const runRequestCoreV7Body = executable.slice(
 );
 if (runRequestCoreV7Body.includes('typedProtocolV6ResponseOfJson')) {
   errors.push('protocol-v7 production adapter must not use the protocol-v6 JSON decoder');
+}
+const productionTypedCommentChecksV7Body = executable.slice(
+  executable.indexOf('def productionTypedCommentChecksV7'),
+  executable.indexOf('def runRequestCoreV7'),
+);
+const productionPassingProtocolV7ProjectionCheckBody = executable.slice(
+  executable.indexOf('def productionPassingProtocolV7ProjectionCheck'),
+  executable.indexOf(
+    'theorem production_passing_protocol_v7_projection_check_sound',
+  ),
+);
+for (const forbidden of [
+  'typedRequestOfRunRequestCoreV7',
+  'typedRequestOfProductionV7',
+  'productionActualBridgeRefinementChecksV7',
+  'productionXmlEventsExactCheckFrom',
+  'typedXmlEventsOfProduction',
+  'typedAllCommentRangeSidesPassV7',
+]) {
+  if (productionTypedCommentChecksV7Body.includes(forbidden)) {
+    errors.push(
+      `protocol-v7 runtime gate must not copy or rescan whole typed events via ${forbidden}`,
+    );
+  }
+}
+for (const required of [
+  'typedRequestOfRunRequestCoreV7',
+  'protocolV7JsonProjectionCheck',
+  'canonicalTypedResponseV7',
+]) {
+  if (!productionPassingProtocolV7ProjectionCheckBody.includes(required)) {
+    errors.push(`passing protocol-v7 projection gate omits ${required}`);
+  }
+}
+for (const forbidden of [
+  'productionActualBridgeRefinementChecksV7',
+  'productionXmlEventsExactCheckFrom',
+  'typedXmlEventsOfProduction',
+  'typedAllCommentRangeSidesPassV7',
+  'retainedCommentMarkerScanForRelationshipV7',
+  '.visitedEvents.toList',
+]) {
+  if (productionPassingProtocolV7ProjectionCheckBody.includes(forbidden)) {
+    errors.push(
+      `passing protocol-v7 projection gate must not copy or rescan evidence via ${forbidden}`,
+    );
+  }
+}
+for (const required of [
+  'productionCommentOutcomeChecksV7',
+  'result.typedProjectionCheck',
+  'protocolV6JsonProjectionCheck result.response result.responsePassed',
+  'productionPassingProtocolV7ProjectionCheck request result',
+  'result.response.compress.toUTF8.data.toList',
+]) {
+  if (!productionTypedCommentChecksV7Body.includes(required)) {
+    errors.push(`protocol-v7 runtime gate omits ${required}`);
+  }
+}
+const productionCommentOutcomeCheckV7Body = executable.slice(
+  executable.indexOf('def productionCommentOutcomeCheckAtV7'),
+  executable.indexOf('def productionCommentOutcomeChecksV7'),
+);
+for (const required of [
+  'if evidence.complete',
+  'evidence.productionIntegrityPassed',
+  'evidence.inventory.status == "passed"',
+  'evidence.inventory.status == "failed"',
+  'evidence.inventory.status == "not_evaluated"',
+  'evidence.markerScanInvocationCount == 0',
+  'evidence.markerScanInvocationCount == 1',
+  'evidence.markerScan.any (·.crossing.isSome)',
+]) {
+  if (!productionCommentOutcomeCheckV7Body.includes(required)) {
+    errors.push(`protocol-v7 outcome-sensitive runtime gate omits ${required}`);
+  }
+}
+if (productionTypedCommentChecksV7Body.includes('!result.responsePassed ||')) {
+  errors.push('protocol-v7 runtime refinements must not be skipped on failed responses');
 }
 for (const theorem of [
   'typedByteArrayEqCheck_true_iff',
