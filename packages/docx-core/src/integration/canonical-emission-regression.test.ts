@@ -27,6 +27,10 @@ const sectionTest = test.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.11' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' },
 );
+const paragraphDeletionTest = test.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.15' },
+);
 
 const AI_AUTHOR = 'SafeDocX';
 const FIXED_DATE = '2026-05-07T12:00:00Z';
@@ -188,6 +192,56 @@ describe('Canonical emission catalog', () => {
       expect(elementsByName(documentXml, 'b').length).toBeGreaterThan(0);
       const rPrChange = elementsByName(documentXml, 'rPrChange')[0]!;
       expect(rPrChange.getElementsByTagNameNS(W_NS, 'rPr')).toHaveLength(1);
+    });
+  });
+
+  paragraphDeletionTest('Table A: text.ts emits paragraph-mark deletion into an existing formatted rPr', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let documentXml: string;
+
+    await given('a real-world title shape with existing paragraph-mark font and size properties', async () => {
+      const title = 'Mutual Non-Disclosure Agreement';
+      const { doc, paragraphIds } = await loadIndexedDoc(
+        await makeMinimalDocx(
+          '<w:p>' +
+            '<w:pPr><w:rPr><w:rFonts w:ascii="Georgia"/><w:sz w:val="44"/></w:rPr></w:pPr>' +
+            `<w:r><w:rPr><w:rFonts w:ascii="Georgia"/><w:sz w:val="44"/></w:rPr><w:t>${title}</w:t></w:r>` +
+          '</w:p>',
+        ),
+      );
+      const paragraph = doc.getParagraphElementById(paragraphIds[0]!);
+      expect(paragraph).toBeTruthy();
+
+      await when('the full title is deleted under tracked changes', async () => {
+        replaceParagraphTextRange(paragraph!, 0, title.length, '', createCtx());
+        ({ parts: { 'word/document.xml': documentXml } } = await toPartMap(doc, ['word/document.xml']));
+      });
+    });
+
+    await then('document.xml preserves formatting and carries separate run and paragraph-mark deletions', () => {
+      const deletions = elementsByName(documentXml, 'del');
+      const paragraphMarkDeletion = deletions.find(
+        (element) => (element.parentNode as Element | null)?.localName === 'rPr',
+      );
+      const runDeletion = deletions.find(
+        (element) => (element.parentNode as Element | null)?.localName === 'p',
+      );
+      const paragraphRPr = paragraphMarkDeletion?.parentNode as Element | undefined;
+
+      expect(paragraphMarkDeletion).toBeTruthy();
+      expect(runDeletion).toBeTruthy();
+      expect(wordAttr(paragraphMarkDeletion!, 'author')).toBe(AI_AUTHOR);
+      expect(wordAttr(paragraphMarkDeletion!, 'id')).not.toBe(wordAttr(runDeletion!, 'id'));
+      expect(paragraphRPr?.getElementsByTagNameNS(W_NS, 'rFonts')).toHaveLength(1);
+      expect(paragraphRPr?.getElementsByTagNameNS(W_NS, 'sz')).toHaveLength(1);
+      expect(Array.from(paragraphRPr!.children).map((child) => child.localName)).toEqual([
+        'del',
+        'rFonts',
+        'sz',
+      ]);
     });
   });
 

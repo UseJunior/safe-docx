@@ -4,6 +4,7 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { parseXml } from './xml.js';
 import { OOXML, W } from './namespaces.js';
 import { SafeDocxError } from './errors.js';
+import { getDirectChildrenByName } from './dom-helpers.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
 import { revisionEvidence, revisionEvidenceCases } from '../testing/revision-evidence.js';
 import {
@@ -51,15 +52,6 @@ function paragraphAt(doc: Document, index: number): Element {
 
 function serialize(node: Node): string {
   return new XMLSerializer().serializeToString(node);
-}
-
-function getDirectElement(parent: Element, localName: string): Element | null {
-  return Array.from(parent.childNodes).find(
-    (child): child is Element =>
-      child.nodeType === 1 &&
-      (child as Element).namespaceURI === W_NS &&
-      (child as Element).localName === localName,
-  ) ?? null;
 }
 
 // ── getParagraphRuns — field-code state machine ─────────────────────
@@ -958,9 +950,9 @@ describe('replaceParagraphTextRange tracked-change emission', () => {
     });
 
     await then('the content and paragraph mark carry separate deletion revisions', () => {
-      const pPr = getDirectElement(p, W.pPr);
-      const paragraphRPr = getDirectElement(pPr!, W.rPr);
-      const paragraphMarkDeletion = getDirectElement(paragraphRPr!, 'del');
+      const pPr = getDirectChildrenByName(p, W.pPr)[0];
+      const paragraphRPr = getDirectChildrenByName(pPr!, W.rPr)[0];
+      const paragraphMarkDeletion = getDirectChildrenByName(paragraphRPr!, 'del')[0];
       const runDeletion = Array.from(p.childNodes).find(
         (child): child is Element =>
           child.nodeType === 1 &&
@@ -972,7 +964,56 @@ describe('replaceParagraphTextRange tracked-change emission', () => {
       expect(paragraphMarkDeletion).toBeTruthy();
       expect(paragraphMarkDeletion?.getAttribute('w:author')).toBe('SafeDocX AI');
       expect(paragraphMarkDeletion?.getAttribute('w:id')).not.toBe(runDeletion?.getAttribute('w:id'));
-      expect(getDirectElement(pPr!, W.numPr)).toBeTruthy();
+      expect(getDirectChildrenByName(pPr!, W.numPr)[0]).toBeTruthy();
+    });
+  });
+
+  paragraphDeletionTest('adds paragraph deletion metadata to existing paragraph-mark formatting', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a formatted paragraph whose pPr already contains paragraph-mark rPr', () => {
+      const doc = makeDoc(
+        '<w:p>' +
+          '<w:pPr><w:rPr><w:rFonts w:ascii="Georgia"/><w:sz w:val="44"/></w:rPr></w:pPr>' +
+          '<w:r><w:rPr><w:rFonts w:ascii="Georgia"/><w:sz w:val="44"/></w:rPr>' +
+          '<w:t>Mutual Non-Disclosure Agreement</w:t></w:r>' +
+        '</w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the complete visible text is deleted under tracked changes', () => {
+      replaceParagraphTextRange(
+        p,
+        0,
+        'Mutual Non-Disclosure Agreement'.length,
+        '',
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-07-29T12:00:00Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+    });
+
+    await then('the existing paragraph-mark formatting is preserved ahead of one deletion marker', () => {
+      const pPr = getDirectChildrenByName(p, W.pPr)[0]!;
+      const paragraphRPr = getDirectChildrenByName(pPr, W.rPr)[0]!;
+      const paragraphMarkDeletions = getDirectChildrenByName(paragraphRPr, 'del');
+
+      expect(getDirectChildrenByName(paragraphRPr, W.rFonts)).toHaveLength(1);
+      expect(getDirectChildrenByName(paragraphRPr, 'sz')).toHaveLength(1);
+      expect(paragraphMarkDeletions).toHaveLength(1);
+      expect(paragraphMarkDeletions[0]!.getAttribute('w:author')).toBe('SafeDocX AI');
+      expect(Array.from(paragraphRPr.children).map((child) => child.localName)).toEqual([
+        'del',
+        W.rFonts,
+        'sz',
+      ]);
     });
   });
 
