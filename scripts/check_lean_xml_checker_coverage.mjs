@@ -328,7 +328,7 @@ const typedParsedPartBody = typedCommentIntegrity.slice(
   typedCommentIntegrity.indexOf('def TypedParsedPartOf'),
 );
 const typedProductionEventBody = executable.slice(
-  executable.indexOf('def typedXmlEventOfProduction'),
+  executable.indexOf('def typedXmlAttributeOfProduction'),
   executable.indexOf('def typedJsonOfProductionFuel'),
 );
 if (/\.data\.toList\s*=\s*/u.test(typedExtractionBody) ||

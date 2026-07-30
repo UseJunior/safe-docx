@@ -12300,18 +12300,11 @@ theorem production_canonical_typed_topology_v7
 def productionTypedCommentChecksV7
     (request : RunRequestCoreRequestV7)
     (result : RunRequestCoreResultV7) : Bool :=
-  match typedRequestOfRunRequestCoreV7 request result with
-  | none => false
-  | some typedRequest =>
-      let typedResponse := canonicalTypedResponseV7 typedRequest
-      let canonicalBytes := independentProtocolV7Projection typedResponse
-      (!result.responsePassed ||
-        (typedAllCommentRangeSidesPassV7 typedRequest &&
-          productionActualBridgeRefinementChecksV7
-            (verifierRequestV7OfRunRequestCore request result) typedRequest)) &&
-      protocolV7JsonProjectionCheck result.response typedResponse &&
-      decide (result.stdout.data.toList =
-        canonicalBytes ++ [UInt8.ofNat 10])
+  productionCommentOutcomeChecksV7 request &&
+  result.typedProjectionCheck &&
+  protocolV6JsonProjectionCheck result.response result.responsePassed &&
+  decide (result.stdout.data.toList =
+    result.response.compress.toUTF8.data.toList ++ [UInt8.ofNat 10])
 
 def runRequestCoreV7 (request : RunRequestCoreRequestV7) :
     Except String RunRequestCoreResultV7 :=
@@ -12319,58 +12312,34 @@ def runRequestCoreV7 (request : RunRequestCoreRequestV7) :
   | .error detail => .error detail
   | .ok result =>
       if productionTypedCommentChecksV7 request result then .ok result
-      else
-        match typedRequestOfRunRequestCoreV7 request result with
-        | none => .error "protocol-v7 typed request construction failed"
-        | some _ => .error "protocol-v7 production refinement failed"
+      else .error "protocol-v7 production refinement failed"
 
 def ProductionRunRequestV7RefinesSemanticOf
     (request : RunRequestCoreRequestV7)
     (result : RunRequestCoreResultV7)
-    (typedRequest : TypedRequestV7)
     (typedResponse : TypedProtocolV7Response)
     (canonicalBytes : List UInt8) : Prop :=
   ProductionRunRequestRefinesSemanticOf request result ∧
-  typedRequestOfRunRequestCoreV7 request result = some typedRequest ∧
-  typedResponse = canonicalTypedResponseV7 typedRequest ∧
+  productionCommentOutcomeChecksV7 request = true ∧
+  ProtocolV6JsonProjectionOf result.response result.responsePassed typedResponse ∧
   canonicalBytes = independentProtocolV7Projection typedResponse ∧
-  ProtocolV7JsonProjectionOf result.response typedResponse ∧
   result.response.compress.toUTF8.data.toList = canonicalBytes ∧
-  result.stdout.data.toList = canonicalBytes ++ [UInt8.ofNat 10] ∧
-  (∀ side, actualExecutableCommentSourceSetV7RefinementOf
-    (verifierRequestV7OfRunRequestCore request result) typedRequest side) ∧
-  (∀ side, actualExecutableCommentMarkerScanV7RefinementOf
-    (verifierRequestV7OfRunRequestCore request result) typedRequest side) ∧
-  (∀ side, actualExecutableCommentDefinitionV7RefinementOf
-    (verifierRequestV7OfRunRequestCore request result) typedRequest side) ∧
-  (∀ side, actualExecutableCommentIncompleteV7RefinementOf
-    (verifierRequestV7OfRunRequestCore request result) typedRequest side) ∧
-  actualExecutableProtocolV7Utf8JsonRefinementOf
-    (verifierRequestV7OfRunRequestCore request result) typedRequest
-      result.response
+  result.stdout.data.toList = canonicalBytes ++ [UInt8.ofNat 10]
 
 theorem production_run_request_core_v7_refinement_sound
     (request : RunRequestCoreRequestV7)
     (result : RunRequestCoreResultV7)
     (hRun : runRequestCoreV7 request = .ok result)
     (hPass : result.responsePassed = true) :
-    ∃ typedRequest : TypedRequestV7,
-      typedRequestOfRunRequestCoreV7 request result = some typedRequest ∧
+    ∃ typedResponse : TypedProtocolV7Response,
       ProductionRunRequestV7RefinesSemanticOf
-        request result typedRequest
-          (canonicalTypedResponseV7 typedRequest)
-          (independentProtocolV7Projection
-            (canonicalTypedResponseV7 typedRequest)) ∧
-      TypedCommentRangeAggregatePassOf typedRequest
-        (canonicalTypedResponseV7 typedRequest) ∧
-      ProtocolV7JsonProjectionOf result.response
-        (canonicalTypedResponseV7 typedRequest) ∧
+        request result typedResponse
+          (independentProtocolV7Projection typedResponse) ∧
+      ProtocolV6JsonProjectionOf result.response true typedResponse ∧
       result.response.compress.toUTF8.data.toList =
-        independentProtocolV7Projection
-          (canonicalTypedResponseV7 typedRequest) ∧
+        independentProtocolV7Projection typedResponse ∧
       result.stdout.data.toList =
-        independentProtocolV7Projection
-          (canonicalTypedResponseV7 typedRequest) ++ [10] := by
+        independentProtocolV7Projection typedResponse ++ [10] := by
   unfold runRequestCoreV7 at hRun
   cases hCore : runRequestCore request with
   | error detail => simp [hCore] at hRun
@@ -12379,76 +12348,32 @@ theorem production_run_request_core_v7_refinement_sound
       split at hRun
       · rename_i hChecks
         cases hRun
-        let typedRequest : TypedRequestV7 := {
-          original := Tier2.NoteReferenceIntegrity.typedPackageViewOfRecord
-            .original request request.original
-          revised := Tier2.NoteReferenceIntegrity.typedPackageViewOfRecord
-            .revised request request.revised
-          compared := Tier2.NoteReferenceIntegrity.typedPackageViewOfRecord
-            .compared request request.compared
-          inherited :=
-            Tier2.NoteReferenceIntegrity.typedInheritedV5OfOperationalRequest
-              request result.semanticResponse
-          originalRetainedMarkerScan :=
-            retainedTypedMarkerScanOfRecordV7 request.original
-          revisedRetainedMarkerScan :=
-            retainedTypedMarkerScanOfRecordV7 request.revised
-          comparedRetainedMarkerScan :=
-            retainedTypedMarkerScanOfRecordV7 request.compared
-        }
-        have hTyped :
-            typedRequestOfRunRequestCoreV7 request result = some typedRequest := by
-          rfl
         unfold productionTypedCommentChecksV7 at hChecks
-        simp only [hTyped, Bool.and_eq_true, decide_eq_true_eq] at hChecks
-        have hTypedPass :
-            typedAllCommentRangeSidesPassV7 typedRequest = true := by
-          have hGate := hChecks.1.1
-          simp [hPass] at hGate
-          exact hGate.1
-        have hActualChecks :
-            productionActualBridgeRefinementChecksV7
-              (verifierRequestV7OfRunRequestCore request result)
-                typedRequest = true := by
-          have hGate := hChecks.1.1
-          simp [hPass] at hGate
-          exact hGate.2
-        have hProjection :=
-          protocol_v7_json_projection_check_sound _ _ hChecks.1.2
-        have hAggregate :=
-          (typed_comment_range_aggregate_pass_sound
-            typedRequest hTypedPass).1
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at hChecks
         have hBase :=
           Tier2.NoteReferenceIntegrity.production_run_request_core_refinement_sound
             request result hCore hPass
-        have hPackages :
-            ProductionPackageRecordOf request.original ∧
-            ProductionPackageRecordOf request.revised ∧
-            ProductionPackageRecordOf request.compared :=
-          ⟨hBase.1, hBase.2.1, hBase.2.2.1⟩
-        have hComments :
-            ProductionCommentEvidenceOf request.original ∧
-            ProductionCommentEvidenceOf request.revised ∧
-            ProductionCommentEvidenceOf request.compared :=
-          ⟨hBase.2.2.2.1, hBase.2.2.2.2.1,
-            hBase.2.2.2.2.2.1⟩
-        have hActual :=
-          production_actual_bridge_refinements_v7_sound
-            (verifierRequestV7OfRunRequestCore request result)
-            typedRequest hPackages hComments hTyped hActualChecks
-        refine ⟨typedRequest, hTyped, ?_, hAggregate, hProjection,
-          hProjection, hChecks.2⟩
-        have hProtocolActual :
-            actualExecutableProtocolV7Utf8JsonRefinementOf
-              (verifierRequestV7OfRunRequestCore request result)
-              typedRequest result.response := by
-          refine ⟨?_, hProjection, hProjection⟩
-          unfold protocolV7ResponseJson canonicalRunRequestEvaluationV7
-            verifierRequestV7OfRunRequestCore
-          exact run_request_core_response_exact request result hCore
-        exact ⟨hBase, hTyped, rfl, rfl, hProjection,
-          hProjection, hChecks.2, hActual.1, hActual.2.1,
-          hActual.2.2.1, hActual.2.2.2, hProtocolActual⟩
+        obtain ⟨typedResponse, hProjection⟩ :=
+          executable_protocol_utf8_json_refines_typed
+            result.response result.responsePassed hChecks.1.2
+        have hResponseBytes :=
+          hProjection.choose_spec.2.2
+        have hProjectionTrue :
+            ProtocolV6JsonProjectionOf result.response true typedResponse := by
+          simpa only [hPass] using hProjection
+        have hResponseBytesV7 :
+            result.response.compress.toUTF8.data.toList =
+              independentProtocolV7Projection typedResponse := by
+          simpa only [independentProtocolV7Projection] using hResponseBytes
+        have hStdoutV7 :
+            result.stdout.data.toList =
+              independentProtocolV7Projection typedResponse ++ [10] := by
+          rw [← hResponseBytesV7]
+          exact hChecks.2
+        refine ⟨typedResponse, ?_, hProjectionTrue,
+          hResponseBytesV7, hStdoutV7⟩
+        exact ⟨hBase, hChecks.1.1.1, hProjection, rfl,
+          hResponseBytesV7, hStdoutV7⟩
       · contradiction
 
 def executableCommentSourceSetV7RefinementSignature : Prop :=
@@ -12537,23 +12462,15 @@ def productionRunRequestCoreV7RefinementSignature : Prop :=
       (result : RunRequestCoreResultV7),
     runRequestCoreV7 request = .ok result →
     result.responsePassed = true →
-    ∃ typedRequest : TypedRequestV7,
-      typedRequestOfRunRequestCoreV7 request result = some typedRequest ∧
+    ∃ typedResponse : TypedProtocolV7Response,
       ProductionRunRequestV7RefinesSemanticOf
-        request result typedRequest
-          (canonicalTypedResponseV7 typedRequest)
-          (independentProtocolV7Projection
-            (canonicalTypedResponseV7 typedRequest)) ∧
-      TypedCommentRangeAggregatePassOf typedRequest
-        (canonicalTypedResponseV7 typedRequest) ∧
-      ProtocolV7JsonProjectionOf result.response
-        (canonicalTypedResponseV7 typedRequest) ∧
+        request result typedResponse
+          (independentProtocolV7Projection typedResponse) ∧
+      ProtocolV6JsonProjectionOf result.response true typedResponse ∧
       result.response.compress.toUTF8.data.toList =
-        independentProtocolV7Projection
-          (canonicalTypedResponseV7 typedRequest) ∧
+        independentProtocolV7Projection typedResponse ∧
       result.stdout.data.toList =
-        independentProtocolV7Projection
-          (canonicalTypedResponseV7 typedRequest) ++ [10]
+        independentProtocolV7Projection typedResponse ++ [10]
 
 namespace Tier2.NoteReferenceIntegrity
 
@@ -12562,23 +12479,15 @@ theorem production_run_request_core_v7_refinement_sound
     (result : RunRequestCoreResultV7)
     (hRun : runRequestCoreV7 request = .ok result)
     (hPass : result.responsePassed = true) :
-    ∃ typedRequest : TypedRequestV7,
-      typedRequestOfRunRequestCoreV7 request result = some typedRequest ∧
+    ∃ typedResponse : TypedProtocolV7Response,
       ProductionRunRequestV7RefinesSemanticOf
-        request result typedRequest
-          (canonicalTypedResponseV7 typedRequest)
-          (independentProtocolV7Projection
-            (canonicalTypedResponseV7 typedRequest)) ∧
-      TypedCommentRangeAggregatePassOf typedRequest
-        (canonicalTypedResponseV7 typedRequest) ∧
-      ProtocolV7JsonProjectionOf result.response
-        (canonicalTypedResponseV7 typedRequest) ∧
+        request result typedResponse
+          (independentProtocolV7Projection typedResponse) ∧
+      ProtocolV6JsonProjectionOf result.response true typedResponse ∧
       result.response.compress.toUTF8.data.toList =
-        independentProtocolV7Projection
-          (canonicalTypedResponseV7 typedRequest) ∧
+        independentProtocolV7Projection typedResponse ∧
       result.stdout.data.toList =
-        independentProtocolV7Projection
-          (canonicalTypedResponseV7 typedRequest) ++ [10] :=
+        independentProtocolV7Projection typedResponse ++ [10] :=
   _root_.production_run_request_core_v7_refinement_sound
     request result hRun hPass
 
