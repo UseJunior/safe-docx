@@ -60,6 +60,19 @@ verification/lean/.lake/build/bin/leanDocxChecker
 
 Set `SAFE_DOCX_LEAN_XML_CHECKER` to use another executable. Normal package usage does not require Lean or Lake.
 
+The installed CLI exposes the same opt-in boundary:
+
+```bash
+safe-docx compare original.docx revised.docx redline.docx --verify
+safe-docx compare original.docx revised.docx redline.docx \
+  --certificate redline.certificate.json
+```
+
+`--certificate` implies `--verify`. A verified CLI comparison uses a 10-second
+checker budget and writes neither artifact unless the certificate passes. The
+command's JSON response includes the certificate under `verification`; the
+optional certificate file contains the same public JSON value.
+
 The checker validates the documents presented to it. It is not a proof of the TypeScript source code, visual fidelity, or the complete ECMA-376 standard.
 
 ## Runtime Dependencies

@@ -1,6 +1,11 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { compareDocuments, type CompareOptions } from '@usejunior/docx-compare';
+import { randomUUID } from 'node:crypto';
+import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
+import {
+  compareDocuments,
+  type CompareOptions,
+  type DocumentIntegrityCertificate,
+} from '@usejunior/docx-compare';
 import { DEFAULT_RECONSTRUCTION_MODE } from '../../tools/comparison_defaults.js';
 
 const SUPPORTED_ENGINES: ReadonlySet<NonNullable<CompareOptions['engine']>> = new Set([
@@ -16,6 +21,8 @@ export interface CompareCommandArgs {
   mode?: string;
   author?: string;
   premergeRuns?: boolean;
+  verify?: boolean;
+  certificatePath?: string;
 }
 
 export interface CompareCommandResult {
@@ -26,6 +33,30 @@ export interface CompareCommandResult {
   fallback_reason?: string;
   bytes: number;
   stats: unknown;
+  verification?: DocumentIntegrityCertificate;
+  certificate_path?: string;
+}
+
+export interface CompareCommandDependencies {
+  compare: typeof compareDocuments;
+}
+
+const DEFAULT_DEPENDENCIES: CompareCommandDependencies = {
+  compare: compareDocuments,
+};
+
+async function writeFileAtomically(target: string, contents: Buffer | string): Promise<void> {
+  await mkdir(dirname(target), { recursive: true });
+  const temporary = join(
+    dirname(target),
+    `.${basename(target)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  try {
+    await writeFile(temporary, contents, { flag: 'wx' });
+    await rename(temporary, target);
+  } finally {
+    await rm(temporary, { force: true });
+  }
 }
 
 function normalizeEngine(raw: string | undefined): NonNullable<CompareOptions['engine']> {
@@ -48,28 +79,48 @@ function defaultOutputPath(revisedPath: string, engine: string, mode: 'inplace' 
   return revisedPath.replace(/\.docx$/i, '') + `.REDLINE.${engine}.${mode}.docx`;
 }
 
-export async function runCompareCommand(args: CompareCommandArgs): Promise<CompareCommandResult> {
+export async function runCompareCommand(
+  args: CompareCommandArgs,
+  dependencies: CompareCommandDependencies = DEFAULT_DEPENDENCIES,
+): Promise<CompareCommandResult> {
   const engine = normalizeEngine(args.engine);
   const mode = normalizeMode(args.mode);
 
   const originalAbs = resolve(args.originalPath);
   const revisedAbs = resolve(args.revisedPath);
   const outputAbs = resolve(args.outputPath ?? defaultOutputPath(revisedAbs, engine, mode));
+  const certificateAbs =
+    args.certificatePath === undefined ? undefined : resolve(args.certificatePath);
+  const verify = args.verify === true || certificateAbs !== undefined;
+
+  if (certificateAbs === outputAbs) {
+    throw new Error('The certificate path must differ from the redline output path.');
+  }
 
   const [originalBuffer, revisedBuffer] = await Promise.all([
     readFile(originalAbs),
     readFile(revisedAbs),
   ]);
 
-  const result = await compareDocuments(originalBuffer, revisedBuffer, {
+  const result = await dependencies.compare(originalBuffer, revisedBuffer, {
     engine,
     author: args.author ?? 'Comparison',
     reconstructionMode: mode,
     premergeRuns: args.premergeRuns,
+    leanXmlVerifier: verify ? { enabled: true } : undefined,
   });
 
-  await mkdir(dirname(outputAbs), { recursive: true });
-  await writeFile(outputAbs, result.document);
+  const verification = result.documentIntegrity;
+  if (verify && verification?.status !== 'passed') {
+    const status = verification?.status ?? 'not_run';
+    const reason = verification?.reason ?? 'The verifier returned no certificate.';
+    throw new Error(`Verified comparison did not pass (${status}): ${reason}`);
+  }
+
+  if (certificateAbs && verification) {
+    await writeFileAtomically(certificateAbs, `${JSON.stringify(verification, null, 2)}\n`);
+  }
+  await writeFileAtomically(outputAbs, result.document);
 
   return {
     output: outputAbs,
@@ -79,5 +130,7 @@ export async function runCompareCommand(args: CompareCommandArgs): Promise<Compa
     fallback_reason: result.fallbackReason,
     bytes: result.document.length,
     stats: result.stats,
+    verification,
+    certificate_path: certificateAbs,
   };
 }

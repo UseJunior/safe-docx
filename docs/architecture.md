@@ -37,6 +37,8 @@ Running `safe-docx` with no command starts the MCP server. The CLI can also invo
 ```bash
 safe-docx grep "governing law" contract.docx
 safe-docx compare original.docx revised.docx comparison.docx
+safe-docx compare original.docx revised.docx comparison.docx --verify \
+  --certificate comparison.certificate.json
 safe-docx export --file-path contract.docx --format markdown
 ```
 

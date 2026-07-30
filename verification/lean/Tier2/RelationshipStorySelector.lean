@@ -239,7 +239,9 @@ def parseCentralEntries (bytes : ByteArray) (eocd : Eocd) : Except String (List 
       let isDirectory := dosDirectory || unixType == 4
       if ![0, 4, 8].contains unixType then throw "non-regular ZIP entry is unsupported"
       if isDirectory != name.endsWith "/" then throw "ZIP directory identity is ambiguous"
-      if isDirectory then throw s!"ZIP directory entry is unsupported: {name}"
+      if isDirectory &&
+          (method != 0 || crc32 != 0 || compressedSize != 0 || expandedSize != 0) then
+        throw s!"ZIP directory entry is not an inert placeholder: {name}"
       loop remaining next
         (entries ++ [{
           name := name

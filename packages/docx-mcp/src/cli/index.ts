@@ -66,6 +66,12 @@ function parseCompareArgs(args: string[]): CompareCommandArgs {
       case '--premerge-runs':
         options.premergeRuns = parseBoolean(consumeValue(token), token);
         break;
+      case '--verify':
+        options.verify = true;
+        break;
+      case '--certificate':
+        options.certificatePath = consumeValue(token);
+        break;
       default:
         throw new Error(`Unknown option for compare command: ${token}`);
     }

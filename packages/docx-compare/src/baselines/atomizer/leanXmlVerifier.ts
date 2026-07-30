@@ -22,7 +22,7 @@ import type {
   ReconstructionMode,
 } from '../../compare-types.js';
 
-const DEFAULT_TIMEOUT_MS = 120_000;
+const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_EXECUTABLE = 'verification/lean/.lake/build/bin/leanDocxChecker';
 const MAX_RESPONSE_BYTES = 2_626_369;
 const MAX_RESPONSE_JSON_BYTES = MAX_RESPONSE_BYTES - 1;
