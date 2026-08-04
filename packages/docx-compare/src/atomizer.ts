@@ -909,9 +909,6 @@ export function atomizeTree(
     ? wordSplitAtoms
     : mergePunctuationAtoms(wordSplitAtoms, normalizedOptions);
 
-  console.log(
-    `[DEBUG] atomizeTree: created ${rawAtoms.length} atoms, field-collapsed to ${fieldCollapsedAtoms.length}, merged to ${mergedAtoms.length}, word-split to ${wordSplitAtoms.length}, punct-merged to ${atoms.length}, ${state.emptyParagraphCount} empty paragraphs`
-  );
   return { atoms, emptyParagraphCount: state.emptyParagraphCount };
 }
 

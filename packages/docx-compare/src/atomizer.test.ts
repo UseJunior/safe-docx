@@ -1,4 +1,4 @@
-import { describe, expect } from 'vitest';
+import { describe, expect, vi } from 'vitest';
 import { testAllure, type AllureBddContext } from './testing/allure-test.js';
 import {
   sha1,
@@ -596,6 +596,29 @@ describe('atomizeTree', () => {
     uri: 'word/document.xml',
     contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml',
   };
+
+  test('does not write diagnostics to stdout', async ({ given, when, then }: AllureBddContext) => {
+    let document: Element;
+    const stdout = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await given('a simple paragraph element', () => {
+      document = el('w:p', {}, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'Machine-readable output')]),
+      ]);
+    });
+
+    await when('the tree is atomized', () => {
+      atomizeTree(document, [], mockPart);
+    });
+
+    await then('stdout remains reserved for the caller result', () => {
+      try {
+        expect(stdout).not.toHaveBeenCalled();
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+  });
 
   test('atomizes a simple paragraph', async ({ given, when, then }: AllureBddContext) => {
     let document: Element;
