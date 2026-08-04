@@ -9,6 +9,7 @@ import { createTrackedTempDir, registerCleanup } from '../testing/session-test-u
 
 registerCleanup();
 
+const TEST_FEATURE = 'add-compare-output-option';
 const test = testAllure.epic('Document Editing').withLabels({ feature: 'CLI Routing' });
 
 describe('safe-docx CLI routing', () => {
@@ -107,6 +108,87 @@ describe('safe-docx CLI routing', () => {
     });
   });
 
+  test.openspec('[CLI-OUTPUT-01] Compare accepts the short output option')(
+    'routes compare -o to the output path',
+    async ({ when, then }: AllureBddContext) => {
+      const compare = vi.fn(async (args: CompareCommandArgs) => ({
+        output: args.outputPath ?? '/tmp/default.docx',
+        engine: 'atomizer',
+        mode: 'inplace' as const,
+        mode_requested: 'inplace' as const,
+        bytes: 1,
+        stats: {},
+      }));
+      const program = createProgram({ serve: vi.fn(async () => undefined), compare, write: () => undefined });
+
+      await when('compare receives -o after its input paths', () =>
+        program.parseAsync(['node', 'safe-docx', 'compare', 'original.docx', 'revised.docx', '-o', 'result.docx']),
+      );
+
+      await then('the compare handler receives the flagged output path', () => {
+        expect(compare).toHaveBeenCalledWith(expect.objectContaining({ outputPath: 'result.docx' }));
+      });
+    },
+  );
+
+  test.openspec('[CLI-OUTPUT-02] Compare accepts the long output option')(
+    'routes compare --output to the output path',
+    async ({ when, then }: AllureBddContext) => {
+      const compare = vi.fn(async (args: CompareCommandArgs) => ({
+        output: args.outputPath ?? '/tmp/default.docx',
+        engine: 'atomizer',
+        mode: 'inplace' as const,
+        mode_requested: 'inplace' as const,
+        bytes: 1,
+        stats: {},
+      }));
+      const program = createProgram({ serve: vi.fn(async () => undefined), compare, write: () => undefined });
+
+      await when('compare receives --output before its input paths', () =>
+        program.parseAsync(['node', 'safe-docx', 'compare', '--output', 'result.docx', 'original.docx', 'revised.docx']),
+      );
+
+      await then('the compare handler receives the flagged output path', () => {
+        expect(compare).toHaveBeenCalledWith(expect.objectContaining({ outputPath: 'result.docx' }));
+      });
+    },
+  );
+
+  test.openspec('[CLI-OUTPUT-03] Compare rejects conflicting output forms')(
+    'rejects positional and flagged compare outputs together',
+    async ({ when }: AllureBddContext) => {
+      const program = createProgram({ write: () => undefined });
+
+      await when('both output forms are supplied', async () => {
+        await expect(
+          program.parseAsync([
+            'node',
+            'safe-docx',
+            'compare',
+            'original.docx',
+            'revised.docx',
+            'positional.docx',
+            '-o',
+            'flagged.docx',
+          ]),
+        ).rejects.toThrow('compare output cannot be supplied both positionally and with -o/--output.');
+      });
+    },
+  );
+
+  test.openspec('[CLI-OUTPUT-04] Compare rejects unknown single-dash options')(
+    'reports an unknown single-dash compare option',
+    async ({ when }: AllureBddContext) => {
+      const program = createProgram({ write: () => undefined });
+
+      await when('an unsupported single-dash option is supplied', async () => {
+        await expect(
+          program.parseAsync(['node', 'safe-docx', 'compare', 'original.docx', 'revised.docx', '-x']),
+        ).rejects.toThrow('Unknown option for compare command: -x');
+      });
+    },
+  );
+
   test('shows help text and does not invoke command handlers', async ({ when, then }: AllureBddContext) => {
     const serve = vi.fn(async () => undefined);
     const compare = vi.fn(async () => ({
@@ -133,6 +215,7 @@ describe('safe-docx CLI routing', () => {
       expect(output).toHaveLength(1);
       expect(output[0]).toContain('safe-docx CLI');
       expect(output[0]).toContain('compare <original> <revised> [output]');
+      expect(output[0]).toContain('-o, --output <path>');
       expect(output[0]).toContain('Reconstruction mode (default: inplace)');
       expect(output[0]).toContain('--verify');
       expect(output[0]).toContain('--certificate <path>');

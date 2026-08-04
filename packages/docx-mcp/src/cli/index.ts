@@ -34,19 +34,20 @@ function packageVersion(): string {
 function parseCompareArgs(args: string[]): CompareCommandArgs {
   const positional: string[] = [];
   const options: Omit<CompareCommandArgs, 'originalPath' | 'revisedPath' | 'outputPath'> = {};
+  let flaggedOutputPath: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const token = args[i];
     if (!token) continue;
 
-    if (!token.startsWith('--')) {
+    if (!token.startsWith('-')) {
       positional.push(token);
       continue;
     }
 
     const consumeValue = (flagName: string): string => {
       const next = args[i + 1];
-      if (!next || next.startsWith('--')) {
+      if (!next || next.startsWith('-')) {
         throw new Error(`Missing value for ${flagName}.`);
       }
       i += 1;
@@ -54,6 +55,13 @@ function parseCompareArgs(args: string[]): CompareCommandArgs {
     };
 
     switch (token) {
+      case '-o':
+      case '--output':
+        if (flaggedOutputPath !== undefined) {
+          throw new Error('compare output may be specified only once.');
+        }
+        flaggedOutputPath = consumeValue(token);
+        break;
       case '--engine':
         options.engine = consumeValue(token);
         break;
@@ -84,15 +92,19 @@ function parseCompareArgs(args: string[]): CompareCommandArgs {
     throw new Error('compare requires: <original> <revised> [output]');
   }
 
-  const [originalPath, revisedPath, outputPath] = positional;
+  const [originalPath, revisedPath, positionalOutputPath] = positional;
   if (!originalPath || !revisedPath) {
     throw new Error('compare requires: <original> <revised> [output]');
+  }
+
+  if (positionalOutputPath !== undefined && flaggedOutputPath !== undefined) {
+    throw new Error('compare output cannot be supplied both positionally and with -o/--output.');
   }
 
   return {
     originalPath,
     revisedPath,
-    outputPath,
+    outputPath: flaggedOutputPath ?? positionalOutputPath,
     ...options,
   };
 }
