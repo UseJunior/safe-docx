@@ -275,8 +275,14 @@ describeWithCompiledLean('safe-docx verified comparison performance', () => {
           verify: true,
         });
         const elapsedMs = performance.now() - started;
-        expect(result.verification?.status, result.verification?.reason).toBe('passed');
-        expect(result.verification?.checkerProtocolVersion).toBe(7);
+        expect(result.certificate_format).toBe('full');
+        expect(result.verification).toBeDefined();
+        expect(result.verification && 'status' in result.verification).toBe(true);
+        if (!result.verification || !('status' in result.verification)) {
+          throw new Error('expected the default full certificate');
+        }
+        expect(result.verification.status, result.verification.reason).toBe('passed');
+        expect(result.verification.checkerProtocolVersion).toBe(7);
         expect(result.mode).toBe('inplace');
         expect(elapsedMs, `verified comparison took ${elapsedMs.toFixed(0)}ms`).toBeLessThanOrEqual(
           10_000,

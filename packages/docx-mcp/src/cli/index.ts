@@ -72,6 +72,9 @@ function parseCompareArgs(args: string[]): CompareCommandArgs {
       case '--certificate':
         options.certificatePath = consumeValue(token);
         break;
+      case '--certificate-format':
+        options.certificateFormat = consumeValue(token);
+        break;
       default:
         throw new Error(`Unknown option for compare command: ${token}`);
     }

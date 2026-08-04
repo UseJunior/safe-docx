@@ -7,6 +7,11 @@ import {
   type DocumentIntegrityCertificate,
 } from '@usejunior/docx-compare';
 import { DEFAULT_RECONSTRUCTION_MODE } from '../../tools/comparison_defaults.js';
+import {
+  projectLlmVerificationCertificate,
+  type CertificateFormat,
+  type LlmVerificationCertificate,
+} from '../certificates/llm_certificate.js';
 
 const SUPPORTED_ENGINES: ReadonlySet<NonNullable<CompareOptions['engine']>> = new Set([
   'auto',
@@ -23,6 +28,7 @@ export interface CompareCommandArgs {
   premergeRuns?: boolean;
   verify?: boolean;
   certificatePath?: string;
+  certificateFormat?: string;
 }
 
 export interface CompareCommandResult {
@@ -33,8 +39,9 @@ export interface CompareCommandResult {
   fallback_reason?: string;
   bytes: number;
   stats: unknown;
-  verification?: DocumentIntegrityCertificate;
+  verification?: DocumentIntegrityCertificate | LlmVerificationCertificate;
   certificate_path?: string;
+  certificate_format?: CertificateFormat;
 }
 
 export interface CompareCommandDependencies {
@@ -75,6 +82,14 @@ function normalizeMode(raw: string | undefined): 'inplace' | 'rebuild' {
   return candidate;
 }
 
+function normalizeCertificateFormat(raw: string | undefined): CertificateFormat {
+  const candidate = (raw ?? 'full').trim().toLowerCase();
+  if (candidate !== 'full' && candidate !== 'llm') {
+    throw new Error(`Unsupported certificate format: ${String(raw)}. Use full or llm.`);
+  }
+  return candidate;
+}
+
 function defaultOutputPath(revisedPath: string, engine: string, mode: 'inplace' | 'rebuild'): string {
   return revisedPath.replace(/\.docx$/i, '') + `.REDLINE.${engine}.${mode}.docx`;
 }
@@ -85,13 +100,15 @@ export async function runCompareCommand(
 ): Promise<CompareCommandResult> {
   const engine = normalizeEngine(args.engine);
   const mode = normalizeMode(args.mode);
+  const certificateFormat = normalizeCertificateFormat(args.certificateFormat);
 
   const originalAbs = resolve(args.originalPath);
   const revisedAbs = resolve(args.revisedPath);
   const outputAbs = resolve(args.outputPath ?? defaultOutputPath(revisedAbs, engine, mode));
   const certificateAbs =
     args.certificatePath === undefined ? undefined : resolve(args.certificatePath);
-  const verify = args.verify === true || certificateAbs !== undefined;
+  const verify =
+    args.verify === true || certificateAbs !== undefined || args.certificateFormat !== undefined;
 
   if (certificateAbs === outputAbs) {
     throw new Error('The certificate path must differ from the redline output path.');
@@ -117,8 +134,13 @@ export async function runCompareCommand(
     throw new Error(`Verified comparison did not pass (${status}): ${reason}`);
   }
 
-  if (certificateAbs && verification) {
-    await writeFileAtomically(certificateAbs, `${JSON.stringify(verification, null, 2)}\n`);
+  const emittedVerification =
+    verification && certificateFormat === 'llm'
+      ? projectLlmVerificationCertificate(verification)
+      : verification;
+
+  if (certificateAbs && emittedVerification) {
+    await writeFileAtomically(certificateAbs, `${JSON.stringify(emittedVerification, null, 2)}\n`);
   }
   await writeFileAtomically(outputAbs, result.document);
 
@@ -130,7 +152,8 @@ export async function runCompareCommand(
     fallback_reason: result.fallbackReason,
     bytes: result.document.length,
     stats: result.stats,
-    verification,
+    verification: emittedVerification,
     certificate_path: certificateAbs,
+    ...(emittedVerification === undefined ? {} : { certificate_format: certificateFormat }),
   };
 }
