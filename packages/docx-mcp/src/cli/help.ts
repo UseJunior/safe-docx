@@ -47,7 +47,7 @@ export function renderTopLevelHelp(): string {
   lines.push('    --mode <inplace|rebuild>                   Reconstruction mode (default: inplace)');
   lines.push('    --verify                                  Require a passing Lean verifier certificate');
   lines.push('    --certificate <path>                      Verify and write the certificate as JSON');
-  lines.push('    --certificate-format <full|llm>           Select canonical or LLM-optimized JSON');
+  lines.push('    --certificate-format <llm|full>           Certificate detail (default: llm)');
   lines.push('                                                Compare stats count revision ranges; atom totals use *Atoms fields');
   lines.push('  edit <file> [--replace ...] [-o output]     Batch edit a DOCX file');
   lines.push('  grep "pattern" <file> [files...]            Search DOCX files for text');

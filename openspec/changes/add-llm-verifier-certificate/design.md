@@ -17,7 +17,6 @@ produce the canonical certificate unchanged.
   - keep output deterministic and fail closed.
 - Non-Goals:
   - alter Lean proofs, checker protocols, or the public v1 certificate;
-  - make `llm` the default in this change;
   - generate HTML or other human-facing presentation;
   - interpret exclusions as failures or verified claims.
 
@@ -27,8 +26,10 @@ produce the canonical certificate unchanged.
 
 The comparison library continues to return `DocumentIntegrityCertificate`.
 The CLI projects it only after verification has passed. `--certificate-format`
-accepts `full` or `llm`; omission means `full`. Supplying the flag implies
-verification, just like `--certificate`.
+accepts `full` or `llm`; omission means `llm`. Consumers see the compact verdict
+and summaries first, then can request `full` when they need the canonical
+evidence object. Supplying the flag implies verification, just like
+`--certificate`.
 
 For `full`, the CLI JSON `verification` field and certificate file retain the
 existing canonical object. For `llm`, both contain the same normalized
@@ -77,11 +78,12 @@ unavailability, non-evaluation, and out-of-scope behavior without parsing prose.
 - Hard-coded invariant IDs require deliberate schema evolution if the canonical
   certificate adds a new generic check. Exhaustiveness helpers and tests make
   omission fail during development.
-- Keeping `full` as default limits immediate token savings but avoids breaking
-  existing automation.
+- Making `llm` the default changes the verified CLI response shape for callers
+  that relied on omission. The explicit `full` format is the compatibility
+  escape hatch, and `certificate_format` makes the selected schema unambiguous.
 
 ## Migration Plan
 
-Existing callers require no change. LLM agents add
-`--certificate-format llm`, with or without `--certificate <path>`. A future
-default change, if desired, requires a separate compatibility decision.
+LLM agents require no format flag. Existing callers that consume the canonical
+certificate add `--certificate-format full`, with or without
+`--certificate <path>`.

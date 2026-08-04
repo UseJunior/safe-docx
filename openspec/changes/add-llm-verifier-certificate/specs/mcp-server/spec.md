@@ -3,17 +3,17 @@
 ### Requirement: CLI can project verifier evidence for LLM consumption
 
 The installed Safe DOCX CLI SHALL accept
-`--certificate-format <full|llm>` for verified comparisons. Omission or `full`
-SHALL preserve the canonical public v1 certificate shape. `llm` SHALL project
-that canonical certificate into a deterministic
+`--certificate-format <full|llm>` for verified comparisons. Omission or `llm`
+SHALL project the canonical public v1 certificate into a deterministic
 `safe-docx.llm-verification-certificate` schema without changing the Lean
-checker protocol or the canonical certificate producer. Supplying the format
-flag SHALL imply verification.
+checker protocol or the canonical certificate producer. Explicit `full` SHALL
+preserve the canonical public v1 certificate shape. Supplying the format flag
+SHALL imply verification.
 
 #### Scenario: [CLI-CERT-01] Full format remains backward compatible
 
 - **GIVEN** a passing canonical public v1 certificate
-- **WHEN** certificate format is omitted or explicitly `full`
+- **WHEN** certificate format is explicitly `full`
 - **THEN** the CLI JSON and requested artifact SHALL contain the unchanged
   canonical certificate
 - **AND** the result SHALL identify the emitted format as `full`
@@ -21,7 +21,7 @@ flag SHALL imply verification.
 #### Scenario: [CLI-CERT-02] LLM format is consistent across outputs
 
 - **GIVEN** a passing canonical public v1 certificate
-- **WHEN** the user selects `--certificate-format llm`
+- **WHEN** certificate format is omitted or explicitly `llm`
 - **THEN** the CLI JSON and requested artifact SHALL contain the same normalized
   LLM certificate
 - **AND** the result SHALL identify the emitted format as `llm`

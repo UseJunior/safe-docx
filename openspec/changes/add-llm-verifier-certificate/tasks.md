@@ -12,7 +12,7 @@
 
 - [x] 3.1 Parse and validate `--certificate-format full|llm`
 - [x] 3.2 Emit the selected format consistently in CLI JSON and certificate files
-- [x] 3.3 Preserve omitted/full behavior and fail-closed atomic publication
+- [x] 3.3 Make LLM output the default, preserve explicit full behavior, and keep fail-closed atomic publication
 - [x] 3.4 Document the new flag and schema semantics
 
 ## 4. Evidence

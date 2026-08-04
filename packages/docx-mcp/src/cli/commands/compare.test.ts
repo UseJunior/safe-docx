@@ -148,7 +148,7 @@ describe('safe-docx compare command', () => {
       let result: Awaited<ReturnType<typeof runCompareCommand>>;
       await when('the caller requests a certificate artifact', async () => {
         result = await runCompareCommand(
-          { originalPath, revisedPath, outputPath, certificatePath },
+          { originalPath, revisedPath, outputPath, certificatePath, certificateFormat: 'full' },
           { compare: async (_original, _revised, options) => {
             expect(options?.leanXmlVerifier).toEqual({ enabled: true });
             return comparisonResult(passed);
@@ -157,6 +157,7 @@ describe('safe-docx compare command', () => {
       });
 
       await then('the JSON result and durable artifact carry the same certificate', async () => {
+        expect(result.certificate_format).toBe('full');
         expect(result.verification).toEqual(passed);
         expect(result.certificate_path).toBe(certificatePath);
         expect(await fs.readFile(outputPath, 'utf8')).toBe('verified-redline');
@@ -275,14 +276,14 @@ describeWithCompiledLean('safe-docx verified comparison performance', () => {
           verify: true,
         });
         const elapsedMs = performance.now() - started;
-        expect(result.certificate_format).toBe('full');
+        expect(result.certificate_format).toBe('llm');
         expect(result.verification).toBeDefined();
-        expect(result.verification && 'status' in result.verification).toBe(true);
-        if (!result.verification || !('status' in result.verification)) {
-          throw new Error('expected the default full certificate');
+        expect(result.verification && 'verdict' in result.verification).toBe(true);
+        if (!result.verification || !('verdict' in result.verification)) {
+          throw new Error('expected the default LLM certificate');
         }
-        expect(result.verification.status, result.verification.reason).toBe('passed');
-        expect(result.verification.checkerProtocolVersion).toBe(7);
+        expect(result.verification.verdict, result.verification.reason).toBe('passed');
+        expect(result.verification.verifier.checkerProtocolVersion).toBe(7);
         expect(result.mode).toBe('inplace');
         expect(elapsedMs, `verified comparison took ${elapsedMs.toFixed(0)}ms`).toBeLessThanOrEqual(
           10_000,

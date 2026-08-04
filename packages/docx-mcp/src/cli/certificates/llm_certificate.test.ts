@@ -133,40 +133,40 @@ async function documentPaths(prefix: string): Promise<{
 
 describe('LLM verifier certificate projection', () => {
   test.openspec('[CLI-CERT-01] Full format remains backward compatible')(
-    'keeps the canonical certificate unchanged by default and for full',
+    'keeps the canonical certificate unchanged when full is explicit',
     async () => {
       const certificate = canonicalCertificate();
-      for (const certificateFormat of [undefined, 'full'] as const) {
-        const paths = await documentPaths('safe-docx-full-certificate-');
-        const result = await runCompareCommand(
-          { ...paths, certificateFormat },
-          { compare: async () => comparisonResult(certificate) },
-        );
-        expect(result.certificate_format).toBe('full');
-        expect(result.verification).toEqual(certificate);
-        expect(JSON.parse(await fs.readFile(paths.certificatePath, 'utf8'))).toEqual(certificate);
-      }
+      const paths = await documentPaths('safe-docx-full-certificate-');
+      const result = await runCompareCommand(
+        { ...paths, certificateFormat: 'full' },
+        { compare: async () => comparisonResult(certificate) },
+      );
+      expect(result.certificate_format).toBe('full');
+      expect(result.verification).toEqual(certificate);
+      expect(JSON.parse(await fs.readFile(paths.certificatePath, 'utf8'))).toEqual(certificate);
     },
   );
 
   test.openspec('[CLI-CERT-02] LLM format is consistent across outputs')(
     'emits the same normalized certificate in JSON and the requested artifact',
     async () => {
-      const paths = await documentPaths('safe-docx-llm-certificate-');
-      const result = await runCompareCommand(
-        { ...paths, certificateFormat: 'llm' },
-        {
-          compare: async (_original, _revised, options) => {
-            expect(options?.leanXmlVerifier).toEqual({ enabled: true });
-            return comparisonResult(canonicalCertificate());
+      for (const certificateFormat of [undefined, 'llm'] as const) {
+        const paths = await documentPaths('safe-docx-llm-certificate-');
+        const result = await runCompareCommand(
+          { ...paths, certificateFormat },
+          {
+            compare: async (_original, _revised, options) => {
+              expect(options?.leanXmlVerifier).toEqual({ enabled: true });
+              return comparisonResult(canonicalCertificate());
+            },
           },
-        },
-      );
-      expect(result.certificate_format).toBe('llm');
-      expect(result.verification).toMatchObject({ schemaId: LLM_CERTIFICATE_SCHEMA_ID });
-      expect(JSON.parse(await fs.readFile(paths.certificatePath, 'utf8'))).toEqual(
-        result.verification,
-      );
+        );
+        expect(result.certificate_format).toBe('llm');
+        expect(result.verification).toMatchObject({ schemaId: LLM_CERTIFICATE_SCHEMA_ID });
+        expect(JSON.parse(await fs.readFile(paths.certificatePath, 'utf8'))).toEqual(
+          result.verification,
+        );
+      }
     },
   );
 

@@ -83,7 +83,7 @@ function normalizeMode(raw: string | undefined): 'inplace' | 'rebuild' {
 }
 
 function normalizeCertificateFormat(raw: string | undefined): CertificateFormat {
-  const candidate = (raw ?? 'full').trim().toLowerCase();
+  const candidate = (raw ?? 'llm').trim().toLowerCase();
   if (candidate !== 'full' && candidate !== 'llm') {
     throw new Error(`Unsupported certificate format: ${String(raw)}. Use full or llm.`);
   }

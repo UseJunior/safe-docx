@@ -136,7 +136,8 @@ describe('safe-docx CLI routing', () => {
       expect(output[0]).toContain('Reconstruction mode (default: inplace)');
       expect(output[0]).toContain('--verify');
       expect(output[0]).toContain('--certificate <path>');
-      expect(output[0]).toContain('--certificate-format <full|llm>');
+      expect(output[0]).toContain('--certificate-format <llm|full>');
+      expect(output[0]).toContain('Certificate detail (default: llm)');
       expect(serve).not.toHaveBeenCalled();
       expect(compare).not.toHaveBeenCalled();
     });

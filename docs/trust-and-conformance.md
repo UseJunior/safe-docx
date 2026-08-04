@@ -71,10 +71,11 @@ safe-docx compare original.docx revised.docx redline.docx \
 ```
 
 `--certificate` and `--certificate-format` imply `--verify`. The default
-certificate format is `full`, the unchanged public v1 certificate. Use `llm`
-for a deterministic, versioned projection that defines repeated invariants once,
-groups stories with identical results, and keeps failures, exclusions, hashes,
-and structured protocol evidence explicit for machine reasoning.
+certificate format is `llm`: a deterministic, versioned progressive-disclosure
+projection that defines repeated invariants once, groups stories with identical
+results, and keeps failures, exclusions, hashes, and structured protocol
+evidence explicit for machine reasoning. Use `--certificate-format full` to
+request the unchanged canonical public v1 certificate.
 
 A verified CLI comparison uses a 10-second
 checker budget and writes neither artifact unless the certificate passes. The
