@@ -1,5 +1,7 @@
 # Safe Docx
 
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.UseJunior%2Fsafe-docx.svg)](https://mcptoplist.com/server/io.github.UseJunior%2Fsafe-docx)
+
 Edit Word and OpenDocument files with coding agents.
 
 <!-- SYNC:badges BEGIN -->
