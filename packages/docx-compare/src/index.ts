@@ -158,3 +158,14 @@ export {
 } from './baselines/atomizer/textBoxRevisionSafety.js';
 export type { TextBoxRevisionChange } from './baselines/atomizer/textBoxRevisionSafety.js';
 export { computeAtomLcs, markCorrelationStatus } from './baselines/atomizer/atomLcs.js';
+export {
+  MC_NAMESPACE,
+  groupElementsByTagNameNS,
+  selectAlternateContentBranch,
+  selectedElementsByTagNameNS,
+} from './markupCompatibility.js';
+export type {
+  MarkupCompatibilityGroup,
+  MarkupCompatibilityOptions,
+  RequiredNamespace,
+} from './markupCompatibility.js';
