@@ -103,7 +103,7 @@ async function readablePackage(): Promise<Buffer> {
 const COMPLETE_PDF = Buffer.from('%PDF-1.7\n1 0 obj\n<<>>\nendobj\ntrailer\n%%EOF\n', 'latin1');
 const TRUNCATED_PDF = Buffer.from('%PDF-1.7\n1 0 obj\n<<>>\nendobj\n', 'latin1');
 /** A `PK\x03\x04` local-file header and nothing else — the issue #796 artifact. */
-const TRUNCATED_PACKAGE = Buffer.from('PKTRUNCATED', 'latin1');
+const TRUNCATED_PACKAGE = Buffer.from('PK\u0003\u0004TRUNCATED', 'latin1');
 
 const GENERATED = Buffer.from('not a real docx — the stub never reads its input');
 
