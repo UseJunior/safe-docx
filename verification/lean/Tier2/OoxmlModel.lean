@@ -30,13 +30,21 @@ inductive FldCharKind
 
     `delText` / `delInstrText` are the deleted-content counterparts the engine
     rewrites back to `text` / `instrText` on `reject`
-    (`trackChangesAcceptorAst.ts:602-616`). -/
+    (`trackChangesAcceptorAst.ts:602-616`).
+
+    `sym` carries the character a `<w:sym w:font=".." w:char="XXXX"/>` stands
+    for, already resolved from `@w:char` by
+    `packages/docx-core/src/primitives/symbol_run_content.ts`. It is a distinct
+    constructor rather than a `text` atom because it has no deleted-content
+    counterpart: OOXML has no `w:delSym`, so a symbol inside a `w:del` is still
+    spelled `w:sym` and `reject`'s rename pass must leave it untouched. -/
 inductive Atom
   | text (s : String)
   | delText (s : String)
   | instrText (s : String)
   | delInstrText (s : String)
   | fldChar (k : FldCharKind)
+  | sym (s : String)
   deriving DecidableEq, Repr, Inhabited
 
 /-- Opaque run-properties marker. `inv_field_001` does not depend on `w:rPr`

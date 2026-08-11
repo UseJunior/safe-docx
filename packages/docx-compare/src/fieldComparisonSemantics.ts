@@ -2,7 +2,7 @@ import {
   OOXML,
   classifyFieldInstruction,
   parseXml,
-  symbolRunCharacter,
+  projectSymbolRun,
 } from '@usejunior/docx-core';
 
 const PAGEREF_IDENTITY_PREFIX = '__safe_docx_pageref__|';
@@ -157,7 +157,7 @@ export function extractRoundTripComparisonText(documentXml: string): string {
             // the projection and the two legal spellings of one glyph agree.
             const value =
               element.localName === 'sym'
-                ? symbolRunCharacter(element) ?? ''
+                ? projectSymbolRun(element) ?? ''
                 : element.textContent ?? '';
             if (value) text.push(value);
           }

@@ -14,7 +14,7 @@ import {
   insertChildAt,
   childElements,
   getLeafText,
-  symbolRunCharacter,
+  projectSymbolRun,
   NODE_TYPE,
 } from '@usejunior/docx-core';
 
@@ -703,7 +703,7 @@ function collectLiveCharacterContent(scope: Element, out: string[]): void {
       continue;
     }
     if (child.tagName === 'w:sym') {
-      const symbol = symbolRunCharacter(child) ?? '';
+      const symbol = projectSymbolRun(child) ?? '';
       if (symbol) out.push(symbol);
       continue;
     }

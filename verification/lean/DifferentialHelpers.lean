@@ -51,6 +51,7 @@ instance : ToJson Atom where
     | .instrText s => Json.mkObj [("instrText", toJson s)]
     | .delInstrText s => Json.mkObj [("delInstrText", toJson s)]
     | .fldChar k => Json.mkObj [("fldChar", toJson k)]
+    | .sym s => Json.mkObj [("sym", toJson s)]
 
 /-- `Block` is recursive (`List Block` children), so the encoder is `partial`; this is
     an executable, not a proof — no termination obligation is incurred. -/

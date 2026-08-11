@@ -142,8 +142,7 @@
         "The residual axiom asserts normalized revised/original text projection equalities for this repo's inplace atomizer output.",
         "Lean normalizeText models trim plus blank-entry dropping, not every TypeScript regex behavior.",
         "Lean extractText keeps structural order; TypeScript extractTextWithParagraphs has known ordering differences outside the compared surfaces.",
-        "The text projection counts w:t, w:delText and w:sym (resolved to its @w:char codepoint). It does not count w:br, w:tab, w:cr, w:noBreakHyphen, w:softHyphen, w:pgNum, w:drawing, w:pict or w:object, and normalizeText erases leading/trailing whitespace and blank paragraph entries, so losing any of those leaves the invariant satisfied.",
-        "Lean atomText models w:t and w:delText only; the TypeScript projection additionally counts w:sym, so the Lean model under-approximates the shipped projection on symbol-bearing documents."
+        "The text projection counts w:t, w:delText and w:sym (resolved to its @w:char codepoint; Lean Atom.sym carries the same resolved character). It does not count w:br, w:tab, w:cr, w:noBreakHyphen, w:softHyphen, w:pgNum, w:drawing, w:pict or w:object, and normalizeText erases leading/trailing whitespace and blank paragraph entries, so losing any of those leaves the invariant satisfied."
       ],
       "falsifier": "lean-build: lake build and axiom audit; packages/docx-core/src/integration/lean-spec-bridge.test.ts; packages/docx-core/src/integration/round-trip-inplace.test.ts"
     },

@@ -2255,7 +2255,11 @@
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/fieldComparisonSemantics.test.ts"
+          "path": "packages/docx-core/src/primitives/symbol_run_content.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/symbolCharacterProjection.test.ts"
         }
       ]
     },

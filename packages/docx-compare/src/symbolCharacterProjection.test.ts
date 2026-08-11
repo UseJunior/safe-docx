@@ -18,6 +18,9 @@ const BALLOT_BOX = '\uF0A8';
 /** A different Wingdings glyph, used as a discriminating control. */
 const CHECKED_BOX = '\uF0FE';
 
+/** U+FFFD, as ordinary authored text. */
+const REPLACEMENT = '\uFFFD';
+
 const WINGDINGS_RPR = '<w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings"/></w:rPr>';
 
 function documentXml(body: string): string {
@@ -157,6 +160,34 @@ describe('round-trip comparison projection of w:sym', () => {
         // w:sym spelling by construction. Font drift is a formatting concern.
         expect(wingdings).toBe(symbolFont);
         expect(differentChar).not.toBe(wingdings);
+      });
+    },
+  );
+
+  test.conformance(symbolConformance)(
+    'an unresolvable w:sym does not compare equal to a document that authored U+FFFD',
+    async ({ given, when, then }: AllureBddContext) => {
+      let unresolvedSym!: string;
+      let authoredReplacement!: string;
+      let resolvedReplacement!: string;
+
+      await given('a w:sym with no w:char, and two documents that carry U+FFFD honestly', async () => {});
+      await when('all three are projected', async () => {
+        unresolvedSym = extractRoundTripComparisonText(
+          documentXml('<w:p><w:r><w:sym w:font="Wingdings"/></w:r></w:p>'),
+        );
+        authoredReplacement = extractRoundTripComparisonText(
+          documentXml(`<w:p><w:r><w:t>${REPLACEMENT}</w:t></w:r></w:p>`),
+        );
+        resolvedReplacement = extractRoundTripComparisonText(withSym('FFFD'));
+      });
+      await then('the unresolved identity stays out of the character channel', async () => {
+        // U+FFFD is the obvious sentinel for an unresolvable symbol and is
+        // wrong: a document may author it literally, and the gate would then
+        // read a broken w:sym and that text as the same content.
+        expect(compareTexts(unresolvedSym, authoredReplacement).normalizedIdentical).toBe(false);
+        // Control: a w:sym that genuinely carries U+FFFD still resolves to it.
+        expect(resolvedReplacement).toContain(REPLACEMENT);
       });
     },
   );
