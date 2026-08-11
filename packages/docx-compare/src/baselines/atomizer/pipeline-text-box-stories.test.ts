@@ -1196,6 +1196,16 @@ describe('VML text-box story comparison (#713)', () => {
  * before/after pair authored in Microsoft Word — the first document in the
  * corpus to contain a text box at all.
  *
+ * **What is Word-authored and what is Word-derived.** Two cases run the
+ * untouched files: the counting case and the twin admission case, which is
+ * what Word actually produces. The standalone-DrawingML and non-`v:shape`
+ * cases run markup *derived* from those files by keeping one
+ * `mc:AlternateContent` branch and discarding the twin. That is stronger than
+ * hand-writing the XML — every byte inside the surviving branch is Word's —
+ * but it is not a claim that some producer emits a bare `wps:txbx` with no
+ * `mc:AlternateContent` wrapper. No such fixture is in the corpus, and the
+ * standalone case should be read as Word-derived, not Word-authored.
+ *
  * @see tests/test_documents/text-box/README.md
  * @see https://github.com/UseJunior/safe-docx/issues/795
  * @see https://github.com/UseJunior/safe-docx/issues/794
@@ -1226,17 +1236,35 @@ describe('Word-authored text-box corpus (#795)', () => {
    * standalone-DrawingML and plain-VML shapes without hand-authoring any of
    * their content: what varies is which of Word's two spellings survives.
    */
-  function keepBranch(branch: 'Choice' | 'Fallback'): (xml: string) => string {
-    return (xml) =>
-      xml.replace(
+  function keepBranch(
+    branch: 'Choice' | 'Fallback',
+    only?: number,
+  ): (xml: string) => string {
+    return (xml) => {
+      let seen = -1;
+      return xml.replace(
         /<mc:AlternateContent\b[^>]*>([\s\S]*?)<\/mc:AlternateContent>/g,
         (whole: string, inner: string): string => {
+          seen += 1;
+          if (only !== undefined && seen !== only) return whole;
           const kept = new RegExp(
             `<mc:${branch}\\b[^>]*>([\\s\\S]*?)</mc:${branch}>`,
           ).exec(inner);
           return kept?.[1] ?? whole;
         },
       );
+    };
+  }
+
+  /** Every stored `w:txbxContent`'s text, in document order — twins included. */
+  function storedStoryTexts(xml: string): string[] {
+    return [
+      ...xml.matchAll(/<w:txbxContent\b[\s\S]*?<\/w:txbxContent>/g),
+    ].map(([story]) =>
+      [...story.matchAll(/<w:t(?: [^>]*)?>([\s\S]*?)<\/w:t>/g)]
+        .map(([, text]) => text ?? '')
+        .join(''),
+    );
   }
 
   /** The DrawingML scaffold of each box, with its story blanked out. */
@@ -1319,62 +1347,82 @@ describe('Word-authored text-box corpus (#795)', () => {
     });
   });
 
-  test('admits the mc:AlternateContent twin Word actually produces', async ({
+  test('admits the mc:AlternateContent twin, and round-trips both branches', async ({
     given,
     when,
     then,
   }: AllureBddContext) => {
     // Failing closed on a missing VML host without noticing the twin would
-    // refuse the commonest text box Word makes. This is that collateral case
-    // on a real document rather than a constructed one. See issue #795.
-    let redlined: string | undefined;
-    let storedCopies = 0;
-    let vmlHosts = 0;
+    // refuse the commonest text box Word makes. Admitting it is only safe if
+    // the redline is reversible, so assert the round trip rather than the mere
+    // presence of revisions: accept-all must reproduce the revised text and
+    // reject-all the original, in *both* stored branches, with the DrawingML
+    // scaffold Word wrote left alone. See issue #795.
+    let redlined = '';
+    let accepted = '';
+    let rejected = '';
+    let sourceXml = '';
+    let revisedXml = '';
 
     const documents = await given('the Word-authored pair, both boxes edited', () => ({
       source: readFileSync(SOURCE),
       revised: readFileSync(REVISED),
     }));
 
-    await when('the pair is compared in place', async () => {
+    await when('the pair is compared, then accepted and rejected', async () => {
       const result = await compareDocumentsAtomizer(
         documents.source,
         documents.revised,
         { reconstructionMode: 'inplace' },
       );
       redlined = await documentXml(result.document);
-      const document = parseXml(redlined);
-      storedCopies = document.getElementsByTagNameNS(
-        OOXML.W_NS,
-        'txbxContent',
-      ).length;
-      vmlHosts = document.getElementsByTagNameNS(
-        TEXT_BOX_NAMESPACES.v,
-        'shape',
-      ).length;
+      accepted = acceptAllChanges(redlined);
+      rejected = rejectAllChanges(redlined);
+      sourceXml = await documentXml(documents.source);
+      revisedXml = await documentXml(documents.revised);
     });
 
-    await then('the twin is admitted and carries tracked revisions', () => {
-      expect(redlined).toBeDefined();
+    await then('the redline is real and exactly reversible', () => {
       // The refusal path throws, so reaching here is itself the admission.
-      // Assert the redline is real rather than empty: revisions landed inside
-      // the stories, and both twin branches survived the round trip.
-      expect(storedCopies).toBe(4);
-      expect(vmlHosts).toBe(2);
+      expect(storedStoryTexts(redlined)).toHaveLength(4);
       expect(redlined).toMatch(/<w:ins\b/);
       expect(redlined).toMatch(/<w:del\b/);
+
+      // Reversibility, per stored copy — this covers the unrendered
+      // `mc:Fallback` twin as well as the `mc:Choice` Word renders.
+      expect(rejected && storedStoryTexts(rejected)).toEqual(
+        storedStoryTexts(sourceXml),
+      );
+      expect(accepted && storedStoryTexts(accepted)).toEqual(
+        storedStoryTexts(revisedXml),
+      );
+
+      // Both branches of each visual box still say the same thing. A redline
+      // that updated only the rendered copy would leave the document saying
+      // two different things depending on which Word opened it.
+      for (const side of [accepted, rejected]) {
+        const [choice1, fallback1, choice2, fallback2] = storedStoryTexts(side);
+        expect(choice1).toBe(fallback1);
+        expect(choice2).toBe(fallback2);
+      }
+
+      // The scaffold is not the story's to change.
+      expect(drawingMlScaffolds(rejected)).toEqual(drawingMlScaffolds(sourceXml));
+      expect(drawingMlScaffolds(accepted)).toEqual(drawingMlScaffolds(revisedXml));
     });
   });
 
-  test('control: the unchanged body paragraph stays outside the redline', async ({
+  test('control: the admission path leaves the unchanged body paragraph alone', async ({
     given,
     when,
     then,
   }: AllureBddContext) => {
-    // A guard that has gone over-broad refuses documents wholesale instead of
-    // refusing the class it excludes, and a comparison that has gone
-    // over-eager marks up text nobody touched. The body paragraph is
-    // identical in both files, so it catches either.
+    // An integration control over the admission path, not an isolated
+    // measurement of guard scope: it necessarily reds whenever the guard stops
+    // admitting the twin, because then there is no redline to inspect. That
+    // coupling is the point — it catches a guard that has gone over-broad and
+    // refuses documents wholesale, and separately catches a comparison that
+    // has gone over-eager and marks up text nobody touched.
     let outsideTextBoxes: string | undefined;
 
     const documents = await given('a pair whose only edits are inside the boxes', () => ({
@@ -1398,6 +1446,58 @@ describe('Word-authored text-box corpus (#795)', () => {
       expect(outsideTextBoxes).toContain('Body text');
       expect(outsideTextBoxes).not.toMatch(/<w:ins\b/);
       expect(outsideTextBoxes).not.toMatch(/<w:del\b/);
+    });
+  });
+
+  test('numbers a refusal by the box a reader sees, not the copy Word stored', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    // #803 separated the storage address from the ordinal a reader can act on.
+    // Strip the twin from the *second* authored box only, leaving the first as
+    // Word wrote it. The refusal must name box `[1]` — the second visual box —
+    // where a walk counting stored copies would say `[2]`, the second copy of
+    // the *first* box, and send a reader somewhere that does not exist.
+    let failure: unknown;
+    let sourceXml = '';
+
+    const derived = await given('the twin removed from the second box only', async () => {
+      const secondOnly = keepBranch('Choice', 1);
+      const source = await rewriteDocumentXml(SOURCE, secondOnly);
+      const revised = await rewriteDocumentXml(REVISED, secondOnly);
+      sourceXml = await documentXml(source);
+      return { source, revised };
+    });
+
+    await when('comparison refuses the now-standalone second box', async () => {
+      try {
+        await compareDocumentsAtomizer(derived.source, derived.revised, {
+          reconstructionMode: 'inplace',
+        });
+      } catch (error) {
+        failure = error;
+      }
+    });
+
+    await then('the diagnostic names the second visual box', () => {
+      // Box 1 keeps its twin (2 stored copies); box 2 is now standalone (1).
+      expect(sourceXml.match(/<mc:AlternateContent\b/g)).toHaveLength(1);
+      expect(storedStoryTexts(sourceXml)).toEqual([
+        'Text box 1',
+        'Text box 1',
+        'Text box 2',
+      ]);
+
+      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+      expect((failure as UnsupportedTextBoxRevisionError).changes).toEqual([
+        expect.objectContaining({
+          index: 1,
+          partPath: 'word/document.xml',
+          reason: 'the containing VML shape scaffold changed or could not be paired',
+        }),
+      ]);
+      expect((failure as Error).message).toContain('#w:txbxContent[1]');
     });
   });
 
@@ -1455,15 +1555,17 @@ describe('Word-authored text-box corpus (#795)', () => {
       expect(authoredScaffolds[1]).toEqual(authoredScaffolds[0]);
       expect(authoredScaffolds[0]).toHaveLength(2);
 
+      // Pin the exact classification, not merely that something mentioning
+      // "scaffold" threw: the relationship-closure and unsupported-story
+      // guards sit next to this one and would refuse for different reasons.
       expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-      expect(failure).toMatchObject({
-        changes: [
-          expect.objectContaining({
-            partPath: 'word/document.xml',
-            reason: expect.stringContaining('scaffold'),
-          }),
-        ],
-      });
+      expect((failure as UnsupportedTextBoxRevisionError).changes).toEqual([
+        expect.objectContaining({
+          index: 0,
+          partPath: 'word/document.xml',
+          reason: 'the containing VML shape scaffold changed or could not be paired',
+        }),
+      ]);
     });
   });
 

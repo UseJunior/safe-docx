@@ -52,6 +52,14 @@ from these files by selecting one `mc:AlternateContent` branch and discarding
 the other. That keeps the markup Word's own rather than hand-written: what
 varies is which branch Word wrote is kept, not what the branch says.
 
+**Read the derived cases as Word-derived, not Word-authored.** Discarding the
+twin is done by the test, not by a producer. Nothing here establishes that some
+tool emits a bare `wps:txbx` with no `mc:AlternateContent` wrapper — only that
+if one does, the guard classifies it the way `CONFORMANCE.md` says it should. A
+fixture emitted naturally in that shape, by Word Strict or LibreOffice or an
+identified generator, would be a strict improvement and is not in the corpus
+yet.
+
 ## Policy
 
 - Do not add customer, partner, or otherwise private documents.
