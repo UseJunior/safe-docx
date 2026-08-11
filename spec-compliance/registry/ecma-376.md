@@ -46,8 +46,10 @@ a `wps:txbx` with no `mc:AlternateContent` twin, and therefore no VML host
 anywhere above it. Such a box has no drawing scaffold this implementation can
 fingerprint, so the comparison is refused with `UnsupportedTextBoxRevisionError`,
 which aborts the whole comparison rather than emitting a partial redline. The
-claim likewise does not cover inserted or deleted text-box topology, or changes
-to the containing scaffold or relationship closure of an untwinned box.
+claim likewise does not cover inserted or deleted text-box topology, nor a
+change to the relationship closure of any text-box story — that check runs
+ahead of the twin carve-out and applies to twinned and untwinned boxes alike —
+nor a change to the containing scaffold of an untwinned box.
 
 ## [ECMA-PART4-19-1-2-22] VML text-box host (v:textbox)
 
