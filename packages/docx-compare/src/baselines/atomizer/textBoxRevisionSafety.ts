@@ -25,6 +25,7 @@ import {
 
 const WORD_2010_NS = 'http://schemas.microsoft.com/office/word/2010/wordml';
 const VML_NS = 'urn:schemas-microsoft-com:vml';
+const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
 const RELATIONSHIPS_NS =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const PACKAGE_RELATIONSHIPS_NS =
@@ -129,18 +130,56 @@ function createPlaceholder(textBox: Element, index: number): void {
   textBox.appendChild(paragraph);
 }
 
+/**
+ * The VML drawing object hosting a story: the parent of the nearest
+ * `v:textbox` ancestor, when that parent is itself VML.
+ *
+ * Derived from the schema rather than matched against a hard-coded element
+ * name. `v:textbox` (`CT_Textbox`) is the only declared parent of
+ * `w:txbxContent`, and it belongs to `EG_ShapeElements`, which `CT_Shape`
+ * shares with `CT_Rect`, `CT_RoundRect`, `CT_Oval`, `CT_Line`, `CT_PolyLine`,
+ * `CT_Curve`, `CT_Arc`, `CT_Image`, `CT_Shapetype` and `CT_Group`
+ * (`spec-compliance/ecma-376/schemas/transitional/vml-main.xsd`). Matching
+ * only `v:shape` would report "no scaffold" for a schema-valid
+ * `v:rect`/`v:roundrect`/`v:oval` host and — now that callers fail closed on
+ * that — refuse VML the comparison handles perfectly well.
+ *
+ * Returns `undefined` when there is no VML `v:textbox` ancestor at all, which
+ * is how a DrawingML (`wps:txbx`) box presents.
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 19.1.2.22
+ * @see https://github.com/UseJunior/safe-docx/issues/795
+ */
 function nearestShape(textBox: Element): Element | undefined {
   let node: Node | null = textBox.parentNode;
   while (node?.nodeType === 1) {
     const element = node as Element;
-    if (element.namespaceURI === VML_NS && element.localName === 'shape') {
-      return element;
+    if (element.namespaceURI === VML_NS && element.localName === 'textbox') {
+      const host = element.parentNode;
+      if (host?.nodeType !== 1) return undefined;
+      const hostElement = host as Element;
+      return hostElement.namespaceURI === VML_NS ? hostElement : undefined;
     }
     node = node.parentNode;
   }
   return undefined;
 }
 
+/**
+ * Fingerprint the VML scaffold that hosts a story, with the story emptied out.
+ *
+ * Returns `undefined` when `nearestShape` found **no VML host at all** — a
+ * DrawingML (`wps:txbx`) box, for instance. That is not "an empty
+ * scaffold"; it is "no scaffold this function can describe", and it means the
+ * box falls outside the subset `spec-compliance/CONFORMANCE.md`
+ * (ECMA-PART4-14-9-1-1) claims to cover. Callers MUST therefore fail closed on
+ * `undefined` on either side rather than comparing the two results, exactly as
+ * they do for `relationshipClosureFingerprint`: two `undefined`s are the
+ * absence of a pairing, never a successful one.
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 19.1.2.22
+ * @see https://github.com/UseJunior/safe-docx/issues/795
+ */
 function scaffoldFingerprint(textBox: Element): string | undefined {
   const shape = nearestShape(textBox);
   if (!shape) return undefined;
@@ -151,6 +190,68 @@ function scaffoldFingerprint(textBox: Element): string | undefined {
     while (nested.firstChild) nested.removeChild(nested.firstChild);
   }
   return canonicalNode(clone);
+}
+
+/**
+ * Is this copy one spelling of a box Word also stored another way?
+ *
+ * Word writes a modern text box twice inside a single `mc:AlternateContent` —
+ * the `mc:Choice` DrawingML spelling and the `mc:Fallback` VML spelling — and
+ * renders one of them. The DrawingML copy of such a pair has no VML host, so
+ * fingerprinting it alone reports "no scaffold" for a box whose scaffold is
+ * sitting in its twin.
+ *
+ * Failing closed on that would refuse the ordinary Word text box, so the
+ * scaffold guard skips a copy inside `mc:AlternateContent` and leaves it at
+ * today's behaviour. Deciding which copy of a twin is the rendered one — and
+ * therefore which scaffold governs — is the `mc:AlternateContent`-aware story
+ * walk's job, tracked separately in #794; this guard deliberately does not
+ * pre-empt it. The exclusion is therefore enforced for a standalone DrawingML
+ * box, which is what #795 reports, and the twinned case is left to #794.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/794
+ * @see https://github.com/UseJunior/safe-docx/issues/795
+ */
+function hasAlternateContentAncestor(textBox: Element): boolean {
+  let node: Node | null = textBox.parentNode;
+  while (node?.nodeType === 1) {
+    const element = node as Element;
+    if (
+      element.namespaceURI === MC_NS &&
+      element.localName === 'AlternateContent'
+    ) {
+      return true;
+    }
+    node = node.parentNode;
+  }
+  return false;
+}
+
+/**
+ * The scaffold-pairing verdict for one changed story, or `undefined` to admit.
+ *
+ * Fails closed when either side has no scaffold to fingerprint. Two
+ * `undefined`s are the absence of a pairing, never a successful one — the
+ * defect in #795 was comparing them with `!==` and reading `false` as "these
+ * pair".
+ */
+function scaffoldPairingReason(
+  originalTextBox: Element,
+  revisedTextBox: Element,
+  reason: string,
+): string | undefined {
+  if (
+    hasAlternateContentAncestor(originalTextBox) ||
+    hasAlternateContentAncestor(revisedTextBox)
+  ) {
+    return undefined;
+  }
+  const original = scaffoldFingerprint(originalTextBox);
+  const revised = scaffoldFingerprint(revisedTextBox);
+  if (original === undefined || revised === undefined || original !== revised) {
+    return reason;
+  }
+  return undefined;
 }
 
 function unsupportedStoryReason(textBox: Element): string | undefined {
@@ -764,9 +865,11 @@ async function ancillaryStoryInputs(
         originalRelationshipClosure !== revisedRelationshipClosure
           ? 'the ancillary text-box relationship closure changed or could not be resolved'
           : undefined) ??
-        (scaffoldFingerprint(originalTextBox) === scaffoldFingerprint(revisedTextBox)
-          ? undefined
-          : 'the ancillary VML shape scaffold changed or could not be paired');
+        scaffoldPairingReason(
+          originalTextBox,
+          revisedTextBox,
+          'the ancillary VML shape scaffold changed or could not be paired',
+        );
       if (reason) {
         throw new UnsupportedTextBoxRevisionError([{
           index,
@@ -945,10 +1048,11 @@ export async function prepareTextBoxStoryComparison(
       originalRelationshipClosure !== revisedRelationshipClosure
         ? 'the text-box relationship closure changed or could not be resolved'
         : undefined) ??
-      (scaffoldFingerprint(originalTextBox) !==
-      scaffoldFingerprint(revisedTextBox)
-        ? 'the containing VML shape scaffold changed or could not be paired'
-        : undefined);
+      scaffoldPairingReason(
+        originalTextBox,
+        revisedTextBox,
+        'the containing VML shape scaffold changed or could not be paired',
+      );
     if (reason) {
       throw new UnsupportedTextBoxRevisionError([{
         index,

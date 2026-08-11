@@ -48,6 +48,11 @@ const TEXT_BOX_NAMESPACES = {
   o: 'urn:schemas-microsoft-com:office:office',
   r: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
 } as const;
+const DRAWINGML_NAMESPACES = {
+  wp: 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
+  a: 'http://schemas.openxmlformats.org/drawingml/2006/main',
+  wps: 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape',
+} as const;
 const HEADER_RELATIONSHIP =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/header';
 const FOOTER_RELATIONSHIP =
@@ -96,6 +101,75 @@ function paragraphWithTextBoxStory(
     `</w:p>` +
     `</w:txbxContent></v:textbox>` +
     `</v:shape></w:pict></w:r></w:p>`
+  );
+}
+
+/**
+ * A DrawingML text box: `wps:txbx/w:txbxContent`, with no VML anywhere.
+ *
+ * `w:txbxContent` is in the `w:` namespace whichever host wraps it, so the
+ * story walk finds this box exactly as it finds a VML one — but there is no
+ * `v:shape` ancestor for `scaffoldFingerprint` to describe.
+ * `spec-compliance/CONFORMANCE.md` (ECMA-PART4-14-9-1-1) puts this box
+ * outside the covered subset. See issue #795.
+ */
+/** The `w:drawing` payload of a DrawingML text box, without its paragraph. */
+function drawingMlBoxContent(text: string): string {
+  return (
+    `<w:drawing><wp:inline>` +
+    `<wp:extent cx="2000000" cy="500000"/>` +
+    `<wp:docPr id="1" name="Box 1"/>` +
+    `<a:graphic><a:graphicData>` +
+    `<wps:wsp><wps:txbx><w:txbxContent>` +
+    `<w:p w14:paraId="30000001" w14:textId="30000001"><w:r><w:t>${text}</w:t></w:r></w:p>` +
+    `</w:txbxContent></wps:txbx></wps:wsp>` +
+    `</a:graphicData></a:graphic></wp:inline></w:drawing>`
+  );
+}
+
+/** The `w:pict` payload of a VML text box, without its paragraph. */
+function vmlBoxContent(text: string): string {
+  return (
+    `<w:pict><v:shape id="shape1" o:spid="_x0000_s1026">` +
+    `<v:textbox><w:txbxContent>` +
+    `<w:p w14:paraId="20000001" w14:textId="20000001"><w:r><w:t>${text}</w:t></w:r></w:p>` +
+    `</w:txbxContent></v:textbox>` +
+    `</v:shape></w:pict>`
+  );
+}
+
+function paragraphWithDrawingMlTextBox(
+  text: string,
+  { extentCx = '2000000', shapeName = 'Box 1' } = {},
+): string {
+  return (
+    `<w:p><w:r><w:drawing><wp:inline>` +
+    `<wp:extent cx="${extentCx}" cy="500000"/>` +
+    `<wp:docPr id="1" name="${shapeName}"/>` +
+    `<a:graphic><a:graphicData>` +
+    `<wps:wsp><wps:txbx><w:txbxContent>` +
+    `<w:p w14:paraId="30000001" w14:textId="30000001"><w:r><w:t>${text}</w:t></w:r></w:p>` +
+    `</w:txbxContent></wps:txbx></wps:wsp>` +
+    `</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
+  );
+}
+
+function drawingMlAncillaryStory(
+  kind: 'header' | 'footer',
+  text: string,
+): string {
+  const root = kind === 'header' ? 'hdr' : 'ftr';
+  return (
+    `<?xml version="1.0"?>` +
+    `<w:${root} xmlns:w="${OOXML.W_NS}"` +
+    ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"` +
+    ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"` +
+    Object.entries(DRAWINGML_NAMESPACES)
+      .map(([prefix, uri]) => ` xmlns:${prefix}="${uri}"`)
+      .join('') +
+    `>` +
+    paragraphWithDrawingMlTextBox(text) +
+    `</w:${root}>`
   );
 }
 
@@ -502,6 +576,216 @@ describe('VML text-box story comparison (#713)', () => {
           }),
         ],
       });
+    });
+  });
+
+  test('fails closed when a DrawingML text box has no VML scaffold to pair', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    // The scaffolds here are byte-identical on both sides. The refusal must
+    // therefore come from the scaffold being *unpairable* (no v:shape to
+    // fingerprint), not from the scaffold having changed — the distinction
+    // `undefined !== undefined` could not draw. See issue #795.
+    const originalBody = paragraphWithDrawingMlTextBox('Original');
+    const revisedBody = paragraphWithDrawingMlTextBox('Revised');
+    const scaffoldOf = (body: string): string =>
+      body.slice(0, body.indexOf('<w:txbxContent'));
+
+    const original = await given('a DrawingML-hosted original story', () =>
+      buildDocxFromBodyXml(originalBody, [], {
+        namespaces: DRAWINGML_NAMESPACES,
+      }),
+    );
+    const revised = await given('the same DrawingML scaffold, edited story', () =>
+      buildDocxFromBodyXml(revisedBody, [], {
+        namespaces: DRAWINGML_NAMESPACES,
+      }),
+    );
+    let failure: unknown;
+
+    await when('comparison classifies the unpairable scaffold', async () => {
+      try {
+        await compareDocumentsAtomizer(original, revised, {
+          reconstructionMode: 'inplace',
+        });
+      } catch (error) {
+        failure = error;
+      }
+    });
+
+    await then('the box is refused, and not because the scaffold differed', () => {
+      expect(scaffoldOf(revisedBody)).toBe(scaffoldOf(originalBody));
+      expect(originalBody).not.toContain('<v:shape');
+      expect(revisedBody).not.toContain('<v:shape');
+      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+      expect(failure).toMatchObject({
+        changes: [
+          expect.objectContaining({
+            index: 0,
+            partPath: 'word/document.xml',
+            reason: expect.stringContaining('scaffold'),
+          }),
+        ],
+      });
+    });
+  });
+
+  test('fails closed when an ancillary DrawingML text box has no VML scaffold to pair', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const withDrawingMlHeader = async (text: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(
+        await selectedHeaderFixture({ text: 'placeholder' }),
+      );
+      archive.setFile('word/header1.xml', drawingMlAncillaryStory('header', text));
+      return archive.save();
+    };
+    const original = await given('a DrawingML-hosted original header story', () =>
+      withDrawingMlHeader('Original header'),
+    );
+    const revised = await given('the same header scaffold, edited story', () =>
+      withDrawingMlHeader('Revised header'),
+    );
+    let failure: unknown;
+
+    await when('comparison classifies the ancillary scaffold', async () => {
+      try {
+        await compareDocumentsAtomizer(original, revised, {
+          reconstructionMode: 'inplace',
+        });
+      } catch (error) {
+        failure = error;
+      }
+    });
+
+    await then('the ancillary box is refused with a scaffold diagnostic', () => {
+      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+      expect(failure).toMatchObject({
+        changes: [
+          expect.objectContaining({
+            index: 0,
+            partPath: 'word/header1.xml',
+            reason: expect.stringContaining('scaffold'),
+          }),
+        ],
+      });
+    });
+  });
+
+  test('control: non-v:shape VML hosts stay pairable', async ({
+    when,
+    then,
+  }: AllureBddContext) => {
+    // `v:textbox` belongs to `EG_ShapeElements`, so `v:rect`, `v:roundrect`
+    // and `v:oval` host stories exactly as `v:shape` does. Failing closed on
+    // an unpairable scaffold must not sweep these up: recognising the host by
+    // the literal name `v:shape` reports "no scaffold" for all three and
+    // refuses VML the engine handles fine.
+    const hostedBox = (host: string, text: string): string =>
+      `<w:p><w:r><w:pict>` +
+      `<v:${host} id="host1" o:spid="_x0000_s1026">` +
+      `<v:textbox><w:txbxContent>` +
+      `<w:p w14:paraId="20000001" w14:textId="20000001"><w:r><w:t>${text}</w:t></w:r></w:p>` +
+      `</w:txbxContent></v:textbox>` +
+      `</v:${host}></w:pict></w:r></w:p>`;
+    const redlined: string[] = [];
+
+    await when('each VML host gets a story-only change', async () => {
+      for (const host of ['rect', 'roundrect', 'oval']) {
+        const result = await compareDocumentsAtomizer(
+          await buildDocxFromBodyXml(hostedBox(host, 'Original'), [], {
+            namespaces: TEXT_BOX_NAMESPACES,
+          }),
+          await buildDocxFromBodyXml(hostedBox(host, 'Revised'), [], {
+            namespaces: TEXT_BOX_NAMESPACES,
+          }),
+          { reconstructionMode: 'inplace' },
+        );
+        const outputXml = await documentXml(result.document);
+        if (
+          textBoxText(acceptAllChanges(outputXml)) === 'Revised' &&
+          textBoxText(rejectAllChanges(outputXml)) === 'Original'
+        ) {
+          redlined.push(host);
+        }
+      }
+    });
+
+    await then('every schema-declared host is redlined, not refused', () => {
+      expect(redlined).toEqual(['rect', 'roundrect', 'oval']);
+    });
+  });
+
+  test('control: an mc:AlternateContent twin box is not refused', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    // Word stores an ordinary text box twice — a DrawingML `mc:Choice` and a
+    // VML `mc:Fallback`. The DrawingML copy has no VML host of its own, so a
+    // scaffold guard that fails closed without noticing the twin would refuse
+    // the commonest text box Word produces. Which copy of a twin governs is
+    // the mc-aware story walk's question (#794); this pins that #795 does not
+    // answer it by refusing the document.
+    const twin = (text: string): string =>
+      `<w:p><w:r><mc:AlternateContent>` +
+      `<mc:Choice Requires="wps">${drawingMlBoxContent(text)}</mc:Choice>` +
+      `<mc:Fallback>${vmlBoxContent(text)}</mc:Fallback>` +
+      `</mc:AlternateContent></w:r></w:p>`;
+    const namespaces = { ...TEXT_BOX_NAMESPACES, ...DRAWINGML_NAMESPACES };
+    const original = await given('a twinned original box', () =>
+      buildDocxFromBodyXml(twin('Original'), [], { namespaces }),
+    );
+    const revised = await given('the same twin with edited text', () =>
+      buildDocxFromBodyXml(twin('Revised'), [], { namespaces }),
+    );
+
+    const result = await when('the twinned box is compared', () =>
+      compareDocumentsAtomizer(original, revised, {
+        reconstructionMode: 'inplace',
+      }),
+    );
+
+    await then('the comparison completes rather than failing closed', () => {
+      expect(result.reconstructionModeUsed).toBe('inplace');
+    });
+  });
+
+  test('control: a pairable VML scaffold still admits the story change', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    // Negative control for the two tests above. Tightening the guard to reject
+    // an unpairable scaffold must not make it reject everything: an identical,
+    // *pairable* v:shape scaffold has to stay green, or the red tests above
+    // would pass for the wrong reason.
+    const original = await given('a VML-hosted original story', () =>
+      buildDocxFromBodyXml(paragraphWithTextBox('Original'), [], {
+        namespaces: TEXT_BOX_NAMESPACES,
+      }),
+    );
+    const revised = await given('the same v:shape scaffold, edited story', () =>
+      buildDocxFromBodyXml(paragraphWithTextBox('Revised'), [], {
+        namespaces: TEXT_BOX_NAMESPACES,
+      }),
+    );
+
+    const result = await when('the pairable story is compared in place', () =>
+      compareDocumentsAtomizer(original, revised, {
+        reconstructionMode: 'inplace',
+      }),
+    );
+    const outputXml = await documentXml(result.document);
+
+    await then('the story is redlined rather than refused', () => {
+      expect(result.reconstructionModeUsed).toBe('inplace');
+      expect(textBoxText(acceptAllChanges(outputXml))).toBe('Revised');
+      expect(textBoxText(rejectAllChanges(outputXml))).toBe('Original');
     });
   });
 
