@@ -493,6 +493,18 @@ const G5_DOC: WireDoc = [
 ];
 
 const exeExists = existsSync(LEAN_EXE);
+
+// See the matching note in lean-differential-lcs.test.ts. The skip is a developer
+// affordance; in CI a skipped harness exits 0 and is indistinguishable from a passing
+// one, which would let the Lean↔TS correspondence go unchecked behind a green step.
+// `SAFE_DOCX_REQUIRE_LEAN_DIFFERENTIAL=1` makes a missing executable fail loudly. See #804.
+if (!exeExists && process.env.SAFE_DOCX_REQUIRE_LEAN_DIFFERENTIAL === '1') {
+  throw new Error(
+    `[lean-differential-helpers] SAFE_DOCX_REQUIRE_LEAN_DIFFERENTIAL=1 but ${LEAN_EXE} is missing. ` +
+      `Refusing to skip: a skipped differential harness reports success without verifying ` +
+      `anything. Build it with: (cd verification/lean && lake build leanHelperDifferential)`,
+  );
+}
 if (!exeExists) {
   // eslint-disable-next-line no-console
   console.warn(

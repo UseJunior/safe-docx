@@ -287,6 +287,20 @@ describeWithCompiledLean('NVCA full-document Lean comment stack safety', () => {
       expect(originalAtomCount).toBe(41_621);
 
       const revised = await deriveMinimallyEditedRevision(original);
+      // This used to assert the `[DEBUG] atomizeTree: ... word-split to N, punct-merged to M`
+      // line was emitted. `8035dce` (#785, fixing #783) deleted that line so CLI stdout stays
+      // valid machine-readable JSON, and added a unit regression in atomizer.test.ts holding
+      // atomization silent — leaving this assertion requiring a log another test forbids, which
+      // is why this step began failing on exactly that commit and, until #804, silently skipped
+      // both Lean↔TS differential harnesses behind it.
+      //
+      // Inverted rather than deleted. The original intent — evidence that the word-split and
+      // punct-merge passes ran — is carried by the exact atom-count fingerprint asserted above:
+      // a composite regression fingerprint over the whole pipeline, which would move if either
+      // pass stopped running, though it does not isolate them individually. That is the same
+      // grade of evidence the log line gave, without depending on stdout. Asserting silence
+      // here additionally pins #785's property at full-document scale, where paths the atomizer
+      // unit test cannot reach are exercised.
       const atomizerLogs: string[] = [];
       const logSpy = vi.spyOn(console, 'log').mockImplementation((...values) => {
         atomizerLogs.push(values.map(String).join(' '));
@@ -306,9 +320,7 @@ describeWithCompiledLean('NVCA full-document Lean comment stack safety', () => {
       } finally {
         logSpy.mockRestore();
       }
-      expect(atomizerLogs.some((message) =>
-        message.includes('word-split to ') && message.includes('punct-merged to '),
-      )).toBe(true);
+      expect(atomizerLogs).toEqual([]);
       expect(
         comparison.documentIntegrity?.status,
         JSON.stringify(comparison.documentIntegrity, null, 2),

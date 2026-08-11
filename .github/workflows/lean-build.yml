@@ -139,6 +139,7 @@ jobs:
           exit 1
 
       - name: Build LeanSpike
+        id: lean_build
         working-directory: verification/lean
         run: |
           lake build
@@ -205,6 +206,7 @@ jobs:
           node-version: 20
           cache: npm
       - name: Install dependencies (npm ci with retry)
+        id: npm_ci
         run: |
           for attempt in 1 2 3; do
             echo "npm ci attempt ${attempt}/3"
@@ -236,9 +238,44 @@ jobs:
           SAFE_DOCX_REQUIRE_LEAN_CHECKER: '1'
         run: npm run test:run -w @usejunior/docx-core -- src/integration/nvca-structural-regression.test.ts
 
+      # The two differential harnesses below are the only checks that verify the Lean
+      # model still DESCRIBES the TypeScript engine. Every other Lean step above proves
+      # the model compiles and is internally sound, which stays true even as the engine
+      # drifts away from it.
+      #
+      # They therefore must not inherit the default `if: success()`. Under it, any earlier
+      # failure — including an acceptance test about document-comparison behavior, which
+      # says nothing about the Lean↔TS correspondence — silently skips them. That is
+      # exactly what happened between 2026-08-10 and 2026-08-11 (issue #804): a failing
+      # NVCA acceptance step suppressed both harnesses across a window in which #802
+      # edited the Lean model and its TypeScript counterparts together.
+      #
+      # `!cancelled()` plus explicit prerequisite success, rather than `always()`, for two
+      # reasons. It respects cancellation — `always()` would keep launching a ~10-minute
+      # exhaustive sweep on a run an operator has already abandoned or that a newer push
+      # superseded. And it declines to run the harnesses at all when their own inputs were
+      # never built: after a failed `lake build` or `npm ci` there is nothing meaningful to
+      # compare, and a step that cannot be meaningful should not report at all. GitHub
+      # documents `!cancelled()` as the recommended form for steps that must survive an
+      # earlier failure.
+      #
+      # Historically `always()` carried a second, sharper hazard: both harnesses self-gate
+      # on the compiled Lean executable (`describe.skip` when absent) and an all-skipped
+      # vitest file exits 0, so a run whose `lake build` failed would have executed these
+      # steps, skipped every case, and reported them GREEN — the same defect wearing a
+      # passing checkmark. SAFE_DOCX_REQUIRE_LEAN_DIFFERENTIAL below now closes that
+      # independently, turning a missing executable into a hard failure, so it is defense
+      # in depth rather than the reason for the condition. Together: a green harness step
+      # implies the harness actually ran.
+      #
+      # Reordering ahead of the acceptance steps would only invert the problem (a harness
+      # failure would then suppress the acceptance gates). A separate job would re-pay the
+      # ~22-minute cold Lean build for no added isolation.
       - name: Lean↔TS LCS differential harness (exhaustive)
+        if: ${{ !cancelled() && steps.lean_build.conclusion == 'success' && steps.npm_ci.conclusion == 'success' }}
         env:
           LEAN_DIFF_EXHAUSTIVE: '1'
+          SAFE_DOCX_REQUIRE_LEAN_DIFFERENTIAL: '1'
         run: npm run test:run -w @usejunior/docx-core -- src/integration/lean-differential-lcs.test.ts
 
       # Lean↔TS Tier 2-helper differential harness (Tier 2.5, second increment). `lake build`
@@ -248,6 +285,8 @@ jobs:
       # accept/reject/validate engine over a widened randomized sweep, reusing the Node setup
       # and `npm ci` above. `LEAN_DIFF_EXHAUSTIVE=1` widens this harness's random sweep too.
       - name: Lean↔TS Tier 2-helper differential harness (extended)
+        if: ${{ !cancelled() && steps.lean_build.conclusion == 'success' && steps.npm_ci.conclusion == 'success' }}
         env:
           LEAN_DIFF_EXHAUSTIVE: '1'
+          SAFE_DOCX_REQUIRE_LEAN_DIFFERENTIAL: '1'
         run: npm run test:run -w @usejunior/docx-core -- src/integration/lean-differential-helpers.test.ts
