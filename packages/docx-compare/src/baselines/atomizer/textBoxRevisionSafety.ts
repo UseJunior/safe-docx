@@ -227,14 +227,17 @@ function nearestShape(textBox: Element): Element | undefined {
 /**
  * Fingerprint the VML scaffold that hosts a story, with the story emptied out.
  *
- * Returns `undefined` when `nearestShape` found **no VML host at all** — a
- * DrawingML (`wps:txbx`) box, for instance. That is not "an empty
- * scaffold"; it is "no scaffold this function can describe", and it means the
- * box falls outside the subset `spec-compliance/CONFORMANCE.md`
- * (ECMA-PART4-14-9-1-1) claims to cover. Callers MUST therefore fail closed on
+ * Returns `undefined` when `nearestShape` found **no VML host at all** — as a
+ * DrawingML (`wps:txbx`) box does. That is not "an empty scaffold"; it is "no
+ * scaffold this function can describe". For a *standalone* DrawingML box it
+ * also means the box falls outside the subset `spec-compliance/CONFORMANCE.md`
+ * (ECMA-PART4-14-9-1-1) claims to cover, so callers MUST fail closed on
  * `undefined` on either side rather than comparing the two results, exactly as
  * they do for `relationshipClosureFingerprint`: two `undefined`s are the
- * absence of a pairing, never a successful one.
+ * absence of a pairing, never a successful one. The DrawingML half of an
+ * `mc:AlternateContent` twin returns `undefined` here too, but it *is* inside
+ * the covered subset — `scaffoldPairingReason` below carves it out before this
+ * verdict is reached.
  *
  * @conformance ECMA-376 edition 5, Part 4 § 19.1.2.22
  * @see https://github.com/UseJunior/safe-docx/issues/795
