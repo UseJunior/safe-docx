@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { describe, expect } from 'vitest';
+import { beforeAll, describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { DocxDocument } from '../primitives/document.js';
 import { parseXml } from '../primitives/xml.js';
@@ -7,7 +7,7 @@ import { childElements } from '../primitives/dom-helpers.js';
 import { generateDocx } from '../generation/compile.js';
 import { checkGeneratedPackage } from '../generation/structural-checks.js';
 import type { DocumentSpec } from '../generation/types.js';
-import { resolveSoffice } from './libreoffice-oracle.js';
+import { probeSofficeUsable, resolveSoffice } from './libreoffice-oracle.js';
 import { probeDocxIdentity, probeDocxToPdf } from './generation-probes.js';
 import { writeIntegrationArtifact, getIntegrationOutputModeLabel } from './output-artifacts.js';
 
@@ -145,9 +145,26 @@ if (!soffice) {
 }
 
 describeProbes('Traceability: LibreOffice probes over generated packages', () => {
+  // `resolveSoffice()` proves the binary EXISTS, not that it can launch: under
+  // a restricted shell it dies with SIGABRT during init, which would FAIL these
+  // tests rather than skip them (observed: exit 134, "Abort trap: 6"). Probe
+  // launchability once and skip the body when it is unusable.
+  let sofficeUsable = false;
+  beforeAll(async () => {
+    sofficeUsable = soffice ? await probeSofficeUsable(soffice) : false;
+    if (!sofficeUsable) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[generation-package-structure] SKIP: soffice present but not launchable ' +
+          '(sandbox abort); cross-reader probes skipped.',
+      );
+    }
+  }, 60_000); // probeSofficeUsable launches soffice; the 10s default hook timeout is too short.
+
   test.openspec('[SDX-GEN-090] LibreOffice identity round-trip succeeds')(
     'Scenario: LibreOffice identity round-trip succeeds',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
+      if (!sofficeUsable) return;
       let generated!: Buffer;
       await given('a generated full-package document', async () => {
         generated = await generateDocx(phase1Spec());
@@ -174,6 +191,7 @@ describeProbes('Traceability: LibreOffice probes over generated packages', () =>
   test.openspec('[SDX-GEN-091] headless PDF conversion succeeds')(
     'Scenario: headless PDF conversion succeeds',
     async ({ given, when, then }: AllureBddContext) => {
+      if (!sofficeUsable) return;
       let generated!: Buffer;
       await given('a generated full-package document', async () => {
         generated = await generateDocx(phase1Spec());

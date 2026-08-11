@@ -9,6 +9,10 @@ import {
 } from '@usejunior/docx-core';
 import { canonicalNode } from './opaquePassthrough.js';
 import {
+  groupElementsByTagNameNS,
+  type MarkupCompatibilityGroup,
+} from '../../markupCompatibility.js';
+import {
   acceptAllChanges,
   rejectAllChanges,
 } from './trackChangesAcceptorAst.js';
@@ -68,7 +72,18 @@ export class UnsupportedTextBoxRevisionError extends Error {
 }
 
 export interface TextBoxStoryInput {
+  /**
+   * Position in the raw `w:txbxContent` sequence. This is a storage address —
+   * it addresses one stored copy of a text box and is the key the splice step
+   * resolves against. It is not the number to show anybody.
+   */
   index: number;
+  /**
+   * Position in the sequence of text boxes a reader can see, counting one
+   * `mc:AlternateContent` as one box. This is the ordinal that goes in a
+   * user-facing `#w:txbxContent[N]` locator.
+   */
+  visualIndex: number;
   partPath: string;
   container: 'textBox' | 'ancillaryPart';
   original: Buffer;
@@ -97,11 +112,55 @@ function textBoxParagraphId(textBox: Element): string | undefined {
   return paragraph?.getAttributeNS(WORD_2010_NS, 'paraId') || undefined;
 }
 
-function textBoxes(documentXml: string): Element[] {
-  const root = parseDocumentXml(documentXml);
+/**
+ * One entry per *visual* text box.
+ *
+ * Word stores a modern text box twice inside one `mc:AlternateContent` — the
+ * `mc:Choice` DrawingML spelling and the `mc:Fallback` VML spelling — and
+ * renders exactly one of them. An unfiltered `w:txbxContent` scan therefore
+ * counts one box as two. Each group carries the rendered copy plus the stored
+ * copies nobody sees, so a caller can still inspect every copy while counting
+ * and numbering the way a reader does.
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 14.9.1.1
+ * @see https://github.com/UseJunior/safe-docx/issues/794
+ */
+function textBoxGroups(root: Node): MarkupCompatibilityGroup[] {
+  return groupElementsByTagNameNS(root, OOXML.W_NS, 'txbxContent');
+}
+
+function textBoxes(documentXml: string): MarkupCompatibilityGroup[] {
+  return textBoxGroups(parseDocumentXml(documentXml));
+}
+
+/** Every stored copy of one visual text box, rendered copy first. */
+function allCopies(group: MarkupCompatibilityGroup): Element[] {
+  return [group.selected, ...group.unselected];
+}
+
+/**
+ * Map each raw `w:txbxContent` position to the position of the visual text box
+ * that owns it.
+ *
+ * Comparison, neutralization, and splice-back all address stored copies, so
+ * they keep using raw positions; only the ordinal in a diagnostic is
+ * translated. Without this, `#w:txbxContent[2]` on a document with twinned
+ * boxes names the second stored copy of the *first* box, and a reader sent to
+ * find it has nowhere to look.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/794
+ */
+function visualTextBoxOrdinals(root: Node): number[] {
+  const visualByCopy = new Map<Element, number>();
+  for (const [visualIndex, group] of textBoxGroups(root).entries()) {
+    for (const copy of allCopies(group)) visualByCopy.set(copy, visualIndex);
+  }
   return Array.from(
-    root.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
-  ) as Element[];
+    (root as Element | Document).getElementsByTagNameNS(
+      OOXML.W_NS,
+      'txbxContent',
+    ),
+  ).map((copy, rawIndex) => visualByCopy.get(copy as Element) ?? rawIndex);
 }
 
 function directChildElements(element: Element): Element[] {
@@ -421,6 +480,38 @@ function partTextBoxes(xml: string): Element[] {
     document.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
   ) as Element[];
 }
+
+function partVisualTextBoxOrdinals(xml: string): number[] {
+  return visualTextBoxOrdinals(parseXml(xml));
+}
+
+/**
+ * The first raw position at which two documents disagree about how their text
+ * boxes are stored, or `undefined` when the two storage shapes correspond.
+ *
+ * Text-box stories are paired by raw position, and the raw-count check alone
+ * does not make that pairing sound: two plain VML boxes and one twinned
+ * `mc:AlternateContent` box both store two `w:txbxContent` elements, so equal
+ * counts can still mean raw position 1 is the second visible box on one side
+ * and the unrendered copy of the first on the other. Comparing the raw→visual
+ * maps element-wise is exactly the condition that forecloses it.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/794
+ */
+function divergentStorageShapePosition(
+  original: readonly number[],
+  revised: readonly number[],
+): number | undefined {
+  const length = Math.max(original.length, revised.length);
+  for (let index = 0; index < length; index += 1) {
+    if (original[index] !== revised[index]) return index;
+  }
+  return undefined;
+}
+
+const DIVERGENT_STORAGE_SHAPE_REASON =
+  'the text-box storage shape differs between the documents ' +
+  '(mc:AlternateContent branches do not correspond)';
 
 function partScaffoldFingerprint(xml: string): string {
   const document = parseXml(xml);
@@ -833,14 +924,32 @@ async function ancillaryStoryInputs(
 
   const stories: TextBoxStoryInput[] = [];
   for (const pair of paired.pairs) {
+    const originalVisualOrdinals = partVisualTextBoxOrdinals(pair.original.xml);
+    const visualOrdinals = partVisualTextBoxOrdinals(pair.revised.xml);
     if (pair.original.textBoxes.length !== pair.revised.textBoxes.length) {
+      const rawIndex = Math.min(
+        pair.original.textBoxes.length,
+        pair.revised.textBoxes.length,
+      );
       throw new UnsupportedTextBoxRevisionError([{
-        index: Math.min(
-          pair.original.textBoxes.length,
-          pair.revised.textBoxes.length,
-        ),
+        index: visualOrdinals[rawIndex] ?? rawIndex,
         partPath: pair.revised.targetPath,
         reason: 'inserted or deleted ancillary text-box topology is not supported',
+      }]);
+    }
+
+    const divergentPosition = divergentStorageShapePosition(
+      originalVisualOrdinals,
+      visualOrdinals,
+    );
+    if (divergentPosition !== undefined) {
+      throw new UnsupportedTextBoxRevisionError([{
+        index: Math.min(
+          originalVisualOrdinals[divergentPosition] ?? divergentPosition,
+          visualOrdinals[divergentPosition] ?? divergentPosition,
+        ),
+        partPath: pair.revised.targetPath,
+        reason: DIVERGENT_STORAGE_SHAPE_REASON,
       }]);
     }
     const originalTargets = relationshipTargets(pair.original.relationshipsXml);
@@ -872,7 +981,7 @@ async function ancillaryStoryInputs(
         );
       if (reason) {
         throw new UnsupportedTextBoxRevisionError([{
-          index,
+          index: visualOrdinals[index] ?? index,
           partPath: pair.revised.targetPath,
           reason,
           originalParagraphId: textBoxParagraphId(originalTextBox),
@@ -908,6 +1017,7 @@ async function ancillaryStoryInputs(
       );
       stories.push({
         index,
+        visualIndex: visualOrdinals[index] ?? index,
         partPath: pair.revised.targetPath,
         container: 'textBox',
         original: await storyOriginalArchive.save(),
@@ -936,6 +1046,7 @@ async function ancillaryStoryInputs(
     );
     stories.push({
       index: 0,
+      visualIndex: 0,
       partPath: story.targetPath,
       container: 'ancillaryPart',
       original: await storyOriginalArchive.save(),
@@ -1016,12 +1127,33 @@ export async function prepareTextBoxStoryComparison(
   const revisedTextBoxes = Array.from(
     revisedDocument.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
   );
+  const originalVisualOrdinals = visualTextBoxOrdinals(originalDocument);
+  const visualOrdinals = visualTextBoxOrdinals(revisedDocument);
 
   if (originalTextBoxes.length !== revisedTextBoxes.length) {
+    const rawIndex = Math.min(
+      originalTextBoxes.length,
+      revisedTextBoxes.length,
+    );
     throw new UnsupportedTextBoxRevisionError([{
-      index: Math.min(originalTextBoxes.length, revisedTextBoxes.length),
+      index: visualOrdinals[rawIndex] ?? rawIndex,
       partPath: 'word/document.xml',
       reason: 'inserted or deleted text-box topology is not supported',
+    }]);
+  }
+
+  const divergentPosition = divergentStorageShapePosition(
+    originalVisualOrdinals,
+    visualOrdinals,
+  );
+  if (divergentPosition !== undefined) {
+    throw new UnsupportedTextBoxRevisionError([{
+      index: Math.min(
+        originalVisualOrdinals[divergentPosition] ?? divergentPosition,
+        visualOrdinals[divergentPosition] ?? divergentPosition,
+      ),
+      partPath: 'word/document.xml',
+      reason: DIVERGENT_STORAGE_SHAPE_REASON,
     }]);
   }
 
@@ -1055,7 +1187,7 @@ export async function prepareTextBoxStoryComparison(
       );
     if (reason) {
       throw new UnsupportedTextBoxRevisionError([{
-        index,
+        index: visualOrdinals[index] ?? index,
         partPath: 'word/document.xml',
         reason,
         originalParagraphId: textBoxParagraphId(originalTextBox),
@@ -1077,6 +1209,7 @@ export async function prepareTextBoxStoryComparison(
     );
     stories.push({
       index,
+      visualIndex: visualOrdinals[index] ?? index,
       partPath: 'word/document.xml',
       container: 'textBox',
       original: await storyOriginalArchive.save(),
@@ -1113,6 +1246,7 @@ export async function assembleTextBoxStoryComparison(
   outerCompared: Buffer,
   storyResults: ReadonlyArray<{
     index: number;
+    visualIndex: number;
     partPath: string;
     container: 'textBox' | 'ancillaryPart';
     document: Buffer;
@@ -1127,7 +1261,7 @@ export async function assembleTextBoxStoryComparison(
       const targetXml = await outerArchive.getFile(storyResult.partPath);
       if (targetXml === null) {
         throw new UnsupportedTextBoxRevisionError([{
-          index: storyResult.index,
+          index: storyResult.visualIndex,
           partPath: storyResult.partPath,
           reason: 'the selected output story part is missing',
         }]);
@@ -1165,7 +1299,7 @@ export async function assembleTextBoxStoryComparison(
       .item(storyResult.index);
     if (!target) {
       throw new UnsupportedTextBoxRevisionError([{
-        index: storyResult.index,
+        index: storyResult.visualIndex,
         partPath: storyResult.partPath,
         reason: 'the outer comparison changed text-box story topology',
       }]);
@@ -1398,24 +1532,31 @@ export function assertTextBoxContentUnchanged(
   const count = Math.max(originalTextBoxes.length, revisedTextBoxes.length);
   const changes: TextBoxRevisionChange[] = [];
 
+  // Hash every stored copy, not only the rendered one: a change confined to an
+  // `mc:Fallback` twin is still a change this guard has to refuse. Only the
+  // reported ordinal counts visually, so `#w:txbxContent[N]` names a box a
+  // reader can actually find.
+  const signature = (
+    group: MarkupCompatibilityGroup | undefined,
+  ): string | undefined =>
+    group
+      ? createHash('sha256')
+          .update(allCopies(group).map(canonicalNode).join('\u0000'))
+          .digest('hex')
+      : undefined;
+
   for (let index = 0; index < count; index++) {
     const originalTextBox = originalTextBoxes[index];
     const revisedTextBox = revisedTextBoxes[index];
-    const originalSignature = originalTextBox
-      ? createHash('sha256').update(canonicalNode(originalTextBox)).digest('hex')
-      : undefined;
-    const revisedSignature = revisedTextBox
-      ? createHash('sha256').update(canonicalNode(revisedTextBox)).digest('hex')
-      : undefined;
-    if (originalSignature === revisedSignature) continue;
+    if (signature(originalTextBox) === signature(revisedTextBox)) continue;
 
     changes.push({
       index,
       originalParagraphId: originalTextBox
-        ? textBoxParagraphId(originalTextBox)
+        ? textBoxParagraphId(originalTextBox.selected)
         : undefined,
       revisedParagraphId: revisedTextBox
-        ? textBoxParagraphId(revisedTextBox)
+        ? textBoxParagraphId(revisedTextBox.selected)
         : undefined,
     });
   }

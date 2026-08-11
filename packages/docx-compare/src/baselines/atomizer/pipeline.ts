@@ -617,7 +617,7 @@ export async function compareDocumentsAtomizer(
   }
   if (options.reconstructionMode !== 'inplace') {
     throw new UnsupportedTextBoxRevisionError([{
-      index: textBoxPlan.stories[0]?.index ?? 0,
+      index: textBoxPlan.stories[0]?.visualIndex ?? 0,
       partPath: textBoxPlan.stories[0]?.partPath ?? 'word/document.xml',
       reason: 'changed text-box stories currently require reconstructionMode=inplace',
     }]);
@@ -635,7 +635,7 @@ export async function compareDocumentsAtomizer(
   );
   if (outerResult.reconstructionModeUsed !== 'inplace') {
     throw new UnsupportedTextBoxRevisionError([{
-      index: textBoxPlan.stories[0]?.index ?? 0,
+      index: textBoxPlan.stories[0]?.visualIndex ?? 0,
       partPath: textBoxPlan.stories[0]?.partPath ?? 'word/document.xml',
       reason: 'the outer document required rebuild fallback',
     }]);
@@ -643,6 +643,7 @@ export async function compareDocumentsAtomizer(
 
   const storyResults: Array<{
     index: number;
+    visualIndex: number;
     partPath: string;
     container: 'textBox' | 'ancillaryPart';
     result: CompareResult;
@@ -664,7 +665,7 @@ export async function compareDocumentsAtomizer(
     );
     if (result.reconstructionModeUsed !== 'inplace') {
       throw new UnsupportedTextBoxRevisionError([{
-        index: story.index,
+        index: story.visualIndex,
         partPath: story.partPath,
         reason: 'the nested story required rebuild fallback',
       }]);
@@ -694,6 +695,7 @@ export async function compareDocumentsAtomizer(
     }
     storyResults.push({
       index: story.index,
+      visualIndex: story.visualIndex,
       partPath: story.partPath,
       container: story.container,
       result,
@@ -702,8 +704,9 @@ export async function compareDocumentsAtomizer(
 
   const document = await assembleTextBoxStoryComparison(
     outerResult.document,
-    storyResults.map(({ index, partPath, container, result }) => ({
+    storyResults.map(({ index, visualIndex, partPath, container, result }) => ({
       index,
+      visualIndex,
       partPath,
       container,
       document: result.document,
@@ -724,7 +727,7 @@ export async function compareDocumentsAtomizer(
     !rejectedComparison.normalizedIdentical
   ) {
     throw new UnsupportedTextBoxRevisionError([{
-      index: textBoxPlan.stories[0]?.index ?? 0,
+      index: textBoxPlan.stories[0]?.visualIndex ?? 0,
       partPath: textBoxPlan.stories[0]?.partPath ?? 'word/document.xml',
       reason: 'assembled nested stories failed accept/reject round-trip validation',
     }]);
