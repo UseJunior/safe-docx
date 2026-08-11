@@ -250,17 +250,23 @@ jobs:
       # NVCA acceptance step suppressed both harnesses across a window in which #802
       # edited the Lean model and its TypeScript counterparts together.
       #
-      # `always()` would be the WRONG relaxation. Both harnesses self-gate on the compiled
-      # Lean executable (`describe.skip` when it is absent) and an all-skipped vitest file
-      # exits 0 — so under `always()`, a run whose `lake build` failed would execute these
-      # steps, skip every case, and report them GREEN. That is the same defect wearing a
-      # passing checkmark, and strictly harder to notice than a skip.
+      # `!cancelled()` plus explicit prerequisite success, rather than `always()`, for two
+      # reasons. It respects cancellation — `always()` would keep launching a ~10-minute
+      # exhaustive sweep on a run an operator has already abandoned or that a newer push
+      # superseded. And it declines to run the harnesses at all when their own inputs were
+      # never built: after a failed `lake build` or `npm ci` there is nothing meaningful to
+      # compare, and a step that cannot be meaningful should not report at all. GitHub
+      # documents `!cancelled()` as the recommended form for steps that must survive an
+      # earlier failure.
       #
-      # `!cancelled()` plus explicit prerequisite success is the precise condition: run
-      # whenever the harnesses CAN be meaningful (their own inputs were built) and an
-      # operator has not cancelled the run, regardless of unrelated failures. Paired with
-      # SAFE_DOCX_REQUIRE_LEAN_DIFFERENTIAL below, which turns the self-skip into a hard
-      # failure, a green harness step now implies the harness actually ran.
+      # Historically `always()` carried a second, sharper hazard: both harnesses self-gate
+      # on the compiled Lean executable (`describe.skip` when absent) and an all-skipped
+      # vitest file exits 0, so a run whose `lake build` failed would have executed these
+      # steps, skipped every case, and reported them GREEN — the same defect wearing a
+      # passing checkmark. SAFE_DOCX_REQUIRE_LEAN_DIFFERENTIAL below now closes that
+      # independently, turning a missing executable into a hard failure, so it is defense
+      # in depth rather than the reason for the condition. Together: a green harness step
+      # implies the harness actually ran.
       #
       # Reordering ahead of the acceptance steps would only invert the problem (a harness
       # failure would then suppress the acceptance gates). A separate job would re-pay the

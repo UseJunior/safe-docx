@@ -294,10 +294,13 @@ describeWithCompiledLean('NVCA full-document Lean comment stack safety', () => {
       // is why this step began failing on exactly that commit and, until #804, silently skipped
       // both Lean↔TS differential harnesses behind it.
       //
-      // Inverted rather than deleted: the original intent (the word-split and punct-merge passes
-      // actually ran) is already covered more strongly and directly by the exact atom-count
-      // fingerprint asserted above, and #785's stdout-silence property is worth pinning here at
-      // full-document scale, where code paths a unit test cannot reach are exercised.
+      // Inverted rather than deleted. The original intent — evidence that the word-split and
+      // punct-merge passes ran — is carried by the exact atom-count fingerprint asserted above:
+      // a composite regression fingerprint over the whole pipeline, which would move if either
+      // pass stopped running, though it does not isolate them individually. That is the same
+      // grade of evidence the log line gave, without depending on stdout. Asserting silence
+      // here additionally pins #785's property at full-document scale, where paths the atomizer
+      // unit test cannot reach are exercised.
       const atomizerLogs: string[] = [];
       const logSpy = vi.spyOn(console, 'log').mockImplementation((...values) => {
         atomizerLogs.push(values.map(String).join(' '));
