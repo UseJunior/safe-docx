@@ -165,6 +165,50 @@ describe('round-trip comparison projection of w:sym', () => {
   );
 
   test.conformance(symbolConformance)(
+    'empty w:t runs around a w:sym do not perturb either projection',
+    async ({ given, when, then }: AllureBddContext) => {
+      let padded!: string;
+      let plain!: string;
+      let paddedParagraphs!: string;
+      let plainParagraphs!: string;
+
+      await given('the same glyph with contentless w:t runs on both sides of it', async () => {});
+      await when('both documents are projected by both projections', async () => {
+        // Word emits contentless <w:t/> runs routinely -- around bookmarks,
+        // after a resolved deletion, in a split run. They carry no characters,
+        // so the projection must be identical with and without them.
+        padded = extractRoundTripComparisonText(
+          documentXml(
+            '<w:p><w:r><w:t xml:space="preserve">Alpha </w:t></w:r>'
+              + '<w:r><w:t/></w:r>'
+              + `<w:r>${WINGDINGS_RPR}<w:sym w:font="Wingdings" w:char="F0A8"/></w:r>`
+              + '<w:r><w:t/></w:r>'
+              + '<w:r><w:t xml:space="preserve"> Bravo</w:t></w:r></w:p>',
+          ),
+        );
+        plain = extractRoundTripComparisonText(withSym());
+        paddedParagraphs = extractTextWithParagraphs(
+          documentXml(
+            '<w:p><w:r><w:t/></w:r>'
+              + '<w:r><w:sym w:font="Wingdings" w:char="F0A8"/></w:r></w:p>',
+          ),
+        );
+        plainParagraphs = extractTextWithParagraphs(
+          documentXml('<w:p><w:r><w:sym w:font="Wingdings" w:char="F0A8"/></w:r></w:p>'),
+        );
+      });
+      await then('empty runs contribute nothing and the glyph still projects', async () => {
+        expect(padded).toBe(plain);
+        expect(paddedParagraphs).toBe(plainParagraphs);
+        // Control: the glyph is still present, so this is not two empty strings
+        // agreeing with each other.
+        expect(padded).toContain(BALLOT_BOX);
+        expect(paddedParagraphs).toBe(BALLOT_BOX);
+      });
+    },
+  );
+
+  test.conformance(symbolConformance)(
     'an unresolvable w:sym does not compare equal to a document that authored U+FFFD',
     async ({ given, when, then }: AllureBddContext) => {
       let unresolvedSym!: string;
