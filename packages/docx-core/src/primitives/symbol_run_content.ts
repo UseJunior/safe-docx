@@ -58,11 +58,11 @@ const SHORT_HEX_NUMBER = /^[0-9A-Fa-f]{4}$/u;
 const UNRESOLVED_SYMBOL_IDENTITY = '__safe_docx_sym__|unresolved';
 
 function isSymElement(element: Element): boolean {
-  if (element.localName !== SYM_LOCAL_NAME) return false;
-  // Namespace-aware parses carry the WordprocessingML URI. Parsers that were
-  // handed a fragment without declarations report a null namespace; fall back
-  // to the qualified name so a `w:sym` is not silently skipped.
-  return element.namespaceURI === OOXML.W_NS || element.tagName === 'w:sym';
+  // The namespace check alone is sufficient, and a qualified-name fallback
+  // would be dead code: `parseXml` rejects an undeclared prefix outright
+  // (`NamespaceError: prefix is non-null and namespace is null`), so nothing
+  // reaching this function can be named `w:sym` with a null namespace.
+  return element.namespaceURI === OOXML.W_NS && element.localName === SYM_LOCAL_NAME;
 }
 
 /**
