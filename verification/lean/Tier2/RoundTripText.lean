@@ -70,15 +70,18 @@ abbrev Line : Type := List Char
 /-! ### Text extraction -/
 
 /-- The text payload of one atom. Mirrors which OOXML leaf elements
-    `extractTextWithParagraphs` collects: `w:t` and `w:delText` carry text;
-    `w:instrText` / `w:delInstrText` / `w:fldChar` do not
-    (`trackChangesAcceptorAst.ts:669-682`). -/
+    `extractTextWithParagraphs` collects: `w:t`, `w:delText` and `w:sym` carry
+    text; `w:instrText` / `w:delInstrText` / `w:fldChar` do not
+    (`trackChangesAcceptorAst.ts:698-772`). A `sym` atom already holds the
+    character resolved from `w:sym/@w:char`, so it contributes exactly what the
+    same glyph spelled literally inside a `w:t` would contribute. -/
 def atomText : Atom → Line
   | .text s => s.toList
   | .delText s => s.toList
   | .instrText _ => []
   | .delInstrText _ => []
   | .fldChar _ => []
+  | .sym s => s.toList
 
 /-- The concatenated text of an atom list. -/
 def atomsText (as : List Atom) : Line :=
