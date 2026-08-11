@@ -16,17 +16,6 @@ function expandPath(inputPath: string): string {
   return inputPath.startsWith('~') ? path.join(process.env.HOME || '', inputPath.slice(1)) : inputPath;
 }
 
-async function runWithoutConsoleLog<T>(fn: () => Promise<T>): Promise<T> {
-  if (process.env.SAFE_DOCX_ALLOW_COMPARISON_STDOUT === '1') return fn();
-  const originalLog = console.log;
-  console.log = () => {};
-  try {
-    return await fn();
-  } finally {
-    console.log = originalLog;
-  }
-}
-
 export async function compareDocuments_tool(
   manager: SessionManager,
   params: {
@@ -117,16 +106,18 @@ export async function compareDocuments_tool(
       }
     }
 
-    // Run comparison
-    const result = await runWithoutConsoleLog(() =>
-      compareDocuments(originalBuffer, revisedBuffer, {
-        author,
-        engine: compareEngine,
-        ignoreFormatting: params.ignore_formatting,
-        detectMoves: params.compare_moves,
-        reconstructionMode: DEFAULT_RECONSTRUCTION_MODE,
-      }),
-    );
+    // Run comparison. The comparison library writes nothing to stdout by default
+    // (issue #783 / PR #785 removed the last unconditional emit; remaining debug
+    // output is opt-in via DOCX_COMPARISON_DEBUG), so the stdio JSON-RPC stream
+    // stays clean without suppressing the process-global console.log — which was
+    // never concurrency-safe across an await (issue #809).
+    const result = await compareDocuments(originalBuffer, revisedBuffer, {
+      author,
+      engine: compareEngine,
+      ignoreFormatting: params.ignore_formatting,
+      detectMoves: params.compare_moves,
+      reconstructionMode: DEFAULT_RECONSTRUCTION_MODE,
+    });
 
     // Validate and write output
     const writePolicy = await enforceWritePathPolicy(savePath);
