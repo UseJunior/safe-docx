@@ -68,6 +68,9 @@ def stepAtom (delDepth : Nat) (r : WalkResult) (a : Atom) : WalkResult :=
     match a with
     | .text _ => .ok ctx
     | .delText _ => .ok ctx
+    -- A resolved symbol glyph is ordinary run content: it neither opens nor
+    -- closes a field region, exactly like `w:t`.
+    | .sym _ => .ok ctx
     | .fldChar k =>
       -- constraint (3): no field characters inside a `del` ancestor (G1)
       if delDepth > 0 then .invalid

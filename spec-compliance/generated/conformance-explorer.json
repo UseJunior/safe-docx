@@ -1680,7 +1680,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar",
-      "claimRationale": "Every generated field is a complete five-run sequence — `fldChar begin`,\npreserved-space `w:instrText`, `fldChar separate`, a cached-result run,\n`fldChar end` — and `w:dirty` is never set. The cached result is a\nrequired spec property, making the no-recovery-dialog guarantee\nunrepresentable-by-omission; the structural validator runs a begin →\nseparate → end state machine over every story part. The comparison path keeps\nthese field-state markers outside the `w:del` payload wrappers shown by the\nPart 1 complex-field and deleted-field-code syntax.\nThe runtime ancillary predicate adds fail-closed stack diagnostics without\nchanging the Lean-pinned predicate or protocol.",
+      "claimRationale": "Every generated field is a complete five-run sequence — `fldChar begin`,\npreserved-space `w:instrText`, `fldChar separate`, a cached-result run,\n`fldChar end` — and generation never sets `w:dirty`. The opt-in field-refresh\nprimitive can set `w:dirty=\"true\"` on a layout-dependent field's begin marker\nwithout changing its cache. The cached result is a\nrequired spec property, making the no-recovery-dialog guarantee\nunrepresentable-by-omission; the structural validator runs a begin →\nseparate → end state machine over every story part. The comparison path keeps\nthese field-state markers outside the `w:del` payload wrappers shown by the\nPart 1 complex-field and deleted-field-code syntax.\nThe runtime ancillary predicate adds fail-closed stack diagnostics without\nchanging the Lean-pinned predicate or protocol.",
       "evidence": [
         {
           "kind": "source",
@@ -1693,6 +1693,14 @@
         {
           "kind": "source",
           "path": "packages/docx-core/src/shared/field-structure.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/field_evaluation.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/field_evaluation.test.ts"
         },
         {
           "kind": "source",
@@ -1779,6 +1787,14 @@
         },
         {
           "kind": "source",
+          "path": "packages/docx-core/src/primitives/field_evaluation.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/field_evaluation.test.ts"
+        },
+        {
+          "kind": "source",
           "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
         },
         {
@@ -1823,6 +1839,14 @@
         },
         {
           "kind": "source",
+          "path": "packages/docx-core/src/primitives/field_evaluation.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/field_evaluation.test.ts"
+        },
+        {
+          "kind": "source",
           "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
         },
         {
@@ -1859,8 +1883,32 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText",
-      "claimRationale": "Forced main-document rebuild classifies a self-contained PAGEREF instruction\nwith one bookmark argument and a bounded switch vocabulary. When the complete\nfield range is unchanged, comparison preserves its ordered XML topology as a\nSafeDocX metamorphic invariant. This entry does not claim bookmark resolution,\npagination, cached-result correctness, or field evaluation.",
+      "claimRationale": "Forced main-document rebuild classifies a self-contained PAGEREF instruction\nwith one bookmark argument and a bounded switch vocabulary. When the complete\nfield range is unchanged, comparison preserves its ordered XML topology as a\nSafeDocX metamorphic invariant. Safe Docx does not paginate PAGEREF. The\nopt-in refresh primitive can mark its begin marker dirty for a layout-capable\nhost, and TOC comparison uses the same instruction classifier to distinguish\nits volatile cached result. The unchanged-rebuild invariant does not claim\npagination, cached-result correctness, or complete field-engine equivalence.",
       "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/shared/field-semantics.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/shared/field-semantics.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/field_evaluation.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/field_evaluation.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/fieldComparisonSemantics.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/fieldComparisonSemantics.test.ts"
+        },
         {
           "kind": "source",
           "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
@@ -1895,8 +1943,32 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText",
-      "claimRationale": "Forced main-document rebuild classifies a self-contained REF instruction with\none bookmark argument and a bounded switch vocabulary; the `\\d` switch requires\nand consumes one separator argument. When the complete field range is unchanged,\ncomparison preserves its ordered XML topology as a SafeDocX metamorphic\ninvariant. This entry does not claim bookmark resolution, cached-result\ncorrectness, or field evaluation.",
+      "claimRationale": "Forced main-document rebuild classifies a self-contained REF instruction with\none bookmark argument and a bounded switch vocabulary; the `\\d` switch requires\nand consumes one separator argument. When the complete field range is unchanged,\ncomparison preserves its ordered XML topology as a SafeDocX metamorphic\ninvariant. The scoped refresh primitive resolves a unique, ID-paired bookmark\nand refreshes the cached result only for the admitted bookmarked-text\nprojection; numbering, position, separator, and unknown projections remain\nunsupported. Because Word writes a REF result structurally, the primitive also\ndeclines any projection carrying a tab, a break, or a paragraph transition\nrather than flattening it into literal characters. That separately tested\ncapability does not broaden unchanged rebuild preservation into complete\nfield-engine equivalence.",
       "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/shared/field-semantics.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/shared/field-semantics.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/field_evaluation.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/field_evaluation.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/fieldComparisonSemantics.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/fieldComparisonSemantics.test.ts"
+        },
         {
           "kind": "source",
           "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
@@ -2152,6 +2224,42 @@
         {
           "kind": "test",
           "path": "scripts/check_docx_formatting_loss.test.mjs"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-3-30",
+      "title": "Symbol character run content (w:sym)",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.3.30"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Sym",
+      "claimRationale": "Part 1 §17.3.3.30 defines `w:sym` as run content that specifies a single\ncharacter by font (`@w:font`) and codepoint (`@w:char`), rather than by\ncharacter data. safe-docx's comparison text projections resolve `@w:char` to\nthat codepoint, so a symbol glyph contributes the same characters whether it is\nspelled as `w:sym` or written literally inside `w:t` under a symbol font, and a\ndocument that lost a symbol no longer projects identically to one that kept it.\n`@w:font` is deliberately excluded from the projected value: these are text\nprojections, which exclude `w:rFonts` as well, and including it would make the\ntwo legal spellings of one glyph unequal by construction. A change confined to\n`@w:font` is therefore outside this claim, as are rendering, font substitution,\nand any mapping between a symbol font's private-use codepoints and Unicode\ncharacters with the same appearance.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/symbol_run_content.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/fieldComparisonSemantics.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/symbol_run_content.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/symbolCharacterProjection.test.ts"
         }
       ]
     },
@@ -5121,6 +5229,19 @@
       "occurrences": [
         {
           "contextPath": "schema/type:CT_SectType"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Sym",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "type",
+      "name": "CT_Sym",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Sym"
         }
       ]
     },
