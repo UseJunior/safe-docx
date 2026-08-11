@@ -254,6 +254,21 @@ function buildCases(): Pair[] {
 }
 
 const exeExists = existsSync(LEAN_EXE);
+
+// The skip below is a developer affordance: without the Lean toolchain there is nothing
+// to compare against, and a local `npm test` should not fail for that. In CI it is a
+// liability — an all-skipped vitest file exits 0, so a silently skipped harness is
+// indistinguishable from a passing one, and this harness is the only check that the Lean
+// model still describes the TS engine. `SAFE_DOCX_REQUIRE_LEAN_DIFFERENTIAL=1` (set by
+// .github/workflows/lean-build.yml) makes a missing executable a hard failure instead, so
+// a green step implies the sweep actually ran. See issue #804.
+if (!exeExists && process.env.SAFE_DOCX_REQUIRE_LEAN_DIFFERENTIAL === '1') {
+  throw new Error(
+    `[lean-differential-lcs] SAFE_DOCX_REQUIRE_LEAN_DIFFERENTIAL=1 but ${LEAN_EXE} is missing. ` +
+      `Refusing to skip: a skipped differential harness reports success without verifying ` +
+      `anything. Build it with: (cd verification/lean && lake build leanDifferential)`,
+  );
+}
 if (!exeExists) {
   // eslint-disable-next-line no-console
   console.warn(
