@@ -624,6 +624,137 @@ describe('mc:AlternateContent cross-document storage shape', () => {
   );
 });
 
+describe('mc:AlternateContent in a relationship-selected header story', () => {
+  // Codex peer review, #794 asked for the analogous header/footer cases: the
+  // ancillary path pairs stories by raw position and builds its own locator,
+  // so it needs the same visual ordinal and the same storage-shape guard as
+  // the main document.
+  const HEADER_RELATIONSHIP =
+    'http://schemas.openxmlformats.org/officeDocument/2006/relationships/header';
+
+  const headerXml = (...boxes: string[]): string =>
+    `<?xml version="1.0"?>` +
+    `<w:hdr xmlns:w="${OOXML.W_NS}"` +
+    ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"` +
+    ` xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"` +
+    ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"` +
+    ` xmlns:wp="${ALTERNATE_CONTENT_NAMESPACES.namespaces.wp}"` +
+    ` xmlns:a="${ALTERNATE_CONTENT_NAMESPACES.namespaces.a}"` +
+    ` xmlns:wps="${ALTERNATE_CONTENT_NAMESPACES.namespaces.wps}"` +
+    ` xmlns:v="${ALTERNATE_CONTENT_NAMESPACES.namespaces.v}"` +
+    ` mc:Ignorable="w14 wps">` +
+    boxes.join('') +
+    `</w:hdr>`;
+
+  const headerFixture = async (...boxes: string[]): Promise<Buffer> => {
+    const archive = await DocxArchive.load(
+      await buildDocxFromBodyXml(
+        `<w:p><w:r><w:t>Body</w:t></w:r></w:p>`,
+        [],
+        ALTERNATE_CONTENT_NAMESPACES,
+      ),
+    );
+    archive.setDocumentXml(
+      (await archive.getDocumentXml()).replace(
+        '<w:sectPr/>',
+        `<w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr>`,
+      ).replace(
+        '<w:document ',
+        `<w:document xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" `,
+      ),
+    );
+    archive.setFile(
+      'word/_rels/document.xml.rels',
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Id="rIdHeader" Type="${HEADER_RELATIONSHIP}" Target="header1.xml"/>` +
+        `</Relationships>`,
+    );
+    archive.setFile('word/header1.xml', headerXml(...boxes));
+    return archive.save();
+  };
+
+  const prepare = async (
+    originalBoxes: string[],
+    revisedBoxes: string[],
+  ): Promise<
+    | { refused: true; error: UnsupportedTextBoxRevisionError }
+    | { refused: false; stories: Array<{ index: number; visualIndex: number; partPath: string }> }
+  > => {
+    try {
+      const prepared = await prepareTextBoxStoryComparison(
+        await headerFixture(...originalBoxes),
+        await headerFixture(...revisedBoxes),
+      );
+      return {
+        refused: false,
+        stories: (prepared?.stories ?? []).map((story) => ({
+          index: story.index,
+          visualIndex: story.visualIndex,
+          partPath: story.partPath,
+        })),
+      };
+    } catch (error) {
+      return { refused: true, error: error as UnsupportedTextBoxRevisionError };
+    }
+  };
+
+  test(
+    'a changed header text box is reported at its visible ordinal',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      const boxes = await given('a header holding two twinned text boxes', () => ({
+        original: [twinTextBox('Charlie'), twinTextBox('Echo')],
+        revised: [twinTextBox('Charlie'), twinTextBox('Foxtrot')],
+      }));
+
+      const outcome = await when('the header stories are prepared', () =>
+        prepare(boxes.original, boxes.revised),
+      );
+
+      await then('the pair is accepted', () => {
+        expect(outcome.refused).toBe(false);
+      });
+      await and('every story for the changed box carries the visible ordinal', () => {
+        const stories = outcome.refused ? [] : outcome.stories;
+        expect(stories.length).toBeGreaterThan(0);
+        expect(stories.every((story) => story.partPath === 'word/header1.xml')).toBe(true);
+        expect([...new Set(stories.map((story) => story.visualIndex))]).toEqual([1]);
+        expect(stories.map((story) => story.index)).toEqual([2, 3]);
+      });
+    },
+  );
+
+  test(
+    'a header whose storage shape changed is refused, not mispaired',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      // The ancillary storage-shape check is defence in depth. Header parts are
+      // paired by canonical content and then by scaffold fingerprint, and a
+      // part whose boxes changed spelling has neither in common, so it is
+      // refused before the shape check is reached. What matters is that the
+      // engine fails closed rather than pairing a plain box against an
+      // unrendered mc:Fallback copy.
+      const boxes = await given(
+        'a header whose two plain boxes become one twinned box',
+        () => ({
+          original: [plainVmlTextBox('Charlie'), plainVmlTextBox('Echo')],
+          revised: [twinTextBox('Charlie')],
+        }),
+      );
+
+      const outcome = await when('the header stories are prepared', () =>
+        prepare(boxes.original, boxes.revised),
+      );
+
+      await then('the pair is refused', () => {
+        expect(outcome.refused).toBe(true);
+      });
+      await and('no story was planned against a mismatched copy', () => {
+        expect(outcome.refused ? outcome.error.changes.length : 0)
+          .toBeGreaterThan(0);
+      });
+    },
+  );
+});
+
 describe('mc:AlternateContent namespace hygiene', () => {
   test(
     'the fixture really does bind the wordprocessingShape namespace',

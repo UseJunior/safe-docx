@@ -398,6 +398,54 @@ describe('markup compatibility branch selection', () => {
   );
 
   test(
+    'the walk accepts an mc:AlternateContent as its own root',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      const alternateContent = await given('a twinned text box element', () => {
+        const xml = documentXml(twinTextBox('Charlie'));
+        return parseXml(xml)
+          .getElementsByTagNameNS(MC_NAMESPACE, 'AlternateContent')
+          .item(0) as Element;
+      });
+
+      const groups = await when('the walk is rooted at the element itself', () =>
+        groupElementsByTagNameNS(alternateContent, OOXML.W_NS, 'txbxContent'),
+      );
+
+      await then('branch selection still applies at the root', () => {
+        expect(groups).toHaveLength(1);
+      });
+      await and('the unrendered copy is still reachable', () => {
+        expect(groups[0]?.unselected).toHaveLength(1);
+      });
+    },
+  );
+
+  test(
+    'a branch element can itself be the match being grouped',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      // Grouping is generic over tag names, so the element being matched can be
+      // the mc:Choice or mc:Fallback itself. That is the one position where a
+      // match is a direct child of the mc:AlternateContent rather than a
+      // descendant of a branch.
+      const xml = await given('a twinned text box', () =>
+        documentXml(twinTextBox('Charlie')),
+      );
+
+      const groups = await when('mc:Fallback elements are grouped', () =>
+        groupElementsByTagNameNS(parseXml(xml), MC_NAMESPACE, 'Fallback'),
+      );
+
+      await then('the unselected branch is collected rather than dropped', () => {
+        expect(groups).toHaveLength(1);
+        expect(groups[0]?.selected.localName).toBe('Fallback');
+      });
+      await and('it is flagged as belonging to no rendered object', () => {
+        expect(groups[0]?.unbalanced).toBe(true);
+      });
+    },
+  );
+
+  test(
     'the branch-aware walk can go red',
     async ({ given, when, then, and }: AllureBddContext) => {
       // Negative control. This class of defect went unnoticed because the
