@@ -256,6 +256,136 @@ describe('Traceability: generation probes reject failed conversions', () => {
     });
   });
 
+  test('rejects a docx with no package relationships part', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const soffice = await given('a converter that writes a zip with no _rels/.rels', async () =>
+      makeStubConverter({
+        name: 'writes-no-package-rels',
+        ext: 'docx',
+        writes: await createZipBuffer({ 'word/document.xml': '<w:document/>' }),
+      }),
+    );
+
+    let failure: unknown;
+    await when('the identity probe runs', async () => {
+      try {
+        await probeDocxIdentity(GENERATED, soffice);
+      } catch (error) {
+        failure = error;
+      }
+    });
+
+    await then('a readable zip is still not a package', () => {
+      expect(failure).toBeInstanceOf(ConvertProbeError);
+      expect((failure as Error).message).toContain('_rels/.rels');
+    });
+  });
+
+  test('rejects a docx whose relationships declare no main document', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const soffice = await given('a converter that writes rels without an officeDocument type', async () =>
+      makeStubConverter({
+        name: 'writes-no-office-document-rel',
+        ext: 'docx',
+        writes: await createZipBuffer({
+          '_rels/.rels':
+            `<?xml version="1.0"?><Relationships ` +
+            `xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+            `<Relationship Id="rId1" ` +
+            `Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" ` +
+            `Target="docProps/core.xml"/></Relationships>`,
+          'word/document.xml': '<w:document/>',
+        }),
+      }),
+    );
+
+    let failure: unknown;
+    await when('the identity probe runs', async () => {
+      try {
+        await probeDocxIdentity(GENERATED, soffice);
+      } catch (error) {
+        failure = error;
+      }
+    });
+
+    await then('the missing officeDocument relationship is named', () => {
+      expect(failure).toBeInstanceOf(ConvertProbeError);
+      expect((failure as Error).message).toContain('officeDocument relationship');
+    });
+  });
+
+  test('rejects a docx whose main-document relationship dangles', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const soffice = await given('a converter that writes rels pointing at an absent part', async () =>
+      makeStubConverter({
+        name: 'writes-dangling-main-part',
+        ext: 'docx',
+        writes: await createZipBuffer({
+          '_rels/.rels':
+            `<?xml version="1.0"?><Relationships ` +
+            `xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+            `<Relationship Id="rId1" ` +
+            `Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" ` +
+            `Target="word/absent.xml"/></Relationships>`,
+          'word/document.xml': '<w:document/>',
+        }),
+      }),
+    );
+
+    let failure: unknown;
+    await when('the identity probe runs', async () => {
+      try {
+        await probeDocxIdentity(GENERATED, soffice);
+      } catch (error) {
+        failure = error;
+      }
+    });
+
+    await then('the probe follows the relationship rather than guessing the path', () => {
+      // word/document.xml IS present; only the declared target is absent. A
+      // probe that assumed the conventional path would pass this package.
+      expect(failure).toBeInstanceOf(ConvertProbeError);
+      expect((failure as Error).message).toContain('word/absent.xml');
+    });
+  });
+
+  test('rejects a pdf with no %PDF- header', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const soffice = await given('a converter that writes non-pdf bytes and succeeds', () =>
+      makeStubConverter({
+        name: 'writes-headerless-pdf',
+        ext: 'pdf',
+        writes: Buffer.from('this is not a pdf at all, but it does end with %%EOF', 'latin1'),
+      }),
+    );
+
+    let failure: unknown;
+    await when('the pdf probe runs', async () => {
+      try {
+        await probeDocxToPdf(GENERATED, soffice);
+      } catch (error) {
+        failure = error;
+      }
+    });
+
+    await then('the missing header is reported even though a trailer is present', () => {
+      expect(failure).toBeInstanceOf(ConvertProbeError);
+      expect((failure as Error).message).toContain('%PDF- header');
+    });
+  });
+
   test('rejects a truncated PDF that still carries the %PDF- header', async ({
     given,
     when,
