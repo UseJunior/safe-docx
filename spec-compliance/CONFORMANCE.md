@@ -149,13 +149,32 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 - **Verified by:** packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts; packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts
 
 Part 4 §14.9.1.1 defines `w:txbxContent` as the rich
-WordprocessingML-content container inside a VML drawing object. It prohibits
+WordprocessingML-content container inside a drawing object. It prohibits
 references to comments, footnotes, and endnotes, as well as nested
-`w:txbxContent`. safe-docx compares a bounded main-document subset as an
-independent story, preserves its surrounding VML scaffold, and rejects those
-prohibited nested forms before comparison. This claim does not cover
-DrawingML text boxes, ancillary-part text boxes, inserted/deleted text-box
-topology, or changes to the containing VML scaffold or relationship closure.
+`w:txbxContent`. safe-docx compares a bounded subset of these stories
+independently of the surrounding body, preserves the drawing scaffold around
+each one, and rejects the prohibited nested forms before comparison.
+
+**Text boxes authored in Microsoft Word are inside that subset.** Word stores
+one modern text box twice within a single `mc:AlternateContent` — an `mc:Choice`
+holding the DrawingML spelling (`a:graphic`, `wps:txbx`) and an `mc:Fallback`
+holding the VML spelling (`v:textbox`) — and renders exactly one of them.
+safe-docx groups the two stored copies as the one visual box a reader sees,
+numbers diagnostics by that visual ordinal, compares each stored copy as its own
+story, and fails closed when the two sides' storage shapes do not correspond.
+Accepting every revision in the result reproduces the revised story text and
+rejecting every revision reproduces the original, in both stored branches.
+
+The claim covers main-document stories and stories in relationship-selected
+header and footer parts. It does not cover a **standalone** DrawingML text box —
+a `wps:txbx` with no `mc:AlternateContent` twin, and therefore no VML host
+anywhere above it. Such a box has no drawing scaffold this implementation can
+fingerprint, so the comparison is refused with `UnsupportedTextBoxRevisionError`,
+which aborts the whole comparison rather than emitting a partial redline. The
+claim likewise does not cover inserted or deleted text-box topology, nor a
+change to the relationship closure of any text-box story — that check runs
+ahead of the twin carve-out and applies to twinned and untwinned boxes alike —
+nor a change to the containing scaffold of an untwinned box.
 
 ### ECMA-PART4-19-1-2-22 — VML text-box host (v:textbox)
 
@@ -165,10 +184,25 @@ topology, or changes to the containing VML scaffold or relationship closure.
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox`
 - **Verified by:** packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts; packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts
 
-Part 4 §19.1.2.22 defines the Transitional VML `v:textbox` host. For the
-accepted comparison subset, safe-docx requires a stable containing
-`v:shape`/`v:textbox` scaffold and places tracked changes only in the hosted
+Part 4 §19.1.2.22 defines the Transitional VML `v:textbox` host. Throughout the
+accepted comparison subset, safe-docx places tracked changes only in the hosted
 WordprocessingML story, never around the drawing object.
+
+The host element is derived from the schema rather than matched by name.
+`v:textbox` (`CT_Textbox`) is the only declared parent of `w:txbxContent`, and it
+belongs to `EG_ShapeElements`, which `CT_Shape` shares with `CT_Rect`,
+`CT_RoundRect`, `CT_Oval` and others. safe-docx therefore treats the VML parent
+of the nearest `v:textbox` as the host, and accepts `v:shape`, `v:rect`,
+`v:roundrect` and `v:oval` alike.
+
+Where a story's host is untwinned VML, safe-docx fingerprints that scaffold with
+the story emptied out and refuses the comparison unless both sides present the
+same scaffold. **That requirement is deliberately not enforced for a text box
+stored inside `mc:AlternateContent`.** The DrawingML copy of a Word twin has no
+VML host of its own, and failing closed on the missing fingerprint would refuse
+the commonest text box Word produces. Which branch of a twin governs the scaffold
+is the `mc:AlternateContent`-aware story walk's question and is not settled here,
+so this claim asserts no stable-scaffold guarantee for a twinned box.
 
 ### ECMA-PART1-17-13-5-14 — Deleted run content
 
