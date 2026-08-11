@@ -138,6 +138,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-5-34` | Table-property revisions (w:tblPrChange) | 5 | 1 | 17.13.5.34 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-36` | Table-cell-property revisions (w:tcPrChange) | 5 | 1 | 17.13.5.36 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-37` | Table-row-property revisions (w:trPrChange) | 5 | 1 | 17.13.5.37 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-3-3-30` | Symbol character run content (w:sym) | 5 | 1 | 17.3.3.30 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Sym` | packages/docx-core/src/primitives/symbol_run_content.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts |
 
 ### ECMA-PART4-14-9-1-1 — VML rich text-box content (w:txbxContent)
 
@@ -1781,6 +1782,27 @@ preservation-only, and Lean does not inspect the snapshot.
 The supported row-height mutation emits `w:trPrChange`; accept/reject also
 consume existing records. Complete row-property semantics and Lean verification
 are outside this claim.
+
+### ECMA-PART1-17-3-3-30 — Symbol character run content (w:sym)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.3.30
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Sym`
+- **Verified by:** packages/docx-core/src/primitives/symbol_run_content.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts
+
+Part 1 §17.3.3.30 defines `w:sym` as run content that specifies a single
+character by font (`@w:font`) and codepoint (`@w:char`), rather than by
+character data. safe-docx's comparison text projections resolve `@w:char` to
+that codepoint, so a symbol glyph contributes the same characters whether it is
+spelled as `w:sym` or written literally inside `w:t` under a symbol font, and a
+document that lost a symbol no longer projects identically to one that kept it.
+`@w:font` is deliberately excluded from the projected value: these are text
+projections, which exclude `w:rFonts` as well, and including it would make the
+two legal spellings of one glyph unequal by construction. A change confined to
+`@w:font` is therefore outside this claim, as are rendering, font substitution,
+and any mapping between a symbol font's private-use codepoints and Unicode
+characters with the same appearance.
 
 ## Non-Goals
 

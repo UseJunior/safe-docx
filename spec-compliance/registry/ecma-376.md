@@ -2085,6 +2085,30 @@ The supported row-height mutation emits `w:trPrChange`; accept/reject also
 consume existing records. Complete row-property semantics and Lean verification
 are outside this claim.
 
+## [ECMA-PART1-17-3-3-30] Symbol character run content (w:sym)
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.3.30"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Sym
+verifiedBy: packages/docx-core/src/primitives/symbol_run_content.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts
+```
+
+Part 1 §17.3.3.30 defines `w:sym` as run content that specifies a single
+character by font (`@w:font`) and codepoint (`@w:char`), rather than by
+character data. safe-docx's comparison text projections resolve `@w:char` to
+that codepoint, so a symbol glyph contributes the same characters whether it is
+spelled as `w:sym` or written literally inside `w:t` under a symbol font, and a
+document that lost a symbol no longer projects identically to one that kept it.
+`@w:font` is deliberately excluded from the projected value: these are text
+projections, which exclude `w:rFonts` as well, and including it would make the
+two legal spellings of one glyph unequal by construction. A change confined to
+`@w:font` is therefore outside this claim, as are rendering, font substitution,
+and any mapping between a symbol font's private-use codepoints and Unicode
+characters with the same appearance.
+
 ## Non-Goals
 
 Sections explicitly **out of scope** for safe-docx. Each entry below carries the

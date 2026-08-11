@@ -2,6 +2,7 @@ import {
   OOXML,
   classifyFieldInstruction,
   parseXml,
+  symbolRunCharacter,
 } from '@usejunior/docx-core';
 
 const PAGEREF_IDENTITY_PREFIX = '__safe_docx_pageref__|';
@@ -59,9 +60,20 @@ export function isTocParagraphStyle(styleId: string | null | undefined): boolean
  * rendered page numbers remain useful when reading a document, but they are
  * pagination output rather than authored comparison content.
  *
+ * Character content is collected from `w:t`, `w:delText` and `w:sym`. `w:sym`
+ * is here because it is the one run-content element whose projected characters
+ * the spec fixes rather than this engine choosing them: `@w:char` *is* the
+ * character. The elements deliberately left out still contribute nothing —
+ * `w:br`, `w:tab`, `w:cr`, `w:noBreakHyphen`, `w:softHyphen`, `w:pgNum`,
+ * `w:drawing`, `w:pict`, `w:object` — so a round trip that is green over this
+ * projection is a claim about the characters those three elements carry, not
+ * about every byte of the story.
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.45
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.3.30
  * @see https://github.com/UseJunior/safe-docx/issues/716
+ * @see https://github.com/UseJunior/safe-docx/issues/793
  */
 export function extractRoundTripComparisonText(documentXml: string): string {
   const document = parseXml(documentXml);
@@ -131,14 +143,22 @@ export function extractRoundTripComparisonText(documentXml: string): string {
           target.push(element.textContent ?? '');
         } else if (
           element.namespaceURI === OOXML.W_NS &&
-          (element.localName === 't' || element.localName === 'delText')
+          (element.localName === 't' ||
+            element.localName === 'delText' ||
+            element.localName === 'sym')
         ) {
           const insidePagerefResult = stack.some(
             (field) =>
               field.separated && field.comparisonIdentity !== undefined,
           );
           if (!insidePagerefResult) {
-            const value = element.textContent ?? '';
+            // `w:sym` has no character data of its own; its glyph lives in
+            // `@w:char`. Resolving it here is what makes a lost symbol change
+            // the projection and the two legal spellings of one glyph agree.
+            const value =
+              element.localName === 'sym'
+                ? symbolRunCharacter(element) ?? ''
+                : element.textContent ?? '';
             if (value) text.push(value);
           }
         }

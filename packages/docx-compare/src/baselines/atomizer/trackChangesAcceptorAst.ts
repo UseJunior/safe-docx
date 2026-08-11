@@ -14,6 +14,7 @@ import {
   insertChildAt,
   childElements,
   getLeafText,
+  symbolRunCharacter,
   NODE_TYPE,
 } from '@usejunior/docx-core';
 
@@ -682,6 +683,35 @@ function restoreParagraphPropertiesFromChanges(root: Element): void {
 }
 
 /**
+ * Collect the live (non-deleted-spelling) character content under `scope` in
+ * document order: `w:t` character data plus the character a `w:sym` stands for.
+ *
+ * `w:sym` carries its glyph in `@w:char` rather than in character data, so a
+ * walk over `w:t` alone reads a document that lost a symbol and a document that
+ * kept it as the same string. There is no `w:delSym` — a symbol inside a
+ * `w:del` is still spelled `w:sym` — so both spellings of one glyph land in
+ * this pass, in the position the glyph actually occupies.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.3.30
+ * @see https://github.com/UseJunior/safe-docx/issues/793
+ */
+function collectLiveCharacterContent(scope: Element, out: string[]): void {
+  for (const child of childElements(scope)) {
+    if (child.tagName === 'w:t') {
+      const text = getLeafText(child) ?? '';
+      if (text) out.push(text);
+      continue;
+    }
+    if (child.tagName === 'w:sym') {
+      const symbol = symbolRunCharacter(child) ?? '';
+      if (symbol) out.push(symbol);
+      continue;
+    }
+    collectLiveCharacterContent(child, out);
+  }
+}
+
+/**
  * Extract plain text content from document XML (AST-based).
  *
  * @param documentXml - The document.xml content
@@ -691,13 +721,8 @@ export function extractTextContent(documentXml: string): string {
   const root = parseDocumentXml(documentXml);
   const texts: string[] = [];
 
-  // Extract text from w:t elements
-  for (const t of findAllByTagName(root, 'w:t')) {
-    const text = getLeafText(t) ?? '';
-    if (text) {
-      texts.push(text);
-    }
-  }
+  // Extract text from w:t elements and the glyphs w:sym stands for
+  collectLiveCharacterContent(root, texts);
 
   // Also extract from w:delText (for rejected changes before conversion)
   for (const delText of findAllByTagName(root, 'w:delText')) {
@@ -712,6 +737,14 @@ export function extractTextContent(documentXml: string): string {
 
 /**
  * Extract text in document order, respecting paragraph breaks (AST-based).
+ *
+ * Character content comes from `w:t`, `w:sym` and `w:delText`. The `w:sym`
+ * glyph is resolved to the character it stands for so that losing a symbol
+ * changes this projection — a `w:t`-only walk cannot tell a document that
+ * dropped a symbol from one that kept it.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.3.30
+ * @see https://github.com/UseJunior/safe-docx/issues/793
  */
 export function extractTextWithParagraphs(documentXml: string): string {
   const root = parseDocumentXml(documentXml);
@@ -721,13 +754,8 @@ export function extractTextWithParagraphs(documentXml: string): string {
   for (const p of findAllByTagName(root, 'w:p')) {
     const texts: string[] = [];
 
-    // Extract text from w:t elements within this paragraph
-    for (const t of findAllByTagName(p, 'w:t')) {
-      const text = getLeafText(t) ?? '';
-      if (text) {
-        texts.push(text);
-      }
-    }
+    // Extract text from w:t elements and w:sym glyphs within this paragraph
+    collectLiveCharacterContent(p, texts);
 
     // Also check w:delText
     for (const delText of findAllByTagName(p, 'w:delText')) {
