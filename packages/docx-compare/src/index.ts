@@ -9,6 +9,7 @@ import { compareDocumentsAtomizer } from './baselines/atomizer/pipeline.js';
 import type { CompareOptions, CompareResult } from './compare-types.js';
 
 export { runLeanXmlTripleVerifier } from './baselines/atomizer/leanXmlVerifier.js';
+export { DEFAULT_RECONSTRUCTION_MODE } from './comparison-defaults.js';
 
 export type {
   CompareOptions,

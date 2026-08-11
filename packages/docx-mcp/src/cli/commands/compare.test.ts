@@ -7,9 +7,11 @@ import { testAllure, type AllureBddContext } from '../../testing/allure-test.js'
 import { makeMinimalDocx } from '../../testing/docx_test_utils.js';
 import { createTrackedTempDir, registerCleanup } from '../../testing/session-test-utils.js';
 import { runCompareCommand } from './compare.js';
-import type {
-  CompareResult,
-  DocumentIntegrityCertificate,
+import { DEFAULT_RECONSTRUCTION_MODE } from '../../tools/comparison_defaults.js';
+import {
+  DEFAULT_RECONSTRUCTION_MODE as LIBRARY_DEFAULT_RECONSTRUCTION_MODE,
+  type CompareResult,
+  type DocumentIntegrityCertificate,
 } from '@usejunior/docx-compare';
 import {
   DocxDocument,
@@ -78,6 +80,18 @@ function comparisonResult(
 }
 
 describe('safe-docx compare command', () => {
+  test('shares one default reconstruction mode with every docx-compare front door', async ({
+    then,
+    and,
+  }: AllureBddContext) => {
+    await then('the MCP-side default is the docx-compare package default', () => {
+      expect(DEFAULT_RECONSTRUCTION_MODE).toBe(LIBRARY_DEFAULT_RECONSTRUCTION_MODE);
+    });
+    await and('that shared default is inplace', () => {
+      expect(DEFAULT_RECONSTRUCTION_MODE).toBe('inplace');
+    });
+  });
+
   test('defaults to the shared inplace reconstruction mode', async ({
     given,
     when,
