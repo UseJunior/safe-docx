@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DocxArchive } from '@usejunior/docx-core';
 import { describe, expect } from 'vitest';
-import { compareDocuments } from './index.js';
+import { compareDocuments, DEFAULT_RECONSTRUCTION_MODE } from './index.js';
 import { testAllure, type AllureBddContext } from './testing/allure-test.js';
 import {
   buildDocxFromBodyXml,
@@ -187,6 +187,34 @@ describe('compareDocuments options', () => {
       await and('the default (omitted) output detects the move', () => {
         expect(omittedXml).toContain('<w:moveFrom');
         expect(omittedXml).toContain('<w:moveTo');
+      });
+    },
+  );
+
+  test(
+    'omitting reconstructionMode requests the shared inplace front-door default',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      const original = await given('a one-paragraph document', () =>
+        buildDocxFromBodyXml(paragraphWithText('Original library-default text')),
+      );
+      const revised = await given('the same document with revised text', () =>
+        buildDocxFromBodyXml(paragraphWithText('Revised library-default text')),
+      );
+
+      const result = await when('the pair is compared with reconstructionMode omitted', () =>
+        compareDocuments(original, revised, {
+          engine: 'atomizer',
+          date: FIXED_DATE,
+        }),
+      );
+
+      await then('the pipeline records the shared default as the requested mode', () => {
+        expect(DEFAULT_RECONSTRUCTION_MODE).toBe('inplace');
+        expect(result.reconstructionModeRequested).toBe(DEFAULT_RECONSTRUCTION_MODE);
+      });
+      await and('this trivially safe pair is produced in place without fallback', () => {
+        expect(result.reconstructionModeUsed).toBe('inplace');
+        expect(result.fallbackReason).toBeUndefined();
       });
     },
   );

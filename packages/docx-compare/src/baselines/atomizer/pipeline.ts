@@ -32,6 +32,7 @@ import type {
   ReconstructionMode,
   LeanXmlVerifierOptions,
 } from '../../compare-types.js';
+import { DEFAULT_RECONSTRUCTION_MODE } from '../../comparison-defaults.js';
 import type {
   ComparisonUnitAtom,
   MoveDetectionSettings,
@@ -829,7 +830,7 @@ async function compareDocumentsAtomizerCore(
     formatDetection = {},
     numbering = {},
     premergeRuns = true,
-    reconstructionMode = 'rebuild',
+    reconstructionMode = DEFAULT_RECONSTRUCTION_MODE,
     leanXmlVerifier,
   } = options;
 

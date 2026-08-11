@@ -759,7 +759,7 @@ describe('Round-trip with comparison', () => {
     });
   });
 
-  test('insert_paragraph round-trip keeps SafeDocX paragraph-mark insertion metadata normalized', async ({
+  test('insert_paragraph round-trip preserves SafeDocX paragraph-mark insertion provenance under the inplace default', async ({
     given,
     when,
     then,
@@ -788,9 +788,15 @@ describe('Round-trip with comparison', () => {
       });
     });
 
-    await then('comparison output keeps SafeDocX metadata, avoids Comparison, and replaces the stale fixed date', () => {
+    await then('comparison output keeps SafeDocX metadata, avoids Comparison, and preserves the original insertion date', () => {
       expectNoComparisonAuthor(comparedDocumentXml);
-      expect(comparedDocumentXml).not.toContain(`w:date="${FIXED_DATE}"`);
+      // Under the shared inplace default (issue #808), comparison preserves the
+      // pre-existing tracked insertion in place — including its original
+      // provenance date — instead of regenerating it as the old rebuild default
+      // did. Date preservation is the desired end state named by the
+      // replace_text characterization above (#126): pre-existing tracked
+      // changes survive with their authorship AND timestamps intact.
+      expect(comparedDocumentXml).toContain(`w:date="${FIXED_DATE}"`);
       expect(revisionTuples(comparedDocumentXml, AI_AUTHOR).length).toBeGreaterThan(0);
       expect(comparedDocumentXml).toContain('Inserted paragraph');
     });
