@@ -114,6 +114,12 @@ describe('compare_documents tool', () => {
         expect(result.engine_used).toBeDefined();
       });
 
+      await then('the handler requests and uses the shared inplace default (#808)', () => {
+        expect(result.reconstruction_mode_requested).toBe('inplace');
+        expect(result.reconstruction_mode_used).toBe('inplace');
+        expect(result.fallback_reason).toBeUndefined();
+      });
+
       await then('the requested author is forwarded to generated revisions', async () => {
         expect(await readDocumentXml(outputPath)).toContain('w:author="Tool Test Author"');
       });

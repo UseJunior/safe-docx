@@ -75,7 +75,17 @@ async function produceRedline(
   asposeCliPath?: string,
 ): Promise<Buffer> {
   if (engine === 'atomizer') {
-    const result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer', author });
+    // Pin the benchmark to rebuild explicitly: benchmark scores predate the
+    // shared inplace front-door default (#808), and historical comparability
+    // requires the reconstruction strategy to stay fixed rather than drift
+    // with the library default. Switching the benchmark to measure the
+    // shipped default is a deliberate decision — record requested/used mode
+    // and fallback reason in the artifacts when making it.
+    const result = await compareDocuments(originalBuffer, revisedBuffer, {
+      engine: 'atomizer',
+      author,
+      reconstructionMode: 'rebuild',
+    });
     return result.document;
   }
 
