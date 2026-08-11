@@ -784,7 +784,7 @@ export interface CompareResult {
   ancillaryFallbackDiagnostics?: AncillaryFallbackDiagnostics;
   /**
    * Safety-check failures observed on rebuild output — whether rebuild was
-   * requested explicitly (the default mode) or reached via inplace fallback.
+   * requested explicitly or reached via fallback from the inplace default.
    * Present only when at least one check failed.
    */
   rebuildSafetyDiagnostics?: ReconstructionRebuildSafetyDiagnostics;
