@@ -49,15 +49,28 @@ contract for each side `s`:
 
 - **P1 bijection**: every node of input side `s` corresponds to exactly one tree
   occurrence tagged `both` or `s`, and every such occurrence corresponds to
-  exactly one node of input side `s`;
+  exactly one node of input side `s`. An explicitly opaque subtree counts as a
+  single atomic input unit and its descendants are not separately accounted;
 - **P2 order**: sibling order in `project(tree, s)` equals sibling order in
   input side `s`;
 - **P3 containment**: parent/child relationships are preserved, so a projected
   node's parent is the projection of its tree parent;
-- **P4 content**: side-specific text, attributes, and properties are those of
-  side `s`'s representative;
-- **P5 opaque payload**: subtrees the engine does not model are reproduced
-  byte-identically on the side they came from.
+- **P4 content**: side-specific namespace, name, attributes and text are those
+  of side `s`'s representative. Element identity SHALL be namespace URI plus
+  local name, never the lexical qualified name, because prefixes are aliasable;
+- **P5 opaque payload**: a subtree the engine explicitly declines to model is
+  carried through equivalent to the input subtree it stands for.
+
+A subtree the engine does not model SHALL be marked opaque **explicitly**. The
+absence of modeled children SHALL NOT be interpreted as a declaration of
+opacity, because that is also what an incomplete construction looks like: a
+representation that cannot distinguish "not modeled deliberately" from "not
+modeled by mistake" certifies the second as the first.
+
+P5 equivalence is **canonical, not byte-level**: attribute order is normalized,
+adjacent text nodes are concatenated, CDATA and text are treated alike, and
+comments and processing instructions do not participate. Content depending on
+those distinctions SHALL NOT be modeled as opaque payload.
 
 Coverage and multiplicity alone SHALL NOT be treated as sufficient. An
 obligation stating only that each input node appears exactly once admits
@@ -76,6 +89,13 @@ its own evidence.
 - **GIVEN** any aligned pair
 - **WHEN** `project(tree, 'original')` and `project(tree, 'revised')` are evaluated
 - **THEN** each SHALL be isomorphic to its input side under P1-P5
+
+#### Scenario: An unmodeled subtree must declare itself opaque
+
+- **GIVEN** a tree node whose input element has child elements
+- **WHEN** the node carries no modeled children and is not marked opaque
+- **THEN** the contract SHALL report a P1 violation naming the unaccounted children
+- **AND** the same shape marked opaque SHALL verify clean
 
 #### Scenario: Reordering that satisfies coverage is rejected
 

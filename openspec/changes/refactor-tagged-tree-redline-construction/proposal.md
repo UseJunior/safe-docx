@@ -84,12 +84,22 @@ Three claims in the first draft of this proposal were wrong and are recorded
 here rather than quietly dropped:
 
 - **`rebuild` is a first-class requested output mode, not only a fallback.**
-  `CompareOptions.reconstructionMode` exposes it (`compare-types.ts:20`), the
-  docx-compare CLI **defaults** to it (`cli/compare-two.ts:49`), and rebuild vs.
-  inplace select different base archives (`pipeline.ts:1239`). "Collapse to a
-  single path" is therefore wrong; the correct target is *one construction
-  algorithm per requested output shape*. Removing the mode is a separate public
-  breaking change (successor D), not a side effect of this refactor.
+  `CompareOptions.reconstructionMode` exposes it, both CLIs accept
+  `--mode rebuild`, and rebuild vs. inplace select different base archives
+  (`pipeline.ts:1239`). "Collapse to a single path" is therefore wrong; the
+  correct target is *one construction algorithm per requested output shape*.
+  Removing the mode is a separate public breaking change (successor D), not a
+  side effect of this refactor.
+
+  *Amended after merge:* this bullet originally said the docx-compare CLI
+  **defaults** to `rebuild`. That was true of the branch it was verified
+  against, but #811 (issue #808) had already unified every front door on
+  `inplace`, and #816 recorded that as a behavior change. The default clause is
+  withdrawn; the substantive point — `rebuild` is a requested output shape, not
+  merely a fallback — is unaffected, and successor D still owns any removal.
+  Note that `CompareOptions.reconstructionMode`'s own doc comment
+  (`compare-types.ts:25`) still advertises `Default: 'rebuild'` and is now
+  wrong on a published API surface; tracked separately, not fixed here.
 
 - **`fail_on_rebuild_fallback` needs no migration.** It exists only on `save`,
   where it is already deprecated and ignored (#126,
