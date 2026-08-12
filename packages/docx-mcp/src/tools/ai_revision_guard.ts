@@ -6,6 +6,7 @@ import {
   type RevisionIdState,
 } from '@usejunior/docx-core';
 import { type DocxSession } from '../session/manager.js';
+import { checkFormattingConvention, type ConventionWarning } from './formatting_convention.js';
 import { err, type ToolResponse } from './types.js';
 
 function cloneRevisionIdState(state: RevisionIdState): RevisionIdState {
@@ -111,20 +112,30 @@ export function formatAiRevisionWarning(d: AiRevisionDiagnostic): string {
  * `blocked` is the historical `ToolResponse | null` contract: non-null means
  * validation rejected the mutation and the caller must return that response
  * without applying the edit. `warnings` carries the non-blocking diagnostics
- * that used to be structurally dropped on the success path (issue #686);
+ * that used to be structurally dropped on the success path (issue #686), plus
+ * any advisory findings computed off the same preview document (the
+ * formatting-convention check, issue #687);
  * callers should surface them on their success response as an optional
  * `warnings?: string[]` field. When `blocked` is set, `warnings` is empty —
  * the blocking response already carries the full diagnostics
  * (errors + warnings) in its `diagnostics` field.
+ *
+ * `conventionWarnings` is the *same* findings as the convention entries in
+ * `warnings`, in structured form — not an addition to them. A caller renders
+ * `warnings` and ignores this, or (like batch_edit, which must attribute a
+ * finding back to the step that produced it) reads this and ignores those.
+ * Reading both double-reports.
  */
 export type AiRevisionPreflightResult = {
   blocked: ToolResponse | null;
   warnings: string[];
+  conventionWarnings: ConventionWarning[];
 };
 
 const PREFLIGHT_PROCEED: AiRevisionPreflightResult = Object.freeze({
   blocked: null,
   warnings: [],
+  conventionWarnings: [],
 });
 
 const sessionBaselineDiagnostics = new WeakMap<DocxSession, Promise<Map<string, number>>>();
@@ -148,20 +159,59 @@ export function getAiRevisionBaseline(session: DocxSession): Promise<Map<string,
   return promise;
 }
 
+/**
+ * Non-validation advisories the caller wants computed off the same preview
+ * round trip. `insertedText` is the text the mutation adds; supplying it opts
+ * the mutation into the formatting-convention check (#687), which is skipped
+ * outright when the inserted text carries no construct the check knows about.
+ *
+ * It rides here rather than on its own document load because the preview load
+ * + mutate + validate round trip is already paid for on every AI-attributed
+ * edit (150–195 ms measured on #687); a full run scan adds 1–2 ms on top.
+ */
+export type AiRevisionPreflightAdvisories = {
+  insertedText?: string;
+};
+
 export async function preflightAiRevisionMutation(
   session: DocxSession,
   ctx: RevisionContext | undefined,
   mutatePreview: (doc: DocxDocument, ctx: RevisionContext | undefined) => Promise<void> | void,
   touched?: AiRevisionValidationTouchedContext,
+  advisories?: AiRevisionPreflightAdvisories,
 ): Promise<AiRevisionPreflightResult> {
   if (!session.aiAuthor) return PREFLIGHT_PROCEED;
 
   const snapshot = await session.doc.toBuffer({ cleanBookmarks: false });
+  // Two loads of the same bytes: `previewDoc` is mutated below, `baselineDoc`
+  // stays as the document was before this mutation so the convention check can
+  // difference them. Loading it from the same snapshot (rather than reusing
+  // `session.doc`) keeps both sides on identical run boundaries, so the
+  // difference reflects the edit and not a serialization artefact. It is only
+  // paid for when a caller actually requests the advisory.
   const previewDoc = await DocxDocument.load(snapshot.buffer);
+  const baselineDoc = advisories?.insertedText
+    ? await DocxDocument.load(snapshot.buffer)
+    : null;
   await mutatePreview(previewDoc, cloneRevisionContext(ctx));
   const validation = await previewDoc.validateAiRevisions(session.aiAuthor, touched);
+  // Advisory only, and never on the blocked path: a blocked mutation is not
+  // applied, so its formatting is not a finding the caller can act on.
+  const conventionWarnings =
+    advisories?.insertedText && baselineDoc
+      ? checkFormattingConvention(previewDoc, {
+          insertedText: advisories.insertedText,
+          aiAuthor: session.aiAuthor,
+          baselineDoc,
+        })
+      : [];
+  const conventionMessages = conventionWarnings.map((w) => w.message);
   if (validation.errors.length === 0) {
-    return { blocked: null, warnings: validation.warnings.map(formatAiRevisionWarning) };
+    return {
+      blocked: null,
+      warnings: [...validation.warnings.map(formatAiRevisionWarning), ...conventionMessages],
+      conventionWarnings,
+    };
   }
 
   // AI-attributed errors always fail. Unattributable errors (field structure,
@@ -186,7 +236,11 @@ export async function preflightAiRevisionMutation(
     // merge them into the surfaced warnings exactly as the failure path does.
     return {
       blocked: null,
-      warnings: [...validation.warnings, ...demoted].map(formatAiRevisionWarning),
+      warnings: [
+        ...[...validation.warnings, ...demoted].map(formatAiRevisionWarning),
+        ...conventionMessages,
+      ],
+      conventionWarnings,
     };
   }
 
@@ -196,5 +250,6 @@ export async function preflightAiRevisionMutation(
       warnings: [...validation.warnings, ...demoted],
     }),
     warnings: [],
+    conventionWarnings: [],
   };
 }

@@ -14,6 +14,7 @@ import { replaceText, stripSearchTags } from './replace_text.js';
 import { insertParagraph } from './insert_paragraph.js';
 import { resolveSessionForTool } from './session_resolution.js';
 import { preflightAiRevisionMutation } from './ai_revision_guard.js';
+import { insertedConstructKeys, type ConventionWarning } from './formatting_convention.js';
 
 const REPLACE_TEXT_FIELDS = new Set([
   'target_paragraph_id',
@@ -484,6 +485,49 @@ function executeStepsOnDoc(doc: DocxDocument, steps: NormalizedStep[], ctx?: Rev
   for (const step of steps) executeStepOnDoc(doc, step, ctx);
 }
 
+/**
+ * Every step's inserted text, joined. The batch preflights once for the whole
+ * sequence, so the formatting-convention gate (#687) sees the sequence's
+ * inserted text as a unit; the newline join keeps one step's tail from fusing
+ * with the next step's head into a construct neither step contains.
+ */
+function collectInsertedText(steps: NormalizedStep[]): string {
+  return steps
+    .map((step) => step.fields.new_string)
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => stripSearchTags(value))
+    .join('\n');
+}
+
+/**
+ * Attribute each convention warning to the step whose inserted text carries
+ * that construct. The preflight runs once for the whole sequence, so the step
+ * is not otherwise recoverable — and batch_edit's `warnings` channel is
+ * per-step `{ step_id, warning }` entries, so an unattributed warning has
+ * nowhere to go. A warning that matches no step (possible only if a step's
+ * text and the document disagree) falls back to the first step rather than
+ * being dropped.
+ */
+function attributeConventionWarnings(
+  steps: NormalizedStep[],
+  warnings: ConventionWarning[],
+): Array<{ step_id: string; warning: string }> {
+  if (warnings.length === 0) return [];
+  const byStep = steps.map((step) => ({
+    stepId: step.step_id,
+    keys: insertedConstructKeys(
+      typeof step.fields.new_string === 'string' ? stripSearchTags(step.fields.new_string) : '',
+    ),
+  }));
+  const normalize = (value: string): string => value.trim().replace(/\s+/g, ' ').toLowerCase();
+
+  return warnings.map((warning) => {
+    const term = normalize(warning.term);
+    const owner = byStep.find((entry) => entry.keys.get(warning.construct)?.has(term));
+    return { step_id: owner?.stepId ?? byStep[0]?.stepId ?? '', warning: warning.message };
+  });
+}
+
 export async function batchEdit(
   manager: SessionManager,
   params: {
@@ -541,7 +585,9 @@ export async function batchEdit(
       };
     }
 
-    const allWarnings = validations.flatMap((v) => v.warnings.map((w) => ({ step_id: v.step_id, warning: w })));
+    const allWarnings: Array<{ step_id: string; warning: string }> = validations.flatMap((v) =>
+      v.warnings.map((w) => ({ step_id: v.step_id, warning: w })),
+    );
     const conflictSteps = buildConflictView(steps);
     const conflicts = [
       ...detectDuplicateStepIdConflicts(conflictSteps),
@@ -567,8 +613,14 @@ export async function batchEdit(
       session,
       ctx,
       (previewDoc, previewCtx) => executeStepsOnDoc(previewDoc, steps, previewCtx),
+      undefined,
+      { insertedText: collectInsertedText(steps) },
     );
     if (revisionPreflight.blocked) return revisionPreflight.blocked;
+    // Structured form only — `revisionPreflight.warnings` carries the same
+    // convention findings as flat strings, and reading both would report each
+    // finding twice.
+    allWarnings.push(...attributeConventionWarnings(steps, revisionPreflight.conventionWarnings));
 
     const result = await executeSteps(manager, manager.normalizePath(session.originalPath), steps, ctx);
     if (result.failed_step_id !== undefined) {

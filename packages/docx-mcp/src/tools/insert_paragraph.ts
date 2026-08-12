@@ -214,6 +214,10 @@ export async function insertParagraph(
           session,
           revisionCtx,
           (doc, activeCtx) => { mutate(doc, activeCtx); },
+          undefined,
+          // Formatting markup is not part of the construct match, so the gate
+          // reads the plain text this insertion adds (issue #687).
+          { insertedText: stripAllInlineTags(params.new_string) },
         );
     if (revisionPreflight?.blocked) return revisionPreflight.blocked;
 
@@ -234,6 +238,11 @@ export async function insertParagraph(
     if (res.styleSourceFallback) {
       responseData.style_source_warning = `style_source_id '${params.style_source_id}' not found; fell back to anchor paragraph formatting.`;
     }
+    // Same optional `warnings?: string[]` channel #701 gave the other mutating
+    // tools; insert_paragraph was left without one, which would have made the
+    // convention check unobservable on this path.
+    const warnings = revisionPreflight?.warnings ?? [];
+    if (warnings.length > 0) responseData.warnings = warnings;
     return ok(mergeSessionResolutionMetadata(responseData, metadata));
   } catch (e: unknown) {
     return err('INSERT_ERROR', `Failed to insert paragraph: ${errorMessage(e)}`);

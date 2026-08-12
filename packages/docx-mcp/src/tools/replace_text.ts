@@ -299,7 +299,11 @@ export async function replaceText(
 
     const revisionPreflight = params.skip_ai_revision_preflight
       ? null
-      : await preflightAiRevisionMutation(session, revisionCtx, mutate);
+      : await preflightAiRevisionMutation(session, revisionCtx, mutate, undefined, {
+          // Formatting markup is not part of the construct match, so the gate
+          // reads the plain text this edit inserts (issue #687).
+          insertedText: stripAllInlineTags(newStr),
+        });
     if (revisionPreflight?.blocked) return revisionPreflight.blocked;
     const warnings = revisionPreflight?.warnings ?? [];
 
