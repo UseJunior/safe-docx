@@ -85,23 +85,34 @@ export function tagAtomLcs(
   granularity: AlignmentGranularity,
 ): TaggedAtomLcsResult {
   const alignments: TaggedAtomAlignment[] = [];
-  const matchesByOriginal = new Map(lcs.matches.map((match) => [match.originalIndex, match]));
-  const deleted = new Set(lcs.deletedIndices);
-  const inserted = new Set(lcs.insertedIndices);
+  // Hierarchical similarity can pair crossing groups. A flat tagged stream
+  // cannot represent both crossing pairs without reversing one projection, so
+  // preserve the legacy LCS evidence but emit those pairs side-only here.
+  const matchesByOriginal = new Map<number, AtomMatch>();
+  const matchedOriginal = new Set<number>();
+  const matchedRevised = new Set<number>();
+  let previousRevisedIndex = -1;
+  for (const match of [...lcs.matches].sort((a, b) => a.originalIndex - b.originalIndex)) {
+    if (match.revisedIndex <= previousRevisedIndex) continue;
+    matchesByOriginal.set(match.originalIndex, match);
+    matchedOriginal.add(match.originalIndex);
+    matchedRevised.add(match.revisedIndex);
+    previousRevisedIndex = match.revisedIndex;
+  }
   let originalIndex = 0;
   let revisedIndex = 0;
 
   while (originalIndex < original.length || revisedIndex < revised.length) {
-    while (originalIndex < original.length && deleted.has(originalIndex)) {
+    while (originalIndex < original.length && !matchedOriginal.has(originalIndex)) {
       const atom = original[originalIndex++]!;
       alignments.push({ tag: 'original', original: atom, originalProvenance: revisionProvenance(atom.contentElement), revisedProvenance: [] });
     }
-    while (revisedIndex < revised.length && inserted.has(revisedIndex)) {
+    while (revisedIndex < revised.length && !matchedRevised.has(revisedIndex)) {
       const atom = revised[revisedIndex++]!;
       alignments.push({ tag: 'revised', revised: atom, originalProvenance: [], revisedProvenance: revisionProvenance(atom.contentElement) });
     }
     const match = matchesByOriginal.get(originalIndex);
-    if (match) {
+    if (match && match.revisedIndex === revisedIndex) {
       const originalAtom = original[originalIndex++]!;
       const revisedAtom = revised[match.revisedIndex]!;
       revisedIndex = match.revisedIndex + 1;
@@ -113,8 +124,9 @@ export function tagAtomLcs(
       });
       continue;
     }
-    if (originalIndex < original.length) originalIndex++;
-    else if (revisedIndex < revised.length) revisedIndex++;
+    // The only remaining case is a revised-side unmatched node preceding a
+    // later match. It must be emitted first to preserve revised document order.
+    if (revisedIndex < revised.length) continue;
   }
   return { lcs, granularity, alignments };
 }

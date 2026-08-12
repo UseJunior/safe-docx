@@ -2,7 +2,7 @@ import { describe, expect } from 'vitest';
 import { CorrelationStatus, type ComparisonUnitAtom } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { el } from '../../testing/dom-test-helpers.js';
-import { computeTaggedAtomLcs } from './atomLcs.js';
+import { computeTaggedAtomLcs, tagAtomLcs } from './atomLcs.js';
 import { hierarchicalCompare, hierarchicalCompareTagged } from './hierarchicalLcs.js';
 import { nextRevisionId } from './taggedTree.js';
 
@@ -134,6 +134,30 @@ describe('tagged atom LCS', () => {
 
       await then('the tagged wrapper exposes the unmodified legacy LCS result', () => {
         expect(tagged.lcs).toEqual(legacy);
+      });
+    },
+  );
+
+  test.allure({ story: 'crossing matches never reverse a tagged projection' })(
+    'crossing legacy matches remain evidence but become side-only tags',
+    async ({ when, then }: AllureBddContext) => {
+      const original = [atom('O0'), atom('O1')];
+      const revised = [atom('R0'), atom('R1')];
+      let result!: ReturnType<typeof tagAtomLcs>;
+
+      await when('a hierarchical similarity pass supplies crossing matches', () => {
+        result = tagAtomLcs(original, revised, {
+          matches: [{ originalIndex: 0, revisedIndex: 1 }, { originalIndex: 1, revisedIndex: 0 }],
+          deletedIndices: [],
+          insertedIndices: [],
+        }, 'run');
+      });
+
+      await then('the legacy result remains intact but tags preserve each side order', () => {
+        expect(result.lcs.matches).toHaveLength(2);
+        expect(result.alignments.map((alignment) => alignment.tag)).toEqual(['revised', 'both', 'original']);
+        expect(result.alignments.flatMap((alignment) => alignment.original?.contentElement.textContent ?? [])).toEqual(['O0', 'O1']);
+        expect(result.alignments.flatMap((alignment) => alignment.revised?.contentElement.textContent ?? [])).toEqual(['R0', 'R1']);
       });
     },
   );
