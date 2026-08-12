@@ -9,7 +9,7 @@
 
 - [x] 2.1 Import a DOCX into an anchored copy without mutating the caller's original, then pin the anchored package hash.
 - [x] 2.2 Emit a complete compact scaffold using stable bookmark IDs, paragraph fingerprints, source text, and inherited style IDs.
-- [ ] 2.3 Emit selective and full normalized detail views with semantically equivalent adjacent runs coalesced and source property hashes retained.
+- [x] 2.3 Emit selective and full normalized detail views with semantically equivalent adjacent runs coalesced and source property hashes retained.
 - [x] 2.4 Report unsupported source structures and prevent v1 compilation when an edit intersects them.
 
 ## 3. Edit IR and replay
@@ -26,7 +26,7 @@
 - [x] 4.2 Verify reject-all equals pinned source and accept-all equals clean output using existing accept/reject projections.
 - [x] 4.3 Verify unchanged admitted package parts and paragraphs are byte- or canonical-equivalent under documented rules.
 - [x] 4.4 Emit a machine-readable certificate containing capability scope, operations applied, excluded structures, and every invariant result.
-- [ ] 4.5 Add mutation tests proving source, anchor, fingerprint, scaffold, and formatting-policy drift fail before writing output.
+- [x] 4.5 Add mutation tests proving source, anchor, fingerprint, scaffold, and formatting-policy drift fail before writing output.
 
 ## 5. Knowledge and training projections
 
@@ -37,7 +37,7 @@
 ## 6. CLI, fixtures, and documentation
 
 - [x] 6.1 Add package CLI commands for `import`, `validate`, `inspect`, `compile`, `verify`, and `export-edits`.
-- [ ] 6.2 Create synthetic fixtures covering unchanged context, clean-state replacement/deletion, insertion, rationale, and mixed-format refusal.
+- [x] 6.2 Create synthetic fixtures covering unchanged context, clean-state replacement/deletion, insertion, rationale, and mixed-format refusal.
 - [x] 6.3 Convert completed-matter findings into de-identified regression fixtures without client names, facts, or document text.
 - [x] 6.4 Document authoring conventions, Git/revision-manifest discipline, compact/detail trade-offs, and recovery from stale anchors.
 - [ ] 6.5 Run focused package tests, workspace build, OpenSpec traceability, and required Safe DOCX preflight gates.

@@ -4,6 +4,7 @@ import { compileMarkdoc } from './compile.js';
 import { DocxMarkdocError } from './errors.js';
 import { exportAdjacentRevisionPairs, exportEditPairs } from './export.js';
 import { importDocxToMarkdoc } from './import.js';
+import { inspectMarkdocSource } from './inspect.js';
 import { parseMarkdoc, requireMarkdoc } from './markdoc.js';
 
 function withBeforeAfterEdit(markdoc: string): string {
@@ -120,4 +121,75 @@ describe('brownfield Markdoc authoring', () => {
     });
     expect(exportAdjacentRevisionPairs(before, after)[0]).not.toHaveProperty('actor');
   });
+
+  it('[SDX-MDOC-11] emits selective normalized detail and coalesces equivalent adjacent runs', async () => {
+    const original = await buildSyntheticDocx({ paragraphs: ['Alpha beta.'] });
+    const imported = await importDocxToMarkdoc(original);
+    const source = await DocxDocument.load(imported.anchoredSource);
+    const paragraph = source.getParagraphs()[0]!;
+    const run = getFirstElement(paragraph, 'r');
+    const text = getFirstElement(run, 't');
+    text.textContent = 'Alpha ';
+    const clone = run.cloneNode(true) as Element;
+    getFirstElement(clone, 't').textContent = 'beta.';
+    paragraph.appendChild(clone);
+    const splitSource = (await source.toBuffer({ cleanBookmarks: false })).buffer;
+    const id = source.buildDocumentView().nodes[0]!.id;
+
+    const detail = await inspectMarkdocSource(splitSource, { paragraphIds: [id] });
+
+    expect(detail).toHaveLength(1);
+    expect(detail[0]?.normalizedRuns).toEqual([
+      expect.objectContaining({ text: 'Alpha beta.', sourceRunCount: 2 }),
+    ]);
+    expect(detail[0]?.paragraphPropertySha256).toMatch(/^[0-9a-f]{64}$/);
+    await expect(inspectMarkdocSource(splitSource, { paragraphIds: ['_bk_missing'] })).rejects.toMatchObject({ code: 'UNKNOWN_INSPECTION_ANCHOR' });
+  });
+
+  it('[SDX-MDOC-06][SDX-MDOC-10][SDX-MDOC-14] fails closed on anchor, fingerprint, scaffold, and mixed-format drift', async () => {
+    const original = await buildSyntheticDocx({ paragraphs: ['Alpha beta.', 'Context.'] });
+    const imported = await importDocxToMarkdoc(original);
+    const canonical = withCanonicalChange(imported.markdoc, 'Alpha beta.', 'Alpha revised.');
+    await expect(compileMarkdoc(imported.anchoredSource, canonical.replace(/id="_bk_[^"]+"/, 'id="_bk_missing"')))
+      .rejects.toMatchObject({ code: 'SCAFFOLD_ORDER_DRIFT' });
+    await expect(compileMarkdoc(imported.anchoredSource, canonical.replace(/fingerprint="[^"]+"/, 'fingerprint="sha256:nfkc:stale"')))
+      .rejects.toMatchObject({ code: 'FINGERPRINT_DRIFT' });
+    const oneBlockRemoved = canonical.replace(/\n\{% para id="[^"]+"[\s\S]*?\{% \/para %\}\n?/, '\n');
+    await expect(compileMarkdoc(imported.anchoredSource, oneBlockRemoved)).rejects.toMatchObject({ code: 'SCAFFOLD_DRIFT' });
+
+    const mixed = await DocxDocument.load(imported.anchoredSource);
+    const paragraph = mixed.getParagraphs()[0]!;
+    const run = getFirstElement(paragraph, 'r');
+    const text = getFirstElement(run, 't');
+    text.textContent = 'Alpha ';
+    const clone = run.cloneNode(true) as Element;
+    getFirstElement(clone, 't').textContent = 'beta.';
+    const rPr = clone.ownerDocument!.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:rPr');
+    rPr.appendChild(clone.ownerDocument!.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:b'));
+    clone.insertBefore(rPr, clone.firstChild);
+    paragraph.appendChild(clone);
+    const mixedBuffer = (await mixed.toBuffer({ cleanBookmarks: false })).buffer;
+    const mixedImported = await importDocxToMarkdoc(mixedBuffer);
+    const mixedChange = withCanonicalChange(mixedImported.markdoc, 'Alpha beta.', 'Alpha revised.');
+    await expect(compileMarkdoc(mixedImported.anchoredSource, mixedChange)).rejects.toMatchObject({ code: 'MIXED_FORMATTING_REQUIRES_DETAIL' });
+  });
 });
+
+function getFirstElement(parent: Element, localName: string): Element {
+  const element = Array.from(parent.getElementsByTagName('*')).find((candidate) => candidate.localName === localName);
+  if (!element) throw new Error(`Missing ${localName}`);
+  return element;
+}
+
+function withCanonicalChange(markdoc: string, before: string, after: string): string {
+  const escaped = before.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`\\{% para ([^\\n]+) %\\}\\n${escaped}\\n\\{% /para %\\}`);
+  const match = markdoc.match(pattern);
+  if (!match?.[1]) throw new Error(`Fixture paragraph not found: ${before}`);
+  return markdoc.replace(pattern, [
+    `{% change ${match[1]} operation="change" format="inherit-source-paragraph" %}`,
+    '{% before %}', before, '{% /before %}',
+    '{% after %}', after, '{% /after %}',
+    '{% /change %}',
+  ].join('\n'));
+}

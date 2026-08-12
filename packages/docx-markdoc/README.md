@@ -36,7 +36,12 @@ Whole-paragraph changes keep both clean states explicit:
 ```
 
 The canonical Markdoc is compact. `inspectMarkdocSource` generates normalized
-formatting detail for selected paragraphs when an edit needs it.
+formatting detail for selected paragraphs when an edit needs it. With no IDs it
+returns the full document; with `paragraphIds` it returns only those anchors.
+Adjacent physical Word runs with identical direct run properties are coalesced,
+while `paragraphPropertySha256`, `runPropertySha256`, and `sourceRunCount` keep
+the readable view tied to the source formatting without copying raw OOXML into
+canonical Markdoc. Inspection output is diagnostic and cannot be compiled.
 
 Leading or trailing spaces in operative text must be written as `&#32;` because
 Markdown treats ordinary boundary spaces as syntax. The importer does this

@@ -174,6 +174,16 @@ Compilation produces a verification certificate. Success requires:
 
 ## Implementation findings
 
+- **2026-08-12 — full-workspace preflight is independently blocked:** The new
+  package build, lint, 10 focused tests, spec coverage, conformance checks, and
+  strict OpenSpec validation pass. The full workspace build on current
+  `origin/main` fails earlier in `docx-compare`: it imports the existing
+  `projectSymbolRun` implementation from `@usejunior/docx-core`, but core's
+  public index does not export it. This slice does not alter that API and does
+  not treat the unrelated failure as evidence against Markdoc; task 6.5 stays
+  open until the repository baseline is repaired and the complete preflight can
+  run honestly.
+
 - **2026-08-12 — paragraph insert/delete bookmark corruption:** The clean replay
   path was correct, but reject-all appeared to omit source paragraphs. Serialized
   OOXML proved that the paragraphs were present: rejection had relocated every
