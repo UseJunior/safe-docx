@@ -222,10 +222,97 @@ describe('brownfield Markdoc authoring', () => {
     paragraph.appendChild(clone);
     const mixedBuffer = (await mixed.toBuffer({ cleanBookmarks: false })).buffer;
     const mixedImported = await importDocxToMarkdoc(mixedBuffer);
-    const mixedChange = withCanonicalChange(mixedImported.markdoc, 'Alpha beta.', 'Alpha revised.');
+    const mixedChange = withCanonicalChange(mixedImported.markdoc, 'Alpha beta.', 'Alpha inserted beta.');
     await expect(compileMarkdoc(mixedImported.anchoredSource, mixedChange)).rejects.toMatchObject({ code: 'MIXED_FORMATTING_REQUIRES_DETAIL' });
+    const resolved = mixedChange.replace(
+      'format="inherit-source-paragraph"',
+      'format="inherit-source-paragraph" format-source="Alpha "',
+    );
+    const resolvedResult = await compileMarkdoc(mixedImported.anchoredSource, resolved);
+    const resolvedClean = await DocxDocument.load(resolvedResult.clean);
+    expect(runFormatProjection(resolvedClean.getParagraphs()[0]!)).toEqual([
+      { text: 'Alpha inserted ', bold: false },
+      { text: 'beta.', bold: true },
+    ]);
+  });
+
+  it('[SDX-MDOC-09][SDX-MDOC-10] preserves mixed emphasis across localized founding-member edits', async () => {
+    const original = await buildSyntheticDocx({ paragraphs: ['Founding Members: Alice and Bob.', 'Context.'] });
+    const styled = await DocxDocument.load(original);
+    setParagraphRuns(styled.getParagraphs()[0]!, [
+      { text: 'Founding Members: ' },
+      { text: 'Alice and Bob.', bold: true },
+    ]);
+    const imported = await importDocxToMarkdoc((await styled.toBuffer({ cleanBookmarks: false })).buffer);
+    const markdoc = withCanonicalChange(
+      imported.markdoc,
+      'Founding Members: Alice and Bob.',
+      'Initial Members: Alice and Carol.',
+    );
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+    expect(result.certificate).toMatchObject({ passed: true, rejectAllEqualsSource: true, acceptAllEqualsClean: true });
+
+    const clean = await DocxDocument.load(result.clean);
+    expect(runFormatProjection(clean.getParagraphs()[0]!)).toEqual([
+      { text: 'Initial Members: ', bold: false },
+      { text: 'Alice and Carol.', bold: true },
+    ]);
+  });
+
+  it('[SDX-MDOC-09] deletes a mixed-format witness line without flattening adjacent content', async () => {
+    const original = await buildSyntheticDocx({ paragraphs: ['Operative text.', 'Witness: ____________________', 'Following text.'] });
+    const styled = await DocxDocument.load(original);
+    setParagraphRuns(styled.getParagraphs()[1]!, [
+      { text: 'Witness:', bold: true },
+      { text: ' ____________________' },
+    ]);
+    const imported = await importDocxToMarkdoc((await styled.toBuffer({ cleanBookmarks: false })).buffer);
+    const markdoc = withCanonicalChange(imported.markdoc, 'Witness: ____________________', '');
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+    expect(result.certificate).toMatchObject({ passed: true, rejectAllEqualsSource: true, acceptAllEqualsClean: true });
+
+    const clean = await DocxDocument.load(result.clean);
+    expect(clean.buildDocumentView().nodes.map((node) => node.raw_text)).toEqual(['Operative text.', 'Following text.']);
+    expect(runFormatProjection(clean.getParagraphs()[0]!)).toEqual([{ text: 'Operative text.', bold: false }]);
+    expect(runFormatProjection(clean.getParagraphs()[1]!)).toEqual([{ text: 'Following text.', bold: false }]);
   });
 });
+
+function setParagraphRuns(paragraph: Element, runs: Array<{ text: string; bold?: boolean }>): void {
+  const doc = paragraph.ownerDocument!;
+  for (const child of Array.from(paragraph.childNodes)) {
+    if (child.nodeType === 1 && (child as Element).localName === 'r') paragraph.removeChild(child);
+  }
+  for (const item of runs) {
+    const run = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:r');
+    if (item.bold) {
+      const rPr = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:rPr');
+      rPr.appendChild(doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:b'));
+      run.appendChild(rPr);
+    }
+    const text = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:t');
+    if (item.text.startsWith(' ') || item.text.endsWith(' ')) text.setAttribute('xml:space', 'preserve');
+    text.textContent = item.text;
+    run.appendChild(text);
+    paragraph.appendChild(run);
+  }
+}
+
+function runFormatProjection(paragraph: Element): Array<{ text: string; bold: boolean }> {
+  const projected = Array.from(paragraph.childNodes)
+    .filter((child): child is Element => child.nodeType === 1 && (child as Element).localName === 'r')
+    .map((run) => ({
+      text: Array.from(run.getElementsByTagName('*')).filter((el) => el.localName === 't').map((el) => el.textContent ?? '').join(''),
+      bold: Array.from(run.getElementsByTagName('*')).some((el) => el.localName === 'b'),
+    }))
+    .filter((run) => run.text.length > 0);
+  return projected.reduce<Array<{ text: string; bold: boolean }>>((result, run) => {
+    const previous = result[result.length - 1];
+    if (previous?.bold === run.bold) previous.text += run.text;
+    else result.push(run);
+    return result;
+  }, []);
+}
 
 function getFirstElement(parent: Element, localName: string): Element {
   const element = Array.from(parent.getElementsByTagName('*')).find((candidate) => candidate.localName === localName);
@@ -234,10 +321,12 @@ function getFirstElement(parent: Element, localName: string): Element {
 }
 
 function withCanonicalChange(markdoc: string, before: string, after: string, operation = 'change'): string {
-  const escaped = before.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = new RegExp(`\\{% para ([^\\n]+) %\\}\\n${escaped}\\n\\{% /para %\\}`);
+  const source = requireMarkdoc(markdoc).scaffold.find((paragraph) => paragraph.originalText === before);
+  if (!source) throw new Error(`Fixture paragraph not found: ${before}`);
+  const escapedId = source.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`\\{% para (id="${escapedId}"[^\\n]*) %\\}[\\s\\S]*?\\{% /para %\\}`);
   const match = markdoc.match(pattern);
-  if (!match?.[1]) throw new Error(`Fixture paragraph not found: ${before}`);
+  if (!match?.[1]) throw new Error(`Fixture paragraph block not found: ${before}`);
   return markdoc.replace(pattern, [
     `{% change ${match[1]} operation="${operation}" format="inherit-source-paragraph" %}`,
     '{% before %}', before, '{% /before %}',

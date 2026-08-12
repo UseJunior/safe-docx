@@ -4,6 +4,8 @@ import { sha256 } from './hash.js';
 
 export type NormalizedRun = {
   text: string;
+  start: number;
+  end: number;
   runPropertySha256: string;
   sourceRunCount: number;
 };
@@ -30,15 +32,18 @@ function directPropertyXml(element: Element, localName: 'pPr' | 'rPr'): string {
 
 function normalizedRuns(paragraph: Element): NormalizedRun[] {
   const result: NormalizedRun[] = [];
+  let offset = 0;
   for (const run of getParagraphRuns(paragraph).filter((candidate) => candidate.text.length > 0)) {
     const propertyHash = sha256(directPropertyXml(run.r, 'rPr'));
     const previous = result[result.length - 1];
     if (previous?.runPropertySha256 === propertyHash) {
       previous.text += run.text;
+      previous.end += run.text.length;
       previous.sourceRunCount += 1;
     } else {
-      result.push({ text: run.text, runPropertySha256: propertyHash, sourceRunCount: 1 });
+      result.push({ text: run.text, start: offset, end: offset + run.text.length, runPropertySha256: propertyHash, sourceRunCount: 1 });
     }
+    offset += run.text.length;
   }
   return result;
 }

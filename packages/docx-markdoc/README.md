@@ -50,11 +50,30 @@ adjacent list level and a list terminator:
 This supports editing text within existing list topology; changing numbering
 definitions, restarting a list, or changing list levels remains out of scope.
 
+Mixed-format paragraphs are edited surgically: unchanged spans retain their
+source runs, and a replacement inherits the one formatting class occupied by
+the deleted source span. If an insertion lands exactly between incompatible
+formats, or a replacement crosses formats, compilation fails closed. The
+author may resolve that ambiguity by naming one unique source substring:
+
+```markdoc
+{% change id="_bk_..." fingerprint="..." style="Normal" operation="rewrite" format="inherit-source-paragraph" format-source="Defined Term" %}
+{% before %}The Defined Term applies.{% /before %}
+{% after %}The Revised Term applies.{% /after %}
+{% /change %}
+```
+
+`format-source` is formatting-only and document-domain-neutral. It must match
+exactly once and occupy one coalesced formatting class; it does not change the
+before/after text or relax source verification. Deleting a mixed-format
+paragraph requires no formatting choice and therefore remains admitted.
+
 The canonical Markdoc is compact. `inspectMarkdocSource` generates normalized
 formatting detail for selected paragraphs when an edit needs it. With no IDs it
 returns the full document; with `paragraphIds` it returns only those anchors.
 Adjacent physical Word runs with identical direct run properties are coalesced,
-while `paragraphPropertySha256`, `runPropertySha256`, and `sourceRunCount` keep
+while `start`, `end`, `paragraphPropertySha256`, `runPropertySha256`, and
+`sourceRunCount` keep
 the readable view tied to the source formatting without copying raw OOXML into
 canonical Markdoc. Inspection output is diagnostic and cannot be compiled.
 

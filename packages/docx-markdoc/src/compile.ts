@@ -3,6 +3,7 @@ import {
   DocxDocument,
   computeContentFingerprint,
   getParagraphRuns,
+  type ReplacementPart,
 } from '@usejunior/docx-core';
 import { compareDocuments } from '@usejunior/docx-compare';
 import { DocxMarkdocError } from './errors.js';
@@ -25,7 +26,7 @@ function directRunPropertySignature(run: Element): string {
   return '';
 }
 
-function assertUniformFormatting(document: DocxDocument, id: string): void {
+function assertAdmittedStructure(document: DocxDocument, id: string): Element {
   const paragraph = document.getParagraphElementById(id);
   if (!paragraph) throw new DocxMarkdocError('MISSING_ANCHOR', `Paragraph ${id} was not found.`);
   const unsupportedDescendants = new Set(['fldChar', 'instrText', 'hyperlink', 'sdt']);
@@ -38,16 +39,139 @@ function assertUniformFormatting(document: DocxDocument, id: string): void {
       `Paragraph ${id} contains unsupported ${[...new Set(encountered)].sort().join(', ')} structure.`,
     );
   }
-  const signatures = new Set(
-    getParagraphRuns(paragraph)
-      .filter((run) => run.text.length > 0)
-      .map((run) => directRunPropertySignature(run.r)),
-  );
-  if (signatures.size > 1) {
+  return paragraph;
+}
+
+type TextHunk = { start: number; end: number; replacement: string };
+type TextToken = { text: string; start: number; end: number };
+
+function textTokens(text: string): TextToken[] {
+  const tokens: TextToken[] = [];
+  const pattern = /\s+|[\p{L}\p{N}\p{M}_]+|[^\s\p{L}\p{N}\p{M}_]/gu;
+  for (const match of text.matchAll(pattern)) {
+    const start = match.index;
+    tokens.push({ text: match[0], start, end: start + match[0].length });
+  }
+  return tokens;
+}
+
+/**
+ * Produce minimal source ranges from an LCS alignment. The bounded matrix is
+ * deliberate: formatting inheritance must fail closed instead of switching to
+ * a heuristic for pathologically large, wholly rewritten paragraphs.
+ */
+function textHunks(before: string, after: string): TextHunk[] {
+  const sourceTokens = textTokens(before);
+  const revisedTokens = textTokens(after);
+  const n = sourceTokens.length;
+  const m = revisedTokens.length;
+  if (n * m > 8_000_000) {
     throw new DocxMarkdocError(
-      'MIXED_FORMATTING_REQUIRES_DETAIL',
-      `Paragraph ${id} has mixed run formatting; inspect it and use a future explicit formatting operation.`,
+      'FORMATTING_ALIGNMENT_TOO_COMPLEX',
+      `Paragraph alignment requires ${n * m} cells; split the change into smaller source units.`,
     );
+  }
+  const width = m + 1;
+  const lcs = new Uint32Array((n + 1) * width);
+  for (let i = n - 1; i >= 0; i -= 1) {
+    for (let j = m - 1; j >= 0; j -= 1) {
+      lcs[i * width + j] = sourceTokens[i]!.text === revisedTokens[j]!.text
+        ? 1 + lcs[(i + 1) * width + j + 1]!
+        : Math.max(lcs[(i + 1) * width + j]!, lcs[i * width + j + 1]!);
+    }
+  }
+  const result: TextHunk[] = [];
+  let source = 0;
+  let revised = 0;
+  let open: TextHunk | null = null;
+  const flush = (): void => {
+    if (open) result.push(open);
+    open = null;
+  };
+  while (source < n || revised < m) {
+    if (source < n && revised < m && sourceTokens[source]!.text === revisedTokens[revised]!.text) {
+      flush();
+      source += 1;
+      revised += 1;
+    } else if (revised < m && (source === n || lcs[source * width + revised + 1]! >= lcs[(source + 1) * width + revised]!)) {
+      const sourceOffset = source < n ? sourceTokens[source]!.start : before.length;
+      open ??= { start: sourceOffset, end: sourceOffset, replacement: '' };
+      open.replacement += revisedTokens[revised]!.text;
+      revised += 1;
+    } else {
+      open ??= { start: sourceTokens[source]!.start, end: sourceTokens[source]!.start, replacement: '' };
+      open.end = sourceTokens[source]!.end;
+      source += 1;
+    }
+  }
+  flush();
+  return result;
+}
+
+type RunSpan = { start: number; end: number; run: Element; signature: string };
+
+function runSpans(paragraph: Element): RunSpan[] {
+  let offset = 0;
+  return getParagraphRuns(paragraph).filter((run) => run.text.length > 0).map((run) => {
+    const span = { start: offset, end: offset + run.text.length, run: run.r, signature: directRunPropertySignature(run.r) };
+    offset = span.end;
+    return span;
+  });
+}
+
+function uniqueSourceTemplate(spans: RunSpan[], sourceText: string, needle: string, id: string): Element {
+  const start = sourceText.indexOf(needle);
+  if (!needle || start < 0 || sourceText.indexOf(needle, start + needle.length) >= 0) {
+    throw new DocxMarkdocError('INVALID_FORMAT_SOURCE', `Paragraph ${id} format-source must identify one non-empty source substring.`);
+  }
+  const touched = spans.filter((span) => span.start < start + needle.length && span.end > start);
+  const signatures = new Set(touched.map((span) => span.signature));
+  if (touched.length === 0 || signatures.size !== 1) {
+    throw new DocxMarkdocError('AMBIGUOUS_FORMAT_SOURCE', `Paragraph ${id} format-source crosses multiple run formats.`);
+  }
+  return touched[0]!.run;
+}
+
+function templateForHunk(
+  spans: RunSpan[],
+  hunk: TextHunk,
+  sourceText: string,
+  id: string,
+  explicit?: string,
+): Element {
+  if (explicit !== undefined) return uniqueSourceTemplate(spans, sourceText, explicit, id);
+  const touched = spans.filter((span) => span.start < hunk.end && span.end > hunk.start);
+  if (touched.length > 0) {
+    const signatures = new Set(touched.map((span) => span.signature));
+    if (signatures.size === 1) return touched[0]!.run;
+  } else {
+    const left = [...spans].reverse().find((span) => span.end <= hunk.start);
+    const right = spans.find((span) => span.start >= hunk.start);
+    if (left && right && left.signature === right.signature) return left.run;
+    if (!left && right) return right.run;
+    if (left && !right) return left.run;
+  }
+  throw new DocxMarkdocError(
+    'MIXED_FORMATTING_REQUIRES_DETAIL',
+    `Paragraph ${id} replacement crosses a formatting boundary; inspect normalized runs and set format-source to a unique source substring.`,
+  );
+}
+
+function replacePreservingMixedFormatting(
+  document: DocxDocument,
+  id: string,
+  before: string,
+  after: string,
+  formatSource?: string,
+): void {
+  const paragraph = assertAdmittedStructure(document, id);
+  const spans = runSpans(paragraph);
+  const hunks = textHunks(before, after);
+  for (const hunk of [...hunks].reverse()) {
+    const replacement: ReplacementPart[] = hunk.replacement.length === 0
+      ? []
+      : [{ text: hunk.replacement, templateRun: templateForHunk(spans, hunk, before, id, formatSource) }];
+    document.replaceTextAtRange({ targetParagraphId: id, start: hunk.start, end: hunk.end, replaceText: replacement });
   }
 }
 
@@ -167,7 +291,7 @@ async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise
       });
       continue;
     }
-    assertUniformFormatting(document, operation.id);
+    assertAdmittedStructure(document, operation.id);
     const original = document.getParagraphTextById(operation.id);
     if (original === null) throw new DocxMarkdocError('MISSING_ANCHOR', `Paragraph ${operation.id} was not found.`);
     if (operation.kind === 'delete-source') {
@@ -175,12 +299,13 @@ async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise
       paragraph?.parentNode?.removeChild(paragraph);
       continue;
     }
-    document.replaceTextAtRange({
-      targetParagraphId: operation.id,
-      start: 0,
-      end: original.length,
-      replaceText: operation.revisedText,
-    });
+    replacePreservingMixedFormatting(
+      document,
+      operation.id,
+      original,
+      operation.revisedText,
+      operation.kind === 'replace-source' ? operation.formatSource : undefined,
+    );
   }
   return (await document.toBuffer({ cleanBookmarks: false })).buffer;
 }

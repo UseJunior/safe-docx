@@ -86,11 +86,26 @@ formatting cannot be preserved under that policy without ambiguity.
 - **WHEN** clean and tracked outputs are produced
 - **THEN** the revised text SHALL inherit the admitted source paragraph and run properties
 
+#### Scenario: [SDX-MDOC-09] Localized edits preserve mixed source formatting
+- **GIVEN** a source paragraph containing multiple coalesced run-formatting classes
+- **AND** every replacement lies wholly within one source formatting class
+- **WHEN** clean and tracked outputs are produced
+- **THEN** unchanged spans SHALL retain their source run properties
+- **AND** inserted replacement text SHALL inherit the formatting class of its deleted source span
+- **AND** deleting the whole paragraph SHALL require no run-formatting choice
+
 #### Scenario: [SDX-MDOC-10] Mixed-format boundary requests detail instead of guessing
 - **GIVEN** an edit boundary spanning incompatible run properties under the declared policy
 - **WHEN** compilation cannot choose one inherited result deterministically
 - **THEN** compilation SHALL fail with a diagnostic identifying the anchor and required selective detail
 - **AND** SHALL NOT silently flatten or choose formatting
+
+#### Scenario: [SDX-MDOC-10] Explicit source span resolves an ambiguous boundary
+- **GIVEN** an insertion or replacement whose implicit formatting source is ambiguous
+- **AND** the operation names a unique source substring occupying one coalesced formatting class
+- **WHEN** compilation runs
+- **THEN** inserted text SHALL inherit that source substring's run properties
+- **AND** a missing, repeated, or mixed-format source substring SHALL fail validation
 
 ### Requirement: Inspection detail is generated and non-canonical
 

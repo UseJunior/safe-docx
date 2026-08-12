@@ -174,6 +174,18 @@ Compilation produces a verification certificate. Success requires:
 
 ## Implementation findings
 
+- **2026-08-12 — mixed formatting was refused at paragraph granularity:** The
+  first replay rejected every change to a paragraph as soon as it saw two
+  direct run-property signatures, even when each changed phrase was wholly
+  inside one formatting class. That safety rule prevented ordinary founding-
+  member and witness-line cleanup. Replay now aligns the clean before/after
+  states into bounded minimal source ranges, leaves unchanged runs in place,
+  and gives new text the unique formatting class of its deleted span. A true
+  boundary ambiguity still fails closed; `format-source` can name one unique,
+  single-format source substring. Synthetic mixed-emphasis replacement and
+  mixed-format whole-paragraph deletion regressions prove clean formatting and
+  accept/reject round trips.
+
 - **2026-08-12 — full-workspace preflight is independently blocked:** The new
   package build, lint, 10 focused tests, spec coverage, conformance checks, and
   strict OpenSpec validation pass. The full workspace build on current

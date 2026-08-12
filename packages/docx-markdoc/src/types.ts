@@ -28,6 +28,8 @@ export type ReplaceSourceOperation = SourceParagraph & {
   kind: 'replace-source';
   operationId: string;
   format: 'inherit-source-paragraph';
+  /** Optional unique source text whose run formatting new text inherits. */
+  formatSource?: string;
 };
 
 export type DeleteSourceOperation = SourceParagraph & {

@@ -29,6 +29,7 @@ export const markdocConfig: Config = {
         style: stringRequired,
         operation: stringRequired,
         format: { type: String, required: true, matches: ['inherit-source-paragraph'] },
+        'format-source': { type: String },
       },
     },
     before: {},
@@ -194,7 +195,13 @@ export function parseMarkdoc(source: string): ValidationResult {
       scaffold.push(paragraph);
       operations.push(afterText === ''
         ? { kind: 'delete-source', operationId, format: 'inherit-source-paragraph', ...paragraph }
-        : { kind: 'replace-source', operationId, format: 'inherit-source-paragraph', ...paragraph });
+        : {
+          kind: 'replace-source',
+          operationId,
+          format: 'inherit-source-paragraph',
+          formatSource: a['format-source'] === undefined ? undefined : String(a['format-source']),
+          ...paragraph,
+        });
       continue;
     }
 
