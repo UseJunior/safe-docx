@@ -165,7 +165,7 @@ export interface AtomizerOptions {
    * - 'rebuild': rebuild document.xml from atoms (best reject/accept idempotency)
    * - 'inplace': modify the revised document AST in place (experimental)
    *
-   * Default: 'rebuild'
+   * Default: {@link DEFAULT_RECONSTRUCTION_MODE}.
    */
   reconstructionMode?: ReconstructionMode;
   /** Optional Lean 4 XML triple verifier for inplace outputs. */

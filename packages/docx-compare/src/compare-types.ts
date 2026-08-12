@@ -22,7 +22,7 @@ export interface CompareOptions {
    * - 'rebuild': rebuild document.xml from scratch (more reject/accept stable)
    * - 'inplace': modify the revised document AST in place (more experimental)
    *
-   * Default: 'rebuild'
+   * Default: {@link DEFAULT_RECONSTRUCTION_MODE}.
    */
   reconstructionMode?: ReconstructionMode;
   /**

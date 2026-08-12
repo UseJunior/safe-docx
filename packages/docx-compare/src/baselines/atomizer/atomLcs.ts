@@ -9,6 +9,12 @@ import type { ComparisonUnitAtom } from '@usejunior/docx-core';
 import { CorrelationStatus } from '@usejunior/docx-core';
 import { EMPTY_PARAGRAPH_TAG, getIdentityId } from '../../atomizer.js';
 import { debug } from './debug.js';
+import {
+  revisionProvenance,
+  subtreeSignature,
+  type PropertyDelta,
+  type RevisionProvenance,
+} from './taggedTree.js';
 
 /**
  * Represents a match between atoms in original and revised documents.
@@ -30,6 +36,108 @@ export interface LcsResult {
   deletedIndices: number[];
   /** Indices of atoms only in revised (inserted) */
   insertedIndices: number[];
+}
+
+/** The atomization unit used before this alignment was run. */
+export type AlignmentGranularity = 'run' | 'word';
+
+/** A side-tagged counterpart of an LCS result that leaves LCS matching untouched. */
+export interface TaggedAtomAlignment {
+  tag: 'both' | 'original' | 'revised';
+  original?: ComparisonUnitAtom;
+  revised?: ComparisonUnitAtom;
+  propertyDelta?: PropertyDelta;
+  originalProvenance: RevisionProvenance[];
+  revisedProvenance: RevisionProvenance[];
+}
+
+export interface TaggedAtomLcsResult {
+  lcs: LcsResult;
+  granularity: AlignmentGranularity;
+  alignments: TaggedAtomAlignment[];
+}
+
+function directRunDelta(
+  original: ComparisonUnitAtom,
+  revised: ComparisonUnitAtom,
+): PropertyDelta | undefined {
+  const originalProps = original.rPr ?? null;
+  const revisedProps = revised.rPr ?? null;
+  const originalXml = originalProps ? subtreeSignature(originalProps) : '';
+  const revisedXml = revisedProps ? subtreeSignature(revisedProps) : '';
+  if (originalXml === revisedXml) return undefined;
+  return {
+    scope: 'run',
+    original: originalProps,
+    revised: revisedProps,
+    changedProperties: ['directRunProperties'],
+  };
+}
+
+/**
+ * Emit side tags from the existing LCS result without changing its equality,
+ * tie-breaking, or status-mutating consumer path.
+ */
+export function tagAtomLcs(
+  original: ComparisonUnitAtom[],
+  revised: ComparisonUnitAtom[],
+  lcs: LcsResult,
+  granularity: AlignmentGranularity,
+): TaggedAtomLcsResult {
+  const alignments: TaggedAtomAlignment[] = [];
+  // Hierarchical similarity can pair crossing groups. A flat tagged stream
+  // cannot represent both crossing pairs without reversing one projection, so
+  // preserve the legacy LCS evidence but emit those pairs side-only here.
+  const matchesByOriginal = new Map<number, AtomMatch>();
+  const matchedOriginal = new Set<number>();
+  const matchedRevised = new Set<number>();
+  let previousRevisedIndex = -1;
+  for (const match of [...lcs.matches].sort((a, b) => a.originalIndex - b.originalIndex)) {
+    if (match.revisedIndex <= previousRevisedIndex) continue;
+    matchesByOriginal.set(match.originalIndex, match);
+    matchedOriginal.add(match.originalIndex);
+    matchedRevised.add(match.revisedIndex);
+    previousRevisedIndex = match.revisedIndex;
+  }
+  let originalIndex = 0;
+  let revisedIndex = 0;
+
+  while (originalIndex < original.length || revisedIndex < revised.length) {
+    while (originalIndex < original.length && !matchedOriginal.has(originalIndex)) {
+      const atom = original[originalIndex++]!;
+      alignments.push({ tag: 'original', original: atom, originalProvenance: revisionProvenance(atom.contentElement), revisedProvenance: [] });
+    }
+    while (revisedIndex < revised.length && !matchedRevised.has(revisedIndex)) {
+      const atom = revised[revisedIndex++]!;
+      alignments.push({ tag: 'revised', revised: atom, originalProvenance: [], revisedProvenance: revisionProvenance(atom.contentElement) });
+    }
+    const match = matchesByOriginal.get(originalIndex);
+    if (match && match.revisedIndex === revisedIndex) {
+      const originalAtom = original[originalIndex++]!;
+      const revisedAtom = revised[match.revisedIndex]!;
+      revisedIndex = match.revisedIndex + 1;
+      alignments.push({
+        tag: 'both', original: originalAtom, revised: revisedAtom,
+        propertyDelta: directRunDelta(originalAtom, revisedAtom),
+        originalProvenance: revisionProvenance(originalAtom.contentElement),
+        revisedProvenance: revisionProvenance(revisedAtom.contentElement),
+      });
+      continue;
+    }
+    // The only remaining case is a revised-side unmatched node preceding a
+    // later match. It must be emitted first to preserve revised document order.
+    if (revisedIndex < revised.length) continue;
+  }
+  return { lcs, granularity, alignments };
+}
+
+/** Run the existing matcher and return its independent side-tagged evidence. */
+export function computeTaggedAtomLcs(
+  original: ComparisonUnitAtom[],
+  revised: ComparisonUnitAtom[],
+  granularity: AlignmentGranularity = 'run',
+): TaggedAtomLcsResult {
+  return tagAtomLcs(original, revised, computeAtomLcs(original, revised), granularity);
 }
 
 /**

@@ -4,7 +4,9 @@ import { testAllure, type AllureBddContext } from '../../testing/allure-test.js'
 import { el } from '../../testing/dom-test-helpers.js';
 import {
   assertTaggedTree,
+  nextRevisionId,
   project,
+  revisionProvenance,
   ProjectionContractError,
   verifyTaggedTree,
   type BothNode,
@@ -314,6 +316,56 @@ describe('side-tagged comparison tree', () => {
 
       await and('the assert form throws rather than letting the tree continue', () => {
         expect(() => assertTaggedTree(original, revised, tree)).toThrow(ProjectionContractError);
+      });
+    },
+  );
+
+  test.openspec('Pre-existing tracked changes are represented by construction invariants')(
+    'aligned content retains each side revision nesting and reserves non-colliding IDs',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      const originalText = el('w:t', {}, undefined, 'shared');
+      const revisedText = el('w:t', {}, undefined, 'shared');
+      const original = el('w:body', {}, [
+        el('w:ins', { 'w:id': '17', 'w:author': 'Original Author', 'w:date': '2024-01-01T00:00:00Z' }, [
+          el('w:del', { 'w:id': '18', 'w:author': 'Second Original Author', 'w:date': '2024-01-02T00:00:00Z' }, [
+            el('w:r', {}, [originalText]),
+          ]),
+        ]),
+      ]);
+      const revised = el('w:body', {}, [
+        el('w:ins', { 'w:id': '42', 'w:author': 'Revised Author', 'w:date': '2024-02-01T00:00:00Z' }, [
+          el('w:r', {}, [revisedText]),
+        ]),
+      ]);
+      let originalProvenance: ReturnType<typeof revisionProvenance> = [];
+      let revisedProvenance: ReturnType<typeof revisionProvenance> = [];
+      let firstAllocatedId = 0;
+
+      await given('matched content under stacked revisions from multiple authors', () => {
+        expect(originalText.textContent).toBe(revisedText.textContent);
+      });
+
+      await when('the aligner captures each input side revision lineage', () => {
+        originalProvenance = revisionProvenance(originalText);
+        revisedProvenance = revisionProvenance(revisedText);
+        firstAllocatedId = nextRevisionId(original, revised);
+      });
+
+      await then('the original lineage preserves nesting, author, and date on every boundary fragment', () => {
+        expect(originalProvenance).toEqual([
+          { kind: 'w:ins', id: '17', author: 'Original Author', date: '2024-01-01T00:00:00Z' },
+          { kind: 'w:del', id: '18', author: 'Second Original Author', date: '2024-01-02T00:00:00Z' },
+        ]);
+      });
+
+      await and('the revised lineage remains independently available to the serializer', () => {
+        expect(revisedProvenance).toEqual([
+          { kind: 'w:ins', id: '42', author: 'Revised Author', date: '2024-02-01T00:00:00Z' },
+        ]);
+      });
+
+      await and('comparison revisions allocate the first identifier not present in either input', () => {
+        expect(firstAllocatedId).toBe(1);
       });
     },
   );

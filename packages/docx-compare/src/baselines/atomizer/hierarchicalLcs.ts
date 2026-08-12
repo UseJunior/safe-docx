@@ -15,7 +15,13 @@
 import type { ComparisonUnitAtom } from '@usejunior/docx-core';
 import { CorrelationStatus } from '@usejunior/docx-core';
 import { EMPTY_PARAGRAPH_TAG, getIdentityId, IdentityInterner } from '../../atomizer.js';
-import { computeAtomLcs, type LcsResult } from './atomLcs.js';
+import {
+  computeAtomLcs,
+  tagAtomLcs,
+  type AlignmentGranularity,
+  type LcsResult,
+  type TaggedAtomLcsResult,
+} from './atomLcs.js';
 import { debug } from './debug.js';
 
 /**
@@ -1025,6 +1031,21 @@ export function hierarchicalCompare(
     deletedIndices,
     insertedIndices,
   };
+}
+
+/**
+ * Additive side-tagged evidence for the existing hierarchical alignment.
+ * The legacy LCS result remains the authoritative output consumed by the
+ * correlation-status path.
+ */
+export function hierarchicalCompareTagged(
+  originalAtoms: ComparisonUnitAtom[],
+  revisedAtoms: ComparisonUnitAtom[],
+  options: HierarchicalCompareOptions = {},
+  granularity: AlignmentGranularity = 'run',
+): TaggedAtomLcsResult {
+  const lcs = hierarchicalCompare(originalAtoms, revisedAtoms, options);
+  return tagAtomLcs(originalAtoms, revisedAtoms, lcs, granularity);
 }
 
 /**

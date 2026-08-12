@@ -4,19 +4,19 @@ in `proposal.md` and are separate changes.
 
 ## 1. Representation and projections (no production caller)
 
-- [ ] 1.1 Add `TaggedNode` / `TaggedTree` to
+- [x] 1.1 Add `TaggedNode` / `TaggedTree` to
       `packages/docx-compare/src/baselines/atomizer/taggedTree.ts`, with `both`
       carrying **both** side representatives plus an optional scoped
       `PropertyDelta`.
-- [ ] 1.2 Define `PropertyDelta` by scope (run, paragraph mark, paragraph, row,
+- [x] 1.2 Define `PropertyDelta` by scope (run, paragraph mark, paragraph, row,
       cell, section), recording direct OOXML snapshots per side. Do not resolve
       through the style chain or `docDefaults` — out of scope.
-- [ ] 1.3 Implement `project(tree, side)` as a total fold.
-- [ ] 1.4 Implement the P1-P5 isomorphism checks against an
+- [x] 1.3 Implement `project(tree, side)` as a total fold.
+- [x] 1.4 Implement the P1-P5 isomorphism checks against an
       (original, revised, tree) triple, without serialization.
-- [ ] 1.5 Property-test P1-P5, including the rejected-counterexample case:
+- [x] 1.5 Property-test P1-P5, including the rejected-counterexample case:
       original `[A,B]`, revised `[B,A]`, tree `[both(B),both(A)]` must fail P2.
-- [ ] 1.6 Add the `TEST_FEATURE` constant and single-line `.openspec(...)` tags
+- [x] 1.6 Add the `TEST_FEATURE` constant and single-line `.openspec(...)` tags
       for the new scenarios in a dedicated test file (one feature per file), and
       regenerate the traceability matrix — never hand-edit it.
 

@@ -71,6 +71,68 @@ export interface PropertyDelta {
   changedProperties: string[];
 }
 
+/** Metadata retained from an input revision wrapper rather than flattened into text. */
+export interface RevisionProvenance {
+  kind: 'w:ins' | 'w:del' | 'w:moveFrom' | 'w:moveTo';
+  id: string | null;
+  author: string | null;
+  date: string | null;
+}
+
+const REVISION_WRAPPER_TAGS = new Set<RevisionProvenance['kind']>([
+  'w:ins',
+  'w:del',
+  'w:moveFrom',
+  'w:moveTo',
+]);
+
+/**
+ * Return the enclosing input revision wrappers from outermost to innermost.
+ *
+ * This is construction metadata: serializers decide how a comparison revision
+ * nests inside it, while projections continue to use the side representative.
+ */
+export function revisionProvenance(element: WmlElement): RevisionProvenance[] {
+  const wrappers: RevisionProvenance[] = [];
+  let current: Element | null = element;
+  while (current) {
+    if (REVISION_WRAPPER_TAGS.has(current.tagName as RevisionProvenance['kind'])) {
+      wrappers.unshift({
+        kind: current.tagName as RevisionProvenance['kind'],
+        id: current.getAttribute('w:id'),
+        author: current.getAttribute('w:author'),
+        date: current.getAttribute('w:date'),
+      });
+    }
+    current = current.parentElement;
+  }
+  return wrappers;
+}
+
+/**
+ * First safe ID for comparison revisions after examining both preserved inputs.
+ * Existing IDs are never reused, even when the two documents contain different
+ * authors or revision kinds with the same decimal identifier.
+ */
+export function nextRevisionId(originalRoot: WmlElement, revisedRoot: WmlElement): number {
+  const used = new Set<string>();
+  for (const root of [originalRoot, revisedRoot]) {
+    const elements = [root, ...Array.from(root.getElementsByTagName('*'))];
+    for (const element of elements) {
+      const rawId = element.getAttribute('w:id');
+      if (rawId === null || !/^[+-]?\d+$/.test(rawId.trim())) continue;
+      try {
+        used.add(BigInt(rawId.trim()).toString());
+      } catch {
+        // Ignore values outside BigInt's grammar, matching the live allocator.
+      }
+    }
+  }
+  let next = 1;
+  while (used.has(String(next))) next++;
+  return next;
+}
+
 /**
  * Fields shared by every tagged node.
  *
@@ -222,7 +284,7 @@ const SIGNATURE_SEPARATOR = '\u0001';
  * `a="x b=y"` and `a="x" b="y"` collapse to the same string — and a false
  * equality here silently passes a wrong projection.
  */
-function elementSignature(element: WmlElement): string {
+export function elementSignature(element: WmlElement): string {
   const attrs: Array<[string, string, string]> = [];
   const attributes = element.attributes;
   for (let i = 0; i < attributes.length; i++) {
@@ -261,7 +323,7 @@ function elementSignature(element: WmlElement): string {
  * processing instructions do not participate. Content that depends on those
  * distinctions surviving must not be modeled as opaque payload here.
  */
-function subtreeSignature(element: WmlElement): string {
+export function subtreeSignature(element: WmlElement): string {
   const parts: string[] = [elementSignature(element)];
   for (const child of childElements(element)) {
     parts.push(subtreeSignature(child));
