@@ -384,9 +384,9 @@ export async function compileMarkdoc(
     && certificate.rejectAllEqualsSource
     && certificate.acceptAllEqualsClean
     && certificate.unchangedPackagePartsPreserved;
-  certificate.passed = certificate.projectionPassed;
   certificate.deliveryReady = certificate.projectionPassed && certificate.draftCompletenessPassed;
-  if (!certificate.passed) throw new DocxMarkdocError('VERIFICATION_FAILED', 'Strict replay verification failed.', {
+  certificate.passed = certificate.deliveryReady;
+  if (!certificate.projectionPassed) throw new DocxMarkdocError('VERIFICATION_FAILED', 'Strict replay verification failed.', {
     certificate,
     sourceText,
     rejectedText,

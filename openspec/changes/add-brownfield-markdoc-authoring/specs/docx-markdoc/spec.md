@@ -175,6 +175,7 @@ NOT imply that every required drafting decision was implemented.
 - **GIVEN** a required drafting decision naming an operation that is absent from the canonical edit plan
 - **WHEN** the remaining edit plan compiles to an exact accept/reject projection
 - **THEN** projection verification SHALL pass
+- **AND** the aggregate `passed` verdict SHALL be false
 - **AND** the requirement SHALL be reported as blocked
 - **AND** draft completeness and delivery readiness SHALL fail
 

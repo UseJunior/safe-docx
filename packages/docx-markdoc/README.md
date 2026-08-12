@@ -43,10 +43,16 @@ Remove the obsolete block without leaving a heading or signature remnant.
 An incomplete atomic change set fails before mutation, so its surviving members
 cannot apply alone. An unsatisfied requirement or failed `present`/`absent`
 assertion does not falsify a successful accept/reject projection; instead it
-sets `draftCompletenessPassed` and `deliveryReady` to `false`. The compatibility
-field `certificate.passed` continues to report the projection verdict and is
-also available under the clearer name `projectionPassed`. Consumers deciding
-whether an artifact may be delivered MUST use `deliveryReady`.
+sets `draftCompletenessPassed` and `deliveryReady` to `false`. The aggregate
+field `certificate.passed` is deliberately conservative and is true only when
+`deliveryReady` is true. Exact accept/reject replay is reported solely by
+`projectionPassed`. Consumers that previously treated `passed` as projection-
+only evidence MUST migrate to `projectionPassed`; consumers gating publication
+on `passed` remain fail-safe. The API may return diagnostic clean/redline
+buffers for an incomplete draft, but they MUST NOT be published when `passed`
+or `deliveryReady` is false. A projection failure still throws
+`VERIFICATION_FAILED`; an incomplete draft returns its distinct completeness
+report so callers can repair it.
 
 A requirement may be waived only with an explicit authority and non-empty
 human-supplied reason. The package records these values verbatim and does not

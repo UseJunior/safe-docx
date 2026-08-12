@@ -291,7 +291,7 @@ Remove the obsolete certification block as one drafting decision.
     const result = await compileMarkdoc(imported.anchoredSource, markdoc);
 
     expect(result.certificate).toMatchObject({
-      passed: true,
+      passed: false,
       projectionPassed: true,
       draftCompletenessPassed: false,
       deliveryReady: false,
@@ -302,6 +302,8 @@ Remove the obsolete certification block as one drafting decision.
     expect(result.certificate.completeness.assertions).toEqual([
       expect.objectContaining({ id: 'no-legacy-remnant', passed: false }),
     ]);
+    expect(result.clean).toBeInstanceOf(Buffer);
+    expect(result.tracked).toBeInstanceOf(Buffer);
   });
 
   it('[SDX-MDOC-18] accepts only an explicit human-supplied waiver and records it in the delivery certificate', async () => {

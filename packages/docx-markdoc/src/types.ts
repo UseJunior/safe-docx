@@ -110,11 +110,12 @@ export type VerificationCertificate = {
   unchangedPackagePartsPreserved: boolean;
   unsupportedStructures: string[];
   appliedOperations: string[];
-  /** Existing projection/replay verdict. Retained for v1 compatibility. */
+  /** Exact source/reject and clean/accept replay verdict. */
   projectionPassed: boolean;
   draftCompletenessPassed: boolean;
   deliveryReady: boolean;
   completeness: DraftCompletenessReport;
+  /** Conservative aggregate verdict: true only when the artifact is delivery-ready. */
   passed: boolean;
 };
 
