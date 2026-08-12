@@ -133,6 +133,24 @@ function uniqueSourceTemplate(spans: RunSpan[], sourceText: string, needle: stri
   return touched[0]!.run;
 }
 
+function insertionFormatSource(document: DocxDocument, operation: InsertOperation): string | undefined {
+  const sourceId = operation.styleSourceId ?? operation.anchorId;
+  const paragraph = assertAdmittedStructure(document, sourceId);
+  const sourceText = document.getParagraphTextById(sourceId);
+  if (sourceText === null) throw new DocxMarkdocError('MISSING_ANCHOR', `Insertion formatting source ${sourceId} was not found.`);
+  const spans = runSpans(paragraph);
+  const signatures = new Set(spans.map((span) => span.signature));
+  if (signatures.size <= 1) return operation.formatSource;
+  if (operation.formatSource === undefined) {
+    throw new DocxMarkdocError(
+      'MIXED_FORMATTING_REQUIRES_DETAIL',
+      `Insertion ${operation.operationId} uses mixed-format source ${sourceId}; set format-source to a unique source substring.`,
+    );
+  }
+  uniqueSourceTemplate(spans, sourceText, operation.formatSource, sourceId);
+  return operation.formatSource;
+}
+
 function templateForHunk(
   spans: RunSpan[],
   hunk: TextHunk,
@@ -284,11 +302,13 @@ async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise
   const document = await DocxDocument.load(sourceBuffer);
   for (const operation of ir.operations) {
     if (isInsertOperation(operation)) {
+      const runStyleSourceText = insertionFormatSource(document, operation);
       document.insertParagraph({
         positionalAnchorNodeId: operation.anchorId,
         relativePosition: operation.kind === 'insert-before' ? 'BEFORE' : 'AFTER',
         newText: operation.revisedText,
         styleSourceId: operation.styleSourceId,
+        runStyleSourceText,
       });
       continue;
     }

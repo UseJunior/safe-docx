@@ -108,6 +108,9 @@ author may resolve that ambiguity by naming one unique source substring:
 exactly once and occupy one coalesced formatting class; it does not change the
 before/after text or relax source verification. Deleting a mixed-format
 paragraph requires no formatting choice and therefore remains admitted.
+The same attribute applies to `insert-before` and `insert-after` when their
+anchor or `style-source` paragraph has mixed character formatting; without it,
+such an insertion fails closed rather than choosing the longest source run.
 
 The canonical Markdoc is compact. `inspectMarkdocSource` generates normalized
 formatting detail for selected paragraphs when an edit needs it. With no IDs it

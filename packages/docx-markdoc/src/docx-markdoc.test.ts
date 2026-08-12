@@ -359,7 +359,61 @@ Use the current name.
       { id: 'rename-unit', complete: true, appliedOperations: ['rename'], missingOperations: [] },
     ]);
   });
+
+  it('[SDX-MDOC-10] requires and applies an exact run source for insertion from a mixed numbered paragraph', async () => {
+    const original = await buildSyntheticDocx({ paragraphs: ['Defined item — source details.', 'Following text.'] });
+    const styled = await DocxDocument.load(original);
+    const sourceParagraph = styled.getParagraphs()[0]!;
+    setParagraphRuns(sourceParagraph, [
+      { text: 'Defined item', bold: true },
+      { text: ' — source details.' },
+    ]);
+    addDirectNumbering(sourceParagraph, '7', '1');
+    const imported = await importDocxToMarkdoc((await styled.toBuffer({ cleanBookmarks: false })).buffer);
+    const sourceId = requireMarkdoc(imported.markdoc).scaffold[0]!.id;
+    const insertion = [
+      `{% insert-after anchor="${sourceId}" operation="insert-item" style-source="${sourceId}" %}`,
+      '{% after %}', 'Inserted item.', '{% /after %}', '{% /insert-after %}',
+    ].join('\n');
+    await expect(compileMarkdoc(imported.anchoredSource, `${imported.markdoc}\n${insertion}`))
+      .rejects.toMatchObject({ code: 'MIXED_FORMATTING_REQUIRES_DETAIL' });
+
+    const resolved = insertion.replace(
+      'style-source="',
+      'format-source="Defined item" style-source="',
+    );
+    const result = await compileMarkdoc(imported.anchoredSource, `${imported.markdoc}\n${resolved}`);
+    expect(result.certificate).toMatchObject({ passed: true, rejectAllEqualsSource: true, acceptAllEqualsClean: true });
+    const clean = await DocxDocument.load(result.clean);
+    expect(clean.buildDocumentView().nodes.map((node) => node.raw_text)).toEqual([
+      'Defined item — source details.', 'Inserted item.', 'Following text.',
+    ]);
+    expect(runFormatProjection(clean.getParagraphs()[1]!)).toEqual([{ text: 'Inserted item.', bold: true }]);
+    expect(directChild(directChild(clean.getParagraphs()[1]!, 'pPr')!, 'numPr')?.toString()).toContain('w:numId');
+  });
 });
+
+function directChild(parent: Element, localName: string): Element | undefined {
+  return Array.from(parent.childNodes)
+    .find((child): child is Element => child.nodeType === 1 && (child as Element).localName === localName);
+}
+
+function addDirectNumbering(paragraph: Element, numId: string, level: string): void {
+  const doc = paragraph.ownerDocument!;
+  let pPr = directChild(paragraph, 'pPr');
+  if (!pPr) {
+    pPr = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:pPr');
+    paragraph.insertBefore(pPr, paragraph.firstChild);
+  }
+  const numPr = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:numPr');
+  const ilvl = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:ilvl');
+  ilvl.setAttribute('w:val', level);
+  const number = doc.createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:numId');
+  number.setAttribute('w:val', numId);
+  numPr.appendChild(ilvl);
+  numPr.appendChild(number);
+  pPr.appendChild(numPr);
+}
 
 function setParagraphRuns(paragraph: Element, runs: Array<{ text: string; bold?: boolean }>): void {
   const doc = paragraph.ownerDocument!;

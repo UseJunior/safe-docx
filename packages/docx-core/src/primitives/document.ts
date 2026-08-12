@@ -706,8 +706,10 @@ export class DocxDocument {
     newText: string;
     newParagraphId?: string;
     styleSourceId?: string;
+    /** Unique visible text in the formatting source whose run properties are cloned. */
+    runStyleSourceText?: string;
   }, ctx?: RevisionContext): { newParagraphId: string; newParagraphIds: string[]; styleSourceFallback?: boolean } {
-    const { positionalAnchorNodeId, relativePosition, newText, newParagraphId: _newParagraphId, styleSourceId } = params;
+    const { positionalAnchorNodeId, relativePosition, newText, newParagraphId: _newParagraphId, styleSourceId, runStyleSourceText } = params;
     const anchor = findParagraphByBookmarkId(this.documentXml, positionalAnchorNodeId);
     if (!anchor) throw new Error(`Anchor paragraph not found: ${positionalAnchorNodeId}`);
     const anchorP = anchor;
@@ -885,14 +887,40 @@ export class DocxDocument {
       return anchorP.nextSibling;
     }
 
-    // Choose a run in the formatting source to use as formatting template: pick the run with the most visible text.
+    // Choose a run in the formatting source to use as formatting template. A
+    // caller may pin one unique visible source substring; legacy callers retain
+    // the predominant-run behavior.
     const sourceVisibleRuns = getParagraphRuns(formattingSource);
     let templateRun: Element | null = null;
     let bestLen = -1;
-    for (const tr of sourceVisibleRuns) {
-      if (tr.text.length > bestLen) {
-        bestLen = tr.text.length;
-        templateRun = tr.r;
+    if (runStyleSourceText !== undefined) {
+      const sourceText = sourceVisibleRuns.map((run) => run.text).join('');
+      const start = sourceText.indexOf(runStyleSourceText);
+      if (!runStyleSourceText || start < 0 || sourceText.indexOf(runStyleSourceText, start + runStyleSourceText.length) >= 0) {
+        throw new Error('runStyleSourceText must identify one non-empty substring in the formatting source paragraph');
+      }
+      let offset = 0;
+      const selectedRuns: Element[] = [];
+      for (const tr of sourceVisibleRuns) {
+        if (start < offset + tr.text.length && start + runStyleSourceText.length > offset) {
+          selectedRuns.push(tr.r);
+        }
+        offset += tr.text.length;
+      }
+      const runPropertySignatures = new Set(selectedRuns.map((run) => {
+        const rPr = getDirectChildrenByName(run, W.rPr)[0];
+        return rPr?.toString() ?? '';
+      }));
+      if (selectedRuns.length === 0 || runPropertySignatures.size !== 1) {
+        throw new Error('runStyleSourceText must occupy one direct run-formatting class');
+      }
+      templateRun = selectedRuns[0]!;
+    } else {
+      for (const tr of sourceVisibleRuns) {
+        if (tr.text.length > bestLen) {
+          bestLen = tr.text.length;
+          templateRun = tr.r;
+        }
       }
     }
     if (!templateRun) {

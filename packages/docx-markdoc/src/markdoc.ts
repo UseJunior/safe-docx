@@ -58,6 +58,7 @@ export const markdocConfig: Config = {
         anchor: stringRequired,
         operation: stringRequired,
         'style-source': { type: String },
+        'format-source': { type: String },
       },
     },
     'insert-after': {
@@ -65,6 +66,7 @@ export const markdocConfig: Config = {
         anchor: stringRequired,
         operation: stringRequired,
         'style-source': { type: String },
+        'format-source': { type: String },
       },
     },
     rationale: {
@@ -253,6 +255,7 @@ export function parseMarkdoc(source: string): ValidationResult {
         anchorId: String(a.anchor ?? ''),
         revisedText: afterNodes[0] ? textProjection(afterNodes[0], 'revised') : '',
         styleSourceId: a['style-source'] === undefined ? undefined : String(a['style-source']),
+        formatSource: a['format-source'] === undefined ? undefined : String(a['format-source']),
       });
       if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
       operationIds.add(operationId);

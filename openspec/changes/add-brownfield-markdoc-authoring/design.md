@@ -196,6 +196,15 @@ Compilation produces a verification certificate. Success requires:
   and fail-before-mutation atomic groups prevent an exact projection from being
   mistaken for a complete deliverable.
 
+- **2026-08-12 — insertion inherited the longest mixed-format run:** The core
+  insertion primitive historically chose the source paragraph's longest run as
+  its character-format template. That was reasonable for generic insertion but
+  violated Markdoc's fail-closed contract when `style-source` was mixed. Markdoc
+  now requires a unique single-format `format-source` substring for that case,
+  and the core primitive accepts and validates that exact run source. A mixed-
+  format numbered source regression proves both paragraph-numbering inheritance
+  and the selected character formatting through accept/reject round trips.
+
 - **2026-08-12 — full-workspace preflight is independently blocked:** The new
   package build, lint, 10 focused tests, spec coverage, conformance checks, and
   strict OpenSpec validation pass. The full workspace build on current

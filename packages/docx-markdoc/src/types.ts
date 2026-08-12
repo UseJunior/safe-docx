@@ -68,6 +68,8 @@ export type InsertOperation = {
   anchorId: string;
   revisedText: string;
   styleSourceId?: string;
+  /** Optional unique style-source text whose run formatting inserted text inherits. */
+  formatSource?: string;
 };
 
 export type EditOperation =
