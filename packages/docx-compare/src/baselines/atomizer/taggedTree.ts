@@ -8,9 +8,14 @@
  * keeps whichever one passes an accept/reject round trip.
  *
  * This module provides the representation that removes the need to search: a
- * single tree in which every node records which side(s) it belongs to. The two
- * projections are then folds over that tree, and their fidelity to the inputs
- * is a property that can be established before anything is serialized.
+ * single tree in which every node records which side(s) it belongs to, and two
+ * projections that fold it back down to each input.
+ *
+ * **Scope.** What this establishes is *IR projection fidelity* — that each
+ * projection reproduces its input side. Serializer correctness, accept/reject
+ * semantics, and package/story assembly are three further layers, each with its
+ * own evidence. An empty violation list says nothing about them, and the
+ * runtime accept/reject checks in `pipeline.ts` are not made redundant by it.
  *
  * Stage A (this module) is additive and has no production caller. See
  * `openspec/changes/refactor-tagged-tree-redline-construction/`.
@@ -37,6 +42,16 @@ export type PropertyScope =
   | 'tableCell'
   | 'section';
 
+/** The direct property element each scope is carried by. */
+export const PROPERTY_SCOPE_ELEMENT: Readonly<Record<PropertyScope, string>> = {
+  run: 'w:rPr',
+  paragraphMark: 'w:rPr',
+  paragraph: 'w:pPr',
+  tableRow: 'w:trPr',
+  tableCell: 'w:tcPr',
+  section: 'w:sectPr',
+};
+
 /**
  * A formatting difference between the two representatives of a `both` node.
  *
@@ -57,6 +72,20 @@ export interface PropertyDelta {
 }
 
 /**
+ * Fields shared by every tagged node.
+ *
+ * `opaque` marks a subtree the IR deliberately does not model: the element is
+ * carried whole and `children` stays empty. It has to be explicit, because an
+ * empty `children` array is also what an *incomplete* construction looks like.
+ * A representation that cannot tell "I chose not to model this" from "I forgot
+ * to model this" will certify the second as the first.
+ */
+interface TaggedNodeBase {
+  children: TaggedNode[];
+  opaque?: true;
+}
+
+/**
  * A node present on both sides.
  *
  * It carries **two** element representatives because matched is not the same as
@@ -65,26 +94,23 @@ export interface PropertyDelta {
  * say which side's attributes each projection should emit, which is what forces
  * formatting differences into delete+insert pairs in the flat-atom pipeline.
  */
-export interface BothNode {
+export interface BothNode extends TaggedNodeBase {
   tag: 'both';
   original: WmlElement;
   revised: WmlElement;
   propertyDelta?: PropertyDelta;
-  children: TaggedNode[];
 }
 
 /** A node present only in the original document — a deletion. */
-export interface OriginalNode {
+export interface OriginalNode extends TaggedNodeBase {
   tag: 'original';
   node: WmlElement;
-  children: TaggedNode[];
 }
 
 /** A node present only in the revised document — an insertion. */
-export interface RevisedNode {
+export interface RevisedNode extends TaggedNodeBase {
   tag: 'revised';
   node: WmlElement;
-  children: TaggedNode[];
 }
 
 export type TaggedNode = BothNode | OriginalNode | RevisedNode;
@@ -107,14 +133,15 @@ export function representative(node: TaggedNode, side: Side): WmlElement | undef
 export interface ProjectedNode {
   element: WmlElement;
   children: ProjectedNode[];
+  /** Carried through so the verifier can tell modeled from unmodeled nodes. */
+  opaque: boolean;
 }
 
 /**
  * Fold a tagged tree down to one side.
  *
  * Total by construction: every node either contributes its representative for
- * `side` or is dropped, and no case is left unhandled. `accept` corresponds to
- * `project(tree, 'revised')` and `reject` to `project(tree, 'original')`.
+ * `side` or is dropped, and no case is left unhandled.
  */
 export function project(node: TaggedNode, side: Side): ProjectedNode | undefined {
   const element = representative(node, side);
@@ -124,7 +151,7 @@ export function project(node: TaggedNode, side: Side): ProjectedNode | undefined
     const projected = project(child, side);
     if (projected !== undefined) children.push(projected);
   }
-  return { element, children };
+  return { element, children, opaque: node.opaque === true };
 }
 
 /** Fold a forest of tagged nodes down to one side. */
@@ -153,15 +180,15 @@ export function projectAll(nodes: TaggedNode[], side: Side): ProjectedNode[] {
  * obligation would certify a redline that reads back wrong.
  */
 export type ProjectionObligation =
-  /** Every input-side node corresponds to exactly one projected node. */
+  /** Every input-side element corresponds to exactly one projected node. */
   | 'P1-bijection'
   /** Sibling order in the projection equals sibling order in the input. */
   | 'P2-order'
   /** Parent/child relationships are preserved. */
   | 'P3-containment'
-  /** Side-specific text, attributes and properties are the side's own. */
+  /** Side-specific namespace, name, attributes and text are the side's own. */
   | 'P4-content'
-  /** Unmodeled subtrees are reproduced verbatim. */
+  /** An explicitly opaque subtree is carried through equivalent to its input. */
   | 'P5-opaque-payload';
 
 export interface ProjectionViolation {
@@ -175,25 +202,39 @@ export interface ProjectionViolation {
 /**
  * Separator between sibling signatures.
  *
- * Explicit and named because a signature is only meaningful if every producer
- * uses the same one: a mismatch here makes two identical subtrees compare
- * unequal and silently disables the ordering check that depends on them.
+ * U+0001 is not a legal XML 1.0 character, so it cannot occur in document data
+ * and cannot be forged by content. Named and explicit because a signature is
+ * only meaningful if every producer uses the same one: an earlier revision
+ * joined on a stray NUL in one of two places, which made identical subtrees
+ * compare unequal and silently disabled the ordering check that depends on them.
  */
 const SIGNATURE_SEPARATOR = '\u0001';
 
 /**
- * Structural signature of an element's own identity — tag name, attributes, and
- * its immediate text, excluding descendants (which are compared separately as
- * their own nodes).
+ * Structural signature of an element's own identity.
+ *
+ * Identity is namespace URI plus local name, never the lexical `tagName`:
+ * prefixes are aliasable, so two elements in different namespaces can share a
+ * `tagName` and two elements in the same namespace can differ in it.
+ *
+ * Attributes and text are encoded with `JSON.stringify` rather than
+ * concatenated around delimiters. Delimiter-joined encoding is not injective —
+ * `a="x b=y"` and `a="x" b="y"` collapse to the same string — and a false
+ * equality here silently passes a wrong projection.
  */
 function elementSignature(element: WmlElement): string {
-  const attrs: string[] = [];
+  const attrs: Array<[string, string, string]> = [];
   const attributes = element.attributes;
   for (let i = 0; i < attributes.length; i++) {
     const attr = attributes.item(i);
-    if (attr) attrs.push(`${attr.name}=${attr.value}`);
+    if (!attr) continue;
+    // Namespace declarations describe the serialization rather than the
+    // content, and the writer re-emits them; comparing them would report a
+    // difference where the projected content is the same.
+    if (attr.name === 'xmlns' || attr.name.startsWith('xmlns:')) continue;
+    attrs.push([attr.namespaceURI ?? '', attr.localName ?? attr.name, attr.value]);
   }
-  attrs.sort();
+  attrs.sort((a, b) => (a[0] === b[0] ? a[1].localeCompare(b[1]) : a[0].localeCompare(b[0])));
 
   let ownText = '';
   for (let i = 0; i < element.childNodes.length; i++) {
@@ -203,10 +244,23 @@ function elementSignature(element: WmlElement): string {
     }
   }
 
-  return `${element.tagName}|${attrs.join(' ')}|${ownText}`;
+  return JSON.stringify([
+    element.namespaceURI ?? '',
+    element.localName ?? element.tagName,
+    attrs,
+    ownText,
+  ]);
 }
 
-/** Serialized form of a subtree, for the P5 verbatim comparison. */
+/**
+ * Signature of a whole input subtree.
+ *
+ * This is the **canonical equivalence** P5 is defined against, and it is
+ * deliberately not byte equality: attribute order is normalized, adjacent text
+ * nodes are concatenated, CDATA and text are treated alike, and comments and
+ * processing instructions do not participate. Content that depends on those
+ * distinctions surviving must not be modeled as opaque payload here.
+ */
 function subtreeSignature(element: WmlElement): string {
   const parts: string[] = [elementSignature(element)];
   for (const child of childElements(element)) {
@@ -215,15 +269,9 @@ function subtreeSignature(element: WmlElement): string {
   return parts.join(SIGNATURE_SEPARATOR);
 }
 
-/**
- * Serialized form of a projected subtree.
- *
- * A projected node with no children stands for its whole element, so it signs
- * as the full input subtree would — that is what lets an unmodeled (opaque)
- * subtree compare equal to the input it was carried from.
- */
+/** Signature of a projected subtree, mirroring {@link subtreeSignature}. */
 function projectedSubtreeSignature(node: ProjectedNode): string {
-  if (node.children.length === 0) return subtreeSignature(node.element);
+  if (node.opaque) return subtreeSignature(node.element);
   const parts: string[] = [elementSignature(node.element)];
   for (const child of node.children) {
     parts.push(projectedSubtreeSignature(child));
@@ -239,12 +287,8 @@ function childPath(path: string, element: WmlElement, ordinal: number): string {
  * Verify that `projected` is isomorphic to `input` under P1-P5.
  *
  * Runs against the tree without serializing it, in time linear in the size of
- * the input side.
- *
- * Scope: this establishes **IR projection fidelity** only. Serializer
- * correctness, accept/reject semantics, and package/story assembly are separate
- * layers with their own evidence, and a clean result here does not speak to
- * them.
+ * the input side. Establishes IR projection fidelity only — see this module's
+ * header for the three layers it does not speak to.
  */
 export function verifyProjection(
   input: WmlElement,
@@ -271,36 +315,42 @@ export function verifyProjection(
       path,
       detail:
         `projected <${projected.element.tagName}> does not carry the ${side} ` +
-        `side's own name, attributes or text`,
+        `side's own namespace, name, attributes or text`,
     });
   }
 
   const inputChildren = childElements(input);
 
-  // A tree node with no children stands for the whole input subtree, so the
-  // subtree must survive verbatim rather than being silently dropped.
-  if (projected.children.length === 0 && inputChildren.length > 0) {
+  // An opaque node stands for its whole subtree by explicit declaration, so the
+  // subtree is compared as a unit and its children are not separately accounted.
+  if (projected.opaque) {
     if (subtreeSignature(projected.element) !== subtreeSignature(input)) {
       violations.push({
         obligation: 'P5-opaque-payload',
         side,
         path,
         detail:
-          `unmodeled subtree under <${input.tagName}> is not reproduced ` +
-          `verbatim in the ${side} projection`,
+          `opaque subtree under <${input.tagName}> is not equivalent to the ` +
+          `${side} input subtree it stands for`,
       });
     }
     return violations;
   }
 
+  // Not opaque: every input child must be accounted for. This is the case an
+  // implicit "no children means opaque" convention silently certified — a tree
+  // that forgot its descendants was indistinguishable from one that carried
+  // them whole, and passed clean.
   if (projected.children.length !== inputChildren.length) {
     violations.push({
-      obligation: 'P3-containment',
+      obligation:
+        inputChildren.length > projected.children.length ? 'P1-bijection' : 'P3-containment',
       side,
       path,
       detail:
         `<${input.tagName}> has ${inputChildren.length} child element(s) on the ` +
-        `${side} side but ${projected.children.length} in the projection`,
+        `${side} side but ${projected.children.length} in the projection; a subtree ` +
+        `that is deliberately unmodeled must be marked opaque`,
     });
   }
 
@@ -308,9 +358,6 @@ export function verifyProjection(
   // projection must reproduce are a *sequence*, so when the same set comes back
   // in a different order the defect is the order — recursing first would report
   // it as a pile of content mismatches deeper down and name the wrong thing.
-  // This is the case that a coverage-only obligation cannot see at all:
-  // original [A, B] against revised [B, A], tagged [both(B), both(A)], has every
-  // input node present exactly once and is still wrong.
   const inputSignatures = inputChildren.map(subtreeSignature);
   const projectedSignatures = projected.children.map(projectedSubtreeSignature);
   const sameSequence =
@@ -343,8 +390,9 @@ export function verifyProjection(
   for (let i = 0; i < shared; i++) {
     const inputChild = inputChildren[i]!;
     const projectedChild = projected.children[i]!;
-    const here = childPath(path, inputChild, i + 1);
-    violations.push(...verifyProjection(inputChild, projectedChild, side, here));
+    violations.push(
+      ...verifyProjection(inputChild, projectedChild, side, childPath(path, inputChild, i + 1)),
+    );
   }
 
   for (let i = shared; i < inputChildren.length; i++) {
@@ -361,12 +409,64 @@ export function verifyProjection(
 }
 
 /**
- * Verify both projections of a tagged tree against the documents it was built
- * from.
+ * Check that a property delta is internally consistent: its snapshots are the
+ * element its scope names, and it records something on at least one side.
  *
- * This is the whole obligation of the aligner. When it returns empty, the
- * round-trip property holds by construction of the tree rather than by
- * inspecting serialized output.
+ * Whether the snapshots agree with the node's representatives is the aligner's
+ * obligation, and stage A has no aligner — so it is deliberately not checked.
+ */
+export function verifyPropertyDelta(delta: PropertyDelta, path: string): ProjectionViolation[] {
+  const violations: ProjectionViolation[] = [];
+  const expected = PROPERTY_SCOPE_ELEMENT[delta.scope];
+
+  for (const side of ['original', 'revised'] as const) {
+    const snapshot = delta[side];
+    if (snapshot !== null && snapshot.tagName !== expected) {
+      violations.push({
+        obligation: 'P4-content',
+        side,
+        path,
+        detail:
+          `property delta at ${delta.scope} scope carries <${snapshot.tagName}> on the ` +
+          `${side} side, but ${delta.scope} scope is carried by <${expected}>`,
+      });
+    }
+  }
+
+  if (delta.original === null && delta.revised === null) {
+    violations.push({
+      obligation: 'P4-content',
+      side: 'original',
+      path,
+      detail: `property delta at ${delta.scope} scope records no snapshot on either side`,
+    });
+  }
+
+  return violations;
+}
+
+/** Walk the tree and verify every property delta it carries. */
+function verifyDeltas(node: TaggedNode, path: string): ProjectionViolation[] {
+  const violations: ProjectionViolation[] = [];
+  if (node.tag === 'both' && node.propertyDelta) {
+    violations.push(...verifyPropertyDelta(node.propertyDelta, path));
+  }
+  node.children.forEach((child, i) => {
+    const element = child.tag === 'both' ? child.original : child.node;
+    violations.push(...verifyDeltas(child, childPath(path, element, i + 1)));
+  });
+  return violations;
+}
+
+/**
+ * Verify both projections of a tagged tree against the documents it was built
+ * from, plus the internal consistency of any property deltas.
+ *
+ * An empty result establishes **IR projection fidelity**: each projection
+ * reproduces its input side. It does not establish serializer correctness,
+ * accept/reject semantics, or package assembly — those are separate layers, and
+ * the runtime round-trip checks covering them today are not made redundant by
+ * this.
  */
 export function verifyTaggedTree(
   originalRoot: WmlElement,
@@ -376,21 +476,20 @@ export function verifyTaggedTree(
   return [
     ...verifyProjection(originalRoot, project(tree, 'original'), 'original'),
     ...verifyProjection(revisedRoot, project(tree, 'revised'), 'revised'),
+    ...verifyDeltas(tree, originalRoot.tagName),
   ];
 }
 
 /** Formats violations for an error message or a divergence report. */
 export function describeViolations(violations: ProjectionViolation[]): string {
-  return violations
-    .map((v) => `${v.obligation} [${v.side}] at ${v.path}: ${v.detail}`)
-    .join('\n');
+  return violations.map((v) => `${v.obligation} [${v.side}] at ${v.path}: ${v.detail}`).join('\n');
 }
 
 /**
  * Error raised when a constructed tree fails its projection obligations.
  *
  * A violation is an engine defect, not something a downstream pass repairs —
- * the pipeline it replaces reacts to a failed check by trying a different
+ * the pipeline this replaces reacts to a failed check by trying a different
  * atomization, which is what lets an incomplete checker ship a wrong redline.
  */
 export class ProjectionContractError extends Error {
