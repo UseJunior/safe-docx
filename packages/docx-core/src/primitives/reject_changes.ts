@@ -326,13 +326,21 @@ function relocateBookmarks(p: Element, paragraphsToRemove: Set<Element>): void {
     }
   }
 
-  // Also check sibling bookmarks (sibling-style: <bookmarkStart/><p/><bookmarkEnd/>)
+  // Also check sibling bookmarks that actually ENVELOP this paragraph
+  // (sibling-style: <bookmarkStart/><p/><bookmarkEnd/>). Merely moving every
+  // consecutive bookmark beside the paragraph corrupts adjacent, unrelated
+  // Safe DOCX paragraph anchors—for example, a deleted source paragraph may
+  // leave its empty start/end pair immediately after an inserted paragraph.
+  // A sibling bookmark belongs to this paragraph only when the start on the
+  // left and end on the right share the same w:id.
+  const precedingStarts = new Map<string, Element>();
   let prev: Node | null = p.previousSibling;
   while (prev) {
     if (prev.nodeType === 1) {
       const el = prev as Element;
-      if (isW(el, 'bookmarkStart') || isW(el, 'bookmarkEnd')) {
-        toMove.push(el);
+      if (isW(el, 'bookmarkStart')) {
+        const id = el.getAttributeNS(W_NS, 'id') ?? el.getAttribute('w:id');
+        if (id !== null) precedingStarts.set(id, el);
         prev = prev.previousSibling;
         continue;
       }
@@ -340,12 +348,14 @@ function relocateBookmarks(p: Element, paragraphsToRemove: Set<Element>): void {
     }
     prev = prev.previousSibling;
   }
+  const followingEnds = new Map<string, Element>();
   let next: Node | null = p.nextSibling;
   while (next) {
     if (next.nodeType === 1) {
       const el = next as Element;
-      if (isW(el, 'bookmarkStart') || isW(el, 'bookmarkEnd')) {
-        toMove.push(el);
+      if (isW(el, 'bookmarkEnd')) {
+        const id = el.getAttributeNS(W_NS, 'id') ?? el.getAttribute('w:id');
+        if (id !== null) followingEnds.set(id, el);
         next = next.nextSibling;
         continue;
       }
@@ -353,14 +363,18 @@ function relocateBookmarks(p: Element, paragraphsToRemove: Set<Element>): void {
     }
     next = next.nextSibling;
   }
+  for (const [id, start] of precedingStarts) {
+    const end = followingEnds.get(id);
+    if (end) toMove.push(start, end);
+  }
 
+  const firstNonPPr = Array.from(target.childNodes).find(
+    (n) => !(n.nodeType === 1 && isW(n as Element, 'pPr')),
+  ) ?? null;
   for (const bm of toMove) {
     // Insert at the beginning of the target paragraph (after pPr if present)
-    const firstNonPPr = Array.from(target.childNodes).find(
-      (n) => !(n.nodeType === 1 && isW(n as Element, 'pPr')),
-    );
     if (bm.parentNode) bm.parentNode.removeChild(bm);
-    target.insertBefore(bm, firstNonPPr ?? null);
+    target.insertBefore(bm, firstNonPPr);
   }
 }
 
