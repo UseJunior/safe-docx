@@ -160,7 +160,7 @@ export interface AtomizerOptions {
    * Default: true.
    */
   premergeRuns?: boolean;
-  /** Decline word refinement when it would create more revision ranges. */
+  /** Decline one candidate run's word refinement when it would create more revision ranges. */
   maxWordRefinementChangeRanges?: number;
   /**
    * How to reconstruct the output:

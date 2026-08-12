@@ -197,6 +197,64 @@ describe('selective word refinement for aligned paragraphs (#717)', () => {
     });
   });
 
+  test('budgets each aligned run independently so one dense rewrite does not coarsen sparse edits', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    const changedRuns = [
+      ['alpha agreement shall remain effective throughout each annual reporting period', 'alpha agreement will remain effective throughout each annual reporting period'],
+      ['beta committee shall review records during each quarterly reporting period', 'beta committee will review records during each quarterly reporting period'],
+      ['gamma adviser shall deliver notices during each monthly reporting period', 'gamma adviser will deliver notices during each monthly reporting period'],
+      ['dense a one b two c three d four e stable tail', 'dense a uno b dos c tres d cuatro e stable tail'],
+    ] as const;
+    const originalAtoms = await given('three sparse paragraph edits and one dense paragraph rewrite', () =>
+      changedRuns.flatMap(([original], paragraphIndex) => [
+        comparisonAtom(`Unique aligned prefix ${paragraphIndex}. `, paragraphIndex),
+        comparisonAtom(original, paragraphIndex),
+        comparisonAtom(` Unique aligned suffix ${paragraphIndex}.`, paragraphIndex),
+      ]),
+    );
+    const revisedAtoms = changedRuns.flatMap(([, revised], paragraphIndex) => [
+      comparisonAtom(`Unique aligned prefix ${paragraphIndex}. `, paragraphIndex),
+      comparisonAtom(revised, paragraphIndex),
+      comparisonAtom(` Unique aligned suffix ${paragraphIndex}.`, paragraphIndex),
+    ]);
+    const denseOriginal = originalAtoms[10]!;
+    const denseRevised = revisedAtoms[10]!;
+    const interner = new IdentityInterner();
+    assignIdentityIds(originalAtoms, interner);
+    assignIdentityIds(revisedAtoms, interner);
+
+    const refined = await when('word refinement receives a six-range budget per candidate pair', () =>
+      refineFuzzyRunsWithinAlignedParagraphs(
+        originalAtoms,
+        revisedAtoms,
+        hierarchicalCompare(originalAtoms, revisedAtoms),
+        DEFAULT_MOVE_DETECTION_SETTINGS,
+        interner,
+        6,
+      ),
+    );
+
+    await then('all three sparse changed runs remain word-refined', () => {
+      expect(refined.refinedPairCount).toBe(3);
+      const matched = refined.lcsResult.matches.map((match) =>
+        getAtomText(refined.originalAtoms[match.originalIndex]!),
+      );
+      expect(matched).toEqual(expect.arrayContaining(['agreement', 'committee', 'adviser']));
+    });
+
+    await and('only the dense changed pair remains as its original coarse atoms', () => {
+      expect(refined.originalAtoms).toContain(denseOriginal);
+      expect(refined.revisedAtoms).toContain(denseRevised);
+      expect(refined.originalAtoms).not.toContain(originalAtoms[1]);
+      expect(refined.originalAtoms).not.toContain(originalAtoms[4]);
+      expect(refined.originalAtoms).not.toContain(originalAtoms[7]);
+    });
+  });
+
   test('refines a containment-heavy aligned run below the move threshold', async ({
     given,
     when,

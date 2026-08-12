@@ -19,9 +19,10 @@ export interface CompareOptions {
   premergeRuns?: boolean;
   /**
    * Maximum contiguous inserted/deleted ranges that selective word refinement
-   * may create. When refinement would exceed this budget, the comparer keeps
-   * the coarser run-level replacement. Omit to preserve unrestricted surgical
-   * refinement.
+   * may create for one candidate aligned run pair. When that pair would exceed
+   * the budget, the comparer keeps its coarser run-level replacement without
+   * disabling sparse refinement elsewhere. Omit to preserve unrestricted
+   * surgical refinement.
    */
   maxWordRefinementChangeRanges?: number;
   /**
