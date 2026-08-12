@@ -158,6 +158,45 @@ describe('selective word refinement for aligned paragraphs (#717)', () => {
     });
   });
 
+  test('keeps a dense rewrite coarse when word refinement exceeds the review budget', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const originalAtoms = await given('an aligned paragraph with four scattered substitutions', () => [
+      comparisonAtom('Exact prefix. '),
+      comparisonAtom('a one b two c three d four e f g h'),
+      comparisonAtom(' Exact suffix.'),
+    ]);
+    const revisedAtoms = await given('the corresponding dense revised run', () => [
+      comparisonAtom('Exact prefix. '),
+      comparisonAtom('a uno b dos c tres d cuatro e f g h'),
+      comparisonAtom(' Exact suffix.'),
+    ]);
+    const interner = new IdentityInterner();
+    assignIdentityIds(originalAtoms, interner);
+    assignIdentityIds(revisedAtoms, interner);
+    const initialLcs = hierarchicalCompare(originalAtoms, revisedAtoms);
+
+    const refined = await when('word refinement is limited to six change ranges', () =>
+      refineFuzzyRunsWithinAlignedParagraphs(
+        originalAtoms,
+        revisedAtoms,
+        initialLcs,
+        DEFAULT_MOVE_DETECTION_SETTINGS,
+        interner,
+        6,
+      ),
+    );
+
+    await then('the changed run remains a single coarse replacement', () => {
+      expect(refined.refinedPairCount).toBe(0);
+      expect(refined.originalAtoms).toBe(originalAtoms);
+      expect(refined.revisedAtoms).toBe(revisedAtoms);
+      expect(refined.lcsResult).toBe(initialLcs);
+    });
+  });
+
   test('refines a containment-heavy aligned run below the move threshold', async ({
     given,
     when,

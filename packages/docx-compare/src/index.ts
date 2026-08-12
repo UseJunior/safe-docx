@@ -96,6 +96,7 @@ export async function compareDocuments(
     detectMoves,
     reconstructionMode,
     premergeRuns,
+    maxWordRefinementChangeRanges,
     leanXmlVerifier,
   } = options;
 
@@ -120,6 +121,7 @@ export async function compareDocuments(
           : { detectMoves },
       reconstructionMode,
       premergeRuns,
+      maxWordRefinementChangeRanges,
       leanXmlVerifier,
     });
   }

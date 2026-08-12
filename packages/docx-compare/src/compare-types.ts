@@ -18,6 +18,13 @@ export interface CompareOptions {
    */
   premergeRuns?: boolean;
   /**
+   * Maximum contiguous inserted/deleted ranges that selective word refinement
+   * may create. When refinement would exceed this budget, the comparer keeps
+   * the coarser run-level replacement. Omit to preserve unrestricted surgical
+   * refinement.
+   */
+  maxWordRefinementChangeRanges?: number;
+  /**
    * How to reconstruct the output DOCX when using the atomizer engine:
    * - 'rebuild': rebuild document.xml from scratch (more reject/accept stable)
    * - 'inplace': modify the revised document AST in place (more experimental)

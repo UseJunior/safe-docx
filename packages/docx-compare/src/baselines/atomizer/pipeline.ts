@@ -160,6 +160,8 @@ export interface AtomizerOptions {
    * Default: true.
    */
   premergeRuns?: boolean;
+  /** Decline word refinement when it would create more revision ranges. */
+  maxWordRefinementChangeRanges?: number;
   /**
    * How to reconstruct the output:
    * - 'rebuild': rebuild document.xml from atoms (best reject/accept idempotency)
@@ -830,6 +832,7 @@ async function compareDocumentsAtomizerCore(
     formatDetection = {},
     numbering = {},
     premergeRuns = true,
+    maxWordRefinementChangeRanges,
     reconstructionMode = DEFAULT_RECONSTRUCTION_MODE,
     leanXmlVerifier,
   } = options;
@@ -1006,6 +1009,7 @@ async function compareDocumentsAtomizerCore(
         lcsResult,
         moveSettings,
         identityInterner,
+        maxWordRefinementChangeRanges,
       );
       originalAtoms = refined.originalAtoms;
       revisedAtoms = refined.revisedAtoms;

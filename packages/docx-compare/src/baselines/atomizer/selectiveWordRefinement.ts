@@ -49,6 +49,7 @@ export function refineFuzzyRunsWithinAlignedParagraphs(
   lcsResult: LcsResult,
   moveSettings: MoveDetectionSettings,
   identityInterner: IdentityInterner,
+  maxChangeRanges?: number,
 ): SelectiveWordRefinementResult {
   const alignedParagraphPairs = new Set<string>();
   for (const match of lcsResult.matches) {
@@ -149,10 +150,28 @@ export function refineFuzzyRunsWithinAlignedParagraphs(
   );
   assignIdentityIds(refinedOriginal, identityInterner);
   assignIdentityIds(refinedRevised, identityInterner);
+  const refinedLcs = hierarchicalCompare(refinedOriginal, refinedRevised);
+  if (maxChangeRanges !== undefined) {
+    if (!Number.isInteger(maxChangeRanges) || maxChangeRanges < 1) {
+      throw new RangeError('maxChangeRanges must be a positive integer');
+    }
+    const countRanges = (indices: number[]): number =>
+      indices.reduce(
+        (ranges, index, position) =>
+          ranges + (position === 0 || index !== indices[position - 1]! + 1 ? 1 : 0),
+        0,
+      );
+    const ranges =
+      countRanges(refinedLcs.deletedIndices) +
+      countRanges(refinedLcs.insertedIndices);
+    if (ranges > maxChangeRanges) {
+      return { originalAtoms, revisedAtoms, lcsResult, refinedPairCount: 0 };
+    }
+  }
   return {
     originalAtoms: refinedOriginal,
     revisedAtoms: refinedRevised,
-    lcsResult: hierarchicalCompare(refinedOriginal, refinedRevised),
+    lcsResult: refinedLcs,
     refinedPairCount: splitOriginal.size,
   };
 }

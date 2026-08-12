@@ -173,6 +173,9 @@ export async function compileMarkdoc(
     author: options.author ?? 'Markdoc',
     date: options.date,
     reconstructionMode: 'inplace',
+    // Dense rewrites are easier to review as a coarser replacement than as
+    // scattered word-level "confetti". Small surgical edits remain refined.
+    maxWordRefinementChangeRanges: 6,
   });
   const tracked = comparison.document;
   const acceptedDoc = await DocxDocument.load(tracked);
