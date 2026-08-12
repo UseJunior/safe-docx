@@ -10,12 +10,26 @@
  * second call captured the first call's no-op as its "original" and restored
  * it last, permanently silencing console.log for the whole process.
  *
- * This test drives the REAL server binary over stdio — the same entry MCP
- * clients use — with real legal documents, issues two overlapping
- * compare_documents tools/call requests (the exact interleaving the old
- * workaround corrupted), and asserts that every line the server writes to
- * stdout parses as a JSON-RPC message. No unit-level substitute can catch a
- * reintroduced stdout emit anywhere on the comparison path; this does.
+ * These tests drive the REAL server binary over stdio — the same entry MCP
+ * clients use — with real legal documents, and assert that every line the
+ * server writes to stdout parses as a JSON-RPC message: once with two
+ * back-to-back compare_documents tools/call requests, and once with
+ * DOCX_COMPARISON_DEBUG=1 so opt-in comparison diagnostics are live (issue
+ * #820: those diagnostics used to go through console.log and corrupt the
+ * stream). No unit-level substitute can catch a reintroduced stdout emit
+ * anywhere on the comparison path; this does.
+ *
+ * Scope note: the back-to-back requests exercise concurrent dispatch but do
+ * NOT establish a deterministic overlap, and a clean protocol stream does not
+ * prove console.log survived (responses are written with process.stdout.write).
+ * The deterministic regression for the #809 console.log race is
+ * src/tools/compare_documents_console_identity.test.ts.
+ *
+ * Standalone-run note: the spawned server resolves @usejunior/docx-compare and
+ * @usejunior/docx-core to their built dist/ via workspace resolution. Standard
+ * workspace scripts build first; if you run this file directly (e.g.
+ * `node ../../node_modules/vitest/vitest.mjs run src/integration/...`), run
+ * `npm run build` at the repo root first or you will exercise stale output.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import fs from 'node:fs/promises';
@@ -60,13 +74,15 @@ class StdioProbe {
   private readonly responseWaiters = new Map<number, (msg: JsonRpcMessage) => void>();
   private readonly responses = new Map<number, JsonRpcMessage>();
 
-  constructor() {
+  constructor(envOverrides: Record<string, string> = {}) {
     // Spawn the real CLI entry (`safedocx serve`) via tsx so the test runs the
-    // same server MCP clients launch, without requiring a prebuilt dist/.
+    // same server MCP clients launch, without requiring a prebuilt docx-mcp
+    // dist/ (workspace dependencies still resolve to their dist/ — see the
+    // standalone-run note in the file header).
     this.child = spawn(process.execPath, ['--import', 'tsx', CLI_ENTRY, 'serve'], {
       cwd: PACKAGE_DIR,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env },
+      env: { ...process.env, ...envOverrides },
     });
     this.child.stdout.setEncoding('utf8');
     this.child.stderr.setEncoding('utf8');
@@ -206,7 +222,7 @@ describe('MCP stdio protocol cleanliness under concurrent compare_documents', ()
 
       let resultA: Record<string, unknown>;
       let resultB: Record<string, unknown>;
-      await when('two compare_documents tools/call requests are issued back-to-back so they overlap', async () => {
+      await when('two compare_documents tools/call requests are issued back-to-back', async () => {
         const callParams = (savePath: string) => ({
           name: 'compare_documents',
           arguments: {
@@ -215,10 +231,12 @@ describe('MCP stdio protocol cleanliness under concurrent compare_documents', ()
             save_to_local_path: savePath,
           },
         });
-        // Both requests are written before either response is awaited, so the
-        // server runs the two comparisons concurrently in one process — the
-        // interleaving that left console.log permanently dead under the old
-        // process-global suppression workaround (issue #809).
+        // Both requests are written before either response is awaited, giving
+        // the server the OPPORTUNITY to run the two comparisons concurrently
+        // in one process. This does not deterministically force the overlap
+        // that broke issue #809 — that race is pinned by the injectable-
+        // dependency test in compare_documents_console_identity.test.ts; this
+        // test's job is catching real stdout emissions end-to-end.
         probe!.send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: callParams(outputA) });
         probe!.send({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: callParams(outputB) });
         const [responseA, responseB] = await Promise.all([
@@ -243,6 +261,72 @@ describe('MCP stdio protocol cleanliness under concurrent compare_documents', ()
           }, `non-JSON line on the stdio protocol stream: ${line}`).not.toThrow();
           expect(parsed?.jsonrpc, `stdout line is JSON but not JSON-RPC: ${line}`).toBe('2.0');
         }
+      });
+    },
+    120_000,
+  );
+
+  test(
+    'DOCX_COMPARISON_DEBUG=1 keeps stdout pure JSON-RPC and routes diagnostics to stderr',
+    async ({ given, when, then }: AllureBddContext) => {
+      const tmpDir = await createTrackedTempDir('safe-docx-stdio-debug-');
+      const revisedPath = path.join(tmpDir, 'mutual-nda-revised.docx');
+      const outputPath = path.join(tmpDir, 'redline-debug.docx');
+
+      await given('the real MCP server running over stdio with DOCX_COMPARISON_DEBUG enabled', async () => {
+        await writeMinimallyRevisedCopy(REAL_DOCUMENT, revisedPath);
+        probe = new StdioProbe({ DOCX_COMPARISON_DEBUG: '1' });
+        probe.send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2024-11-05',
+            capabilities: {},
+            clientInfo: { name: 'stdio-debug-probe', version: '0.0.0' },
+          },
+        });
+        const initResponse = await probe.waitForResponse(1, 60_000);
+        expect(initResponse.error).toBeUndefined();
+        probe.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+      });
+
+      let result: Record<string, unknown>;
+      await when('a compare_documents tools/call request runs with debug diagnostics live', async () => {
+        probe!.send({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/call',
+          params: {
+            name: 'compare_documents',
+            arguments: {
+              original_file_path: REAL_DOCUMENT,
+              revised_file_path: revisedPath,
+              save_to_local_path: outputPath,
+            },
+          },
+        });
+        result = parseToolResult(await probe!.waitForResponse(2, 90_000));
+      });
+
+      await then('the comparison succeeds and every stdout line parses as JSON-RPC', async () => {
+        expect(result.success, JSON.stringify(result)).toBe(true);
+        await fs.access(outputPath);
+
+        for (const line of probe!.rawStdoutLines) {
+          let parsed: JsonRpcMessage | undefined;
+          expect(() => {
+            parsed = JSON.parse(line) as JsonRpcMessage;
+          }, `non-JSON line on the stdio protocol stream: ${line}`).not.toThrow();
+          expect(parsed?.jsonrpc, `stdout line is JSON but not JSON-RPC: ${line}`).toBe('2.0');
+        }
+      });
+
+      await then('the debug diagnostics appear on stderr instead of vanishing', () => {
+        // Guards against "fixing" the corruption by deleting the diagnostics:
+        // the enabled debug output must still exist, on the stderr channel.
+        const stderrText = probe!.stderrChunks.join('');
+        expect(stderrText, 'expected DOCX_COMPARISON_DEBUG diagnostics on stderr').toContain('[DEBUG] [');
       });
     },
     120_000,

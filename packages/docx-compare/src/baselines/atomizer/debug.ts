@@ -4,6 +4,12 @@
  * Provides controlled debug logging for the docx-comparison package.
  * Debug output is controlled by the DOCX_COMPARISON_DEBUG environment variable.
  *
+ * ALL output — debug, warn, and error — goes to stderr, never stdout. This
+ * library runs inside the safe-docx MCP server, which speaks newline-delimited
+ * JSON-RPC over stdio; any diagnostic written to stdout corrupts the protocol
+ * stream (issues #783, #809, #820). Do not add console.log /
+ * process.stdout.write here or anywhere on the comparison path.
+ *
  * Usage:
  *   import { debug, warn } from './debug.js';
  *   debug('inPlaceModifier', 'Processing atom', { status: atom.correlationStatus });
@@ -37,6 +43,10 @@ function formatMessage(level: LogLevel, module: string, message: string): string
 /**
  * Log a debug message (only when DOCX_COMPARISON_DEBUG is enabled).
  *
+ * Emits via console.error so diagnostics land on stderr: the MCP server owns
+ * stdout for JSON-RPC, and an enabled debug line on stdout breaks the client's
+ * protocol parser (issue #820).
+ *
  * @param module - The module name (e.g., 'inPlaceModifier', 'atomizer')
  * @param message - The message to log
  * @param data - Optional data to include
@@ -46,9 +56,9 @@ export function debug(module: string, message: string, data?: unknown): void {
 
   const formatted = formatMessage('debug', module, message);
   if (data !== undefined) {
-    console.log(formatted, data);
+    console.error(formatted, data);
   } else {
-    console.log(formatted);
+    console.error(formatted);
   }
 }
 
