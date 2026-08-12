@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildSyntheticDocx, DocxDocument } from '@usejunior/docx-core';
+import JSZip from 'jszip';
+import { buildDocxFromParts, buildSyntheticDocx, DocxDocument, parseXml } from '@usejunior/docx-core';
 import { compileMarkdoc } from './compile.js';
 import { DocxMarkdocError } from './errors.js';
 import { exportAdjacentRevisionPairs, exportEditPairs } from './export.js';
@@ -109,6 +110,57 @@ describe('brownfield Markdoc authoring', () => {
     expect(result.certificate).toMatchObject({ rejectAllEqualsSource: true, acceptAllEqualsClean: true, passed: true });
   });
 
+  it('[SDX-MDOC-05][SDX-MDOC-09][SDX-MDOC-13] edits numbered paragraphs without changing list topology', async () => {
+    const original = await numberedFixture();
+    const imported = await importDocxToMarkdoc(original);
+    const [first, second, third] = requireMarkdoc(imported.markdoc).scaffold;
+    if (!first || !second || !third) throw new Error('numbered fixture paragraphs missing');
+
+    let markdoc = withCanonicalChange(imported.markdoc, 'First item.', 'First item revised.', 'replace-numbered');
+    markdoc = withCanonicalChange(markdoc, 'Second item.', '', 'delete-numbered');
+    markdoc += [
+      `{% insert-after anchor="${first.id}" operation="insert-numbered" style-source="${first.id}" %}`,
+      '{% after %}', 'Inserted item.', '{% /after %}', '{% /insert-after %}', '',
+    ].join('\n');
+
+    const parsedNumbered = parseMarkdoc(markdoc);
+    if (!parsedNumbered.valid) throw new Error(JSON.stringify(parsedNumbered.issues));
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+    const clean = await DocxDocument.load(result.clean);
+    expect(clean.buildDocumentView().nodes.map((node) => node.raw_text)).toEqual([
+      'First item revised.', 'Inserted item.', 'Third item.',
+    ]);
+    expect(result.certificate).toMatchObject({ rejectAllEqualsSource: true, acceptAllEqualsClean: true, passed: true });
+
+    const sourceTopology = await numberingTopology(imported.anchoredSource);
+    const cleanTopology = await numberingTopology(result.clean);
+    expect(sourceTopology.map((entry) => entry.signature)).toEqual([
+      'ListParagraph|7|0|720|360', 'ListParagraph|7|0|720|360', 'ListParagraph|7|0|720|360',
+    ]);
+    expect(cleanTopology.map((entry) => entry.signature)).toEqual([
+      'ListParagraph|7|0|720|360', 'ListParagraph|7|0|720|360', 'ListParagraph|7|0|720|360',
+    ]);
+    expect(cleanTopology.map((entry) => entry.text)).toEqual(['First item revised.', 'Inserted item.', 'Third item.']);
+
+    const accepted = await DocxDocument.load(result.tracked);
+    const rejected = await DocxDocument.load(result.tracked);
+    await accepted.acceptChanges();
+    await rejected.rejectChanges();
+    expect(await numberingTopology((await accepted.toBuffer({ cleanBookmarks: false })).buffer)).toEqual(cleanTopology);
+    expect((await numberingTopology((await rejected.toBuffer({ cleanBookmarks: false })).buffer)).map(({ text, signature }) => ({ text, signature })))
+      .toEqual(sourceTopology.map(({ text, signature }) => ({ text, signature })));
+  });
+
+  it('[SDX-MDOC-06][SDX-MDOC-14] requires an explicit numbered insertion style source and rejects stale sources', async () => {
+    const imported = await importDocxToMarkdoc(await numberedFixture());
+    const first = requireMarkdoc(imported.markdoc).scaffold[0]!;
+    const insertion = (styleSource = '') => `${imported.markdoc}\n{% insert-after anchor="${first.id}" operation="insert"${styleSource} %}\n{% after %}\nInserted.\n{% /after %}\n{% /insert-after %}\n`;
+    await expect(compileMarkdoc(imported.anchoredSource, insertion()))
+      .rejects.toMatchObject({ code: 'NUMBERED_INSERT_REQUIRES_STYLE_SOURCE' });
+    await expect(compileMarkdoc(imported.anchoredSource, insertion(' style-source="_bk_missing"')))
+      .rejects.toMatchObject({ code: 'MISSING_STYLE_SOURCE' });
+  });
+
   it('[SDX-MDOC-16] compares adjacent revisions while retaining only supplied labels', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.'] });
     const imported = await importDocxToMarkdoc(original);
@@ -181,15 +233,46 @@ function getFirstElement(parent: Element, localName: string): Element {
   return element;
 }
 
-function withCanonicalChange(markdoc: string, before: string, after: string): string {
+function withCanonicalChange(markdoc: string, before: string, after: string, operation = 'change'): string {
   const escaped = before.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = new RegExp(`\\{% para ([^\\n]+) %\\}\\n${escaped}\\n\\{% /para %\\}`);
   const match = markdoc.match(pattern);
   if (!match?.[1]) throw new Error(`Fixture paragraph not found: ${before}`);
   return markdoc.replace(pattern, [
-    `{% change ${match[1]} operation="change" format="inherit-source-paragraph" %}`,
+    `{% change ${match[1]} operation="${operation}" format="inherit-source-paragraph" %}`,
     '{% before %}', before, '{% /before %}',
     '{% after %}', after, '{% /after %}',
     '{% /change %}',
   ].join('\n'));
+}
+
+async function numberedFixture(): Promise<Buffer> {
+  const paragraph = (text: string) => [
+    '<w:p>',
+    '<w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr><w:ind w:left="720" w:hanging="360"/></w:pPr>',
+    `<w:r><w:t>${text}</w:t></w:r>`,
+    '</w:p>',
+  ].join('');
+  return buildDocxFromParts({
+    bodyXml: [paragraph('First item.'), paragraph('Second item.'), paragraph('Third item.')].join(''),
+    numberingXml: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum><w:num w:numId="7"><w:abstractNumId w:val="3"/></w:num></w:numbering>',
+  });
+}
+
+async function numberingTopology(buffer: Buffer): Promise<Array<{ text: string; signature: string }>> {
+  const zip = await JSZip.loadAsync(buffer);
+  const xml = await zip.file('word/document.xml')!.async('string');
+  const doc = parseXml(xml);
+  return Array.from(doc.getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'p'))
+    .filter((paragraph) => paragraph.getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'numPr').length > 0)
+    .map((paragraph) => {
+      const value = (name: string, attribute = 'val') => paragraph
+        .getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', name)[0]
+        ?.getAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', attribute) ?? '';
+      const texts = Array.from(paragraph.getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 't'));
+      return {
+        text: texts.map((node) => node.textContent ?? '').join(''),
+        signature: [value('pStyle'), value('numId'), value('ilvl'), value('ind', 'left'), value('ind', 'hanging')].join('|'),
+      };
+    });
 }

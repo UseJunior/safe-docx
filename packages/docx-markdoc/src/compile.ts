@@ -108,15 +108,48 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     if (node.table_context) unsupported.add('tables');
     if (node.footnote_refs?.length) unsupported.add('footnotes');
     if (node.comments?.length) unsupported.add('comments');
-    if (node.numbering.is_auto_numbered) unsupported.add('numbering');
   });
   for (const operation of ir.operations) {
     const id = sourceOperationId(operation);
     if (!id) continue;
     const node = nodes.find((candidate) => candidate.id === id);
     if (!node) throw new DocxMarkdocError('MISSING_ANCHOR', `Operation ${operation.operationId} targets missing paragraph ${id}.`);
-    if (node.table_context || node.footnote_refs?.length || node.comments?.length || node.numbering.is_auto_numbered) {
+    if (node.table_context || node.footnote_refs?.length || node.comments?.length) {
       throw new DocxMarkdocError('UNSUPPORTED_EDIT_STRUCTURE', `Operation ${operation.operationId} intersects unsupported structure at ${id}.`);
+    }
+  }
+  for (const operation of ir.operations.filter(isInsertOperation)) {
+    const anchor = nodes.find((candidate) => candidate.id === operation.anchorId);
+    if (!anchor) {
+      throw new DocxMarkdocError('MISSING_ANCHOR', `Operation ${operation.operationId} targets missing paragraph ${operation.anchorId}.`);
+    }
+    if (anchor.table_context || anchor.footnote_refs?.length || anchor.comments?.length) {
+      throw new DocxMarkdocError('UNSUPPORTED_EDIT_STRUCTURE', `Operation ${operation.operationId} intersects unsupported structure at ${operation.anchorId}.`);
+    }
+    const styleSource = operation.styleSourceId
+      ? nodes.find((candidate) => candidate.id === operation.styleSourceId)
+      : anchor;
+    if (!styleSource) {
+      throw new DocxMarkdocError(
+        'MISSING_STYLE_SOURCE',
+        `Operation ${operation.operationId} names missing style source ${operation.styleSourceId}.`,
+      );
+    }
+    if (styleSource.table_context || styleSource.footnote_refs?.length || styleSource.comments?.length) {
+      throw new DocxMarkdocError(
+        'UNSUPPORTED_EDIT_STRUCTURE',
+        `Operation ${operation.operationId} style source ${styleSource.id} intersects unsupported structure.`,
+      );
+    }
+    // A numbered insertion must state which existing list paragraph supplies
+    // its pPr. Merely being adjacent to a list is not enough: the neighboring
+    // paragraph may be a different level or a list terminator. DocxDocument
+    // then clones that exact pPr, preserving numId, ilvl, style, and ind.
+    if (anchor.numbering.is_auto_numbered && !operation.styleSourceId) {
+      throw new DocxMarkdocError(
+        'NUMBERED_INSERT_REQUIRES_STYLE_SOURCE',
+        `Operation ${operation.operationId} inserts beside numbered paragraph ${anchor.id}; provide style-source explicitly.`,
+      );
     }
   }
   return { unsupported: [...unsupported].sort() };

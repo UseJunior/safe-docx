@@ -35,6 +35,21 @@ Whole-paragraph changes keep both clean states explicit:
 {% /change %}
 ```
 
+Text replacement and deletion of an existing numbered paragraph preserve its
+source `w:pPr`, including paragraph style, `w:numPr`, level, indentation, and
+list identity. Inserting a numbered item requires an explicit existing
+paragraph as the formatting source so the compiler never guesses between an
+adjacent list level and a list terminator:
+
+```markdoc
+{% insert-after anchor="_bk_current_item" operation="add-item" style-source="_bk_current_item" %}
+{% after %}The new numbered item.{% /after %}
+{% /insert-after %}
+```
+
+This supports editing text within existing list topology; changing numbering
+definitions, restarting a list, or changing list levels remains out of scope.
+
 The canonical Markdoc is compact. `inspectMarkdocSource` generates normalized
 formatting detail for selected paragraphs when an edit needs it. With no IDs it
 returns the full document; with `paragraphIds` it returns only those anchors.
