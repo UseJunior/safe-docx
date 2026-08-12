@@ -14,10 +14,12 @@
  * This test pins the defect directly. It mocks the comparison dependency so
  * both tool calls can be paused INSIDE the comparison — the exact interleaving
  * that reproduced #809 — with no reliance on timing, and asserts console.log
- * retains strict identity at every stage. Any implementation that assigns to
- * process-global console methods around the comparison fails here
- * deterministically: mid-flight if it suppresses, at the end if it restores
- * the wrong function.
+ * retains strict identity at every stage: synchronously at dependency entry
+ * (catching a swap that is restored before the caller awaits), mid-flight
+ * while both calls are suspended (catching the across-an-await suppression),
+ * and after both complete (catching the permanent wrong-function restore).
+ * Per-call handling that never mutates the process-global console identities
+ * (e.g. AsyncLocalStorage scoping) is intentionally outside this regression.
  */
 import { describe, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
@@ -110,13 +112,28 @@ describe('compare_documents leaves the process-global console untouched (#809)',
       const gateA = deferred<CompareResult>();
       const gateB = deferred<CompareResult>();
 
+      // Console identities observed synchronously INSIDE the comparison call.
+      // A wrapper that swaps console.log and restores it before the caller
+      // awaits would look intact from the outside; these entry-time records
+      // catch it (peer review of #820).
+      const entryIdentities: Array<{
+        log: typeof console.log;
+        warn: typeof console.warn;
+        error: typeof console.error;
+      }> = [];
+      const recordEntryIdentities = () => {
+        entryIdentities.push({ log: console.log, warn: console.warn, error: console.error });
+      };
+
       await given('a comparison dependency that pauses inside each call', () => {
         vi.mocked(compareDocuments)
           .mockImplementationOnce(() => {
+            recordEntryIdentities();
             enteredA.resolve();
             return gateA.promise;
           })
           .mockImplementationOnce(() => {
+            recordEntryIdentities();
             enteredB.resolve();
             return gateB.promise;
           });
@@ -140,6 +157,17 @@ describe('compare_documents leaves the process-global console untouched (#809)',
             save_to_local_path: outputB,
           });
           await enteredB.promise;
+        });
+
+        await then('the console was untouched at entry to each comparison call', () => {
+          // Fails for a synchronous swap-and-restore around the dependency
+          // call, which the outside-the-call assertions below cannot see.
+          expect(entryIdentities).toHaveLength(2);
+          for (const identities of entryIdentities) {
+            expect(identities.log).toBe(initialConsoleLog);
+            expect(identities.warn).toBe(initialConsoleWarn);
+            expect(identities.error).toBe(initialConsoleError);
+          }
         });
 
         await then('console.log is untouched while both comparisons are in flight', () => {
