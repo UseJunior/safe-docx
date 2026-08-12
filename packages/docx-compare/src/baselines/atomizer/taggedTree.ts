@@ -115,15 +115,22 @@ export function revisionProvenance(element: WmlElement): RevisionProvenance[] {
  * authors or revision kinds with the same decimal identifier.
  */
 export function nextRevisionId(originalRoot: WmlElement, revisedRoot: WmlElement): number {
-  let max = 0;
+  const used = new Set<string>();
   for (const root of [originalRoot, revisedRoot]) {
-    for (const wrapper of Array.from(root.getElementsByTagName('*'))) {
-      if (!REVISION_WRAPPER_TAGS.has(wrapper.tagName as RevisionProvenance['kind'])) continue;
-      const id = Number(wrapper.getAttribute('w:id'));
-      if (Number.isSafeInteger(id) && id >= max) max = id + 1;
+    const elements = [root, ...Array.from(root.getElementsByTagName('*'))];
+    for (const element of elements) {
+      const rawId = element.getAttribute('w:id');
+      if (rawId === null || !/^[+-]?\d+$/.test(rawId.trim())) continue;
+      try {
+        used.add(BigInt(rawId.trim()).toString());
+      } catch {
+        // Ignore values outside BigInt's grammar, matching the live allocator.
+      }
     }
   }
-  return max;
+  let next = 1;
+  while (used.has(String(next))) next++;
+  return next;
 }
 
 /**
@@ -277,7 +284,7 @@ const SIGNATURE_SEPARATOR = '\u0001';
  * `a="x b=y"` and `a="x" b="y"` collapse to the same string — and a false
  * equality here silently passes a wrong projection.
  */
-function elementSignature(element: WmlElement): string {
+export function elementSignature(element: WmlElement): string {
   const attrs: Array<[string, string, string]> = [];
   const attributes = element.attributes;
   for (let i = 0; i < attributes.length; i++) {
@@ -316,7 +323,7 @@ function elementSignature(element: WmlElement): string {
  * processing instructions do not participate. Content that depends on those
  * distinctions surviving must not be modeled as opaque payload here.
  */
-function subtreeSignature(element: WmlElement): string {
+export function subtreeSignature(element: WmlElement): string {
   const parts: string[] = [elementSignature(element)];
   for (const child of childElements(element)) {
     parts.push(subtreeSignature(child));

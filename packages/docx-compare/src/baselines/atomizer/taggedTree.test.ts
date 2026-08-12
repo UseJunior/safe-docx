@@ -364,8 +364,8 @@ describe('side-tagged comparison tree', () => {
         ]);
       });
 
-      await and('comparison revisions allocate after every identifier already present in either input', () => {
-        expect(firstAllocatedId).toBe(43);
+      await and('comparison revisions allocate the first identifier not present in either input', () => {
+        expect(firstAllocatedId).toBe(1);
       });
     },
   );

@@ -9,7 +9,12 @@ import type { ComparisonUnitAtom } from '@usejunior/docx-core';
 import { CorrelationStatus } from '@usejunior/docx-core';
 import { EMPTY_PARAGRAPH_TAG, getIdentityId } from '../../atomizer.js';
 import { debug } from './debug.js';
-import { revisionProvenance, type PropertyDelta, type RevisionProvenance } from './taggedTree.js';
+import {
+  revisionProvenance,
+  subtreeSignature,
+  type PropertyDelta,
+  type RevisionProvenance,
+} from './taggedTree.js';
 
 /**
  * Represents a match between atoms in original and revised documents.
@@ -58,8 +63,8 @@ function directRunDelta(
 ): PropertyDelta | undefined {
   const originalProps = original.rPr ?? null;
   const revisedProps = revised.rPr ?? null;
-  const originalXml = originalProps?.toString() ?? '';
-  const revisedXml = revisedProps?.toString() ?? '';
+  const originalXml = originalProps ? subtreeSignature(originalProps) : '';
+  const revisedXml = revisedProps ? subtreeSignature(revisedProps) : '';
   if (originalXml === revisedXml) return undefined;
   return {
     scope: 'run',
@@ -80,35 +85,36 @@ export function tagAtomLcs(
   granularity: AlignmentGranularity,
 ): TaggedAtomLcsResult {
   const alignments: TaggedAtomAlignment[] = [];
-  for (const match of lcs.matches) {
-    const originalAtom = original[match.originalIndex]!;
-    const revisedAtom = revised[match.revisedIndex]!;
-    alignments.push({
-      tag: 'both',
-      original: originalAtom,
-      revised: revisedAtom,
-      propertyDelta: directRunDelta(originalAtom, revisedAtom),
-      originalProvenance: revisionProvenance(originalAtom.contentElement),
-      revisedProvenance: revisionProvenance(revisedAtom.contentElement),
-    });
-  }
-  for (const index of lcs.deletedIndices) {
-    const atom = original[index]!;
-    alignments.push({
-      tag: 'original',
-      original: atom,
-      originalProvenance: revisionProvenance(atom.contentElement),
-      revisedProvenance: [],
-    });
-  }
-  for (const index of lcs.insertedIndices) {
-    const atom = revised[index]!;
-    alignments.push({
-      tag: 'revised',
-      revised: atom,
-      originalProvenance: [],
-      revisedProvenance: revisionProvenance(atom.contentElement),
-    });
+  const matchesByOriginal = new Map(lcs.matches.map((match) => [match.originalIndex, match]));
+  const deleted = new Set(lcs.deletedIndices);
+  const inserted = new Set(lcs.insertedIndices);
+  let originalIndex = 0;
+  let revisedIndex = 0;
+
+  while (originalIndex < original.length || revisedIndex < revised.length) {
+    while (originalIndex < original.length && deleted.has(originalIndex)) {
+      const atom = original[originalIndex++]!;
+      alignments.push({ tag: 'original', original: atom, originalProvenance: revisionProvenance(atom.contentElement), revisedProvenance: [] });
+    }
+    while (revisedIndex < revised.length && inserted.has(revisedIndex)) {
+      const atom = revised[revisedIndex++]!;
+      alignments.push({ tag: 'revised', revised: atom, originalProvenance: [], revisedProvenance: revisionProvenance(atom.contentElement) });
+    }
+    const match = matchesByOriginal.get(originalIndex);
+    if (match) {
+      const originalAtom = original[originalIndex++]!;
+      const revisedAtom = revised[match.revisedIndex]!;
+      revisedIndex = match.revisedIndex + 1;
+      alignments.push({
+        tag: 'both', original: originalAtom, revised: revisedAtom,
+        propertyDelta: directRunDelta(originalAtom, revisedAtom),
+        originalProvenance: revisionProvenance(originalAtom.contentElement),
+        revisedProvenance: revisionProvenance(revisedAtom.contentElement),
+      });
+      continue;
+    }
+    if (originalIndex < original.length) originalIndex++;
+    else if (revisedIndex < revised.length) revisedIndex++;
   }
   return { lcs, granularity, alignments };
 }
