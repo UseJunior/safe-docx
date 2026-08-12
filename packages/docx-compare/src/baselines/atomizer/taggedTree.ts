@@ -71,6 +71,61 @@ export interface PropertyDelta {
   changedProperties: string[];
 }
 
+/** Metadata retained from an input revision wrapper rather than flattened into text. */
+export interface RevisionProvenance {
+  kind: 'w:ins' | 'w:del' | 'w:moveFrom' | 'w:moveTo';
+  id: string | null;
+  author: string | null;
+  date: string | null;
+}
+
+const REVISION_WRAPPER_TAGS = new Set<RevisionProvenance['kind']>([
+  'w:ins',
+  'w:del',
+  'w:moveFrom',
+  'w:moveTo',
+]);
+
+/**
+ * Return the enclosing input revision wrappers from outermost to innermost.
+ *
+ * This is construction metadata: serializers decide how a comparison revision
+ * nests inside it, while projections continue to use the side representative.
+ */
+export function revisionProvenance(element: WmlElement): RevisionProvenance[] {
+  const wrappers: RevisionProvenance[] = [];
+  let current: Element | null = element;
+  while (current) {
+    if (REVISION_WRAPPER_TAGS.has(current.tagName as RevisionProvenance['kind'])) {
+      wrappers.unshift({
+        kind: current.tagName as RevisionProvenance['kind'],
+        id: current.getAttribute('w:id'),
+        author: current.getAttribute('w:author'),
+        date: current.getAttribute('w:date'),
+      });
+    }
+    current = current.parentElement;
+  }
+  return wrappers;
+}
+
+/**
+ * First safe ID for comparison revisions after examining both preserved inputs.
+ * Existing IDs are never reused, even when the two documents contain different
+ * authors or revision kinds with the same decimal identifier.
+ */
+export function nextRevisionId(originalRoot: WmlElement, revisedRoot: WmlElement): number {
+  let max = 0;
+  for (const root of [originalRoot, revisedRoot]) {
+    for (const wrapper of Array.from(root.getElementsByTagName('*'))) {
+      if (!REVISION_WRAPPER_TAGS.has(wrapper.tagName as RevisionProvenance['kind'])) continue;
+      const id = Number(wrapper.getAttribute('w:id'));
+      if (Number.isSafeInteger(id) && id >= max) max = id + 1;
+    }
+  }
+  return max;
+}
+
 /**
  * Fields shared by every tagged node.
  *

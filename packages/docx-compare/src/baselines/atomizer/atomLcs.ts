@@ -9,6 +9,7 @@ import type { ComparisonUnitAtom } from '@usejunior/docx-core';
 import { CorrelationStatus } from '@usejunior/docx-core';
 import { EMPTY_PARAGRAPH_TAG, getIdentityId } from '../../atomizer.js';
 import { debug } from './debug.js';
+import { revisionProvenance, type PropertyDelta, type RevisionProvenance } from './taggedTree.js';
 
 /**
  * Represents a match between atoms in original and revised documents.
@@ -30,6 +31,95 @@ export interface LcsResult {
   deletedIndices: number[];
   /** Indices of atoms only in revised (inserted) */
   insertedIndices: number[];
+}
+
+/** The atomization unit used before this alignment was run. */
+export type AlignmentGranularity = 'run' | 'word';
+
+/** A side-tagged counterpart of an LCS result that leaves LCS matching untouched. */
+export interface TaggedAtomAlignment {
+  tag: 'both' | 'original' | 'revised';
+  original?: ComparisonUnitAtom;
+  revised?: ComparisonUnitAtom;
+  propertyDelta?: PropertyDelta;
+  originalProvenance: RevisionProvenance[];
+  revisedProvenance: RevisionProvenance[];
+}
+
+export interface TaggedAtomLcsResult {
+  lcs: LcsResult;
+  granularity: AlignmentGranularity;
+  alignments: TaggedAtomAlignment[];
+}
+
+function directRunDelta(
+  original: ComparisonUnitAtom,
+  revised: ComparisonUnitAtom,
+): PropertyDelta | undefined {
+  const originalProps = original.rPr ?? null;
+  const revisedProps = revised.rPr ?? null;
+  const originalXml = originalProps?.toString() ?? '';
+  const revisedXml = revisedProps?.toString() ?? '';
+  if (originalXml === revisedXml) return undefined;
+  return {
+    scope: 'run',
+    original: originalProps,
+    revised: revisedProps,
+    changedProperties: ['directRunProperties'],
+  };
+}
+
+/**
+ * Emit side tags from the existing LCS result without changing its equality,
+ * tie-breaking, or status-mutating consumer path.
+ */
+export function tagAtomLcs(
+  original: ComparisonUnitAtom[],
+  revised: ComparisonUnitAtom[],
+  lcs: LcsResult,
+  granularity: AlignmentGranularity,
+): TaggedAtomLcsResult {
+  const alignments: TaggedAtomAlignment[] = [];
+  for (const match of lcs.matches) {
+    const originalAtom = original[match.originalIndex]!;
+    const revisedAtom = revised[match.revisedIndex]!;
+    alignments.push({
+      tag: 'both',
+      original: originalAtom,
+      revised: revisedAtom,
+      propertyDelta: directRunDelta(originalAtom, revisedAtom),
+      originalProvenance: revisionProvenance(originalAtom.contentElement),
+      revisedProvenance: revisionProvenance(revisedAtom.contentElement),
+    });
+  }
+  for (const index of lcs.deletedIndices) {
+    const atom = original[index]!;
+    alignments.push({
+      tag: 'original',
+      original: atom,
+      originalProvenance: revisionProvenance(atom.contentElement),
+      revisedProvenance: [],
+    });
+  }
+  for (const index of lcs.insertedIndices) {
+    const atom = revised[index]!;
+    alignments.push({
+      tag: 'revised',
+      revised: atom,
+      originalProvenance: [],
+      revisedProvenance: revisionProvenance(atom.contentElement),
+    });
+  }
+  return { lcs, granularity, alignments };
+}
+
+/** Run the existing matcher and return its independent side-tagged evidence. */
+export function computeTaggedAtomLcs(
+  original: ComparisonUnitAtom[],
+  revised: ComparisonUnitAtom[],
+  granularity: AlignmentGranularity = 'run',
+): TaggedAtomLcsResult {
+  return tagAtomLcs(original, revised, computeAtomLcs(original, revised), granularity);
 }
 
 /**
