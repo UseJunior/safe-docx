@@ -26,6 +26,41 @@ comparison engine. It then proves reject-all equals source and accept-all equals
 clean. Inline `ins`/`del` is available only as generated display/export syntax;
 models and lawyers author familiar complete sentences.
 
+## Delivery completeness
+
+Exact DOCX replay and drafting completeness are separate claims. A required
+drafting decision names the operation or operations that satisfy it:
+
+```markdoc
+{% requirement id="remove-obsolete-block" satisfied-by="remove-heading,remove-body" mode="all" %}
+Remove the obsolete block without leaving a heading or signature remnant.
+{% /requirement %}
+
+{% change-set id="remove-obsolete-block" operations="remove-heading,remove-body" atomic=true /%}
+{% assert id="obsolete-label-absent" kind="absent" text="OBSOLETE LABEL" /%}
+```
+
+An incomplete atomic change set fails before mutation, so its surviving members
+cannot apply alone. An unsatisfied requirement or failed `present`/`absent`
+assertion does not falsify a successful accept/reject projection; instead it
+sets `draftCompletenessPassed` and `deliveryReady` to `false`. The compatibility
+field `certificate.passed` continues to report the projection verdict and is
+also available under the clearer name `projectionPassed`. Consumers deciding
+whether an artifact may be delivered MUST use `deliveryReady`.
+
+A requirement may be waived only with an explicit authority and non-empty
+human-supplied reason. The package records these values verbatim and does not
+infer authority or create waivers:
+
+```markdoc
+{% waiver for="remove-obsolete-block" authority="reviewing-lawyer" %}
+Expressly deferred to the next instrument.
+{% /waiver %}
+```
+
+These tags describe general document-workflow invariants. They intentionally do
+not encode document domains, clause types, parties, or legal conclusions.
+
 Whole-paragraph changes keep both clean states explicit:
 
 ```markdoc

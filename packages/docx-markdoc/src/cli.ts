@@ -6,6 +6,7 @@ import { exportEditPairs } from './export.js';
 import { importDocxToMarkdoc } from './import.js';
 import { inspectMarkdocSource } from './inspect.js';
 import { requireMarkdoc } from './markdoc.js';
+import { DocxMarkdocError } from './errors.js';
 
 function usage(): never {
   throw new Error([
@@ -48,6 +49,13 @@ async function main(): Promise<void> {
     if (!sourcePath || !markdocPath || (command === 'compile' && !outputDir)) usage();
     const result = await compileMarkdoc(await readFile(sourcePath), await readFile(markdocPath, 'utf8'));
     if (command === 'compile') {
+      if (!result.certificate.deliveryReady) {
+        throw new DocxMarkdocError(
+          'DELIVERY_NOT_READY',
+          'Projection verification passed, but draft completeness blocks deliverable output.',
+          result.certificate,
+        );
+      }
       await mkdir(outputDir!, { recursive: true });
       await Promise.all([
         writeFile(path.join(outputDir!, 'clean.docx'), result.clean),
@@ -56,6 +64,7 @@ async function main(): Promise<void> {
       ]);
     }
     process.stdout.write(`${JSON.stringify(result.certificate, null, 2)}\n`);
+    if (command === 'verify' && !result.certificate.deliveryReady) process.exitCode = 2;
     return;
   }
   if (command === 'export-edits') {

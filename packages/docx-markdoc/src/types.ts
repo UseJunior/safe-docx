@@ -11,6 +11,30 @@ export type Rationale = {
   category?: string;
 };
 
+export type DraftRequirement = {
+  id: string;
+  description: string;
+  satisfiedBy: string[];
+  mode: 'all' | 'any';
+};
+
+export type RequirementWaiver = {
+  requirementId: string;
+  authority: string;
+  reason: string;
+};
+
+export type AtomicChangeSet = {
+  id: string;
+  operationIds: string[];
+};
+
+export type DraftAssertion = {
+  id: string;
+  kind: 'present' | 'absent';
+  text: string;
+};
+
 export type SourceParagraph = {
   id: string;
   fingerprint: string;
@@ -58,6 +82,11 @@ export type MarkdocEditIR = {
   scaffold: SourceParagraph[];
   operations: EditOperation[];
   rationales: Rationale[];
+  /** Additive v1 fields; omitted legacy IR is treated as having no completeness declarations. */
+  requirements?: DraftRequirement[];
+  waivers?: RequirementWaiver[];
+  changeSets?: AtomicChangeSet[];
+  assertions?: DraftAssertion[];
 };
 
 export type ValidationIssue = {
@@ -81,6 +110,37 @@ export type VerificationCertificate = {
   unchangedPackagePartsPreserved: boolean;
   unsupportedStructures: string[];
   appliedOperations: string[];
+  /** Existing projection/replay verdict. Retained for v1 compatibility. */
+  projectionPassed: boolean;
+  draftCompletenessPassed: boolean;
+  deliveryReady: boolean;
+  completeness: DraftCompletenessReport;
+  passed: boolean;
+};
+
+export type RequirementResult = {
+  id: string;
+  status: 'satisfied' | 'waived' | 'blocked';
+  satisfiedBy: string[];
+  missingOperations: string[];
+  waiver?: RequirementWaiver;
+};
+
+export type ChangeSetResult = {
+  id: string;
+  complete: boolean;
+  appliedOperations: string[];
+  missingOperations: string[];
+};
+
+export type AssertionResult = DraftAssertion & {
+  passed: boolean;
+};
+
+export type DraftCompletenessReport = {
+  requirements: RequirementResult[];
+  changeSets: ChangeSetResult[];
+  assertions: AssertionResult[];
   passed: boolean;
 };
 

@@ -186,6 +186,15 @@ Compilation produces a verification certificate. Success requires:
   mixed-format whole-paragraph deletion regressions prove clean formatting and
   accept/reject round trips.
 
+- **2026-08-12 — projection correctness is not drafting completeness:** A
+  completed-matter replay passed exact accept/reject verification after several
+  unsupported edits were rolled back, leaving known remnants in the clean
+  document. The certificate now preserves `passed` as the compatible projection
+  verdict while separately reporting `draftCompletenessPassed` and
+  `deliveryReady`. Required decisions, explicit waivers, revised-text assertions,
+  and fail-before-mutation atomic groups prevent an exact projection from being
+  mistaken for a complete deliverable.
+
 - **2026-08-12 — full-workspace preflight is independently blocked:** The new
   package build, lint, 10 focused tests, spec coverage, conformance checks, and
   strict OpenSpec validation pass. The full workspace build on current

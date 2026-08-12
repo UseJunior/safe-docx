@@ -9,6 +9,7 @@ import { compareDocuments } from '@usejunior/docx-compare';
 import { DocxMarkdocError } from './errors.js';
 import { sha256 } from './hash.js';
 import { requireMarkdoc } from './markdoc.js';
+import { assessDraftCompleteness } from './completeness.js';
 import type { CompileResult, EditOperation, InsertOperation, MarkdocEditIR, VerificationCertificate } from './types.js';
 
 function verificationText(document: DocxDocument): string {
@@ -325,6 +326,16 @@ export async function compileMarkdoc(
   }
   const sourceDocument = await DocxDocument.load(sourceBuffer);
   const { unsupported } = validateAgainstSource(ir, sourceDocument);
+  const declaredOperationIds = ir.operations.map((operation) => operation.operationId);
+  const atomicPreflight = assessDraftCompleteness(ir, declaredOperationIds);
+  const incompleteAtomicSets = atomicPreflight.changeSets.filter((set) => !set.complete);
+  if (incompleteAtomicSets.length > 0) {
+    throw new DocxMarkdocError(
+      'INCOMPLETE_ATOMIC_CHANGE_SET',
+      'Atomic change sets cannot be partially applied.',
+      { changeSets: incompleteAtomicSets },
+    );
+  }
   const clean = await applyOperations(sourceBuffer, ir);
   const comparison = await compareDocuments(sourceBuffer, clean, {
     engine: 'atomizer',
@@ -345,6 +356,7 @@ export async function compileMarkdoc(
   const rejectedText = verificationText(rejectedDoc);
   const cleanText = verificationText(cleanDoc);
   const acceptedText = verificationText(acceptedDoc);
+  const completeness = assessDraftCompleteness(ir, declaredOperationIds, cleanText);
   const rejectAllEqualsSource = rejectedText === sourceText;
   const acceptAllEqualsClean = acceptedText === cleanText;
   const unchangedPackagePartsPreserved = await unchangedPartsEqual(sourceBuffer, clean);
@@ -358,16 +370,22 @@ export async function compileMarkdoc(
     acceptAllEqualsClean,
     unchangedPackagePartsPreserved,
     unsupportedStructures: unsupported,
-    appliedOperations: ir.operations.map((operation) => operation.operationId),
+    appliedOperations: declaredOperationIds,
+    projectionPassed: false,
+    draftCompletenessPassed: completeness.passed,
+    deliveryReady: false,
+    completeness,
     passed: false,
   };
-  certificate.passed = certificate.sourceSha256Matches
+  certificate.projectionPassed = certificate.sourceSha256Matches
     && certificate.scaffoldComplete
     && certificate.paragraphFingerprintsMatch
     && certificate.operationsAppliedExactlyOnce
     && certificate.rejectAllEqualsSource
     && certificate.acceptAllEqualsClean
     && certificate.unchangedPackagePartsPreserved;
+  certificate.passed = certificate.projectionPassed;
+  certificate.deliveryReady = certificate.projectionPassed && certificate.draftCompletenessPassed;
   if (!certificate.passed) throw new DocxMarkdocError('VERIFICATION_FAILED', 'Strict replay verification failed.', {
     certificate,
     sourceText,

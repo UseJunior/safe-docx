@@ -41,3 +41,11 @@
 - [x] 6.3 Convert completed-matter findings into de-identified regression fixtures without client names, facts, or document text.
 - [x] 6.4 Document authoring conventions, Git/revision-manifest discipline, compact/detail trade-offs, and recovery from stale anchors.
 - [ ] 6.5 Run focused package tests, workspace build, OpenSpec traceability, and required Safe DOCX preflight gates.
+
+## 7. Delivery completeness
+
+- [x] 7.1 Add domain-neutral requirements and explicit authority/reason waivers to canonical Markdoc and IR.
+- [x] 7.2 Add atomic operation groups that fail before mutation when any declared member is absent.
+- [x] 7.3 Add exact-string present/absent assertions against the revised body-text projection.
+- [x] 7.4 Distinguish projection verification, draft completeness, and delivery readiness in the certificate.
+- [x] 7.5 Add synthetic regressions for rolled-back required work, orphan remnants, explicit waivers, and incomplete atomic groups.

@@ -164,3 +164,46 @@ authorization, privilege, or training eligibility.
 - **WHEN** the revisions are exported as edit pairs
 - **THEN** the records SHALL retain those supplied labels
 - **AND** the system SHALL not invent a label for an omitted or ambiguous actor, instruction, or reason
+
+### Requirement: Delivery certification is distinct from projection verification
+
+The system SHALL distinguish exact DOCX projection verification from draft
+completeness and delivery readiness. A successful accept/reject round trip SHALL
+NOT imply that every required drafting decision was implemented.
+
+#### Scenario: [SDX-MDOC-17] Rolled-back operation blocks delivery readiness
+- **GIVEN** a required drafting decision naming an operation that is absent from the canonical edit plan
+- **WHEN** the remaining edit plan compiles to an exact accept/reject projection
+- **THEN** projection verification SHALL pass
+- **AND** the requirement SHALL be reported as blocked
+- **AND** draft completeness and delivery readiness SHALL fail
+
+#### Scenario: [SDX-MDOC-18] Explicit waiver resolves a requirement without inventing authority
+- **GIVEN** an unsatisfied requirement and a waiver containing a non-empty caller-supplied authority and reason
+- **WHEN** completeness is assessed
+- **THEN** the requirement SHALL be reported as waived with the supplied values verbatim
+- **AND** the system SHALL NOT infer, synthesize, or silently create waiver authority or rationale
+
+### Requirement: Atomic change sets cannot partially apply
+
+The system SHALL support domain-neutral atomic change sets that enumerate their
+member operation IDs. Every named member MUST be present before any member is
+applied.
+
+#### Scenario: [SDX-MDOC-19] Missing atomic member fails before mutation
+- **GIVEN** an atomic change set whose operation list includes an absent operation
+- **WHEN** compilation is attempted
+- **THEN** compilation SHALL fail before document mutation
+- **AND** no remaining member of that change set SHALL be partially applied
+
+### Requirement: Revised-text assertions contribute to delivery readiness
+
+The system SHALL support general exact-string `present` and `absent` assertions
+against the complete revised body-text projection. Assertion results SHALL be
+recorded separately from accept/reject projection verification.
+
+#### Scenario: [SDX-MDOC-20] Orphan remnant fails an absence assertion
+- **GIVEN** a revised document retaining text declared by an `absent` assertion
+- **WHEN** completeness is assessed after clean replay
+- **THEN** the assertion SHALL fail
+- **AND** delivery readiness SHALL fail even if accept/reject projection verification passes

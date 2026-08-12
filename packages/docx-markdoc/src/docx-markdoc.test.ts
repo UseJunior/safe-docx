@@ -38,6 +38,7 @@ describe('brownfield Markdoc authoring', () => {
       date: new Date('2026-08-12T00:00:00.000Z'),
     });
     expect(result.certificate.passed).toBe(true);
+    expect(result.certificate).toMatchObject({ projectionPassed: true, draftCompletenessPassed: true, deliveryReady: true });
     expect(result.certificate.rejectAllEqualsSource).toBe(true);
     expect(result.certificate.acceptAllEqualsClean).toBe(true);
     const clean = await DocxDocument.load(result.clean);
@@ -275,6 +276,86 @@ describe('brownfield Markdoc authoring', () => {
     expect(clean.buildDocumentView().nodes.map((node) => node.raw_text)).toEqual(['Operative text.', 'Following text.']);
     expect(runFormatProjection(clean.getParagraphs()[0]!)).toEqual([{ text: 'Operative text.', bold: false }]);
     expect(runFormatProjection(clean.getParagraphs()[1]!)).toEqual([{ text: 'Following text.', bold: false }]);
+  });
+
+  it('[SDX-MDOC-17][SDX-MDOC-20] separates exact projection from blocked draft completeness and orphan remnants', async () => {
+    const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.', 'Legacy certification remains.'] });
+    const imported = await importDocxToMarkdoc(original);
+    const markdoc = `${withBeforeAfterEdit(imported.markdoc)}
+{% requirement id="remove-remnant" satisfied-by="remove-certification" %}
+Remove the obsolete certification block as one drafting decision.
+{% /requirement %}
+{% assert id="no-legacy-remnant" kind="absent" text="Legacy certification" /%}
+`;
+
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+
+    expect(result.certificate).toMatchObject({
+      passed: true,
+      projectionPassed: true,
+      draftCompletenessPassed: false,
+      deliveryReady: false,
+    });
+    expect(result.certificate.completeness.requirements).toEqual([
+      expect.objectContaining({ id: 'remove-remnant', status: 'blocked', missingOperations: ['remove-certification'] }),
+    ]);
+    expect(result.certificate.completeness.assertions).toEqual([
+      expect.objectContaining({ id: 'no-legacy-remnant', passed: false }),
+    ]);
+  });
+
+  it('[SDX-MDOC-18] accepts only an explicit human-supplied waiver and records it in the delivery certificate', async () => {
+    const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.'] });
+    const imported = await importDocxToMarkdoc(original);
+    const markdoc = `${withBeforeAfterEdit(imported.markdoc)}
+{% requirement id="deferred-decision" satisfied-by="future-operation" %}
+Resolve the deferred drafting decision.
+{% /requirement %}
+{% waiver for="deferred-decision" authority="reviewing-lawyer" %}
+The reviewer expressly deferred this decision to a later instrument.
+{% /waiver %}
+{% assert id="new-name-present" kind="present" text="The New Name." /%}
+`;
+
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+
+    expect(result.certificate).toMatchObject({ passed: true, draftCompletenessPassed: true, deliveryReady: true });
+    expect(result.certificate.completeness.requirements[0]).toMatchObject({
+      status: 'waived',
+      waiver: { authority: 'reviewing-lawyer', reason: 'The reviewer expressly deferred this decision to a later instrument.' },
+    });
+    expect(() => requireMarkdoc(markdoc.replace('The reviewer expressly deferred this decision to a later instrument.', '')))
+      .toThrow(DocxMarkdocError);
+  });
+
+  it('[SDX-MDOC-19] rejects an incomplete atomic change set before any member can apply', async () => {
+    const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.'] });
+    const imported = await importDocxToMarkdoc(original);
+    const markdoc = `${withBeforeAfterEdit(imported.markdoc)}
+{% change-set id="remove-certification-block" operations="rename,remove-witness-line" atomic=true /%}
+`;
+
+    await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({
+      code: 'INCOMPLETE_ATOMIC_CHANGE_SET',
+      details: { changeSets: [expect.objectContaining({ id: 'remove-certification-block', missingOperations: ['remove-witness-line'] })] },
+    });
+  });
+
+  it('[SDX-MDOC-19] certifies a complete atomic change set', async () => {
+    const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.'] });
+    const imported = await importDocxToMarkdoc(original);
+    const markdoc = `${withBeforeAfterEdit(imported.markdoc)}
+{% change-set id="rename-unit" operations="rename" atomic=true /%}
+{% requirement id="rename-required" satisfied-by="rename" %}
+Use the current name.
+{% /requirement %}
+`;
+
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+    expect(result.certificate.deliveryReady).toBe(true);
+    expect(result.certificate.completeness.changeSets).toEqual([
+      { id: 'rename-unit', complete: true, appliedOperations: ['rename'], missingOperations: [] },
+    ]);
   });
 });
 
