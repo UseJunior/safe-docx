@@ -4,8 +4,6 @@
  * @see https://github.com/UseJunior/safe-docx/issues/446
  */
 
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import { buildSyntheticDocx, parseXml, serializeXml } from '@usejunior/docx-core';
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
@@ -24,9 +22,6 @@ const test = testAllure
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.28' });
 
 const MOVED_PARAGRAPH = 'The quick brown fox jumps over the lazy dog today';
-const TEST_DIR = dirname(import.meta.url.replace('file://', ''));
-const LEAN_EXE = join(TEST_DIR, '../../../../../verification/lean/.lake/build/bin/leanDocxChecker');
-const describeWithLean = existsSync(LEAN_EXE) ? describe : describe.skip;
 
 function countTag(xml: string, tag: string): number {
   return (xml.match(new RegExp(`<${tag.replace(':', '\\:')}\\b`, 'g')) ?? []).length;
@@ -94,7 +89,7 @@ describe('Inplace move-range marker coalescing', () => {
       });
     });
 
-  describeWithLean('preserved move identity collision', () => {
+  describe('preserved move identity collision', () => {
     test.openspec('[MOVE-RANGE-PAIR-01] Inplace emission produces one range pair per logical move')(
     'seeds preserved range IDs and names before an end-to-end compare and certificate check', async () => {
       const preservedMove =
@@ -118,7 +113,6 @@ describe('Inplace move-range marker coalescing', () => {
       const result = await compareDocuments(original, revised, {
         engine: 'atomizer',
         reconstructionMode: 'inplace',
-        leanXmlVerifier: { enabled: true, executablePath: LEAN_EXE },
       });
       const xml = await documentXml(result.document);
       const starts = Array.from(parseXml(xml).getElementsByTagName('w:moveFromRangeStart'));
@@ -133,8 +127,6 @@ describe('Inplace move-range marker coalescing', () => {
       expect(identities.filter(({ name }) => name === 'move2').map(({ id }) => id))
         .not.toContain('1');
       expect(xml).toContain('w:moveToRangeStart w:id="3" w:name="move1"');
-      expect(result.documentIntegrity?.status).toBe('passed');
-      expect(result.documentIntegrity?.checks.trackedMoveRangesAreCorrectlyPaired?.status).toBe('passed');
     });
   });
 

@@ -106,7 +106,7 @@ const VET_CASES: VetCase[] = [
 const IDENTITY_CASES = ['nested-fully-deleted-ins', 'del-ins-stack', 'partial-del-in-ins'] as const;
 
 // Gated on a LibreOffice binary; CI does not install one, so this is a local developer check
-// (it skips cleanly, like the oracle voter in lean-differential-helpers.test.ts). Set
+// (it skips cleanly when LibreOffice is unavailable). Set
 // SAFE_DOCX_SOFFICE_BIN to point at a binary in a non-standard location.
 const soffice = resolveSoffice();
 const describeOracle = soffice ? describe : describe.skip;
@@ -207,7 +207,7 @@ describeOracle('LibreOffice oracle trust boundary — accept/reject is sound, th
           }
         }
         // Reject of the partial case empties the paragraph (every run was inserted), but the
-        // paragraph itself survives — its mark is untracked (the mark-based rule, [LEAN-HELP-10]).
+        // paragraph itself survives because its paragraph mark is untracked.
         expect(loShape['partial-del-in-ins:reject'], 'partial reject: LibreOffice keeps the emptied paragraph').toEqual([false]);
         expect(paragraphShape(rejectAllChanges(PARTIAL_DEL_IN_INS)), 'partial reject: TS keeps the emptied paragraph').toEqual([false]);
       });

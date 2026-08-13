@@ -46,7 +46,7 @@ function extractScenarioId(rawScenario) {
 
 // Scenarios whose tagged test genuinely exercises the scenario but cannot
 // reference the scenario's tokens in its own body — because the observable is
-// asserted by an external suite runner or compiled Lean proof, or through a
+// asserted by an external suite runner or through a
 // shared assertion helper that wraps the primitive the spec names. Each is a
 // real, peer-reviewed mapping, not a stuffed tag. Keep this list short; every
 // entry carries a one-line justification. It is NOT a place to silence a
@@ -55,10 +55,6 @@ const THEN_CHECK_ALLOWLIST = new Set([
   // External docx-platform-tests suite runner asserts acceptChanges semantics
   // (no remaining w:ins) in a separate process; the TS test only drives it.
   'acceptAllTrackedChanges round-trip through the adapter',
-  // Lean proof-closure ([LEAN-RT-03]) is validated by `lake build` / Spec.lean
-  // in the lean-build workflow; this TS bridge is the falsifiability layer, not
-  // the proof, so it cannot reference the proof's identifiers.
-  '`inv_rt_001` sorry is replaced by a proof composing the named residual axiom and the lemmas',
   // The round-trip observable is asserted via the `assertRoundTripInvariant`
   // helper, which wraps `normalizeText`/`extractTextWithParagraphs`; the
   // property-test body references the wrapper, not the wrapped primitives.
@@ -108,8 +104,7 @@ function collectSpanTokens(line, sink) {
 //
 //   gateTokens  — tokens in the observable (THEN and any trailing AND clauses).
 //                 The check only fires for a scenario when this set is non-empty.
-//                 A pure-prose observable (documentation/proof scenarios like the
-//                 Lean bridge cases) yields nothing here and is exempt — this is
+//                 A pure-prose observable yields nothing here and is exempt — this is
 //                 the issue's "fail-closed only when THEN has a code token" rule,
 //                 auto-detected with no allowlist.
 //

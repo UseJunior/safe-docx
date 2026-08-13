@@ -1018,13 +1018,7 @@ describe('VML text-box story comparison (#713)', () => {
     );
 
     const result = await when('the selected story is compared in place', () =>
-      compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'inplace',
-        leanXmlVerifier: {
-          enabled: true,
-          executablePath: '/does/not/exist',
-        },
-      }),
+      compareDocumentsAtomizer(original, revised, { reconstructionMode: 'inplace' }),
     );
     const archive = await DocxArchive.load(result.document);
     const output = await archive.getFile('word/header1.xml');
@@ -1038,11 +1032,6 @@ describe('VML text-box story comparison (#713)', () => {
       expect(textBox?.getElementsByTagNameNS(OOXML.W_NS, 'del').length).toBeGreaterThan(0);
       expect(textBoxText(acceptAllChanges(output!))).toBe('Revised header');
       expect(textBoxText(rejectAllChanges(output!))).toBe('Original header');
-      expect(result.documentIntegrity?.exclusions).toEqual(
-        expect.arrayContaining([
-          expect.stringContaining('Relationship-selected header/footer'),
-        ]),
-      );
     });
   });
 

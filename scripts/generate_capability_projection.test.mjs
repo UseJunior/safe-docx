@@ -19,7 +19,6 @@ async function inputs() {
     mappings: await json('spec-compliance/capabilities/upstream/scenario-capabilities.json'),
     summary: await json('spec-compliance/capabilities/upstream/capability-summary.json'),
     projection: await json('spec-compliance/capabilities/safe-docx-projection.json'),
-    leanCoverage: await json('verification/registry/lean-xml-checker-coverage.json'),
   };
 }
 
@@ -56,22 +55,6 @@ test('vendored byte drift is rejected by its content hash', async () => {
   const first = value.pin.files[0].path;
   contents.set(first, Buffer.from('mutated'));
   assert.throws(() => verifyPinnedContent(value.pin, contents), /pin drift/);
-});
-
-test('a Lean scope manifest cannot establish a positive claim', async () => {
-  const value = await inputs();
-  const claim = value.projection.claims.find(
-    (candidate) => candidate.capabilityId === 'word.comments.anchors' && candidate.axis === 'edit'
-  );
-  claim.status = 'supported';
-  claim.evidence = [{
-    kind: 'lean-checker',
-    path: 'verification/registry/lean-xml-checker-coverage.json',
-    evidenceClass: 'lean-per-document-checker',
-    implementationVersion: claim.implementationVersion,
-    lastVerifiedCommit: claim.lastVerifiedCommit,
-  }];
-  await assert.rejects(() => validateProjection(value, root), /unsupported positive evidence kind lean-checker/);
 });
 
 test('an unmeasured neutral result cannot establish a positive claim', async () => {
@@ -327,19 +310,9 @@ test('projection pairs on non-applicable axes are rejected', async () => {
   await assert.rejects(() => validateProjection(value, root), /axis generate is not applicable/);
 });
 
-test('the human report retains the exact formal-assurance limitations', async () => {
+test('the human report retains the neutral evidence limitations', async () => {
   const report = await readFile(path.join(root, 'spec-compliance/generated/safe-docx-capability-projection.md'), 'utf8');
-  assert.match(report, /scope metadata only and establishes \*\*no capability row\*\*/);
-  assert.match(report, /Covered reconstruction mode: inplace\. Excluded mode: rebuild\./);
-  assert.match(
-    report,
-    /Covered stories: main, footnotes, endnotes, selected headers, selected footers\. Projections: text and field markers only\./
-  );
-  assert.match(
-    report,
-    /Exact excluded surfaces: Microsoft threaded-comment extensions;/,
-  );
-  assert.match(report, /inherited or omitted header\/footer role semantics;/);
-  assert.match(report, /unselected header\/footer parts and unselected relationship semantics;/);
-  assert.match(report, /Exact known unchecked areas: full ECMA-376 or OPC conformance;/);
+  assert.match(report, /a positive row applies only to the listed evidence and scope/);
+  assert.match(report, /explicit untested and gap rows/);
+  assert.doesNotMatch(report, /formal assurance|theorem prover|Lean/i);
 });

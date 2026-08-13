@@ -29,13 +29,7 @@
       "word/footer*.xml",
       "word/styles.xml",
       "word/numbering.xml"
-    ],
-    "leanReads": [
-      "word/document.xml",
-      "word/footnotes.xml",
-      "word/endnotes.xml"
-    ],
-    "leanClaim": "Lean checks text and field-marker projections through ins, del, moveFrom, and moveTo in fixed stories and in-place mode. It also checks the bounded move-range pairing subset: unique ids, balanced non-crossing endpoints, and matching source/destination names. It does not prove other advanced-record semantics, snapshots, annotations, relationships, or rebuild behavior."
+    ]
   },
   "records": [
     {
@@ -64,10 +58,6 @@
         "reconstruction": {
           "inplace": "preservation-only",
           "rebuild": "conformance-gap"
-        },
-        "lean": {
-          "textFieldProjection": "implemented",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -201,10 +191,6 @@
         "reconstruction": {
           "inplace": "non-goal",
           "rebuild": "non-goal"
-        },
-        "lean": {
-          "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -271,10 +257,6 @@
         "reconstruction": {
           "inplace": "non-goal",
           "rebuild": "non-goal"
-        },
-        "lean": {
-          "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -325,10 +307,6 @@
         "reconstruction": {
           "inplace": "non-goal",
           "rebuild": "non-goal"
-        },
-        "lean": {
-          "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -395,10 +373,6 @@
         "reconstruction": {
           "inplace": "non-goal",
           "rebuild": "non-goal"
-        },
-        "lean": {
-          "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -464,10 +438,6 @@
         "reconstruction": {
           "inplace": "non-goal",
           "rebuild": "non-goal"
-        },
-        "lean": {
-          "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -533,10 +503,6 @@
         "reconstruction": {
           "inplace": "non-goal",
           "rebuild": "non-goal"
-        },
-        "lean": {
-          "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -586,10 +552,6 @@
         "reconstruction": {
           "inplace": "non-goal",
           "rebuild": "non-goal"
-        },
-        "lean": {
-          "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -645,10 +607,6 @@
         "reconstruction": {
           "inplace": "preservation-only",
           "rebuild": "conformance-gap"
-        },
-        "lean": {
-          "textFieldProjection": "implemented",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -759,7 +717,7 @@
           ]
         }
       ],
-      "notes": "Generated moves are supported in both modes. Equal pre-existing wrappers survive in-place but are resolved by rebuild; Lean checks projected text only."
+      "notes": "Generated moves are supported in both modes."
     },
     {
       "id": "advanced-revision.moves-ranges",
@@ -796,10 +754,6 @@
         "reconstruction": {
           "inplace": "preservation-only",
           "rebuild": "preservation-only"
-        },
-        "lean": {
-          "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "implemented"
         }
       },
       "evidence": [
@@ -1034,10 +988,6 @@
         "reconstruction": {
           "inplace": "non-goal",
           "rebuild": "non-goal"
-        },
-        "lean": {
-          "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -1109,10 +1059,6 @@
         "reconstruction": {
           "inplace": "non-goal",
           "rebuild": "non-goal"
-        },
-        "lean": {
-          "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -1204,10 +1150,6 @@
         "reconstruction": {
           "inplace": "non-goal",
           "rebuild": "non-goal"
-        },
-        "lean": {
-          "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -1348,10 +1290,6 @@
         "reconstruction": {
           "inplace": "preservation-only",
           "rebuild": "conformance-gap"
-        },
-        "lean": {
-          "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -1642,10 +1580,6 @@
         "reconstruction": {
           "inplace": "preservation-only",
           "rebuild": "conformance-gap"
-        },
-        "lean": {
-          "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -1842,8 +1776,12 @@
         "w14:conflictDel"
       ],
       "normativeSections": {
-        "w14:conflictIns": [],
-        "w14:conflictDel": []
+        "w14:conflictIns": [
+
+        ],
+        "w14:conflictDel": [
+
+        ]
       },
       "classification": "non-goal",
       "operations": {
@@ -1857,10 +1795,6 @@
         "reconstruction": {
           "inplace": "preservation-only",
           "rebuild": "conformance-gap"
-        },
-        "lean": {
-          "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -1905,8 +1839,12 @@
         "footer story revisions"
       ],
       "normativeSections": {
-        "header story revisions": [],
-        "footer story revisions": []
+        "header story revisions": [
+
+        ],
+        "footer story revisions": [
+
+        ]
       },
       "classification": "preservation-only",
       "operations": {
@@ -1921,10 +1859,6 @@
         "reconstruction": {
           "inplace": "non-goal",
           "rebuild": "non-goal"
-        },
-        "lean": {
-          "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "non-goal"
         }
       },
       "evidence": [
@@ -1970,7 +1904,7 @@
           ]
         }
       ],
-      "notes": "Package load/save preserves these parts, but package-wide accept/reject does not sweep them and Lean does not read them. Comparison mode behavior is not claimed here."
+      "notes": "Comparison mode behavior is not claimed here."
     }
   ]
 }

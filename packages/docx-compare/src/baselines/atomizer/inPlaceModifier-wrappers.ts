@@ -346,14 +346,14 @@ export function findParagraphMarkRevisionMarker(
   return null;
 }
 
-// @lean-segment: field-wrapper-emission
-// Lean traceability anchor — cited by verification/lean/LeanSpike/Spec.lean and
-// packages/docx-core/src/integration/lean-spec-bridge.test.ts. These wrapping
+// Field-wrapper emission boundary.
+// Traceability anchor cited by validation documentation and
+// the comparison round-trip regression suite. These wrapping
 // primitives (wrapAsInserted/wrapAsDeleted and the move/format variants below)
 // emit whole field sequences as SINGLE track-change wrappers, which is why the
 // engine currently satisfies the stronger `fieldContextNeutral ∀ ctx` property.
 // When ECMA-376 field fragmentation lands (#217) this anchor marks the code the
-// Lean predicate-strength choice depends on. Grep this anchor, not line numbers.
+// validation predicate-strength choice depends on. Grep this anchor, not line numbers.
 export function wrapAsInserted(
   run: Element,
   author: string,

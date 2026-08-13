@@ -344,7 +344,7 @@ async function generateReport(references, vocabulary, advancedRevisions) {
     '',
     '## Advanced revision records',
     '',
-    'This operation-specific matrix distinguishes semantic implementation from preservation, known gaps, and non-goals. Lean scope is recorded independently and does not inherit TypeScript claims.',
+    'This operation-specific matrix distinguishes semantic implementation from preservation, known gaps, and non-goals. Independent release-verifier evidence is recorded separately and does not establish these implementation claims.',
     '',
     '| Record | Classification | Operations |',
     '| --- | --- | --- |',

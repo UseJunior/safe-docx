@@ -23,7 +23,7 @@
  * PPR-DEL(Comparison) + PPR-INS(original-author)) from the G4/G5 fixes.
  *
  * Revised-side provenance collisions remain pinned separately (issue #359,
- * lean-spec-bridge.test.ts).
+ * the comparison round-trip regression suite).
  *
  * @see https://github.com/UseJunior/safe-docx/issues/358
  */
@@ -52,7 +52,7 @@ const test = testAllure
   .epic('Document Comparison')
   .withLabels({ feature: 'Pre-tracked Insertion Provenance (#358)' });
 
-const ORIGINAL_AUTHOR = 'Lean Bridge';
+const ORIGINAL_AUTHOR = 'Source Author';
 const ORIGINAL_DATE = '2026-05-11T00:00:00Z';
 const BOOKMARK_ATTACHMENT_ID = 'pretracked-ins-provenance';
 

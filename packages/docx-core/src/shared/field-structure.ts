@@ -76,7 +76,7 @@ export function collectFieldStructureIssues(input: string | FieldStory[]): Field
 /**
  * Text-placement rules added for the AI revision validator. They are NOT part
  * of `validateFieldStructure`: that boolean is pinned extensionally against
- * the Lean model (`Tier2.FieldStructure.validateFieldStructure`) by the Lean
+ * the comparison engine's validation model by the differential
  * differential harness, so its rule set must not grow.
  */
 const TEXT_PLACEMENT_ISSUE_CODES = new Set([
@@ -150,7 +150,7 @@ function collectStrictStackIssuesForStory(xml: string, story: string): FieldStru
 
 /**
  * Reports strict runtime field-story violations without changing the
- * Lean-pinned `validateFieldStructure` predicate.
+ * pinned `validateFieldStructure` predicate.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  */
@@ -213,7 +213,7 @@ function collectFieldStructureIssuesForStory(documentXml: string, story: string)
   let insideDelDepth = 0;
   // Move-sources (w:moveFrom) carry deletion-flavored content (w:delText)
   // per the OOXML revision model; the text-placement rules treat them as
-  // deletion contexts. The Lean-pinned field rules above use only w:del.
+  // deletion contexts. The field rules above use only w:del.
   let insideMoveFromDepth = 0;
 
   function push(code: string, message: string, element: string): void {

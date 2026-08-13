@@ -3,7 +3,7 @@
  *
  * Drives LibreOffice headless as a track-changes accept/reject implementation so the
  * production engine's paragraph-collapse behavior (the G3/G4/G5 differential cases) can be
- * validated against a real word processor, not just Lean↔TS self-consistency. LibreOffice is
+ * validated against a real word processor, not just implementation self-consistency. LibreOffice is
  * the native engine for the .uno:AcceptAllTrackedChanges / .uno:RejectAllTrackedChanges
  * dispatches, so its paragraph-structure output is authoritative ground truth for the
  * mark-based rule (an untracked paragraph mark is kept on accept/reject; a PPR-INS/PPR-DEL mark

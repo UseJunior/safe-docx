@@ -31,6 +31,14 @@ export interface SelectiveWordRefinementResult {
 export const ALIGNED_RUN_REFINEMENT_SIMILARITY_THRESHOLD = 0.5;
 export const ALIGNED_RUN_REFINEMENT_CONTAINMENT_THRESHOLD = 0.8;
 
+function countChangeRanges(indices: number[]): number {
+  return indices.reduce(
+    (ranges, index, position) =>
+      ranges + (position === 0 || index !== indices[position - 1]! + 1 ? 1 : 0),
+    0,
+  );
+}
+
 /**
  * Refine fuzzy changed runs only inside paragraph pairs already established by
  * exact atom matches. This is the run-level precision escape hatch: it avoids
@@ -49,7 +57,11 @@ export function refineFuzzyRunsWithinAlignedParagraphs(
   lcsResult: LcsResult,
   moveSettings: MoveDetectionSettings,
   identityInterner: IdentityInterner,
+  maxChangeRanges?: number,
 ): SelectiveWordRefinementResult {
+  if (maxChangeRanges !== undefined && (!Number.isInteger(maxChangeRanges) || maxChangeRanges < 1)) {
+    throw new RangeError('maxChangeRanges must be a positive integer');
+  }
   const alignedParagraphPairs = new Set<string>();
   for (const match of lcsResult.matches) {
     const originalParagraph = originalAtoms[match.originalIndex]?.paragraphIndex;
@@ -119,14 +131,35 @@ export function refineFuzzyRunsWithinAlignedParagraphs(
       left.originalIndex - right.originalIndex ||
       left.revisedIndex - right.revisedIndex,
   );
-  const splitOriginal = new Set<number>();
-  const splitRevised = new Set<number>();
+  const pairedOriginal = new Set<number>();
+  const pairedRevised = new Set<number>();
+  const selectedCandidates: typeof candidates = [];
   for (const candidate of candidates) {
     if (
-      splitOriginal.has(candidate.originalIndex) ||
-      splitRevised.has(candidate.revisedIndex)
+      pairedOriginal.has(candidate.originalIndex) ||
+      pairedRevised.has(candidate.revisedIndex)
     ) {
       continue;
+    }
+    pairedOriginal.add(candidate.originalIndex);
+    pairedRevised.add(candidate.revisedIndex);
+    selectedCandidates.push(candidate);
+  }
+
+  const splitOriginal = new Set<number>();
+  const splitRevised = new Set<number>();
+  for (const candidate of selectedCandidates) {
+    if (maxChangeRanges !== undefined) {
+      // Apply the readability budget to this aligned run pair, not to the
+      // entire document. One dense rewrite must not make unrelated sparse
+      // paragraph edits fall back to coarse run-level replacements.
+      const pairOriginal = splitAtomsIntoWords([originalAtoms[candidate.originalIndex]!]);
+      const pairRevised = splitAtomsIntoWords([revisedAtoms[candidate.revisedIndex]!]);
+      assignIdentityIds(pairOriginal, identityInterner);
+      assignIdentityIds(pairRevised, identityInterner);
+      const pairLcs = hierarchicalCompare(pairOriginal, pairRevised);
+      const ranges = countChangeRanges(pairLcs.deletedIndices) + countChangeRanges(pairLcs.insertedIndices);
+      if (ranges > maxChangeRanges) continue;
     }
     splitOriginal.add(candidate.originalIndex);
     splitRevised.add(candidate.revisedIndex);
@@ -149,10 +182,11 @@ export function refineFuzzyRunsWithinAlignedParagraphs(
   );
   assignIdentityIds(refinedOriginal, identityInterner);
   assignIdentityIds(refinedRevised, identityInterner);
+  const refinedLcs = hierarchicalCompare(refinedOriginal, refinedRevised);
   return {
     originalAtoms: refinedOriginal,
     revisedAtoms: refinedRevised,
-    lcsResult: hierarchicalCompare(refinedOriginal, refinedRevised),
+    lcsResult: refinedLcs,
     refinedPairCount: splitOriginal.size,
   };
 }

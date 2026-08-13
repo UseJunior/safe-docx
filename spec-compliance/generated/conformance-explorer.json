@@ -45,46 +45,6 @@
       ]
     },
     {
-      "id": "ECMA-PART1-11-3-4",
-      "title": "Main Document relationship ownership of endnotes",
-      "classification": "targeted",
-      "citation": {
-        "standard": "ECMA-376",
-        "edition": 5,
-        "part": 1,
-        "section": "11.3.4"
-      },
-      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
-      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnotes",
-      "claimRationale": "The inplace verifier admits an Endnotes Part only through the sole exact\nTransitional endnotes relationship owned by fixed `word/document.xml`.",
-      "evidence": [
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
-        }
-      ]
-    },
-    {
-      "id": "ECMA-PART1-11-3-7",
-      "title": "Main Document relationship ownership of footnotes",
-      "classification": "targeted",
-      "citation": {
-        "standard": "ECMA-376",
-        "edition": 5,
-        "part": 1,
-        "section": "11.3.7"
-      },
-      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
-      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotes",
-      "claimRationale": "The inplace verifier admits a Footnotes Part only through the sole exact\nTransitional footnotes relationship owned by fixed `word/document.xml`.",
-      "evidence": [
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
-        }
-      ]
-    },
-    {
       "id": "ECMA-PART1-17-10-1",
       "title": "w:evenAndOddHeaders setting",
       "classification": "targeted",
@@ -97,7 +57,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:evenAndOddHeaders",
       "claimRationale": "Even-page headers/footers are only honored when `w:evenAndOddHeaders` is\nset in word/settings.xml. Generation always emits the baseline settings part\nand conditionally adds this switch exactly when some section declares an\n`even` slot, so the declared content and document-level switch cannot drift.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/settings-part.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-10-2",
@@ -124,18 +89,6 @@
         {
           "kind": "source",
           "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/RelationshipStorySelector.lean"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
         },
         {
           "kind": "test",
@@ -166,18 +119,6 @@
           "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
         },
         {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/RelationshipStorySelector.lean"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
-        },
-        {
           "kind": "test",
           "path": "packages/docx-core/src/integration/ancillary-field-safety.test.ts"
         },
@@ -204,18 +145,6 @@
         {
           "kind": "source",
           "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/RelationshipStorySelector.lean"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
         },
         {
           "kind": "test",
@@ -254,18 +183,6 @@
           "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
         },
         {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/RelationshipStorySelector.lean"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
-        },
-        {
           "kind": "test",
           "path": "packages/docx-core/src/integration/ancillary-field-safety.test.ts"
         },
@@ -288,25 +205,10 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:titlePg",
       "claimRationale": "`w:titlePg` activates a section's first-page header/footer. Generation\nimplies it whenever a `first` header or footer is declared (and honors an\nexplicit `titlePg: true`), so a declared cover-page header can never be\nsilently ignored by readers.",
-      "evidence": []
-    },
-    {
-      "id": "ECMA-PART1-17-11-10",
-      "title": "Footnote definition schema",
-      "classification": "targeted",
-      "citation": {
-        "standard": "ECMA-376",
-        "edition": 5,
-        "part": 1,
-        "section": "17.11.10"
-      },
-      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
-      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_FtnEdn",
-      "claimRationale": "Direct `w:footnote` definitions are scanned as `CT_FtnEdn` records.",
       "evidence": [
         {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/section.ts"
         }
       ]
     },
@@ -322,7 +224,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteReference",
-      "claimRationale": "`w:id` on `w:footnoteReference` is a *reference identifier*, not the\ndisplayed footnote number. For the supported Word-conventional package\nsurface, display numbers are derived sequentially by document order. The\nruntime ordering logic (`findReferencesInOrder` in\n`packages/docx-core/src/footnotes.ts`) implements that distinction.\n\nThe current `isReservedId` helper skips numeric IDs `0` and `1`, following a\nconvention seen in Word-produced packages. That is a conformance gap, not a\nrule of §17.11.14: the standard identifies separator and continuation-\nseparator notes through note type and does not normatively reserve those\nnumeric identifiers. Arbitrary packages that use `0` or `1` for user notes,\nfull `w:type` interpretation, and complete `w:customMarkFollows` display-mark\nsemantics are outside the present numbering claim.\n\nThe compiled Lean checker selects the Transitional footnotes relationship from\nthe fixed Main Document Part relationship set, scans namespace-resolved\n`w:footnoteReference` events, classifies definitions by `w:type`, and requires\neach canonical user reference ID to have exactly one package-local user\ndefinition. Unique unreferenced definitions remain valid. This claim is\ninplace-only and does not cover display numbering or custom marks.",
+      "claimRationale": "`w:id` on `w:footnoteReference` is a *reference identifier*, not the\ndisplayed footnote number. For the supported Word-conventional package\nsurface, display numbers are derived sequentially by document order. The\nruntime ordering logic (`findReferencesInOrder` in\n`packages/docx-core/src/footnotes.ts`) implements that distinction.\n\nThe current `isReservedId` helper skips numeric IDs `0` and `1`, following a\nconvention seen in Word-produced packages. That is a conformance gap, not a\nrule of §17.11.14: the standard identifies separator and continuation-\nseparator notes through note type and does not normatively reserve those\nnumeric identifiers. Arbitrary packages that use `0` or `1` for user notes,\nfull `w:type` interpretation, and complete `w:customMarkFollows` display-mark\nsemantics are outside the present numbering claim.\n\nThis claim is bounded to the runtime and test evidence listed above.",
       "evidence": [
         {
           "kind": "source",
@@ -331,162 +233,6 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/footnotes.test.ts"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/NoteReferenceIntegrity.lean"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
-        }
-      ]
-    },
-    {
-      "id": "ECMA-PART1-17-11-15",
-      "title": "Footnotes part root",
-      "classification": "targeted",
-      "citation": {
-        "standard": "ECMA-376",
-        "edition": 5,
-        "part": 1,
-        "section": "17.11.15"
-      },
-      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
-      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotes",
-      "claimRationale": "A selected Footnotes Part is admitted only when its expanded root name is\nTransitional `w:footnotes`.",
-      "evidence": [
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
-        }
-      ]
-    },
-    {
-      "id": "ECMA-PART1-17-11-2",
-      "title": "Typed footnote/endnote definitions",
-      "classification": "targeted",
-      "citation": {
-        "standard": "ECMA-376",
-        "edition": 5,
-        "part": 1,
-        "section": "17.11.2"
-      },
-      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
-      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_FtnEdn",
-      "claimRationale": "Absent or `normal` `w:type` values identify user definitions. `separator`,\n`continuationSeparator`, and `continuationNotice` identify special definitions;\nnumeric IDs, including `0` and `1`, never infer that classification.",
-      "evidence": [
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/NoteReferenceIntegrity.lean"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
-        }
-      ]
-    },
-    {
-      "id": "ECMA-PART1-17-11-3",
-      "title": "Endnote definition schema",
-      "classification": "targeted",
-      "citation": {
-        "standard": "ECMA-376",
-        "edition": 5,
-        "part": 1,
-        "section": "17.11.3"
-      },
-      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
-      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_FtnEdn",
-      "claimRationale": "Direct `w:endnote` definitions are scanned as `CT_FtnEdn` records and retain\ntheir typed classification and decimal identity.",
-      "evidence": [
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
-        }
-      ]
-    },
-    {
-      "id": "ECMA-PART1-17-11-7",
-      "title": "Endnote reference integrity",
-      "classification": "targeted",
-      "citation": {
-        "standard": "ECMA-376",
-        "edition": 5,
-        "part": 1,
-        "section": "17.11.7"
-      },
-      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
-      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnoteReference",
-      "claimRationale": "The compiled Lean checker selects the Transitional endnotes relationship from\n`word/_rels/document.xml.rels` and requires each namespace-resolved user\n`w:endnoteReference` ID to have exactly one user definition in that selected\npart. References inside either selected note-definition story are rejected.",
-      "evidence": [
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/NoteReferenceIntegrity.lean"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
-        }
-      ]
-    },
-    {
-      "id": "ECMA-PART1-17-11-7-TYPE",
-      "title": "CT_FtnEdnRef note-reference schema",
-      "classification": "targeted",
-      "citation": {
-        "standard": "ECMA-376",
-        "edition": 5,
-        "part": 1,
-        "section": "17.11.7"
-      },
-      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
-      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_FtnEdnRef",
-      "claimRationale": "Namespace-resolved note references use the required decimal `w:id` shape\ndeclared by `CT_FtnEdnRef`; malformed and missing IDs are retained as failures.",
-      "evidence": [
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
-        }
-      ]
-    },
-    {
-      "id": "ECMA-PART1-17-11-8",
-      "title": "Endnotes part root",
-      "classification": "targeted",
-      "citation": {
-        "standard": "ECMA-376",
-        "edition": 5,
-        "part": 1,
-        "section": "17.11.8"
-      },
-      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
-      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnotes",
-      "claimRationale": "A selected Endnotes Part is admitted only when its expanded root name is\nTransitional `w:endnotes`.",
-      "evidence": [
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
-        }
-      ]
-    },
-    {
-      "id": "ECMA-PART1-17-11-9",
-      "title": "Typed footnote definitions",
-      "classification": "targeted",
-      "citation": {
-        "standard": "ECMA-376",
-        "edition": 5,
-        "part": 1,
-        "section": "17.11.9"
-      },
-      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
-      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_FtnEdn",
-      "claimRationale": "The verifier distinguishes normal and special footnote definitions by the\n`ST_FtnEdn` value rather than by numeric ID conventions.",
-      "evidence": [
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
         }
       ]
     },
@@ -511,14 +257,6 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/generation/generation-drafting-notes.test.ts"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/CommentReferenceIntegrity/Semantics.lean"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
         }
       ]
     },
@@ -543,22 +281,6 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/generation/generation-drafting-notes.test.ts"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/CommentReferenceIntegrity/TypedSemantics.lean"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
-        },
-        {
-          "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
         }
       ]
     },
@@ -583,22 +305,6 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/generation/generation-drafting-notes.test.ts"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/CommentReferenceIntegrity/TypedSemantics.lean"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
-        },
-        {
-          "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
         }
       ]
     },
@@ -614,7 +320,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentReference",
-      "claimRationale": "The trailing reference run carries `w:commentReference` with the same id\nas its range anchors; the existing deleteComment editing path removes the\ntrio cleanly, which the strip scenario verifies on generated output.\nThe compiled Lean checker collects references from admitted main, note,\nheader, and footer physical stories and requires exactly one direct definition\nwith the same canonical decimal ID. It also verifies the stronger Safe-DOCX\npaired-or-point topology profile without presenting orphan rejection as an\nECMA-376 requirement. Microsoft threaded-comment extension integrity remains\noutside scope.",
+      "claimRationale": "This claim is bounded to the runtime and test evidence listed above.",
       "evidence": [
         {
           "kind": "source",
@@ -623,26 +329,6 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/generation/generation-drafting-notes.test.ts"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/CommentReferenceIntegrity/Semantics.lean"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/CommentReferenceIntegrity/TypedSemantics.lean"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
-        },
-        {
-          "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
         }
       ]
     },
@@ -658,7 +344,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comments",
-      "claimRationale": "Drafting notes compile to a word/comments.xml part holding one\n`w:comment` per note, alongside the Word-extension commentsExtended and\npeople parts (content/relationship types matching what Word itself\nwrites, cross-checked against the Open XML SDK part constants). The\nemitter lives in `packages/docx-core/src/generation/emit/comments-part.ts`.\nThis claim is limited to generated root-comment collections. Thread replies,\ncomment-resolution semantics, and arbitrary third-party comment-part repair\nare not claimed. The compiled Lean checker independently selects an exact\ninternal Transitional comments relationship, accepts a relocated safe part,\nrequires a `w:comments` root, and scans direct `CT_Comment` definitions.\n`CT_TrackChange` ancestry is retained by the shared parser, but range pairing\nand topology are explicitly outside this claim.",
+      "claimRationale": "This claim is bounded to the runtime and test evidence listed above.",
       "evidence": [
         {
           "kind": "source",
@@ -667,14 +353,6 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/generation/generation-drafting-notes.test.ts"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
         }
       ]
     },
@@ -896,7 +574,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom",
-      "claimRationale": "This subsection defines paragraph-level `w:moveFrom`. safe-docx consumes and\nauthors bounded move markup, while complete wrapper/range identity remains a\ngap. Lean checks only the resulting text and field-marker projection.",
+      "claimRationale": "This claim is bounded to the runtime and test evidence listed above.",
       "evidence": [
         {
           "kind": "source",
@@ -953,14 +631,6 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/XmlTripleChecker.lean"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
         }
       ]
     },
@@ -985,14 +655,6 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/XmlTripleChecker.lean"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
         }
       ]
     },
@@ -1057,14 +719,6 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/XmlTripleChecker.lean"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
         }
       ]
     },
@@ -1089,14 +743,6 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/XmlTripleChecker.lean"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
         }
       ]
     },
@@ -1155,7 +801,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange",
-      "claimRationale": "safe-docx accepts/rejects `w:rPrChange` records under paragraph-mark run\nproperties. Emission is bounded to the supported formatting surfaces; Lean does\nnot inspect or prove the prior-property snapshot.",
+      "claimRationale": "This claim is bounded to the runtime and test evidence listed above.",
       "evidence": [
         {
           "kind": "source",
@@ -1219,7 +865,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange",
-      "claimRationale": "safe-docx emits bounded page-number/page-setup snapshots and consumes existing\n`w:sectPrChange` records: accept removes the prior snapshot and reject restores\nit. Section-break insertion uses one such snapshot when the following section's\nnon-relationship properties change. Header/footer references remain live\nbecause `CT_SectPrChange` carries `CT_SectPrBase`; header/footer part editing,\nrelationship mutation, general pagination, and Lean are outside the claim.",
+      "claimRationale": "This claim is bounded to the runtime and test evidence listed above.",
       "evidence": [
         {
           "kind": "source",
@@ -1290,7 +936,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange",
-      "claimRationale": "safe-docx accepts/rejects existing `w:tblPrChange` records but does not emit\nthem. Table layout/rendering and Lean verification are outside this claim.",
+      "claimRationale": "This claim is bounded to the runtime and test evidence listed above.",
       "evidence": [
         {
           "kind": "source",
@@ -1333,7 +979,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcPrChange",
-      "claimRationale": "The supported cell-padding mutation emits `w:tcPrChange`; accept/reject also\nconsume existing records. Cell-topology records inside the snapshot remain\npreservation-only, and Lean does not inspect the snapshot.",
+      "claimRationale": "This claim is bounded to the runtime and test evidence listed above.",
       "evidence": [
         {
           "kind": "source",
@@ -1365,7 +1011,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPrChange",
-      "claimRationale": "The supported row-height mutation emits `w:trPrChange`; accept/reject also\nconsume existing records. Complete row-property semantics and Lean verification\nare outside this claim.",
+      "claimRationale": "This claim is bounded to the runtime and test evidence listed above.",
       "evidence": [
         {
           "kind": "source",
@@ -1598,7 +1244,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:proofErr",
       "claimRationale": "`w:proofErr` anchors mark spelling or grammar proofing state. They are\nconsumer-rewritable metadata and carry no document content, so safe-docx\ntreats a paragraph whose only children are proofing anchors as an empty\nparagraph for comparison. Rebuild reconstruction does not re-emit those\nanchors.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/atomizer.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-15-3-4",
@@ -1653,18 +1304,6 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-core/src/integration/lean-spec-bridge.test.ts"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/XmlTripleChecker.lean"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/registry/lean-xml-checker-coverage.json"
         }
       ]
     },
@@ -1680,7 +1319,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar",
-      "claimRationale": "Every generated field is a complete five-run sequence — `fldChar begin`,\npreserved-space `w:instrText`, `fldChar separate`, a cached-result run,\n`fldChar end` — and generation never sets `w:dirty`. The opt-in field-refresh\nprimitive can set `w:dirty=\"true\"` on a layout-dependent field's begin marker\nwithout changing its cache. The cached result is a\nrequired spec property, making the no-recovery-dialog guarantee\nunrepresentable-by-omission; the structural validator runs a begin →\nseparate → end state machine over every story part. The comparison path keeps\nthese field-state markers outside the `w:del` payload wrappers shown by the\nPart 1 complex-field and deleted-field-code syntax.\nThe runtime ancillary predicate adds fail-closed stack diagnostics without\nchanging the Lean-pinned predicate or protocol.",
+      "claimRationale": "This claim is bounded to the runtime and test evidence listed above.",
       "evidence": [
         {
           "kind": "source",
@@ -1737,14 +1376,6 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/nvca-coi-regression.test.ts"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/XmlTripleChecker.lean"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/registry/lean-xml-checker-coverage.json"
         }
       ]
     },
@@ -1761,7 +1392,28 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink",
       "claimRationale": "`w:hyperlink` (CT_Hyperlink) is a run container inside `<w:p>` whose\n`r:id` attribute carries the relationship reference to the link target.\nIts content model (EG_PContent) admits run-level revision wrappers, so\ntracked edits to link text nest as `<w:hyperlink><w:ins>…` /\n`<w:hyperlink><w:del>…`; the reverse nesting is invalid because\nCT_RunTrackChange (the `w:ins` / `w:del` content model) does not admit\n`w:hyperlink`. safe-docx's comparison engine preserves the wrapper and\nits attributes when reconstructing paragraphs that contain hyperlinks,\nand never merges text atoms across a hyperlink boundary. The enforcement\nlives in `packages/docx-core/src/atomizer.ts`\n(`nearestHyperlinkAncestor`) and\n`packages/docx-core/src/baselines/atomizer/documentReconstructor.ts`\n(hyperlink wrapper re-emission).",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/atomizer.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/relationships.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/text.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-16-5-42",
@@ -1992,46 +1644,6 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/nvca-coi-regression.test.ts"
-        }
-      ]
-    },
-    {
-      "id": "ECMA-PART1-17-18-10",
-      "title": "ST_DecimalNumber note and comment identifiers",
-      "classification": "targeted",
-      "citation": {
-        "standard": "ECMA-376",
-        "edition": 5,
-        "part": 1,
-        "section": "17.18.10"
-      },
-      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
-      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_DecimalNumber",
-      "claimRationale": "Note and legacy comment IDs are admitted only after a 64-byte raw lexical bound, XML Schema\nwhitespace collapse, and signed decimal parsing. Evidence uses a canonical\ndecimal spelling; aliases such as leading zeroes and negative zero therefore\ncannot create distinct semantic definitions.",
-      "evidence": [
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/NoteReferenceIntegrity.lean"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/CommentReferenceIntegrity/Semantics.lean"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/Tier2/CommentReferenceIntegrity/TypedSemantics.lean"
-        },
-        {
-          "kind": "formal-verification",
-          "path": "verification/lean/LeanDocxChecker.lean"
-        },
-        {
-          "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
         }
       ]
     },
@@ -2276,7 +1888,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:gridCol",
       "claimRationale": "Grid columns carry their width in twentieths of a point, matching the\nspec's `columnWidthsTwips` verbatim — widths are never redistributed or\nnormalized by the compiler.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-17",
@@ -2291,7 +1908,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:gridSpan",
       "claimRationale": "Cells spanning multiple grid columns emit `w:gridSpan`; validation\nrejects rows whose summed spans diverge from the declared grid with a\ntyped `grid_mismatch` error before any XML is produced.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-32",
@@ -2306,7 +1928,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:shd",
       "claimRationale": "Cell shading emits as `w:shd w:val=\"clear\"` with an explicit fill color\nfrom the spec's six-digit hex value; the pattern value is never omitted.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-37",
@@ -2321,7 +1948,16 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tbl",
       "claimRationale": "Tables compile as `w:tbl` with table properties, the column grid, and rows\nin schema order. The emitter lives in\n`packages/docx-core/src/generation/emit/table.ts`; cells dispatch back into\nthe shared block emitters so nested tables reuse the same path.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/validate-spec.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-38",
@@ -2336,7 +1972,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblBorders",
       "claimRationale": "Declared table borders emit as a `w:tblBorders` collection whose edges\nappear in the `CT_TblBorders` sequence (top, left, bottom, right, insideH,\ninsideV) with explicit size/space/color on every edge.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-48",
@@ -2351,7 +1992,16 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGrid",
       "claimRationale": "Every generated table carries a `w:tblGrid` with one `w:gridCol` per\ndeclared column width; spec validation rejects any row whose effective\nspan arithmetic diverges from this grid.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/validate-spec.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-49",
@@ -2366,7 +2016,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblHeader",
       "claimRationale": "Rows marked as header rows emit `w:tblHeader` so the row repeats at the\ntop of every page the table spans.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-52",
@@ -2381,7 +2036,16 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblLayout",
       "claimRationale": "The layout algorithm is always written explicitly (`fixed` by default)\nbecause autofit is the reader-side default when the element is omitted and\nsilently reflows fixed designs.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/schema-enum-domains.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-59",
@@ -2396,7 +2060,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPr",
       "claimRationale": "Table-level properties are collected into a map and appended through the\n`TBLPR_ORDER` table, which the ordering-schema test cross-checks against\n`CT_TblPrBase` in the vendored transitional schema.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-63",
@@ -2411,7 +2080,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblW",
       "claimRationale": "`w:tblW` is always emitted in `dxa` units as the sum of the declared grid\ncolumn widths, so the preferred table width and the grid never disagree —\nreaders that honor one or the other render the same layout.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-65",
@@ -2426,7 +2100,16 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tc",
       "claimRationale": "Cells emit their properties then their block content, and the emitter\nguarantees by construction that every cell ends with a `w:p` — an empty\ncell or one whose last block is a nested table receives a closing empty\nparagraph. The structural validator independently re-checks this invariant\n(and that the document body never ends with a table) over the parsed\noutput.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/structural-checks.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-66",
@@ -2441,7 +2124,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcBorders",
       "claimRationale": "Declared cell borders emit as a `w:tcBorders` collection in the\n`CT_TcBorders` sequence with explicit size/space/color per edge, sitting\nbetween `w:vMerge` and `w:shd` in the cell-property order.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/borders.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-68",
@@ -2456,7 +2144,16 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcMar",
       "claimRationale": "Per-cell margins emit a `w:tcMar` collection in schema edge order with\nexplicit `dxa` widths; only the edges the spec declares are written.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/layout.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-69",
@@ -2471,7 +2168,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcPr",
       "claimRationale": "Cell properties are appended through the `TCPR_ORDER` table\n(tcW, gridSpan, vMerge, tcBorders, shd, tcMar, vAlign), cross-checked\nagainst `CT_TcPrBase` by the ordering-schema test.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-71",
@@ -2486,7 +2188,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcW",
       "claimRationale": "Every cell carries an explicit `w:tcW` in `dxa` units: the declared\nwidth when given, otherwise the sum of the grid columns the cell spans —\ncell widths are deterministic, never left to reader inference.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-78",
@@ -2501,7 +2208,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tr",
       "claimRationale": "Rows emit as `w:tr` with optional row properties followed by cells. Cell\ngrid offsets are tracked during emission so unspecified cell widths can be\nderived from the columns each cell actually spans.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-80",
@@ -2516,7 +2228,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trHeight",
       "claimRationale": "A declared row height emits `w:trHeight` with an explicit `w:hRule`\n(`atLeast` unless the spec says `exact`), avoiding the reader-divergent\ndefault when the rule attribute is omitted.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-81",
@@ -2531,7 +2248,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPr",
       "claimRationale": "Row properties are appended through the `TRPR_ORDER` table\n(`trHeight` before `tblHeader`), cross-checked against `CT_TrPrBase` by\nthe ordering-schema test.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/ordering.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-83",
@@ -2546,7 +2268,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:vAlign",
       "claimRationale": "Declared cell vertical alignment emits `w:vAlign` with the literal\ntop/center/bottom value at its `CT_TcPrBase` position.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-4-84",
@@ -2561,7 +2288,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:vMerge",
       "claimRationale": "Merge starts emit `w:vMerge w:val=\"restart\"`; continuations emit the\nbare element form Word itself writes. Validation requires each\ncontinuation to sit at exactly the grid position and span of a merge cell\nin the previous row.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-5-2-29",
@@ -2768,7 +2500,16 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgMar",
       "claimRationale": "`w:pgMar` declares the page margins plus header/footer offsets and\ngutter for a section, all in twips. The generation section emitter\nalways emits the full attribute set (top, right, bottom, left, header,\nfooter, gutter) because readers diverge in their defaults when\nattributes are omitted; spec values fill in unspecified members from\nthe standard one-inch/half-inch defaults.\nThe section editing primitive permits partial updates of an existing complete\nmargin record, supports the signed top/bottom domains, and requires all seven\nattributes before creating a missing `w:pgMar`.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/sections.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/section.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-6-12",
@@ -2823,7 +2564,16 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgSz",
       "claimRationale": "`w:pgSz` carries the page width/height in twentieths of a point and an\noptional orientation. The generation section emitter\n(`packages/docx-core/src/generation/emit/section.ts`) emits explicit\n`w:w`/`w:h` for every section (defaulting to US Letter) and sets\n`w:orient=\"landscape\"` with swapped dimensions when the spec requests\nlandscape, so readers never fall back to printer-driver defaults.\nThe section editing primitive updates explicit width, height, and orientation\nattributes atomically, preserves untargeted attributes such as paper code, and\nrequires both dimensions before creating a missing `w:pgSz`.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/sections.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/section.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-6-17",
@@ -2838,7 +2588,20 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr",
       "claimRationale": "The final section of a document binds its properties through a `w:sectPr`\nthat is a direct child of `w:body`, positioned after all block-level\ncontent. From-scratch generation always emits exactly one body-level\n`w:sectPr` as the body's last child, and the generation structural\nvalidator (`packages/docx-core/src/generation/structural-checks.ts`)\nrejects packages where it is missing, duplicated, or not last —\ncomplementing `auditSectPr`, which tolerates the zero-sectPr case for\nparsed third-party documents.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/baselines/atomizer/unrepresentedChanges.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/structural-checks.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/document-part.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-6-18",
@@ -2941,7 +2704,20 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:style",
       "claimRationale": "Each declared `StyleSpec` becomes a `w:style` carrying `w:type`,\n`w:styleId`, `w:name`, optional `w:basedOn`/`w:next` links, and `w:pPr` /\n`w:rPr` built by the same shared property builders the body emitters use —\nso a style definition and direct formatting can never serialize a property\ndifferently. Dangling `basedOn`/`next`/paragraph references are rejected\nat spec validation, before any XML is built.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/schema-enum-domains.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/styles-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/validate-spec.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-7-4-18",
@@ -2956,7 +2732,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:styles",
       "claimRationale": "`w:styles` is the root of the style-definitions part. From-scratch\ngeneration always emits `word/styles.xml` — document defaults, a default\n`Normal` paragraph style, and every declared named style — wired through a\ncontent-type override and a styles relationship from the main document\npart. The emitter lives at\n`packages/docx-core/src/generation/emit/styles-part.ts`.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/styles-part.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-7-5-1",
@@ -2971,7 +2752,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults",
       "claimRationale": "`w:docDefaults` carries the document-wide default run and paragraph\nproperties that styles and direct formatting layer over. Generation emits\nexplicit defaults (font bound across ascii/hAnsi/cs script ranges plus an\nexplicit size) rather than relying on reader fallbacks, which diverge\nbetween Word, LibreOffice, and Google Docs import.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/styles-part.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-9-1",
@@ -2986,7 +2772,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:abstractNum",
       "claimRationale": "Each NumberingSpec becomes one abstract definition with sequential\n`abstractNumId` values assigned in declaration order — ids are\ndeterministic compile output, never random.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-9-11",
@@ -3001,7 +2792,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlText",
       "claimRationale": "The level text pattern (e.g. `%1.` / `%1.%2` / a literal bullet glyph) is\nemitted verbatim from the spec; validation requires a non-empty pattern on\nevery level.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-9-12",
@@ -3016,7 +2812,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:multiLevelType",
       "claimRationale": "Abstract definitions declare `multilevel` when more than one level exists\nand `singleLevel` otherwise, so single-level bullet definitions don't\nadvertise unused depth.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-9-15",
@@ -3031,7 +2832,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num",
       "claimRationale": "Instances carry sequential numeric `w:numId` values (starting at 1) in\ndeclaration order; the spec-level string handle → numeric id map is what\nparagraph references bind through.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-9-16",
@@ -3046,7 +2852,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numbering",
       "claimRationale": "Declared numbering definitions compile to a word/numbering.xml part whose\nroot holds every abstract definition before every instance, per the\nCT_Numbering sequence. The emitter lives in\n`packages/docx-core/src/generation/emit/numbering-part.ts`.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-9-17",
@@ -3061,7 +2872,20 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numFmt",
       "claimRationale": "Each level carries its declared format verbatim (decimal, letter, roman,\nbullet, none); the generated formats round-trip through the read-side\nlabel computation in `packages/docx-core/src/primitives/numbering.ts`.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/schema-enum-domains.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/validate-spec.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-9-18",
@@ -3100,7 +2924,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:abstractNumId",
       "claimRationale": "Every emitted instance references its abstract definition through\n`w:abstractNumId`; the pairing is 1:1 by construction so the reference can\nnever dangle.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-9-22",
@@ -3139,7 +2968,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:start",
       "claimRationale": "The starting value is always emitted explicitly (declared value or 1) so\nreaders never fall back to divergent defaults.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-9-28",
@@ -3154,7 +2988,16 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:suff",
       "claimRationale": "A declared suffix (tab/space/nothing) emits at its CT_Lvl position; when\nabsent the element is omitted and readers apply the spec default (tab),\nmatching the read-side parser's assumption.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/validate-spec.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-9-3",
@@ -3193,7 +3036,16 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvl",
       "claimRationale": "Level definitions follow the CT_Lvl child sequence (start, numFmt, suff,\nlvlText, lvlJc, pPr, rPr); level indents emit through `w:pPr`/`w:ind` and\nlevel run properties reuse the shared rPr builder.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/numbering.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-9-7",
@@ -3208,7 +3060,12 @@
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlJc",
       "claimRationale": "Level justification is authorable per level via `NumberingSpec` (`left`,\n`center`, or `right`, the transitional ST_Jc subset) and is always emitted\ndeterministically, defaulting to `left` when omitted. `right` aligns labels of\ndiffering widths on their right edge — the standard legal-outline convention.",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART4-14-9-1-1",
@@ -3649,34 +3506,6 @@
       ]
     },
     {
-      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnoteReference",
-      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
-      "conformanceClass": "transitional",
-      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
-      "kind": "element",
-      "name": "endnoteReference",
-      "occurrences": [
-        {
-          "contextPath": "schema/group:EG_RunInnerContent/choice/element:endnoteReference",
-          "declaredType": "CT_FtnEdnRef"
-        }
-      ]
-    },
-    {
-      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnotes",
-      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
-      "conformanceClass": "transitional",
-      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
-      "kind": "element",
-      "name": "endnotes",
-      "occurrences": [
-        {
-          "contextPath": "schema/element:endnotes",
-          "declaredType": "CT_Endnotes"
-        }
-      ]
-    },
-    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:evenAndOddHeaders",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -3731,20 +3560,6 @@
         {
           "contextPath": "schema/group:EG_RunInnerContent/choice/element:footnoteReference",
           "declaredType": "CT_FtnEdnRef"
-        }
-      ]
-    },
-    {
-      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotes",
-      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
-      "conformanceClass": "transitional",
-      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
-      "kind": "element",
-      "name": "footnotes",
-      "occurrences": [
-        {
-          "contextPath": "schema/element:footnotes",
-          "declaredType": "CT_Footnotes"
         }
       ]
     },
@@ -5090,32 +4905,6 @@
       ]
     },
     {
-      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_FtnEdn",
-      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
-      "conformanceClass": "transitional",
-      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
-      "kind": "type",
-      "name": "CT_FtnEdn",
-      "occurrences": [
-        {
-          "contextPath": "schema/type:CT_FtnEdn"
-        }
-      ]
-    },
-    {
-      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_FtnEdnRef",
-      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
-      "conformanceClass": "transitional",
-      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
-      "kind": "type",
-      "name": "CT_FtnEdnRef",
-      "occurrences": [
-        {
-          "contextPath": "schema/type:CT_FtnEdnRef"
-        }
-      ]
-    },
-    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_RPr",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -5242,32 +5031,6 @@
       "occurrences": [
         {
           "contextPath": "schema/type:CT_Sym"
-        }
-      ]
-    },
-    {
-      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_DecimalNumber",
-      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
-      "conformanceClass": "transitional",
-      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
-      "kind": "type",
-      "name": "ST_DecimalNumber",
-      "occurrences": [
-        {
-          "contextPath": "schema/type:ST_DecimalNumber"
-        }
-      ]
-    },
-    {
-      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_FtnEdn",
-      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
-      "conformanceClass": "transitional",
-      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
-      "kind": "type",
-      "name": "ST_FtnEdn",
-      "occurrences": [
-        {
-          "contextPath": "schema/type:ST_FtnEdn"
         }
       ]
     }

@@ -385,7 +385,7 @@ const MOVE_RANGE_MARKER_TAGS = [
  * duplicate, even when a logical move spans multiple paragraphs. Only marker
  * nodes recorded by the current comparison pass are eligible, so pre-existing
  * tracked moves remain untouched even if their IDs collide with generated IDs.
- * Groups with inconsistent names for one id are left untouched so the Lean
+ * Groups with inconsistent names for one id are left untouched so the
  * checker can reject the malformed identity instead of this repair pass hiding it.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.23

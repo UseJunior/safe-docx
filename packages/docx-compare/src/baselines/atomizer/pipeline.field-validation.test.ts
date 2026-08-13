@@ -346,10 +346,10 @@ describe('strict ancillary field structure', () => {
     },
   );
 
-  strictTest.openspec('[SDX-ANC-STRICT-03] Lean behavior does not change')(
+  strictTest.openspec('[SDX-ANC-STRICT-03] Legacy permissive behavior remains stable')(
     'keeps the original predicate intentionally unchanged',
     async ({ then }: AllureBddContext) => {
-      await then('a stray separator remains tolerated only by the Lean-pinned predicate', () => {
+      await then('a stray separator remains tolerated only by the legacy predicate', () => {
         const xml = buildDoc(`<w:p><w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>`);
         expect(validateFieldStructure(xml)).toBe(true);
         expect(validateStrictFieldStructure(xml)).toBe(false);

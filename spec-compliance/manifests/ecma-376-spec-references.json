@@ -51,7 +51,7 @@
       "relatedRegistryIds": ["ECMA-PART1-17-11-14"],
       "relatedSource": ["packages/docx-core/src/footnotes.ts"],
       "relatedTests": ["packages/docx-core/src/footnotes.test.ts"],
-      "notes": "Covers document-order display numbering for Word-conventional packages. Numeric IDs 0 and 1 are skipped by an explicit conformance gap; arbitrary IDs, complete w:type/customMarkFollows semantics, definition matching, and relationships are not covered or verified by Lean."
+      "notes": "Covers document-order display numbering for Word-conventional packages. Numeric IDs 0 and 1 are skipped by an explicit conformance gap; arbitrary IDs, complete w:type/customMarkFollows semantics, definition matching, and relationships are not covered."
     },
     {
       "id": "ooxml.ecma376.5ed.part1.comments.collection",
@@ -126,7 +126,7 @@
       "relatedRegistryIds": ["ECMA-PART1-17-13-4-5"],
       "relatedSource": ["packages/docx-core/src/generation/emit/paragraph.ts"],
       "relatedTests": ["packages/docx-core/src/generation/generation-drafting-notes.test.ts"],
-      "notes": "Covers generated matching reference marks inside a trailing run. Lean does not inspect comments.xml or anchor identity."
+      "notes": "Covers generated matching reference marks inside a trailing run; arbitrary comments.xml repair and anchor identity validation are outside this claim."
     },
     {
       "id": "ooxml.ecma376.5ed.part1.revisions.moves",
@@ -141,7 +141,7 @@
       "relatedRegistryIds": ["ECMA-PART1-17-13-5-21"],
       "relatedSource": ["packages/docx-core/src/primitives/accept_changes.ts", "packages/docx-core/src/primitives/reject_changes.ts"],
       "relatedTests": ["packages/docx-core/src/integration/advanced-revision-classification.test.ts"],
-      "notes": "Covers consuming moveFrom/moveTo content. Emission, wrapper/range identity, complete pair semantics, header/footer sweeps, and Lean proof are excluded."
+      "notes": "Covers consuming moveFrom/moveTo content. Emission, wrapper/range identity, complete pair semantics, and header/footer sweeps are excluded."
     },
     {
       "id": "ooxml.ecma376.5ed.part1.revisions.run-properties-paragraph-mark",
@@ -156,7 +156,7 @@
       "relatedRegistryIds": ["ECMA-PART1-17-13-5-30"],
       "relatedSource": ["packages/docx-core/src/primitives/accept_changes.ts", "packages/docx-core/src/primitives/reject_changes.ts"],
       "relatedTests": ["packages/docx-core/src/integration/advanced-revision-classification.test.ts"],
-      "notes": "Covers bounded accept/reject of rPrChange on paragraph-mark run properties; Lean does not inspect prior-property snapshots."
+      "notes": "Covers bounded accept/reject of rPrChange on paragraph-mark run properties; prior-property snapshot semantics are outside this claim."
     },
     {
       "id": "ooxml.ecma376.5ed.part1.revisions.section-properties",
@@ -171,7 +171,7 @@
       "relatedRegistryIds": ["ECMA-PART1-17-13-5-32"],
       "relatedSource": ["packages/docx-core/src/primitives/accept_changes.ts", "packages/docx-core/src/primitives/reject_changes.ts"],
       "relatedTests": ["packages/docx-core/src/integration/advanced-revision-classification.test.ts"],
-      "notes": "Covers accept/reject of existing snapshots in swept stories, not emission, relationship semantics, headers/footers, pagination, or Lean proof."
+      "notes": "Covers accept/reject of existing snapshots in swept stories, not emission, relationship semantics, headers/footers, or pagination."
     },
     {
       "id": "ooxml.ecma376.5ed.part1.revisions.table-cell-properties",
@@ -186,7 +186,7 @@
       "relatedRegistryIds": ["ECMA-PART1-17-13-5-36"],
       "relatedSource": ["packages/docx-core/src/primitives/accept_changes.ts", "packages/docx-core/src/primitives/reject_changes.ts"],
       "relatedTests": ["packages/docx-core/src/integration/advanced-revision-classification.test.ts"],
-      "notes": "Covers tcPrChange consumption and bounded cell-padding snapshot emission; topology semantics and Lean proof are excluded."
+      "notes": "Covers tcPrChange consumption and bounded cell-padding snapshot emission; topology semantics are excluded."
     }
   ]
 }
