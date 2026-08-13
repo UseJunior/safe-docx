@@ -5,12 +5,117 @@ import {
   getParagraphRuns,
   type ReplacementPart,
 } from '@usejunior/docx-core';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocuments, compareFormattingFidelity, type FormattingFidelityReport } from '@usejunior/docx-compare';
 import { DocxMarkdocError } from './errors.js';
 import { sha256 } from './hash.js';
 import { requireMarkdoc } from './markdoc.js';
 import { assessDraftCompleteness } from './completeness.js';
-import type { CompileResult, EditOperation, InsertOperation, MarkdocEditIR, VerificationCertificate } from './types.js';
+import type {
+  CompileResult,
+  EditOperation,
+  FormattingProjectionDiagnostic,
+  FormattingProjectionReport,
+  InsertOperation,
+  MarkdocEditIR,
+  RunFormat,
+  VerificationCertificate,
+} from './types.js';
+
+const FORMATTING_DIAGNOSTIC_LIMIT = 8;
+
+async function documentXml(buffer: Buffer): Promise<string> {
+  const zip = await JSZip.loadAsync(buffer);
+  const xml = await zip.file('word/document.xml')?.async('string');
+  if (!xml) throw new DocxMarkdocError('VERIFICATION_FAILED', 'DOCX has no word/document.xml for formatting verification.');
+  // Projection materialization can leave an empty direct rPr container in a
+  // paragraph property block. It carries no formatting semantics but the
+  // public comparator correctly treats a non-empty rPr as material; erase
+  // only the syntactically empty form before handing XML to that comparator.
+  return xml.replace(/<w:rPr\s*\/>|<w:rPr\s*>\s*<\/w:rPr>/gu, '');
+}
+
+function formattingDiagnostic(report: FormattingFidelityReport): FormattingProjectionDiagnostic {
+  return {
+    score: report.score,
+    unalignedExpectedParagraphs: report.unalignedExpectedParagraphs,
+    unalignedActualParagraphs: report.unalignedActualParagraphs,
+    divergenceCount: report.divergences.length,
+    divergences: report.divergences.slice(0, FORMATTING_DIAGNOSTIC_LIMIT).map((divergence) => ({
+      scope: divergence.scope,
+      property: divergence.property,
+      kind: divergence.kind,
+      expectedValue: divergence.expectedValue,
+      actualValue: divergence.actualValue,
+      paragraphIndex: divergence.paragraphIndex,
+      textSample: divergence.textSample,
+    })),
+  };
+}
+
+function formattingEquivalent(report: FormattingFidelityReport): boolean {
+  return report.score === 1
+    && report.unalignedExpectedParagraphs === 0
+    && report.unalignedActualParagraphs === 0
+    && report.divergences.length === 0;
+}
+
+/**
+ * Check the two projections that make up Markdoc replay certification.
+ *
+ * Source is intentionally compared only with reject-all and clean only with
+ * accept-all: source ↔ clean contains authored edits and is not an invariant.
+ */
+export async function verifyFormattingProjections(
+  source: Buffer,
+  clean: Buffer,
+  tracked: Buffer,
+): Promise<{
+  rejectAllFormattingEqualsSource: boolean;
+  acceptAllFormattingEqualsClean: boolean;
+  formattingProjections: FormattingProjectionReport;
+}> {
+  const [sourceXml, cleanXml] = await Promise.all([documentXml(source), documentXml(clean)]);
+  const accepted = await DocxDocument.load(tracked);
+  const rejected = await DocxDocument.load(tracked);
+  await Promise.all([accepted.acceptChanges(), rejected.rejectChanges()]);
+  const [acceptedXml, rejectedXml] = await Promise.all([
+    documentXml((await accepted.toBuffer({ cleanBookmarks: false })).buffer),
+    documentXml((await rejected.toBuffer({ cleanBookmarks: false })).buffer),
+  ]);
+  const sourceRejectAll = compareFormattingFidelity(sourceXml, rejectedXml);
+  const cleanAcceptAll = compareFormattingFidelity(cleanXml, acceptedXml);
+  return {
+    rejectAllFormattingEqualsSource: formattingEquivalent(sourceRejectAll),
+    acceptAllFormattingEqualsClean: formattingEquivalent(cleanAcceptAll),
+    formattingProjections: {
+      sourceRejectAll: formattingDiagnostic(sourceRejectAll),
+      cleanAcceptAll: formattingDiagnostic(cleanAcceptAll),
+    },
+  };
+}
+
+export function projectionChecksPassed(checks: Pick<
+  VerificationCertificate,
+  | 'sourceSha256Matches'
+  | 'scaffoldComplete'
+  | 'paragraphFingerprintsMatch'
+  | 'operationsAppliedExactlyOnce'
+  | 'rejectAllEqualsSource'
+  | 'acceptAllEqualsClean'
+  | 'rejectAllFormattingEqualsSource'
+  | 'acceptAllFormattingEqualsClean'
+  | 'unchangedPackagePartsPreserved'
+>): boolean {
+  return checks.sourceSha256Matches
+    && checks.scaffoldComplete
+    && checks.paragraphFingerprintsMatch
+    && checks.operationsAppliedExactlyOnce
+    && checks.rejectAllEqualsSource
+    && checks.acceptAllEqualsClean
+    && checks.rejectAllFormattingEqualsSource
+    && checks.acceptAllFormattingEqualsClean
+    && checks.unchangedPackagePartsPreserved;
+}
 
 function verificationText(document: DocxDocument): string {
   // The comparison engine may legitimately move internal paragraph bookmarks
@@ -176,21 +281,77 @@ function templateForHunk(
   );
 }
 
+function addRunProps(runFormat: RunFormat | undefined): ReplacementPart['addRunProps'] | undefined {
+  if (!runFormat) return undefined;
+  return {
+    ...(runFormat.underline === undefined ? {} : { underline: runFormat.underline }),
+    ...(runFormat.highlight === undefined ? {} : { highlight: runFormat.highlight }),
+  };
+}
+
+function requireSingleGeneratedHunk(operationId: string, hunks: TextHunk[]): TextHunk {
+  const generated = hunks.filter((hunk) => hunk.replacement.length > 0);
+  if (generated.length !== 1) {
+    throw new DocxMarkdocError(
+      'AMBIGUOUS_RUN_FORMAT_SCOPE',
+      `Operation ${operationId} run formatting requires exactly one generated replacement hunk.`,
+    );
+  }
+  return generated[0]!;
+}
+
+function insertionTemplate(document: DocxDocument, operation: InsertOperation): Element {
+  const sourceId = operation.styleSourceId ?? operation.anchorId;
+  const paragraph = assertAdmittedStructure(document, sourceId);
+  const sourceText = document.getParagraphTextById(sourceId);
+  if (sourceText === null) throw new DocxMarkdocError('MISSING_ANCHOR', `Insertion formatting source ${sourceId} was not found.`);
+  const spans = runSpans(paragraph);
+  if (operation.formatSource !== undefined) return uniqueSourceTemplate(spans, sourceText, operation.formatSource, sourceId);
+  if (spans.length === 0) throw new DocxMarkdocError('MIXED_FORMATTING_REQUIRES_DETAIL', `Insertion ${operation.operationId} has no source run template.`);
+  return spans[0]!.run;
+}
+
 function replacePreservingMixedFormatting(
   document: DocxDocument,
   id: string,
   before: string,
   after: string,
   formatSource?: string,
+  runFormat?: RunFormat,
 ): void {
   const paragraph = assertAdmittedStructure(document, id);
   const spans = runSpans(paragraph);
   const hunks = textHunks(before, after);
+  const formatted = runFormat ? requireSingleGeneratedHunk(id, hunks) : undefined;
   for (const hunk of [...hunks].reverse()) {
     const replacement: ReplacementPart[] = hunk.replacement.length === 0
       ? []
-      : [{ text: hunk.replacement, templateRun: templateForHunk(spans, hunk, before, id, formatSource) }];
+      : [{
+        text: hunk.replacement,
+        templateRun: templateForHunk(spans, hunk, before, id, formatSource),
+        addRunProps: hunk === formatted ? addRunProps(runFormat) : undefined,
+      }];
     document.replaceTextAtRange({ targetParagraphId: id, start: hunk.start, end: hunk.end, replaceText: replacement });
+  }
+}
+
+function validateRunFormatScopes(ir: MarkdocEditIR, source: DocxDocument): void {
+  for (const operation of ir.operations) {
+    if (!operation.runFormat) continue;
+    if (isInsertOperation(operation)) {
+      if (operation.revisedText.length === 0 || operation.revisedText.replace(/\r\n/gu, '\n').split(/\n{2,}/u).length !== 1) {
+        throw new DocxMarkdocError(
+          'AMBIGUOUS_RUN_FORMAT_SCOPE',
+          `Operation ${operation.operationId} run formatting requires exactly one generated replacement hunk.`,
+        );
+      }
+      insertionFormatSource(source, operation);
+      insertionTemplate(source, operation);
+      continue;
+    }
+    const original = source.getParagraphTextById(operation.id);
+    if (original === null) throw new DocxMarkdocError('MISSING_ANCHOR', `Paragraph ${operation.id} was not found.`);
+    requireSingleGeneratedHunk(operation.operationId, textHunks(original, operation.revisedText));
   }
 }
 
@@ -303,13 +464,26 @@ async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise
   for (const operation of ir.operations) {
     if (isInsertOperation(operation)) {
       const runStyleSourceText = insertionFormatSource(document, operation);
-      document.insertParagraph({
+      const templateRun = operation.runFormat ? insertionTemplate(document, operation) : undefined;
+      const inserted = document.insertParagraph({
         positionalAnchorNodeId: operation.anchorId,
         relativePosition: operation.kind === 'insert-before' ? 'BEFORE' : 'AFTER',
         newText: operation.revisedText,
         styleSourceId: operation.styleSourceId,
         runStyleSourceText,
       });
+      if (operation.runFormat) {
+        document.replaceTextAtRange({
+          targetParagraphId: inserted.newParagraphId,
+          start: 0,
+          end: operation.revisedText.length,
+          replaceText: [{
+            text: operation.revisedText,
+            templateRun,
+            addRunProps: addRunProps(operation.runFormat),
+          }],
+        });
+      }
       continue;
     }
     assertAdmittedStructure(document, operation.id);
@@ -326,6 +500,7 @@ async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise
       original,
       operation.revisedText,
       operation.kind === 'replace-source' ? operation.formatSource : undefined,
+      operation.runFormat,
     );
   }
   return (await document.toBuffer({ cleanBookmarks: false })).buffer;
@@ -346,6 +521,7 @@ export async function compileMarkdoc(
   }
   const sourceDocument = await DocxDocument.load(sourceBuffer);
   const { unsupported } = validateAgainstSource(ir, sourceDocument);
+  validateRunFormatScopes(ir, sourceDocument);
   const declaredOperationIds = ir.operations.map((operation) => operation.operationId);
   const atomicPreflight = assessDraftCompleteness(ir, declaredOperationIds);
   const incompleteAtomicSets = atomicPreflight.changeSets.filter((set) => !set.complete);
@@ -379,6 +555,7 @@ export async function compileMarkdoc(
   const completeness = assessDraftCompleteness(ir, declaredOperationIds, cleanText);
   const rejectAllEqualsSource = rejectedText === sourceText;
   const acceptAllEqualsClean = acceptedText === cleanText;
+  const formattingProjection = await verifyFormattingProjections(sourceBuffer, clean, tracked);
   const unchangedPackagePartsPreserved = await unchangedPartsEqual(sourceBuffer, clean);
   const certificate: VerificationCertificate = {
     version: 1,
@@ -388,6 +565,9 @@ export async function compileMarkdoc(
     operationsAppliedExactlyOnce: new Set(ir.operations.map((operation) => operation.operationId)).size === ir.operations.length,
     rejectAllEqualsSource,
     acceptAllEqualsClean,
+    rejectAllFormattingEqualsSource: formattingProjection.rejectAllFormattingEqualsSource,
+    acceptAllFormattingEqualsClean: formattingProjection.acceptAllFormattingEqualsClean,
+    formattingProjections: formattingProjection.formattingProjections,
     unchangedPackagePartsPreserved,
     unsupportedStructures: unsupported,
     appliedOperations: declaredOperationIds,
@@ -397,13 +577,7 @@ export async function compileMarkdoc(
     completeness,
     passed: false,
   };
-  certificate.projectionPassed = certificate.sourceSha256Matches
-    && certificate.scaffoldComplete
-    && certificate.paragraphFingerprintsMatch
-    && certificate.operationsAppliedExactlyOnce
-    && certificate.rejectAllEqualsSource
-    && certificate.acceptAllEqualsClean
-    && certificate.unchangedPackagePartsPreserved;
+  certificate.projectionPassed = projectionChecksPassed(certificate);
   certificate.deliveryReady = certificate.projectionPassed && certificate.draftCompletenessPassed;
   certificate.passed = certificate.deliveryReady;
   if (!certificate.projectionPassed) throw new DocxMarkdocError('VERIFICATION_FAILED', 'Strict replay verification failed.', {

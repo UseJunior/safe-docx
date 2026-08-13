@@ -108,9 +108,35 @@ author may resolve that ambiguity by naming one unique source substring:
 exactly once and occupy one coalesced formatting class; it does not change the
 before/after text or relax source verification. Deleting a mixed-format
 paragraph requires no formatting choice and therefore remains admitted.
+
+Verification separately checks semantic formatting fidelity from the pinned
+source to reject-all and from clean output to accept-all. Both checks tolerate
+harmless run fragmentation, include at most eight property-level divergences in
+the certificate, and gate projection and delivery success. They do not infer
+that new text should be formatted merely because it resembles a blank, date,
+signature line, or other domain convention.
 The same attribute applies to `insert-before` and `insert-after` when their
 anchor or `style-source` paragraph has mixed character formatting; without it,
 such an insertion fails closed rather than choosing the longest source run.
+
+`format-source` only selects the inherited source template. It never authors
+new formatting. One generated replacement hunk may instead declare an explicit
+additive overlay using the closed `underline="single"` and
+`highlight="yellow"` vocabulary:
+
+```markdoc
+{% change id="_bk_..." fingerprint="..." style="Normal" operation="replace-fill" format="inherit-source-paragraph" underline="single" highlight="yellow" %}
+{% before %}2026-08-12{% /before %}
+{% after %}________________{% /after %}
+{% /change %}
+```
+
+Only the generated replacement receives those direct properties. All
+undeclared properties remain inherited from the selected source run. A
+run-format declaration is rejected before mutation if its operation produces
+zero or multiple generated text hunks; split the work into separate
+source-anchored operations instead. An inserted paragraph is one zero-width
+source hunk and may use the same overlay.
 
 The canonical Markdoc is compact. `inspectMarkdocSource` generates normalized
 formatting detail for selected paragraphs when an edit needs it. With no IDs it

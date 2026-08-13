@@ -1,8 +1,12 @@
 import Markdoc, { type Config, type Node } from '@markdoc/markdoc';
 import { DocxMarkdocError } from './errors.js';
-import { IR_VERSION, type AtomicChangeSet, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type RequirementWaiver, type SourceParagraph, type ValidationIssue, type ValidationResult } from './types.js';
+import { IR_VERSION, type AtomicChangeSet, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type RequirementWaiver, type RunFormat, type SourceParagraph, type ValidationIssue, type ValidationResult } from './types.js';
 
 const stringRequired = { type: String, required: true } as const;
+const runFormatAttributes = {
+  underline: { type: String, matches: ['single'] },
+  highlight: { type: String, matches: ['yellow'] },
+};
 
 export const markdocConfig: Config = {
   tags: {
@@ -30,6 +34,7 @@ export const markdocConfig: Config = {
         operation: stringRequired,
         format: { type: String, required: true, matches: ['inherit-source-paragraph'] },
         'format-source': { type: String },
+        ...runFormatAttributes,
       },
     },
     before: {},
@@ -41,6 +46,8 @@ export const markdocConfig: Config = {
         style: stringRequired,
         operation: stringRequired,
         format: { type: String, required: true, matches: ['inherit-source-paragraph'] },
+        'format-source': { type: String },
+        ...runFormatAttributes,
       },
     },
     'delete-source': {
@@ -51,6 +58,7 @@ export const markdocConfig: Config = {
         style: stringRequired,
         operation: stringRequired,
         format: { type: String, required: true, matches: ['inherit-source-paragraph'] },
+        ...runFormatAttributes,
       },
     },
     'insert-before': {
@@ -59,6 +67,7 @@ export const markdocConfig: Config = {
         operation: stringRequired,
         'style-source': { type: String },
         'format-source': { type: String },
+        ...runFormatAttributes,
       },
     },
     'insert-after': {
@@ -67,6 +76,7 @@ export const markdocConfig: Config = {
         operation: stringRequired,
         'style-source': { type: String },
         'format-source': { type: String },
+        ...runFormatAttributes,
       },
     },
     rationale: {
@@ -153,6 +163,22 @@ function assertNoNestedTags(node: Node, issues: ValidationIssue[]): void {
 
 function commaList(value: unknown): string[] {
   return String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function runFormatFromAttributes(attributes: Record<string, unknown>, node: Node, issues: ValidationIssue[]): RunFormat | undefined {
+  const underline = attributes.underline === undefined ? undefined : String(attributes.underline);
+  const highlight = attributes.highlight === undefined ? undefined : String(attributes.highlight);
+  if (underline !== undefined && underline !== 'single') {
+    issues.push(issue('INVALID_RUN_FORMAT', 'underline must be the admitted value "single".', node));
+  }
+  if (highlight !== undefined && highlight !== 'yellow') {
+    issues.push(issue('INVALID_RUN_FORMAT', 'highlight must be the admitted value "yellow".', node));
+  }
+  if (underline === undefined && highlight === undefined) return undefined;
+  return {
+    ...(underline === 'single' ? { underline } : {}),
+    ...(highlight === 'yellow' ? { highlight } : {}),
+  };
 }
 
 export function parseMarkdoc(source: string): ValidationResult {
@@ -249,6 +275,14 @@ export function parseMarkdoc(source: string): ValidationResult {
       }
       if (afterNodes.some(hasRevision)) issues.push(issue('REVISION_TAGS_NONCANONICAL', 'The after state contains clean text; inline ins/del belongs only in generated views.', node));
       const operationId = String(a.operation ?? '');
+      const runFormat = runFormatFromAttributes(a, node, issues);
+      if (runFormat && afterNodes[0]?.children.filter((child) => child.type === 'paragraph').length !== 1) {
+        issues.push(issue(
+          'AMBIGUOUS_RUN_FORMAT_SCOPE',
+          `Operation ${operationId} run formatting requires exactly one generated replacement block.`,
+          node,
+        ));
+      }
       operations.push({
         kind: node.tag,
         operationId,
@@ -256,6 +290,7 @@ export function parseMarkdoc(source: string): ValidationResult {
         revisedText: afterNodes[0] ? textProjection(afterNodes[0], 'revised') : '',
         styleSourceId: a['style-source'] === undefined ? undefined : String(a['style-source']),
         formatSource: a['format-source'] === undefined ? undefined : String(a['format-source']),
+        runFormat,
       });
       if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
       operationIds.add(operationId);
@@ -276,6 +311,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       const afterText = afterNodes[0] ? textProjection(afterNodes[0], 'revised') : '';
       if (children.some(hasRevision)) issues.push(issue('REVISION_TAGS_NONCANONICAL', 'Before/after states contain clean text; inline ins/del belongs only in generated views.', node));
       const operationId = String(a.operation ?? '');
+      const runFormat = runFormatFromAttributes(a, node, issues);
       if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
       operationIds.add(operationId);
       const paragraph: SourceParagraph = {
@@ -287,12 +323,13 @@ export function parseMarkdoc(source: string): ValidationResult {
       };
       scaffold.push(paragraph);
       operations.push(afterText === ''
-        ? { kind: 'delete-source', operationId, format: 'inherit-source-paragraph', ...paragraph }
+        ? { kind: 'delete-source', operationId, format: 'inherit-source-paragraph', runFormat, ...paragraph }
         : {
           kind: 'replace-source',
           operationId,
           format: 'inherit-source-paragraph',
           formatSource: a['format-source'] === undefined ? undefined : String(a['format-source']),
+          runFormat,
           ...paragraph,
         });
       continue;
@@ -319,16 +356,24 @@ export function parseMarkdoc(source: string): ValidationResult {
     };
     scaffold.push(paragraph);
     const operationId = a.operation === undefined ? undefined : String(a.operation);
+    const runFormat = runFormatFromAttributes(a, node, issues);
     if (node.tag === 'para' && hasRevision(node)) issues.push(issue('INLINE_REVISIONS_NONCANONICAL', `Paragraph ${id} must be represented as clean before/after states.`, node));
     if (!operationId) continue;
     if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
     operationIds.add(operationId);
     if (node.tag === 'para') {
-      operations.push({ kind: 'inline-edit', operationId, ...paragraph });
+      operations.push({ kind: 'inline-edit', operationId, runFormat, ...paragraph });
     } else if (node.tag === 'replace-source') {
-      operations.push({ kind: 'replace-source', operationId, format: 'inherit-source-paragraph', ...paragraph });
+      operations.push({
+        kind: 'replace-source',
+        operationId,
+        format: 'inherit-source-paragraph',
+        formatSource: a['format-source'] === undefined ? undefined : String(a['format-source']),
+        runFormat,
+        ...paragraph,
+      });
     } else {
-      operations.push({ kind: 'delete-source', operationId, format: 'inherit-source-paragraph', ...paragraph });
+      operations.push({ kind: 'delete-source', operationId, format: 'inherit-source-paragraph', runFormat, ...paragraph });
     }
   }
 
