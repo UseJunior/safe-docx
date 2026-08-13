@@ -1,10 +1,10 @@
 ## Context
 
-Lean proves properties of admitted models and supplies a compiled checker over
-finished packages. TypeScript generators and replay engines produce artifacts.
-LibreOffice and PDF rasterization expose environment-dependent presentation.
-These are complementary trust domains and must not collapse into one green
-boolean produced by the authoring implementation.
+TypeScript generators and replay engines produce artifacts. A separately
+implemented TypeScript release verifier reopens finished packages without
+generator imports. LibreOffice and PDF rasterization expose environment-
+dependent presentation. These are complementary trust domains and must not
+collapse into one green boolean produced by the authoring implementation.
 
 ## Goals / Non-Goals
 
@@ -29,10 +29,9 @@ boolean produced by the authoring implementation.
 
 `@usejunior/docx-release-verifier` SHALL NOT import mutation, comparison,
 accept/reject, or redline-generation implementations from `docx-core`,
-`docx-compare`, or `docx-markdoc`. It may invoke the compiled Lean checker as a
-separate process and use its own bounded ZIP/XML projection for manifest-level
-expectations and negative controls. Inputs are paths plus hashes, never
-generator IR.
+`docx-compare`, or `docx-markdoc`. It uses its own bounded ZIP/XML projection,
+tokenization, and LCS implementation for minimality, manifest expectations,
+and negative controls. Inputs are paths plus hashes, never generator IR.
 
 ### 2. Layered certificate
 
@@ -48,15 +47,15 @@ The certificate records separate `pass`, `fail`, or `not_run` results for:
 Required `not_run` blocks delivery. Exit codes are 0 pass, 1 verified failure,
 and 3 incomplete/not-run.
 
-### 3. Lean minimality evidence
+### 3. Independent TypeScript minimality evidence
 
-The compiled checker independently tokenizes aligned original/revised
+The release verifier independently tokenizes aligned original/revised
 paragraphs, computes the exact token LCS, and compares it with tokens left in
 ordinary non-revision runs in the finished redline. Evidence includes available
 preservable tokens, preserved tokens, lost tokens, efficiency, and bounded
 paragraph diagnostics. Authored-redline policy defaults to zero lost tokens and
-100% efficiency. The theorem-backed LCS supplies optimality; the checker binds
-that result to emitted OOXML.
+100% efficiency. The exact dynamic-programming LCS result is bound directly to
+emitted OOXML.
 
 ### 4. Renderer verifier is optional and separate
 
@@ -79,8 +78,9 @@ directories and refuses manifests or outputs under tracked fixture paths.
 
 - **Duplicated parsing:** independence requires some duplication. Mitigation:
   keep the verifier projection narrow and prohibit generator imports by test.
-- **Lean protocol growth:** minimality adds payload and runtime. Mitigation:
-  bounded token/paragraph limits and versioned additive protocol fields.
+- **Independent-parser drift:** duplicated parsing may diverge. Mitigation:
+  bounded token/paragraph limits, negative controls, and synthetic plus private
+  corpus regressions.
 - **Renderer instability:** pixel counts vary. Mitigation: broad calibrated
   bands, a same-input negative control, text equality, and human review.
 - **Fixture leakage:** minimized client text may remain identifying. Mitigation:

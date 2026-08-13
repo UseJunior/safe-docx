@@ -17,8 +17,8 @@ interface ContainerResolutionContext {
   lastParaByContainer: Map<Element, Element>;
 }
 
-// @lean-segment: container-topology
-// Lean traceability anchor — cited by verification/lean/LeanSpike/Spec.lean for
+// Container-topology boundary.
+// Traceability anchor for
 // the container-topology-mismatch failure mode that makes the inplace candidate
 // partial. Grep this anchor instead of relying on line numbers (refactor-stable).
 export class ContainerResolutionError extends Error {

@@ -15,7 +15,7 @@ compares, accepts/rejects revisions, and emits WordprocessingML documents.
 | --- | --- |
 | `claimed` | A registry entry exists and source/tests cite it through the conformance machinery. |
 | `partial` | Some important subsections are claimed, but the section family is not fully covered. |
-| `formal-checker` | Covered by the current Lean XML triple checker for its narrow DOCX comparison scope. |
+| `independent-release-verifier` | Covered by finished-artifact replay, package-integrity, and emitted-redline minimality checks. |
 | `planned` | Important for safe-docx, but not yet fully modeled, implemented, or claimed. |
 | `non-goal` | Explicitly out of scope today; this is tracked so silence is not mistaken for coverage. |
 
@@ -24,7 +24,7 @@ compares, accepts/rejects revisions, and emits WordprocessingML documents.
 | Slice | ECMA-376 area | Current posture | Existing registry anchors | Suggested GitHub issue title |
 | --- | --- | --- | --- | --- |
 | Tracked run/paragraph revisions | Part 1 §17.13.5 plus Part 1 §17.16.13 for deleted field-code payloads | `partial`, with narrow `formal-checker` coverage for XML triple accept/reject text and field-structure checks | `ECMA-PART1-17-13-5`, `ECMA-PART1-17-13-5-15`, `ECMA-PART1-17-13-5-20`, `ECMA-PART1-17-16-13` | Track ECMA-376 §17.13.5 run and paragraph revision coverage |
-| Complex fields | Part 1 §17.16 | `partial`, with Lean checker coverage for field markers in compared `word/document.xml`; not full field-code semantics | `ECMA-PART1-17-16-13`, `ECMA-PART1-17-16-18`, `ECMA-PART1-17-16-5-44`, `ECMA-PART1-17-16-5-42` | Track ECMA-376 §17.16 complex-field coverage |
+| Complex fields | Part 1 §17.16 | `partial`; runtime structural checks cover field markers in compared `word/document.xml`, not full field-code semantics | `ECMA-PART1-17-16-13`, `ECMA-PART1-17-16-18`, `ECMA-PART1-17-16-5-44`, `ECMA-PART1-17-16-5-42` | Track ECMA-376 §17.16 complex-field coverage |
 | Paragraph and run properties | Part 1 §17.3 | `partial`; the exposed paragraph subset follows CT_PPr sequence order, supported direct run properties occur at most once, values are runtime-validated, and package load/save preserves authored XML; rendering, layout, computed style inheritance/cascade, semantic formatting comparison, and unimplemented property families are non-goals | `ECMA-PART1-17-3-1-26`, `ECMA-PART1-17-3-2-28`, `ECMA-PART1-17-3-1-19` | Track ECMA-376 §17.3 paragraph/run property coverage |
 | Sections, page setup, headers, footers | Part 1 §17.6 and §17.10 | `partial`; generated section/header/footer wiring is claimed, full pagination/rendering is not | `ECMA-PART1-17-6-17`, `ECMA-PART1-17-6-18`, `ECMA-PART1-17-6-13`, `ECMA-PART1-17-6-11`, `ECMA-PART1-17-6-12`, `ECMA-PART1-17-10-1`, `ECMA-PART1-17-10-2`, `ECMA-PART1-17-10-3`, `ECMA-PART1-17-10-4`, `ECMA-PART1-17-10-5`, `ECMA-PART1-17-10-6` | Track ECMA-376 §17.6/§17.10 section and header/footer coverage |
 | Tables | Part 1 §17.4 | `partial`; schema-ordered generation, API-subset value/grid validation, and package preservation are evidenced; XSD-valid values outside `DocumentSpec`, rendering, layout outcomes, and tracked table topology revisions remain unsupported or non-goals | `ECMA-PART1-17-4-37`, `ECMA-PART1-17-4-59`, `ECMA-PART1-17-4-63`, `ECMA-PART1-17-4-52`, `ECMA-PART1-17-4-38`, `ECMA-PART1-17-4-48`, `ECMA-PART1-17-4-16`, `ECMA-PART1-17-4-78`, `ECMA-PART1-17-4-81`, `ECMA-PART1-17-4-80`, `ECMA-PART1-17-4-49`, `ECMA-PART1-17-4-65`, `ECMA-PART1-17-4-69`, `ECMA-PART1-17-4-71`, `ECMA-PART1-17-4-17`, `ECMA-PART1-17-4-84`, `ECMA-PART1-17-4-32`, `ECMA-PART1-17-4-83`, `ECMA-PART1-17-4-68`, `ECMA-PART1-17-4-66`, `ECMA-PART1-17-13-5-2`, `ECMA-PART1-17-13-5-36` | Track ECMA-376 §17.4 table coverage |
@@ -49,7 +49,7 @@ Acceptance:
 - Unsupported subsections are listed as Non-Goals or conformance gaps.
 - Source claims use @conformance / @conformance-gap.
 - Tests use testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '<section>' }).
-- If a Lean verifier claim is involved, the checker coverage ledger says exactly which XML/docx inputs it reads.
+- Independent-verifier claims identify exactly which final DOCX artifacts and projections they read.
 ```
 
 ## Definition of Done for a Slice
@@ -60,11 +60,11 @@ A slice is complete only when:
 - unsupported subsections are explicit Non-Goals or `@conformance-gap`s;
 - source and tests resolve through the citation lints;
 - generated `CONFORMANCE.md` and README summary remain up to date; and
-- any Lean-backed claim is tied to the concrete checker input, not to the whole
+- any independent-verifier claim is tied to its concrete artifact input, not to the whole
   TypeScript implementation or to all of ECMA-376.
 
 The operation-specific advanced-revision denominator is
 `spec-compliance/manifests/ecma-376-advanced-revisions.json`. Its checker fails
 when a runtime revision-vocabulary element is not classified, an operation
 lacks element-specific executable evidence, an exact normative subsection
-disappears, evidence is only tag-stuffed into a file, or Lean scope drifts.
+disappears, evidence is only tag-stuffed into a file, or verifier scope drifts.

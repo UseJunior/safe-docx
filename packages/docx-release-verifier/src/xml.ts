@@ -4,6 +4,7 @@ import type { Projection } from './types.js';
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const OMIT_ON_ACCEPT = new Set(['del', 'moveFrom']);
 const OMIT_ON_REJECT = new Set(['ins', 'moveTo']);
+const REVISION_WRAPPERS = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
 
 function isWord(element: XmlElement, localName: string): boolean {
   return element.namespaceURI === W_NS && element.localName === localName;
@@ -33,6 +34,37 @@ export function projectDocumentXml(xml: string, mode: 'accept' | 'reject'): Proj
   const document = parse(xml);
   const paragraphs = Array.from(document.getElementsByTagNameNS(W_NS, 'p')).map((paragraph) => textFrom(paragraph, mode));
   return { paragraphs, text: paragraphs.join('\n') };
+}
+
+export interface TrackedParagraphView {
+  index: number;
+  acceptText: string;
+  rejectText: string;
+  /** Text-node boundaries are retained so revision wrappers cannot coalesce whitespace. */
+  ordinaryTextNodes: string[];
+}
+
+function ordinaryTextNodes(element: XmlElement, insideRevision = false): string[] {
+  const revision = insideRevision || (element.namespaceURI === W_NS && REVISION_WRAPPERS.has(element.localName ?? ''));
+  if (revision) return [];
+  if (isWord(element, 'tab')) return ['\t'];
+  if (isWord(element, 'br') || isWord(element, 'cr')) return ['\n'];
+  if (isWord(element, 't')) return [element.textContent ?? ''];
+  const result: string[] = [];
+  for (const child of Array.from(element.childNodes)) {
+    if (child.nodeType === 1) result.push(...ordinaryTextNodes(child as XmlElement, revision));
+  }
+  return result;
+}
+
+export function trackedParagraphViews(xml: string): TrackedParagraphView[] {
+  const document = parse(xml);
+  return Array.from(document.getElementsByTagNameNS(W_NS, 'p')).map((paragraph, index) => ({
+    index,
+    acceptText: textFrom(paragraph, 'accept'),
+    rejectText: textFrom(paragraph, 'reject'),
+    ordinaryTextNodes: ordinaryTextNodes(paragraph),
+  }));
 }
 
 export function commentIds(xml: string, localName: string): string[] {

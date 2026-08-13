@@ -24,13 +24,6 @@ export interface MutationControl {
   index?: number;
 }
 
-export interface LeanCheckerConfig {
-  command?: string;
-  args?: string[];
-  required?: boolean;
-  timeoutMs?: number;
-}
-
 export interface ReleaseManifest {
   version: typeof RELEASE_MANIFEST_VERSION;
   originalPath: string;
@@ -42,7 +35,6 @@ export interface ReleaseManifest {
   absentFromAccept?: string[];
   requireNativeComments?: boolean;
   mutationControl?: MutationControl;
-  lean?: LeanCheckerConfig;
   requireRenderer?: boolean;
   /** JSON verdict emitted independently by docx-render-verifier. */
   rendererEvidencePath?: string;

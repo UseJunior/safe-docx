@@ -8,7 +8,6 @@
 import { compareDocumentsAtomizer } from './baselines/atomizer/pipeline.js';
 import type { CompareOptions, CompareResult } from './compare-types.js';
 
-export { runLeanXmlTripleVerifier } from './baselines/atomizer/leanXmlVerifier.js';
 export { DEFAULT_RECONSTRUCTION_MODE } from './comparison-defaults.js';
 
 export type {
@@ -29,33 +28,6 @@ export type {
   AncillaryStorySafetyCategory,
   AncillaryStorySafetyIssue,
   AncillaryStorySummary,
-  DocumentIntegrityCertificate,
-  DocumentIntegrityCertificateStatus,
-  DocumentIntegrityCheckCertificate,
-  DocumentIntegrityCheckStatus,
-  DocumentIntegrityFixedStoryFailure,
-  DocumentIntegrityFixedStoryIssueCode,
-  DocumentIntegrityCommentFailure,
-  DocumentIntegrityCommentInventory,
-  DocumentIntegrityCommentRelationshipIdentity,
-  DocumentIntegrityCommentScope,
-  DocumentIntegrityCommentStatus,
-  DocumentIntegrityCommentStory,
-  DocumentIntegrityCommentStorySide,
-  DocumentIntegrityEmittedRedlineMinimality,
-  DocumentIntegrityEmittedRedlineMinimalityDiagnostic,
-  DocumentIntegrityRelationshipKind,
-  DocumentIntegrityRelationshipRole,
-  DocumentIntegrityRelationshipScope,
-  DocumentIntegrityRelationshipSelectionFailure,
-  DocumentIntegrityRelationshipSelectionIssueCode,
-  DocumentIntegrityRelationshipSideIdentity,
-  DocumentIntegrityRelationshipSlot,
-  DocumentIntegrityRelationshipStory,
-  DocumentIntegrityStoryCertificate,
-  DocumentIntegrityStoryName,
-  DocumentIntegrityVerifierSide,
-  LeanXmlVerifierOptions,
   ReconstructionAttemptDiagnostics,
   ReconstructionBookmarkMismatchDetails,
   ReconstructionBookmarkMismatchSummary,
@@ -99,7 +71,6 @@ export async function compareDocuments(
     reconstructionMode,
     premergeRuns,
     maxWordRefinementChangeRanges,
-    leanXmlVerifier,
   } = options;
 
   if ((engine as string) === 'diffmatch') {
@@ -124,7 +95,6 @@ export async function compareDocuments(
       reconstructionMode,
       premergeRuns,
       maxWordRefinementChangeRanges,
-      leanXmlVerifier,
     });
   }
 

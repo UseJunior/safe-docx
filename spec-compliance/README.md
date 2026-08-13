@@ -2,7 +2,7 @@
 
 This tree advertises what external specifications safe-docx claims correctness
 against, and binds each claim to a stable identifier, a vendored normative
-artifact, and (where available) tests and formal proofs.
+artifact and (where available) executable tests.
 
 The contents are auditable in-repo:
 
@@ -61,10 +61,8 @@ land as siblings of `registry/ecma-376.md` without restructuring this tree.
 Local tests without structured capability-and-axis metadata cannot establish a
 positive row in this initial projection, even when an exact test title exists.
 Existing ECMA-376 and test registries remain authoritative outside this
-projection. The Lean XML checker coverage registry is reported separately as
-scope metadata: it covers in-place main, footnote, and endnote text and
-field-marker projections with the registry's exact exclusions, but it does not
-establish any capability row without a pinned executable result.
+projection. Independent release-verifier evidence is reported separately and
+does not establish a capability row without a pinned executable result.
 
 The generated report names two different inventories. The profile denominator
 is the intersection of every profile axis with every capability's applicable

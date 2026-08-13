@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect } from 'vitest';
+import { itAllure } from '../../docx-core/src/testing/allure-test.js';
 import JSZip from 'jszip';
 import { buildSyntheticDocx, DocxDocument, getParagraphRuns } from '@usejunior/docx-core';
 import { compareDocuments } from '@usejunior/docx-compare';
@@ -39,7 +40,7 @@ function removeInsertedProperty(xml: string, pattern: RegExp, property: string):
 }
 
 describe('formatting-aware projection certificate', () => {
-  it('[SDX-MDOC-27] reports semantic formatting fidelity for both replay projections', async () => {
+  itAllure('[SDX-MDOC-27] reports semantic formatting fidelity for both replay projections', async () => {
     const source = await buildSyntheticDocx({ paragraphs: ['Pinned text.'] });
     const imported = await importDocxToMarkdoc(source);
     const result = await compileMarkdoc(imported.anchoredSource, imported.markdoc);
@@ -57,10 +58,11 @@ describe('formatting-aware projection certificate', () => {
     });
   });
 
-  it.each([
+  for (const [property, pattern] of [
     ['highlight', /<w:highlight\b[^>]*\/>/u],
     ['underline', /<w:u\b[^>]*\/>/u],
-  ] as const)('[SDX-MDOC-28] blocks the accepted formatting projection when tracked %s is removed', async (property, pattern) => {
+  ] as const) {
+    itAllure(`[SDX-MDOC-28] blocks the accepted formatting projection when tracked ${property} is removed`, async () => {
     const { source, clean, tracked } = await formattingFixture();
     const tampered = await replaceDocumentXml(tracked, (xml) => removeInsertedProperty(xml, pattern, property));
 
@@ -94,5 +96,6 @@ describe('formatting-aware projection certificate', () => {
       divergences: [expect.objectContaining({ scope: 'run', property })],
     });
     expect(certification.formattingProjections.cleanAcceptAll.divergences.length).toBeLessThanOrEqual(8);
-  });
+    });
+  }
 });

@@ -1,7 +1,7 @@
-import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { readIndependentDocx } from './archive.js';
-import { RELEASE_CERTIFICATE_VERSION, type GateName, type LeanCheckerConfig, type ReleaseCertificate, type ReleaseManifest, type Verdict } from './types.js';
+import { minimalityVerdict } from './minimality.js';
+import { RELEASE_CERTIFICATE_VERSION, type GateName, type ReleaseCertificate, type ReleaseManifest, type Verdict } from './types.js';
 
 function count(text: string, needle: string): number {
   if (!needle) return 0;
@@ -17,33 +17,6 @@ function count(text: string, needle: string): number {
 
 function expectedHash(actual: string, expected: string | undefined): boolean {
   return expected === undefined || actual === expected;
-}
-
-async function invokeChecker(config: LeanCheckerConfig | undefined, request: Record<string, unknown>): Promise<Verdict> {
-  const required = config?.required ?? false;
-  if (!config?.command) return { status: 'not_run', required, reason: 'No compiled Lean checker command was supplied.' };
-  return new Promise((resolve) => {
-    const child = spawn(config.command!, config.args ?? [], { stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-    const timeout = setTimeout(() => child.kill('SIGTERM'), config.timeoutMs ?? 30_000);
-    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString('utf8'); });
-    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8'); });
-    child.on('error', (error) => { clearTimeout(timeout); resolve({ status: 'not_run', required, reason: `Checker could not start: ${error.message}` }); });
-    child.on('close', (code) => {
-      clearTimeout(timeout);
-      if (code !== 0) return resolve({ status: 'not_run', required, reason: `Checker exited ${code}: ${stderr.trim()}` });
-      try {
-        const result = JSON.parse(stdout) as { passed?: unknown; diagnostics?: unknown };
-        resolve(result.passed === true
-          ? { status: 'pass', required, details: { diagnostics: result.diagnostics ?? null } }
-          : { status: 'fail', required, reason: 'Compiled checker rejected finished artifacts.', details: { diagnostics: result.diagnostics ?? null } });
-      } catch {
-        resolve({ status: 'not_run', required, reason: 'Checker did not return one JSON result.' });
-      }
-    });
-    child.stdin.end(JSON.stringify(request));
-  });
 }
 
 function expectationVerdict(manifest: ReleaseManifest, accept: string, reject: string): Verdict {
@@ -129,19 +102,10 @@ export async function verifyRelease(manifest: ReleaseManifest): Promise<ReleaseC
     ? { status: 'pass', required: true, details: { originalParagraphs: original.accept.paragraphs.length, intendedCleanParagraphs: intendedClean.accept.paragraphs.length, acceptParagraphs: tracked.accept.paragraphs.length, rejectParagraphs: tracked.reject.paragraphs.length } }
     : { status: 'fail', required: true, reason: 'Finished tracked accept/reject projections or hashes do not exactly match supplied operands.' };
   const afterHashes = { original: original.hash, intendedClean: intendedClean.hash, tracked: tracked.hash };
-  // This is the compiled checker's public, strict protocol. Pass paths only;
-  // checker-owned ZIP/XML parsing and token evidence must remain independent
-  // of this verifier's projections and of generator IR.
-  const checker = await invokeChecker(manifest.lean, {
-    protocolVersion: 8,
-    originalDocxPath: manifest.originalPath,
-    revisedDocxPath: manifest.intendedCleanPath,
-    comparedDocxPath: manifest.trackedPath,
-  });
   const renderer = await renderVerdict(manifest, tracked.hash);
   const gates: Record<GateName, Verdict> = {
     semantic,
-    minimality: checker,
+    minimality: minimalityVerdict(original.reject.paragraphs, intendedClean.accept.paragraphs, tracked.documentXml),
     package: original.packageVerdict.status === 'pass' && intendedClean.packageVerdict.status === 'pass' && tracked.packageVerdict.status === 'pass'
       ? { status: 'pass', required: true, details: { original: original.packageVerdict.details, intendedClean: intendedClean.packageVerdict.details, tracked: tracked.packageVerdict.details } }
       : { status: 'fail', required: true, reason: 'One or more DOCX packages failed independent archive integrity.' },

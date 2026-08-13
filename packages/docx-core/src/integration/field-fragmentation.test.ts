@@ -14,7 +14,7 @@
  *
  * Whole-field INSERTION (and move-destination) is NOT fragmented. ECMA-376
  * permits `w:fldChar` inside `<w:ins>` and `<w:moveTo>`; only `<w:del>` bars
- * it. The existing insertion coverage in `lean-spec-bridge.test.ts:907–941`
+ * it. Existing insertion coverage
  * continues to assert the stronger wrapper-neutrality shape for inserted
  * fields.
  *

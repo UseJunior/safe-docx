@@ -113,7 +113,6 @@ function canonicalRanges(xml: string): string[][] {
 async function compare(
   originalBody: string,
   revisedBody: string,
-  lean = false,
 ) {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
@@ -121,7 +120,6 @@ async function compare(
     author: 'Issue 582 Test',
     date: new Date('2026-07-23T00:00:00Z'),
     reconstructionMode: 'rebuild',
-    leanXmlVerifier: { enabled: lean },
   });
 }
 
@@ -485,7 +483,7 @@ describe('Forced rebuild preserves unchanged supported complex fields', () => {
   );
 
   test
-    .openspec('[SDX-FIELD-REBUILD-05] Inplace and Lean boundaries remain unchanged')(
+    .openspec('[SDX-FIELD-REBUILD-05] Inplace validation boundaries remain unchanged')(
     'does not engage ordered-range capture for direct inplace comparison',
     async ({ given, when, then }: AllureBddContext) => {
       const field = decoratedComplexField(FIELD_INSTRUCTIONS.PAGE, '7', '_Page');
@@ -507,28 +505,6 @@ describe('Forced rebuild preserves unchanged supported complex fields', () => {
       await then('inplace remains selected and retains its established revised field topology', () => {
         expect(result.reconstructionModeUsed).toBe('inplace');
         expect(canonicalRanges(output)).toEqual(canonicalRanges(revisedXml));
-      });
-    },
-  );
-
-  test
-    .openspec('[SDX-FIELD-REBUILD-05] Inplace and Lean boundaries remain unchanged')(
-    'reports Lean rebuild evidence as not applicable',
-    async ({ given, when, then }: AllureBddContext) => {
-      const field = decoratedComplexField(FIELD_INSTRUCTIONS.PAGE, '7', '_Page');
-      let status: string | undefined;
-
-      await given('a forced rebuild with the compiled Lean verifier requested', () => {});
-      await when('the comparison certificate is assembled', async () => {
-        const result = await compare(
-          `<w:p>${field}${textRun(' old')}</w:p>`,
-          `<w:p>${field}${textRun(' new')}</w:p>`,
-          true,
-        );
-        status = result.documentIntegrity?.status;
-      });
-      await then('the Lean evidence remains explicitly outside rebuild scope', () => {
-        expect(status).toBe('not_applicable');
       });
     },
   );
@@ -556,25 +532,4 @@ describe('Forced rebuild preserves unchanged supported complex fields', () => {
     },
   );
 
-  test
-    .openspec('[SDX-FIELD-CONFORMANCE-02] Executable evidence names the verification boundary')(
-    'keeps rebuild topology outside the Lean certificate claim',
-    async ({ given, when, then }: AllureBddContext) => {
-      const field = decoratedComplexField(FIELD_INSTRUCTIONS.REF, 'Section 1', 'Clause_1');
-      let reason: string | undefined;
-
-      await given('a supported field rebuild with Lean evidence enabled', () => {});
-      await when('the document-integrity certificate is returned', async () => {
-        const result = await compare(
-          `<w:p>${field}${textRun(' old')}</w:p>`,
-          `<w:p>${field}${textRun(' new')}</w:p>`,
-          true,
-        );
-        reason = result.documentIntegrity?.reason;
-      });
-      await then('the certificate says fixed-story verification covers inplace output only', () => {
-        expect(reason).toContain('inplace comparison output only');
-      });
-    },
-  );
 });

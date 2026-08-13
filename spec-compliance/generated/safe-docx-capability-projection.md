@@ -6,20 +6,6 @@ Profile: `current-neutral-surface` (registry version 1)
 
 This report preserves the upstream profile denominator. It does not claim full ECMA-376 coverage, and a positive row applies only to the listed evidence and scope.
 
-## Formal Assurance Boundary
-
-The registry `verification/registry/lean-xml-checker-coverage.json` is scope metadata only and establishes **no capability row** in this projection.
-
-Covered reconstruction mode: inplace. Excluded mode: rebuild.
-
-Covered stories: main, footnotes, endnotes, selected headers, selected footers. Projections: text and field markers only.
-
-Exact covered surfaces: required word/document.xml token stream with exactly one direct w:body, at most one terminal body-level w:sectPr, and ancestry-aware direct w:body/w:sectPr or w:body/w:p/w:pPr/w:sectPr binding inventory; zero or one exact internal Transitional footnotes and endnotes relationship selected from the fixed Main Document Part relationships; semantic note-definition stories aligned by note kind across differing safe package paths; namespace-resolved footnote/endnote references in main and selected header/footer stories with exactly-one user-definition checks; typed separator, continuationSeparator, and continuationNotice definitions plus definition-story poison-reference rejection; zero or one exact internal Transitional comments relationship selected from fixed main relationships, including relocated safe targets; direct w:comment definitions plus w:commentReference, w:commentRangeStart, and w:commentRangeEnd occurrences from admitted main, note, header, and footer stories with exact-one canonical decimal resolution and request-bound physical-story/event ordinals; direct package-relationship records in word/_rels/document.xml.rels; direct explicit first/default/even w:headerReference and w:footerReference slots aligned by section ordinal, kind, and role; selected Transitional w:hdr and w:ftr token streams deduplicated by the complete three-side physical key.
-
-Exact excluded surfaces: Microsoft threaded-comment extensions; inherited or omitted header/footer role semantics; unselected header/footer parts and unselected relationship semantics; complete OPC, content-type, relationship-graph, XML Schema, pagination, rendering, and field-evaluation validation.
-
-Exact known unchecked areas: full ECMA-376 or OPC conformance; Strict OOXML namespaces; rendering, pagination, inherited roles, and semantic section identity; unselected parts and complete relationship/content-type integrity; Microsoft threaded-comment extensions, replies, parent graphs, durable IDs, and resolved state; field instruction evaluation, cached results, and bookmark resolution; general XML canonicalization outside the accepted subset.
-
 ## Denominator
 
 Profile capability/axis pairs: **91**

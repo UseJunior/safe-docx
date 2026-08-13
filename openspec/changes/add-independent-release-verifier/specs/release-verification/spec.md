@@ -30,7 +30,7 @@ intended-clean and original operands.
 
 ### Requirement: Authored redlines preserve every available common token
 
-The compiled independent checker SHALL compare the exact token LCS of aligned
+The independent release verifier SHALL compare the exact token LCS of aligned
 original/revised paragraphs with ordinary non-revision tokens in the emitted
 tracked paragraph.
 

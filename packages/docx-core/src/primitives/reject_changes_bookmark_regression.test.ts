@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect } from 'vitest';
+import { itAllure } from '../testing/allure-test.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { DocxDocument } from './document.js';
 
 describe('rejectChanges sibling bookmark relocation', () => {
-  it('moves only the bookmark pair enclosing an inserted paragraph', async () => {
+  itAllure('moves only the bookmark pair enclosing an inserted paragraph', async () => {
     const source = await buildDocxFromBodyXml([
       '<w:bookmarkStart w:id="1" w:name="_bk_keep"/><w:p><w:r><w:t>Keep.</w:t></w:r></w:p><w:bookmarkEnd w:id="1"/>',
       '<w:bookmarkStart w:id="2" w:name="_bk_deleted"/><w:p><w:pPr><w:rPr><w:del w:id="10"/></w:rPr></w:pPr><w:del w:id="11"><w:r><w:delText>Restore.</w:delText></w:r></w:del></w:p><w:bookmarkEnd w:id="2"/>',

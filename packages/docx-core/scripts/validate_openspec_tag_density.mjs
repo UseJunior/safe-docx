@@ -5,10 +5,8 @@
  *
  * A single `test(...)` carrying many `.openspec('[ID] …')` tags is a
  * tag-stuffing smell: one assertion claiming to discharge several distinct
- * scenarios (see #513, where `[LEAN-RT-01..05]` were piled onto one property
- * test and `[LEAN-RT-05]` landed on the *wrong* test). But it is sometimes
- * legitimate — the Lean bridge tests genuinely map a related cluster of
- * `[LEAN-*]` scenarios onto one property/fixture test by accepted convention.
+ * scenarios. Multiple tags are sometimes legitimate when one property or
+ * fixture test genuinely exercises a related scenario cluster.
  *
  * This guard makes that legitimacy deliberate and greppable: when a single
  * test carries `>= THRESHOLD` `.openspec` tags, it must declare an explicit

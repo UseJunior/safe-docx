@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect } from 'vitest';
+import { itAllure } from '../../docx-core/src/testing/allure-test.js';
 import JSZip from 'jszip';
 import { buildDocxFromParts, buildSyntheticDocx, DocxDocument, parseXml } from '@usejunior/docx-core';
 import { compileMarkdoc } from './compile.js';
@@ -19,7 +20,7 @@ function withBeforeAfterEdit(markdoc: string): string {
 }
 
 describe('brownfield Markdoc authoring', () => {
-  it('[SDX-MDOC-01][SDX-MDOC-02] imports a complete hash-pinned scaffold without mutating input', async () => {
+  itAllure('[SDX-MDOC-01][SDX-MDOC-02] imports a complete hash-pinned scaffold without mutating input', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.', 'Second paragraph.'] });
     const imported = await importDocxToMarkdoc(original);
     expect(imported.anchoredSource.equals(original)).toBe(false);
@@ -29,7 +30,7 @@ describe('brownfield Markdoc authoring', () => {
     expect(ir.scaffold.every((paragraph) => paragraph.id.startsWith('_bk_'))).toBe(true);
   });
 
-  it('[SDX-MDOC-03][SDX-MDOC-07][SDX-MDOC-13] compiles canonical clean states to verified clean and tracked DOCX', async () => {
+  itAllure('[SDX-MDOC-03][SDX-MDOC-07][SDX-MDOC-13] compiles canonical clean states to verified clean and tracked DOCX', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.', 'Second paragraph.'] });
     const imported = await importDocxToMarkdoc(original);
     const markdoc = withBeforeAfterEdit(imported.markdoc);
@@ -46,7 +47,7 @@ describe('brownfield Markdoc authoring', () => {
     expect(result.ir.rationales).toEqual([{ operationId: 'rename', text: 'Use the current name.', category: 'correction' }]);
   });
 
-  it('[SDX-MDOC-05][SDX-MDOC-15] replaces a canonical before/after paragraph and exports an edit pair', async () => {
+  itAllure('[SDX-MDOC-05][SDX-MDOC-15] replaces a canonical before/after paragraph and exports an edit pair', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Original provision.', 'Context paragraph.'] });
     const imported = await importDocxToMarkdoc(original);
     const paragraph = requireMarkdoc(imported.markdoc).scaffold[0]!;
@@ -64,7 +65,7 @@ describe('brownfield Markdoc authoring', () => {
     expect(pairs[0]).toMatchObject({ before: 'Original provision.', after: 'Revised provision.', verified: true });
   });
 
-  it('[SDX-MDOC-04][SDX-MDOC-08] rejects nested revisions and orphan rationale', async () => {
+  itAllure('[SDX-MDOC-04][SDX-MDOC-08] rejects nested revisions and orphan rationale', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Text.'] });
     const imported = await importDocxToMarkdoc(original);
     const paragraph = requireMarkdoc(imported.markdoc).scaffold[0]!;
@@ -78,14 +79,14 @@ describe('brownfield Markdoc authoring', () => {
     expect(() => requireMarkdoc(invalid)).toThrow(DocxMarkdocError);
   });
 
-  it('[SDX-MDOC-06][SDX-MDOC-14] fails before output when the source hash drifts', async () => {
+  itAllure('[SDX-MDOC-06][SDX-MDOC-14] fails before output when the source hash drifts', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Text.'] });
     const imported = await importDocxToMarkdoc(original);
     const other = await buildSyntheticDocx({ paragraphs: ['Other.'] });
     await expect(compileMarkdoc(other, imported.markdoc)).rejects.toMatchObject({ code: 'SOURCE_HASH_DRIFT' });
   });
 
-  it('[SDX-MDOC-01] preserves source-significant boundary spaces and literal entities', async () => {
+  itAllure('[SDX-MDOC-01] preserves source-significant boundary spaces and literal entities', async () => {
     const text = '  # Price * &amp; value  ';
     const original = await buildSyntheticDocx({ paragraphs: [text] });
     const imported = await importDocxToMarkdoc(original);
@@ -95,7 +96,7 @@ describe('brownfield Markdoc authoring', () => {
     expect(result.certificate.passed).toBe(true);
   });
 
-  it('[SDX-MDOC-05][SDX-MDOC-13] applies and verifies paragraph insertion and deletion from stable anchors', async () => {
+  itAllure('[SDX-MDOC-05][SDX-MDOC-13] applies and verifies paragraph insertion and deletion from stable anchors', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Keep.', 'Delete me.', 'Stable tail context.'] });
     const imported = await importDocxToMarkdoc(original);
     const [keep, remove] = requireMarkdoc(imported.markdoc).scaffold;
@@ -111,7 +112,7 @@ describe('brownfield Markdoc authoring', () => {
     expect(result.certificate).toMatchObject({ rejectAllEqualsSource: true, acceptAllEqualsClean: true, passed: true });
   });
 
-  it('[SDX-MDOC-05][SDX-MDOC-09][SDX-MDOC-13] edits numbered paragraphs without changing list topology', async () => {
+  itAllure('[SDX-MDOC-05][SDX-MDOC-09][SDX-MDOC-13] edits numbered paragraphs without changing list topology', async () => {
     const original = await numberedFixture();
     const imported = await importDocxToMarkdoc(original);
     const [first, second, third] = requireMarkdoc(imported.markdoc).scaffold;
@@ -152,7 +153,7 @@ describe('brownfield Markdoc authoring', () => {
       .toEqual(sourceTopology.map(({ text, signature }) => ({ text, signature })));
   });
 
-  it('[SDX-MDOC-06][SDX-MDOC-14] requires an explicit numbered insertion style source and rejects stale sources', async () => {
+  itAllure('[SDX-MDOC-06][SDX-MDOC-14] requires an explicit numbered insertion style source and rejects stale sources', async () => {
     const imported = await importDocxToMarkdoc(await numberedFixture());
     const first = requireMarkdoc(imported.markdoc).scaffold[0]!;
     const insertion = (styleSource = '') => `${imported.markdoc}\n{% insert-after anchor="${first.id}" operation="insert"${styleSource} %}\n{% after %}\nInserted.\n{% /after %}\n{% /insert-after %}\n`;
@@ -162,7 +163,7 @@ describe('brownfield Markdoc authoring', () => {
       .rejects.toMatchObject({ code: 'MISSING_STYLE_SOURCE' });
   });
 
-  it('[SDX-MDOC-16] compares adjacent revisions while retaining only supplied labels', async () => {
+  itAllure('[SDX-MDOC-16] compares adjacent revisions while retaining only supplied labels', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.'] });
     const imported = await importDocxToMarkdoc(original);
     const before = requireMarkdoc(imported.markdoc);
@@ -175,7 +176,7 @@ describe('brownfield Markdoc authoring', () => {
     expect(exportAdjacentRevisionPairs(before, after)[0]).not.toHaveProperty('actor');
   });
 
-  it('[SDX-MDOC-11] emits selective normalized detail and coalesces equivalent adjacent runs', async () => {
+  itAllure('[SDX-MDOC-11] emits selective normalized detail and coalesces equivalent adjacent runs', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Alpha beta.'] });
     const imported = await importDocxToMarkdoc(original);
     const source = await DocxDocument.load(imported.anchoredSource);
@@ -199,7 +200,7 @@ describe('brownfield Markdoc authoring', () => {
     await expect(inspectMarkdocSource(splitSource, { paragraphIds: ['_bk_missing'] })).rejects.toMatchObject({ code: 'UNKNOWN_INSPECTION_ANCHOR' });
   });
 
-  it('[SDX-MDOC-06][SDX-MDOC-10][SDX-MDOC-14] fails closed on anchor, fingerprint, scaffold, and mixed-format drift', async () => {
+  itAllure('[SDX-MDOC-06][SDX-MDOC-10][SDX-MDOC-14] fails closed on anchor, fingerprint, scaffold, and mixed-format drift', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Alpha beta.', 'Context.'] });
     const imported = await importDocxToMarkdoc(original);
     const canonical = withCanonicalChange(imported.markdoc, 'Alpha beta.', 'Alpha revised.');
@@ -237,7 +238,7 @@ describe('brownfield Markdoc authoring', () => {
     ]);
   });
 
-  it('[SDX-MDOC-09][SDX-MDOC-10] preserves mixed emphasis across localized founding-member edits', async () => {
+  itAllure('[SDX-MDOC-09][SDX-MDOC-10] preserves mixed emphasis across localized founding-member edits', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Founding Members: Alice and Bob.', 'Context.'] });
     const styled = await DocxDocument.load(original);
     setParagraphRuns(styled.getParagraphs()[0]!, [
@@ -260,7 +261,7 @@ describe('brownfield Markdoc authoring', () => {
     ]);
   });
 
-  it('[SDX-MDOC-09] deletes a mixed-format witness line without flattening adjacent content', async () => {
+  itAllure('[SDX-MDOC-09] deletes a mixed-format witness line without flattening adjacent content', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Operative text.', 'Witness: ____________________', 'Following text.'] });
     const styled = await DocxDocument.load(original);
     setParagraphRuns(styled.getParagraphs()[1]!, [
@@ -278,7 +279,7 @@ describe('brownfield Markdoc authoring', () => {
     expect(runFormatProjection(clean.getParagraphs()[1]!)).toEqual([{ text: 'Following text.', bold: false }]);
   });
 
-  it('[SDX-MDOC-17][SDX-MDOC-20] separates exact projection from blocked draft completeness and orphan remnants', async () => {
+  itAllure('[SDX-MDOC-17][SDX-MDOC-20] separates exact projection from blocked draft completeness and orphan remnants', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.', 'Legacy certification remains.'] });
     const imported = await importDocxToMarkdoc(original);
     const markdoc = `${withBeforeAfterEdit(imported.markdoc)}
@@ -306,7 +307,7 @@ Remove the obsolete certification block as one drafting decision.
     expect(result.tracked).toBeInstanceOf(Buffer);
   });
 
-  it('[SDX-MDOC-18] accepts only an explicit human-supplied waiver and records it in the delivery certificate', async () => {
+  itAllure('[SDX-MDOC-18] accepts only an explicit human-supplied waiver and records it in the delivery certificate', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.'] });
     const imported = await importDocxToMarkdoc(original);
     const markdoc = `${withBeforeAfterEdit(imported.markdoc)}
@@ -330,7 +331,7 @@ The reviewer expressly deferred this decision to a later instrument.
       .toThrow(DocxMarkdocError);
   });
 
-  it('[SDX-MDOC-19] rejects an incomplete atomic change set before any member can apply', async () => {
+  itAllure('[SDX-MDOC-19] rejects an incomplete atomic change set before any member can apply', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.'] });
     const imported = await importDocxToMarkdoc(original);
     const markdoc = `${withBeforeAfterEdit(imported.markdoc)}
@@ -343,7 +344,7 @@ The reviewer expressly deferred this decision to a later instrument.
     });
   });
 
-  it('[SDX-MDOC-19] certifies a complete atomic change set', async () => {
+  itAllure('[SDX-MDOC-19] certifies a complete atomic change set', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.'] });
     const imported = await importDocxToMarkdoc(original);
     const markdoc = `${withBeforeAfterEdit(imported.markdoc)}
@@ -360,7 +361,7 @@ Use the current name.
     ]);
   });
 
-  it('[SDX-MDOC-10] requires and applies an exact run source for insertion from a mixed numbered paragraph', async () => {
+  itAllure('[SDX-MDOC-10] requires and applies an exact run source for insertion from a mixed numbered paragraph', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Defined item — source details.', 'Following text.'] });
     const styled = await DocxDocument.load(original);
     const sourceParagraph = styled.getParagraphs()[0]!;

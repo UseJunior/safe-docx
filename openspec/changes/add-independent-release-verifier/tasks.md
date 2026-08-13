@@ -7,17 +7,17 @@
 ## 2. Independent artifact verifier
 
 - [x] 2.1 Add bounded ZIP/XML projection over original, intended-clean, and tracked DOCX paths.
-- [x] 2.2 Invoke the compiled Lean checker and verify hashes plus exact accept/reject results.
+- [x] 2.2 Verify hashes plus exact accept/reject results without generator imports.
 - [x] 2.3 Add literal character-count, present-only-in-accept, absent-from-accept, and mutation negative controls.
 - [x] 2.4 Add package-integrity and conditional native-comment gates.
 - [x] 2.5 Add CLI JSON/report output with pass/fail/not-run exit semantics.
 
-## 3. Lean emitted-redline minimality
+## 3. Independent emitted-redline minimality
 
-- [x] 3.1 Extend the versioned checker request/response with bounded minimality evidence.
+- [x] 3.1 Add bounded TypeScript minimality evidence to the independent certificate.
 - [x] 3.2 Compute exact per-paragraph available LCS and ordinary emitted preservation independently from generator IR.
 - [x] 3.3 Require zero lost preservable tokens for authored-redline policy and emit bounded diagnostics.
-- [x] 3.4 Add Lean and supervisor tests for exact, coarse, repeated-token, punctuation, whitespace, insertion, and deletion cases.
+- [x] 3.4 Add independent tests for exact, coarse, repeated-token, punctuation, whitespace, insertion, deletion, and ambiguous topology cases.
 
 ## 4. Renderer verifier
 
@@ -36,7 +36,7 @@
 
 ## 6. Integration and validation
 
-- [x] 6.1 Aggregate Lean, artifact, renderer, expectation, and human-review evidence into one release certificate.
+- [x] 6.1 Aggregate minimality, artifact, renderer, expectation, and human-review evidence into one release certificate.
 - [x] 6.2 Prove each negative control causes the intended gate to fail.
-- [ ] 6.3 Run focused/full tests, builds, Lean build/differentials, strict OpenSpec validation, conformance checks, and diff checks.
+- [ ] 6.3 Run focused/full tests, builds, strict OpenSpec validation, conformance checks, and diff checks.
 - [x] 6.4 Record private-corpus hashes and pass/fail summary without client substance.

@@ -4,16 +4,8 @@
  * Single source of truth for the field-XML primitives, complete-field
  * sequences, tracked-change variants, and minimal DOCX-package builder used
  * across the docx-core test suite. Consolidates patterns previously
- * re-derived inline in `lean-spec-bridge.test.ts`,
- * `pipeline.field-validation.test.ts`, and `collapsed-field-inplace.test.ts`.
- *
- * The Lean Tier 2 model in `verification/lean/...` does NOT import this
- * module — it operates on inductive `Doc`/`Block`/`Atom` constructors, not
- * XML strings. The three independent walk semantics
- * (`pipeline.ts:fieldContextNeutral`, `Tier2/FieldStructure.fieldContextNeutral`,
- * `lean-spec-bridge.test.ts:isFieldContextNeutral`) are deliberately
- * re-derived — that triple is the falsifiability layer of the field-structure
- * proof and must not be collapsed.
+ * re-derived inline in `pipeline.field-validation.test.ts` and
+ * `collapsed-field-inplace.test.ts`.
  *
  * Ref: issue #221.
  */

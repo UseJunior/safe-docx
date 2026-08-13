@@ -1,6 +1,0 @@
-Classical.choice
-LeanSpike.compareDocumentXml
-LeanSpike.compareDocumentXml_output_preservation_friendly
-LeanSpike.compareDocumentXml_output_text_roundtrip
-Quot.sound
-propext

@@ -2,7 +2,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect } from 'vitest';
+import { itAllure } from '../../docx-core/src/testing/allure-test.js';
 import { measurePixelBands, verifyRenderedMarkup } from './render.js';
 import type { RendererTools } from './types.js';
 
@@ -36,11 +37,11 @@ function fakeTools(markup = 'Visible markup text', profiles?: string[]): Rendere
 }
 
 describe('renderer verifier', () => {
-  it('counts broad blue and red pixel bands rather than requiring exact antialiasing pixels', () => {
+  itAllure('counts broad blue and red pixel bands rather than requiring exact antialiasing pixels', () => {
     expect(measurePixelBands('0,0: #0a10ef\n1,0: #ef120c\n2,0: #202020\n')).toEqual({ sampledPixels: 3, bluePixels: 1, redPixels: 1 });
   });
 
-  it('returns not_run rather than green when a required external tool is missing', async () => {
+  itAllure('returns not_run rather than green when a required external tool is missing', async () => {
     const file = path.join(os.tmpdir(), `render-missing-${Date.now()}.docx`);
     await writeFile(file, 'tracked');
     const result = await verifyRenderedMarkup({
@@ -52,7 +53,7 @@ describe('renderer verifier', () => {
     expect(result).toMatchObject({ status: 'not_run', reason: expect.stringContaining('Missing renderer tool') });
   });
 
-  it('binds caller markup text and calibrated configured/control colour measurements using fake tools', async () => {
+  itAllure('binds caller markup text and calibrated configured/control colour measurements using fake tools', async () => {
     const root = path.join(os.tmpdir(), `render-fake-${Date.now()}`);
     const source = path.join(root, 'tracked.docx');
     await mkdir(root, { recursive: true });
@@ -75,7 +76,7 @@ describe('renderer verifier', () => {
     ]));
   });
 
-  it('refuses a transform that mutates the authoritative DOCX', async () => {
+  itAllure('refuses a transform that mutates the authoritative DOCX', async () => {
     const root = path.join(os.tmpdir(), `render-transform-${Date.now()}`);
     const source = path.join(root, 'tracked.docx');
     await mkdir(root, { recursive: true });

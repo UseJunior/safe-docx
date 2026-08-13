@@ -40,10 +40,12 @@ OOXML behavior can carry:
 
 The generated [conformance report](../spec-compliance/CONFORMANCE.md) is the index of claimed sections and explicit non-goals.
 
-## Lean Verification
+## Independent Verification
 
-The Lean work models selected comparison invariants. The optional XML triple checker evaluates the actual original, revised, and comparison `word/document.xml` parts. Among its checks, accepting the comparison must recover the revised text projection and rejecting it must recover the original text projection, subject to the documented normalization and model boundaries.
+Release verification uses deterministic TypeScript package, replay,
+expectation, comment-integrity, mutation-control, and renderer-evidence gates.
+This validates properties of particular artifacts; it does not prove visual
+fidelity or the complete ECMA-376 standard.
 
-This validates properties of a particular comparison output. It does not prove the TypeScript source code, visual fidelity, or the complete ECMA-376 standard.
-
-See the [invariant registry](../verification/INVARIANTS.md), [Lean documentation](../verification/lean/README.md), and [trust and conformance guide](trust-and-conformance.md) for exact statements and caveats.
+See the [invariant registry](../verification/INVARIANTS.md) and
+[trust and conformance guide](trust-and-conformance.md) for exact boundaries.

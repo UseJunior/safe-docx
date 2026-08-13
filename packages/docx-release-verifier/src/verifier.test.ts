@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import JSZip from 'jszip';
-import { describe, expect, it } from 'vitest';
+import { describe, expect } from 'vitest';
+import { itAllure } from '../../docx-core/src/testing/allure-test.js';
 import { verifyRelease } from './verifier.js';
 import type { ReleaseManifest } from './types.js';
 
@@ -33,19 +34,18 @@ async function fixture(): Promise<{ directory: string; manifest: ReleaseManifest
 }
 
 describe('independent release verifier', () => {
-  it('derives exact accept/reject projections and proves mutation sensitivity without changing inputs', async () => {
+  itAllure('derives exact accept/reject projections and proves mutation sensitivity without changing inputs', async () => {
     const { manifest } = await fixture();
     const before = await readFile(manifest.trackedPath);
     const result = await verifyRelease(manifest);
     expect(result.gates.semantic.status).toBe('pass');
     expect(result.gates.expectations.status).toBe('pass');
     expect(result.gates.mutationControl.status).toBe('pass');
-    expect(result.gates.minimality).toMatchObject({ status: 'not_run', required: false });
     expect(result.exitCode).toBe(0);
     expect(await readFile(manifest.trackedPath)).toEqual(before);
   });
 
-  it('fails exact replay when an expected projection is changed', async () => {
+  itAllure('fails exact replay when an expected projection is changed', async () => {
     const { manifest } = await fixture();
     await writeDocx(manifest.intendedCleanPath, '<w:p><w:r><w:t>Hello changed</w:t></w:r></w:p>');
     const result = await verifyRelease(manifest);
@@ -53,21 +53,7 @@ describe('independent release verifier', () => {
     expect(result.exitCode).toBe(1);
   });
 
-  it('reports a required unavailable checker as incomplete', async () => {
-    const { manifest } = await fixture();
-    const result = await verifyRelease({ ...manifest, lean: { required: true } });
-    expect(result.gates.minimality).toMatchObject({ status: 'not_run', required: true });
-    expect(result.exitCode).toBe(3);
-  });
-
-  it('accepts an injected compiled checker without importing its implementation', async () => {
-    const { manifest } = await fixture();
-    const result = await verifyRelease({ ...manifest, lean: { command: process.execPath, args: ['-e', 'process.stdin.on("data",()=>{});process.stdin.on("end",()=>console.log(JSON.stringify({passed:true})))'], required: true } });
-    expect(result.gates.minimality.status).toBe('pass');
-    expect(result.exitCode).toBe(0);
-  });
-
-  it('binds separate renderer evidence to the exact tracked bytes', async () => {
+  itAllure('binds separate renderer evidence to the exact tracked bytes', async () => {
     const { directory, manifest } = await fixture();
     const evidencePath = join(directory, 'renderer.json');
     const trackedSha256 = createHash('sha256').update(await readFile(manifest.trackedPath)).digest('hex');
@@ -81,7 +67,7 @@ describe('independent release verifier', () => {
     expect(failed.exitCode).toBe(1);
   });
 
-  it('fails native comment integrity when OOXML comment IDs disagree', async () => {
+  itAllure('fails native comment integrity when OOXML comment IDs disagree', async () => {
     const { manifest } = await fixture();
     await writeDocx(manifest.trackedPath,
       '<w:p><w:commentRangeStart w:id="1"/><w:r><w:t>Hello </w:t></w:r><w:del w:id="1"><w:r><w:delText>old</w:delText></w:r></w:del><w:ins w:id="2"><w:r><w:t>new</w:t></w:r></w:ins><w:commentRangeEnd w:id="2"/><w:r><w:commentReference w:id="1"/></w:r></w:p>',
@@ -91,7 +77,7 @@ describe('independent release verifier', () => {
     expect(result.exitCode).toBe(1);
   });
 
-  it('fails corrupt packages independently of semantic text', async () => {
+  itAllure('fails corrupt packages independently of semantic text', async () => {
     const { manifest } = await fixture();
     await writeFile(manifest.trackedPath, 'not a zip');
     const result = await verifyRelease(manifest);

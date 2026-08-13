@@ -8,7 +8,6 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const manifestPath = path.join(root, 'spec-compliance/manifests/ecma-376-advanced-revisions.json');
 const vocabularyPath = path.join(root, 'packages/docx-core/src/primitives/revision-vocabulary.ts');
 const registryPath = path.join(root, 'spec-compliance/registry/ecma-376.md');
-const leanLedgerPath = path.join(root, 'verification/registry/lean-xml-checker-coverage.json');
 const evidenceResultsPath = path.join(root, 'spec-compliance/evidence/ecma-376-advanced-revisions.json');
 
 const ALLOWED_STATUSES = new Set(['implemented', 'preservation-only', 'conformance-gap', 'non-goal']);
@@ -55,7 +54,6 @@ const REQUIRED_ELEMENT_ANCHORS = new Map(Object.entries({
   'header story revisions': [],
   'footer story revisions': [],
 }));
-const LEAN_PROJECTED_ELEMENTS = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
 
 export function parseRevisionVocabulary(source) {
   const sourceFile = ts.createSourceFile('revision-vocabulary.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -162,7 +160,7 @@ async function validateEvidence(record, operationStatuses, executedClaimsByEvide
   }
 }
 
-export async function validateAdvancedRevisionClassification(manifest, vocabulary, registryText, leanLedger, evidenceResults) {
+export async function validateAdvancedRevisionClassification(manifest, vocabulary, registryText, evidenceResults) {
   if (manifest.schemaVersion !== 3) throw new Error('Unsupported advanced-revision manifest schemaVersion');
   if (!Array.isArray(manifest.records) || manifest.records.length === 0) throw new Error('Advanced-revision manifest has no records');
 
@@ -208,18 +206,6 @@ export async function validateAdvancedRevisionClassification(manifest, vocabular
     for (const requiredPath of REQUIRED_MODE_PATHS) {
       if (!operationStatuses.has(requiredPath)) throw new Error(`${record.id}: missing explicit ${requiredPath} classification`);
     }
-    const leanAdvancedSemantics = operationStatuses.get('lean.advancedRecordSemantics');
-    const moveRangeSemanticsImplemented =
-      record.id === 'advanced-revision.moves-ranges' && leanAdvancedSemantics === 'implemented';
-    if (leanAdvancedSemantics !== 'non-goal' && !moveRangeSemanticsImplemented) {
-      throw new Error(`${record.id}: Lean does not verify these advanced-record semantics`);
-    }
-    const leanProjection = operationStatuses.get('lean.textFieldProjection');
-    if (!ALLOWED_STATUSES.has(leanProjection)) throw new Error(`${record.id}: missing Lean text/field projection status`);
-    if (leanProjection === 'implemented' && record.elements.some((element) => !LEAN_PROJECTED_ELEMENTS.has(element))) {
-      throw new Error(`${record.id}: Lean projection is limited to ins/del/moveFrom/moveTo`);
-    }
-
     for (const element of record.elements ?? []) {
       if (!element.includes(' ') && !element.includes(':')) classifiedElements.add(element);
       if (!Object.hasOwn(record.normativeSections ?? {}, element) || !Array.isArray(record.normativeSections[element])) {
@@ -256,25 +242,16 @@ export async function validateAdvancedRevisionClassification(manifest, vocabular
     throw new Error(`Canonical normative-anchor map contains unclassified elements: ${missingClassifiedElements.join(', ')}`);
   }
 
-  if ((manifest.storyScope?.leanReads ?? []).join('|') !== 'word/document.xml|word/footnotes.xml|word/endnotes.xml') {
-    throw new Error('Lean advanced-revision scope must remain the exact fixed-story input set');
-  }
-  for (const element of LEAN_PROJECTED_ELEMENTS) {
-    if (!leanLedger.parsedWordprocessingML?.elements?.includes(`w:${element}`)) {
-      throw new Error(`Lean ledger no longer lists projected element w:${element}`);
-    }
-  }
 }
 
 export async function main() {
-  const [manifest, vocabularySource, registryText, leanLedger, evidenceResults] = await Promise.all([
+  const [manifest, vocabularySource, registryText, evidenceResults] = await Promise.all([
     readFile(manifestPath, 'utf8').then(JSON.parse),
     readFile(vocabularyPath, 'utf8'),
     readFile(registryPath, 'utf8'),
-    readFile(leanLedgerPath, 'utf8').then(JSON.parse),
     readFile(evidenceResultsPath, 'utf8').then(JSON.parse),
   ]);
-  await validateAdvancedRevisionClassification(manifest, parseRevisionVocabulary(vocabularySource), registryText, leanLedger, evidenceResults);
+  await validateAdvancedRevisionClassification(manifest, parseRevisionVocabulary(vocabularySource), registryText, evidenceResults);
   console.log(`check_advanced_revision_classification: OK (${manifest.records.length} records)`);
 }
 

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect } from 'vitest';
+import { itAllure } from '../../docx-core/src/testing/allure-test.js';
 import { buildSyntheticDocx, DocxDocument, getParagraphRuns } from '@usejunior/docx-core';
 import { compileMarkdoc } from './compile.js';
 import { importDocxToMarkdoc } from './import.js';
@@ -98,7 +99,7 @@ function setMixedRuns(paragraph: Element): void {
 }
 
 describe('explicit Markdoc run formatting', () => {
-  it('[SDX-MDOC-21][SDX-MDOC-26] overlays exactly declared formatting without dropping inherited properties', async () => {
+  itAllure('[SDX-MDOC-21][SDX-MDOC-26] overlays exactly declared formatting without dropping inherited properties', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['2026-08-12'] });
     const styled = await DocxDocument.load(original);
     addInheritedProperties(styled.getParagraphs()[0]!);
@@ -134,7 +135,7 @@ describe('explicit Markdoc run formatting', () => {
     expect(directChild(directChild(rejectedRun, 'rPr') ?? rejectedRun, 'highlight')).toBeUndefined();
   });
 
-  it('[SDX-MDOC-21][SDX-MDOC-26] formats only the replacement inside a mixed-format paragraph', async () => {
+  itAllure('[SDX-MDOC-21][SDX-MDOC-26] formats only the replacement inside a mixed-format paragraph', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Date: 2026-08-12 witnessed'] });
     const styled = await DocxDocument.load(original);
     setMixedRuns(styled.getParagraphs()[0]!);
@@ -159,7 +160,7 @@ describe('explicit Markdoc run formatting', () => {
     expect(directChild(directChild(suffix, 'rPr') ?? suffix, 'highlight')).toBeUndefined();
   });
 
-  it('[SDX-MDOC-22][SDX-MDOC-25] does not infer an overlay from fill-in text', async () => {
+  itAllure('[SDX-MDOC-22][SDX-MDOC-25] does not infer an overlay from fill-in text', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['2026-08-12'] });
     const imported = await importDocxToMarkdoc(original);
     const result = await compileMarkdoc(
@@ -171,7 +172,7 @@ describe('explicit Markdoc run formatting', () => {
     expect(directChild(directChild(run, 'rPr') ?? run, 'highlight')).toBeUndefined();
   });
 
-  it('[SDX-MDOC-23] rejects unknown direct-format values and ambiguous multi-hunk scope before output', async () => {
+  itAllure('[SDX-MDOC-23] rejects unknown direct-format values and ambiguous multi-hunk scope before output', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Alpha beta gamma.'] });
     const imported = await importDocxToMarkdoc(original);
 
@@ -188,7 +189,7 @@ describe('explicit Markdoc run formatting', () => {
       .rejects.toMatchObject({ code: 'AMBIGUOUS_RUN_FORMAT_SCOPE' });
   });
 
-  it('[SDX-MDOC-24] applies an overlay to one zero-width paragraph insertion', async () => {
+  itAllure('[SDX-MDOC-24] applies an overlay to one zero-width paragraph insertion', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Anchor.'] });
     const imported = await importDocxToMarkdoc(original);
     const anchor = requireMarkdoc(imported.markdoc).scaffold[0]!;
@@ -209,7 +210,7 @@ describe('explicit Markdoc run formatting', () => {
     assertDirectRunProperty(run, 'highlight', 'yellow');
   });
 
-  it('[SDX-MDOC-23] rejects formatted multi-paragraph insertion before mutation', async () => {
+  itAllure('[SDX-MDOC-23] rejects formatted multi-paragraph insertion before mutation', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Anchor.'] });
     const imported = await importDocxToMarkdoc(original);
     const anchor = requireMarkdoc(imported.markdoc).scaffold[0]!;
@@ -230,7 +231,7 @@ describe('explicit Markdoc run formatting', () => {
       });
   });
 
-  it('[SDX-MDOC-30][SDX-MDOC-31] formats two identical generated spans by exact inline position', async () => {
+  itAllure('[SDX-MDOC-30][SDX-MDOC-31] formats two identical generated spans by exact inline position', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Dates: first and second.'] });
     const imported = await importDocxToMarkdoc(original);
     const blank = '\\_\\_\\_\\_';
@@ -260,7 +261,7 @@ describe('explicit Markdoc run formatting', () => {
     expect(result.certificate.projectionPassed).toBe(true);
   });
 
-  it('[SDX-MDOC-32][SDX-MDOC-33] rejects inline formatting outside generated text and malformed spans', async () => {
+  itAllure('[SDX-MDOC-32][SDX-MDOC-33] rejects inline formatting outside generated text and malformed spans', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Alpha first omega.'] });
     const imported = await importDocxToMarkdoc(original);
     const unchanged = changeMarkdocWithInlineFormats(

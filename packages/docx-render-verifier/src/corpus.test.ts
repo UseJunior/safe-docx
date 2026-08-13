@@ -3,7 +3,8 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect } from 'vitest';
+import { itAllure } from '../../docx-core/src/testing/allure-test.js';
 import { runPrivateCorpus } from './corpus.js';
 
 const testId = `render-corpus-test-${process.pid}-${Date.now()}`;
@@ -23,7 +24,7 @@ afterEach(async () => {
 });
 
 describe('private renderer corpus', () => {
-  it('accepts only an ignored manifest/output and emits no markup text', async () => {
+  itAllure('accepts only an ignored manifest/output and emits no markup text', async () => {
     await mkdir(externalDir, { recursive: true });
     const docx = path.join(externalDir, 'tracked.docx');
     const expected = path.join(externalDir, 'expected.txt');
@@ -40,7 +41,7 @@ describe('private renderer corpus', () => {
     expect(await readFile(path.join(outputDir, 'summary.json'), 'utf8')).not.toContain('private expected markup');
   });
 
-  it('rejects a Git-tracked repository artifact as a private corpus input', async () => {
+  itAllure('rejects a Git-tracked repository artifact as a private corpus input', async () => {
     await mkdir(externalDir, { recursive: true });
     const expected = path.join(externalDir, 'expected.txt');
     await writeFile(expected, 'not used');

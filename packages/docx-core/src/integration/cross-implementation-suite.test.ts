@@ -9,7 +9,7 @@
  * the suite's assertions derive from cited standards clauses, so a failure is
  * a conformance finding, not a flake.
  *
- * Gating (Lean-differential-harness pattern): the suite checkout is located
+ * Gating: the suite checkout is located
  * via the DOCX_PLATFORM_TESTS_DIR environment variable; when it is unset,
  * missing, or its runner dependencies are not installed, the gated suite is
  * SKIPPED with a clear message so `npm test` stays green on machines without

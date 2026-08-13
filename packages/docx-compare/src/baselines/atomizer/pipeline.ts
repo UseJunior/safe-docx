@@ -30,7 +30,6 @@ import type {
   ReconstructionTextMismatchSummary,
   ReconstructionTextMismatchDetails,
   ReconstructionMode,
-  LeanXmlVerifierOptions,
 } from '../../compare-types.js';
 import { DEFAULT_RECONSTRUCTION_MODE } from '../../comparison-defaults.js';
 import type {
@@ -91,7 +90,6 @@ import {
   validateOpaquePassthroughCorrelation,
 } from './opaquePassthrough.js';
 import { modifyRevisedDocument, ContainerResolutionError } from './inPlaceModifier.js';
-import { runLeanXmlTripleVerifier } from './leanXmlVerifier.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
@@ -170,8 +168,6 @@ export interface AtomizerOptions {
    * Default: {@link DEFAULT_RECONSTRUCTION_MODE}.
    */
   reconstructionMode?: ReconstructionMode;
-  /** Optional Lean 4 XML triple verifier for inplace outputs. */
-  leanXmlVerifier?: LeanXmlVerifierOptions;
 }
 
 interface BookmarkDiagnostics {
@@ -629,7 +625,6 @@ export async function compareDocumentsAtomizer(
   const nestedOptions: AtomizerOptions = {
     ...options,
     reconstructionMode: 'inplace',
-    leanXmlVerifier: undefined,
   };
   const outerResult = await compareDocumentsAtomizerCore(
     textBoxPlan.outerOriginal,
@@ -771,32 +766,6 @@ export async function compareDocumentsAtomizer(
       formatChangeAtoms: 0,
     },
   );
-  const documentIntegrity = options.leanXmlVerifier?.enabled
-    ? await runLeanXmlTripleVerifier({
-        originalDocx: original,
-        revisedDocx: revised,
-        comparedDocx: document,
-        legacyDocumentXml: {
-          original: textBoxPlan.originalDocumentXml,
-          revised: textBoxPlan.revisedDocumentXml,
-          compared: comparedDocumentXml,
-        },
-        reconstructionMode: 'inplace',
-        options: options.leanXmlVerifier,
-      }).then((certificate) => ({
-        ...certificate,
-        exclusions: [
-          ...(certificate.exclusions ?? []),
-          'Nested w:txbxContent stories are not independently enumerated by the compiled verifier.',
-          ...(textBoxPlan.hasAncillaryTextBoxStories
-            ? [
-                'Relationship-selected header/footer w:txbxContent stories are not independently enumerated by the compiled verifier.',
-              ]
-            : []),
-        ],
-      }))
-    : undefined;
-
   const unrepresentedChanges = outerResult.unrepresentedChanges?.filter(
     (change) => !textBoxPlan.representedAncillaryChanges.some(
       (represented) =>
@@ -812,7 +781,6 @@ export async function compareDocumentsAtomizer(
     ...outerResult,
     document,
     stats,
-    documentIntegrity,
     unrepresentedChanges:
       unrepresentedChanges && unrepresentedChanges.length > 0
         ? unrepresentedChanges
@@ -834,7 +802,6 @@ async function compareDocumentsAtomizerCore(
     premergeRuns = true,
     maxWordRefinementChangeRanges,
     reconstructionMode = DEFAULT_RECONSTRUCTION_MODE,
-    leanXmlVerifier,
   } = options;
 
   // Merge settings with defaults
@@ -1344,24 +1311,9 @@ async function compareDocumentsAtomizerCore(
     }
   }
 
-  const { mergedAtoms, newDocumentXml } = comparisonResult;
+  const { mergedAtoms } = comparisonResult;
   const { resultBuffer, ancillaryFieldEvidence } = assembled;
   const stats = computeAtomizerStats(mergedAtoms);
-  const documentIntegrity = leanXmlVerifier?.enabled
-    ? await runLeanXmlTripleVerifier({
-        originalDocx: original,
-        revisedDocx: revised,
-        comparedDocx: resultBuffer,
-        legacyDocumentXml: {
-          original: originalXml,
-          revised: revisedXml,
-          compared: newDocumentXml,
-        },
-        reconstructionMode: comparisonResult.outputMode,
-        options: leanXmlVerifier,
-      })
-    : undefined;
-
   return {
     document: resultBuffer,
     stats,
@@ -1376,7 +1328,6 @@ async function compareDocumentsAtomizerCore(
     rebuildSafetyDiagnostics,
     inplaceSuccessDiagnostics,
     ancillaryFieldEvidence,
-    documentIntegrity,
   };
 }
 

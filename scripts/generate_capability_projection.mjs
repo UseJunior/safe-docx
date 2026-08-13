@@ -20,7 +20,6 @@ const paths = {
   summary: 'spec-compliance/capabilities/upstream/capability-summary.json',
   projection: 'spec-compliance/capabilities/safe-docx-projection.json',
   projectionSchema: 'spec-compliance/capabilities/safe-docx-projection.schema.json',
-  leanCoverage: 'verification/registry/lean-xml-checker-coverage.json',
   jsonOutput: 'spec-compliance/generated/safe-docx-capability-projection.json',
   markdownOutput: 'spec-compliance/generated/safe-docx-capability-projection.md',
 };
@@ -317,25 +316,7 @@ export async function validateProjection(inputs, repositoryRoot = root) {
   return { profile, capabilityById, denominator: expected.size };
 }
 
-function formalAssuranceBoundary(leanCoverage) {
-  return {
-    establishesCapabilityClaims: false,
-    checkerRegistry: paths.leanCoverage,
-    reconstructionModes: {
-      covered: [...leanCoverage.scope.reconstructionModes.covered],
-      excluded: [...leanCoverage.scope.reconstructionModes.outOfScope],
-    },
-    stories: ['main', 'footnotes', 'endnotes', 'selected headers', 'selected footers'],
-    projections: ['text', 'field markers'],
-    documentSurfaces: {
-      covered: [...leanCoverage.scope.documentSurfaces.covered],
-      excluded: [...leanCoverage.scope.documentSurfaces.outOfScope],
-    },
-    knownUncheckedAreas: [...leanCoverage.knownUncheckedAreas],
-  };
-}
-
-function generateReport(pin, profile, capabilityById, mappings, summary, projection, leanCoverage) {
+function generateReport(pin, profile, capabilityById, mappings, summary, projection) {
   const claims = [...projection.claims]
     .sort((a, b) => a.capabilityId.localeCompare(b.capabilityId) || a.axis.localeCompare(b.axis))
     .map((claim) => ({
@@ -375,7 +356,6 @@ function generateReport(pin, profile, capabilityById, mappings, summary, project
       pinnedUnmeasuredScenarios: summary.unmeasuredScenarioIds.length,
     },
     statusCounts: byStatus,
-    formalAssuranceBoundary: formalAssuranceBoundary(leanCoverage),
     claims,
   };
 }
@@ -389,20 +369,6 @@ function markdown(report) {
     `Profile: \`${report.generatedFrom.profileId}\` (registry version ${report.generatedFrom.registryVersion})`,
     '',
     'This report preserves the upstream profile denominator. It does not claim full ECMA-376 coverage, and a positive row applies only to the listed evidence and scope.',
-    '',
-    '## Formal Assurance Boundary',
-    '',
-    `The registry \`${report.formalAssuranceBoundary.checkerRegistry}\` is scope metadata only and establishes **no capability row** in this projection.`,
-    '',
-    `Covered reconstruction mode: ${report.formalAssuranceBoundary.reconstructionModes.covered.join(', ')}. Excluded mode: ${report.formalAssuranceBoundary.reconstructionModes.excluded.join(', ')}.`,
-    '',
-    `Covered stories: ${report.formalAssuranceBoundary.stories.join(', ')}. Projections: ${report.formalAssuranceBoundary.projections.join(' and ')} only.`,
-    '',
-    `Exact covered surfaces: ${report.formalAssuranceBoundary.documentSurfaces.covered.join('; ')}.`,
-    '',
-    `Exact excluded surfaces: ${report.formalAssuranceBoundary.documentSurfaces.excluded.join('; ')}.`,
-    '',
-    `Exact known unchecked areas: ${report.formalAssuranceBoundary.knownUncheckedAreas.join('; ')}.`,
     '',
     '## Denominator',
     '',
@@ -448,10 +414,10 @@ function markdown(report) {
 }
 
 async function main() {
-  const [pin, capabilities, capabilitiesSchema, profiles, profilesSchema, mappings, mappingsSchema, summary, projection, projectionSchema, leanCoverage] = await Promise.all([
+  const [pin, capabilities, capabilitiesSchema, profiles, profilesSchema, mappings, mappingsSchema, summary, projection, projectionSchema] = await Promise.all([
     readJson(paths.pin), readJson(paths.capabilities), readJson(paths.capabilitiesSchema), readJson(paths.profiles),
     readJson(paths.profilesSchema), readJson(paths.mappings), readJson(paths.mappingsSchema), readJson(paths.summary),
-    readJson(paths.projection), readJson(paths.projectionSchema), readJson(paths.leanCoverage),
+    readJson(paths.projection), readJson(paths.projectionSchema),
   ]);
   const contents = new Map(await Promise.all(pin.files.map(async (file) => {
     const absolute = path.resolve(root, file.path);
@@ -463,8 +429,8 @@ async function main() {
   compileSchema(profilesSchema, 'profiles schema')(profiles);
   compileSchema(mappingsSchema, 'scenario mappings schema')(mappings);
   compileSchema(projectionSchema, 'SafeDocX projection schema')(projection);
-  const validated = await validateProjection({ pin, capabilities, profiles, mappings, summary, projection, leanCoverage });
-  const report = generateReport(pin, validated.profile, validated.capabilityById, mappings, summary, projection, leanCoverage);
+  const validated = await validateProjection({ pin, capabilities, profiles, mappings, summary, projection });
+  const report = generateReport(pin, validated.profile, validated.capabilityById, mappings, summary, projection);
   const outputs = new Map([
     [paths.jsonOutput, stableJson(report)],
     [paths.markdownOutput, markdown(report)],

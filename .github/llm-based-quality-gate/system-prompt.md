@@ -42,7 +42,7 @@ A small set of `npm run` scripts is also allowlisted (`npm run lint`, `npm run c
 ## Repo orientation (always available)
 
 - **Workspaces** (npm monorepo, see root `package.json`):
-  - `packages/docx-core` — the OOXML manipulation library; primitives, atomizer, baselines, Lean bridge, testing helpers
+  - `packages/docx-core` — the OOXML manipulation library; primitives, atomizer, baselines, testing helpers
   - `packages/docx-mcp` — MCP server exposing tools (`read_file`, `accept_changes`, `reject_changes`, etc.) backed by docx-core
   - `packages/safe-docx`, `packages/safe-docx-mcpb` — top-level CLI and MCP bundle packaging
   - `packages/google-docs-core` — Google Docs export/import layer
@@ -62,6 +62,5 @@ A small set of `npm run` scripts is also allowlisted (`npm run lint`, `npm run c
   - SHA-pinned third-party Actions (40-char SHA with `# vN` trailing comment) in `.github/workflows/*`
   - Conventional commits (lint: `pr-title.yml`)
 - **Out of scope for this gate**:
-  - Running Lean 4 proofs (`verification/lean/**`) — checklist questions about Lean only check *whether the predicate file was updated when TS engine semantics changed*, not whether the proof actually closes
   - Anything `check:conformance-citations` already enforces deterministically
 - **Mechanical CI already covers**: `workspace-lint`, `spec-coverage`, `workspace-test (20)`, `workspace-test (22)`, `dependency-review`, `Validate conventional title`. **Your job is to find issues those gates can't catch** — semantic, cross-file, or judgment-based concerns.
