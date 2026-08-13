@@ -123,6 +123,11 @@ export interface LeanXmlVerifierOptions {
   executablePath?: string;
   /** Maximum verifier runtime in milliseconds. Default: 10000. */
   timeoutMs?: number;
+  /**
+   * Request protocol v8 emitted-redline minimality evidence from the compiled
+   * checker. This is opt-in while v7 remains supported for existing callers.
+   */
+  requireEmittedRedlineMinimality?: boolean;
 }
 
 export type ReconstructionSafetyCheckName =
@@ -683,13 +688,37 @@ export interface DocumentIntegrityCommentScope {
 }
 
 export interface DocumentIntegrityCommentRangeTopology {
-  checkerProtocolVersion: 7;
+  checkerProtocolVersion: 7 | 8;
   crossParagraphRanges: true;
   crossingRanges: true;
   ecmaUnmatchedEndpointPointAnchorsAccepted: false;
   profile: 'safe-docx-paired-or-point';
   samePhysicalStoryRequired: true;
   status: Exclude<DocumentIntegrityCommentStatus, 'absent'>;
+}
+
+export interface DocumentIntegrityEmittedRedlineMinimalityDiagnostic {
+  originalParagraphIndex: number;
+  revisedParagraphIndex: number;
+  /** Omitted when paragraph-mark topology cannot be safely identified. */
+  comparedParagraphIndex?: number;
+  availableTokens: number;
+  preservedTokens: number;
+  lostTokens: number;
+  efficiencyPercent: number;
+  topology: 'identified' | 'unresolved_ambiguous_paragraph_topology';
+}
+
+export interface DocumentIntegrityEmittedRedlineMinimality {
+  policy: 'authored-zero-loss';
+  passed: boolean;
+  availableTokens: number;
+  preservedTokens: number;
+  lostTokens: number;
+  efficiencyPercent: number;
+  comparedParagraphs: number;
+  unresolvedTopologyParagraphs: number;
+  paragraphDiagnostics: DocumentIntegrityEmittedRedlineMinimalityDiagnostic[];
 }
 
 export interface DocumentIntegrityCertificate {
@@ -725,7 +754,12 @@ export interface DocumentIntegrityCertificate {
   /** Stable v1 main-story token counts. */
   parsedTokenCounts?: { original: number; revised: number; compared: number };
   /** Internal executable protocol used for package-level verification. */
-  checkerProtocolVersion?: 3 | 4 | 5 | 6 | 7;
+  checkerProtocolVersion?: 3 | 4 | 5 | 6 | 7 | 8;
+  /**
+   * Independently computed v8 evidence that ordinary non-revision OOXML text
+   * preserves every exact-LCS token available in aligned logical paragraphs.
+   */
+  emittedRedlineMinimality?: DocumentIntegrityEmittedRedlineMinimality;
   fixedStoryScope?: readonly ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml'];
   inputPackageSha256?: { originalDocx: string; revisedDocx: string; comparedDocx: string };
   stories?: DocumentIntegrityStoryCertificate[];

@@ -235,6 +235,22 @@ Every fixed and selected physical story uses the existing generic checker:
 - the accept and reject projections keep valid Word field structure; and
 - the compared XML has valid field-marker and tracked-move structure.
 
+### Protocol v8 emitted-redline minimality
+
+The optional v8 request (`protocolVersion: 8`) retains the v7 payload and adds
+`emittedRedlineMinimality`. The checker independently tokenizes logical
+accept/reject text paragraphs from the parsed OOXML, computes their exact
+Lean LCS, and measures the matched tokens that remain in ordinary
+non-revision `w:t` text in the finished compared XML. The authored policy is
+zero lost tokens and 100% efficiency. Diagnostics are capped at 64 paragraphs
+and tokenization preserves whitespace and punctuation. A physical paragraph is
+used only when its own accept and reject projections uniquely identify the
+logical pair. An aligned pair that cannot be physically identified is reported
+as `unresolved_ambiguous_paragraph_topology` and charges its available LCS
+tokens as lost, so a delete-paragraph/insert-paragraph replacement fails rather
+than evading minimality; truly inserted/deleted logical paragraphs have no
+aligned pair and therefore no available common tokens.
+
 For main plus successfully selected header/footer sources, protocol v6 also
 scans `w:footnoteReference` and `w:endnoteReference`. Each canonical decimal
 user reference must resolve to exactly one typed user definition in the

@@ -12,6 +12,8 @@ lean_lib LeanSpike
 @[default_target]
 lean_lib Tier2
 
+lean_lib EmittedRedlineMinimality
+
 -- Differential harness executable: runs the genuine `LeanSpike.computeAtomLcs`
 -- over batched JSON stdin/stdout so the TS bridge can assert Lean↔TS LCS
 -- extensional equivalence (Tier 2.5). Plain executable code with no proof

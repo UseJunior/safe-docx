@@ -73,3 +73,9 @@ integration-tests/OPENSPEC_TRACEABILITY.md
 *.dxt
 site/src/trust/system-card.md
 .peer-review/
+
+# Local completed-matter renderer runs: manifests and rendered files are never tracked.
+packages/docx-render-verifier/private-corpus/*.json
+!packages/docx-render-verifier/private-corpus/manifest.example.json
+packages/docx-render-verifier/private-corpus/output/
+packages/docx-render-verifier/render-output/

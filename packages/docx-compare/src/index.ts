@@ -42,6 +42,8 @@ export type {
   DocumentIntegrityCommentStatus,
   DocumentIntegrityCommentStory,
   DocumentIntegrityCommentStorySide,
+  DocumentIntegrityEmittedRedlineMinimality,
+  DocumentIntegrityEmittedRedlineMinimalityDiagnostic,
   DocumentIntegrityRelationshipKind,
   DocumentIntegrityRelationshipRole,
   DocumentIntegrityRelationshipScope,

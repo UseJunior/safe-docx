@@ -2741,6 +2741,51 @@ const validProtocolReport = {
   commentIntegrityIssues: [],
 };
 
+test('strictly decodes bounded protocol-v8 emitted-redline minimality evidence', () => {
+  const v8 = {
+    ...validProtocolReport,
+    protocolVersion: 8,
+    checker: 'safe-docx-lean-emitted-redline-minimality-checker',
+    emittedRedlineMinimality: {
+      policy: 'authored-zero-loss',
+      passed: true,
+      availableTokens: 3,
+      preservedTokens: 3,
+      lostTokens: 0,
+      efficiencyPercent: 100,
+      comparedParagraphs: 1,
+      unresolvedTopologyParagraphs: 0,
+      paragraphDiagnostics: [{
+        originalParagraphIndex: 0,
+        revisedParagraphIndex: 0,
+        comparedParagraphIndex: 0,
+        availableTokens: 3,
+        preservedTokens: 3,
+        lostTokens: 0,
+        efficiencyPercent: 100,
+        topology: 'identified',
+      }],
+    },
+  };
+  expect(isLeanVerifierJson(v8)).toBe(true);
+  expect(isLeanVerifierJson({ ...v8, emittedRedlineMinimality: {
+    ...v8.emittedRedlineMinimality, lostTokens: 1,
+  }})).toBe(false);
+  expect(isLeanVerifierJson({ ...v8, emittedRedlineMinimality: {
+    ...v8.emittedRedlineMinimality, paragraphDiagnostics:
+      Array.from({ length: 65 }, () => v8.emittedRedlineMinimality.paragraphDiagnostics[0]),
+  }})).toBe(false);
+  expect(isLeanVerifierJson({ ...v8, emittedRedlineMinimality: {
+    ...v8.emittedRedlineMinimality, paragraphDiagnostics: [{
+      ...v8.emittedRedlineMinimality.paragraphDiagnostics[0],
+      comparedParagraphIndex: null,
+      topology: 'unresolved_ambiguous_paragraph_topology',
+    }],
+  }})).toBe(true);
+  expect(isLeanVerifierJson({ ...validProtocolReport, emittedRedlineMinimality:
+    v8.emittedRedlineMinimality })).toBe(false);
+});
+
 test('rejects duplicate and non-canonical raw JSON object keys before parsing', () => {
   expect(() => validateCanonicalProtocolJson(
     '{"a":{"a":"\\b\\f\\n\\r\\t\\u0000","b":2},"b":[]}',

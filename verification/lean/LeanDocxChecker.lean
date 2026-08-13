@@ -1,4 +1,5 @@
 import Lean.Data.Json
+import EmittedRedlineMinimality
 import Tier2.CommentReferenceIntegrity
 import Tier2.CommentReferenceIntegrity.TypedSemantics
 import Tier2.NoteReferenceIntegrity
@@ -880,6 +881,7 @@ theorem protocol_v6_projection_check_of_finalize_ok
   · contradiction
 
 structure Request where
+  protocolVersion : Nat
   originalDocxPath : String
   revisedDocxPath : String
   comparedDocxPath : String
@@ -890,8 +892,10 @@ def requestFromJson (j : Json) : Except String Request := do
       "revisedDocxPath"] then
     throw "protocol v7 request has unknown or missing keys"
   let protocolVersion ← j.getObjValAs? Nat "protocolVersion"
-  if protocolVersion != 7 then throw s!"unsupported protocolVersion: {protocolVersion}"
+  if protocolVersion != 7 && protocolVersion != 8 then
+    throw s!"unsupported protocolVersion: {protocolVersion}"
   return {
+    protocolVersion
     originalDocxPath := (← j.getObjValAs? String "originalDocxPath")
     revisedDocxPath := (← j.getObjValAs? String "revisedDocxPath")
     comparedDocxPath := (← j.getObjValAs? String "comparedDocxPath")
@@ -13422,6 +13426,36 @@ theorem production_run_request_core_v7_refinement_sound
 
 end Tier2.NoteReferenceIntegrity
 
+/-- Protocol v8 is an additive envelope around the proof-audited v7 response.
+The new minimality field is computed from the independently parsed OOXML token
+streams before this response is serialized; it is intentionally not synthesized
+by the TypeScript supervisor. -/
+def protocolV8Response (legacy : Json) (minimality : EmittedRedlineMinimality.Evidence) : Json :=
+  match legacy with
+  | .obj fields =>
+      let retained := fields.toList.filter fun field =>
+        field.1 != "protocolVersion" && field.1 != "checker" && field.1 != "passed"
+      let legacyPassed := match legacy.getObjValAs? Bool "passed" with
+        | .ok value => value
+        | .error _ => false
+      Json.mkObj (retained ++ [
+        ("protocolVersion", toJson (8 : Nat)),
+        ("checker", toJson "safe-docx-lean-emitted-redline-minimality-checker"),
+        ("passed", toJson (legacyPassed && minimality.passed)),
+        ("emittedRedlineMinimality", EmittedRedlineMinimality.evidenceJson minimality)
+      ])
+  | _ => legacy
+
+def finalizeProtocolV8Response (response : Json) : Except String ByteArray :=
+  let jsonBytes := response.compress.toUTF8
+  if jsonBytes.size > maxProtocolV6JsonResponseBytes then
+    .error "protocol v8 JSON response exceeds legal envelope"
+  else
+    let stdout := jsonBytes ++ protocolV6LineFeed
+    if stdout.size > maxProtocolV6ResponseBytes then
+      .error "protocol v8 stdout response exceeds legal envelope"
+    else .ok stdout
+
 def runRequestWithPackages (request : Request)
     (packages : Package × Package × Package) : IO ByteArray := do
   let originalPackage := packages.1
@@ -13599,7 +13633,13 @@ def runRequestWithPackages (request : Request)
   }
   let core ← IO.ofExcept <|
     runRequestCoreV7 coreRequest
-  return core.stdout
+  if request.protocolVersion == 7 then
+    return core.stdout
+  else
+    let minimality := EmittedRedlineMinimality.check
+      main.story.original main.story.revised main.story.combined
+    let response := protocolV8Response core.response minimality
+    IO.ofExcept <| finalizeProtocolV8Response response
 
 def withLoadedPackage {α : Type} (root : SnapshotRoot) (path : String)
     (use : Package → IO α) : IO α := do

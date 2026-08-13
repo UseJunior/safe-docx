@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "license": "Apache-2.0",
+  "fixtures": [
+    { "id": "exact-lcs", "path": "exact-lcs.xml", "purpose": "single-token surgical tracked edit" },
+    { "id": "coarse-lcs", "path": "coarse-lcs.xml", "purpose": "coarse replacement negative control" },
+    { "id": "paragraph-mark", "path": "paragraph-mark.xml", "purpose": "paragraph-mark revision shape" },
+    { "id": "mixed-format", "path": "mixed-format.xml", "purpose": "adjacent direct run formatting" },
+    { "id": "repeated-span", "path": "repeated-span.xml", "purpose": "repeated-token alignment" },
+    { "id": "comments", "path": "comments.xml", "purpose": "native comment anchor shape" },
+    { "id": "color-control", "path": "color-control.xml", "purpose": "renderer colour-control text" },
+    { "id": "corrupt-zip", "path": "corrupt.docx", "purpose": "unreadable package negative control" },
+    { "id": "header-wrap", "path": "header-wrap.xml", "purpose": "minimized de-identified header-wrap shape" },
+    { "id": "signature-table", "path": "signature-table.xml", "purpose": "minimized de-identified table layout shape" }
+  ]
+}

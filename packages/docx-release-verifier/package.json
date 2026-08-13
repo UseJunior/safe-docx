@@ -1,0 +1,32 @@
+{
+  "name": "@usejunior/docx-release-verifier",
+  "version": "0.19.1",
+  "description": "Independent finished-artifact verification for DOCX releases.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "docx-release-verify": "dist/cli.js"
+  },
+  "scripts": {
+    "clean:dist": "node -e \"const { rmSync } = require('node:fs'); rmSync('dist', { recursive: true, force: true });\"",
+    "build": "npm run clean:dist && tsc -p tsconfig.build.json",
+    "test": "node ../../node_modules/vitest/vitest.mjs",
+    "test:run": "node ../../node_modules/vitest/vitest.mjs run",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.9.10",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.8"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": ["dist", "README.md", "NOTICE"],
+  "license": "Apache-2.0"
+}

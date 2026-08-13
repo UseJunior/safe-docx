@@ -10,6 +10,7 @@ import type {
   DocumentIntegrityCommentInventory,
   DocumentIntegrityCommentStory,
   DocumentIntegrityCommentStorySide,
+  DocumentIntegrityEmittedRedlineMinimality,
   DocumentIntegrityNoteFailure,
   DocumentIntegrityNoteInventory,
   DocumentIntegrityNoteStory,
@@ -70,8 +71,9 @@ interface LeanRelationshipStoryJson {
 }
 
 interface LeanVerifierJson {
-  protocolVersion: 7;
-  checker: 'safe-docx-lean-conventional-main-comment-range-integrity-checker';
+  protocolVersion: 7 | 8;
+  checker: 'safe-docx-lean-conventional-main-comment-range-integrity-checker' |
+    'safe-docx-lean-emitted-redline-minimality-checker';
   passed: boolean;
   fixedStories: LeanStoryJson[];
   presenceMismatches: [];
@@ -86,6 +88,7 @@ interface LeanVerifierJson {
   commentStory: LeanCommentStoryJson;
   commentInventories: DocumentIntegrityCommentInventory[];
   commentIntegrityIssues: DocumentIntegrityCommentFailure[];
+  emittedRedlineMinimality?: DocumentIntegrityEmittedRedlineMinimality;
 }
 
 interface LeanCommentStoryJson {
@@ -1259,16 +1262,74 @@ export function isCommentIssue(value: unknown): value is DocumentIntegrityCommen
   }
 }
 
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && typeof value === 'number' && value >= 0;
+}
+
+function isEmittedRedlineMinimalityDiagnostic(
+  value: unknown,
+): value is DocumentIntegrityEmittedRedlineMinimality['paragraphDiagnostics'][number] {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    'originalParagraphIndex', 'revisedParagraphIndex', 'comparedParagraphIndex',
+    'availableTokens', 'preservedTokens', 'lostTokens', 'efficiencyPercent', 'topology',
+  ])) return false;
+  return isNonNegativeSafeInteger(value.originalParagraphIndex) &&
+    isNonNegativeSafeInteger(value.revisedParagraphIndex) &&
+    (value.comparedParagraphIndex === null ||
+      isNonNegativeSafeInteger(value.comparedParagraphIndex)) &&
+    isNonNegativeSafeInteger(value.availableTokens) &&
+    isNonNegativeSafeInteger(value.preservedTokens) &&
+    isNonNegativeSafeInteger(value.lostTokens) &&
+    isNonNegativeSafeInteger(value.efficiencyPercent) &&
+    value.efficiencyPercent <= 100 &&
+    (value.topology === 'identified' || value.topology === 'unresolved_ambiguous_paragraph_topology');
+}
+
+function isEmittedRedlineMinimality(value: unknown): value is DocumentIntegrityEmittedRedlineMinimality {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    'policy', 'passed', 'availableTokens', 'preservedTokens', 'lostTokens', 'efficiencyPercent',
+    'comparedParagraphs', 'unresolvedTopologyParagraphs', 'paragraphDiagnostics',
+  ])) return false;
+  return value.policy === 'authored-zero-loss' && typeof value.passed === 'boolean' &&
+    isNonNegativeSafeInteger(value.availableTokens) &&
+    isNonNegativeSafeInteger(value.preservedTokens) &&
+    isNonNegativeSafeInteger(value.lostTokens) &&
+    value.lostTokens === value.availableTokens - value.preservedTokens &&
+    isNonNegativeSafeInteger(value.efficiencyPercent) &&
+    value.efficiencyPercent <= 100 &&
+    isNonNegativeSafeInteger(value.comparedParagraphs) &&
+    isNonNegativeSafeInteger(value.unresolvedTopologyParagraphs) &&
+    Array.isArray(value.paragraphDiagnostics) && value.paragraphDiagnostics.length <= 64 &&
+    value.paragraphDiagnostics.every(isEmittedRedlineMinimalityDiagnostic) &&
+    value.passed === (value.lostTokens === 0 && value.efficiencyPercent === 100);
+}
+
+function emittedRedlineMinimalityCertificate(
+  value: NonNullable<LeanVerifierJson['emittedRedlineMinimality']>,
+): DocumentIntegrityEmittedRedlineMinimality {
+  return {
+    ...value,
+    paragraphDiagnostics: value.paragraphDiagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      comparedParagraphIndex: diagnostic.comparedParagraphIndex ?? undefined,
+    })),
+  };
+}
+
 export function isLeanVerifierJson(value: unknown): value is LeanVerifierJson {
   if (!isRecord(value) || !hasExactKeys(value, [
     'protocolVersion', 'checker', 'passed', 'fixedStories', 'presenceMismatches',
     'fixedStoryIssues', 'relationshipSlots', 'relationshipStories', 'selectionIssues',
     'referenceSourcePartitions', 'noteStories', 'noteInventories', 'noteIntegrityIssues',
     'commentStory', 'commentInventories', 'commentIntegrityIssues',
-  ])) return false;
-  if (value.protocolVersion !== 7 ||
-      value.checker !== 'safe-docx-lean-conventional-main-comment-range-integrity-checker' ||
+  ], value.protocolVersion === 8 ? ['emittedRedlineMinimality'] : [])) return false;
+  if ((value.protocolVersion !== 7 && value.protocolVersion !== 8) ||
+      (value.protocolVersion === 7 &&
+        value.checker !== 'safe-docx-lean-conventional-main-comment-range-integrity-checker') ||
+      (value.protocolVersion === 8 &&
+        value.checker !== 'safe-docx-lean-emitted-redline-minimality-checker') ||
       typeof value.passed !== 'boolean') return false;
+  if (value.protocolVersion === 8 && !isEmittedRedlineMinimality(value.emittedRedlineMinimality)) return false;
   if (!Array.isArray(value.fixedStories) || !value.fixedStories.every(isFixedStory)) return false;
   const fixedNames = value.fixedStories.map((story) => story.name);
   if (fixedNames.length !== 1 || fixedNames[0] !== 'main') return false;
@@ -1892,8 +1953,9 @@ async function runLeanXmlTripleVerifierWithDependencies(
       writeFile(revisedDocxPath, snapshot.revisedDocx),
       writeFile(comparedDocxPath, snapshot.comparedDocx),
     ]);
+    const requestedProtocolVersion = snapshot.options.requireEmittedRedlineMinimality ? 8 : 7;
     const payload = JSON.stringify({
-      protocolVersion: 7, originalDocxPath, revisedDocxPath, comparedDocxPath,
+      protocolVersion: requestedProtocolVersion, originalDocxPath, revisedDocxPath, comparedDocxPath,
     });
     if (Buffer.byteLength(payload, 'utf8') > 64 * 1024) throw new Error('Lean verifier request exceeds 64 KiB');
     const stdout = await runExecutable(executablePath, payload, timeoutMs, scratch);
@@ -1908,7 +1970,7 @@ async function runLeanXmlTripleVerifierWithDependencies(
     const main = stories[0]!;
     return {
       ...base,
-      checkerProtocolVersion: 7,
+      checkerProtocolVersion: parsed.protocolVersion,
       status: parsed.passed ? 'passed' : 'failed',
       stories,
       checks: {
@@ -1928,6 +1990,9 @@ async function runLeanXmlTripleVerifierWithDependencies(
         ),
       },
       parsedTokenCounts: main.parsedTokenCounts,
+      emittedRedlineMinimality: parsed.emittedRedlineMinimality
+        ? emittedRedlineMinimalityCertificate(parsed.emittedRedlineMinimality)
+        : undefined,
       presenceMismatches: [],
       fixedStoryFailures: parsed.fixedStoryIssues,
       relationshipStoryScope: {
@@ -1975,7 +2040,7 @@ async function runLeanXmlTripleVerifierWithDependencies(
         threadedComments: false,
       },
       commentRangeTopology: {
-        checkerProtocolVersion: 7,
+        checkerProtocolVersion: parsed.protocolVersion,
         crossParagraphRanges: true,
         crossingRanges: true,
         ecmaUnmatchedEndpointPointAnchorsAccepted: false,

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "outputDir": "output",
+  "cases": [
+    {
+      "label": "case-001",
+      "trackedDocxPath": "/absolute/local/matter/tracked.docx",
+      "expectedMarkupTextPath": "/absolute/local/matter/expected-markup.txt",
+      "expectedTrackedSha256": "replace-with-64-lowercase-hex",
+      "requireRender": true
+    }
+  ]
+}

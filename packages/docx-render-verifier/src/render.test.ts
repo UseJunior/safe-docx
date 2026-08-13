@@ -1,0 +1,101 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import { measurePixelBands, verifyRenderedMarkup } from './render.js';
+import type { RendererTools } from './types.js';
+
+function fakeTools(markup = 'Visible markup text', profiles?: string[]): RendererTools {
+  return {
+    resolve: () => 'fake-tool',
+    async run(_command, args) {
+      if (args.includes('--convert-to')) {
+        const out = args[args.indexOf('--outdir') + 1]!;
+        const input = args[args.length - 1]!;
+        const profile = args.find((argument) => argument.startsWith('-env:UserInstallation='));
+        if (profile && profiles) {
+          const directory = fileURLToPath(profile.slice('-env:UserInstallation='.length));
+          profiles.push(await readFile(path.join(directory, 'user', 'registrymodifications.xcu'), 'utf8'));
+        }
+        await writeFile(path.join(out, `${path.basename(input, path.extname(input))}.pdf`), '%PDF-fake');
+        return { code: 0, stdout: '', stderr: '' };
+      }
+      if (args[0] === '-layout') return { code: 0, stdout: markup, stderr: '' };
+      if (args.includes('-png')) {
+        await writeFile(`${args[args.length - 1]}-1.png`, 'synthetic png');
+        return { code: 0, stdout: '', stderr: '' };
+      }
+      const control = args[0]?.includes('control') ?? false;
+      const pixels = control
+        ? '0,0: #000000\n1,0: #000000\n'
+        : '0,0: #0000ff\n1,0: #ff0000\n2,0: #0000ff\n3,0: #ff0000\n';
+      return { code: 0, stdout: pixels, stderr: '' };
+    },
+  };
+}
+
+describe('renderer verifier', () => {
+  it('counts broad blue and red pixel bands rather than requiring exact antialiasing pixels', () => {
+    expect(measurePixelBands('0,0: #0a10ef\n1,0: #ef120c\n2,0: #202020\n')).toEqual({ sampledPixels: 3, bluePixels: 1, redPixels: 1 });
+  });
+
+  it('returns not_run rather than green when a required external tool is missing', async () => {
+    const file = path.join(os.tmpdir(), `render-missing-${Date.now()}.docx`);
+    await writeFile(file, 'tracked');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: file,
+      expectedMarkupText: 'text',
+      outputDir: path.join(os.tmpdir(), `render-missing-out-${Date.now()}`),
+      tools: { ...fakeTools(), resolve: () => null },
+    });
+    expect(result).toMatchObject({ status: 'not_run', reason: expect.stringContaining('Missing renderer tool') });
+  });
+
+  it('binds caller markup text and calibrated configured/control colour measurements using fake tools', async () => {
+    const root = path.join(os.tmpdir(), `render-fake-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await writeFile(source, 'tracked content');
+    const profiles: string[] = [];
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source,
+      expectedMarkupText: 'Visible markup text',
+      outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', profiles),
+      configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true, configuredContrastPassed: true });
+    expect(result.reviewPngs).toHaveLength(1);
+    expect(profiles).toEqual(expect.arrayContaining([
+      expect.stringContaining('/org.openoffice.Office.Writer/Revision/TextDisplay/Insert'),
+      expect.stringContaining('<value>255</value>'),
+      expect.stringContaining('<value>16711680</value>'),
+      expect.stringContaining('<value>-1</value>'),
+    ]));
+  });
+
+  it('refuses a transform that mutates the authoritative DOCX', async () => {
+    const root = path.join(os.tmpdir(), `render-transform-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await writeFile(source, 'tracked content');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source,
+      expectedMarkupText: 'Visible markup text',
+      outputDir: path.join(root, 'out'),
+      tools: fakeTools(),
+      transform: {
+        id: 'bad-transform', version: '1',
+        async apply(_input, workspace) {
+          await writeFile(source, 'mutated');
+          const output = path.join(workspace, 'render-only.docx');
+          await writeFile(output, 'mutated');
+          return output;
+        },
+      },
+    });
+    expect(result).toMatchObject({ status: 'fail', reason: expect.stringContaining('mutate authoritative') });
+    expect(await readFile(source, 'utf8')).toBe('mutated');
+  });
+});
