@@ -34,7 +34,7 @@
 - [x] 5.1 Document inheritance versus explicit formatting with domain-neutral examples.
 - [x] 5.2 Document certificate semantics and formatting-fidelity diagnostic limits.
 - [x] 5.3 Run focused package tests, builds/typechecks, strict OpenSpec validation, conformance checks, and `git diff --check`.
-- [ ] 5.4 Re-run the downstream completed-matter experiment out of band before merge; keep auto-merge disabled until it passes.
+- [x] 5.4 Re-run the downstream completed-matter experiment out of band before merge; keep auto-merge disabled until it passes.
 
 ## 6. Selectively scoped generated formatting
 
