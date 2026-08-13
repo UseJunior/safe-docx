@@ -35,3 +35,11 @@
 - [x] 5.2 Document certificate semantics and formatting-fidelity diagnostic limits.
 - [x] 5.3 Run focused package tests, builds/typechecks, strict OpenSpec validation, conformance checks, and `git diff --check`.
 - [ ] 5.4 Re-run the downstream completed-matter experiment out of band before merge; keep auto-merge disabled until it passes.
+
+## 6. Selectively scoped generated formatting
+
+- [x] 6.1 Add readable inline `run-format` syntax and exact revised-offset IR spans.
+- [x] 6.2 Reject empty, nested, overlapping, unchanged-text, and cross-hunk spans before mutation.
+- [x] 6.3 Split generated replacement parts at declared span boundaries and apply only each declared overlay.
+- [x] 6.4 Prove two identical generated blanks in one paragraph are styled independently with unchanged text untouched.
+- [x] 6.5 Document inline authoring and rerun focused validation gates.

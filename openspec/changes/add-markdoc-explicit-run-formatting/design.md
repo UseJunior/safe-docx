@@ -53,8 +53,17 @@ created by that operation. It does not restyle unchanged text or the source
 paragraph. In the first release, the declaration is admitted only when the
 before/after alignment yields exactly one non-empty generated replacement hunk.
 Zero-width insertion is one generated hunk and is admitted. Multiple generated
-hunks fail closed with a diagnostic requiring separate source-anchored
-operations or future selectively scoped syntax.
+hunks with an operation-level declaration fail closed. A clean `after` state
+may instead wrap each intended generated span in an inline `run-format` tag.
+The parser records exact revised-text offsets in the canonical IR, so repeated
+visible strings need no occurrence selectors and formatting intent remains
+adjacent to the authored text.
+
+An inline span must be non-empty, may not nest or overlap another inline span,
+and must fall wholly inside one generated replacement hunk. A span that touches
+unchanged text or crosses a hunk boundary fails before mutation. The compiler
+splits generated replacement text into ordered `ReplacementPart` values and
+applies overlays only to declared intervals.
 
 This constraint avoids an ad hoc inline DSL while ensuring that a visually
 simple attribute cannot silently format several unrelated phrases.
@@ -88,7 +97,8 @@ accepted state, including any explicit run-format overlay.
 - **Syntax growth:** A broad property bag could become raw OOXML in disguise.
   Mitigation: a closed semantic allowlist backed by existing core primitives.
 - **Overbroad styling:** One declaration could affect unrelated replacements.
-  Mitigation: admit exactly one generated hunk and fail closed otherwise.
+  Mitigation: operation-level formatting admits exactly one generated hunk;
+  multi-hunk edits require explicit inline spans validated against alignment.
 - **False certificate failures:** XML serialization and run splitting vary.
   Mitigation: reuse semantic formatting-fidelity comparison rather than byte
   equality.

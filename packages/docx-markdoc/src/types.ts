@@ -53,10 +53,18 @@ export type RunFormat = {
   highlight?: 'yellow';
 };
 
+/** Exact half-open revised-text interval carrying an explicit direct-format overlay. */
+export type RunFormatSpan = {
+  start: number;
+  end: number;
+  format: RunFormat;
+};
+
 export type InlineEditOperation = SourceParagraph & {
   kind: 'inline-edit';
   operationId: string;
   runFormat?: RunFormat;
+  runFormatSpans?: RunFormatSpan[];
 };
 
 export type ReplaceSourceOperation = SourceParagraph & {
@@ -67,6 +75,7 @@ export type ReplaceSourceOperation = SourceParagraph & {
   formatSource?: string;
   /** Optional direct formatting overlaid only on generated replacement text. */
   runFormat?: RunFormat;
+  runFormatSpans?: RunFormatSpan[];
 };
 
 export type DeleteSourceOperation = SourceParagraph & {
@@ -74,6 +83,7 @@ export type DeleteSourceOperation = SourceParagraph & {
   operationId: string;
   format: 'inherit-source-paragraph';
   runFormat?: RunFormat;
+  runFormatSpans?: RunFormatSpan[];
 };
 
 export type InsertOperation = {
@@ -86,6 +96,7 @@ export type InsertOperation = {
   formatSource?: string;
   /** Optional direct formatting overlaid only on the generated insertion text. */
   runFormat?: RunFormat;
+  runFormatSpans?: RunFormatSpan[];
 };
 
 export type EditOperation =

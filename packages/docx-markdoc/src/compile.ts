@@ -18,6 +18,7 @@ import type {
   InsertOperation,
   MarkdocEditIR,
   RunFormat,
+  RunFormatSpan,
   VerificationCertificate,
 } from './types.js';
 
@@ -148,7 +149,7 @@ function assertAdmittedStructure(document: DocxDocument, id: string): Element {
   return paragraph;
 }
 
-type TextHunk = { start: number; end: number; replacement: string };
+type TextHunk = { start: number; end: number; replacement: string; revisedStart: number; revisedEnd: number };
 type TextToken = { text: string; start: number; end: number };
 
 function textTokens(text: string): TextToken[] {
@@ -201,11 +202,13 @@ function textHunks(before: string, after: string): TextHunk[] {
       revised += 1;
     } else if (revised < m && (source === n || lcs[source * width + revised + 1]! >= lcs[(source + 1) * width + revised]!)) {
       const sourceOffset = source < n ? sourceTokens[source]!.start : before.length;
-      open ??= { start: sourceOffset, end: sourceOffset, replacement: '' };
+      open ??= { start: sourceOffset, end: sourceOffset, replacement: '', revisedStart: revisedTokens[revised]!.start, revisedEnd: revisedTokens[revised]!.start };
       open.replacement += revisedTokens[revised]!.text;
+      open.revisedEnd = revisedTokens[revised]!.end;
       revised += 1;
     } else {
-      open ??= { start: sourceTokens[source]!.start, end: sourceTokens[source]!.start, replacement: '' };
+      const revisedOffset = revised < m ? revisedTokens[revised]!.start : after.length;
+      open ??= { start: sourceTokens[source]!.start, end: sourceTokens[source]!.start, replacement: '', revisedStart: revisedOffset, revisedEnd: revisedOffset };
       open.end = sourceTokens[source]!.end;
       source += 1;
     }
@@ -300,6 +303,47 @@ function requireSingleGeneratedHunk(operationId: string, hunks: TextHunk[]): Tex
   return generated[0]!;
 }
 
+function validateInlineRunFormatSpans(operationId: string, hunks: TextHunk[], spans: RunFormatSpan[]): void {
+  const generated = hunks.filter((hunk) => hunk.replacement.length > 0);
+  let previousEnd = -1;
+  for (const span of spans) {
+    if (span.start < previousEnd || span.end <= span.start) {
+      throw new DocxMarkdocError('AMBIGUOUS_RUN_FORMAT_SCOPE', `Operation ${operationId} has empty or overlapping inline run-format spans.`);
+    }
+    previousEnd = span.end;
+    const containing = generated.filter((hunk) => span.start >= hunk.revisedStart && span.end <= hunk.revisedEnd);
+    if (containing.length !== 1) {
+      throw new DocxMarkdocError(
+        'RUN_FORMAT_SPAN_OUTSIDE_GENERATED_TEXT',
+        `Operation ${operationId} inline run formatting must fall wholly inside one generated replacement hunk.`,
+      );
+    }
+  }
+}
+
+function replacementPartsForHunk(
+  hunk: TextHunk,
+  templateRun: Element,
+  spans: RunFormatSpan[],
+  operationRunFormat?: RunFormat,
+): ReplacementPart[] {
+  if (hunk.replacement.length === 0) return [];
+  if (operationRunFormat) return [{ text: hunk.replacement, templateRun, addRunProps: addRunProps(operationRunFormat) }];
+  const relevant = spans.filter((span) => span.start >= hunk.revisedStart && span.end <= hunk.revisedEnd);
+  if (relevant.length === 0) return [{ text: hunk.replacement, templateRun }];
+  const parts: ReplacementPart[] = [];
+  let offset = 0;
+  for (const span of relevant) {
+    const localStart = span.start - hunk.revisedStart;
+    const localEnd = span.end - hunk.revisedStart;
+    if (localStart > offset) parts.push({ text: hunk.replacement.slice(offset, localStart), templateRun });
+    parts.push({ text: hunk.replacement.slice(localStart, localEnd), templateRun, addRunProps: addRunProps(span.format) });
+    offset = localEnd;
+  }
+  if (offset < hunk.replacement.length) parts.push({ text: hunk.replacement.slice(offset), templateRun });
+  return parts;
+}
+
 function insertionTemplate(document: DocxDocument, operation: InsertOperation): Element {
   const sourceId = operation.styleSourceId ?? operation.anchorId;
   const paragraph = assertAdmittedStructure(document, sourceId);
@@ -318,26 +362,25 @@ function replacePreservingMixedFormatting(
   after: string,
   formatSource?: string,
   runFormat?: RunFormat,
+  runFormatSpans: RunFormatSpan[] = [],
 ): void {
   const paragraph = assertAdmittedStructure(document, id);
   const spans = runSpans(paragraph);
   const hunks = textHunks(before, after);
   const formatted = runFormat ? requireSingleGeneratedHunk(id, hunks) : undefined;
+  validateInlineRunFormatSpans(id, hunks, runFormatSpans);
   for (const hunk of [...hunks].reverse()) {
-    const replacement: ReplacementPart[] = hunk.replacement.length === 0
-      ? []
-      : [{
-        text: hunk.replacement,
-        templateRun: templateForHunk(spans, hunk, before, id, formatSource),
-        addRunProps: hunk === formatted ? addRunProps(runFormat) : undefined,
-      }];
+    const templateRun = hunk.replacement.length === 0 ? undefined : templateForHunk(spans, hunk, before, id, formatSource);
+    const replacement = templateRun
+      ? replacementPartsForHunk(hunk, templateRun, runFormatSpans, hunk === formatted ? runFormat : undefined)
+      : [];
     document.replaceTextAtRange({ targetParagraphId: id, start: hunk.start, end: hunk.end, replaceText: replacement });
   }
 }
 
 function validateRunFormatScopes(ir: MarkdocEditIR, source: DocxDocument): void {
   for (const operation of ir.operations) {
-    if (!operation.runFormat) continue;
+    if (!operation.runFormat && !(operation.runFormatSpans?.length)) continue;
     if (isInsertOperation(operation)) {
       if (operation.revisedText.length === 0 || operation.revisedText.replace(/\r\n/gu, '\n').split(/\n{2,}/u).length !== 1) {
         throw new DocxMarkdocError(
@@ -347,11 +390,14 @@ function validateRunFormatScopes(ir: MarkdocEditIR, source: DocxDocument): void 
       }
       insertionFormatSource(source, operation);
       insertionTemplate(source, operation);
+      validateInlineRunFormatSpans(operation.operationId, [{ start: 0, end: 0, replacement: operation.revisedText, revisedStart: 0, revisedEnd: operation.revisedText.length }], operation.runFormatSpans ?? []);
       continue;
     }
     const original = source.getParagraphTextById(operation.id);
     if (original === null) throw new DocxMarkdocError('MISSING_ANCHOR', `Paragraph ${operation.id} was not found.`);
-    requireSingleGeneratedHunk(operation.operationId, textHunks(original, operation.revisedText));
+    const hunks = textHunks(original, operation.revisedText);
+    if (operation.runFormat) requireSingleGeneratedHunk(operation.operationId, hunks);
+    validateInlineRunFormatSpans(operation.operationId, hunks, operation.runFormatSpans ?? []);
   }
 }
 
@@ -464,7 +510,7 @@ async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise
   for (const operation of ir.operations) {
     if (isInsertOperation(operation)) {
       const runStyleSourceText = insertionFormatSource(document, operation);
-      const templateRun = operation.runFormat ? insertionTemplate(document, operation) : undefined;
+      const templateRun = operation.runFormat || operation.runFormatSpans?.length ? insertionTemplate(document, operation) : undefined;
       const inserted = document.insertParagraph({
         positionalAnchorNodeId: operation.anchorId,
         relativePosition: operation.kind === 'insert-before' ? 'BEFORE' : 'AFTER',
@@ -472,16 +518,17 @@ async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise
         styleSourceId: operation.styleSourceId,
         runStyleSourceText,
       });
-      if (operation.runFormat) {
+      if (templateRun) {
         document.replaceTextAtRange({
           targetParagraphId: inserted.newParagraphId,
           start: 0,
           end: operation.revisedText.length,
-          replaceText: [{
-            text: operation.revisedText,
+          replaceText: replacementPartsForHunk(
+            { start: 0, end: 0, replacement: operation.revisedText, revisedStart: 0, revisedEnd: operation.revisedText.length },
             templateRun,
-            addRunProps: addRunProps(operation.runFormat),
-          }],
+            operation.runFormatSpans ?? [],
+            operation.runFormat,
+          ),
         });
       }
       continue;
@@ -501,6 +548,7 @@ async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise
       operation.revisedText,
       operation.kind === 'replace-source' ? operation.formatSource : undefined,
       operation.runFormat,
+      operation.runFormatSpans,
     );
   }
   return (await document.toBuffer({ cleanBookmarks: false })).buffer;

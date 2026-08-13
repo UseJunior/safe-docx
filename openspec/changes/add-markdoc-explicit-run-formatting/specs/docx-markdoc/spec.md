@@ -79,3 +79,35 @@ readiness independently of exact text checks.
 - **WHEN** the clean and tracked outputs remain plain
 - **THEN** formatting projection verification SHALL pass
 - **AND** the system SHALL NOT report missing formatting based on the semantic appearance of the replacement text
+
+### Requirement: Inline run formatting identifies generated spans exactly
+
+The system SHALL permit a clean `after` state to declare direct character
+formatting on one or more exact inline spans. The IR SHALL retain revised-text
+offsets for each declaration, and replay SHALL apply each overlay only to its
+declared generated interval.
+
+#### Scenario: [SDX-MDOC-30] Two generated spans in one paragraph are independently formatted
+- **GIVEN** one replacement operation whose alignment produces two generated hunks
+- **AND** each intended blank is wrapped by its own inline run-format declaration
+- **WHEN** the operation compiles
+- **THEN** both declared blanks SHALL carry their declared overlays
+- **AND** intervening unchanged text SHALL retain its existing formatting
+
+#### Scenario: [SDX-MDOC-31] Repeated generated text requires no occurrence selector
+- **GIVEN** two generated spans with identical visible text in one clean `after` state
+- **WHEN** each occurrence is wrapped inline
+- **THEN** the parser SHALL retain distinct exact revised-text offsets
+- **AND** replay SHALL format each occurrence without text-search ambiguity
+
+#### Scenario: [SDX-MDOC-32] Inline formatting cannot reach unchanged text
+- **GIVEN** an inline run-format span that includes any unchanged text or crosses a generated-hunk boundary
+- **WHEN** scope validation runs
+- **THEN** compilation SHALL fail before mutation with a stable scope diagnostic
+- **AND** no output SHALL be emitted
+
+#### Scenario: [SDX-MDOC-33] Inline formatting spans are structurally unambiguous
+- **GIVEN** an empty, nested, or overlapping inline run-format declaration
+- **WHEN** canonical Markdoc validation runs
+- **THEN** validation SHALL fail with a stable diagnostic
+- **AND** no operation SHALL enter replay

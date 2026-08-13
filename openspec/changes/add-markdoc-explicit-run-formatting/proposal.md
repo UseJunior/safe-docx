@@ -21,8 +21,11 @@ dropping direct run properties during tracked-change reconstruction.
   template; it never creates formatting implicitly.
 - Overlay only declared run properties using Safe DOCX's existing additive
   `ReplacementPart.addRunProps` primitive.
-- Fail closed when one operation-level declaration would apply ambiguously to
-  multiple replacement hunks.
+- Preserve the concise operation-level declaration for exactly one generated
+  hunk, and add inline `run-format` spans for explicitly styling two or more
+  independently identified generated spans in one clean `after` state.
+- Fail closed when a formatting span overlaps unchanged text, crosses generated
+  hunk boundaries, is empty or nested, or overlaps another formatting span.
 - Add formatting-aware projection checks to the verification certificate:
   pinned source versus reject-all, and clean output versus accept-all.
 - Keep expected formatting explicit: the certificate verifies declared and

@@ -42,6 +42,19 @@ function changeMarkdoc(markdoc: string, before: string, after: string, attribute
   ].join('\n'));
 }
 
+function changeMarkdocWithInlineFormats(markdoc: string, before: string, afterMarkup: string): string {
+  const source = requireMarkdoc(markdoc).scaffold.find((paragraph) => paragraph.originalText === before);
+  if (!source) throw new Error(`Source paragraph not found: ${before}`);
+  const escapedId = source.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`\\{% para (id="${escapedId}"[^\\n]*) %\\}[\\s\\S]*?\\{% /para %\\}`);
+  return markdoc.replace(pattern, [
+    '{% change $1 operation="format-two-spans" format="inherit-source-paragraph" %}',
+    '{% before %}', before, '{% /before %}',
+    '{% after %}', afterMarkup, '{% /after %}',
+    '{% /change %}',
+  ].join('\n'));
+}
+
 function addInheritedProperties(paragraph: Element): void {
   const doc = paragraph.ownerDocument!;
   const run = firstRun(paragraph);
@@ -215,5 +228,69 @@ describe('explicit Markdoc run formatting', () => {
         code: 'INVALID_MARKDOC',
         issues: expect.arrayContaining([expect.objectContaining({ code: 'AMBIGUOUS_RUN_FORMAT_SCOPE' })]),
       });
+  });
+
+  it('[SDX-MDOC-30][SDX-MDOC-31] formats two identical generated spans by exact inline position', async () => {
+    const original = await buildSyntheticDocx({ paragraphs: ['Dates: first and second.'] });
+    const imported = await importDocxToMarkdoc(original);
+    const blank = '\\_\\_\\_\\_';
+    const markdoc = changeMarkdocWithInlineFormats(
+      imported.markdoc,
+      'Dates: first and second.',
+      `Dates: {% run-format underline="single" highlight="yellow" %}${blank}{% /run-format %} and {% run-format underline="single" highlight="yellow" %}${blank}{% /run-format %}.`,
+    );
+
+    const parsed = requireMarkdoc(markdoc).operations[0]!;
+    expect(parsed.runFormatSpans).toEqual([
+      { start: 7, end: 11, format: { underline: 'single', highlight: 'yellow' } },
+      { start: 16, end: 20, format: { underline: 'single', highlight: 'yellow' } },
+    ]);
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+    const paragraph = (await DocxDocument.load(result.clean)).getParagraphs()[0]!;
+    const runs = getParagraphRuns(paragraph);
+    const blankRuns = runs.filter((run) => run.text === '____');
+    expect(blankRuns).toHaveLength(2);
+    for (const run of blankRuns) {
+      assertDirectRunProperty(run.r, 'u', 'single');
+      assertDirectRunProperty(run.r, 'highlight', 'yellow');
+    }
+    const unchanged = runs.find((run) => run.text.includes(' and '));
+    expect(unchanged).toBeDefined();
+    expect(directChild(directChild(unchanged!.r, 'rPr') ?? unchanged!.r, 'highlight')).toBeUndefined();
+    expect(result.certificate.projectionPassed).toBe(true);
+  });
+
+  it('[SDX-MDOC-32][SDX-MDOC-33] rejects inline formatting outside generated text and malformed spans', async () => {
+    const original = await buildSyntheticDocx({ paragraphs: ['Alpha first omega.'] });
+    const imported = await importDocxToMarkdoc(original);
+    const unchanged = changeMarkdocWithInlineFormats(
+      imported.markdoc,
+      'Alpha first omega.',
+      'Alpha {% run-format underline="single" %}first{% /run-format %} revised omega.',
+    );
+    await expect(compileMarkdoc(imported.anchoredSource, unchanged))
+      .rejects.toMatchObject({ code: 'RUN_FORMAT_SPAN_OUTSIDE_GENERATED_TEXT' });
+
+    const crossing = changeMarkdocWithInlineFormats(
+      imported.markdoc,
+      'Alpha first omega.',
+      'Alpha {% run-format underline="single" %}new first revised{% /run-format %} omega.',
+    );
+    await expect(compileMarkdoc(imported.anchoredSource, crossing))
+      .rejects.toMatchObject({ code: 'RUN_FORMAT_SPAN_OUTSIDE_GENERATED_TEXT' });
+
+    const empty = changeMarkdocWithInlineFormats(
+      imported.markdoc,
+      'Alpha first omega.',
+      'Alpha first {% run-format underline="single" %}{% /run-format %}omega.',
+    );
+    expect(() => requireMarkdoc(empty)).toThrow(/Markdoc validation failed/);
+
+    const nested = changeMarkdocWithInlineFormats(
+      imported.markdoc,
+      'Alpha first omega.',
+      'Alpha {% run-format underline="single" %}{% run-format highlight="yellow" %}new{% /run-format %}{% /run-format %} omega.',
+    );
+    expect(() => requireMarkdoc(nested)).toThrow(/Markdoc validation failed/);
   });
 });

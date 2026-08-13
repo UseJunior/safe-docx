@@ -76,6 +76,21 @@ Whole-paragraph changes keep both clean states explicit:
 {% /change %}
 ```
 
+When one paragraph generates more than one independently formatted span, keep
+the intent inline with the clean authored text:
+
+```markdoc
+{% after %}
+Dates: {% run-format underline="single" highlight="yellow" %}____{% /run-format %}
+and {% run-format underline="single" highlight="yellow" %}____{% /run-format %}.
+{% /after %}
+```
+
+Inline spans are stored as exact revised-text offsets, so repeated text is not
+resolved by search or occurrence counting. Each span must lie wholly within one
+generated replacement hunk; unchanged, empty, nested, overlapping, and
+cross-hunk scopes fail before document mutation.
+
 Text replacement and deletion of an existing numbered paragraph preserve its
 source `w:pPr`, including paragraph style, `w:numPr`, level, indentation, and
 list identity. Inserting a numbered item requires an explicit existing

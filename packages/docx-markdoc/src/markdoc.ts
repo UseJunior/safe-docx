@@ -1,6 +1,6 @@
 import Markdoc, { type Config, type Node } from '@markdoc/markdoc';
 import { DocxMarkdocError } from './errors.js';
-import { IR_VERSION, type AtomicChangeSet, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type RequirementWaiver, type RunFormat, type SourceParagraph, type ValidationIssue, type ValidationResult } from './types.js';
+import { IR_VERSION, type AtomicChangeSet, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type RequirementWaiver, type RunFormat, type RunFormatSpan, type SourceParagraph, type ValidationIssue, type ValidationResult } from './types.js';
 
 const stringRequired = { type: String, required: true } as const;
 const runFormatAttributes = {
@@ -26,6 +26,10 @@ export const markdocConfig: Config = {
     },
     ins: { inline: true },
     del: { inline: true },
+    'run-format': {
+      inline: true,
+      attributes: runFormatAttributes,
+    },
     change: {
       attributes: {
         id: stringRequired,
@@ -140,10 +144,14 @@ function hasRevision(node: Node): boolean {
   return [...node.walk()].some((child) => child.type === 'tag' && (child.tag === 'ins' || child.tag === 'del'));
 }
 
+function hasRunFormat(node: Node): boolean {
+  return [...node.walk()].some((child) => child.type === 'tag' && child.tag === 'run-format');
+}
+
 function assertOnlyInlineRevisions(node: Node, issues: ValidationIssue[]): void {
   for (const child of node.walk()) {
     if (child === node || child.type !== 'tag') continue;
-    if (child.tag !== 'ins' && child.tag !== 'del') {
+    if (child.tag !== 'ins' && child.tag !== 'del' && child.tag !== 'run-format') {
       issues.push(issue('UNSUPPORTED_NESTED_TAG', `Unsupported nested tag ${child.tag ?? '<unknown>'}.`, child));
     }
   }
@@ -179,6 +187,37 @@ function runFormatFromAttributes(attributes: Record<string, unknown>, node: Node
     ...(underline === 'single' ? { underline } : {}),
     ...(highlight === 'yellow' ? { highlight } : {}),
   };
+}
+
+function revisedProjectionWithRunFormats(node: Node, issues: ValidationIssue[]): { text: string; spans: RunFormatSpan[] } {
+  let text = '';
+  const spans: RunFormatSpan[] = [];
+  const visit = (current: Node, insideRunFormat: boolean): void => {
+    if (current.type === 'text') {
+      text += String(current.attributes.content ?? '');
+      return;
+    }
+    if (current.type === 'softbreak' || current.type === 'hardbreak') {
+      text += '\n';
+      return;
+    }
+    if (current.type === 'tag' && current.tag === 'run-format') {
+      if (insideRunFormat) {
+        issues.push(issue('NESTED_RUN_FORMAT', 'Inline run-format declarations may not be nested.', current));
+      }
+      const start = text.length;
+      const format = runFormatFromAttributes(current.attributes, current, issues);
+      for (const child of current.children) visit(child, true);
+      const end = text.length;
+      if (end === start) issues.push(issue('EMPTY_RUN_FORMAT_SPAN', 'Inline run-format declarations require non-empty text.', current));
+      if (!format) issues.push(issue('EMPTY_RUN_FORMAT', 'Inline run-format declarations require at least one admitted property.', current));
+      if (!insideRunFormat && end > start && format) spans.push({ start, end, format });
+      return;
+    }
+    for (const child of current.children) visit(child, insideRunFormat);
+  };
+  visit(node, false);
+  return { text, spans };
 }
 
 export function parseMarkdoc(source: string): ValidationResult {
@@ -276,6 +315,10 @@ export function parseMarkdoc(source: string): ValidationResult {
       if (afterNodes.some(hasRevision)) issues.push(issue('REVISION_TAGS_NONCANONICAL', 'The after state contains clean text; inline ins/del belongs only in generated views.', node));
       const operationId = String(a.operation ?? '');
       const runFormat = runFormatFromAttributes(a, node, issues);
+      const afterProjection = afterNodes[0]
+        ? revisedProjectionWithRunFormats(afterNodes[0], issues)
+        : { text: '', spans: [] };
+      if (runFormat && afterProjection.spans.length > 0) issues.push(issue('CONFLICTING_RUN_FORMAT_SCOPE', 'Use either operation-level or inline run formatting, not both.', node));
       if (runFormat && afterNodes[0]?.children.filter((child) => child.type === 'paragraph').length !== 1) {
         issues.push(issue(
           'AMBIGUOUS_RUN_FORMAT_SCOPE',
@@ -287,10 +330,11 @@ export function parseMarkdoc(source: string): ValidationResult {
         kind: node.tag,
         operationId,
         anchorId: String(a.anchor ?? ''),
-        revisedText: afterNodes[0] ? textProjection(afterNodes[0], 'revised') : '',
+        revisedText: afterProjection.text,
         styleSourceId: a['style-source'] === undefined ? undefined : String(a['style-source']),
         formatSource: a['format-source'] === undefined ? undefined : String(a['format-source']),
         runFormat,
+        runFormatSpans: afterProjection.spans,
       });
       if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
       operationIds.add(operationId);
@@ -308,10 +352,15 @@ export function parseMarkdoc(source: string): ValidationResult {
         issues.push(issue('INVALID_CHANGE_STATES', 'A change requires exactly one before block and one after block.', node));
       }
       const beforeText = beforeNodes[0] ? textProjection(beforeNodes[0], 'original') : '';
-      const afterText = afterNodes[0] ? textProjection(afterNodes[0], 'revised') : '';
+      const afterProjection = afterNodes[0]
+        ? revisedProjectionWithRunFormats(afterNodes[0], issues)
+        : { text: '', spans: [] };
+      const afterText = afterProjection.text;
+      if (beforeNodes.some(hasRunFormat)) issues.push(issue('RUN_FORMAT_OUTSIDE_AFTER', 'Inline run-format declarations are permitted only in the clean after state.', node));
       if (children.some(hasRevision)) issues.push(issue('REVISION_TAGS_NONCANONICAL', 'Before/after states contain clean text; inline ins/del belongs only in generated views.', node));
       const operationId = String(a.operation ?? '');
       const runFormat = runFormatFromAttributes(a, node, issues);
+      if (runFormat && afterProjection.spans.length > 0) issues.push(issue('CONFLICTING_RUN_FORMAT_SCOPE', 'Use either operation-level or inline run formatting, not both.', node));
       if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
       operationIds.add(operationId);
       const paragraph: SourceParagraph = {
@@ -323,13 +372,14 @@ export function parseMarkdoc(source: string): ValidationResult {
       };
       scaffold.push(paragraph);
       operations.push(afterText === ''
-        ? { kind: 'delete-source', operationId, format: 'inherit-source-paragraph', runFormat, ...paragraph }
+        ? { kind: 'delete-source', operationId, format: 'inherit-source-paragraph', runFormat, runFormatSpans: afterProjection.spans, ...paragraph }
         : {
           kind: 'replace-source',
           operationId,
           format: 'inherit-source-paragraph',
           formatSource: a['format-source'] === undefined ? undefined : String(a['format-source']),
           runFormat,
+          runFormatSpans: afterProjection.spans,
           ...paragraph,
         });
       continue;
@@ -346,7 +396,10 @@ export function parseMarkdoc(source: string): ValidationResult {
     const originalText = node.tag === 'replace-source' || node.tag === 'delete-source'
       ? ''
       : textProjection(node, 'original');
-    const revisedText = node.tag === 'delete-source' ? '' : textProjection(node, 'revised');
+    const revisedProjection = node.tag === 'delete-source'
+      ? { text: '', spans: [] as RunFormatSpan[] }
+      : revisedProjectionWithRunFormats(node, issues);
+    const revisedText = revisedProjection.text;
     const paragraph: SourceParagraph = {
       id,
       fingerprint: String(a.fingerprint ?? ''),
@@ -357,12 +410,14 @@ export function parseMarkdoc(source: string): ValidationResult {
     scaffold.push(paragraph);
     const operationId = a.operation === undefined ? undefined : String(a.operation);
     const runFormat = runFormatFromAttributes(a, node, issues);
+    if (runFormat && revisedProjection.spans.length > 0) issues.push(issue('CONFLICTING_RUN_FORMAT_SCOPE', 'Use either operation-level or inline run formatting, not both.', node));
     if (node.tag === 'para' && hasRevision(node)) issues.push(issue('INLINE_REVISIONS_NONCANONICAL', `Paragraph ${id} must be represented as clean before/after states.`, node));
+    if (!operationId && revisedProjection.spans.length > 0) issues.push(issue('RUN_FORMAT_REQUIRES_OPERATION', `Paragraph ${id} cannot declare run formatting without an edit operation.`, node));
     if (!operationId) continue;
     if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
     operationIds.add(operationId);
     if (node.tag === 'para') {
-      operations.push({ kind: 'inline-edit', operationId, runFormat, ...paragraph });
+      operations.push({ kind: 'inline-edit', operationId, runFormat, runFormatSpans: revisedProjection.spans, ...paragraph });
     } else if (node.tag === 'replace-source') {
       operations.push({
         kind: 'replace-source',
@@ -370,10 +425,11 @@ export function parseMarkdoc(source: string): ValidationResult {
         format: 'inherit-source-paragraph',
         formatSource: a['format-source'] === undefined ? undefined : String(a['format-source']),
         runFormat,
+        runFormatSpans: revisedProjection.spans,
         ...paragraph,
       });
     } else {
-      operations.push({ kind: 'delete-source', operationId, format: 'inherit-source-paragraph', runFormat, ...paragraph });
+      operations.push({ kind: 'delete-source', operationId, format: 'inherit-source-paragraph', runFormat, runFormatSpans: revisedProjection.spans, ...paragraph });
     }
   }
 
