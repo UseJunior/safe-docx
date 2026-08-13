@@ -12,7 +12,7 @@ import {
 
 registerCleanup();
 
-const TEST_FEATURE = 'compare-cli';
+const TEST_FEATURE = 'add-compare-output-option';
 const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
 
 describe('safe-docx compare command', () => {
