@@ -56,7 +56,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-3-2-6` | Run color and theme transforms | 5 | 1 | 17.3.2.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Color` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-theme.test.ts; scripts/check_docx_formatting_loss.test.mjs |
 | `ECMA-PART1-17-7-4-18` | w:styles style-definitions part emission | 5 | 1 | 17.7.4.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:styles` | — |
 | `ECMA-PART1-17-7-4-17` | w:style style-definition emission | 5 | 1 | 17.7.4.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:style` | — |
-| `ECMA-PART1-17-7-5-1` | w:docDefaults document-default properties | 5 | 1 | 17.7.5.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults` | — |
+| `ECMA-PART1-17-7-5-1` | w:docDefaults document-default properties | 5 | 1 | 17.7.5.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts |
 | `ECMA-PART1-17-6-18` | w:sectPr paragraph-level section break emission | 5 | 1 | 17.6.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr` | packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts |
 | `ECMA-PART1-17-6-22` | w:type section start kind | 5 | 1 | 17.6.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SectType` | packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts |
 | `ECMA-PART1-17-6-12` | w:pgNumType page-numbering settings emission | 5 | 1 | 17.6.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgNumType` | packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/tools/format_section.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts |
@@ -772,12 +772,16 @@ at spec validation, before any XML is built.
 - **Part / Section:** Part 1 § 17.7.5.1
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults`
+- **Verified by:** packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts
 
 `w:docDefaults` carries the document-wide default run and paragraph
 properties that styles and direct formatting layer over. Generation emits
 explicit defaults (font bound across ascii/hAnsi/cs script ranges plus an
 explicit size) rather than relying on reader fallbacks, which diverge
-between Word, LibreOffice, and Google Docs import.
+between Word, LibreOffice, and Google Docs import. Effective run formatting
+reads `w:rPrDefault/w:rPr` as its lowest-precedence tier; for toggle
+properties that tier establishes the base state before style parity and
+absolute direct formatting are applied.
 
 ### ECMA-PART1-17-6-18 — w:sectPr paragraph-level section break emission
 

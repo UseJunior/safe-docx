@@ -17,6 +17,11 @@ export type StyleDef = {
 
 export type StylesModel = {
   byId: Map<string, StyleDef>;
+  /**
+   * Document-wide default run properties. Optional so callers that constructed
+   * the pre-#753 `{ byId }` model shape remain source-compatible.
+   */
+  docDefaultsRPr?: Element | null;
 };
 
 export type ThemeModel = {
@@ -98,7 +103,15 @@ export function parseThemeXml(themeDoc: Document | null): ThemeModel {
 
 export function parseStylesXml(stylesDoc: Document | null): StylesModel {
   const byId = new Map<string, StyleDef>();
-  if (!stylesDoc) return { byId };
+  if (!stylesDoc) return { byId, docDefaultsRPr: null };
+
+  const docDefaults = stylesDoc.getElementsByTagNameNS(OOXML.W_NS, W.docDefaults).item(0);
+  const rPrDefault = docDefaults
+    ? getFirstChild(docDefaults, OOXML.W_NS, W.rPrDefault)
+    : null;
+  const docDefaultsRPr = rPrDefault
+    ? getFirstChild(rPrDefault, OOXML.W_NS, W.rPr)
+    : null;
 
   const styles = Array.from(stylesDoc.getElementsByTagNameNS(OOXML.W_NS, W.style));
   for (const st of styles) {
@@ -120,7 +133,7 @@ export function parseStylesXml(stylesDoc: Document | null): StylesModel {
       rPr: rPr ?? null,
     });
   }
-  return { byId };
+  return { byId, docDefaultsRPr };
 }
 
 function resolveStyleChain(model: StylesModel, styleId: string | null): StyleDef[] {
@@ -299,23 +312,33 @@ function parseBoolProp(parent: Element | null, tagLocal: string): boolean | null
 
 type ToggleStep = {
   rPr: Element | null;
-  kind: 'style' | 'direct';
+  kind: 'default' | 'style' | 'direct';
 };
 
 /**
- * Evaluate a toggle property in hierarchy order. Style-level true values
- * invert the accumulated state while style-level false values preserve it;
- * direct formatting sets an absolute value.
+ * Evaluate a toggle property in hierarchy order. Document defaults establish
+ * the initial absolute value; style-level true values invert the accumulated
+ * state while style-level false values preserve it; direct formatting sets an
+ * absolute value.
+ *
+ * Microsoft's current ISO/IEC 29500 implementation note for §17.7.3 explicitly
+ * says Word falls back to document defaults when a hierarchy level supplies no
+ * value and describes the document-default value as the base for subsequent
+ * parity. MS-OE376 §2.7.7 documents a separate Word deviation for paragraph
+ * styles, but does not redefine `w:docDefaults` as another toggling style
+ * level. Accordingly, defaults seed rather than invert the state here.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.7.3
  * @see https://github.com/UseJunior/safe-docx/issues/737
+ * @see https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/f7130225-2368-48f3-acae-a9d278d0fb25
+ * @see https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/f936abaf-a9cb-439b-923d-7f688d9202e9
  */
 function resolveToggleProperty(steps: ToggleStep[], tagLocal: string): boolean {
   let effective = false;
   for (const { rPr, kind } of steps) {
     const declaration = parseBoolProp(rPr, tagLocal);
     if (declaration === null) continue;
-    if (kind === 'direct') {
+    if (kind === 'default' || kind === 'direct') {
       effective = declaration;
     } else if (declaration) {
       effective = !effective;
@@ -404,8 +427,9 @@ function parseHighlightVal(parent: Element | null): string | null {
  * the run declares. Ordinary properties are taken from the first layer that
  * specifies them: direct `w:rPr` on the run, then the `w:rStyle`
  * character-style `basedOn` chain, then the paragraph mark's `w:rPr` inside
- * `pPr`, then the paragraph style's `basedOn` chain. A property specified
- * nowhere resolves to the neutral value (`false`, `''`, `0`, or `null`).
+ * `pPr`, then the paragraph style's `basedOn` chain, and finally
+ * `w:docDefaults/w:rPrDefault/w:rPr`. A property specified nowhere resolves
+ * to the neutral value (`false`, `''`, `0`, or `null`).
  *
  * Each property is resolved independently down the chain — a style that
  * specifies only color does not mask an ancestor's bold.
@@ -417,9 +441,9 @@ function parseHighlightVal(parent: Element | null): string | null {
  * `w:caps`, `w:smallCaps`, `w:strike`, `w:emboss`, `w:imprint`, `w:outline`,
  * `w:shadow`, and `w:vanish`.
  *
- * Not resolved: `w:docDefaults`, table-style run properties, and
- * numbering-level `rPr`. A formatting change confined to one of those layers
- * is invisible to this resolver.
+ * Not resolved: table-style run properties and numbering-level `rPr`. A
+ * formatting change confined to one of those layers is invisible to this
+ * resolver.
  *
  * Part of docx-core's public surface (see `src/index.ts`) so external
  * diagnostics — `scripts/check_docx_formatting_loss.mjs` today, the planned
@@ -435,7 +459,9 @@ function parseHighlightVal(parent: Element | null): string | null {
  *   omitted, direct font/color fallbacks retain their previous behavior
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.7.3
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.5.1
  * @see https://github.com/UseJunior/safe-docx/issues/737
+ * @see https://github.com/UseJunior/safe-docx/issues/753
  */
 export function extractEffectiveRunFormatting(params: {
   run: Element;
@@ -466,6 +492,7 @@ export function extractEffectiveRunFormatting(params: {
     ...rStyleChain.map((s) => s.rPr),
     pRPr,
     ...paragraphStyleChain.map((s) => s.rPr),
+    styles.docDefaultsRPr ?? null,
   ];
   const resolve = <T>(parse: (el: Element | null) => T | null): T | null =>
     firstNonNull(sources.map(parse));
@@ -475,6 +502,7 @@ export function extractEffectiveRunFormatting(params: {
   // character style can still contribute above it before the run's own rPr
   // supplies the final absolute override.
   const toggleSteps: ToggleStep[] = [
+    { rPr: styles.docDefaultsRPr ?? null, kind: 'default' },
     ...[...paragraphStyleChain].reverse().map((style) => ({ rPr: style.rPr, kind: 'style' as const })),
     { rPr: pRPr, kind: 'direct' },
     ...[...rStyleChain].reverse().map((style) => ({ rPr: style.rPr, kind: 'style' as const })),

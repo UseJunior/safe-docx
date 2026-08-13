@@ -796,14 +796,17 @@ part: 1
 section: "17.7.5.1"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults
-verifiedBy:
+verifiedBy: packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts
 ```
 
 `w:docDefaults` carries the document-wide default run and paragraph
 properties that styles and direct formatting layer over. Generation emits
 explicit defaults (font bound across ascii/hAnsi/cs script ranges plus an
 explicit size) rather than relying on reader fallbacks, which diverge
-between Word, LibreOffice, and Google Docs import.
+between Word, LibreOffice, and Google Docs import. Effective run formatting
+reads `w:rPrDefault/w:rPr` as its lowest-precedence tier; for toggle
+properties that tier establishes the base state before style parity and
+absolute direct formatting are applied.
 
 ## [ECMA-PART1-17-6-18] w:sectPr paragraph-level section break emission
 
