@@ -118,7 +118,13 @@ export type NormalizationResult = {
 };
 
 function emptyAcceptChangesResult(): AcceptChangesResult {
-  return { insertionsAccepted: 0, deletionsAccepted: 0, movesResolved: 0, propertyChangesResolved: 0 };
+  return {
+    insertionsAccepted: 0,
+    deletionsAccepted: 0,
+    movesResolved: 0,
+    propertyChangesResolved: 0,
+    unresolvedRowRevisions: 0,
+  };
 }
 
 function hasAcceptedChanges(result: AcceptChangesResult): boolean {
@@ -135,10 +141,17 @@ function addAcceptChangesResult(total: AcceptChangesResult, result: AcceptChange
   total.deletionsAccepted += result.deletionsAccepted;
   total.movesResolved += result.movesResolved;
   total.propertyChangesResolved += result.propertyChangesResolved;
+  total.unresolvedRowRevisions += result.unresolvedRowRevisions;
 }
 
 function emptyRejectChangesResult(): RejectChangesResult {
-  return { insertionsRemoved: 0, deletionsRestored: 0, movesReverted: 0, propertyChangesReverted: 0 };
+  return {
+    insertionsRemoved: 0,
+    deletionsRestored: 0,
+    movesReverted: 0,
+    propertyChangesReverted: 0,
+    unresolvedRowRevisions: 0,
+  };
 }
 
 function hasRejectedChanges(result: RejectChangesResult): boolean {
@@ -155,6 +168,7 @@ function addRejectChangesResult(total: RejectChangesResult, result: RejectChange
   total.deletionsRestored += result.deletionsRestored;
   total.movesReverted += result.movesReverted;
   total.propertyChangesReverted += result.propertyChangesReverted;
+  total.unresolvedRowRevisions += result.unresolvedRowRevisions;
 }
 
 function parseWId(el: Element): number | null {

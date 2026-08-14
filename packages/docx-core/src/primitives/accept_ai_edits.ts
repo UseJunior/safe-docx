@@ -292,8 +292,20 @@ export function rejectAIEdits(doc: Document, selector: AiEditSelector): Selectiv
 }
 
 function emptyAccept(): AcceptChangesResult {
-  return { insertionsAccepted: 0, deletionsAccepted: 0, movesResolved: 0, propertyChangesResolved: 0 };
+  return {
+    insertionsAccepted: 0,
+    deletionsAccepted: 0,
+    movesResolved: 0,
+    propertyChangesResolved: 0,
+    unresolvedRowRevisions: 0,
+  };
 }
 function emptyReject(): RejectChangesResult {
-  return { insertionsRemoved: 0, deletionsRestored: 0, movesReverted: 0, propertyChangesReverted: 0 };
+  return {
+    insertionsRemoved: 0,
+    deletionsRestored: 0,
+    movesReverted: 0,
+    propertyChangesReverted: 0,
+    unresolvedRowRevisions: 0,
+  };
 }
