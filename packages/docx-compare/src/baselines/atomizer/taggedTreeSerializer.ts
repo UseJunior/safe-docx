@@ -165,8 +165,8 @@ export function splitWithPreservedProvenance(
   return fragments.map((fragment) => wrapPreserved(cloneElement(fragment), stack));
 }
 
-function emitNode(node: TaggedNode, plan: PreservePlan): WmlElement {
-  const base = cloneElement(representative(node, node.tag === 'original' ? 'original' : 'revised')!);
+function emitNode(node: TaggedNode, plan: PreservePlan, bothSide: Side = 'revised'): WmlElement {
+  const base = cloneElement(representative(node, node.tag === 'original' ? 'original' : node.tag === 'revised' ? 'revised' : bothSide)!);
   if (!node.opaque && node.children.length > 0) {
     replaceElementChildren(base, node.children.map((child) => emitNode(child, plan)));
   }
@@ -183,9 +183,26 @@ function emitNode(node: TaggedNode, plan: PreservePlan): WmlElement {
 }
 
 /** Serialize a tagged tree to shadow-only OOXML tracked markup. */
-export function serializeTaggedTree(tree: TaggedNode, plan: PreservePlan): string {
+export interface TaggedTreeSerializerOptions {
+  /** Package/story skeleton. Tracked content still projects to both sides. */
+  baseSide?: Side;
+}
+
+export function serializeTaggedTree(
+  tree: TaggedNode,
+  plan: PreservePlan,
+  options: TaggedTreeSerializerOptions = {},
+): string {
   if (!plan.entries.has(tree)) throw new Error('PreservePlan does not belong to this TaggedTree');
-  return new XMLSerializer().serializeToString(emitNode(tree, plan));
+  return new XMLSerializer().serializeToString(emitNode(tree, plan, options.baseSide ?? 'revised'));
+}
+
+/**
+ * Compose independently aligned text-box or ancillary stories as IR subtrees.
+ * The input parent is not mutated, keeping story recursion additive in Stage A.
+ */
+export function composeTaggedStories(parent: TaggedNode, stories: readonly TaggedNode[]): TaggedNode {
+  return { ...parent, children: [...parent.children, ...stories] } as TaggedNode;
 }
 
 /** Return the side representative stack retained by the plan. */

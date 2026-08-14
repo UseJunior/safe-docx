@@ -4,8 +4,9 @@ import { XMLSerializer } from '@xmldom/xmldom';
 import { parseXml } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
-import type { BothNode, TaggedNode } from './taggedTree.js';
+import { project, type BothNode, type TaggedNode } from './taggedTree.js';
 import {
+  composeTaggedStories,
   createPreservePlan,
   preservedStack,
   serializeTaggedTree,
@@ -198,5 +199,45 @@ describe('tagged-tree shadow serializer', () => {
       }));
       return text(rejectAllChanges(output)) === oldText && text(acceptAllChanges(output)) === newText;
     }), { numRuns: 100 });
+  });
+
+  test('composes nested story subtrees without mutating the outer tree', () => {
+    const original = documentBody('<w:p><w:r><w:t>outer</w:t></w:r></w:p>');
+    const revised = documentBody('<w:p><w:r><w:t>outer</w:t></w:r></w:p>');
+    const storyOriginal = documentBody('<w:p><w:r><w:t>old story</w:t></w:r></w:p>');
+    const storyRevised = documentBody('<w:p><w:r><w:t>new story</w:t></w:r></w:p>');
+    const outer: BothNode = { tag: 'both', original, revised, children: [], opaque: true };
+    const story: BothNode = {
+      tag: 'both', original: storyOriginal, revised: storyRevised, children: [
+        { tag: 'original', node: elementChildren(storyOriginal)[0]!, children: [], opaque: true },
+        { tag: 'revised', node: elementChildren(storyRevised)[0]!, children: [], opaque: true },
+      ],
+    };
+    const composed = composeTaggedStories(outer, [story]);
+    expect(outer.children).toEqual([]);
+    expect(project(composed, 'original')?.children[0]?.element).toBe(storyOriginal);
+    expect(project(composed, 'revised')?.children[0]?.element).toBe(storyRevised);
+  });
+
+  test('parameterizes the package skeleton side without changing tracked projections', () => {
+    const original = documentBody('<w:p><w:r><w:t>A</w:t></w:r></w:p>');
+    const revised = documentBody('<w:p><w:r><w:t>B</w:t></w:r></w:p>');
+    original.setAttribute('data-skeleton', 'original');
+    revised.setAttribute('data-skeleton', 'revised');
+    const tree: BothNode = {
+      tag: 'both', original, revised, children: [
+        { tag: 'original', node: elementChildren(original)[0]!, children: [], opaque: true },
+        { tag: 'revised', node: elementChildren(revised)[0]!, children: [], opaque: true },
+      ],
+    };
+    const plan = createPreservePlan(original, revised, tree, {
+      author: 'Comparator', date: '2026-08-14T12:00:00Z',
+    });
+    const rebuilt = serializeTaggedTree(tree, plan, { baseSide: 'original' });
+    const inplace = serializeTaggedTree(tree, plan, { baseSide: 'revised' });
+    expect(parseXml(rebuilt).documentElement.getAttribute('data-skeleton')).toBe('original');
+    expect(parseXml(inplace).documentElement.getAttribute('data-skeleton')).toBe('revised');
+    expect(text(acceptAllChanges(rebuilt))).toBe('B');
+    expect(text(rejectAllChanges(inplace))).toBe('A');
   });
 });

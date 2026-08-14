@@ -65,11 +65,16 @@ in `proposal.md` and are separate changes.
       stacks agrees with the original and revised tree projections. This is the
       serializer-dependent half of the former task 2.5 and SHALL pass before
       proceeding to shadow corpus evidence.
-- [ ] 3.3 Design nested text-box / ancillary story composition as IR subtrees;
+- [x] 3.3 Design nested text-box / ancillary story composition as IR subtrees;
       verify projections compose. Do not touch the recursive pipeline path.
-- [ ] 3.4 Determine whether `rebuild`'s different base-archive selection
+- [x] 3.4 Determine whether `rebuild`'s different base-archive selection
       (`pipeline.ts:1239`) needs a second serializer or one parameterized by
       which side supplies the package skeleton.
+
+      **Determination (2026-08-14):** one serializer parameterized by
+      `baseSide` is sufficient. Tests prove that original- and revised-based
+      skeleton attributes differ while accept/reject tracked-content
+      projections remain unchanged. Production mode selection is untouched.
 
 ## 4. Shadow mode and evidence
 
