@@ -41,32 +41,48 @@ const NUMERIC_TOKEN = /^[0-9]+$/u;
 const BINDING_SAMPLE_LIMIT = 8;
 
 export function emptyPaginationProfile(pageCount: number): PaginationProfile {
-  return { pageCount, headerFooterTokenCounts: new Map(), pageFieldCount: 0 };
+  return { pageCount, headerFooterTokenCounts: new Map(), headerFooterPageFieldCount: 0, bodyPageFieldCount: 0, pageNumberUpperBound: pageCount };
+}
+
+function isReservablePageNumber(token: string, pagination: PaginationProfile): boolean {
+  if (!NUMERIC_TOKEN.test(token)) return false;
+  const value = Number.parseInt(token, 10);
+  return value >= 1 && value <= pagination.pageNumberUpperBound;
 }
 
 /**
- * Story-scoped text binding: multiset containment with a pagination allowance.
+ * Story-scoped text binding: per-page maximal reservation of pagination
+ * artifacts, then multiset containment of the caller's logical projection.
  *
  * Invariant:
- * 1. Completeness lower bound — every whitespace-delimited token of the
- *    caller's logical markup projection must occur in the extracted PDF text
- *    at least as many times as it occurs in the projection. A render that
- *    drops any logical content therefore still fails.
- * 2. Bounded residue upper bound — every PDF token occurrence beyond the
- *    projection's count (the residue) must be attributable to renderer-created
- *    pagination artifacts with explicit occurrence bounds: a token drawn from
- *    a referenced header/footer story is allowed at most
- *    `pageCount x (its occurrence count in those stories)` residual
- *    occurrences, and purely numeric residue is allowed only when a
- *    PAGE-family field instruction exists in a rendered story, bounded in
- *    total by `pageCount x pageFieldCount`. Duplicated or hallucinated body
- *    content therefore also fails.
+ * 1. Pagination-first reservation — the extracted PDF text is split into
+ *    rendered pages (form feeds). On each page, pagination-owned material is
+ *    reserved FIRST and MAXIMALLY: each referenced header/footer story token
+ *    up to its occurrence count in those stories, and numeric page-number
+ *    renderings (integer value within the rendered page-number range) up to
+ *    the header/footer PAGE-family field count per page plus a
+ *    whole-document budget for body-story PAGE-family fields.
+ * 2. Completeness lower bound — every whitespace-delimited token of the
+ *    caller's logical projection must be covered by the tokens REMAINING
+ *    after reservation. Because reservation is maximal, repeated header or
+ *    footer vocabulary can never substitute for genuinely missing logical
+ *    content: dropping any logical token still fails.
+ * 3. Zero residue — every remaining token beyond the projection is
+ *    unexplained and fails, so duplicated or hallucinated rendered content
+ *    also fails.
  *
- * The binding deliberately does not check reading order: LibreOffice emits
- * text in renderer-created page and float positions (repeated headers,
- * footers, anchored text boxes), which a logical DOCX projection cannot
- * predict without reimplementing pagination. Order and placement remain the
- * image-review domain; colour visibility is verified separately.
+ * Accepted limitations, all in the strict (fail-not-pass) direction or
+ * covered by a separate check:
+ * - Reading order is not checked by this automated verdict; LibreOffice emits
+ *   text in renderer-created page and float positions that a logical DOCX
+ *   projection cannot predict. The emitted review PNGs support optional human
+ *   placement review; no automated placement comparison happens here.
+ * - Header/footer story text is pagination-owned and reserved, not itself
+ *   bound; revision visibility inside headers is covered by the pixel and
+ *   revision-markup path.
+ * - A bare integer in body text that falls within the rendered page-number
+ *   range may be attributed to pagination, which can only cause a failure,
+ *   never a false pass.
  *
  * The pagination profile is derived from the rendered artifact and the
  * rendered DOCX package only — never from the caller's projection or from any
@@ -74,27 +90,45 @@ export function emptyPaginationProfile(pageCount: number): PaginationProfile {
  */
 export function bindLogicalMarkupText(expectedMarkupText: string, pdfText: string, pagination: PaginationProfile): TextBindingEvidence {
   const expectedCounts = countTokens(tokenizeRenderedText(expectedMarkupText));
-  const pdfCounts = countTokens(tokenizeRenderedText(pdfText));
+  const bodyAvailable = new Map<string, number>();
+  let bodyFieldBudget = pagination.bodyPageFieldCount;
+  const pageNumberStart = pagination.pageNumberUpperBound - pagination.pageCount + 1;
+  for (const [pageIndex, page] of pdfText.split('\f').entries()) {
+    const remaining = new Map<string, number>();
+    for (const [token, count] of countTokens(tokenizeRenderedText(page))) {
+      const afterStories = count - Math.min(count, pagination.headerFooterTokenCounts.get(token) ?? 0);
+      if (afterStories > 0) remaining.set(token, afterStories);
+    }
+    let pageNumericBudget = pagination.headerFooterPageFieldCount;
+    const reserveNumeric = (token: string): void => {
+      let available = remaining.get(token) ?? 0;
+      while (available > 0 && (pageNumericBudget > 0 || bodyFieldBudget > 0)) {
+        if (pageNumericBudget > 0) pageNumericBudget--;
+        else bodyFieldBudget--;
+        available--;
+      }
+      remaining.set(token, available);
+    };
+    // Attribute the page's own PAGE rendering and the NUMPAGES total before
+    // any other in-range numeral, so a bare body integer is not attributed to
+    // pagination while the actual page number goes unaccounted.
+    for (const preferred of new Set([String(pageNumberStart + pageIndex), String(pagination.pageNumberUpperBound)])) {
+      if (isReservablePageNumber(preferred, pagination)) reserveNumeric(preferred);
+    }
+    for (const token of [...remaining.keys()]) {
+      if (isReservablePageNumber(token, pagination)) reserveNumeric(token);
+    }
+    for (const [token, count] of remaining) {
+      if (count > 0) bodyAvailable.set(token, (bodyAvailable.get(token) ?? 0) + count);
+    }
+  }
   const missingTokens: string[] = [];
   for (const [token, expected] of expectedCounts) {
-    if ((pdfCounts.get(token) ?? 0) < expected) missingTokens.push(token);
+    if ((bodyAvailable.get(token) ?? 0) < expected) missingTokens.push(token);
   }
   const unexplainedTokens: string[] = [];
-  let numericResidueTotal = 0;
-  for (const [token, rendered] of pdfCounts) {
-    const residue = rendered - (expectedCounts.get(token) ?? 0);
-    if (residue <= 0) continue;
-    const storyAllowance = pagination.pageCount * (pagination.headerFooterTokenCounts.get(token) ?? 0);
-    const beyondStories = residue - storyAllowance;
-    if (beyondStories <= 0) continue;
-    if (NUMERIC_TOKEN.test(token) && pagination.pageFieldCount > 0) {
-      numericResidueTotal += beyondStories;
-      continue;
-    }
-    unexplainedTokens.push(token);
-  }
-  if (numericResidueTotal > pagination.pageCount * pagination.pageFieldCount) {
-    unexplainedTokens.push(`${numericResidueTotal} numeric token occurrence(s) beyond the page-field allowance`);
+  for (const [token, available] of bodyAvailable) {
+    if (available - (expectedCounts.get(token) ?? 0) > 0) unexplainedTokens.push(token);
   }
   return {
     matched: missingTokens.length === 0 && unexplainedTokens.length === 0,
@@ -193,7 +227,9 @@ async function analyzeRenderedPackage(bytes: Buffer, pageCount: number): Promise
     let insertions = false;
     let deletions = false;
     const headerFooterTokenCounts = new Map<string, number>();
-    let pageFieldCount = 0;
+    let headerFooterPageFieldCount = 0;
+    let bodyPageFieldCount = 0;
+    let pageNumberStart = 1;
     for (const story of renderedStories) {
       const xml = await zip.file(story.name)?.async('string');
       if (xml === undefined) continue;
@@ -201,17 +237,39 @@ async function analyzeRenderedPackage(bytes: Buffer, pageCount: number): Promise
       deletions ||= hasVisibleRevisionInStory(xml, ['del', 'moveFrom']);
       const document = parseStoryXml(xml);
       if (document === null) continue;
-      pageFieldCount += pageFieldInstructionCount(document);
-      if (story.kind !== 'header' && story.kind !== 'footer') continue;
+      const isPaginationStory = story.kind === 'header' || story.kind === 'footer';
+      if (isPaginationStory) headerFooterPageFieldCount += pageFieldInstructionCount(document);
+      else bodyPageFieldCount += pageFieldInstructionCount(document);
+      if (story.kind === 'document') {
+        for (const numbering of Array.from(document.getElementsByTagNameNS(W_NS, 'pgNumType'))) {
+          const start = Number.parseInt(numbering.getAttributeNS(W_NS, 'start') ?? '', 10);
+          if (Number.isInteger(start) && start > pageNumberStart) pageNumberStart = start;
+        }
+      }
+      if (!isPaginationStory) continue;
       for (const localName of ['t', 'delText'] as const) {
         for (const text of Array.from(document.getElementsByTagNameNS(W_NS, localName))) {
+          // A cached field result (e.g. the stored "1" of a PAGE fldSimple) is
+          // not literal story text: at render time the field value replaces
+          // it. Counting it would double-reserve alongside the numeric
+          // page-field budget and could eat a legitimate body token.
+          if (hasFieldResultAncestor(text)) continue;
           for (const token of tokenizeRenderedText(text.textContent ?? '')) {
             headerFooterTokenCounts.set(token, (headerFooterTokenCounts.get(token) ?? 0) + 1);
           }
         }
       }
     }
-    return { revisionMarkup: { insertions, deletions }, pagination: { pageCount, headerFooterTokenCounts, pageFieldCount } };
+    return {
+      revisionMarkup: { insertions, deletions },
+      pagination: {
+        pageCount,
+        headerFooterTokenCounts,
+        headerFooterPageFieldCount,
+        bodyPageFieldCount,
+        pageNumberUpperBound: pageCount + pageNumberStart - 1,
+      },
+    };
   } catch {
     return fallback;
   }
@@ -224,6 +282,13 @@ function parseStoryXml(xml: string): ReturnType<DOMParser['parseFromString']> | 
   } catch {
     return null;
   }
+}
+
+function hasFieldResultAncestor(node: XmlElement): boolean {
+  for (let ancestor = node.parentNode; ancestor !== null; ancestor = ancestor.parentNode) {
+    if (ancestor.nodeType === 1 && (ancestor as XmlElement).namespaceURI === W_NS && (ancestor as XmlElement).localName === 'fldSimple') return true;
+  }
+  return false;
 }
 
 function pageFieldInstructionCount(document: NonNullable<ReturnType<typeof parseStoryXml>>): number {

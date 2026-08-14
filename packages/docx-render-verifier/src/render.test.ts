@@ -72,10 +72,10 @@ function storyPartXml(fragment: string): string {
   return fragment.replace(/^<w:(hdr|ftr)>/u, `<w:$1 xmlns:w="${W_XMLNS}">`);
 }
 
-async function paginatedFixture(pathname: string, parts: { body: string; header?: string; footer?: string }): Promise<void> {
+async function paginatedFixture(pathname: string, parts: { body: string; header?: string; footer?: string; pgNumStart?: number }): Promise<void> {
   const zip = new JSZip();
   zip.file('[Content_Types].xml', '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>');
-  const references = `${parts.header ? '<w:headerReference r:id="rIdHeader1"/>' : ''}${parts.footer ? '<w:footerReference r:id="rIdFooter1"/>' : ''}`;
+  const references = `${parts.header ? '<w:headerReference r:id="rIdHeader1"/>' : ''}${parts.footer ? '<w:footerReference r:id="rIdFooter1"/>' : ''}${parts.pgNumStart === undefined ? '' : `<w:pgNumType w:start="${parts.pgNumStart}"/>`}`;
   const sectPr = references.length > 0 ? `<w:sectPr>${references}</w:sectPr>` : '';
   zip.file('word/document.xml', `<w:document xmlns:w="${W_XMLNS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:v="urn:schemas-microsoft-com:vml"><w:body>${parts.body}${sectPr}</w:body></w:document>`);
   const relationships: string[] = [];
@@ -405,7 +405,7 @@ describe('renderer verifier', () => {
     expect(result.textBinding?.unexplainedTokenSample).toContain('7');
   });
 
-  itAllure('caps page-field numeric residue at page count times declared page fields', async () => {
+  itAllure('rejects numeric residue outside the rendered page-number range even when page fields exist', async () => {
     const root = path.join(os.tmpdir(), `render-numeric-cap-${Date.now()}`);
     const source = path.join(root, 'tracked.docx');
     await mkdir(root, { recursive: true });
@@ -419,7 +419,94 @@ describe('renderer verifier', () => {
       tools: fakeTools(`${MULTI_PAGE_PDF}\n3 4 5 6 7`, undefined, false, 2), configuredPixelFloor: 2,
     });
     expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
-    expect(result.textBinding?.unexplainedTokenSample?.join(' ')).toContain('page-field allowance');
+    expect(result.textBinding?.unexplainedTokenSample).toContain('7');
+  });
+
+  itAllure('does not let a PAGE field launder a meaningful out-of-range number such as an amount', async () => {
+    const root = path.join(os.tmpdir(), `render-numeric-smuggle-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = 'Synthetic single page opening clause. inserted-alpha removed-beta';
+    await paginatedFixture(source, {
+      body: await fixtureFragment('single-page-body.xml'),
+      footer: await fixtureFragment('page-field-footer.xml'),
+    });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: body, outputDir: path.join(root, 'out'),
+      tools: fakeTools(`${body}\nPage 1\n999`), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding?.unexplainedTokenSample).toContain('999');
+  });
+
+  itAllure('fails when repeated header vocabulary would otherwise mask a missing body token', async () => {
+    const root = path.join(os.tmpdir(), `render-header-mask-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = 'Synthetic single page opening clause. inserted-alpha removed-beta';
+    await paginatedFixture(source, {
+      body: await fixtureFragment('single-page-body.xml'),
+      header: await fixtureFragment('repeated-header.xml'),
+    });
+    // The caller's projection requires a body occurrence of "Draft"; the body
+    // dropped it, and only the per-page repeated header supplies that token.
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: `${body} Draft`, outputDir: path.join(root, 'out'),
+      tools: fakeTools(`Synthetic Neutral Draft Header\n${body}\f\nSynthetic Neutral Draft Header`, undefined, false, 2), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding?.missingTokenSample).toContain('Draft');
+  });
+
+  itAllure('grants a body PAGE field one rendered occurrence rather than one per page', async () => {
+    const root = path.join(os.tmpdir(), `render-body-field-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = 'Synthetic single page opening clause. inserted-alpha removed-beta';
+    const bodyWithField = `${await fixtureFragment('single-page-body.xml')}<w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p>`;
+    await paginatedFixture(source, { body: bodyWithField });
+    const oneRendering = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: body, outputDir: path.join(root, 'out-one'),
+      tools: fakeTools(`${body}\f\n2`, undefined, false, 2), configuredPixelFloor: 2,
+    });
+    expect(oneRendering).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+    const twoRenderings = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: body, outputDir: path.join(root, 'out-two'),
+      tools: fakeTools(`${body} 1\f\n2`, undefined, false, 2), configuredPixelFloor: 2,
+    });
+    expect(twoRenderings).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(twoRenderings.textBinding?.unexplainedTokenSample).toContain('2');
+  });
+
+  itAllure('reserves offset page numbers when the section declares an explicit numbering start', async () => {
+    const root = path.join(os.tmpdir(), `render-pgnum-start-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = 'Synthetic single page opening clause. inserted-alpha removed-beta';
+    await paginatedFixture(source, {
+      body: await fixtureFragment('single-page-body.xml'),
+      footer: await fixtureFragment('page-field-footer.xml'),
+      pgNumStart: 5,
+    });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: body, outputDir: path.join(root, 'out'),
+      tools: fakeTools(`${body}\nPage 5`), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+  });
+
+  itAllure('accepts an insertion and deletion order swap as the documented order-insensitivity limitation', async () => {
+    const root = path.join(os.tmpdir(), `render-order-swap-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await paginatedFixture(source, { body: await fixtureFragment('single-page-body.xml') });
+    // Placement is deliberately outside the automated text-binding verdict;
+    // the review PNGs exist for optional human placement review.
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Synthetic single page opening clause. inserted-alpha removed-beta', outputDir: path.join(root, 'out'),
+      tools: fakeTools('removed-beta Synthetic single page opening clause. inserted-alpha'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
   });
 
   itAllure('accepts renderer-reordered text-box content because binding is order-independent', async () => {

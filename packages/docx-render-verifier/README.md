@@ -10,16 +10,20 @@ text, measures broad blue/red pixel bands after downsampling, and writes only
 selected PDF-page PNGs to the requested output path. Required missing tools are
 reported as `not_run`, not pass.
 
-Text binding is story-scoped and pagination-aware rather than exact equality:
-every token of the caller's logical projection must appear in the PDF text at
-least as often as in the projection, and every extra PDF token must be
-attributable to renderer-created pagination artifacts with explicit occurrence
-bounds — referenced header/footer story tokens up to `pageCount x` their story
-occurrence, and numeric page-number residue only when a PAGE-family field
-exists, capped at `pageCount x` the field count. Missing logical content or
-unattributable residue still fails; reading order is deliberately left to the
-image-review domain. The structured outcome is reported in
-`verdict.textBinding` separately from colour visibility.
+Text binding is story-scoped and pagination-aware rather than exact equality.
+The extracted PDF text is split into rendered pages; on each page,
+pagination-owned material is reserved first and maximally — referenced
+header/footer story tokens up to their story occurrence count, and numeric
+page-number renderings (values within the rendered page-number range) up to
+the header/footer PAGE-family field count per page plus a whole-document
+budget for body-story fields. The caller's logical projection must then be
+covered by the remaining tokens, and any leftover token fails. Because
+reservation is maximal, repeated header vocabulary can never substitute for
+missing logical content, and duplicated or hallucinated rendered text is
+never absorbed. Reading order is deliberately outside this automated verdict:
+the emitted review PNGs support optional human placement review, and no
+automated placement comparison is performed. The structured outcome is
+reported in `verdict.textBinding` separately from colour visibility.
 
 If Writer displays configured insertions but suppresses deletions, verification
 fails with `revisionVisibility: "hidden-deletions"` rather than reporting only

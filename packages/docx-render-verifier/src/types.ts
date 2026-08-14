@@ -27,10 +27,14 @@ export type PixelMeasurement = {
 export type PaginationProfile = {
   /** Number of rasterized pages in the configured render. */
   pageCount: number;
-  /** Rendered token occurrence counts from referenced header and footer stories. */
+  /** Per-page reservation quota: rendered token occurrence counts from referenced header and footer stories. */
   headerFooterTokenCounts: ReadonlyMap<string, number>;
-  /** Count of PAGE-family field instructions across rendered stories. */
-  pageFieldCount: number;
+  /** Per-page numeric reservation quota: PAGE-family field instructions in referenced header/footer stories. */
+  headerFooterPageFieldCount: number;
+  /** Whole-document numeric reservation quota: PAGE-family field instructions in body-layer stories. */
+  bodyPageFieldCount: number;
+  /** Highest integer accepted as a rendered page number (pageCount adjusted by any explicit numbering start). */
+  pageNumberUpperBound: number;
 };
 
 /**
