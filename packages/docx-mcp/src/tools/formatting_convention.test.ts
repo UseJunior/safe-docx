@@ -205,6 +205,13 @@ async function check(
   );
 }
 
+async function conventionDocs(): Promise<{ baselineDoc: DocxDocument; previewDoc: DocxDocument }> {
+  return {
+    baselineDoc: await loadDoc(CONVENTION_BODY + TARGET_PLAIN),
+    previewDoc: await loadDoc(CONVENTION_BODY + insertedDefinedTermParagraph({})),
+  };
+}
+
 async function openConventionSession(): Promise<Awaited<ReturnType<typeof openSession>>> {
   return openSession([], {
     mgr: new SessionManager({ defaultAiAuthor: AI }),
@@ -297,6 +304,62 @@ describe('formatting-convention detection on corpus documents', () => {
 });
 
 describe('formatting-convention check', () => {
+  test('is silent only when each required master-gate input is absent', async () => {
+    const { baselineDoc, previewDoc } = await conventionDocs();
+    const positive = {
+      insertedText: INSERTED_DEFINED_TERM_TEXT,
+      aiAuthor: AI,
+      baselineDoc,
+    };
+
+    // Seed: replacing any `return []` below with the positive control's result
+    // makes its paired silence assertion fail.
+    expect(checkFormattingConvention(previewDoc, positive)).toHaveLength(1);
+    for (const missing of ['insertedText', 'aiAuthor', 'baselineDoc'] as const) {
+      const options = { ...positive, [missing]: undefined } as unknown as Parameters<
+        typeof checkFormattingConvention
+      >[1];
+      expect(checkFormattingConvention(previewDoc, options), `${missing} gate`).toEqual([]);
+    }
+  });
+
+  test('is silent only when convention resolution has no population', async () => {
+    const baselineDoc = await loadDoc(TARGET_PLAIN);
+    const previewDoc = await loadDoc(insertedDefinedTermParagraph({}));
+    const options = {
+      insertedText: INSERTED_DEFINED_TERM_TEXT,
+      aiAuthor: AI,
+      baselineDoc,
+      minInstances: 0,
+    };
+
+    // Seed: returning a tuple when `best` is null makes this assertion fail;
+    // the same insertion is reported as soon as a population exists.
+    expect(checkFormattingConvention(previewDoc, options)).toEqual([]);
+    const { baselineDoc: populatedBaseline, previewDoc: populatedPreview } = await conventionDocs();
+    expect(
+      checkFormattingConvention(populatedPreview, { ...options, baselineDoc: populatedBaseline }),
+    ).toHaveLength(1);
+  });
+
+  test('is silent only when an inserted construct has no resolvable runs', async () => {
+    const deletedInsertion = `<w:p><w:r><w:t>Fee </w:t></w:r><w:del w:id="902" w:author="${AI}">` +
+      `<w:r><w:delText xml:space="preserve">(each, a “Fee Item”)</w:delText></w:r></w:del></w:p>`;
+
+    // Seed: treating removed runs as comparable makes the paired silence
+    // assertion fail; the same baseline and construct warn when inserted.
+    expect(
+      await check(CONVENTION_BODY + TARGET_PLAIN, CONVENTION_BODY + deletedInsertion, INSERTED_DEFINED_TERM_TEXT),
+    ).toEqual([]);
+    expect(
+      await check(
+        CONVENTION_BODY + TARGET_PLAIN,
+        CONVENTION_BODY + insertedDefinedTermParagraph({}),
+        INSERTED_DEFINED_TERM_TEXT,
+      ),
+    ).toHaveLength(1);
+  });
+
   test('NEGATIVE CONTROL: a seeded off-convention insertion makes the check go red', async ({
     given,
     when,
