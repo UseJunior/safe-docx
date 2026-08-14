@@ -33,7 +33,7 @@ export interface CompareOptions {
    * Default: {@link DEFAULT_RECONSTRUCTION_MODE}.
    */
   reconstructionMode?: ReconstructionMode;
-  /** Select tagged construction explicitly; legacy remains default until package gates pass. */
+  /** Select the comparison construction strategy. Tagged-tree is default; legacy is the rollback path. */
   comparisonStrategy?: 'tagged-tree' | 'legacy';
   /**
    * Comparison engine to use:

@@ -35,21 +35,22 @@ describe('tagged-tree offline evaluation', () => {
     },
   );
 
-  test.openspec('Offline evaluation does not affect returned output')(
-    'stages tagged publication explicitly without changing the legacy default',
+  test.openspec('Tagged-tree is default with legacy rollback')(
+    'uses tagged publication by default while retaining explicit legacy rollback',
     async ({ given, when, then, and }: AllureBddContext) => {
       let pipelineSource = '';
       await given('the ordinary comparison pipeline source', () => undefined);
       await when('its runtime dependencies are inspected', () => {
         pipelineSource = readFileSync(new URL('./pipeline.ts', import.meta.url), 'utf8');
       });
-      await then('the tagged-tree builder is gated by an explicit strategy', () => {
-        expect(pipelineSource).toContain("comparisonStrategy = 'legacy'");
+      await then('the tagged-tree builder is the ordinary default', () => {
+        expect(pipelineSource).toContain("comparisonStrategy = 'tagged-tree'");
         expect(pipelineSource).toContain("comparisonStrategy === 'tagged-tree'");
         expect(pipelineSource).not.toContain('runTaggedTreeShadow');
         expect(pipelineSource).not.toContain('SAFE_DOCX_TAGGED_TREE');
       });
-      await and('the legacy runtime checks remain in the pipeline', () => {
+      await and('the legacy rollback and runtime checks remain in the pipeline', () => {
+        expect(pipelineSource).toContain("'tagged-tree' | 'legacy'");
         expect(pipelineSource).toContain('evaluateRoundTripSafety');
       });
     },

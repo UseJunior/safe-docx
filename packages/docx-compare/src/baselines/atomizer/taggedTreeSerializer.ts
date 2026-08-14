@@ -19,6 +19,10 @@ const DIRECT_PROPERTY_BY_CONTAINER: Readonly<Record<string, string>> = {
   tr: 'w:trPr',
   tc: 'w:tcPr',
 };
+const RANGE_BOUNDARY_LOCALS = new Set([
+  'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
+  'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd',
+]);
 
 export interface ComparisonRevision {
   id: number;
@@ -110,6 +114,9 @@ function convertDeletedText(root: WmlElement): void {
       const attr = text.attributes.item(i);
       if (attr) replacement.setAttributeNS(attr.namespaceURI, attr.name, attr.value);
     }
+    if (/\s/u.test(text.textContent ?? '')) {
+      replacement.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+    }
     while (text.firstChild) replacement.appendChild(text.firstChild);
     text.parentNode?.replaceChild(replacement, text);
   }
@@ -125,10 +132,44 @@ function wrapRevision(node: WmlElement, kind: 'ins' | 'del' | 'moveFrom' | 'move
   return wrapper;
 }
 
+/** ECMA-376 bars field-character runs from w:del. Keep those zero-width
+ * structural controls live and split the deletion around them, matching the
+ * established hardened deletion path. */
+function hoistFieldCharactersFromDeletions(root: WmlElement): void {
+  const deletions = Array.from(root.getElementsByTagNameNS(W_NS, 'del')) as WmlElement[];
+  for (const deletion of deletions) {
+    const parent = deletion.parentNode;
+    if (!parent) continue;
+    const children = childElements(deletion);
+    if (!children.some((child) => child.getElementsByTagNameNS(W_NS, 'fldChar').length > 0)) continue;
+    const replacement: WmlElement[] = [];
+    let wrapper: WmlElement | undefined;
+    const flush = (): void => {
+      if (wrapper?.firstChild) replacement.push(wrapper);
+      wrapper = undefined;
+    };
+    for (const child of children) {
+      if (child.getElementsByTagNameNS(W_NS, 'fldChar').length > 0) {
+        flush();
+        replacement.push(child);
+      } else {
+        if (!wrapper) {
+          wrapper = deletion.cloneNode(false) as WmlElement;
+        }
+        wrapper.appendChild(child);
+      }
+    }
+    flush();
+    for (const item of replacement) parent.insertBefore(item, deletion);
+    parent.removeChild(deletion);
+  }
+}
+
 function markWholeParagraph(
   paragraph: WmlElement,
   kind: 'ins' | 'del',
   revision: ComparisonRevision,
+  contentRevision: ComparisonRevision,
 ): WmlElement {
   let pPr = childElements(paragraph).find((child) => child.localName === 'pPr');
   if (!pPr) {
@@ -149,17 +190,33 @@ function markWholeParagraph(
 
   const content = childElements(paragraph).filter((child) => child !== pPr);
   for (const child of content) paragraph.removeChild(child);
-  if (content.length > 0) {
-    const wrapper = paragraph.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
-    wrapper.setAttributeNS(W_NS, 'w:id', String(revision.id));
-    wrapper.setAttributeNS(W_NS, 'w:author', revision.author);
-    wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
-    for (const child of content) {
-      if (kind === 'del') convertDeletedText(child);
-      wrapper.appendChild(child);
+  let wrapper: WmlElement | undefined;
+  const flush = (): void => {
+    if (wrapper?.firstChild) paragraph.appendChild(wrapper);
+    wrapper = undefined;
+  };
+  for (const child of content) {
+    // Deleted paragraphs keep range boundaries live so Reject All restores
+    // their authored topology. Inserted paragraphs must carry boundaries
+    // inside the insertion; otherwise Reject All leaves zero-width markers
+    // from a paragraph that did not exist on the original side.
+    if (RANGE_BOUNDARY_LOCALS.has(child.localName)) {
+      flush();
+      paragraph.appendChild(
+        kind === 'del' ? child : wrapRevision(child, 'ins', contentRevision),
+      );
+      continue;
     }
-    paragraph.appendChild(wrapper);
+    if (!wrapper) {
+      wrapper = paragraph.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
+      wrapper.setAttributeNS(W_NS, 'w:id', String(contentRevision.id));
+      wrapper.setAttributeNS(W_NS, 'w:author', revision.author);
+      wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
+    }
+    if (kind === 'del') convertDeletedText(child);
+    wrapper.appendChild(child);
   }
+  flush();
   return paragraph;
 }
 
@@ -177,6 +234,27 @@ function applyPropertyDelta(node: WmlElement, tagged: TaggedNode, revision: Comp
   const delta = tagged.propertyDelta;
   if (delta.scope === 'paragraph') {
     applyParagraphPropertyDelta(node, delta.original, delta.revised, revision);
+    return;
+  }
+  if (delta.scope === 'section') {
+    const revised = delta.revised ? cloneElement(delta.revised) : undefined;
+    const original = delta.original ? cloneElement(delta.original) : undefined;
+    while (node.firstChild) node.removeChild(node.firstChild);
+    if (revised) {
+      for (const child of childElements(revised)) {
+        if (child.localName !== 'sectPrChange') node.appendChild(cloneElement(child));
+      }
+    }
+    const change = node.ownerDocument!.createElementNS(W_NS, 'w:sectPrChange') as WmlElement;
+    appendChangeMetadata(change, revision);
+    const snapshot = node.ownerDocument!.createElementNS(W_NS, 'w:sectPr') as WmlElement;
+    if (original) {
+      for (const child of childElements(original)) {
+        if (child.localName !== 'sectPrChange') snapshot.appendChild(cloneElement(child));
+      }
+    }
+    change.appendChild(snapshot);
+    node.appendChild(change);
     return;
   }
   const live = delta.revised ? cloneElement(delta.revised) : undefined;
@@ -202,7 +280,13 @@ function applyPropertyDelta(node: WmlElement, tagged: TaggedNode, revision: Comp
   change.setAttributeNS(W_NS, 'w:id', String(revision.id));
   change.setAttributeNS(W_NS, 'w:author', revision.author);
   change.setAttributeNS(W_NS, 'w:date', revision.date);
-  if (original) change.appendChild(original);
+  // A property addition still needs a typed, empty old-value snapshot.  A
+  // self-closing *PrChange element is ambiguous to consumers (and gives the
+  // reject projector nothing to restore), whereas OOXML represents the
+  // absent original value as an empty container of the corresponding type.
+  change.appendChild(
+    original ?? property.ownerDocument!.createElementNS(property.namespaceURI, property.tagName),
+  );
   property.appendChild(change);
 }
 
@@ -222,6 +306,8 @@ function applyParagraphPropertyDelta(
   for (const stale of childElements(live).filter((child) => child.localName === 'pPrChange')) live.removeChild(stale);
   const liveMark = childElements(live).find((child) => child.localName === 'rPr');
   const originalMark = original && childElements(original).find((child) => child.localName === 'rPr');
+  const liveSection = childElements(live).find((child) => child.localName === 'sectPr');
+  const originalSection = original && childElements(original).find((child) => child.localName === 'sectPr');
   if ((liveMark ? new XMLSerializer().serializeToString(liveMark) : '') !==
       (originalMark ? new XMLSerializer().serializeToString(originalMark) : '')) {
     const mark = liveMark ?? paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
@@ -239,6 +325,25 @@ function applyParagraphPropertyDelta(
     }
     markChange.appendChild(snapshot);
     mark.appendChild(markChange);
+  }
+  const serialize = (element: WmlElement | null | undefined): string =>
+    element ? new XMLSerializer().serializeToString(element) : '';
+  if (serialize(liveSection) !== serialize(originalSection)) {
+    const section = liveSection ?? paragraph.ownerDocument!.createElementNS(W_NS, 'w:sectPr') as WmlElement;
+    if (!liveSection) live.appendChild(section);
+    for (const stale of childElements(section).filter((child) => child.localName === 'sectPrChange')) {
+      section.removeChild(stale);
+    }
+    const change = paragraph.ownerDocument!.createElementNS(W_NS, 'w:sectPrChange') as WmlElement;
+    appendChangeMetadata(change, revision);
+    const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:sectPr') as WmlElement;
+    if (originalSection) {
+      for (const child of childElements(originalSection)) {
+        if (child.localName !== 'sectPrChange') snapshot.appendChild(cloneElement(child));
+      }
+    }
+    change.appendChild(snapshot);
+    section.appendChild(change);
   }
   const pPrChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPrChange') as WmlElement;
   appendChangeMetadata(pPrChange, revision);
@@ -289,6 +394,82 @@ function moveFor(node: TaggedNode, moves: readonly TaggedMoveRelation[]): Tagged
   return moves.find((move) => move.source === node || move.destination === node);
 }
 
+function refineRunReplacement(
+  originalNode: TaggedNode,
+  revisedNode: TaggedNode,
+  allocateRevision: () => ComparisonRevision,
+): WmlElement[] | undefined {
+  const original = representative(originalNode, 'original');
+  const revised = representative(revisedNode, 'revised');
+  if (original?.localName !== 'r' || revised?.localName !== 'r') return undefined;
+  // A retained prefix is live in both projections, so it can only be shared
+  // when its direct formatting is also shared. Otherwise Accept All and Reject
+  // All need distinct runs to recover the revised and original rPr snapshots.
+  const originalProperties = childElements(original).find((child) => child.localName === 'rPr');
+  const revisedProperties = childElements(revised).find((child) => child.localName === 'rPr');
+  if (
+    (originalProperties === undefined) !== (revisedProperties === undefined) ||
+    (originalProperties && revisedProperties &&
+      new XMLSerializer().serializeToString(originalProperties) !==
+        new XMLSerializer().serializeToString(revisedProperties))
+  ) return undefined;
+  const originalContent = childElements(original).filter((child) => child.localName !== 'rPr');
+  const revisedContent = childElements(revised).filter((child) => child.localName !== 'rPr');
+  if (
+    originalContent.length > 1 &&
+    originalContent.length === revisedContent.length &&
+    originalContent.every((child, index) => child.localName === revisedContent[index]!.localName)
+  ) {
+    const emitted: WmlElement[] = [];
+    const fragmentRun = (source: WmlElement, content: WmlElement): WmlElement => {
+      const run = cloneElement(source);
+      for (const child of childElements(run)) {
+        if (child.localName !== 'rPr') run.removeChild(child);
+      }
+      run.appendChild(cloneElement(content));
+      return run;
+    };
+    for (let index = 0; index < originalContent.length; index++) {
+      const beforeChild = originalContent[index]!;
+      const afterChild = revisedContent[index]!;
+      if (new XMLSerializer().serializeToString(beforeChild) === new XMLSerializer().serializeToString(afterChild)) {
+        emitted.push(fragmentRun(revised, afterChild));
+      } else {
+        emitted.push(wrapRevision(fragmentRun(original, beforeChild), 'del', allocateRevision()));
+        emitted.push(wrapRevision(fragmentRun(revised, afterChild), 'ins', allocateRevision()));
+      }
+    }
+    return emitted;
+  }
+  const originalTexts = Array.from(original.getElementsByTagNameNS(W_NS, 't'));
+  const revisedTexts = Array.from(revised.getElementsByTagNameNS(W_NS, 't'));
+  if (originalTexts.length !== 1 || revisedTexts.length !== 1) return undefined;
+  const before = originalTexts[0]!.textContent ?? '';
+  const after = revisedTexts[0]!.textContent ?? '';
+  let prefixLength = 0;
+  while (prefixLength < before.length && prefixLength < after.length && before[prefixLength] === after[prefixLength]) prefixLength++;
+  while (prefixLength > 0 && /[\p{L}\p{N}_]/u.test(before[prefixLength - 1] ?? '') &&
+    /[\p{L}\p{N}_]/u.test(before[prefixLength] ?? after[prefixLength] ?? '')) prefixLength--;
+  if (prefixLength === 0) return undefined;
+  const emitted: WmlElement[] = [];
+  const common = cloneElement(revised);
+  common.getElementsByTagNameNS(W_NS, 't')[0]!.textContent = after.slice(0, prefixLength);
+  emitted.push(common);
+  const deletedText = before.slice(prefixLength);
+  if (deletedText) {
+    const deletionRun = cloneElement(original);
+    deletionRun.getElementsByTagNameNS(W_NS, 't')[0]!.textContent = deletedText;
+    emitted.push(wrapRevision(deletionRun, 'del', allocateRevision()));
+  }
+  const insertedText = after.slice(prefixLength);
+  if (insertedText) {
+    const insertionRun = cloneElement(revised);
+    insertionRun.getElementsByTagNameNS(W_NS, 't')[0]!.textContent = insertedText;
+    emitted.push(wrapRevision(insertionRun, 'ins', allocateRevision()));
+  }
+  return emitted;
+}
+
 function moveMarker(
   owner: Document,
   relation: TaggedMoveRelation,
@@ -302,12 +483,31 @@ function moveMarker(
   return marker;
 }
 
+function renumberBookmarkRanges(root: WmlElement, allocateBookmarkId: () => number): void {
+  const replacements = new Map<string, string>();
+  for (const start of Array.from(root.getElementsByTagNameNS(W_NS, 'bookmarkStart'))) {
+    const id = start.getAttributeNS(W_NS, 'id');
+    if (!id) continue;
+    const replacement = replacements.get(id) ?? String(allocateBookmarkId());
+    replacements.set(id, replacement);
+    start.setAttributeNS(W_NS, 'w:id', replacement);
+  }
+  for (const end of Array.from(root.getElementsByTagNameNS(W_NS, 'bookmarkEnd'))) {
+    const id = end.getAttributeNS(W_NS, 'id');
+    const replacement = id ? replacements.get(id) : undefined;
+    if (replacement) end.setAttributeNS(W_NS, 'w:id', replacement);
+  }
+}
+
 function emitNode(
   node: TaggedNode,
   plan: PreservePlan,
   bothSide: Side = 'revised',
   moves: readonly TaggedMoveRelation[] = [],
+  allocateRevision: () => ComparisonRevision,
+  allocateBookmarkId: () => number,
 ): WmlElement {
+  const nodeRevision = allocateRevision();
   const base = cloneElement(representative(node, node.tag === 'original' ? 'original' : node.tag === 'revised' ? 'revised' : bothSide)!);
   if (!node.opaque && node.children.length > 0) {
     const directPropertyTag = DIRECT_PROPERTY_BY_CONTAINER[base.localName];
@@ -324,31 +524,42 @@ function emitNode(
       if (propertyTag && childElement?.tagName === propertyTag) {
         continue;
       }
+      const next = node.children[index + 1];
+      if (child.tag === 'original' && next?.tag === 'revised' &&
+          !moveFor(child, moves) && !moveFor(next, moves)) {
+        const refined = refineRunReplacement(child, next, allocateRevision);
+        if (refined) {
+          emitted.push(...refined);
+          index++;
+          continue;
+        }
+      }
       const relation = moveFor(child, moves);
       if (relation) {
         const direction = relation.source === child ? 'From' : 'To';
         emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'Start'));
-        emitted.push(emitNode(child, plan, 'revised', moves));
+        emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId));
         emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'End'));
-      } else emitted.push(emitNode(child, plan, 'revised', moves));
+      } else emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId));
     }
     replaceElementChildren(base, emitted);
   }
-  applyPropertyDelta(base, node, plan.comparison);
+  applyPropertyDelta(base, node, nodeRevision);
   const entry = plan.entries.get(node)!;
   if (node.tag === 'original') {
     const relation = moveFor(node, moves);
-    const revision = relation ? { ...plan.comparison, id: relation.sourceRangeId } : plan.comparison;
+    if (relation) renumberBookmarkRanges(base, allocateBookmarkId);
+    const revision = relation ? { ...plan.comparison, id: relation.sourceRangeId } : nodeRevision;
     if (!relation && base.namespaceURI === W_NS && base.localName === 'p') {
-      return wrapPreserved(markWholeParagraph(base, 'del', revision), entry.originalStack);
+      return wrapPreserved(markWholeParagraph(base, 'del', revision, allocateRevision()), entry.originalStack);
     }
     return wrapPreserved(wrapRevision(base, relation ? 'moveFrom' : 'del', revision), entry.originalStack);
   }
   if (node.tag === 'revised') {
     const relation = moveFor(node, moves);
-    const revision = relation ? { ...plan.comparison, id: relation.destinationRangeId } : plan.comparison;
+    const revision = relation ? { ...plan.comparison, id: relation.destinationRangeId } : nodeRevision;
     if (!relation && base.namespaceURI === W_NS && base.localName === 'p') {
-      return wrapPreserved(markWholeParagraph(base, 'ins', revision), entry.revisedStack);
+      return wrapPreserved(markWholeParagraph(base, 'ins', revision, allocateRevision()), entry.revisedStack);
     }
     return wrapPreserved(wrapRevision(base, relation ? 'moveTo' : 'ins', revision), entry.revisedStack);
   }
@@ -369,9 +580,28 @@ export function serializeTaggedTree(
   options: TaggedTreeSerializerOptions = {},
 ): string {
   if (!plan.entries.has(tree)) throw new Error('PreservePlan does not belong to this TaggedTree');
-  return new XMLSerializer().serializeToString(
-    emitNode(tree, plan, options.baseSide ?? 'revised', options.moves ?? []),
+  let nextId = Math.max(
+    plan.comparison.id,
+    ...((options.moves ?? []).flatMap((move) => [move.sourceRangeId, move.destinationRangeId])),
+  ) + 1;
+  const allocateRevision = (): ComparisonRevision => ({ ...plan.comparison, id: nextId++ });
+  const representatives = tree.tag === 'both' ? [tree.original, tree.revised] : [tree.node];
+  const usedBookmarkIds = representatives.flatMap((root) => [
+    ...Array.from(root.getElementsByTagNameNS(W_NS, 'bookmarkStart')),
+    ...Array.from(root.getElementsByTagNameNS(W_NS, 'bookmarkEnd')),
+  ]).map((element) => Number(element.getAttributeNS(W_NS, 'id')))
+    .filter((id) => Number.isSafeInteger(id) && id >= 0);
+  let nextBookmarkId = Math.max(-1, ...usedBookmarkIds) + 1;
+  const emitted = emitNode(
+    tree,
+    plan,
+    options.baseSide ?? 'revised',
+    options.moves ?? [],
+    allocateRevision,
+    () => nextBookmarkId++,
   );
+  hoistFieldCharactersFromDeletions(emitted);
+  return new XMLSerializer().serializeToString(emitted);
 }
 
 /**

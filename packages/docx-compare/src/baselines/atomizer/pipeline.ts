@@ -128,7 +128,7 @@ import {
 } from './ancillaryFieldSafety.js';
 import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.js';
 import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
-import { buildTaggedTreeShadowXml } from './taggedTreeShadow.js';
+import { buildTaggedTreeShadowXml, countTaggedTreePropertyDeltas } from './taggedTreeShadow.js';
 import {
   assembleTextBoxStoryComparison,
   assertAncillaryTextBoxStoryProjection,
@@ -175,7 +175,7 @@ export interface AtomizerOptions {
    * Default: {@link DEFAULT_RECONSTRUCTION_MODE}.
    */
   reconstructionMode?: ReconstructionMode;
-  /** Explicit tagged construction path; legacy remains the publication default. */
+  /** Comparison construction strategy. Tagged-tree is default; legacy is the rollback path. */
   comparisonStrategy?: 'tagged-tree' | 'legacy';
 }
 
@@ -652,7 +652,11 @@ export async function compareDocumentsAtomizer(
     result: CompareResult;
   }> = [];
   const rejectedSelectedStoryPaths =
-    await rejectedSelectedAncillaryStoryPaths(outerResult.document);
+    await rejectedSelectedAncillaryStoryPaths(
+      (options.comparisonStrategy ?? 'tagged-tree') === 'tagged-tree'
+        ? textBoxPlan.outerOriginal
+        : outerResult.document,
+    );
   const representedPartPaths = new Set<string>();
   for (const story of textBoxPlan.stories) {
     if (
@@ -807,7 +811,7 @@ async function compareDocumentsAtomizerCore(
     premergeRuns = true,
     maxWordRefinementChangeRanges,
     reconstructionMode = DEFAULT_RECONSTRUCTION_MODE,
-    comparisonStrategy = 'legacy',
+    comparisonStrategy = 'tagged-tree',
   } = options;
 
   // Merge settings with defaults
@@ -1360,16 +1364,44 @@ async function compareDocumentsAtomizerCore(
   const { resultBuffer, ancillaryFieldEvidence } = assembled;
   let publishedBuffer = resultBuffer;
   if (comparisonStrategy === 'tagged-tree') {
-    const taggedXml = buildTaggedTreeShadowXml({ originalXml, revisedXml, author, date });
+    const taggedXml = buildTaggedTreeShadowXml({
+      originalXml,
+      revisedXml,
+      author,
+      date,
+      detectFormatChanges: formatSettings.detectFormatChanges,
+      detectMoves: moveSettings.detectMoves,
+    });
     const taggedSafety = evaluateRoundTripSafety(taggedXml);
     if (!taggedSafety.safe) {
-      throw new Error(`tagged-tree publication failed: ${taggedSafety.failureSummary ?? taggedSafety.failedChecks.join(', ')}`);
+      const summary = taggedSafety.failureSummary;
+      throw new Error(`tagged-tree publication failed: ${
+        typeof summary === 'string' ? summary : JSON.stringify(summary ?? taggedSafety.failureDetails)
+      }`);
     }
     const publishedArchive = await DocxArchive.load(resultBuffer);
     publishedArchive.setDocumentXml(taggedXml);
+    // The tagged story can reference definitions that the legacy-shaped
+    // assembly candidate did not expose. Re-run the established auxiliary
+    // merger against both source packages using the actual published story,
+    // so Accept All and Reject All retain their respective note definitions.
+    for (const descriptor of AUXILIARY_PARTS) {
+      await mergeAuxiliaryPartDefinitions(originalArchive, publishedArchive, taggedXml, descriptor);
+      await mergeAuxiliaryPartDefinitions(revisedArchive, publishedArchive, taggedXml, descriptor);
+    }
     publishedBuffer = await publishedArchive.save();
   }
   const stats = computeAtomizerStats(mergedAtoms);
+  if (comparisonStrategy === 'tagged-tree') {
+    const taggedFormatChanges = countTaggedTreePropertyDeltas({
+      originalXml,
+      revisedXml,
+      detectFormatChanges: formatSettings.detectFormatChanges,
+      detectMoves: moveSettings.detectMoves,
+    });
+    stats.formatChanges = taggedFormatChanges;
+    stats.formatChangeAtoms = taggedFormatChanges;
+  }
   return {
     document: publishedBuffer,
     stats,

@@ -230,7 +230,11 @@ function hoistBookmarkMarkers(node: Element, allocateRevisionId: () => number): 
   }
 }
 
-export function enforceConsumerCompatibility(root: Element, allocateRevisionId: () => number): void {
+export function enforceConsumerCompatibility(
+  root: Element,
+  allocateRevisionId: () => number,
+  options: { repairBookmarkInventory?: boolean } = {},
+): void {
   // 1. Reposition bookmark markers so their ranges survive both projections.
   hoistBookmarkMarkers(root, allocateRevisionId);
 
@@ -243,6 +247,11 @@ export function enforceConsumerCompatibility(root: Element, allocateRevisionId: 
       }
     }
   }
+
+  // Tagged construction carries the exact bookmark inventory of both inputs.
+  // It needs range hoisting/splitting, but must not deduplicate or synthesize
+  // source-authored markers. Legacy callers retain repair behavior.
+  if (options.repairBookmarkInventory === false) return;
 
   // 3. Balance markers and remove duplicates
   const starts = Array.from(root.getElementsByTagName('w:bookmarkStart'));

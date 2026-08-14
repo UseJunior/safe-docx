@@ -67,7 +67,7 @@ export function parseCompareCliArgs(argv: string[]): ParsedCompareCliArgs {
     reconstructionMode: DEFAULT_RECONSTRUCTION_MODE,
     author: 'Comparison',
     premergeRuns: true,
-    comparisonStrategy: 'legacy',
+    comparisonStrategy: 'tagged-tree',
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -169,6 +169,7 @@ export async function runCompareCli(
     author: parsed.options.author,
     reconstructionMode: parsed.options.reconstructionMode,
     premergeRuns: parsed.options.premergeRuns,
+    comparisonStrategy: parsed.options.comparisonStrategy,
   });
 
   await mkdir(dirname(outputAbs), { recursive: true });

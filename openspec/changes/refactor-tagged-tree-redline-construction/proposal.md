@@ -1,4 +1,4 @@
-# Change: Add a side-tagged tree IR for offline redline validation
+# Change: Construct redlines with a side-tagged tree
 
 Tracking issue: #814. Related: #542 (cross-run passes as candidate dead code), #469.
 
@@ -40,10 +40,12 @@ afterwards.
 
 ## What Changes
 
-This change is **stage A only**: it adds the representation and validates it in
-an offline corpus harness. It deletes nothing and changes no user-visible
-behavior. Deletion of the
-pass ladder and any public-surface decisions are successor changes, named below.
+This change began as stage-A offline validation. On 2026-08-14, after the
+source-grounded, Aspose, LibreOffice, package, story, and full-suite gates became
+exact, the user expressly expanded the approved scope to make tagged-tree
+construction the ordinary default. The legacy strategy remains an explicit
+rollback for one release cycle. Nothing is deleted, and public `rebuild` mode is
+unchanged; deletion and public-surface removal remain successor changes.
 
 - **Add a side-tagged tree IR (`TaggedTree`).** Every node carries a tag of
   `both`, `original`, or `revised`. A `both` node holds **both side
@@ -64,6 +66,11 @@ pass ladder and any public-surface decisions are successor changes, named below.
   divergence. The ordinary comparison pipeline does not run the new engine,
   emit telemetry, or incur duplicate work.
 
+- **Publish tagged-tree output by default after the gates pass.** The ordinary
+  pipeline now selects tagged-tree construction when no strategy is specified,
+  while `comparisonStrategy: 'legacy'` and the corresponding CLI option retain
+  the prior construction as an explicit rollback.
+
 - **Sequence PRESERVE evidence in two layers.** Model-level provenance
   splitting, nesting, identifier allocation, and multi-author relationships
   gate the serializer. Accept/reject evidence over those relationships follows
@@ -75,10 +82,12 @@ pass ladder and any public-surface decisions are successor changes, named below.
   story checks all remain exactly as they are. This change adds a construction
   invariant; it does not yet cash it in against any existing safety net.
 
-**Explicitly deferred to successor changes** (so this one stays reviewable):
+**Implemented in this change after the expanded approval:**
 
-- **B — default flip.** Make the IR path default while retaining the legacy path
-  and all existing diagnostics.
+- **B — default flip.** The IR path is default while the legacy path and all
+  existing diagnostics remain available for a rollback window.
+
+**Explicitly deferred to successor changes:**
 - **C — remove the retry ladder and automatic fallback**, and delete
   `suppressNoOpChangePairs` /
   `suppressDuplicatedFormatChangesInTextReplacements` with their cause. Gated on

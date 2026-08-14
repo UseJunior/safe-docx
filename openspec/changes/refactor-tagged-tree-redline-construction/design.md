@@ -32,15 +32,16 @@ artifact verification, and cross-reader tests.
 
 ## Goals / Non-Goals
 
-**Goals (this change, stage A)**
+**Goals (initial stage A, followed by the approved default flip)**
 - A representation in which `accept`/`reject` correctness is a property of the
   construction rather than a test on serialized output.
 - A projection contract precise enough to be falsifiable.
 - Offline divergence evidence over the differential corpus.
 
 **Non-Goals (this change)**
-- Any behavior change. Nothing is deleted, nothing is flipped, no runtime check
-  is retired.
+- Deleting the legacy path or retiring any runtime check. The tagged-tree
+  default flip is included only after exact independent gates; legacy remains
+  the explicit rollback.
 - **Effective formatting.** The existing detector (`format-detection.ts:299`)
   and fidelity oracle (`formattingFidelity.ts:290`) inspect *direct* `w:rPr` /
   `w:pPr` only, not formatting resolved through the style chain or
@@ -191,15 +192,16 @@ otherwise it is retained and reclassified alongside the readability passes.
 Text-box and ancillary-part stories currently recurse into the whole pipeline
 (`pipeline.ts:609-680`) and re-validate the assembled result with another
 accept/reject round-trip. Under the IR a nested story is a subtree with its own
-tagged tree, and assembly is IR composition. This is designed for in stage A but
-only exercised by the offline harness; the recursive path is untouched until
-successor C.
+tagged tree, and assembly is IR composition. The tagged strategy is injected at
+the existing story boundary, while the established recursive assembler retains
+ownership of relationships, IDs, notes, comments, and package validation.
 
 ## Risks / Trade-offs
 
 - **This is the engine's core.** A wrong step ships bad redlines into legal
-  documents. → Stage A changes no behavior at all; the IR has no production
-  caller. Every subsequent stage is gated on corpus evidence.
+  documents. → Initial stage-A commits changed no behavior. The later
+  user-approved flip occurs only after source, Aspose, LibreOffice, package, and
+  story evidence passes exactly.
 - **PRESERVE is the hardest case**, and the first draft underestimated it. →
   Explicit invariants above; multi-author fixtures are proved before anything
   else advances.
@@ -216,10 +218,11 @@ successor C.
 
 ## Migration Plan
 
-**This change (A):** build `TaggedTree`, `project`, and the P1-P5 checks;
+**Initial stage A:** build `TaggedTree`, `project`, and the P1-P5 checks;
 property-test them in isolation; run the IR in controlled corpus jobs and
 produce a divergence
-report over the differential corpus. Nothing user-visible changes. Fully
+report over the differential corpus. Nothing user-visible changes in this
+initial phase. Fully
 revertible.
 
 *Implementation finding (2026-08-14):* the original task order required
@@ -227,8 +230,9 @@ serialized multi-author accept/reject evidence before the serializer existed.
 The gate is split: model-level PRESERVE invariants precede serialization, and
 serialized PRESERVE evidence is the first serializer-dependent gate afterward.
 
-**Successor B:** flip the default, retaining the legacy path behind a flag and
-retaining all existing diagnostics and both explicit output modes.
+**Successor B (included by approved scope expansion):** flip the default,
+retaining the legacy path behind an explicit strategy and retaining all existing
+diagnostics and both explicit output modes.
 
 **Successor C:** after release evidence from B, delete the four-pass ladder, the
 automatic fallback, `suppressNoOpChangePairs`,

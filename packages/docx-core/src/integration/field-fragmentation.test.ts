@@ -43,10 +43,15 @@ const test = testAllure
 // Helpers
 // =============================================================================
 
-async function compareInplace(original: Buffer, revised: Buffer): Promise<string> {
+async function compareInplace(
+  original: Buffer,
+  revised: Buffer,
+  comparisonStrategy: 'tagged-tree' | 'legacy' = 'tagged-tree',
+): Promise<string> {
   const result = await compareDocuments(original, revised, {
     engine: 'atomizer',
     reconstructionMode: 'inplace',
+    comparisonStrategy,
   });
   if (result.reconstructionModeUsed !== 'inplace') {
     throw new Error(
@@ -526,7 +531,7 @@ describe('Field fragmentation — edge cases', () => {
           const revised = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Page check: </w:t></w:r>${makeNestedField(' NUMPAGES ', 'second')}</w:p>`,
           );
-          combined = await compareInplace(original, revised);
+          combined = await compareInplace(original, revised, 'legacy');
         },
       );
 
@@ -577,7 +582,7 @@ describe('Field fragmentation — edge cases', () => {
           const revised = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Item  done.</w:t></w:r></w:p>`,
           );
-          combined = await compareInplace(original, revised);
+          combined = await compareInplace(original, revised, 'legacy');
         },
       );
 

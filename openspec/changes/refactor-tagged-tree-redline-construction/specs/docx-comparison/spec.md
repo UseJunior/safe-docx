@@ -159,14 +159,16 @@ representation is exercised on any other class of input.
 - **THEN** accept SHALL reproduce the revised tree projection
 - **AND** reject SHALL reproduce the original tree projection
 
-### Requirement: The tagged-tree path is evaluated offline and changes no behavior
+### Requirement: Tagged-tree construction is the default with an explicit legacy rollback
 
-The tagged-tree representation SHALL be directly callable by tests and
-controlled corpus jobs, and SHALL NOT be invoked by the ordinary comparison
-pipeline while this requirement is in force. Existing runtime safety checks —
-text, bookmark, field structure, and ancillary story — SHALL remain unchanged.
+The ordinary comparison pipeline SHALL use tagged-tree construction by default.
+Callers SHALL be able to request the legacy construction explicitly for one
+release-cycle rollback window. Existing runtime safety checks — text, bookmark,
+field structure, ancillary story, relationship closure, and package integrity —
+SHALL remain in force for both strategies. The public `rebuild` mode SHALL
+remain available and unchanged.
 
-The offline harness SHALL record divergence between the two constructions across the
+The offline harness SHALL continue recording divergence between the two constructions across the
 formatting-fidelity corpus, the multi-author fixtures, the OpenAgreements and
 NVCA/ILPA templates, and the pinned engine-bug characterization cases.
 
@@ -176,12 +178,12 @@ as blocking. A divergence that is projection-equivalent but textually different
 SHALL be recorded for individual review and either accepted with a rationale or
 pinned as a characterization case.
 
-#### Scenario: Offline evaluation does not affect returned output
+#### Scenario: Tagged-tree is default with legacy rollback
 
-- **GIVEN** no tagged-tree evaluation is requested by a test or corpus job
-- **WHEN** a document pair is compared through the ordinary pipeline
-- **THEN** the returned output SHALL be the existing pipeline's output, unchanged
-- **AND** the tagged-tree evaluator SHALL NOT run
+- **GIVEN** a document pair and no comparison-strategy override
+- **WHEN** the pair is compared through the ordinary pipeline
+- **THEN** the tagged-tree strategy SHALL construct the returned redline
+- **AND** an explicit legacy strategy SHALL remain available as a rollback
 - **AND** every existing runtime safety check SHALL still run
 
 #### Scenario: Divergence is recorded with fixture identity

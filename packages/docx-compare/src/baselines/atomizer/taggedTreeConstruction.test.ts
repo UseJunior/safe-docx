@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { parseXml, validateFieldStructure } from '@usejunior/docx-core';
+import { parseXml, validateBookmarkIntegrity, validateFieldStructure } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { verifyMoveRelations, verifyTaggedTree } from './taggedTree.js';
 import { constructTaggedTree, verifyGlobalEqualContentInvariant } from './taggedTreeConstruction.js';
@@ -97,6 +97,40 @@ describe('complete tagged-tree construction', () => {
     expect(verifySerializedMoveRanges(output, result.moves)).toEqual([]);
     expect(resolvedText(rejectAllChanges(output))).toBe('AB');
     expect(resolvedText(acceptAllChanges(output))).toBe('BA');
+  });
+
+  test('serializes bookmarked moves with unique paired IDs in the combined candidate', () => {
+    const paragraph = (value: string, bookmarked = false) => `<w:p>${
+      bookmarked ? '<w:bookmarkStart w:id="7" w:name="Clause"/>' : ''
+    }<w:r><w:t>${value}</w:t></w:r>${
+      bookmarked ? '<w:bookmarkEnd w:id="7"/>' : ''
+    }</w:p>`;
+    const original = documentWithBody(paragraph('A') + paragraph('B', true));
+    const revised = documentWithBody(paragraph('B', true) + paragraph('A'));
+    const result = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(
+      result.tree,
+      createPreservePlan(original, revised, result.tree, {
+        author: 'Comparator', date: '2026-08-14T12:00:00Z',
+      }),
+      { moves: result.moves },
+    );
+    const integrity = validateBookmarkIntegrity(output);
+
+    expect(integrity).toEqual({
+      unmatchedStartIds: [],
+      unmatchedEndIds: [],
+      duplicateStartIds: [],
+      duplicateEndIds: [],
+    });
+    expect(resolvedText(acceptAllChanges(output))).toBe('BA');
+    expect(resolvedText(rejectAllChanges(output))).toBe('AB');
+    for (const projection of [acceptAllChanges(output), rejectAllChanges(output)]) {
+      const document = parseXml(projection);
+      expect(document.getElementsByTagNameNS(W_NS, 'bookmarkStart')).toHaveLength(1);
+      expect(document.getElementsByTagNameNS(W_NS, 'bookmarkEnd')).toHaveLength(1);
+      expect(document.getElementsByTagNameNS(W_NS, 'bookmarkStart')[0]!.getAttributeNS(W_NS, 'name')).toBe('Clause');
+    }
   });
 
   test('represents direct run properties as a both node with a scoped delta', () => {

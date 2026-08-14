@@ -35,6 +35,7 @@ async function compareInMode(
   const result = await compareDocuments(original, revised, {
     engine: 'atomizer',
     reconstructionMode: mode,
+    comparisonStrategy: 'legacy',
   });
   expect(result.reconstructionModeUsed).toBe(mode);
 

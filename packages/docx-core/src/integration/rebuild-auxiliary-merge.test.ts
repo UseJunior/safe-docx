@@ -887,7 +887,7 @@ describe('Multi-paragraph sibling comment ranges on rebuild (issue #103)', () =>
   });
 
   describe('Orphaned body-level comment range remnant', () => {
-    test('a sibling commentRangeStart with no matching end is still stripped', async ({ given, when, then }: AllureBddContext) => {
+    test('legacy rebuild strips a sibling commentRangeStart with no matching end', async ({ given, when, then }: AllureBddContext) => {
       let original: Buffer, revised: Buffer;
       await given('both sides carry an unmatched body-level commentRangeStart between two paragraphs', async () => {
         const bodyXml = (textA: string) =>
@@ -903,6 +903,7 @@ describe('Multi-paragraph sibling comment ranges on rebuild (issue #103)', () =>
         result = await compareDocuments(original, revised, {
           engine: 'atomizer',
           reconstructionMode: 'rebuild',
+          comparisonStrategy: 'legacy',
         });
       });
 
@@ -1070,7 +1071,7 @@ describe('Move-range marker reconstruction on rebuild (issue #110)', () => {
   });
 
   describe('Body-level move-range scaffold remnants', () => {
-    test('sibling-of-paragraph move-range markers are stripped on rebuild', async ({ given, when, then }: AllureBddContext) => {
+    test('legacy rebuild strips sibling-of-paragraph move-range scaffold markers', async ({ given, when, then }: AllureBddContext) => {
       const bodyLevelMarkers =
         `<w:moveFromRangeStart w:id="900" w:name="orphanMove" w:author="Mover" w:date="2025-01-01T00:00:00Z"/>` +
         `<w:moveFromRangeEnd w:id="900"/>`;
@@ -1090,6 +1091,7 @@ describe('Move-range marker reconstruction on rebuild (issue #110)', () => {
         result = await compareDocuments(original, revised, {
           engine: 'atomizer',
           reconstructionMode: 'rebuild',
+          comparisonStrategy: 'legacy',
         });
       });
 
@@ -1149,7 +1151,7 @@ describe('Range-permission marker reconstruction on rebuild (issue #111)', () =>
   });
 
   describe('Sibling-style scaffold perm markers', () => {
-    test('body-level perm markers are stripped on rebuild and do not leak into reconstructed paragraphs', async ({ given, when, then }: AllureBddContext) => {
+    test('legacy rebuild strips body-level permission scaffold markers', async ({ given, when, then }: AllureBddContext) => {
       let original: Buffer, revised: Buffer;
       await given('both sides have a sibling-style perm range between two paragraphs', async () => {
         original = await buildSyntheticDocx({
@@ -1167,6 +1169,7 @@ describe('Range-permission marker reconstruction on rebuild (issue #111)', () =>
         result = await compareDocuments(original, revised, {
           engine: 'atomizer',
           reconstructionMode: 'rebuild',
+          comparisonStrategy: 'legacy',
         });
       });
 

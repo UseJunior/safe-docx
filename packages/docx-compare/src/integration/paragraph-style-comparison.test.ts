@@ -96,6 +96,26 @@ function snapshotStyle(change: Element): string | null {
 }
 
 describe('direct paragraph style comparison', () => {
+  test('tagged publication reports row and cell direct-property revisions in public stats', async () => {
+    const table = (row: string, cell: string) =>
+      `<w:tbl><w:tr>${row}<w:tc>${cell}<w:p><w:r><w:t>same</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+    const original = await buildDocxFromBodyXml(table('', ''));
+    const revised = await buildDocxFromBodyXml(table(
+      '<w:trPr><w:tblHeader/></w:trPr>',
+      '<w:tcPr><w:gridSpan w:val="2"/></w:tcPr>',
+    ));
+
+    const result = await compareDocuments(original, revised, {
+      engine: 'atomizer',
+      reconstructionMode: 'inplace',
+      author: AUTHOR,
+      date: DATE,
+    });
+
+    expect(result.stats.formatChanges).toBe(2);
+    expect(result.stats.formatChangeAtoms).toBe(2);
+  });
+
   test.openspec('[SDX-CMP-PSTYLE-01] Non-empty paragraph style replacement is detected once')(
     'tracks one paragraph change for fragmented non-empty text',
     async ({ given, when, then, and }: AllureBddContext) => {
@@ -299,7 +319,7 @@ describe('direct paragraph style comparison', () => {
   );
 
   test(
-    'does not classify a text-divergent paragraph as style-only',
+    'reports both text and direct-style changes in a divergent paragraph',
     async ({ given, when, then }: AllureBddContext) => {
       const original = await given('a Heading1 paragraph with original text', () =>
         styledParagraph('Heading1', textRun('Original text')),
@@ -311,8 +331,8 @@ describe('direct paragraph style comparison', () => {
       const compared = await when('comparison runs', () =>
         compareBodies(original, revised, 'rebuild'),
       );
-      await then('the paragraph is a text replacement, not a style-only change', () => {
-        expect(compared.result.stats.formatChanges).toBe(0);
+      await then('the published text replacement and property revision are both counted', () => {
+        expect(compared.result.stats.formatChanges).toBe(1);
         expect(compared.result.stats.insertions).toBe(1);
         expect(compared.result.stats.deletions).toBe(1);
       });

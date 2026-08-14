@@ -747,7 +747,7 @@ describe('ECMA-376 advanced revision records', () => {
     );
 
   test(
-      '[ADV-COMPARE-MODE-PRESERVATION-01] records existing advanced-markup preservation by reconstruction mode',
+      '[ADV-COMPARE-MODE-PRESERVATION-01] records legacy reconstruction advanced-markup preservation by mode',
       async ({ given, when, then }: AllureBddContext) => {
         const advanced =
           `<q:bookmarkStart q:id="20" q:name="b"/><q:bookmarkEnd q:id="20"/>` +
@@ -778,10 +778,16 @@ describe('ECMA-376 advanced revision records', () => {
           packageWithDocumentXml(sourceXml),
         );
 
+        // This is an explicit compatibility characterization of the retained
+        // legacy reconstruction engines, including their known rebuild gaps.
         const outputByMode = new Map<string, Document>();
         for (const mode of ['inplace', 'rebuild'] as const) {
           const result = await when(`the identical pair is compared in ${mode} mode`, () =>
-            compareDocuments(input, input, { engine: 'atomizer', reconstructionMode: mode }),
+            compareDocuments(input, input, {
+              engine: 'atomizer',
+              comparisonStrategy: 'legacy',
+              reconstructionMode: mode,
+            }),
           );
           expect(result.reconstructionModeUsed).toBe(mode);
           outputByMode.set(mode, parseXml((await getResultParts(result.document)).documentXml));
@@ -845,7 +851,11 @@ describe('ECMA-376 advanced revision records', () => {
           run: async (fixture, _element, context) => {
             const mode = context.operation.endsWith('.rebuild') ? 'rebuild' : 'inplace';
             const bytes = await packageWithDocumentXml(serializeXml(fixture));
-            const result = await compareDocuments(bytes, bytes, { engine: 'atomizer', reconstructionMode: mode });
+            const result = await compareDocuments(bytes, bytes, {
+              engine: 'atomizer',
+              comparisonStrategy: 'legacy',
+              reconstructionMode: mode,
+            });
             return {
               input: fixture,
               output: parseXml((await getResultParts(result.document)).documentXml),

@@ -171,6 +171,7 @@ describe('LCS alignment pinning (#584)', () => {
         date: FIXED_DATE,
         ignoreFormatting: false,
         detectMoves: false,
+        comparisonStrategy: 'legacy',
       });
       stats = result.stats;
       xml = await documentXml(result.document);
@@ -219,6 +220,7 @@ describe('LCS alignment pinning (#584)', () => {
         date: FIXED_DATE,
         ignoreFormatting: false,
         detectMoves: false,
+        comparisonStrategy: 'legacy',
       });
       stats = result.stats;
       xml = await documentXml(result.document);

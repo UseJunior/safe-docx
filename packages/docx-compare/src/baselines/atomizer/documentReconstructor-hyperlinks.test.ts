@@ -50,6 +50,7 @@ async function rebuildCompare(originalBody: string, revisedBody: string) {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
   const result = await compareDocumentsAtomizer(original, revised, {
+    comparisonStrategy: 'legacy',
     author: 'Hyperlink Test',
     date: new Date('2026-06-10T00:00:00Z'),
     reconstructionMode: 'rebuild',
@@ -107,9 +108,11 @@ describe('Rebuild reconstruction preserves w:hyperlink wrappers', () => {
       );
       const options = { author: 'Hyperlink Test', date: new Date('2026-06-10T00:00:00Z') };
       const inplace = await compareDocumentsAtomizer(original, revised, {
+        comparisonStrategy: 'legacy',
         ...options, reconstructionMode: 'inplace',
       });
       const rebuild = await compareDocumentsAtomizer(original, revised, {
+        comparisonStrategy: 'legacy',
         ...options, reconstructionMode: 'rebuild',
       });
       inplaceXml = await (await DocxArchive.load(inplace.document)).getDocumentXml();
@@ -255,6 +258,7 @@ describe('Retargeted / inserted hyperlinks ship a resolvable relationship', () =
     const original = await buildDocxFromBodyXml(originalBody, originalRels);
     const revised = await buildDocxFromBodyXml(revisedBody, revisedRels);
     const result = await compareDocumentsAtomizer(original, revised, {
+      comparisonStrategy: 'legacy',
       author: 'Hyperlink Test',
       date: new Date('2026-06-10T00:00:00Z'),
       reconstructionMode: 'rebuild',

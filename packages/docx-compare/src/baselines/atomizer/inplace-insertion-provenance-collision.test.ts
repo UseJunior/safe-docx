@@ -98,6 +98,7 @@ describe('Inplace revised insertion provenance collisions', () => {
       const result = await compareDocuments(original, revised, {
         engine: 'atomizer',
         reconstructionMode: 'inplace',
+        comparisonStrategy: 'legacy',
       });
       const combined = await documentXml(result.document);
       await when('the documents are compared in inplace mode', () => {});
@@ -132,6 +133,7 @@ describe('Inplace revised insertion provenance collisions', () => {
       const result = await compareDocuments(original, revised, {
         engine: 'atomizer',
         reconstructionMode: 'inplace',
+        comparisonStrategy: 'legacy',
       });
       const combined = await documentXml(result.document);
       await when('the documents are compared in inplace mode', () => {});
@@ -162,6 +164,7 @@ describe('Inplace revised insertion provenance collisions', () => {
       const result = await compareDocuments(original, revised, {
         engine: 'atomizer',
         reconstructionMode: 'inplace',
+        comparisonStrategy: 'legacy',
       });
       const combined = await documentXml(result.document);
       await when('the documents are compared in inplace mode', () => {});

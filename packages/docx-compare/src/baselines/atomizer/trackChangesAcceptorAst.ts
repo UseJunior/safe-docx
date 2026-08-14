@@ -550,6 +550,10 @@ export function acceptAllChanges(documentXml: string): string {
   // Remove format change tracking
   removeAllByTagName(root, 'w:rPrChange');
   removeAllByTagName(root, 'w:pPrChange');
+  removeAllByTagName(root, 'w:trPrChange');
+  removeAllByTagName(root, 'w:tcPrChange');
+  removeAllByTagName(root, 'w:sectPrChange');
+  removeEmptyTablePropertyContainers(root);
 
   // Strip paragraph-level markers now that changes are accepted.
   removeParaMarkers(root);
@@ -648,10 +652,17 @@ export function rejectAllChanges(documentXml: string): string {
   // properties and section topology sit outside that base and remain live.
   restoreRunPropertiesFromChanges(root);
   restoreParagraphPropertiesFromChanges(root);
+  restoreContainerPropertiesFromChanges(root, 'w:trPrChange', 'w:trPr');
+  restoreContainerPropertiesFromChanges(root, 'w:tcPrChange', 'w:tcPr');
+  restoreSectionPropertiesFromChanges(root);
 
   // Remove remaining format change tracking
   removeAllByTagName(root, 'w:rPrChange');
   removeAllByTagName(root, 'w:pPrChange');
+  removeAllByTagName(root, 'w:trPrChange');
+  removeAllByTagName(root, 'w:tcPrChange');
+  removeAllByTagName(root, 'w:sectPrChange');
+  removeEmptyTablePropertyContainers(root);
 
   // Strip paragraph-level markers now that changes are rejected.
   removeParaMarkers(root);
@@ -668,6 +679,40 @@ function restoreRunPropertiesFromChanges(root: Element): void {
     const live = change.parentNode as Element | null;
     if (!live || live.tagName !== 'w:rPr') continue;
     const snapshot = childElements(change).find((child) => child.tagName === 'w:rPr');
+    if (!snapshot) continue;
+    for (const child of childElements(live)) live.removeChild(child);
+    for (const child of childElements(snapshot)) live.appendChild(child.cloneNode(true));
+  }
+}
+
+function restoreContainerPropertiesFromChanges(
+  root: Element,
+  changeTag: 'w:trPrChange' | 'w:tcPrChange',
+  propertyTag: 'w:trPr' | 'w:tcPr',
+): void {
+  for (const change of findAllByTagName(root, changeTag)) {
+    const live = change.parentNode as Element | null;
+    if (!live || live.tagName !== propertyTag) continue;
+    const snapshot = childElements(change).find((child) => child.tagName === propertyTag);
+    if (!snapshot) continue;
+    for (const child of childElements(live)) live.removeChild(child);
+    for (const child of childElements(snapshot)) live.appendChild(child.cloneNode(true));
+  }
+}
+
+function removeEmptyTablePropertyContainers(root: Element): void {
+  for (const propertyTag of ['w:trPr', 'w:tcPr']) {
+    for (const properties of findAllByTagName(root, propertyTag)) {
+      if (childElements(properties).length === 0) properties.parentNode?.removeChild(properties);
+    }
+  }
+}
+
+function restoreSectionPropertiesFromChanges(root: Element): void {
+  for (const change of findAllByTagName(root, 'w:sectPrChange')) {
+    const live = change.parentNode as Element | null;
+    if (!live || live.tagName !== 'w:sectPr') continue;
+    const snapshot = childElements(change).find((child) => child.tagName === 'w:sectPr');
     if (!snapshot) continue;
     for (const child of childElements(live)) live.removeChild(child);
     for (const child of childElements(snapshot)) live.appendChild(child.cloneNode(true));

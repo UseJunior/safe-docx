@@ -1,6 +1,7 @@
-Scope: **stage A only** — additive representation, invariants, and offline
-evidence. Nothing is deleted and no default changes. Successors B/C/D are named
-in `proposal.md` and are separate changes.
+Scope began as stage-A additive representation, invariants, and offline
+evidence. On 2026-08-14 the user expanded the approved scope to include
+successor B's rigorously gated default flip. Nothing is deleted; the legacy
+strategy remains the rollback path, and successors C/D remain separate changes.
 
 ## 1. Representation and projections (no production caller)
 
@@ -212,7 +213,7 @@ in `proposal.md` and are separate changes.
       measured package normalization boundary. LibreOffice renders the repaired
       60-paragraph projections as visible 18-page accept and 19-page reject PDFs.
 
-      **Package integration staging:** `comparisonStrategy: 'tagged-tree'` now
+      **Package integration and default flip:** `comparisonStrategy: 'tagged-tree'` now
       routes tagged story XML through the existing atomizer package assembler;
       it does not create a parallel OPC pipeline. Existing reconstruction still
       owns relationship closure, ID collision handling, notes, comments,
@@ -220,17 +221,18 @@ in `proposal.md` and are separate changes.
       Focused real-package tests pass for ordinary body output, VML text-box
       story assembly, inserted footnote/endnote definitions plus relationships
       and content types, and a threaded modern-comment graph. The public CLI
-      exposes the same explicit `--comparison-strategy tagged-tree|legacy`
-      staging switch. Production default publication remains legacy pending the
-      final protected default-flip authorization; the explicit tagged path is
-      the evidence surface, not a silent fallback.
+      exposes the same `--comparison-strategy tagged-tree|legacy` switch.
+      Following exact source, Aspose, LibreOffice, package, and story gates plus
+      explicit user authorization, tagged-tree is the ordinary default and
+      `legacy` remains the explicit rollback for one release cycle. Rebuild mode
+      remains unchanged.
 
       An Aspose save of the revised source itself changes `0/60` paragraph
       snapshots, likewise proving the changes are not its ordinary save
       normalization. Both the control and projection add 33 drawing-fallback
       paragraphs and remap header/footer relationship IDs, which are recorded
-      separately as reader normalization. Because accept-all is not yet exact,
-      the ordinary comparison default remains unchanged.
+      separately as reader normalization. The repaired tagged candidate is
+      exact across direct run and paragraph formatting in both projections.
 - [x] 4.5 Produce the field-case evidence that successor C's deletion of
       `suppressNoOpChangePairs` depends on: field-stable, field-modification,
       field-delete, nested-field, and paragraph-spanning-field cases showing no

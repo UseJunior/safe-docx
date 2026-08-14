@@ -63,6 +63,7 @@ describe('Rebuild-output safety screening (issue #226) — pipeline-level', () =
         result = await compareDocuments(original, revised, {
           engine: 'atomizer',
           reconstructionMode: 'rebuild',
+          comparisonStrategy: 'legacy',
         });
         await attachPrettyJson('comparison-metadata.json', {
           reconstructionModeUsed: result.reconstructionModeUsed,
@@ -94,7 +95,10 @@ describe('Rebuild-output safety screening (issue #226) — pipeline-level', () =
       });
 
       await when('compared without specifying a reconstruction mode', async () => {
-        result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          comparisonStrategy: 'legacy',
+        });
       });
 
       await then('the fieldStructure failure is surfaced without opaque preflight rejection', () => {
@@ -120,6 +124,7 @@ describe('Rebuild-output safety screening (issue #226) — pipeline-level', () =
         result = await compareDocuments(original, revised, {
           engine: 'atomizer',
           reconstructionMode: 'rebuild',
+          comparisonStrategy: 'legacy',
         });
         await attachPrettyJson('comparison-metadata.json', {
           reconstructionModeUsed: result.reconstructionModeUsed,

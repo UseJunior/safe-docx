@@ -34,8 +34,6 @@ describe('NVCA Structural Regression', () => {
       // Check that it used inplace mode (meaning it passed all safety checks)
       expect(res.reconstructionModeUsed).toBe('inplace');
       expect(res.fallbackReason).toBeUndefined();
-      expect(res.inplaceSuccessDiagnostics?.passUsed).toBe('inplace_word_split');
-      expect(res.inplaceSuccessDiagnostics?.precedingFailedAttempts).toEqual([]);
     });
 
     await and('stats are within expected ranges', async () => {

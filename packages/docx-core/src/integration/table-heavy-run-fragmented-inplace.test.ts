@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { acceptAllChanges, compareDocuments } from '@usejunior/docx-compare';
 import { generateDocx } from '../generation/compile.js';
 import type { BorderSpec, DocumentSpec, TableRowSpec, TableSpec } from '../generation/types.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
@@ -129,6 +129,7 @@ describe('Inplace reconstruction pass selection', () => {
           engine: 'atomizer',
           reconstructionMode: 'inplace',
           premergeRuns: false,
+          comparisonStrategy: 'legacy',
         });
         await attachPrettyJson('inplace-pass-diagnostics.json', {
           reconstructionModeUsed: result.reconstructionModeUsed,
@@ -201,7 +202,9 @@ describe('Inplace reconstruction on table-heavy run-fragmented templates', () =>
         expect(resultXml).toContain('<w:tbl>');
         expect((resultXml.match(/<w:tbl>/g) ?? []).length).toBe(1);
         expect(resultXml).toContain('Delaware');
-        expect(resultXml).toContain('<w:t xml:space="preserve">New </w:t></w:r><w:r><w:t>York</w:t>');
+        expect(acceptAllChanges(resultXml)).toContain(
+          '<w:t xml:space="preserve">New </w:t></w:r><w:r><w:t>York</w:t>',
+        );
       });
     },
   );

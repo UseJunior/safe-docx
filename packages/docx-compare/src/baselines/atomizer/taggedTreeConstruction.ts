@@ -3,6 +3,7 @@ import { childElements } from '@usejunior/docx-core';
 import {
   nextRevisionId,
   PROPERTY_SCOPE_ELEMENT,
+  revisionProvenance,
   subtreeSignature,
   verifyMoveRelations,
   verifyTaggedTree,
@@ -22,16 +23,46 @@ const PROPERTY_SCOPE_BY_CONTAINER: Readonly<Record<string, { child: string; scop
   tc: { child: 'tcPr', scope: 'tableCell' },
   sectPr: { child: 'sectPr', scope: 'section' },
 };
+const RANGE_BOUNDARY_LOCALS = new Set([
+  'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
+  'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd',
+]);
 
 function alignmentKey(element: WmlElement): string {
-  return JSON.stringify([element.namespaceURI ?? '', element.localName ?? element.tagName, element.textContent ?? '']);
+  const text = element.textContent ?? '';
+  const formattingOnlyEmptyParagraph = element.localName === 'p' &&
+    text.length === 0 &&
+    childElements(element).every((child) => child.localName === 'pPr');
+  const provenanceSensitive = new Set([
+    'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
+    'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd',
+  ]).has(element.localName);
+  // Empty structural records (bookmark/range boundaries, field characters,
+  // proofing markers, etc.) derive their identity from attributes and child
+  // topology. Treating them as interchangeable aligns unrelated IDs as a
+  // `both` node and leaks the revised marker into Reject All.
+  return JSON.stringify([
+    element.namespaceURI ?? '',
+    element.localName ?? element.tagName,
+    text,
+    text.length === 0 && element.localName !== 'sectPr' && !formattingOnlyEmptyParagraph
+      ? subtreeSignature(element)
+      : '',
+    provenanceSensitive
+      ? revisionProvenance(element).map(({ kind, id, author, date }) => [kind, id, author, date])
+      : [],
+  ]);
 }
 
 function propertyDelta(original: WmlElement, revised: WmlElement): PropertyDelta | undefined {
   const descriptor = PROPERTY_SCOPE_BY_CONTAINER[original.localName ?? original.tagName.replace(/^w:/, '')];
   if (!descriptor) return undefined;
-  const originalProperty = childElements(original).find((child) => child.localName === descriptor.child) ?? null;
-  const revisedProperty = childElements(revised).find((child) => child.localName === descriptor.child) ?? null;
+  const originalProperty = descriptor.scope === 'section'
+    ? original
+    : childElements(original).find((child) => child.localName === descriptor.child) ?? null;
+  const revisedProperty = descriptor.scope === 'section'
+    ? revised
+    : childElements(revised).find((child) => child.localName === descriptor.child) ?? null;
   const propertySignature = (property: WmlElement | null): string => {
     if (!property) return '';
     const normalized = property.cloneNode(true) as WmlElement;
@@ -79,7 +110,7 @@ function lcsPairs(original: readonly WmlElement[], revised: readonly WmlElement[
 }
 
 function paragraphSimilarity(left: WmlElement, right: WmlElement): number {
-  if (left.localName !== 'p' || right.localName !== 'p') return 0;
+  if (left.localName !== right.localName || !['p', 'r'].includes(left.localName)) return 0;
   const words = (value: string): Set<string> => new Set(value.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? []);
   const a = words(left.textContent ?? '');
   const b = words(right.textContent ?? '');
@@ -114,7 +145,18 @@ function similarParagraphPairs(
   return pairs;
 }
 
-function constructBoth(original: WmlElement, revised: WmlElement): BothNode {
+export interface TaggedTreeConstructionOptions {
+  /** Emit direct-formatting revisions. Default: true. */
+  detectFormatChanges?: boolean;
+  /** Classify equal-content side-only nodes as moves. Default: true. */
+  detectMoves?: boolean;
+}
+
+function constructBoth(
+  original: WmlElement,
+  revised: WmlElement,
+  options: Required<TaggedTreeConstructionOptions>,
+): BothNode {
   const originalChildren = childElements(original);
   const revisedChildren = childElements(revised);
   const pairs = lcsPairs(originalChildren, revisedChildren);
@@ -128,7 +170,7 @@ function constructBoth(original: WmlElement, revised: WmlElement): BothNode {
         (childElements(left).length > 0 || childElements(right).length > 0) &&
         (left.localName !== 'r' || left.textContent === right.textContent);
       if (!sameIdentity) break;
-      children.push(constructBoth(left, right));
+      children.push(constructBoth(left, right, options));
       oi++;
       ri++;
     }
@@ -143,7 +185,14 @@ function constructBoth(original: WmlElement, revised: WmlElement): BothNode {
       const matchedRevised = gapRevisedStart + localRevised;
       while (oi < matchedOriginal) children.push({ tag: 'original', node: originalChildren[oi++]!, children: [], opaque: true });
       while (ri < matchedRevised) children.push({ tag: 'revised', node: revisedChildren[ri++]!, children: [], opaque: true });
-      children.push(constructBoth(originalChildren[oi++]!, revisedChildren[ri++]!));
+      const left = originalChildren[oi++]!;
+      const right = revisedChildren[ri++]!;
+      if (left.localName === 'r') {
+        children.push({ tag: 'original', node: left, children: [], opaque: true });
+        children.push({ tag: 'revised', node: right, children: [], opaque: true });
+      } else {
+        children.push(constructBoth(left, right, options));
+      }
     }
     while (oi < originalEnd) children.push({ tag: 'original', node: originalChildren[oi++]!, children: [], opaque: true });
     while (ri < revisedEnd) children.push({ tag: 'revised', node: revisedChildren[ri++]!, children: [], opaque: true });
@@ -152,15 +201,25 @@ function constructBoth(original: WmlElement, revised: WmlElement): BothNode {
   let ri = 0;
   for (const [matchedOriginal, matchedRevised] of pairs) {
     emitGap(matchedOriginal, matchedRevised);
-    children.push(constructBoth(originalChildren[oi++]!, revisedChildren[ri++]!));
+    children.push(constructBoth(originalChildren[oi++]!, revisedChildren[ri++]!, options));
   }
   emitGap(originalChildren.length, revisedChildren.length);
-  return { tag: 'both', original, revised, children, propertyDelta: propertyDelta(original, revised) };
+  return {
+    tag: 'both',
+    original,
+    revised,
+    children,
+    propertyDelta: options.detectFormatChanges ? propertyDelta(original, revised) : undefined,
+  };
 }
 
 function collectSideOnly(node: TaggedNode, originals: OriginalNode[], revised: RevisedNode[]): void {
-  if (node.tag === 'original') originals.push(node);
-  else if (node.tag === 'revised') revised.push(node);
+  const ownElement = node.tag === 'both' ? node.original : node.node;
+  // Range boundaries describe their enclosing content; moving an individual
+  // zero-width marker creates a second range vocabulary around the marker and
+  // duplicates IDs after projection. Only content-bearing nodes are moves.
+  if (node.tag === 'original' && !RANGE_BOUNDARY_LOCALS.has(ownElement.localName)) originals.push(node);
+  else if (node.tag === 'revised' && !RANGE_BOUNDARY_LOCALS.has(ownElement.localName)) revised.push(node);
   const propertyTag = node.tag === 'both' && node.propertyDelta
     ? PROPERTY_SCOPE_ELEMENT[node.propertyDelta.scope]
     : undefined;
@@ -204,15 +263,23 @@ export interface ConstructedTaggedTree {
 }
 
 /** Construct a complete, projection-isomorphic tagged tree directly from both DOM roots. */
-export function constructTaggedTree(original: WmlElement, revised: WmlElement): ConstructedTaggedTree {
+export function constructTaggedTree(
+  original: WmlElement,
+  revised: WmlElement,
+  options: TaggedTreeConstructionOptions = {},
+): ConstructedTaggedTree {
   if ((original.namespaceURI ?? '') !== (revised.namespaceURI ?? '') ||
       (original.localName ?? original.tagName) !== (revised.localName ?? revised.tagName)) {
     throw new Error('tagged-tree roots must have the same element identity and story role');
   }
-  const tree = constructBoth(original, revised);
+  const settings: Required<TaggedTreeConstructionOptions> = {
+    detectFormatChanges: options.detectFormatChanges ?? true,
+    detectMoves: options.detectMoves ?? true,
+  };
+  const tree = constructBoth(original, revised, settings);
   const violations = verifyTaggedTree(original, revised, tree);
   if (violations.length > 0) throw new Error(`constructed tagged tree violates P1-P5: ${violations[0]!.detail}`);
-  const moves = classifyMoves(tree, nextRevisionId(original, revised));
+  const moves = settings.detectMoves ? classifyMoves(tree, nextRevisionId(original, revised)) : [];
   const moveViolations = verifyMoveRelations(moves, tree);
   if (moveViolations.length > 0) throw new Error(`constructed move relation is invalid: ${moveViolations[0]!.detail}`);
   return { tree, moves };

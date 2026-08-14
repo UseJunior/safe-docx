@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { acceptAllChanges, compareDocuments, rejectAllChanges } from '@usejunior/docx-compare';
 import { parseXml } from '../primitives/xml.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 
@@ -44,13 +44,15 @@ function documentParagraphCount(xml: string): number {
 async function compareBodyXml(
   originalBodyXml: string,
   revisedBodyXml: string,
-  reconstructionMode: ReconstructionMode
+  reconstructionMode: ReconstructionMode,
+  comparisonStrategy: 'tagged-tree' | 'legacy' = 'legacy',
 ): Promise<{ result: Awaited<ReturnType<typeof compareDocuments>>; xml: string }> {
   const original = await buildDocxFromBodyXml(originalBodyXml);
   const revised = await buildDocxFromBodyXml(revisedBodyXml);
   const result = await compareDocuments(original, revised, {
     engine: 'atomizer',
     reconstructionMode,
+    comparisonStrategy,
   });
   return { result, xml: await documentXml(result.document) };
 }
@@ -175,4 +177,24 @@ describe('Issue #456 — proofErr-only paragraph atomization', () => {
       });
     });
   }
+});
+
+describe('Issue #456 — tagged default source projections', () => {
+  test('proofErr-only identity/add/remove cases project exactly to their source sides', async () => {
+    const cases = [
+      { original: proofErrFixture, revised: proofErrFixture, acceptParagraphs: 3, acceptProof: 2, rejectParagraphs: 3, rejectProof: 2 },
+      { original: proofErrFixture, revised: strippedFixture, acceptParagraphs: 3, acceptProof: 0, rejectParagraphs: 3, rejectProof: 2 },
+      { original: proofErrFixture, revised: withoutMiddleFixture, acceptParagraphs: 2, acceptProof: 0, rejectParagraphs: 3, rejectProof: 2 },
+      { original: withoutMiddleFixture, revised: proofErrFixture, acceptParagraphs: 3, acceptProof: 2, rejectParagraphs: 2, rejectProof: 0 },
+    ];
+    for (const fixture of cases) {
+      const { xml } = await compareBodyXml(fixture.original, fixture.revised, 'inplace', 'tagged-tree');
+      const accepted = acceptAllChanges(xml);
+      const rejected = rejectAllChanges(xml);
+      expect(documentParagraphCount(accepted)).toBe(fixture.acceptParagraphs);
+      expect(countTag(accepted, 'w:proofErr')).toBe(fixture.acceptProof);
+      expect(documentParagraphCount(rejected)).toBe(fixture.rejectParagraphs);
+      expect(countTag(rejected, 'w:proofErr')).toBe(fixture.rejectProof);
+    }
+  });
 });

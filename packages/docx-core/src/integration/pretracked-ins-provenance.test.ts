@@ -235,10 +235,12 @@ async function runComparison(
   original: Buffer,
   revised: Buffer,
   reconstructionMode: ReconstructionMode,
+  comparisonStrategy: 'tagged-tree' | 'legacy' = 'tagged-tree',
 ): Promise<ProjectionReport> {
   const result = await compareDocuments(original, revised, {
     engine: 'atomizer',
     reconstructionMode,
+    comparisonStrategy,
   });
   const [combinedXml, originalXml, revisedXml] = await Promise.all([
     getDocumentXml(result.document),
@@ -331,6 +333,7 @@ describe('Original-side pre-tracked insertion provenance (issue #358)', () => {
             original,
             await buildSyntheticDocx({ paragraphs: ['Alpha beta'] }),
             'inplace',
+            'legacy',
           )
         ).combinedXml;
         deletedXml = (
@@ -338,6 +341,7 @@ describe('Original-side pre-tracked insertion provenance (issue #358)', () => {
             original,
             await buildSyntheticDocx({ paragraphs: ['Alpha'] }),
             'inplace',
+            'legacy',
           )
         ).combinedXml;
       });

@@ -496,10 +496,12 @@ describe('rsid-fragmented runs through the comparison pipeline (issue #675)', ()
 
     await when('both pairs are compared in inplace mode', async () => {
       alternatingResult = await compareDocuments(alternating, revised, {
+        comparisonStrategy: 'legacy',
         engine: 'atomizer',
         reconstructionMode: 'inplace',
       });
       uniformResult = await compareDocuments(uniform, revised, {
+        comparisonStrategy: 'legacy',
         engine: 'atomizer',
         reconstructionMode: 'inplace',
       });
@@ -550,6 +552,7 @@ describe('rsid-fragmented runs through the comparison pipeline (issue #675)', ()
 
     await when('the documents are compared in inplace mode', async () => {
       const result = await compareDocuments(source, revised, {
+        comparisonStrategy: 'legacy',
         engine: 'atomizer',
         reconstructionMode: 'inplace',
       });

@@ -297,4 +297,60 @@ describe('tagged-tree shadow serializer', () => {
     expect(fidelity.accept.score).toBe(1);
     expect(fidelity.reject.score).toBe(1);
   });
+
+  for (const scenario of [
+    {
+      name: 'addition',
+      originalRow: '',
+      revisedRow: '<w:trPr><w:tblHeader/></w:trPr>',
+      originalCell: '',
+      revisedCell: '<w:tcPr><w:gridSpan w:val="2"/></w:tcPr>',
+    },
+    {
+      name: 'removal',
+      originalRow: '<w:trPr><w:cantSplit/></w:trPr>',
+      revisedRow: '',
+      originalCell: '<w:tcPr><w:gridSpan w:val="2"/></w:tcPr>',
+      revisedCell: '',
+    },
+    {
+      name: 'replacement',
+      originalRow: '<w:trPr><w:cantSplit/></w:trPr>',
+      revisedRow: '<w:trPr><w:tblHeader/></w:trPr>',
+      originalCell: '<w:tcPr><w:tcW w:w="1200" w:type="dxa"/></w:tcPr>',
+      revisedCell: '<w:tcPr><w:tcW w:w="2400" w:type="dxa"/></w:tcPr>',
+    },
+  ]) {
+    test(`serializes table row/cell property ${scenario.name} with exact source projections`, () => {
+      const table = (row: string, cell: string) =>
+        `<w:tbl><w:tr>${row}<w:tc>${cell}<w:p><w:r><w:t>same</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+      const original = documentBody(table(scenario.originalRow, scenario.originalCell));
+      const revised = documentBody(table(scenario.revisedRow, scenario.revisedCell));
+      const constructed = constructTaggedTree(original, revised);
+      const output = serializeTaggedTree(
+        constructed.tree,
+        createPreservePlan(original, revised, constructed.tree, {
+          author: 'Comparator', date: '2026-08-14T12:00:00Z',
+        }),
+      );
+      const parsed = parseXml(output);
+
+      expect(parsed.getElementsByTagNameNS(W_NS, 'trPrChange')).toHaveLength(1);
+      expect(parsed.getElementsByTagNameNS(W_NS, 'tcPrChange')).toHaveLength(1);
+      for (const [changeName, snapshotName] of [
+        ['trPrChange', 'trPr'],
+        ['tcPrChange', 'tcPr'],
+      ] as const) {
+        const change = parsed.getElementsByTagNameNS(W_NS, changeName)[0]!;
+        expect(elementChildren(change).map((child) => child.localName)).toContain(snapshotName);
+      }
+
+      const originalXml = `<w:document xmlns:w="${W_NS}">${new XMLSerializer().serializeToString(original)}</w:document>`;
+      const revisedXml = `<w:document xmlns:w="${W_NS}">${new XMLSerializer().serializeToString(revised)}</w:document>`;
+      const candidateXml = `<w:document xmlns:w="${W_NS}">${output}</w:document>`;
+      const fidelity = compareSourceProjectedFormattingFidelity(originalXml, revisedXml, candidateXml);
+      expect(fidelity.accept.score).toBe(1);
+      expect(fidelity.reject.score).toBe(1);
+    });
+  }
 });

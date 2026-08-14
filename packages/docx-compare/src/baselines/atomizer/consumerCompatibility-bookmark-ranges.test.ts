@@ -72,7 +72,11 @@ function bookmarkedParagraph(id: string, name: string, text: string, pPr = ''): 
 async function compare(
   originalBody: string,
   revisedBody: string,
-  reconstructionMode: ReconstructionMode
+  reconstructionMode: ReconstructionMode,
+  // This suite exercises the legacy consumer-compatibility postprocessor's
+  // exact marker-hoisting topology. Tagged projection behavior is covered by
+  // the tagged serializer and source-grounded package invariant suites.
+  comparisonStrategy: 'tagged-tree' | 'legacy' = 'legacy',
 ): Promise<string> {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
@@ -80,6 +84,7 @@ async function compare(
     author: AUTHOR,
     date: DATE,
     reconstructionMode,
+    comparisonStrategy,
   });
   expect(result.reconstructionModeUsed).toBe(reconstructionMode);
   return (await DocxArchive.load(result.document)).getDocumentXml();
@@ -407,7 +412,11 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
           '<w:bookmarkEnd w:id="50"/>' +
           '<w:r><w:t>outside-range</w:t></w:r></w:p>',
         '<w:p><w:r><w:t>kept</w:t></w:r></w:p>',
-        'inplace'
+        'inplace',
+        // This assertion specifically exercises the legacy inplace
+        // postprocessor's wrapper splitting. Tagged construction deliberately
+        // does not vary its revision semantics by reconstruction mode.
+        'legacy',
       );
     });
 
@@ -453,7 +462,7 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
       // The inplace pipeline runs its wrapper-merging postprocess passes over
       // this tree, so this asserts end-to-end that none of them re-merge the
       // split halves across the boundary.
-      documentXml = await compare(trackedBody, trackedBody, 'inplace');
+      documentXml = await compare(trackedBody, trackedBody, 'inplace', 'legacy');
     });
 
     await then('the pre-existing wrapper is split with the boundary between the halves', () => {
