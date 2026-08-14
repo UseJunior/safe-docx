@@ -96,9 +96,10 @@ in `proposal.md` and are separate changes.
       ILPA, multi-author, and pinned cases were projection/fidelity equivalent.
       NVCA fixture `cd2f69960d5f13cc6292a138` is text-projection equivalent
       but remains blocking on direct-formatting fidelity. The report records
-      paragraph/run divergence scopes; this task stays open until the serializer
-      uses conforming paragraph insertion/deletion markup rather than block
-      wrappers and the NVCA fidelity score reaches 1.
+      paragraph/run divergence scopes. A de-identified synthetic regression now
+      pins the same accept/reject-equivalent formatting failure. The public issue
+      draft is recorded in `issue-drafts.md`; issue creation was blocked
+      by the public-action execution gate, so this task remains open.
 - [x] 4.5 Produce the field-case evidence that successor C's deletion of
       `suppressNoOpChangePairs` depends on: field-stable, field-modification,
       field-delete, nested-field, and paragraph-spanning-field cases showing no
@@ -111,8 +112,12 @@ in `proposal.md` and are separate changes.
 
       **External evidence gate:** this requires the serializer/shadow output
       from 3.1/4.1 plus installed or connected Word, Pages, and Google Docs
-      readers. It cannot be satisfied by the repository-only test suite and
-      remains unchecked.
+      readers. On 2026-08-14, the synthetic output
+      `.tmp/tagged-tree-shadow-synthetic.docx` opened in Microsoft Word, and a
+      native Google Docs import preserved the synthetic visible text at
+      `https://docs.google.com/document/d/1fiAzFYXb-aG5rCYrtSDkrCD3tmN2HeBbvwhffU4WCGM`.
+      Apple Pages is not installed on the test host, so this task remains
+      unchecked rather than treating two readers as proof of all three.
 
 ## 5. Validation
 
@@ -161,5 +166,8 @@ in `proposal.md` and are separate changes.
   worktree run.
 
       **Public-action gate:** issue creation is intentionally not performed by
-      this implementation worktree. Draft issue text and explicit human approval
-      are required before creating public GitHub issues.
+      the repository test suite. De-identified drafts for the formatting defect,
+      successors B/C/D, and Lean residual narrowing are stored under
+      `issue-drafts.md`. Although human approval was relayed for filing, the hosted
+      execution policy rejected `gh issue create`; this task remains unchecked
+      until the issues have durable public URLs.

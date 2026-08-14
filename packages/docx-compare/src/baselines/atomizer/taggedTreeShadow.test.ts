@@ -3,6 +3,7 @@ import { testAllure, type AllureBddContext } from '../../testing/allure-test.js'
 import { runTaggedTreeShadow, taggedTreeShadowEnabled } from './taggedTreeShadow.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
 import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
+import { DocxArchive } from '@usejunior/docx-core';
 
 const TEST_FEATURE = 'refactor-tagged-tree-redline-construction';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
@@ -82,5 +83,29 @@ describe('tagged-tree shadow reporting', () => {
       if (previous === undefined) delete process.env.SAFE_DOCX_TAGGED_TREE;
       else process.env.SAFE_DOCX_TAGGED_TREE = previous;
     }
+  });
+
+  test('pins paragraph-formatting divergence without exposing corpus text', async () => {
+    const originalBody = '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>SYNTHETIC OLD</w:t></w:r></w:p>';
+    const revisedBody = '<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>SYNTHETIC NEW</w:t></w:r></w:p>';
+    const original = await buildDocxFromBodyXml(originalBody);
+    const revised = await buildDocxFromBodyXml(revisedBody);
+    const legacy = await compareDocumentsAtomizer(original, revised, {
+      author: 'Safe DOCX Synthetic Test', date: new Date('2026-08-14T12:00:00Z'),
+    });
+    const legacyXml = await (await DocxArchive.load(legacy.document)).getDocumentXml();
+    const report = runTaggedTreeShadow({
+      originalXml: xml('SYNTHETIC OLD').replace('<w:p>', '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>').replace('<w:r>', '<w:r><w:rPr><w:b/></w:rPr>'),
+      revisedXml: xml('SYNTHETIC NEW').replace('<w:p>', '<w:p><w:pPr><w:jc w:val="right"/></w:pPr>').replace('<w:r>', '<w:r><w:rPr><w:i/></w:rPr>'),
+      legacyXml,
+      author: 'Safe DOCX Synthetic Test', date: new Date('2026-08-14T12:00:00Z'),
+      fixtureIdentity: 'synthetic-paragraph-formatting-divergence',
+    });
+
+    expect(report.divergingProjections).not.toContain('accept');
+    expect(report.divergingProjections).not.toContain('reject');
+    expect(report.divergingProjections).toContain('formatting');
+    expect(report.fidelityScore).toBeLessThan(1);
+    expect(report.classification).toBe('projection-inequivalent');
   });
 });

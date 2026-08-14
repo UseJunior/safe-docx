@@ -26,6 +26,20 @@ export interface TaggedTreeShadowInput {
   fixtureIdentity?: string;
 }
 
+export function buildTaggedTreeShadowXml(input: Omit<TaggedTreeShadowInput, 'legacyXml'>): string {
+  const original = parseXml(input.originalXml).documentElement;
+  const revised = parseXml(input.revisedXml).documentElement;
+  const constructed = constructTaggedTree(original, revised);
+  return serializeTaggedTree(
+    constructed.tree,
+    createPreservePlan(original, revised, constructed.tree, {
+      author: input.author,
+      date: input.date.toISOString(),
+    }),
+    { moves: constructed.moves },
+  );
+}
+
 export function taggedTreeShadowEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
   return environment.SAFE_DOCX_TAGGED_TREE === 'shadow';
 }
@@ -56,14 +70,7 @@ export function runTaggedTreeShadow(input: TaggedTreeShadowInput): TaggedTreeSha
   const revised = parseXml(input.revisedXml).documentElement;
   const constructed = constructTaggedTree(original, revised);
   const diagnostics = verifyGlobalEqualContentInvariant(constructed.tree, constructed.moves);
-  const shadowXml = serializeTaggedTree(
-    constructed.tree,
-    createPreservePlan(original, revised, constructed.tree, {
-      author: input.author,
-      date: input.date.toISOString(),
-    }),
-    { moves: constructed.moves },
-  );
+  const shadowXml = buildTaggedTreeShadowXml(input);
   diagnostics.push(...verifySerializedMoveRanges(shadowXml, constructed.moves));
 
   const expectedAccept = text(acceptAllChanges(input.revisedXml));
