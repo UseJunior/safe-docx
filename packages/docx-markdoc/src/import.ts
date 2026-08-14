@@ -7,7 +7,12 @@ function escapeText(text: string): string {
     .replace(/&/g, '&amp;')
     .replace(/\\/g, '\\\\')
     .replace(/([`*_\[\]{}<>#!])/g, '\\$1')
-    .replace(/^(\d+)\./, '$1\\.');
+    .replace(/^(\d+)\./, '$1\\.')
+    // Keep OOXML tabs and explicit line breaks inside one CommonMark line.
+    // At Markdown line boundaries the parser discards adjacent horizontal
+    // whitespace before character references are materialized.
+    .replace(/\t/g, '&#9;')
+    .replace(/\n/g, '&#10;');
   // CommonMark discards syntactic whitespace at block boundaries. Character
   // references survive parsing as text, so preserve source-significant spaces
   // without introducing a second representation or raw OOXML.

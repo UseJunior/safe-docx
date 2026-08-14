@@ -10,6 +10,10 @@ text, measures broad blue/red pixel bands after downsampling, and writes only
 selected PDF-page PNGs to the requested output path. Required missing tools are
 reported as `not_run`, not pass.
 
+If Writer displays configured insertions but suppresses deletions, verification
+fails with `revisionVisibility: "hidden-deletions"` rather than reporting only
+a generic colour-contrast failure.
+
 An optional render transform receives only a copied input and a disposable
 workspace. The verifier hashes the authoritative DOCX before and after and
 rejects any transform that changes it or returns a path outside the workspace.

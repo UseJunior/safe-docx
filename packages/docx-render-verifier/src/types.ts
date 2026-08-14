@@ -31,6 +31,7 @@ export type RenderVerdict = {
   configured?: PixelMeasurement;
   byAuthorControl?: PixelMeasurement;
   configuredContrastPassed?: boolean;
+  revisionVisibility?: 'visible' | 'hidden-deletions' | 'insufficient-contrast';
 };
 
 export type RenderRequest = {

@@ -6,11 +6,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import JSZip from 'jszip';
+import { DOMParser, type Element as XmlElement } from '@xmldom/xmldom';
 import type { PixelMeasurement, RenderRequest, RendererTools, RenderVerdict, ToolResult } from './types.js';
 
 const execFileAsync = promisify(execFile);
 const BLUE = [0, 0, 255] as const;
 const RED = [255, 0, 0] as const;
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const PKG_REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+const OFFICE_REL_PREFIX = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
 
 function sha256(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
@@ -86,6 +92,89 @@ function configuredContrast(configured: PixelMeasurement, control: PixelMeasurem
   const blueFloor = Math.max(floor, Math.ceil(control.bluePixels * 1.5));
   const redFloor = Math.max(floor, Math.ceil(control.redPixels * 1.5));
   return configured.bluePixels >= blueFloor && configured.redPixels >= redFloor;
+}
+
+function revisionVisibility(configured: PixelMeasurement, control: PixelMeasurement, floor: number): NonNullable<RenderVerdict['revisionVisibility']> {
+  const blueFloor = Math.max(floor, Math.ceil(control.bluePixels * 1.5));
+  const redFloor = Math.max(floor, Math.ceil(control.redPixels * 1.5));
+  if (configured.bluePixels >= blueFloor && configured.redPixels < redFloor) return 'hidden-deletions';
+  if (configured.bluePixels >= blueFloor && configured.redPixels >= redFloor) return 'visible';
+  return 'insufficient-contrast';
+}
+
+async function hasDeletionMarkup(bytes: Buffer): Promise<boolean> {
+  try {
+    const zip = await JSZip.loadAsync(bytes);
+    const documentXml = await zip.file('word/document.xml')?.async('string');
+    if (documentXml === undefined) return false;
+    const renderedStories = await referencedRenderedStories(zip, documentXml);
+    for (const name of renderedStories) {
+      const xml = await zip.file(name)?.async('string');
+      if (xml !== undefined && hasVisibleDeletionInStory(xml)) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function referencedRenderedStories(zip: JSZip, documentXml: string): Promise<string[]> {
+  const stories = ['word/document.xml'];
+  const document = new DOMParser().parseFromString(documentXml, 'application/xml');
+  if (document.getElementsByTagName('parsererror').length > 0) return stories;
+  const referencedIds = new Set<string>();
+  for (const localName of ['headerReference', 'footerReference'] as const) {
+    for (const reference of Array.from(document.getElementsByTagNameNS(W_NS, localName))) {
+      const id = reference.getAttributeNS(R_NS, 'id');
+      if (id) referencedIds.add(id);
+    }
+  }
+  const hasFootnotes = document.getElementsByTagNameNS(W_NS, 'footnoteReference').length > 0;
+  const hasEndnotes = document.getElementsByTagNameNS(W_NS, 'endnoteReference').length > 0;
+  const relationshipsXml = await zip.file('word/_rels/document.xml.rels')?.async('string');
+  if (relationshipsXml === undefined) return stories;
+  const relationships = new DOMParser().parseFromString(relationshipsXml, 'application/xml');
+  if (relationships.getElementsByTagName('parsererror').length > 0) return stories;
+  for (const relationship of Array.from(relationships.getElementsByTagNameNS(PKG_REL_NS, 'Relationship'))) {
+    if (relationship.getAttribute('TargetMode') === 'External') continue;
+    const id = relationship.getAttribute('Id');
+    const type = relationship.getAttribute('Type');
+    const target = relationship.getAttribute('Target');
+    if (!id || !type || !target) continue;
+    const kind = type.startsWith(OFFICE_REL_PREFIX) ? type.slice(OFFICE_REL_PREFIX.length) : '';
+    const referenced = (kind === 'header' || kind === 'footer') ? referencedIds.has(id)
+      : kind === 'footnotes' ? hasFootnotes
+        : kind === 'endnotes' ? hasEndnotes : false;
+    if (!referenced) continue;
+    const resolved = target.startsWith('/') ? target.slice(1) : path.posix.normalize(path.posix.join('word', target));
+    if (zip.file(resolved)) stories.push(resolved);
+  }
+  return [...new Set(stories)];
+}
+
+function hasVisibleDeletionInStory(xml: string): boolean {
+  try {
+    const document = new DOMParser().parseFromString(xml, 'application/xml');
+    if (document.getElementsByTagName('parsererror').length > 0) return false;
+    const wrappers = [
+      ...Array.from(document.getElementsByTagNameNS(W_NS, 'del')),
+      ...Array.from(document.getElementsByTagNameNS(W_NS, 'moveFrom')),
+    ];
+    return wrappers.some((wrapper) => hasVisibleRevisionPayload(wrapper));
+  } catch {
+    return false;
+  }
+}
+
+function hasVisibleRevisionPayload(wrapper: XmlElement): boolean {
+  for (const localName of ['t', 'delText'] as const) {
+    for (const text of Array.from(wrapper.getElementsByTagNameNS(W_NS, localName))) {
+      const value = text.textContent ?? '';
+      const preserve = text.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'space') === 'preserve';
+      if ((preserve ? value : value.replace(/^[\u0009\u000a\u000d\u0020]+|[\u0009\u000a\u000d\u0020]+$/gu, '')) !== '') return true;
+    }
+  }
+  return ['tab', 'br', 'cr'].some((localName) => wrapper.getElementsByTagNameNS(W_NS, localName).length > 0);
 }
 
 async function configureProfile(profile: string, mode: 'configured' | 'by-author'): Promise<void> {
@@ -192,6 +281,7 @@ export async function verifyRenderedMarkup(request: RenderRequest): Promise<Rend
       }
       transform = { id: request.transform.id, version: request.transform.version, inputSha256: sha256(await readFile(inputPath)), outputSha256: sha256(await readFile(renderInput)) };
     }
+    const renderedInputBytes = await readFile(renderInput);
     const configured = await renderOne(tools, soffice, renderInput, workspace, 'configured');
     const control = await renderOne(tools, soffice, renderInput, workspace, 'by-author');
     const pdfText = await extractPdfText(tools, pdftotext, configured.pdfPath);
@@ -202,13 +292,21 @@ export async function verifyRenderedMarkup(request: RenderRequest): Promise<Rend
     ]);
     const markupTextMatchesPdf = normalizeText(pdfText) === normalizeText(request.expectedMarkupText);
     const configuredContrastPassed = configuredContrast(configuredPixels, controlPixels, request.configuredPixelFloor ?? 4);
+    const measuredVisibility = revisionVisibility(configuredPixels, controlPixels, request.configuredPixelFloor ?? 4);
+    const visibility = markupTextMatchesPdf && (measuredVisibility !== 'hidden-deletions' || await hasDeletionMarkup(renderedInputBytes))
+      ? measuredVisibility
+      : 'insufficient-contrast';
     const pdfOut = path.join(request.outputDir, 'tracked-configured.pdf');
     await copyFile(configured.pdfPath, pdfOut);
     return {
       status: markupTextMatchesPdf && configuredContrastPassed ? 'pass' : 'fail',
-      reason: markupTextMatchesPdf ? (configuredContrastPassed ? undefined : 'Configured render did not exceed by-author control colour bands.') : 'PDF text does not equal caller-supplied independent markup text.',
+      reason: !markupTextMatchesPdf
+        ? 'PDF text does not equal caller-supplied independent markup text.'
+        : visibility === 'hidden-deletions'
+          ? 'LibreOffice rendered configured insertions but hid configured deletions.'
+          : configuredContrastPassed ? undefined : 'Configured render did not exceed by-author control colour bands.',
       trackedSha256,
-      renderedInputSha256: sha256(await readFile(renderInput)),
+      renderedInputSha256: sha256(renderedInputBytes),
       transform,
       pdfPath: pdfOut,
       reviewPngs,
@@ -216,6 +314,7 @@ export async function verifyRenderedMarkup(request: RenderRequest): Promise<Rend
       configured: configuredPixels,
       byAuthorControl: controlPixels,
       configuredContrastPassed,
+      revisionVisibility: visibility,
     };
   } catch (error) {
     return { status: 'not_run', reason: `Renderer invocation unavailable: ${(error as Error).message}`, trackedSha256, reviewPngs: [] };

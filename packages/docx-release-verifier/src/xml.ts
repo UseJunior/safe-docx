@@ -10,15 +10,23 @@ function isWord(element: XmlElement, localName: string): boolean {
   return element.namespaceURI === W_NS && element.localName === localName;
 }
 
+function wordText(element: XmlElement): string {
+  const value = element.textContent ?? '';
+  const space = element.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'space') ?? element.getAttribute('xml:space');
+  return space === 'preserve' ? value : value.replace(/^[\u0009\u000a\u000d\u0020]+|[\u0009\u000a\u000d\u0020]+$/gu, '');
+}
+
 function textFrom(element: XmlElement, mode: 'accept' | 'reject'): string {
   const localName = element.localName ?? '';
-  if ((mode === 'accept' && OMIT_ON_ACCEPT.has(localName)) || (mode === 'reject' && OMIT_ON_REJECT.has(localName))) return '';
+  const wordRevision = element.namespaceURI === W_NS;
+  if (wordRevision && ((mode === 'accept' && OMIT_ON_ACCEPT.has(localName)) || (mode === 'reject' && OMIT_ON_REJECT.has(localName)))) return '';
   if (isWord(element, 'tab')) return '\t';
   if (isWord(element, 'br') || isWord(element, 'cr')) return '\n';
+  if (isWord(element, 't')) return wordText(element);
+  if (isWord(element, 'delText')) return mode === 'reject' ? wordText(element) : '';
   let text = '';
   for (const child of Array.from(element.childNodes)) {
-    if (child.nodeType === 3 || child.nodeType === 4) text += child.nodeValue ?? '';
-    else if (child.nodeType === 1) text += textFrom(child as XmlElement, mode);
+    if (child.nodeType === 1) text += textFrom(child as XmlElement, mode);
   }
   return text;
 }
@@ -44,16 +52,31 @@ export interface TrackedParagraphView {
   ordinaryTextNodes: string[];
 }
 
-function ordinaryTextNodes(element: XmlElement, insideRevision = false): string[] {
-  const revision = insideRevision || (element.namespaceURI === W_NS && REVISION_WRAPPERS.has(element.localName ?? ''));
-  if (revision) return [];
-  if (isWord(element, 'tab')) return ['\t'];
-  if (isWord(element, 'br') || isWord(element, 'cr')) return ['\n'];
-  if (isWord(element, 't')) return [element.textContent ?? ''];
+function ordinaryTextNodes(element: XmlElement): string[] {
   const result: string[] = [];
-  for (const child of Array.from(element.childNodes)) {
-    if (child.nodeType === 1) result.push(...ordinaryTextNodes(child as XmlElement, revision));
-  }
+  let current = '';
+  const flush = (): void => {
+    if (current !== '') result.push(current);
+    current = '';
+  };
+  const visit = (node: XmlElement): void => {
+    if (node.namespaceURI === W_NS && REVISION_WRAPPERS.has(node.localName ?? '')) {
+      // Empty/property-only revision wrappers do not separate visible text and
+      // must not fragment an otherwise ordinary token or whitespace run.
+      if (textFrom(node, 'accept') !== '' || textFrom(node, 'reject') !== '') flush();
+      return;
+    }
+    if (isWord(node, 'tab')) current += '\t';
+    else if (isWord(node, 'br') || isWord(node, 'cr')) current += '\n';
+    else if (isWord(node, 't')) current += wordText(node);
+    else {
+      for (const child of Array.from(node.childNodes)) {
+        if (child.nodeType === 1) visit(child as XmlElement);
+      }
+    }
+  };
+  visit(element);
+  flush();
   return result;
 }
 

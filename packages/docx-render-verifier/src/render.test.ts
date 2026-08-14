@@ -4,10 +4,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect } from 'vitest';
 import { itAllure } from '../../docx-core/src/testing/allure-test.js';
+import JSZip from 'jszip';
 import { measurePixelBands, verifyRenderedMarkup } from './render.js';
 import type { RendererTools } from './types.js';
 
-function fakeTools(markup = 'Visible markup text', profiles?: string[]): RendererTools {
+function fakeTools(markup = 'Visible markup text', profiles?: string[], hiddenDeletion = false): RendererTools {
   return {
     resolve: () => 'fake-tool',
     async run(_command, args) {
@@ -30,10 +31,29 @@ function fakeTools(markup = 'Visible markup text', profiles?: string[]): Rendere
       const control = args[0]?.includes('control') ?? false;
       const pixels = control
         ? '0,0: #000000\n1,0: #000000\n'
-        : '0,0: #0000ff\n1,0: #ff0000\n2,0: #0000ff\n3,0: #ff0000\n';
+        : hiddenDeletion
+          ? '0,0: #0000ff\n1,0: #0000ff\n2,0: #000000\n3,0: #000000\n'
+          : '0,0: #0000ff\n1,0: #ff0000\n2,0: #0000ff\n3,0: #ff0000\n';
       return { code: 0, stdout: pixels, stderr: '' };
     },
   };
+}
+
+async function trackedFixture(pathname: string, revision: 'ins' | 'del' | 'empty-del', headerDeletion: 'none' | 'orphan' | 'referenced' = 'none'): Promise<void> {
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>');
+  const markup = revision === 'empty-del'
+    ? '<w:del w:id="1"><w:r><w:rPr><w:b/></w:rPr></w:r></w:del>'
+    : `<w:${revision} w:id="1"><w:r><w:${revision === 'del' ? 'delText' : 't'}>revision</w:${revision === 'del' ? 'delText' : 't'}></w:r></w:${revision}>`;
+  const headerReference = headerDeletion === 'referenced' ? '<w:sectPr><w:headerReference r:id="rIdHeader1"/></w:sectPr>' : '';
+  zip.file('word/document.xml', `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p>${markup}</w:p>${headerReference}</w:body></w:document>`);
+  if (headerDeletion !== 'none') {
+    zip.file('word/header1.xml', '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:del w:id="2"><w:r><w:delText>header deletion</w:delText></w:r></w:del></w:p></w:hdr>');
+  }
+  if (headerDeletion === 'referenced') {
+    zip.file('word/_rels/document.xml.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>');
+  }
+  await writeFile(pathname, await zip.generateAsync({ type: 'nodebuffer' }));
 }
 
 describe('renderer verifier', () => {
@@ -57,7 +77,7 @@ describe('renderer verifier', () => {
     const root = path.join(os.tmpdir(), `render-fake-${Date.now()}`);
     const source = path.join(root, 'tracked.docx');
     await mkdir(root, { recursive: true });
-    await writeFile(source, 'tracked content');
+    await trackedFixture(source, 'del');
     const profiles: string[] = [];
     const result = await verifyRenderedMarkup({
       trackedDocxPath: source,
@@ -66,7 +86,7 @@ describe('renderer verifier', () => {
       tools: fakeTools('Visible markup text', profiles),
       configuredPixelFloor: 2,
     });
-    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true, configuredContrastPassed: true });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true, configuredContrastPassed: true, revisionVisibility: 'visible' });
     expect(result.reviewPngs).toHaveLength(1);
     expect(profiles).toEqual(expect.arrayContaining([
       expect.stringContaining('/org.openoffice.Office.Writer/Revision/TextDisplay/Insert'),
@@ -74,6 +94,126 @@ describe('renderer verifier', () => {
       expect.stringContaining('<value>16711680</value>'),
       expect.stringContaining('<value>-1</value>'),
     ]));
+  });
+
+  itAllure('does not diagnose hidden deletions when the tracked document has insertions only', async () => {
+    const root = path.join(os.tmpdir(), `render-insertion-only-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await trackedFixture(source, 'ins');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', revisionVisibility: 'insufficient-contrast' });
+    expect(result.reason).not.toContain('hid configured deletions');
+  });
+
+  itAllure('prioritizes a PDF text mismatch over a hidden-deletion pixel pattern', async () => {
+    const root = path.join(os.tmpdir(), `render-text-mismatch-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await trackedFixture(source, 'del');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Different expected text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({
+      status: 'fail', revisionVisibility: 'insufficient-contrast',
+      reason: expect.stringContaining('PDF text does not equal'),
+    });
+  });
+
+  itAllure('does not diagnose hidden deletions from an empty property-only deletion wrapper', async () => {
+    const root = path.join(os.tmpdir(), `render-empty-deletion-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await trackedFixture(source, 'empty-del');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', revisionVisibility: 'insufficient-contrast' });
+    expect(result.reason).not.toContain('hid configured deletions');
+  });
+
+  itAllure('recognizes visible deletion payload in a rendered header story', async () => {
+    const root = path.join(os.tmpdir(), `render-header-deletion-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await trackedFixture(source, 'ins', 'referenced');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', revisionVisibility: 'hidden-deletions' });
+  });
+
+  itAllure('ignores deletion payload in an orphaned unreferenced header part', async () => {
+    const root = path.join(os.tmpdir(), `render-orphan-header-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await trackedFixture(source, 'ins', 'orphan');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', revisionVisibility: 'insufficient-contrast' });
+  });
+
+  itAllure('classifies deletion evidence from the disposable transformed input', async () => {
+    const root = path.join(os.tmpdir(), `render-transform-add-deletion-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await trackedFixture(source, 'ins');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+      transform: {
+        id: 'add-visible-deletion', version: '1',
+        async apply(_input, workspace) {
+          const output = path.join(workspace, 'render-only.docx');
+          await trackedFixture(output, 'del');
+          return output;
+        },
+      },
+    });
+    expect(result).toMatchObject({ status: 'fail', revisionVisibility: 'hidden-deletions' });
+  });
+
+  itAllure('does not use authoritative-source deletion evidence removed by a render transform', async () => {
+    const root = path.join(os.tmpdir(), `render-transform-remove-deletion-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await trackedFixture(source, 'del');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+      transform: {
+        id: 'remove-visible-deletion', version: '1',
+        async apply(_input, workspace) {
+          const output = path.join(workspace, 'render-only.docx');
+          await trackedFixture(output, 'ins');
+          return output;
+        },
+      },
+    });
+    expect(result).toMatchObject({ status: 'fail', revisionVisibility: 'insufficient-contrast' });
+  });
+
+  itAllure('classifies blue-only revision output as hidden deletions and never passes it', async () => {
+    const root = path.join(os.tmpdir(), `render-hidden-delete-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await trackedFixture(source, 'del');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({
+      status: 'fail', revisionVisibility: 'hidden-deletions', configuredContrastPassed: false,
+      reason: expect.stringContaining('hid configured deletions'),
+    });
   });
 
   itAllure('refuses a transform that mutates the authoritative DOCX', async () => {
