@@ -95,7 +95,12 @@ describe('tagged-tree offline evaluation', () => {
     expect(report.divergingProjections).not.toContain('accept');
     expect(report.divergingProjections).not.toContain('reject');
     expect(report.divergingProjections).toContain('formatting');
-    expect(report.fidelityScore).toBeLessThan(1);
+    expect(report.fidelityScore).toBe(0.4102564102564103);
+    expect(report.diagnostics).toEqual([
+      'reject formatting run/bold/added at paragraph 0',
+      'reject formatting run/italic/removed at paragraph 0',
+      'reject formatting paragraph/alignment/changed at paragraph 0',
+    ]);
     expect(report.classification).toBe('projection-inequivalent');
   });
 });

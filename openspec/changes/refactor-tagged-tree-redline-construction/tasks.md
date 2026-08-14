@@ -101,6 +101,22 @@ in `proposal.md` and are separate changes.
       pins the same accept/reject-equivalent formatting failure. The defect is
       filed as https://github.com/UseJunior/safe-docx/issues/836; the legacy
       pipeline remains authoritative pending that issue's completion gate.
+
+      **Successor-B investigation (2026-08-14):** the pinned synthetic score is
+      exactly `0.4102564102564103`: accept is `1.0`; reject differs on run bold
+      (added), run italic (removed), and paragraph alignment (changed). The
+      opaque fixture remains `0.6287170885149017`: accept run/table/section
+      dimensions are `1.0`, while paragraph formatting is `0.8528678304239401`
+      (59/401 divergent paragraphs); reject also contains direct run and
+      paragraph-property differences. A conforming whole-paragraph-marker
+      experiment did not converge (`0.6262509972695257`) and was reverted.
+      The mismatch is not merely wrapper shape: legacy reject retains revised
+      direct properties on aligned content, while the tagged serializer restores
+      original direct properties from `PropertyDelta`. Reproducing that legacy
+      loss would contradict the IR's projection invariant. The oracle was not
+      weakened, the scores were not averaged away, and #837's default flip was
+      not performed. Synthetic DOCX/PDF/PNG evidence is generated under
+      `.tmp/review-artifacts/tagged-formatting-divergence/`.
 - [x] 4.5 Produce the field-case evidence that successor C's deletion of
       `suppressNoOpChangePairs` depends on: field-stable, field-modification,
       field-delete, nested-field, and paragraph-spanning-field cases showing no

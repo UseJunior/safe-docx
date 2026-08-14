@@ -89,7 +89,7 @@ export function runTaggedTreeShadow(input: TaggedTreeShadowInput): TaggedTreeSha
     for (const [projection, report] of [['accept', fidelity.accept], ['reject', fidelity.reject]] as const) {
       for (const divergence of report.divergences.slice(0, 10)) {
         diagnostics.push(
-          `${projection} formatting ${divergence.scope}/${divergence.kind} at paragraph ${divergence.paragraphIndex}`,
+          `${projection} formatting ${divergence.scope}/${divergence.property}/${divergence.kind} at paragraph ${divergence.paragraphIndex}`,
         );
       }
     }
