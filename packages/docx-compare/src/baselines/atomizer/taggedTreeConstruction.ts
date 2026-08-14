@@ -32,8 +32,21 @@ function propertyDelta(original: WmlElement, revised: WmlElement): PropertyDelta
   if (!descriptor) return undefined;
   const originalProperty = childElements(original).find((child) => child.localName === descriptor.child) ?? null;
   const revisedProperty = childElements(revised).find((child) => child.localName === descriptor.child) ?? null;
-  if ((originalProperty ? subtreeSignature(originalProperty) : '') ===
-      (revisedProperty ? subtreeSignature(revisedProperty) : '')) return undefined;
+  const propertySignature = (property: WmlElement | null): string => {
+    if (!property) return '';
+    const normalized = property.cloneNode(true) as WmlElement;
+    const stripWhitespace = (element: Element): void => {
+      for (const child of Array.from(element.childNodes)) {
+        if (child.nodeType === 1) stripWhitespace(child as Element);
+        else if ((child.nodeType === 3 || child.nodeType === 4) && !(child.nodeValue ?? '').trim()) {
+          element.removeChild(child);
+        }
+      }
+    };
+    stripWhitespace(normalized);
+    return subtreeSignature(normalized);
+  };
+  if (propertySignature(originalProperty) === propertySignature(revisedProperty)) return undefined;
   return {
     scope: descriptor.scope,
     original: originalProperty,
@@ -65,14 +78,49 @@ function lcsPairs(original: readonly WmlElement[], revised: readonly WmlElement[
   return pairs;
 }
 
+function paragraphSimilarity(left: WmlElement, right: WmlElement): number {
+  if (left.localName !== 'p' || right.localName !== 'p') return 0;
+  const words = (value: string): Set<string> => new Set(value.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? []);
+  const a = words(left.textContent ?? '');
+  const b = words(right.textContent ?? '');
+  if (a.size === 0 || b.size === 0) return a.size === b.size ? 1 : 0;
+  let intersection = 0;
+  for (const word of a) if (b.has(word)) intersection++;
+  return intersection / (a.size + b.size - intersection);
+}
+
+function similarParagraphPairs(
+  original: readonly WmlElement[],
+  revised: readonly WmlElement[],
+): Array<[number, number]> {
+  const dp = Array.from({ length: original.length + 1 }, () => Array<number>(revised.length + 1).fill(0));
+  for (let i = original.length - 1; i >= 0; i--) {
+    for (let j = revised.length - 1; j >= 0; j--) {
+      const similarity = paragraphSimilarity(original[i]!, revised[j]!);
+      const paired = similarity >= 0.25 ? similarity + dp[i + 1]![j + 1]! : -1;
+      dp[i]![j] = Math.max(paired, dp[i + 1]![j]!, dp[i]![j + 1]!);
+    }
+  }
+  const pairs: Array<[number, number]> = [];
+  let i = 0;
+  let j = 0;
+  while (i < original.length && j < revised.length) {
+    const similarity = paragraphSimilarity(original[i]!, revised[j]!);
+    if (similarity >= 0.25 && Math.abs(dp[i]![j]! - (similarity + dp[i + 1]![j + 1]!)) < 1e-9) {
+      pairs.push([i++, j++]);
+    } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
+    else j++;
+  }
+  return pairs;
+}
+
 function constructBoth(original: WmlElement, revised: WmlElement): BothNode {
   const originalChildren = childElements(original);
   const revisedChildren = childElements(revised);
   const pairs = lcsPairs(originalChildren, revisedChildren);
   const children: TaggedNode[] = [];
   const emitGap = (originalEnd: number, revisedEnd: number): void => {
-    const pairReplacements = originalEnd - oi === revisedEnd - ri;
-    while (pairReplacements && oi < originalEnd && ri < revisedEnd) {
+    while (originalEnd - oi === revisedEnd - ri && oi < originalEnd && ri < revisedEnd) {
       const left = originalChildren[oi]!;
       const right = revisedChildren[ri]!;
       const sameIdentity = (left.namespaceURI ?? '') === (right.namespaceURI ?? '') &&
@@ -83,6 +131,19 @@ function constructBoth(original: WmlElement, revised: WmlElement): BothNode {
       children.push(constructBoth(left, right));
       oi++;
       ri++;
+    }
+    const gapOriginalStart = oi;
+    const gapRevisedStart = ri;
+    const similarityPairs = similarParagraphPairs(
+      originalChildren.slice(gapOriginalStart, originalEnd),
+      revisedChildren.slice(gapRevisedStart, revisedEnd),
+    );
+    for (const [localOriginal, localRevised] of similarityPairs) {
+      const matchedOriginal = gapOriginalStart + localOriginal;
+      const matchedRevised = gapRevisedStart + localRevised;
+      while (oi < matchedOriginal) children.push({ tag: 'original', node: originalChildren[oi++]!, children: [], opaque: true });
+      while (ri < matchedRevised) children.push({ tag: 'revised', node: revisedChildren[ri++]!, children: [], opaque: true });
+      children.push(constructBoth(originalChildren[oi++]!, revisedChildren[ri++]!));
     }
     while (oi < originalEnd) children.push({ tag: 'original', node: originalChildren[oi++]!, children: [], opaque: true });
     while (ri < revisedEnd) children.push({ tag: 'revised', node: revisedChildren[ri++]!, children: [], opaque: true });

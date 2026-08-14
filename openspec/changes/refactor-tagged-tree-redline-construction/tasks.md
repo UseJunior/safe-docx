@@ -189,6 +189,29 @@ in `proposal.md` and are separate changes.
       multi-paragraph replacement topology that both independent readers resolve
       exactly.
 
+      **Gold-topology correction (2026-08-14):** the preceding boundary
+      characterization was incomplete and is superseded by a licensed local
+      `Document.compare` control. Aspose aligns similar paragraphs and emits
+      run-level changes; the tagged constructor previously required exact
+      paragraph text outside equal-sized gaps, producing 99 wholesale
+      paragraphs where the control emitted 63. Ordered Jaccard paragraph
+      alignment now produces 62 while preserving both source projections.
+      Separately, semantically identical property containers differed only by
+      indentation whitespace, causing the generic child path to wrap live
+      `w:pPr` as content revisions. Property comparison now ignores
+      whitespace-only text, and every direct `pPr`/`rPr` container is retained
+      live outside content wrappers even when no property delta exists.
+
+      With those two general repairs, the 60-paragraph reduction scores exactly
+      `1.0` for Aspose accept and reject across direct run and paragraph
+      formatting. The full de-identified opaque fixture likewise scores exactly
+      `1.0`: accept compares 284,872 run snapshots and 401 paragraph snapshots;
+      reject compares 295,602 run snapshots and 405 paragraph snapshots, with
+      zero direct-format divergences. Aspose's drawing-fallback paragraphs,
+      relationship-ID remapping, and section defaults remain the separately
+      measured package normalization boundary. LibreOffice renders the repaired
+      60-paragraph projections as visible 18-page accept and 19-page reject PDFs.
+
       An Aspose save of the revised source itself changes `0/60` paragraph
       snapshots, likewise proving the changes are not its ordinary save
       normalization. Both the control and projection add 33 drawing-fallback

@@ -13,6 +13,12 @@ import {
 } from './taggedTree.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const DIRECT_PROPERTY_BY_CONTAINER: Readonly<Record<string, string>> = {
+  p: 'w:pPr',
+  r: 'w:rPr',
+  tr: 'w:trPr',
+  tc: 'w:tcPr',
+};
 
 export interface ComparisonRevision {
   id: number;
@@ -304,10 +310,14 @@ function emitNode(
 ): WmlElement {
   const base = cloneElement(representative(node, node.tag === 'original' ? 'original' : node.tag === 'revised' ? 'revised' : bothSide)!);
   if (!node.opaque && node.children.length > 0) {
-    const emitted: WmlElement[] = [];
+    const directPropertyTag = DIRECT_PROPERTY_BY_CONTAINER[base.localName];
+    const retainedProperty = directPropertyTag
+      ? childElements(base).find((child) => child.tagName === directPropertyTag)
+      : undefined;
+    const emitted: WmlElement[] = retainedProperty ? [retainedProperty] : [];
     const propertyTag = node.tag === 'both' && node.propertyDelta
       ? PROPERTY_SCOPE_ELEMENT[node.propertyDelta.scope]
-      : undefined;
+      : directPropertyTag;
     for (let index = 0; index < node.children.length; index++) {
       const child = node.children[index]!;
       const childElement = representative(child, child.tag === 'original' ? 'original' : 'revised');

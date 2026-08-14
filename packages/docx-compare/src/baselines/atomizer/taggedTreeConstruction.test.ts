@@ -34,6 +34,29 @@ describe('complete tagged-tree construction', () => {
     expect(verifyGlobalEqualContentInvariant(result.tree, result.moves)).toEqual([]);
   });
 
+  test('aligns similar paragraphs before constructing run-level replacements', () => {
+    const original = body(['stable anchor', 'the agreement applies to old assets', 'final anchor']);
+    const revised = body(['stable anchor', 'the agreement applies to revised assets and liabilities', 'final anchor']);
+    const result = constructTaggedTree(original, revised);
+    const paragraph = result.tree.children[1];
+    expect(paragraph?.tag).toBe('both');
+    expect(paragraph?.children.some((child) => child.tag === 'original')).toBe(true);
+    expect(paragraph?.children.some((child) => child.tag === 'revised')).toBe(true);
+    expect(verifyTaggedTree(original, revised, result.tree)).toEqual([]);
+  });
+
+  test('does not create property deltas for indentation-only XML whitespace', () => {
+    const original = documentWithBody('<w:p><w:pPr>\n  <w:pStyle w:val="Heading3"/>\n</w:pPr><w:r><w:t>same</w:t></w:r></w:p>');
+    const revised = documentWithBody('<w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t>same</w:t></w:r></w:p>');
+    const result = constructTaggedTree(original, revised);
+    const paragraph = result.tree.children[0];
+    expect(paragraph?.tag === 'both' ? paragraph.propertyDelta : undefined).toBeUndefined();
+    const output = serializeTaggedTree(result.tree, createPreservePlan(original, revised, result.tree, {
+      author: 'Comparator', date: '2026-08-14T12:00:00Z',
+    }));
+    expect(output).not.toMatch(/<w:(?:ins|del)[^>]*>\s*<w:pPr[ >]/);
+  });
+
   test.openspec('Equal content is tagged both')(
     'classifies reordered equal subtrees as explicit moves rather than unrelated del/ins',
     async ({ given, when, then, and }: AllureBddContext) => {
