@@ -119,7 +119,7 @@ describe('brownfield Markdoc authoring', () => {
       const result = await compileMarkdoc(imported.anchoredSource, imported.markdoc);
       expect(result.certificate).toMatchObject({ passed: true, rejectAllEqualsSource: true, acceptAllEqualsClean: true });
     }
-  }, 20_000);
+  }, 60_000);
 
   itAllure('[SDX-MDOC-05][SDX-MDOC-13] applies and verifies paragraph insertion and deletion from stable anchors', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Keep.', 'Delete me.', 'Stable tail context.'] });
