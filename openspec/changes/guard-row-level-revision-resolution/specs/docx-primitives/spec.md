@@ -50,3 +50,15 @@ and MCP surfaces agree with that classification.
 - **THEN** the resolved-revision counters SHALL be unchanged from the previous behavior
 - **AND** `unresolvedRowRevisions` SHALL be `0`
 - **AND** a selective accept or reject SHALL count only the row markers its `RevisionFilter` selects
+
+#### Scenario: [SDX-ROWREV-05] restoring row properties preserves surviving row markers
+- **GIVEN** a `w:trPr` carrying both a row-level revision marker and a `w:trPrChange`
+- **WHEN** `rejectChanges` restores the original row properties from the `w:trPrChange` snapshot
+- **THEN** the surviving row-level marker SHALL be carried into the restored `w:trPr` with its attributes intact
+- **AND** the reported `unresolvedRowRevisions` SHALL agree with the markers actually present in the output
+
+#### Scenario: [SDX-ROWREV-06] selective operations preserve foreign row markers byte-for-byte
+- **GIVEN** a document with one targeted and one foreign row-level revision marker
+- **WHEN** a selective accept or reject runs with a `RevisionFilter` matching only the targeted marker
+- **THEN** the foreign marker SHALL be left untouched, including when a targeted `w:trPrChange` shares its `w:trPr`
+- **AND** only the targeted marker SHALL be reported in `unresolvedRowRevisions`

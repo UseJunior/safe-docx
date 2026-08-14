@@ -549,6 +549,26 @@ export function rejectChanges(
         // CT_SectPrChange carries CT_SectPrBase, which intentionally excludes
         // header/footer references. Those live bindings are not part of the
         // page-setup property revision and must survive rejection.
+        // A `w:trPr` may carry BOTH a row-level revision marker and a
+        // `w:trPrChange`. Restoring the snapshot replaces the whole `w:trPr`,
+        // which would silently destroy any surviving marker — including the
+        // unresolved `w:ins` Phase C deliberately preserved (making the reported
+        // `unresolvedRowRevisions` disagree with the document) and any FOREIGN
+        // marker a selective reject promised to leave byte-untouched.
+        //
+        // `w:trPrChange` carries CT_TrPrBase, which has no row-revision
+        // children of its own, so transplanting the survivors cannot collide
+        // with the restored properties.
+        if (localName === 'trPrChange') {
+          const survivingRowMarkers = Array.from(parentProp.childNodes)
+            .filter((node): node is Element =>
+              node.nodeType === 1
+              && (isW(node as Element, 'ins') || isW(node as Element, 'del')))
+            .map((marker) => marker.cloneNode(true));
+          for (const marker of survivingRowMarkers.reverse()) {
+            restored.insertBefore(marker, restored.firstChild);
+          }
+        }
         if (localName === 'sectPrChange') {
           const liveReferences = Array.from(parentProp.childNodes)
             .filter((node): node is Element =>

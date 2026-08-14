@@ -235,7 +235,7 @@ Insert a tracked DOCX section break after a stable direct-body paragraph. The ne
 
 ## `accept_changes`
 
-Accept all tracked changes in the document body, producing a clean document with no revision markup. Returns acceptance stats.
+Accept every tracked change in the document body that the engine can resolve. Revision records it cannot resolve (currently row-level table revisions) are preserved and reported as unresolvedRowRevisions rather than silently stripped. Returns acceptance stats.
 
 - readOnly: `false`
 - destructive: `true`

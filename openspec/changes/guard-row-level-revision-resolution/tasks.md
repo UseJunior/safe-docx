@@ -39,3 +39,21 @@
   (`expected null not to be null` for the stripped marker, `expected undefined to be +0` for the counter).
 - Full workspace suite green (`npm run test:run`, exit 0), including `[XIMPL-08]`, which pins the conformance
   adapter's `supported: false` classification for both unresolvable combinations.
+
+## 6. Peer review follow-ups (Codex, 2026-08-14)
+
+- [x] 6.1 P1 — reject-side ordering leak. Phase F restored a `w:trPrChange` snapshot by replacing the whole
+      `w:trPr`, destroying a marker Phase C had preserved while still reporting it in `unresolvedRowRevisions`.
+      Reproduced, then fixed by carrying surviving row markers into the restored `w:trPr`. The accept side was
+      checked and is unaffected (Phase D removes the change record without replacing the parent).
+- [x] 6.2 P1/P2 — the `mcp-server` requirement promised "no revision markup in the body". Added a MODIFIED
+      delta, updated the `tool_catalog.ts` description, and regenerated `tool-reference.generated.md`.
+- [x] 6.3 P2 — documented the source-level breaking change for external TypeScript that constructs the exported
+      result types, and the reasoning for keeping the field required.
+- [x] 6.4 P2 — added `[SDX-ROWREV-05]` (trPrChange collision) and `[SDX-ROWREV-06]` (selective reject preserves
+      foreign markers) plus an MCP-level test `[SDX-ROWREV-MCP-01]`. Both new primitive tests verified red
+      against the un-fixed Phase F.
+- Codex confirmed assumptions 1 and 2 against the vendored strict/transitional schemas: `CT_TrPr` admits only
+  `ins`/`del`/`trPrChange` as revision children, paragraph-mark markers live under `pPr > rPr`, cell topology uses
+  distinct `cellIns`/`cellDel` names, and nested tables do not change the direct-parent test. No Word or
+  LibreOffice projection oracle was run, so application-specific normalization remains unverified.

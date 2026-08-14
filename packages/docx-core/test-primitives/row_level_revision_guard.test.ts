@@ -156,4 +156,95 @@ describe('row-level revision guard', () => {
       expect(rowMarker(selected, 'del')).not.toBeNull();
     },
   );
+
+  test.openspec('[SDX-ROWREV-05] restoring row properties preserves surviving row markers')(
+    'a w:trPrChange in the same w:trPr must not carry the preserved marker away with it',
+    () => {
+      // Regression: Phase C preserves the row marker, then Phase F restores the
+      // original row properties by REPLACING the whole `w:trPr` with the
+      // `w:trPrChange` snapshot. Before the guard extended into Phase F, the
+      // marker vanished while `unresolvedRowRevisions` still reported it — the
+      // count and the document disagreed, which is the exact failure mode this
+      // change exists to prevent.
+      const doc = new DOMParser().parseFromString(
+        `<w:document xmlns:w="${W_NS}"><w:body><w:tbl><w:tr><w:trPr>`
+          + `<w:ins w:id="7" w:author="Reviewer" w:date="2026-01-01T00:00:00Z"/>`
+          + `<w:trPrChange w:id="8" w:author="Reviewer" w:date="2026-01-01T00:00:00Z">`
+          + `<w:trPr><w:trHeight w:val="240"/></w:trPr>`
+          + `</w:trPrChange>`
+          + `</w:trPr>`
+          + `<w:tc><w:p><w:r><w:t>ROWTEXT</w:t></w:r></w:p></w:tc></w:tr>`
+          + `</w:tbl></w:body></w:document>`,
+        'text/xml',
+      ) as unknown as Document;
+
+      const result = rejectChanges(doc);
+
+      // The property change itself is reverted...
+      expect(result.propertyChangesReverted).toBe(1);
+      expect(serialize(doc)).toContain('w:trHeight');
+      expect(serialize(doc)).not.toContain('trPrChange');
+
+      // ...and the unresolvable row marker survives it, so the reported count
+      // matches what is actually in the document.
+      const marker = rowMarker(doc, 'ins');
+      expect(marker).not.toBeNull();
+      expect(attrs(marker!)).toEqual({
+        id: '7',
+        author: 'Reviewer',
+        date: '2026-01-01T00:00:00Z',
+      });
+      expect(result.unresolvedRowRevisions).toBe(1);
+      expect(rowCount(doc)).toBe(1);
+    },
+  );
+
+  test.openspec('[SDX-ROWREV-06] selective operations preserve foreign row markers byte-for-byte')(
+    'a selective reject leaves an unselected row marker untouched, including across a trPrChange restore',
+    () => {
+      // Two rows: row 1 carries the TARGETED insertion marker plus a targeted
+      // trPrChange; row 2 carries a FOREIGN marker a selective run promised not
+      // to touch (#125).
+      const doc = new DOMParser().parseFromString(
+        `<w:document xmlns:w="${W_NS}"><w:body><w:tbl>`
+          + `<w:tr><w:trPr>`
+          + `<w:ins w:id="7" w:author="Target" w:date="2026-01-01T00:00:00Z"/>`
+          + `<w:trPrChange w:id="8" w:author="Target" w:date="2026-01-01T00:00:00Z">`
+          + `<w:trPr><w:trHeight w:val="240"/></w:trPr>`
+          + `</w:trPrChange>`
+          + `</w:trPr><w:tc><w:p><w:r><w:t>TARGETROW</w:t></w:r></w:p></w:tc></w:tr>`
+          + `<w:tr><w:trPr>`
+          + `<w:ins w:id="99" w:author="Foreign" w:date="2025-06-01T00:00:00Z"/>`
+          + `</w:trPr><w:tc><w:p><w:r><w:t>FOREIGNROW</w:t></w:r></w:p></w:tc></w:tr>`
+          + `</w:tbl></w:body></w:document>`,
+        'text/xml',
+      ) as unknown as Document;
+
+      const targeted = new Set(['7', '8']);
+      const selectsTargeted: RevisionFilter = (el) => {
+        const id = el.getAttributeNS(W_NS, 'id') ?? el.getAttribute('w:id');
+        return id !== null && targeted.has(id);
+      };
+
+      const result = rejectChanges(doc, { filter: selectsTargeted });
+      const xml = serialize(doc);
+
+      // Only the targeted marker is counted — the foreign one was never attempted.
+      expect(result.unresolvedRowRevisions).toBe(1);
+
+      // Both markers survive with their own authors and dates intact.
+      expect(xml).toContain('w:id="7"');
+      expect(xml).toContain('w:author="Target"');
+      expect(xml).toContain('w:id="99"');
+      expect(xml).toContain('w:author="Foreign"');
+      expect(xml).toContain('w:date="2025-06-01T00:00:00Z"');
+
+      // The targeted property change was reverted; the foreign row is unchanged.
+      expect(xml).toContain('w:trHeight');
+      expect(xml).not.toContain('trPrChange');
+      expect(rowCount(doc)).toBe(2);
+      expect(xml).toContain('TARGETROW');
+      expect(xml).toContain('FOREIGNROW');
+    },
+  );
 });
