@@ -71,6 +71,7 @@ export async function compareDocuments(
     reconstructionMode,
     premergeRuns,
     maxWordRefinementChangeRanges,
+    comparisonStrategy,
   } = options;
 
   if ((engine as string) === 'diffmatch') {
@@ -95,6 +96,7 @@ export async function compareDocuments(
       reconstructionMode,
       premergeRuns,
       maxWordRefinementChangeRanges,
+      comparisonStrategy,
     });
   }
 

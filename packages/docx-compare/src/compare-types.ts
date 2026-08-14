@@ -33,6 +33,8 @@ export interface CompareOptions {
    * Default: {@link DEFAULT_RECONSTRUCTION_MODE}.
    */
   reconstructionMode?: ReconstructionMode;
+  /** Select tagged construction explicitly; legacy remains default until package gates pass. */
+  comparisonStrategy?: 'tagged-tree' | 'legacy';
   /**
    * Comparison engine to use:
    * - 'atomizer': Character-level comparison with move detection (recommended)

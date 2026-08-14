@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { DocxArchive } from '@usejunior/docx-core';
 import { describe, expect } from 'vitest';
 import { compareDocuments, DEFAULT_RECONSTRUCTION_MODE } from './index.js';
+import { acceptAllChanges, rejectAllChanges } from './baselines/atomizer/trackChangesAcceptorAst.js';
 import { testAllure, type AllureBddContext } from './testing/allure-test.js';
 import {
   buildDocxFromBodyXml,
@@ -187,6 +188,24 @@ describe('compareDocuments options', () => {
       await and('the default (omitted) output detects the move', () => {
         expect(omittedXml).toContain('<w:moveFrom');
         expect(omittedXml).toContain('<w:moveTo');
+      });
+    },
+  );
+
+  test(
+    'explicit tagged-tree strategy publishes source-exact projections through the package pipeline',
+    async ({ given, when, then }: AllureBddContext) => {
+      const original = await given('a package with original paragraph formatting', () =>
+        buildDocxFromBodyXml('<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Original package text</w:t></w:r></w:p>'));
+      const revised = await given('the revised package and formatting', () =>
+        buildDocxFromBodyXml('<w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t>Revised package text</w:t></w:r></w:p>'));
+      const result = await when('tagged-tree is selected explicitly', () => compareDocuments(original, revised, {
+        engine: 'atomizer', date: FIXED_DATE, comparisonStrategy: 'tagged-tree',
+      }));
+      const output = await documentXml(result.document);
+      await then('the package carries both exact text projections', async () => {
+        expect(acceptAllChanges(output)).toContain('Revised package text');
+        expect(rejectAllChanges(output)).toContain('Original package text');
       });
     },
   );

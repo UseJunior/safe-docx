@@ -88,6 +88,7 @@ describe('pipeline auxiliary note publication', () => {
         author: 'Pipeline test',
         date: new Date('2025-01-01T00:00:00Z'),
         reconstructionMode: 'rebuild',
+        comparisonStrategy: 'tagged-tree',
       });
     });
 

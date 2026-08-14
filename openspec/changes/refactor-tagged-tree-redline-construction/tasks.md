@@ -212,6 +212,19 @@ in `proposal.md` and are separate changes.
       measured package normalization boundary. LibreOffice renders the repaired
       60-paragraph projections as visible 18-page accept and 19-page reject PDFs.
 
+      **Package integration staging:** `comparisonStrategy: 'tagged-tree'` now
+      routes tagged story XML through the existing atomizer package assembler;
+      it does not create a parallel OPC pipeline. Existing reconstruction still
+      owns relationship closure, ID collision handling, notes, comments,
+      commentsExtended/commentsIds/people metadata, and rebuild fallback.
+      Focused real-package tests pass for ordinary body output, VML text-box
+      story assembly, inserted footnote/endnote definitions plus relationships
+      and content types, and a threaded modern-comment graph. The public CLI
+      exposes the same explicit `--comparison-strategy tagged-tree|legacy`
+      staging switch. Production default publication remains legacy pending the
+      final protected default-flip authorization; the explicit tagged path is
+      the evidence surface, not a silent fallback.
+
       An Aspose save of the revised source itself changes `0/60` paragraph
       snapshots, likewise proving the changes are not its ordinary save
       normalization. Both the control and projection add 33 drawing-fallback

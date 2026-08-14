@@ -62,6 +62,7 @@ describe('docx-comparison CLI argument parsing', () => {
           reconstructionMode: 'inplace',
           author: 'Comparison',
           premergeRuns: true,
+          comparisonStrategy: 'legacy',
         },
       });
     });
@@ -85,6 +86,8 @@ describe('docx-comparison CLI argument parsing', () => {
         'inplace',
         '--author',
         'Junior',
+        '--comparison-strategy',
+        'tagged-tree',
         '--premerge-runs',
         'true',
       ]);
@@ -100,6 +103,7 @@ describe('docx-comparison CLI argument parsing', () => {
           reconstructionMode: 'inplace',
           author: 'Junior',
           premergeRuns: true,
+          comparisonStrategy: 'tagged-tree',
         },
       });
     });

@@ -128,6 +128,7 @@ import {
 } from './ancillaryFieldSafety.js';
 import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.js';
 import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
+import { buildTaggedTreeShadowXml } from './taggedTreeShadow.js';
 import {
   assembleTextBoxStoryComparison,
   assertAncillaryTextBoxStoryProjection,
@@ -174,6 +175,8 @@ export interface AtomizerOptions {
    * Default: {@link DEFAULT_RECONSTRUCTION_MODE}.
    */
   reconstructionMode?: ReconstructionMode;
+  /** Explicit tagged construction path; legacy remains the publication default. */
+  comparisonStrategy?: 'tagged-tree' | 'legacy';
 }
 
 interface BookmarkDiagnostics {
@@ -804,6 +807,7 @@ async function compareDocumentsAtomizerCore(
     premergeRuns = true,
     maxWordRefinementChangeRanges,
     reconstructionMode = DEFAULT_RECONSTRUCTION_MODE,
+    comparisonStrategy = 'legacy',
   } = options;
 
   // Merge settings with defaults
@@ -1354,9 +1358,20 @@ async function compareDocumentsAtomizerCore(
 
   const { mergedAtoms } = comparisonResult;
   const { resultBuffer, ancillaryFieldEvidence } = assembled;
+  let publishedBuffer = resultBuffer;
+  if (comparisonStrategy === 'tagged-tree') {
+    const taggedXml = buildTaggedTreeShadowXml({ originalXml, revisedXml, author, date });
+    const taggedSafety = evaluateRoundTripSafety(taggedXml);
+    if (!taggedSafety.safe) {
+      throw new Error(`tagged-tree publication failed: ${taggedSafety.failureSummary ?? taggedSafety.failedChecks.join(', ')}`);
+    }
+    const publishedArchive = await DocxArchive.load(resultBuffer);
+    publishedArchive.setDocumentXml(taggedXml);
+    publishedBuffer = await publishedArchive.save();
+  }
   const stats = computeAtomizerStats(mergedAtoms);
   return {
-    document: resultBuffer,
+    document: publishedBuffer,
     stats,
     engine: 'atomizer' as const,
     unrepresentedChanges:

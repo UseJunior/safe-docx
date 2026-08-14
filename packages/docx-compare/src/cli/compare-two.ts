@@ -5,7 +5,7 @@ import { DEFAULT_RECONSTRUCTION_MODE } from '../comparison-defaults.js';
 
 const USAGE =
   'Usage: docx-comparison <original.docx> <revised.docx> [output.docx] ' +
-  '[--engine atomizer|auto] [--mode inplace|rebuild] [--author "Name"] [--premerge-runs true|false]\n' +
+  '[--engine atomizer|auto] [--mode inplace|rebuild] [--comparison-strategy tagged-tree|legacy] [--author "Name"] [--premerge-runs true|false]\n' +
   `Mode defaults to ${DEFAULT_RECONSTRUCTION_MODE}; the pipeline may fall back to rebuild when safety checks fail ` +
   '(reported via mode vs mode_requested and fallback_reason).\n' +
   'Stats: insertions/deletions count contiguous revision ranges; insertedAtoms/deletedAtoms count granular word atoms; ' +
@@ -20,6 +20,7 @@ export interface ParsedCompareCliArgs {
     reconstructionMode: 'inplace' | 'rebuild';
     author: string;
     premergeRuns: boolean;
+    comparisonStrategy: 'tagged-tree' | 'legacy';
   };
 }
 
@@ -66,6 +67,7 @@ export function parseCompareCliArgs(argv: string[]): ParsedCompareCliArgs {
     reconstructionMode: DEFAULT_RECONSTRUCTION_MODE,
     author: 'Comparison',
     premergeRuns: true,
+    comparisonStrategy: 'legacy',
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -106,6 +108,14 @@ export function parseCompareCliArgs(argv: string[]): ParsedCompareCliArgs {
       case '--author':
         options.author = consumeValue(token);
         break;
+      case '--comparison-strategy': {
+        const strategy = consumeValue(token);
+        if (strategy !== 'tagged-tree' && strategy !== 'legacy') {
+          throw new Error(`Unsupported comparison strategy: ${strategy}. Use tagged-tree or legacy.`);
+        }
+        options.comparisonStrategy = strategy;
+        break;
+      }
       case '--premerge-runs':
         options.premergeRuns = parseBooleanFlag(consumeValue(token), token);
         break;

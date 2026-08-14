@@ -36,15 +36,16 @@ describe('tagged-tree offline evaluation', () => {
   );
 
   test.openspec('Offline evaluation does not affect returned output')(
-    'keeps the tagged evaluator outside the ordinary comparison pipeline',
+    'stages tagged publication explicitly without changing the legacy default',
     async ({ given, when, then, and }: AllureBddContext) => {
       let pipelineSource = '';
       await given('the ordinary comparison pipeline source', () => undefined);
       await when('its runtime dependencies are inspected', () => {
         pipelineSource = readFileSync(new URL('./pipeline.ts', import.meta.url), 'utf8');
       });
-      await then('the tagged-tree evaluator is not imported or invoked', () => {
-        expect(pipelineSource).not.toContain('taggedTreeShadow');
+      await then('the tagged-tree builder is gated by an explicit strategy', () => {
+        expect(pipelineSource).toContain("comparisonStrategy = 'legacy'");
+        expect(pipelineSource).toContain("comparisonStrategy === 'tagged-tree'");
         expect(pipelineSource).not.toContain('runTaggedTreeShadow');
         expect(pipelineSource).not.toContain('SAFE_DOCX_TAGGED_TREE');
       });
