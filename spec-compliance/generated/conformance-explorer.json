@@ -603,6 +603,14 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-release-verifier/src/xml.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-release-verifier/src/paragraph-mark-projection.test.ts"
         }
       ]
     },
@@ -711,6 +719,14 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-release-verifier/src/xml.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-release-verifier/src/paragraph-mark-projection.test.ts"
         }
       ]
     },

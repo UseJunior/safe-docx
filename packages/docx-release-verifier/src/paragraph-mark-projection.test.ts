@@ -23,6 +23,11 @@ const conformanceTest = testAllure.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.20' },
 );
 
+const moveConformanceTest = testAllure.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.21' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.26' },
+);
+
 describe('paragraph-mark revision projection', () => {
   conformanceTest('merges a deleted paragraph mark into the following paragraph on accept only', () => {
     const body = paragraph(`${deletedMark}${run('alpha ')}`) + paragraph(run('beta'));
@@ -94,7 +99,53 @@ describe('paragraph-mark revision projection', () => {
     expect(project(body)).toEqual({ accept: ['before', 'InCell', 'after'], reject: ['before', 'InCell', 'after'] });
   });
 
-  itAllure('treats moveFrom and moveTo paragraph marks like deletion and insertion marks', () => {
+  itAllure('drops a fully deleted paragraph directly before a table on accept', () => {
+    const table = `<w:tbl><w:tr><w:tc>${paragraph(run('Cell'))}</w:tc></w:tr></w:tbl>`;
+    const body = paragraph(run('First')) + paragraph(`${deletedMark}${deletedRun('Doomed')}`) + table + paragraph(run('After'));
+    expect(project(body)).toEqual({ accept: ['First', 'Cell', 'After'], reject: ['First', 'Doomed', 'Cell', 'After'] });
+  });
+
+  itAllure('drops a fully deleted terminal paragraph on accept', () => {
+    const body = paragraph(run('First')) + paragraph(`${deletedMark}${deletedRun('Doomed')}`);
+    expect(project(body)).toEqual({ accept: ['First'], reject: ['First', 'Doomed'] });
+  });
+
+  itAllure('drops an inserted terminal or table-blocked empty paragraph on reject', () => {
+    const terminal = paragraph(run('First')) + paragraph(insertedMark);
+    expect(project(terminal)).toEqual({ accept: ['First', ''], reject: ['First'] });
+    const table = `<w:tbl><w:tr><w:tc>${paragraph(run('Cell'))}</w:tc></w:tr></w:tbl>`;
+    const beforeTable = paragraph(run('First')) + paragraph(insertedMark) + table;
+    expect(project(beforeTable)).toEqual({ accept: ['First', '', 'Cell'], reject: ['First', 'Cell'] });
+  });
+
+  itAllure('drops a chain of fully deleted empty paragraphs before a table on accept', () => {
+    const table = `<w:tbl><w:tr><w:tc>${paragraph(run('Cell'))}</w:tc></w:tr></w:tbl>`;
+    const body = paragraph(run('First')) + paragraph(deletedMark) + paragraph(deletedMark) + table + paragraph(run('After'));
+    expect(project(body)).toEqual({ accept: ['First', 'Cell', 'After'], reject: ['First', '', '', 'Cell', 'After'] });
+  });
+
+  itAllure('keeps a structurally required empty paragraph despite its removed mark', () => {
+    const soleCellParagraph = `<w:tbl><w:tr><w:tc>${paragraph(`${deletedMark}${deletedRun('Gone')}`)}</w:tc></w:tr></w:tbl>` + paragraph(run('After'));
+    expect(project(soleCellParagraph)).toEqual({ accept: ['', 'After'], reject: ['Gone', 'After'] });
+
+    const table = `<w:tbl><w:tr><w:tc>${paragraph(run('Cell'))}</w:tc></w:tr></w:tbl>`;
+    const trailingAfterTable = table + paragraph(deletedMark);
+    expect(project(trailingAfterTable)).toEqual({ accept: ['Cell', ''], reject: ['Cell', ''] });
+
+    const betweenTables = table + paragraph(deletedMark) + table;
+    expect(project(betweenTables)).toEqual({ accept: ['Cell', '', 'Cell'], reject: ['Cell', '', 'Cell'] });
+
+    const emptiedChainAfterTable = table + paragraph(deletedMark) + paragraph(deletedMark);
+    expect(project(emptiedChainAfterTable)).toEqual({ accept: ['Cell', ''], reject: ['Cell', '', ''] });
+  });
+
+  itAllure('keeps a textless terminal paragraph whose surviving content is a drawing', () => {
+    const drawing = '<w:r><w:drawing xmlns:wp="urn:wp" xmlns:a="urn:a" xmlns:wps="urn:wps"><wp:inline><a:graphic><wps:txbx><w:txbxContent><w:p><w:r><w:t>Box</w:t></w:r></w:p></w:txbxContent></wps:txbx></a:graphic></wp:inline></w:drawing></w:r>';
+    const body = paragraph(run('First')) + paragraph(`${deletedMark}${drawing}`);
+    expect(project(body)).toEqual({ accept: ['First', '', 'Box'], reject: ['First', '', 'Box'] });
+  });
+
+  moveConformanceTest('treats moveFrom and moveTo paragraph marks like deletion and insertion marks', () => {
     const movedAway = '<w:pPr><w:rPr><w:moveFrom w:id="31"/></w:rPr></w:pPr>';
     const movedIn = '<w:pPr><w:rPr><w:moveTo w:id="32"/></w:rPr></w:pPr>';
     const body = paragraph(`${movedAway}${run('source ')}`) + paragraph(`${movedIn}${run('landed ')}`) + paragraph(run('end'));
