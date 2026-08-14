@@ -88,6 +88,14 @@ function configuredContrast(configured: PixelMeasurement, control: PixelMeasurem
   return configured.bluePixels >= blueFloor && configured.redPixels >= redFloor;
 }
 
+function revisionVisibility(configured: PixelMeasurement, control: PixelMeasurement, floor: number): NonNullable<RenderVerdict['revisionVisibility']> {
+  const blueFloor = Math.max(floor, Math.ceil(control.bluePixels * 1.5));
+  const redFloor = Math.max(floor, Math.ceil(control.redPixels * 1.5));
+  if (configured.bluePixels >= blueFloor && configured.redPixels < redFloor) return 'hidden-deletions';
+  if (configured.bluePixels >= blueFloor && configured.redPixels >= redFloor) return 'visible';
+  return 'insufficient-contrast';
+}
+
 async function configureProfile(profile: string, mode: 'configured' | 'by-author'): Promise<void> {
   const user = path.join(profile, 'user');
   await mkdir(user, { recursive: true });
@@ -202,11 +210,14 @@ export async function verifyRenderedMarkup(request: RenderRequest): Promise<Rend
     ]);
     const markupTextMatchesPdf = normalizeText(pdfText) === normalizeText(request.expectedMarkupText);
     const configuredContrastPassed = configuredContrast(configuredPixels, controlPixels, request.configuredPixelFloor ?? 4);
+    const visibility = revisionVisibility(configuredPixels, controlPixels, request.configuredPixelFloor ?? 4);
     const pdfOut = path.join(request.outputDir, 'tracked-configured.pdf');
     await copyFile(configured.pdfPath, pdfOut);
     return {
       status: markupTextMatchesPdf && configuredContrastPassed ? 'pass' : 'fail',
-      reason: markupTextMatchesPdf ? (configuredContrastPassed ? undefined : 'Configured render did not exceed by-author control colour bands.') : 'PDF text does not equal caller-supplied independent markup text.',
+      reason: visibility === 'hidden-deletions'
+        ? 'LibreOffice rendered configured insertions but hid configured deletions.'
+        : markupTextMatchesPdf ? (configuredContrastPassed ? undefined : 'Configured render did not exceed by-author control colour bands.') : 'PDF text does not equal caller-supplied independent markup text.',
       trackedSha256,
       renderedInputSha256: sha256(await readFile(renderInput)),
       transform,
@@ -216,6 +227,7 @@ export async function verifyRenderedMarkup(request: RenderRequest): Promise<Rend
       configured: configuredPixels,
       byAuthorControl: controlPixels,
       configuredContrastPassed,
+      revisionVisibility: visibility,
     };
   } catch (error) {
     return { status: 'not_run', reason: `Renderer invocation unavailable: ${(error as Error).message}`, trackedSha256, reviewPngs: [] };

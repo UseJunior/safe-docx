@@ -1,4 +1,6 @@
 import { describe, expect } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { itAllure } from '../../docx-core/src/testing/allure-test.js';
 import JSZip from 'jszip';
 import { buildDocxFromParts, buildSyntheticDocx, DocxDocument, parseXml } from '@usejunior/docx-core';
@@ -95,6 +97,29 @@ describe('brownfield Markdoc authoring', () => {
     const result = await compileMarkdoc(imported.anchoredSource, imported.markdoc);
     expect(result.certificate.passed).toBe(true);
   });
+
+  itAllure('[SDX-MDOC-01][SDX-MDOC-13] preserves trailing tabs in signature-label paragraphs during untouched replay', async () => {
+    // Public form documents commonly use literal tabs as blank signature lines.
+    // CommonMark discards them at line boundaries unless import encodes them.
+    const original = await buildSyntheticDocx({ paragraphs: ['By:\t\t', 'Address:\t\t\n\t', 'Total Cash \nPurchase Price'] });
+    const imported = await importDocxToMarkdoc(original);
+    expect(imported.markdoc).toContain('By:&#9;&#9;');
+    expect(imported.markdoc).toContain('Address:&#9;&#9;&#10;&#9;');
+    expect(imported.markdoc).toContain('Total Cash &#10;Purchase Price');
+    expect(requireMarkdoc(imported.markdoc).scaffold.map((paragraph) => paragraph.originalText))
+      .toEqual(['By:\t\t', 'Address:\t\t\n\t', 'Total Cash \nPurchase Price']);
+    const result = await compileMarkdoc(imported.anchoredSource, imported.markdoc);
+    expect(result.certificate).toMatchObject({ rejectAllEqualsSource: true, acceptAllEqualsClean: true, passed: true });
+  });
+
+  itAllure('[SDX-MDOC-01][SDX-MDOC-13] replays the existing public NVCA source and filled fixtures unchanged', async () => {
+    const directory = fileURLToPath(new URL('../../../tests/test_documents/nvca-regression/', import.meta.url));
+    for (const name of ['source.docx', 'filled.docx']) {
+      const imported = await importDocxToMarkdoc(await readFile(`${directory}${name}`));
+      const result = await compileMarkdoc(imported.anchoredSource, imported.markdoc);
+      expect(result.certificate).toMatchObject({ passed: true, rejectAllEqualsSource: true, acceptAllEqualsClean: true });
+    }
+  }, 20_000);
 
   itAllure('[SDX-MDOC-05][SDX-MDOC-13] applies and verifies paragraph insertion and deletion from stable anchors', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['Keep.', 'Delete me.', 'Stable tail context.'] });

@@ -7,7 +7,7 @@ import { itAllure } from '../../docx-core/src/testing/allure-test.js';
 import { measurePixelBands, verifyRenderedMarkup } from './render.js';
 import type { RendererTools } from './types.js';
 
-function fakeTools(markup = 'Visible markup text', profiles?: string[]): RendererTools {
+function fakeTools(markup = 'Visible markup text', profiles?: string[], hiddenDeletion = false): RendererTools {
   return {
     resolve: () => 'fake-tool',
     async run(_command, args) {
@@ -30,7 +30,9 @@ function fakeTools(markup = 'Visible markup text', profiles?: string[]): Rendere
       const control = args[0]?.includes('control') ?? false;
       const pixels = control
         ? '0,0: #000000\n1,0: #000000\n'
-        : '0,0: #0000ff\n1,0: #ff0000\n2,0: #0000ff\n3,0: #ff0000\n';
+        : hiddenDeletion
+          ? '0,0: #0000ff\n1,0: #0000ff\n2,0: #000000\n3,0: #000000\n'
+          : '0,0: #0000ff\n1,0: #ff0000\n2,0: #0000ff\n3,0: #ff0000\n';
       return { code: 0, stdout: pixels, stderr: '' };
     },
   };
@@ -66,7 +68,7 @@ describe('renderer verifier', () => {
       tools: fakeTools('Visible markup text', profiles),
       configuredPixelFloor: 2,
     });
-    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true, configuredContrastPassed: true });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true, configuredContrastPassed: true, revisionVisibility: 'visible' });
     expect(result.reviewPngs).toHaveLength(1);
     expect(profiles).toEqual(expect.arrayContaining([
       expect.stringContaining('/org.openoffice.Office.Writer/Revision/TextDisplay/Insert'),
@@ -74,6 +76,21 @@ describe('renderer verifier', () => {
       expect.stringContaining('<value>16711680</value>'),
       expect.stringContaining('<value>-1</value>'),
     ]));
+  });
+
+  itAllure('classifies blue-only revision output as hidden deletions and never passes it', async () => {
+    const root = path.join(os.tmpdir(), `render-hidden-delete-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await writeFile(source, 'tracked content');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({
+      status: 'fail', revisionVisibility: 'hidden-deletions', configuredContrastPassed: false,
+      reason: expect.stringContaining('hid configured deletions'),
+    });
   });
 
   itAllure('refuses a transform that mutates the authoritative DOCX', async () => {
