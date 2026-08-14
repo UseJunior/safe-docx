@@ -1,4 +1,5 @@
 import { describe, expect } from 'vitest';
+import fc from 'fast-check';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { parseXml } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
@@ -175,5 +176,27 @@ describe('tagged-tree shadow serializer', () => {
     expect(change.getAttributeNS(W_NS, 'author')).toBe('Comparator');
     expect(change.getElementsByTagNameNS(W_NS, 'b')).toHaveLength(1);
     expect(output.documentElement.getElementsByTagNameNS(W_NS, 'i')).toHaveLength(1);
+  });
+
+  test('preserves both text projections for arbitrary replacement siblings', () => {
+    const words = fc.string({
+      unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz'.split('')),
+      minLength: 1,
+      maxLength: 20,
+    });
+    fc.assert(fc.property(words, words, (oldText, newText) => {
+      const original = documentBody(`<w:p><w:r><w:t>${oldText}</w:t></w:r></w:p>`);
+      const revised = documentBody(`<w:p><w:r><w:t>${newText}</w:t></w:r></w:p>`);
+      const tree: BothNode = {
+        tag: 'both', original, revised, children: [
+          { tag: 'original', node: elementChildren(original)[0]!, children: [], opaque: true },
+          { tag: 'revised', node: elementChildren(revised)[0]!, children: [], opaque: true },
+        ],
+      };
+      const output = serializeTaggedTree(tree, createPreservePlan(original, revised, tree, {
+        author: 'Comparator', date: '2026-08-14T12:00:00Z',
+      }));
+      return text(rejectAllChanges(output)) === oldText && text(acceptAllChanges(output)) === newText;
+    }), { numRuns: 100 });
   });
 });

@@ -43,7 +43,7 @@ in `proposal.md` and are separate changes.
       balanced non-crossing markers, unique decimal IDs. Record whether the tree
       guarantees this at construction (input to the `coalesceMoveRangeMarkers`
       decision in successor C).
-- [ ] 2.5A Implement the pre-serializer PRESERVE model invariants — provenance
+- [x] 2.5A Implement the pre-serializer PRESERVE model invariants — provenance
       splitting, nesting, revision-ID allocation, and ordered multi-author
       relationships — before proceeding to task 3. This is the
       highest-risk surface; `preSplitInsProvenanceRuns`
@@ -57,11 +57,11 @@ in `proposal.md` and are separate changes.
 
 ## 3. Serializer and story composition (shadow-only)
 
-- [ ] 3.1 Implement a serializer from `TaggedTree` to OOXML tracked markup,
+- [x] 3.1 Implement a serializer from `TaggedTree` to OOXML tracked markup,
       exercised only in shadow.
-- [ ] 3.2 Property-test that serialization preserves both projections (layer 2
+- [x] 3.2 Property-test that serialization preserves both projections (layer 2
       of the four correctness layers in `design.md`).
-- [ ] 3.2A Prove serialized accept/reject behavior over ordered multi-author
+- [x] 3.2A Prove serialized accept/reject behavior over ordered multi-author
       stacks agrees with the original and revised tree projections. This is the
       serializer-dependent half of the former task 2.5 and SHALL pass before
       proceeding to shadow corpus evidence.
