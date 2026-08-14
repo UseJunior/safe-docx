@@ -2,12 +2,13 @@
  * Characterization tests pinning the LCS *alignment* chosen by `computeAtomLcs` (#584).
  *
  * LCS *length* is unique, but the *alignment* — which atom pairs get matched when
- * several optimal alignments exist — is not. The backtracker in `atomLcs.ts`
- * resolves ties with `dp[i-1][j] > dp[i][j-1]`, and that choice is user-visible:
- * matched pairs feed `comparisonUnitAtomBefore`, which drives format-change
- * detection (`w:rPrChange`), move detection, and merged-output ordering. Before
- * this file, inverting the tie-breaker (`>` → `>=`) changed which runs received
- * format-change revisions yet the entire suite stayed green.
+ * several optimal alignments exist — is not. The selector in `atomLcs.ts` walks
+ * a suffix table FORWARD from (0,0), matching equal heads eagerly and preferring
+ * the original side on `dp[i+1][j] >= dp[i][j+1]` ties, and that choice is
+ * user-visible: matched pairs feed `comparisonUnitAtomBefore`, which drives
+ * format-change detection (`w:rPrChange`), move detection, and merged-output
+ * ordering. Before this file, inverting a tie-breaker changed which runs
+ * received format-change revisions yet the entire suite stayed green.
  *
  * These tests pin the CURRENT alignment as observable behavior — they do not
  * claim it is the only correct one. Any refactor of the LCS internals (the
@@ -18,15 +19,25 @@
  * refactor could preserve these cases while changing other ambiguous alignments
  * — the corpus-wide differential harness proposed in #584 remains follow-up.)
  *
+ * One such deliberate decision has already happened: issue #846 replaced the
+ * original prefix-table backward backtracker (whose eager tail matching pinned
+ * LAST-occurrence duplicates) with the forward earliest-occurrence walk, so the
+ * emitted alignment agrees with the independent release verifier's
+ * forward-greedy convention and stops revising preservable common tokens. The
+ * "duplicate identity" pin below was updated accordingly in the same change.
+ *
  * Perturbations each test discriminates:
- * - "swapped adjacent atoms" / "reversed sequence": fail when the DP tie-breaker
- *   is inverted (`>` → `>=`), verified by executing the suite under the inversion.
- * - "duplicate identity": the inversion cannot reach the tie branch here (the
- *   backtracker eagerly matches equal heads), so this test is inversion-neutral
- *   by construction; it instead pins the eager last-occurrence match that a
- *   first-occurrence-preferring rewrite (e.g. Myers) would flip.
+ * - "swapped adjacent atoms" / "reversed sequence": fail when the forward walk's
+ *   tie preference is inverted (`>=` → `<`), which would advance the revised
+ *   side first and survive the opposite element.
+ * - "duplicate identity": tie branches are unreachable here (the walk eagerly
+ *   matches equal heads), so this test is tie-inversion-neutral by
+ *   construction; it instead pins the eager first-occurrence match that a
+ *   last-occurrence-preferring rewrite (e.g. the pre-#846 backward
+ *   backtracker) would flip.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/584
+ * @see https://github.com/UseJunior/safe-docx/issues/846
  */
 
 import { describe, expect } from 'vitest';
@@ -106,10 +117,11 @@ describe('LCS alignment pinning (#584)', () => {
       await attachPrettyJson('LCS result', result);
     });
 
-    await then('the backtracker keeps the Beta pair (original index 1 ↔ revised index 0), deleting and re-inserting Alpha', () => {
-      // Both {Alpha: 0↔1} and {Beta: 1↔0} are length-1 optima. The dp tie at the
-      // top-right corner is what selects between them, so an inverted tie-breaker
-      // (`>` → `>=`) flips this to [{ originalIndex: 0, revisedIndex: 1 }].
+    await then('the walk keeps the Beta pair (original index 1 ↔ revised index 0), deleting and re-inserting Alpha', () => {
+      // Both {Alpha: 0↔1} and {Beta: 1↔0} are length-1 optima. The forward
+      // walk's `>=` tie advances the original side first and lands on Beta; an
+      // inverted tie preference (advance the revised side first) flips this to
+      // [{ originalIndex: 0, revisedIndex: 1 }].
       expect(result.matches).toEqual([{ originalIndex: 1, revisedIndex: 0 }]);
       expect(result.deletedIndices).toEqual([0]);
       expect(result.insertedIndices).toEqual([1]);
@@ -131,10 +143,10 @@ describe('LCS alignment pinning (#584)', () => {
       await attachPrettyJson('LCS result', result);
     });
 
-    await then('the backtracker survives D (original index 3 ↔ revised index 0)', () => {
-      // The backtrack from the corner crosses three consecutive dp ties; the
-      // current `>` tie-breaker walks the revised side first and lands on D.
-      // Inverting it walks the original side first and would survive A
+    await then('the walk survives D (original index 3 ↔ revised index 0)', () => {
+      // The forward walk crosses three consecutive dp ties; the `>=` tie
+      // preference advances the original side first and lands on D. Inverting
+      // it advances the revised side first and would survive A
       // ([{ originalIndex: 0, revisedIndex: 3 }]) instead.
       expect(result.matches).toEqual([{ originalIndex: 3, revisedIndex: 0 }]);
       expect(result.deletedIndices).toEqual([0, 1, 2]);
@@ -190,7 +202,7 @@ describe('LCS alignment pinning (#584)', () => {
     });
   });
 
-  test.allure({ story: 'duplicate identity: the LAST same-text original run anchors the match, not the first' })('duplicate identity: the LAST same-text original run anchors the match, not the first', async ({ given, when, then, and, attachPrettyJson }: AllureBddContext) => {
+  test.allure({ story: 'duplicate identity: the FIRST same-text original run anchors the match, not the last' })('duplicate identity: the FIRST same-text original run anchors the match, not the last', async ({ given, when, then, and, attachPrettyJson }: AllureBddContext) => {
     let xml: string;
     let stats: Awaited<ReturnType<typeof compareDocuments>>['stats'];
 
@@ -213,27 +225,27 @@ describe('LCS alignment pinning (#584)', () => {
       await attachPrettyJson('Comparison stats', stats);
     });
 
-    await then('the surviving run pairs with the ITALIC original, surfacing an italic→bold rPrChange', () => {
-      // The backtracker matches equal heads eagerly from the tail, so the revised
-      // bold "Same" pairs with the *italic* original — a format change — while the
-      // formatting-identical bold original is deleted. A first-occurrence-preferring
-      // rewrite (e.g. Myers) would pair bold↔bold and emit no rPrChange at all.
+    await then('the surviving run pairs with the BOLD original, so no rPrChange is emitted', () => {
+      // The forward walk matches equal heads eagerly from the front, so the
+      // revised bold "Same" pairs with the *bold* original — formatting
+      // identical, no format change — while the italic duplicate is deleted.
+      // A last-occurrence-preferring rewrite (e.g. the pre-#846 backward
+      // backtracker) would pair bold↔italic and surface a spurious
+      // italic→bold rPrChange instead.
       const doc = parseXml(xml);
       const rPrChanges = elementsOf(doc, 'w:rPrChange');
-      expect(stats.formatChanges).toBe(1);
-      expect(rPrChanges).toHaveLength(1);
-      const oldRPr = Array.from(rPrChanges[0]!.getElementsByTagName('w:i'));
-      expect(oldRPr).toHaveLength(1);
+      expect(stats.formatChanges).toBe(0);
+      expect(rPrChanges).toHaveLength(0);
     });
 
-    await and('the deleted run is the BOLD duplicate', () => {
+    await and('the deleted run is the ITALIC duplicate', () => {
       const doc = parseXml(xml);
       const dels = elementsOf(doc, 'w:del');
       expect(dels).toHaveLength(1);
       const deletedRun = dels[0]!;
       expect(Array.from(deletedRun.getElementsByTagName('w:delText')).map((t) => t.textContent)).toEqual(['Same']);
-      expect(Array.from(deletedRun.getElementsByTagName('w:b'))).toHaveLength(1);
-      expect(Array.from(deletedRun.getElementsByTagName('w:i'))).toHaveLength(0);
+      expect(Array.from(deletedRun.getElementsByTagName('w:i'))).toHaveLength(1);
+      expect(Array.from(deletedRun.getElementsByTagName('w:b'))).toHaveLength(0);
     });
   });
 });

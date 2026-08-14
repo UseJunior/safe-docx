@@ -641,6 +641,85 @@ function similarityLcs(
 }
 
 /**
+ * Canonical safe-docx paragraph anchor name: `_bk_` plus 12 lowercase hex
+ * digits, allocated by docx-core `primitives/bookmarks.ts`
+ * (`deriveDeterministicJrParaName`). Anchor matching is deliberately limited
+ * to this exact shape so arbitrary third-party bookmark names can never
+ * activate the identity pass.
+ */
+const SAFE_DOCX_ANCHOR_NAME = /^_bk_[0-9a-f]{12}$/;
+
+const W_MAIN_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+function wAttribute(element: Element, localName: string): string | null {
+  return element.getAttributeNS(W_MAIN_NS, localName) ?? element.getAttribute(`w:${localName}`);
+}
+
+function adjacentElement(node: Node, direction: 'previousSibling' | 'nextSibling'): Element | null {
+  let sibling: Node | null = node[direction];
+  while (sibling && sibling.nodeType !== 1) sibling = sibling[direction];
+  return sibling as Element | null;
+}
+
+/**
+ * Name of the paragraph-bracketing bookmark anchor for a group, or null.
+ *
+ * safe-docx brackets a managed paragraph with a uniquely named
+ * `<w:bookmarkStart w:name="_bk_…"/>` inserted as the paragraph's immediately
+ * preceding element sibling and a matching `<w:bookmarkEnd/>` as its
+ * immediately following element sibling (docx-core `primitives/bookmarks.ts`).
+ * Only that complete bracket with the canonical `_bk_[0-9a-f]{12}` name and a
+ * start/end pair agreeing on `w:id` qualifies. Bookmarks that live inside the
+ * paragraph (Word's `_GoBack`, `_Toc…`), foreign sibling bookmark names, and
+ * orphaned or mismatched brackets never qualify, so ordinary third-party
+ * documents are unaffected.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
+ * @see https://github.com/UseJunior/safe-docx/issues/846
+ */
+function getGroupAnchorName(group: ComparisonUnitGroup): string | null {
+  const atom = group.atoms[0];
+  if (!atom) return null;
+  let paragraph: Element | undefined;
+  for (const el of atom.ancestorElements) {
+    if (el.tagName === 'w:p') paragraph = el;
+  }
+  if (!paragraph) return null;
+  const start = adjacentElement(paragraph, 'previousSibling');
+  if (!start || start.tagName !== 'w:bookmarkStart') return null;
+  const name = wAttribute(start, 'name');
+  if (!name || !SAFE_DOCX_ANCHOR_NAME.test(name)) return null;
+  const end = adjacentElement(paragraph, 'nextSibling');
+  if (!end || end.tagName !== 'w:bookmarkEnd') return null;
+  const startId = wAttribute(start, 'id');
+  const endId = wAttribute(end, 'id');
+  if (startId === null || endId === null || startId !== endId) return null;
+  return name;
+}
+
+/**
+ * Map each anchor name to its single bracketed group index. Names bracketing
+ * more than one group on a side (for example a mega-paragraph split on soft
+ * breaks into several groups) identify nothing unambiguously and are dropped.
+ */
+function buildAnchorNameMap(groups: ComparisonUnitGroup[]): Map<string, number> {
+  const byName = new Map<string, number[]>();
+  groups.forEach((group, index) => {
+    const name = getGroupAnchorName(group);
+    if (!name) return;
+    const list = byName.get(name);
+    if (list) list.push(index);
+    else byName.set(name, [index]);
+  });
+  const unique = new Map<string, number>();
+  for (const [name, indices] of byName) {
+    if (indices.length === 1) unique.set(name, indices[0]!);
+  }
+  return unique;
+}
+
+/**
  * Compute a container key for a paragraph group based on its first atom's ancestor chain.
  * Returns "" for body-level paragraphs, or a path like "w:tbl:0/w:tr:2/w:tc:1" for table cells.
  */
@@ -722,6 +801,46 @@ export function computeGroupLcs(
   // Find initially unmatched indices
   const matchedOriginal = new Set(matchedGroups.map((m) => m.originalIndex));
   const matchedRevised = new Set(matchedGroups.map((m) => m.revisedIndex));
+
+  // === Pass 1.5 (issue #846): deterministic anchor-identity matching ===
+  //
+  // A dense whole-paragraph rewrite can leave a paragraph pair with no exact
+  // atom match and a text similarity below every heuristic threshold, so the
+  // similarity passes below fall back to whole-paragraph delete + insert and
+  // every preservable common token inside the pair is needlessly revised.
+  // When both documents bracket a paragraph with the same uniquely named
+  // safe-docx bookmark anchor, the two paragraphs are the same logical
+  // paragraph by construction: identity evidence outranks text-similarity
+  // heuristics, so the pair is force-matched here, before similarity runs.
+  // Accepted pairs must stay order-consistent with the exact matches from
+  // Pass 1 and with each other, so a relocated or stale anchor can never
+  // reorder the alignment.
+  const originalAnchorNames = buildAnchorNameMap(originalGroups);
+  const revisedAnchorNames = buildAnchorNameMap(revisedGroups);
+  const anchorPairs: Array<{ originalIndex: number; revisedIndex: number }> = [];
+  for (const [name, originalIndex] of originalAnchorNames) {
+    const revisedIndex = revisedAnchorNames.get(name);
+    if (revisedIndex === undefined) continue;
+    if (matchedOriginal.has(originalIndex) || matchedRevised.has(revisedIndex)) continue;
+    anchorPairs.push({ originalIndex, revisedIndex });
+  }
+  anchorPairs.sort((a, b) => a.originalIndex - b.originalIndex);
+  const orderConsistent = (
+    pair: { originalIndex: number; revisedIndex: number },
+    others: Array<{ originalIndex: number; revisedIndex: number }>,
+  ): boolean => others.every((other) =>
+    Math.sign(pair.originalIndex - other.originalIndex) === Math.sign(pair.revisedIndex - other.revisedIndex));
+  const acceptedAnchorPairs: Array<{ originalIndex: number; revisedIndex: number }> = [];
+  for (const pair of anchorPairs) {
+    if (!orderConsistent(pair, matchedGroups) || !orderConsistent(pair, acceptedAnchorPairs)) continue;
+    acceptedAnchorPairs.push(pair);
+  }
+  for (const pair of acceptedAnchorPairs) {
+    matchedGroups.push(pair);
+    matchedOriginal.add(pair.originalIndex);
+    matchedRevised.add(pair.revisedIndex);
+  }
+  matchedGroups.sort((a, b) => a.originalIndex - b.originalIndex);
 
   let unmatchedOriginal: number[] = [];
   for (let idx = 0; idx < n; idx++) {
