@@ -16,6 +16,11 @@
     { "id": "multi-page-body", "path": "multi-page-body.xml", "purpose": "explicit page-break body spanning two rendered pages" },
     { "id": "repeated-header", "path": "repeated-header.xml", "purpose": "header story repeated once per rendered page" },
     { "id": "page-field-footer", "path": "page-field-footer.xml", "purpose": "footer story with a PAGE field rendering per-page numerals" },
-    { "id": "reordered-text-box", "path": "reordered-text-box.xml", "purpose": "anchored text box emitted out of logical order by pdftotext" }
+    { "id": "reordered-text-box", "path": "reordered-text-box.xml", "purpose": "anchored text box emitted out of logical order by pdftotext" },
+    { "id": "adjacent-revision-alnum", "path": "adjacent-revision-alnum.xml", "purpose": "adjacent deletion/insertion junction with alphanumeric text on both sides" },
+    { "id": "adjacent-revision-punctuation", "path": "adjacent-revision-punctuation.xml", "purpose": "adjacent deletion/insertion junction with punctuation immediately after the insertion" },
+    { "id": "adjacent-revision-multiword-deletion", "path": "adjacent-revision-multiword-deletion.xml", "purpose": "multiword deletion adjacent to a single-word insertion" },
+    { "id": "adjacent-revision-multiword-insertion", "path": "adjacent-revision-multiword-insertion.xml", "purpose": "single-word deletion adjacent to a multiword insertion" },
+    { "id": "ordinary-run-split", "path": "ordinary-run-split.xml", "purpose": "unchanged text split across ordinary runs as a no-boundary negative control" }
   ]
 }

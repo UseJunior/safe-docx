@@ -38,6 +38,24 @@ export type PaginationProfile = {
 };
 
 /**
+ * An emitted-OOXML-proven junction where a visible deletion-family revision
+ * span (`w:del`/`w:moveFrom`) and a visible insertion-family revision span
+ * (`w:ins`/`w:moveTo`) are adjacent with no whitespace between them.
+ * LibreOffice and `pdftotext` do not expose a stable whitespace-delimited
+ * token boundary at such a junction, so text binding may treat whitespace
+ * there — and only there — as optional. The fragments are the maximal
+ * non-whitespace character runs meeting at the junction in the story's own
+ * character stream, so they can extend into neighbouring ordinary runs (for
+ * example trailing punctuation attached to the insertion).
+ */
+export type AdjacentRevisionBoundary = {
+  /** Maximal non-whitespace run ending exactly at the junction. */
+  leftToken: string;
+  /** Maximal non-whitespace run starting exactly at the junction. */
+  rightToken: string;
+};
+
+/**
  * Structured outcome of the story-scoped text binding. Token samples are
  * bounded excerpts for diagnosis; `matched` is the binding verdict.
  */
@@ -49,6 +67,20 @@ export type TextBindingEvidence = {
   missingTokenSample: string[];
   /** Bounded sample of rendered tokens not attributable to markup or pagination. */
   unexplainedTokenSample: string[];
+  /**
+   * Adjacent deletion/insertion junctions the emitted tracked OOXML declares
+   * as eligible for optional-whitespace normalization. Derived from the
+   * rendered package's revision markup, independent of pagination reservation.
+   */
+  declaredRevisionBoundaryCount: number;
+  /**
+   * Optional-whitespace normalizations actually applied at declared adjacent
+   * revision boundaries (at most one per declared junction). Reported
+   * separately from pagination reservation so a certificate consumer can
+   * distinguish renderer whitespace tolerance from header/footer/page-number
+   * accounting.
+   */
+  revisionBoundaryNormalizationCount: number;
 };
 
 export type RenderVerdict = {

@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import JSZip from 'jszip';
 import { DOMParser, type Element as XmlElement } from '@xmldom/xmldom';
-import type { PaginationProfile, PixelMeasurement, RenderRequest, RendererTools, RenderVerdict, TextBindingEvidence, ToolResult } from './types.js';
+import type { AdjacentRevisionBoundary, PaginationProfile, PixelMeasurement, RenderRequest, RendererTools, RenderVerdict, TextBindingEvidence, ToolResult } from './types.js';
 
 const execFileAsync = promisify(execFile);
 const BLUE = [0, 0, 255] as const;
@@ -87,8 +87,20 @@ function isReservablePageNumber(token: string, pagination: PaginationProfile): b
  * The pagination profile is derived from the rendered artifact and the
  * rendered DOCX package only — never from the caller's projection or from any
  * Safe DOCX generator — so the binding stays an independent oracle.
+ *
+ * Adjacent-revision whitespace tolerance: LibreOffice and `pdftotext` do not
+ * expose a stable whitespace-delimited token boundary between neighbouring
+ * deletion and insertion spans, so the extracted PDF may render `OldNew`
+ * where the projection has `Old New` (or vice versa). After the strict
+ * multiset pass, each OOXML-declared adjacent revision junction may explain
+ * AT MOST ONE merge (rendered `leftToken+rightToken` standing for the
+ * projection's separate `leftToken` and `rightToken`) or ONE split (the
+ * reverse). The tolerance never removes whitespace globally, never absorbs
+ * missing or duplicated lexical content — the substitution must balance the
+ * exact junction tokens on both sides — and applies only at junctions the
+ * emitted tracked OOXML proves lie between adjacent visible revision spans.
  */
-export function bindLogicalMarkupText(expectedMarkupText: string, pdfText: string, pagination: PaginationProfile): TextBindingEvidence {
+export function bindLogicalMarkupText(expectedMarkupText: string, pdfText: string, pagination: PaginationProfile, revisionBoundaries: readonly AdjacentRevisionBoundary[] = []): TextBindingEvidence {
   const expectedCounts = countTokens(tokenizeRenderedText(expectedMarkupText));
   const bodyAvailable = new Map<string, number>();
   let bodyFieldBudget = pagination.bodyPageFieldCount;
@@ -122,20 +134,68 @@ export function bindLogicalMarkupText(expectedMarkupText: string, pdfText: strin
       if (count > 0) bodyAvailable.set(token, (bodyAvailable.get(token) ?? 0) + count);
     }
   }
-  const missingTokens: string[] = [];
+  const deficits = new Map<string, number>();
   for (const [token, expected] of expectedCounts) {
-    if ((bodyAvailable.get(token) ?? 0) < expected) missingTokens.push(token);
+    const shortfall = expected - (bodyAvailable.get(token) ?? 0);
+    if (shortfall > 0) deficits.set(token, shortfall);
   }
-  const unexplainedTokens: string[] = [];
+  const surpluses = new Map<string, number>();
   for (const [token, available] of bodyAvailable) {
-    if (available - (expectedCounts.get(token) ?? 0) > 0) unexplainedTokens.push(token);
+    const excess = available - (expectedCounts.get(token) ?? 0);
+    if (excess > 0) surpluses.set(token, excess);
   }
+  let revisionBoundaryNormalizationCount = 0;
+  for (const { leftToken, rightToken } of revisionBoundaries) {
+    if (leftToken.length === 0 || rightToken.length === 0) continue;
+    const joined = `${leftToken}${rightToken}`;
+    // Renderer concatenated the junction (projection separated), or the
+    // reverse. Each declared junction may explain at most one such swap, and
+    // the swap must balance the exact junction tokens on both sides — a
+    // dropped or duplicated token elsewhere still surfaces as residue.
+    if (applyBoundaryNormalization(deficits, [leftToken, rightToken], surpluses, [joined])
+      || applyBoundaryNormalization(deficits, [joined], surpluses, [leftToken, rightToken])) {
+      revisionBoundaryNormalizationCount++;
+    }
+  }
+  const missingTokens = [...deficits.keys()];
+  const unexplainedTokens = [...surpluses.keys()];
   return {
     matched: missingTokens.length === 0 && unexplainedTokens.length === 0,
     pageCount: pagination.pageCount,
     missingTokenSample: missingTokens.slice(0, BINDING_SAMPLE_LIMIT),
     unexplainedTokenSample: unexplainedTokens.slice(0, BINDING_SAMPLE_LIMIT),
+    declaredRevisionBoundaryCount: revisionBoundaries.length,
+    revisionBoundaryNormalizationCount,
   };
+}
+
+function hasTokenCounts(counts: ReadonlyMap<string, number>, tokens: readonly string[]): boolean {
+  const needed = countTokens(tokens);
+  for (const [token, count] of needed) {
+    if ((counts.get(token) ?? 0) < count) return false;
+  }
+  return true;
+}
+
+function consumeTokenCounts(counts: Map<string, number>, tokens: readonly string[]): void {
+  for (const token of tokens) {
+    const remaining = (counts.get(token) ?? 0) - 1;
+    if (remaining <= 0) counts.delete(token);
+    else counts.set(token, remaining);
+  }
+}
+
+/**
+ * Atomically consume one whitespace swap at a declared adjacent revision
+ * junction: the deficit side and the surplus side must BOTH hold the exact
+ * junction tokens, otherwise nothing is consumed and the mismatch stays a
+ * binding failure.
+ */
+function applyBoundaryNormalization(deficits: Map<string, number>, deficitTokens: readonly string[], surpluses: Map<string, number>, surplusTokens: readonly string[]): boolean {
+  if (!hasTokenCounts(deficits, deficitTokens) || !hasTokenCounts(surpluses, surplusTokens)) return false;
+  consumeTokenCounts(deficits, deficitTokens);
+  consumeTokenCounts(surpluses, surplusTokens);
+  return true;
 }
 
 function profileXml(mode: 'configured' | 'by-author'): string {
@@ -215,10 +275,99 @@ type RenderedStory = { name: string; kind: 'document' | 'header' | 'footer' | 'f
 type RenderedPackageEvidence = {
   revisionMarkup: { insertions: boolean; deletions: boolean };
   pagination: PaginationProfile;
+  revisionBoundaries: AdjacentRevisionBoundary[];
 };
 
+const WHITESPACE_CHAR = /\s/u;
+
+function revisionSpanFamily(element: XmlElement): 'deletion' | 'insertion' | undefined {
+  if (element.namespaceURI !== W_NS) return undefined;
+  if (element.localName === 'del' || element.localName === 'moveFrom') return 'deletion';
+  if (element.localName === 'ins' || element.localName === 'moveTo') return 'insertion';
+  return undefined;
+}
+
+/**
+ * Visible character stream of an element as Writer displays it with tracked
+ * changes shown: `w:t` and `w:delText` text in document order, with tab and
+ * break glyphs contributing whitespace. Content of a nested paragraph (for
+ * example inside a text box) belongs to that paragraph's own stream and is
+ * excluded here.
+ */
+function visibleCharacterStream(element: XmlElement): string {
+  let stream = '';
+  for (let child = element.firstChild; child !== null; child = child.nextSibling) {
+    if (child.nodeType !== 1) continue;
+    const childElement = child as XmlElement;
+    if (childElement.namespaceURI !== W_NS) { stream += visibleCharacterStream(childElement); continue; }
+    switch (childElement.localName) {
+      case 't':
+      case 'delText':
+        stream += childElement.textContent ?? '';
+        break;
+      case 'tab':
+      case 'br':
+      case 'cr':
+        stream += ' ';
+        break;
+      case 'p':
+      case 'pPr':
+      case 'rPr':
+      case 'instrText':
+      case 'delInstrText':
+        break;
+      default:
+        stream += visibleCharacterStream(childElement);
+    }
+  }
+  return stream;
+}
+
+/**
+ * Junctions where the emitted tracked OOXML proves a visible deletion-family
+ * span and a visible insertion-family span are adjacent without intervening
+ * whitespace or visible content. Only these positions are eligible for the
+ * optional-whitespace tolerance in `bindLogicalMarkupText`; ordinary run
+ * splits, same-family adjacency, and junctions that already carry whitespace
+ * declare nothing.
+ */
+function collectAdjacentRevisionBoundaries(document: NonNullable<ReturnType<typeof parseStoryXml>>): AdjacentRevisionBoundary[] {
+  const boundaries: AdjacentRevisionBoundary[] = [];
+  for (const paragraph of Array.from(document.getElementsByTagNameNS(W_NS, 'p'))) {
+    const segments: Array<{ family: 'deletion' | 'insertion' | undefined; start: number; end: number }> = [];
+    let stream = '';
+    for (let child = paragraph.firstChild; child !== null; child = child.nextSibling) {
+      if (child.nodeType !== 1) continue;
+      const childElement = child as XmlElement;
+      const text = childElement.namespaceURI === W_NS && childElement.localName === 'pPr' ? '' : visibleCharacterStream(childElement);
+      segments.push({ family: revisionSpanFamily(childElement), start: stream.length, end: stream.length + text.length });
+      stream += text;
+    }
+    for (let index = 0; index < segments.length; index++) {
+      const left = segments[index]!;
+      if (left.family === undefined || left.end === left.start) continue;
+      // Skip siblings that render nothing (bookmarks, proofing marks, empty
+      // runs); the next segment with visible payload is the rendered
+      // neighbour.
+      let nextIndex = index + 1;
+      while (nextIndex < segments.length && segments[nextIndex]!.end === segments[nextIndex]!.start) nextIndex++;
+      if (nextIndex >= segments.length) break;
+      const right = segments[nextIndex]!;
+      if (right.family === undefined || right.family === left.family) continue;
+      const junction = left.end;
+      if (WHITESPACE_CHAR.test(stream.charAt(junction - 1)) || WHITESPACE_CHAR.test(stream.charAt(junction))) continue;
+      let leftStart = junction;
+      while (leftStart > 0 && !WHITESPACE_CHAR.test(stream.charAt(leftStart - 1))) leftStart--;
+      let rightEnd = junction;
+      while (rightEnd < stream.length && !WHITESPACE_CHAR.test(stream.charAt(rightEnd))) rightEnd++;
+      boundaries.push({ leftToken: stream.slice(leftStart, junction), rightToken: stream.slice(junction, rightEnd) });
+    }
+  }
+  return boundaries;
+}
+
 async function analyzeRenderedPackage(bytes: Buffer, pageCount: number): Promise<RenderedPackageEvidence> {
-  const fallback: RenderedPackageEvidence = { revisionMarkup: { insertions: false, deletions: false }, pagination: emptyPaginationProfile(pageCount) };
+  const fallback: RenderedPackageEvidence = { revisionMarkup: { insertions: false, deletions: false }, pagination: emptyPaginationProfile(pageCount), revisionBoundaries: [] };
   try {
     const zip = await JSZip.loadAsync(bytes);
     const documentXml = await zip.file('word/document.xml')?.async('string');
@@ -227,6 +376,7 @@ async function analyzeRenderedPackage(bytes: Buffer, pageCount: number): Promise
     let insertions = false;
     let deletions = false;
     const headerFooterTokenCounts = new Map<string, number>();
+    const revisionBoundaries: AdjacentRevisionBoundary[] = [];
     let headerFooterPageFieldCount = 0;
     let bodyPageFieldCount = 0;
     let pageNumberStart = 1;
@@ -240,6 +390,9 @@ async function analyzeRenderedPackage(bytes: Buffer, pageCount: number): Promise
       const isPaginationStory = story.kind === 'header' || story.kind === 'footer';
       if (isPaginationStory) headerFooterPageFieldCount += pageFieldInstructionCount(document);
       else bodyPageFieldCount += pageFieldInstructionCount(document);
+      // Header/footer story text is pagination-owned and reserved wholesale,
+      // so only body-layer stories can declare whitespace-optional junctions.
+      if (!isPaginationStory) revisionBoundaries.push(...collectAdjacentRevisionBoundaries(document));
       if (story.kind === 'document') {
         for (const numbering of Array.from(document.getElementsByTagNameNS(W_NS, 'pgNumType'))) {
           const start = Number.parseInt(numbering.getAttributeNS(W_NS, 'start') ?? '', 10);
@@ -269,6 +422,7 @@ async function analyzeRenderedPackage(bytes: Buffer, pageCount: number): Promise
         bodyPageFieldCount,
         pageNumberUpperBound: pageCount + pageNumberStart - 1,
       },
+      revisionBoundaries,
     };
   } catch {
     return fallback;
@@ -474,7 +628,7 @@ export async function verifyRenderedMarkup(request: RenderRequest): Promise<Rend
     const configuredPixels = configuredMeasured.pixels;
     const controlPixels = controlMeasured.pixels;
     const packageEvidence = await analyzeRenderedPackage(renderedInputBytes, configuredMeasured.pageCount);
-    const textBinding = bindLogicalMarkupText(request.expectedMarkupText, pdfText, packageEvidence.pagination);
+    const textBinding = bindLogicalMarkupText(request.expectedMarkupText, pdfText, packageEvidence.pagination, packageEvidence.revisionBoundaries);
     const markupTextMatchesPdf = textBinding.matched;
     const configuredContrastPassed = configuredContrast(configuredPixels, controlPixels, request.configuredPixelFloor ?? 4);
     const measuredVisibility = revisionVisibility(configuredPixels, controlPixels, request.configuredPixelFloor ?? 4);
