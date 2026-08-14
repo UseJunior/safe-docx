@@ -27,7 +27,7 @@ in `proposal.md` and are separate changes.
       unchanged.
 - [x] 2.2 Add a tag-emitting path to within-paragraph `atomLcs`, with
       word-vs-run granularity as an alignment parameter.
-- [ ] 2.3 Represent direct formatting differences as `both` + scoped
+- [x] 2.3 Represent direct formatting differences as `both` + scoped
       `PropertyDelta`; assert no construction path emits a del/ins pair over
       equal content.
 
@@ -37,7 +37,7 @@ in `proposal.md` and are separate changes.
       assertion remains open until reordered equal content is bound to explicit
       task-2.4 move relations; otherwise a non-adjacent equal del/ins pair could
       escape the local assertion.
-- [ ] 2.4 Model move pairs as a relation between an `original` and a `revised`
+- [x] 2.4 Model move pairs as a relation between an `original` and a `revised`
       subtree, and verify the tree satisfies the live "Tracked move ranges are
       structurally certified" requirement — one range per direction and name,
       balanced non-crossing markers, unique decimal IDs. Record whether the tree

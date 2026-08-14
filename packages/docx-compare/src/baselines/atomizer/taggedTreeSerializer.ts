@@ -1,12 +1,13 @@
 import { XMLSerializer } from '@xmldom/xmldom';
 import type { WmlElement } from '@usejunior/docx-core';
-import { childElements } from '@usejunior/docx-core';
+import { childElements, parseXml } from '@usejunior/docx-core';
 import {
   nextRevisionId,
   representative,
   revisionProvenance,
   type RevisionProvenance,
   type Side,
+  type TaggedMoveRelation,
   type TaggedNode,
 } from './taggedTree.js';
 
@@ -86,12 +87,12 @@ function convertDeletedText(root: WmlElement): void {
   }
 }
 
-function wrapRevision(node: WmlElement, kind: 'ins' | 'del', revision: ComparisonRevision): WmlElement {
+function wrapRevision(node: WmlElement, kind: 'ins' | 'del' | 'moveFrom' | 'moveTo', revision: ComparisonRevision): WmlElement {
   const wrapper = node.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
   wrapper.setAttributeNS(W_NS, 'w:id', String(revision.id));
   wrapper.setAttributeNS(W_NS, 'w:author', revision.author);
   wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
-  if (kind === 'del') convertDeletedText(node);
+  if (kind === 'del' || kind === 'moveFrom') convertDeletedText(node);
   wrapper.appendChild(node);
   return wrapper;
 }
@@ -165,18 +166,54 @@ export function splitWithPreservedProvenance(
   return fragments.map((fragment) => wrapPreserved(cloneElement(fragment), stack));
 }
 
-function emitNode(node: TaggedNode, plan: PreservePlan, bothSide: Side = 'revised'): WmlElement {
+function moveFor(node: TaggedNode, moves: readonly TaggedMoveRelation[]): TaggedMoveRelation | undefined {
+  return moves.find((move) => move.source === node || move.destination === node);
+}
+
+function moveMarker(
+  owner: Document,
+  relation: TaggedMoveRelation,
+  direction: 'From' | 'To',
+  boundary: 'Start' | 'End',
+): WmlElement {
+  const marker = owner.createElementNS(W_NS, `w:move${direction}Range${boundary}`) as WmlElement;
+  const id = direction === 'From' ? relation.sourceRangeId : relation.destinationRangeId;
+  marker.setAttributeNS(W_NS, 'w:id', String(id));
+  marker.setAttributeNS(W_NS, 'w:name', relation.name);
+  return marker;
+}
+
+function emitNode(
+  node: TaggedNode,
+  plan: PreservePlan,
+  bothSide: Side = 'revised',
+  moves: readonly TaggedMoveRelation[] = [],
+): WmlElement {
   const base = cloneElement(representative(node, node.tag === 'original' ? 'original' : node.tag === 'revised' ? 'revised' : bothSide)!);
   if (!node.opaque && node.children.length > 0) {
-    replaceElementChildren(base, node.children.map((child) => emitNode(child, plan)));
+    const emitted: WmlElement[] = [];
+    for (const child of node.children) {
+      const relation = moveFor(child, moves);
+      if (relation) {
+        const direction = relation.source === child ? 'From' : 'To';
+        emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'Start'));
+        emitted.push(emitNode(child, plan, 'revised', moves));
+        emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'End'));
+      } else emitted.push(emitNode(child, plan, 'revised', moves));
+    }
+    replaceElementChildren(base, emitted);
   }
   applyPropertyDelta(base, node, plan.comparison);
   const entry = plan.entries.get(node)!;
   if (node.tag === 'original') {
-    return wrapPreserved(wrapRevision(base, 'del', plan.comparison), entry.originalStack);
+    const relation = moveFor(node, moves);
+    const revision = relation ? { ...plan.comparison, id: relation.sourceRangeId } : plan.comparison;
+    return wrapPreserved(wrapRevision(base, relation ? 'moveFrom' : 'del', revision), entry.originalStack);
   }
   if (node.tag === 'revised') {
-    return wrapPreserved(wrapRevision(base, 'ins', plan.comparison), entry.revisedStack);
+    const relation = moveFor(node, moves);
+    const revision = relation ? { ...plan.comparison, id: relation.destinationRangeId } : plan.comparison;
+    return wrapPreserved(wrapRevision(base, relation ? 'moveTo' : 'ins', revision), entry.revisedStack);
   }
   const stack = entry.revisedStack.length > 0 ? entry.revisedStack : entry.originalStack;
   return wrapPreserved(base, stack);
@@ -186,6 +223,7 @@ function emitNode(node: TaggedNode, plan: PreservePlan, bothSide: Side = 'revise
 export interface TaggedTreeSerializerOptions {
   /** Package/story skeleton. Tracked content still projects to both sides. */
   baseSide?: Side;
+  moves?: readonly TaggedMoveRelation[];
 }
 
 export function serializeTaggedTree(
@@ -194,7 +232,9 @@ export function serializeTaggedTree(
   options: TaggedTreeSerializerOptions = {},
 ): string {
   if (!plan.entries.has(tree)) throw new Error('PreservePlan does not belong to this TaggedTree');
-  return new XMLSerializer().serializeToString(emitNode(tree, plan, options.baseSide ?? 'revised'));
+  return new XMLSerializer().serializeToString(
+    emitNode(tree, plan, options.baseSide ?? 'revised', options.moves ?? []),
+  );
 }
 
 /**
@@ -203,6 +243,48 @@ export function serializeTaggedTree(
  */
 export function composeTaggedStories(parent: TaggedNode, stories: readonly TaggedNode[]): TaggedNode {
   return { ...parent, children: [...parent.children, ...stories] } as TaggedNode;
+}
+
+/** Certify exactly one balanced range in each direction for every logical move. */
+export function verifySerializedMoveRanges(
+  xml: string,
+  relations: readonly TaggedMoveRelation[],
+): string[] {
+  const document = parseXml(xml);
+  const violations: string[] = [];
+  const stacks: Record<'From' | 'To', string[]> = { From: [], To: [] };
+  const elements = Array.from(document.getElementsByTagName('*'));
+  for (const element of elements) {
+    const match = /^move(From|To)Range(Start|End)$/.exec(element.localName ?? '');
+    if (!match) continue;
+    const direction = match[1] as 'From' | 'To';
+    const boundary = match[2] as 'Start' | 'End';
+    const name = element.getAttributeNS(W_NS, 'name') ?? '';
+    if (boundary === 'Start') stacks[direction].push(name);
+    else if (stacks[direction].pop() !== name) violations.push(`${direction.toLowerCase()} move ranges cross or close out of order`);
+  }
+  for (const direction of ['From', 'To'] as const) {
+    if (stacks[direction].length > 0) violations.push(`${direction.toLowerCase()} move ranges are unbalanced`);
+  }
+  for (const relation of relations) {
+    for (const [direction, id] of [
+      ['From', relation.sourceRangeId],
+      ['To', relation.destinationRangeId],
+    ] as const) {
+      for (const boundary of ['Start', 'End'] as const) {
+        const matches = Array.from(document.getElementsByTagNameNS(W_NS, `move${direction}Range${boundary}`))
+          .filter((element) => element.getAttributeNS(W_NS, 'id') === String(id) &&
+            element.getAttributeNS(W_NS, 'name') === relation.name);
+        if (matches.length !== 1) {
+          violations.push(`${relation.name} ${direction.toLowerCase()} range ${boundary.toLowerCase()} count is ${matches.length}`);
+        }
+      }
+      const wrappers = Array.from(document.getElementsByTagNameNS(W_NS, `move${direction}`))
+        .filter((element) => element.getAttributeNS(W_NS, 'id') === String(id));
+      if (wrappers.length !== 1) violations.push(`${relation.name} ${direction.toLowerCase()} wrapper count is ${wrappers.length}`);
+    }
+  }
+  return violations;
 }
 
 /** Return the side representative stack retained by the plan. */

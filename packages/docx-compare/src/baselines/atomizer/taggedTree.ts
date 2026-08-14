@@ -213,13 +213,27 @@ export interface MoveRelationViolation {
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.28
  * @see #814
  */
-export function verifyMoveRelations(relations: readonly TaggedMoveRelation[]): MoveRelationViolation[] {
+export function verifyMoveRelations(
+  relations: readonly TaggedMoveRelation[],
+  tree?: TaggedNode,
+): MoveRelationViolation[] {
   const violations: MoveRelationViolation[] = [];
   const names = new Set<string>();
   const rangeIds = new Set<number>();
+  const members = new Set<TaggedNode>();
+  if (tree) {
+    const visit = (node: TaggedNode): void => {
+      members.add(node);
+      node.children.forEach(visit);
+    };
+    visit(tree);
+  }
   relations.forEach((relation, index) => {
     if (relation.source.tag !== 'original' || relation.destination.tag !== 'revised') {
       violations.push({ relation: index, detail: 'move endpoints must be original and revised subtrees' });
+    }
+    if (tree && (!members.has(relation.source) || !members.has(relation.destination))) {
+      violations.push({ relation: index, detail: 'move endpoints must belong to the certified tagged tree' });
     }
     if (relation.name.trim().length === 0 || names.has(relation.name)) {
       violations.push({ relation: index, detail: 'move name must be non-empty and one-to-one' });

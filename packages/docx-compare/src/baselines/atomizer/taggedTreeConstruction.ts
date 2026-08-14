@@ -1,0 +1,153 @@
+import type { WmlElement } from '@usejunior/docx-core';
+import { childElements } from '@usejunior/docx-core';
+import {
+  nextRevisionId,
+  subtreeSignature,
+  verifyMoveRelations,
+  verifyTaggedTree,
+  type BothNode,
+  type OriginalNode,
+  type PropertyDelta,
+  type PropertyScope,
+  type RevisedNode,
+  type TaggedMoveRelation,
+  type TaggedNode,
+} from './taggedTree.js';
+
+const PROPERTY_SCOPE_BY_CONTAINER: Readonly<Record<string, { child: string; scope: PropertyScope }>> = {
+  r: { child: 'rPr', scope: 'run' },
+  p: { child: 'pPr', scope: 'paragraph' },
+  tr: { child: 'trPr', scope: 'tableRow' },
+  tc: { child: 'tcPr', scope: 'tableCell' },
+  sectPr: { child: 'sectPr', scope: 'section' },
+};
+
+function alignmentKey(element: WmlElement): string {
+  return JSON.stringify([element.namespaceURI ?? '', element.localName ?? element.tagName, element.textContent ?? '']);
+}
+
+function propertyDelta(original: WmlElement, revised: WmlElement): PropertyDelta | undefined {
+  const descriptor = PROPERTY_SCOPE_BY_CONTAINER[original.localName ?? original.tagName.replace(/^w:/, '')];
+  if (!descriptor) return undefined;
+  const originalProperty = childElements(original).find((child) => child.localName === descriptor.child) ?? null;
+  const revisedProperty = childElements(revised).find((child) => child.localName === descriptor.child) ?? null;
+  if ((originalProperty ? subtreeSignature(originalProperty) : '') ===
+      (revisedProperty ? subtreeSignature(revisedProperty) : '')) return undefined;
+  return {
+    scope: descriptor.scope,
+    original: originalProperty,
+    revised: revisedProperty,
+    changedProperties: ['directProperties'],
+  };
+}
+
+function lcsPairs(original: readonly WmlElement[], revised: readonly WmlElement[]): Array<[number, number]> {
+  const rows = original.length + 1;
+  const cols = revised.length + 1;
+  const dp = Array.from({ length: rows }, () => Array<number>(cols).fill(0));
+  for (let i = original.length - 1; i >= 0; i--) {
+    for (let j = revised.length - 1; j >= 0; j--) {
+      dp[i]![j] = alignmentKey(original[i]!) === alignmentKey(revised[j]!)
+        ? 1 + dp[i + 1]![j + 1]!
+        : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
+    }
+  }
+  const pairs: Array<[number, number]> = [];
+  let i = 0;
+  let j = 0;
+  while (i < original.length && j < revised.length) {
+    if (alignmentKey(original[i]!) === alignmentKey(revised[j]!)) {
+      pairs.push([i++, j++]);
+    } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
+    else j++;
+  }
+  return pairs;
+}
+
+function constructBoth(original: WmlElement, revised: WmlElement): BothNode {
+  const originalChildren = childElements(original);
+  const revisedChildren = childElements(revised);
+  const pairs = lcsPairs(originalChildren, revisedChildren);
+  const children: TaggedNode[] = [];
+  let oi = 0;
+  let ri = 0;
+  for (const [matchedOriginal, matchedRevised] of pairs) {
+    while (oi < matchedOriginal) children.push({ tag: 'original', node: originalChildren[oi++]!, children: [], opaque: true });
+    while (ri < matchedRevised) children.push({ tag: 'revised', node: revisedChildren[ri++]!, children: [], opaque: true });
+    children.push(constructBoth(originalChildren[oi++]!, revisedChildren[ri++]!));
+  }
+  while (oi < originalChildren.length) children.push({ tag: 'original', node: originalChildren[oi++]!, children: [], opaque: true });
+  while (ri < revisedChildren.length) children.push({ tag: 'revised', node: revisedChildren[ri++]!, children: [], opaque: true });
+  return { tag: 'both', original, revised, children, propertyDelta: propertyDelta(original, revised) };
+}
+
+function collectSideOnly(node: TaggedNode, originals: OriginalNode[], revised: RevisedNode[]): void {
+  if (node.tag === 'original') originals.push(node);
+  else if (node.tag === 'revised') revised.push(node);
+  node.children.forEach((child) => collectSideOnly(child, originals, revised));
+}
+
+function classifyMoves(tree: TaggedNode, firstRevisionId: number): TaggedMoveRelation[] {
+  const originals: OriginalNode[] = [];
+  const revised: RevisedNode[] = [];
+  collectSideOnly(tree, originals, revised);
+  const revisedBySignature = new Map<string, RevisedNode[]>();
+  for (const node of revised) {
+    const signature = subtreeSignature(node.node);
+    const bucket = revisedBySignature.get(signature) ?? [];
+    bucket.push(node);
+    revisedBySignature.set(signature, bucket);
+  }
+  const relations: TaggedMoveRelation[] = [];
+  let id = firstRevisionId;
+  for (const source of originals) {
+    const destination = revisedBySignature.get(subtreeSignature(source.node))?.shift();
+    if (!destination) continue;
+    relations.push({
+      source,
+      destination,
+      name: `taggedMove${relations.length + 1}`,
+      sourceRangeId: id++,
+      destinationRangeId: id++,
+    });
+  }
+  return relations;
+}
+
+export interface ConstructedTaggedTree {
+  tree: TaggedNode;
+  moves: TaggedMoveRelation[];
+}
+
+/** Construct a complete, projection-isomorphic tagged tree directly from both DOM roots. */
+export function constructTaggedTree(original: WmlElement, revised: WmlElement): ConstructedTaggedTree {
+  if ((original.namespaceURI ?? '') !== (revised.namespaceURI ?? '') ||
+      (original.localName ?? original.tagName) !== (revised.localName ?? revised.tagName)) {
+    throw new Error('tagged-tree roots must have the same element identity and story role');
+  }
+  const tree = constructBoth(original, revised);
+  const violations = verifyTaggedTree(original, revised, tree);
+  if (violations.length > 0) throw new Error(`constructed tagged tree violates P1-P5: ${violations[0]!.detail}`);
+  const moves = classifyMoves(tree, nextRevisionId(original, revised));
+  const moveViolations = verifyMoveRelations(moves, tree);
+  if (moveViolations.length > 0) throw new Error(`constructed move relation is invalid: ${moveViolations[0]!.detail}`);
+  return { tree, moves };
+}
+
+/** Equal-content side-only pairs are valid only when explicitly bound as moves. */
+export function verifyGlobalEqualContentInvariant(
+  tree: TaggedNode,
+  moves: readonly TaggedMoveRelation[],
+): string[] {
+  const originals: OriginalNode[] = [];
+  const revised: RevisedNode[] = [];
+  collectSideOnly(tree, originals, revised);
+  const bound = new Set(moves.flatMap((move) => [move.source, move.destination]));
+  const revisedSignatures = new Map(revised.map((node) => [subtreeSignature(node.node), node]));
+  return originals.flatMap((node) => {
+    const peer = revisedSignatures.get(subtreeSignature(node.node));
+    return peer && (!bound.has(node) || !bound.has(peer))
+      ? [`equal-content original/revised pair is not classified as a move: ${node.node.tagName}`]
+      : [];
+  });
+}
