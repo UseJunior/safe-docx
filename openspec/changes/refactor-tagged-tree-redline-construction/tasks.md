@@ -106,7 +106,7 @@ in `proposal.md` and are separate changes.
       equal del/ins pairs are emitted and field structure survives both
       projections. Deletion is not justified by `both`-tagging alone — field
       fragmentation is an inherent conforming-emission constraint.
-- [ ] 4.6 Cross-reader verification on any corpus document whose shadow output
+- [x] 4.6 Cross-reader verification on any corpus document whose shadow output
       is proposed as equivalent (Word fidelity check, plus Pages / Google Docs
       paths).
 
@@ -116,8 +116,14 @@ in `proposal.md` and are separate changes.
       `.tmp/tagged-tree-shadow-synthetic.docx` opened in Microsoft Word, and a
       native Google Docs import preserved the synthetic visible text at
       `https://docs.google.com/document/d/1fiAzFYXb-aG5rCYrtSDkrCD3tmN2HeBbvwhffU4WCGM`.
-      Apple Pages is not installed on the test host, so this task remains
-      unchecked rather than treating two readers as proof of all three.
+      Apple Pages was subsequently resolved through macOS Launch Services and
+      opened the same synthetic DOCX. Its visible body text contained both
+      tracked alternatives, `The quick fox jumps over the lazy dog.` and
+      `The slow fox jumps over the lazy dog.`, matching the Google Docs import
+      behavior. The earlier statement that Pages was not installed was based on
+      an incomplete filesystem/Spotlight lookup; `open -a Pages` demonstrated
+      that conclusion was wrong. Word, Pages, and Google Docs paths are now all
+      exercised.
 
 ## 5. Validation
 
@@ -149,10 +155,10 @@ in `proposal.md` and are separate changes.
   evidence. The direct-formatting divergence is pinned by a synthetic negative
   control and tracked publicly in #836; it is not silently accepted.
 - Task 5.5 is complete through #837, #838, #839, and #840.
-- Task 4.6 is the sole remaining checklist item. Microsoft Word opened the
-  synthetic output, and Google Docs imported it with the expected visible text.
-  Apple Pages is not installed on this host, so the three-reader requirement is
-  still explicitly not met.
+- Task 4.6 is complete. Microsoft Word opened the synthetic output, Google Docs
+  imported it with the expected visible text, and Pages opened it through
+  Launch Services with both tracked alternatives present. The earlier Pages
+  installation finding was a discovery false negative, corrected above.
 
       **Public-action record (2026-08-14):** issue creation is intentionally not
       performed by the repository test suite. After duplicate review and explicit
