@@ -102,8 +102,8 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-4-4` | w:commentRangeStart comment anchor opening | 5 | 1 | 17.13.4.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeStart` | packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
 | `ECMA-PART1-17-13-4-3` | w:commentRangeEnd comment anchor closing | 5 | 1 | 17.13.4.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeEnd` | packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
 | `ECMA-PART1-17-13-4-5` | w:commentReference comment reference mark | 5 | 1 | 17.13.4.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentReference` | packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
-| `ECMA-PART1-17-13-5-15` | Deleted paragraph mark (w:del under w:pPr/w:rPr) | 5 | 1 | 17.13.5.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts |
-| `ECMA-PART1-17-13-5-20` | Inserted paragraph mark (w:ins under w:pPr/w:rPr) | 5 | 1 | 17.13.5.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts |
+| `ECMA-PART1-17-13-5-15` | Deleted paragraph mark (w:del under w:pPr/w:rPr) | 5 | 1 | 17.13.5.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts |
+| `ECMA-PART1-17-13-5-20` | Inserted paragraph mark (w:ins under w:pPr/w:rPr) | 5 | 1 | 17.13.5.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts |
 | `ECMA-PART1-17-13-5-4` | Custom XML deletion range end | 5 | 1 | 17.13.5.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-5` | Custom XML deletion range start | 5 | 1 | 17.13.5.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-6` | Custom XML insertion range end | 5 | 1 | 17.13.5.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
@@ -112,12 +112,12 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-5-9` | Custom XML move-source range start | 5 | 1 | 17.13.5.9 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveFromRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-10` | Custom XML move-destination range end | 5 | 1 | 17.13.5.10 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-11` | Custom XML move-destination range start | 5 | 1 | 17.13.5.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
-| `ECMA-PART1-17-13-5-21` | Move source paragraph (w:moveFrom) | 5 | 1 | 17.13.5.21 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-21` | Move source paragraph (w:moveFrom) | 5 | 1 | 17.13.5.21 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts |
 | `ECMA-PART1-17-13-5-22` | Move source run content (w:moveFrom) | 5 | 1 | 17.13.5.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-23` | Move source range end | 5 | 1 | 17.13.5.23 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts |
 | `ECMA-PART1-17-13-5-24` | Move source range start | 5 | 1 | 17.13.5.24 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts |
 | `ECMA-PART1-17-13-5-25` | Move destination run content (w:moveTo) | 5 | 1 | 17.13.5.25 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveTo` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
-| `ECMA-PART1-17-13-5-26` | Move destination paragraph (w:moveTo) | 5 | 1 | 17.13.5.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveTo` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-26` | Move destination paragraph (w:moveTo) | 5 | 1 | 17.13.5.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveTo` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts |
 | `ECMA-PART1-17-13-5-27` | Move destination range end | 5 | 1 | 17.13.5.27 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts |
 | `ECMA-PART1-17-13-5-28` | Move destination range start | 5 | 1 | 17.13.5.28 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts |
 | `ECMA-PART1-17-13-5-29` | Paragraph-property revisions (w:pPrChange) | 5 | 1 | 17.13.5.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
@@ -1382,7 +1382,7 @@ This claim is bounded to the runtime and test evidence listed above.
 - **Part / Section:** Part 1 § 17.13.5.15
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del`
-- **Verified by:** packages/docx-core/src/primitives/accept_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts
+- **Verified by:** packages/docx-core/src/primitives/accept_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts
 
 ECMA-376 Part 1 §17.13.5.15 defines `w:del` inside `w:pPr/w:rPr` as a tracked
 deletion of the *paragraph mark* (the glyph ending the paragraph), not of the
@@ -1399,7 +1399,7 @@ contents themselves are deleted only where they carry their own run-level
 - **Part / Section:** Part 1 § 17.13.5.20
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins`
-- **Verified by:** packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts
+- **Verified by:** packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts
 
 ECMA-376 Part 1 §17.13.5.20 defines `w:ins` inside `w:pPr/w:rPr` as a tracked
 insertion of the *paragraph mark*, not of the paragraph's contents. Rejecting
@@ -1507,7 +1507,7 @@ its §17.13.5.10 end marker.
 - **Part / Section:** Part 1 § 17.13.5.21
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom`
-- **Verified by:** packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts
 
 This claim is bounded to the runtime and test evidence listed above.
 
@@ -1567,7 +1567,7 @@ comparison surface. Complete pair semantics are not claimed.
 - **Part / Section:** Part 1 § 17.13.5.26
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveTo`
-- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts
 
 Paragraph-level move-destination content has the same bounded support and
 pairing caveat as run-level content.

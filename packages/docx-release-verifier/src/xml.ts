@@ -1,4 +1,4 @@
-import { DOMParser, type Document as XmlDocument, type Element as XmlElement } from '@xmldom/xmldom';
+import { DOMParser, type Document as XmlDocument, type Element as XmlElement, type Node as XmlNode } from '@xmldom/xmldom';
 import type { Projection } from './types.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -42,9 +42,151 @@ function parse(xml: string): XmlDocument {
   return doc;
 }
 
+function directWordChild(element: XmlElement, localName: string): XmlElement | null {
+  for (const child of Array.from(element.childNodes)) {
+    if (child.nodeType === 1 && isWord(child as XmlElement, localName)) return child as XmlElement;
+  }
+  return null;
+}
+
+/**
+ * Whether this physical paragraph's own mark disappears in the selected view.
+ * The paragraph mark is tracked as a revision of the mark's run properties:
+ * a deleted mark or a move-source mark disappears on accept, and an inserted
+ * mark or a move-destination mark disappears on reject. Only the paragraph's
+ * direct `w:pPr/w:rPr` is consulted, so nested text-box paragraphs never
+ * contribute a mark revision to their host paragraph.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
+ */
+function paragraphMarkRemoved(paragraph: XmlElement, mode: 'accept' | 'reject'): boolean {
+  const paragraphProperties = directWordChild(paragraph, 'pPr');
+  const markRunProperties = paragraphProperties && directWordChild(paragraphProperties, 'rPr');
+  if (!markRunProperties) return false;
+  const removed = mode === 'accept' ? OMIT_ON_ACCEPT : OMIT_ON_REJECT;
+  return Array.from(markRunProperties.childNodes).some((child) => child.nodeType === 1
+    && (child as XmlElement).namespaceURI === W_NS && removed.has((child as XmlElement).localName ?? ''));
+}
+
+/** Block containers that terminate a paragraph-mark merge scan conservatively. */
+const MERGE_SCAN_BLOCKERS = new Set(['tbl', 'sdt', 'customXml', 'altChunk']);
+
+/**
+ * The paragraph a removed paragraph mark merges into: the next `w:p` sibling
+ * inside the same flow (body, table cell, or text-box content). Marker
+ * siblings such as bookmarks and proofing anchors are skipped; block
+ * containers stop the scan so content never merges across a table or
+ * structured document tag, and the final paragraph of a flow keeps its mark.
+ */
+function followingParagraphInFlow(paragraph: XmlElement): XmlElement | null {
+  for (let node = paragraph.nextSibling; node; node = node.nextSibling) {
+    if (node.nodeType !== 1) continue;
+    const element = node as XmlElement;
+    if (isWord(element, 'p')) return element;
+    if (element.namespaceURI === W_NS && MERGE_SCAN_BLOCKERS.has(element.localName ?? '')) return null;
+  }
+  return null;
+}
+
+/**
+ * Range-markup siblings that are transparent when looking for the block
+ * elements surrounding a paragraph; `w:sectPr` is included because a
+ * trailing body sectPr is not a block element.
+ */
+const BLOCK_SIBLING_MARKERS = new Set([
+  'bookmarkStart', 'bookmarkEnd',
+  'commentRangeStart', 'commentRangeEnd',
+  'moveFromRangeStart', 'moveFromRangeEnd',
+  'moveToRangeStart', 'moveToRangeEnd',
+  'customXmlInsRangeStart', 'customXmlInsRangeEnd',
+  'customXmlDelRangeStart', 'customXmlDelRangeEnd',
+  'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd',
+  'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd',
+  'permStart', 'permEnd',
+  'proofErr', 'sectPr',
+]);
+
+function blockSibling(start: XmlNode | null, direction: 'previousSibling' | 'nextSibling'): XmlElement | null {
+  for (let node = start; node; node = node[direction]) {
+    if (node.nodeType !== 1) continue;
+    const element = node as XmlElement;
+    if (element.namespaceURI === W_NS && BLOCK_SIBLING_MARKERS.has(element.localName ?? '')) continue;
+    return element;
+  }
+  return null;
+}
+
+/** Non-text run content that keeps an emptied paragraph logically present (e.g. an anchored drawing or embedded object). */
+const VISIBLE_OBJECT_LOCALS = new Set(['drawing', 'pict', 'object']);
+
+/** Whether the paragraph retains non-text visible content in the selected view. Nested text-box paragraphs are the box's own logical paragraphs and are not consulted. */
+function hasVisibleObjects(element: XmlElement, mode: 'accept' | 'reject'): boolean {
+  const localName = element.localName ?? '';
+  if (element.namespaceURI === W_NS) {
+    if ((mode === 'accept' && OMIT_ON_ACCEPT.has(localName)) || (mode === 'reject' && OMIT_ON_REJECT.has(localName))) return false;
+    if (VISIBLE_OBJECT_LOCALS.has(localName)) return true;
+  }
+  for (const child of Array.from(element.childNodes)) {
+    if (child.nodeType !== 1) continue;
+    const childElement = child as XmlElement;
+    if (isWord(childElement, 'p')) continue;
+    if (hasVisibleObjects(childElement, mode)) return true;
+  }
+  return false;
+}
+
+/**
+ * True iff dropping an emptied removed-mark chain keeps its parent flow
+ * structurally valid for Word: the parent must retain at least one block
+ * element, must not end on a `w:tbl` (a trailing table needs a following
+ * paragraph), and two tables must not become adjacent. The previous block is
+ * taken at the chain's first paragraph and the next block at its last, so
+ * the whole chain is evaluated as the single logical paragraph it projects.
+ */
+function chainRemovalKeepsFlowValid(chainStart: XmlElement, chainEnd: XmlElement): boolean {
+  const previous = blockSibling(chainStart.previousSibling, 'previousSibling');
+  const next = blockSibling(chainEnd.nextSibling, 'nextSibling');
+  if (!previous && !next) return false;
+  if (previous && isWord(previous, 'tbl') && !next) return false;
+  if (previous && next && isWord(previous, 'tbl') && isWord(next, 'tbl')) return false;
+  return true;
+}
+
+/**
+ * Projects the logical accept-all/reject-all paragraph sequence. Every
+ * physical paragraph contributes its visible text, and a paragraph whose own
+ * mark is removed in the selected view merges that text into the following
+ * paragraph of the same flow instead of ending a logical paragraph. Merged
+ * chains emit exactly one logical paragraph at the chain's first physical
+ * position, so empty physical paragraphs survive only when their mark
+ * survives in the selected view. A removed mark with no merge target (end of
+ * flow, or blocked by a table or other block container) still dissolves its
+ * paragraph when the chain has no surviving text or objects and removal
+ * keeps the flow structurally valid; content-bearing chains are always kept.
+ */
 export function projectDocumentXml(xml: string, mode: 'accept' | 'reject'): Projection {
   const document = parse(xml);
-  const paragraphs = Array.from(document.getElementsByTagNameNS(W_NS, 'p')).map((paragraph) => textFrom(paragraph, mode, true));
+  const physical = Array.from(document.getElementsByTagNameNS(W_NS, 'p'));
+  const slotOf = new Map<XmlElement, number>();
+  const logical = new Map<number, string>();
+  const objectSlots = new Set<number>();
+  physical.forEach((paragraph, index) => {
+    const slot = slotOf.get(paragraph) ?? index;
+    const text = (logical.get(slot) ?? '') + textFrom(paragraph, mode, true);
+    logical.set(slot, text);
+    if (text === '' && !objectSlots.has(slot) && hasVisibleObjects(paragraph, mode)) objectSlots.add(slot);
+    if (!paragraphMarkRemoved(paragraph, mode)) return;
+    const target = followingParagraphInFlow(paragraph);
+    if (target) {
+      slotOf.set(target, slot);
+      return;
+    }
+    if (text === '' && !objectSlots.has(slot) && chainRemovalKeepsFlowValid(physical[slot]!, paragraph)) logical.delete(slot);
+  });
+  const paragraphs = [...logical.entries()].sort(([left], [right]) => left - right).map(([, text]) => text);
   return { paragraphs, text: paragraphs.join('\n') };
 }
 
