@@ -167,6 +167,28 @@ in `proposal.md` and are separate changes.
       allowing the generic child serializer to wrap property elements as text
       revisions.
 
+      **Property canonicalization follow-up:** the serializer now filters the
+      property subtree from generic child emission and writes paragraph base
+      properties through a CT_PPrBase `w:pPrChange`, with paragraph-mark
+      properties carried independently by `w:rPrChange`. Synthetic additions,
+      removals, and replacements of `pStyle`, `numPr`, `spacing`, `ind`, `jc`,
+      `tabs`, and paragraph-mark `rPr` project exactly in both directions and no
+      longer produce `w:ins|del/w:pPr`. The hardened reject projection now
+      restores `w:rPrChange` snapshots before restoring the paragraph base.
+      The 60-paragraph source projections remain exactly `1.0`/`1.0`.
+
+      Aspose accept remains `39/60` for direct paragraph snapshots while reject
+      is `60/60`: the remaining 21 cases are whole-paragraph replacement
+      boundaries, not property-subtree wrappers. A conforming attempt to coalesce
+      entire deletion/insertion hunks into paired paragraphs changed paragraph
+      identity and worsened Aspose accept to `6/60`; it was discarded. Copying
+      the following inserted paragraph's live formatting onto the immediately
+      preceding deleted paragraph (with a conforming prior snapshot) left the
+      same `39/60`, showing that the loss is not simple paragraph-mark formatting
+      inheritance. Default publication remains blocked pending a conforming
+      multi-paragraph replacement topology that both independent readers resolve
+      exactly.
+
       An Aspose save of the revised source itself changes `0/60` paragraph
       snapshots, likewise proving the changes are not its ordinary save
       normalization. Both the control and projection add 33 drawing-fallback

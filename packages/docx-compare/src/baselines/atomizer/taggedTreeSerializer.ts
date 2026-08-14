@@ -3,6 +3,7 @@ import type { WmlElement } from '@usejunior/docx-core';
 import { childElements, parseXml } from '@usejunior/docx-core';
 import {
   nextRevisionId,
+  PROPERTY_SCOPE_ELEMENT,
   representative,
   revisionProvenance,
   type RevisionProvenance,
@@ -168,6 +169,10 @@ const CHANGE_ELEMENT_BY_SCOPE = {
 function applyPropertyDelta(node: WmlElement, tagged: TaggedNode, revision: ComparisonRevision): void {
   if (tagged.tag !== 'both' || !tagged.propertyDelta) return;
   const delta = tagged.propertyDelta;
+  if (delta.scope === 'paragraph') {
+    applyParagraphPropertyDelta(node, delta.original, delta.revised, revision);
+    return;
+  }
   const live = delta.revised ? cloneElement(delta.revised) : undefined;
   const original = delta.original ? cloneElement(delta.original) : undefined;
   const expectedLocalName = live?.localName ?? original?.localName;
@@ -193,6 +198,55 @@ function applyPropertyDelta(node: WmlElement, tagged: TaggedNode, revision: Comp
   change.setAttributeNS(W_NS, 'w:date', revision.date);
   if (original) change.appendChild(original);
   property.appendChild(change);
+}
+
+function appendChangeMetadata(change: WmlElement, revision: ComparisonRevision): void {
+  change.setAttributeNS(W_NS, 'w:id', String(revision.id));
+  change.setAttributeNS(W_NS, 'w:author', revision.author);
+  change.setAttributeNS(W_NS, 'w:date', revision.date);
+}
+
+function applyParagraphPropertyDelta(
+  paragraph: WmlElement,
+  original: WmlElement | null,
+  revised: WmlElement | null,
+  revision: ComparisonRevision,
+): void {
+  const live = revised ? cloneElement(revised) : paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
+  for (const stale of childElements(live).filter((child) => child.localName === 'pPrChange')) live.removeChild(stale);
+  const liveMark = childElements(live).find((child) => child.localName === 'rPr');
+  const originalMark = original && childElements(original).find((child) => child.localName === 'rPr');
+  if ((liveMark ? new XMLSerializer().serializeToString(liveMark) : '') !==
+      (originalMark ? new XMLSerializer().serializeToString(originalMark) : '')) {
+    const mark = liveMark ?? paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
+    if (!liveMark) {
+      const boundary = childElements(live).find((child) => ['sectPr', 'pPrChange'].includes(child.localName));
+      live.insertBefore(mark, boundary ?? null);
+    }
+    const markChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPrChange') as WmlElement;
+    appendChangeMetadata(markChange, revision);
+    const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
+    if (originalMark) {
+      for (const child of childElements(originalMark)) {
+        if (child.localName !== 'rPrChange') snapshot.appendChild(cloneElement(child));
+      }
+    }
+    markChange.appendChild(snapshot);
+    mark.appendChild(markChange);
+  }
+  const pPrChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPrChange') as WmlElement;
+  appendChangeMetadata(pPrChange, revision);
+  const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
+  if (original) {
+    for (const child of childElements(original)) {
+      if (!['rPr', 'sectPr', 'pPrChange'].includes(child.localName)) snapshot.appendChild(cloneElement(child));
+    }
+  }
+  pPrChange.appendChild(snapshot);
+  live.appendChild(pPrChange);
+  const current = childElements(paragraph).find((child) => child.localName === 'pPr');
+  if (current) paragraph.replaceChild(live, current);
+  else paragraph.insertBefore(live, paragraph.firstChild);
 }
 
 function wrapPreserved(node: WmlElement, stack: readonly RevisionProvenance[]): WmlElement {
@@ -251,7 +305,15 @@ function emitNode(
   const base = cloneElement(representative(node, node.tag === 'original' ? 'original' : node.tag === 'revised' ? 'revised' : bothSide)!);
   if (!node.opaque && node.children.length > 0) {
     const emitted: WmlElement[] = [];
-    for (const child of node.children) {
+    const propertyTag = node.tag === 'both' && node.propertyDelta
+      ? PROPERTY_SCOPE_ELEMENT[node.propertyDelta.scope]
+      : undefined;
+    for (let index = 0; index < node.children.length; index++) {
+      const child = node.children[index]!;
+      const childElement = representative(child, child.tag === 'original' ? 'original' : 'revised');
+      if (propertyTag && childElement?.tagName === propertyTag) {
+        continue;
+      }
       const relation = moveFor(child, moves);
       if (relation) {
         const direction = relation.source === child ? 'From' : 'To';

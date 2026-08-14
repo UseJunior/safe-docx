@@ -646,6 +646,7 @@ export function rejectAllChanges(documentXml: string): string {
   // Restore original direct paragraph properties before removing format
   // tracking. The pPrChange child is a CT_PPrBase snapshot; paragraph-mark
   // properties and section topology sit outside that base and remain live.
+  restoreRunPropertiesFromChanges(root);
   restoreParagraphPropertiesFromChanges(root);
 
   // Remove remaining format change tracking
@@ -660,6 +661,17 @@ export function rejectAllChanges(documentXml: string): string {
   removeEmptyHyperlinks(root);
 
   return serializeToXml(root);
+}
+
+function restoreRunPropertiesFromChanges(root: Element): void {
+  for (const change of findAllByTagName(root, 'w:rPrChange')) {
+    const live = change.parentNode as Element | null;
+    if (!live || live.tagName !== 'w:rPr') continue;
+    const snapshot = childElements(change).find((child) => child.tagName === 'w:rPr');
+    if (!snapshot) continue;
+    for (const child of childElements(live)) live.removeChild(child);
+    for (const child of childElements(snapshot)) live.appendChild(child.cloneNode(true));
+  }
 }
 
 /**

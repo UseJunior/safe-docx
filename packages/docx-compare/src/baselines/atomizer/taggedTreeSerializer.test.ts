@@ -265,4 +265,36 @@ describe('tagged-tree shadow serializer', () => {
     const candidateXml = `<w:document xmlns:w="${W_NS}">${output}</w:document>`;
     expect(compareSourceProjectedFormattingFidelity(originalXml, revisedXml, candidateXml).score).toBe(1);
   });
+
+  test('serializes paragraph property families only through conforming property changes', () => {
+    const original = documentBody(
+      '<w:p><w:pPr><w:pStyle w:val="Old"/><w:numPr><w:ilvl w:val="1"/><w:numId w:val="4"/></w:numPr>' +
+      '<w:spacing w:before="120"/><w:ind w:left="240"/><w:jc w:val="left"/>' +
+      '<w:tabs><w:tab w:val="left" w:pos="720"/></w:tabs><w:rPr><w:b/></w:rPr></w:pPr>' +
+      '<w:r><w:t>same</w:t></w:r></w:p>',
+    );
+    const revised = documentBody(
+      '<w:p><w:pPr><w:pStyle w:val="New"/><w:spacing w:after="240"/><w:ind w:right="360"/>' +
+      '<w:jc w:val="right"/><w:tabs><w:tab w:val="right" w:pos="1440"/></w:tabs>' +
+      '<w:rPr><w:i/></w:rPr></w:pPr><w:r><w:t>same</w:t></w:r></w:p>',
+    );
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+      author: 'Comparator', date: '2026-08-14T12:00:00Z',
+    }));
+    const parsed = parseXml(output);
+    const pPrChange = parsed.getElementsByTagNameNS(W_NS, 'pPrChange')[0]!;
+    const snapshot = Array.from(pPrChange.childNodes).find((node): node is Element =>
+      node.nodeType === 1 && (node as Element).localName === 'pPr')!;
+
+    expect(output).not.toMatch(/<w:(?:ins|del)[^>]*>\s*<w:pPr[ >]/);
+    expect(snapshot.getElementsByTagNameNS(W_NS, 'rPr')).toHaveLength(0);
+    expect(parsed.getElementsByTagNameNS(W_NS, 'rPrChange')).toHaveLength(1);
+    const originalXml = `<w:document xmlns:w="${W_NS}">${new XMLSerializer().serializeToString(original)}</w:document>`;
+    const revisedXml = `<w:document xmlns:w="${W_NS}">${new XMLSerializer().serializeToString(revised)}</w:document>`;
+    const candidateXml = `<w:document xmlns:w="${W_NS}">${output}</w:document>`;
+    const fidelity = compareSourceProjectedFormattingFidelity(originalXml, revisedXml, candidateXml);
+    expect(fidelity.accept.score).toBe(1);
+    expect(fidelity.reject.score).toBe(1);
+  });
 });
