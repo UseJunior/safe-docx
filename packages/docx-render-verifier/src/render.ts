@@ -102,9 +102,21 @@ function revisionVisibility(configured: PixelMeasurement, control: PixelMeasurem
 async function hasDeletionMarkup(bytes: Buffer): Promise<boolean> {
   try {
     const zip = await JSZip.loadAsync(bytes);
-    const documentXml = await zip.file('word/document.xml')?.async('string');
-    if (documentXml === undefined) return false;
-    const document = new DOMParser().parseFromString(documentXml, 'application/xml');
+    const renderedStories = Object.keys(zip.files).filter((name) =>
+      /^word\/(?:document|header[^/]*|footer[^/]*|footnotes|endnotes)\.xml$/u.test(name));
+    for (const name of renderedStories) {
+      const xml = await zip.file(name)?.async('string');
+      if (xml !== undefined && hasVisibleDeletionInStory(xml)) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function hasVisibleDeletionInStory(xml: string): boolean {
+  try {
+    const document = new DOMParser().parseFromString(xml, 'application/xml');
     if (document.getElementsByTagName('parsererror').length > 0) return false;
     const wrappers = [
       ...Array.from(document.getElementsByTagNameNS(W_NS, 'del')),
