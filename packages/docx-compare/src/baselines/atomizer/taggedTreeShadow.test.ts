@@ -75,7 +75,7 @@ describe('tagged-tree offline evaluation', () => {
     },
   );
 
-  test('pins paragraph-formatting divergence without exposing corpus text', async () => {
+  test('proves direct paragraph and run formatting against source projections', async () => {
     const originalBody = '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>SYNTHETIC OLD</w:t></w:r></w:p>';
     const revisedBody = '<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>SYNTHETIC NEW</w:t></w:r></w:p>';
     const original = await buildDocxFromBodyXml(originalBody);
@@ -94,13 +94,9 @@ describe('tagged-tree offline evaluation', () => {
 
     expect(report.divergingProjections).not.toContain('accept');
     expect(report.divergingProjections).not.toContain('reject');
-    expect(report.divergingProjections).toContain('formatting');
-    expect(report.fidelityScore).toBe(0.4102564102564103);
-    expect(report.diagnostics).toEqual([
-      'reject formatting run/bold/added at paragraph 0',
-      'reject formatting run/italic/removed at paragraph 0',
-      'reject formatting paragraph/alignment/changed at paragraph 0',
-    ]);
-    expect(report.classification).toBe('projection-inequivalent');
+    expect(report.divergingProjections).not.toContain('formatting');
+    expect(report.fidelityScore).toBe(1);
+    expect(report.diagnostics).toEqual([]);
+    expect(report.classification).toBe('projection-equivalent');
   });
 });

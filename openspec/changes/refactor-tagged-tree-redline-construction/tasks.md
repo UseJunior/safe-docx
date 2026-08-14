@@ -117,6 +117,24 @@ in `proposal.md` and are separate changes.
       weakened, the scores were not averaged away, and #837's default flip was
       not performed. Synthetic DOCX/PDF/PNG evidence is generated under
       `.tmp/review-artifacts/tagged-formatting-divergence/`.
+
+      **Correction after product decision (2026-08-14):** the preceding
+      successor-B investigation used legacy-output fidelity as the gate. Steven
+      confirmed that the tagged reject behavior is correct, so the authoritative
+      gate is now source-projection fidelity: accept against revised, reject
+      against original. The synthetic case is exactly `1.0`. Opaque fixture
+      `cd2f69960d5f13cc6292a138` is still blocking at
+      `0.6332451499118166`, with paragraph properties lost on changed
+      whole-paragraph paths; consequently #837 was not implemented. An optional
+      local Aspose Words check independently accepted and rejected the synthetic
+      tagged DOCX. Direct run and paragraph formatting scored `1.0` in both
+      directions. Aspose normalized section defaults by adding `w:cols
+      w:space="720"` and header/footer-only `w:pgMar`, so the unnormalized
+      all-dimension score is `0.6666666666666666`; this normalization is recorded
+      separately and was not attributed to tagged serialization. The license
+      remains outside the repository and Aspose is neither a runtime nor package
+      dependency. Reviewable Aspose DOCX/PDF/PNG projections are stored under
+      the same deterministic `.tmp/review-artifacts/` directory.
 - [x] 4.5 Produce the field-case evidence that successor C's deletion of
       `suppressNoOpChangePairs` depends on: field-stable, field-modification,
       field-delete, nested-field, and paragraph-spanning-field cases showing no

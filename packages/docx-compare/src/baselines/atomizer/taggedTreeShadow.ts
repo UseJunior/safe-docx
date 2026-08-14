@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { parseXml } from '@usejunior/docx-core';
-import { compareProjectedFormattingFidelity } from './formattingFidelity.js';
+import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.js';
 import { constructTaggedTree, verifyGlobalEqualContentInvariant } from './taggedTreeConstruction.js';
@@ -83,7 +83,7 @@ export function runTaggedTreeShadow(input: TaggedTreeShadowInput): TaggedTreeSha
     diagnostics.push(textMismatch('reject', expectedReject, shadowReject));
   }
 
-  const fidelity = compareProjectedFormattingFidelity(input.legacyXml, shadowXml);
+  const fidelity = compareSourceProjectedFormattingFidelity(input.originalXml, input.revisedXml, shadowXml);
   if (fidelity.score !== 1) {
     divergingProjections.push('formatting');
     for (const [projection, report] of [['accept', fidelity.accept], ['reject', fidelity.reject]] as const) {

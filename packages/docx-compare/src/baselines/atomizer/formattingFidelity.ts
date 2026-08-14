@@ -677,3 +677,14 @@ export function compareProjectedFormattingFidelity(
   );
   return { accept, reject, score: Math.min(accept.score, reject.score) };
 }
+
+/** Measure one tracked candidate against the authoritative source sides. */
+export function compareSourceProjectedFormattingFidelity(
+  originalXml: string,
+  revisedXml: string,
+  candidateXml: string,
+): ProjectedFormattingFidelity {
+  const accept = compareFormattingFidelity(revisedXml, acceptAllChanges(candidateXml));
+  const reject = compareFormattingFidelity(originalXml, rejectAllChanges(candidateXml));
+  return { accept, reject, score: Math.min(accept.score, reject.score) };
+}
