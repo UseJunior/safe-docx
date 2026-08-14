@@ -36,7 +36,7 @@ artifact verification, and cross-reader tests.
 - A representation in which `accept`/`reject` correctness is a property of the
   construction rather than a test on serialized output.
 - A projection contract precise enough to be falsifiable.
-- Shadow-mode divergence evidence over the differential corpus.
+- Offline divergence evidence over the differential corpus.
 
 **Non-Goals (this change)**
 - Any behavior change. Nothing is deleted, nothing is flipped, no runtime check
@@ -44,7 +44,7 @@ artifact verification, and cross-reader tests.
 - **Effective formatting.** The existing detector (`format-detection.ts:299`)
   and fidelity oracle (`formattingFidelity.ts:290`) inspect *direct* `w:rPr` /
   `w:pPr` only, not formatting resolved through the style chain or
-  `docDefaults`. The shadow gate therefore cannot establish correctness for
+  `docDefaults`. The offline gate therefore cannot establish correctness for
   inherited toggles, and `PropertyDelta` is scoped to direct properties.
   Resolved formatting stays a separately-tracked known-divergence class.
 - Removing the explicit `rebuild` output mode (successor D).
@@ -168,7 +168,7 @@ So PRESERVE needs explicit invariants, not transport:
   already covers this class and is the gate.
 
 The model-level invariants are proved before serializer work. Accept/reject over
-multi-author stacks is then proved immediately after the shadow-only serializer
+multi-author stacks is then proved immediately after the offline serializer
 exists. This is an evidence dependency, not a relaxation: serialized behavior
 cannot be evaluated before there is serialized output to evaluate.
 
@@ -192,7 +192,8 @@ Text-box and ancillary-part stories currently recurse into the whole pipeline
 (`pipeline.ts:609-680`) and re-validate the assembled result with another
 accept/reject round-trip. Under the IR a nested story is a subtree with its own
 tagged tree, and assembly is IR composition. This is designed for in stage A but
-only exercised in shadow; the recursive path is untouched until successor C.
+only exercised by the offline harness; the recursive path is untouched until
+successor C.
 
 ## Risks / Trade-offs
 
@@ -202,12 +203,12 @@ only exercised in shadow; the recursive path is untouched until successor C.
 - **PRESERVE is the hardest case**, and the first draft underestimated it. →
   Explicit invariants above; multi-author fixtures are proved before anything
   else advances.
-- **Shadow equivalence may be equivalent-but-not-identical.** Coalescing
+- **Offline equivalence may be equivalent-but-not-identical.** Coalescing
   boundaries can legitimately differ. → The gate compares projections and
   fidelity scores, not bytes; projection-inequivalent diffs block, and
   projection-equivalent textual differences are reviewed individually and either
   accepted with a recorded rationale or pinned.
-- **The shadow gate cannot see inherited formatting**, because neither the
+- **The offline gate cannot see inherited formatting**, because neither the
   detector nor the oracle resolves the style chain. → Declared a non-goal rather
   than assumed away; effective-formatting divergence remains separately tracked.
 - **Two representations coexist during migration.** → Bounded: stage A is
@@ -216,7 +217,8 @@ only exercised in shadow; the recursive path is untouched until successor C.
 ## Migration Plan
 
 **This change (A):** build `TaggedTree`, `project`, and the P1-P5 checks;
-property-test them in isolation; run the IR in shadow and produce a divergence
+property-test them in isolation; run the IR in controlled corpus jobs and
+produce a divergence
 report over the differential corpus. Nothing user-visible changes. Fully
 revertible.
 

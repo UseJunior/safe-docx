@@ -133,7 +133,7 @@ The representation SHALL specify:
 
 After a tagged-tree serializer exists, accept and reject over serialized stacked
 revisions from several authors SHALL agree with the corresponding tree
-projections. This serialized evidence SHALL pass before shadow corpus evidence
+projections. This serialized evidence SHALL pass before offline corpus evidence
 is treated as complete.
 
 These invariants SHALL be evidenced on the multi-author corpus before the
@@ -155,18 +155,18 @@ representation is exercised on any other class of input.
 #### Scenario: Serialized multi-author stacks preserve both projections
 
 - **GIVEN** a tagged tree retaining ordered revision stacks from several authors
-- **WHEN** the shadow serializer emits tracked markup and accept/reject are applied
+- **WHEN** the offline serializer emits tracked markup and accept/reject are applied
 - **THEN** accept SHALL reproduce the revised tree projection
 - **AND** reject SHALL reproduce the original tree projection
 
-### Requirement: The tagged-tree path runs in shadow and changes no behavior
+### Requirement: The tagged-tree path is evaluated offline and changes no behavior
 
-The tagged-tree representation SHALL run beside the existing pipeline behind an
-opt-in shadow mode, and SHALL NOT supply the output of any comparison while this
-requirement is in force. Existing runtime safety checks — text, bookmark, field
-structure, and ancillary story — SHALL remain in place unchanged.
+The tagged-tree representation SHALL be directly callable by tests and
+controlled corpus jobs, and SHALL NOT be invoked by the ordinary comparison
+pipeline while this requirement is in force. Existing runtime safety checks —
+text, bookmark, field structure, and ancillary story — SHALL remain unchanged.
 
-Shadow mode SHALL record divergence between the two constructions across the
+The offline harness SHALL record divergence between the two constructions across the
 formatting-fidelity corpus, the multi-author fixtures, the OpenAgreements and
 NVCA/ILPA templates, and the pinned engine-bug characterization cases.
 
@@ -176,16 +176,17 @@ as blocking. A divergence that is projection-equivalent but textually different
 SHALL be recorded for individual review and either accepted with a rationale or
 pinned as a characterization case.
 
-#### Scenario: Shadow mode does not affect returned output
+#### Scenario: Offline evaluation does not affect returned output
 
-- **GIVEN** shadow mode enabled
-- **WHEN** a document pair is compared
+- **GIVEN** no tagged-tree evaluation is requested by a test or corpus job
+- **WHEN** a document pair is compared through the ordinary pipeline
 - **THEN** the returned output SHALL be the existing pipeline's output, unchanged
+- **AND** the tagged-tree evaluator SHALL NOT run
 - **AND** every existing runtime safety check SHALL still run
 
 #### Scenario: Divergence is recorded with fixture identity
 
-- **GIVEN** a corpus run in shadow mode
+- **GIVEN** a controlled offline corpus run
 - **WHEN** the two constructions differ
 - **THEN** the report SHALL name the fixture and the diverging projection
 - **AND** SHALL classify the divergence as projection-inequivalent (blocking) or

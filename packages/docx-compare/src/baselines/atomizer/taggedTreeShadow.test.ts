@@ -1,6 +1,7 @@
-import { describe, expect, vi } from 'vitest';
+import { describe, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
-import { runTaggedTreeShadow, taggedTreeShadowEnabled } from './taggedTreeShadow.js';
+import { runTaggedTreeShadow } from './taggedTreeShadow.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
 import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
 import { DocxArchive } from '@usejunior/docx-core';
@@ -11,19 +12,12 @@ const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const xml = (value: string) =>
   `<w:document xmlns:w="${W_NS}"><w:body><w:p><w:r><w:t>${value}</w:t></w:r></w:p></w:body></w:document>`;
 
-describe('tagged-tree shadow reporting', () => {
-  test('is default-off and recognizes only the explicit shadow value', () => {
-    expect(taggedTreeShadowEnabled({})).toBe(false);
-    expect(taggedTreeShadowEnabled({ SAFE_DOCX_TAGGED_TREE: '1' })).toBe(false);
-    expect(taggedTreeShadowEnabled({ SAFE_DOCX_TAGGED_TREE: 'shadow' })).toBe(true);
-  });
-
-  test.openspec('Shadow mode does not affect returned output')(
-    'reports beside a caller-owned legacy candidate without mutating it',
+describe('tagged-tree offline evaluation', () => {
+  test('reports without mutating caller-owned legacy output',
     async ({ given, when, then, and }: AllureBddContext) => {
       const legacy = xml('legacy bytes remain caller-owned');
       let report!: ReturnType<typeof runTaggedTreeShadow>;
-      await given('an explicit shadow evaluation and a legacy candidate', () => undefined);
+      await given('an explicit offline evaluation and a legacy candidate', () => undefined);
       await when('the tagged tree is constructed and serialized beside it', () => {
         report = runTaggedTreeShadow({
           originalXml: xml('old'), revisedXml: xml('new'), legacyXml: legacy,
@@ -37,6 +31,25 @@ describe('tagged-tree shadow reporting', () => {
       await and('source projections are equivalent even if formatting differs from the legacy candidate', () => {
         expect(report.divergingProjections).not.toContain('accept');
         expect(report.divergingProjections).not.toContain('reject');
+      });
+    },
+  );
+
+  test.openspec('Offline evaluation does not affect returned output')(
+    'keeps the tagged evaluator outside the ordinary comparison pipeline',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      let pipelineSource = '';
+      await given('the ordinary comparison pipeline source', () => undefined);
+      await when('its runtime dependencies are inspected', () => {
+        pipelineSource = readFileSync(new URL('./pipeline.ts', import.meta.url), 'utf8');
+      });
+      await then('the tagged-tree evaluator is not imported or invoked', () => {
+        expect(pipelineSource).not.toContain('taggedTreeShadow');
+        expect(pipelineSource).not.toContain('runTaggedTreeShadow');
+        expect(pipelineSource).not.toContain('SAFE_DOCX_TAGGED_TREE');
+      });
+      await and('the legacy runtime checks remain in the pipeline', () => {
+        expect(pipelineSource).toContain('evaluateRoundTripSafety');
       });
     },
   );
@@ -61,29 +74,6 @@ describe('tagged-tree shadow reporting', () => {
       });
     },
   );
-
-  test('pipeline shadow mode emits diagnostics but returns the legacy document unchanged', async () => {
-    const original = await buildDocxFromBodyXml('<w:p><w:r><w:t>old</w:t></w:r></w:p>');
-    const revised = await buildDocxFromBodyXml('<w:p><w:r><w:t>new</w:t></w:r></w:p>');
-    const previous = process.env.SAFE_DOCX_TAGGED_TREE;
-    const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    try {
-      delete process.env.SAFE_DOCX_TAGGED_TREE;
-      const authoritative = await compareDocumentsAtomizer(original, revised, {
-        author: 'Comparator', date: new Date('2026-08-14T12:00:00Z'),
-      });
-      process.env.SAFE_DOCX_TAGGED_TREE = 'shadow';
-      const shadowed = await compareDocumentsAtomizer(original, revised, {
-        author: 'Comparator', date: new Date('2026-08-14T12:00:00Z'),
-      });
-      expect(shadowed.document.equals(authoritative.document)).toBe(true);
-      expect(write.mock.calls.some(([chunk]) => String(chunk).includes('[safe-docx:tagged-tree-shadow]'))).toBe(true);
-    } finally {
-      write.mockRestore();
-      if (previous === undefined) delete process.env.SAFE_DOCX_TAGGED_TREE;
-      else process.env.SAFE_DOCX_TAGGED_TREE = previous;
-    }
-  });
 
   test('pins paragraph-formatting divergence without exposing corpus text', async () => {
     const originalBody = '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>SYNTHETIC OLD</w:t></w:r></w:p>';

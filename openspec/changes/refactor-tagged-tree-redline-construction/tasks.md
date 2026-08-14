@@ -1,4 +1,4 @@
-Scope: **stage A only** — additive representation, invariants, and shadow
+Scope: **stage A only** — additive representation, invariants, and offline
 evidence. Nothing is deleted and no default changes. Successors B/C/D are named
 in `proposal.md` and are separate changes.
 
@@ -55,16 +55,16 @@ in `proposal.md` and are separate changes.
       3.1. User authorization split that evidence into task 3.2A below. The
       model-level gate remains mandatory before serializer work.
 
-## 3. Serializer and story composition (shadow-only)
+## 3. Serializer and story composition (offline-only)
 
 - [x] 3.1 Implement a serializer from `TaggedTree` to OOXML tracked markup,
-      exercised only in shadow.
+      exercised only by tests and controlled corpus jobs.
 - [x] 3.2 Property-test that serialization preserves both projections (layer 2
       of the four correctness layers in `design.md`).
 - [x] 3.2A Prove serialized accept/reject behavior over ordered multi-author
       stacks agrees with the original and revised tree projections. This is the
       serializer-dependent half of the former task 2.5 and SHALL pass before
-      proceeding to shadow corpus evidence.
+      proceeding to offline corpus evidence.
 - [x] 3.3 Design nested text-box / ancillary story composition as IR subtrees;
       verify projections compose. Do not touch the recursive pipeline path.
 - [x] 3.4 Determine whether `rebuild`'s different base-archive selection
@@ -76,11 +76,12 @@ in `proposal.md` and are separate changes.
       skeleton attributes differ while accept/reject tracked-content
       projections remain unchanged. Production mode selection is untouched.
 
-## 4. Shadow mode and evidence
+## 4. Offline differential evidence
 
-- [x] 4.1 Run the tree construction beside the existing pipeline behind
-      `SAFE_DOCX_TAGGED_TREE=shadow`; existing pipeline stays authoritative and
-      every existing runtime check keeps running.
+- [x] 4.1 Provide a directly callable offline harness for tests and controlled
+      corpus jobs. Do not wire the tagged path into the ordinary comparison
+      pipeline; the existing pipeline stays authoritative and pays no duplicate
+      runtime cost.
 - [x] 4.2 Emit a divergence report keyed by fixture identity and diverging
       projection, classified projection-inequivalent (blocking) vs.
       projection-equivalent (for review). Compare projections and fidelity
@@ -106,11 +107,11 @@ in `proposal.md` and are separate changes.
       equal del/ins pairs are emitted and field structure survives both
       projections. Deletion is not justified by `both`-tagging alone — field
       fragmentation is an inherent conforming-emission constraint.
-- [x] 4.6 Cross-reader verification on any corpus document whose shadow output
+- [x] 4.6 Cross-reader verification on any corpus document whose offline output
       is proposed as equivalent (Word fidelity check, plus Pages / Google Docs
       paths).
 
-      **External evidence gate:** this requires the serializer/shadow output
+      **External evidence gate:** this requires the serializer/offline output
       from 3.1/4.1 plus installed or connected Word, Pages, and Google Docs
       readers. On 2026-08-14, the synthetic output
       `.tmp/tagged-tree-shadow-synthetic.docx` opened in Microsoft Word, and a
@@ -145,7 +146,7 @@ in `proposal.md` and are separate changes.
 - **Correction recorded 2026-08-14:** this audit originally said tasks 2.4,
   2.5A, 3.1-4.6, and 5.5 remained open. That was a point-in-time statement that
   became stale as later commits added the serializer, move certification,
-  ordered multi-author preserve evidence, shadow corpus results, and public
+  ordered multi-author preserve evidence, offline corpus results, and public
   issue records. It is corrected in place so the mechanism of the earlier
   conclusion remains visible without contradicting the live checklist.
 - Tasks 2.4, 2.5A, 3.1-3.4, and 4.1-4.5 now have committed implementation and

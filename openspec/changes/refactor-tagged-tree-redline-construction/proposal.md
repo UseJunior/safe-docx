@@ -1,4 +1,4 @@
-# Change: Add a side-tagged tree IR for redline construction, proved in shadow
+# Change: Add a side-tagged tree IR for offline redline validation
 
 Tracking issue: #814. Related: #542 (cross-run passes as candidate dead code), #469.
 
@@ -40,8 +40,9 @@ afterwards.
 
 ## What Changes
 
-This change is **stage A only**: it adds the representation and proves it in
-shadow. It deletes nothing and changes no user-visible behavior. Deletion of the
+This change is **stage A only**: it adds the representation and validates it in
+an offline corpus harness. It deletes nothing and changes no user-visible
+behavior. Deletion of the
 pass ladder and any public-surface decisions are successor changes, named below.
 
 - **Add a side-tagged tree IR (`TaggedTree`).** Every node carries a tag of
@@ -58,14 +59,15 @@ pass ladder and any public-surface decisions are successor changes, named below.
   exactly one IR occurrence. Membership-and-multiplicity alone is provably
   insufficient (see `design.md` for the rejected counterexample).
 
-- **Run the IR in shadow.** The existing pipeline stays authoritative. The IR
-  path runs beside it behind `SAFE_DOCX_TAGGED_TREE=shadow` and records
-  divergence over the differential corpus. No production caller switches.
+- **Run the IR offline.** The existing pipeline stays authoritative. Tests and
+  controlled corpus jobs call the tagged evaluator directly and record
+  divergence. The ordinary comparison pipeline does not run the new engine,
+  emit telemetry, or incur duplicate work.
 
 - **Sequence PRESERVE evidence in two layers.** Model-level provenance
   splitting, nesting, identifier allocation, and multi-author relationships
   gate the serializer. Accept/reject evidence over those relationships follows
-  immediately after the shadow-only serializer exists; it cannot coherently
+  immediately after the offline serializer exists; it cannot coherently
   precede the serializer whose output it evaluates. This ordering correction
   was authorized on 2026-08-14 and does not weaken the PRESERVE requirement.
 
@@ -126,14 +128,14 @@ here rather than quietly dropped:
 ## Impact
 
 - Affected specs: `docx-comparison` — ADDED only (tagged-tree IR, projection
-  isomorphism, shadow-differential gate). **No REMOVED delta in this change**:
+  isomorphism, offline differential gate). **No REMOVED delta in this change**:
   the ladder requirement stays until successor C actually deletes the code, so
   the spec never describes a state the engine is not in.
 
 - Affected code (additive; all in `packages/docx-compare/src/`):
-  new `baselines/atomizer/taggedTree.ts`, plus shadow-mode wiring in
-  `baselines/atomizer/pipeline.ts`. `hierarchicalLcs.ts` / `atomLcs.ts` gain a
-  tag-emitting output path alongside their existing one.
+  new tagged-tree construction, serialization, and offline evaluation modules.
+  `hierarchicalLcs.ts` / `atomLcs.ts` gain a tag-emitting output path alongside
+  their existing one; `pipeline.ts` remains on the legacy runtime path.
 
 - Post-processing inventory (fates decided here, executed in successor C):
 
@@ -155,7 +157,7 @@ here rather than quietly dropped:
 - Non-goal: **effective** (style-chain / `docDefaults`-resolved) formatting.
   The current detector (`format-detection.ts:299`) and fidelity oracle
   (`formattingFidelity.ts:290`) both compare *direct* `w:rPr` / `w:pPr` only, so
-  the shadow gate cannot establish correctness for inherited toggles. This
+  the offline gate cannot establish correctness for inherited toggles. This
   change scopes `PropertyDelta` to direct properties and records resolved
   formatting as out of scope; it is already tracked separately as a
   known-divergence class.
@@ -167,4 +169,4 @@ here rather than quietly dropped:
 
 - Safety net: the LibreOffice/Word differential oracles, pinned engine-bug
   characterization cases, and the fidelity corpus are what make this attemptable
-  at all. The shadow gate runs against them, not unit tests alone.
+  at all. The offline corpus gate runs against them, not unit tests alone.

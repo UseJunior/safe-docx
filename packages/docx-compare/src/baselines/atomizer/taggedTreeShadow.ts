@@ -40,10 +40,6 @@ export function buildTaggedTreeShadowXml(input: Omit<TaggedTreeShadowInput, 'leg
   );
 }
 
-export function taggedTreeShadowEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
-  return environment.SAFE_DOCX_TAGGED_TREE === 'shadow';
-}
-
 function text(xml: string): string {
   // Use the same field/cache-aware observable as the authoritative safety gate.
   return extractRoundTripComparisonText(xml);
@@ -64,7 +60,7 @@ function identity(input: TaggedTreeShadowInput): string {
     .slice(0, 24);
 }
 
-/** Run the complete tagged construction beside, never instead of, the legacy output. */
+/** Evaluate tagged construction offline against a caller-supplied legacy candidate. */
 export function runTaggedTreeShadow(input: TaggedTreeShadowInput): TaggedTreeShadowReport {
   const original = parseXml(input.originalXml).documentElement;
   const revised = parseXml(input.revisedXml).documentElement;
@@ -108,8 +104,4 @@ export function runTaggedTreeShadow(input: TaggedTreeShadowInput): TaggedTreeSha
     legacyOutputUnchanged: true,
     diagnostics,
   };
-}
-
-export function emitTaggedTreeShadowReport(report: TaggedTreeShadowReport): void {
-  process.stderr.write(`[safe-docx:tagged-tree-shadow] ${JSON.stringify(report)}\n`);
 }
