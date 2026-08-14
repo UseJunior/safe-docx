@@ -57,3 +57,15 @@
   `ins`/`del`/`trPrChange` as revision children, paragraph-mark markers live under `pPr > rPr`, cell topology uses
   distinct `cellIns`/`cellDel` names, and nested tables do not change the direct-parent test. No Word or
   LibreOffice projection oracle was run, so application-specific normalization remains unverified.
+
+## 7. Oracle attempt (2026-08-14)
+
+- [x] 7.1 LibreOffice: ran the committed oracle harness over all four directions plus an `identity` control.
+      Result — LO discards `w:trPr > w:ins|w:del` on IMPORT (`<w:trPr></w:trPr>` after a plain load+save), so it
+      cannot validate this class. A content deletion in the same cell was imported and resolved correctly,
+      confirming the harness works and isolating the failure to row-level markers.
+- [x] 7.2 Microsoft Word via AppleScript: attempted, blocked. `open file name` left Word on its start screen and
+      no fixture was rewritten. The `scripts/oracle/word/` helpers referenced elsewhere do not exist on this
+      branch. Abandoned rather than pursued further.
+- Consequence: the four-direction asymmetry is supported by the schemas and by `conformance-adapter.ts`, not by an
+  observed projection. Sufficient for a preserve-and-report guard; NOT sufficient to implement the semantics.

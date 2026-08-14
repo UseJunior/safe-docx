@@ -85,11 +85,27 @@ Implementing the row semantics themselves is deliberately out of scope — see `
 
 ## Out of scope
 
-Resolving row-level revisions semantically (accept-deletes-the-row, reject-removes-the-inserted-row). That needs an
-oracle pass over Microsoft Word's actual projection first — `w:vMerge` chains and cells carrying their own content
-revisions have to be settled before the projection can be called correct — and it overlaps issue #764, which owns
-structural table changes and lists accept/reject round trips in its scope. This change deliberately makes the gap
-visible rather than guessing at the semantics.
+Resolving row-level revisions semantically (accept-deletes-the-row, reject-removes-the-inserted-row). It overlaps
+issue #764, which owns structural table changes and lists accept/reject round trips in its scope.
+
+An oracle pass WAS attempted before settling on this scope, and the result reinforces it:
+
+**LibreOffice cannot serve as the oracle for this class — it discards row-level markers on import.** Driving the
+committed harness (`packages/docx-core/src/integration/libreoffice-oracle.ts`) over a two-row table whose first row
+carried a marker, an `identity` job (plain load + save, no accept/reject) returned `<w:trPr></w:trPr>`: the marker is
+gone before any operation runs. A content deletion placed in the same cell as a positive control WAS imported and
+resolved correctly — accept removed its text, reject restored it — so the harness itself works. All four
+accept/reject directions therefore returned "row kept", which is not evidence about row semantics; it is what a
+document with no row revision at all would produce.
+
+Driving Microsoft Word for Mac via AppleScript was then attempted and did not get off the ground in this
+environment: `open file name` left Word on its start screen and no fixture was ever rewritten. Not pursued further.
+
+So the four-direction asymmetry rests on the vendored strict and transitional schemas (`CT_TrPr` admits only
+`ins`/`del`/`trPrChange`) plus the classification already encoded in `conformance-adapter.ts` — not on an observed
+projection. That is sufficient for THIS change, which only needs to know which directions safe-docx does not
+implement, and it is NOT sufficient to implement the semantics. Any follow-up must obtain a real Word projection
+first; `w:vMerge` chains and cells carrying their own content revisions remain unsettled.
 
 Extending `extract_revisions` to report row and cell topology, so a caller can inspect a document *before* deciding
 to accept it, is also left out; today the counter reports the gap after the fact.
