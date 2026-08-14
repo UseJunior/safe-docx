@@ -78,20 +78,28 @@ in `proposal.md` and are separate changes.
 
 ## 4. Shadow mode and evidence
 
-- [ ] 4.1 Run the tree construction beside the existing pipeline behind
+- [x] 4.1 Run the tree construction beside the existing pipeline behind
       `SAFE_DOCX_TAGGED_TREE=shadow`; existing pipeline stays authoritative and
       every existing runtime check keeps running.
-- [ ] 4.2 Emit a divergence report keyed by fixture identity and diverging
+- [x] 4.2 Emit a divergence report keyed by fixture identity and diverging
       projection, classified projection-inequivalent (blocking) vs.
       projection-equivalent (for review). Compare projections and fidelity
       scores, not bytes.
-- [ ] 4.3 Run over the fidelity corpus, multi-author fixtures, OpenAgreements +
+- [x] 4.3 Run over the fidelity corpus, multi-author fixtures, OpenAgreements +
       NVCA/ILPA templates, and pinned characterization cases.
 - [ ] 4.4 Triage every divergence: fix inline if it is an aligner or oracle
       defect; pin and file it if it is a genuine pre-existing engine bug; record
       a rationale for any accepted projection-equivalent difference. One fix per
       PR.
-- [ ] 4.5 Produce the field-case evidence that successor C's deletion of
+
+      **Repository corpus finding (2026-08-14):** committed OpenAgreements,
+      ILPA, multi-author, and pinned cases were projection/fidelity equivalent.
+      NVCA fixture `cd2f69960d5f13cc6292a138` is text-projection equivalent
+      but remains blocking on direct-formatting fidelity. The report records
+      paragraph/run divergence scopes; this task stays open until the serializer
+      uses conforming paragraph insertion/deletion markup rather than block
+      wrappers and the NVCA fidelity score reaches 1.
+- [x] 4.5 Produce the field-case evidence that successor C's deletion of
       `suppressNoOpChangePairs` depends on: field-stable, field-modification,
       field-delete, nested-field, and paragraph-spanning-field cases showing no
       equal del/ins pairs are emitted and field structure survives both

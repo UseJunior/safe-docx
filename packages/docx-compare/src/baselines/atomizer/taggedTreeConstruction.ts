@@ -2,6 +2,7 @@ import type { WmlElement } from '@usejunior/docx-core';
 import { childElements } from '@usejunior/docx-core';
 import {
   nextRevisionId,
+  PROPERTY_SCOPE_ELEMENT,
   subtreeSignature,
   verifyMoveRelations,
   verifyTaggedTree,
@@ -69,22 +70,44 @@ function constructBoth(original: WmlElement, revised: WmlElement): BothNode {
   const revisedChildren = childElements(revised);
   const pairs = lcsPairs(originalChildren, revisedChildren);
   const children: TaggedNode[] = [];
+  const emitGap = (originalEnd: number, revisedEnd: number): void => {
+    const pairReplacements = originalEnd - oi === revisedEnd - ri;
+    while (pairReplacements && oi < originalEnd && ri < revisedEnd) {
+      const left = originalChildren[oi]!;
+      const right = revisedChildren[ri]!;
+      const sameIdentity = (left.namespaceURI ?? '') === (right.namespaceURI ?? '') &&
+        (left.localName ?? left.tagName) === (right.localName ?? right.tagName) &&
+        (childElements(left).length > 0 || childElements(right).length > 0) &&
+        (left.localName !== 'r' || left.textContent === right.textContent);
+      if (!sameIdentity) break;
+      children.push(constructBoth(left, right));
+      oi++;
+      ri++;
+    }
+    while (oi < originalEnd) children.push({ tag: 'original', node: originalChildren[oi++]!, children: [], opaque: true });
+    while (ri < revisedEnd) children.push({ tag: 'revised', node: revisedChildren[ri++]!, children: [], opaque: true });
+  };
   let oi = 0;
   let ri = 0;
   for (const [matchedOriginal, matchedRevised] of pairs) {
-    while (oi < matchedOriginal) children.push({ tag: 'original', node: originalChildren[oi++]!, children: [], opaque: true });
-    while (ri < matchedRevised) children.push({ tag: 'revised', node: revisedChildren[ri++]!, children: [], opaque: true });
+    emitGap(matchedOriginal, matchedRevised);
     children.push(constructBoth(originalChildren[oi++]!, revisedChildren[ri++]!));
   }
-  while (oi < originalChildren.length) children.push({ tag: 'original', node: originalChildren[oi++]!, children: [], opaque: true });
-  while (ri < revisedChildren.length) children.push({ tag: 'revised', node: revisedChildren[ri++]!, children: [], opaque: true });
+  emitGap(originalChildren.length, revisedChildren.length);
   return { tag: 'both', original, revised, children, propertyDelta: propertyDelta(original, revised) };
 }
 
 function collectSideOnly(node: TaggedNode, originals: OriginalNode[], revised: RevisedNode[]): void {
   if (node.tag === 'original') originals.push(node);
   else if (node.tag === 'revised') revised.push(node);
-  node.children.forEach((child) => collectSideOnly(child, originals, revised));
+  const propertyTag = node.tag === 'both' && node.propertyDelta
+    ? PROPERTY_SCOPE_ELEMENT[node.propertyDelta.scope]
+    : undefined;
+  node.children.forEach((child) => {
+    const element = child.tag === 'both' ? child.original : child.node;
+    if (propertyTag && element.tagName === propertyTag) return;
+    collectSideOnly(child, originals, revised);
+  });
 }
 
 function classifyMoves(tree: TaggedNode, firstRevisionId: number): TaggedMoveRelation[] {

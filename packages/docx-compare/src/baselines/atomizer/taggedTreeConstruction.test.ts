@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { parseXml } from '@usejunior/docx-core';
+import { parseXml, validateFieldStructure } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { verifyMoveRelations, verifyTaggedTree } from './taggedTree.js';
 import { constructTaggedTree, verifyGlobalEqualContentInvariant } from './taggedTreeConstruction.js';
@@ -19,6 +19,10 @@ function body(paragraphs: readonly string[]): Element {
 
 function resolvedText(xml: string): string {
   return parseXml(xml).documentElement.textContent ?? '';
+}
+
+function documentWithBody(bodyXml: string): Element {
+  return parseXml(`<w:document xmlns:w="${W_NS}"><w:body>${bodyXml}</w:body></w:document>`).documentElement;
 }
 
 describe('complete tagged-tree construction', () => {
@@ -86,5 +90,33 @@ describe('complete tagged-tree construction', () => {
     expect(runNode?.tag).toBe('both');
     expect(runNode?.tag === 'both' ? runNode.propertyDelta?.scope : undefined).toBe('run');
     expect(verifyTaggedTree(original, revised, result.tree)).toEqual([]);
+  });
+
+  test('preserves field structure and both projections across the Stage A field matrix', () => {
+    const run = (content: string) => `<w:r>${content}</w:r>`;
+    const field = (instruction: string, result: string) =>
+      run('<w:fldChar w:fldCharType="begin"/>') +
+      run(`<w:instrText>${instruction}</w:instrText>`) +
+      run('<w:fldChar w:fldCharType="separate"/>') +
+      run(`<w:t>${result}</w:t>`) +
+      run('<w:fldChar w:fldCharType="end"/>');
+    const cases = [
+      ['field-stable', `<w:p>${field('PAGE', '1')}</w:p>`, `<w:p>${field('PAGE', '1')}</w:p>`],
+      ['field-modification', `<w:p>${field('PAGE', '1')}</w:p>`, `<w:p>${field('PAGE', '2')}</w:p>`],
+      ['field-delete', `<w:p>${field('PAGE', '1')}<w:r><w:t>tail</w:t></w:r></w:p>`, '<w:p><w:r><w:t>tail</w:t></w:r></w:p>'],
+      ['nested-field', `<w:p>${field('IF', 'old')}${field('PAGE', '1')}</w:p>`, `<w:p>${field('IF', 'new')}${field('PAGE', '1')}</w:p>`],
+      ['paragraph-spanning-field', `<w:p>${run('<w:fldChar w:fldCharType="begin"/>')}${run('<w:instrText>REF x</w:instrText>')}</w:p><w:p>${run('<w:fldChar w:fldCharType="end"/>')}</w:p>`, `<w:p>${run('<w:fldChar w:fldCharType="begin"/>')}${run('<w:instrText>REF y</w:instrText>')}</w:p><w:p>${run('<w:fldChar w:fldCharType="end"/>')}</w:p>`],
+    ] as const;
+    for (const [name, originalBody, revisedBody] of cases) {
+      const original = documentWithBody(originalBody);
+      const revised = documentWithBody(revisedBody);
+      const result = constructTaggedTree(original, revised);
+      expect(verifyGlobalEqualContentInvariant(result.tree, result.moves), name).toEqual([]);
+      const output = serializeTaggedTree(result.tree, createPreservePlan(original, revised, result.tree, {
+        author: 'Comparator', date: '2026-08-14T12:00:00Z',
+      }), { moves: result.moves });
+      expect(validateFieldStructure(acceptAllChanges(output)), `${name} accept`).toBe(true);
+      expect(validateFieldStructure(rejectAllChanges(output)), `${name} reject`).toBe(true);
+    }
   });
 });

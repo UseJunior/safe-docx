@@ -102,6 +102,11 @@ import {
   DEFAULT_NUMBERING_OPTIONS,
 } from './numberingIntegration.js';
 import { premergeAdjacentRuns } from './premergeRuns.js';
+import {
+  emitTaggedTreeShadowReport,
+  runTaggedTreeShadow,
+  taggedTreeShadowEnabled,
+} from './taggedTreeShadow.js';
 export {
   validateFieldStructure,
   type FieldStory,
@@ -1349,6 +1354,29 @@ async function compareDocumentsAtomizerCore(
         failureDetails: safety.failureDetails,
         firstDiffSummary: safety.failureSummary,
       };
+    }
+  }
+
+  // Stage A only: construct and evaluate the tagged tree beside the legacy
+  // candidate. Its report is diagnostic; its bytes are never returned.
+  if (taggedTreeShadowEnabled()) {
+    try {
+      emitTaggedTreeShadowReport(runTaggedTreeShadow({
+        originalXml,
+        revisedXml,
+        legacyXml: comparisonResult.newDocumentXml,
+        author,
+        date,
+      }));
+    } catch (error) {
+      emitTaggedTreeShadowReport({
+        fixtureIdentity: 'construction-error',
+        classification: 'projection-inequivalent',
+        divergingProjections: ['accept', 'reject'],
+        fidelityScore: 0,
+        legacyOutputUnchanged: true,
+        diagnostics: [error instanceof Error ? error.message : String(error)],
+      });
     }
   }
 

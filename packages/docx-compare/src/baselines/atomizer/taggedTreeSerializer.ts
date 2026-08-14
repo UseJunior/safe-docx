@@ -46,13 +46,34 @@ export function createPreservePlan(
   attribution: Omit<ComparisonRevision, 'id'>,
 ): PreservePlan {
   const entries = new Map<TaggedNode, PreservePlanEntry>();
+  const represented = new Set<Element>();
+  const indexRepresentatives = (node: TaggedNode): void => {
+    const original = representative(node, 'original');
+    const revised = representative(node, 'revised');
+    if (original) represented.add(original);
+    if (revised) represented.add(revised);
+    node.children.forEach(indexRepresentatives);
+  };
+  indexRepresentatives(tree);
+  const externalStack = (element: WmlElement): RevisionProvenance[] => {
+    const stack = revisionProvenance(element);
+    let representedWrapperCount = 0;
+    let current: Element | null = element;
+    while (current) {
+      if (represented.has(current) && ['w:ins', 'w:del', 'w:moveFrom', 'w:moveTo'].includes(current.tagName)) {
+        representedWrapperCount++;
+      }
+      current = current.parentElement;
+    }
+    return representedWrapperCount === 0 ? stack : stack.slice(representedWrapperCount);
+  };
   const visit = (node: TaggedNode): void => {
     const original = representative(node, 'original');
     const revised = representative(node, 'revised');
     entries.set(node, {
       node,
-      originalStack: original ? revisionProvenance(original) : [],
-      revisedStack: revised ? revisionProvenance(revised) : [],
+      originalStack: original ? externalStack(original) : [],
+      revisedStack: revised ? externalStack(revised) : [],
       comparisonNesting: 'inside-preserved',
     });
     node.children.forEach(visit);
