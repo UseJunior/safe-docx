@@ -39,15 +39,19 @@ function fakeTools(markup = 'Visible markup text', profiles?: string[], hiddenDe
   };
 }
 
-async function trackedFixture(pathname: string, revision: 'ins' | 'del' | 'empty-del', headerDeletion = false): Promise<void> {
+async function trackedFixture(pathname: string, revision: 'ins' | 'del' | 'empty-del', headerDeletion: 'none' | 'orphan' | 'referenced' = 'none'): Promise<void> {
   const zip = new JSZip();
   zip.file('[Content_Types].xml', '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>');
   const markup = revision === 'empty-del'
     ? '<w:del w:id="1"><w:r><w:rPr><w:b/></w:rPr></w:r></w:del>'
     : `<w:${revision} w:id="1"><w:r><w:${revision === 'del' ? 'delText' : 't'}>revision</w:${revision === 'del' ? 'delText' : 't'}></w:r></w:${revision}>`;
-  zip.file('word/document.xml', `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p>${markup}</w:p></w:body></w:document>`);
-  if (headerDeletion) {
+  const headerReference = headerDeletion === 'referenced' ? '<w:sectPr><w:headerReference r:id="rIdHeader1"/></w:sectPr>' : '';
+  zip.file('word/document.xml', `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p>${markup}</w:p>${headerReference}</w:body></w:document>`);
+  if (headerDeletion !== 'none') {
     zip.file('word/header1.xml', '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:del w:id="2"><w:r><w:delText>header deletion</w:delText></w:r></w:del></w:p></w:hdr>');
+  }
+  if (headerDeletion === 'referenced') {
+    zip.file('word/_rels/document.xml.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>');
   }
   await writeFile(pathname, await zip.generateAsync({ type: 'nodebuffer' }));
 }
@@ -137,12 +141,24 @@ describe('renderer verifier', () => {
     const root = path.join(os.tmpdir(), `render-header-deletion-${Date.now()}`);
     const source = path.join(root, 'tracked.docx');
     await mkdir(root, { recursive: true });
-    await trackedFixture(source, 'ins', true);
+    await trackedFixture(source, 'ins', 'referenced');
     const result = await verifyRenderedMarkup({
       trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
       tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
     });
     expect(result).toMatchObject({ status: 'fail', revisionVisibility: 'hidden-deletions' });
+  });
+
+  itAllure('ignores deletion payload in an orphaned unreferenced header part', async () => {
+    const root = path.join(os.tmpdir(), `render-orphan-header-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await trackedFixture(source, 'ins', 'orphan');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', revisionVisibility: 'insufficient-contrast' });
   });
 
   itAllure('classifies deletion evidence from the disposable transformed input', async () => {

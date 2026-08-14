@@ -14,6 +14,9 @@ const execFileAsync = promisify(execFile);
 const BLUE = [0, 0, 255] as const;
 const RED = [255, 0, 0] as const;
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const PKG_REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+const OFFICE_REL_PREFIX = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
 
 function sha256(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
@@ -102,8 +105,9 @@ function revisionVisibility(configured: PixelMeasurement, control: PixelMeasurem
 async function hasDeletionMarkup(bytes: Buffer): Promise<boolean> {
   try {
     const zip = await JSZip.loadAsync(bytes);
-    const renderedStories = Object.keys(zip.files).filter((name) =>
-      /^word\/(?:document|header[^/]*|footer[^/]*|footnotes|endnotes)\.xml$/u.test(name));
+    const documentXml = await zip.file('word/document.xml')?.async('string');
+    if (documentXml === undefined) return false;
+    const renderedStories = await referencedRenderedStories(zip, documentXml);
     for (const name of renderedStories) {
       const xml = await zip.file(name)?.async('string');
       if (xml !== undefined && hasVisibleDeletionInStory(xml)) return true;
@@ -112,6 +116,40 @@ async function hasDeletionMarkup(bytes: Buffer): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function referencedRenderedStories(zip: JSZip, documentXml: string): Promise<string[]> {
+  const stories = ['word/document.xml'];
+  const document = new DOMParser().parseFromString(documentXml, 'application/xml');
+  if (document.getElementsByTagName('parsererror').length > 0) return stories;
+  const referencedIds = new Set<string>();
+  for (const localName of ['headerReference', 'footerReference'] as const) {
+    for (const reference of Array.from(document.getElementsByTagNameNS(W_NS, localName))) {
+      const id = reference.getAttributeNS(R_NS, 'id');
+      if (id) referencedIds.add(id);
+    }
+  }
+  const hasFootnotes = document.getElementsByTagNameNS(W_NS, 'footnoteReference').length > 0;
+  const hasEndnotes = document.getElementsByTagNameNS(W_NS, 'endnoteReference').length > 0;
+  const relationshipsXml = await zip.file('word/_rels/document.xml.rels')?.async('string');
+  if (relationshipsXml === undefined) return stories;
+  const relationships = new DOMParser().parseFromString(relationshipsXml, 'application/xml');
+  if (relationships.getElementsByTagName('parsererror').length > 0) return stories;
+  for (const relationship of Array.from(relationships.getElementsByTagNameNS(PKG_REL_NS, 'Relationship'))) {
+    if (relationship.getAttribute('TargetMode') === 'External') continue;
+    const id = relationship.getAttribute('Id');
+    const type = relationship.getAttribute('Type');
+    const target = relationship.getAttribute('Target');
+    if (!id || !type || !target) continue;
+    const kind = type.startsWith(OFFICE_REL_PREFIX) ? type.slice(OFFICE_REL_PREFIX.length) : '';
+    const referenced = (kind === 'header' || kind === 'footer') ? referencedIds.has(id)
+      : kind === 'footnotes' ? hasFootnotes
+        : kind === 'endnotes' ? hasEndnotes : false;
+    if (!referenced) continue;
+    const resolved = target.startsWith('/') ? target.slice(1) : path.posix.normalize(path.posix.join('word', target));
+    if (zip.file(resolved)) stories.push(resolved);
+  }
+  return [...new Set(stories)];
 }
 
 function hasVisibleDeletionInStory(xml: string): boolean {

@@ -35,6 +35,21 @@ describe('independent emitted-redline minimality', () => {
     expect(whitespace.passed).toBe(true);
   });
 
+  itAllure('does not charge ordinary Word run, tab, or proofing fragmentation as a revision', () => {
+    const runAndTab = check(
+      ['Hourly Rate: \t$48.86  \t \tHourly rate includes: '],
+      ['Hourly Rate: \t$48.86  \t \tHourly rate includes: '],
+      paragraph('<w:r><w:t xml:space="preserve">Hourly Rate: </w:t><w:tab/></w:r><w:r><w:t>$48.</w:t></w:r><w:proofErr w:type="gramStart"/><w:r><w:t xml:space="preserve">86  </w:t><w:tab/></w:r><w:proofErr w:type="gramEnd"/><w:r><w:t xml:space="preserve"> </w:t><w:tab/></w:r><w:r><w:t xml:space="preserve">Hourly rate includes: </w:t></w:r>'),
+    );
+    const splitUnderscore = check(
+      ['\tCLIENT:____________________________      \tDate :__________________ '],
+      ['\tCLIENT:____________________________      \tDate :__________________ '],
+      paragraph('<w:r><w:tab/></w:r><w:proofErr w:type="gramStart"/><w:r><w:t>CLIENT:_</w:t></w:r><w:proofErr w:type="gramEnd"/><w:r><w:t xml:space="preserve">___________________________      </w:t><w:tab/></w:r><w:proofErr w:type="gramStart"/><w:r><w:t>Date :</w:t></w:r><w:proofErr w:type="gramEnd"/><w:r><w:t xml:space="preserve">__________________ </w:t></w:r>'),
+    );
+    expect(runAndTab).toMatchObject({ passed: true, lostTokens: 0 });
+    expect(splitUnderscore).toMatchObject({ passed: true, lostTokens: 0 });
+  });
+
   itAllure('admits true insertion and deletion without charging neighboring text', () => {
     const insertion = check(['a b'], ['a x b'], paragraph(`${plain('a ')}${ins('x ')}${plain('b')}`));
     const deletion = check(['a x b'], ['a b'], paragraph(`${plain('a ')}${del('x ')}${plain('b')}`));
