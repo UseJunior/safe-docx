@@ -109,13 +109,13 @@ in `proposal.md` and are separate changes.
 ## 5. Validation
 
 - [x] 5.1 `openspec validate refactor-tagged-tree-redline-construction --strict`.
-- [ ] 5.2 Full gate run with explicit exit-code checks (never piped to `tail`):
+- [x] 5.2 Full gate run with explicit exit-code checks (never piped to `tail`):
       `npm run build`, `npm run test`, `npm run check:spec-coverage`.
-- [ ] 5.3 Coverage in the correct order — `npm run test:coverage:packages`
+- [x] 5.3 Coverage in the correct order — `npm run test:coverage:packages`
       **first** (it generates the summaries), then
       `npm run coverage:packages:check`. The check alone fails with "Missing
       coverage summary".
-- [ ] 5.4 Confirm the new scenarios are mapped before archival. Note that
+- [x] 5.4 Confirm the new scenarios are mapped before archival. Note that
       `check:spec-coverage` validates the canonical live spec, so a green
       pre-archive run does not by itself cover this change's ADDED scenarios.
 - [ ] 5.5 Record the successor changes (B default flip, C deletion, D public
