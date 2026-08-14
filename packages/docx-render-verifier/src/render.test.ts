@@ -130,6 +130,46 @@ describe('renderer verifier', () => {
     expect(result.reason).not.toContain('hid configured deletions');
   });
 
+  itAllure('classifies deletion evidence from the disposable transformed input', async () => {
+    const root = path.join(os.tmpdir(), `render-transform-add-deletion-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await trackedFixture(source, 'ins');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+      transform: {
+        id: 'add-visible-deletion', version: '1',
+        async apply(_input, workspace) {
+          const output = path.join(workspace, 'render-only.docx');
+          await trackedFixture(output, 'del');
+          return output;
+        },
+      },
+    });
+    expect(result).toMatchObject({ status: 'fail', revisionVisibility: 'hidden-deletions' });
+  });
+
+  itAllure('does not use authoritative-source deletion evidence removed by a render transform', async () => {
+    const root = path.join(os.tmpdir(), `render-transform-remove-deletion-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await trackedFixture(source, 'del');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+      transform: {
+        id: 'remove-visible-deletion', version: '1',
+        async apply(_input, workspace) {
+          const output = path.join(workspace, 'render-only.docx');
+          await trackedFixture(output, 'ins');
+          return output;
+        },
+      },
+    });
+    expect(result).toMatchObject({ status: 'fail', revisionVisibility: 'insufficient-contrast' });
+  });
+
   itAllure('classifies blue-only revision output as hidden deletions and never passes it', async () => {
     const root = path.join(os.tmpdir(), `render-hidden-delete-${Date.now()}`);
     const source = path.join(root, 'tracked.docx');

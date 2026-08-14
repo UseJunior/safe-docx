@@ -131,6 +131,26 @@ describe('independent release verifier', () => {
     expect(result.gates.minimality).toMatchObject({ status: 'pass', details: { evidence: { lostTokens: 0 } } });
   });
 
+  itAllure('does not apply Word revision semantics to foreign namespace name collisions', async () => {
+    const { manifest } = await fixture();
+    const visible = '<w:p xmlns:x="urn:foreign"><x:del><w:r><w:t>VISIBLE</w:t></w:r></x:del><x:ins><w:r><w:t>ADD</w:t></w:r></x:ins></w:p>';
+    await writeDocx(manifest.originalPath, visible);
+    await writeDocx(manifest.intendedCleanPath, visible);
+    await writeDocx(manifest.trackedPath, visible);
+    const result = await verifyRelease({
+      version: 1,
+      originalPath: manifest.originalPath,
+      intendedCleanPath: manifest.intendedCleanPath,
+      trackedPath: manifest.trackedPath,
+      mutationControl: { projection: 'accept', expected: 'intendedClean' },
+    });
+    expect(result.projections).toMatchObject({
+      original: { paragraphs: ['VISIBLEADD'] }, intendedClean: { paragraphs: ['VISIBLEADD'] },
+      accept: { paragraphs: ['VISIBLEADD'] }, reject: { paragraphs: ['VISIBLEADD'] },
+    });
+    expect(result.gates.semantic.status).toBe('pass');
+  });
+
   itAllure('derives exact accept/reject projections and proves mutation sensitivity without changing inputs', async () => {
     const { manifest } = await fixture();
     const before = await readFile(manifest.trackedPath);

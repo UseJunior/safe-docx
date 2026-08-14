@@ -18,7 +18,8 @@ function wordText(element: XmlElement): string {
 
 function textFrom(element: XmlElement, mode: 'accept' | 'reject'): string {
   const localName = element.localName ?? '';
-  if ((mode === 'accept' && OMIT_ON_ACCEPT.has(localName)) || (mode === 'reject' && OMIT_ON_REJECT.has(localName))) return '';
+  const wordRevision = element.namespaceURI === W_NS;
+  if (wordRevision && ((mode === 'accept' && OMIT_ON_ACCEPT.has(localName)) || (mode === 'reject' && OMIT_ON_REJECT.has(localName)))) return '';
   if (isWord(element, 'tab')) return '\t';
   if (isWord(element, 'br') || isWord(element, 'cr')) return '\n';
   if (isWord(element, 't')) return wordText(element);

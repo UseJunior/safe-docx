@@ -231,6 +231,7 @@ export async function verifyRenderedMarkup(request: RenderRequest): Promise<Rend
       }
       transform = { id: request.transform.id, version: request.transform.version, inputSha256: sha256(await readFile(inputPath)), outputSha256: sha256(await readFile(renderInput)) };
     }
+    const renderedInputBytes = await readFile(renderInput);
     const configured = await renderOne(tools, soffice, renderInput, workspace, 'configured');
     const control = await renderOne(tools, soffice, renderInput, workspace, 'by-author');
     const pdfText = await extractPdfText(tools, pdftotext, configured.pdfPath);
@@ -242,7 +243,7 @@ export async function verifyRenderedMarkup(request: RenderRequest): Promise<Rend
     const markupTextMatchesPdf = normalizeText(pdfText) === normalizeText(request.expectedMarkupText);
     const configuredContrastPassed = configuredContrast(configuredPixels, controlPixels, request.configuredPixelFloor ?? 4);
     const measuredVisibility = revisionVisibility(configuredPixels, controlPixels, request.configuredPixelFloor ?? 4);
-    const visibility = markupTextMatchesPdf && (measuredVisibility !== 'hidden-deletions' || await hasDeletionMarkup(trackedBytes))
+    const visibility = markupTextMatchesPdf && (measuredVisibility !== 'hidden-deletions' || await hasDeletionMarkup(renderedInputBytes))
       ? measuredVisibility
       : 'insufficient-contrast';
     const pdfOut = path.join(request.outputDir, 'tracked-configured.pdf');
@@ -255,7 +256,7 @@ export async function verifyRenderedMarkup(request: RenderRequest): Promise<Rend
           ? 'LibreOffice rendered configured insertions but hid configured deletions.'
           : configuredContrastPassed ? undefined : 'Configured render did not exceed by-author control colour bands.',
       trackedSha256,
-      renderedInputSha256: sha256(await readFile(renderInput)),
+      renderedInputSha256: sha256(renderedInputBytes),
       transform,
       pdfPath: pdfOut,
       reviewPngs,
