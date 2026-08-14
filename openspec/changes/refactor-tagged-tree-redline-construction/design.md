@@ -12,16 +12,23 @@ makes a redline valid, and what `accept`/`reject` depend on — is not preserved
 by that pipeline, so it can only be checked at the end, and recovery from a
 failed check means retrying with different knobs.
 
-Two prior findings frame this change:
+Two prior findings framed this change when it was drafted:
 
 - `reclassify-cross-run-rescue-as-residual` measured passes 3-4 as never
   selected and documented them as a residual (#469, follow-up #542).
-- The Lean spike carries `compareDocumentXml_output_text_roundtrip` as a named
-  residual axiom precisely because `compareDocumentXml` is not modeled
-  definitionally — the engine's behavior has to be assumed.
+- The former Lean spike carried `compareDocumentXml_output_text_roundtrip` as a
+  named residual axiom because `compareDocumentXml` was not modeled
+  definitionally.
 
 Both are symptoms of the same thing: correctness is asserted about the output
 instead of guaranteed by the construction.
+
+**Correction recorded 2026-08-14:** PR #826 removed the Lean verifier and
+replaced it with independent artifact checks before this implementation branch
+was prepared. The residual-axiom observation remains historical motivation,
+not a live deliverable or successor requirement. Current evidence comes from
+the tagged projections, serialized accept/reject checks, formatting fidelity,
+artifact verification, and cross-reader tests.
 
 ## Goals / Non-Goals
 
@@ -41,7 +48,9 @@ instead of guaranteed by the construction.
   inherited toggles, and `PropertyDelta` is scoped to direct properties.
   Resolved formatting stays a separately-tracked known-divergence class.
 - Removing the explicit `rebuild` output mode (successor D).
-- Discharging the Lean residual axiom (Tier 3).
+- Reintroducing or extending a formal verifier. PR #826 deliberately removed
+  that infrastructure; this change relies on the current artifact-verification
+  boundary instead.
 
 ## Decisions
 

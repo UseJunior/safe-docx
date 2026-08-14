@@ -138,10 +138,7 @@ in `proposal.md` and are separate changes.
       `check:spec-coverage` validates the canonical live spec, so a green
       pre-archive run does not by itself cover this change's ADDED scenarios.
 - [x] 5.5 Record the successor changes (B default flip, C deletion, D public
-      rebuild-mode decision) as issues so the staging is durable, and record the
-      follow-up to narrow the Lean residual axiom
-      `compareDocumentXml_output_text_roundtrip` once the projection half is
-      definitional.
+      rebuild-mode decision) as issues so the staging is durable.
 
 ## Stage A evidence audit (2026-08-14)
 
@@ -154,7 +151,9 @@ in `proposal.md` and are separate changes.
 - Tasks 2.4, 2.5A, 3.1-3.4, and 4.1-4.5 now have committed implementation and
   evidence. The direct-formatting divergence is pinned by a synthetic negative
   control and tracked publicly in #836; it is not silently accepted.
-- Task 5.5 is complete through #837, #838, #839, and #840.
+- Task 5.5 is complete through #837, #838, and #839. Issue #840 was filed from
+  stale pre-#826 language and then closed as not planned because the formal
+  verifier it referenced no longer exists.
 - Task 4.6 is complete. Microsoft Word opened the synthetic output, Google Docs
   imported it with the expected visible text, and Pages opened it through
   Launch Services with both tracked alternatives present. The earlier Pages
@@ -162,6 +161,8 @@ in `proposal.md` and are separate changes.
 
       **Public-action record (2026-08-14):** issue creation is intentionally not
       performed by the repository test suite. After duplicate review and explicit
-      human approval, the de-identified successor and residual-axiom issues were
-      filed as #837, #838, #839, and #840. The formatting defect is #836. Exact
-      URLs and the corrected filing method are recorded in `issue-drafts.md`.
+      human approval, the de-identified successor issues were filed as #837,
+      #838, and #839. The formatting defect is #836. Issue #840 was immediately
+      corrected and closed after confirming PR #826 had removed its premise.
+      Exact URLs and the corrected filing method are recorded in
+      `issue-drafts.md`.

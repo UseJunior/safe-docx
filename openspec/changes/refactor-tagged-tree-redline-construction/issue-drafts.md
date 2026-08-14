@@ -7,7 +7,8 @@ explicit human approval:
 - successor B, production default: https://github.com/UseJunior/safe-docx/issues/837
 - successor C, legacy deletion: https://github.com/UseJunior/safe-docx/issues/838
 - successor D, rebuild-mode contract: https://github.com/UseJunior/safe-docx/issues/839
-- residual-axiom narrowing: https://github.com/UseJunior/safe-docx/issues/840
+- retracted residual-axiom narrowing: https://github.com/UseJunior/safe-docx/issues/840
+  (closed as not planned because PR #826 removed the formal verifier)
 
 The first filing of issue 836 omitted the opaque fixture identifier and score
 because shell command substitution consumed backtick-delimited text. Immediate
@@ -48,9 +49,9 @@ original- and revised-side package skeletons. Inventory callers, compare
 fidelity and package preservation, and publish the migration path before
 changing the option.
 
-## Narrow the Lean output-text residual axiom
+## Retracted: narrow the Lean output-text residual axiom
 
-Narrow `compareDocumentXml_output_text_roundtrip` after #814 makes the
-projection half definitional through `TaggedTree.project`. Replace the broad
-assumption with the smallest serializer/OOXML bridge obligation and document
-any field-context or reader-semantics assumptions that remain.
+This draft was filed as #840 from stale language predating PR #826. PR #826 had
+already removed the Lean verifier and replaced it with independent artifact
+checks, so the issue had no live implementation target. It was closed as not
+planned and retained here only to preserve the correction trail.
