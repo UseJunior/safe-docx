@@ -69,6 +69,7 @@ import {
   coalesceDelInsPairChains,
   coalesceMoveRangeMarkers,
   groupDeletionsBeforeInsertions,
+  narrowResultOnlyFieldReplacements,
   mergeAdjacentTrackChangeSiblings,
   mergeWhitespaceBridgedTrackChanges,
   suppressDuplicatedFormatChangesInTextReplacements,
@@ -967,7 +968,9 @@ function processAtoms(
   // Reorder atoms so consecutive deletions precede consecutive insertions.
   // This produces grouped tracked changes (all <w:del> then all <w:ins>)
   // instead of alternating word-by-word del/ins pairs.
-  const reorderedAtoms = groupDeletionsBeforeInsertions(mergedAtoms);
+  const reorderedAtoms = narrowResultOnlyFieldReplacements(
+    groupDeletionsBeforeInsertions(mergedAtoms),
+  );
 
   for (const atom of reorderedAtoms) {
     const handler = ATOM_HANDLERS[atom.correlationStatus];
@@ -1141,6 +1144,7 @@ export {
   coalesceMoveRangeMarkers,
   groupDeletionsBeforeInsertions,
   isNoOpPair,
+  narrowResultOnlyFieldReplacements,
   mergeWhitespaceBridgedTrackChanges,
   suppressDuplicatedFormatChangesInTextReplacements,
   suppressNoOpChangePairs,

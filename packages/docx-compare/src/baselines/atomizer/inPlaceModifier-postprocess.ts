@@ -65,6 +65,142 @@ export function groupDeletionsBeforeInsertions(atoms: ComparisonUnitAtom[]): Com
   return result;
 }
 
+function fieldInstructionSignature(atom: ComparisonUnitAtom): string | null {
+  if (!atom.collapsedFieldAtoms?.length) return null;
+  const instructions = atom.collapsedFieldAtoms
+    .filter((part) => part.contentElement.tagName === 'w:instrText')
+    .map((part) => part.contentElement.textContent ?? '');
+  return instructions.length > 0 ? instructions.join('\u0000') : null;
+}
+
+function hydrateCollapsedPart(part: ComparisonUnitAtom, parent: ComparisonUnitAtom): void {
+  part.paragraphIndex = parent.paragraphIndex;
+  part.sourceParagraphElement ??= parent.sourceParagraphElement;
+  part.sourceRunElement ??= [...part.ancestorElements]
+    .reverse()
+    .find((ancestor) => ancestor.tagName === 'w:r');
+}
+
+function simpleFieldResultAtoms(atom: ComparisonUnitAtom): ComparisonUnitAtom[] | null {
+  if (!atom.collapsedFieldAtoms?.length) return null;
+  const result: ComparisonUnitAtom[] = [];
+  let depth = 0;
+  let inResult = false;
+
+  for (const part of atom.collapsedFieldAtoms) {
+    if (part.contentElement.tagName === 'w:fldChar') {
+      const type = part.contentElement.getAttribute('w:fldCharType');
+      if (type === 'begin') depth++;
+      else if (type === 'separate' && depth === 1) inResult = true;
+      else if (type === 'end') {
+        if (depth === 1) inResult = false;
+        depth--;
+      }
+      continue;
+    }
+    if (inResult && depth === 1) result.push(part);
+  }
+
+  return result.length > 0 ? result : null;
+}
+
+function fieldResultBounds(atom: ComparisonUnitAtom): { start: number; end: number } | null {
+  const parts = atom.collapsedFieldAtoms;
+  if (!parts?.length) return null;
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < parts.length; i++) {
+    const el = parts[i]!.contentElement;
+    if (el.tagName !== 'w:fldChar') continue;
+    const type = el.getAttribute('w:fldCharType');
+    if (type === 'begin') depth++;
+    else if (type === 'separate' && depth === 1) start = i + 1;
+    else if (type === 'end') {
+      if (depth === 1 && start >= 0) return { start, end: i };
+      depth--;
+    }
+  }
+  return null;
+}
+
+/**
+ * Reduce an unchanged-instruction complex-field replacement to its cached-result
+ * atoms. Word 16.112 and Aspose.Words 25.10 both preserve the field state
+ * machine for a result-only change (for example NUMPAGES 3 -> 4) and redline
+ * only the old/new result text. Instruction changes remain whole-field
+ * replacements.
+ */
+export function narrowResultOnlyFieldReplacements(
+  atoms: ComparisonUnitAtom[],
+): ComparisonUnitAtom[] {
+  const result: ComparisonUnitAtom[] = [];
+  for (let i = 0; i < atoms.length; i++) {
+    const deleted = atoms[i]!;
+    const inserted = atoms[i + 1];
+    if (
+      inserted &&
+      deleted.correlationStatus === CorrelationStatus.Deleted &&
+      inserted.correlationStatus === CorrelationStatus.Inserted &&
+      deleted.paragraphIndex === inserted.paragraphIndex &&
+      fieldInstructionSignature(deleted) !== null &&
+      fieldInstructionSignature(deleted) === fieldInstructionSignature(inserted)
+    ) {
+      const oldResult = simpleFieldResultAtoms(deleted);
+      const newResult = simpleFieldResultAtoms(inserted);
+      const oldBounds = fieldResultBounds(deleted);
+      const newBounds = fieldResultBounds(inserted);
+      const oldParts = deleted.collapsedFieldAtoms;
+      const newParts = inserted.collapsedFieldAtoms;
+      if (
+        oldResult &&
+        newResult &&
+        oldBounds &&
+        newBounds &&
+        oldParts &&
+        newParts &&
+        oldBounds.start === newBounds.start &&
+        oldParts.length - oldBounds.end === newParts.length - newBounds.end
+      ) {
+        for (let partIndex = 0; partIndex < newBounds.start; partIndex++) {
+          const oldPart = oldParts[partIndex]!;
+          const newPart = newParts[partIndex]!;
+          newPart.correlationStatus = CorrelationStatus.Equal;
+          newPart.sourceDocument = 'revised';
+          hydrateCollapsedPart(newPart, inserted);
+          newPart.comparisonUnitAtomBefore = oldPart;
+          result.push(newPart);
+        }
+        for (const atom of oldResult) {
+          atom.correlationStatus = CorrelationStatus.Deleted;
+          atom.sourceDocument = 'original';
+          hydrateCollapsedPart(atom, deleted);
+          result.push(atom);
+        }
+        for (const atom of newResult) {
+          atom.correlationStatus = CorrelationStatus.Inserted;
+          atom.sourceDocument = 'revised';
+          hydrateCollapsedPart(atom, inserted);
+          result.push(atom);
+        }
+        const oldSuffixStart = oldBounds.end;
+        for (let partIndex = newBounds.end; partIndex < newParts.length; partIndex++) {
+          const oldPart = oldParts[oldSuffixStart + partIndex - newBounds.end]!;
+          const newPart = newParts[partIndex]!;
+          newPart.correlationStatus = CorrelationStatus.Equal;
+          newPart.sourceDocument = 'revised';
+          hydrateCollapsedPart(newPart, inserted);
+          newPart.comparisonUnitAtomBefore = oldPart;
+          result.push(newPart);
+        }
+        i++;
+        continue;
+      }
+    }
+    result.push(deleted);
+  }
+  return result;
+}
+
 
 export function mergeAdjacentTrackChangeSiblings(root: Element): void {
   function traverse(node: Element): void {

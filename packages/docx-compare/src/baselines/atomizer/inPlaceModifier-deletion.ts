@@ -188,7 +188,6 @@ export function insertDeletedRun(
  * next insertion anchor (preserving the contract of `insertDeletedRun`).
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
- * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  *
  * Rule (the part that IS in Part 1): `w:delInstrText` must appear inside
  * `<w:del>`. Nothing in Part 1 bars `w:fldChar` from appearing there too.
