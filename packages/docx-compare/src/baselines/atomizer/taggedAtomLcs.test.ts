@@ -2,7 +2,7 @@ import { describe, expect } from 'vitest';
 import { CorrelationStatus, type ComparisonUnitAtom } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { el } from '../../testing/dom-test-helpers.js';
-import { computeTaggedAtomLcs, tagAtomLcs } from './atomLcs.js';
+import { computeTaggedAtomLcs, EqualContentDelInsError, tagAtomLcs } from './atomLcs.js';
 import { hierarchicalCompare, hierarchicalCompareTagged } from './hierarchicalLcs.js';
 import { nextRevisionId } from './taggedTree.js';
 
@@ -178,6 +178,16 @@ describe('tagged atom LCS', () => {
       });
     },
   );
+
+  test('rejects an equal-content deletion/insertion construction boundary', () => {
+    const original = atom('same');
+    const revised = atom('same');
+    expect(() => tagAtomLcs([original], [revised], {
+      matches: [],
+      deletedIndices: [0],
+      insertedIndices: [0],
+    }, 'run')).toThrow(EqualContentDelInsError);
+  });
 
   test.allure({ story: 'revision IDs reserve all surviving markup IDs' })(
     'the first allocation skips root, marker, and property-change aliases',

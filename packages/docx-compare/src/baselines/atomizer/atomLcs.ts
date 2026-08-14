@@ -57,6 +57,31 @@ export interface TaggedAtomLcsResult {
   alignments: TaggedAtomAlignment[];
 }
 
+export class EqualContentDelInsError extends Error {
+  constructor(readonly originalIndex: number, readonly revisedIndex: number) {
+    super(`tagged alignment emitted equal content as original/revised at ${originalIndex}/${revisedIndex}`);
+    this.name = 'EqualContentDelInsError';
+  }
+}
+
+/**
+ * Assert that a replacement boundary is not a false-positive equal del/ins
+ * pair. Relocated content is represented separately as a move relation and is
+ * therefore intentionally outside this local replacement invariant.
+ */
+export function assertNoEqualContentDelIns(alignments: readonly TaggedAtomAlignment[]): void {
+  for (let index = 0; index + 1 < alignments.length; index++) {
+    const left = alignments[index]!;
+    const right = alignments[index + 1]!;
+    const original = left.tag === 'original' ? left.original : right.tag === 'original' ? right.original : undefined;
+    const revised = left.tag === 'revised' ? left.revised : right.tag === 'revised' ? right.revised : undefined;
+    if (!original || !revised || left.tag === right.tag) continue;
+    if (original.contentElement.textContent === revised.contentElement.textContent) {
+      throw new EqualContentDelInsError(index, index + 1);
+    }
+  }
+}
+
 function directRunDelta(
   original: ComparisonUnitAtom,
   revised: ComparisonUnitAtom,
@@ -128,6 +153,7 @@ export function tagAtomLcs(
     // later match. It must be emitted first to preserve revised document order.
     if (revisedIndex < revised.length) continue;
   }
+  assertNoEqualContentDelIns(alignments);
   return { lcs, granularity, alignments };
 }
 

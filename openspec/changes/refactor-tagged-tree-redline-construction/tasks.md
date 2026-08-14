@@ -22,14 +22,21 @@ in `proposal.md` and are separate changes.
 
 ## 2. Aligner emits tags
 
-- [ ] 2.1 Add a tag-emitting output path to `hierarchicalLcs` paragraph matching
+- [x] 2.1 Add a tag-emitting output path to `hierarchicalLcs` paragraph matching
       alongside the existing correlation-status path; matching behavior
       unchanged.
-- [ ] 2.2 Add a tag-emitting path to within-paragraph `atomLcs`, with
+- [x] 2.2 Add a tag-emitting path to within-paragraph `atomLcs`, with
       word-vs-run granularity as an alignment parameter.
 - [ ] 2.3 Represent direct formatting differences as `both` + scoped
       `PropertyDelta`; assert no construction path emits a del/ins pair over
       equal content.
+
+      **Partial (2026-08-14):** matched direct run-property differences are
+      `both` + run-scoped `PropertyDelta`, and local replacement boundaries now
+      fail fast on an adjacent equal-content original/revised pair. The global
+      assertion remains open until reordered equal content is bound to explicit
+      task-2.4 move relations; otherwise a non-adjacent equal del/ins pair could
+      escape the local assertion.
 - [ ] 2.4 Model move pairs as a relation between an `original` and a `revised`
       subtree, and verify the tree satisfies the live "Tracked move ranges are
       structurally certified" requirement — one range per direction and name,
@@ -42,6 +49,18 @@ in `proposal.md` and are separate changes.
       highest-risk surface; `preSplitInsProvenanceRuns`
       (`inPlaceModifier-presplit.ts:175`) and the ID seeding at
       `inPlaceModifier.ts:96` are the behavior to match.
+
+      **Blocked (2026-08-14):** the current tagged alignment records both
+      provenance stacks and collision-free starting IDs, but it cannot evidence
+      the required accept/reject behavior over multi-author stacks until tracked
+      markup exists. That markup is first introduced by task 3.1, while this task
+      explicitly gates all of section 3. The ordering is circular as written:
+      2.5 requires serializer output, and 3.1 is forbidden until 2.5 is complete.
+      Reproduce the implemented subset with
+      `npm run test:run -w @usejunior/docx-compare -- --run
+      src/baselines/atomizer/taggedTree.test.ts
+      src/baselines/atomizer/taggedAtomLcs.test.ts` (31 tests pass); none of those
+      tests serializes tagged evidence or applies accept/reject to its output.
 
 ## 3. Serializer and story composition (shadow-only)
 
@@ -80,9 +99,14 @@ in `proposal.md` and are separate changes.
       is proposed as equivalent (Word fidelity check, plus Pages / Google Docs
       paths).
 
+      **External evidence gate:** this requires the serializer/shadow output
+      from 3.1/4.1 plus installed or connected Word, Pages, and Google Docs
+      readers. It cannot be satisfied by the repository-only test suite and
+      remains unchecked.
+
 ## 5. Validation
 
-- [ ] 5.1 `openspec validate refactor-tagged-tree-redline-construction --strict`.
+- [x] 5.1 `openspec validate refactor-tagged-tree-redline-construction --strict`.
 - [ ] 5.2 Full gate run with explicit exit-code checks (never piped to `tail`):
       `npm run build`, `npm run test`, `npm run check:spec-coverage`.
 - [ ] 5.3 Coverage in the correct order — `npm run test:coverage:packages`
@@ -97,3 +121,34 @@ in `proposal.md` and are separate changes.
       follow-up to narrow the Lean residual axiom
       `compareDocumentXml_output_text_roundtrip` once the projection half is
       definitional.
+
+## Stage A evidence audit (2026-08-14)
+
+- Task 2.4 remains open. `TaggedMoveRelation` now makes a logical move a
+  relation between whole original/revised subtrees, and
+  `verifyMoveRelations` certifies unique integer direction IDs and one-to-one
+  non-empty names. A TaggedTree serializer does not yet exist, however, so
+  tree membership, non-crossing placement, and exactly one balanced start/end
+  marker pair per relation remain unproved. That serializer evidence is
+  required by the live move-range requirement and must not be inferred from the
+  IR alone.
+- Task 2.5 remains open and blocks task 3. The additive alignment records every
+  enclosing revision wrapper on both representatives, tests a boundary inside
+  a prior insertion, and reserves numeric revision IDs from both roots. It does
+  not yet define and exercise comparison-revision nesting for every pre-existing
+  `w:ins`/`w:del` stack, nor prove accept/reject equivalence for a serialized
+  multi-author tree. Existing legacy-path provenance tests do not prove the new
+  construction.
+- Tasks 3.1-4.6 consequently remain open. Wiring a shadow flag before task 2.5
+  would weaken the proposal's explicit highest-risk gate.
+- Tasks 4.3, 4.4, and 4.6 additionally require proprietary/external corpus or
+  reader artifacts not present in this worktree (OpenAgreements plus NVCA/ILPA
+  corpus identities and Word/Pages/Google Docs readers). No result is inferred
+  or fabricated for those inputs.
+- Task 5.5 remains open because recording durable successor issues requires
+  external issue-tracker writes, which are outside this no-push/no-PR local
+  worktree run.
+
+      **Public-action gate:** issue creation is intentionally not performed by
+      this implementation worktree. Draft issue text and explicit human approval
+      are required before creating public GitHub issues.
