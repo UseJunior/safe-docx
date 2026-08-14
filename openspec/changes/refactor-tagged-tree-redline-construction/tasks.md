@@ -135,6 +135,34 @@ in `proposal.md` and are separate changes.
       remains outside the repository and Aspose is neither a runtime nor package
       dependency. Reviewable Aspose DOCX/PDF/PNG projections are stored under
       the same deterministic `.tmp/review-artifacts/` directory.
+
+      **Serializer repair (2026-08-14):** the source-grounded blocker was two
+      coupled defects. Side-only `w:p` nodes were serialized inside block-level
+      `w:ins`/`w:del` wrappers, which are not valid paragraph revision markup and
+      caused LibreOffice to render the de-identified projections as blank. They
+      now use paragraph-mark revisions (`w:pPr/w:rPr/w:ins|del`) with run-level
+      content wrappers. On reject, `pPrChange` restoration also duplicated a
+      paragraph-mark `w:rPr` already present in the snapshot; restoration now
+      retains at most one direct `w:rPr`/`w:sectPr`. The synthetic case, the
+      60-paragraph de-identified reduction, and opaque fixture
+      `cd2f69960d5f13cc6292a138` now score exactly `1.0` for both source
+      projections. LibreOffice renders both repaired de-identified projections
+      with visible content and source-side layout. This clears the main-story
+      formatting/reader defect but does not by itself authorize #837: ordinary
+      pipeline package/story integration and the complete default-flip gate
+      remain separate work.
+
+      The independent Aspose control remains a blocking interoperability
+      discrepancy rather than a source-oracle failure. Aspose reject-all retains
+      all `60/60` direct paragraph-property snapshots and all run properties;
+      accept-all retains all run properties but changes `21/60` direct paragraph
+      snapshots after accepting adjacent whole-paragraph delete/insert pairs.
+      An Aspose save of the revised source itself changes `0/60` paragraph
+      snapshots, proving those 21 changes are not its ordinary save
+      normalization. Both control and projection add 33 drawing-fallback
+      paragraphs and remap header/footer relationship IDs, which are recorded
+      separately as reader normalization. Because accept-all is not yet exact,
+      the ordinary comparison default remains unchanged.
 - [x] 4.5 Produce the field-case evidence that successor C's deletion of
       `suppressNoOpChangePairs` depends on: field-stable, field-modification,
       field-delete, nested-field, and paragraph-spanning-field cases showing no

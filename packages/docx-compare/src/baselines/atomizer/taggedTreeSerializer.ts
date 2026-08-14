@@ -118,6 +118,44 @@ function wrapRevision(node: WmlElement, kind: 'ins' | 'del' | 'moveFrom' | 'move
   return wrapper;
 }
 
+function markWholeParagraph(
+  paragraph: WmlElement,
+  kind: 'ins' | 'del',
+  revision: ComparisonRevision,
+): WmlElement {
+  let pPr = childElements(paragraph).find((child) => child.localName === 'pPr');
+  if (!pPr) {
+    pPr = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
+    paragraph.insertBefore(pPr, paragraph.firstChild);
+  }
+  let paraRPr = childElements(pPr).find((child) => child.localName === 'rPr');
+  if (!paraRPr) {
+    paraRPr = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
+    const boundary = childElements(pPr).find((child) => ['sectPr', 'pPrChange'].includes(child.localName));
+    pPr.insertBefore(paraRPr, boundary ?? null);
+  }
+  const marker = paragraph.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
+  marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
+  marker.setAttributeNS(W_NS, 'w:author', revision.author);
+  marker.setAttributeNS(W_NS, 'w:date', revision.date);
+  paraRPr.appendChild(marker);
+
+  const content = childElements(paragraph).filter((child) => child !== pPr);
+  for (const child of content) paragraph.removeChild(child);
+  if (content.length > 0) {
+    const wrapper = paragraph.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
+    wrapper.setAttributeNS(W_NS, 'w:id', String(revision.id));
+    wrapper.setAttributeNS(W_NS, 'w:author', revision.author);
+    wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
+    for (const child of content) {
+      if (kind === 'del') convertDeletedText(child);
+      wrapper.appendChild(child);
+    }
+    paragraph.appendChild(wrapper);
+  }
+  return paragraph;
+}
+
 const CHANGE_ELEMENT_BY_SCOPE = {
   run: 'w:rPrChange',
   paragraphMark: 'w:rPrChange',
@@ -229,11 +267,17 @@ function emitNode(
   if (node.tag === 'original') {
     const relation = moveFor(node, moves);
     const revision = relation ? { ...plan.comparison, id: relation.sourceRangeId } : plan.comparison;
+    if (!relation && base.namespaceURI === W_NS && base.localName === 'p') {
+      return wrapPreserved(markWholeParagraph(base, 'del', revision), entry.originalStack);
+    }
     return wrapPreserved(wrapRevision(base, relation ? 'moveFrom' : 'del', revision), entry.originalStack);
   }
   if (node.tag === 'revised') {
     const relation = moveFor(node, moves);
     const revision = relation ? { ...plan.comparison, id: relation.destinationRangeId } : plan.comparison;
+    if (!relation && base.namespaceURI === W_NS && base.localName === 'p') {
+      return wrapPreserved(markWholeParagraph(base, 'ins', revision), entry.revisedStack);
+    }
     return wrapPreserved(wrapRevision(base, relation ? 'moveTo' : 'ins', revision), entry.revisedStack);
   }
   const stack = entry.revisedStack.length > 0 ? entry.revisedStack : entry.originalStack;

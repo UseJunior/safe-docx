@@ -12,6 +12,8 @@ import {
   serializeTaggedTree,
   splitWithPreservedProvenance,
 } from './taggedTreeSerializer.js';
+import { constructTaggedTree } from './taggedTreeConstruction.js';
+import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
 
 const TEST_FEATURE = 'refactor-tagged-tree-redline-construction';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
@@ -239,5 +241,28 @@ describe('tagged-tree shadow serializer', () => {
     expect(parseXml(inplace).documentElement.getAttribute('data-skeleton')).toBe('revised');
     expect(text(acceptAllChanges(rebuilt))).toBe('B');
     expect(text(rejectAllChanges(inplace))).toBe('A');
+  });
+
+  test('serializes whole paragraphs through paragraph marks with exact source properties', () => {
+    const original = documentBody(
+      '<w:p><w:r><w:t>anchor</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:pStyle w:val="Heading2"/><w:jc w:val="center"/><w:rPr><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:t>old</w:t></w:r></w:p>',
+    );
+    const revised = documentBody(
+      '<w:p><w:r><w:t>anchor</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:pStyle w:val="Heading3"/><w:jc w:val="right"/><w:rPr><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:t>new one</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:pStyle w:val="Heading4"/><w:jc w:val="left"/></w:pPr><w:r><w:t>new two</w:t></w:r></w:p>',
+    );
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+      author: 'Comparator', date: '2026-08-14T12:00:00Z',
+    }), { moves: constructed.moves });
+
+    expect(output).not.toMatch(/<w:(?:ins|del)[^>]*>\s*<w:p[ >]/);
+    expect(output).toMatch(/<w:pPr>[\s\S]*<w:rPr>[\s\S]*<w:(?:ins|del)/);
+    const originalXml = `<w:document xmlns:w="${W_NS}">${new XMLSerializer().serializeToString(original)}</w:document>`;
+    const revisedXml = `<w:document xmlns:w="${W_NS}">${new XMLSerializer().serializeToString(revised)}</w:document>`;
+    const candidateXml = `<w:document xmlns:w="${W_NS}">${output}</w:document>`;
+    expect(compareSourceProjectedFormattingFidelity(originalXml, revisedXml, candidateXml).score).toBe(1);
   });
 });

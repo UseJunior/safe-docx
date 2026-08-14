@@ -77,6 +77,18 @@ function removeParaMarkers(root: Element): void {
   }
 }
 
+function removeEmptyParagraphMarkerContainers(root: Element): void {
+  for (const p of findAllByTagName(root, 'w:p')) {
+    const pPr = getParagraphPPr(p);
+    if (!pPr) continue;
+    const rPr = childElements(pPr).find((child) => child.tagName === 'w:rPr');
+    if (rPr && childElements(rPr).length === 0 && !(rPr.textContent ?? '').trim()) {
+      pPr.removeChild(rPr);
+    }
+    if (childElements(pPr).length === 0 && !(pPr.textContent ?? '').trim()) p.removeChild(pPr);
+  }
+}
+
 function findContainingParagraph(node: Element | undefined): Element | undefined {
   let current: Element | undefined = node;
   while (current) {
@@ -541,6 +553,7 @@ export function acceptAllChanges(documentXml: string): string {
 
   // Strip paragraph-level markers now that changes are accepted.
   removeParaMarkers(root);
+  removeEmptyParagraphMarkerContainers(root);
 
   // Resolve the PPR-DEL-marked paragraphs (their paragraph mark was deleted):
   // merge each into its following paragraph (document order, so consecutive
@@ -641,6 +654,7 @@ export function rejectAllChanges(documentXml: string): string {
 
   // Strip paragraph-level markers now that changes are rejected.
   removeParaMarkers(root);
+  removeEmptyParagraphMarkerContainers(root);
 
   // Drop hyperlink wrappers emptied by the rejected insertions above.
   removeEmptyHyperlinks(root);
@@ -675,6 +689,7 @@ function restoreParagraphPropertiesFromChanges(root: Element): void {
     // CT_PPrBase intentionally excludes these live, non-base children.
     for (const child of childElements(livePPr)) {
       if (child.tagName === 'w:rPr' || child.tagName === 'w:sectPr') {
+        if (childElements(restored).some((existing) => existing.tagName === child.tagName)) continue;
         restored.appendChild(child.cloneNode(true));
       }
     }
