@@ -16,7 +16,7 @@ function wordText(element: XmlElement): string {
   return space === 'preserve' ? value : value.replace(/^[\u0009\u000a\u000d\u0020]+|[\u0009\u000a\u000d\u0020]+$/gu, '');
 }
 
-function textFrom(element: XmlElement, mode: 'accept' | 'reject'): string {
+function textFrom(element: XmlElement, mode: 'accept' | 'reject', skipNestedParagraphs = false): string {
   const localName = element.localName ?? '';
   const wordRevision = element.namespaceURI === W_NS;
   if (wordRevision && ((mode === 'accept' && OMIT_ON_ACCEPT.has(localName)) || (mode === 'reject' && OMIT_ON_REJECT.has(localName)))) return '';
@@ -26,7 +26,11 @@ function textFrom(element: XmlElement, mode: 'accept' | 'reject'): string {
   if (isWord(element, 'delText')) return mode === 'reject' ? wordText(element) : '';
   let text = '';
   for (const child of Array.from(element.childNodes)) {
-    if (child.nodeType === 1) text += textFrom(child as XmlElement, mode);
+    if (child.nodeType === 1) {
+      const childElement = child as XmlElement;
+      if (skipNestedParagraphs && isWord(childElement, 'p')) continue;
+      text += textFrom(childElement, mode, skipNestedParagraphs);
+    }
   }
   return text;
 }
@@ -40,7 +44,7 @@ function parse(xml: string): XmlDocument {
 
 export function projectDocumentXml(xml: string, mode: 'accept' | 'reject'): Projection {
   const document = parse(xml);
-  const paragraphs = Array.from(document.getElementsByTagNameNS(W_NS, 'p')).map((paragraph) => textFrom(paragraph, mode));
+  const paragraphs = Array.from(document.getElementsByTagNameNS(W_NS, 'p')).map((paragraph) => textFrom(paragraph, mode, true));
   return { paragraphs, text: paragraphs.join('\n') };
 }
 
@@ -63,9 +67,10 @@ function ordinaryTextNodes(element: XmlElement): string[] {
     if (node.namespaceURI === W_NS && REVISION_WRAPPERS.has(node.localName ?? '')) {
       // Empty/property-only revision wrappers do not separate visible text and
       // must not fragment an otherwise ordinary token or whitespace run.
-      if (textFrom(node, 'accept') !== '' || textFrom(node, 'reject') !== '') flush();
+      if (textFrom(node, 'accept', true) !== '' || textFrom(node, 'reject', true) !== '') flush();
       return;
     }
+    if (node !== element && isWord(node, 'p')) return;
     if (isWord(node, 'tab')) current += '\t';
     else if (isWord(node, 'br') || isWord(node, 'cr')) current += '\n';
     else if (isWord(node, 't')) current += wordText(node);
@@ -84,8 +89,8 @@ export function trackedParagraphViews(xml: string): TrackedParagraphView[] {
   const document = parse(xml);
   return Array.from(document.getElementsByTagNameNS(W_NS, 'p')).map((paragraph, index) => ({
     index,
-    acceptText: textFrom(paragraph, 'accept'),
-    rejectText: textFrom(paragraph, 'reject'),
+    acceptText: textFrom(paragraph, 'accept', true),
+    rejectText: textFrom(paragraph, 'reject', true),
     ordinaryTextNodes: ordinaryTextNodes(paragraph),
   }));
 }
