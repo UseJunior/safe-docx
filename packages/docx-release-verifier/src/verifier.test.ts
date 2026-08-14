@@ -173,6 +173,27 @@ describe('independent release verifier', () => {
     expect(result.gates.minimality).toMatchObject({ status: 'pass', details: { evidence: { lostTokens: 0 } } });
   });
 
+  itAllure('accepts a release whose tracked artifact merges paragraphs through a deleted paragraph mark', async () => {
+    const { manifest } = await fixture();
+    await writeDocx(manifest.originalPath, '<w:p><w:r><w:t>intro</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">alpha </w:t></w:r></w:p><w:p><w:r><w:t>beta</w:t></w:r></w:p><w:p><w:r><w:t>outro</w:t></w:r></w:p>');
+    await writeDocx(manifest.intendedCleanPath, '<w:p><w:r><w:t>intro</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">alpha beta</w:t></w:r></w:p><w:p><w:r><w:t>outro</w:t></w:r></w:p>');
+    await writeDocx(manifest.trackedPath, '<w:p><w:r><w:t>intro</w:t></w:r></w:p><w:p><w:pPr><w:rPr><w:del w:id="1"/></w:rPr></w:pPr><w:r><w:t xml:space="preserve">alpha </w:t></w:r></w:p><w:p><w:r><w:t>beta</w:t></w:r></w:p><w:p><w:r><w:t>outro</w:t></w:r></w:p>');
+    const result = await verifyRelease({
+      version: 1,
+      originalPath: manifest.originalPath,
+      intendedCleanPath: manifest.intendedCleanPath,
+      trackedPath: manifest.trackedPath,
+      mutationControl: { projection: 'accept', expected: 'intendedClean' },
+    });
+    expect(result.projections).toMatchObject({
+      accept: { paragraphs: ['intro', 'alpha beta', 'outro'] },
+      reject: { paragraphs: ['intro', 'alpha ', 'beta', 'outro'] },
+    });
+    expect(result.gates.semantic.status).toBe('pass');
+    expect(result.gates.minimality.status).toBe('pass');
+    expect(result.exitCode).toBe(0);
+  });
+
   itAllure('derives exact accept/reject projections and proves mutation sensitivity without changing inputs', async () => {
     const { manifest } = await fixture();
     const before = await readFile(manifest.trackedPath);

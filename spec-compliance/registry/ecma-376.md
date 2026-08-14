@@ -1548,7 +1548,7 @@ part: 1
 section: "17.13.5.15"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del
-verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts
+verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts
 ```
 
 ECMA-376 Part 1 §17.13.5.15 defines `w:del` inside `w:pPr/w:rPr` as a tracked
@@ -1568,7 +1568,7 @@ part: 1
 section: "17.13.5.20"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins
-verifiedBy: packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts
+verifiedBy: packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts
 ```
 
 ECMA-376 Part 1 §17.13.5.20 defines `w:ins` inside `w:pPr/w:rPr` as a tracked

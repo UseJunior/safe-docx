@@ -42,9 +42,75 @@ function parse(xml: string): XmlDocument {
   return doc;
 }
 
+function directWordChild(element: XmlElement, localName: string): XmlElement | null {
+  for (const child of Array.from(element.childNodes)) {
+    if (child.nodeType === 1 && isWord(child as XmlElement, localName)) return child as XmlElement;
+  }
+  return null;
+}
+
+/**
+ * Whether this physical paragraph's own mark disappears in the selected view.
+ * The paragraph mark is tracked as a revision of the mark's run properties:
+ * a deleted mark (or a move source) disappears on accept, and an inserted
+ * mark (or a move destination) disappears on reject. Only the paragraph's
+ * direct `w:pPr/w:rPr` is consulted, so nested text-box paragraphs never
+ * contribute a mark revision to their host paragraph.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ */
+function paragraphMarkRemoved(paragraph: XmlElement, mode: 'accept' | 'reject'): boolean {
+  const paragraphProperties = directWordChild(paragraph, 'pPr');
+  const markRunProperties = paragraphProperties && directWordChild(paragraphProperties, 'rPr');
+  if (!markRunProperties) return false;
+  const removed = mode === 'accept' ? OMIT_ON_ACCEPT : OMIT_ON_REJECT;
+  return Array.from(markRunProperties.childNodes).some((child) => child.nodeType === 1
+    && (child as XmlElement).namespaceURI === W_NS && removed.has((child as XmlElement).localName ?? ''));
+}
+
+/** Block containers that terminate a paragraph-mark merge scan conservatively. */
+const MERGE_SCAN_BLOCKERS = new Set(['tbl', 'sdt', 'customXml', 'altChunk']);
+
+/**
+ * The paragraph a removed paragraph mark merges into: the next `w:p` sibling
+ * inside the same flow (body, table cell, or text-box content). Marker
+ * siblings such as bookmarks and proofing anchors are skipped; block
+ * containers stop the scan so content never merges across a table or
+ * structured document tag, and the final paragraph of a flow keeps its mark.
+ */
+function followingParagraphInFlow(paragraph: XmlElement): XmlElement | null {
+  for (let node = paragraph.nextSibling; node; node = node.nextSibling) {
+    if (node.nodeType !== 1) continue;
+    const element = node as XmlElement;
+    if (isWord(element, 'p')) return element;
+    if (element.namespaceURI === W_NS && MERGE_SCAN_BLOCKERS.has(element.localName ?? '')) return null;
+  }
+  return null;
+}
+
+/**
+ * Projects the logical accept-all/reject-all paragraph sequence. Every
+ * physical paragraph contributes its visible text, and a paragraph whose own
+ * mark is removed in the selected view merges that text into the following
+ * paragraph of the same flow instead of ending a logical paragraph. Merged
+ * chains emit exactly one logical paragraph at the chain's first physical
+ * position, so empty physical paragraphs survive only when their mark
+ * survives in the selected view.
+ */
 export function projectDocumentXml(xml: string, mode: 'accept' | 'reject'): Projection {
   const document = parse(xml);
-  const paragraphs = Array.from(document.getElementsByTagNameNS(W_NS, 'p')).map((paragraph) => textFrom(paragraph, mode, true));
+  const physical = Array.from(document.getElementsByTagNameNS(W_NS, 'p'));
+  const slotOf = new Map<XmlElement, number>();
+  const logical = new Map<number, string>();
+  physical.forEach((paragraph, index) => {
+    const slot = slotOf.get(paragraph) ?? index;
+    logical.set(slot, (logical.get(slot) ?? '') + textFrom(paragraph, mode, true));
+    if (!paragraphMarkRemoved(paragraph, mode)) return;
+    const target = followingParagraphInFlow(paragraph);
+    if (target) slotOf.set(target, slot);
+  });
+  const paragraphs = [...logical.entries()].sort(([left], [right]) => left - right).map(([, text]) => text);
   return { paragraphs, text: paragraphs.join('\n') };
 }
 
