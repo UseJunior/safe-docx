@@ -99,8 +99,9 @@ describe('Traceability: row-level revision guard (MCP surface)', () => {
 
   // The MODIFIED `Accept Tracked Changes Tool` requirement carries three
   // pre-existing scenarios. They are re-verified here against the new
-  // preserve-and-report behavior: a document with no row-level markers must
-  // still come out clean, well-formed, and non-mutating.
+  // preserve-and-report behavior, each with a fixture that actually matches
+  // what the scenario claims — resolvable-only input where the scenario is
+  // about a clean result, not a row-marker fixture standing in for one.
 
   test.openspec('accept_changes produces clean document body with no revision markup')(
     'a document without row-level markers still yields a body with no revision markup',
@@ -136,7 +137,46 @@ describe('Traceability: row-level revision guard (MCP surface)', () => {
   );
 
   test.openspec('accepted document opens cleanly in Microsoft Word')(
-    'output stays well-formed with a preserved row marker present (well-formed XML proxy)',
+    'resolvable-only input leaves no revision markup at all (well-formed XML proxy)',
+    async ({ when, then }: AllureBddContext) => {
+      const mgr = createTestSessionManager();
+      const dir = await createTrackedTempDir();
+
+      // This scenario is about a document Word can open with an EMPTY review
+      // pane, so the fixture must contain only resolvable revisions. A
+      // row-level marker would legitimately survive and is covered by
+      // [SDX-ROWREV-MCP-02] instead.
+      const bodyXml =
+        `<w:p>`
+        + `<w:ins w:id="60" w:author="A"><w:r><w:t>ins</w:t></w:r></w:ins>`
+        + `<w:del w:id="61" w:author="A"><w:r><w:delText>del</w:delText></w:r></w:del></w:p>`
+        + `<w:p><w:pPr><w:pPrChange w:id="62" w:author="A"><w:pPr/></w:pPrChange></w:pPr>`
+        + `<w:r><w:t>para</w:t></w:r></w:p>`;
+      const filePath = await writeTestDocx(dir, 'resolvable-only.docx', bodyXml);
+
+      const result = await when('Call accept_changes', () =>
+        acceptChangesTool(mgr, { file_path: filePath }),
+      );
+      assertSuccess(result, 'accept_changes');
+
+      await then('Output parses and holds no revision markup for the review pane to show', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
+        const dom = parseXml(serializeDoc(session));
+        expect(dom).toBeTruthy();
+
+        for (const local of [
+          'ins', 'del', 'delText', 'moveFrom', 'moveTo',
+          'rPrChange', 'pPrChange', 'sectPrChange', 'tblPrChange', 'trPrChange', 'tcPrChange',
+        ]) {
+          expect(dom.getElementsByTagNameNS(W_NS, local).length).toBe(0);
+        }
+        expect(result.unresolvedRowRevisions).toBe(0);
+      });
+    },
+  );
+
+  test.openspec('[SDX-ROWREV-MCP-02] a document holding unresolved row revisions stays structurally valid')(
+    'the preserved marker stays in the only position the schema admits',
     async ({ when, then }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
@@ -146,24 +186,23 @@ describe('Traceability: row-level revision guard (MCP surface)', () => {
         + `<w:del w:id="7" w:author="Reviewer" w:date="2026-01-01T00:00:00Z"/>`
         + `</w:trPr><w:tc><w:p><w:r><w:t>ROWTEXT</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`
         + `<w:p><w:r><w:t>body</w:t></w:r></w:p>`;
-      const filePath = await writeTestDocx(dir, 'wellformed-row.docx', bodyXml);
+      const filePath = await writeTestDocx(dir, 'unresolved-structural.docx', bodyXml);
 
       const result = await when('Call accept_changes', () =>
         acceptChangesTool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'accept_changes');
 
-      await then('Output parses and the preserved marker sits in valid trPr position', async () => {
+      await then('The marker survives as a w:trPr child and the output is well-formed', async () => {
         const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const dom = parseXml(serializeDoc(session));
         expect(dom).toBeTruthy();
 
-        // The marker must remain a child of w:trPr — a stray w:del elsewhere
-        // in the row would be schema-invalid and is exactly what Word rejects.
+        // A stray w:del anywhere else in the row would be schema-invalid.
         const dels = dom.getElementsByTagNameNS(W_NS, 'del');
         expect(dels.length).toBe(1);
-        const parent = dels.item(0)!.parentNode as Element;
-        expect(parent.localName).toBe('trPr');
+        expect((dels.item(0)!.parentNode as Element).localName).toBe('trPr');
+        expect(result.unresolvedRowRevisions).toBe(1);
       });
     },
   );
