@@ -102,19 +102,24 @@ function revisionVisibility(configured: PixelMeasurement, control: PixelMeasurem
   return 'insufficient-contrast';
 }
 
-async function hasDeletionMarkup(bytes: Buffer): Promise<boolean> {
+async function renderedRevisionMarkup(bytes: Buffer): Promise<{ insertions: boolean; deletions: boolean }> {
   try {
     const zip = await JSZip.loadAsync(bytes);
     const documentXml = await zip.file('word/document.xml')?.async('string');
-    if (documentXml === undefined) return false;
+    if (documentXml === undefined) return { insertions: false, deletions: false };
     const renderedStories = await referencedRenderedStories(zip, documentXml);
+    let insertions = false;
+    let deletions = false;
     for (const name of renderedStories) {
       const xml = await zip.file(name)?.async('string');
-      if (xml !== undefined && hasVisibleDeletionInStory(xml)) return true;
+      if (xml === undefined) continue;
+      insertions ||= hasVisibleRevisionInStory(xml, ['ins', 'moveTo']);
+      deletions ||= hasVisibleRevisionInStory(xml, ['del', 'moveFrom']);
+      if (insertions && deletions) break;
     }
-    return false;
+    return { insertions, deletions };
   } catch {
-    return false;
+    return { insertions: false, deletions: false };
   }
 }
 
@@ -152,14 +157,11 @@ async function referencedRenderedStories(zip: JSZip, documentXml: string): Promi
   return [...new Set(stories)];
 }
 
-function hasVisibleDeletionInStory(xml: string): boolean {
+function hasVisibleRevisionInStory(xml: string, wrapperNames: readonly string[]): boolean {
   try {
     const document = new DOMParser().parseFromString(xml, 'application/xml');
     if (document.getElementsByTagName('parsererror').length > 0) return false;
-    const wrappers = [
-      ...Array.from(document.getElementsByTagNameNS(W_NS, 'del')),
-      ...Array.from(document.getElementsByTagNameNS(W_NS, 'moveFrom')),
-    ];
+    const wrappers = wrapperNames.flatMap((localName) => Array.from(document.getElementsByTagNameNS(W_NS, localName)));
     return wrappers.some((wrapper) => hasVisibleRevisionPayload(wrapper));
   } catch {
     return false;
@@ -293,7 +295,8 @@ export async function verifyRenderedMarkup(request: RenderRequest): Promise<Rend
     const markupTextMatchesPdf = normalizeText(pdfText) === normalizeText(request.expectedMarkupText);
     const configuredContrastPassed = configuredContrast(configuredPixels, controlPixels, request.configuredPixelFloor ?? 4);
     const measuredVisibility = revisionVisibility(configuredPixels, controlPixels, request.configuredPixelFloor ?? 4);
-    const visibility = markupTextMatchesPdf && (measuredVisibility !== 'hidden-deletions' || await hasDeletionMarkup(renderedInputBytes))
+    const revisionMarkup = await renderedRevisionMarkup(renderedInputBytes);
+    const visibility = markupTextMatchesPdf && (measuredVisibility !== 'hidden-deletions' || (revisionMarkup.insertions && revisionMarkup.deletions))
       ? measuredVisibility
       : 'insufficient-contrast';
     const pdfOut = path.join(request.outputDir, 'tracked-configured.pdf');

@@ -151,6 +151,28 @@ describe('independent release verifier', () => {
     expect(result.gates.semantic.status).toBe('pass');
   });
 
+  itAllure('projects host and nested text-box paragraphs once each in document order', async () => {
+    const { manifest } = await fixture();
+    const drawing = '<w:p xmlns:wp="urn:wp" xmlns:a="urn:a" xmlns:wps="urn:wps"><w:r><w:t>Body</w:t></w:r><w:r><w:drawing><wp:inline><a:graphic><wps:txbx><w:txbxContent><w:p><w:r><w:t>Box</w:t></w:r></w:p></w:txbxContent></wps:txbx></a:graphic></wp:inline></w:drawing></w:r></w:p>';
+    await writeDocx(manifest.originalPath, drawing);
+    await writeDocx(manifest.intendedCleanPath, drawing);
+    await writeDocx(manifest.trackedPath, drawing);
+    const result = await verifyRelease({
+      version: 1,
+      originalPath: manifest.originalPath,
+      intendedCleanPath: manifest.intendedCleanPath,
+      trackedPath: manifest.trackedPath,
+      mutationControl: { projection: 'accept', expected: 'intendedClean' },
+    });
+    expect(result.projections).toMatchObject({
+      original: { paragraphs: ['Body', 'Box'], text: 'Body\nBox' },
+      intendedClean: { paragraphs: ['Body', 'Box'], text: 'Body\nBox' },
+      accept: { paragraphs: ['Body', 'Box'], text: 'Body\nBox' },
+      reject: { paragraphs: ['Body', 'Box'], text: 'Body\nBox' },
+    });
+    expect(result.gates.minimality).toMatchObject({ status: 'pass', details: { evidence: { lostTokens: 0 } } });
+  });
+
   itAllure('derives exact accept/reject projections and proves mutation sensitivity without changing inputs', async () => {
     const { manifest } = await fixture();
     const before = await readFile(manifest.trackedPath);

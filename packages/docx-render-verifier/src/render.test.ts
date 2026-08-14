@@ -39,11 +39,13 @@ function fakeTools(markup = 'Visible markup text', profiles?: string[], hiddenDe
   };
 }
 
-async function trackedFixture(pathname: string, revision: 'ins' | 'del' | 'empty-del', headerDeletion: 'none' | 'orphan' | 'referenced' = 'none'): Promise<void> {
+async function trackedFixture(pathname: string, revision: 'ins' | 'del' | 'ins-del' | 'empty-del', headerDeletion: 'none' | 'orphan' | 'referenced' = 'none'): Promise<void> {
   const zip = new JSZip();
   zip.file('[Content_Types].xml', '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>');
   const markup = revision === 'empty-del'
     ? '<w:del w:id="1"><w:r><w:rPr><w:b/></w:rPr></w:r></w:del>'
+    : revision === 'ins-del'
+      ? '<w:ins w:id="1"><w:r><w:t>insertion</w:t></w:r></w:ins><w:del w:id="2"><w:r><w:delText>deletion</w:delText></w:r></w:del>'
     : `<w:${revision} w:id="1"><w:r><w:${revision === 'del' ? 'delText' : 't'}>revision</w:${revision === 'del' ? 'delText' : 't'}></w:r></w:${revision}>`;
   const headerReference = headerDeletion === 'referenced' ? '<w:sectPr><w:headerReference r:id="rIdHeader1"/></w:sectPr>' : '';
   zip.file('word/document.xml', `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p>${markup}</w:p>${headerReference}</w:body></w:document>`);
@@ -77,7 +79,7 @@ describe('renderer verifier', () => {
     const root = path.join(os.tmpdir(), `render-fake-${Date.now()}`);
     const source = path.join(root, 'tracked.docx');
     await mkdir(root, { recursive: true });
-    await trackedFixture(source, 'del');
+    await trackedFixture(source, 'ins-del');
     const profiles: string[] = [];
     const result = await verifyRenderedMarkup({
       trackedDocxPath: source,
@@ -94,6 +96,18 @@ describe('renderer verifier', () => {
       expect.stringContaining('<value>16711680</value>'),
       expect.stringContaining('<value>-1</value>'),
     ]));
+  });
+
+  itAllure('does not infer visible configured insertions from blue pixels in a deletion-only document', async () => {
+    const root = path.join(os.tmpdir(), `render-deletion-only-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await trackedFixture(source, 'del');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', revisionVisibility: 'insufficient-contrast' });
   });
 
   itAllure('does not diagnose hidden deletions when the tracked document has insertions only', async () => {
@@ -173,7 +187,7 @@ describe('renderer verifier', () => {
         id: 'add-visible-deletion', version: '1',
         async apply(_input, workspace) {
           const output = path.join(workspace, 'render-only.docx');
-          await trackedFixture(output, 'del');
+          await trackedFixture(output, 'ins-del');
           return output;
         },
       },
@@ -205,7 +219,7 @@ describe('renderer verifier', () => {
     const root = path.join(os.tmpdir(), `render-hidden-delete-${Date.now()}`);
     const source = path.join(root, 'tracked.docx');
     await mkdir(root, { recursive: true });
-    await trackedFixture(source, 'del');
+    await trackedFixture(source, 'ins-del');
     const result = await verifyRenderedMarkup({
       trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
       tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
