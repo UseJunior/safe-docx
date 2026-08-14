@@ -103,12 +103,10 @@ import {
 } from './numberingIntegration.js';
 import { premergeAdjacentRuns } from './premergeRuns.js';
 export {
-  hasFldCharInsideDel,
   validateFieldStructure,
   type FieldStory,
 } from '@usejunior/docx-core';
 import {
-  hasFldCharInsideDel,
   validateFieldStructure,
   type FieldStory,
 } from '@usejunior/docx-core';
@@ -520,16 +518,12 @@ function evaluateSafetyChecks(
     auxiliarySidecars.footnotesXmls,
     auxiliarySidecars.endnotesXmls,
   );
-  // Issue #217 conformance gate on the COMBINED output: keep w:fldChar outside
-  // <w:del>, matching the Part 1 complex-field and deleted-field-code syntax.
-  // The full validateFieldStructure check is run
-  // on the accept/reject projections (per-story); on the combined view we
-  // only gate the strict no-fldChar-in-del rule because some legacy emit
-  // paths (e.g. delInstrText inside <w:moveFrom>) are non-conformant in shape
-  // but out of scope for #217.
-  const combinedNoFldCharInDel = !hasFldCharInsideDel(candidateXml);
+  // The full validateFieldStructure check runs on the accept/reject projections
+  // (per-story). There is deliberately no additional gate on the combined view:
+  // the former #217 no-fldChar-in-del rule was removed after Word 16.112 and
+  // Aspose.Words 25.10 were both measured emitting whole deleted fields inside
+  // <w:del>, with output that validates against the Transitional WML schema.
   const fieldStructureOk =
-    combinedNoFldCharInDel &&
     validateFieldStructure(acceptedStories) &&
     validateFieldStructure(rejectedStories);
 

@@ -118,10 +118,11 @@ export {
   compareTexts,
 } from './baselines/atomizer/trackChangesAcceptorAst.js';
 export {
-  hasFldCharInsideDel,
   validateFieldStructure,
   compareDocumentsAtomizer,
 } from './baselines/atomizer/pipeline.js';
+/** @deprecated fldChar inside w:del is valid; see the docx-core definition. */
+export { hasFldCharInsideDel } from '@usejunior/docx-core';
 export { parseDocumentXml } from './baselines/atomizer/xmlToWmlElement.js';
 export {
   AncillaryStorySafetyError,

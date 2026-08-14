@@ -25,6 +25,11 @@ function allW(root: Document | Element, localName: string): Element[] {
   return Array.from(root.getElementsByTagNameNS(OOXML.W_NS, localName)) as Element[];
 }
 
+/**
+ * @deprecated `w:fldChar` inside `<w:del>` is valid, so a `true` result is not a
+ * defect. Word and Aspose both emit it. Retained only so existing callers keep
+ * compiling; do not gate on it. See {@link collectFieldStructureIssues}.
+ */
 export function hasFldCharInsideDel(documentXml: string): boolean {
   const root = parseXml(documentXml).documentElement;
   let insideDelDepth = 0;
@@ -247,9 +252,13 @@ function collectFieldStructureIssuesForStory(documentXml: string, story: string)
       }
 
       if (isW(el, 'fldChar')) {
-        if (insideDelDepth > 0) {
-          push('FIELD_CHAR_INSIDE_DELETION', 'w:fldChar must not appear inside w:del', 'w:fldChar');
-        }
+        // `w:fldChar` inside `<w:del>` is NOT a violation. The Transitional WML
+        // schema reaches it (w:del -> CT_RunTrackChange -> EG_ContentRunContent
+        // -> w:r -> EG_RunInnerContent), and Word 16.112 and Aspose.Words 25.10
+        // both emit whole deleted fields that way on real input, producing
+        // schema-valid output. The rule this once enforced (issue #217) came
+        // from a research summary rather than the standard; enforcing it left
+        // deleted fields as unrenderable husks. See insertWholeDeletedField.
         const type = getWAttr(el, 'fldCharType');
         if (type === 'begin') {
           depth++;

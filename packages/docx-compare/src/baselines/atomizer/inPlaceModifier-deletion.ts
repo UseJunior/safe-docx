@@ -84,11 +84,9 @@ export function cloneRunWithAtomContent(
  *
  * For a single-content atom this wraps one cloned run in `<w:del>` and returns
  * the `<w:del>` element. For a collapsed-field atom (issue #217), control
- * routes to `insertFragmentedDeletedField` which emits multiple sibling
- * elements — `w:fldChar` runs at sibling level (unwrapped) and individual
- * `<w:del>` wrappers around each payload run — and returns the LAST inserted
- * sibling (which may be a `<w:r>` carrying the end fldChar, not a `<w:del>`).
- * Callers use the return value purely as the next insertion anchor.
+ * routes to `insertWholeDeletedField`, which wraps the entire field in a
+ * single `<w:del>` and returns it. Callers use the return value purely as the
+ * next insertion anchor.
  *
  * @param deletedAtom - Atom with the deleted content
  * @param insertAfterRun - The run to insert after (null to insert at beginning of paragraph)
@@ -117,15 +115,11 @@ export function insertDeletedRun(
 
   const runs = getAtomRuns(deletedAtom);
 
-  // ECMA-376 Part 4 fragmentation (issue #217): for a collapsed-field atom,
-  // emit w:fldChar runs at sibling level (unwrapped) and wrap only the
-  // payload runs (w:instrText, w:t, etc.) in <w:del>. w:fldChar inside
-  // <w:del> is non-conformant and Word treats it as fatal. Iterates the
-  // constituent collapsedFieldAtoms (not the deduped source runs) so a
-  // mixed-run field — where multiple field elements share one source `<w:r>` —
-  // is correctly split into one cloned run per field element.
+  // A collapsed-field atom deletes as ONE unit: the whole field, begin through
+  // end, inside a single <w:del>. See insertWholeDeletedField for why the
+  // previous fragmenting shape (issue #217) was wrong.
   if (isCollapsedFieldAtom(deletedAtom)) {
-    return insertFragmentedDeletedField(
+    return insertWholeDeletedField(
       deletedAtom,
       sourceRun,
       insertAfterRun,
@@ -173,10 +167,22 @@ export function insertDeletedRun(
 }
 
 /**
- * Emit a fragmented deletion of a collapsed-field atom: walks the constituent
- * source runs in document order, cloning each into the target paragraph as
- * either a sibling-level unwrapped run (for `w:fldChar`) or a `<w:del>`-wrapped
- * run (for payload runs whose text is renamed to `w:delText` / `w:delInstrText`).
+ * Emit a deleted complex field as a single unit: one `<w:del>` spanning the
+ * whole field, begin through end, with `w:t` renamed to `w:delText` and
+ * `w:instrText` to `w:delInstrText`.
+ *
+ * This replaces an earlier fragmenting shape that kept `w:fldChar` runs at
+ * sibling level outside the `<w:del>` (issue #217). That shape left a field
+ * husk -- begin/separate/end intact, instruction deleted -- which renderers
+ * display as nothing, so the deletion was invisible to readers while the
+ * inserted replacement showed normally.
+ *
+ * The rule it enforced does not exist. The Transitional WML schema reaches
+ * `w:fldChar` from `w:del` (CT_RunTrackChange -> EG_ContentRunContent -> w:r ->
+ * EG_RunInnerContent), and both Microsoft Word 16.112 and Aspose.Words 25.10
+ * emit whole fields inside `w:del` on the same input -- output that validates
+ * against the Transitional schema. #217's claim that Word "treats violations as
+ * fatal" was sourced from a research summary, not the standard, and is false.
  *
  * Returns the last sibling element inserted, which the caller uses as the
  * next insertion anchor (preserving the contract of `insertDeletedRun`).
@@ -184,10 +190,10 @@ export function insertDeletedRun(
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  *
- * Rule: `w:delInstrText` MUST appear inside `<w:del>`;
- * the Part 1 complex-field syntax keeps `w:fldChar` runs at sibling level.
+ * Rule (the part that IS in Part 1): `w:delInstrText` must appear inside
+ * `<w:del>`. Nothing in Part 1 bars `w:fldChar` from appearing there too.
  */
-export function insertFragmentedDeletedField(
+export function insertWholeDeletedField(
   deletedAtom: ComparisonUnitAtom,
   sourceRun: Element,
   insertAfterRun: Element | null,
@@ -218,36 +224,33 @@ export function insertFragmentedDeletedField(
     anchor = el;
   };
 
+  // One <w:del> spanning the whole field, begin through end.
+  const id = allocateRevisionId(state);
+  const del = createEl('w:del', {
+    'w:id': String(id),
+    'w:author': author,
+    'w:date': dateStr,
+  });
+
   for (const fieldAtom of fieldAtoms) {
     // Each constituent field atom produces its own cloned run carrying exactly
-    // one content element (fldChar / instrText / t). This is critical for
-    // mixed-run fields where multiple field elements share a single `<w:r>` in
-    // the source — we MUST emit them as separate runs so we can fragment
-    // fldChars out of the `<w:del>` wrapper.
+    // one content element (fldChar / instrText / t), so a mixed-run field --
+    // where several field elements share a single `<w:r>` in the source -- is
+    // reassembled run-by-run rather than as one undifferentiated blob.
     const baseRun =
       fieldAtom.sourceRunElement ?? findAncestorByTag(fieldAtom, 'w:r') ?? sourceRun;
     if (!baseRun) continue;
 
     const clonedRun = cloneRunWithAtomContent(baseRun, fieldAtom);
-    const contentTag = fieldAtom.contentElement.tagName;
-
-    if (contentTag === 'w:fldChar') {
-      // Sibling level — unwrapped.
-      place(clonedRun);
-      continue;
+    // fldChar runs carry no text; everything else renames w:t -> w:delText and
+    // w:instrText -> w:delInstrText.
+    if (fieldAtom.contentElement.tagName !== 'w:fldChar') {
+      convertToDelText(clonedRun);
     }
-
-    // Payload — wrap in <w:del> and rename w:t→w:delText / w:instrText→w:delInstrText.
-    convertToDelText(clonedRun);
-    const id = allocateRevisionId(state);
-    const del = createEl('w:del', {
-      'w:id': String(id),
-      'w:author': author,
-      'w:date': dateStr,
-    });
     del.appendChild(clonedRun);
-    place(del);
   }
+
+  if (del.firstChild) place(del);
 
   if (firstInserted && lastInserted) {
     const sourceMarkers = cloneUnemittedSourceBookmarkMarkers(sourceRun, targetParagraph, state, context);
