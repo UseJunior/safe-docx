@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect } from 'vitest';
 import { itAllure } from '../../docx-core/src/testing/allure-test.js';
+import JSZip from 'jszip';
 import { measurePixelBands, verifyRenderedMarkup } from './render.js';
 import type { RendererTools } from './types.js';
 
@@ -38,6 +39,13 @@ function fakeTools(markup = 'Visible markup text', profiles?: string[], hiddenDe
   };
 }
 
+async function trackedFixture(pathname: string, revision: 'ins' | 'del'): Promise<void> {
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>');
+  zip.file('word/document.xml', `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:${revision} w:id="1"><w:r><w:${revision === 'del' ? 'delText' : 't'}>revision</w:${revision === 'del' ? 'delText' : 't'}></w:r></w:${revision}></w:p></w:body></w:document>`);
+  await writeFile(pathname, await zip.generateAsync({ type: 'nodebuffer' }));
+}
+
 describe('renderer verifier', () => {
   itAllure('counts broad blue and red pixel bands rather than requiring exact antialiasing pixels', () => {
     expect(measurePixelBands('0,0: #0a10ef\n1,0: #ef120c\n2,0: #202020\n')).toEqual({ sampledPixels: 3, bluePixels: 1, redPixels: 1 });
@@ -59,7 +67,7 @@ describe('renderer verifier', () => {
     const root = path.join(os.tmpdir(), `render-fake-${Date.now()}`);
     const source = path.join(root, 'tracked.docx');
     await mkdir(root, { recursive: true });
-    await writeFile(source, 'tracked content');
+    await trackedFixture(source, 'del');
     const profiles: string[] = [];
     const result = await verifyRenderedMarkup({
       trackedDocxPath: source,
@@ -78,11 +86,39 @@ describe('renderer verifier', () => {
     ]));
   });
 
+  itAllure('does not diagnose hidden deletions when the tracked document has insertions only', async () => {
+    const root = path.join(os.tmpdir(), `render-insertion-only-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await trackedFixture(source, 'ins');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', revisionVisibility: 'insufficient-contrast' });
+    expect(result.reason).not.toContain('hid configured deletions');
+  });
+
+  itAllure('prioritizes a PDF text mismatch over a hidden-deletion pixel pattern', async () => {
+    const root = path.join(os.tmpdir(), `render-text-mismatch-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await trackedFixture(source, 'del');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Different expected text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({
+      status: 'fail', revisionVisibility: 'insufficient-contrast',
+      reason: expect.stringContaining('PDF text does not equal'),
+    });
+  });
+
   itAllure('classifies blue-only revision output as hidden deletions and never passes it', async () => {
     const root = path.join(os.tmpdir(), `render-hidden-delete-${Date.now()}`);
     const source = path.join(root, 'tracked.docx');
     await mkdir(root, { recursive: true });
-    await writeFile(source, 'tracked content');
+    await trackedFixture(source, 'del');
     const result = await verifyRenderedMarkup({
       trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
       tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,

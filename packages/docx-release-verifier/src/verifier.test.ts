@@ -78,11 +78,15 @@ describe('independent release verifier', () => {
         <w:pPr><w:spacing w:before="120"/></w:pPr>
         <w:r><w:t>Hello</w:t></w:r>
         <w:r><w:t xml:space="preserve"> old</w:t></w:r>
+        <w:r><w:t>&#160;semantic&#160;</w:t></w:r>
+        <w:r><w:t>&#8195;em&#8195;</w:t></w:r>
       </w:p>`);
     await writeDocx(manifest.intendedCleanPath, `
       <w:p>
         <w:r><w:t>Hello</w:t></w:r>
         <w:r><w:t xml:space="preserve"> new</w:t></w:r>
+        <w:r><w:t>&#160;semantic&#160;</w:t></w:r>
+        <w:r><w:t>&#8195;em&#8195;</w:t></w:r>
       </w:p>`);
     await writeDocx(manifest.trackedPath, `
       <w:p>
@@ -90,14 +94,41 @@ describe('independent release verifier', () => {
         <w:r><w:t xml:space="preserve"> </w:t></w:r>
         <w:del w:id="1"><w:r><w:delText>old</w:delText></w:r></w:del>
         <w:ins w:id="2"><w:r><w:t>new</w:t></w:r></w:ins>
+        <w:r><w:t>&#160;semantic&#160;</w:t></w:r>
+        <w:r><w:t>&#8195;em&#8195;</w:t></w:r>
       </w:p>`);
-    const result = await verifyRelease(manifest);
+    const result = await verifyRelease({
+      version: 1,
+      originalPath: manifest.originalPath,
+      intendedCleanPath: manifest.intendedCleanPath,
+      trackedPath: manifest.trackedPath,
+      mutationControl: { projection: 'accept', expected: 'intendedClean' },
+    });
     expect(result.projections).toMatchObject({
-      original: { paragraphs: ['Hello old'] }, intendedClean: { paragraphs: ['Hello new'] },
-      accept: { paragraphs: ['Hello new'] }, reject: { paragraphs: ['Hello old'] },
+      original: { paragraphs: ['Hello old\u00a0semantic\u00a0\u2003em\u2003'] }, intendedClean: { paragraphs: ['Hello new\u00a0semantic\u00a0\u2003em\u2003'] },
+      accept: { paragraphs: ['Hello new\u00a0semantic\u00a0\u2003em\u2003'] }, reject: { paragraphs: ['Hello old\u00a0semantic\u00a0\u2003em\u2003'] },
     });
     expect(result.gates.semantic.status).toBe('pass');
     expect(result.gates.minimality.status).toBe('pass');
+  });
+
+  itAllure('does not fragment minimality tokens at empty or property-only revision wrappers', async () => {
+    const { manifest } = await fixture();
+    await writeDocx(manifest.originalPath, '<w:p><w:r><w:t>fragmented</w:t></w:r></w:p>');
+    await writeDocx(manifest.intendedCleanPath, '<w:p><w:r><w:t>fragmented</w:t></w:r></w:p>');
+    await writeDocx(manifest.trackedPath, '<w:p><w:r><w:t>frag</w:t></w:r><w:ins w:id="1"><w:r><w:rPr><w:b/></w:rPr></w:r></w:ins><w:r><w:t>mented</w:t></w:r></w:p>');
+    const result = await verifyRelease({
+      version: 1,
+      originalPath: manifest.originalPath,
+      intendedCleanPath: manifest.intendedCleanPath,
+      trackedPath: manifest.trackedPath,
+      mutationControl: { projection: 'accept', expected: 'intendedClean' },
+    });
+    expect(result.projections).toMatchObject({
+      original: { paragraphs: ['fragmented'] }, intendedClean: { paragraphs: ['fragmented'] },
+      accept: { paragraphs: ['fragmented'] }, reject: { paragraphs: ['fragmented'] },
+    });
+    expect(result.gates.minimality).toMatchObject({ status: 'pass', details: { evidence: { lostTokens: 0 } } });
   });
 
   itAllure('derives exact accept/reject projections and proves mutation sensitivity without changing inputs', async () => {

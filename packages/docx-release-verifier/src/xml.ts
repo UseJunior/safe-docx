@@ -13,7 +13,7 @@ function isWord(element: XmlElement, localName: string): boolean {
 function wordText(element: XmlElement): string {
   const value = element.textContent ?? '';
   const space = element.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'space') ?? element.getAttribute('xml:space');
-  return space === 'preserve' ? value : value.replace(/^\s+|\s+$/gu, '');
+  return space === 'preserve' ? value : value.replace(/^[\u0009\u000a\u000d\u0020]+|[\u0009\u000a\u000d\u0020]+$/gu, '');
 }
 
 function textFrom(element: XmlElement, mode: 'accept' | 'reject'): string {
@@ -60,7 +60,9 @@ function ordinaryTextNodes(element: XmlElement): string[] {
   };
   const visit = (node: XmlElement): void => {
     if (node.namespaceURI === W_NS && REVISION_WRAPPERS.has(node.localName ?? '')) {
-      flush();
+      // Empty/property-only revision wrappers do not separate visible text and
+      // must not fragment an otherwise ordinary token or whitespace run.
+      if (textFrom(node, 'accept') !== '' || textFrom(node, 'reject') !== '') flush();
       return;
     }
     if (isWord(node, 'tab')) current += '\t';

@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import JSZip from 'jszip';
 import type { PixelMeasurement, RenderRequest, RendererTools, RenderVerdict, ToolResult } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -94,6 +95,16 @@ function revisionVisibility(configured: PixelMeasurement, control: PixelMeasurem
   if (configured.bluePixels >= blueFloor && configured.redPixels < redFloor) return 'hidden-deletions';
   if (configured.bluePixels >= blueFloor && configured.redPixels >= redFloor) return 'visible';
   return 'insufficient-contrast';
+}
+
+async function hasDeletionMarkup(bytes: Buffer): Promise<boolean> {
+  try {
+    const zip = await JSZip.loadAsync(bytes);
+    const documentXml = await zip.file('word/document.xml')?.async('string');
+    return documentXml !== undefined && /<(?:[A-Za-z_][\w.-]*:)?(?:del|moveFrom)\b/u.test(documentXml);
+  } catch {
+    return false;
+  }
 }
 
 async function configureProfile(profile: string, mode: 'configured' | 'by-author'): Promise<void> {
@@ -210,14 +221,19 @@ export async function verifyRenderedMarkup(request: RenderRequest): Promise<Rend
     ]);
     const markupTextMatchesPdf = normalizeText(pdfText) === normalizeText(request.expectedMarkupText);
     const configuredContrastPassed = configuredContrast(configuredPixels, controlPixels, request.configuredPixelFloor ?? 4);
-    const visibility = revisionVisibility(configuredPixels, controlPixels, request.configuredPixelFloor ?? 4);
+    const measuredVisibility = revisionVisibility(configuredPixels, controlPixels, request.configuredPixelFloor ?? 4);
+    const visibility = markupTextMatchesPdf && (measuredVisibility !== 'hidden-deletions' || await hasDeletionMarkup(trackedBytes))
+      ? measuredVisibility
+      : 'insufficient-contrast';
     const pdfOut = path.join(request.outputDir, 'tracked-configured.pdf');
     await copyFile(configured.pdfPath, pdfOut);
     return {
       status: markupTextMatchesPdf && configuredContrastPassed ? 'pass' : 'fail',
-      reason: visibility === 'hidden-deletions'
-        ? 'LibreOffice rendered configured insertions but hid configured deletions.'
-        : markupTextMatchesPdf ? (configuredContrastPassed ? undefined : 'Configured render did not exceed by-author control colour bands.') : 'PDF text does not equal caller-supplied independent markup text.',
+      reason: !markupTextMatchesPdf
+        ? 'PDF text does not equal caller-supplied independent markup text.'
+        : visibility === 'hidden-deletions'
+          ? 'LibreOffice rendered configured insertions but hid configured deletions.'
+          : configuredContrastPassed ? undefined : 'Configured render did not exceed by-author control colour bands.',
       trackedSha256,
       renderedInputSha256: sha256(await readFile(renderInput)),
       transform,
