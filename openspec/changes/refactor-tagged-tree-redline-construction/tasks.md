@@ -152,14 +152,24 @@ in `proposal.md` and are separate changes.
       pipeline package/story integration and the complete default-flip gate
       remain separate work.
 
-      The independent Aspose control remains a blocking interoperability
-      discrepancy rather than a source-oracle failure. Aspose reject-all retains
-      all `60/60` direct paragraph-property snapshots and all run properties;
-      accept-all retains all run properties but changes `21/60` direct paragraph
-      snapshots after accepting adjacent whole-paragraph delete/insert pairs.
+      The independent Aspose control remains a blocking serializer defect rather
+      than a source-oracle failure. Aspose reject-all retains all `60/60` direct
+      paragraph-property snapshots and all run properties; accept-all retains
+      all run properties but changes `21/60` direct paragraph snapshots. A
+      one-paragraph prefix reduces the failure to the first paragraph: the
+      serializer places side-only `w:pPr` nodes beneath run-content
+      `w:del`/`w:ins` wrappers inside `w:p`, which is not a conforming property
+      revision shape. A separate minimal Heading2-to-Heading3 whole-paragraph
+      replacement that contains no complex property subtree projects exactly
+      through Aspose in both directions, so this is not an Aspose product
+      limitation. A principled repair must canonicalize paragraph properties as
+      live `w:pPr` plus `w:pPrChange`/paragraph-mark `w:rPrChange`, rather than
+      allowing the generic child serializer to wrap property elements as text
+      revisions.
+
       An Aspose save of the revised source itself changes `0/60` paragraph
-      snapshots, proving those 21 changes are not its ordinary save
-      normalization. Both control and projection add 33 drawing-fallback
+      snapshots, likewise proving the changes are not its ordinary save
+      normalization. Both the control and projection add 33 drawing-fallback
       paragraphs and remap header/footer relationship IDs, which are recorded
       separately as reader normalization. Because accept-all is not yet exact,
       the ordinary comparison default remains unchanged.
