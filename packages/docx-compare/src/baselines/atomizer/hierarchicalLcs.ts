@@ -641,16 +641,41 @@ function similarityLcs(
 }
 
 /**
+ * Canonical safe-docx paragraph anchor name: `_bk_` plus 12 lowercase hex
+ * digits, allocated by docx-core `primitives/bookmarks.ts`
+ * (`deriveDeterministicJrParaName`). Anchor matching is deliberately limited
+ * to this exact shape so arbitrary third-party bookmark names can never
+ * activate the identity pass.
+ */
+const SAFE_DOCX_ANCHOR_NAME = /^_bk_[0-9a-f]{12}$/;
+
+const W_MAIN_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+function wAttribute(element: Element, localName: string): string | null {
+  return element.getAttributeNS(W_MAIN_NS, localName) ?? element.getAttribute(`w:${localName}`);
+}
+
+function adjacentElement(node: Node, direction: 'previousSibling' | 'nextSibling'): Element | null {
+  let sibling: Node | null = node[direction];
+  while (sibling && sibling.nodeType !== 1) sibling = sibling[direction];
+  return sibling as Element | null;
+}
+
+/**
  * Name of the paragraph-bracketing bookmark anchor for a group, or null.
  *
  * safe-docx brackets a managed paragraph with a uniquely named
  * `<w:bookmarkStart w:name="_bk_…"/>` inserted as the paragraph's immediately
- * preceding element sibling (docx-core `primitives/bookmarks.ts`). Only that
- * exact sibling pattern is honored: bookmarks that live inside the paragraph
- * (Word's `_GoBack`, `_Toc…`) never qualify, so ordinary third-party
+ * preceding element sibling and a matching `<w:bookmarkEnd/>` as its
+ * immediately following element sibling (docx-core `primitives/bookmarks.ts`).
+ * Only that complete bracket with the canonical `_bk_[0-9a-f]{12}` name and a
+ * start/end pair agreeing on `w:id` qualifies. Bookmarks that live inside the
+ * paragraph (Word's `_GoBack`, `_Toc…`), foreign sibling bookmark names, and
+ * orphaned or mismatched brackets never qualify, so ordinary third-party
  * documents are unaffected.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
  * @see https://github.com/UseJunior/safe-docx/issues/846
  */
 function getGroupAnchorName(group: ComparisonUnitGroup): string | null {
@@ -661,15 +686,16 @@ function getGroupAnchorName(group: ComparisonUnitGroup): string | null {
     if (el.tagName === 'w:p') paragraph = el;
   }
   if (!paragraph) return null;
-  let sibling: Node | null = paragraph.previousSibling;
-  while (sibling && sibling.nodeType !== 1) sibling = sibling.previousSibling;
-  if (!sibling || (sibling as Element).tagName !== 'w:bookmarkStart') return null;
-  const element = sibling as Element;
-  const name = element.getAttributeNS(
-    'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
-    'name',
-  ) ?? element.getAttribute('w:name');
-  return name && name.length > 0 ? name : null;
+  const start = adjacentElement(paragraph, 'previousSibling');
+  if (!start || start.tagName !== 'w:bookmarkStart') return null;
+  const name = wAttribute(start, 'name');
+  if (!name || !SAFE_DOCX_ANCHOR_NAME.test(name)) return null;
+  const end = adjacentElement(paragraph, 'nextSibling');
+  if (!end || end.tagName !== 'w:bookmarkEnd') return null;
+  const startId = wAttribute(start, 'id');
+  const endId = wAttribute(end, 'id');
+  if (startId === null || endId === null || startId !== endId) return null;
+  return name;
 }
 
 /**

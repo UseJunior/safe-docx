@@ -111,6 +111,63 @@ describe('anchor-identity paragraph matching (#846)', () => {
     });
   });
 
+  test.allure({ story: 'a foreign sibling bookmark name never activates the identity pass' })('a foreign sibling bookmark name never activates the identity pass', async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
+    let xml = '';
+
+    await given('both sides bracket the dense pair with an identical non-safe-docx bookmark name', () => {});
+
+    await when('the documents are compared', async () => {
+      xml = await compareBodies(
+        `<w:bookmarkStart w:id="1" w:name="CustomerBookmark"/>${paragraph(DENSE_BEFORE)}<w:bookmarkEnd w:id="1"/>${paragraph('Context paragraph.')}`,
+        `<w:bookmarkStart w:id="1" w:name="CustomerBookmark"/>${paragraph(DENSE_AFTER)}<w:bookmarkEnd w:id="1"/>${paragraph('Context paragraph.')}`,
+      );
+      await attachPrettyJson('tracked document.xml', xml);
+    });
+
+    await then('the third-party bookmark does not force an alignment and the pair still splits', () => {
+      // Anchor identity is limited to the canonical safe-docx _bk_ + 12-hex
+      // name shape; arbitrary customer bookmark names must never change
+      // generic comparison behavior.
+      expect(paragraphCount(xml)).toBe(3);
+    });
+  });
+
+  test.allure({ story: 'an orphaned bookmarkStart without its bracketing end is ignored' })('an orphaned bookmarkStart without its bracketing end is ignored', async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
+    let xml = '';
+
+    await given('both sides have a _bk_ start before the paragraph but no bookmarkEnd after it', () => {});
+
+    await when('the documents are compared', async () => {
+      xml = await compareBodies(
+        `<w:bookmarkStart w:id="1" w:name="_bk_00000000000a"/>${paragraph(DENSE_BEFORE)}${paragraph('Context paragraph.')}`,
+        `<w:bookmarkStart w:id="1" w:name="_bk_00000000000a"/>${paragraph(DENSE_AFTER)}${paragraph('Context paragraph.')}`,
+      );
+      await attachPrettyJson('tracked document.xml', xml);
+    });
+
+    await then('the incomplete bracket does not qualify and the pair still splits', () => {
+      expect(paragraphCount(xml)).toBe(3);
+    });
+  });
+
+  test.allure({ story: 'a bracket whose start and end ids disagree is ignored' })('a bracket whose start and end ids disagree is ignored', async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
+    let xml = '';
+
+    await given('both sides have a _bk_ start and a following bookmarkEnd with a different w:id', () => {});
+
+    await when('the documents are compared', async () => {
+      xml = await compareBodies(
+        `<w:bookmarkStart w:id="1" w:name="_bk_00000000000b"/>${paragraph(DENSE_BEFORE)}<w:bookmarkEnd w:id="9"/>${paragraph('Context paragraph.')}`,
+        `<w:bookmarkStart w:id="1" w:name="_bk_00000000000b"/>${paragraph(DENSE_AFTER)}<w:bookmarkEnd w:id="9"/>${paragraph('Context paragraph.')}`,
+      );
+      await attachPrettyJson('tracked document.xml', xml);
+    });
+
+    await then('the mismatched bracket does not qualify and the pair still splits', () => {
+      expect(paragraphCount(xml)).toBe(3);
+    });
+  });
+
   test.allure({ story: 'a duplicated anchor name identifies nothing and is ignored' })('a duplicated anchor name identifies nothing and is ignored', async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
     let xml = '';
 
