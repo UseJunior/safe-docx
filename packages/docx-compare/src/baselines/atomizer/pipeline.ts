@@ -119,6 +119,10 @@ import {
   restampCollidingCommentParaIds,
   type AuxiliaryPartDescriptor,
 } from './auxiliaryIdCollision.js';
+import {
+  importReferencedRelationships,
+  renumberCollidingRelationshipIds,
+} from './relationshipIdCollision.js';
 import { maybeCaptureEmittedDocumentXml } from '@usejunior/docx-core';
 import {
   AncillaryStorySafetyError,
@@ -839,6 +843,23 @@ async function compareDocumentsAtomizerCore(
   await renumberCollidingAuxiliaryIds(originalArchive, revisedArchive);
   await restampCollidingCommentParaIds(originalArchive, revisedArchive);
 
+  // Step 1c: Resolve relationship ID collisions for the same reason. `rId9`
+  // means an image in one document and a header in the other, so a merged
+  // reference resolved against the base package's table can silently bind to
+  // the wrong part. Disjoint id spaces make the merged references unambiguous;
+  // `importReferencedRelationships` then supplies the entries at assembly.
+  //
+  // Which side gets renumbered follows the base package: the output clones the
+  // base, so renumbering it would churn every id in the table the result
+  // inherits, for no correctness gain. In-place clones the revised side, rebuild
+  // clones the original, so the merge source is the opposite one each time.
+  // A later in-place -> rebuild fallback flips the base after this point; that
+  // costs id churn in the fallback output but stays correct, because both
+  // tables remain internally consistent and the two id spaces stay disjoint.
+  await (reconstructionMode === 'rebuild'
+    ? renumberCollidingRelationshipIds(revisedArchive, originalArchive)
+    : renumberCollidingRelationshipIds(originalArchive, revisedArchive));
+
   // Step 2: Extract document.xml
   const originalXml = canonicalizeWordprocessingPrefixes(await originalArchive.getDocumentXml());
   const revisedXml = canonicalizeWordprocessingPrefixes(await revisedArchive.getDocumentXml());
@@ -1222,6 +1243,11 @@ async function compareDocumentsAtomizerCore(
 
     await appendHyperlinkRelationships(resultArchive, candidate.hyperlinkRelationships);
 
+    // The merged document carries references from both sides, but the result
+    // archive is a clone of one. Import what the base package lacks, with the
+    // target parts and content types those references depend on.
+    await importReferencedRelationships(mergeSourceArchive, resultArchive, newDocumentXml);
+
     const noteMergeResults = new Map<'footnote' | 'endnote', AuxiliaryMergeResult>();
     for (const descriptor of AUXILIARY_PARTS) {
       let mergeResult: AuxiliaryMergeResult;
@@ -1591,7 +1617,14 @@ function createRebuildHyperlinkRelResolver(
 ): { resolver: HyperlinkRelResolver; newRelationships: NewHyperlinkRel[] } {
   const originalEntries = parseHyperlinkRelEntries(originalRelsDoc);
   const revisedEntries = parseHyperlinkRelEntries(revisedRelsDoc);
-  const existingIds = listRelationshipIds(originalRelsDoc);
+  // Reserve against BOTH tables, not just the base's. Assembly later imports
+  // merge-source relationships under their own ids, so an id minted here that
+  // collides with one of those would be seen as "already present" and silence
+  // the import -- binding, say, a w:headerReference to this hyperlink instead.
+  const existingIds = new Set<string>([
+    ...listRelationshipIds(originalRelsDoc),
+    ...listRelationshipIds(revisedRelsDoc),
+  ]);
 
   const originalIdByDest = new Map<string, string>();
   for (const [id, entry] of originalEntries) {
