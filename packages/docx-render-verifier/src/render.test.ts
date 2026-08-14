@@ -39,10 +39,13 @@ function fakeTools(markup = 'Visible markup text', profiles?: string[], hiddenDe
   };
 }
 
-async function trackedFixture(pathname: string, revision: 'ins' | 'del'): Promise<void> {
+async function trackedFixture(pathname: string, revision: 'ins' | 'del' | 'empty-del'): Promise<void> {
   const zip = new JSZip();
   zip.file('[Content_Types].xml', '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>');
-  zip.file('word/document.xml', `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:${revision} w:id="1"><w:r><w:${revision === 'del' ? 'delText' : 't'}>revision</w:${revision === 'del' ? 'delText' : 't'}></w:r></w:${revision}></w:p></w:body></w:document>`);
+  const markup = revision === 'empty-del'
+    ? '<w:del w:id="1"><w:r><w:rPr><w:b/></w:rPr></w:r></w:del>'
+    : `<w:${revision} w:id="1"><w:r><w:${revision === 'del' ? 'delText' : 't'}>revision</w:${revision === 'del' ? 'delText' : 't'}></w:r></w:${revision}>`;
+  zip.file('word/document.xml', `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p>${markup}</w:p></w:body></w:document>`);
   await writeFile(pathname, await zip.generateAsync({ type: 'nodebuffer' }));
 }
 
@@ -112,6 +115,19 @@ describe('renderer verifier', () => {
       status: 'fail', revisionVisibility: 'insufficient-contrast',
       reason: expect.stringContaining('PDF text does not equal'),
     });
+  });
+
+  itAllure('does not diagnose hidden deletions from an empty property-only deletion wrapper', async () => {
+    const root = path.join(os.tmpdir(), `render-empty-deletion-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await trackedFixture(source, 'empty-del');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Visible markup text', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Visible markup text', undefined, true), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', revisionVisibility: 'insufficient-contrast' });
+    expect(result.reason).not.toContain('hid configured deletions');
   });
 
   itAllure('classifies blue-only revision output as hidden deletions and never passes it', async () => {

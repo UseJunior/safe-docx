@@ -7,11 +7,13 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import JSZip from 'jszip';
+import { DOMParser, type Element as XmlElement } from '@xmldom/xmldom';
 import type { PixelMeasurement, RenderRequest, RendererTools, RenderVerdict, ToolResult } from './types.js';
 
 const execFileAsync = promisify(execFile);
 const BLUE = [0, 0, 255] as const;
 const RED = [255, 0, 0] as const;
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 function sha256(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
@@ -101,10 +103,28 @@ async function hasDeletionMarkup(bytes: Buffer): Promise<boolean> {
   try {
     const zip = await JSZip.loadAsync(bytes);
     const documentXml = await zip.file('word/document.xml')?.async('string');
-    return documentXml !== undefined && /<(?:[A-Za-z_][\w.-]*:)?(?:del|moveFrom)\b/u.test(documentXml);
+    if (documentXml === undefined) return false;
+    const document = new DOMParser().parseFromString(documentXml, 'application/xml');
+    if (document.getElementsByTagName('parsererror').length > 0) return false;
+    const wrappers = [
+      ...Array.from(document.getElementsByTagNameNS(W_NS, 'del')),
+      ...Array.from(document.getElementsByTagNameNS(W_NS, 'moveFrom')),
+    ];
+    return wrappers.some((wrapper) => hasVisibleRevisionPayload(wrapper));
   } catch {
     return false;
   }
+}
+
+function hasVisibleRevisionPayload(wrapper: XmlElement): boolean {
+  for (const localName of ['t', 'delText'] as const) {
+    for (const text of Array.from(wrapper.getElementsByTagNameNS(W_NS, localName))) {
+      const value = text.textContent ?? '';
+      const preserve = text.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'space') === 'preserve';
+      if ((preserve ? value : value.replace(/^[\u0009\u000a\u000d\u0020]+|[\u0009\u000a\u000d\u0020]+$/gu, '')) !== '') return true;
+    }
+  }
+  return ['tab', 'br', 'cr'].some((localName) => wrapper.getElementsByTagNameNS(W_NS, localName).length > 0);
 }
 
 async function configureProfile(profile: string, mode: 'configured' | 'by-author'): Promise<void> {
