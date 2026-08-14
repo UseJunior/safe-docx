@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import JSZip from 'jszip';
 import { DOMParser, type Element as XmlElement } from '@xmldom/xmldom';
-import type { PixelMeasurement, RenderRequest, RendererTools, RenderVerdict, ToolResult } from './types.js';
+import type { PaginationProfile, PixelMeasurement, RenderRequest, RendererTools, RenderVerdict, TextBindingEvidence, ToolResult } from './types.js';
 
 const execFileAsync = promisify(execFile);
 const BLUE = [0, 0, 255] as const;
@@ -22,12 +22,86 @@ function sha256(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-function normalizeText(value: string): string {
-  // PDF extraction is a reading-order oracle, not a pagination oracle. Line
-  // wrapping, page breaks, and indentation legitimately vary by renderer, so
-  // bind the complete non-whitespace character sequence while layout remains
-  // the separate image-review domain.
-  return value.replace(/\s+/gu, ' ').trim();
+function tokenizeRenderedText(value: string): string[] {
+  // PDF extraction is a content oracle, not a pagination oracle. Line
+  // wrapping, page breaks, form feeds, and indentation legitimately vary by
+  // renderer, so bind whitespace-delimited tokens while layout remains the
+  // separate image-review domain.
+  return value.split(/\s+/u).filter((token) => token.length > 0);
+}
+
+function countTokens(tokens: readonly string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const token of tokens) counts.set(token, (counts.get(token) ?? 0) + 1);
+  return counts;
+}
+
+const PAGE_FIELD_INSTRUCTION = /\b(?:PAGE|NUMPAGES|SECTIONPAGES|PAGEREF)\b/u;
+const NUMERIC_TOKEN = /^[0-9]+$/u;
+const BINDING_SAMPLE_LIMIT = 8;
+
+export function emptyPaginationProfile(pageCount: number): PaginationProfile {
+  return { pageCount, headerFooterTokenCounts: new Map(), pageFieldCount: 0 };
+}
+
+/**
+ * Story-scoped text binding: multiset containment with a pagination allowance.
+ *
+ * Invariant:
+ * 1. Completeness lower bound — every whitespace-delimited token of the
+ *    caller's logical markup projection must occur in the extracted PDF text
+ *    at least as many times as it occurs in the projection. A render that
+ *    drops any logical content therefore still fails.
+ * 2. Bounded residue upper bound — every PDF token occurrence beyond the
+ *    projection's count (the residue) must be attributable to renderer-created
+ *    pagination artifacts with explicit occurrence bounds: a token drawn from
+ *    a referenced header/footer story is allowed at most
+ *    `pageCount x (its occurrence count in those stories)` residual
+ *    occurrences, and purely numeric residue is allowed only when a
+ *    PAGE-family field instruction exists in a rendered story, bounded in
+ *    total by `pageCount x pageFieldCount`. Duplicated or hallucinated body
+ *    content therefore also fails.
+ *
+ * The binding deliberately does not check reading order: LibreOffice emits
+ * text in renderer-created page and float positions (repeated headers,
+ * footers, anchored text boxes), which a logical DOCX projection cannot
+ * predict without reimplementing pagination. Order and placement remain the
+ * image-review domain; colour visibility is verified separately.
+ *
+ * The pagination profile is derived from the rendered artifact and the
+ * rendered DOCX package only — never from the caller's projection or from any
+ * Safe DOCX generator — so the binding stays an independent oracle.
+ */
+export function bindLogicalMarkupText(expectedMarkupText: string, pdfText: string, pagination: PaginationProfile): TextBindingEvidence {
+  const expectedCounts = countTokens(tokenizeRenderedText(expectedMarkupText));
+  const pdfCounts = countTokens(tokenizeRenderedText(pdfText));
+  const missingTokens: string[] = [];
+  for (const [token, expected] of expectedCounts) {
+    if ((pdfCounts.get(token) ?? 0) < expected) missingTokens.push(token);
+  }
+  const unexplainedTokens: string[] = [];
+  let numericResidueTotal = 0;
+  for (const [token, rendered] of pdfCounts) {
+    const residue = rendered - (expectedCounts.get(token) ?? 0);
+    if (residue <= 0) continue;
+    const storyAllowance = pagination.pageCount * (pagination.headerFooterTokenCounts.get(token) ?? 0);
+    const beyondStories = residue - storyAllowance;
+    if (beyondStories <= 0) continue;
+    if (NUMERIC_TOKEN.test(token) && pagination.pageFieldCount > 0) {
+      numericResidueTotal += beyondStories;
+      continue;
+    }
+    unexplainedTokens.push(token);
+  }
+  if (numericResidueTotal > pagination.pageCount * pagination.pageFieldCount) {
+    unexplainedTokens.push(`${numericResidueTotal} numeric token occurrence(s) beyond the page-field allowance`);
+  }
+  return {
+    matched: missingTokens.length === 0 && unexplainedTokens.length === 0,
+    pageCount: pagination.pageCount,
+    missingTokenSample: missingTokens.slice(0, BINDING_SAMPLE_LIMIT),
+    unexplainedTokenSample: unexplainedTokens.slice(0, BINDING_SAMPLE_LIMIT),
+  };
 }
 
 function profileXml(mode: 'configured' | 'by-author'): string {
@@ -102,29 +176,69 @@ function revisionVisibility(configured: PixelMeasurement, control: PixelMeasurem
   return 'insufficient-contrast';
 }
 
-async function renderedRevisionMarkup(bytes: Buffer): Promise<{ insertions: boolean; deletions: boolean }> {
+type RenderedStory = { name: string; kind: 'document' | 'header' | 'footer' | 'footnotes' | 'endnotes' };
+
+type RenderedPackageEvidence = {
+  revisionMarkup: { insertions: boolean; deletions: boolean };
+  pagination: PaginationProfile;
+};
+
+async function analyzeRenderedPackage(bytes: Buffer, pageCount: number): Promise<RenderedPackageEvidence> {
+  const fallback: RenderedPackageEvidence = { revisionMarkup: { insertions: false, deletions: false }, pagination: emptyPaginationProfile(pageCount) };
   try {
     const zip = await JSZip.loadAsync(bytes);
     const documentXml = await zip.file('word/document.xml')?.async('string');
-    if (documentXml === undefined) return { insertions: false, deletions: false };
+    if (documentXml === undefined) return fallback;
     const renderedStories = await referencedRenderedStories(zip, documentXml);
     let insertions = false;
     let deletions = false;
-    for (const name of renderedStories) {
-      const xml = await zip.file(name)?.async('string');
+    const headerFooterTokenCounts = new Map<string, number>();
+    let pageFieldCount = 0;
+    for (const story of renderedStories) {
+      const xml = await zip.file(story.name)?.async('string');
       if (xml === undefined) continue;
       insertions ||= hasVisibleRevisionInStory(xml, ['ins', 'moveTo']);
       deletions ||= hasVisibleRevisionInStory(xml, ['del', 'moveFrom']);
-      if (insertions && deletions) break;
+      const document = parseStoryXml(xml);
+      if (document === null) continue;
+      pageFieldCount += pageFieldInstructionCount(document);
+      if (story.kind !== 'header' && story.kind !== 'footer') continue;
+      for (const localName of ['t', 'delText'] as const) {
+        for (const text of Array.from(document.getElementsByTagNameNS(W_NS, localName))) {
+          for (const token of tokenizeRenderedText(text.textContent ?? '')) {
+            headerFooterTokenCounts.set(token, (headerFooterTokenCounts.get(token) ?? 0) + 1);
+          }
+        }
+      }
     }
-    return { insertions, deletions };
+    return { revisionMarkup: { insertions, deletions }, pagination: { pageCount, headerFooterTokenCounts, pageFieldCount } };
   } catch {
-    return { insertions: false, deletions: false };
+    return fallback;
   }
 }
 
-async function referencedRenderedStories(zip: JSZip, documentXml: string): Promise<string[]> {
-  const stories = ['word/document.xml'];
+function parseStoryXml(xml: string): ReturnType<DOMParser['parseFromString']> | null {
+  try {
+    const document = new DOMParser().parseFromString(xml, 'application/xml');
+    return document.getElementsByTagName('parsererror').length > 0 ? null : document;
+  } catch {
+    return null;
+  }
+}
+
+function pageFieldInstructionCount(document: NonNullable<ReturnType<typeof parseStoryXml>>): number {
+  let count = 0;
+  for (const instruction of Array.from(document.getElementsByTagNameNS(W_NS, 'instrText'))) {
+    if (PAGE_FIELD_INSTRUCTION.test(instruction.textContent ?? '')) count++;
+  }
+  for (const field of Array.from(document.getElementsByTagNameNS(W_NS, 'fldSimple'))) {
+    if (PAGE_FIELD_INSTRUCTION.test(field.getAttributeNS(W_NS, 'instr') ?? '')) count++;
+  }
+  return count;
+}
+
+async function referencedRenderedStories(zip: JSZip, documentXml: string): Promise<RenderedStory[]> {
+  const stories: RenderedStory[] = [{ name: 'word/document.xml', kind: 'document' }];
   const document = new DOMParser().parseFromString(documentXml, 'application/xml');
   if (document.getElementsByTagName('parsererror').length > 0) return stories;
   const referencedIds = new Set<string>();
@@ -147,14 +261,14 @@ async function referencedRenderedStories(zip: JSZip, documentXml: string): Promi
     const target = relationship.getAttribute('Target');
     if (!id || !type || !target) continue;
     const kind = type.startsWith(OFFICE_REL_PREFIX) ? type.slice(OFFICE_REL_PREFIX.length) : '';
+    if (kind !== 'header' && kind !== 'footer' && kind !== 'footnotes' && kind !== 'endnotes') continue;
     const referenced = (kind === 'header' || kind === 'footer') ? referencedIds.has(id)
-      : kind === 'footnotes' ? hasFootnotes
-        : kind === 'endnotes' ? hasEndnotes : false;
+      : kind === 'footnotes' ? hasFootnotes : hasEndnotes;
     if (!referenced) continue;
     const resolved = target.startsWith('/') ? target.slice(1) : path.posix.normalize(path.posix.join('word', target));
-    if (zip.file(resolved)) stories.push(resolved);
+    if (zip.file(resolved) && !stories.some((story) => story.name === resolved)) stories.push({ name: resolved, kind });
   }
-  return [...new Set(stories)];
+  return stories;
 }
 
 function hasVisibleRevisionInStory(xml: string, wrapperNames: readonly string[]): boolean {
@@ -212,7 +326,7 @@ async function extractPdfText(tools: RendererTools, command: string, pdfPath: st
   return result.stdout;
 }
 
-async function measurePdf(tools: RendererTools, pdftoppm: string, magick: string, pdfPath: string, workspace: string, name: string): Promise<PixelMeasurement> {
+async function measurePdf(tools: RendererTools, pdftoppm: string, magick: string, pdfPath: string, workspace: string, name: string): Promise<{ pixels: PixelMeasurement; pageCount: number }> {
   const prefix = path.join(workspace, name);
   const raster = await tools.run(pdftoppm, ['-png', '-r', '96', pdfPath, prefix]);
   if (raster.code !== 0) throw new Error(`pdftoppm failed: ${(raster.stderr || raster.stdout).trim()}`);
@@ -233,7 +347,7 @@ async function measurePdf(tools: RendererTools, pdftoppm: string, magick: string
     total.bluePixels += measured.bluePixels;
     total.redPixels += measured.redPixels;
   }
-  return total;
+  return { pixels: total, pageCount: pages.length };
 }
 
 async function reviewPages(tools: RendererTools, pdftoppm: string, pdfPath: string, outputDir: string, pages: number[]): Promise<string[]> {
@@ -287,33 +401,45 @@ export async function verifyRenderedMarkup(request: RenderRequest): Promise<Rend
     const configured = await renderOne(tools, soffice, renderInput, workspace, 'configured');
     const control = await renderOne(tools, soffice, renderInput, workspace, 'by-author');
     const pdfText = await extractPdfText(tools, pdftotext, configured.pdfPath);
-    const [configuredPixels, controlPixels, reviewPngs] = await Promise.all([
+    const [configuredMeasured, controlMeasured, reviewPngs] = await Promise.all([
       measurePdf(tools, pdftoppm, magick, configured.pdfPath, workspace, 'configured'),
       measurePdf(tools, pdftoppm, magick, control.pdfPath, workspace, 'control'),
       reviewPages(tools, pdftoppm, configured.pdfPath, request.outputDir, request.reviewPages ?? [1]),
     ]);
-    const markupTextMatchesPdf = normalizeText(pdfText) === normalizeText(request.expectedMarkupText);
+    const configuredPixels = configuredMeasured.pixels;
+    const controlPixels = controlMeasured.pixels;
+    const packageEvidence = await analyzeRenderedPackage(renderedInputBytes, configuredMeasured.pageCount);
+    const textBinding = bindLogicalMarkupText(request.expectedMarkupText, pdfText, packageEvidence.pagination);
+    const markupTextMatchesPdf = textBinding.matched;
     const configuredContrastPassed = configuredContrast(configuredPixels, controlPixels, request.configuredPixelFloor ?? 4);
     const measuredVisibility = revisionVisibility(configuredPixels, controlPixels, request.configuredPixelFloor ?? 4);
-    const revisionMarkup = await renderedRevisionMarkup(renderedInputBytes);
-    const visibility = markupTextMatchesPdf && (measuredVisibility !== 'hidden-deletions' || (revisionMarkup.insertions && revisionMarkup.deletions))
+    const revisionMarkup = packageEvidence.revisionMarkup;
+    // Colour visibility is classified from pixel and revision-markup evidence
+    // only. A text-binding failure is reported as its own reason and never
+    // relabels calibrated colour evidence as insufficient-contrast.
+    const visibility = measuredVisibility !== 'hidden-deletions' || (revisionMarkup.insertions && revisionMarkup.deletions)
       ? measuredVisibility
       : 'insufficient-contrast';
+    const reasons: string[] = [];
+    if (!markupTextMatchesPdf) {
+      reasons.push(textBinding.missingTokenSample.length > 0
+        ? 'PDF text binding failed: expected logical markup content is missing from the rendered PDF.'
+        : 'PDF text binding failed: rendered text is not attributable to logical markup or pagination artifacts.');
+    }
+    if (visibility === 'hidden-deletions') reasons.push('LibreOffice rendered configured insertions but hid configured deletions.');
+    else if (!configuredContrastPassed) reasons.push('Configured render did not exceed by-author control colour bands.');
     const pdfOut = path.join(request.outputDir, 'tracked-configured.pdf');
     await copyFile(configured.pdfPath, pdfOut);
     return {
       status: markupTextMatchesPdf && configuredContrastPassed ? 'pass' : 'fail',
-      reason: !markupTextMatchesPdf
-        ? 'PDF text does not equal caller-supplied independent markup text.'
-        : visibility === 'hidden-deletions'
-          ? 'LibreOffice rendered configured insertions but hid configured deletions.'
-          : configuredContrastPassed ? undefined : 'Configured render did not exceed by-author control colour bands.',
+      reason: reasons.length > 0 ? reasons.join(' ') : undefined,
       trackedSha256,
       renderedInputSha256: sha256(renderedInputBytes),
       transform,
       pdfPath: pdfOut,
       reviewPngs,
       markupTextMatchesPdf,
+      textBinding,
       configured: configuredPixels,
       byAuthorControl: controlPixels,
       configuredContrastPassed,

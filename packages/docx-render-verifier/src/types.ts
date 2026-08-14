@@ -19,6 +19,34 @@ export type PixelMeasurement = {
   redPixels: number;
 };
 
+/**
+ * Renderer-created pagination facts used to bound PDF text residue. All values
+ * are derived from the rendered artifact and the rendered DOCX package itself,
+ * never from the caller's expected markup projection.
+ */
+export type PaginationProfile = {
+  /** Number of rasterized pages in the configured render. */
+  pageCount: number;
+  /** Rendered token occurrence counts from referenced header and footer stories. */
+  headerFooterTokenCounts: ReadonlyMap<string, number>;
+  /** Count of PAGE-family field instructions across rendered stories. */
+  pageFieldCount: number;
+};
+
+/**
+ * Structured outcome of the story-scoped text binding. Token samples are
+ * bounded excerpts for diagnosis; `matched` is the binding verdict.
+ */
+export type TextBindingEvidence = {
+  matched: boolean;
+  /** Rendered page count the occurrence bounds were computed against. */
+  pageCount: number;
+  /** Bounded sample of expected tokens missing from the rendered PDF text. */
+  missingTokenSample: string[];
+  /** Bounded sample of rendered tokens not attributable to markup or pagination. */
+  unexplainedTokenSample: string[];
+};
+
 export type RenderVerdict = {
   status: Verdict;
   reason?: string;
@@ -27,7 +55,10 @@ export type RenderVerdict = {
   transform?: { id: string; version: string; inputSha256: string; outputSha256: string };
   pdfPath?: string;
   reviewPngs: string[];
+  /** True when the story-scoped text binding matched; see `textBinding`. */
   markupTextMatchesPdf?: boolean;
+  /** Structured text-binding evidence, reported separately from colour visibility. */
+  textBinding?: TextBindingEvidence;
   configured?: PixelMeasurement;
   byAuthorControl?: PixelMeasurement;
   configuredContrastPassed?: boolean;

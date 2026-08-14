@@ -1,0 +1,1 @@
+<w:p><w:r><w:t>Synthetic first page opening text.</w:t></w:r><w:ins w:id="1"><w:r><w:t>inserted-alpha</w:t></w:r></w:ins></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:r><w:t>Synthetic second page closing text.</w:t></w:r><w:del w:id="2"><w:r><w:delText>removed-beta</w:delText></w:r></w:del></w:p>

@@ -11,6 +11,11 @@
     { "id": "color-control", "path": "color-control.xml", "purpose": "renderer colour-control text" },
     { "id": "corrupt-zip", "path": "corrupt.docx", "purpose": "unreadable package negative control" },
     { "id": "header-wrap", "path": "header-wrap.xml", "purpose": "minimized de-identified header-wrap shape" },
-    { "id": "signature-table", "path": "signature-table.xml", "purpose": "minimized de-identified table layout shape" }
+    { "id": "signature-table", "path": "signature-table.xml", "purpose": "minimized de-identified table layout shape" },
+    { "id": "single-page-body", "path": "single-page-body.xml", "purpose": "single-page tracked body for exact text binding" },
+    { "id": "multi-page-body", "path": "multi-page-body.xml", "purpose": "explicit page-break body spanning two rendered pages" },
+    { "id": "repeated-header", "path": "repeated-header.xml", "purpose": "header story repeated once per rendered page" },
+    { "id": "page-field-footer", "path": "page-field-footer.xml", "purpose": "footer story with a PAGE field rendering per-page numerals" },
+    { "id": "reordered-text-box", "path": "reordered-text-box.xml", "purpose": "anchored text box emitted out of logical order by pdftotext" }
   ]
 }
