@@ -1,0 +1,1 @@
+<w:p><w:r><w:t>Anchor paragraph before floating content.</w:t></w:r><w:ins w:id="1"><w:r><w:t>inserted-alpha</w:t></w:r></w:ins></w:p><w:p><w:r><w:pict><v:shape><v:textbox><w:txbxContent><w:p><w:r><w:t>Floating box narrative sentence.</w:t></w:r><w:del w:id="2"><w:r><w:delText>removed-beta</w:delText></w:r></w:del></w:p></w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>
