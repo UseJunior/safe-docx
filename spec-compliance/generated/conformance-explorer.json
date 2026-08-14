@@ -484,6 +484,14 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-release-verifier/src/xml.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-release-verifier/src/paragraph-mark-projection.test.ts"
         }
       ]
     },
@@ -559,6 +567,14 @@
         {
           "kind": "test",
           "path": "packages/docx-mcp/src/tools/insert_section_break.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-release-verifier/src/xml.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-release-verifier/src/paragraph-mark-projection.test.ts"
         }
       ]
     },
