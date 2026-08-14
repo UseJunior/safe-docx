@@ -69,4 +69,60 @@ describe('independent emitted-redline minimality', () => {
     const result = check(['same text', 'same text'], ['same text', 'same text'], body);
     expect(result.passed).toBe(false);
   });
+
+  itAllure('does not charge unanchored whitespace to a complete phrase replacement', () => {
+    const result = check(['alpha beta gamma'], ['delta epsilon zeta'], paragraph(`${del('alpha beta gamma')}${ins('delta epsilon zeta')}`));
+    expect(result).toMatchObject({ passed: true, availableTokens: 0, preservedTokens: 0, lostTokens: 0 });
+  });
+
+  itAllure('still charges whitespace anchored to a genuinely matched neighbor', () => {
+    const surgical = check(['alpha beta gamma'], ['alpha epsilon zeta'], paragraph(`${plain('alpha ')}${del('beta gamma')}${ins('epsilon zeta')}`));
+    expect(surgical).toMatchObject({ passed: true, lostTokens: 0 });
+
+    const coarse = check(['alpha beta gamma'], ['alpha epsilon zeta'], paragraph(`${del('alpha beta gamma')}${ins('alpha epsilon zeta')}`));
+    expect(coarse.passed).toBe(false);
+    expect(coarse.lostTokens).toBe(2);
+    expect(coarse.lostTokensByClass).toEqual({ lexical: 1, punctuation: 0, structural: 0, whitespace: 1 });
+  });
+
+  itAllure('still fails a needless whitespace-only rewrite between kept words', () => {
+    const result = check(['alpha beta'], ['alpha beta'], paragraph(`${plain('alpha')}${del(' ')}${ins(' ')}${plain('beta')}`));
+    expect(result.passed).toBe(false);
+    expect(result.lostTokens).toBe(1);
+    expect(result.lostTokensByClass).toEqual({ lexical: 0, punctuation: 0, structural: 0, whitespace: 1 });
+  });
+
+  itAllure('does not let an ordinary whitespace run beyond a revision wrapper stand in for a rewritten anchored space', () => {
+    const body = paragraph(`${plain('alpha beta')}${del(' ')}${ins(' ')}${del('x')}${ins('y')}${plain(' ')}${del('gamma')}${ins('delta')}`);
+    const result = check(['alpha beta x gamma'], ['alpha beta y delta'], body);
+    expect(result.passed).toBe(false);
+    expect(result.lostTokensByClass).toEqual({ lexical: 0, punctuation: 0, structural: 0, whitespace: 1 });
+  });
+
+  itAllure('credits an anchored ordinary space despite an earlier repeated space', () => {
+    const body = paragraph(`${del('x')}${ins('y')}${plain(' ')}${del('x')}${ins('y')}${plain(' x')}`);
+    const result = check(['x x x'], ['y y x'], body);
+    expect(result).toMatchObject({ passed: true, lostTokens: 0 });
+  });
+
+  itAllure('credits an anchored ordinary space despite a later repeated space', () => {
+    const body = paragraph(`${plain('x ')}${del('x')}${ins('y')}${plain(' ')}${del('x')}${ins('y')}`);
+    const result = check(['x x x'], ['x y y'], body);
+    expect(result).toMatchObject({ passed: true, lostTokens: 0 });
+  });
+
+  itAllure('anchors shared leading indentation by position', () => {
+    const surgical = check(['  alpha'], ['  beta'], paragraph(`${plain('  ')}${del('alpha')}${ins('beta')}`));
+    expect(surgical).toMatchObject({ passed: true, lostTokens: 0 });
+
+    const coarse = check(['  alpha'], ['  beta'], paragraph(`${del('  alpha')}${ins('  beta')}`));
+    expect(coarse.passed).toBe(false);
+    expect(coarse.lostTokensByClass).toEqual({ lexical: 0, punctuation: 0, structural: 0, whitespace: 1 });
+  });
+
+  itAllure('classifies a needlessly rewritten tab as structural loss', () => {
+    const result = check(['alpha\tbeta'], ['alpha\tbeta'], paragraph(`${plain('alpha')}${del('\t')}${ins('\t')}${plain('beta')}`));
+    expect(result.passed).toBe(false);
+    expect(result.lostTokensByClass).toEqual({ lexical: 0, punctuation: 0, structural: 1, whitespace: 0 });
+  });
 });
