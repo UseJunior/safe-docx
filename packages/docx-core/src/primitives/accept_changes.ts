@@ -28,6 +28,13 @@ export type AcceptChangesResult = {
   deletionsAccepted: number;
   movesResolved: number;
   propertyChangesResolved: number;
+  /**
+   * Row-level revision markers left in place because this engine cannot resolve
+   * them. A non-zero count means the output still holds tracked-change markup
+   * and does not match what a word processor would project. Reported separately
+   * from the resolved counters: a preserved marker is not an accepted change.
+   */
+  unresolvedRowRevisions: number;
 };
 
 /**
@@ -70,14 +77,44 @@ function collectByLocalName(container: Document | Element, localName: string): E
   return Array.from(container.getElementsByTagNameNS(W_NS, localName));
 }
 
+/**
+ * True iff this element is a row-level revision marker — a `w:ins`/`w:del`
+ * whose direct parent is `w:trPr`.
+ *
+ * These describe the ROW rather than wrapping a span of content:
+ * `w:tr > w:trPr > w:del` marks the row itself as deleted and
+ * `w:tr > w:trPr > w:ins` marks it as inserted. A sweep that matches on local
+ * name alone cannot tell them apart from the content wrappers, and removing one
+ * strips the `w:id`/`w:author`/`w:date` evidence while leaving the `w:tr` it
+ * described in the document.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/845
+ */
+function isRowPropertyRevisionMarker(el: Element): boolean {
+  const parent = el.parentNode;
+  return parent !== null && isW(parent, 'trPr');
+}
+
+/** Row-level markers the filter selects, which this engine cannot resolve. */
+function countUnresolvedRowRevisions(
+  container: Document | Element,
+  localName: string,
+  filter: RevisionFilter,
+): number {
+  return collectByLocalName(container, localName).filter(filter).filter(isRowPropertyRevisionMarker)
+    .length;
+}
+
 function removeAllByLocalName(
   container: Document | Element,
   localName: string,
   filter: RevisionFilter = ACCEPT_ALL,
+  exclude?: (el: Element) => boolean,
 ): number {
   const elements = collectByLocalName(container, localName).filter(filter);
   let count = 0;
   for (const el of elements) {
+    if (exclude?.(el)) continue;
     if (el.parentNode) {
       el.parentNode.removeChild(el);
       count++;
@@ -311,7 +348,13 @@ export function acceptChanges(
   const selective = filter !== ACCEPT_ALL;
   const root = doc.getElementsByTagNameNS(W_NS, 'body').item(0) ?? doc.documentElement;
   if (!root) {
-    return { insertionsAccepted: 0, deletionsAccepted: 0, movesResolved: 0, propertyChangesResolved: 0 };
+    return {
+      insertionsAccepted: 0,
+      deletionsAccepted: 0,
+      movesResolved: 0,
+      propertyChangesResolved: 0,
+      unresolvedRowRevisions: 0,
+    };
   }
 
   // Phase A — Identify paragraphs whose MARK is a tracked deletion
@@ -334,8 +377,18 @@ export function acceptChanges(
     }
   }
 
-  // Phase B — Remove deletions and move sources
-  const deletionsAccepted = removeAllByLocalName(root, 'del', filter);
+  // Phase B — Remove deletions and move sources.
+  //
+  // A `w:trPr > w:del` marks the ROW as deleted; accepting it should remove the
+  // whole `w:tr`, which this engine does not implement (conformance-adapter.ts
+  // already classifies the combination as unsupported). Sweeping it as a content
+  // deletion would strip the marker and keep the row — silent divergence with no
+  // residual record. Preserve it and report it instead (#845).
+  //
+  // The mirror direction needs no guard: accepting a `w:trPr > w:ins` correctly
+  // keeps the row and drops the marker, which Phase C's unwrap already does.
+  const unresolvedRowRevisions = countUnresolvedRowRevisions(root, 'del', filter);
+  const deletionsAccepted = removeAllByLocalName(root, 'del', filter, isRowPropertyRevisionMarker);
   const moveFromRemoved = removeAllByLocalName(root, 'moveFrom', filter);
   removeAllByLocalName(root, 'moveFromRangeStart', filter);
   removeAllByLocalName(root, 'moveFromRangeEnd', filter);
@@ -409,5 +462,6 @@ export function acceptChanges(
     deletionsAccepted,
     movesResolved: moveFromRemoved + moveToUnwrapped,
     propertyChangesResolved,
+    unresolvedRowRevisions,
   };
 }
