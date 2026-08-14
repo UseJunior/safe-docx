@@ -1,11 +1,13 @@
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect } from 'vitest';
 import { itAllure } from '../../docx-core/src/testing/allure-test.js';
+import { buildDocxFromBodyXml } from '../../docx-core/src/testing/ooxml-fixtures.js';
 import JSZip from 'jszip';
-import { measurePixelBands, verifyRenderedMarkup } from './render.js';
+import { defaultRendererTools, measurePixelBands, verifyRenderedMarkup } from './render.js';
 import type { RendererTools } from './types.js';
 
 function fakeTools(markup = 'Visible markup text', profiles?: string[], hiddenDeletion = false, pageCount = 1): RendererTools {
@@ -92,6 +94,10 @@ async function paginatedFixture(pathname: string, parts: { body: string; header?
   }
   await writeFile(pathname, await zip.generateAsync({ type: 'nodebuffer' }));
 }
+
+const ALNUM_EXPECTED = 'Synthetic clause prefix OldTerm NewTerm synthetic suffix.';
+const ALNUM_JOINED_PDF = 'Synthetic clause prefix OldTermNewTerm synthetic suffix.';
+const ORDINARY_RUN_SPLIT_RENDERED = 'Synthetic unchanged fragmented clause inserted-alpha and removed-beta synthetic tail.';
 
 const MULTI_PAGE_EXPECTED = 'Synthetic first page opening text. inserted-alpha Synthetic second page closing text. removed-beta';
 const MULTI_PAGE_PDF = [
@@ -523,6 +529,280 @@ describe('renderer verifier', () => {
     expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true, revisionVisibility: 'visible' });
   });
 
+  itAllure('tolerates renderer-concatenated output at an OOXML-declared adjacent deletion/insertion junction', async () => {
+    const root = path.join(os.tmpdir(), `render-boundary-merge-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await paginatedFixture(source, { body: await fixtureFragment('adjacent-revision-alnum.xml') });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: ALNUM_EXPECTED, outputDir: path.join(root, 'out'),
+      tools: fakeTools(ALNUM_JOINED_PDF), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true, revisionVisibility: 'visible' });
+    expect(result.textBinding).toMatchObject({ matched: true, declaredRevisionBoundaryCount: 1, revisionBoundaryNormalizationCount: 1 });
+  });
+
+  itAllure('binds separated renderer output at a declared junction without spending any normalization', async () => {
+    const root = path.join(os.tmpdir(), `render-boundary-separated-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await paginatedFixture(source, { body: await fixtureFragment('adjacent-revision-alnum.xml') });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: ALNUM_EXPECTED, outputDir: path.join(root, 'out'),
+      tools: fakeTools(ALNUM_EXPECTED), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+    expect(result.textBinding).toMatchObject({ matched: true, declaredRevisionBoundaryCount: 1, revisionBoundaryNormalizationCount: 0 });
+  });
+
+  itAllure('tolerates a renderer-created separator where the caller projection concatenates the junction', async () => {
+    const root = path.join(os.tmpdir(), `render-boundary-split-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await paginatedFixture(source, { body: await fixtureFragment('adjacent-revision-alnum.xml') });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: ALNUM_JOINED_PDF, outputDir: path.join(root, 'out'),
+      tools: fakeTools(ALNUM_EXPECTED), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+    expect(result.textBinding).toMatchObject({ matched: true, revisionBoundaryNormalizationCount: 1 });
+  });
+
+  itAllure('extends the junction tolerance through punctuation attached immediately after the insertion', async () => {
+    const root = path.join(os.tmpdir(), `render-boundary-punct-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await paginatedFixture(source, { body: await fixtureFragment('adjacent-revision-punctuation.xml') });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Synthetic filing reference Formation Charter, synthetic continuation.', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Synthetic filing reference FormationCharter, synthetic continuation.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+    expect(result.textBinding).toMatchObject({ matched: true, declaredRevisionBoundaryCount: 1, revisionBoundaryNormalizationCount: 1 });
+  });
+
+  itAllure('normalizes only the junction-adjacent word of a multiword deletion against a single-word insertion', async () => {
+    const root = path.join(os.tmpdir(), `render-boundary-multidel-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await paginatedFixture(source, { body: await fixtureFragment('adjacent-revision-multiword-deletion.xml') });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Synthetic instrument label Certificate of Formation Charter synthetic closing.', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Synthetic instrument label Certificate of FormationCharter synthetic closing.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+    expect(result.textBinding).toMatchObject({ matched: true, declaredRevisionBoundaryCount: 1, revisionBoundaryNormalizationCount: 1 });
+  });
+
+  itAllure('normalizes only the junction-adjacent word of a multiword insertion against a single-word deletion', async () => {
+    const root = path.join(os.tmpdir(), `render-boundary-multiins-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await paginatedFixture(source, { body: await fixtureFragment('adjacent-revision-multiword-insertion.xml') });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Synthetic venue label StateAlpha State Beta synthetic tail.', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Synthetic venue label StateAlphaState Beta synthetic tail.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+    expect(result.textBinding).toMatchObject({ matched: true, declaredRevisionBoundaryCount: 1, revisionBoundaryNormalizationCount: 1 });
+  });
+
+  itAllure('declares no optional boundary at an unchanged ordinary-run split', async () => {
+    const root = path.join(os.tmpdir(), `render-run-split-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await paginatedFixture(source, { body: await fixtureFragment('ordinary-run-split.xml') });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Synthetic unchanged frag mented clause inserted-alpha and removed-beta synthetic tail.', outputDir: path.join(root, 'out'),
+      tools: fakeTools(ORDINARY_RUN_SPLIT_RENDERED), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding).toMatchObject({ declaredRevisionBoundaryCount: 0, revisionBoundaryNormalizationCount: 0 });
+    expect(result.textBinding?.missingTokenSample).toContain('frag');
+    expect(result.textBinding?.unexplainedTokenSample).toContain('fragmented');
+  });
+
+  itAllure('declares no optional boundary between adjacent same-family insertion wrappers', async () => {
+    const root = path.join(os.tmpdir(), `render-same-family-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = '<w:p><w:r><w:t xml:space="preserve">Synthetic opening </w:t></w:r><w:ins w:id="1"><w:r><w:t>AlphaOne</w:t></w:r></w:ins><w:ins w:id="2"><w:r><w:t>AlphaTwo</w:t></w:r></w:ins><w:r><w:t xml:space="preserve"> and </w:t></w:r><w:del w:id="3"><w:r><w:delText>removed-beta</w:delText></w:r></w:del><w:r><w:t xml:space="preserve"> tail.</w:t></w:r></w:p>';
+    await paginatedFixture(source, { body });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Synthetic opening AlphaOne AlphaTwo and removed-beta tail.', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Synthetic opening AlphaOneAlphaTwo and removed-beta tail.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding).toMatchObject({ declaredRevisionBoundaryCount: 0, revisionBoundaryNormalizationCount: 0 });
+  });
+
+  itAllure('still fails a junction render that drops the insertion word entirely', async () => {
+    const root = path.join(os.tmpdir(), `render-boundary-dropped-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await paginatedFixture(source, { body: await fixtureFragment('adjacent-revision-alnum.xml') });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: ALNUM_EXPECTED, outputDir: path.join(root, 'out'),
+      tools: fakeTools('Synthetic clause prefix OldTerm synthetic suffix.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding?.missingTokenSample).toContain('NewTerm');
+    expect(result.textBinding).toMatchObject({ revisionBoundaryNormalizationCount: 0 });
+  });
+
+  itAllure('still fails a junction render that duplicates the insertion word alongside the merge', async () => {
+    const root = path.join(os.tmpdir(), `render-boundary-duplicated-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await paginatedFixture(source, { body: await fixtureFragment('adjacent-revision-alnum.xml') });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: ALNUM_EXPECTED, outputDir: path.join(root, 'out'),
+      tools: fakeTools('Synthetic clause prefix OldTermNewTerm NewTerm synthetic suffix.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding?.unexplainedTokenSample).toContain('OldTermNewTerm');
+    expect(result.textBinding).toMatchObject({ revisionBoundaryNormalizationCount: 0 });
+  });
+
+  itAllure('still fails a punctuation change hidden inside a junction merge', async () => {
+    const root = path.join(os.tmpdir(), `render-boundary-punct-change-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await paginatedFixture(source, { body: await fixtureFragment('adjacent-revision-punctuation.xml') });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Synthetic filing reference Formation Charter, synthetic continuation.', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Synthetic filing reference FormationCharter. synthetic continuation.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding).toMatchObject({ revisionBoundaryNormalizationCount: 0 });
+  });
+
+  itAllure('spends at most one whitespace normalization per declared junction occurrence', async () => {
+    const root = path.join(os.tmpdir(), `render-boundary-budget-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await paginatedFixture(source, { body: await fixtureFragment('adjacent-revision-alnum.xml') });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: `${ALNUM_EXPECTED} OldTerm NewTerm`, outputDir: path.join(root, 'out'),
+      tools: fakeTools(`${ALNUM_JOINED_PDF} OldTermNewTerm`), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding).toMatchObject({ declaredRevisionBoundaryCount: 1, revisionBoundaryNormalizationCount: 1 });
+    expect(result.textBinding?.unexplainedTokenSample).toContain('OldTermNewTerm');
+  });
+
+  itAllure('keeps the junction tolerance from excusing an ordinary-run whitespace change elsewhere', async () => {
+    const root = path.join(os.tmpdir(), `render-boundary-elsewhere-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    await paginatedFixture(source, { body: await fixtureFragment('adjacent-revision-alnum.xml') });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: ALNUM_EXPECTED, outputDir: path.join(root, 'out'),
+      tools: fakeTools('Syntheticclause prefix OldTermNewTerm synthetic suffix.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding?.missingTokenSample).toContain('Synthetic');
+    expect(result.textBinding?.unexplainedTokenSample).toContain('Syntheticclause');
+  });
+
+  itAllure('reports junction normalization separately from multi-page pagination reservation', async () => {
+    const root = path.join(os.tmpdir(), `render-boundary-multipage-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = `${await fixtureFragment('adjacent-revision-alnum.xml')}<w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:r><w:t>Synthetic second page closing text.</w:t></w:r></w:p>`;
+    await paginatedFixture(source, {
+      body,
+      header: await fixtureFragment('repeated-header.xml'),
+      footer: await fixtureFragment('page-field-footer.xml'),
+    });
+    const pdf = [
+      'Synthetic Neutral Draft Header',
+      ALNUM_JOINED_PDF,
+      'Page 1',
+      '\f',
+      'Synthetic Neutral Draft Header',
+      'Synthetic second page closing text.',
+      'Page 2',
+    ].join('\n');
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: `${ALNUM_EXPECTED} Synthetic second page closing text.`, outputDir: path.join(root, 'out'),
+      tools: fakeTools(pdf, undefined, false, 2), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+    expect(result.textBinding).toMatchObject({ matched: true, pageCount: 2, declaredRevisionBoundaryCount: 1, revisionBoundaryNormalizationCount: 1 });
+  });
+
+  itAllure('declares no boundary across a footnote reference mark between opposite revision spans', async () => {
+    const root = path.join(os.tmpdir(), `render-footnote-separator-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = '<w:p><w:r><w:t xml:space="preserve">Prefix </w:t></w:r><w:del w:id="1"><w:r><w:delText>Old</w:delText></w:r></w:del><w:r><w:footnoteReference w:id="2"/></w:r><w:ins w:id="3"><w:r><w:t>New</w:t></w:r></w:ins><w:r><w:t xml:space="preserve"> suffix.</w:t></w:r></w:p>';
+    await paginatedFixture(source, { body });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Prefix Old New suffix.', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Prefix OldNew suffix.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding).toMatchObject({ declaredRevisionBoundaryCount: 0, revisionBoundaryNormalizationCount: 0 });
+  });
+
+  itAllure('declares no boundary across an inline drawing between opposite revision spans', async () => {
+    const root = path.join(os.tmpdir(), `render-drawing-separator-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = '<w:p><w:r><w:t xml:space="preserve">Prefix </w:t></w:r><w:del w:id="1"><w:r><w:delText>Old</w:delText></w:r></w:del><w:r><w:drawing/></w:r><w:ins w:id="2"><w:r><w:t>New</w:t></w:r></w:ins><w:r><w:t xml:space="preserve"> suffix.</w:t></w:r></w:p>';
+    await paginatedFixture(source, { body });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Prefix Old New suffix.', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Prefix OldNew suffix.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding).toMatchObject({ declaredRevisionBoundaryCount: 0, revisionBoundaryNormalizationCount: 0 });
+  });
+
+  itAllure('declares no boundary across a resultless field or symbol between opposite revision spans', async () => {
+    const root = path.join(os.tmpdir(), `render-field-separator-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = '<w:p><w:r><w:t xml:space="preserve">Prefix </w:t></w:r><w:del w:id="1"><w:r><w:delText>Old</w:delText></w:r></w:del><w:fldSimple w:instr=" DATE "/><w:ins w:id="2"><w:r><w:t>New</w:t></w:r></w:ins><w:r><w:t xml:space="preserve"> and </w:t></w:r><w:del w:id="3"><w:r><w:delText>Left</w:delText></w:r></w:del><w:r><w:sym w:font="Wingdings" w:char="F0E0"/></w:r><w:ins w:id="4"><w:r><w:t>Right</w:t></w:r></w:ins><w:r><w:t xml:space="preserve"> suffix.</w:t></w:r></w:p>';
+    await paginatedFixture(source, { body });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Prefix Old New and Left Right suffix.', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Prefix OldNew and LeftRight suffix.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding).toMatchObject({ declaredRevisionBoundaryCount: 0, revisionBoundaryNormalizationCount: 0 });
+  });
+
+  itAllure('still declares a boundary across genuinely non-rendering range markers between opposite revision spans', async () => {
+    const root = path.join(os.tmpdir(), `render-marker-separator-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = '<w:p><w:r><w:t xml:space="preserve">Prefix </w:t></w:r><w:del w:id="1"><w:r><w:delText>Old</w:delText></w:r></w:del><w:bookmarkStart w:id="9" w:name="syntheticAnchor"/><w:proofErr w:type="spellStart"/><w:ins w:id="2"><w:r><w:t>New</w:t></w:r></w:ins><w:bookmarkEnd w:id="9"/><w:r><w:t xml:space="preserve"> suffix.</w:t></w:r></w:p>';
+    await paginatedFixture(source, { body });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Prefix Old New suffix.', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Prefix OldNew suffix.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+    expect(result.textBinding).toMatchObject({ matched: true, declaredRevisionBoundaryCount: 1, revisionBoundaryNormalizationCount: 1 });
+  });
+
+  itAllure('does not declare junctions from pagination-owned header stories', async () => {
+    const root = path.join(os.tmpdir(), `render-boundary-header-story-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const junctionHeader = '<w:hdr><w:p><w:del w:id="7"><w:r><w:delText>HeadOld</w:delText></w:r></w:del><w:ins w:id="8"><w:r><w:t>HeadNew</w:t></w:r></w:ins></w:p></w:hdr>';
+    const body = 'Synthetic unchanged fragmented clause inserted-alpha and removed-beta synthetic tail.';
+    await paginatedFixture(source, { body: await fixtureFragment('ordinary-run-split.xml'), header: junctionHeader });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: body, outputDir: path.join(root, 'out'),
+      tools: fakeTools(body), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+    expect(result.textBinding).toMatchObject({ declaredRevisionBoundaryCount: 0, revisionBoundaryNormalizationCount: 0 });
+  });
+
   itAllure('falls back to strict zero-allowance binding when the rendered package is unreadable', async () => {
     const root = path.join(os.tmpdir(), `render-unreadable-${Date.now()}`);
     const source = path.join(root, 'tracked.docx');
@@ -536,4 +816,76 @@ describe('renderer verifier', () => {
     expect(result.textBinding).toMatchObject({ pageCount: 1 });
     expect(result.textBinding?.unexplainedTokenSample).toContain('Residue');
   });
+});
+
+// ── Real-LibreOffice boundary fixtures ──────────────────────────────────────
+// These tests exercise the shipped fixtures through an actual LibreOffice and
+// poppler toolchain when one is installed. CI has neither; the verifier's own
+// `resolve() -> null` discipline reports `not_run` there and each test accepts
+// exactly that outcome (and only that outcome) as a skip.
+
+const REAL_MACOS_SOFFICE = '/Applications/LibreOffice.app/Contents/MacOS/soffice';
+
+function realRendererTools(): RendererTools {
+  const base = defaultRendererTools();
+  return {
+    resolve: (name) => base.resolve(name) ?? (name === 'soffice' && existsSync(REAL_MACOS_SOFFICE) ? REAL_MACOS_SOFFICE : null),
+    run: (command, args, cwd) => base.run(command, args, cwd),
+  };
+}
+
+async function verifyRealBoundaryFixture(fixture: string, expectedMarkupText: string) {
+  const root = path.join(os.tmpdir(), `render-real-${fixture}-${Date.now()}`);
+  await mkdir(root, { recursive: true });
+  const source = path.join(root, 'tracked.docx');
+  await writeFile(source, await buildDocxFromBodyXml(await fixtureFragment(`${fixture}.xml`)));
+  return verifyRenderedMarkup({
+    trackedDocxPath: source,
+    expectedMarkupText,
+    outputDir: path.join(root, 'out'),
+    tools: realRendererTools(),
+    configuredPixelFloor: 2,
+  });
+}
+
+const REAL_RENDER_TIMEOUT_MS = 300_000;
+
+describe('renderer verifier real LibreOffice adjacent revision boundaries', () => {
+  itAllure('binds an independently derived projection across a real alphanumeric deletion/insertion junction', async () => {
+    const result = await verifyRealBoundaryFixture('adjacent-revision-alnum', ALNUM_EXPECTED);
+    if (result.status === 'not_run') { expect(result.reason).toContain('Missing renderer tool'); return; }
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true, revisionVisibility: 'visible' });
+    expect(result.textBinding).toMatchObject({ matched: true, declaredRevisionBoundaryCount: 1 });
+  }, REAL_RENDER_TIMEOUT_MS);
+
+  itAllure('binds a real junction whose insertion is immediately followed by punctuation', async () => {
+    const result = await verifyRealBoundaryFixture('adjacent-revision-punctuation', 'Synthetic filing reference Formation Charter, synthetic continuation.');
+    if (result.status === 'not_run') { expect(result.reason).toContain('Missing renderer tool'); return; }
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+    expect(result.textBinding).toMatchObject({ matched: true, declaredRevisionBoundaryCount: 1 });
+  }, REAL_RENDER_TIMEOUT_MS);
+
+  itAllure('binds a real multiword deletion adjacent to a single-word insertion', async () => {
+    const result = await verifyRealBoundaryFixture('adjacent-revision-multiword-deletion', 'Synthetic instrument label Certificate of Formation Charter synthetic closing.');
+    if (result.status === 'not_run') { expect(result.reason).toContain('Missing renderer tool'); return; }
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+    expect(result.textBinding).toMatchObject({ matched: true, declaredRevisionBoundaryCount: 1 });
+  }, REAL_RENDER_TIMEOUT_MS);
+
+  itAllure('binds a real single-word deletion adjacent to a multiword insertion', async () => {
+    const result = await verifyRealBoundaryFixture('adjacent-revision-multiword-insertion', 'Synthetic venue label StateAlpha State Beta synthetic tail.');
+    if (result.status === 'not_run') { expect(result.reason).toContain('Missing renderer tool'); return; }
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+    expect(result.textBinding).toMatchObject({ matched: true, declaredRevisionBoundaryCount: 1 });
+  }, REAL_RENDER_TIMEOUT_MS);
+
+  itAllure('keeps ordinary-run splits strict in a real render while declaring no optional boundary', async () => {
+    const correct = await verifyRealBoundaryFixture('ordinary-run-split', ORDINARY_RUN_SPLIT_RENDERED);
+    if (correct.status === 'not_run') { expect(correct.reason).toContain('Missing renderer tool'); return; }
+    expect(correct).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+    expect(correct.textBinding).toMatchObject({ matched: true, declaredRevisionBoundaryCount: 0, revisionBoundaryNormalizationCount: 0 });
+    const whitespaceChanged = await verifyRealBoundaryFixture('ordinary-run-split', 'Synthetic unchanged frag mented clause inserted-alpha and removed-beta synthetic tail.');
+    expect(whitespaceChanged).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(whitespaceChanged.textBinding?.missingTokenSample).toContain('frag');
+  }, REAL_RENDER_TIMEOUT_MS);
 });

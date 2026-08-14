@@ -20,7 +20,22 @@ budget for body-story fields. The caller's logical projection must then be
 covered by the remaining tokens, and any leftover token fails. Because
 reservation is maximal, repeated header vocabulary can never substitute for
 missing logical content, and duplicated or hallucinated rendered text is
-never absorbed. Reading order is deliberately outside this automated verdict:
+never absorbed.
+
+Adjacent revision junctions get one narrow whitespace tolerance. LibreOffice
+and `pdftotext` do not expose a stable whitespace-delimited token boundary
+between neighbouring deletion and insertion spans, so the extracted PDF may
+render `OldNew` where the projection has `Old New`, or the reverse. Where the
+emitted tracked OOXML proves a visible deletion-family span and a visible
+insertion-family span meet with no whitespace between them, the binding may
+treat whitespace at exactly that junction as optional — at most one merge or
+split per declared junction, and the substituted tokens must balance the
+junction's own character content exactly. Ordinary run splits, same-family
+adjacency, dropped or duplicated words, and punctuation changes still fail.
+The evidence reports `declaredRevisionBoundaryCount` and
+`revisionBoundaryNormalizationCount` separately from pagination reservation.
+
+Reading order is deliberately outside this automated verdict:
 the emitted review PNGs support optional human placement review, and no
 automated placement comparison is performed. The structured outcome is
 reported in `verdict.textBinding` separately from colour visibility.
