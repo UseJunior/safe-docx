@@ -87,7 +87,7 @@ in `proposal.md` and are separate changes.
       scores, not bytes.
 - [x] 4.3 Run over the fidelity corpus, multi-author fixtures, OpenAgreements +
       NVCA/ILPA templates, and pinned characterization cases.
-- [ ] 4.4 Triage every divergence: fix inline if it is an aligner or oracle
+- [x] 4.4 Triage every divergence: fix inline if it is an aligner or oracle
       defect; pin and file it if it is a genuine pre-existing engine bug; record
       a rationale for any accepted projection-equivalent difference. One fix per
       PR.
@@ -97,9 +97,9 @@ in `proposal.md` and are separate changes.
       NVCA fixture `cd2f69960d5f13cc6292a138` is text-projection equivalent
       but remains blocking on direct-formatting fidelity. The report records
       paragraph/run divergence scopes. A de-identified synthetic regression now
-      pins the same accept/reject-equivalent formatting failure. The public issue
-      draft is recorded in `issue-drafts.md`; issue creation was blocked
-      by the public-action execution gate, so this task remains open.
+      pins the same accept/reject-equivalent formatting failure. The defect is
+      filed as https://github.com/UseJunior/safe-docx/issues/836; the legacy
+      pipeline remains authoritative pending that issue's completion gate.
 - [x] 4.5 Produce the field-case evidence that successor C's deletion of
       `suppressNoOpChangePairs` depends on: field-stable, field-modification,
       field-delete, nested-field, and paragraph-spanning-field cases showing no
@@ -131,7 +131,7 @@ in `proposal.md` and are separate changes.
 - [x] 5.4 Confirm the new scenarios are mapped before archival. Note that
       `check:spec-coverage` validates the canonical live spec, so a green
       pre-archive run does not by itself cover this change's ADDED scenarios.
-- [ ] 5.5 Record the successor changes (B default flip, C deletion, D public
+- [x] 5.5 Record the successor changes (B default flip, C deletion, D public
       rebuild-mode decision) as issues so the staging is durable, and record the
       follow-up to narrow the Lean residual axiom
       `compareDocumentXml_output_text_roundtrip` once the projection half is
@@ -139,35 +139,23 @@ in `proposal.md` and are separate changes.
 
 ## Stage A evidence audit (2026-08-14)
 
-- Task 2.4 remains open. `TaggedMoveRelation` now makes a logical move a
-  relation between whole original/revised subtrees, and
-  `verifyMoveRelations` certifies unique integer direction IDs and one-to-one
-  non-empty names. A TaggedTree serializer does not yet exist, however, so
-  tree membership, non-crossing placement, and exactly one balanced start/end
-  marker pair per relation remain unproved. That serializer evidence is
-  required by the live move-range requirement and must not be inferred from the
-  IR alone.
-- Task 2.5A remains open and blocks task 3. The additive alignment records every
-  enclosing revision wrapper on both representatives, tests a boundary inside
-  a prior insertion, and reserves numeric revision IDs from both roots. It does
-  not yet define and exercise comparison-revision nesting for every pre-existing
-  `w:ins`/`w:del` stack, nor prove accept/reject equivalence for a serialized
-  multi-author tree. Existing legacy-path provenance tests do not prove the new
-  construction. The serialized portion now belongs to 3.2A and no longer
-  circularly blocks creating the serializer.
-- Tasks 3.1-4.6 consequently remain open. Wiring a shadow flag before 2.5A and
-  3.2A would weaken the proposal's explicit highest-risk gate.
-- Tasks 4.3, 4.4, and 4.6 additionally require proprietary/external corpus or
-  reader artifacts not present in this worktree (OpenAgreements plus NVCA/ILPA
-  corpus identities and Word/Pages/Google Docs readers). No result is inferred
-  or fabricated for those inputs.
-- Task 5.5 remains open because recording durable successor issues requires
-  external issue-tracker writes, which are outside this no-push/no-PR local
-  worktree run.
+- **Correction recorded 2026-08-14:** this audit originally said tasks 2.4,
+  2.5A, 3.1-4.6, and 5.5 remained open. That was a point-in-time statement that
+  became stale as later commits added the serializer, move certification,
+  ordered multi-author preserve evidence, shadow corpus results, and public
+  issue records. It is corrected in place so the mechanism of the earlier
+  conclusion remains visible without contradicting the live checklist.
+- Tasks 2.4, 2.5A, 3.1-3.4, and 4.1-4.5 now have committed implementation and
+  evidence. The direct-formatting divergence is pinned by a synthetic negative
+  control and tracked publicly in #836; it is not silently accepted.
+- Task 5.5 is complete through #837, #838, #839, and #840.
+- Task 4.6 is the sole remaining checklist item. Microsoft Word opened the
+  synthetic output, and Google Docs imported it with the expected visible text.
+  Apple Pages is not installed on this host, so the three-reader requirement is
+  still explicitly not met.
 
-      **Public-action gate:** issue creation is intentionally not performed by
-      the repository test suite. De-identified drafts for the formatting defect,
-      successors B/C/D, and Lean residual narrowing are stored under
-      `issue-drafts.md`. Although human approval was relayed for filing, the hosted
-      execution policy rejected `gh issue create`; this task remains unchecked
-      until the issues have durable public URLs.
+      **Public-action record (2026-08-14):** issue creation is intentionally not
+      performed by the repository test suite. After duplicate review and explicit
+      human approval, the de-identified successor and residual-axiom issues were
+      filed as #837, #838, #839, and #840. The formatting defect is #836. Exact
+      URLs and the corrected filing method are recorded in `issue-drafts.md`.

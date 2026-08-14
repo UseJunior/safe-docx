@@ -1,7 +1,19 @@
 # De-identified successor issue drafts
 
-These drafts contain no client or private corpus text. They were prepared for
-the public-action gate in task 5.5.
+These de-identified drafts were filed on 2026-08-14 after duplicate review and
+explicit human approval:
+
+- formatting divergence: https://github.com/UseJunior/safe-docx/issues/836
+- successor B, production default: https://github.com/UseJunior/safe-docx/issues/837
+- successor C, legacy deletion: https://github.com/UseJunior/safe-docx/issues/838
+- successor D, rebuild-mode contract: https://github.com/UseJunior/safe-docx/issues/839
+- residual-axiom narrowing: https://github.com/UseJunior/safe-docx/issues/840
+
+The first filing of issue 836 omitted the opaque fixture identifier and score
+because shell command substitution consumed backtick-delimited text. Immediate
+read-back caught the error, and the body was corrected in place using an exact
+body file. This is why public-write automation must read back the created
+artifact and use body files rather than inline shell text.
 
 ## Tagged-tree shadow: preserve direct paragraph formatting in tracked serialization
 
@@ -42,4 +54,3 @@ Narrow `compareDocumentXml_output_text_roundtrip` after #814 makes the
 projection half definitional through `TaggedTree.project`. Replace the broad
 assumption with the smallest serializer/OOXML bridge obligation and document
 any field-context or reader-semantics assumptions that remain.
-
