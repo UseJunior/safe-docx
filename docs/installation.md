@@ -78,6 +78,21 @@ Claude Code:
 claude mcp add safe-docx -- /absolute/path/to/safe-docx
 ```
 
+Antigravity CLI (`~/.gemini/config/mcp_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "safe-docx": {
+      "command": "/absolute/path/to/safe-docx",
+      "args": []
+    }
+  }
+}
+```
+
+Restart `agy` after saving the configuration. Antigravity may ask you to approve the MCP server before first use.
+
 JSON-based clients:
 
 ```json

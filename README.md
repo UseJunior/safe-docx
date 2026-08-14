@@ -49,6 +49,23 @@ Then configure your MCP client with the installed executable's absolute path. Fo
 claude mcp add safe-docx -- /absolute/path/to/safe-docx
 ```
 
+### Antigravity CLI
+
+Add Safe Docx to `~/.gemini/config/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "safe-docx": {
+      "command": "/absolute/path/to/safe-docx",
+      "args": []
+    }
+  }
+}
+```
+
+Restart `agy`, then ask it to edit a `.docx` file. Antigravity may ask you to approve the MCP server before first use.
+
 See [Installation and verification](docs/installation.md) for locating the executable, pinning a version, and configuring clients.
 
 ## Documentation
