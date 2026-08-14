@@ -99,6 +99,18 @@ describe('independent emitted-redline minimality', () => {
     expect(result.lostTokensByClass).toEqual({ lexical: 0, punctuation: 0, structural: 0, whitespace: 1 });
   });
 
+  itAllure('credits an anchored ordinary space despite an earlier repeated space', () => {
+    const body = paragraph(`${del('x')}${ins('y')}${plain(' ')}${del('x')}${ins('y')}${plain(' x')}`);
+    const result = check(['x x x'], ['y y x'], body);
+    expect(result).toMatchObject({ passed: true, lostTokens: 0 });
+  });
+
+  itAllure('credits an anchored ordinary space despite a later repeated space', () => {
+    const body = paragraph(`${plain('x ')}${del('x')}${ins('y')}${plain(' ')}${del('x')}${ins('y')}`);
+    const result = check(['x x x'], ['x y y'], body);
+    expect(result).toMatchObject({ passed: true, lostTokens: 0 });
+  });
+
   itAllure('anchors shared leading indentation by position', () => {
     const surgical = check(['  alpha'], ['  beta'], paragraph(`${plain('  ')}${del('alpha')}${ins('beta')}`));
     expect(surgical).toMatchObject({ passed: true, lostTokens: 0 });

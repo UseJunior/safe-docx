@@ -157,35 +157,54 @@ function ordinaryTokens(segments: readonly string[]): OrdinaryToken[] {
 
 /**
  * Indices of the common tokens the tracked paragraph genuinely preserves as
- * ordinary text. Non-whitespace matches count directly. A whitespace match
- * counts only through one of its recorded anchors: the anchoring neighbor
- * must itself be matched immediately adjacent within the same ordinary text
- * segment (a whitespace run beyond a revision wrapper is a different run, not
- * the anchored one), or a positional anchor must map the run to the
- * corresponding extremity of the ordinary text. This keeps the gate able to
- * fail a needless rewrite of one specific space even when another equal-
- * looking space elsewhere in the paragraph stayed ordinary.
+ * ordinary text. Non-whitespace tokens align by LCS over the non-whitespace
+ * subsequences and count directly. A whitespace token never aligns on its
+ * own: it is credited only through one of its recorded anchors, so it must
+ * claim the ordinary token physically adjacent to its own matched anchor —
+ * equal text, in the same ordinary text segment (a whitespace run beyond a
+ * revision wrapper is a different run, not the anchored one) — or, for a
+ * positional anchor, the exact first or last ordinary token. Claims are
+ * injective: an ordinary token credits at most one common token, so one
+ * surviving space cannot stand in for several. Driving whitespace credit
+ * from the anchor's own match, rather than from a single global LCS
+ * traceback, keeps an equal-looking space elsewhere in the paragraph from
+ * either rescuing a rewritten space or stealing credit from a kept one.
  */
 function preservedCommonTokenIndices(common: readonly CommonToken[], ordinary: readonly OrdinaryToken[]): Set<number> {
-  const pairs = lcsPairs(common.map((item) => item.token), ordinary.map((item) => item.token));
+  const commonWords = common.flatMap((item, index) => (isWhitespaceToken(item.token) ? [] : [{ token: item.token, index }]));
+  const ordinaryWords = ordinary.flatMap((item, position) => (isWhitespaceToken(item.token) ? [] : [{ token: item.token, position }]));
   const preserved = new Set<number>();
-  pairs.forEach((pair, index) => {
-    const token = common[pair.left]!;
-    if (!isWhitespaceToken(token.token)) {
-      preserved.add(pair.left);
-      return;
-    }
-    const preceding = pairs[index - 1];
-    const following = pairs[index + 1];
-    const byPreceding = token.anchoredByPrecedingMatch
-      && preceding !== undefined && preceding.left === pair.left - 1 && preceding.right === pair.right - 1
-      && ordinary[preceding.right]!.segment === ordinary[pair.right]!.segment;
-    const byFollowing = token.anchoredByFollowingMatch
-      && following !== undefined && following.left === pair.left + 1 && following.right === pair.right + 1
-      && ordinary[following.right]!.segment === ordinary[pair.right]!.segment;
-    const byStart = token.anchoredAtParagraphStart && pair.left === 0 && pair.right === 0;
-    const byEnd = token.anchoredAtParagraphEnd && pair.left === common.length - 1 && pair.right === ordinary.length - 1;
-    if (byPreceding || byFollowing || byStart || byEnd) preserved.add(pair.left);
+  const claimed = new Set<number>();
+  const anchorPositionByCommonIndex = new Map<number, number>();
+  for (const pair of lcsPairs(commonWords.map((word) => word.token), ordinaryWords.map((word) => word.token))) {
+    const commonIndex = commonWords[pair.left]!.index;
+    const position = ordinaryWords[pair.right]!.position;
+    preserved.add(commonIndex);
+    claimed.add(position);
+    anchorPositionByCommonIndex.set(commonIndex, position);
+  }
+  common.forEach((item, index) => {
+    if (!isWhitespaceToken(item.token)) return;
+    const claimAdjacent = (anchorPosition: number | undefined, offset: 1 | -1): boolean => {
+      if (anchorPosition === undefined) return false;
+      const position = anchorPosition + offset;
+      const candidate = ordinary[position];
+      if (candidate === undefined || claimed.has(position)) return false;
+      if (candidate.token !== item.token || candidate.segment !== ordinary[anchorPosition]!.segment) return false;
+      claimed.add(position);
+      return true;
+    };
+    const claimExtremity = (position: number): boolean => {
+      const candidate = ordinary[position];
+      if (candidate === undefined || claimed.has(position) || candidate.token !== item.token) return false;
+      claimed.add(position);
+      return true;
+    };
+    const credited = (item.anchoredByPrecedingMatch && claimAdjacent(anchorPositionByCommonIndex.get(index - 1), 1))
+      || (item.anchoredByFollowingMatch && claimAdjacent(anchorPositionByCommonIndex.get(index + 1), -1))
+      || (item.anchoredAtParagraphStart && index === 0 && claimExtremity(0))
+      || (item.anchoredAtParagraphEnd && index === common.length - 1 && claimExtremity(ordinary.length - 1));
+    if (credited) preserved.add(index);
   });
   return preserved;
 }
