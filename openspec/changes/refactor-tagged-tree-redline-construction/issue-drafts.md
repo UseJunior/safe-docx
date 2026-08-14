@@ -16,9 +16,9 @@ read-back caught the error, and the body was corrected in place using an exact
 body file. This is why public-write automation must read back the created
 artifact and use body files rather than inline shell text.
 
-## Tagged-tree shadow: preserve direct paragraph formatting in tracked serialization
+## Tagged-tree offline evaluator: preserve direct paragraph formatting in tracked serialization
 
-Stage-A shadow comparison for #814 preserves accept/reject text on a synthetic
+Stage-A offline comparison for #814 preserves accept/reject text on a synthetic
 paragraph replacement, but its serialized tracked tree does not match the
 legacy candidate's direct-formatting projection. The pinned synthetic case
 changes paragraph justification and run emphasis and reports `formatting`
@@ -32,7 +32,7 @@ authoritative until the separate default-flip gate is met.
 ## Tagged-tree successor B: production default flip
 
 Make tagged-tree redline construction authoritative only after all blocking
-shadow divergences and accept/reject, structural, formatting, move, field,
+offline-corpus divergences and accept/reject, structural, formatting, move, field,
 multi-author, ancillary-story, and cross-reader gates pass. Preserve the legacy
 output for an explicit rollback window; do not delete it in this issue.
 
