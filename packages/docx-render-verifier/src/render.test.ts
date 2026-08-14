@@ -732,6 +732,62 @@ describe('renderer verifier', () => {
     expect(result.textBinding).toMatchObject({ matched: true, pageCount: 2, declaredRevisionBoundaryCount: 1, revisionBoundaryNormalizationCount: 1 });
   });
 
+  itAllure('declares no boundary across a footnote reference mark between opposite revision spans', async () => {
+    const root = path.join(os.tmpdir(), `render-footnote-separator-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = '<w:p><w:r><w:t xml:space="preserve">Prefix </w:t></w:r><w:del w:id="1"><w:r><w:delText>Old</w:delText></w:r></w:del><w:r><w:footnoteReference w:id="2"/></w:r><w:ins w:id="3"><w:r><w:t>New</w:t></w:r></w:ins><w:r><w:t xml:space="preserve"> suffix.</w:t></w:r></w:p>';
+    await paginatedFixture(source, { body });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Prefix Old New suffix.', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Prefix OldNew suffix.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding).toMatchObject({ declaredRevisionBoundaryCount: 0, revisionBoundaryNormalizationCount: 0 });
+  });
+
+  itAllure('declares no boundary across an inline drawing between opposite revision spans', async () => {
+    const root = path.join(os.tmpdir(), `render-drawing-separator-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = '<w:p><w:r><w:t xml:space="preserve">Prefix </w:t></w:r><w:del w:id="1"><w:r><w:delText>Old</w:delText></w:r></w:del><w:r><w:drawing/></w:r><w:ins w:id="2"><w:r><w:t>New</w:t></w:r></w:ins><w:r><w:t xml:space="preserve"> suffix.</w:t></w:r></w:p>';
+    await paginatedFixture(source, { body });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Prefix Old New suffix.', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Prefix OldNew suffix.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding).toMatchObject({ declaredRevisionBoundaryCount: 0, revisionBoundaryNormalizationCount: 0 });
+  });
+
+  itAllure('declares no boundary across a resultless field or symbol between opposite revision spans', async () => {
+    const root = path.join(os.tmpdir(), `render-field-separator-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = '<w:p><w:r><w:t xml:space="preserve">Prefix </w:t></w:r><w:del w:id="1"><w:r><w:delText>Old</w:delText></w:r></w:del><w:fldSimple w:instr=" DATE "/><w:ins w:id="2"><w:r><w:t>New</w:t></w:r></w:ins><w:r><w:t xml:space="preserve"> and </w:t></w:r><w:del w:id="3"><w:r><w:delText>Left</w:delText></w:r></w:del><w:r><w:sym w:font="Wingdings" w:char="F0E0"/></w:r><w:ins w:id="4"><w:r><w:t>Right</w:t></w:r></w:ins><w:r><w:t xml:space="preserve"> suffix.</w:t></w:r></w:p>';
+    await paginatedFixture(source, { body });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Prefix Old New and Left Right suffix.', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Prefix OldNew and LeftRight suffix.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding).toMatchObject({ declaredRevisionBoundaryCount: 0, revisionBoundaryNormalizationCount: 0 });
+  });
+
+  itAllure('still declares a boundary across genuinely non-rendering range markers between opposite revision spans', async () => {
+    const root = path.join(os.tmpdir(), `render-marker-separator-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = '<w:p><w:r><w:t xml:space="preserve">Prefix </w:t></w:r><w:del w:id="1"><w:r><w:delText>Old</w:delText></w:r></w:del><w:bookmarkStart w:id="9" w:name="syntheticAnchor"/><w:proofErr w:type="spellStart"/><w:ins w:id="2"><w:r><w:t>New</w:t></w:r></w:ins><w:bookmarkEnd w:id="9"/><w:r><w:t xml:space="preserve"> suffix.</w:t></w:r></w:p>';
+    await paginatedFixture(source, { body });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source, expectedMarkupText: 'Prefix Old New suffix.', outputDir: path.join(root, 'out'),
+      tools: fakeTools('Prefix OldNew suffix.'), configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+    expect(result.textBinding).toMatchObject({ matched: true, declaredRevisionBoundaryCount: 1, revisionBoundaryNormalizationCount: 1 });
+  });
+
   itAllure('does not declare junctions from pagination-owned header stories', async () => {
     const root = path.join(os.tmpdir(), `render-boundary-header-story-${Date.now()}`);
     const source = path.join(root, 'tracked.docx');

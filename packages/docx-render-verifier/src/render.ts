@@ -288,37 +288,82 @@ function revisionSpanFamily(element: XmlElement): 'deletion' | 'insertion' | und
 }
 
 /**
- * Visible character stream of an element as Writer displays it with tracked
- * changes shown: `w:t` and `w:delText` text in document order, with tab and
- * break glyphs contributing whitespace. Content of a nested paragraph (for
- * example inside a text box) belongs to that paragraph's own stream and is
- * excluded here.
+ * Placeholder for content that may render a glyph this projection cannot
+ * model as text: footnote and endnote reference marks, inline drawings, VML
+ * pictures, embedded objects, symbol runs, resultless fields, foreign markup,
+ * and any element not on the explicit non-rendering allowlist. The
+ * placeholder is non-whitespace, so such content between two revision spans
+ * blocks junction declaration (the OOXML cannot prove the spans render
+ * adjacently), and such content at a junction edge produces fragments no PDF
+ * token can match — both strictly in the fail-not-pass direction.
  */
+const VISIBLE_GLYPH_PLACEHOLDER = '￼';
+
+const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
+
+/**
+ * Elements the OOXML wordprocessing vocabulary defines as pure range
+ * markers, properties, or field plumbing that never render glyphs of their
+ * own. Only members of this allowlist may sit between two revision spans
+ * without blocking junction declaration; everything unrecognized fails closed
+ * as a possible glyph.
+ */
+const NON_RENDERING_ELEMENTS = new Set([
+  'p', 'pPr', 'rPr', 'sectPr', 'instrText', 'delInstrText', 'proofErr',
+  'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd', 'commentReference',
+  'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd',
+  'customXmlInsRangeStart', 'customXmlInsRangeEnd', 'customXmlDelRangeStart', 'customXmlDelRangeEnd',
+  'permStart', 'permEnd', 'lastRenderedPageBreak', 'softHyphen', 'sdtPr', 'sdtEndPr',
+]);
+
+/** Containers whose rendered content is exactly the rendered content of their children. */
+const CONTENT_CONTAINER_ELEMENTS = new Set([
+  'r', 'ins', 'del', 'moveFrom', 'moveTo', 'hyperlink', 'smartTag', 'sdt', 'sdtContent',
+  'customXml', 'ruby', 'rubyBase', 'rt', 'bdo', 'dir',
+]);
+
+/**
+ * Visible rendering of one element as Writer displays it with tracked changes
+ * shown: `w:t`/`w:delText` text, whitespace for tab and break glyphs, and a
+ * fail-closed placeholder for anything that may render a non-text glyph.
+ * Content of a nested paragraph (for example inside a text box) belongs to
+ * that paragraph's own stream, and drawings and pictures contribute a single
+ * placeholder rather than their embedded text.
+ */
+function elementVisibleContribution(element: XmlElement): string {
+  if (element.namespaceURI !== W_NS) {
+    // Markup-compatibility wrappers pass through (both branches contribute,
+    // which can only over-block); all other foreign markup fails closed.
+    return element.namespaceURI === MC_NS ? visibleCharacterStream(element) : VISIBLE_GLYPH_PLACEHOLDER;
+  }
+  switch (element.localName) {
+    case 't':
+    case 'delText':
+      return element.textContent ?? '';
+    case 'tab':
+    case 'br':
+    case 'cr':
+    case 'ptab':
+      return ' ';
+    case 'fldSimple': {
+      // A field renders its computed result. A cached result approximates it;
+      // a resultless field still renders something, so it fails closed.
+      const cached = visibleCharacterStream(element);
+      return cached.length > 0 ? cached : VISIBLE_GLYPH_PLACEHOLDER;
+    }
+    default:
+      if (NON_RENDERING_ELEMENTS.has(element.localName ?? '')) return '';
+      if (CONTENT_CONTAINER_ELEMENTS.has(element.localName ?? '')) return visibleCharacterStream(element);
+      return VISIBLE_GLYPH_PLACEHOLDER;
+  }
+}
+
+/** Concatenated visible contributions of an element's child elements. */
 function visibleCharacterStream(element: XmlElement): string {
   let stream = '';
   for (let child = element.firstChild; child !== null; child = child.nextSibling) {
     if (child.nodeType !== 1) continue;
-    const childElement = child as XmlElement;
-    if (childElement.namespaceURI !== W_NS) { stream += visibleCharacterStream(childElement); continue; }
-    switch (childElement.localName) {
-      case 't':
-      case 'delText':
-        stream += childElement.textContent ?? '';
-        break;
-      case 'tab':
-      case 'br':
-      case 'cr':
-        stream += ' ';
-        break;
-      case 'p':
-      case 'pPr':
-      case 'rPr':
-      case 'instrText':
-      case 'delInstrText':
-        break;
-      default:
-        stream += visibleCharacterStream(childElement);
-    }
+    stream += elementVisibleContribution(child as XmlElement);
   }
   return stream;
 }
@@ -339,7 +384,7 @@ function collectAdjacentRevisionBoundaries(document: NonNullable<ReturnType<type
     for (let child = paragraph.firstChild; child !== null; child = child.nextSibling) {
       if (child.nodeType !== 1) continue;
       const childElement = child as XmlElement;
-      const text = childElement.namespaceURI === W_NS && childElement.localName === 'pPr' ? '' : visibleCharacterStream(childElement);
+      const text = elementVisibleContribution(childElement);
       segments.push({ family: revisionSpanFamily(childElement), start: stream.length, end: stream.length + text.length });
       stream += text;
     }
