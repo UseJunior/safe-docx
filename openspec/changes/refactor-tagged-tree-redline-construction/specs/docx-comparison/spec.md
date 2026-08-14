@@ -127,8 +127,14 @@ The representation SHALL specify:
   pre-existing one;
 - **revision-identifier allocation**: identifiers SHALL NOT collide with any
   already present in either input;
-- **multi-author resolution**: accept and reject over stacked revisions from
-  several authors SHALL agree with the reject-projection oracle.
+- **multi-author relationships**: the model SHALL retain the ordered prior
+  revision stacks from both representatives and SHALL define how comparison
+  revisions nest relative to them.
+
+After a tagged-tree serializer exists, accept and reject over serialized stacked
+revisions from several authors SHALL agree with the corresponding tree
+projections. This serialized evidence SHALL pass before shadow corpus evidence
+is treated as complete.
 
 These invariants SHALL be evidenced on the multi-author corpus before the
 representation is exercised on any other class of input.
@@ -145,6 +151,13 @@ representation is exercised on any other class of input.
 - **GIVEN** inputs that already contain revision identifiers
 - **WHEN** the tree allocates identifiers for the comparison's own revisions
 - **THEN** no allocated identifier SHALL equal one present in either input
+
+#### Scenario: Serialized multi-author stacks preserve both projections
+
+- **GIVEN** a tagged tree retaining ordered revision stacks from several authors
+- **WHEN** the shadow serializer emits tracked markup and accept/reject are applied
+- **THEN** accept SHALL reproduce the revised tree projection
+- **AND** reject SHALL reproduce the original tree projection
 
 ### Requirement: The tagged-tree path runs in shadow and changes no behavior
 

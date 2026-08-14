@@ -158,7 +158,10 @@ So PRESERVE needs explicit invariants, not transport:
 - **accept/reject over multi-author stacks** — the reject-projection oracle
   already covers this class and is the gate.
 
-These are proved on the multi-author corpus **first**, not last (task 2.5).
+The model-level invariants are proved before serializer work. Accept/reject over
+multi-author stacks is then proved immediately after the shadow-only serializer
+exists. This is an evidence dependency, not a relaxation: serialized behavior
+cannot be evaluated before there is serialized output to evaluate.
 
 ### Decision: move ranges keep their existing certification
 
@@ -207,6 +210,11 @@ only exercised in shadow; the recursive path is untouched until successor C.
 property-test them in isolation; run the IR in shadow and produce a divergence
 report over the differential corpus. Nothing user-visible changes. Fully
 revertible.
+
+*Implementation finding (2026-08-14):* the original task order required
+serialized multi-author accept/reject evidence before the serializer existed.
+The gate is split: model-level PRESERVE invariants precede serialization, and
+serialized PRESERVE evidence is the first serializer-dependent gate afterward.
 
 **Successor B:** flip the default, retaining the legacy path behind a flag and
 retaining all existing diagnostics and both explicit output modes.

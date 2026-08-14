@@ -43,24 +43,17 @@ in `proposal.md` and are separate changes.
       balanced non-crossing markers, unique decimal IDs. Record whether the tree
       guarantees this at construction (input to the `coalesceMoveRangeMarkers`
       decision in successor C).
-- [ ] 2.5 Implement the PRESERVE invariants — provenance splitting, nesting,
-      revision-ID allocation, multi-author resolution — and evidence them on the
-      multi-author corpus **before** proceeding to task 3. This is the
+- [ ] 2.5A Implement the pre-serializer PRESERVE model invariants — provenance
+      splitting, nesting, revision-ID allocation, and ordered multi-author
+      relationships — before proceeding to task 3. This is the
       highest-risk surface; `preSplitInsProvenanceRuns`
       (`inPlaceModifier-presplit.ts:175`) and the ID seeding at
       `inPlaceModifier.ts:96` are the behavior to match.
 
-      **Blocked (2026-08-14):** the current tagged alignment records both
-      provenance stacks and collision-free starting IDs, but it cannot evidence
-      the required accept/reject behavior over multi-author stacks until tracked
-      markup exists. That markup is first introduced by task 3.1, while this task
-      explicitly gates all of section 3. The ordering is circular as written:
-      2.5 requires serializer output, and 3.1 is forbidden until 2.5 is complete.
-      Reproduce the implemented subset with
-      `npm run test:run -w @usejunior/docx-compare -- --run
-      src/baselines/atomizer/taggedTree.test.ts
-      src/baselines/atomizer/taggedAtomLcs.test.ts` (31 tests pass); none of those
-      tests serializes tagged evidence or applies accept/reject to its output.
+      **Implementation finding (2026-08-14):** this task formerly also required
+      serialized accept/reject evidence, creating a circular dependency on task
+      3.1. User authorization split that evidence into task 3.2A below. The
+      model-level gate remains mandatory before serializer work.
 
 ## 3. Serializer and story composition (shadow-only)
 
@@ -68,6 +61,10 @@ in `proposal.md` and are separate changes.
       exercised only in shadow.
 - [ ] 3.2 Property-test that serialization preserves both projections (layer 2
       of the four correctness layers in `design.md`).
+- [ ] 3.2A Prove serialized accept/reject behavior over ordered multi-author
+      stacks agrees with the original and revised tree projections. This is the
+      serializer-dependent half of the former task 2.5 and SHALL pass before
+      proceeding to shadow corpus evidence.
 - [ ] 3.3 Design nested text-box / ancillary story composition as IR subtrees;
       verify projections compose. Do not touch the recursive pipeline path.
 - [ ] 3.4 Determine whether `rebuild`'s different base-archive selection
@@ -132,15 +129,16 @@ in `proposal.md` and are separate changes.
   marker pair per relation remain unproved. That serializer evidence is
   required by the live move-range requirement and must not be inferred from the
   IR alone.
-- Task 2.5 remains open and blocks task 3. The additive alignment records every
+- Task 2.5A remains open and blocks task 3. The additive alignment records every
   enclosing revision wrapper on both representatives, tests a boundary inside
   a prior insertion, and reserves numeric revision IDs from both roots. It does
   not yet define and exercise comparison-revision nesting for every pre-existing
   `w:ins`/`w:del` stack, nor prove accept/reject equivalence for a serialized
   multi-author tree. Existing legacy-path provenance tests do not prove the new
-  construction.
-- Tasks 3.1-4.6 consequently remain open. Wiring a shadow flag before task 2.5
-  would weaken the proposal's explicit highest-risk gate.
+  construction. The serialized portion now belongs to 3.2A and no longer
+  circularly blocks creating the serializer.
+- Tasks 3.1-4.6 consequently remain open. Wiring a shadow flag before 2.5A and
+  3.2A would weaken the proposal's explicit highest-risk gate.
 - Tasks 4.3, 4.4, and 4.6 additionally require proprietary/external corpus or
   reader artifacts not present in this worktree (OpenAgreements plus NVCA/ILPA
   corpus identities and Word/Pages/Google Docs readers). No result is inferred

@@ -62,6 +62,13 @@ pass ladder and any public-surface decisions are successor changes, named below.
   path runs beside it behind `SAFE_DOCX_TAGGED_TREE=shadow` and records
   divergence over the differential corpus. No production caller switches.
 
+- **Sequence PRESERVE evidence in two layers.** Model-level provenance
+  splitting, nesting, identifier allocation, and multi-author relationships
+  gate the serializer. Accept/reject evidence over those relationships follows
+  immediately after the shadow-only serializer exists; it cannot coherently
+  precede the serializer whose output it evaluates. This ordering correction
+  was authorized on 2026-08-14 and does not weaken the PRESERVE requirement.
+
 - **Keep every runtime check.** Text, bookmark, field-structure, and ancillary
   story checks all remain exactly as they are. This change adds a construction
   invariant; it does not yet cash it in against any existing safety net.
