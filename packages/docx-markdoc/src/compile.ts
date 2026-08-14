@@ -586,9 +586,12 @@ export async function compileMarkdoc(
     author: options.author ?? 'Markdoc',
     date: options.date,
     reconstructionMode: 'inplace',
-    // Dense rewrites are easier to review as a coarser replacement than as
-    // scattered word-level "confetti". Small surgical edits remain refined.
-    maxWordRefinementChangeRanges: 6,
+    // No maxWordRefinementChangeRanges budget: a finite budget made dense
+    // rewrites fall back to coarse whole-span replacement on the run-level
+    // reconstruction paths, so ordinary source tokens the independent release
+    // verifier proves preservable were deleted and reinserted. Token-level
+    // minimality outranks "confetti" readability for authored redlines.
+    // See https://github.com/UseJunior/safe-docx/issues/846.
   });
   const tracked = comparison.document;
   const acceptedDoc = await DocxDocument.load(tracked);
