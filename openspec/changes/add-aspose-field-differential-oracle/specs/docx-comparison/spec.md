@@ -11,7 +11,10 @@ The local driver SHALL use explicit developer-provided Aspose runtime and licens
 when that configuration is absent, SHALL fail loudly when an explicitly attempted run is invalid, and SHALL NOT
 copy license data into the repository, logs, snapshots, or CI artifacts. CI SHALL NOT execute or install Aspose;
 it SHALL validate a checked-in deterministic JSON snapshot containing the exact oracle version, fixture hashes,
-and structural verdicts. The repository SHALL document one command for refreshing that snapshot locally.
+result revision text, and structural verdicts. CI SHALL reproduce the fixture hashes and SHALL reject a no-op
+projection as cached-result-only evidence. The repository SHALL document one command for refreshing that snapshot
+locally. Manually inspected full-document observations SHALL be dated separately so refreshing reduced fixtures
+cannot silently restamp evidence that was not rerun.
 
 #### Scenario: [ASPOSE-FIELD-01] Instruction changes replace the complete complex field
 

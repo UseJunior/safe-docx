@@ -10,7 +10,7 @@
 - [x] 2.1 Check in a snapshot stamped `Aspose.Words 25.10` with fixture hashes and deterministic verdicts.
 - [x] 2.2 Add CI-safe tests that validate the snapshot schema, provenance, fixture hashes, and pinned verdicts without
       importing Aspose or accessing a license.
-- [x] 2.3 Add a trust-boundary test recording Word as primary oracle, the measured Word/Aspose agreements, and any
+- [x] 2.3 Add a separately dated manual trust-boundary record and test recording Word as primary oracle, the measured Word/Aspose agreements, and any
       characterized divergences, including the pinned ILPA enumerator, formatting, and `Giveback),` observations.
 
 ## 3. Documentation and verification

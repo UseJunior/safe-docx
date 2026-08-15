@@ -8,7 +8,6 @@ fails before replacing the snapshot and never prints license contents or paths.
 """
 
 import argparse
-import datetime
 import hashlib
 import json
 import os
@@ -23,7 +22,7 @@ W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 NS = {"w": W}
 CASES = {
     "formcheckbox-to-formtext": (" FORMCHECKBOX ", " FORMTEXT ", "☐", "value"),
-    "hyperlink-retarget": (" HYPERLINK \\\"https://old.example\\\" ", " HYPERLINK \\\"https://new.example\\\" ", "link", "link"),
+    "hyperlink-retarget": (' HYPERLINK "https://old.example" ', ' HYPERLINK "https://new.example" ', "link", "link"),
     "pageref-retarget": (" PAGEREF Old \\h ", " PAGEREF New \\h ", "3", "3"),
     "numpages-result-only": (" NUMPAGES ", " NUMPAGES ", "3", "4"),
 }
@@ -47,19 +46,26 @@ def body_xml(instruction: str, result: str) -> str:
 
 def pack_docx(path: Path, document_xml: str) -> None:
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>')
-        archive.writestr("_rels/.rels", '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
-        archive.writestr("word/document.xml", document_xml)
+        entries = {
+            "[Content_Types].xml": '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
+            "_rels/.rels": '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
+            "word/document.xml": document_xml,
+        }
+        for name, content in entries.items():
+            info = zipfile.ZipInfo(name, date_time=(2024, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o600 << 16
+            archive.writestr(info, content.encode("utf-8"))
 
 
 def compare_script() -> str:
-    return """import aspose.words as aw, datetime, importlib.metadata, sys
-aw.License().set_license(sys.argv[3])
+    return """import aspose.words as aw, datetime, importlib.metadata, os, sys
+aw.License().set_license(os.environ['SAFE_DOCX_ASPOSE_CHILD_LICENSE'])
 original, revised = aw.Document(sys.argv[1]), aw.Document(sys.argv[2])
 if original.revisions.count: original.accept_all_revisions()
 if revised.revisions.count: revised.accept_all_revisions()
 original.compare(revised, 'Aspose Oracle', datetime.datetime(2026, 8, 14), aw.comparing.CompareOptions())
-original.save(sys.argv[4])
+original.save(sys.argv[3])
 print(importlib.metadata.version('aspose-words'))
 """
 
@@ -72,14 +78,24 @@ def project(path: Path) -> dict:
     inserted = root.findall(".//w:ins", NS)
     fld = lambda nodes: sum(len(node.findall(".//w:fldChar", NS)) for node in nodes)
     instruction = lambda nodes: "".join((node.text or "") for parent in nodes for node in parent.findall(".//w:instrText", NS) + parent.findall(".//w:delInstrText", NS))
+    deleted_text = "".join(node.text or "" for parent in deleted for node in parent.findall(".//w:delText", NS) + parent.findall(".//w:t", NS))
+    inserted_text = "".join(node.text or "" for parent in inserted for node in parent.findall(".//w:t", NS))
     outside = sum(1 for node in root.findall(".//w:fldChar", NS) if not any(node in parent.iter() for parent in deleted + inserted))
+    if fld(deleted) >= 3 and fld(inserted) >= 3:
+        classification = "whole-field-replacement"
+    elif fld(deleted) == 0 and fld(inserted) == 0 and outside == 3 and deleted_text and inserted_text:
+        classification = "cached-result-only"
+    else:
+        classification = "unclassified"
     return {
         "deletedFldChars": fld(deleted),
         "insertedFldChars": fld(inserted),
         "outsideRevisionFldChars": outside,
         "deletedInstruction": instruction(deleted),
         "insertedInstruction": instruction(inserted),
-        "classification": "whole-field-replacement" if fld(deleted) >= 3 and fld(inserted) >= 3 else "cached-result-only",
+        "deletedText": deleted_text,
+        "insertedText": inserted_text,
+        "classification": classification,
     }
 
 
@@ -90,7 +106,45 @@ def sha256(path: Path) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
+    parser.add_argument("--check", action="store_true", help="verify deterministic fixture hashes without importing Aspose")
+    parser.add_argument("--self-test", action="store_true", help="verify projection discriminates a no-op from result-only redlining")
     args = parser.parse_args()
+    destination = Path(args.output)
+    if args.self_test:
+        no_revision = body_xml(" NUMPAGES ", "3")
+        tracked_result = (
+            f'<w:document xmlns:w="{W}"><w:body><w:p>'
+            '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> NUMPAGES </w:instrText></w:r>'
+            '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            '<w:del><w:r><w:delText>3</w:delText></w:r></w:del><w:ins><w:r><w:t>4</w:t></w:r></w:ins>'
+            '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:sectPr/></w:body></w:document>'
+        )
+        with tempfile.TemporaryDirectory(prefix="safe-docx-aspose-self-test-") as temp:
+            no_revision_path, tracked_path = Path(temp) / "no-op.docx", Path(temp) / "tracked.docx"
+            pack_docx(no_revision_path, no_revision)
+            pack_docx(tracked_path, tracked_result)
+            if project(no_revision_path)["classification"] != "unclassified":
+                raise AssertionError("no-op output must not classify as cached-result-only")
+            tracked = project(tracked_path)
+            if tracked["classification"] != "cached-result-only" or tracked["deletedText"] != "3" or tracked["insertedText"] != "4":
+                raise AssertionError("tracked cached-result projection is incomplete")
+        print("Aspose projection self-test passed without importing Aspose")
+        return 0
+    if args.check:
+        snapshot = json.loads(destination.read_text())
+        with tempfile.TemporaryDirectory(prefix="safe-docx-aspose-check-") as temp:
+            work = Path(temp)
+            for case, stored in zip(CASES.items(), snapshot["fieldCases"], strict=True):
+                case_id, (old_instruction, new_instruction, old_result, new_result) = case
+                if stored["id"] != case_id:
+                    raise ValueError("snapshot case order or identity changed")
+                original, revised = work / "original.docx", work / "revised.docx"
+                pack_docx(original, body_xml(old_instruction, old_result))
+                pack_docx(revised, body_xml(new_instruction, new_result))
+                if stored["originalSha256"] != sha256(original) or stored["revisedSha256"] != sha256(revised):
+                    raise ValueError(f"fixture hash mismatch for {case_id}")
+        print("Aspose snapshot fixture hashes verified without importing Aspose")
+        return 0
     python = os.environ.get("SAFE_DOCX_ASPOSE_PYTHON")
     license_path = os.environ.get("SAFE_DOCX_ASPOSE_LICENSE")
     if not python and not license_path:
@@ -113,38 +167,27 @@ def main() -> int:
             original, revised, output = work / f"{case_id}-original.docx", work / f"{case_id}-revised.docx", work / f"{case_id}-output.docx"
             pack_docx(original, body_xml(old_instruction, old_result))
             pack_docx(revised, body_xml(new_instruction, new_result))
-            completed = subprocess.run([python, str(runner), str(original), str(revised), license_path, str(output)], capture_output=True, text=True)
+            child_env = {**os.environ, "SAFE_DOCX_ASPOSE_CHILD_LICENSE": license_path}
+            completed = subprocess.run([python, str(runner), str(original), str(revised), str(output)], capture_output=True, text=True, env=child_env)
             if completed.returncode:
-                detail = (completed.stderr or completed.stdout or "unknown error").strip().splitlines()[-1]
-                detail = detail.replace(python, "<runtime>").replace(license_path, "<license>").replace(str(work), "<temp>")
-                print(f"ERROR: Aspose comparison failed: {detail}", file=sys.stderr)
+                print(f"ERROR: Aspose comparison failed with exit {completed.returncode}; verify the configured runtime and license", file=sys.stderr)
                 return completed.returncode
-            version = completed.stdout.strip().splitlines()[-1]
+            output_lines = completed.stdout.strip().splitlines()
+            if not output_lines or not output.is_file():
+                print("ERROR: Aspose comparison produced incomplete output; verify the configured runtime", file=sys.stderr)
+                return 2
+            version = output_lines[-1]
+            if version not in ("25.10.0", "25.10"):
+                print("ERROR: oracle must run with aspose-words==25.10", file=sys.stderr)
+                return 2
             verdicts.append({"id": case_id, "originalSha256": sha256(original), "revisedSha256": sha256(revised), **project(output)})
-        if version not in ("25.10.0", "25.10"):
-            print("ERROR: oracle must run with aspose-words==25.10", file=sys.stderr)
-            return 2
 
-    repo = Path(__file__).resolve().parents[1]
-    ilpa_original = repo / "tests/test_documents/redline/ILPA-Model-Limited-Partnership-Agreement-WOF_v2.docx"
-    ilpa_revised = repo / "tests/test_documents/redline/ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx"
     snapshot = {
         "schemaVersion": 1,
         "generatedOn": "2026-08-14",
         "oracle": {"name": "Aspose.Words for Python via .NET", "package": "aspose-words", "version": "25.10"},
         "fieldCases": verdicts,
-        "ilpa": {
-            "originalSha256": sha256(ilpa_original), "revisedSha256": sha256(ilpa_revised),
-            "measured": {
-                "wordVersion": "16.112", "asposeVersion": "25.10",
-                "wholeFieldDeletion": {"agreement": True, "wordFldCharsInsideDeletion": 174, "asposeFldCharsInsideDeletion": 45},
-                "parentheticalEnumerator1471": {"agreement": True, "word": "delete-old-whole-enumerator-and-insert-(i", "aspose": "delete-old-whole-enumerator-and-insert-(i"},
-                "boldToNotBold1555": {"agreement": True, "shape": "rPrChange", "documentCounts": {"safeDocx": 17, "word": 34, "aspose": 31}},
-                "givebackBoundary": {"agreement": False, "authority": "word", "wordAndSafeDocx": "delete-and-reinsert-closing-punctuation", "aspose": "preserve-closing-punctuation-and-insert-middle"},
-            },
-        },
     }
-    destination = Path(args.output)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".tmp")
     temporary.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
@@ -154,4 +197,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except Exception as error:
+        print(f"ERROR: oracle operation failed safely ({type(error).__name__})", file=sys.stderr)
+        raise SystemExit(2)
