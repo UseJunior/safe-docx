@@ -41,6 +41,9 @@ async function boundedText(zip: JSZip, name: string): Promise<string> {
   return new TextDecoder().decode(bytes);
 }
 
+/** Requiring native comments means at least this many valid comments must exist. */
+const REQUIRED_COMMENT_MINIMUM = 1;
+
 function commentIntegrity(documentXml: string, commentsXml: string | null, required: boolean): Verdict {
   if (!required) return { status: 'not_run', required: false, reason: 'Native comments not required.' };
   const starts = commentIds(documentXml, 'commentRangeStart');
@@ -50,9 +53,20 @@ function commentIntegrity(documentXml: string, commentsXml: string | null, requi
   const exact = (left: string[], right: string[]) => left.length === right.length && left.every((id) => right.includes(id));
   const consistent = starts.every(Boolean) && ends.every(Boolean) && references.every(Boolean) && records.every(Boolean)
     && exact(starts, ends) && exact(starts, references) && exact(starts, records);
-  return consistent
-    ? { status: 'pass', required: true, details: { count: starts.length } }
-    : { status: 'fail', required: true, reason: 'Native comment records, range starts, range ends, and references disagree.', details: { starts, ends, references, records } };
+  if (!consistent) {
+    return { status: 'fail', required: true, reason: 'Native comment records, range starts, range ends, and references disagree.', details: { starts, ends, references, records } };
+  }
+  // Consistency of an empty set is vacuous: requiring native comments demands
+  // at least one valid comment, so zero comments fails closed (issue #858).
+  if (records.length < REQUIRED_COMMENT_MINIMUM) {
+    return {
+      status: 'fail',
+      required: true,
+      reason: `Native comments were required but the tracked DOCX contains none: expected minimum ${REQUIRED_COMMENT_MINIMUM}, actual ${records.length}.`,
+      details: { expectedMinimum: REQUIRED_COMMENT_MINIMUM, count: records.length },
+    };
+  }
+  return { status: 'pass', required: true, details: { expectedMinimum: REQUIRED_COMMENT_MINIMUM, count: starts.length } };
 }
 
 /**
