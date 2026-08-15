@@ -9,7 +9,7 @@ import { testAllure } from './allure-test.js';
 interface Snapshot {
   schemaVersion: number;
   oracle: { name: string; package: string; version: string };
-  fieldCases: Array<{ id: string; originalSha256: string; revisedSha256: string; classification: string; deletedFldChars: number; insertedFldChars: number; outsideRevisionFldChars: number; deletedText: string; insertedText: string }>;
+  fieldCases: Array<{ id: string; originalSha256: string; revisedSha256: string; classification: string; deletedFldChars: number; insertedFldChars: number; outsideRevisionFldChars: number; deletedInstruction: string; insertedInstruction: string; deletedText: string; insertedText: string }>;
 }
 
 interface IlpaMeasurements {
@@ -25,7 +25,7 @@ const TEST_FEATURE = 'Add Aspose Field Differential Oracle';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
 
 describe('Aspose field differential oracle trust boundary', () => {
-  test.openspec('Instruction changes replace the complete complex field')('classifies all instruction changes as whole-field replacement', () => {
+  test.openspec('[ASPOSE-FIELD-01] Instruction changes replace the complete complex field')('classifies all instruction changes as whole-field replacement', () => {
     expect(snapshot.schemaVersion).toBe(1);
     expect(snapshot.oracle).toMatchObject({ package: 'aspose-words', version: '25.10' });
     for (const id of ['formcheckbox-to-formtext', 'hyperlink-retarget', 'pageref-retarget']) {
@@ -33,15 +33,17 @@ describe('Aspose field differential oracle trust boundary', () => {
       expect(verdict?.classification).toBe('whole-field-replacement');
       expect(verdict?.deletedFldChars).toBeGreaterThanOrEqual(3);
       expect(verdict?.insertedFldChars).toBeGreaterThanOrEqual(3);
+      expect(verdict?.deletedInstruction).toBeTruthy();
+      expect(verdict?.insertedInstruction).toBeTruthy();
     }
   });
 
-  test.openspec('A cached-result-only change preserves field scaffolding')('classifies the NUMPAGES cache update as result-only', () => {
+  test.openspec('[ASPOSE-FIELD-02] A cached-result-only change preserves field scaffolding')('classifies the NUMPAGES cache update as result-only', () => {
     const verdict = snapshot.fieldCases.find((entry) => entry.id === 'numpages-result-only');
     expect(verdict).toMatchObject({ classification: 'cached-result-only', deletedFldChars: 0, insertedFldChars: 0, outsideRevisionFldChars: 3, deletedText: '3', insertedText: '4' });
   });
 
-  test.openspec('CI validates evidence without Aspose or its license')('validates committed provenance using only repository files', () => {
+  test.openspec('[ASPOSE-FIELD-03] CI validates evidence without Aspose or its license')('validates committed provenance using only repository files', () => {
     expect(snapshot.fieldCases).toHaveLength(4);
     expect(ilpa.provenance.originalSha256).toBe(hash(resolve(repoRoot, 'tests/test_documents/redline/ILPA-Model-Limited-Partnership-Agreement-WOF_v2.docx')));
     expect(ilpa.provenance.revisedSha256).toBe(hash(resolve(repoRoot, 'tests/test_documents/redline/ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx')));
@@ -53,12 +55,12 @@ describe('Aspose field differential oracle trust boundary', () => {
     expect(selfTest.stdout).toContain('projection self-test passed without importing Aspose');
   });
 
-  test.openspec('Local oracle configuration has a fail-closed trust boundary')('contains no license configuration or secret material', () => {
+  test.openspec('[ASPOSE-FIELD-04] Local oracle configuration has a fail-closed trust boundary')('contains no license configuration or secret material', () => {
     expect(snapshot).not.toHaveProperty('license');
     expect(JSON.stringify(snapshot)).not.toMatch(/\.lic|SAFE_DOCX_ASPOSE_LICENSE/);
   });
 
-  test.openspec('Local oracle configuration has a fail-closed trust boundary')('skips absent configuration and rejects partial configuration without writing', () => {
+  test.openspec('[ASPOSE-FIELD-04] Local oracle configuration has a fail-closed trust boundary')('skips absent configuration and rejects partial configuration without writing', () => {
     const output = resolve(mkdtempSync(resolve(tmpdir(), 'aspose-oracle-boundary-')), 'snapshot.json');
     const script = resolve(repoRoot, 'scripts/aspose_field_oracle.py');
     const cleanEnv = { ...process.env };
@@ -79,7 +81,7 @@ describe('Aspose field differential oracle trust boundary', () => {
     expect(existsSync(output)).toBe(false);
   });
 
-  test.openspec('The ILPA trust boundary records agreement and divergence')('pins the measured agreements and the non-authoritative divergence', () => {
+  test.openspec('[ASPOSE-FIELD-05] The ILPA trust boundary records agreement and divergence')('pins the measured agreements and the non-authoritative divergence', () => {
     const measured = ilpa.observations;
     expect(ilpa.provenance).toMatchObject({ wordVersion: '16.112', asposeVersion: '25.10' });
     expect(measured.wholeFieldDeletion).toMatchObject({ agreement: true, wordFldCharsInsideDeletion: 174, asposeFldCharsInsideDeletion: 45 });

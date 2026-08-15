@@ -8,6 +8,7 @@ fails before replacing the snapshot and never prints license contents or paths.
 """
 
 import argparse
+import datetime
 import hashlib
 import json
 import os
@@ -53,6 +54,7 @@ def pack_docx(path: Path, document_xml: str) -> None:
         }
         for name, content in entries.items():
             info = zipfile.ZipInfo(name, date_time=(2024, 1, 1, 0, 0, 0))
+            info.create_system = 3
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o600 << 16
             archive.writestr(info, content.encode("utf-8"))
@@ -184,7 +186,7 @@ def main() -> int:
 
     snapshot = {
         "schemaVersion": 1,
-        "generatedOn": "2026-08-14",
+        "generatedOn": datetime.date.today().isoformat(),
         "oracle": {"name": "Aspose.Words for Python via .NET", "package": "aspose-words", "version": "25.10"},
         "fieldCases": verdicts,
     }
@@ -201,6 +203,9 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except SystemExit:
         raise
+    except (ValueError, AssertionError) as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        raise SystemExit(2)
     except Exception as error:
         print(f"ERROR: oracle operation failed safely ({type(error).__name__})", file=sys.stderr)
         raise SystemExit(2)
