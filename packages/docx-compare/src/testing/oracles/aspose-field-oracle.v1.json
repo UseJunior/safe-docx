@@ -1,0 +1,75 @@
+{
+  "fieldCases": [
+    {
+      "classification": "whole-field-replacement",
+      "deletedFldChars": 3,
+      "deletedInstruction": " FORMCHECKBOX ",
+      "deletedText": "\u2610",
+      "id": "formcheckbox-to-formtext",
+      "insertedFldChars": 3,
+      "insertedInstruction": " FORMTEXT ",
+      "insertedText": "value",
+      "originalSha256": "871b126a70bd390cc6b08bb79d81c98fb79e7e4406797d3bfc9c29e0f3930532",
+      "outputDocumentXmlSha256": "d9864f4c4a2550555056ba86281a65fb1d149ead12db9061f22c5144d98b08bb",
+      "outsideRevisionFldChars": 0,
+      "outsideRevisionInstruction": "",
+      "overlappingRevisions": false,
+      "revisedSha256": "b61a9ca2e5e9ee9540e194aa86440b0bd7f2cbfc290180f9ab19cae565e5dbae"
+    },
+    {
+      "classification": "whole-field-replacement",
+      "deletedFldChars": 3,
+      "deletedInstruction": " HYPERLINK \"https://old.example\" ",
+      "deletedText": "link",
+      "id": "hyperlink-retarget",
+      "insertedFldChars": 3,
+      "insertedInstruction": " HYPERLINK \"https://new.example\" ",
+      "insertedText": "link",
+      "originalSha256": "174f4efa5acafed59e6827ad6fe96e1fe91250443c5730cf62f5631dfc97595e",
+      "outputDocumentXmlSha256": "741edacdf6453cb7baaccafa43b781666da6c0f2c1d8e729dd1e0e144f83ca92",
+      "outsideRevisionFldChars": 0,
+      "outsideRevisionInstruction": "",
+      "overlappingRevisions": false,
+      "revisedSha256": "af0c107541ba9c7bc68ba8786c9dae42d14d339dbb8277cf7da0c0a6dac547d4"
+    },
+    {
+      "classification": "whole-field-replacement",
+      "deletedFldChars": 3,
+      "deletedInstruction": " PAGEREF Old \\h ",
+      "deletedText": "3",
+      "id": "pageref-retarget",
+      "insertedFldChars": 3,
+      "insertedInstruction": " PAGEREF New \\h ",
+      "insertedText": "3",
+      "originalSha256": "9ac5544ddda29b5f100992170d5e8eb491e207e7cb4898ab61acfe734453353b",
+      "outputDocumentXmlSha256": "19d92b3fba6cb09129b30c07d37bfc6bd890e8cc06477c5171846e36cb00cd0d",
+      "outsideRevisionFldChars": 0,
+      "outsideRevisionInstruction": "",
+      "overlappingRevisions": false,
+      "revisedSha256": "c2f0a45216ec904622025dd7762adeddcc92f29c7f2be86c4b09e84acf1187e2"
+    },
+    {
+      "classification": "cached-result-only",
+      "deletedFldChars": 0,
+      "deletedInstruction": "",
+      "deletedText": "3",
+      "id": "numpages-result-only",
+      "insertedFldChars": 0,
+      "insertedInstruction": "",
+      "insertedText": "4",
+      "originalSha256": "96af86216cfe5dd6e5dd364923db70a7a2798b09697f223e767873fa0f6cda21",
+      "outputDocumentXmlSha256": "adae039afe5b64eb935cef71cf88afcdf36bf7f471ceb0b5415caed1226bf8af",
+      "outsideRevisionFldChars": 3,
+      "outsideRevisionInstruction": " NUMPAGES ",
+      "overlappingRevisions": false,
+      "revisedSha256": "f7d12803fbd52490ca5d3f08d184895c5aa2be2ad0282f160da3874e0c2d8677"
+    }
+  ],
+  "generatedOn": "2026-08-14",
+  "oracle": {
+    "name": "Aspose.Words for Python via .NET",
+    "package": "aspose-words",
+    "version": "25.10"
+  },
+  "schemaVersion": 1
+}
