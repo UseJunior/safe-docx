@@ -35,12 +35,14 @@ def expected_projection(case_id: str, old_instruction: str, new_instruction: str
             "classification": "cached-result-only", "deletedFldChars": 0,
             "insertedFldChars": 0, "outsideRevisionFldChars": 3,
             "deletedInstruction": "", "insertedInstruction": "",
+            "outsideRevisionInstruction": old_instruction,
             "deletedText": old_result, "insertedText": new_result,
         }
     return {
         "classification": "whole-field-replacement", "deletedFldChars": 3,
         "insertedFldChars": 3, "outsideRevisionFldChars": 0,
         "deletedInstruction": old_instruction, "insertedInstruction": new_instruction,
+        "outsideRevisionInstruction": "",
         "deletedText": old_result, "insertedText": new_result,
     }
 
@@ -99,6 +101,10 @@ def project(path: Path) -> dict:
     deleted_text = "".join(node.text or "" for parent in deleted for node in parent.findall(".//w:delText", NS) + parent.findall(".//w:t", NS))
     inserted_text = "".join(node.text or "" for parent in inserted for node in parent.findall(".//w:t", NS))
     outside = sum(1 for node in root.findall(".//w:fldChar", NS) if not any(node in parent.iter() for parent in deleted + inserted))
+    outside_instruction = "".join(
+        node.text or "" for node in root.findall(".//w:instrText", NS)
+        if not any(node in parent.iter() for parent in deleted + inserted)
+    )
     if fld(deleted) >= 3 and fld(inserted) >= 3:
         classification = "whole-field-replacement"
     elif fld(deleted) == 0 and fld(inserted) == 0 and outside == 3 and deleted_text and inserted_text:
@@ -111,6 +117,7 @@ def project(path: Path) -> dict:
         "outsideRevisionFldChars": outside,
         "deletedInstruction": instruction(deleted),
         "insertedInstruction": instruction(inserted),
+        "outsideRevisionInstruction": outside_instruction,
         "deletedText": deleted_text,
         "insertedText": inserted_text,
         "classification": classification,
@@ -185,7 +192,7 @@ def main() -> int:
                 if any(stored.get(key) != value for key, value in expected.items()):
                     raise ValueError(f"snapshot verdict mismatch for {case_id}")
                 output_hash = stored.get("outputDocumentXmlSha256", "")
-                if len(output_hash) != 64 or any(char not in "0123456789abcdef" for char in output_hash):
+                if len(output_hash) != 64 or set(output_hash) == {"0"} or any(char not in "0123456789abcdef" for char in output_hash):
                     raise ValueError(f"Aspose output provenance is missing for {case_id}")
         print("Aspose snapshot fixture hashes verified without importing Aspose")
         return 0

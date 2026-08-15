@@ -9,7 +9,7 @@ import { testAllure } from './allure-test.js';
 interface Snapshot {
   schemaVersion: number;
   oracle: { name: string; package: string; version: string };
-  fieldCases: Array<{ id: string; originalSha256: string; revisedSha256: string; outputDocumentXmlSha256: string; classification: string; deletedFldChars: number; insertedFldChars: number; outsideRevisionFldChars: number; deletedInstruction: string; insertedInstruction: string; deletedText: string; insertedText: string }>;
+  fieldCases: Array<{ id: string; originalSha256: string; revisedSha256: string; outputDocumentXmlSha256: string; classification: string; deletedFldChars: number; insertedFldChars: number; outsideRevisionFldChars: number; deletedInstruction: string; insertedInstruction: string; outsideRevisionInstruction: string; deletedText: string; insertedText: string }>;
 }
 
 interface IlpaMeasurements {
@@ -39,6 +39,7 @@ describe('Aspose field differential oracle trust boundary', () => {
         classification: 'whole-field-replacement', deletedFldChars: 3,
         insertedFldChars: 3, outsideRevisionFldChars: 0,
         deletedInstruction: expected[id][0], insertedInstruction: expected[id][1],
+        outsideRevisionInstruction: '',
         deletedText: expected[id][2], insertedText: expected[id][3],
       });
       expect(verdict?.outputDocumentXmlSha256).toMatch(/^[0-9a-f]{64}$/);
@@ -47,10 +48,10 @@ describe('Aspose field differential oracle trust boundary', () => {
 
   test.openspec('[ASPOSE-FIELD-02] A cached-result-only change preserves field scaffolding')('classifies the NUMPAGES cache update as result-only', () => {
     const verdict = snapshot.fieldCases.find((entry) => entry.id === 'numpages-result-only');
-    expect(verdict).toMatchObject({ classification: 'cached-result-only', deletedFldChars: 0, insertedFldChars: 0, outsideRevisionFldChars: 3, deletedText: '3', insertedText: '4' });
+    expect(verdict).toMatchObject({ classification: 'cached-result-only', deletedFldChars: 0, insertedFldChars: 0, outsideRevisionFldChars: 3, outsideRevisionInstruction: ' NUMPAGES ', deletedText: '3', insertedText: '4' });
   });
 
-  test.openspec('[ASPOSE-FIELD-03] CI validates evidence without Aspose or its license')('validates committed provenance using only repository files', () => {
+  test.openspec('[ASPOSE-FIELD-03] CI validates evidence without Aspose or its license')('validates fixture inputs, verdict expectations, and provenance format without claiming runtime attestation', () => {
     expect(snapshot.fieldCases).toHaveLength(4);
     expect(ilpa.provenance.originalSha256).toBe(hash(resolve(repoRoot, 'tests/test_documents/redline/ILPA-Model-Limited-Partnership-Agreement-WOF_v2.docx')));
     expect(ilpa.provenance.revisedSha256).toBe(hash(resolve(repoRoot, 'tests/test_documents/redline/ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx')));

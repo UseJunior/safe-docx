@@ -10,6 +10,7 @@
     "originalSha256": "7880ad250513d23be064a5c71ef79aecb2bf3d870c45fa070256d5388ac74455",
     "revisedSha256": "46be28b42853da50eba3e24df944d04dd34893f56539258d53bd69b4b33547d7",
     "asposeComparisonOutputSha256": "c3354f3325c8d6429ce9234fc6b6aa56187b1c2d70fa31cef86b3bc211b4c074",
+    "asposeComparisonOutputNote": "Generated locally on 2026-08-14 and retained for this review at /private/tmp/ilpa-aspose-oracle-20260814.docx; the hash is documentary provenance and is not CI-verifiable without the licensed runtime.",
     "wordComparisonOutputSha256": null,
     "wordComparisonOutputNote": "The measured Word output was inspected and schema-validated on 2026-08-14 but was not retained. A fresh output hash could not be captured during review because Word had five user documents open; the workflow forbids disturbing them. Regenerate with the documented method before the next Word-version measurement."
   },
