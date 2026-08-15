@@ -1,8 +1,9 @@
 # Proprietary comparison-oracle snapshots
 
 `aspose-field-oracle.v1.json` is reproducible minimal-pair evidence generated locally with
-`aspose-words==25.10`. Each verdict includes the SHA-256 of Aspose's emitted
-`word/document.xml`, binding the projection to an actual oracle output.
+`aspose-words==25.10`. Each verdict includes the SHA-256 recorded for the
+locally emitted `word/document.xml`; this detects drift across licensed local
+refreshes, but CI cannot independently prove which proprietary runtime emitted it.
 `word-aspose-ilpa-measurements.v1.json` is a separately dated manual measurement record;
 the minimal-pair refresh does not silently restamp it. Aspose and its license are never installed in CI.
 Microsoft Word remains the primary behavioral oracle.

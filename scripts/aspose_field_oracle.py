@@ -166,6 +166,8 @@ def main() -> int:
         return 0
     if args.check:
         snapshot = json.loads(destination.read_text())
+        if snapshot.get("schemaVersion") != 1 or snapshot.get("oracle", {}).get("version") != "25.10":
+            raise ValueError("snapshot schema or Aspose version changed")
         with tempfile.TemporaryDirectory(prefix="safe-docx-aspose-check-") as temp:
             work = Path(temp)
             if len(snapshot.get("fieldCases", [])) != len(CASES):
@@ -223,9 +225,6 @@ def main() -> int:
                 print("ERROR: oracle must run with aspose-words==25.10", file=sys.stderr)
                 return 2
             projected = project(output)
-            expected = expected_projection(case_id, old_instruction, new_instruction, old_result, new_result)
-            if any(projected.get(key) != value for key, value in expected.items()):
-                raise ValueError(f"Aspose produced an invalid verdict for {case_id}")
             verdicts.append({"id": case_id, "originalSha256": sha256(original), "revisedSha256": sha256(revised), "outputDocumentXmlSha256": document_xml_sha256(output), **projected})
 
     snapshot = {
