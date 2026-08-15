@@ -37,3 +37,8 @@ and structural verdicts. The repository SHALL document one command for refreshin
 - **WHEN** a developer invokes the oracle refresh command
 - **THEN** absent configuration produces a clear non-mutating skip, while invalid attempted configuration fails with sanitized diagnostics and leaves the checked-in snapshot unchanged
 
+#### Scenario: [ASPOSE-FIELD-05] The ILPA trust boundary records agreement and divergence
+
+- **GIVEN** the pinned ILPA original/revised pair and the measured Microsoft Word 16.112 and Aspose.Words 25.10 outputs
+- **WHEN** the checked-in trust-boundary snapshot is validated
+- **THEN** it records agreement on whole-field deletion, the §14.7.1 parenthetical-enumerator boundary, and the §15.5.5 bold-to-not-bold `rPrChange`; records the document-wide `rPrChange` counts as ours 17, Word 34, and Aspose 31; and records that Aspose is more surgical than Word at `Giveback),` while Word remains authoritative

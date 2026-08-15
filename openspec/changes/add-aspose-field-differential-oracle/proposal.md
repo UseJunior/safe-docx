@@ -17,7 +17,8 @@ runtime or license into CI.
 - Check in the version-stamped verdict snapshot and make CI validate its schema and pinned expectations without
   executing Aspose.
 - Add a trust-boundary test recording the measured Word/Aspose agreements for instruction changes and cached
-  result changes, plus any characterized divergence discovered during implementation.
+  result changes; the ILPA whole-field deletion, §14.7.1 enumerator, and §15.5.5 formatting agreements; and the
+  characterized `Giveback),` boundary divergence.
 - Document the refresh command and the oracle version (`Aspose.Words 25.10`).
 
 ## Impact
@@ -26,4 +27,3 @@ runtime or license into CI.
 - Affected code: developer scripts, comparison integration tests, and one checked-in JSON snapshot.
 - No production runtime behavior or dependency changes.
 - Aspose execution remains local-only; CI consumes only the deterministic snapshot.
-

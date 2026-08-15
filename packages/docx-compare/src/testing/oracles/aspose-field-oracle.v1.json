@@ -1,0 +1,88 @@
+{
+  "fieldCases": [
+    {
+      "classification": "whole-field-replacement",
+      "deletedFldChars": 3,
+      "deletedInstruction": " FORMCHECKBOX ",
+      "id": "formcheckbox-to-formtext",
+      "insertedFldChars": 3,
+      "insertedInstruction": " FORMTEXT ",
+      "originalSha256": "1d0b4bbf3cd1f8c1e9e0a98ce2f1d0baa74a231d4a90844ce9a26e8402d2d8eb",
+      "outsideRevisionFldChars": 0,
+      "revisedSha256": "89d8bbc261bc590b12902b56fb3bd09846b79842ebfe00a9d6b7e854f65cf11b"
+    },
+    {
+      "classification": "whole-field-replacement",
+      "deletedFldChars": 3,
+      "deletedInstruction": " HYPERLINK \\\"https://old.example\\\" ",
+      "id": "hyperlink-retarget",
+      "insertedFldChars": 3,
+      "insertedInstruction": " HYPERLINK \\\"https://new.example\\\" ",
+      "originalSha256": "9f92e75d5d92133304f0f1446427ed600ea5a4e4157fb52573d00857313cb5b4",
+      "outsideRevisionFldChars": 0,
+      "revisedSha256": "08859dd97e68fe6ecf75beff3e33620c7946d232304b739eb117acb44c9d060d"
+    },
+    {
+      "classification": "whole-field-replacement",
+      "deletedFldChars": 3,
+      "deletedInstruction": " PAGEREF Old \\h ",
+      "id": "pageref-retarget",
+      "insertedFldChars": 3,
+      "insertedInstruction": " PAGEREF New \\h ",
+      "originalSha256": "8d20162b9431d947de7c8a1e697ce9722bee1adbef453f3012968d3a280b5a1b",
+      "outsideRevisionFldChars": 0,
+      "revisedSha256": "804f7706df2536d8b90365e5c2aa2558400691cf982d509c4360a78aff533f79"
+    },
+    {
+      "classification": "cached-result-only",
+      "deletedFldChars": 0,
+      "deletedInstruction": "",
+      "id": "numpages-result-only",
+      "insertedFldChars": 0,
+      "insertedInstruction": "",
+      "originalSha256": "22afe6bb3a896969079474f7bdff84dfb5eedfe837953f0a127460b72cf5798c",
+      "outsideRevisionFldChars": 3,
+      "revisedSha256": "cf479fb6d37d03791f746cdca5489beb88ea91dacc58c6202e8c93d1dc231467"
+    }
+  ],
+  "generatedOn": "2026-08-14",
+  "ilpa": {
+    "measured": {
+      "asposeVersion": "25.10",
+      "boldToNotBold1555": {
+        "agreement": true,
+        "documentCounts": {
+          "aspose": 31,
+          "safeDocx": 17,
+          "word": 34
+        },
+        "shape": "rPrChange"
+      },
+      "givebackBoundary": {
+        "agreement": false,
+        "aspose": "preserve-closing-punctuation-and-insert-middle",
+        "authority": "word",
+        "wordAndSafeDocx": "delete-and-reinsert-closing-punctuation"
+      },
+      "parentheticalEnumerator1471": {
+        "agreement": true,
+        "aspose": "delete-old-whole-enumerator-and-insert-(i",
+        "word": "delete-old-whole-enumerator-and-insert-(i"
+      },
+      "wholeFieldDeletion": {
+        "agreement": true,
+        "asposeFldCharsInsideDeletion": 45,
+        "wordFldCharsInsideDeletion": 174
+      },
+      "wordVersion": "16.112"
+    },
+    "originalSha256": "7880ad250513d23be064a5c71ef79aecb2bf3d870c45fa070256d5388ac74455",
+    "revisedSha256": "46be28b42853da50eba3e24df944d04dd34893f56539258d53bd69b4b33547d7"
+  },
+  "oracle": {
+    "name": "Aspose.Words for Python via .NET",
+    "package": "aspose-words",
+    "version": "25.10"
+  },
+  "schemaVersion": 1
+}
