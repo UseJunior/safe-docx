@@ -199,4 +199,28 @@ describe('parenthetical enumerator revision boundaries', () => {
       expect(revisions.every((text) => text !== '(i)')).toBe(true);
     });
   });
+
+  test('keeps short Roman list and prose parentheticals out of unchanged-marker revisions', async ({ given, when, then }: AllureBddContext) => {
+    const outputs: string[] = [];
+    await given('a one-word list item and a prose Exhibit reference whose following word changes', async () => {
+      for (const [before, after] of [
+        ['(i) June, (ii) July', '(i) May, (ii) July'],
+        ['see Exhibit (v) June', 'see Exhibit (v) May'],
+      ]) {
+        const original = await buildDocxFromBodyXml(paragraph(before));
+        const revised = await buildDocxFromBodyXml(paragraph(after));
+        const compared = await compareDocuments(original, revised, { engine: 'atomizer', reconstructionMode: 'inplace' });
+        outputs.push(await (await DocxArchive.load(compared.document)).getDocumentXml());
+      }
+    });
+
+    await when('the short edits are compared', async () => {});
+
+    await then('only the changed month is revised', () => {
+      for (const xml of outputs) {
+        expect(directRevisionText(xml, 'w:del')).toEqual(['June']);
+        expect(directRevisionText(xml, 'w:ins')).toEqual(['May']);
+      }
+    });
+  });
 });

@@ -202,10 +202,20 @@ export function computeAtomLcs(
     const ordinal = originalOrdinal.get(numeral) ?? 0;
     originalOrdinal.set(numeral, ordinal + 1);
     const counterpart = revisedByNumeral.get(numeral)?.[ordinal];
-    if (counterpart && similarity(
-      itemTokens(original, triple, originalTriples),
-      itemTokens(revised, counterpart, revisedTriples),
-    ) < 0.25) {
+    const originalContext = itemTokens(original, triple, originalTriples);
+    const revisedContext = counterpart
+      ? itemTokens(revised, counterpart, revisedTriples)
+      : new Set<string>();
+    // Word 16.112 treats a parenthetical Roman marker as part of a wholesale
+    // rewritten legal-list item, preventing LCS from keeping only `(i` while
+    // orphaning `)`. Require at least three distinct lexical tokens on both
+    // sides before applying that contextual rule: short list items and prose
+    // references such as "Exhibit (v) June" must retain ordinary minimal
+    // word-level alignment. Alphabetic and numeric markers remain outside this
+    // deliberately measured Roman-only scope.
+    // @see https://github.com/UseJunior/safe-docx/issues/851
+    if (counterpart && originalContext.size >= 3 && revisedContext.size >= 3 &&
+      similarity(originalContext, revisedContext) < 0.25) {
       triple.forEach((index) => blockedOriginal.add(original[index]!));
       counterpart.forEach((index) => blockedRevised.add(revised[index]!));
     }
