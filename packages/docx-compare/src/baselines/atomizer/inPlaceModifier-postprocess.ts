@@ -123,6 +123,37 @@ function fieldResultBounds(atom: ComparisonUnitAtom): { start: number; end: numb
   return null;
 }
 
+function sourceRun(part: ComparisonUnitAtom): Element | null {
+  return part.sourceRunElement ?? [...part.ancestorElements]
+    .reverse()
+    .find((ancestor) => ancestor.tagName === 'w:r') ?? null;
+}
+
+function attributesEqual(left: Element, right: Element): boolean {
+  if (left.attributes.length !== right.attributes.length) return false;
+  for (let index = 0; index < left.attributes.length; index++) {
+    const attribute = left.attributes.item(index)!;
+    if (right.getAttribute(attribute.name) !== attribute.value) return false;
+  }
+  return true;
+}
+
+function scaffoldPartsEqual(left: ComparisonUnitAtom, right: ComparisonUnitAtom): boolean {
+  const leftElement = left.contentElement;
+  const rightElement = right.contentElement;
+  if (
+    leftElement.tagName !== rightElement.tagName ||
+    leftElement.textContent !== rightElement.textContent ||
+    !attributesEqual(leftElement, rightElement)
+  ) return false;
+  const leftRun = sourceRun(left);
+  const rightRun = sourceRun(right);
+  return areRunPropertiesEqual(
+    leftRun ? findChildByTagName(leftRun, 'w:rPr') : null,
+    rightRun ? findChildByTagName(rightRun, 'w:rPr') : null,
+  );
+}
+
 /**
  * Reduce an unchanged-instruction complex-field replacement to its cached-result
  * atoms. Word 16.112 and Aspose.Words 25.10 both preserve the field state
@@ -159,7 +190,13 @@ export function narrowResultOnlyFieldReplacements(
         oldParts &&
         newParts &&
         oldBounds.start === newBounds.start &&
-        oldParts.length - oldBounds.end === newParts.length - newBounds.end
+        oldParts.length - oldBounds.end === newParts.length - newBounds.end &&
+        oldResult.length === oldBounds.end - oldBounds.start &&
+        newResult.length === newBounds.end - newBounds.start &&
+        oldParts.slice(0, oldBounds.start).every((part, index) =>
+          scaffoldPartsEqual(part, newParts[index]!)) &&
+        oldParts.slice(oldBounds.end).every((part, index) =>
+          scaffoldPartsEqual(part, newParts[newBounds.end + index]!))
       ) {
         for (let partIndex = 0; partIndex < newBounds.start; partIndex++) {
           const oldPart = oldParts[partIndex]!;

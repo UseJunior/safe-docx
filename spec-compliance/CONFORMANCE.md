@@ -231,9 +231,8 @@ Part 1 §17.16.13 requires every `w:delInstrText` run to sit inside `<w:del>`
 and describes it as deleted field code within a complex field. The runtime
 enforcement lives in
 `packages/docx-compare/src/baselines/atomizer/pipeline.ts` (the
-`validateFieldStructure` function). The related `w:fldChar` placement rule is
-tracked separately under `ECMA-PART1-17-16-18`; Part 4 supplies the
-Transitional XSD declaration but is not the prose authority for this claim.
+`validateFieldStructure` function). This requirement does not constrain the
+placement of sibling `w:fldChar` runs relative to the enclosing deletion.
 
 ### ECMA-PART1-17-13-5 — Paragraph-level OOXML markers
 
@@ -333,7 +332,11 @@ numeric identifiers. Arbitrary packages that use `0` or `1` for user notes,
 full `w:type` interpretation, and complete `w:customMarkFollows` display-mark
 semantics are outside the present numbering claim.
 
-This claim is bounded to the runtime and test evidence listed above.
+This claim is bounded to the runtime and test evidence listed above. In
+particular, §17.16.18 does not prohibit `w:fldChar` below `<w:del>`: the
+Transitional schema permits that ancestry, and Word 16.112 and Aspose.Words
+25.10 were measured on 2026-08-14 emitting deleted complex fields that way.
+The former issue-#217 placement rule was therefore retracted.
 
 ### ECMA-PART1-17-16-22 — w:hyperlink container preservation under tracked changes
 

@@ -361,6 +361,58 @@ describe('Field fragmentation — modification scenarios', () => {
       });
     },
   );
+
+  test(
+    'result-only narrowing skips an outer field whose result contains a nested field',
+    async ({ given, when, then }: AllureBddContext) => {
+      let combined: string;
+
+      await given('the same outer IF instruction with a nested PAGE field in its changing result', async () => {
+        const nestedResult = (value: string) =>
+          fldChar('begin') + instrText(' IF ', { preserve: true }) + fldChar('separate') +
+          makeField(' PAGE ', '7') + resultText(value) + fldChar('end');
+        const original = await buildDocxFromBodyXml(`<w:p>${nestedResult('3')}</w:p>`);
+        const revised = await buildDocxFromBodyXml(`<w:p>${nestedResult('4')}</w:p>`);
+        combined = await compareInplace(original, revised);
+      });
+
+      await when('the inplace combined output is produced', async () => {});
+
+      await then('the optimization falls back to whole-field replacement without dropping nested markers', () => {
+        assertEmitsTrackedChanges(combined);
+        expect(countTag(combined, 'w:fldChar')).toBe(12);
+        expect(rejectAllChanges(combined)).toContain('3');
+        expect(acceptAllChanges(combined)).toContain('4');
+        assertFieldStructureSurvives(combined);
+      });
+    },
+  );
+
+  test(
+    'result-only narrowing skips fields whose marker attributes differ',
+    async ({ given, when, then }: AllureBddContext) => {
+      let combined: string;
+
+      await given('matching NUMPAGES instructions with original-only lock and dirty marker state', async () => {
+        const originalField =
+          '<w:r><w:fldChar w:fldCharType="begin" w:fldLock="true" w:dirty="true"/></w:r>' +
+          instrText(' NUMPAGES ', { preserve: true }) + fldChar('separate') + resultText('3') + fldChar('end');
+        const revisedField = makeField(' NUMPAGES ', '4');
+        const original = await buildDocxFromBodyXml(`<w:p>${originalField}</w:p>`);
+        const revised = await buildDocxFromBodyXml(`<w:p>${revisedField}</w:p>`);
+        combined = await compareInplace(original, revised);
+      });
+
+      await when('the inplace combined output is produced', async () => {});
+
+      await then('reject restores the original marker state instead of borrowing revised scaffolding', () => {
+        assertEmitsTrackedChanges(combined);
+        const rejected = rejectAllChanges(combined);
+        expect(rejected).toMatch(/w:fldChar[^>]*w:fldCharType="begin"[^>]*w:fldLock="true"[^>]*w:dirty="true"/);
+        assertFieldStructureSurvives(combined);
+      });
+    },
+  );
 });
 
 // =============================================================================
