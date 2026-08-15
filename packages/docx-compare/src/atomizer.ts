@@ -1291,6 +1291,51 @@ function splitAtomIntoWords(atom: ComparisonUnitAtom): ComparisonUnitAtom[] {
 }
 
 /**
+ * Bind a parenthetical Roman enumerator to the first two lexical tokens in its item.
+ *
+ * Without this context, the LCS can match only the opening `(` and numeral from
+ * two semantically different list items, leaving the old closing `)` at the
+ * head of a deletion. Context salting makes `(i)` compare equal only when its
+ * item still begins with the same word, so rewritten items delete/insert the
+ * complete enumerator instead of splitting inside it.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/851
+ */
+function saltParentheticalRomanEnumerators(atoms: ComparisonUnitAtom[]): void {
+  for (let i = 0; i + 3 < atoms.length; i++) {
+    const open = atoms[i]!;
+    const numeral = atoms[i + 1]!;
+    const close = atoms[i + 2]!;
+    if (
+      open.contentElement.tagName !== 'w:t' ||
+      numeral.contentElement.tagName !== 'w:t' ||
+      close.contentElement.tagName !== 'w:t' ||
+      open.contentElement.textContent !== '(' ||
+      !/^[ivxlcdm]+$/i.test(numeral.contentElement.textContent ?? '') ||
+      close.contentElement.textContent !== ')'
+    ) {
+      continue;
+    }
+
+    const contextTokens: string[] = [];
+    for (let nextIndex = i + 3; nextIndex < atoms.length && contextTokens.length < 2; nextIndex++) {
+      const next = atoms[nextIndex]!;
+      const nextText = next.contentElement.textContent ?? '';
+      if (next.contentElement.tagName === 'w:t' && !/^\s+$/.test(nextText)) {
+        contextTokens.push(nextText.toLocaleLowerCase());
+      }
+    }
+    if (contextTokens.length < 2) continue;
+    const ordinal = (numeral.contentElement.textContent ?? '').toLocaleLowerCase();
+    const contextSalt = `:paren-enumerator=${ordinal}:${encodeURIComponent(contextTokens.join(' '))}`;
+    appendIdentitySalt(open, contextSalt);
+    appendIdentitySalt(numeral, contextSalt);
+    appendIdentitySalt(close, contextSalt);
+    i += 2;
+  }
+}
+
+/**
  * Split all w:t atoms into word-level atoms.
  *
  * @param atoms - Array of atoms
@@ -1304,6 +1349,8 @@ export function splitAtomsIntoWords(
   for (const atom of atoms) {
     result.push(...splitAtomIntoWords(atom));
   }
+
+  saltParentheticalRomanEnumerators(result);
 
   return result;
 }
