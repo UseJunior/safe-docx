@@ -37,6 +37,7 @@ def expected_projection(case_id: str, old_instruction: str, new_instruction: str
             "deletedInstruction": "", "insertedInstruction": "",
             "outsideRevisionInstruction": old_instruction,
             "deletedText": old_result, "insertedText": new_result,
+            "overlappingRevisions": False,
         }
     return {
         "classification": "whole-field-replacement", "deletedFldChars": 3,
@@ -44,6 +45,7 @@ def expected_projection(case_id: str, old_instruction: str, new_instruction: str
         "deletedInstruction": old_instruction, "insertedInstruction": new_instruction,
         "outsideRevisionInstruction": "",
         "deletedText": old_result, "insertedText": new_result,
+        "overlappingRevisions": False,
     }
 
 

@@ -20,13 +20,13 @@ cannot silently restamp evidence that was not rerun.
 
 - **GIVEN** pinned FORMCHECKBOX-to-FORMTEXT, HYPERLINK-retarget, and PAGEREF-retarget fixture pairs
 - **WHEN** the local oracle snapshot is refreshed with Aspose.Words 25.10
-- **THEN** each verdict records whole-field replacement, including deleted and inserted field-character scaffolding, matching the measured Microsoft Word behavior
+- **THEN** each verdict records whole-field replacement, including deleted and inserted field-character scaffolding
 
 #### Scenario: [ASPOSE-FIELD-02] A cached-result-only change preserves field scaffolding
 
 - **GIVEN** a pinned NUMPAGES fixture whose instruction is unchanged and whose cached result changes from `3` to `4`
 - **WHEN** the local oracle snapshot is refreshed with Aspose.Words 25.10
-- **THEN** the verdict records preserved field characters and instruction text with only the cached result redlined, matching the measured Microsoft Word behavior
+- **THEN** the verdict records preserved field characters and instruction text with only the cached result redlined
 
 #### Scenario: [ASPOSE-FIELD-03] CI validates evidence without Aspose or its license
 

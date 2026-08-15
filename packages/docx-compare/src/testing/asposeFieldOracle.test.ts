@@ -9,7 +9,7 @@ import { testAllure } from './allure-test.js';
 interface Snapshot {
   schemaVersion: number;
   oracle: { name: string; package: string; version: string };
-  fieldCases: Array<{ id: string; originalSha256: string; revisedSha256: string; outputDocumentXmlSha256: string; classification: string; deletedFldChars: number; insertedFldChars: number; outsideRevisionFldChars: number; deletedInstruction: string; insertedInstruction: string; outsideRevisionInstruction: string; deletedText: string; insertedText: string }>;
+  fieldCases: Array<{ id: string; originalSha256: string; revisedSha256: string; outputDocumentXmlSha256: string; classification: string; overlappingRevisions: boolean; deletedFldChars: number; insertedFldChars: number; outsideRevisionFldChars: number; deletedInstruction: string; insertedInstruction: string; outsideRevisionInstruction: string; deletedText: string; insertedText: string }>;
 }
 
 interface IlpaMeasurements {
@@ -36,7 +36,7 @@ describe('Aspose field differential oracle trust boundary', () => {
     for (const id of Object.keys(expected) as Array<keyof typeof expected>) {
       const verdict = snapshot.fieldCases.find((entry) => entry.id === id);
       expect(verdict).toMatchObject({
-        classification: 'whole-field-replacement', deletedFldChars: 3,
+        classification: 'whole-field-replacement', overlappingRevisions: false, deletedFldChars: 3,
         insertedFldChars: 3, outsideRevisionFldChars: 0,
         deletedInstruction: expected[id][0], insertedInstruction: expected[id][1],
         outsideRevisionInstruction: '',
@@ -48,7 +48,7 @@ describe('Aspose field differential oracle trust boundary', () => {
 
   test.openspec('[ASPOSE-FIELD-02] A cached-result-only change preserves field scaffolding')('classifies the NUMPAGES cache update as result-only', () => {
     const verdict = snapshot.fieldCases.find((entry) => entry.id === 'numpages-result-only');
-    expect(verdict).toMatchObject({ classification: 'cached-result-only', deletedFldChars: 0, insertedFldChars: 0, outsideRevisionFldChars: 3, outsideRevisionInstruction: ' NUMPAGES ', deletedText: '3', insertedText: '4' });
+    expect(verdict).toMatchObject({ classification: 'cached-result-only', overlappingRevisions: false, deletedFldChars: 0, insertedFldChars: 0, outsideRevisionFldChars: 3, outsideRevisionInstruction: ' NUMPAGES ', deletedText: '3', insertedText: '4' });
   });
 
   test.openspec('[ASPOSE-FIELD-03] CI validates evidence without Aspose or its license')('validates fixture inputs, verdict expectations, and provenance format without claiming runtime attestation', () => {
