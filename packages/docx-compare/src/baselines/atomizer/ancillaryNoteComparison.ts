@@ -15,12 +15,14 @@ import {
 } from '../../atomizer.js';
 import { detectFormatChangesInAtomList } from '../../format-detection.js';
 import { detectParagraphStyleChanges } from '../../paragraph-style-detection.js';
+import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.js';
 import { assignUnifiedParagraphIndices, createMergedAtomList } from './atomLcs.js';
 import {
   hierarchicalCompare,
   markHierarchicalCorrelationStatus,
 } from './hierarchicalLcs.js';
 import { modifyRevisedDocument } from './inPlaceModifier.js';
+import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { premergeAdjacentRuns } from './premergeRuns.js';
 import { refineFuzzyRunsWithinAlignedParagraphs } from './selectiveWordRefinement.js';
 import {
@@ -99,8 +101,14 @@ export function compareFootnoteDefinitions(
     premergeAdjacentRuns(revisedBody);
   }
 
-  let { atoms: originalAtoms } = atomizeTree(originalBody, [], STORY_PART);
-  let { atoms: revisedAtoms } = atomizeTree(revisedBody, [], STORY_PART);
+  const atomizeOptions = {
+    cloneLeafNodes: true,
+    mergeAcrossRuns: false,
+    mergePunctuationAcrossRuns: false,
+    splitTextIntoWords: true,
+  } as const;
+  let { atoms: originalAtoms } = atomizeTree(originalBody, [], STORY_PART, atomizeOptions);
+  let { atoms: revisedAtoms } = atomizeTree(revisedBody, [], STORY_PART, atomizeOptions);
   assignParagraphIndices(originalAtoms);
   assignParagraphIndices(revisedAtoms);
 
@@ -138,6 +146,17 @@ export function compareFootnoteDefinitions(
       preservedRoots: [originalTree, ...(options.preservedRoots ?? [])],
     },
   );
+  const expectedAccepted = extractRoundTripComparisonText(
+    acceptAllChanges(wrapDefinition(revisedEntry)),
+  );
+  const expectedRejected = extractRoundTripComparisonText(
+    rejectAllChanges(wrapDefinition(originalEntry)),
+  );
+  const actualAccepted = extractRoundTripComparisonText(acceptAllChanges(comparedXml));
+  const actualRejected = extractRoundTripComparisonText(rejectAllChanges(comparedXml));
+  if (actualAccepted !== expectedAccepted || actualRejected !== expectedRejected) {
+    throw new Error('Footnote definition comparison failed accept/reject projection safety');
+  }
   const comparedBody = findBody(parseDocumentXml(comparedXml));
   if (!comparedBody) throw new Error('Footnote comparison emitted no story body');
   return Array.from(comparedBody.childNodes)

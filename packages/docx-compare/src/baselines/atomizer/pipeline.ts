@@ -1453,14 +1453,22 @@ async function reconcileCorrespondingFootnoteDefinitions(
       footnoteDefinitionRequiresCollisionSafeFallback(revisedEntry)
     ) continue;
 
-    const comparedChildren = compareFootnoteDefinitions(originalEntry, revisedEntry, {
-      author: options.author,
-      date: options.date,
-      formatDetection: options.formatDetection,
-      premergeRuns: options.premergeRuns,
-      maxWordRefinementChangeRanges: options.maxWordRefinementChangeRanges,
-      preservedRoots: [documentDoc.documentElement, resultParsed.doc.documentElement],
-    });
+    let comparedChildren: Element[];
+    try {
+      comparedChildren = compareFootnoteDefinitions(originalEntry, revisedEntry, {
+        author: options.author,
+        date: options.date,
+        formatDetection: options.formatDetection,
+        premergeRuns: options.premergeRuns,
+        maxWordRefinementChangeRanges: options.maxWordRefinementChangeRanges,
+        preservedRoots: [documentDoc.documentElement, resultParsed.doc.documentElement],
+      });
+    } catch {
+      // A note definition is an independent optional comparison story. If its
+      // topology cannot be represented safely, retain both collision-renumbered
+      // definitions rather than failing or weakening the whole document result.
+      continue;
+    }
     while (targetEntry.firstChild) targetEntry.removeChild(targetEntry.firstChild);
     for (const child of comparedChildren) {
       targetEntry.appendChild(resultParsed.doc.importNode(child, true));

@@ -22,6 +22,20 @@ async function resultParts(docx: Buffer) {
   };
 }
 
+async function replaceUserFootnoteContent(docx: Buffer, content: string): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(docx);
+  const path = 'word/footnotes.xml';
+  const xml = await zip.file(path)!.async('string');
+  zip.file(
+    path,
+    xml.replace(
+      /(<w:footnote w:id="1">)[\s\S]*?(<\/w:footnote>)/,
+      `$1${content}$2`,
+    ),
+  );
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
 describe('pipeline auxiliary note publication', () => {
   test('rebuild creates referenced footnote and endnote parts with package metadata', async ({
     given,
@@ -223,5 +237,101 @@ describe('pipeline auxiliary note publication', () => {
     expect(footnoteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:hyperlink r:id="rId7"><w:r><w:t>source</w:t></w:r></w:hyperlink></w:p>'))).toBe(true);
     expect(footnoteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:drawing r:embed="rId8"/></w:p>'))).toBe(true);
     expect(footnoteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:r><w:t>plain</w:t></w:r></w:p>'))).toBe(false);
+  });
+
+  test('rsid-split two-run definitions do not duplicate retained text', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let original: Buffer;
+    let revised: Buffer;
+    let result: Awaited<ReturnType<typeof compareDocumentsAtomizer>>;
+
+    await given('aligned footnotes split unchanged and changed text across separate rsid runs', async () => {
+      original = await buildSyntheticDocx({
+        paragraphs: ['Aligned body'],
+        footnoteOnParagraph: 0,
+        footnoteText: 'placeholder',
+      });
+      revised = await buildSyntheticDocx({
+        paragraphs: ['Aligned body'],
+        footnoteOnParagraph: 0,
+        footnoteText: 'placeholder',
+      });
+      original = await replaceUserFootnoteContent(
+        original,
+        '<w:p><w:r w:rsidR="00000001"><w:t>Shared </w:t></w:r>' +
+          '<w:r w:rsidR="00000002"><w:t>before</w:t></w:r></w:p>',
+      );
+      revised = await replaceUserFootnoteContent(
+        revised,
+        '<w:p><w:r w:rsidR="00000003"><w:t>Shared </w:t></w:r>' +
+          '<w:r w:rsidR="00000004"><w:t>after</w:t></w:r></w:p>',
+      );
+    });
+
+    await when('the pair is compared in place', async () => {
+      result = await compareDocumentsAtomizer(original, revised, {
+        reconstructionMode: 'inplace',
+        moveDetection: { detectMoves: false },
+      });
+    });
+
+    await then('one definition retains one shared prefix and tracks only the changed suffix', async () => {
+      const parts = await resultParts(result.document);
+      expect(parts.footnotesXml?.match(/Shared /g)).toHaveLength(1);
+      expect(parts.footnotesXml).toContain('<w:delText>before</w:delText>');
+      expect(parts.footnotesXml).toContain('<w:t>after</w:t>');
+      expect(parts.footnotesXml?.match(/<w:footnote\b/g)).toHaveLength(3);
+    });
+  });
+
+  test('unrepresentable table-to-paragraph definitions retain collision-safe definitions', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let original: Buffer;
+    let revised: Buffer;
+    let result: Awaited<ReturnType<typeof compareDocumentsAtomizer>>;
+
+    await given('an aligned footnote changes from table content to a paragraph', async () => {
+      original = await buildSyntheticDocx({
+        paragraphs: ['Aligned body'],
+        footnoteOnParagraph: 0,
+        footnoteText: 'placeholder',
+      });
+      revised = await buildSyntheticDocx({
+        paragraphs: ['Aligned body'],
+        footnoteOnParagraph: 0,
+        footnoteText: 'placeholder',
+      });
+      original = await replaceUserFootnoteContent(
+        original,
+        '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Original table note</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
+      );
+      revised = await replaceUserFootnoteContent(
+        revised,
+        '<w:p><w:r><w:t>Revised paragraph note</w:t></w:r></w:p>',
+      );
+    });
+
+    await when('the document is compared', async () => {
+      result = await compareDocumentsAtomizer(original, revised, {
+        reconstructionMode: 'rebuild',
+        moveDetection: { detectMoves: false },
+      });
+    });
+
+    await then('comparison succeeds with both definitions and resolvable distinct references', async () => {
+      const parts = await resultParts(result.document);
+      expect(parts.footnotesXml).toContain('Original table note');
+      expect(parts.footnotesXml).toContain('Revised paragraph note');
+      expect(parts.footnotesXml).toMatch(/<w:footnote w:id="1"/);
+      expect(parts.footnotesXml).toMatch(/<w:footnote w:id="2"/);
+      expect(parts.documentXml).toMatch(/<w:footnoteReference w:id="1"/);
+      expect(parts.documentXml).toMatch(/<w:footnoteReference w:id="2"/);
+    });
   });
 });
