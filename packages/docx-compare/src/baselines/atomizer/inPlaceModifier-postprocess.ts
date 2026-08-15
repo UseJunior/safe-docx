@@ -176,6 +176,10 @@ export function narrowResultOnlyFieldReplacements(
         const candidate = atoms[candidateIndex]!;
         if (candidate.paragraphIndex !== deleted.paragraphIndex) break;
         if (
+          candidate.correlationStatus !== CorrelationStatus.Deleted &&
+          candidate.correlationStatus !== CorrelationStatus.Inserted
+        ) break;
+        if (
           candidate.correlationStatus === CorrelationStatus.Inserted &&
           fieldInstructionSignature(candidate) === signature
         ) matchingInsertionIndices.push(candidateIndex);
