@@ -1425,10 +1425,12 @@ async function reconcileCorrespondingFootnoteDefinitions(
   );
   if (pairs.length === 0) return options.documentXml;
 
-  const [originalXml, revisedXml, resultXml] = await Promise.all([
+  const [originalXml, revisedXml, resultXml, originalDocumentXml, revisedDocumentXml] = await Promise.all([
     options.originalArchive.getFile('word/footnotes.xml'),
     options.revisedArchive.getFile('word/footnotes.xml'),
     options.resultArchive.getFile('word/footnotes.xml'),
+    options.originalArchive.getDocumentXml(),
+    options.revisedArchive.getDocumentXml(),
   ]);
   if (!originalXml || !revisedXml || !resultXml) return options.documentXml;
 
@@ -1436,6 +1438,8 @@ async function reconcileCorrespondingFootnoteDefinitions(
   const revisedParsed = parseEntries(revisedXml, 'w:footnote');
   const resultParsed = parseEntries(resultXml, 'w:footnote');
   const documentDoc = parseXml(options.documentXml);
+  const originalDocumentDoc = parseXml(originalDocumentXml);
+  const revisedDocumentDoc = parseXml(revisedDocumentXml);
 
   for (const pair of pairs) {
     const originalEntry = originalParsed.entries.get(pair.originalId);
@@ -1444,6 +1448,13 @@ async function reconcileCorrespondingFootnoteDefinitions(
     const discardedId = options.outputMode === 'inplace' ? pair.originalId : pair.revisedId;
     const targetEntry = resultParsed.entries.get(targetId);
     if (!originalEntry || !revisedEntry || !targetEntry) continue;
+    if (!isOnlyFootnoteAnchorInSourceParagraph(originalDocumentDoc, pair.originalId) ||
+        !isOnlyFootnoteAnchorInSourceParagraph(revisedDocumentDoc, pair.revisedId)) continue;
+    if (!hasSafeEmittedFootnoteReferenceShape(
+      documentDoc,
+      pair.originalId,
+      pair.revisedId,
+    )) continue;
     // Field ranges have a separate exact-preservation gate, and nested
     // auxiliary anchors need their own relationship-aware story comparison.
     // Keep the collision-safe two-definition representation for those shapes
@@ -1483,6 +1494,96 @@ async function reconcileCorrespondingFootnoteDefinitions(
 
   options.resultArchive.setFile('word/footnotes.xml', serializer.serializeToString(resultParsed.doc));
   return serializer.serializeToString(documentDoc);
+}
+
+function isOnlyFootnoteAnchorInSourceParagraph(documentDoc: Document, id: string): boolean {
+  const matches: Element[] = [];
+  const references = documentDoc.getElementsByTagName('w:footnoteReference');
+  for (let i = 0; i < references.length; i++) {
+    const reference = references[i] as Element;
+    if (reference.getAttribute('w:id') === id) matches.push(reference);
+  }
+  if (matches.length !== 1) return false;
+  const paragraph = ancestorElement(matches[0]!, 'w:p');
+  return paragraph?.getElementsByTagName('w:footnoteReference').length === 1;
+}
+
+function hasAncestorTag(element: Element, tagName: string): boolean {
+  let current = element.parentNode;
+  while (current?.nodeType === 1) {
+    if ((current as Element).tagName === tagName) return true;
+    current = current.parentNode;
+  }
+  return false;
+}
+
+function ancestorElement(element: Element, tagName: string): Element | null {
+  let current = element.parentNode;
+  while (current?.nodeType === 1) {
+    if ((current as Element).tagName === tagName) return current as Element;
+    current = current.parentNode;
+  }
+  return null;
+}
+
+/**
+ * Require either Word's explicit deleted/inserted reference pair or a single
+ * unchanged live reference. Ambiguous multiplicity and mixed wrapper shapes
+ * retain collision-safe definitions rather than rewriting every matching ID.
+ *
+ * Endnote definition reconciliation is intentionally outside #763; endnotes
+ * continue to use collision-safe renumbering and merge behavior.
+ */
+function hasSafeEmittedFootnoteReferenceShape(
+  documentDoc: Document,
+  originalId: string,
+  revisedId: string,
+): boolean {
+  const original: Element[] = [];
+  const revised: Element[] = [];
+  const references = documentDoc.getElementsByTagName('w:footnoteReference');
+  for (let i = 0; i < references.length; i++) {
+    const reference = references[i] as Element;
+    const id = reference.getAttribute('w:id');
+    if (id === originalId) original.push(reference);
+    if (id === revisedId) revised.push(reference);
+  }
+  const originalParagraph = original[0] ? ancestorElement(original[0], 'w:p') : null;
+  const revisedParagraph = revised[0] ? ancestorElement(revised[0], 'w:p') : null;
+  const pairParagraphIsUnambiguous =
+    originalParagraph !== null &&
+    originalParagraph === revisedParagraph &&
+    originalParagraph.getElementsByTagName('w:footnoteReference').length === 2;
+  const explicitPair =
+    original.length === 1 &&
+    revised.length === 1 &&
+    pairParagraphIsUnambiguous &&
+    hasAncestorTag(original[0]!, 'w:del') &&
+    hasAncestorTag(revised[0]!, 'w:ins');
+  const stableReference =
+    original.length === 0 &&
+    revised.length === 1 &&
+    revisedParagraph?.getElementsByTagName('w:footnoteReference').length === 1 &&
+    !hasAncestorTag(revised[0]!, 'w:del') &&
+    !hasAncestorTag(revised[0]!, 'w:ins');
+  const projectionPair = (() => {
+    if (original.length !== 1 || revised.length !== 1 || !pairParagraphIsUnambiguous) return false;
+    const accepted = parseXml(acceptAllChanges(serializer.serializeToString(documentDoc)));
+    const rejected = parseXml(rejectAllChanges(serializer.serializeToString(documentDoc)));
+    const count = (doc: Document, id: string): number => {
+      let matches = 0;
+      const refs = doc.getElementsByTagName('w:footnoteReference');
+      for (let i = 0; i < refs.length; i++) {
+        if ((refs[i] as Element).getAttribute('w:id') === id) matches++;
+      }
+      return matches;
+    };
+    return count(accepted, originalId) === 0 &&
+      count(accepted, revisedId) === 1 &&
+      count(rejected, originalId) === 1 &&
+      count(rejected, revisedId) === 0;
+  })();
+  return explicitPair || stableReference || projectionPair;
 }
 
 export function footnoteDefinitionRequiresCollisionSafeFallback(entry: Element): boolean {

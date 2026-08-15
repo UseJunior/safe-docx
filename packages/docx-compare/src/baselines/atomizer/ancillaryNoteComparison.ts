@@ -183,7 +183,7 @@ export function findCorrespondingFootnotePairs(
   mergedAtoms: readonly ComparisonUnitAtom[],
   renumberings: readonly { label: string; fromId: string; toId: string }[],
 ): CorrespondingFootnotePair[] {
-  const pairs: CorrespondingFootnotePair[] = [];
+  const candidates: Array<CorrespondingFootnotePair & { paragraphIndex: number }> = [];
   for (const { label, fromId, toId } of renumberings) {
     if (label !== 'footnote') continue;
     const deleted = mergedAtoms.filter((atom) =>
@@ -192,7 +192,26 @@ export function findCorrespondingFootnotePairs(
       atom.correlationStatus === CorrelationStatus.Inserted && referenceId(atom) === toId);
     if (deleted.length !== 1 || inserted.length !== 1) continue;
     if (deleted[0]!.paragraphIndex !== inserted[0]!.paragraphIndex) continue;
-    pairs.push({ originalId: fromId, revisedId: toId });
+    if (deleted[0]!.paragraphIndex === undefined) continue;
+    candidates.push({
+      originalId: fromId,
+      revisedId: toId,
+      paragraphIndex: deleted[0]!.paragraphIndex,
+    });
   }
-  return pairs;
+  const countByParagraph = new Map<number, number>();
+  for (const candidate of candidates) {
+    countByParagraph.set(
+      candidate.paragraphIndex,
+      (countByParagraph.get(candidate.paragraphIndex) ?? 0) + 1,
+    );
+  }
+  return candidates
+    .filter((candidate) => {
+      if (countByParagraph.get(candidate.paragraphIndex) !== 1) return false;
+      const referencesInParagraph = mergedAtoms.filter((atom) =>
+        atom.paragraphIndex === candidate.paragraphIndex && referenceId(atom) !== null);
+      return referencesInParagraph.length === 2;
+    })
+    .map(({ originalId, revisedId }) => ({ originalId, revisedId }));
 }

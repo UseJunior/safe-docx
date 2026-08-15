@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import { DOMParser } from '@xmldom/xmldom';
 import { buildSyntheticDocx } from '@usejunior/docx-core';
 import { compareDocumentsAtomizer, footnoteDefinitionRequiresCollisionSafeFallback } from './pipeline.js';
+import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 
 const test = testAllure
@@ -31,6 +32,30 @@ async function replaceUserFootnoteContent(docx: Buffer, content: string): Promis
     xml.replace(
       /(<w:footnote w:id="1">)[\s\S]*?(<\/w:footnote>)/,
       `$1${content}$2`,
+    ),
+  );
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+async function addSecondFootnote(docx: Buffer, text: string): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(docx);
+  const documentPath = 'word/document.xml';
+  const documentXml = await zip.file(documentPath)!.async('string');
+  zip.file(
+    documentPath,
+    documentXml.replace(
+      '</w:p>',
+      '<w:r><w:footnoteReference w:id="2"/></w:r></w:p>',
+    ),
+  );
+  const footnotePath = 'word/footnotes.xml';
+  const footnotesXml = await zip.file(footnotePath)!.async('string');
+  zip.file(
+    footnotePath,
+    footnotesXml.replace(
+      '</w:footnotes>',
+      `<w:footnote w:id="2"><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:footnote>` +
+        '</w:footnotes>',
     ),
   );
   return zip.generateAsync({ type: 'nodebuffer' });
@@ -332,6 +357,64 @@ describe('pipeline auxiliary note publication', () => {
       expect(parts.footnotesXml).toMatch(/<w:footnote w:id="2"/);
       expect(parts.documentXml).toMatch(/<w:footnoteReference w:id="1"/);
       expect(parts.documentXml).toMatch(/<w:footnoteReference w:id="2"/);
+    });
+  });
+
+  test('two edited footnotes in one aligned paragraph skip ambiguous ID reconciliation', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let original: Buffer;
+    let revised: Buffer;
+    let result: Awaited<ReturnType<typeof compareDocumentsAtomizer>>;
+
+    await given('one aligned paragraph contains two independently edited footnote anchors', async () => {
+      original = await buildSyntheticDocx({
+        paragraphs: ['Stable body'],
+        footnoteOnParagraph: 0,
+        footnoteText: 'Original first note',
+      });
+      revised = await buildSyntheticDocx({
+        paragraphs: ['Stable body'],
+        footnoteOnParagraph: 0,
+        footnoteText: 'Revised first note',
+      });
+      original = await addSecondFootnote(original, 'Original second note');
+      revised = await addSecondFootnote(revised, 'Revised second note');
+    });
+
+    await when('the pair is compared in rebuild mode', async () => {
+      result = await compareDocumentsAtomizer(original, revised, {
+        reconstructionMode: 'rebuild',
+        moveDetection: { detectMoves: false },
+      });
+    });
+
+    await then('the ambiguous pairs are not rewritten and projections retain both anchors', async () => {
+      const parts = await resultParts(result.document);
+      expect(parts.footnotesXml).toContain('Original first note');
+      expect(parts.footnotesXml).toContain('Original second note');
+      expect(parts.footnotesXml).toContain('Revised first note');
+      expect(parts.footnotesXml).not.toContain('<w:ins');
+      expect(parts.footnotesXml).not.toContain('<w:del');
+
+      const accepted = acceptAllChanges(parts.documentXml!);
+      const rejected = rejectAllChanges(parts.documentXml!);
+      expect(accepted.match(/<w:footnoteReference\b/g)?.length ?? 0).toBeGreaterThan(0);
+      expect(rejected.match(/<w:footnoteReference\b/g)?.length ?? 0).toBeGreaterThan(0);
+      expect(accepted).not.toContain('<w:del');
+      expect(rejected).not.toContain('<w:ins');
+
+      const definitionIds = new Set(
+        [...parts.footnotesXml!.matchAll(/<w:footnote\b[^>]*w:id="([^\"]+)"/g)]
+          .map((match) => match[1]),
+      );
+      for (const projection of [accepted, rejected]) {
+        for (const match of projection.matchAll(/<w:footnoteReference\b[^>]*w:id="([^\"]+)"/g)) {
+          expect(definitionIds.has(match[1]!)).toBe(true);
+        }
+      }
     });
   });
 });
