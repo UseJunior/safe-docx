@@ -248,6 +248,7 @@ export async function addComment(
     initials: initials ?? author.charAt(0).toUpperCase(),
     text,
     paraId,
+    date: ctx?.date,
   });
   zip.writeText('word/comments.xml', serializeXml(commentsDoc));
 
@@ -276,15 +277,17 @@ export type AddCommentReplyResult = {
  *
  * Replies don't have range markers in the document body.
  * Thread linkage is stored in commentsExtended.xml via paraIdParent.
- * `ctx` is accepted for API consistency with other comment mutations, but this
- * primitive only updates comment side parts for replies, so no body revision
- * markup is emitted here.
+ * Replies emit no body revision markup (there is nothing to anchor), but the
+ * reply's comment definition still claims creation metadata — so a
+ * caller-supplied `ctx.date` stamps `w:date` exactly as it does for root
+ * comments, keeping reply timestamps deterministic alongside the rest of the
+ * operation. Author and initials intentionally stay sourced from `params`.
  */
 export async function addCommentReply(
   _documentXml: Document,
   zip: DocxZip,
   params: AddCommentReplyParams,
-  _ctx?: RevisionContext,
+  ctx?: RevisionContext,
 ): Promise<AddCommentReplyResult> {
   const { parentCommentId, author, text, initials } = params;
 
@@ -307,6 +310,7 @@ export async function addCommentReply(
     initials: initials ?? author.charAt(0).toUpperCase(),
     text,
     paraId: replyParaId,
+    date: ctx?.date,
   });
   zip.writeText('word/comments.xml', serializeXml(commentsDoc));
 
@@ -378,9 +382,23 @@ function ensureCommentPartNamespaceAliases(commentsDoc: Document): void {
   }
 }
 
+/**
+ * Append a `w:comment` definition to the comments part.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.2
+ * The `w:date` creation stamp uses the caller-supplied revision date when one
+ * is provided, so the comment definition and the body revision markup emitted
+ * for the same operation agree on the calendar date Word displays — even
+ * across a UTC/local day boundary. Only when the caller supplies no date does
+ * the process clock remain the default. Author and initials always come from
+ * `AddCommentParams` / `AddCommentReplyParams`, never from `RevisionContext`:
+ * the comment's attribution is the commenting author, which is allowed to
+ * differ from the tracked-change author wrapping the reference run.
+ * @see #859
+ */
 function addCommentElement(
   commentsDoc: Document,
-  params: { id: number; author: string; initials: string; text: string; paraId: string },
+  params: { id: number; author: string; initials: string; text: string; paraId: string; date?: string },
 ): void {
   ensureCommentPartNamespaceAliases(commentsDoc);
   const root = commentsDoc.documentElement;
@@ -388,7 +406,7 @@ function addCommentElement(
   const commentEl = commentsDoc.createElementNS(OOXML.W_NS, 'w:comment');
   commentEl.setAttribute('w:id', String(params.id));
   commentEl.setAttribute('w:author', params.author);
-  commentEl.setAttribute('w:date', isoNow());
+  commentEl.setAttribute('w:date', params.date ?? isoNow());
   commentEl.setAttribute('w:initials', params.initials);
 
   // Comment body: <w:p w14:paraId="..."><w:pPr><w:pStyle w:val="CommentText"/></w:pPr><w:r><w:annotationRef/></w:r><w:r><w:t>text</w:t></w:r></w:p>
