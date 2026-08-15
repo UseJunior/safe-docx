@@ -181,6 +181,7 @@ export function narrowResultOnlyFieldReplacements(
         ) break;
         if (
           candidate.correlationStatus === CorrelationStatus.Inserted &&
+          !consumedInsertions.has(candidateIndex) &&
           fieldInstructionSignature(candidate) === signature
         ) matchingInsertionIndices.push(candidateIndex);
       }

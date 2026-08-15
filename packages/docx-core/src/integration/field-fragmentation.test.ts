@@ -444,6 +444,27 @@ describe('Field fragmentation — modification scenarios', () => {
       });
     },
   );
+
+  test('does not reuse one inserted field for repeated deleted instructions', async ({ given, when, then }: AllureBddContext) => {
+    let combined: string;
+    await given('two original NUMPAGES fields and one revised NUMPAGES field in anchored prose', async () => {
+      const original = await buildDocxFromBodyXml(
+        `<w:p><w:r><w:t>Stable opening prose. </w:t></w:r>${makeField(' NUMPAGES ', '3')}<w:r><w:t> middle </w:t></w:r>${makeField(' NUMPAGES ', '3')}<w:r><w:t> stable closing prose.</w:t></w:r></w:p>`,
+      );
+      const revised = await buildDocxFromBodyXml(
+        `<w:p><w:r><w:t>Stable opening prose. </w:t></w:r>${makeField(' NUMPAGES ', '4')}<w:r><w:t> middle stable closing prose.</w:t></w:r></w:p>`,
+      );
+      combined = await compareInplace(original, revised);
+    });
+
+    await when('the repeated-instruction paragraph is compared', async () => {});
+
+    await then('the insertion is consumed once and both projections remain exact', () => {
+      expect(rejectAllChanges(combined).match(/>3</g)).toHaveLength(2);
+      expect(acceptAllChanges(combined).match(/>4</g)).toHaveLength(1);
+      assertFieldStructureSurvives(combined);
+    });
+  });
 });
 
 // =============================================================================
