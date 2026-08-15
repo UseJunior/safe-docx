@@ -7,9 +7,10 @@
  * the result part" as success and skip the source side, leaving one side's
  * anchors bound to the other side's content (or missing entirely).
  *
- * The fix renumbers the revised side's colliding IDs before comparison, so
- * each anchor in the output resolves to the definition it was authored
- * against, in both reconstruction modes.
+ * The fix renumbers the revised side's colliding IDs before comparison. The
+ * comparison layer may later reconcile aligned footnote references into one
+ * tracked definition; unrelated collisions remain distinct. In either case,
+ * every surviving anchor resolves without binding to unrelated content.
  *
  * Reported in https://github.com/UseJunior/safe-docx/issues/107 (surfaced by
  * peer review of PR #101).
@@ -237,7 +238,7 @@ describe('Auxiliary part ID collisions (issue #107)', () => {
   });
 
   describe('Footnote w:id="1" means different content on each side', () => {
-    test('rebuild ships both footnotes under distinct IDs', async ({ given, when, then }: AllureBddContext) => {
+    test('rebuild reconciles aligned footnotes into one tracked definition', async ({ given, when, then }: AllureBddContext) => {
       let original: Buffer, revised: Buffer;
       await given('both sides define a different footnote under w:id="1"', async () => {
         original = await buildSyntheticDocx({
@@ -260,7 +261,7 @@ describe('Auxiliary part ID collisions (issue #107)', () => {
         });
       });
 
-      await then('both footnotes ship and every reference resolves', async () => {
+      await then('one tracked footnote ships and every reference resolves', async () => {
         expect(result.reconstructionModeUsed).toBe('rebuild');
         const parts = await getResultParts(result.document);
         expect(parts.footnotesXml).not.toBeNull();
@@ -268,9 +269,13 @@ describe('Auxiliary part ID collisions (issue #107)', () => {
         const definitions = expectAnchorsResolve(
           parts.documentXml, parts.footnotesXml!, 'w:footnoteReference', 'w:footnote'
         );
-        const texts = new Set(Array.from(definitions.values()).map((d) => d.text));
-        expect(texts).toContain('Original footnote');
-        expect(texts).toContain('Revised footnote');
+        const userDefinitions = [...definitions].filter(([id]) => Number(id) > 0);
+        expect(userDefinitions).toHaveLength(1);
+        expect(userDefinitions[0]![1].text).toBe('OriginalRevised footnote');
+        expect(parts.footnotesXml).toContain('<w:del');
+        expect(parts.footnotesXml).toContain('<w:ins');
+        testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
+        testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' });
       });
     });
   });

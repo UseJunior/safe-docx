@@ -1420,7 +1420,7 @@ describe('inPlaceModifier', () => {
       });
     });
 
-    test('handles collapsed field atoms by replaying field sequence (ECMA-376 fragmentation per #217)', async ({ given, when, then, and }: AllureBddContext) => {
+    test('deletes a collapsed field as one <w:del> spanning begin through end', async ({ given, when, then, and }: AllureBddContext) => {
       let atom: ComparisonUnitAtom;
       let targetP: Element;
       let state: ReturnType<typeof createRevisionIdState>;
@@ -1462,50 +1462,41 @@ describe('inPlaceModifier', () => {
         lastInserted = insertDeletedRun(atom, null, targetP, author, dateStr, state);
       });
 
-      await then('the last inserted element is the trailing field-char run (sibling level, unwrapped)', () => {
-        // ECMA-376 Part 4 forbids w:fldChar inside <w:del>. Fragmented output
-        // emits fldChar runs at sibling level; the trailing element of the
-        // HYPERLINK field is the end fldChar in its own <w:r>.
+      await then('the whole field lands in one <w:del>', () => {
+        // Word 16.112 and Aspose.Words 25.10 both delete a complex field as a
+        // single unit, fldChars included. The earlier fragmenting shape
+        // (issue #217) left begin/separate/end outside the deletion with only
+        // the instruction removed -- a husk that renderers show as nothing, so
+        // the deletion was invisible while its replacement rendered normally.
         assertDefined(lastInserted, 'last inserted sibling');
-        expect(lastInserted.tagName).toBe('w:r');
-        const endFldChar = childElements(lastInserted).find(
-          (c) => c.tagName === 'w:fldChar' && c.getAttribute('w:fldCharType') === 'end',
-        );
-        expect(endFldChar).toBeDefined();
+        expect(lastInserted.tagName).toBe('w:del');
+        expect(childElements(targetP).filter((c) => c.tagName === 'w:del').length).toBe(1);
       });
 
-      await and('w:fldChar runs are emitted at sibling level of the paragraph (never inside w:del)', () => {
-        // Walk the target paragraph and confirm: every fldChar's parent chain
-        // up to w:p contains no w:del ancestor.
+      await and('every field character sits inside that <w:del>', () => {
         const fldChars = (Array.from(
           targetP.getElementsByTagName('w:fldChar'),
         ) as unknown) as Element[];
         expect(fldChars.length).toBe(3); // begin, separate, end
         for (const fc of fldChars) {
           let cur: Node | null = fc.parentNode;
+          let sawDel = false;
           while (cur && cur !== targetP) {
-            expect((cur as Element).tagName).not.toBe('w:del');
+            if ((cur as Element).tagName === 'w:del') sawDel = true;
             cur = cur.parentNode;
           }
+          expect(sawDel).toBe(true);
         }
       });
 
-      await and('payload runs (instrText, t) are wrapped in their own <w:del> siblings', () => {
-        // We expect exactly two <w:del> wrappers: one around instrText, one around t.
-        const dels = childElements(targetP).filter((c) => c.tagName === 'w:del');
-        expect(dels.length).toBe(2);
-        // First del wraps delInstrText
-        const firstDelRun = childElements(dels[0]!)[0]!;
-        const hasDelInstrText = childElements(firstDelRun).some(
-          (c) => c.tagName === 'w:delInstrText',
-        );
-        expect(hasDelInstrText).toBe(true);
-        // Second del wraps delText
-        const secondDelRun = childElements(dels[1]!)[0]!;
-        const hasDelText = childElements(secondDelRun).some(
-          (c) => c.tagName === 'w:delText',
-        );
-        expect(hasDelText).toBe(true);
+      await and('payload text is renamed for the deleted side', () => {
+        const del = childElements(targetP).find((c) => c.tagName === 'w:del')!;
+        const inner = (Array.from(del.getElementsByTagName('*')) as unknown) as Element[];
+        expect(inner.some((c) => c.tagName === 'w:delInstrText')).toBe(true);
+        expect(inner.some((c) => c.tagName === 'w:delText')).toBe(true);
+        // No live text survives on the deleted side.
+        expect(inner.some((c) => c.tagName === 'w:instrText')).toBe(false);
+        expect(inner.some((c) => c.tagName === 'w:t')).toBe(false);
       });
     });
   });

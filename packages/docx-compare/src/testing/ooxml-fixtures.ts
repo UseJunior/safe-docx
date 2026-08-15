@@ -130,11 +130,9 @@ export function decoratedComplexField(
   );
 }
 
-// ECMA-376 conformant field-modification pattern: a field whose instruction
-// text is changing under track changes. The fldChars remain UNWRAPPED at the
-// sibling-run level (they cannot enter <w:del>), while the changed instrText
-// fragments into <w:ins>/<w:del> wrappers. See c-rex ECMA-376 Part 4 fldChar
-// topic + DeletedFieldCode placement constraint.
+// A structurally valid fragmented field-modification pattern used to exercise
+// field validation. It is not the Word comparison oracle for an instruction
+// change: Word 16.112 and Aspose.Words 25.10 replace the whole field instead.
 export function fragmentedFieldModification(
   newInstruction: string,
   oldInstruction: string,

@@ -148,7 +148,7 @@ describe('Collapsed field inplace reconstruction', () => {
   describe('Dedicated-run field (PAGEREF)', () => {
     let resultXml: string;
 
-    test('deleted field emits fldChar at sibling level and wraps only payloads in w:del (ECMA-376 fragmentation per #217)', async ({ given, when, then, and, attachPrettyJson, parameter }: AllureBddContext) => {
+    test('result-only PAGEREF change preserves the field and redlines only cached text', async ({ given, when, then, and, attachPrettyJson, parameter }: AllureBddContext) => {
       await given('original and revised docs with a PAGEREF field change (23 -> 42)', async () => {
         await parameter('fixture', 'dedicated-run-field');
       });
@@ -173,22 +173,17 @@ describe('Collapsed field inplace reconstruction', () => {
         });
       });
 
-      await then('fldChars are balanced, no instrText leaks, and w:del contains only payload runs', async () => {
+      await then('fldChars are balanced, no instrText leaks, and only the cached result is wrapped', async () => {
         const fieldPairs = countFieldCharPairs(resultXml);
         await attachPrettyJson('field-char-counts.json', { fieldPairs });
         expect(fieldPairs.balanced, 'fldChar begin/end counts must be balanced').toBe(true);
         expect(hasLeakedInstrText(resultXml), 'instrText must not leak outside field boundaries').toBe(false);
-        // ECMA-376 conformance: w:fldChar MUST NOT appear inside <w:del>. Per
-        // #217, fragmentation emits fldChar runs at sibling level; <w:del>
-        // wraps only delInstrText / delText payload runs.
-        expect(resultXml).not.toMatch(/<w:del[^>]*>[^<]*<w:r[^>]*>[^<]*<w:fldChar/);
+        // Measured 2026-08-14: Word 16.112 and Aspose.Words 25.10 both preserve
+        // a PAGEREF field whose instruction is unchanged and redline only 23→42.
+        const deletedWrapper = resultXml.match(/<w:del[^>]*>[^]*?<\/w:del>/)?.[0] ?? '';
+        expect(deletedWrapper).not.toContain('<w:fldChar');
         const delRunCounts = countRunsInTrackedChangeWrappers(resultXml, 'w:del');
-        // After fragmentation each <w:del> wraps exactly one payload run.
-        for (const count of delRunCounts) {
-          if (count > 0) {
-            expect(count, 'fragmented w:del should wrap exactly one payload run').toBe(1);
-          }
-        }
+        expect(delRunCounts).toEqual([1]);
       });
 
       await and('accept-all recovers revised text', () => {

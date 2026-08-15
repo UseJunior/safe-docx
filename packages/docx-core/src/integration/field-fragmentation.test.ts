@@ -1,26 +1,16 @@
 /**
- * Integration Tests — ECMA-376 Field-Fragmentation Conformance (issue #217)
+ * Integration Tests — complex-field tracked-change behavior (issue #217 retraction)
  *
- * Asserts the expected fragmented shape of the combined inplace comparison
- * output for field-deletion and field-modification scenarios:
+ * Asserts the Word-compatible shape of combined inplace comparison output:
  *
- *   - `w:fldChar` runs MUST NOT appear inside `<w:del>`. (ECMA-376 Part 4 —
- *     Word treats this as fatal and discards the field state machine.)
- *   - On the `<w:del>` side, fragmentation wraps only the `w:instrText`
- *     (renamed to `w:delInstrText`) and result-text (renamed to `w:delText`)
- *     payloads; `w:fldChar` markers are emitted at run-sibling level.
+ *   - instruction changes replace the whole field, including `w:fldChar`,
+ *     inside `<w:del>` / `<w:ins>`;
+ *   - result-only changes preserve the field and redline only cached text;
  *   - `validateFieldStructure` MUST return true on the combined output AND on
  *     both the post-accept and post-reject projections.
  *
- * Whole-field INSERTION (and move-destination) is NOT fragmented. ECMA-376
- * permits `w:fldChar` inside `<w:ins>` and `<w:moveTo>`; only `<w:del>` bars
- * it. Existing insertion coverage
- * continues to assert the stronger wrapper-neutrality shape for inserted
- * fields.
- *
- * These tests are red against the pre-#217 engine. They go green after the
- * fragmentation work in `inPlaceModifier.ts` lands (Phase 2 / Phase 3 of the
- * `fragment-ins-del-at-field-boundaries` OpenSpec change).
+ * Microsoft Word 16.112 and Aspose.Words 25.10 were measured on 2026-08-14
+ * using the minimal scenarios below. Both produced those two behaviors.
  */
 
 import { describe, expect } from 'vitest';
@@ -44,7 +34,7 @@ const test = testAllure
   .epic('Document Comparison')
   .withLabels({
     feature: 'Field Fragmentation (ECMA-376)',
-    story: 'Issue #217 — fragment <w:ins>/<w:del> at field-character boundaries',
+    story: 'Issue #217 retraction — preserve visible whole-field deletions',
     severity: 'critical',
   })
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.13' });
@@ -61,7 +51,7 @@ async function compareInplace(original: Buffer, revised: Buffer): Promise<string
   if (result.reconstructionModeUsed !== 'inplace') {
     throw new Error(
       `expected inplace mode but engine fell back to ${result.reconstructionModeUsed ?? 'unknown'}: ` +
-        `${result.fallbackReason ?? 'no reason'}`,
+        `${result.fallbackReason ?? 'no reason'} ${JSON.stringify(result.fallbackDiagnostics)}`,
     );
   }
   const archive = await DocxArchive.load(result.document);
@@ -91,8 +81,19 @@ function assertNoFldCharInside(combined: string, parentTag: string): void {
   expect(
     offenders,
     `w:fldChar (${offenders.join(', ')}) appeared inside <${parentTag}>. ` +
-      `ECMA-376 forbids w:fldChar inside w:del (and #217 also fragments w:ins for modifications).`,
+      `expected the field markers to remain outside <${parentTag}> for a surgical result edit.`,
   ).toEqual([]);
+}
+
+function assertWholeFieldInside(combined: string, parentTag: 'w:del' | 'w:ins'): void {
+  const doc = new DOMParser().parseFromString(combined, 'application/xml');
+  const fldChars = Array.from(doc.getElementsByTagName('w:fldChar')) as unknown as Element[];
+  const inside = fldChars.filter((el) => hasAncestorWithTag(el, parentTag));
+  expect(inside.map((el) => el.getAttribute('w:fldCharType'))).toEqual([
+    'begin',
+    'separate',
+    'end',
+  ]);
 }
 
 function assertFieldStructureSurvives(combined: string): void {
@@ -112,7 +113,7 @@ function countTag(combined: string, tag: string): number {
   return doc.getElementsByTagName(tag).length;
 }
 
-// Guards against a vacuous pass: assertNoFldCharInside + validateFieldStructure
+// Guards against a vacuous pass: wrapper-shape + validateFieldStructure
 // also hold when the comparator emits zero tracked changes (e.g., the whole edit
 // is silently absorbed). These scenarios are only meaningful if del/ins are
 // actually present, so assert that the fragmentation path ran at all.
@@ -133,8 +134,7 @@ function makeField(instr: string, result: string): string {
 
 // A nested field — the canonical { IF { <inner> } = 1 "<result>" } shape, where
 // the inner field lives inside the outer instruction region. ECMA-376 §17.16.5.1
-// permits arbitrarily nested fields; both the inner and outer fldChar pairs must
-// stay unwrapped on the deletion side.
+// permits arbitrarily nested fields; both marker pairs must survive replacement.
 function makeNestedField(innerInstr: string, result: string): string {
   return (
     fldChar('begin') +
@@ -153,14 +153,13 @@ function makeNestedField(innerInstr: string, result: string): string {
 
 // A separator-less field — begin/instr/end with no `separate` marker. ECMA-376
 // §17.16.5.1 permits this (the field carries no cached result). The classifier
-// must still recognize the begin/end pair as a field boundary so the fldChar
-// markers are emitted unwrapped on the deletion side.
+// must still recognize the begin/end pair as a field boundary.
 function makeSeparatorlessField(instr: string): string {
   return fldChar('begin') + instrText(instr, { preserve: true }) + fldChar('end');
 }
 
 // =============================================================================
-// Modification fixtures (ECMA-376 mandates fragmentation)
+// Modification fixtures — Word/Aspose oracle measurements from 2026-08-14
 // =============================================================================
 
 // ---------------------------------------------------------------------------
@@ -169,13 +168,13 @@ function makeSeparatorlessField(instr: string): string {
 // FORMCHECKBOX → FORMTEXT with identical result "☐") is silently absorbed —
 // the comparator sees Equal atoms and emits the revised document verbatim
 // with no tracked changes. That is a SEPARATE GAP (not in scope for #217).
-// To exercise the fragmentation code path, the scenarios below combine instr
+// To exercise the whole-field replacement path, the scenarios below combine instr
 // and result changes so the engine actually emits <w:ins>/<w:del>.
 // ---------------------------------------------------------------------------
 
 describe('Field fragmentation — modification scenarios', () => {
   test(
-    'FORMCHECKBOX → FORMTEXT (with result change): w:fldChar runs are unwrapped, only payloads are wrapped',
+    'FORMCHECKBOX → FORMTEXT (with result change): replaces the whole field',
     async ({ given, when, then }: AllureBddContext) => {
       let combined: string;
 
@@ -194,15 +193,16 @@ describe('Field fragmentation — modification scenarios', () => {
 
       await when('the inplace combined output is produced', async () => {});
 
-      await then('no w:fldChar appears inside <w:del>; field structure validates', () => {
-        assertNoFldCharInside(combined, 'w:del');
+      await then('both the deleted and inserted fields include their field markers', () => {
+        assertWholeFieldInside(combined, 'w:del');
+        assertWholeFieldInside(combined, 'w:ins');
         assertFieldStructureSurvives(combined);
       });
     },
   );
 
   test(
-    'HYPERLINK target rewrite (with link-text change): fragmented output keeps fldChar unwrapped',
+    'HYPERLINK target rewrite (with link-text change): replaces the whole field',
     async ({ given, when, then }: AllureBddContext) => {
       let combined: string;
 
@@ -221,15 +221,16 @@ describe('Field fragmentation — modification scenarios', () => {
 
       await when('the inplace combined output is produced', async () => {});
 
-      await then('no w:fldChar appears inside <w:del>; field structure validates', () => {
-        assertNoFldCharInside(combined, 'w:del');
+      await then('both the deleted and inserted fields include their field markers', () => {
+        assertWholeFieldInside(combined, 'w:del');
+        assertWholeFieldInside(combined, 'w:ins');
         assertFieldStructureSurvives(combined);
       });
     },
   );
 
   test(
-    'PAGEREF target rewrite (with result-page change): fragmented output keeps fldChar unwrapped',
+    'PAGEREF target rewrite (with result-page change): replaces the whole field',
     async ({ given, when, then }: AllureBddContext) => {
       let combined: string;
 
@@ -248,15 +249,16 @@ describe('Field fragmentation — modification scenarios', () => {
 
       await when('the inplace combined output is produced', async () => {});
 
-      await then('no w:fldChar appears inside <w:del>; field structure validates', () => {
-        assertNoFldCharInside(combined, 'w:del');
+      await then('both the deleted and inserted fields include their field markers', () => {
+        assertWholeFieldInside(combined, 'w:del');
+        assertWholeFieldInside(combined, 'w:ins');
         assertFieldStructureSurvives(combined);
       });
     },
   );
 
   test(
-    'bookmarked field modification (with result change): fragmented output keeps fldChar unwrapped',
+    'bookmarked field modification (with result change): replaces the whole field',
     async ({ given, when, then }: AllureBddContext) => {
       let combined: string;
 
@@ -277,8 +279,9 @@ describe('Field fragmentation — modification scenarios', () => {
 
       await when('the inplace combined output is produced', async () => {});
 
-      await then('no w:fldChar appears inside <w:del>; field structure validates', () => {
-        assertNoFldCharInside(combined, 'w:del');
+      await then('both the deleted and inserted fields include their field markers', () => {
+        assertWholeFieldInside(combined, 'w:del');
+        assertWholeFieldInside(combined, 'w:ins');
         assertFieldStructureSurvives(combined);
       });
     },
@@ -312,8 +315,8 @@ describe('Field fragmentation — modification scenarios', () => {
 
       await when('the inplace combined output is produced', async () => {});
 
-      await then('no w:fldChar inside <w:del>; field validates; bookmarkStart/End survive in the combined view', () => {
-        assertNoFldCharInside(combined, 'w:del');
+      await then('the whole deleted field is redlined and its bookmark survives', () => {
+        assertWholeFieldInside(combined, 'w:del');
         assertFieldStructureSurvives(combined);
         // The pre-existing engine behavior hoists the bookmarkStart found
         // adjacent to the first source run BEFORE the first emitted element
@@ -333,7 +336,7 @@ describe('Field fragmentation — modification scenarios', () => {
   );
 
   test(
-    'result-text-only change (NUMPAGES 3 → 4): w:fldChar runs are unwrapped, only delText/text payloads are wrapped',
+    'result-text-only change (NUMPAGES 3 → 4): preserves fldChar and redlines only cached text',
     async ({ given, when, then }: AllureBddContext) => {
       let combined: string;
 
@@ -358,6 +361,110 @@ describe('Field fragmentation — modification scenarios', () => {
       });
     },
   );
+
+  test(
+    'result-only narrowing skips an outer field whose result contains a nested field',
+    async ({ given, when, then }: AllureBddContext) => {
+      let combined: string;
+
+      await given('the same outer IF instruction with a nested PAGE field in its changing result', async () => {
+        const nestedResult = (value: string) =>
+          fldChar('begin') + instrText(' IF ', { preserve: true }) + fldChar('separate') +
+          makeField(' PAGE ', '7') + resultText(value) + fldChar('end');
+        const original = await buildDocxFromBodyXml(`<w:p>${nestedResult('3')}</w:p>`);
+        const revised = await buildDocxFromBodyXml(`<w:p>${nestedResult('4')}</w:p>`);
+        combined = await compareInplace(original, revised);
+      });
+
+      await when('the inplace combined output is produced', async () => {});
+
+      await then('the optimization falls back to whole-field replacement without dropping nested markers', () => {
+        assertEmitsTrackedChanges(combined);
+        expect(countTag(combined, 'w:fldChar')).toBe(12);
+        expect(rejectAllChanges(combined)).toContain('3');
+        expect(acceptAllChanges(combined)).toContain('4');
+        assertFieldStructureSurvives(combined);
+      });
+    },
+  );
+
+  test(
+    'result-only narrowing survives an adjacent prose replacement',
+    async ({ given, when, then }: AllureBddContext) => {
+      let combined: string;
+
+      await given('changed prose beside a NUMPAGES cached-result update', async () => {
+        const original = await buildDocxFromBodyXml(
+          `<w:p><w:r><w:t>This agreement has old total pages: </w:t></w:r>${makeField(' NUMPAGES ', '3')}<w:r><w:t> as calculated here.</w:t></w:r></w:p>`,
+        );
+        const revised = await buildDocxFromBodyXml(
+          `<w:p><w:r><w:t>This agreement has new total pages: </w:t></w:r>${makeField(' NUMPAGES ', '4')}<w:r><w:t> as calculated here.</w:t></w:r></w:p>`,
+        );
+        combined = await compareInplace(original, revised);
+      });
+
+      await when('the inplace combined output is produced', async () => {});
+
+      await then('the unchanged field scaffolding remains outside the result revisions', () => {
+        assertEmitsTrackedChanges(combined);
+        expect(countTag(combined, 'w:fldChar')).toBe(3);
+        assertNoFldCharInside(combined, 'w:del');
+        assertNoFldCharInside(combined, 'w:ins');
+        expect(rejectAllChanges(combined)).toContain('old');
+        expect(rejectAllChanges(combined)).toContain('3');
+        expect(acceptAllChanges(combined)).toContain('new');
+        expect(acceptAllChanges(combined)).toContain('4');
+        assertFieldStructureSurvives(combined);
+      });
+    },
+  );
+
+  test(
+    'result-only narrowing skips fields whose marker attributes differ',
+    async ({ given, when, then }: AllureBddContext) => {
+      let combined: string;
+
+      await given('matching NUMPAGES instructions with original-only lock and dirty marker state', async () => {
+        const originalField =
+          '<w:r><w:fldChar w:fldCharType="begin" w:fldLock="true" w:dirty="true"/></w:r>' +
+          instrText(' NUMPAGES ', { preserve: true }) + fldChar('separate') + resultText('3') + fldChar('end');
+        const revisedField = makeField(' NUMPAGES ', '4');
+        const original = await buildDocxFromBodyXml(`<w:p>${originalField}</w:p>`);
+        const revised = await buildDocxFromBodyXml(`<w:p>${revisedField}</w:p>`);
+        combined = await compareInplace(original, revised);
+      });
+
+      await when('the inplace combined output is produced', async () => {});
+
+      await then('reject restores the original marker state instead of borrowing revised scaffolding', () => {
+        assertEmitsTrackedChanges(combined);
+        const rejected = rejectAllChanges(combined);
+        expect(rejected).toMatch(/w:fldChar[^>]*w:fldCharType="begin"[^>]*w:fldLock="true"[^>]*w:dirty="true"/);
+        assertFieldStructureSurvives(combined);
+      });
+    },
+  );
+
+  test('does not reuse one inserted field for repeated deleted instructions', async ({ given, when, then }: AllureBddContext) => {
+    let combined: string;
+    await given('two original NUMPAGES fields and one revised NUMPAGES field in anchored prose', async () => {
+      const original = await buildDocxFromBodyXml(
+        `<w:p><w:r><w:t>Stable opening prose. </w:t></w:r>${makeField(' NUMPAGES ', '3')}<w:r><w:t> middle </w:t></w:r>${makeField(' NUMPAGES ', '3')}<w:r><w:t> stable closing prose.</w:t></w:r></w:p>`,
+      );
+      const revised = await buildDocxFromBodyXml(
+        `<w:p><w:r><w:t>Stable opening prose. </w:t></w:r>${makeField(' NUMPAGES ', '4')}<w:r><w:t> middle stable closing prose.</w:t></w:r></w:p>`,
+      );
+      combined = await compareInplace(original, revised);
+    });
+
+    await when('the repeated-instruction paragraph is compared', async () => {});
+
+    await then('the insertion is consumed once and both projections remain exact', () => {
+      expect(rejectAllChanges(combined).match(/>3</g)).toHaveLength(2);
+      expect(acceptAllChanges(combined).match(/>4</g)).toHaveLength(1);
+      assertFieldStructureSurvives(combined);
+    });
+  });
 });
 
 // =============================================================================
@@ -366,7 +473,7 @@ describe('Field fragmentation — modification scenarios', () => {
 
 describe('Field fragmentation — whole-field deletion', () => {
   test(
-    'whole-field deletion: w:fldChar runs are NOT placed inside <w:del>',
+    'whole-field deletion: w:fldChar runs are placed inside <w:del>',
     async ({ given, when, then }: AllureBddContext) => {
       let combined: string;
 
@@ -385,8 +492,8 @@ describe('Field fragmentation — whole-field deletion', () => {
 
       await when('the inplace combined output is produced', async () => {});
 
-      await then('no w:fldChar appears inside <w:del>; field structure validates on combined/accept/reject', () => {
-        assertNoFldCharInside(combined, 'w:del');
+      await then('the whole field is inside <w:del>; field structure validates on combined/accept/reject', () => {
+        assertWholeFieldInside(combined, 'w:del');
         assertFieldStructureSurvives(combined);
       });
     },
@@ -399,7 +506,7 @@ describe('Field fragmentation — whole-field deletion', () => {
 
 describe('Field fragmentation — edge cases', () => {
   test(
-    'nested whole-field replacement (IF { PAGE } … → IF { NUMPAGES } …): both inner and outer fldChar runs stay unwrapped',
+    'nested whole-field replacement (IF { PAGE } … → IF { NUMPAGES } …): wraps both fields',
     async ({ given, when, then }: AllureBddContext) => {
       let combined: string;
 
@@ -426,10 +533,14 @@ describe('Field fragmentation — edge cases', () => {
       await when('the inplace combined output is produced', async () => {});
 
       await then(
-        'tracked changes are emitted; no fldChar (inner or outer) is inside <w:del>; old content is wrapped and new content inserted; field structure validates',
+        'tracked changes wrap every marker on both sides and field structure validates',
         () => {
           assertEmitsTrackedChanges(combined);
-          assertNoFldCharInside(combined, 'w:del');
+          expect(countTag(combined, 'w:fldChar')).toBe(12);
+          const doc = new DOMParser().parseFromString(combined, 'application/xml');
+          const markers = Array.from(doc.getElementsByTagName('w:fldChar')) as unknown as Element[];
+          expect(markers.filter((el) => hasAncestorWithTag(el, 'w:del'))).toHaveLength(6);
+          expect(markers.filter((el) => hasAncestorWithTag(el, 'w:ins'))).toHaveLength(6);
           // Both nested field marker pairs survive as fldChar runs (2 fields ×
           // begin/separate/end, on both the deleted and inserted sides = 12).
           expect(countTag(combined, 'w:fldChar'), 'all six markers preserved on both sides').toBe(
@@ -439,7 +550,7 @@ describe('Field fragmentation — edge cases', () => {
           expect(combined).toContain('<w:delInstrText');
           expect(combined).toMatch(/<w:delInstrText[^>]*> PAGE <\/w:delInstrText>/);
           expect(combined).toMatch(/<w:delText>first<\/w:delText>/);
-          // Revised field content lands on the insertion side, unwrapped.
+          // Revised field content lands on the insertion side.
           expect(combined).toMatch(/<w:instrText[^>]*> NUMPAGES <\/w:instrText>/);
           expect(combined).toContain('second');
           assertFieldStructureSurvives(combined);
@@ -449,7 +560,7 @@ describe('Field fragmentation — edge cases', () => {
   );
 
   test(
-    'field without separator (deferred-result field) deleted: fldChar runs stay unwrapped',
+    'field without separator (deferred-result field) deleted: wraps its fldChar runs',
     async ({ given, when, then }: AllureBddContext) => {
       let combined: string;
 
@@ -459,8 +570,7 @@ describe('Field fragmentation — edge cases', () => {
           // ECMA-376 permits a field with no `separate` marker, hence no cached
           // result text. An instr-only edit on such a field is absorbed (no
           // visible delta), so whole-field deletion is used to drive the
-          // deletion-side fragmentation path: the begin/end markers must be
-          // emitted unwrapped while only the delInstrText payload is wrapped.
+          // whole-field deletion path for a separator-less field.
           const original = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Item </w:t></w:r>${makeSeparatorlessField(' AUTONUM ')}<w:r><w:t> done.</w:t></w:r></w:p>`,
           );
@@ -474,10 +584,12 @@ describe('Field fragmentation — edge cases', () => {
       await when('the inplace combined output is produced', async () => {});
 
       await then(
-        'tracked changes are emitted; the field is begin/end only (no separate); instr is wrapped as delInstrText; no fldChar inside <w:del>; field structure validates',
+        'tracked changes are emitted; the begin/end-only field is wholly wrapped and validates',
         () => {
           assertEmitsTrackedChanges(combined);
-          assertNoFldCharInside(combined, 'w:del');
+          const parsed = new DOMParser().parseFromString(combined, 'application/xml');
+          const fieldMarkers = Array.from(parsed.getElementsByTagName('w:fldChar')) as unknown as Element[];
+          expect(fieldMarkers.filter((el) => hasAncestorWithTag(el, 'w:del'))).toHaveLength(2);
           // Separator-less shape preserved: exactly the begin/end pair, no
           // `separate` marker is synthesized by the engine.
           const doc = new DOMParser().parseFromString(combined, 'application/xml');

@@ -103,12 +103,10 @@ import {
 } from './numberingIntegration.js';
 import { premergeAdjacentRuns } from './premergeRuns.js';
 export {
-  hasFldCharInsideDel,
   validateFieldStructure,
   type FieldStory,
 } from '@usejunior/docx-core';
 import {
-  hasFldCharInsideDel,
   validateFieldStructure,
   type FieldStory,
 } from '@usejunior/docx-core';
@@ -138,6 +136,10 @@ import {
   rejectedSelectedAncillaryStoryPaths,
   UnsupportedTextBoxRevisionError,
 } from './textBoxRevisionSafety.js';
+import {
+  compareFootnoteDefinitions,
+  findCorrespondingFootnotePairs,
+} from './ancillaryNoteComparison.js';
 
 /**
  * Options for the atomizer pipeline.
@@ -520,16 +522,12 @@ function evaluateSafetyChecks(
     auxiliarySidecars.footnotesXmls,
     auxiliarySidecars.endnotesXmls,
   );
-  // Issue #217 conformance gate on the COMBINED output: keep w:fldChar outside
-  // <w:del>, matching the Part 1 complex-field and deleted-field-code syntax.
-  // The full validateFieldStructure check is run
-  // on the accept/reject projections (per-story); on the combined view we
-  // only gate the strict no-fldChar-in-del rule because some legacy emit
-  // paths (e.g. delInstrText inside <w:moveFrom>) are non-conformant in shape
-  // but out of scope for #217.
-  const combinedNoFldCharInDel = !hasFldCharInsideDel(candidateXml);
+  // The full validateFieldStructure check runs on the accept/reject projections
+  // (per-story). There is deliberately no additional gate on the combined view:
+  // the former #217 no-fldChar-in-del rule was removed after Word 16.112 and
+  // Aspose.Words 25.10 were both measured emitting whole deleted fields inside
+  // <w:del>, with output that validates against the Transitional WML schema.
   const fieldStructureOk =
-    combinedNoFldCharInDel &&
     validateFieldStructure(acceptedStories) &&
     validateFieldStructure(rejectedStories);
 
@@ -840,7 +838,10 @@ async function compareDocumentsAtomizerCore(
   // row in the merged output can bind to the other document's definition.
   // Must run before any document.xml extraction so every downstream step sees
   // the rewritten archive.
-  await renumberCollidingAuxiliaryIds(originalArchive, revisedArchive);
+  const auxiliaryIdRenumberings = await renumberCollidingAuxiliaryIds(
+    originalArchive,
+    revisedArchive,
+  );
   await restampCollidingCommentParaIds(originalArchive, revisedArchive);
 
   // Step 1c: Resolve relationship ID collisions for the same reason. `rId9`
@@ -1231,13 +1232,27 @@ async function compareDocumentsAtomizerCore(
     resultBuffer: Buffer;
     ancillaryFieldEvidence: AncillaryFieldEvidence;
   }> => {
-    const { newDocumentXml } = candidate;
+    let { newDocumentXml } = candidate;
     // Step 12: Clone the mode-selected archive and update document.xml.
     const baseArchive = candidate.outputMode === 'inplace' ? revisedArchive : originalArchive;
     const mergeSourceArchive = candidate.outputMode === 'inplace' ? originalArchive : revisedArchive;
     const baseSide = candidate.outputMode === 'inplace' ? 'revised' : 'original';
     const mergeSourceSide = candidate.outputMode === 'inplace' ? 'original' : 'revised';
     const resultArchive = await baseArchive.clone();
+    newDocumentXml = await reconcileCorrespondingFootnoteDefinitions({
+      originalArchive,
+      revisedArchive,
+      resultArchive,
+      documentXml: newDocumentXml,
+      outputMode: candidate.outputMode,
+      mergedAtoms: candidate.mergedAtoms,
+      auxiliaryIdRenumberings,
+      author,
+      date,
+      formatDetection: formatSettings,
+      premergeRuns,
+      maxWordRefinementChangeRanges,
+    });
     maybeCaptureEmittedDocumentXml(newDocumentXml);
     resultArchive.setDocumentXml(newDocumentXml);
 
@@ -1370,6 +1385,235 @@ async function compareDocumentsAtomizerCore(
 export interface AuxiliaryMergeResult {
   mergedIds: Set<string>;
   createdPart: boolean;
+}
+
+interface ReconcileFootnoteDefinitionsOptions {
+  originalArchive: DocxArchive;
+  revisedArchive: DocxArchive;
+  resultArchive: DocxArchive;
+  documentXml: string;
+  outputMode: ReconstructionMode;
+  mergedAtoms: readonly ComparisonUnitAtom[];
+  auxiliaryIdRenumberings: readonly { label: string; fromId: string; toId: string }[];
+  author: string;
+  date: Date;
+  formatDetection: FormatDetectionSettings;
+  premergeRuns: boolean;
+  maxWordRefinementChangeRanges?: number;
+}
+
+/**
+ * Collapse an aligned delete/insert footnote reference pair back onto one
+ * definition and compare that definition as an independent story. Collision
+ * renumbering still runs first and remains authoritative for every unrelated
+ * auxiliary-ID collision.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/763
+ */
+async function reconcileCorrespondingFootnoteDefinitions(
+  options: ReconcileFootnoteDefinitionsOptions,
+): Promise<string> {
+  const pairs = findCorrespondingFootnotePairs(
+    options.mergedAtoms,
+    options.auxiliaryIdRenumberings,
+  );
+  if (pairs.length === 0) return options.documentXml;
+
+  const [originalXml, revisedXml, resultXml, originalDocumentXml, revisedDocumentXml] = await Promise.all([
+    options.originalArchive.getFile('word/footnotes.xml'),
+    options.revisedArchive.getFile('word/footnotes.xml'),
+    options.resultArchive.getFile('word/footnotes.xml'),
+    options.originalArchive.getDocumentXml(),
+    options.revisedArchive.getDocumentXml(),
+  ]);
+  if (!originalXml || !revisedXml || !resultXml) return options.documentXml;
+
+  const originalParsed = parseEntries(originalXml, 'w:footnote');
+  const revisedParsed = parseEntries(revisedXml, 'w:footnote');
+  const resultParsed = parseEntries(resultXml, 'w:footnote');
+  const documentDoc = parseXml(options.documentXml);
+  const originalDocumentDoc = parseXml(originalDocumentXml);
+  const revisedDocumentDoc = parseXml(revisedDocumentXml);
+  let projectionDocs: FootnoteReferenceProjectionDocs | undefined;
+  const getProjectionDocs = (): FootnoteReferenceProjectionDocs => {
+    projectionDocs ??= {
+      accepted: parseXml(acceptAllChanges(options.documentXml)),
+      rejected: parseXml(rejectAllChanges(options.documentXml)),
+    };
+    return projectionDocs;
+  };
+
+  for (const pair of pairs) {
+    const originalEntry = originalParsed.entries.get(pair.originalId);
+    const revisedEntry = revisedParsed.entries.get(pair.revisedId);
+    const targetId = options.outputMode === 'inplace' ? pair.revisedId : pair.originalId;
+    const discardedId = options.outputMode === 'inplace' ? pair.originalId : pair.revisedId;
+    const targetEntry = resultParsed.entries.get(targetId);
+    if (!originalEntry || !revisedEntry || !targetEntry) continue;
+    // Cheap definition-local exclusions precede every document-wide reference
+    // or projection check.
+    if (
+      footnoteDefinitionRequiresCollisionSafeFallback(originalEntry) ||
+      footnoteDefinitionRequiresCollisionSafeFallback(revisedEntry)
+    ) continue;
+    if (!isOnlyFootnoteAnchorInSourceParagraph(originalDocumentDoc, pair.originalId) ||
+        !isOnlyFootnoteAnchorInSourceParagraph(revisedDocumentDoc, pair.revisedId)) continue;
+    if (!hasSafeEmittedFootnoteReferenceShape(
+      documentDoc,
+      pair.originalId,
+      pair.revisedId,
+      getProjectionDocs,
+    )) continue;
+
+    let comparedChildren: Element[];
+    try {
+      comparedChildren = compareFootnoteDefinitions(originalEntry, revisedEntry, {
+        author: options.author,
+        date: options.date,
+        formatDetection: options.formatDetection,
+        premergeRuns: options.premergeRuns,
+        maxWordRefinementChangeRanges: options.maxWordRefinementChangeRanges,
+        preservedRoots: [documentDoc.documentElement, resultParsed.doc.documentElement],
+      });
+    } catch {
+      // A note definition is an independent optional comparison story. If its
+      // topology cannot be represented safely, retain both collision-renumbered
+      // definitions rather than failing or weakening the whole document result.
+      continue;
+    }
+    while (targetEntry.firstChild) targetEntry.removeChild(targetEntry.firstChild);
+    for (const child of comparedChildren) {
+      targetEntry.appendChild(resultParsed.doc.importNode(child, true));
+    }
+
+    const references = documentDoc.getElementsByTagName('w:footnoteReference');
+    for (let i = 0; i < references.length; i++) {
+      const reference = references[i] as Element;
+      if (reference.getAttribute('w:id') === discardedId) reference.setAttribute('w:id', targetId);
+    }
+  }
+
+  options.resultArchive.setFile('word/footnotes.xml', serializer.serializeToString(resultParsed.doc));
+  return serializer.serializeToString(documentDoc);
+}
+
+function isOnlyFootnoteAnchorInSourceParagraph(documentDoc: Document, id: string): boolean {
+  const matches: Element[] = [];
+  const references = documentDoc.getElementsByTagName('w:footnoteReference');
+  for (let i = 0; i < references.length; i++) {
+    const reference = references[i] as Element;
+    if (reference.getAttribute('w:id') === id) matches.push(reference);
+  }
+  if (matches.length !== 1) return false;
+  const paragraph = ancestorElement(matches[0]!, 'w:p');
+  return paragraph?.getElementsByTagName('w:footnoteReference').length === 1;
+}
+
+function hasAncestorTag(element: Element, tagName: string): boolean {
+  let current = element.parentNode;
+  while (current?.nodeType === 1) {
+    if ((current as Element).tagName === tagName) return true;
+    current = current.parentNode;
+  }
+  return false;
+}
+
+function ancestorElement(element: Element, tagName: string): Element | null {
+  let current = element.parentNode;
+  while (current?.nodeType === 1) {
+    if ((current as Element).tagName === tagName) return current as Element;
+    current = current.parentNode;
+  }
+  return null;
+}
+
+interface FootnoteReferenceProjectionDocs {
+  accepted: Document;
+  rejected: Document;
+}
+
+/**
+ * Require either Word's explicit deleted/inserted reference pair or a single
+ * unchanged live reference. Ambiguous multiplicity and mixed wrapper shapes
+ * retain collision-safe definitions rather than rewriting every matching ID.
+ *
+ * Endnote definition reconciliation is intentionally outside #763; endnotes
+ * continue to use collision-safe renumbering and merge behavior.
+ */
+function hasSafeEmittedFootnoteReferenceShape(
+  documentDoc: Document,
+  originalId: string,
+  revisedId: string,
+  getProjectionDocs: () => FootnoteReferenceProjectionDocs,
+): boolean {
+  const original: Element[] = [];
+  const revised: Element[] = [];
+  const references = documentDoc.getElementsByTagName('w:footnoteReference');
+  for (let i = 0; i < references.length; i++) {
+    const reference = references[i] as Element;
+    const id = reference.getAttribute('w:id');
+    if (id === originalId) original.push(reference);
+    if (id === revisedId) revised.push(reference);
+  }
+  const originalParagraph = original[0] ? ancestorElement(original[0], 'w:p') : null;
+  const revisedParagraph = revised[0] ? ancestorElement(revised[0], 'w:p') : null;
+  const pairParagraphIsUnambiguous =
+    originalParagraph !== null &&
+    originalParagraph === revisedParagraph &&
+    originalParagraph.getElementsByTagName('w:footnoteReference').length === 2;
+  const explicitPair =
+    original.length === 1 &&
+    revised.length === 1 &&
+    pairParagraphIsUnambiguous &&
+    hasAncestorTag(original[0]!, 'w:del') &&
+    hasAncestorTag(revised[0]!, 'w:ins');
+  const stableReference =
+    original.length === 0 &&
+    revised.length === 1 &&
+    revisedParagraph?.getElementsByTagName('w:footnoteReference').length === 1 &&
+    !hasAncestorTag(revised[0]!, 'w:del') &&
+    !hasAncestorTag(revised[0]!, 'w:ins');
+  if (explicitPair || stableReference) return true;
+  if (original.length !== 1 || revised.length !== 1 || !pairParagraphIsUnambiguous) return false;
+
+  const { accepted, rejected } = getProjectionDocs();
+  const count = (doc: Document, id: string): number => {
+    let matches = 0;
+    const refs = doc.getElementsByTagName('w:footnoteReference');
+    for (let i = 0; i < refs.length; i++) {
+      if ((refs[i] as Element).getAttribute('w:id') === id) matches++;
+    }
+    return matches;
+  };
+  return count(accepted, originalId) === 0 &&
+    count(accepted, revisedId) === 1 &&
+    count(rejected, originalId) === 1 &&
+    count(rejected, revisedId) === 0;
+}
+
+export function footnoteDefinitionRequiresCollisionSafeFallback(entry: Element): boolean {
+  const unsupportedTags = [
+    'w:fldChar',
+    'w:fldSimple',
+    'w:hyperlink',
+    'w:commentReference',
+    'w:commentRangeStart',
+    'w:commentRangeEnd',
+    'w:footnoteReference',
+    'w:endnoteReference',
+  ];
+  if (unsupportedTags.some((tag) => entry.getElementsByTagName(tag).length > 0)) return true;
+  const elements = [entry, ...Array.from(entry.getElementsByTagName('*'))] as Element[];
+  return elements.some((element) => {
+    for (let index = 0; index < element.attributes.length; index++) {
+      const attribute = element.attributes.item(index)!;
+      if (
+        attribute.namespaceURI === 'http://schemas.openxmlformats.org/officeDocument/2006/relationships' ||
+        attribute.name.startsWith('r:')
+      ) return true;
+    }
+    return false;
+  });
 }
 
 /**
