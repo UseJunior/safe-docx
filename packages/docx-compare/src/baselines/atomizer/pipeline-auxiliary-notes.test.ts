@@ -1,7 +1,8 @@
 import { describe, expect } from 'vitest';
 import JSZip from 'jszip';
+import { DOMParser } from '@xmldom/xmldom';
 import { buildSyntheticDocx } from '@usejunior/docx-core';
-import { compareDocumentsAtomizer } from './pipeline.js';
+import { compareDocumentsAtomizer, footnoteDefinitionRequiresCollisionSafeFallback } from './pipeline.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 
 const test = testAllure
@@ -211,5 +212,16 @@ describe('pipeline auxiliary note publication', () => {
       expect(parts.footnotesXml).toContain('<w:t>After</w:t>');
       expect(parts.documentXml?.match(/<w:footnoteReference w:id="2"/g)).toHaveLength(1);
     });
+  });
+
+  test('field and relationship-bearing definitions retain the collision-safe fallback', () => {
+    const parseEntry = (content: string) => new DOMParser().parseFromString(
+      `<w:footnote xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${content}</w:footnote>`,
+      'application/xml',
+    ).documentElement;
+    expect(footnoteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>7</w:t></w:r></w:fldSimple></w:p>'))).toBe(true);
+    expect(footnoteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:hyperlink r:id="rId7"><w:r><w:t>source</w:t></w:r></w:hyperlink></w:p>'))).toBe(true);
+    expect(footnoteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:drawing r:embed="rId8"/></w:p>'))).toBe(true);
+    expect(footnoteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:r><w:t>plain</w:t></w:r></w:p>'))).toBe(false);
   });
 });

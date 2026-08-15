@@ -1448,18 +1448,10 @@ async function reconcileCorrespondingFootnoteDefinitions(
     // auxiliary anchors need their own relationship-aware story comparison.
     // Keep the collision-safe two-definition representation for those shapes
     // until their dedicated structural comparers can participate here.
-    const unsupportedTags = [
-      'w:fldChar',
-      'w:commentReference',
-      'w:commentRangeStart',
-      'w:commentRangeEnd',
-      'w:footnoteReference',
-      'w:endnoteReference',
-    ];
-    if (unsupportedTags.some((tag) =>
-      originalEntry.getElementsByTagName(tag).length > 0 ||
-      revisedEntry.getElementsByTagName(tag).length > 0
-    )) continue;
+    if (
+      footnoteDefinitionRequiresCollisionSafeFallback(originalEntry) ||
+      footnoteDefinitionRequiresCollisionSafeFallback(revisedEntry)
+    ) continue;
 
     const comparedChildren = compareFootnoteDefinitions(originalEntry, revisedEntry, {
       author: options.author,
@@ -1483,6 +1475,31 @@ async function reconcileCorrespondingFootnoteDefinitions(
 
   options.resultArchive.setFile('word/footnotes.xml', serializer.serializeToString(resultParsed.doc));
   return serializer.serializeToString(documentDoc);
+}
+
+export function footnoteDefinitionRequiresCollisionSafeFallback(entry: Element): boolean {
+  const unsupportedTags = [
+    'w:fldChar',
+    'w:fldSimple',
+    'w:hyperlink',
+    'w:commentReference',
+    'w:commentRangeStart',
+    'w:commentRangeEnd',
+    'w:footnoteReference',
+    'w:endnoteReference',
+  ];
+  if (unsupportedTags.some((tag) => entry.getElementsByTagName(tag).length > 0)) return true;
+  const elements = [entry, ...Array.from(entry.getElementsByTagName('*'))] as Element[];
+  return elements.some((element) => {
+    for (let index = 0; index < element.attributes.length; index++) {
+      const attribute = element.attributes.item(index)!;
+      if (
+        attribute.namespaceURI === 'http://schemas.openxmlformats.org/officeDocument/2006/relationships' ||
+        attribute.name.startsWith('r:')
+      ) return true;
+    }
+    return false;
+  });
 }
 
 /**
