@@ -15,7 +15,7 @@ boundary: its executable output may be refreshed locally while CI validates only
 ## Decisions
 
 - Decision: emit a canonical JSON snapshot rather than checking in Aspose-produced DOCX files. The generated snapshot will
-  contain the oracle/version stamp, fixture IDs and hashes, and structural verdicts sufficient to distinguish
+  contain the oracle/version stamp, fixture IDs and hashes, non-derivable Aspose output-XML hashes, and structural verdicts sufficient to distinguish
   whole-field replacement from result-only redlining.
 - Decision: require explicit environment configuration for the Python executable and license path. Absence yields
   a clear skipped result; an attempted run with invalid configuration fails loudly.

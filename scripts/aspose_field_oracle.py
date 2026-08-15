@@ -62,7 +62,7 @@ def body_xml(instruction: str, result: str) -> str:
 
 
 def pack_docx(path: Path, document_xml: str) -> None:
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as archive:
         entries = {
             "[Content_Types].xml": '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
             "_rels/.rels": '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
@@ -71,7 +71,7 @@ def pack_docx(path: Path, document_xml: str) -> None:
         for name, content in entries.items():
             info = zipfile.ZipInfo(name, date_time=(2024, 1, 1, 0, 0, 0))
             info.create_system = 3
-            info.compress_type = zipfile.ZIP_DEFLATED
+            info.compress_type = zipfile.ZIP_STORED
             info.external_attr = 0o600 << 16
             archive.writestr(info, content.encode("utf-8"))
 
@@ -121,6 +121,11 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def document_xml_sha256(path: Path) -> str:
+    with zipfile.ZipFile(path) as archive:
+        return hashlib.sha256(archive.read("word/document.xml")).hexdigest()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
@@ -140,7 +145,7 @@ def main() -> int:
         with tempfile.TemporaryDirectory(prefix="safe-docx-aspose-self-test-") as temp:
             whole_field = (
                 f'<w:document xmlns:w="{W}"><w:body><w:p><w:del>'
-                + body_xml(" FORMCHECKBOX ", "☐").split("<w:p>", 1)[1].split("</w:p>", 1)[0]
+                + body_xml(" FORMCHECKBOX ", "☐").split("<w:p>", 1)[1].split("</w:p>", 1)[0].replace("w:instrText", "w:delInstrText").replace("<w:t>", "<w:delText>").replace("</w:t>", "</w:delText>")
                 + '</w:del><w:ins>'
                 + body_xml(" FORMTEXT ", "value").split("<w:p>", 1)[1].split("</w:p>", 1)[0]
                 + '</w:ins></w:p><w:sectPr/></w:body></w:document>'
@@ -177,6 +182,9 @@ def main() -> int:
                 expected = expected_projection(case_id, old_instruction, new_instruction, old_result, new_result)
                 if any(stored.get(key) != value for key, value in expected.items()):
                     raise ValueError(f"snapshot verdict mismatch for {case_id}")
+                output_hash = stored.get("outputDocumentXmlSha256", "")
+                if len(output_hash) != 64 or any(char not in "0123456789abcdef" for char in output_hash):
+                    raise ValueError(f"Aspose output provenance is missing for {case_id}")
         print("Aspose snapshot fixture hashes verified without importing Aspose")
         return 0
     python = os.environ.get("SAFE_DOCX_ASPOSE_PYTHON")
@@ -218,7 +226,7 @@ def main() -> int:
             expected = expected_projection(case_id, old_instruction, new_instruction, old_result, new_result)
             if any(projected.get(key) != value for key, value in expected.items()):
                 raise ValueError(f"Aspose produced an invalid verdict for {case_id}")
-            verdicts.append({"id": case_id, "originalSha256": sha256(original), "revisedSha256": sha256(revised), **projected})
+            verdicts.append({"id": case_id, "originalSha256": sha256(original), "revisedSha256": sha256(revised), "outputDocumentXmlSha256": document_xml_sha256(output), **projected})
 
     snapshot = {
         "schemaVersion": 1,

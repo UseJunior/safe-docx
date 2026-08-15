@@ -9,7 +9,7 @@ import { testAllure } from './allure-test.js';
 interface Snapshot {
   schemaVersion: number;
   oracle: { name: string; package: string; version: string };
-  fieldCases: Array<{ id: string; originalSha256: string; revisedSha256: string; classification: string; deletedFldChars: number; insertedFldChars: number; outsideRevisionFldChars: number; deletedInstruction: string; insertedInstruction: string; deletedText: string; insertedText: string }>;
+  fieldCases: Array<{ id: string; originalSha256: string; revisedSha256: string; outputDocumentXmlSha256: string; classification: string; deletedFldChars: number; insertedFldChars: number; outsideRevisionFldChars: number; deletedInstruction: string; insertedInstruction: string; deletedText: string; insertedText: string }>;
 }
 
 interface IlpaMeasurements {
@@ -41,6 +41,7 @@ describe('Aspose field differential oracle trust boundary', () => {
         deletedInstruction: expected[id][0], insertedInstruction: expected[id][1],
         deletedText: expected[id][2], insertedText: expected[id][3],
       });
+      expect(verdict?.outputDocumentXmlSha256).toMatch(/^[0-9a-f]{64}$/);
     }
   });
 
@@ -94,7 +95,7 @@ describe('Aspose field differential oracle trust boundary', () => {
     expect(rejectedInvalidPaths.stderr).not.toContain('/private/nonexistent');
   });
 
-  test.openspec('[ASPOSE-FIELD-05] The ILPA trust boundary records agreement and divergence')('pins the measured agreements and the non-authoritative divergence', () => {
+  test.openspec('[ASPOSE-FIELD-05] The ILPA trust boundary records agreement and divergence')('pins the dated manual measurement record and its authority boundary', () => {
     const measured = ilpa.observations;
     expect(ilpa.provenance).toMatchObject({ wordVersion: '16.112', asposeVersion: '25.10' });
     expect(measured.wholeFieldDeletion).toMatchObject({ agreement: true, wordFldCharsInsideDeletion: 174, asposeFldCharsInsideDeletion: 45 });

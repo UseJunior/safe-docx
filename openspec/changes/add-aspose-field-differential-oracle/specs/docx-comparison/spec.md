@@ -44,4 +44,4 @@ cannot silently restamp evidence that was not rerun.
 
 - **GIVEN** the pinned ILPA original/revised pair and the measured Microsoft Word 16.112 and Aspose.Words 25.10 outputs
 - **WHEN** the checked-in trust-boundary snapshot is validated
-- **THEN** it records agreement on whole-field deletion, the §14.7.1 parenthetical-enumerator boundary, and the §15.5.5 bold-to-not-bold `rPrChange`; records the document-wide `rPrChange` counts as ours 17, Word 34, and Aspose 31; and records that Aspose is more surgical than Word at `Giveback),` while Word remains authoritative
+- **THEN** it records agreement on whole-field deletion, the §14.7.1 parenthetical-enumerator boundary, and the §15.5.5 bold-to-not-bold `rPrChange`; records the manual-oracle document-wide `rPrChange` counts as Word 34 and Aspose 31; keeps safe-docx behavior asserted structurally by the reproducible comparison suite rather than pinned as a self-measurement; and records that Aspose is more surgical than Word at `Giveback),` while Word remains authoritative
