@@ -237,6 +237,69 @@ describe('independent release verifier', () => {
     expect(result.exitCode).toBe(1);
   });
 
+  itAllure('fails closed when native comments are required but the tracked DOCX has zero comments', async () => {
+    const { manifest } = await fixture();
+    const result = await verifyRelease({ ...manifest, requireNativeComments: true });
+    expect(result.gates.comments.status).toBe('fail');
+    expect(result.gates.comments.reason).toContain('expected minimum 1, actual 0');
+    expect(result.gates.comments.details).toMatchObject({ expectedMinimum: 1, count: 0 });
+    expect(result.delivery.status).toBe('fail');
+    expect(result.exitCode).toBe(1);
+  });
+
+  itAllure('leaves the zero-comment gate not_run when native comments are not required', async () => {
+    const { manifest } = await fixture();
+    const omitted = await verifyRelease(manifest);
+    expect(omitted.gates.comments).toMatchObject({ status: 'not_run', required: false });
+    expect(omitted.exitCode).toBe(0);
+    const disabled = await verifyRelease({ ...manifest, requireNativeComments: false });
+    expect(disabled.gates.comments).toMatchObject({ status: 'not_run', required: false });
+    expect(disabled.exitCode).toBe(0);
+  });
+
+  itAllure('accepts one structurally valid native comment and turns red when that final comment is removed', async () => {
+    const { manifest } = await fixture();
+    const trackedRevision = '<w:r><w:t xml:space="preserve">Hello </w:t></w:r><w:del w:id="1"><w:r><w:delText>old</w:delText></w:r></w:del><w:ins w:id="2"><w:r><w:t>new</w:t></w:r></w:ins>';
+    await writeDocx(manifest.trackedPath,
+      `<w:p><w:commentRangeStart w:id="1"/>${trackedRevision}<w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r></w:p>`,
+      `<w:comments xmlns:w="${W}"><w:comment w:id="1"/></w:comments>`);
+    const commented = await verifyRelease({ ...manifest, requireNativeComments: true });
+    expect(commented.gates.comments).toMatchObject({ status: 'pass', details: { expectedMinimum: 1, count: 1 } });
+    expect(commented.exitCode).toBe(0);
+    // Negative control: removing the final comment must flip the required gate to red.
+    await writeDocx(manifest.trackedPath, `<w:p>${trackedRevision}</w:p>`);
+    const stripped = await verifyRelease({ ...manifest, requireNativeComments: true });
+    expect(stripped.gates.comments.status).toBe('fail');
+    expect(stripped.gates.comments.reason).toContain('expected minimum 1, actual 0');
+    expect(stripped.exitCode).toBe(1);
+  });
+
+  itAllure('fails dangling references, duplicate definitions, and malformed ranges independently of the nonempty check', async () => {
+    const { manifest } = await fixture();
+    const revision = '<w:r><w:t xml:space="preserve">Hello </w:t></w:r><w:del w:id="1"><w:r><w:delText>old</w:delText></w:r></w:del><w:ins w:id="2"><w:r><w:t>new</w:t></w:r></w:ins>';
+    const commentsXml = `<w:comments xmlns:w="${W}"><w:comment w:id="1"/></w:comments>`;
+    // Dangling reference: full range markup in the document but no comment record part.
+    await writeDocx(manifest.trackedPath, `<w:p><w:commentRangeStart w:id="1"/>${revision}<w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r></w:p>`);
+    const dangling = await verifyRelease({ ...manifest, requireNativeComments: true });
+    expect(dangling.gates.comments.status).toBe('fail');
+    expect(dangling.gates.comments.reason).toContain('disagree');
+    expect(dangling.exitCode).toBe(1);
+    // Duplicate definition: two comment records for a single referenced range.
+    await writeDocx(manifest.trackedPath,
+      `<w:p><w:commentRangeStart w:id="1"/>${revision}<w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r></w:p>`,
+      `<w:comments xmlns:w="${W}"><w:comment w:id="1"/><w:comment w:id="1"/></w:comments>`);
+    const duplicated = await verifyRelease({ ...manifest, requireNativeComments: true });
+    expect(duplicated.gates.comments.status).toBe('fail');
+    expect(duplicated.gates.comments.reason).toContain('disagree');
+    expect(duplicated.exitCode).toBe(1);
+    // Malformed range: a start without a matching end, even though a record and reference exist.
+    await writeDocx(manifest.trackedPath, `<w:p><w:commentRangeStart w:id="1"/>${revision}<w:r><w:commentReference w:id="1"/></w:r></w:p>`, commentsXml);
+    const malformed = await verifyRelease({ ...manifest, requireNativeComments: true });
+    expect(malformed.gates.comments.status).toBe('fail');
+    expect(malformed.gates.comments.reason).toContain('disagree');
+    expect(malformed.exitCode).toBe(1);
+  });
+
   itAllure('fails corrupt packages independently of semantic text', async () => {
     const { manifest } = await fixture();
     await writeFile(manifest.trackedPath, 'not a zip');
