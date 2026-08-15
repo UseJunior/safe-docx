@@ -1,3 +1,6 @@
+> **Retracted and archived without applying the spec delta on 2026-08-14.** See
+> `proposal.md` for the measured evidence that invalidated the premise.
+
 ## 1. OpenSpec scaffold
 
 - [x] 1.1 Scaffold `openspec/changes/fragment-ins-del-at-field-boundaries/` with `proposal.md`, `design.md`, `tasks.md`, and `specs/docx-comparison/spec.md` (ADDED requirement for ECMA-376 field-fragmentation conformance).
