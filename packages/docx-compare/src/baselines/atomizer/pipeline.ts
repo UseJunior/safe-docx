@@ -1440,6 +1440,14 @@ async function reconcileCorrespondingFootnoteDefinitions(
   const documentDoc = parseXml(options.documentXml);
   const originalDocumentDoc = parseXml(originalDocumentXml);
   const revisedDocumentDoc = parseXml(revisedDocumentXml);
+  let projectionDocs: FootnoteReferenceProjectionDocs | undefined;
+  const getProjectionDocs = (): FootnoteReferenceProjectionDocs => {
+    projectionDocs ??= {
+      accepted: parseXml(acceptAllChanges(options.documentXml)),
+      rejected: parseXml(rejectAllChanges(options.documentXml)),
+    };
+    return projectionDocs;
+  };
 
   for (const pair of pairs) {
     const originalEntry = originalParsed.entries.get(pair.originalId);
@@ -1448,21 +1456,20 @@ async function reconcileCorrespondingFootnoteDefinitions(
     const discardedId = options.outputMode === 'inplace' ? pair.originalId : pair.revisedId;
     const targetEntry = resultParsed.entries.get(targetId);
     if (!originalEntry || !revisedEntry || !targetEntry) continue;
+    // Cheap definition-local exclusions precede every document-wide reference
+    // or projection check.
+    if (
+      footnoteDefinitionRequiresCollisionSafeFallback(originalEntry) ||
+      footnoteDefinitionRequiresCollisionSafeFallback(revisedEntry)
+    ) continue;
     if (!isOnlyFootnoteAnchorInSourceParagraph(originalDocumentDoc, pair.originalId) ||
         !isOnlyFootnoteAnchorInSourceParagraph(revisedDocumentDoc, pair.revisedId)) continue;
     if (!hasSafeEmittedFootnoteReferenceShape(
       documentDoc,
       pair.originalId,
       pair.revisedId,
+      getProjectionDocs,
     )) continue;
-    // Field ranges have a separate exact-preservation gate, and nested
-    // auxiliary anchors need their own relationship-aware story comparison.
-    // Keep the collision-safe two-definition representation for those shapes
-    // until their dedicated structural comparers can participate here.
-    if (
-      footnoteDefinitionRequiresCollisionSafeFallback(originalEntry) ||
-      footnoteDefinitionRequiresCollisionSafeFallback(revisedEntry)
-    ) continue;
 
     let comparedChildren: Element[];
     try {
@@ -1526,6 +1533,11 @@ function ancestorElement(element: Element, tagName: string): Element | null {
   return null;
 }
 
+interface FootnoteReferenceProjectionDocs {
+  accepted: Document;
+  rejected: Document;
+}
+
 /**
  * Require either Word's explicit deleted/inserted reference pair or a single
  * unchanged live reference. Ambiguous multiplicity and mixed wrapper shapes
@@ -1538,6 +1550,7 @@ function hasSafeEmittedFootnoteReferenceShape(
   documentDoc: Document,
   originalId: string,
   revisedId: string,
+  getProjectionDocs: () => FootnoteReferenceProjectionDocs,
 ): boolean {
   const original: Element[] = [];
   const revised: Element[] = [];
@@ -1566,24 +1579,22 @@ function hasSafeEmittedFootnoteReferenceShape(
     revisedParagraph?.getElementsByTagName('w:footnoteReference').length === 1 &&
     !hasAncestorTag(revised[0]!, 'w:del') &&
     !hasAncestorTag(revised[0]!, 'w:ins');
-  const projectionPair = (() => {
-    if (original.length !== 1 || revised.length !== 1 || !pairParagraphIsUnambiguous) return false;
-    const accepted = parseXml(acceptAllChanges(serializer.serializeToString(documentDoc)));
-    const rejected = parseXml(rejectAllChanges(serializer.serializeToString(documentDoc)));
-    const count = (doc: Document, id: string): number => {
-      let matches = 0;
-      const refs = doc.getElementsByTagName('w:footnoteReference');
-      for (let i = 0; i < refs.length; i++) {
-        if ((refs[i] as Element).getAttribute('w:id') === id) matches++;
-      }
-      return matches;
-    };
-    return count(accepted, originalId) === 0 &&
-      count(accepted, revisedId) === 1 &&
-      count(rejected, originalId) === 1 &&
-      count(rejected, revisedId) === 0;
-  })();
-  return explicitPair || stableReference || projectionPair;
+  if (explicitPair || stableReference) return true;
+  if (original.length !== 1 || revised.length !== 1 || !pairParagraphIsUnambiguous) return false;
+
+  const { accepted, rejected } = getProjectionDocs();
+  const count = (doc: Document, id: string): number => {
+    let matches = 0;
+    const refs = doc.getElementsByTagName('w:footnoteReference');
+    for (let i = 0; i < refs.length; i++) {
+      if ((refs[i] as Element).getAttribute('w:id') === id) matches++;
+    }
+    return matches;
+  };
+  return count(accepted, originalId) === 0 &&
+    count(accepted, revisedId) === 1 &&
+    count(rejected, originalId) === 1 &&
+    count(rejected, revisedId) === 0;
 }
 
 export function footnoteDefinitionRequiresCollisionSafeFallback(entry: Element): boolean {
