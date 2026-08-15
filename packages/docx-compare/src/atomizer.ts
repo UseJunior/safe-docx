@@ -1290,62 +1290,6 @@ function splitAtomIntoWords(atom: ComparisonUnitAtom): ComparisonUnitAtom[] {
   return result;
 }
 
-function paragraphAncestor(atom: ComparisonUnitAtom): Element | undefined {
-  return atom.ancestorElements.find((ancestor) => ancestor.tagName === 'w:p');
-}
-
-function isRomanNumeral(value: string): boolean {
-  return /^(?=[mdclxvi]+$)m{0,4}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})$/i.test(value);
-}
-
-/**
- * In a paragraph containing a sequence of parenthetical Roman enumerators,
- * bind each enumerator to its local item opening. This prevents LCS from
- * partially matching `(i` across a rewritten multi-item enumeration while
- * leaving standalone enumerators and neighbouring paragraphs unaffected.
- *
- * @see https://github.com/UseJunior/safe-docx/issues/851
- */
-function saltParentheticalRomanEnumerators(atoms: ComparisonUnitAtom[]): void {
-  const triples: Array<{ index: number; paragraph: Element }> = [];
-  for (let index = 0; index + 2 < atoms.length; index++) {
-    const open = atoms[index]!;
-    const numeral = atoms[index + 1]!;
-    const close = atoms[index + 2]!;
-    const paragraph = paragraphAncestor(open);
-    if (
-      paragraph && paragraphAncestor(numeral) === paragraph && paragraphAncestor(close) === paragraph &&
-      open.contentElement.tagName === 'w:t' && open.contentElement.textContent === '(' &&
-      numeral.contentElement.tagName === 'w:t' &&
-      isRomanNumeral(numeral.contentElement.textContent ?? '') &&
-      close.contentElement.tagName === 'w:t' && close.contentElement.textContent === ')'
-    ) {
-      triples.push({ index, paragraph });
-    }
-  }
-
-  const ordinalByParagraph = new Map<Element, number>();
-  for (const triple of triples) {
-    const ordinal = ordinalByParagraph.get(triple.paragraph) ?? 0;
-    ordinalByParagraph.set(triple.paragraph, ordinal + 1);
-    const nextTriple = triples.find((candidate) =>
-      candidate.index > triple.index && candidate.paragraph === triple.paragraph);
-    let lexicalTokenCount = 0;
-    for (let index = triple.index + 3; index < (nextTriple?.index ?? atoms.length); index++) {
-      const next = atoms[index]!;
-      if (paragraphAncestor(next) !== triple.paragraph) break;
-      const text = next.contentElement.textContent ?? '';
-      if (next.contentElement.tagName === 'w:t' && /[\p{L}\p{N}]/u.test(text)) lexicalTokenCount++;
-    }
-    const numeral = atoms[triple.index + 1]!.contentElement.textContent!.toLowerCase();
-    const lengthBand = Math.floor(Math.log2(Math.max(1, lexicalTokenCount)));
-    const salt = `:paren-enumerator=${numeral}:${ordinal}:band-${lengthBand}`;
-    appendIdentitySalt(atoms[triple.index]!, salt);
-    appendIdentitySalt(atoms[triple.index + 1]!, salt);
-    appendIdentitySalt(atoms[triple.index + 2]!, salt);
-  }
-}
-
 /**
  * Split all w:t atoms into word-level atoms.
  *
@@ -1360,8 +1304,6 @@ export function splitAtomsIntoWords(
   for (const atom of atoms) {
     result.push(...splitAtomIntoWords(atom));
   }
-
-  saltParentheticalRomanEnumerators(result);
 
   return result;
 }

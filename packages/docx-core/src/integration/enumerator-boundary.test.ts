@@ -181,4 +181,22 @@ describe('parenthetical enumerator revision boundaries', () => {
       expect(revisions.every((text) => !text.includes('(i)'))).toBe(true);
     });
   });
+
+  test('keeps a standalone enumerator stable when its item grows', async ({ given, when, then }: AllureBddContext) => {
+    let xml = '';
+    await given('a standalone item that adds two words after its unchanged marker', async () => {
+      const original = await buildDocxFromBodyXml(paragraph('(i) alpha'));
+      const revised = await buildDocxFromBodyXml(paragraph('(i) alpha beta gamma'));
+      const compared = await compareDocuments(original, revised, { engine: 'atomizer', reconstructionMode: 'inplace' });
+      expect(compared.reconstructionModeUsed).toBe('inplace');
+      xml = await (await DocxArchive.load(compared.document)).getDocumentXml();
+    });
+
+    await when('the item growth is compared', async () => {});
+
+    await then('the unchanged marker is absent from revisions', () => {
+      const revisions = [...directRevisionText(xml, 'w:del'), ...directRevisionText(xml, 'w:ins')];
+      expect(revisions.every((text) => text !== '(i)')).toBe(true);
+    });
+  });
 });
