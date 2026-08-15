@@ -105,7 +105,16 @@ def project(path: Path) -> dict:
         node.text or "" for node in root.findall(".//w:instrText", NS)
         if not any(node in parent.iter() for parent in deleted + inserted)
     )
-    if fld(deleted) >= 3 and fld(inserted) >= 3:
+    overlapping_revisions = any(
+        inserted_node in deleted_node.iter()
+        for deleted_node in deleted
+        for inserted_node in inserted
+    ) or any(
+        deleted_node in inserted_node.iter()
+        for inserted_node in inserted
+        for deleted_node in deleted
+    )
+    if not overlapping_revisions and fld(deleted) >= 3 and fld(inserted) >= 3:
         classification = "whole-field-replacement"
     elif fld(deleted) == 0 and fld(inserted) == 0 and outside == 3 and deleted_text and inserted_text:
         classification = "cached-result-only"
@@ -121,6 +130,7 @@ def project(path: Path) -> dict:
         "deletedText": deleted_text,
         "insertedText": inserted_text,
         "classification": classification,
+        "overlappingRevisions": overlapping_revisions,
     }
 
 
@@ -167,8 +177,12 @@ def main() -> int:
             if tracked["classification"] != "cached-result-only" or tracked["deletedText"] != "3" or tracked["insertedText"] != "4":
                 raise AssertionError("tracked cached-result projection is incomplete")
             whole = project(whole_path)
-            if whole != expected_projection("formcheckbox-to-formtext", " FORMCHECKBOX ", " FORMTEXT ", "☐", "value"):
+            if any(whole.get(key) != value for key, value in expected_projection("formcheckbox-to-formtext", " FORMCHECKBOX ", " FORMTEXT ", "☐", "value").items()):
                 raise AssertionError("whole-field projection is incomplete")
+            nested_path = Path(temp) / "nested.docx"
+            pack_docx(nested_path, whole_field.replace('<w:del>', '<w:del><w:ins>').replace('</w:del><w:ins>', '</w:ins></w:del><w:ins>', 1))
+            if project(nested_path)["classification"] != "unclassified":
+                raise AssertionError("overlapping revisions must not classify as whole-field replacement")
         print("Aspose projection self-test passed without importing Aspose")
         return 0
     if args.check:

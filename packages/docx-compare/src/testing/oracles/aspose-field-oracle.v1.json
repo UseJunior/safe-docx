@@ -13,6 +13,7 @@
       "outputDocumentXmlSha256": "d9864f4c4a2550555056ba86281a65fb1d149ead12db9061f22c5144d98b08bb",
       "outsideRevisionFldChars": 0,
       "outsideRevisionInstruction": "",
+      "overlappingRevisions": false,
       "revisedSha256": "b61a9ca2e5e9ee9540e194aa86440b0bd7f2cbfc290180f9ab19cae565e5dbae"
     },
     {
@@ -28,6 +29,7 @@
       "outputDocumentXmlSha256": "741edacdf6453cb7baaccafa43b781666da6c0f2c1d8e729dd1e0e144f83ca92",
       "outsideRevisionFldChars": 0,
       "outsideRevisionInstruction": "",
+      "overlappingRevisions": false,
       "revisedSha256": "af0c107541ba9c7bc68ba8786c9dae42d14d339dbb8277cf7da0c0a6dac547d4"
     },
     {
@@ -43,6 +45,7 @@
       "outputDocumentXmlSha256": "19d92b3fba6cb09129b30c07d37bfc6bd890e8cc06477c5171846e36cb00cd0d",
       "outsideRevisionFldChars": 0,
       "outsideRevisionInstruction": "",
+      "overlappingRevisions": false,
       "revisedSha256": "c2f0a45216ec904622025dd7762adeddcc92f29c7f2be86c4b09e84acf1187e2"
     },
     {
@@ -58,6 +61,7 @@
       "outputDocumentXmlSha256": "adae039afe5b64eb935cef71cf88afcdf36bf7f471ceb0b5415caed1226bf8af",
       "outsideRevisionFldChars": 3,
       "outsideRevisionInstruction": " NUMPAGES ",
+      "overlappingRevisions": false,
       "revisedSha256": "f7d12803fbd52490ca5d3f08d184895c5aa2be2ad0282f160da3874e0c2d8677"
     }
   ],
