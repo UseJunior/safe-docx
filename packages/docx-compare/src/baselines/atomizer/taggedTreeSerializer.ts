@@ -1,6 +1,7 @@
 import { XMLSerializer } from '@xmldom/xmldom';
 import type { WmlElement } from '@usejunior/docx-core';
 import { childElements, parseXml } from '@usejunior/docx-core';
+import { alignComparisonSequences, tokenizeComparisonText } from '../../textAlignment.js';
 import {
   nextRevisionId,
   PROPERTY_SCOPE_ELEMENT,
@@ -132,14 +133,30 @@ function wrapRevision(node: WmlElement, kind: 'ins' | 'del' | 'moveFrom' | 'move
   return wrapper;
 }
 
-/** ECMA-376 bars field-character runs from w:del. Keep those zero-width
- * structural controls live and split the deletion around them, matching the
- * established hardened deletion path. */
+/**
+ * Keep field-character controls live and split deletion content around them,
+ * matching the established hardened deletion path.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
+ */
 function hoistFieldCharactersFromDeletions(root: WmlElement): void {
   const deletions = Array.from(root.getElementsByTagNameNS(W_NS, 'del')) as WmlElement[];
   for (const deletion of deletions) {
     const parent = deletion.parentNode;
     if (!parent) continue;
+    const deletedFields = Array.from(deletion.getElementsByTagNameNS(W_NS, 'fldChar'));
+    let nextElement = deletion.nextSibling;
+    while (nextElement && nextElement.nodeType !== 1) nextElement = nextElement.nextSibling;
+    if (deletedFields.length === 1 && nextElement && (nextElement as WmlElement).localName === 'ins') {
+      const insertedFields = Array.from(
+        (nextElement as WmlElement).getElementsByTagNameNS(W_NS, 'fldChar'),
+      );
+      const fieldType = (field: Element): string | null =>
+        field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType');
+      if (insertedFields.length === 1 && fieldType(deletedFields[0]!) === fieldType(insertedFields[0]!)) {
+        continue;
+      }
+    }
     const children = childElements(deletion);
     if (!children.some((child) => child.getElementsByTagNameNS(W_NS, 'fldChar').length > 0)) continue;
     const replacement: WmlElement[] = [];
@@ -163,6 +180,67 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
     for (const item of replacement) parent.insertBefore(item, deletion);
     parent.removeChild(deletion);
   }
+}
+
+/**
+ * Keep literal replacement content outside a deleted complex-field
+ * instruction. A live field skeleton may remain for consumer compatibility,
+ * but Accept All must never see literal text between begin and separate when
+ * the instruction itself exists only in Reject All.
+ */
+function hoistLiteralInsertionsFromDeletedFieldInstructions(root: WmlElement): void {
+  const visit = (container: WmlElement): void => {
+    for (const child of childElements(container)) visit(child);
+
+    for (;;) {
+      const siblings = childElements(container);
+      const stack: Array<{ begin: WmlElement; instructionNodes: WmlElement[] }> = [];
+      let changed = false;
+      for (const sibling of siblings) {
+        const fieldCharacters = Array.from(sibling.getElementsByTagNameNS(W_NS, 'fldChar'));
+        const types = fieldCharacters.map((field) => field.getAttributeNS(W_NS, 'fldCharType'));
+        if (types.includes('begin')) {
+          stack.push({ begin: sibling, instructionNodes: [] });
+          continue;
+        }
+        const active = stack[stack.length - 1];
+        if (!active) continue;
+        if (types.includes('separate')) {
+          const deletedInstruction = active.instructionNodes.some((node) =>
+            (node.localName === 'del' || node.getElementsByTagNameNS(W_NS, 'del').length > 0) &&
+            (node.getElementsByTagNameNS(W_NS, 'instrText').length > 0 ||
+              node.getElementsByTagNameNS(W_NS, 'delInstrText').length > 0),
+          );
+          if (deletedInstruction) {
+            const literalInsertions = active.instructionNodes.filter((node) => {
+              if (node.localName !== 'ins') return false;
+              const runs = childElements(node);
+              return runs.length > 0 && runs.every((run) =>
+                run.localName === 'r' && childElements(run).every((content) =>
+                  ['rPr', 't'].includes(content.localName),
+                ),
+              );
+            });
+            if (literalInsertions.length > 0) {
+              for (const insertion of literalInsertions) {
+                container.insertBefore(insertion, active.begin);
+              }
+              changed = true;
+              break;
+            }
+          }
+          continue;
+        }
+        if (types.includes('end')) {
+          stack.pop();
+          continue;
+        }
+        active.instructionNodes.push(sibling);
+      }
+      if (!changed) break;
+    }
+  };
+  visit(root);
 }
 
 function markWholeParagraph(
@@ -441,6 +519,10 @@ function refineRunReplacement(
     }
     return emitted;
   }
+  if (
+    originalContent.length !== 1 || revisedContent.length !== 1 ||
+    originalContent[0]!.localName !== 't' || revisedContent[0]!.localName !== 't'
+  ) return undefined;
   const originalTexts = Array.from(original.getElementsByTagNameNS(W_NS, 't'));
   const revisedTexts = Array.from(revised.getElementsByTagNameNS(W_NS, 't'));
   if (originalTexts.length !== 1 || revisedTexts.length !== 1) return undefined;
@@ -466,6 +548,233 @@ function refineRunReplacement(
     const insertionRun = cloneElement(revised);
     insertionRun.getElementsByTagNameNS(W_NS, 't')[0]!.textContent = insertedText;
     emitted.push(wrapRevision(insertionRun, 'ins', allocateRevision()));
+  }
+  return emitted;
+}
+
+function simpleTextRun(node: TaggedNode, side: Side): WmlElement | undefined {
+  const run = representative(node, side);
+  if (run?.localName !== 'r') return undefined;
+  if (revisionProvenance(run).length > 0) return undefined;
+  const content = childElements(run).filter((child) => child.localName !== 'rPr');
+  return content.filter((child) => child.localName === 't').length === 1 &&
+    content.every((child) => child.localName === 't' || child.localName === 'tab')
+    ? run
+    : undefined;
+}
+
+function runText(run: WmlElement): string {
+  return run.getElementsByTagNameNS(W_NS, 't')[0]?.textContent ?? '';
+}
+
+const fragmentSource = new WeakMap<WmlElement, WmlElement>();
+
+function runFragment(run: WmlElement, value: string): WmlElement {
+  const fragment = cloneElement(run);
+  fragmentSource.set(fragment, run);
+  const text = fragment.getElementsByTagNameNS(W_NS, 't')[0]!;
+  text.textContent = value;
+  if (/^\s|\s$/u.test(value)) text.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+  else text.removeAttributeNS('http://www.w3.org/XML/1998/namespace', 'space');
+  return fragment;
+}
+
+function runProperties(run: WmlElement): WmlElement | null {
+  return childElements(run).find((child) => child.localName === 'rPr') ?? null;
+}
+
+function emitCommonRun(
+  original: WmlElement,
+  revised: WmlElement,
+  value: string,
+  allocateRevision: () => ComparisonRevision,
+): WmlElement {
+  const live = runFragment(revised, value);
+  const before = runProperties(original);
+  const after = runProperties(revised);
+  const serialize = (property: WmlElement | null): string => property
+    ? new XMLSerializer().serializeToString(property)
+    : '';
+  if (serialize(before) !== serialize(after)) {
+    applyPropertyDelta(live, {
+      tag: 'both', original, revised, children: [], opaque: true,
+      propertyDelta: { scope: 'run', original: before, revised: after, changedProperties: ['directProperties'] },
+    }, allocateRevision());
+  }
+  return live;
+}
+
+interface TextToken { value: string; run: WmlElement; start: number }
+
+function appendCoalescedTextEmission(emitted: WmlElement[], next: WmlElement): void {
+  const previous = emitted[emitted.length - 1];
+  if (!previous || previous.localName !== next.localName) {
+    emitted.push(next);
+    return;
+  }
+  const previousRun = previous.localName === 'r'
+    ? previous
+    : childElements(previous).length === 1 && childElements(previous)[0]!.localName === 'r'
+      ? childElements(previous)[0]!
+      : undefined;
+  const nextRun = next.localName === 'r'
+    ? next
+    : childElements(next).length === 1 && childElements(next)[0]!.localName === 'r'
+      ? childElements(next)[0]!
+      : undefined;
+  if (!previousRun || !nextRun) {
+    emitted.push(next);
+    return;
+  }
+  if (fragmentSource.get(previousRun) !== fragmentSource.get(nextRun)) {
+    emitted.push(next);
+    return;
+  }
+  const signature = (run: WmlElement): string => {
+    const properties = runProperties(run);
+    return properties ? new XMLSerializer().serializeToString(properties) : '';
+  };
+  const previousText = childElements(previousRun).find((child) => ['t', 'delText'].includes(child.localName));
+  const nextText = childElements(nextRun).find((child) => ['t', 'delText'].includes(child.localName));
+  if (!previousText || !nextText || previousText.localName !== nextText.localName ||
+      signature(previousRun) !== signature(nextRun)) {
+    emitted.push(next);
+    return;
+  }
+  previousText.textContent = (previousText.textContent ?? '') + (nextText.textContent ?? '');
+  if (/^\s|\s$/u.test(previousText.textContent ?? '')) {
+    previousText.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+  }
+}
+
+function tokenizedRuns(runs: readonly WmlElement[], concatenate: boolean): TextToken[] {
+  if (!concatenate) {
+    let start = 0;
+    return runs.flatMap((run) => {
+      const tokens = tokenizeComparisonText(runText(run)).map((value) => {
+        const token = { value, run, start };
+        start += value.length;
+        return token;
+      });
+      return tokens;
+    });
+  }
+  const text = runs.map(runText).join('');
+  let offset = 0;
+  const ownerAt = (position: number): WmlElement => {
+    let end = 0;
+    for (const run of runs) {
+      end += runText(run).length;
+      if (position < end) return run;
+    }
+    return runs[runs.length - 1]!;
+  };
+  return tokenizeComparisonText(text).map((value) => {
+    const token = { value, run: ownerAt(offset), start: offset };
+    offset += value.length;
+    return token;
+  });
+}
+
+function emitCommonToken(
+  originalToken: TextToken,
+  revisedToken: TextToken,
+  originals: readonly WmlElement[],
+  revised: readonly WmlElement[],
+  allocateRevision: () => ComparisonRevision,
+): WmlElement[] {
+  const relativeBoundaries = new Set<number>([0, originalToken.value.length]);
+  const addBoundaries = (runs: readonly WmlElement[], tokenStart: number): void => {
+    let boundary = 0;
+    for (const run of runs) {
+      boundary += runText(run).length;
+      const relative = boundary - tokenStart;
+      if (relative > 0 && relative < originalToken.value.length) relativeBoundaries.add(relative);
+    }
+  };
+  addBoundaries(originals, originalToken.start);
+  addBoundaries(revised, revisedToken.start);
+  const ownerAt = (runs: readonly WmlElement[], position: number): WmlElement => {
+    let end = 0;
+    for (const run of runs) {
+      end += runText(run).length;
+      if (position < end) return run;
+    }
+    return runs[runs.length - 1]!;
+  };
+  const boundaries = [...relativeBoundaries].sort((a, b) => a - b);
+  return boundaries.slice(0, -1).map((start, index) => emitCommonRun(
+    ownerAt(originals, originalToken.start + start),
+    ownerAt(revised, revisedToken.start + start),
+    originalToken.value.slice(start, boundaries[index + 1]),
+    allocateRevision,
+  ));
+}
+
+function refineSimpleRunGap(
+  originals: readonly WmlElement[],
+  revised: readonly WmlElement[],
+  allocateRevision: () => ComparisonRevision,
+): WmlElement[] | undefined {
+  if (originals.length === 0 || revised.length === 0) return undefined;
+  const before = originals.map(runText).join('');
+  const after = revised.map(runText).join('');
+  const hasAuxiliaryContent = [...originals, ...revised].some((run) =>
+    childElements(run).some((child) => !['rPr', 't'].includes(child.localName)));
+  if (before === after) {
+    if (hasAuxiliaryContent) {
+      const propertySignatures = new Set([...originals, ...revised].map((run) => {
+        const property = runProperties(run);
+        return property ? new XMLSerializer().serializeToString(property) : '';
+      }));
+      if (propertySignatures.size > 1) return undefined;
+    }
+    const boundaries = new Set<number>([0, before.length]);
+    for (const runs of [originals, revised]) {
+      let offset = 0;
+      for (const run of runs) { offset += runText(run).length; boundaries.add(offset); }
+    }
+    const offsets = [...boundaries].sort((a, b) => a - b);
+    const ownerAt = (runs: readonly WmlElement[], offset: number): WmlElement => {
+      let end = 0;
+      for (const run of runs) { end += runText(run).length; if (offset < end) return run; }
+      return runs[runs.length - 1]!;
+    };
+    const emitted: WmlElement[] = [];
+    offsets.slice(0, -1).forEach((start, index) => {
+      const value = before.slice(start, offsets[index + 1]);
+      if (value) appendCoalescedTextEmission(
+        emitted,
+        emitCommonRun(ownerAt(originals, start), ownerAt(revised, start), value, allocateRevision),
+      );
+    });
+    return emitted;
+  }
+  if (hasAuxiliaryContent) return undefined;
+  const directPropertySignatures = new Set([...originals, ...revised].map((run) => {
+    const property = runProperties(run);
+    return property ? new XMLSerializer().serializeToString(property) : '';
+  }));
+  const concatenate = directPropertySignatures.size === 1;
+  const left = tokenizedRuns(originals, concatenate);
+  const right = tokenizedRuns(revised, concatenate);
+  const alignment = alignComparisonSequences(left, right, (a, b) => a.value === b.value);
+  const matches = new Map(alignment.matches.map((match) => [match.originalIndex, match.revisedIndex]));
+  const deleted = new Set(alignment.deletedIndices);
+  const emitted: WmlElement[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < left.length || j < right.length) {
+    if (i < left.length && j < right.length && matches.get(i) === j) {
+      for (const common of emitCommonToken(left[i]!, right[j]!, originals, revised, allocateRevision)) {
+        appendCoalescedTextEmission(emitted, common);
+      }
+      i++; j++;
+    } else if (i < left.length && deleted.has(i)) {
+      appendCoalescedTextEmission(emitted, wrapRevision(runFragment(left[i]!.run, left[i]!.value), 'del', allocateRevision())); i++;
+    } else {
+      appendCoalescedTextEmission(emitted, wrapRevision(runFragment(right[j]!.run, right[j]!.value), 'ins', allocateRevision())); j++;
+    }
   }
   return emitted;
 }
@@ -523,6 +832,27 @@ function emitNode(
       const childElement = representative(child, child.tag === 'original' ? 'original' : 'revised');
       if (propertyTag && childElement?.tagName === propertyTag) {
         continue;
+      }
+      if (child.tag === 'original' || child.tag === 'revised') {
+        let end = index;
+        const originals: WmlElement[] = [];
+        const revisions: WmlElement[] = [];
+        while (end < node.children.length) {
+          const candidate = node.children[end]!;
+          if (candidate.tag === 'both' || moveFor(candidate, moves)) break;
+          const run = simpleTextRun(candidate, candidate.tag);
+          if (!run) break;
+          (candidate.tag === 'original' ? originals : revisions).push(run);
+          end++;
+        }
+        if (end > index + 1) {
+          const refined = refineSimpleRunGap(originals, revisions, allocateRevision);
+          if (refined) {
+            emitted.push(...refined);
+            index = end - 1;
+            continue;
+          }
+        }
       }
       const next = node.children[index + 1];
       if (child.tag === 'original' && next?.tag === 'revised' &&
@@ -601,6 +931,7 @@ export function serializeTaggedTree(
     () => nextBookmarkId++,
   );
   hoistFieldCharactersFromDeletions(emitted);
+  hoistLiteralInsertionsFromDeletedFieldInstructions(emitted);
   return new XMLSerializer().serializeToString(emitted);
 }
 

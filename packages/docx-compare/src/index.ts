@@ -136,6 +136,7 @@ export {
 } from './baselines/atomizer/textBoxRevisionSafety.js';
 export type { TextBoxRevisionChange } from './baselines/atomizer/textBoxRevisionSafety.js';
 export { computeAtomLcs, markCorrelationStatus } from './baselines/atomizer/atomLcs.js';
+export { alignComparisonSequences, tokenizeComparisonText } from './textAlignment.js';
 export {
   MC_NAMESPACE,
   groupElementsByTagNameNS,

@@ -1381,6 +1381,7 @@ async function compareDocumentsAtomizerCore(
     }
     const publishedArchive = await DocxArchive.load(resultBuffer);
     publishedArchive.setDocumentXml(taggedXml);
+    await importReferencedRelationships(originalArchive, publishedArchive, taggedXml);
     // The tagged story can reference definitions that the legacy-shaped
     // assembly candidate did not expose. Re-run the established auxiliary
     // merger against both source packages using the actual published story,

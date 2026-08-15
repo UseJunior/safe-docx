@@ -3,6 +3,7 @@ import { acceptAllChanges, compareDocuments } from '@usejunior/docx-compare';
 import { generateDocx } from '../generation/compile.js';
 import type { BorderSpec, DocumentSpec, TableRowSpec, TableSpec } from '../generation/types.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
+import { parseXml } from '../primitives/xml.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 
 const TEST_FEATURE = 'Inplace Reconstruction Cross-Run Recovery';
@@ -202,9 +203,7 @@ describe('Inplace reconstruction on table-heavy run-fragmented templates', () =>
         expect(resultXml).toContain('<w:tbl>');
         expect((resultXml.match(/<w:tbl>/g) ?? []).length).toBe(1);
         expect(resultXml).toContain('Delaware');
-        expect(acceptAllChanges(resultXml)).toContain(
-          '<w:t xml:space="preserve">New </w:t></w:r><w:r><w:t>York</w:t>',
-        );
+        expect(parseXml(acceptAllChanges(resultXml)).documentElement.textContent).toContain('New York');
       });
     },
   );

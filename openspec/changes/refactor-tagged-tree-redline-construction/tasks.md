@@ -227,6 +227,39 @@ strategy remains the rollback path, and successors C/D remain separate changes.
       `legacy` remains the explicit rollback for one release cycle. Rebuild mode
       remains unchanged.
 
+      **Post-#850 readability gate:** after rebasing onto the canonical
+      forward-tie LCS, tagged serialization now consumes the same exported text
+      tokenization/alignment boundary as atom comparison. Changed run boundaries
+      are refined across paragraphs and hyperlinks while prior-revision stacks
+      remain opaque. The public ILPA corpus gate preserves the TOC and body
+      `Definitions and Interpretation` headings, the recital's `Agreement of
+      Limited` substring, and `such party to the Fund;` without identical-text
+      replacement noise. ILPA and NVCA accept/reject source-formatting scores
+      remain exactly `1.0`; the ILPA wrapper count falls from 4,375 on the
+      clean rebased candidate to 1,893 after field/control-safe refinement.
+      Adjacent live runs with identical direct formatting may coalesce across a
+      source run boundary; this is accepted as projection-equivalent because
+      run partitioning is not visible Word semantics, while text, direct
+      formatting, and both source projections remain exact.
+
+      **Independent-reader residual after the #850 rebase:** Safe DOCX's own
+      source projections remain exactly `1.0` in both directions, and the four
+      reported visible ILPA anchors are minimal. Licensed Aspose projection is
+      not yet equivalent, however, and this is not ordinary Aspose save
+      normalization: the Aspose-authored comparison controls retain exact
+      source text. Aligning corresponding field-character runs by structural
+      type fixed the ordinary body-field failures: NVCA Aspose accept and reject
+      now match their sources character-for-character, and its candidate field
+      inventory falls from 702 to 405. ILPA remains blocked specifically on TOC
+      `PAGEREF` complexes: Aspose evaluates cached page numbers (`23`/`24`) where
+      its comparison control retains the authored instruction/cache text.
+      Ordinally pairing those repeated field controls was tested and rejected:
+      it both increased text loss and, when instructions were paired too,
+      produced an invalid document model on Aspose Reject All. This remains a
+      blocking field-topology defect; the default must not ship on this evidence
+      until the shared field serializer treats each complete field complex as
+      an atomic, schema-valid revision unit.
+
       An Aspose save of the revised source itself changes `0/60` paragraph
       snapshots, likewise proving the changes are not its ordinary save
       normalization. Both the control and projection add 33 drawing-fallback

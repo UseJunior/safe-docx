@@ -14,6 +14,7 @@ import {
 } from './taggedTreeSerializer.js';
 import { constructTaggedTree } from './taggedTreeConstruction.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
+import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.js';
 
 const TEST_FEATURE = 'refactor-tagged-tree-redline-construction';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
@@ -353,4 +354,133 @@ describe('tagged-tree shadow serializer', () => {
       expect(fidelity.reject.score).toBe(1);
     });
   }
+
+  test('aligns common words across changed run boundaries and coalesces each change hunk', () => {
+    const original = documentBody('<w:p><w:r><w:t>Agreement of Limited Partnership</w:t></w:r></w:p>');
+    const revised = documentBody(
+      '<w:p><w:r><w:t>Agreement </w:t></w:r><w:r><w:t>of Limited Liability Partnership</w:t></w:r></w:p>',
+    );
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+      author: 'Comparator', date: '2026-08-14T12:00:00Z',
+    }));
+
+    expect(output).toContain('Agreement ');
+    expect(output).not.toMatch(/<w:del[^>]*>[\s\S]*Agreement[\s\S]*<\/w:del>/);
+    expect(output).toMatch(/<w:ins[^>]*>[\s\S]*Liability[\s\S]*<\/w:ins>/);
+    expect(parseXml(output).getElementsByTagNameNS(W_NS, 'del')).toHaveLength(0);
+    expect(text(acceptAllChanges(output))).toBe('Agreement of Limited Liability Partnership');
+    expect(text(rejectAllChanges(output))).toBe('Agreement of Limited Partnership');
+  });
+
+  test('represents identical text with changed run boundaries as formatting-only markup', () => {
+    const original = documentBody('<w:p><w:r><w:t>such </w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>party to the Fund;</w:t></w:r></w:p>');
+    const revised = documentBody('<w:p><w:r><w:rPr><w:i/></w:rPr><w:t>such party</w:t></w:r><w:r><w:t> to the Fund;</w:t></w:r></w:p>');
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+      author: 'Comparator', date: '2026-08-14T12:00:00Z',
+    }));
+
+    expect(output).not.toMatch(/<w:(?:ins|del)\b/);
+    expect(parseXml(output).getElementsByTagNameNS(W_NS, 'rPrChange').length).toBeGreaterThan(0);
+    expect(text(acceptAllChanges(output))).toBe('such party to the Fund;');
+    expect(text(rejectAllChanges(output))).toBe('such party to the Fund;');
+  });
+
+  test('aligns a common token split inside different run boundaries', () => {
+    const original = documentBody('<w:p><w:r><w:t>Agre</w:t></w:r><w:r><w:t>ement of Limited</w:t></w:r></w:p>');
+    const revised = documentBody('<w:p><w:r><w:t>Agreement </w:t></w:r><w:r><w:t>of Expanded Limited</w:t></w:r></w:p>');
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+      author: 'Comparator', date: '2026-08-14T12:00:00Z',
+    }));
+
+    expect(output).not.toMatch(/<w:del[^>]*>[\s\S]*Agreement[\s\S]*<\/w:del>/);
+    expect(text(acceptAllChanges(output))).toBe('Agreement of Expanded Limited');
+    expect(text(rejectAllChanges(output))).toBe('Agreement of Limited');
+  });
+
+  test('never multiplies a field character while refining nearby text', () => {
+    const original = documentBody('<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:t>alpha beta</w:t></w:r><w:r><w:t> tail</w:t></w:r></w:p>');
+    const revised = documentBody('<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:t>alpha theta</w:t></w:r><w:r><w:t> tail</w:t></w:r></w:p>');
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+      author: 'Comparator', date: '2026-08-14T12:00:00Z',
+    }));
+
+    expect(parseXml(output).getElementsByTagNameNS(W_NS, 'fldChar')).toHaveLength(1);
+  });
+
+  test('keeps a literal replacement outside a deleted REF instruction zone', () => {
+    const original = documentBody(
+      '<w:p><w:r><w:t>Section </w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> REF _Ref1 \\r \\h </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:t>5.1</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+      '<w:r><w:t xml:space="preserve"> (Heading)</w:t></w:r></w:p>',
+    );
+    const revised = documentBody(
+      '<w:p><w:r><w:t xml:space="preserve">Section 5.1 </w:t></w:r>' +
+      '<w:r><w:t>(</w:t></w:r><w:r><w:t>Heading)</w:t></w:r></w:p>',
+    );
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(
+      constructed.tree,
+      createPreservePlan(original, revised, constructed.tree, {
+        author: 'Comparator', date: '2026-08-14T12:00:00Z',
+      }),
+    );
+    const document = parseXml(output);
+    const paragraph = document.getElementsByTagNameNS(W_NS, 'p')[0]!;
+    const siblings = elementChildren(paragraph);
+    const beginIndex = siblings.findIndex((node) =>
+      Array.from(node.getElementsByTagNameNS(W_NS, 'fldChar')).some((field) =>
+        field.getAttributeNS(W_NS, 'fldCharType') === 'begin'),
+    );
+    const separateIndex = siblings.findIndex((node) =>
+      Array.from(node.getElementsByTagNameNS(W_NS, 'fldChar')).some((field) =>
+        field.getAttributeNS(W_NS, 'fldCharType') === 'separate'),
+    );
+    const instructionZone = siblings.slice(beginIndex + 1, separateIndex);
+    expect(instructionZone.some((node) =>
+      node.localName === 'ins' && node.textContent === '('),
+    ).toBe(false);
+    expect(extractRoundTripComparisonText(acceptAllChanges(output))).toBe('Section 5.1 (Heading)');
+    expect(extractRoundTripComparisonText(rejectAllChanges(output))).toBe('Section 5.1 (Heading)');
+  });
+
+  test('serializes a retargeted REF as complete deleted and inserted fields', () => {
+    const field = (target: string, result: string) =>
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      `<w:r><w:instrText xml:space="preserve"> REF ${target} \\r \\h </w:instrText></w:r>` +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      `<w:r><w:t>${result}</w:t></w:r>` +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>';
+    const original = documentBody(field('_RefOld', '14.7.3'));
+    const revised = documentBody(field('_RefNew', '14.7.2'));
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(
+      original, revised, constructed.tree,
+      { author: 'Comparator', date: '2026-08-14T12:00:00Z' },
+    ));
+    const document = parseXml(output);
+    for (const type of ['begin', 'separate', 'end']) {
+      const fields = Array.from(document.getElementsByTagNameNS(W_NS, 'fldChar')).filter((field) =>
+        field.getAttributeNS(W_NS, 'fldCharType') === type);
+      expect(fields, `${type} count`).toHaveLength(2);
+      expect(fields.map((field) => (field.parentNode?.parentNode as Element).localName).sort()).toEqual(['del', 'ins']);
+    }
+    const accepted = acceptAllChanges(output);
+    const rejected = rejectAllChanges(output);
+    expect(extractRoundTripComparisonText(accepted)).toBe('14.7.2');
+    expect(extractRoundTripComparisonText(rejected)).toBe('14.7.3');
+    const instructionTexts = (xml: string): string[] => Array.from(
+      parseXml(xml).getElementsByTagNameNS(W_NS, 'instrText'),
+      (instruction) => instruction.textContent ?? '',
+    );
+    expect(instructionTexts(accepted)).toEqual([' REF _RefNew \\r \\h ']);
+    expect(instructionTexts(rejected)).toEqual([' REF _RefOld \\r \\h ']);
+  });
 });

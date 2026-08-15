@@ -8,6 +8,7 @@
 import type { ComparisonUnitAtom } from '@usejunior/docx-core';
 import { CorrelationStatus } from '@usejunior/docx-core';
 import { EMPTY_PARAGRAPH_TAG, getIdentityId } from '../../atomizer.js';
+import { alignComparisonSequences } from '../../textAlignment.js';
 import { debug } from './debug.js';
 import {
   revisionProvenance,
@@ -199,52 +200,9 @@ export function computeAtomLcs(
     ? (a: ComparisonUnitAtom, b: ComparisonUnitAtom): boolean => getIdentityId(a) === getIdentityId(b)
     : atomsEqual;
 
-  // Build LCS length table over suffixes:
-  // dp[i][j] = length of LCS of original[i..] and revised[j..]
-  //
-  // A suffix table lets the traceback walk FORWARD from (0,0) and take every
-  // available equal pair immediately, so a token that repeats nearby matches
-  // its EARLIEST co-monotonic occurrence. The previous prefix-table backward
-  // traceback resolved the same ties toward the LATEST occurrence, which is an
-  // equally long LCS but systematically disagrees with the independent
-  // release verifier's forward alignment: around a dense rewrite the survivor
-  // among several equal candidates (an inter-word space, a repeated term) was
-  // the one the verifier does not credit, so ordinary source tokens were
-  // needlessly deleted and reinserted. Tie-breaking must mirror the
-  // checker-owned convention exactly: match on equality, otherwise prefer
-  // advancing the original side.
-  //
-  // @see https://github.com/UseJunior/safe-docx/issues/846
-  const dp: number[][] = Array(n + 1)
-    .fill(null)
-    .map(() => Array(m + 1).fill(0));
-
-  for (let i = n - 1; i >= 0; i--) {
-    for (let j = m - 1; j >= 0; j--) {
-      if (eq(original[i]!, revised[j]!)) {
-        dp[i]![j] = dp[i + 1]![j + 1]! + 1;
-      } else {
-        dp[i]![j] = Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
-      }
-    }
-  }
-
-  // Walk forward to select the actual LCS matches (earliest-occurrence ties)
-  let matches: AtomMatch[] = [];
-  let i = 0;
-  let j = 0;
-
-  while (i < n && j < m) {
-    if (eq(original[i]!, revised[j]!)) {
-      matches.push({ originalIndex: i, revisedIndex: j });
-      i++;
-      j++;
-    } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) {
-      i++;
-    } else {
-      j++;
-    }
-  }
+  // Use the shared forward alignment boundary so repeated-token tie-breaking
+  // is identical for atom comparison and tagged-tree run refinement.
+  let matches: AtomMatch[] = alignComparisonSequences(original, revised, eq).matches;
 
   // Word tokenization deliberately preserves whitespace as standalone atoms.
   // Those atoms all have the same identity, so an LCS can otherwise align an

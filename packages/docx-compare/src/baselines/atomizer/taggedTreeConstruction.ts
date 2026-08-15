@@ -27,9 +27,32 @@ const RANGE_BOUNDARY_LOCALS = new Set([
   'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
   'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd',
 ]);
-
 function alignmentKey(element: WmlElement): string {
   const text = element.textContent ?? '';
+  let runControlSignature = '';
+  if (element.localName === 'r') {
+    const fieldCharacters = Array.from(element.getElementsByTagNameNS(
+      'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+      'fldChar',
+    ));
+    if (fieldCharacters.length === 1) {
+      return JSON.stringify(['field-character', fieldCharacters[0]!.getAttributeNS(
+        'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+        'fldCharType',
+      ) ?? '']);
+    }
+    const instructions = Array.from(element.getElementsByTagNameNS(
+      'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+      'instrText',
+    ));
+    if (instructions.length === 1) {
+      return JSON.stringify(['field-instruction', (instructions[0]!.textContent ?? '').trim().replace(/\s+/gu, ' ')]);
+    }
+    runControlSignature = childElements(element)
+      .filter((child) => !['rPr', 't', 'delText'].includes(child.localName))
+      .map((child) => subtreeSignature(child))
+      .join('|');
+  }
   const formattingOnlyEmptyParagraph = element.localName === 'p' &&
     text.length === 0 &&
     childElements(element).every((child) => child.localName === 'pPr');
@@ -51,6 +74,7 @@ function alignmentKey(element: WmlElement): string {
     provenanceSensitive
       ? revisionProvenance(element).map(({ kind, id, author, date }) => [kind, id, author, date])
       : [],
+    runControlSignature,
   ]);
 }
 
@@ -87,12 +111,46 @@ function propertyDelta(original: WmlElement, revised: WmlElement): PropertyDelta
 }
 
 function lcsPairs(original: readonly WmlElement[], revised: readonly WmlElement[]): Array<[number, number]> {
+  const fieldContexts = (elements: readonly WmlElement[]): Map<number, string> => {
+    const contexts = new Map<number, string>();
+    const stack: Array<{ start: number; instruction: string[]; separated: boolean }> = [];
+    for (let index = 0; index < elements.length; index++) {
+      const element = elements[index]!;
+      for (const instruction of Array.from(element.getElementsByTagNameNS(
+        'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'instrText',
+      ))) {
+        const active = stack[stack.length - 1];
+        if (active && !active.separated) active.instruction.push(instruction.textContent ?? '');
+      }
+      for (const field of Array.from(element.getElementsByTagNameNS(
+        'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
+      ))) {
+        const type = field.getAttributeNS(
+          'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldCharType',
+        );
+        if (type === 'begin') stack.push({ start: index, instruction: [], separated: false });
+        else if (type === 'separate' && stack.length > 0) stack[stack.length - 1]!.separated = true;
+        else if (type === 'end' && stack.length > 0) {
+          const completed = stack.pop()!;
+          const identity = completed.instruction.join('').trim().replace(/\s+/gu, ' ');
+          if (identity) for (let member = completed.start; member <= index; member++) {
+            contexts.set(member, identity);
+          }
+        }
+      }
+    }
+    return contexts;
+  };
+  const originalFields = fieldContexts(original);
+  const revisedFields = fieldContexts(revised);
+  const key = (element: WmlElement, field: string | undefined): string =>
+    JSON.stringify([field ?? null, alignmentKey(element)]);
   const rows = original.length + 1;
   const cols = revised.length + 1;
   const dp = Array.from({ length: rows }, () => Array<number>(cols).fill(0));
   for (let i = original.length - 1; i >= 0; i--) {
     for (let j = revised.length - 1; j >= 0; j--) {
-      dp[i]![j] = alignmentKey(original[i]!) === alignmentKey(revised[j]!)
+      dp[i]![j] = key(original[i]!, originalFields.get(i)) === key(revised[j]!, revisedFields.get(j))
         ? 1 + dp[i + 1]![j + 1]!
         : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
     }
@@ -101,7 +159,7 @@ function lcsPairs(original: readonly WmlElement[], revised: readonly WmlElement[
   let i = 0;
   let j = 0;
   while (i < original.length && j < revised.length) {
-    if (alignmentKey(original[i]!) === alignmentKey(revised[j]!)) {
+    if (key(original[i]!, originalFields.get(i)) === key(revised[j]!, revisedFields.get(j))) {
       pairs.push([i++, j++]);
     } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
     else j++;
@@ -168,7 +226,21 @@ function constructBoth(
       const sameIdentity = (left.namespaceURI ?? '') === (right.namespaceURI ?? '') &&
         (left.localName ?? left.tagName) === (right.localName ?? right.tagName) &&
         (childElements(left).length > 0 || childElements(right).length > 0) &&
-        (left.localName !== 'r' || left.textContent === right.textContent);
+        (left.localName !== 'r' || (
+          left.textContent === right.textContent &&
+          left.getElementsByTagNameNS(
+            'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
+          ).length === 0 &&
+          right.getElementsByTagNameNS(
+            'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
+          ).length === 0 &&
+          left.getElementsByTagNameNS(
+            'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'instrText',
+          ).length === 0 &&
+          right.getElementsByTagNameNS(
+            'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'instrText',
+          ).length === 0
+        ));
       if (!sameIdentity) break;
       children.push(constructBoth(left, right, options));
       oi++;
@@ -213,20 +285,44 @@ function constructBoth(
   };
 }
 
-function collectSideOnly(node: TaggedNode, originals: OriginalNode[], revised: RevisedNode[]): void {
+function collectSideOnly(
+  node: TaggedNode,
+  originals: OriginalNode[],
+  revised: RevisedNode[],
+  insideComplexField = false,
+): void {
   const ownElement = node.tag === 'both' ? node.original : node.node;
   // Range boundaries describe their enclosing content; moving an individual
   // zero-width marker creates a second range vocabulary around the marker and
   // duplicates IDs after projection. Only content-bearing nodes are moves.
-  if (node.tag === 'original' && !RANGE_BOUNDARY_LOCALS.has(ownElement.localName)) originals.push(node);
-  else if (node.tag === 'revised' && !RANGE_BOUNDARY_LOCALS.has(ownElement.localName)) revised.push(node);
+  const fieldControlRun = ownElement.localName === 'r' && (
+    ownElement.getElementsByTagNameNS(
+      'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
+    ).length > 0 ||
+    ownElement.getElementsByTagNameNS(
+      'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'instrText',
+    ).length > 0
+  );
+  if (node.tag === 'original' && !insideComplexField && !RANGE_BOUNDARY_LOCALS.has(ownElement.localName) && !fieldControlRun) originals.push(node);
+  else if (node.tag === 'revised' && !insideComplexField && !RANGE_BOUNDARY_LOCALS.has(ownElement.localName) && !fieldControlRun) revised.push(node);
   const propertyTag = node.tag === 'both' && node.propertyDelta
     ? PROPERTY_SCOPE_ELEMENT[node.propertyDelta.scope]
     : undefined;
+  let fieldDepth = 0;
   node.children.forEach((child) => {
     const element = child.tag === 'both' ? child.original : child.node;
     if (propertyTag && element.tagName === propertyTag) return;
-    collectSideOnly(child, originals, revised);
+    const fieldCharacters = Array.from(element.getElementsByTagNameNS(
+      'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
+    ));
+    const begins = fieldCharacters.filter((field) =>
+      field.getAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldCharType') === 'begin',
+    ).length;
+    const ends = fieldCharacters.filter((field) =>
+      field.getAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldCharType') === 'end',
+    ).length;
+    collectSideOnly(child, originals, revised, insideComplexField || fieldDepth > 0);
+    fieldDepth = Math.max(0, fieldDepth + begins - ends);
   });
 }
 

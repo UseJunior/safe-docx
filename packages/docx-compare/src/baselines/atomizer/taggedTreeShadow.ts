@@ -7,6 +7,7 @@ import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.j
 import { constructTaggedTree, verifyGlobalEqualContentInvariant } from './taggedTreeConstruction.js';
 import { createPreservePlan, serializeTaggedTree, verifySerializedMoveRanges } from './taggedTreeSerializer.js';
 import { formatDate } from './inPlaceModifier-shared.js';
+import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
 
 export type TaggedTreeDivergenceClass = 'projection-inequivalent' | 'projection-equivalent';
 
@@ -53,7 +54,9 @@ export function buildTaggedTreeShadowXml(input: Omit<TaggedTreeShadowInput, 'leg
       (wrapper.parentNode as Element | null)?.localName !== 'rPr'
     ) wrapper.parentNode?.removeChild(wrapper);
   }
-  return new XMLSerializer().serializeToString(document);
+  return suppressVolatileTocPagerefCacheRevisions(
+    new XMLSerializer().serializeToString(document),
+  );
 }
 
 /** Count the direct-property revisions represented by tagged construction. */

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DocxArchive } from '@usejunior/docx-core';
+import { DocxArchive, parseXml } from '@usejunior/docx-core';
 import { describe, expect } from 'vitest';
 import { compareDocuments, DEFAULT_RECONSTRUCTION_MODE } from './index.js';
 import { acceptAllChanges, rejectAllChanges } from './baselines/atomizer/trackChangesAcceptorAst.js';
@@ -204,8 +204,8 @@ describe('compareDocuments options', () => {
       }));
       const output = await documentXml(result.document);
       await then('the package carries both exact text projections', async () => {
-        expect(acceptAllChanges(output)).toContain('Revised package text');
-        expect(rejectAllChanges(output)).toContain('Original package text');
+        expect(parseXml(acceptAllChanges(output)).documentElement.textContent).toContain('Revised package text');
+        expect(parseXml(rejectAllChanges(output)).documentElement.textContent).toContain('Original package text');
       });
     },
   );
