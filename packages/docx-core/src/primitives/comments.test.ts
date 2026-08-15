@@ -1629,7 +1629,8 @@ describe('comments — edge cases and branch coverage', () => {
       });
     });
 
-    test('stamps comment definitions with the caller-supplied RevisionContext date across a UTC/local day boundary', async ({ given, when, then }: AllureBddContext) => {
+    test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.2' })(
+      'stamps comment definitions with the caller-supplied RevisionContext date across a UTC/local day boundary', async ({ given, when, then }: AllureBddContext) => {
       let zip: DocxZip;
       let doc: Document;
       let paragraph: Element;
@@ -1667,6 +1668,7 @@ describe('comments — edge cases and branch coverage', () => {
             parentCommentId: commentId,
             author: 'Reply Author',
             text: 'Reply body',
+            initials: 'RA',
           }, ctx);
         });
 
@@ -1685,6 +1687,7 @@ describe('comments — edge cases and branch coverage', () => {
         expect(commentEls[0]!.getAttribute('w:author')).toBe('Comment Author');
         expect(commentEls[0]!.getAttribute('w:initials')).toBe('CA');
         expect(commentEls[1]!.getAttribute('w:author')).toBe('Reply Author');
+        expect(commentEls[1]!.getAttribute('w:initials')).toBe('RA');
 
         // Body revision and comment metadata are internally consistent.
         expect(bodyInsertion).toBeTruthy();
