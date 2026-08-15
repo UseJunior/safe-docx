@@ -82,12 +82,10 @@ async function fragmentRevisedTableRuns(buffer: Buffer): Promise<Buffer> {
 
 /**
  * A single-run paragraph whose revised copy splits one run at a formatting
- * boundary (a bold fragment mid-phrase) and edits a nearby word. The word-split
- * inplace pass cannot reconstruct this safely — splitting the bold run corrupts
- * the reject-side round-trip text — so it fails, and the run-level pass (which
- * deletes/inserts whole runs) rescues the output while keeping inplace mode.
- * This is a genuine fail-then-rescue that exercises the pass-supersession
- * machinery and the `inplaceSuccessDiagnostics` reporting.
+ * boundary (a bold fragment mid-phrase) and edits a nearby word. Whitespace-only
+ * formatting mismatches used to make the word-split pass fail its round-trip
+ * checks, forcing a run-level rescue. Suppressing that alignment noise lets the
+ * more precise word-split pass win directly.
  */
 async function fragmentAtFormattingBoundary(original: Buffer): Promise<Buffer> {
   const archive = await DocxArchive.load(original);
@@ -107,7 +105,7 @@ async function fragmentAtFormattingBoundary(original: Buffer): Promise<Buffer> {
 
 describe('Inplace reconstruction pass selection', () => {
   test.openspec('Inplace reconstruction reports the pass that produced the output')(
-    'reports the winning pass and the earlier pass it superseded',
+    'reports the primary word-split pass when whitespace formatting noise is suppressed',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       let original!: Buffer;
       let revised!: Buffer;
@@ -140,20 +138,14 @@ describe('Inplace reconstruction pass selection', () => {
         });
       });
 
-      await then('inplace output is kept and the diagnostics name the winning pass and the pass it superseded', () => {
+      await then('inplace output is kept and the diagnostics name the primary winning pass', () => {
         expect(result.reconstructionModeUsed).toBe('inplace');
         expect(result.fallbackReason).toBeUndefined();
 
         const diagnostics = result.inplaceSuccessDiagnostics;
         expect(diagnostics).toBeDefined();
-        // The run-level pass rescued output that word-split could not reconstruct safely.
-        expect(diagnostics!.passUsed).toBe('inplace_run_level');
-        expect(diagnostics!.precedingFailedAttempts.length).toBeGreaterThan(0);
-        expect(diagnostics!.precedingFailedAttempts[0]!.pass).toBe('inplace_word_split');
-        // Every superseded attempt records at least one failed safety check, in evaluation order.
-        for (const attempt of diagnostics!.precedingFailedAttempts) {
-          expect(attempt.failedChecks.length).toBeGreaterThan(0);
-        }
+        expect(diagnostics!.passUsed).toBe('inplace_word_split');
+        expect(diagnostics!.precedingFailedAttempts).toEqual([]);
       });
     },
   );

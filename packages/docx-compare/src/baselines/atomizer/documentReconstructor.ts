@@ -1897,7 +1897,7 @@ function buildFormatChangeRun(
     // DOM-aware buildRPrChangeElement helper exists for new primitive code
     // paths (#136 onward).
     const formatChange = group.atoms[0]?.formatChange;
-    if (formatChange?.oldRunProperties) {
+    if (formatChange?.oldRunProperties && !isWhitespaceOnlyGroup(group)) {
       const id = allocateRevisionId(revState);
       parts.push(
         `<w:rPrChange w:id="${id}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">`
