@@ -28,13 +28,19 @@ describe('Aspose field differential oracle trust boundary', () => {
   test.openspec('[ASPOSE-FIELD-01] Instruction changes replace the complete complex field')('classifies all instruction changes as whole-field replacement', () => {
     expect(snapshot.schemaVersion).toBe(1);
     expect(snapshot.oracle).toMatchObject({ package: 'aspose-words', version: '25.10' });
-    for (const id of ['formcheckbox-to-formtext', 'hyperlink-retarget', 'pageref-retarget']) {
+    const expected = {
+      'formcheckbox-to-formtext': [' FORMCHECKBOX ', ' FORMTEXT ', '☐', 'value'],
+      'hyperlink-retarget': [' HYPERLINK "https://old.example" ', ' HYPERLINK "https://new.example" ', 'link', 'link'],
+      'pageref-retarget': [' PAGEREF Old \\h ', ' PAGEREF New \\h ', '3', '3'],
+    } as const;
+    for (const id of Object.keys(expected) as Array<keyof typeof expected>) {
       const verdict = snapshot.fieldCases.find((entry) => entry.id === id);
-      expect(verdict?.classification).toBe('whole-field-replacement');
-      expect(verdict?.deletedFldChars).toBeGreaterThanOrEqual(3);
-      expect(verdict?.insertedFldChars).toBeGreaterThanOrEqual(3);
-      expect(verdict?.deletedInstruction).toBeTruthy();
-      expect(verdict?.insertedInstruction).toBeTruthy();
+      expect(verdict).toMatchObject({
+        classification: 'whole-field-replacement', deletedFldChars: 3,
+        insertedFldChars: 3, outsideRevisionFldChars: 0,
+        deletedInstruction: expected[id][0], insertedInstruction: expected[id][1],
+        deletedText: expected[id][2], insertedText: expected[id][3],
+      });
     }
   });
 
@@ -79,6 +85,13 @@ describe('Aspose field differential oracle trust boundary', () => {
     expect(rejected.stderr).toContain('both SAFE_DOCX_ASPOSE_PYTHON and SAFE_DOCX_ASPOSE_LICENSE are required');
     expect(rejected.stderr).not.toContain('/private/nonexistent-aspose-python');
     expect(existsSync(output)).toBe(false);
+
+    const rejectedInvalidPaths = spawnSync('python3', [script, '--output', output], {
+      encoding: 'utf8',
+      env: { ...cleanEnv, SAFE_DOCX_ASPOSE_PYTHON: '/private/nonexistent-aspose-python', SAFE_DOCX_ASPOSE_LICENSE: '/private/nonexistent-license.lic' },
+    });
+    expect(rejectedInvalidPaths.status).toBe(2);
+    expect(rejectedInvalidPaths.stderr).not.toContain('/private/nonexistent');
   });
 
   test.openspec('[ASPOSE-FIELD-05] The ILPA trust boundary records agreement and divergence')('pins the measured agreements and the non-authoritative divergence', () => {
@@ -86,7 +99,7 @@ describe('Aspose field differential oracle trust boundary', () => {
     expect(ilpa.provenance).toMatchObject({ wordVersion: '16.112', asposeVersion: '25.10' });
     expect(measured.wholeFieldDeletion).toMatchObject({ agreement: true, wordFldCharsInsideDeletion: 174, asposeFldCharsInsideDeletion: 45 });
     expect(measured.parentheticalEnumerator1471.agreement).toBe(true);
-    expect(measured.boldToNotBold1555).toMatchObject({ agreement: true, shape: 'rPrChange', documentCounts: { safeDocx: 17, word: 34, aspose: 31 } });
+    expect(measured.boldToNotBold1555).toMatchObject({ agreement: true, shape: 'rPrChange', oracleDocumentCounts: { word: 34, aspose: 31 } });
     expect(measured.givebackBoundary).toMatchObject({ agreement: false, authority: 'word' });
   });
 });

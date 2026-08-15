@@ -29,6 +29,22 @@ CASES = {
 }
 
 
+def expected_projection(case_id: str, old_instruction: str, new_instruction: str, old_result: str, new_result: str) -> dict:
+    if case_id == "numpages-result-only":
+        return {
+            "classification": "cached-result-only", "deletedFldChars": 0,
+            "insertedFldChars": 0, "outsideRevisionFldChars": 3,
+            "deletedInstruction": "", "insertedInstruction": "",
+            "deletedText": old_result, "insertedText": new_result,
+        }
+    return {
+        "classification": "whole-field-replacement", "deletedFldChars": 3,
+        "insertedFldChars": 3, "outsideRevisionFldChars": 0,
+        "deletedInstruction": old_instruction, "insertedInstruction": new_instruction,
+        "deletedText": old_result, "insertedText": new_result,
+    }
+
+
 def xml_escape(value: str) -> str:
     return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
@@ -122,21 +138,34 @@ def main() -> int:
             '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:sectPr/></w:body></w:document>'
         )
         with tempfile.TemporaryDirectory(prefix="safe-docx-aspose-self-test-") as temp:
-            no_revision_path, tracked_path = Path(temp) / "no-op.docx", Path(temp) / "tracked.docx"
+            whole_field = (
+                f'<w:document xmlns:w="{W}"><w:body><w:p><w:del>'
+                + body_xml(" FORMCHECKBOX ", "☐").split("<w:p>", 1)[1].split("</w:p>", 1)[0]
+                + '</w:del><w:ins>'
+                + body_xml(" FORMTEXT ", "value").split("<w:p>", 1)[1].split("</w:p>", 1)[0]
+                + '</w:ins></w:p><w:sectPr/></w:body></w:document>'
+            )
+            no_revision_path, tracked_path, whole_path = Path(temp) / "no-op.docx", Path(temp) / "tracked.docx", Path(temp) / "whole.docx"
             pack_docx(no_revision_path, no_revision)
             pack_docx(tracked_path, tracked_result)
+            pack_docx(whole_path, whole_field)
             if project(no_revision_path)["classification"] != "unclassified":
                 raise AssertionError("no-op output must not classify as cached-result-only")
             tracked = project(tracked_path)
             if tracked["classification"] != "cached-result-only" or tracked["deletedText"] != "3" or tracked["insertedText"] != "4":
                 raise AssertionError("tracked cached-result projection is incomplete")
+            whole = project(whole_path)
+            if whole != expected_projection("formcheckbox-to-formtext", " FORMCHECKBOX ", " FORMTEXT ", "☐", "value"):
+                raise AssertionError("whole-field projection is incomplete")
         print("Aspose projection self-test passed without importing Aspose")
         return 0
     if args.check:
         snapshot = json.loads(destination.read_text())
         with tempfile.TemporaryDirectory(prefix="safe-docx-aspose-check-") as temp:
             work = Path(temp)
-            for case, stored in zip(CASES.items(), snapshot["fieldCases"], strict=True):
+            if len(snapshot.get("fieldCases", [])) != len(CASES):
+                raise ValueError("snapshot case count changed")
+            for case, stored in zip(CASES.items(), snapshot["fieldCases"]):
                 case_id, (old_instruction, new_instruction, old_result, new_result) = case
                 if stored["id"] != case_id:
                     raise ValueError("snapshot case order or identity changed")
@@ -145,6 +174,9 @@ def main() -> int:
                 pack_docx(revised, body_xml(new_instruction, new_result))
                 if stored["originalSha256"] != sha256(original) or stored["revisedSha256"] != sha256(revised):
                     raise ValueError(f"fixture hash mismatch for {case_id}")
+                expected = expected_projection(case_id, old_instruction, new_instruction, old_result, new_result)
+                if any(stored.get(key) != value for key, value in expected.items()):
+                    raise ValueError(f"snapshot verdict mismatch for {case_id}")
         print("Aspose snapshot fixture hashes verified without importing Aspose")
         return 0
     python = os.environ.get("SAFE_DOCX_ASPOSE_PYTHON")
@@ -173,7 +205,7 @@ def main() -> int:
             completed = subprocess.run([python, str(runner), str(original), str(revised), str(output)], capture_output=True, text=True, env=child_env)
             if completed.returncode:
                 print(f"ERROR: Aspose comparison failed with exit {completed.returncode}; verify the configured runtime and license", file=sys.stderr)
-                return completed.returncode
+                return 2
             output_lines = completed.stdout.strip().splitlines()
             if not output_lines or not output.is_file():
                 print("ERROR: Aspose comparison produced incomplete output; verify the configured runtime", file=sys.stderr)
@@ -182,7 +214,11 @@ def main() -> int:
             if version not in ("25.10.0", "25.10"):
                 print("ERROR: oracle must run with aspose-words==25.10", file=sys.stderr)
                 return 2
-            verdicts.append({"id": case_id, "originalSha256": sha256(original), "revisedSha256": sha256(revised), **project(output)})
+            projected = project(output)
+            expected = expected_projection(case_id, old_instruction, new_instruction, old_result, new_result)
+            if any(projected.get(key) != value for key, value in expected.items()):
+                raise ValueError(f"Aspose produced an invalid verdict for {case_id}")
+            verdicts.append({"id": case_id, "originalSha256": sha256(original), "revisedSha256": sha256(revised), **projected})
 
     snapshot = {
         "schemaVersion": 1,

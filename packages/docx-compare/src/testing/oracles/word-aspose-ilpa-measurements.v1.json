@@ -13,7 +13,7 @@
   "observations": {
     "wholeFieldDeletion": { "agreement": true, "wordFldCharsInsideDeletion": 174, "asposeFldCharsInsideDeletion": 45 },
     "parentheticalEnumerator1471": { "agreement": true, "word": "delete-old-whole-enumerator-and-insert-(i", "aspose": "delete-old-whole-enumerator-and-insert-(i" },
-    "boldToNotBold1555": { "agreement": true, "shape": "rPrChange", "documentCounts": { "safeDocx": 17, "word": 34, "aspose": 31 } },
+    "boldToNotBold1555": { "agreement": true, "shape": "rPrChange", "oracleDocumentCounts": { "word": 34, "aspose": 31 }, "safeDocx": "asserted structurally by the comparison suite; no self-measurement is pinned in this manual oracle record" },
     "givebackBoundary": { "agreement": false, "authority": "word", "wordAndSafeDocx": "delete-and-reinsert-closing-punctuation", "aspose": "preserve-closing-punctuation-and-insert-middle" }
   }
 }
