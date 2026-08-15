@@ -1629,6 +1629,113 @@ describe('comments — edge cases and branch coverage', () => {
       });
     });
 
+    test('stamps comment definitions with the caller-supplied RevisionContext date across a UTC/local day boundary', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+      let paragraph: Element;
+      let commentsXml: string;
+      let commentEls: Element[];
+      let bodyInsertion: Element;
+
+      // 2026-01-15T23:30:00-05:00 is 2026-01-16T04:30:00Z — the local and UTC
+      // calendar dates disagree, so any current-clock leak (frozen below to
+      // 2026-05-03T14:15:16Z) is unambiguously distinguishable from the
+      // caller's date regardless of the machine's timezone.
+      const callerDate = '2026-01-15T23:30:00-05:00';
+      const frozenClock = '2026-05-03T14:15:16Z';
+      const ctx = createRevisionContext({
+        author: 'Revision Author',
+        date: callerDate,
+        idState: createRevisionIdState(),
+      });
+
+      await given('a bootstrapped document and a revision context with a fixed-offset date', async () => {
+        ({ zip, doc, p: paragraph } = await setupWithComment());
+      });
+
+      await when('a root comment and a threaded reply are added with that context under a frozen process clock', async () => {
+        await withDeterministicMetadata([0.123456789], async () => {
+          const { commentId } = await addComment(doc, zip, {
+            paragraphEl: paragraph,
+            start: 0,
+            end: 5,
+            author: 'Comment Author',
+            text: 'Root comment',
+            initials: 'CA',
+          }, ctx);
+          await addCommentReply(doc, zip, {
+            parentCommentId: commentId,
+            author: 'Reply Author',
+            text: 'Reply body',
+          }, ctx);
+        });
+
+        commentsXml = await zip.readText('word/comments.xml');
+        const commentsDoc = parseXml(commentsXml);
+        commentEls = Array.from(commentsDoc.getElementsByTagNameNS(W_NS, W.comment)) as Element[];
+        bodyInsertion = doc.getElementsByTagNameNS(W_NS, 'ins').item(0) as Element;
+      });
+
+      await then('root and reply definitions carry the caller date verbatim, matching the body revision, with no process-clock leak', () => {
+        expect(commentEls).toHaveLength(2);
+        for (const el of commentEls) {
+          expect(el.getAttribute('w:date')).toBe(callerDate);
+        }
+        // Author/initials still come from AddComment(Reply)Params, not from ctx.
+        expect(commentEls[0]!.getAttribute('w:author')).toBe('Comment Author');
+        expect(commentEls[0]!.getAttribute('w:initials')).toBe('CA');
+        expect(commentEls[1]!.getAttribute('w:author')).toBe('Reply Author');
+
+        // Body revision and comment metadata are internally consistent.
+        expect(bodyInsertion).toBeTruthy();
+        expect(bodyInsertion.getAttribute('w:date')).toBe(callerDate);
+        expect(bodyInsertion.getAttribute('w:author')).toBe('Revision Author');
+
+        // The frozen process clock must not leak into any comment definition.
+        expect(commentsXml).not.toContain(frozenClock);
+        expect(commentsXml).not.toContain('2026-05-03');
+      });
+    });
+
+    test('stamps comment definitions from the process clock when the revision context is omitted', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+      let paragraph: Element;
+      let commentEls: Element[];
+
+      await given('a bootstrapped document and no revision context', async () => {
+        ({ zip, doc, p: paragraph } = await setupWithComment());
+      });
+
+      await when('a root comment and a threaded reply are added without ctx under a frozen process clock', async () => {
+        await withDeterministicMetadata([0.987654321], async () => {
+          const { commentId } = await addComment(doc, zip, {
+            paragraphEl: paragraph,
+            start: 0,
+            end: 5,
+            author: 'Comment Author',
+            text: 'Root comment',
+          });
+          await addCommentReply(doc, zip, {
+            parentCommentId: commentId,
+            author: 'Reply Author',
+            text: 'Reply body',
+          });
+        });
+
+        const commentsXml = await zip.readText('word/comments.xml');
+        const commentsDoc = parseXml(commentsXml);
+        commentEls = Array.from(commentsDoc.getElementsByTagNameNS(W_NS, W.comment)) as Element[];
+      });
+
+      await then('both definitions default to the current-time stamp', () => {
+        expect(commentEls).toHaveLength(2);
+        for (const el of commentEls) {
+          expect(el.getAttribute('w:date')).toBe('2026-05-03T14:15:16Z');
+        }
+      });
+    });
+
     test('preserves the legacy untracked body behavior when ctx is omitted for addComment, addCommentReply, and deleteComment', async ({ given, when, then }: AllureBddContext) => {
       let zip: DocxZip;
       let doc: Document;
