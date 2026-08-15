@@ -138,6 +138,10 @@ import {
   rejectedSelectedAncillaryStoryPaths,
   UnsupportedTextBoxRevisionError,
 } from './textBoxRevisionSafety.js';
+import {
+  compareFootnoteDefinitions,
+  findCorrespondingFootnotePairs,
+} from './ancillaryNoteComparison.js';
 
 /**
  * Options for the atomizer pipeline.
@@ -840,7 +844,10 @@ async function compareDocumentsAtomizerCore(
   // row in the merged output can bind to the other document's definition.
   // Must run before any document.xml extraction so every downstream step sees
   // the rewritten archive.
-  await renumberCollidingAuxiliaryIds(originalArchive, revisedArchive);
+  const auxiliaryIdRenumberings = await renumberCollidingAuxiliaryIds(
+    originalArchive,
+    revisedArchive,
+  );
   await restampCollidingCommentParaIds(originalArchive, revisedArchive);
 
   // Step 1c: Resolve relationship ID collisions for the same reason. `rId9`
@@ -1231,13 +1238,27 @@ async function compareDocumentsAtomizerCore(
     resultBuffer: Buffer;
     ancillaryFieldEvidence: AncillaryFieldEvidence;
   }> => {
-    const { newDocumentXml } = candidate;
+    let { newDocumentXml } = candidate;
     // Step 12: Clone the mode-selected archive and update document.xml.
     const baseArchive = candidate.outputMode === 'inplace' ? revisedArchive : originalArchive;
     const mergeSourceArchive = candidate.outputMode === 'inplace' ? originalArchive : revisedArchive;
     const baseSide = candidate.outputMode === 'inplace' ? 'revised' : 'original';
     const mergeSourceSide = candidate.outputMode === 'inplace' ? 'original' : 'revised';
     const resultArchive = await baseArchive.clone();
+    newDocumentXml = await reconcileCorrespondingFootnoteDefinitions({
+      originalArchive,
+      revisedArchive,
+      resultArchive,
+      documentXml: newDocumentXml,
+      outputMode: candidate.outputMode,
+      mergedAtoms: candidate.mergedAtoms,
+      auxiliaryIdRenumberings,
+      author,
+      date,
+      formatDetection: formatSettings,
+      premergeRuns,
+      maxWordRefinementChangeRanges,
+    });
     maybeCaptureEmittedDocumentXml(newDocumentXml);
     resultArchive.setDocumentXml(newDocumentXml);
 
@@ -1370,6 +1391,98 @@ async function compareDocumentsAtomizerCore(
 export interface AuxiliaryMergeResult {
   mergedIds: Set<string>;
   createdPart: boolean;
+}
+
+interface ReconcileFootnoteDefinitionsOptions {
+  originalArchive: DocxArchive;
+  revisedArchive: DocxArchive;
+  resultArchive: DocxArchive;
+  documentXml: string;
+  outputMode: ReconstructionMode;
+  mergedAtoms: readonly ComparisonUnitAtom[];
+  auxiliaryIdRenumberings: readonly { label: string; fromId: string; toId: string }[];
+  author: string;
+  date: Date;
+  formatDetection: FormatDetectionSettings;
+  premergeRuns: boolean;
+  maxWordRefinementChangeRanges?: number;
+}
+
+/**
+ * Collapse an aligned delete/insert footnote reference pair back onto one
+ * definition and compare that definition as an independent story. Collision
+ * renumbering still runs first and remains authoritative for every unrelated
+ * auxiliary-ID collision.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/763
+ */
+async function reconcileCorrespondingFootnoteDefinitions(
+  options: ReconcileFootnoteDefinitionsOptions,
+): Promise<string> {
+  const pairs = findCorrespondingFootnotePairs(
+    options.mergedAtoms,
+    options.auxiliaryIdRenumberings,
+  );
+  if (pairs.length === 0) return options.documentXml;
+
+  const [originalXml, revisedXml, resultXml] = await Promise.all([
+    options.originalArchive.getFile('word/footnotes.xml'),
+    options.revisedArchive.getFile('word/footnotes.xml'),
+    options.resultArchive.getFile('word/footnotes.xml'),
+  ]);
+  if (!originalXml || !revisedXml || !resultXml) return options.documentXml;
+
+  const originalParsed = parseEntries(originalXml, 'w:footnote');
+  const revisedParsed = parseEntries(revisedXml, 'w:footnote');
+  const resultParsed = parseEntries(resultXml, 'w:footnote');
+  const documentDoc = parseXml(options.documentXml);
+
+  for (const pair of pairs) {
+    const originalEntry = originalParsed.entries.get(pair.originalId);
+    const revisedEntry = revisedParsed.entries.get(pair.revisedId);
+    const targetId = options.outputMode === 'inplace' ? pair.revisedId : pair.originalId;
+    const discardedId = options.outputMode === 'inplace' ? pair.originalId : pair.revisedId;
+    const targetEntry = resultParsed.entries.get(targetId);
+    if (!originalEntry || !revisedEntry || !targetEntry) continue;
+    // Field ranges have a separate exact-preservation gate, and nested
+    // auxiliary anchors need their own relationship-aware story comparison.
+    // Keep the collision-safe two-definition representation for those shapes
+    // until their dedicated structural comparers can participate here.
+    const unsupportedTags = [
+      'w:fldChar',
+      'w:commentReference',
+      'w:commentRangeStart',
+      'w:commentRangeEnd',
+      'w:footnoteReference',
+      'w:endnoteReference',
+    ];
+    if (unsupportedTags.some((tag) =>
+      originalEntry.getElementsByTagName(tag).length > 0 ||
+      revisedEntry.getElementsByTagName(tag).length > 0
+    )) continue;
+
+    const comparedChildren = compareFootnoteDefinitions(originalEntry, revisedEntry, {
+      author: options.author,
+      date: options.date,
+      formatDetection: options.formatDetection,
+      premergeRuns: options.premergeRuns,
+      maxWordRefinementChangeRanges: options.maxWordRefinementChangeRanges,
+      preservedRoots: [documentDoc.documentElement, resultParsed.doc.documentElement],
+    });
+    while (targetEntry.firstChild) targetEntry.removeChild(targetEntry.firstChild);
+    for (const child of comparedChildren) {
+      targetEntry.appendChild(resultParsed.doc.importNode(child, true));
+    }
+
+    const references = documentDoc.getElementsByTagName('w:footnoteReference');
+    for (let i = 0; i < references.length; i++) {
+      const reference = references[i] as Element;
+      if (reference.getAttribute('w:id') === discardedId) reference.setAttribute('w:id', targetId);
+    }
+  }
+
+  options.resultArchive.setFile('word/footnotes.xml', serializer.serializeToString(resultParsed.doc));
+  return serializer.serializeToString(documentDoc);
 }
 
 /**
