@@ -1290,48 +1290,56 @@ function splitAtomIntoWords(atom: ComparisonUnitAtom): ComparisonUnitAtom[] {
   return result;
 }
 
+function paragraphAncestor(atom: ComparisonUnitAtom): Element | undefined {
+  return atom.ancestorElements.find((ancestor) => ancestor.tagName === 'w:p');
+}
+
+function isRomanNumeral(value: string): boolean {
+  return /^(?=[mdclxvi]+$)m{0,4}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})$/i.test(value);
+}
+
 /**
- * Bind a parenthetical Roman enumerator to the first two lexical tokens in its item.
- *
- * Without this context, the LCS can match only the opening `(` and numeral from
- * two semantically different list items, leaving the old closing `)` at the
- * head of a deletion. Context salting makes `(i)` compare equal only when its
- * item still begins with the same word, so rewritten items delete/insert the
- * complete enumerator instead of splitting inside it.
+ * In a paragraph containing a sequence of parenthetical Roman enumerators,
+ * bind each enumerator to its local item opening. This prevents LCS from
+ * partially matching `(i` across a rewritten multi-item enumeration while
+ * leaving standalone enumerators and neighbouring paragraphs unaffected.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/851
  */
 function saltParentheticalRomanEnumerators(atoms: ComparisonUnitAtom[]): void {
-  for (let i = 0; i + 3 < atoms.length; i++) {
-    const open = atoms[i]!;
-    const numeral = atoms[i + 1]!;
-    const close = atoms[i + 2]!;
+  const triples: Array<{ index: number; paragraph: Element }> = [];
+  const counts = new Map<Element, number>();
+  for (let index = 0; index + 2 < atoms.length; index++) {
+    const open = atoms[index]!;
+    const numeral = atoms[index + 1]!;
+    const close = atoms[index + 2]!;
+    const paragraph = paragraphAncestor(open);
     if (
-      open.contentElement.tagName !== 'w:t' ||
-      numeral.contentElement.tagName !== 'w:t' ||
-      close.contentElement.tagName !== 'w:t' ||
-      open.contentElement.textContent !== '(' ||
-      !/^[ivxlcdm]+$/i.test(numeral.contentElement.textContent ?? '') ||
-      close.contentElement.textContent !== ')'
+      paragraph && paragraphAncestor(numeral) === paragraph && paragraphAncestor(close) === paragraph &&
+      open.contentElement.textContent === '(' &&
+      isRomanNumeral(numeral.contentElement.textContent ?? '') &&
+      close.contentElement.textContent === ')'
     ) {
-      continue;
+      triples.push({ index, paragraph });
+      counts.set(paragraph, (counts.get(paragraph) ?? 0) + 1);
     }
+  }
 
+  for (const triple of triples) {
+    if ((counts.get(triple.paragraph) ?? 0) < 2) continue;
     const contextTokens: string[] = [];
-    for (let nextIndex = i + 3; nextIndex < atoms.length && contextTokens.length < 2; nextIndex++) {
-      const next = atoms[nextIndex]!;
-      const nextText = next.contentElement.textContent ?? '';
-      if (next.contentElement.tagName === 'w:t' && !/^\s+$/.test(nextText)) {
-        contextTokens.push(nextText.toLocaleLowerCase());
-      }
+    for (let index = triple.index + 3; index < atoms.length && contextTokens.length < 2; index++) {
+      const next = atoms[index]!;
+      if (paragraphAncestor(next) !== triple.paragraph) break;
+      const text = next.contentElement.textContent ?? '';
+      if (next.contentElement.tagName === 'w:t' && !/^\s+$/.test(text)) contextTokens.push(text.toLowerCase());
     }
     if (contextTokens.length < 2) continue;
-    const ordinal = (numeral.contentElement.textContent ?? '').toLocaleLowerCase();
-    const contextSalt = `:paren-enumerator=${ordinal}:${encodeURIComponent(contextTokens.join(' '))}`;
-    appendIdentitySalt(open, contextSalt);
-    appendIdentitySalt(numeral, contextSalt);
-    appendIdentitySalt(close, contextSalt);
-    i += 2;
+    const numeral = atoms[triple.index + 1]!.contentElement.textContent!.toLowerCase();
+    const salt = `:paren-enumerator=${numeral}:${encodeURIComponent(contextTokens.join(' '))}`;
+    appendIdentitySalt(atoms[triple.index]!, salt);
+    appendIdentitySalt(atoms[triple.index + 1]!, salt);
+    appendIdentitySalt(atoms[triple.index + 2]!, salt);
   }
 }
 

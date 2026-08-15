@@ -42,6 +42,7 @@ describe('parenthetical enumerator revision boundaries', () => {
         engine: 'atomizer',
         reconstructionMode: 'inplace',
       });
+      expect(compared.reconstructionModeUsed).toBe('inplace');
       const archive = await DocxArchive.load(compared.document);
       xml = await archive.getDocumentXml();
     });
@@ -62,7 +63,7 @@ describe('parenthetical enumerator revision boundaries', () => {
     });
   });
 
-  test('matches the Word boundary on the committed ILPA §14.7.1 pair', async ({
+  test('keeps the complete enumerator boundary on the committed ILPA §14.7.1 pair', async ({
     given,
     when,
     then,
@@ -91,4 +92,48 @@ describe('parenthetical enumerator revision boundaries', () => {
       expect(insertions.some((text) => text === '(i)')).toBe(true);
     });
   }, 30_000);
+
+  test('does not redline an unchanged enumerator when only nearby prose changes', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let xml = '';
+    await given('an unchanged (i) followed by a one-word edit in the same item', async () => {
+      const original = await buildDocxFromBodyXml(paragraph('(i) below the threshold'));
+      const revised = await buildDocxFromBodyXml(paragraph('(i) above the threshold'));
+      const compared = await compareDocuments(original, revised, { engine: 'atomizer', reconstructionMode: 'inplace' });
+      expect(compared.reconstructionModeUsed).toBe('inplace');
+      xml = await (await DocxArchive.load(compared.document)).getDocumentXml();
+    });
+
+    await when('the nearby prose edit is compared', async () => {});
+
+    await then('only the changed word is revised', () => {
+      expect(directRevisionText(xml, 'w:del')).toEqual(['below']);
+      expect(directRevisionText(xml, 'w:ins')).toEqual(['above']);
+    });
+  });
+
+  test('does not borrow enumerator identity from the following paragraph', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let xml = '';
+    await given('an unchanged short enumerator paragraph before an edited paragraph', async () => {
+      const original = await buildDocxFromBodyXml(paragraph('Clause (i)') + paragraph('Alpha beta gamma.'));
+      const revised = await buildDocxFromBodyXml(paragraph('Clause (i)') + paragraph('Delta epsilon gamma.'));
+      const compared = await compareDocuments(original, revised, { engine: 'atomizer', reconstructionMode: 'inplace' });
+      expect(compared.reconstructionModeUsed).toBe('inplace');
+      xml = await (await DocxArchive.load(compared.document)).getDocumentXml();
+    });
+
+    await when('the following paragraph is compared', async () => {});
+
+    await then('the unchanged enumerator is absent from all revisions', () => {
+      const revisions = [...directRevisionText(xml, 'w:del'), ...directRevisionText(xml, 'w:ins')];
+      expect(revisions.every((text) => !text.includes('(i)'))).toBe(true);
+    });
+  });
 });
