@@ -251,11 +251,7 @@ numeric identifiers. Arbitrary packages that use `0` or `1` for user notes,
 full `w:type` interpretation, and complete `w:customMarkFollows` display-mark
 semantics are outside the present numbering claim.
 
-This claim is bounded to the runtime and test evidence listed above. In
-particular, §17.16.18 does not prohibit `w:fldChar` below `<w:del>`: the
-Transitional schema permits that ancestry, and Word 16.112 and Aspose.Words
-25.10 were measured on 2026-08-14 emitting deleted complex fields that way.
-The former issue-#217 placement rule was therefore retracted.
+This claim is bounded to the runtime and test evidence listed above.
 
 ## [ECMA-PART1-17-16-22] w:hyperlink container preservation under tracked changes
 
@@ -856,6 +852,10 @@ verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/sr
 ```
 
 This claim is bounded to the runtime and test evidence listed above.
+In particular, §17.16.18 does not prohibit `w:fldChar` below `<w:del>`: the
+Transitional schema permits that ancestry, and Word 16.112 and Aspose.Words
+25.10 were measured on 2026-08-14 emitting deleted complex fields that way.
+The former issue-#217 placement rule was therefore retracted.
 
 ## [ECMA-PART1-17-16-5-44] PAGE field instruction emission
 

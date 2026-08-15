@@ -1,5 +1,13 @@
 # Change: Fragment `<w:ins>`/`<w:del>` at field-character boundaries per ECMA-376 Part 4
 
+> **Retracted 2026-08-14.** This change was archived without applying its spec
+> delta. Direct Microsoft Word 16.112 and Aspose.Words 25.10 measurements showed
+> that complete deleted complex fields place `w:fldChar` below `<w:del>`, and
+> the ECMA-376 Transitional schema permits that ancestry. The original proposal
+> incorrectly treated a research summary as a normative placement rule. Issue
+> #217 was reopened with the measurement record; the replacement behavior keeps
+> instruction changes whole and narrows only cached-result changes.
+
 ## Why
 
 The current inplace atomizer wraps whole field sequences as a single track-change wrapper, even when a conformant emitter must fragment. ECMA-376 Part 4 is explicit that `w:fldChar` is **strictly barred** from `<w:del>` — Microsoft Word treats violations as fatal and discards the field state machine, falling back to literal-text rendering. The current engine emits deleted complete fields as a single `<w:del>` containing the entire begin/instrText/separate/result/end run sequence (`packages/docx-core/src/baselines/atomizer/inPlaceModifier-deletion.ts`, function `insertDeletedRun`), which violates this rule.

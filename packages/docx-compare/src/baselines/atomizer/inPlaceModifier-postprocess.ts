@@ -165,16 +165,34 @@ export function narrowResultOnlyFieldReplacements(
   atoms: ComparisonUnitAtom[],
 ): ComparisonUnitAtom[] {
   const result: ComparisonUnitAtom[] = [];
+  const consumedInsertions = new Set<number>();
   for (let i = 0; i < atoms.length; i++) {
+    if (consumedInsertions.has(i)) continue;
     const deleted = atoms[i]!;
-    const inserted = atoms[i + 1];
+    const signature = fieldInstructionSignature(deleted);
+    const matchingInsertionIndices: number[] = [];
+    if (deleted.correlationStatus === CorrelationStatus.Deleted && signature !== null) {
+      for (let candidateIndex = i + 1; candidateIndex < atoms.length; candidateIndex++) {
+        const candidate = atoms[candidateIndex]!;
+        if (candidate.paragraphIndex !== deleted.paragraphIndex) break;
+        if (
+          candidate.correlationStatus === CorrelationStatus.Inserted &&
+          fieldInstructionSignature(candidate) === signature
+        ) matchingInsertionIndices.push(candidateIndex);
+      }
+    }
+    // Fail closed when more than one field in the local change block has the
+    // same instruction: positional intent is then ambiguous.
+    const insertedIndex = matchingInsertionIndices.length === 1
+      ? matchingInsertionIndices[0]
+      : undefined;
+    const inserted = insertedIndex === undefined ? undefined : atoms[insertedIndex];
     if (
       inserted &&
       deleted.correlationStatus === CorrelationStatus.Deleted &&
       inserted.correlationStatus === CorrelationStatus.Inserted &&
       deleted.paragraphIndex === inserted.paragraphIndex &&
-      fieldInstructionSignature(deleted) !== null &&
-      fieldInstructionSignature(deleted) === fieldInstructionSignature(inserted)
+      signature === fieldInstructionSignature(inserted)
     ) {
       const oldResult = simpleFieldResultAtoms(deleted);
       const newResult = simpleFieldResultAtoms(inserted);
@@ -229,7 +247,7 @@ export function narrowResultOnlyFieldReplacements(
           newPart.comparisonUnitAtomBefore = oldPart;
           result.push(newPart);
         }
-        i++;
+        consumedInsertions.add(insertedIndex!);
         continue;
       }
     }

@@ -968,8 +968,11 @@ function processAtoms(
   // Reorder atoms so consecutive deletions precede consecutive insertions.
   // This produces grouped tracked changes (all <w:del> then all <w:ins>)
   // instead of alternating word-by-word del/ins pairs.
-  const reorderedAtoms = narrowResultOnlyFieldReplacements(
-    groupDeletionsBeforeInsertions(mergedAtoms),
+  // Narrow field pairs while the differ's deleted/inserted adjacency is still
+  // intact. Grouping first can separate the pair when prose in the same
+  // paragraph also changed, defeating the result-only optimization.
+  const reorderedAtoms = groupDeletionsBeforeInsertions(
+    narrowResultOnlyFieldReplacements(mergedAtoms),
   );
 
   for (const atom of reorderedAtoms) {

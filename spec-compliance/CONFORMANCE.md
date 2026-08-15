@@ -332,11 +332,7 @@ numeric identifiers. Arbitrary packages that use `0` or `1` for user notes,
 full `w:type` interpretation, and complete `w:customMarkFollows` display-mark
 semantics are outside the present numbering claim.
 
-This claim is bounded to the runtime and test evidence listed above. In
-particular, §17.16.18 does not prohibit `w:fldChar` below `<w:del>`: the
-Transitional schema permits that ancestry, and Word 16.112 and Aspose.Words
-25.10 were measured on 2026-08-14 emitting deleted complex fields that way.
-The former issue-#217 placement rule was therefore retracted.
+This claim is bounded to the runtime and test evidence listed above.
 
 ### ECMA-PART1-17-16-22 — w:hyperlink container preservation under tracked changes
 
@@ -824,6 +820,10 @@ and conditionally adds this switch exactly when some section declares an
 - **Verified by:** packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/shared/field-structure.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 
 This claim is bounded to the runtime and test evidence listed above.
+In particular, §17.16.18 does not prohibit `w:fldChar` below `<w:del>`: the
+Transitional schema permits that ancestry, and Word 16.112 and Aspose.Words
+25.10 were measured on 2026-08-14 emitting deleted complex fields that way.
+The former issue-#217 placement rule was therefore retracted.
 
 ### ECMA-PART1-17-16-5-44 — PAGE field instruction emission
 

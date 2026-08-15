@@ -389,6 +389,37 @@ describe('Field fragmentation — modification scenarios', () => {
   );
 
   test(
+    'result-only narrowing survives an adjacent prose replacement',
+    async ({ given, when, then }: AllureBddContext) => {
+      let combined: string;
+
+      await given('changed prose beside a NUMPAGES cached-result update', async () => {
+        const original = await buildDocxFromBodyXml(
+          `<w:p><w:r><w:t>This agreement has old total pages: </w:t></w:r>${makeField(' NUMPAGES ', '3')}<w:r><w:t> as calculated here.</w:t></w:r></w:p>`,
+        );
+        const revised = await buildDocxFromBodyXml(
+          `<w:p><w:r><w:t>This agreement has new total pages: </w:t></w:r>${makeField(' NUMPAGES ', '4')}<w:r><w:t> as calculated here.</w:t></w:r></w:p>`,
+        );
+        combined = await compareInplace(original, revised);
+      });
+
+      await when('the inplace combined output is produced', async () => {});
+
+      await then('the unchanged field scaffolding remains outside the result revisions', () => {
+        assertEmitsTrackedChanges(combined);
+        expect(countTag(combined, 'w:fldChar')).toBe(3);
+        assertNoFldCharInside(combined, 'w:del');
+        assertNoFldCharInside(combined, 'w:ins');
+        expect(rejectAllChanges(combined)).toContain('old');
+        expect(rejectAllChanges(combined)).toContain('3');
+        expect(acceptAllChanges(combined)).toContain('new');
+        expect(acceptAllChanges(combined)).toContain('4');
+        assertFieldStructureSurvives(combined);
+      });
+    },
+  );
+
+  test(
     'result-only narrowing skips fields whose marker attributes differ',
     async ({ given, when, then }: AllureBddContext) => {
       let combined: string;
