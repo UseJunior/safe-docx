@@ -283,15 +283,45 @@ export function computeAtomLcs(
   const matchedByOriginal = new Map(
     matches.map((match) => [match.originalIndex, match.revisedIndex]),
   );
+  const matchedByRevised = new Map(
+    matches.map((match) => [match.revisedIndex, match.originalIndex]),
+  );
   matches = matches.filter((match) => {
     const originalMate = originalMates.get(match.originalIndex);
     const revisedMate = revisedMates.get(match.revisedIndex);
     if (originalMate === undefined && revisedMate === undefined) return true;
-    return (
-      originalMate !== undefined &&
-      revisedMate !== undefined &&
-      matchedByOriginal.get(originalMate) === revisedMate
-    );
+    if (
+      originalMate === undefined ||
+      revisedMate === undefined ||
+      matchedByOriginal.get(originalMate) !== revisedMate
+    ) {
+      return false;
+    }
+    const originalStart = Math.min(match.originalIndex, originalMate);
+    const originalEnd = Math.max(match.originalIndex, originalMate);
+    const revisedStart = Math.min(match.revisedIndex, revisedMate);
+    const revisedEnd = Math.max(match.revisedIndex, revisedMate);
+    for (let index = originalStart + 1; index < originalEnd; index++) {
+      const counterpart = matchedByOriginal.get(index);
+      if (
+        counterpart === undefined ||
+        counterpart <= revisedStart ||
+        counterpart >= revisedEnd
+      ) {
+        return false;
+      }
+    }
+    for (let index = revisedStart + 1; index < revisedEnd; index++) {
+      const counterpart = matchedByRevised.get(index);
+      if (
+        counterpart === undefined ||
+        counterpart <= originalStart ||
+        counterpart >= originalEnd
+      ) {
+        return false;
+      }
+    }
+    return true;
   });
 
   // Find deleted and inserted indices

@@ -28,17 +28,17 @@ function directRevisionText(xml: string, tagName: 'w:del' | 'w:ins'): string[] {
 }
 
 describe('parenthetical enumerator revision boundaries', () => {
-  test('keeps an unchanged marker equal and does not end deletion before a closing parenthesis', async ({
+  test('revises the complete changed marker in the reduced ILPA clause', async ({
     given,
     when,
     then,
   }: AllureBddContext) => {
     let xml = '';
-    await given('an unchanged marker followed by a deleted parenthetical phrase', async () => {
+    await given('the reduced ILPA clause that changes item (iv) to item (ii)', async () => {
       const original = await buildDocxFromBodyXml(
-        paragraph('(i) deleted text (parenthetical) retained tail'),
+        paragraph('If, upon any of (i) the first anniversary following the end of the Commitment Period, (ii) a Removal Date, (iii) the liquidation of the Fund and final distribution to the Partners pursuant to Section 18.3.2.2; or (iv) any re-advance of any amounts pursuant to Section 16.3 (Limited Partner Giveback), with respect to any Limited Partner, either:'),
       );
-      const revised = await buildDocxFromBodyXml(paragraph('(i) retained tail'));
+      const revised = await buildDocxFromBodyXml(paragraph('If, upon (i) the liquidation of the Fund and final distribution to the Partners pursuant to Section 18.3.2.2 or (ii) any re-advance of any amounts pursuant to Section 16.3 (Limited Partner Giveback) after the liquidation of the Fund and final distribution to the Partners pursuant to Section 18.3.2.2, with respect to any Limited Partner, either:'));
       const compared = await compareDocuments(original, revised, {
         engine: 'atomizer',
         reconstructionMode: 'inplace',
@@ -50,11 +50,13 @@ describe('parenthetical enumerator revision boundaries', () => {
 
     await when('the inplace redline is emitted', async () => {});
 
-    await then('the marker stays equal and the deleted parenthetical is complete', () => {
+    await then('the parentheses travel with the changed Roman numerals', () => {
       const deletions = directRevisionText(xml, 'w:del');
-      expect(deletions.join('')).toBe('deleted text (parenthetical) ');
-      expect(deletions.every((text) => !text.includes('(i)'))).toBe(true);
-      expect(directRevisionText(xml, 'w:ins')).toEqual([]);
+      const insertions = directRevisionText(xml, 'w:ins');
+      expect(deletions).toContain('(iv)');
+      expect(insertions).toContain('(ii)');
+      expect(deletions).not.toContain('iv');
+      expect(insertions).not.toContain('ii');
     });
   });
 
