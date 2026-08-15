@@ -2,6 +2,7 @@ import { DOMParser } from '@xmldom/xmldom';
 import { compareDocuments } from '@usejunior/docx-compare';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect } from 'vitest';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
@@ -15,7 +16,7 @@ const test = testAllure
     severity: 'normal',
   });
 
-const projectRoot = join(dirname(import.meta.url.replace('file://', '')), '../../../..');
+const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
 
 function paragraph(text: string): string {
   return `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`;
@@ -99,9 +100,9 @@ describe('parenthetical enumerator revision boundaries', () => {
     then,
   }: AllureBddContext) => {
     let xml = '';
-    await given('an unchanged (i) followed by a one-word edit in the same item', async () => {
-      const original = await buildDocxFromBodyXml(paragraph('(i) below the threshold'));
-      const revised = await buildDocxFromBodyXml(paragraph('(i) above the threshold'));
+    await given('two unchanged enumerators with a one-word edit in the second item', async () => {
+      const original = await buildDocxFromBodyXml(paragraph('(i) alpha beta gamma and (ii) below the threshold'));
+      const revised = await buildDocxFromBodyXml(paragraph('(i) alpha beta gamma and (ii) above the threshold'));
       const compared = await compareDocuments(original, revised, { engine: 'atomizer', reconstructionMode: 'inplace' });
       expect(compared.reconstructionModeUsed).toBe('inplace');
       xml = await (await DocxArchive.load(compared.document)).getDocumentXml();
@@ -112,6 +113,50 @@ describe('parenthetical enumerator revision boundaries', () => {
     await then('only the changed word is revised', () => {
       expect(directRevisionText(xml, 'w:del')).toEqual(['below']);
       expect(directRevisionText(xml, 'w:ins')).toEqual(['above']);
+    });
+  });
+
+  test('keeps surviving enumerators unchanged when a trailing item is deleted', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let xml = '';
+    await given('a two-item enumeration reduced to its unchanged first item', async () => {
+      const original = await buildDocxFromBodyXml(paragraph('(i) alpha beta gamma delta, and (ii) epsilon zeta eta theta'));
+      const revised = await buildDocxFromBodyXml(paragraph('(i) alpha beta gamma delta.'));
+      const compared = await compareDocuments(original, revised, { engine: 'atomizer', reconstructionMode: 'inplace' });
+      expect(compared.reconstructionModeUsed).toBe('inplace');
+      xml = await (await DocxArchive.load(compared.document)).getDocumentXml();
+    });
+
+    await when('the trailing item deletion is compared', async () => {});
+
+    await then('the surviving first enumerator is not redlined', () => {
+      const revisions = [...directRevisionText(xml, 'w:del'), ...directRevisionText(xml, 'w:ins')];
+      expect(revisions.every((text) => text !== '(i)')).toBe(true);
+    });
+  });
+
+  test('does not redline an enumerator for a punctuation-only item edit', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let xml = '';
+    await given('two items whose first item only loses a comma', async () => {
+      const original = await buildDocxFromBodyXml(paragraph('(i) alpha, beta gamma occurs and (ii) delta epsilon zeta occurs'));
+      const revised = await buildDocxFromBodyXml(paragraph('(i) alpha beta gamma occurs and (ii) delta epsilon zeta occurs'));
+      const compared = await compareDocuments(original, revised, { engine: 'atomizer', reconstructionMode: 'inplace' });
+      expect(compared.reconstructionModeUsed).toBe('inplace');
+      xml = await (await DocxArchive.load(compared.document)).getDocumentXml();
+    });
+
+    await when('the punctuation edit is compared', async () => {});
+
+    await then('neither unchanged enumerator is revised', () => {
+      const revisions = [...directRevisionText(xml, 'w:del'), ...directRevisionText(xml, 'w:ins')];
+      expect(revisions.every((text) => text !== '(i)' && text !== '(ii)')).toBe(true);
     });
   });
 

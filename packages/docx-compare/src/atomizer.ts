@@ -1308,7 +1308,6 @@ function isRomanNumeral(value: string): boolean {
  */
 function saltParentheticalRomanEnumerators(atoms: ComparisonUnitAtom[]): void {
   const triples: Array<{ index: number; paragraph: Element }> = [];
-  const counts = new Map<Element, number>();
   for (let index = 0; index + 2 < atoms.length; index++) {
     const open = atoms[index]!;
     const numeral = atoms[index + 1]!;
@@ -1316,27 +1315,31 @@ function saltParentheticalRomanEnumerators(atoms: ComparisonUnitAtom[]): void {
     const paragraph = paragraphAncestor(open);
     if (
       paragraph && paragraphAncestor(numeral) === paragraph && paragraphAncestor(close) === paragraph &&
-      open.contentElement.textContent === '(' &&
+      open.contentElement.tagName === 'w:t' && open.contentElement.textContent === '(' &&
+      numeral.contentElement.tagName === 'w:t' &&
       isRomanNumeral(numeral.contentElement.textContent ?? '') &&
-      close.contentElement.textContent === ')'
+      close.contentElement.tagName === 'w:t' && close.contentElement.textContent === ')'
     ) {
       triples.push({ index, paragraph });
-      counts.set(paragraph, (counts.get(paragraph) ?? 0) + 1);
     }
   }
 
+  const ordinalByParagraph = new Map<Element, number>();
   for (const triple of triples) {
-    if ((counts.get(triple.paragraph) ?? 0) < 2) continue;
-    const contextTokens: string[] = [];
-    for (let index = triple.index + 3; index < atoms.length && contextTokens.length < 2; index++) {
+    const ordinal = ordinalByParagraph.get(triple.paragraph) ?? 0;
+    ordinalByParagraph.set(triple.paragraph, ordinal + 1);
+    const nextTriple = triples.find((candidate) =>
+      candidate.index > triple.index && candidate.paragraph === triple.paragraph);
+    let lexicalTokenCount = 0;
+    for (let index = triple.index + 3; index < (nextTriple?.index ?? atoms.length); index++) {
       const next = atoms[index]!;
       if (paragraphAncestor(next) !== triple.paragraph) break;
       const text = next.contentElement.textContent ?? '';
-      if (next.contentElement.tagName === 'w:t' && !/^\s+$/.test(text)) contextTokens.push(text.toLowerCase());
+      if (next.contentElement.tagName === 'w:t' && /[\p{L}\p{N}]/u.test(text)) lexicalTokenCount++;
     }
-    if (contextTokens.length < 2) continue;
     const numeral = atoms[triple.index + 1]!.contentElement.textContent!.toLowerCase();
-    const salt = `:paren-enumerator=${numeral}:${encodeURIComponent(contextTokens.join(' '))}`;
+    const lengthBand = Math.floor(Math.log2(Math.max(1, lexicalTokenCount)));
+    const salt = `:paren-enumerator=${numeral}:${ordinal}:band-${lengthBand}`;
     appendIdentitySalt(atoms[triple.index]!, salt);
     appendIdentitySalt(atoms[triple.index + 1]!, salt);
     appendIdentitySalt(atoms[triple.index + 2]!, salt);
