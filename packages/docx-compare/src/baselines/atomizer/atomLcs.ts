@@ -8,6 +8,7 @@
 import type { ComparisonUnitAtom } from '@usejunior/docx-core';
 import { CorrelationStatus } from '@usejunior/docx-core';
 import { EMPTY_PARAGRAPH_TAG, getIdentityId } from '../../atomizer.js';
+import { incompatibleContextualAnchorAtoms } from './contextualAnchorAlignment.js';
 import { debug } from './debug.js';
 import {
   revisionProvenance,
@@ -156,70 +157,7 @@ export function computeAtomLcs(
 ): LcsResult {
   const n = original.length;
   const m = revised.length;
-  const roman = /^(?:x{0,3})(?:ix|iv|v?i{0,3})$/i;
-  const triples = (atoms: ComparisonUnitAtom[]): number[][] => {
-    const found: number[][] = [];
-    for (let index = 0; index + 2 < atoms.length; index++) {
-      const values = atoms.slice(index, index + 3).map((atom) =>
-        atom.contentElement.tagName === 'w:t' ? atom.contentElement.textContent ?? '' : '');
-      if (values[0] === '(' && values[1] !== '' && roman.test(values[1]!) && values[2] === ')') {
-        found.push([index, index + 1, index + 2]);
-      }
-    }
-    return found;
-  };
-  const originalTriples = triples(original);
-  const revisedTriples = triples(revised);
-  const itemTokens = (atoms: ComparisonUnitAtom[], triple: number[], allTriples: number[][]): Set<string> => {
-    const paragraph = atoms[triple[0]!]!.ancestorElements.find((ancestor) => ancestor.tagName === 'w:p');
-    const next = allTriples.find((candidate) => candidate[0]! > triple[0]!)?.[0] ?? atoms.length;
-    const tokens = new Set<string>();
-    for (let index = triple[2]! + 1; index < next; index++) {
-      const atom = atoms[index]!;
-      if (atom.ancestorElements.find((ancestor) => ancestor.tagName === 'w:p') !== paragraph) break;
-      const value = atom.contentElement.textContent ?? '';
-      if (atom.contentElement.tagName === 'w:t' && /[\p{L}\p{N}]/u.test(value)) tokens.add(value.toLowerCase());
-    }
-    return tokens;
-  };
-  const similarity = (left: Set<string>, right: Set<string>): number => {
-    const union = new Set([...left, ...right]);
-    if (union.size === 0) return 1;
-    let intersection = 0;
-    for (const token of left) if (right.has(token)) intersection++;
-    return intersection / union.size;
-  };
-  const blockedOriginal = new Set<ComparisonUnitAtom>();
-  const blockedRevised = new Set<ComparisonUnitAtom>();
-  const revisedByNumeral = new Map<string, number[][]>();
-  for (const triple of revisedTriples) {
-    const numeral = revised[triple[1]!]!.contentElement.textContent!.toLowerCase();
-    revisedByNumeral.set(numeral, [...(revisedByNumeral.get(numeral) ?? []), triple]);
-  }
-  const originalOrdinal = new Map<string, number>();
-  for (const triple of originalTriples) {
-    const numeral = original[triple[1]!]!.contentElement.textContent!.toLowerCase();
-    const ordinal = originalOrdinal.get(numeral) ?? 0;
-    originalOrdinal.set(numeral, ordinal + 1);
-    const counterpart = revisedByNumeral.get(numeral)?.[ordinal];
-    const originalContext = itemTokens(original, triple, originalTriples);
-    const revisedContext = counterpart
-      ? itemTokens(revised, counterpart, revisedTriples)
-      : new Set<string>();
-    // Word 16.112 treats a parenthetical Roman marker as part of a wholesale
-    // rewritten legal-list item, preventing LCS from keeping only `(i` while
-    // orphaning `)`. Require at least three distinct lexical tokens on both
-    // sides before applying that contextual rule: short list items and prose
-    // references such as "Exhibit (v) June" must retain ordinary minimal
-    // word-level alignment. Alphabetic and numeric markers remain outside this
-    // deliberately measured Roman-only scope.
-    // @see https://github.com/UseJunior/safe-docx/issues/851
-    if (counterpart && originalContext.size >= 3 && revisedContext.size >= 3 &&
-      similarity(originalContext, revisedContext) < 0.25) {
-      triple.forEach((index) => blockedOriginal.add(original[index]!));
-      counterpart.forEach((index) => blockedRevised.add(revised[index]!));
-    }
-  }
+  const blocked = incompatibleContextualAnchorAtoms(original, revised);
 
   // Select the equality comparator once, not per DP cell. Use the integer-id path
   // only when EVERY atom on both sides carries an interned id (the production
@@ -237,7 +175,7 @@ export function computeAtomLcs(
     ? (a: ComparisonUnitAtom, b: ComparisonUnitAtom): boolean => getIdentityId(a) === getIdentityId(b)
     : atomsEqual;
   const eq = (a: ComparisonUnitAtom, b: ComparisonUnitAtom): boolean =>
-    !blockedOriginal.has(a) && !blockedRevised.has(b) && baseEq(a, b);
+    !blocked.original.has(a) && !blocked.revised.has(b) && baseEq(a, b);
 
   // Build LCS length table over suffixes:
   // dp[i][j] = length of LCS of original[i..] and revised[j..]

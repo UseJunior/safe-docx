@@ -206,7 +206,7 @@ describe('parenthetical enumerator revision boundaries', () => {
       for (const [before, after] of [
         ['(i) June, (ii) July', '(i) May, (ii) July'],
         ['see Exhibit (v) June', 'see Exhibit (v) May'],
-      ]) {
+      ] as const) {
         const original = await buildDocxFromBodyXml(paragraph(before));
         const revised = await buildDocxFromBodyXml(paragraph(after));
         const compared = await compareDocuments(original, revised, { engine: 'atomizer', reconstructionMode: 'inplace' });
@@ -220,6 +220,119 @@ describe('parenthetical enumerator revision boundaries', () => {
       for (const xml of outputs) {
         expect(directRevisionText(xml, 'w:del')).toEqual(['June']);
         expect(directRevisionText(xml, 'w:ins')).toEqual(['May']);
+      }
+    });
+  });
+
+  test('applies one contextual policy to numeric, alphabetic, and Roman markers', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const outputs: Array<{ marker: string; xml: string }> = [];
+    await given('equivalent wholesale item rewrites in each supported marker family', async () => {
+      for (const [marker, nextMarker] of [
+        ['1', '2'],
+        ['a', 'b'],
+        ['iv', 'v'],
+      ]) {
+        const original = await buildDocxFromBodyXml(
+          paragraph(
+            `Lead (${marker}) alpha beta gamma delta and (${nextMarker}) retained item text remains.`,
+          ),
+        );
+        const revised = await buildDocxFromBodyXml(
+          paragraph(
+            `Lead (${marker}) epsilon zeta eta theta and (${nextMarker}) retained item text remains.`,
+          ),
+        );
+        const compared = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+        outputs.push({
+          marker: `(${marker})`,
+          xml: await (await DocxArchive.load(compared.document)).getDocumentXml(),
+        });
+      }
+    });
+
+    await when('the contextual-anchor matcher aligns each paragraph', async () => {});
+
+    await then('every incompatible item replaces its complete marker', () => {
+      for (const { marker, xml } of outputs) {
+        expect(directRevisionText(xml, 'w:del').some((text) => text.includes(marker))).toBe(true);
+        expect(directRevisionText(xml, 'w:ins').some((text) => text.includes(marker))).toBe(true);
+      }
+    });
+  });
+
+  test('preserves markers across compatible local edits for every marker family', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const outputs: string[] = [];
+    await given('numeric, alphabetic, and Roman items with the same one-word edit', async () => {
+      for (const [marker, nextMarker] of [
+        ['1', '2'],
+        ['a', 'b'],
+        ['iv', 'v'],
+      ]) {
+        const original = await buildDocxFromBodyXml(
+          paragraph(
+            `Lead (${marker}) alpha beta before delta and (${nextMarker}) retained item text remains.`,
+          ),
+        );
+        const revised = await buildDocxFromBodyXml(
+          paragraph(
+            `Lead (${marker}) alpha beta after delta and (${nextMarker}) retained item text remains.`,
+          ),
+        );
+        const compared = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+        outputs.push(await (await DocxArchive.load(compared.document)).getDocumentXml());
+      }
+    });
+
+    await when('the compatible spans are aligned', async () => {});
+
+    await then('ordinary token LCS isolates the changed word', () => {
+      for (const xml of outputs) {
+        expect(directRevisionText(xml, 'w:del')).toEqual(['before']);
+        expect(directRevisionText(xml, 'w:ins')).toEqual(['after']);
+      }
+    });
+  });
+
+  test('does not preserve marker identity when item bodies exchange positions', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let xml = '';
+    await given('two alphabetic item bodies swapped beneath their positional markers', async () => {
+      const original = await buildDocxFromBodyXml(
+        paragraph('(a) alpha beta gamma delta and (b) epsilon zeta eta theta'),
+      );
+      const revised = await buildDocxFromBodyXml(
+        paragraph('(a) epsilon zeta eta theta and (b) alpha beta gamma delta'),
+      );
+      const compared = await compareDocuments(original, revised, {
+        engine: 'atomizer',
+        reconstructionMode: 'inplace',
+      });
+      xml = await (await DocxArchive.load(compared.document)).getDocumentXml();
+    });
+
+    await when('the reordered item contexts are aligned', async () => {});
+
+    await then('both positional markers participate in the replacement', () => {
+      for (const marker of ['(a)', '(b)']) {
+        expect(directRevisionText(xml, 'w:del').some((text) => text.includes(marker))).toBe(true);
+        expect(directRevisionText(xml, 'w:ins').some((text) => text.includes(marker))).toBe(true);
       }
     });
   });
