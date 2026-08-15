@@ -8,7 +8,6 @@
 import type { ComparisonUnitAtom } from '@usejunior/docx-core';
 import { CorrelationStatus } from '@usejunior/docx-core';
 import { EMPTY_PARAGRAPH_TAG, getIdentityId } from '../../atomizer.js';
-import { incompatibleContextualAnchorAtoms } from './contextualAnchorAlignment.js';
 import { debug } from './debug.js';
 import {
   revisionProvenance,
@@ -157,7 +156,6 @@ export function computeAtomLcs(
 ): LcsResult {
   const n = original.length;
   const m = revised.length;
-  const blocked = incompatibleContextualAnchorAtoms(original, revised);
 
   // Select the equality comparator once, not per DP cell. Use the integer-id path
   // only when EVERY atom on both sides carries an interned id (the production
@@ -171,11 +169,9 @@ export function computeAtomLcs(
   const useIds =
     original.every((a) => getIdentityId(a) !== undefined) &&
     revised.every((a) => getIdentityId(a) !== undefined);
-  const baseEq = useIds
+  const eq = useIds
     ? (a: ComparisonUnitAtom, b: ComparisonUnitAtom): boolean => getIdentityId(a) === getIdentityId(b)
     : atomsEqual;
-  const eq = (a: ComparisonUnitAtom, b: ComparisonUnitAtom): boolean =>
-    !blocked.original.has(a) && !blocked.revised.has(b) && baseEq(a, b);
 
   // Build LCS length table over suffixes:
   // dp[i][j] = length of LCS of original[i..] and revised[j..]
@@ -247,6 +243,54 @@ export function computeAtomLcs(
     return (
       matchedPairs.has(`${match.originalIndex - 1}:${match.revisedIndex - 1}`) ||
       matchedPairs.has(`${match.originalIndex + 1}:${match.revisedIndex + 1}`)
+    );
+  });
+
+  // A delimiter match is meaningful only when its mate is matched to the mate
+  // on the other side. Otherwise an equal closing delimiter can strand the
+  // revision boundary inside a parenthetical, e.g. `(i~) deleted text
+  // (parenthetical~)` instead of `(i)~ deleted text (parenthetical)~`.
+  // This changes neither token identity nor substantive alignment: it only
+  // removes orphaned delimiter matches after LCS.
+  const delimiterMates = (atoms: ComparisonUnitAtom[]): Map<number, number> => {
+    const mates = new Map<number, number>();
+    const stacks = new Map<unknown, number[]>();
+    for (let index = 0; index < atoms.length; index++) {
+      const atom = atoms[index]!;
+      if (atom.contentElement.tagName !== 'w:t') continue;
+      const value = atom.contentElement.textContent ?? '';
+      if (value !== '(' && value !== ')') continue;
+      const paragraph = atom.ancestorElements.find(
+        (ancestor) => ancestor.tagName === 'w:p',
+      );
+      if (paragraph === undefined) continue;
+      const stack = stacks.get(paragraph) ?? [];
+      stacks.set(paragraph, stack);
+      if (value === '(') {
+        stack.push(index);
+      } else {
+        const open = stack.pop();
+        if (open !== undefined) {
+          mates.set(open, index);
+          mates.set(index, open);
+        }
+      }
+    }
+    return mates;
+  };
+  const originalMates = delimiterMates(original);
+  const revisedMates = delimiterMates(revised);
+  const matchedByOriginal = new Map(
+    matches.map((match) => [match.originalIndex, match.revisedIndex]),
+  );
+  matches = matches.filter((match) => {
+    const originalMate = originalMates.get(match.originalIndex);
+    const revisedMate = revisedMates.get(match.revisedIndex);
+    if (originalMate === undefined && revisedMate === undefined) return true;
+    return (
+      originalMate !== undefined &&
+      revisedMate !== undefined &&
+      matchedByOriginal.get(originalMate) === revisedMate
     );
   });
 

@@ -28,17 +28,17 @@ function directRevisionText(xml: string, tagName: 'w:del' | 'w:ins'): string[] {
 }
 
 describe('parenthetical enumerator revision boundaries', () => {
-  test('deletes the complete old (i) enumerator and inserts the complete new one', async ({
+  test('keeps an unchanged marker equal and does not end deletion before a closing parenthesis', async ({
     given,
     when,
     then,
   }: AllureBddContext) => {
     let xml = '';
-    await given('the reduced ILPA §14.7.1 enumerator rewrite', async () => {
+    await given('an unchanged marker followed by a deleted parenthetical phrase', async () => {
       const original = await buildDocxFromBodyXml(
-        paragraph('If, upon any of (i) the first anniversary following the end of the Commitment Period, (ii) a Removal Date, (iii) the liquidation of the Fund and final distribution to the Partners pursuant to Section 18.3.2.2; or (iv) any re-advance of any amounts pursuant to Section 16.3 (Limited Partner Giveback), with respect to any Limited Partner, either:'),
+        paragraph('(i) deleted text (parenthetical) retained tail'),
       );
-      const revised = await buildDocxFromBodyXml(paragraph('If, upon (i) the liquidation of the Fund and final distribution to the Partners pursuant to Section 18.3.2.2 or (ii) any re-advance of any amounts pursuant to Section 16.3 (Limited Partner Giveback) after the liquidation of the Fund and final distribution to the Partners pursuant to Section 18.3.2.2, with respect to any Limited Partner, either:'));
+      const revised = await buildDocxFromBodyXml(paragraph('(i) retained tail'));
       const compared = await compareDocuments(original, revised, {
         engine: 'atomizer',
         reconstructionMode: 'inplace',
@@ -50,17 +50,11 @@ describe('parenthetical enumerator revision boundaries', () => {
 
     await when('the inplace redline is emitted', async () => {});
 
-    await then('the changed first enumerator is never split before its closing parenthesis', () => {
+    await then('the marker stays equal and the deleted parenthetical is complete', () => {
       const deletions = directRevisionText(xml, 'w:del');
-      const insertions = directRevisionText(xml, 'w:ins');
-      expect(
-        deletions.some((text) => text.includes('(i) the first anniversary')),
-        `deletions: ${JSON.stringify(deletions)} insertions: ${JSON.stringify(insertions)}`,
-      ).toBe(true);
-      expect(
-        insertions.some((text) => text.includes('(i)')),
-        `deletions: ${JSON.stringify(deletions)} insertions: ${JSON.stringify(insertions)}`,
-      ).toBe(true);
+      expect(deletions.join('')).toBe('deleted text (parenthetical) ');
+      expect(deletions.every((text) => !text.includes('(i)'))).toBe(true);
+      expect(directRevisionText(xml, 'w:ins')).toEqual([]);
     });
   });
 
@@ -86,11 +80,17 @@ describe('parenthetical enumerator revision boundaries', () => {
 
     await when('the real-document redline is emitted', async () => {});
 
-    await then('the old (i) is deleted whole and the new (i) is inserted whole', () => {
-      const deletions = directRevisionText(xml, 'w:del');
-      const insertions = directRevisionText(xml, 'w:ins');
-      expect(deletions.some((text) => text.includes('(i) the first anniversary'))).toBe(true);
-      expect(insertions.some((text) => text === '(i)')).toBe(true);
+    await then('no deletion boundary is stranded immediately before a closing parenthesis', () => {
+      const doc = new DOMParser().parseFromString(xml, 'application/xml');
+      const deletions = Array.from(doc.getElementsByTagName('w:del'));
+      const offenders = deletions.flatMap((deletion) => {
+        let sibling = deletion.nextSibling;
+        while (sibling && sibling.nodeType !== 1) sibling = sibling.nextSibling;
+        return sibling?.nodeName === 'w:r' && (sibling.textContent ?? '').startsWith(')')
+          ? [{ deletion: deletion.textContent ?? '', following: sibling.textContent ?? '' }]
+          : [];
+      });
+      expect(offenders, JSON.stringify(offenders)).toEqual([]);
     });
   }, 30_000);
 
@@ -224,49 +224,6 @@ describe('parenthetical enumerator revision boundaries', () => {
     });
   });
 
-  test('applies one contextual policy to numeric, alphabetic, and Roman markers', async ({
-    given,
-    when,
-    then,
-  }: AllureBddContext) => {
-    const outputs: Array<{ marker: string; xml: string }> = [];
-    await given('equivalent wholesale item rewrites in each supported marker family', async () => {
-      for (const [marker, nextMarker] of [
-        ['1', '2'],
-        ['a', 'b'],
-        ['iv', 'v'],
-      ]) {
-        const original = await buildDocxFromBodyXml(
-          paragraph(
-            `Lead (${marker}) alpha beta gamma delta and (${nextMarker}) retained item text remains.`,
-          ),
-        );
-        const revised = await buildDocxFromBodyXml(
-          paragraph(
-            `Lead (${marker}) epsilon zeta eta theta and (${nextMarker}) retained item text remains.`,
-          ),
-        );
-        const compared = await compareDocuments(original, revised, {
-          engine: 'atomizer',
-          reconstructionMode: 'inplace',
-        });
-        outputs.push({
-          marker: `(${marker})`,
-          xml: await (await DocxArchive.load(compared.document)).getDocumentXml(),
-        });
-      }
-    });
-
-    await when('the contextual-anchor matcher aligns each paragraph', async () => {});
-
-    await then('every incompatible item replaces its complete marker', () => {
-      for (const { marker, xml } of outputs) {
-        expect(directRevisionText(xml, 'w:del').some((text) => text.includes(marker))).toBe(true);
-        expect(directRevisionText(xml, 'w:ins').some((text) => text.includes(marker))).toBe(true);
-      }
-    });
-  });
-
   test('preserves markers across compatible local edits for every marker family', async ({
     given,
     when,
@@ -303,36 +260,6 @@ describe('parenthetical enumerator revision boundaries', () => {
       for (const xml of outputs) {
         expect(directRevisionText(xml, 'w:del')).toEqual(['before']);
         expect(directRevisionText(xml, 'w:ins')).toEqual(['after']);
-      }
-    });
-  });
-
-  test('does not preserve marker identity when item bodies exchange positions', async ({
-    given,
-    when,
-    then,
-  }: AllureBddContext) => {
-    let xml = '';
-    await given('two alphabetic item bodies swapped beneath their positional markers', async () => {
-      const original = await buildDocxFromBodyXml(
-        paragraph('(a) alpha beta gamma delta and (b) epsilon zeta eta theta'),
-      );
-      const revised = await buildDocxFromBodyXml(
-        paragraph('(a) epsilon zeta eta theta and (b) alpha beta gamma delta'),
-      );
-      const compared = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
-      });
-      xml = await (await DocxArchive.load(compared.document)).getDocumentXml();
-    });
-
-    await when('the reordered item contexts are aligned', async () => {});
-
-    await then('both positional markers participate in the replacement', () => {
-      for (const marker of ['(a)', '(b)']) {
-        expect(directRevisionText(xml, 'w:del').some((text) => text.includes(marker))).toBe(true);
-        expect(directRevisionText(xml, 'w:ins').some((text) => text.includes(marker))).toBe(true);
       }
     });
   });
