@@ -32,7 +32,10 @@ import { describe, expect } from 'vitest';
 import { DocxArchive, childElements, parseXml } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
-import { compareDocumentsAtomizer } from './pipeline.js';
+import {
+  compareDocumentsAtomizer,
+  compareDocumentsAtomizerUnguarded,
+} from './pipeline.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import type { ReconstructionMode } from '../../compare-types.js';
@@ -72,11 +75,14 @@ function bookmarkedParagraph(id: string, name: string, text: string, pPr = ''): 
 async function compare(
   originalBody: string,
   revisedBody: string,
-  reconstructionMode: ReconstructionMode
+  reconstructionMode: ReconstructionMode,
+  // Pre-tracked fixtures exercise the engine below the tracked-input guard
+  // (issue #742); everything else goes through the guarded public entry.
+  entry: typeof compareDocumentsAtomizer = compareDocumentsAtomizer,
 ): Promise<string> {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
-  const result = await compareDocumentsAtomizer(original, revised, {
+  const result = await entry(original, revised, {
     author: AUTHOR,
     date: DATE,
     reconstructionMode,
@@ -453,7 +459,12 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
       // The inplace pipeline runs its wrapper-merging postprocess passes over
       // this tree, so this asserts end-to-end that none of them re-merge the
       // split halves across the boundary.
-      documentXml = await compare(trackedBody, trackedBody, 'inplace');
+      documentXml = await compare(
+        trackedBody,
+        trackedBody,
+        'inplace',
+        compareDocumentsAtomizerUnguarded,
+      );
     });
 
     await then('the pre-existing wrapper is split with the boundary between the halves', () => {

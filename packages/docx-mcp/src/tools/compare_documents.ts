@@ -3,7 +3,11 @@ import { errorCode, errorMessage } from "../error_utils.js";
 import fs from 'node:fs/promises';
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
-import { compareDocuments, type CompareOptions } from '@usejunior/docx-compare';
+import {
+  compareDocuments,
+  TrackedInputRevisionError,
+  type CompareOptions,
+} from '@usejunior/docx-compare';
 import {
   mergeSessionResolutionMetadata,
   resolveSessionForTool,
@@ -150,6 +154,24 @@ export async function compareDocuments_tool(
     return ok(response);
   } catch (e: unknown) {
     const msg = errorMessage(e);
+    if (e instanceof TrackedInputRevisionError) {
+      // Distinct from the catch-all COMPARE_ERROR so an agent can recover: the
+      // refusal is deliberate and the remedy (accept/reject the named operand's
+      // revisions first) is actionable. The hint depends on WHERE the markup
+      // was found: accept_changes covers the document body and the
+      // revisionable side stories (footnotes, endnotes, comments, glossary)
+      // but not headers or footers, so recommending it for a header/footer
+      // detection would send the caller in a loop. See issue #742.
+      const headerOrFooterPart = /^word\/(?:header|footer)\d*\.xml$/.test(e.partPath);
+      return err(
+        'INPUT_HAS_TRACKED_CHANGES',
+        msg,
+        headerOrFooterPart
+          ? `The tracked changes live in ${e.partPath}; accept_changes does not cover headers or footers. ` +
+              'Produce a fully accepted or rejected copy of the named input (e.g. in Microsoft Word), then retry compare_documents.'
+          : 'Accept or reject the tracked changes in the named input (e.g. via accept_changes), then retry compare_documents.',
+      );
+    }
     if (String(errorCode(e) ?? '').toUpperCase() === 'EACCES') {
       return err('PERMISSION_DENIED', `Cannot write to: ${params.save_to_local_path}`, 'Try saving to ~/Downloads/ or ~/Documents/ instead.');
     }

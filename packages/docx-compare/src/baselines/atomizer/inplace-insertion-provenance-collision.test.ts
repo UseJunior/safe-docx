@@ -16,11 +16,14 @@ import {
 } from '@usejunior/docx-core';
 import {
   acceptAllChanges,
-  compareDocuments,
   extractTextWithParagraphs,
   normalizeText,
   rejectAllChanges,
 } from '../../index.js';
+// These fixtures deliberately pre-track the revised input, which the public
+// comparison boundary now refuses (issue #742); the collision-promotion
+// engine behavior under test lives below that guard.
+import { compareDocumentsAtomizerUnguarded } from './pipeline.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import {
   buildDocxFromBodyXml,
@@ -95,8 +98,7 @@ describe('Inplace revised insertion provenance collisions', () => {
       );
 
       await given('settled original text matched by a revised-side inline insertion', () => {});
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
+      const result = await compareDocumentsAtomizerUnguarded(original, revised, {
         reconstructionMode: 'inplace',
       });
       const combined = await documentXml(result.document);
@@ -129,8 +131,7 @@ describe('Inplace revised insertion provenance collisions', () => {
       );
 
       await given('a settled original paragraph marked inserted on the revised side', () => {});
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
+      const result = await compareDocumentsAtomizerUnguarded(original, revised, {
         reconstructionMode: 'inplace',
       });
       const combined = await documentXml(result.document);
@@ -159,8 +160,7 @@ describe('Inplace revised insertion provenance collisions', () => {
       );
 
       await given('settled text whose revised insertion also changes formatting', () => {});
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
+      const result = await compareDocumentsAtomizerUnguarded(original, revised, {
         reconstructionMode: 'inplace',
       });
       const combined = await documentXml(result.document);

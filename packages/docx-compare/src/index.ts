@@ -132,6 +132,14 @@ export {
   UnsupportedTextBoxRevisionError,
   assertTextBoxContentUnchanged,
 } from './baselines/atomizer/textBoxRevisionSafety.js';
+export {
+  TrackedInputRevisionError,
+  assertComparisonInputsUntracked,
+} from './baselines/atomizer/trackedInputRevisionSafety.js';
+export type {
+  ComparisonOperandName,
+  TrackedInputRevisionDetection,
+} from './baselines/atomizer/trackedInputRevisionSafety.js';
 export type { TextBoxRevisionChange } from './baselines/atomizer/textBoxRevisionSafety.js';
 export { computeAtomLcs, markCorrelationStatus } from './baselines/atomizer/atomLcs.js';
 export {

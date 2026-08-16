@@ -1,5 +1,8 @@
 import { describe, expect } from 'vitest';
 import { compareDocuments } from '@usejunior/docx-compare';
+// Test-only pipeline subpath (aliased to source in vitest.config.ts); the
+// unguarded seam is deliberately not exported from the package root (#742).
+import { compareDocumentsAtomizerUnguarded } from '@usejunior/docx-compare/dist/baselines/atomizer/pipeline.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { auditSectPr } from '../primitives/sectPrAudit.js';
 import {
@@ -151,8 +154,10 @@ describe('unrepresented section and header/footer reporting', () => {
     expect(
       auditSectPr(await revisedArchive.getDocumentXml()).stats.totalSectPrCount,
     ).toBe(1);
-    const result = await compareDocuments(original, revised, {
-      engine: 'atomizer',
+    // The revised fixture pre-tracks a sectPrChange; the public boundary
+    // refuses pre-tracked inputs (issue #742), so this engine behavior is
+    // pinned via the unguarded seam.
+    const result = await compareDocumentsAtomizerUnguarded(original, revised, {
       reconstructionMode: 'inplace',
     });
     expect(result.unrepresentedChanges).toBeUndefined();

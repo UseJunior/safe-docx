@@ -24,7 +24,10 @@ import {
   FIELD_INSTRUCTIONS,
 } from '../../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
-import { compareDocumentsAtomizer } from './pipeline.js';
+import {
+  compareDocumentsAtomizer,
+  compareDocumentsAtomizerUnguarded,
+} from './pipeline.js';
 import {
   acceptAllChanges,
   extractTextWithParagraphs,
@@ -113,10 +116,14 @@ function canonicalRanges(xml: string): string[][] {
 async function compare(
   originalBody: string,
   revisedBody: string,
+  // Fixtures that pre-track their inputs exercise the engine below the
+  // tracked-input guard (issue #742); everything else stays on the guarded
+  // public entry.
+  entry: typeof compareDocumentsAtomizer = compareDocumentsAtomizer,
 ) {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
-  return compareDocumentsAtomizer(original, revised, {
+  return entry(original, revised, {
     author: 'Issue 582 Test',
     date: new Date('2026-07-23T00:00:00Z'),
     reconstructionMode: 'rebuild',
@@ -299,7 +306,12 @@ describe('Forced rebuild preserves unchanged supported complex fields', () => {
       const page = decoratedComplexField(FIELD_INSTRUCTIONS.PAGE, '7', '_Page');
       const numPages = decoratedComplexField(FIELD_INSTRUCTIONS.NUMPAGES, '12', '_NumPages');
       const simplePage = completeField(FIELD_INSTRUCTIONS.PAGE, '7');
-      const cases: Array<{ name: string; original: string; revised: string }> = [
+      const cases: Array<{
+        name: string;
+        original: string;
+        revised: string;
+        pretracked?: boolean;
+      }> = [
         {
           name: 'result mutation',
           original: `<w:p>${page}</w:p>`,
@@ -376,11 +388,13 @@ describe('Forced rebuild preserves unchanged supported complex fields', () => {
           name: 'tracked paragraph owner',
           original: `<w:p>${simplePage}</w:p>`,
           revised: `<w:ins w:id="9"><w:p>${simplePage}</w:p></w:ins>`,
+          pretracked: true,
         },
         {
           name: 'inline revision wrapper ownership',
           original: `<w:p>${simplePage}</w:p>`,
           revised: `<w:p><w:ins w:id="9" w:author="Reviewer">${simplePage}</w:ins></w:p>`,
+          pretracked: true,
         },
         {
           name: 'unmatched begin',
@@ -394,7 +408,13 @@ describe('Forced rebuild preserves unchanged supported complex fields', () => {
       await given('adversarial supported-field shapes that violate bounded ownership', () => {});
       await when('each shape is compared through forced rebuild', async () => {
         for (const scenario of cases) {
-          await expect(compare(scenario.original, scenario.revised), scenario.name)
+          // Pre-tracked shapes reach the ownership guard via the unguarded
+          // seam; the tracked-input guard would otherwise refuse them first
+          // (issue #742).
+          const entry = scenario.pretracked
+            ? compareDocumentsAtomizerUnguarded
+            : compareDocumentsAtomizer;
+          await expect(compare(scenario.original, scenario.revised, entry), scenario.name)
             .rejects.toThrow(/Opaque passthrough:/);
         }
       });

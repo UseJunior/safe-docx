@@ -8,6 +8,13 @@ import { DocxDocument } from '../primitives/document.js';
 import { createZipBuffer, readZipText } from '../primitives/zip.js';
 import { validateAiRevisions } from '../primitives/validate_ai_revisions.js';
 import { compareDocuments } from '@usejunior/docx-compare';
+// [ADV-COMPARE-MODE-PRESERVATION-01] characterizes how the ENGINE treats
+// pre-existing advanced markup by reconstruction mode. The public boundary
+// now refuses inputs carrying w:ins/w:del/w:moveFrom/w:moveTo (issue #742),
+// so that characterization runs below the guard via the test-only pipeline
+// subpath (aliased to source in vitest.config.ts) — the seam is deliberately
+// not exported from the package root.
+import { compareDocumentsAtomizerUnguarded } from '@usejunior/docx-compare/dist/baselines/atomizer/pipeline.js';
 import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
 import { revisionEvidence, revisionEvidenceCases } from '../testing/revision-evidence.js';
 
@@ -781,7 +788,7 @@ describe('ECMA-376 advanced revision records', () => {
         const outputByMode = new Map<string, Document>();
         for (const mode of ['inplace', 'rebuild'] as const) {
           const result = await when(`the identical pair is compared in ${mode} mode`, () =>
-            compareDocuments(input, input, { engine: 'atomizer', reconstructionMode: mode }),
+            compareDocumentsAtomizerUnguarded(input, input, { reconstructionMode: mode }),
           );
           expect(result.reconstructionModeUsed).toBe(mode);
           outputByMode.set(mode, parseXml((await getResultParts(result.document)).documentXml));
@@ -845,7 +852,7 @@ describe('ECMA-376 advanced revision records', () => {
           run: async (fixture, _element, context) => {
             const mode = context.operation.endsWith('.rebuild') ? 'rebuild' : 'inplace';
             const bytes = await packageWithDocumentXml(serializeXml(fixture));
-            const result = await compareDocuments(bytes, bytes, { engine: 'atomizer', reconstructionMode: mode });
+            const result = await compareDocumentsAtomizerUnguarded(bytes, bytes, { reconstructionMode: mode });
             return {
               input: fixture,
               output: parseXml((await getResultParts(result.document)).documentXml),

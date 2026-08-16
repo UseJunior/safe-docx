@@ -136,6 +136,7 @@ import {
   rejectedSelectedAncillaryStoryPaths,
   UnsupportedTextBoxRevisionError,
 } from './textBoxRevisionSafety.js';
+import { assertComparisonInputsUntracked } from './trackedInputRevisionSafety.js';
 import {
   compareFootnoteDefinitions,
   findCorrespondingFootnotePairs,
@@ -608,6 +609,37 @@ function evaluateSafetyChecks(
  * @see https://github.com/UseJunior/safe-docx/issues/713
  */
 export async function compareDocumentsAtomizer(
+  original: Buffer,
+  revised: Buffer,
+  options: AtomizerOptions = {},
+): Promise<CompareResult> {
+  // Fail closed on inputs that already carry tracked changes: passing them
+  // through merges two authors' revision markup into one output that Microsoft
+  // Word refuses to open (issue #742). Guarded here — the lowest public
+  // comparison boundary — so both compareDocuments and the directly exported
+  // compareDocumentsAtomizer are covered by one scan.
+  await assertComparisonInputsUntracked(original, revised);
+  return compareDocumentsAtomizerUnguarded(original, revised, options);
+}
+
+/**
+ * The comparison orchestration below the tracked-input guard.
+ *
+ * Internal seam, deliberately NOT exported from the package root (a test pins
+ * that): it performs no tracked-input validation, and tracked inputs produce
+ * Word-unreadable output (issue #742). It exists so engine tests can exercise
+ * comparison behavior over deliberately pre-tracked inputs — provenance
+ * restoration, revision-ID collision promotion, round-trip projection — which
+ * the supported boundary refuses. docx-compare tests import it from this
+ * module; docx-core integration tests import it via the package's dist
+ * subpath, which their vitest config aliases back to this source file. A
+ * future accept-on-ingest opt-in would also route here after projecting its
+ * inputs. Every supported caller goes through
+ * {@link compareDocumentsAtomizer}.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/742
+ */
+export async function compareDocumentsAtomizerUnguarded(
   original: Buffer,
   revised: Buffer,
   options: AtomizerOptions = {},

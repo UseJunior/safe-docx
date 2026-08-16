@@ -10,6 +10,10 @@ import { describe, expect } from 'vitest';
 import { compareDocuments } from '../../index.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { coalesceMoveRangeMarkers } from './inPlaceModifier-postprocess.js';
+// The preserved-move fixture pre-tracks both inputs, which the public
+// comparison boundary now refuses (issue #742); the identity-collision
+// behavior under test lives below that guard.
+import { compareDocumentsAtomizerUnguarded } from './pipeline.js';
 import { buildDocxFromBodyXml, paragraphWithText } from '../../testing/ooxml-fixtures.js';
 
 const TEST_FEATURE = 'Inplace Move-Range Coalescing';
@@ -110,8 +114,7 @@ describe('Inplace move-range marker coalescing', () => {
         paragraphWithText('Final paragraph stays put') + paragraphWithText(MOVED_PARAGRAPH),
       );
 
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
+      const result = await compareDocumentsAtomizerUnguarded(original, revised, {
         reconstructionMode: 'inplace',
       });
       const xml = await documentXml(result.document);

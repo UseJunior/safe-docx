@@ -1,6 +1,9 @@
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { compareDocuments } from '../../index.js';
+// Pre-tracked fixtures exercise the engine below the tracked-input guard
+// (issue #742); clean fixtures stay on the guarded public entry.
+import { compareDocumentsAtomizerUnguarded } from './pipeline.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
@@ -29,13 +32,18 @@ async function compareInMode(
   originalBody: string,
   revisedBody: string,
   mode: 'inplace' | 'rebuild',
+  pretracked = false,
 ) {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
-  const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
-    reconstructionMode: mode,
-  });
+  const result = pretracked
+    ? await compareDocumentsAtomizerUnguarded(original, revised, {
+        reconstructionMode: mode,
+      })
+    : await compareDocuments(original, revised, {
+        engine: 'atomizer',
+        reconstructionMode: mode,
+      });
   expect(result.reconstructionModeUsed).toBe(mode);
 
   const xml = await documentXmlOf(result.document);
@@ -166,6 +174,7 @@ describe('empty-paragraph w:pPr serialization phantoms', () => {
     revised: string;
     expectNoParagraphMarkRevision: boolean;
     survivingFormatting?: string;
+    pretracked?: boolean;
   }> = [
     {
       name: 'bare w:pPr versus absent w:pPr',
@@ -191,6 +200,7 @@ describe('empty-paragraph w:pPr serialization phantoms', () => {
       original: `${anchor}<w:p><w:pPr><w:rPr><w:ins w:id="1" w:author="A" w:date="2024-01-01T00:00:00Z"/></w:rPr></w:pPr></w:p>`,
       revised: `${anchor}<w:p><w:pPr><w:rPr><w:ins w:id="99" w:author="B" w:date="2026-06-30T00:00:00Z"/></w:rPr></w:pPr></w:p>`,
       expectNoParagraphMarkRevision: false,
+      pretracked: true,
     },
   ];
 
@@ -210,7 +220,12 @@ describe('empty-paragraph w:pPr serialization phantoms', () => {
         await given('two formatting-equivalent documents differing only in w:pPr serialization', () => {});
 
         await when(`the documents are compared using ${mode} reconstruction`, async () => {
-          const comparison = await compareInMode(pair.original, pair.revised, mode);
+          const comparison = await compareInMode(
+            pair.original,
+            pair.revised,
+            mode,
+            pair.pretracked,
+          );
           xml = comparison.xml;
           originalXml = comparison.originalXml;
           revisedXml = comparison.revisedXml;
