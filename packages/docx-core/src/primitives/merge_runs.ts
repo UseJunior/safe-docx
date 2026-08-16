@@ -2,7 +2,8 @@
  * merge_runs — merge adjacent format-identical runs within paragraphs.
  *
  * Safety barriers: never merge across fldChar/instrText, comment range,
- * bookmark, or tracked-change wrapper boundaries.
+ * bookmark, or tracked-change wrapper boundaries, and never merge runs
+ * carrying embedded content (drawing/pict/object/contentPart).
  */
 
 import { XMLSerializer } from '@xmldom/xmldom';
@@ -36,6 +37,14 @@ const BARRIER_LOCALS = new Set([
   W.bookmarkEnd,
   'commentRangeStart',
   'commentRangeEnd',
+  // Embedded content: folding an image/picture/object/content-part run into
+  // an adjacent text run makes later text edits treat the embedded content as
+  // part of the text payload, so removing that text drags the content with
+  // it. Keep embedded-content runs unmerged (issue #739).
+  W.drawing,
+  W.pict,
+  W.object,
+  W.contentPart,
 ]);
 
 const TC_WRAPPER_LOCALS = new Set([
@@ -104,7 +113,7 @@ function runRsidKey(run: Element): string {
     .join('|');
 }
 
-/** Check whether a run contains barrier content (fldChar, instrText). */
+/** Check whether a run contains barrier content (fldChar, instrText, embedded objects, …). */
 function runContainsBarrierContent(run: Element): boolean {
   let child = run.firstChild;
   while (child) {
@@ -291,6 +300,7 @@ function mergeParagraphRuns(paragraph: Element, preserveRsidIdentity: boolean): 
  * - Comment range boundaries (commentRangeStart, commentRangeEnd)
  * - Bookmark boundaries (bookmarkStart, bookmarkEnd)
  * - Tracked-change wrapper boundaries (ins, del, moveFrom, moveTo)
+ * - Embedded-content runs (drawing, pict, object, contentPart) — see #739
  */
 export function mergeRuns(doc: Document, opts: MergeRunsOptions = {}): MergeRunsResult {
   const body = doc.getElementsByTagNameNS(OOXML.W_NS, W.body).item(0);

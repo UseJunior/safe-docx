@@ -31,7 +31,7 @@ const MINIMAL_RELS_XML = [
   '</Relationships>',
 ].join('\n');
 
-export async function makeDocxWithDocumentXml(documentXml: string, extraFiles?: Record<string, string>): Promise<Buffer> {
+export async function makeDocxWithDocumentXml(documentXml: string, extraFiles?: Record<string, string | Buffer | Uint8Array>): Promise<Buffer> {
   return createZipBuffer({
     '[Content_Types].xml': MINIMAL_CONTENT_TYPES_XML,
     '_rels/.rels': MINIMAL_RELS_XML,

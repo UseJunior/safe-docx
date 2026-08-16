@@ -182,6 +182,7 @@ export const W = {
   drawing: 'drawing',
   pict: 'pict',
   object: 'object',
+  contentPart: 'contentPart',
 
   // Revision wrappers
   del: 'del',

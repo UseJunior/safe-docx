@@ -351,6 +351,30 @@ function getRunVisibleLength(run: Element): number {
   return getDirectContentElements(run).reduce((sum, child) => sum + visibleLengthForEl(child), 0);
 }
 
+// OOXML embedded run content that references package parts: DrawingML drawing
+// (w:drawing), VML picture (w:pict), embedded OLE object (w:object), and
+// imported content part (w:contentPart, a CT_Rel relationship reference).
+// These carry no visible text length, so a caller-approved text match never
+// covers them — a text replacement must not destroy them (issue #739).
+const EMBEDDED_CONTENT_LOCALS: ReadonlySet<string> = new Set([
+  W.drawing,
+  W.pict,
+  W.object,
+  W.contentPart,
+]);
+
+function isEmbeddedContentElement(node: Node): boolean {
+  return (
+    node.nodeType === 1 &&
+    (node as Element).namespaceURI === OOXML.W_NS &&
+    EMBEDDED_CONTENT_LOCALS.has((node as Element).localName ?? '')
+  );
+}
+
+function getEmbeddedContentElements(run: Element): Element[] {
+  return getDirectContentElements(run).filter((el) => EMBEDDED_CONTENT_LOCALS.has(el.localName ?? ''));
+}
+
 export type AddRunProps = {
   // Additive or subtractive formatting.
   // Set to true to enable, false to explicitly disable/remove.
@@ -655,11 +679,18 @@ function getContainerBoundaryError(
  * remain nested there, while cross-container ranges are refused before the
  * DOM is changed.
  *
+ * Embedded content (`w:drawing`, `w:pict`, `w:object`, `w:contentPart`)
+ * inside the replaced range is preserved as live runs: it contributes no
+ * visible text, so no text match ever covers it and no text edit may delete
+ * it. Tracked deletions around preserved content are emitted as in-place
+ * segments so rejectChanges() restores the original content order exactly.
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
  * @see #652
  * @see #741
+ * @see #739
  */
 export function replaceParagraphTextRange(
   p: Element,
@@ -786,19 +817,125 @@ export function replaceParagraphTextRange(
   const insertBeforeNode = rangeEndRunEl.nextSibling;
 
   // Remove runs in [rangeStartRunEl, rangeEndRunEl] inclusive (only w:r elements).
-  const removedRuns: Element[] = [];
-  let cur: Node | null = rangeStartRunEl;
-  while (cur) {
-    const nextNode: Node | null = cur.nextSibling as Node | null;
-    if (cur.nodeType === 1 && isW(cur as Element, W.r)) {
-      const runEl = cur as Element;
-      runEl.parentNode?.removeChild(runEl);
-      if (getRunVisibleLength(runEl) > 0) {
-        removedRuns.push(runEl);
-      }
+  //
+  // Embedded content (w:drawing / w:pict / w:object / w:contentPart) has zero
+  // visible text length, so the text match the caller approved never covered
+  // it. It must survive the replacement as live content (issue #739): an
+  // embedded-only run stays in place untouched, and embedded content
+  // co-resident with replaced text is split into its own run at the same
+  // relative position before the text is removed. Without this, an
+  // embedded-only run would be detached here but never recorded
+  // (getRunVisibleLength returns 0 for it), so neither the tracked nor the
+  // clean branch could re-emit it.
+  //
+  // When embedded content is preserved, tracked deletions are emitted as
+  // IN-PLACE SEGMENTS — one w:del per contiguous stretch of removed text,
+  // inserted at that stretch's original position — instead of one terminal
+  // w:del after the range. A single terminal w:del would make rejectChanges()
+  // restore the removed text AFTER the preserved object, permanently
+  // reordering content the user never touched. When no embedded content is
+  // involved the historical single-deletion emission is kept unchanged.
+  let rangeContainsEmbeddedContent = false;
+  for (let node: Node | null = rangeStartRunEl; node; node = node.nextSibling) {
+    if (
+      node.nodeType === 1 &&
+      isW(node as Element, W.r) &&
+      getEmbeddedContentElements(node as Element).length > 0
+    ) {
+      rangeContainsEmbeddedContent = true;
     }
-    if (cur === rangeEndRunEl) break;
-    cur = nextNode;
+    if (node === rangeEndRunEl) break;
+  }
+
+  const removedRuns: Element[] = [];
+  let preservedEmbeddedContent = false;
+
+  if (!rangeContainsEmbeddedContent) {
+    let cur: Node | null = rangeStartRunEl;
+    while (cur) {
+      const nextNode: Node | null = cur.nextSibling as Node | null;
+      if (cur.nodeType === 1 && isW(cur as Element, W.r)) {
+        const runEl = cur as Element;
+        runEl.parentNode?.removeChild(runEl);
+        if (getRunVisibleLength(runEl) > 0) {
+          removedRuns.push(runEl);
+        }
+      }
+      if (cur === rangeEndRunEl) break;
+      cur = nextNode;
+    }
+  } else {
+    // The open deletion segment; reset to null whenever preserved embedded
+    // content interrupts the removed stretch so the next removed run starts
+    // a new w:del at its own position.
+    let currentDeletion: Element | null = null;
+
+    const removeRunInPlace = (runEl: Element): void => {
+      const parentNode = runEl.parentNode;
+      if (!parentNode) return;
+      if (ctx && getRunVisibleLength(runEl) > 0) {
+        if (!currentDeletion) {
+          currentDeletion = createRevisionContainer(doc, 'del', ctx);
+          parentNode.insertBefore(currentDeletion, runEl);
+        }
+        parentNode.removeChild(runEl);
+        currentDeletion.appendChild(prepareElementForDeletion(runEl));
+      } else {
+        parentNode.removeChild(runEl);
+      }
+    };
+
+    // Split a run holding both text and embedded content into consecutive
+    // homogeneous runs (formatting cloned), inserted at the run's position in
+    // original child order, so both the preserved content and the removed
+    // text keep their exact relative positions.
+    const splitMixedRun = (runEl: Element): Array<{ el: Element; embedded: boolean }> => {
+      const parentNode = runEl.parentNode;
+      if (!parentNode) throw new Error('Run has no parent');
+      const pieces: Array<{ el: Element; embedded: boolean }> = [];
+      let currentPiece: { el: Element; embedded: boolean } | null = null;
+      for (const child of Array.from(runEl.childNodes)) {
+        if (child.nodeType === 1 && isW(child as Element, W.rPr)) continue;
+        const embedded = isEmbeddedContentElement(child);
+        if (!currentPiece || currentPiece.embedded !== embedded) {
+          currentPiece = { el: cloneRunFormattingOnly(doc, runEl), embedded };
+          pieces.push(currentPiece);
+        }
+        currentPiece.el.appendChild(child);
+      }
+      for (const piece of pieces) parentNode.insertBefore(piece.el, runEl);
+      parentNode.removeChild(runEl);
+      return pieces;
+    };
+
+    let cur: Node | null = rangeStartRunEl;
+    while (cur) {
+      const nextNode: Node | null = cur.nextSibling as Node | null;
+      const atRangeEnd = cur === rangeEndRunEl;
+      if (cur.nodeType === 1 && isW(cur as Element, W.r)) {
+        const runEl = cur as Element;
+        const embeddedContent = getEmbeddedContentElements(runEl);
+        if (embeddedContent.length === 0) {
+          removeRunInPlace(runEl);
+        } else if (getRunVisibleLength(runEl) === 0) {
+          // Embedded-only run: the replaced text lives entirely in sibling
+          // runs. Leave it in the paragraph as-is.
+          preservedEmbeddedContent = true;
+          currentDeletion = null;
+        } else {
+          for (const piece of splitMixedRun(runEl)) {
+            if (piece.embedded) {
+              preservedEmbeddedContent = true;
+              currentDeletion = null;
+            } else {
+              removeRunInPlace(piece.el);
+            }
+          }
+        }
+      }
+      if (atRangeEnd) break;
+      cur = nextNode;
+    }
   }
 
   // Build replacement runs using the same formatting/template logic as the legacy path.
@@ -837,7 +974,11 @@ export function replaceParagraphTextRange(
       parent.insertBefore(insertion, insertBeforeNode);
     }
 
-    if (start === 0 && end === fullText.length && replacementRuns.length === 0) {
+    // Only delete the paragraph mark when the edit leaves nothing live behind.
+    // Preserved embedded content keeps the paragraph meaningful, and merging
+    // it into the following paragraph on accept would move the image the user
+    // never touched (issue #739).
+    if (start === 0 && end === fullText.length && replacementRuns.length === 0 && !preservedEmbeddedContent) {
       addParagraphMarkDeletion(p, ctx);
     }
   } else {
