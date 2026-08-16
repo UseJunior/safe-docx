@@ -7,7 +7,6 @@ import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.j
 import { constructTaggedTree, verifyGlobalEqualContentInvariant } from './taggedTreeConstruction.js';
 import { createPreservePlan, serializeTaggedTree, verifySerializedMoveRanges } from './taggedTreeSerializer.js';
 import { formatDate } from './inPlaceModifier-shared.js';
-import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
 
 export type TaggedTreeDivergenceClass = 'projection-inequivalent' | 'projection-equivalent';
 
@@ -54,9 +53,10 @@ export function buildTaggedTreeShadowXml(input: Omit<TaggedTreeShadowInput, 'leg
       (wrapper.parentNode as Element | null)?.localName !== 'rPr'
     ) wrapper.parentNode?.removeChild(wrapper);
   }
-  return suppressVolatileTocPagerefCacheRevisions(
-    new XMLSerializer().serializeToString(document),
-  );
+  // Tagged publication preserves source-grounded cache projections exactly.
+  // Reader recalculation of volatile PAGEREF results is measured separately;
+  // silently choosing one source cache would make the other projection false.
+  return new XMLSerializer().serializeToString(document);
 }
 
 /** Count the direct-property revisions represented by tagged construction. */

@@ -250,7 +250,17 @@ describe('pipeline auxiliary note publication', () => {
       expect(parts.footnotesXml).not.toMatch(/<w:footnote w:id="1"/);
       expect(parts.footnotesXml).toContain('<w:delText>Before</w:delText>');
       expect(parts.footnotesXml).toContain('<w:t>After</w:t>');
-      expect(parts.documentXml?.match(/<w:footnoteReference w:id="2"/g)).toHaveLength(1);
+      expect(parts.documentXml?.match(/<w:footnoteReference w:id="2"/g)).toHaveLength(2);
+      const acceptedDocument = acceptAllChanges(parts.documentXml!);
+      const rejectedDocument = rejectAllChanges(parts.documentXml!);
+      expect(acceptedDocument.match(/<w:footnoteReference w:id="2"/g)).toHaveLength(1);
+      expect(rejectedDocument.match(/<w:footnoteReference w:id="2"/g)).toHaveLength(1);
+      const projectedText = (xml: string): string => Array.from(
+        new DOMParser().parseFromString(xml, 'application/xml').getElementsByTagName('w:t'),
+        (text) => text.textContent ?? '',
+      ).join('');
+      expect(projectedText(acceptAllChanges(parts.footnotesXml!))).toBe('After note text');
+      expect(projectedText(rejectAllChanges(parts.footnotesXml!))).toBe('Before note text');
     });
   });
 

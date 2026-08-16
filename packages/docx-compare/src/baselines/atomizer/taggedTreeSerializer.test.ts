@@ -466,6 +466,14 @@ describe('tagged-tree shadow serializer', () => {
       { author: 'Comparator', date: '2026-08-14T12:00:00Z' },
     ));
     const document = parseXml(output);
+    const deletedFields = Array.from(document.getElementsByTagNameNS(W_NS, 'del')).filter((wrapper) =>
+      wrapper.getElementsByTagNameNS(W_NS, 'fldChar').length > 0);
+    const insertedFields = Array.from(document.getElementsByTagNameNS(W_NS, 'ins')).filter((wrapper) =>
+      wrapper.getElementsByTagNameNS(W_NS, 'fldChar').length > 0);
+    expect(deletedFields).toHaveLength(1);
+    expect(insertedFields).toHaveLength(1);
+    expect(elementChildren(deletedFields[0]!)).toHaveLength(5);
+    expect(elementChildren(insertedFields[0]!)).toHaveLength(5);
     for (const type of ['begin', 'separate', 'end']) {
       const fields = Array.from(document.getElementsByTagNameNS(W_NS, 'fldChar')).filter((field) =>
         field.getAttributeNS(W_NS, 'fldCharType') === type);
@@ -482,5 +490,101 @@ describe('tagged-tree shadow serializer', () => {
     );
     expect(instructionTexts(accepted)).toEqual([' REF _RefNew \\r \\h ']);
     expect(instructionTexts(rejected)).toEqual([' REF _RefOld \\r \\h ']);
+  });
+
+  test('serializes split-instruction retargets as complete fields', () => {
+    const field = (target: string, result: string) =>
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      `<w:r><w:instrText xml:space="preserve"> REF ${target}</w:instrText></w:r>` +
+      '<w:r><w:instrText xml:space="preserve"> \\r \\h </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      `<w:r><w:t>${result}</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`;
+    const original = documentBody(field('_RefOld', '14.7.3'));
+    const revised = documentBody(field('_RefNew', '14.7.2'));
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(
+      original, revised, constructed.tree,
+      { author: 'Comparator', date: '2026-08-14T12:00:00Z' },
+    ));
+    const document = parseXml(output);
+    const deleted = Array.from(document.getElementsByTagNameNS(W_NS, 'del')).filter((wrapper) =>
+      wrapper.getElementsByTagNameNS(W_NS, 'fldChar').length > 0);
+    const inserted = Array.from(document.getElementsByTagNameNS(W_NS, 'ins')).filter((wrapper) =>
+      wrapper.getElementsByTagNameNS(W_NS, 'fldChar').length > 0);
+    expect(deleted).toHaveLength(1);
+    expect(inserted).toHaveLength(1);
+    const accepted = acceptAllChanges(output);
+    const rejected = rejectAllChanges(output);
+    expect(extractRoundTripComparisonText(accepted)).toBe('14.7.2');
+    expect(extractRoundTripComparisonText(rejected)).toBe('14.7.3');
+    const instructions = (xml: string): string => Array.from(
+      parseXml(xml).getElementsByTagNameNS(W_NS, 'instrText'),
+      (instruction) => instruction.textContent ?? '',
+    ).join('');
+    expect(instructions(accepted)).toBe(' REF _RefNew \\r \\h ');
+    expect(instructions(rejected)).toBe(' REF _RefOld \\r \\h ');
+  });
+
+  test('wraps an added complete field in one insertion', () => {
+    const original = documentBody('<w:p/>');
+    const revised = documentBody(
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText> REF _RefNew \\r \\h </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>14.3.2</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+    );
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(
+      original, revised, constructed.tree,
+      { author: 'Comparator', date: '2026-08-14T12:00:00Z' },
+    ));
+    const insertions = Array.from(parseXml(output).getElementsByTagNameNS(W_NS, 'ins')).filter((wrapper) =>
+      wrapper.getElementsByTagNameNS(W_NS, 'fldChar').length > 0);
+    expect(insertions).toHaveLength(1);
+    expect(elementChildren(insertions[0]!)).toHaveLength(5);
+    expect(extractRoundTripComparisonText(acceptAllChanges(output))).toBe('14.3.2');
+    expect(extractRoundTripComparisonText(rejectAllChanges(output))).toBe('');
+  });
+
+  test('does not interleave one original field with multiple revised fields', () => {
+    const field = (target: string, result: string) =>
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      `<w:r><w:instrText> REF ${target} \\r \\h </w:instrText></w:r>` +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      `<w:r><w:t>${result}</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+    const original = documentBody(`<w:p>${field('_RefOld', '14.3')}<w:r><w:t> over</w:t></w:r></w:p>`);
+    const revised = documentBody(`<w:p>${field('_RefA', '14.3.2')}<w:r><w:t> and </w:t></w:r>${field('_RefB', '14.3.3')}</w:p>`);
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(
+      original, revised, constructed.tree,
+      { author: 'Comparator', date: '2026-08-14T12:00:00Z' },
+    ));
+    const document = parseXml(output);
+    const fieldWrappers = (kind: 'del' | 'ins') => Array.from(
+      document.getElementsByTagNameNS(W_NS, kind),
+    ).filter((wrapper) => wrapper.getElementsByTagNameNS(W_NS, 'fldChar').length > 0);
+    expect(fieldWrappers('del')).toHaveLength(1);
+    expect(fieldWrappers('ins')).toHaveLength(2);
+    expect(Array.from(document.getElementsByTagNameNS(W_NS, 'fldChar')).every((field) =>
+      ['del', 'ins'].includes((field.parentNode?.parentNode as Element).localName))).toBe(true);
+    expect(extractRoundTripComparisonText(acceptAllChanges(output))).toBe('14.3.2 and 14.3.3');
+    expect(extractRoundTripComparisonText(rejectAllChanges(output))).toBe('14.3 over');
+  });
+
+  test('does not wrap a volatile rendered-page-break marker inside a run revision', () => {
+    const textValue = 'repay indebtedness and satisfy liabilities of the Fund.';
+    const original = documentBody(`<w:p><w:r><w:t>${textValue}</w:t></w:r></w:p>`);
+    const revised = documentBody(`<w:p><w:r><w:lastRenderedPageBreak/><w:t>${textValue}</w:t></w:r></w:p>`);
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(
+      original, revised, constructed.tree,
+      { author: 'Comparator', date: '2026-08-14T12:00:00Z' },
+    ));
+    const document = parseXml(output);
+    const marker = document.getElementsByTagNameNS(W_NS, 'lastRenderedPageBreak')[0]!;
+    expect((marker.parentNode as Element).localName).toBe('r');
+    expect(document.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(0);
+    expect(extractRoundTripComparisonText(acceptAllChanges(output))).toBe(textValue);
+    expect(extractRoundTripComparisonText(rejectAllChanges(output))).toBe(textValue);
   });
 });

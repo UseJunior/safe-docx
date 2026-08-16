@@ -248,10 +248,21 @@ function constructBoth(
     }
     const gapOriginalStart = oi;
     const gapRevisedStart = ri;
-    const similarityPairs = similarParagraphPairs(
-      originalChildren.slice(gapOriginalStart, originalEnd),
-      revisedChildren.slice(gapRevisedStart, revisedEnd),
-    );
+    const originalGap = originalChildren.slice(gapOriginalStart, originalEnd);
+    const revisedGap = revisedChildren.slice(gapRevisedStart, revisedEnd);
+    const containsFieldControl = (elements: readonly WmlElement[]): boolean => elements.some((element) =>
+      element.getElementsByTagNameNS(
+        'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
+      ).length > 0 || element.getElementsByTagNameNS(
+        'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'instrText',
+      ).length > 0);
+    // Field-context keys deliberately keep different complete fields out of
+    // the LCS. Do not re-pair their individual runs through the generic fuzzy
+    // gap matcher: that interleaves one source field with multiple revised
+    // fields and produces projection-invalid partial complexes.
+    const similarityPairs = containsFieldControl(originalGap) || containsFieldControl(revisedGap)
+      ? []
+      : similarParagraphPairs(originalGap, revisedGap);
     for (const [localOriginal, localRevised] of similarityPairs) {
       const matchedOriginal = gapOriginalStart + localOriginal;
       const matchedRevised = gapRevisedStart + localRevised;

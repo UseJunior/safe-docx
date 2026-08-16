@@ -266,6 +266,19 @@ strategy remains the rollback path, and successors C/D remain separate changes.
       paragraphs and remap header/footer relationship IDs, which are recorded
       separately as reader normalization. The repaired tagged candidate is
       exact across direct run and paragraph formatting in both projections.
+
+      **Independent-reader closure (2026-08-16):** the preceding PAGEREF
+      blocker was a point-in-time finding and is now superseded. Complete
+      balanced fields are emitted atomically; mismatched field-control
+      attributes trigger retargeting; volatile `lastRenderedPageBreak` markers
+      remain live; and reconciled footnote anchors retain one definition in
+      each projection. Licensed Aspose now reproduces the ILPA source text
+      exactly on Accept All (`235,565/235,565`) and Reject All
+      (`240,610/240,610`), with NVCA exact in both directions. Internal ILPA
+      and NVCA source-grounded formatting projections are `1.0/1.0`. The field
+      regression matrix now asserts exact accepted/rejected visible text,
+      balanced field structure, and bookmark restoration instead of legacy
+      wrapper topology.
 - [x] 4.5 Produce the field-case evidence that successor C's deletion of
       `suppressNoOpChangePairs` depends on: field-stable, field-modification,
       field-delete, nested-field, and paragraph-spanning-field cases showing no

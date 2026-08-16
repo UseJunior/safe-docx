@@ -106,9 +106,10 @@ function replaceElementChildren(target: WmlElement, children: readonly WmlElemen
   for (const child of children) target.appendChild(child);
 }
 
-function convertDeletedText(root: WmlElement): void {
+function convertDeletedText(root: WmlElement): WmlElement {
   const texts = Array.from(root.getElementsByTagNameNS(W_NS, 't'));
   if (root.namespaceURI === W_NS && root.localName === 't') texts.unshift(root);
+  let convertedRoot = root;
   for (const text of texts) {
     const replacement = text.ownerDocument!.createElementNS(W_NS, 'w:delText');
     for (let i = 0; i < text.attributes.length; i++) {
@@ -119,8 +120,10 @@ function convertDeletedText(root: WmlElement): void {
       replacement.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
     }
     while (text.firstChild) replacement.appendChild(text.firstChild);
-    text.parentNode?.replaceChild(replacement, text);
+    if (text === root && !text.parentNode) convertedRoot = replacement as WmlElement;
+    else text.parentNode?.replaceChild(replacement, text);
   }
+  return convertedRoot;
 }
 
 function wrapRevision(node: WmlElement, kind: 'ins' | 'del' | 'moveFrom' | 'moveTo', revision: ComparisonRevision): WmlElement {
@@ -128,7 +131,7 @@ function wrapRevision(node: WmlElement, kind: 'ins' | 'del' | 'moveFrom' | 'move
   wrapper.setAttributeNS(W_NS, 'w:id', String(revision.id));
   wrapper.setAttributeNS(W_NS, 'w:author', revision.author);
   wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
-  if (kind === 'del' || kind === 'moveFrom') convertDeletedText(node);
+  if (kind === 'del' || kind === 'moveFrom') node = convertDeletedText(node);
   wrapper.appendChild(node);
   return wrapper;
 }
@@ -145,8 +148,23 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
     const parent = deletion.parentNode;
     if (!parent) continue;
     const deletedFields = Array.from(deletion.getElementsByTagNameNS(W_NS, 'fldChar'));
+    const deletedFieldTypes = deletedFields.map((field) =>
+      field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '');
+    if (deletedFieldTypes.join('|') === 'begin|separate|end') continue;
     let nextElement = deletion.nextSibling;
     while (nextElement && nextElement.nodeType !== 1) nextElement = nextElement.nextSibling;
+    if (nextElement && (nextElement as WmlElement).localName === 'ins') {
+      const types = (element: WmlElement): string[] => Array.from(
+        element.getElementsByTagNameNS(W_NS, 'fldChar'),
+        (field) => field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '',
+      );
+      const deletedTypes = types(deletion);
+      const insertedTypes = types(nextElement as WmlElement);
+      if (
+        deletedTypes.join('|') === 'begin|separate|end' &&
+        insertedTypes.join('|') === deletedTypes.join('|')
+      ) continue;
+    }
     if (deletedFields.length === 1 && nextElement && (nextElement as WmlElement).localName === 'ins') {
       const insertedFields = Array.from(
         (nextElement as WmlElement).getElementsByTagNameNS(W_NS, 'fldChar'),
@@ -808,6 +826,135 @@ function renumberBookmarkRanges(root: WmlElement, allocateBookmarkId: () => numb
   }
 }
 
+function emitAtomicRetargetedField(
+  children: readonly TaggedNode[],
+  start: number,
+  plan: PreservePlan,
+  allocateRevision: () => ComparisonRevision,
+): { emitted: WmlElement[]; end: number } | undefined {
+  const originals: WmlElement[] = [];
+  const revised: WmlElement[] = [];
+  const instructions = { original: [] as string[], revised: [] as string[] };
+  const controls = { original: [] as string[], revised: [] as string[] };
+  let depth = 0;
+  let sawBegin = false;
+  let sawSeparate = false;
+  let sawEnd = false;
+  let cursor = start;
+  while (cursor < children.length) {
+    const oldNode = children[cursor]!;
+    const paired = oldNode.tag === 'both' ? oldNode : children[cursor + 1];
+    if (oldNode.tag !== 'both' && (oldNode.tag !== 'original' || paired?.tag !== 'revised')) break;
+    const oldRun = representative(oldNode, 'original');
+    const newRun = representative(paired!, 'revised');
+    if (
+      plan.entries.get(oldNode)?.originalStack.length ||
+      plan.entries.get(paired!)?.revisedStack.length
+    ) break;
+    if (!oldRun || !newRun || oldRun.localName !== 'r' || newRun.localName !== 'r') break;
+    const fieldTypes = (run: WmlElement): string[] => Array.from(
+      run.getElementsByTagNameNS(W_NS, 'fldChar'),
+      (field) => field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '',
+    );
+    const oldTypes = fieldTypes(oldRun);
+    const newTypes = fieldTypes(newRun);
+    if (oldTypes.join('|') !== newTypes.join('|')) break;
+    if (cursor === start && oldTypes[0] !== 'begin') break;
+    instructions.original.push(...Array.from(
+      oldRun.getElementsByTagNameNS(W_NS, 'instrText'),
+      (instruction) => instruction.textContent ?? '',
+    ));
+    instructions.revised.push(...Array.from(
+      newRun.getElementsByTagNameNS(W_NS, 'instrText'),
+      (instruction) => instruction.textContent ?? '',
+    ));
+    controls.original.push(...Array.from(
+      oldRun.getElementsByTagNameNS(W_NS, 'fldChar'),
+      (field) => new XMLSerializer().serializeToString(field),
+    ));
+    controls.revised.push(...Array.from(
+      newRun.getElementsByTagNameNS(W_NS, 'fldChar'),
+      (field) => new XMLSerializer().serializeToString(field),
+    ));
+    originals.push(oldRun);
+    revised.push(newRun);
+    for (const type of oldTypes) {
+      if (type === 'begin') {
+        depth++;
+        sawBegin = true;
+      } else if (type === 'separate' && depth === 1) {
+        sawSeparate = true;
+      } else if (type === 'end') {
+        depth--;
+        if (depth < 0) return undefined;
+        if (depth === 0) sawEnd = true;
+      }
+    }
+    cursor += oldNode.tag === 'both' ? 1 : 2;
+    if (sawEnd) break;
+  }
+  if (!sawBegin || !sawSeparate || !sawEnd || depth !== 0) return undefined;
+  const oldInstruction = instructions.original.join('').trim().replace(/\s+/gu, ' ');
+  const newInstruction = instructions.revised.join('').trim().replace(/\s+/gu, ' ');
+  const controlsDiffer = controls.original.join('|') !== controls.revised.join('|');
+  if (!oldInstruction || !newInstruction || (oldInstruction === newInstruction && !controlsDiffer)) return undefined;
+
+  const oldWrapper = wrapRevision(cloneElement(originals[0]!), 'del', allocateRevision());
+  const newWrapper = wrapRevision(cloneElement(revised[0]!), 'ins', allocateRevision());
+  for (const run of originals.slice(1)) oldWrapper.appendChild(cloneElement(run));
+  for (const run of revised.slice(1)) newWrapper.appendChild(cloneElement(run));
+  convertDeletedText(oldWrapper);
+  return { emitted: [oldWrapper, newWrapper], end: cursor };
+}
+
+function emitAtomicSideOnlyField(
+  children: readonly TaggedNode[],
+  start: number,
+  plan: PreservePlan,
+  allocateRevision: () => ComparisonRevision,
+): { emitted: WmlElement; end: number } | undefined {
+  const side = children[start]?.tag;
+  if (side !== 'original' && side !== 'revised') return undefined;
+  const runs: WmlElement[] = [];
+  let depth = 0;
+  let sawBegin = false;
+  let sawSeparate = false;
+  let sawEnd = false;
+  let cursor = start;
+  for (; cursor < children.length && children[cursor]!.tag === side; cursor++) {
+    const child = children[cursor]!;
+    const entry = plan.entries.get(child);
+    if ((side === 'original' ? entry?.originalStack : entry?.revisedStack)?.length) break;
+    const run = representative(child, side);
+    if (!run || run.localName !== 'r') break;
+    const types = Array.from(
+      run.getElementsByTagNameNS(W_NS, 'fldChar'),
+      (field) => field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '',
+    );
+    if (cursor === start && types[0] !== 'begin') break;
+    runs.push(run);
+    for (const type of types) {
+      if (type === 'begin') { depth++; sawBegin = true; }
+      else if (type === 'separate' && depth === 1) sawSeparate = true;
+      else if (type === 'end') {
+        depth--;
+        if (depth < 0) return undefined;
+        if (depth === 0) sawEnd = true;
+      }
+    }
+    if (sawEnd) { cursor++; break; }
+  }
+  if (!sawBegin || !sawSeparate || !sawEnd || depth !== 0) return undefined;
+  const wrapper = wrapRevision(
+    cloneElement(runs[0]!),
+    side === 'original' ? 'del' : 'ins',
+    allocateRevision(),
+  );
+  for (const run of runs.slice(1)) wrapper.appendChild(cloneElement(run));
+  if (side === 'original') convertDeletedText(wrapper);
+  return { emitted: wrapper, end: cursor };
+}
+
 function emitNode(
   node: TaggedNode,
   plan: PreservePlan,
@@ -831,6 +978,25 @@ function emitNode(
       const child = node.children[index]!;
       const childElement = representative(child, child.tag === 'original' ? 'original' : 'revised');
       if (propertyTag && childElement?.tagName === propertyTag) {
+        continue;
+      }
+      if (childElement?.namespaceURI === W_NS && childElement.localName === 'lastRenderedPageBreak') {
+        // This pagination cache marker is not authored content and cannot be
+        // nested in w:ins/w:del inside a run. Keep the revised marker live;
+        // omitting an original-only marker is projection-semantically neutral.
+        if (child.tag !== 'original') emitted.push(cloneElement(childElement));
+        continue;
+      }
+      const atomicField = emitAtomicRetargetedField(node.children, index, plan, allocateRevision);
+      if (atomicField) {
+        emitted.push(...atomicField.emitted);
+        index = atomicField.end - 1;
+        continue;
+      }
+      const sideOnlyField = emitAtomicSideOnlyField(node.children, index, plan, allocateRevision);
+      if (sideOnlyField) {
+        emitted.push(sideOnlyField.emitted);
+        index = sideOnlyField.end - 1;
         continue;
       }
       if (child.tag === 'original' || child.tag === 'revised') {
