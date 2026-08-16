@@ -44,17 +44,57 @@ async function boundedText(zip: JSZip, name: string): Promise<string> {
 /** Requiring native comments means at least this many valid comments must exist. */
 const REQUIRED_COMMENT_MINIMUM = 1;
 
+function idMultiset(ids: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1);
+  return counts;
+}
+
+/**
+ * Verifies that native comment markup is internally consistent: range starts,
+ * range ends, references, and comment records must carry the same identifier
+ * multiset, and each identifier must be defined exactly once. Comparing
+ * multiplicities — not just membership and total length — rejects documents a
+ * set-style comparison cannot distinguish from valid ones, such as identifiers
+ * duplicated identically across all four collections.
+ *
+ * Rejecting duplicate identifiers is a conservative release-verifier
+ * integrity invariant, deliberately stricter than the spec: unambiguous
+ * comment linkage requires each identifier to resolve to exactly one comment
+ * record. The transitional `wml.xsd` carries no uniqueness constraint (it
+ * permits unbounded `w:comment` children), and the spec prose anticipates
+ * duplicate identifiers by defining consumer fallback behavior for them
+ * rather than prohibiting them. A release gate whose job is to fail closed
+ * does not rely on that fallback.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/863
+ */
 function commentIntegrity(documentXml: string, commentsXml: string | null, required: boolean): Verdict {
   if (!required) return { status: 'not_run', required: false, reason: 'Native comments not required.' };
   const starts = commentIds(documentXml, 'commentRangeStart');
   const ends = commentIds(documentXml, 'commentRangeEnd');
   const references = commentIds(documentXml, 'commentReference');
   const records = commentsXml ? commentIds(commentsXml, 'comment') : [];
-  const exact = (left: string[], right: string[]) => left.length === right.length && left.every((id) => right.includes(id));
+  const exact = (left: string[], right: string[]) => {
+    if (left.length !== right.length) return false;
+    const expected = idMultiset(right);
+    return [...idMultiset(left)].every(([id, count]) => expected.get(id) === count);
+  };
   const consistent = starts.every(Boolean) && ends.every(Boolean) && references.every(Boolean) && records.every(Boolean)
     && exact(starts, ends) && exact(starts, references) && exact(starts, records);
   if (!consistent) {
     return { status: 'fail', required: true, reason: 'Native comment records, range starts, range ends, and references disagree.', details: { starts, ends, references, records } };
+  }
+  // Identical duplication across all four collections survives the multiset
+  // comparison, so the definitions must additionally be duplicate-free.
+  const duplicates = [...idMultiset(records)].filter(([, count]) => count > 1).map(([id]) => id);
+  if (duplicates.length > 0) {
+    return {
+      status: 'fail',
+      required: true,
+      reason: `Native comment IDs are duplicated across range starts, range ends, references, and records: ${duplicates.join(', ')}. Each annotation identifier must be unique.`,
+      details: { duplicates, starts, ends, references, records },
+    };
   }
   // Consistency of an empty set is vacuous: requiring native comments demands
   // at least one valid comment, so zero comments fails closed (issue #858).
