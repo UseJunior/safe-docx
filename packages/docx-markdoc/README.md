@@ -2,6 +2,9 @@
 
 Brownfield DOCX authoring as readable clean document states over a hash-pinned
 Word source. The redline is deterministic derived output, not canonical input.
+This package is an experimental compiler and conversion surface; its Markdoc
+syntax and transient comparison-attribution machinery are intentionally kept
+out of the general-purpose `@usejunior/docx-core` package.
 
 ```markdoc
 {% source sha256="..." paragraphs=2 /%}

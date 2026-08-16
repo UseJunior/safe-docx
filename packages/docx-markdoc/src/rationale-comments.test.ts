@@ -133,6 +133,23 @@ describe('external-facing rationale comments', () => {
       rejectAllFormattingEqualsSource: true,
       acceptAllFormattingEqualsClean: true,
     });
+    const accepted = await DocxDocument.load(result.tracked);
+    const rejected = await DocxDocument.load(result.tracked);
+    await accepted.acceptChanges();
+    await rejected.rejectChanges();
+    const projected = await Promise.all([
+      accepted.toBuffer({ cleanBookmarks: false }),
+      rejected.toBuffer({ cleanBookmarks: false }),
+    ]);
+    for (const artifact of [
+      imported.anchoredSource,
+      result.clean,
+      result.tracked,
+      projected[0].buffer,
+      projected[1].buffer,
+    ]) {
+      expect(JSON.stringify(await parts(artifact))).not.toContain('safe-docx-rationale-');
+    }
   });
 
   itAllure('[SDX-MDOC-42] emits one bounded comment across a multi-paragraph insertion', async () => {

@@ -4,7 +4,12 @@ import {
   addTrackedRangeComments,
   computeContentFingerprint,
   getParagraphRuns,
+  getAttributeSafe,
+  OOXML,
+  parseXml,
+  serializeXml,
   type ReplacementPart,
+  type TrackedRevisionLocator,
 } from '@usejunior/docx-core';
 import { compareDocuments, compareFormattingFidelity, type FormattingFidelityReport } from '@usejunior/docx-compare';
 import { DocxMarkdocError } from './errors.js';
@@ -679,6 +684,73 @@ async function instrumentRanges(buffer: Buffer, materializations: RationaleMater
   return (await document.toBuffer({ cleanBookmarks: false })).buffer;
 }
 
+type ResolvedRationaleComment = {
+  startRevision: TrackedRevisionLocator;
+  endRevision: TrackedRevisionLocator;
+  text: string;
+};
+
+function nearestRevision(node: Node): Element | null {
+  let current: Node | null = node.parentNode;
+  while (current) {
+    const element = current.nodeType === 1 ? current as Element : null;
+    if (element && ['ins', 'del', 'moveFrom', 'moveTo'].includes(element.localName)) return element;
+    current = current.parentNode;
+  }
+  return null;
+}
+
+function resolveSentinel(documentXml: Document, sentinel: string): { textNode: Text; revision: Element } {
+  const matches: Text[] = [];
+  const visit = (node: Node): void => {
+    if (node.nodeType === 3 && (node.nodeValue ?? '').includes(sentinel)) matches.push(node as Text);
+    for (let child = node.firstChild; child; child = child.nextSibling) visit(child);
+  };
+  visit(documentXml.documentElement);
+  if (matches.length !== 1) throw new Error(`Private attribution marker must occur exactly once; found ${matches.length}.`);
+  const revision = nearestRevision(matches[0]!);
+  if (!revision) throw new Error('Private attribution marker is not inside tracked revision markup.');
+  return { textNode: matches[0]!, revision };
+}
+
+function revisionLocator(revision: Element): TrackedRevisionLocator {
+  const id = getAttributeSafe(revision, OOXML.W_NS, 'id', 'w', { bareFallback: false });
+  if (!id || !['ins', 'del', 'moveFrom', 'moveTo'].includes(revision.localName)) {
+    throw new Error('Attributed tracked revision has no stable OOXML identity.');
+  }
+  return { type: revision.localName as TrackedRevisionLocator['type'], id };
+}
+
+async function resolveAndRemoveAttributionMarkers(
+  buffer: Buffer,
+  materializations: RationaleMaterialization[],
+): Promise<{ buffer: Buffer; comments: ResolvedRationaleComment[] }> {
+  const zip = await JSZip.loadAsync(buffer);
+  const file = zip.file('word/document.xml');
+  if (!file) throw new Error('Tracked DOCX has no word/document.xml.');
+  const documentXml = parseXml(await file.async('string'));
+  const comments = materializations.map((item) => {
+    const start = resolveSentinel(documentXml, item.startSentinel);
+    const end = resolveSentinel(documentXml, item.endSentinel);
+    const attributableText = start.revision === end.revision
+      ? start.revision.textContent ?? ''
+      : `${start.revision.textContent ?? ''}${end.revision.textContent ?? ''}`;
+    const foreignMarker = attributableText.match(/\uE000safe-docx-rationale-\d+-(?:start|end)\uE001/gu)
+      ?.some((marker) => marker !== item.startSentinel && marker !== item.endSentinel);
+    if (foreignMarker) throw new Error('Tracked comment attribution overlaps another operation revision.');
+    const resolved = {
+      startRevision: revisionLocator(start.revision),
+      endRevision: revisionLocator(end.revision),
+      text: item.text,
+    };
+    start.textNode.data = start.textNode.data.replace(item.startSentinel, '');
+    end.textNode.data = end.textNode.data.replace(item.endSentinel, '');
+    return resolved;
+  });
+  zip.file('word/document.xml', serializeXml(documentXml));
+  return { buffer: await zip.generateAsync({ type: 'nodebuffer' }), comments };
+}
+
 export async function compileMarkdoc(
   sourceBuffer: Buffer,
   markdoc: string,
@@ -736,9 +808,10 @@ export async function compileMarkdoc(
   if (materializations.length > 0) {
     const identity = options.rationaleComments!;
     try {
-      tracked = await addTrackedRangeComments(tracked, materializations.map((item) => ({
-        startSentinel: item.startSentinel,
-        endSentinel: item.endSentinel,
+      const resolved = await resolveAndRemoveAttributionMarkers(tracked, materializations);
+      tracked = await addTrackedRangeComments(resolved.buffer, resolved.comments.map((item) => ({
+        startRevision: item.startRevision,
+        endRevision: item.endRevision,
         author: identity.author,
         initials: identity.initials,
         date: identity.date.toISOString(),

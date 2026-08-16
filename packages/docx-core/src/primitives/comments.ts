@@ -204,12 +204,19 @@ export type AddCommentResult = {
 };
 
 export type AddTrackedRangeCommentParams = {
-  startSentinel: string;
-  endSentinel: string;
+  startRevision: TrackedRevisionLocator;
+  endRevision: TrackedRevisionLocator;
   author: string;
   initials: string;
   date: string;
   text: string;
+};
+
+export type TrackedRevisionType = 'ins' | 'del' | 'moveFrom' | 'moveTo';
+
+export type TrackedRevisionLocator = {
+  type: TrackedRevisionType;
+  id: string;
 };
 
 function deterministicParaId(params: AddTrackedRangeCommentParams, commentId: number): string {
@@ -220,35 +227,13 @@ function deterministicParaId(params: AddTrackedRangeCommentParams, commentId: nu
     .toUpperCase();
 }
 
-function nearestRevisionContainer(node: Node): Element | null {
-  let current: Node | null = node.parentNode;
-  while (current) {
-    const element = current.nodeType === 1 ? current as Element : null;
-    if (element && (
-      isW(element, 'ins') || isW(element, 'del') || isW(element, 'moveFrom') || isW(element, 'moveTo')
-    )) return element;
-    current = current.parentNode;
-  }
-  return null;
-}
-
-function findUniqueSentinel(documentXml: Document, sentinel: string): { text: Text; revision: Element } {
-  const matches: Text[] = [];
-  const visit = (node: Node): void => {
-    if (node.nodeType === 3 && (node.nodeValue ?? '').includes(sentinel)) matches.push(node as Text);
-    for (let child = node.firstChild; child; child = child.nextSibling) visit(child);
-  };
-  visit(documentXml.documentElement);
+function findUniqueRevision(documentXml: Document, locator: TrackedRevisionLocator): Element {
+  const matches = Array.from(documentXml.getElementsByTagNameNS(OOXML.W_NS, locator.type))
+    .filter((element) => getAttributeSafe(element, OOXML.W_NS, 'id', 'w', { bareFallback: false }) === locator.id);
   if (matches.length !== 1) {
-    throw new Error(`Tracked comment sentinel must occur exactly once; found ${matches.length}.`);
+    throw new Error(`Tracked revision ${locator.type}#${locator.id} must occur exactly once; found ${matches.length}.`);
   }
-  const revision = nearestRevisionContainer(matches[0]!);
-  if (!revision) throw new Error('Tracked comment sentinel is not inside attributable revision markup.');
-  return { text: matches[0]!, revision };
-}
-
-function removeSentinel(node: Text, sentinel: string): void {
-  node.data = node.data.replace(sentinel, '');
+  return matches[0]!;
 }
 
 function createCommentReference(documentXml: Document, commentId: number): Element {
@@ -265,10 +250,10 @@ function createCommentReference(documentXml: Document, commentId: number): Eleme
 }
 
 /**
- * Materialize root comments around compiler-owned sentinels inside tracked
- * revision markup. Markers are placed immediately outside the attributable
- * revision containers so accept/reject keeps a balanced annotation and
- * naturally collapses it when that revision's text is removed.
+ * Materialize root comments around an OOXML tracked-revision range. Markers
+ * are placed immediately outside the identified revision containers so
+ * accept/reject keeps a balanced annotation and naturally collapses it when
+ * that revision's text is removed.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.2
  * @see https://github.com/UseJunior/safe-docx/issues/860
@@ -284,29 +269,21 @@ export async function addTrackedRangeComments(
   const commentsDoc = parseXml(await zip.readText('word/comments.xml'));
 
   for (const params of comments) {
-    const start = findUniqueSentinel(documentXml, params.startSentinel);
-    const end = findUniqueSentinel(documentXml, params.endSentinel);
-    const startParent = start.revision.parentNode;
-    const endParent = end.revision.parentNode;
+    const startRevision = findUniqueRevision(documentXml, params.startRevision);
+    const endRevision = findUniqueRevision(documentXml, params.endRevision);
+    const startParent = startRevision.parentNode;
+    const endParent = endRevision.parentNode;
     if (!startParent || !endParent) throw new Error('Attributed revision container has no parent.');
-    const attributableXml = start.revision === end.revision
-      ? start.revision.textContent ?? ''
-      : `${start.revision.textContent ?? ''}${end.revision.textContent ?? ''}`;
-    const otherSentinel = attributableXml.match(/\uE000safe-docx-rationale-\d+-(?:start|end)\uE001/gu)
-      ?.some((sentinel) => sentinel !== params.startSentinel && sentinel !== params.endSentinel);
-    if (otherSentinel) throw new Error('Tracked comment attribution overlaps another operation revision.');
 
     const commentId = allocateNextCommentId(commentsDoc);
     const rangeStart = documentXml.createElementNS(OOXML.W_NS, 'w:commentRangeStart');
     rangeStart.setAttribute('w:id', String(commentId));
     const rangeEnd = documentXml.createElementNS(OOXML.W_NS, 'w:commentRangeEnd');
     rangeEnd.setAttribute('w:id', String(commentId));
-    startParent.insertBefore(rangeStart, start.revision);
-    endParent.insertBefore(rangeEnd, end.revision.nextSibling);
+    startParent.insertBefore(rangeStart, startRevision);
+    endParent.insertBefore(rangeEnd, endRevision.nextSibling);
     endParent.insertBefore(createCommentReference(documentXml, commentId), rangeEnd.nextSibling);
 
-    removeSentinel(start.text, params.startSentinel);
-    removeSentinel(end.text, params.endSentinel);
     addCommentElement(commentsDoc, {
       id: commentId,
       author: params.author,
