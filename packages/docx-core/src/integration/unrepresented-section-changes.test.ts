@@ -1,5 +1,8 @@
 import { describe, expect } from 'vitest';
-import { compareDocuments, compareDocumentsAtomizerUnguarded } from '@usejunior/docx-compare';
+import { compareDocuments } from '@usejunior/docx-compare';
+// Test-only pipeline subpath (aliased to source in vitest.config.ts); the
+// unguarded seam is deliberately not exported from the package root (#742).
+import { compareDocumentsAtomizerUnguarded } from '@usejunior/docx-compare/dist/baselines/atomizer/pipeline.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { auditSectPr } from '../primitives/sectPrAudit.js';
 import {

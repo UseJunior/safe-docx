@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import JSZip from 'jszip';
 import { describe, expect, afterAll } from 'vitest';
 import { compareDocuments, TrackedInputRevisionError } from '../../index.js';
+import * as packageRoot from '../../index.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
 import { runCompareCli } from '../../cli/compare-two.js';
 import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
@@ -92,6 +93,37 @@ const TRACKED_BODY_BY_KIND: ReadonlyArray<{ marker: string; body: string }> = [
       `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/></w:tblGrid>` +
       `<w:tr><w:tc><w:tcPr><w:tcPrChange ${REVISION_ATTRS}><w:tcPr/></w:tcPrChange></w:tcPr>` +
       `<w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>${paragraph('after')}`,
+  },
+  // The three cell-topology records and the legacy numbering-change record
+  // were execution-proven during peer review to pass the original ten-name
+  // guard and survive the comparison with their prior author intact.
+  {
+    marker: 'w:cellIns',
+    body:
+      `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/></w:tblGrid>` +
+      `<w:tr><w:tc><w:tcPr><w:cellIns ${REVISION_ATTRS}/></w:tcPr>` +
+      `<w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>${paragraph('after')}`,
+  },
+  {
+    marker: 'w:cellDel',
+    body:
+      `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/></w:tblGrid>` +
+      `<w:tr><w:tc><w:tcPr><w:cellDel ${REVISION_ATTRS}/></w:tcPr>` +
+      `<w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>${paragraph('after')}`,
+  },
+  {
+    marker: 'w:cellMerge',
+    body:
+      `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/></w:tblGrid>` +
+      `<w:tr><w:tc><w:tcPr><w:cellMerge w:vMerge="cont" ${REVISION_ATTRS}/></w:tcPr>` +
+      `<w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>${paragraph('after')}`,
+  },
+  {
+    marker: 'w:numberingChange',
+    body:
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/>` +
+      `<w:numberingChange ${REVISION_ATTRS} w:original="%1:1:0:."/>` +
+      `</w:numPr></w:pPr><w:r><w:t>numbered</w:t></w:r></w:p>`,
   },
 ];
 
@@ -280,7 +312,7 @@ describe('tracked-input comparison guard', () => {
 
   test.openspec('[SDX-TRKIN-06] the directly exported atomizer entry point is guarded')(
     'compareDocumentsAtomizer refuses tracked inputs exactly like compareDocuments',
-    async ({ given, when, then }: AllureBddContext) => {
+    async ({ given, when, then, and }: AllureBddContext) => {
       let atomizerError: TrackedInputRevisionError;
       let publicError: TrackedInputRevisionError;
 
@@ -300,6 +332,13 @@ describe('tracked-input comparison guard', () => {
         expect(atomizerError.operand).toBe(publicError.operand);
         expect(atomizerError.partPath).toBe(publicError.partPath);
         expect(atomizerError.markers).toEqual(publicError.markers);
+      });
+
+      await and('the package root exports no unguarded comparison entry', () => {
+        // The unguarded orchestrator exists for engine tests (module-level
+        // import only); exporting it from the root would be a working public
+        // bypass of the guard — peer review demonstrated exactly that.
+        expect(packageRoot).not.toHaveProperty('compareDocumentsAtomizerUnguarded');
       });
     },
   );

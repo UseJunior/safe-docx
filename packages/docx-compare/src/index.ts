@@ -121,14 +121,6 @@ export {
   validateFieldStructure,
   compareDocumentsAtomizer,
 } from './baselines/atomizer/pipeline.js';
-/**
- * NOT a supported comparison entry point: performs no tracked-input
- * validation, and tracked inputs produce Word-unreadable output (issue #742).
- * Exists for engine tests over deliberately pre-tracked fixtures and as the
- * attachment point for a future accept-on-ingest opt-in. Use
- * {@link compareDocuments} or {@link compareDocumentsAtomizer} instead.
- */
-export { compareDocumentsAtomizerUnguarded } from './baselines/atomizer/pipeline.js';
 /** @deprecated fldChar inside w:del is valid; see the docx-core definition. */
 export { hasFldCharInsideDel } from '@usejunior/docx-core';
 export { parseDocumentXml } from './baselines/atomizer/xmlToWmlElement.js';

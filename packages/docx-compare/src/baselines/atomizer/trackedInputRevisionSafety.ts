@@ -8,9 +8,19 @@ import {
 /**
  * Revision-markup local names (WordprocessingML namespace) whose presence in a
  * comparison input means the document already carries tracked changes: the
- * four content markers plus the six property-change records. Row-level markers
- * (`w:trPr > w:ins|w:del`) share the same local names and are detected by the
- * same scan.
+ * four content markers, the six property-change records, the three
+ * cell-topology records, and the legacy numbering-change record. Row-level
+ * markers (`w:trPr > w:ins|w:del`) share the same local names and are
+ * detected by the same scan. The cell and numbering records were
+ * execution-proven (peer review of #742) to otherwise pass through the
+ * comparison with their original author intact.
+ *
+ * Deliberately NOT detection triggers: the range-boundary markers
+ * (`w:moveFromRangeStart`/`End`, `w:moveToRangeStart`/`End`) and the
+ * `w:customXml*Range*` markers. They carry no run content or author-bearing
+ * wrapper of their own; content-bearing moves are caught via `w:moveFrom` /
+ * `w:moveTo`, and an isolated range pair was execution-observed to be dropped
+ * by the comparison rather than passed through as another author's markup.
  */
 const TRACKED_REVISION_LOCAL_NAMES = [
   'ins',
@@ -23,6 +33,10 @@ const TRACKED_REVISION_LOCAL_NAMES = [
   'tblPrChange',
   'trPrChange',
   'tcPrChange',
+  'cellIns',
+  'cellDel',
+  'cellMerge',
+  'numberingChange',
 ] as const;
 
 /** Which comparison operand a tracked-input detection refers to. */
@@ -117,9 +131,12 @@ async function findTrackedRevisionMarkup(
  * The scan covers `word/document.xml` plus every revision story part the
  * package holds — footnotes, endnotes, comments, the glossary document, and
  * each numbered header/footer part — and detects the four content markers
- * (`w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`) and the six property-change
+ * (`w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`), the six property-change
  * records (`w:rPrChange`, `w:pPrChange`, `w:sectPrChange`, `w:tblPrChange`,
- * `w:trPrChange`, `w:tcPrChange`). Missing parts are skipped. Parts that fail
+ * `w:trPrChange`, `w:tcPrChange`), the cell-topology records (`w:cellIns`,
+ * `w:cellDel`, `w:cellMerge`), and `w:numberingChange`; see
+ * {@link TRACKED_REVISION_LOCAL_NAMES} for the range-marker records that are
+ * deliberately not triggers. Missing parts are skipped. Parts that fail
  * to parse are also skipped by this guard: malformed-part failures belong to
  * the package-level ancillary safety boundary, whose typed diagnostics this
  * preparatory scan must not pre-empt. The original operand is scanned first,

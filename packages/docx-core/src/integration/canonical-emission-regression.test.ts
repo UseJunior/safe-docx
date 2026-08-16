@@ -13,9 +13,10 @@ import {
 // These round-trips compare a baseline against a document that already
 // carries SafeDocX-authored tracked markup, which the public comparison
 // boundary now refuses (issue #742). The canonical-emission engine behavior
-// pinned here lives below that guard, reached via the explicitly named
-// unguarded seam.
-import { compareDocumentsAtomizerUnguarded } from '@usejunior/docx-compare';
+// pinned here lives below that guard, reached via the test-only pipeline
+// subpath (aliased to source in vitest.config.ts) — the seam is deliberately
+// not exported from the package root.
+import { compareDocumentsAtomizerUnguarded } from '@usejunior/docx-compare/dist/baselines/atomizer/pipeline.js';
 import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({

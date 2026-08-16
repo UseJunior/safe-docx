@@ -58,3 +58,21 @@
       npm run check:conformance-citations && npm run check:conformance-doc`, gated on exit codes.
 - [x] 5.2 `npx openspec validate add-tracked-input-comparison-guard --strict`.
 - [x] 5.3 `git diff --check` clean; rebase onto current `origin/main` before opening the draft PR.
+
+## 6. Peer review follow-ups (Codex, 2026-08-16)
+
+- [x] 6.1 Blocking — detector gaps. Codex execution-proved that `w:cellIns`, `w:cellDel`, `w:cellMerge`, and
+      `w:numberingChange` passed the ten-name guard through public `compareDocuments` and survived in the output
+      with their prior author. Added all four to the detection list, added one fixture per kind to
+      `[SDX-TRKIN-04]`, and documented the range-marker family (`w:*RangeStart`/`End`, `w:customXml*Range*`) as
+      classified non-triggers (Codex's probe showed an isolated range pair is dropped, not passed through).
+- [x] 6.2 Blocking — package-root bypass. The root export of `compareDocumentsAtomizerUnguarded` was a live
+      public bypass (execution-proved). Removed it; docx-core integration tests now import the pipeline module
+      through the package's dist subpath, aliased back to the same source module graph in
+      `packages/docx-core/vitest.config.ts`; `[SDX-TRKIN-06]` pins that the package root does not export the
+      seam; corrected the contradictory pipeline JSDoc.
+- [x] 6.3 Hint accuracy. `accept_changes` cannot clean headers or footers, so a header/footer detection no
+      longer recommends it — the hint is part-aware. Added `[SDX-TRKIN-MCP-04]` (header-part hint) and, per the
+      coverage recommendation, `[SDX-TRKIN-MCP-05]` (session-mode refusal).
+- [x] 6.4 Re-ran the full gate sequence, both new suites, all eleven re-pointed engine suites, and
+      `openspec validate --strict` after the fixes.

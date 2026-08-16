@@ -42,6 +42,16 @@ export default defineConfig({
   resolve: {
     alias: {
       '@usejunior/docx-core': resolve(__dirname, 'src/index.ts'),
+      // Test-only seam for engine tests over deliberately pre-tracked inputs
+      // (issue #742): the unguarded orchestrator is not exported from the
+      // package root, so those tests import the pipeline module through the
+      // package's dist subpath, aliased here back to the same source module
+      // graph the root alias below uses. Must precede the root alias so the
+      // longer specifier wins prefix matching.
+      '@usejunior/docx-compare/dist/baselines/atomizer/pipeline.js': resolve(
+        __dirname,
+        '../docx-compare/src/baselines/atomizer/pipeline.ts',
+      ),
       '@usejunior/docx-compare': resolve(__dirname, '../docx-compare/src/index.ts'),
     },
   },

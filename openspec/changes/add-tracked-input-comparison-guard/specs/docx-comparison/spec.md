@@ -8,8 +8,13 @@ merges two authors' revision markup into one document. The error SHALL name the 
 `revised`), the package part in which markup was found, and the revision element names detected. The scan SHALL
 cover `word/document.xml` plus every revision story part the package holds (footnotes, endnotes, comments, the
 glossary document, and each numbered header or footer part) and SHALL detect the content markers `w:ins`, `w:del`,
-`w:moveFrom`, and `w:moveTo` and the property-change records `w:rPrChange`, `w:pPrChange`, `w:sectPrChange`,
-`w:tblPrChange`, `w:trPrChange`, and `w:tcPrChange`, including row-level `w:trPr > w:ins|w:del` markers. The
+`w:moveFrom`, and `w:moveTo`, the property-change records `w:rPrChange`, `w:pPrChange`, `w:sectPrChange`,
+`w:tblPrChange`, `w:trPrChange`, and `w:tcPrChange`, the cell-topology records `w:cellIns`, `w:cellDel`, and
+`w:cellMerge`, and the legacy `w:numberingChange` record, including row-level `w:trPr > w:ins|w:del` markers.
+Range-boundary markers (`w:moveFromRangeStart`/`End`, `w:moveToRangeStart`/`End`, and the `w:customXml*Range*`
+family) are classified as non-triggers: they carry no author-bearing content of their own, content-bearing moves
+are caught via `w:moveFrom`/`w:moveTo`, and an isolated range pair is dropped by the comparison rather than passed
+through as another author's markup. The
 refusal SHALL apply to every supported comparison entry point (`compareDocuments` and the directly exported
 `compareDocumentsAtomizer`) and every reconstruction mode. Missing story parts SHALL be skipped, and parts the
 scan cannot parse SHALL be left to the package-level ancillary safety boundary's own diagnostics rather than
@@ -38,8 +43,8 @@ point and performs no input validation.
 
 #### Scenario: [SDX-TRKIN-04] every content and property revision kind trips the guard
 - **GIVEN** one fixture per revision kind: `w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`, `w:rPrChange`,
-  `w:pPrChange`, `w:sectPrChange`, `w:tblPrChange`, `w:trPrChange`, `w:tcPrChange`, and a row-level
-  `w:trPr > w:del` marker
+  `w:pPrChange`, `w:sectPrChange`, `w:tblPrChange`, `w:trPrChange`, `w:tcPrChange`, `w:cellIns`, `w:cellDel`,
+  `w:cellMerge`, `w:numberingChange`, and a row-level `w:trPr > w:del` marker
 - **WHEN** each fixture is compared as each operand
 - **THEN** each comparison SHALL be refused and `markers` SHALL report that revision kind
 

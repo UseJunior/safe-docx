@@ -625,12 +625,17 @@ export async function compareDocumentsAtomizer(
 /**
  * The comparison orchestration below the tracked-input guard.
  *
- * Internal seam: exported from this module (NOT from the package root) so
- * engine tests can exercise comparison behavior over deliberately pre-tracked
- * inputs — provenance restoration, revision-ID collision promotion, round-trip
- * projection — which the public boundary now refuses (issue #742). A future
- * accept-on-ingest opt-in would also route here after projecting its inputs.
- * Every public caller goes through {@link compareDocumentsAtomizer}.
+ * Internal seam, deliberately NOT exported from the package root (a test pins
+ * that): it performs no tracked-input validation, and tracked inputs produce
+ * Word-unreadable output (issue #742). It exists so engine tests can exercise
+ * comparison behavior over deliberately pre-tracked inputs — provenance
+ * restoration, revision-ID collision promotion, round-trip projection — which
+ * the supported boundary refuses. docx-compare tests import it from this
+ * module; docx-core integration tests import it via the package's dist
+ * subpath, which their vitest config aliases back to this source file. A
+ * future accept-on-ingest opt-in would also route here after projecting its
+ * inputs. Every supported caller goes through
+ * {@link compareDocumentsAtomizer}.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/742
  */

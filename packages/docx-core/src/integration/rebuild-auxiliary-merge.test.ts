@@ -14,10 +14,13 @@
 
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 // compareDocumentsAtomizerUnguarded is for fixtures that pre-track their
 // inputs only (issue #742): the engine behavior under test lives below the
-// public tracked-input guard.
-import { compareDocuments, compareDocumentsAtomizerUnguarded } from '@usejunior/docx-compare';
+// public tracked-input guard, reached via the test-only pipeline subpath
+// (aliased to source in vitest.config.ts) — the seam is deliberately not
+// exported from the package root.
+import { compareDocumentsAtomizerUnguarded } from '@usejunior/docx-compare/dist/baselines/atomizer/pipeline.js';
 import { buildSyntheticDocx, buildDocxFromParts, getResultParts } from './synthetic-docx-fixture.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { parseXml } from '../primitives/xml.js';

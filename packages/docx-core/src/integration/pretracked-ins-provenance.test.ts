@@ -33,9 +33,10 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { type ReconstructionMode } from '@usejunior/docx-compare';
 // Pre-tracked originals are the very subject of this suite, and the public
 // comparison boundary now refuses them (issue #742). The engine behavior
-// pinned here lives below that guard, reached via the explicitly named
-// unguarded seam.
-import { compareDocumentsAtomizerUnguarded } from '@usejunior/docx-compare';
+// pinned here lives below that guard, reached via the test-only pipeline
+// subpath (aliased to source in vitest.config.ts) — the seam is deliberately
+// not exported from the package root.
+import { compareDocumentsAtomizerUnguarded } from '@usejunior/docx-compare/dist/baselines/atomizer/pipeline.js';
 import {
   acceptAllChanges,
   rejectAllChanges,

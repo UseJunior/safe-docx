@@ -28,6 +28,7 @@ import {
   registerCleanup,
   createTestSessionManager,
   createTrackedTempDir,
+  openSession,
 } from '../testing/session-test-utils.js';
 
 const TEST_FEATURE = 'add-tracked-input-comparison-guard';
@@ -134,6 +135,80 @@ describe('Traceability: tracked-input comparison guard (MCP surface)', () => {
 
       await and('no output file was written', async () => {
         expect(await fileExists(outputPath)).toBe(false);
+      });
+    },
+  );
+
+  test.openspec('[SDX-TRKIN-MCP-04] header and footer refusals carry an actionable hint')(
+    'a header-part detection does not recommend the body-scoped accept_changes tool',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      const mgr = createTestSessionManager();
+      const dir = await createTrackedTempDir();
+
+      await given('a revised file whose only tracked markup lives in word/header1.xml', () => {});
+      const originalPath = await writeTestDocx(dir, 'header-original.docx', CLEAN_BODY);
+      const revisedDocXml =
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w:document xmlns:w="${W_NS}"><w:body>${CLEAN_BODY}</w:body></w:document>`;
+      const headerXml =
+        `<w:hdr xmlns:w="${W_NS}"><w:p><w:ins ${REVISION_ATTRS}>` +
+        `<w:r><w:t>tracked header edit</w:t></w:r></w:ins></w:p></w:hdr>`;
+      const revisedBuffer = await makeDocxWithDocumentXml(revisedDocXml, {
+        'word/header1.xml': headerXml,
+      });
+      const revisedPath = path.join(dir, 'header-revised.docx');
+      await fs.writeFile(revisedPath, new Uint8Array(revisedBuffer));
+      const savePath = path.join(dir, 'header-redline.docx');
+
+      const result = await when('Call compare_documents in two-file mode', () =>
+        compareDocuments_tool(mgr, {
+          original_file_path: originalPath,
+          revised_file_path: revisedPath,
+          save_to_local_path: savePath,
+        }),
+      );
+
+      await then('the refusal names the header part', () => {
+        assertFailure(result, 'INPUT_HAS_TRACKED_CHANGES', 'compare_documents');
+        expect(result.error?.message).toContain('word/header1.xml');
+      });
+
+      await and('the hint is actionable: accept_changes cannot clean headers, so it is not suggested', async () => {
+        assertFailure(result);
+        // accept_changes covers the body and note/comment stories only;
+        // recommending it here would send the caller in a retry loop. The
+        // hint may NAME accept_changes only to say it does not apply.
+        expect(result.error?.hint).not.toContain('via accept_changes');
+        expect(result.error?.hint).toContain('accept_changes does not cover headers or footers');
+        expect(result.error?.hint).toContain('word/header1.xml');
+        expect(await fileExists(savePath)).toBe(false);
+      });
+    },
+  );
+
+  test.openspec('[SDX-TRKIN-MCP-05] session-mode comparison of a tracked document is refused')(
+    'a session opened on a document with pre-existing tracked changes cannot session-compare',
+    async ({ given, when, then }: AllureBddContext) => {
+      await given('an open session whose document already carries w:ins markup', () => {});
+      const sessionDocXml =
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w:document xmlns:w="${W_NS}"><w:body>${CLEAN_BODY}${TRACKED_BODY}</w:body></w:document>`;
+      const { mgr, inputPath, tmpDir } = await openSession([], { xml: sessionDocXml });
+      const savePath = path.join(tmpDir, 'session-redline.docx');
+
+      const result = await when('Call compare_documents in session mode', () =>
+        compareDocuments_tool(mgr, {
+          file_path: inputPath,
+          save_to_local_path: savePath,
+        }),
+      );
+
+      await then('the session comparison is refused with the distinct code and writes nothing', async () => {
+        // Both session operands (the baseline and the working copy) inherit
+        // the document's pre-existing markup, so the comparison must refuse
+        // rather than merge two authors' revision trees.
+        assertFailure(result, 'INPUT_HAS_TRACKED_CHANGES', 'compare_documents');
+        expect(await fileExists(savePath)).toBe(false);
       });
     },
   );

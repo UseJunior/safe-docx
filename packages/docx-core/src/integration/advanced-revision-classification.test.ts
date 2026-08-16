@@ -7,12 +7,14 @@ import { OOXML } from '../primitives/namespaces.js';
 import { DocxDocument } from '../primitives/document.js';
 import { createZipBuffer, readZipText } from '../primitives/zip.js';
 import { validateAiRevisions } from '../primitives/validate_ai_revisions.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 // [ADV-COMPARE-MODE-PRESERVATION-01] characterizes how the ENGINE treats
 // pre-existing advanced markup by reconstruction mode. The public boundary
 // now refuses inputs carrying w:ins/w:del/w:moveFrom/w:moveTo (issue #742),
-// so that characterization runs below the guard via the explicitly named
-// unguarded seam.
-import { compareDocuments, compareDocumentsAtomizerUnguarded } from '@usejunior/docx-compare';
+// so that characterization runs below the guard via the test-only pipeline
+// subpath (aliased to source in vitest.config.ts) — the seam is deliberately
+// not exported from the package root.
+import { compareDocumentsAtomizerUnguarded } from '@usejunior/docx-compare/dist/baselines/atomizer/pipeline.js';
 import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
 import { revisionEvidence, revisionEvidenceCases } from '../testing/revision-evidence.js';
 

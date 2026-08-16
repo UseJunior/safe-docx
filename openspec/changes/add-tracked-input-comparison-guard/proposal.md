@@ -28,13 +28,20 @@ proposal.
   precedent) that names the offending operand (`original` vs `revised`), the package part, and the markers found.
 - The scan covers `word/document.xml` plus every revision story part — footnotes, endnotes, comments, the glossary
   document, and each numbered header/footer part via `enumerateRevisionStoryPartPaths` — and detects the four
-  content markers (`w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`) and the six property-change records (`w:rPrChange`,
-  `w:pPrChange`, `w:sectPrChange`, `w:tblPrChange`, `w:trPrChange`, `w:tcPrChange`). Row-level markers
-  (`w:trPr > w:ins|w:del`) share those local names and trip the guard.
+  content markers (`w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`), the six property-change records (`w:rPrChange`,
+  `w:pPrChange`, `w:sectPrChange`, `w:tblPrChange`, `w:trPrChange`, `w:tcPrChange`), the cell-topology records
+  (`w:cellIns`, `w:cellDel`, `w:cellMerge`), and `w:numberingChange` — the last four added after peer review
+  execution-proved they passed the ten-name scan and survived comparison with their prior author. Row-level
+  markers (`w:trPr > w:ins|w:del`) share those local names and trip the guard. Range-boundary markers
+  (`w:*RangeStart`/`End`, `w:customXml*Range*`) are classified non-triggers: no author-bearing content of their
+  own, content-bearing moves are caught via their wrappers, and an isolated range pair is dropped by the
+  comparison rather than passed through.
 - One guard at the lowest public comparison boundary (`compareDocumentsAtomizer`), not one per surface: the MCP
   tool and both CLIs funnel through it, so surfaces only *map* the typed error rather than re-scanning.
   - `compare_documents` (MCP) maps the error to a distinct `INPUT_HAS_TRACKED_CHANGES` code — never the catch-all
-    `COMPARE_ERROR` — with a recovery hint pointing at `accept_changes`.
+    `COMPARE_ERROR` — with a part-aware recovery hint: `accept_changes` where it applies, but a header/footer
+    detection instead directs the caller to produce a fully accepted/rejected copy, because `accept_changes`
+    does not cover headers or footers and recommending it there would loop.
   - Both CLIs (`docx-comparison`, `safe-docx compare`) propagate the error to their existing entry-point handler:
     nonzero exit, message naming the offending operand. No CLI code change is required.
 - Missing story parts are skipped. Parts the scan cannot parse are also skipped **by this guard**: malformed-part
@@ -44,11 +51,12 @@ proposal.
 - Engine behaviors that only arise for pre-tracked inputs (original-insertion provenance restoration, revised-side
   insertion-collision promotion, preserved-move identity seeding, pre-existing-wrapper bookmark splitting,
   canonical-emission round-trips, [ADV-COMPARE-MODE-PRESERVATION-01]'s mode characterization) remain implemented
-  and tested through `compareDocumentsAtomizerUnguarded`, an explicitly named unguarded seam. It is exported from
-  the package root — cross-package engine tests in docx-core need it, and a relative source import breaks that
-  package's tsc project — but its JSDoc marks it as NOT a supported comparison entry point, with no input
-  validation. A future accept-on-ingest opt-in would route there after projecting its inputs; until then the
-  supported boundary refuses.
+  and tested through `compareDocumentsAtomizerUnguarded`, an explicitly named unguarded seam that is NOT exported
+  from the package root (a test pins its absence — peer review demonstrated that a root export is a live public
+  bypass). docx-compare tests import it from the pipeline module; docx-core integration tests import it through
+  the package's dist subpath, which their vitest config aliases back to the same source module graph the root
+  alias uses (a relative source import violates that package's tsc `rootDir`). A future accept-on-ingest opt-in
+  would route there after projecting its inputs; until then the supported boundary refuses.
 
 ## Impact
 
