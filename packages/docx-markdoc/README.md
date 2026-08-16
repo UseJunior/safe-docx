@@ -26,6 +26,42 @@ comparison engine. It then proves reject-all equals source and accept-all equals
 clean. Inline `ins`/`del` is available only as generated display/export syntax;
 models and lawyers author familiar complete sentences.
 
+## External-facing rationale comments
+
+Rationales remain passive metadata unless compilation explicitly enables
+native comments. Only the exact, case-sensitive category `external-facing` is
+eligible; absent, internal, misspelled, or differently cased categories are
+never inferred to be shareable.
+
+```markdoc
+{% rationale for="rename" category="external-facing" %}
+The revised name matches the synthetic review record.
+{% /rationale %}
+```
+
+Supply comment identity separately from tracked-revision identity. All three
+values are required and the compiler never substitutes the revision author,
+revision date, initials, or current time:
+
+```ts
+const result = await compileMarkdoc(source, markdoc, {
+  author: 'Revision Author',
+  date: new Date('2026-08-16T14:30:00.000Z'),
+  rationaleComments: {
+    author: 'External Reviewer',
+    initials: 'ER',
+    date: new Date('2026-08-16T14:30:00.000Z'),
+  },
+});
+```
+
+Each selected rationale becomes one native root Word comment around the
+tracked edit attributable to its operation. Insertions and replacements prefer
+inserted text; deletion-only edits remain anchored to deleted tracked markup;
+multi-paragraph edits receive one bounded range. Accept-all and reject-all keep
+the comment components balanced, collapsing the range at the edit boundary
+when its tracked anchor disappears.
+
 ## Delivery completeness
 
 Exact DOCX replay and drafting completeness are separate claims. A required

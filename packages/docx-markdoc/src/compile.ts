@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import {
   DocxDocument,
+  addTrackedRangeComments,
   computeContentFingerprint,
   getParagraphRuns,
   type ReplacementPart,
@@ -12,6 +13,7 @@ import { requireMarkdoc } from './markdoc.js';
 import { assessDraftCompleteness } from './completeness.js';
 import type {
   CompileResult,
+  CompileOptions,
   EditOperation,
   FormattingProjectionDiagnostic,
   FormattingProjectionReport,
@@ -505,8 +507,18 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
   return { unsupported: [...unsupported].sort() };
 }
 
-async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise<Buffer> {
+type AttributedRange = {
+  operationId: string;
+  projection: 'source' | 'clean';
+  startParagraphId: string;
+  start: number;
+  endParagraphId: string;
+  end: number;
+};
+
+async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise<{ buffer: Buffer; ranges: AttributedRange[] }> {
   const document = await DocxDocument.load(sourceBuffer);
+  const ranges: AttributedRange[] = [];
   for (const operation of ir.operations) {
     if (isInsertOperation(operation)) {
       const runStyleSourceText = insertionFormatSource(document, operation);
@@ -517,6 +529,15 @@ async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise
         newText: operation.revisedText,
         styleSourceId: operation.styleSourceId,
         runStyleSourceText,
+      });
+      const insertedTexts = operation.revisedText.replace(/\r\n/gu, '\n').split(/\n{2,}/u);
+      ranges.push({
+        operationId: operation.operationId,
+        projection: 'clean',
+        startParagraphId: inserted.newParagraphIds[0]!,
+        start: 0,
+        endParagraphId: inserted.newParagraphIds.at(-1)!,
+        end: insertedTexts.at(-1)!.length,
       });
       if (templateRun) {
         document.replaceTextAtRange({
@@ -537,9 +558,38 @@ async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise
     const original = document.getParagraphTextById(operation.id);
     if (original === null) throw new DocxMarkdocError('MISSING_ANCHOR', `Paragraph ${operation.id} was not found.`);
     if (operation.kind === 'delete-source') {
+      ranges.push({
+        operationId: operation.operationId,
+        projection: 'source',
+        startParagraphId: operation.id,
+        start: 0,
+        endParagraphId: operation.id,
+        end: original.length,
+      });
       const paragraph = document.getParagraphElementById(operation.id);
       paragraph?.parentNode?.removeChild(paragraph);
       continue;
+    }
+    const operationHunks = textHunks(original, operation.revisedText);
+    const generated = operationHunks.filter((hunk) => hunk.replacement.length > 0);
+    if (generated.length > 0) {
+      ranges.push({
+        operationId: operation.operationId,
+        projection: 'clean',
+        startParagraphId: operation.id,
+        start: generated[0]!.revisedStart,
+        endParagraphId: operation.id,
+        end: generated.at(-1)!.revisedEnd,
+      });
+    } else if (operationHunks.length > 0) {
+      ranges.push({
+        operationId: operation.operationId,
+        projection: 'source',
+        startParagraphId: operation.id,
+        start: operationHunks[0]!.start,
+        endParagraphId: operation.id,
+        end: operationHunks.at(-1)!.end,
+      });
     }
     replacePreservingMixedFormatting(
       document,
@@ -551,15 +601,91 @@ async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise
       operation.runFormatSpans,
     );
   }
+  return { buffer: (await document.toBuffer({ cleanBookmarks: false })).buffer, ranges };
+}
+
+type RationaleMaterialization = {
+  range: AttributedRange;
+  startSentinel: string;
+  endSentinel: string;
+  text: string;
+};
+
+function validateRationaleCommentOptions(options: CompileOptions, ir: MarkdocEditIR): RationaleMaterialization[] {
+  if (!options.rationaleComments) return [];
+  const { author, initials, date } = options.rationaleComments;
+  if (typeof author !== 'string' || author.trim().length === 0
+    || typeof initials !== 'string' || initials.trim().length === 0
+    || !(date instanceof Date) || !Number.isFinite(date.getTime())) {
+    throw new DocxMarkdocError(
+      'INVALID_RATIONALE_COMMENT_IDENTITY',
+      'Rationale comment author, initials, and date must be supplied explicitly and be valid.',
+    );
+  }
+  const selected = ir.rationales.filter((rationale) => rationale.category === 'external-facing');
+  const seen = new Set<string>();
+  for (const rationale of selected) {
+    if (seen.has(rationale.operationId)) {
+      throw new DocxMarkdocError(
+        'DUPLICATE_EXTERNAL_RATIONALE',
+        `Operation ${rationale.operationId} has more than one external-facing rationale.`,
+      );
+    }
+    seen.add(rationale.operationId);
+  }
+  return selected.map((rationale, index) => ({
+    range: { operationId: rationale.operationId } as AttributedRange,
+    startSentinel: `\u{E000}safe-docx-rationale-${index}-start\u{E001}`,
+    endSentinel: `\u{E000}safe-docx-rationale-${index}-end\u{E001}`,
+    text: rationale.text,
+  }));
+}
+
+async function instrumentRanges(buffer: Buffer, materializations: RationaleMaterialization[]): Promise<Buffer> {
+  const document = await DocxDocument.load(buffer);
+  for (const item of [...materializations].reverse()) {
+    const { range } = item;
+    if (range.startParagraphId === range.endParagraphId) {
+      const paragraphText = document.getParagraphTextById(range.startParagraphId);
+      if (paragraphText === null || range.start >= range.end || range.end > paragraphText.length) {
+        throw new DocxMarkdocError('RATIONALE_ANCHOR_UNAVAILABLE', `Operation ${range.operationId} has no anchorable tracked content.`);
+      }
+      document.replaceTextAtRange({
+        targetParagraphId: range.startParagraphId,
+        start: range.start,
+        end: range.end,
+        replaceText: `${item.startSentinel}${paragraphText.slice(range.start, range.end)}${item.endSentinel}`,
+      });
+      continue;
+    }
+    const startText = document.getParagraphTextById(range.startParagraphId);
+    const endText = document.getParagraphTextById(range.endParagraphId);
+    if (startText === null || endText === null || range.start > startText.length || range.end <= 0 || range.end > endText.length) {
+      throw new DocxMarkdocError('RATIONALE_ANCHOR_UNAVAILABLE', `Operation ${range.operationId} has no anchorable tracked content.`);
+    }
+    document.replaceTextAtRange({
+      targetParagraphId: range.endParagraphId,
+      start: range.end,
+      end: range.end,
+      replaceText: item.endSentinel,
+    });
+    document.replaceTextAtRange({
+      targetParagraphId: range.startParagraphId,
+      start: range.start,
+      end: range.start,
+      replaceText: item.startSentinel,
+    });
+  }
   return (await document.toBuffer({ cleanBookmarks: false })).buffer;
 }
 
 export async function compileMarkdoc(
   sourceBuffer: Buffer,
   markdoc: string,
-  options: { author?: string; date?: Date } = {},
+  options: CompileOptions = {},
 ): Promise<CompileResult> {
   const ir = requireMarkdoc(markdoc);
+  const materializations = validateRationaleCommentOptions(options, ir);
   const sourceHashMatches = sha256(sourceBuffer) === ir.source.sha256;
   if (!sourceHashMatches) throw new DocxMarkdocError('SOURCE_HASH_DRIFT', 'Source DOCX hash does not match canonical Markdoc.');
   const sourceZip = await JSZip.loadAsync(sourceBuffer);
@@ -580,8 +706,21 @@ export async function compileMarkdoc(
       { changeSets: incompleteAtomicSets },
     );
   }
-  const clean = await applyOperations(sourceBuffer, ir);
-  const comparison = await compareDocuments(sourceBuffer, clean, {
+  const applied = await applyOperations(sourceBuffer, ir);
+  const clean = applied.buffer;
+  const rangesByOperation = new Map(applied.ranges.map((range) => [range.operationId, range]));
+  for (const item of materializations) {
+    const range = rangesByOperation.get(item.range.operationId);
+    if (!range) throw new DocxMarkdocError('RATIONALE_ANCHOR_UNAVAILABLE', `Operation ${item.range.operationId} has no attributable edit range.`);
+    item.range = range;
+  }
+  const sourceMaterializations = materializations.filter((item) => item.range.projection === 'source');
+  const cleanMaterializations = materializations.filter((item) => item.range.projection === 'clean');
+  const [comparisonSource, comparisonClean] = await Promise.all([
+    instrumentRanges(sourceBuffer, sourceMaterializations),
+    instrumentRanges(clean, cleanMaterializations),
+  ]);
+  const comparison = await compareDocuments(comparisonSource, comparisonClean, {
     engine: 'atomizer',
     author: options.author ?? 'Markdoc',
     date: options.date,
@@ -593,7 +732,26 @@ export async function compileMarkdoc(
     // minimality outranks "confetti" readability for authored redlines.
     // See https://github.com/UseJunior/safe-docx/issues/846.
   });
-  const tracked = comparison.document;
+  let tracked = comparison.document;
+  if (materializations.length > 0) {
+    const identity = options.rationaleComments!;
+    try {
+      tracked = await addTrackedRangeComments(tracked, materializations.map((item) => ({
+        startSentinel: item.startSentinel,
+        endSentinel: item.endSentinel,
+        author: identity.author,
+        initials: identity.initials,
+        date: identity.date.toISOString(),
+        text: item.text,
+      })));
+    } catch (error) {
+      throw new DocxMarkdocError(
+        'RATIONALE_ANCHOR_AMBIGUOUS',
+        'Selected rationale could not be mapped to one exact tracked edit range.',
+        { cause: (error as Error).message },
+      );
+    }
+  }
   const acceptedDoc = await DocxDocument.load(tracked);
   const rejectedDoc = await DocxDocument.load(tracked);
   await acceptedDoc.acceptChanges();

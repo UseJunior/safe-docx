@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { itAllure } from '../../docx-core/src/testing/allure-test.js';
+import { buildSyntheticDocx } from '@usejunior/docx-core';
 import { verifyRelease } from './verifier.js';
 import type { ReleaseManifest } from './types.js';
 import { compileMarkdoc, importDocxToMarkdoc, requireMarkdoc } from '../../docx-markdoc/src/index.js';
@@ -246,6 +247,53 @@ describe('independent release verifier', () => {
     expect(result.gates.comments.details).toEqual({ expectedMinimum: 1, count: 0 });
     expect(result.delivery.status).toBe('fail');
     expect(result.exitCode).toBe(1);
+  });
+
+  itAllure('[SDX-MDOC-45][SDX-MDOC-46] verifies materialized rationale comments and rejects unselected output', async () => {
+    const original = await buildSyntheticDocx({ paragraphs: ['Synthetic old value.'] });
+    const imported = await importDocxToMarkdoc(original);
+    const paragraph = requireMarkdoc(imported.markdoc).scaffold[0]!;
+    const block = new RegExp(`\\{% para id="${paragraph.id}"[\\s\\S]*?\\{% /para %\\}`);
+    const replacement = [
+      `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="edit" format="inherit-source-paragraph" %}`,
+      '{% before %}', 'Synthetic old value.', '{% /before %}',
+      '{% after %}', 'Synthetic new value.', '{% /after %}', '{% /change %}',
+    ].join('\n');
+    const rationale = '\n{% rationale for="edit" category="external-facing" %}\nSynthetic public explanation.\n{% /rationale %}\n';
+    const compiled = await compileMarkdoc(imported.anchoredSource, imported.markdoc.replace(block, replacement) + rationale, {
+      author: 'Synthetic Revision Author',
+      date: new Date('2026-08-16T14:30:00.000Z'),
+      rationaleComments: {
+        author: 'Synthetic Reviewer',
+        initials: 'SR',
+        date: new Date('2026-08-16T14:30:00.000Z'),
+      },
+    });
+    const directory = await mkdtemp(join(tmpdir(), 'release-rationale-comments-'));
+    const manifest: ReleaseManifest = {
+      version: 1,
+      originalPath: join(directory, 'original.docx'),
+      intendedCleanPath: join(directory, 'clean.docx'),
+      trackedPath: join(directory, 'tracked.docx'),
+      requireNativeComments: true,
+      mutationControl: { projection: 'accept', expected: 'intendedClean' },
+    };
+    await Promise.all([
+      writeFile(manifest.originalPath, imported.anchoredSource),
+      writeFile(manifest.intendedCleanPath, compiled.clean),
+      writeFile(manifest.trackedPath, compiled.tracked),
+    ]);
+    const positive = await verifyRelease(manifest);
+    expect(positive.gates.comments).toMatchObject({ status: 'pass', details: { expectedMinimum: 1, count: 1 } });
+
+    const unselected = await compileMarkdoc(
+      imported.anchoredSource,
+      imported.markdoc.replace(block, replacement) + rationale.replace('external-facing', 'internal'),
+      { rationaleComments: { author: 'Synthetic Reviewer', initials: 'SR', date: new Date('2026-08-16T14:30:00.000Z') } },
+    );
+    await writeFile(manifest.trackedPath, unselected.tracked);
+    const negative = await verifyRelease(manifest);
+    expect(negative.gates.comments.status).toBe('fail');
   });
 
   itAllure('leaves the zero-comment gate not_run when native comments are not required', async () => {

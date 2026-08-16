@@ -5,6 +5,7 @@
  * and supports threaded replies via commentsExtended.xml.
  */
 
+import { createHash } from 'node:crypto';
 import { OOXML, W } from './namespaces.js';
 import { parseXml, serializeXml } from './xml.js';
 import { DocxZip } from './zip.js';
@@ -201,6 +202,126 @@ export type AddCommentParams = {
 export type AddCommentResult = {
   commentId: number;
 };
+
+export type AddTrackedRangeCommentParams = {
+  startSentinel: string;
+  endSentinel: string;
+  author: string;
+  initials: string;
+  date: string;
+  text: string;
+};
+
+function deterministicParaId(params: AddTrackedRangeCommentParams, commentId: number): string {
+  return createHash('sha256')
+    .update(`${commentId}\0${params.author}\0${params.initials}\0${params.date}\0${params.text}`)
+    .digest('hex')
+    .slice(0, 8)
+    .toUpperCase();
+}
+
+function nearestRevisionContainer(node: Node): Element | null {
+  let current: Node | null = node.parentNode;
+  while (current) {
+    const element = current.nodeType === 1 ? current as Element : null;
+    if (element && (
+      isW(element, 'ins') || isW(element, 'del') || isW(element, 'moveFrom') || isW(element, 'moveTo')
+    )) return element;
+    current = current.parentNode;
+  }
+  return null;
+}
+
+function findUniqueSentinel(documentXml: Document, sentinel: string): { text: Text; revision: Element } {
+  const matches: Text[] = [];
+  const visit = (node: Node): void => {
+    if (node.nodeType === 3 && (node.nodeValue ?? '').includes(sentinel)) matches.push(node as Text);
+    for (let child = node.firstChild; child; child = child.nextSibling) visit(child);
+  };
+  visit(documentXml.documentElement);
+  if (matches.length !== 1) {
+    throw new Error(`Tracked comment sentinel must occur exactly once; found ${matches.length}.`);
+  }
+  const revision = nearestRevisionContainer(matches[0]!);
+  if (!revision) throw new Error('Tracked comment sentinel is not inside attributable revision markup.');
+  return { text: matches[0]!, revision };
+}
+
+function removeSentinel(node: Text, sentinel: string): void {
+  node.data = node.data.replace(sentinel, '');
+}
+
+function createCommentReference(documentXml: Document, commentId: number): Element {
+  const refRun = documentXml.createElementNS(OOXML.W_NS, 'w:r');
+  const rPr = documentXml.createElementNS(OOXML.W_NS, 'w:rPr');
+  const rStyle = documentXml.createElementNS(OOXML.W_NS, 'w:rStyle');
+  rStyle.setAttribute('w:val', 'CommentReference');
+  rPr.appendChild(rStyle);
+  refRun.appendChild(rPr);
+  const reference = documentXml.createElementNS(OOXML.W_NS, 'w:commentReference');
+  reference.setAttribute('w:id', String(commentId));
+  refRun.appendChild(reference);
+  return refRun;
+}
+
+/**
+ * Materialize root comments around compiler-owned sentinels inside tracked
+ * revision markup. Markers are placed immediately outside the attributable
+ * revision containers so accept/reject keeps a balanced annotation and
+ * naturally collapses it when that revision's text is removed.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.2
+ * @see https://github.com/UseJunior/safe-docx/issues/860
+ */
+export async function addTrackedRangeComments(
+  buffer: Buffer,
+  comments: AddTrackedRangeCommentParams[],
+): Promise<Buffer> {
+  if (comments.length === 0) return buffer;
+  const zip = await DocxZip.load(buffer);
+  await bootstrapCommentParts(zip);
+  const documentXml = parseXml(await zip.readText('word/document.xml'));
+  const commentsDoc = parseXml(await zip.readText('word/comments.xml'));
+
+  for (const params of comments) {
+    const start = findUniqueSentinel(documentXml, params.startSentinel);
+    const end = findUniqueSentinel(documentXml, params.endSentinel);
+    const startParent = start.revision.parentNode;
+    const endParent = end.revision.parentNode;
+    if (!startParent || !endParent) throw new Error('Attributed revision container has no parent.');
+    const attributableXml = start.revision === end.revision
+      ? start.revision.textContent ?? ''
+      : `${start.revision.textContent ?? ''}${end.revision.textContent ?? ''}`;
+    const otherSentinel = attributableXml.match(/\uE000safe-docx-rationale-\d+-(?:start|end)\uE001/gu)
+      ?.some((sentinel) => sentinel !== params.startSentinel && sentinel !== params.endSentinel);
+    if (otherSentinel) throw new Error('Tracked comment attribution overlaps another operation revision.');
+
+    const commentId = allocateNextCommentId(commentsDoc);
+    const rangeStart = documentXml.createElementNS(OOXML.W_NS, 'w:commentRangeStart');
+    rangeStart.setAttribute('w:id', String(commentId));
+    const rangeEnd = documentXml.createElementNS(OOXML.W_NS, 'w:commentRangeEnd');
+    rangeEnd.setAttribute('w:id', String(commentId));
+    startParent.insertBefore(rangeStart, start.revision);
+    endParent.insertBefore(rangeEnd, end.revision.nextSibling);
+    endParent.insertBefore(createCommentReference(documentXml, commentId), rangeEnd.nextSibling);
+
+    removeSentinel(start.text, params.startSentinel);
+    removeSentinel(end.text, params.endSentinel);
+    addCommentElement(commentsDoc, {
+      id: commentId,
+      author: params.author,
+      initials: params.initials,
+      text: params.text,
+      paraId: deterministicParaId(params, commentId),
+      date: params.date,
+    });
+    await ensureAuthorInPeople(zip, params.author);
+  }
+
+  zip.writeText('word/document.xml', serializeXml(documentXml));
+  zip.writeText('word/comments.xml', serializeXml(commentsDoc));
+  return zip.toBuffer();
+}
 
 /**
  * Insert a root comment anchored to a text range within a paragraph.
