@@ -152,6 +152,17 @@ describe('external-facing rationale comments', () => {
     }
   });
 
+  itAllure('[SDX-MDOC-44] preserves boundary whitespace exposed by private marker removal', async () => {
+    const source = await buildSyntheticDocx({ paragraphs: ['Letter of Intent'] });
+    const imported = await importDocxToMarkdoc(source);
+    const markdoc = replaceOperation(imported.markdoc, 'Letter of Intent', 'Mutual Letter of Intent')
+      + rationale('edit', 'external-facing');
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc, compileOptions);
+    const xml = (await parts(result.tracked)).document;
+    expect(xml).toContain('<w:t xml:space="preserve">Mutual </w:t>');
+    expect(result.certificate).toMatchObject({ acceptAllEqualsClean: true, rejectAllEqualsSource: true });
+  });
+
   itAllure('[SDX-MDOC-42] emits one bounded comment across a multi-paragraph insertion', async () => {
     const source = await buildSyntheticDocx({ paragraphs: ['Anchor text.', 'Tail text.'] });
     const imported = await importDocxToMarkdoc(source);

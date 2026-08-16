@@ -721,6 +721,16 @@ function revisionLocator(revision: Element): TrackedRevisionLocator {
   return { type: revision.localName as TrackedRevisionLocator['type'], id };
 }
 
+function removeAttributionMarker(textNode: Text, marker: string): void {
+  textNode.data = textNode.data.replace(marker, '');
+  if (/^\s|\s$/u.test(textNode.data)) {
+    const textElement = textNode.parentNode;
+    if (textElement?.nodeType === 1) {
+      (textElement as Element).setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+    }
+  }
+}
+
 async function resolveAndRemoveAttributionMarkers(
   buffer: Buffer,
   materializations: RationaleMaterialization[],
@@ -743,8 +753,8 @@ async function resolveAndRemoveAttributionMarkers(
       endRevision: revisionLocator(end.revision),
       text: item.text,
     };
-    start.textNode.data = start.textNode.data.replace(item.startSentinel, '');
-    end.textNode.data = end.textNode.data.replace(item.endSentinel, '');
+    removeAttributionMarker(start.textNode, item.startSentinel);
+    removeAttributionMarker(end.textNode, item.endSentinel);
     return resolved;
   });
   zip.file('word/document.xml', serializeXml(documentXml));
