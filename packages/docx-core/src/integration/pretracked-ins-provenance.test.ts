@@ -30,7 +30,12 @@
 
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments, type ReconstructionMode } from '@usejunior/docx-compare';
+import { type ReconstructionMode } from '@usejunior/docx-compare';
+// Pre-tracked originals are the very subject of this suite, and the public
+// comparison boundary now refuses them (issue #742). The engine behavior
+// pinned here lives below that guard, reached via the explicitly named
+// unguarded seam.
+import { compareDocumentsAtomizerUnguarded } from '@usejunior/docx-compare';
 import {
   acceptAllChanges,
   rejectAllChanges,
@@ -236,8 +241,7 @@ async function runComparison(
   revised: Buffer,
   reconstructionMode: ReconstructionMode,
 ): Promise<ProjectionReport> {
-  const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
+  const result = await compareDocumentsAtomizerUnguarded(original, revised, {
     reconstructionMode,
   });
   const [combinedXml, originalXml, revisedXml] = await Promise.all([

@@ -1,6 +1,9 @@
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
-import { compareDocuments } from '../../index.js';
+// Provenance restoration only arises for pre-tracked originals, which the
+// public comparison boundary now refuses (issue #742); this engine behavior
+// lives below that guard.
+import { compareDocumentsAtomizerUnguarded } from './pipeline.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
 
@@ -11,8 +14,7 @@ const test = testAllure
 async function compareInplace(originalBody: string, revisedBody: string) {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
-  const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
+  const result = await compareDocumentsAtomizerUnguarded(original, revised, {
     reconstructionMode: 'inplace',
   });
   expect(result.reconstructionModeUsed).toBe('inplace');

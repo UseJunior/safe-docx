@@ -14,7 +14,10 @@
 
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+// compareDocumentsAtomizerUnguarded is for fixtures that pre-track their
+// inputs only (issue #742): the engine behavior under test lives below the
+// public tracked-input guard.
+import { compareDocuments, compareDocumentsAtomizerUnguarded } from '@usejunior/docx-compare';
 import { buildSyntheticDocx, buildDocxFromParts, getResultParts } from './synthetic-docx-fixture.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { parseXml } from '../primitives/xml.js';
@@ -957,8 +960,10 @@ describe('Move-range marker reconstruction on rebuild (issue #110)', () => {
 
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
-        result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
+        // The revised fixture pre-tracks a move; the public boundary refuses
+        // pre-tracked inputs (issue #742), so this engine test uses the
+        // unguarded seam.
+        result = await compareDocumentsAtomizerUnguarded(original, revised, {
           reconstructionMode: 'rebuild',
         });
       });
@@ -1004,8 +1009,8 @@ describe('Move-range marker reconstruction on rebuild (issue #110)', () => {
 
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in inplace mode', async () => {
-        result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
+        // Same pre-tracked fixture as above; see issue #742.
+        result = await compareDocumentsAtomizerUnguarded(original, revised, {
           reconstructionMode: 'inplace',
         });
       });

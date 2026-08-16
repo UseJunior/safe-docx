@@ -10,7 +10,12 @@ import {
   readZipText,
   replaceParagraphTextRange,
 } from '../index.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+// These round-trips compare a baseline against a document that already
+// carries SafeDocX-authored tracked markup, which the public comparison
+// boundary now refuses (issue #742). The canonical-emission engine behavior
+// pinned here lives below that guard, reached via the explicitly named
+// unguarded seam.
+import { compareDocumentsAtomizerUnguarded } from '@usejunior/docx-compare';
 import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({
@@ -704,9 +709,8 @@ describe('Round-trip with comparison', () => {
       preCompareDocumentXml = modifiedParts.parts['word/document.xml']!;
 
       await when('compareDocuments runs against the tracked document', async () => {
-        const compared = await compareDocuments(baseline, modifiedParts.buffer, {
+        const compared = await compareDocumentsAtomizerUnguarded(baseline, modifiedParts.buffer, {
           author: AI_AUTHOR,
-          engine: 'atomizer',
         });
         comparedDocumentXml = (await readZipText(compared.document, 'word/document.xml'))!;
       });
@@ -780,9 +784,8 @@ describe('Round-trip with comparison', () => {
       const { buffer: modified } = await toPartMap(doc, ['word/document.xml']);
 
       await when('compareDocuments runs against the tracked insertion', async () => {
-        const compared = await compareDocuments(baseline, modified, {
+        const compared = await compareDocumentsAtomizerUnguarded(baseline, modified, {
           author: AI_AUTHOR,
-          engine: 'atomizer',
         });
         comparedDocumentXml = (await readZipText(compared.document, 'word/document.xml'))!;
       });
@@ -828,9 +831,8 @@ describe('Round-trip with comparison', () => {
       modifiedCommentsXml = modifiedParts.parts['word/comments.xml'];
 
       await when('compareDocuments runs against the tracked comment document', async () => {
-        const compared = await compareDocuments(baseline, modifiedParts.buffer, {
+        const compared = await compareDocumentsAtomizerUnguarded(baseline, modifiedParts.buffer, {
           author: AI_AUTHOR,
-          engine: 'atomizer',
         });
         const parts = await getResultParts(compared.document);
         comparedDocumentXml = parts.documentXml;
@@ -862,9 +864,8 @@ describe('Round-trip with comparison', () => {
       modifiedFootnotesXml = modifiedParts.parts['word/footnotes.xml'];
 
       await when('compareDocuments runs against the tracked footnote document', async () => {
-        const compared = await compareDocuments(baseline, modifiedParts.buffer, {
+        const compared = await compareDocumentsAtomizerUnguarded(baseline, modifiedParts.buffer, {
           author: AI_AUTHOR,
-          engine: 'atomizer',
         });
         const parts = await getResultParts(compared.document);
         comparedDocumentXml = parts.documentXml;

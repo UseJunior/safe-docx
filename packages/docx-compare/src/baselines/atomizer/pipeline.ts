@@ -136,6 +136,7 @@ import {
   rejectedSelectedAncillaryStoryPaths,
   UnsupportedTextBoxRevisionError,
 } from './textBoxRevisionSafety.js';
+import { assertComparisonInputsUntracked } from './trackedInputRevisionSafety.js';
 import {
   compareFootnoteDefinitions,
   findCorrespondingFootnotePairs,
@@ -608,6 +609,32 @@ function evaluateSafetyChecks(
  * @see https://github.com/UseJunior/safe-docx/issues/713
  */
 export async function compareDocumentsAtomizer(
+  original: Buffer,
+  revised: Buffer,
+  options: AtomizerOptions = {},
+): Promise<CompareResult> {
+  // Fail closed on inputs that already carry tracked changes: passing them
+  // through merges two authors' revision markup into one output that Microsoft
+  // Word refuses to open (issue #742). Guarded here — the lowest public
+  // comparison boundary — so both compareDocuments and the directly exported
+  // compareDocumentsAtomizer are covered by one scan.
+  await assertComparisonInputsUntracked(original, revised);
+  return compareDocumentsAtomizerUnguarded(original, revised, options);
+}
+
+/**
+ * The comparison orchestration below the tracked-input guard.
+ *
+ * Internal seam: exported from this module (NOT from the package root) so
+ * engine tests can exercise comparison behavior over deliberately pre-tracked
+ * inputs — provenance restoration, revision-ID collision promotion, round-trip
+ * projection — which the public boundary now refuses (issue #742). A future
+ * accept-on-ingest opt-in would also route here after projecting its inputs.
+ * Every public caller goes through {@link compareDocumentsAtomizer}.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/742
+ */
+export async function compareDocumentsAtomizerUnguarded(
   original: Buffer,
   revised: Buffer,
   options: AtomizerOptions = {},
