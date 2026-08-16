@@ -446,7 +446,17 @@ export function parseMarkdoc(source: string): ValidationResult {
     waiverTargets.add(waiver.requirementId);
   }
   const rationaleTargets = new Set<string>();
+  const externalRationaleTargets = new Set<string>();
   for (const rationale of rationales) {
+    if (rationale.category === 'external-facing') {
+      if (externalRationaleTargets.has(rationale.operationId)) {
+        issues.push(issue(
+          'DUPLICATE_EXTERNAL_RATIONALE',
+          `Operation ${rationale.operationId} has more than one external-facing rationale.`,
+        ));
+      }
+      externalRationaleTargets.add(rationale.operationId);
+    }
     if (rationaleTargets.has(rationale.operationId)) {
       issues.push(issue('MULTIPLE_RATIONALES', `Operation ${rationale.operationId} has more than one rationale block.`));
     }

@@ -212,6 +212,18 @@ export type CompileResult = {
   certificate: VerificationCertificate;
 };
 
+export type RationaleCommentOptions = {
+  author: string;
+  initials: string;
+  date: Date;
+};
+
+export type CompileOptions = {
+  author?: string;
+  date?: Date;
+  rationaleComments?: RationaleCommentOptions;
+};
+
 export type ImportResult = {
   anchoredSource: Buffer;
   markdoc: string;

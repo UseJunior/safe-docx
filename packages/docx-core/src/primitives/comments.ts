@@ -5,6 +5,7 @@
  * and supports threaded replies via commentsExtended.xml.
  */
 
+import { createHash } from 'node:crypto';
 import { OOXML, W } from './namespaces.js';
 import { parseXml, serializeXml } from './xml.js';
 import { DocxZip } from './zip.js';
@@ -201,6 +202,103 @@ export type AddCommentParams = {
 export type AddCommentResult = {
   commentId: number;
 };
+
+export type AddTrackedRangeCommentParams = {
+  startRevision: TrackedRevisionLocator;
+  endRevision: TrackedRevisionLocator;
+  author: string;
+  initials: string;
+  date: string;
+  text: string;
+};
+
+export type TrackedRevisionType = 'ins' | 'del' | 'moveFrom' | 'moveTo';
+
+export type TrackedRevisionLocator = {
+  type: TrackedRevisionType;
+  id: string;
+};
+
+function deterministicParaId(params: AddTrackedRangeCommentParams, commentId: number): string {
+  return createHash('sha256')
+    .update(`${commentId}\0${params.author}\0${params.initials}\0${params.date}\0${params.text}`)
+    .digest('hex')
+    .slice(0, 8)
+    .toUpperCase();
+}
+
+function findUniqueRevision(documentXml: Document, locator: TrackedRevisionLocator): Element {
+  const matches = Array.from(documentXml.getElementsByTagNameNS(OOXML.W_NS, locator.type))
+    .filter((element) => getAttributeSafe(element, OOXML.W_NS, 'id', 'w', { bareFallback: false }) === locator.id);
+  if (matches.length !== 1) {
+    throw new Error(`Tracked revision ${locator.type}#${locator.id} must occur exactly once; found ${matches.length}.`);
+  }
+  return matches[0]!;
+}
+
+function createCommentReference(documentXml: Document, commentId: number): Element {
+  const refRun = documentXml.createElementNS(OOXML.W_NS, 'w:r');
+  const rPr = documentXml.createElementNS(OOXML.W_NS, 'w:rPr');
+  const rStyle = documentXml.createElementNS(OOXML.W_NS, 'w:rStyle');
+  rStyle.setAttribute('w:val', 'CommentReference');
+  rPr.appendChild(rStyle);
+  refRun.appendChild(rPr);
+  const reference = documentXml.createElementNS(OOXML.W_NS, 'w:commentReference');
+  reference.setAttribute('w:id', String(commentId));
+  refRun.appendChild(reference);
+  return refRun;
+}
+
+/**
+ * Materialize root comments around an OOXML tracked-revision range. Markers
+ * are placed immediately outside the identified revision containers so
+ * accept/reject keeps a balanced annotation and naturally collapses it when
+ * that revision's text is removed.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.2
+ * @see https://github.com/UseJunior/safe-docx/issues/860
+ */
+export async function addTrackedRangeComments(
+  buffer: Buffer,
+  comments: AddTrackedRangeCommentParams[],
+): Promise<Buffer> {
+  if (comments.length === 0) return buffer;
+  const zip = await DocxZip.load(buffer);
+  await bootstrapCommentParts(zip);
+  const documentXml = parseXml(await zip.readText('word/document.xml'));
+  const commentsDoc = parseXml(await zip.readText('word/comments.xml'));
+
+  for (const params of comments) {
+    const startRevision = findUniqueRevision(documentXml, params.startRevision);
+    const endRevision = findUniqueRevision(documentXml, params.endRevision);
+    const startParent = startRevision.parentNode;
+    const endParent = endRevision.parentNode;
+    if (!startParent || !endParent) throw new Error('Attributed revision container has no parent.');
+
+    const commentId = allocateNextCommentId(commentsDoc);
+    const rangeStart = documentXml.createElementNS(OOXML.W_NS, 'w:commentRangeStart');
+    rangeStart.setAttribute('w:id', String(commentId));
+    const rangeEnd = documentXml.createElementNS(OOXML.W_NS, 'w:commentRangeEnd');
+    rangeEnd.setAttribute('w:id', String(commentId));
+    startParent.insertBefore(rangeStart, startRevision);
+    endParent.insertBefore(rangeEnd, endRevision.nextSibling);
+    endParent.insertBefore(createCommentReference(documentXml, commentId), rangeEnd.nextSibling);
+
+    addCommentElement(commentsDoc, {
+      id: commentId,
+      author: params.author,
+      initials: params.initials,
+      text: params.text,
+      paraId: deterministicParaId(params, commentId),
+      date: params.date,
+    });
+    await ensureAuthorInPeople(zip, params.author);
+  }
+
+  zip.writeText('word/document.xml', serializeXml(documentXml));
+  zip.writeText('word/comments.xml', serializeXml(commentsDoc));
+  return zip.toBuffer();
+}
 
 /**
  * Insert a root comment anchored to a text range within a paragraph.
