@@ -1558,3 +1558,296 @@ describe('findOffsetInRuns (via replaceParagraphTextRange)', () => {
     });
   });
 });
+
+// ── replaceParagraphTextRange — embedded object preservation (#739) ──
+
+const MINIMAL_DRAWING =
+  '<w:drawing>' +
+  '<wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">' +
+  '<wp:extent cx="914400" cy="914400"/><wp:docPr id="1" name="Picture 1"/>' +
+  '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+  '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+  '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+  '<pic:nvPicPr><pic:cNvPr id="1" name="Picture 1"/><pic:cNvPicPr/></pic:nvPicPr>' +
+  '<pic:blipFill><a:blip r:embed="rId9"/></pic:blipFill>' +
+  '<pic:spPr/></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>';
+
+const MINIMAL_PICT =
+  '<w:pict><v:shape xmlns:v="urn:schemas-microsoft-com:vml" id="_s1" style="width:100pt;height:80pt"/></w:pict>';
+
+const MINIMAL_OBJECT =
+  '<w:object><v:shape xmlns:v="urn:schemas-microsoft-com:vml" id="_s2" style="width:60pt;height:20pt"/></w:object>';
+
+function embeddedObjectsIn(p: Element, localName: string): Element[] {
+  return Array.from(p.getElementsByTagNameNS(W_NS, localName));
+}
+
+function isInsideRevisionWrapper(el: Element, stopAt: Element): boolean {
+  let cur: Node | null = el.parentNode;
+  while (cur && cur !== stopAt) {
+    if (
+      cur.nodeType === 1 &&
+      (cur as Element).namespaceURI === W_NS &&
+      ['ins', 'del', 'moveFrom', 'moveTo'].includes((cur as Element).localName ?? '')
+    ) {
+      return true;
+    }
+    cur = cur.parentNode;
+  }
+  return false;
+}
+
+function trackedCtx() {
+  return createRevisionContext({
+    author: 'SafeDocX AI',
+    date: '2026-08-15T10:00:00Z',
+    idState: createRevisionIdState(),
+  });
+}
+
+describe('replaceParagraphTextRange — embedded object preservation', () => {
+  test('clean full blanking preserves a drawing-only run between text runs', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a paragraph with text runs around a drawing-only run', () => {
+      const doc = makeDoc(
+        '<w:p>' +
+          '<w:r><w:t>before</w:t></w:r>' +
+          `<w:r>${MINIMAL_DRAWING}</w:r>` +
+          '<w:r><w:t>after</w:t></w:r>' +
+        '</w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the full visible text is replaced with an empty string (clean)', () => {
+      replaceParagraphTextRange(p, 0, 'beforeafter'.length, '');
+    });
+
+    await then('the drawing survives as a live run with its relationship reference', () => {
+      expect(getParagraphText(p)).toBe('');
+      const drawings = embeddedObjectsIn(p, W.drawing);
+      expect(drawings).toHaveLength(1);
+      expect(isInsideRevisionWrapper(drawings[0]!, p)).toBe(false);
+      expect(serialize(p)).toContain('r:embed="rId9"');
+    });
+  });
+
+  test('clean full blanking of a run carrying both text and a drawing keeps the drawing with its formatting', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a single run holding bold caption text and a drawing', () => {
+      const doc = makeDoc(
+        `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>caption</w:t>${MINIMAL_DRAWING}</w:r></w:p>`,
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the caption text is fully blanked (clean)', () => {
+      replaceParagraphTextRange(p, 0, 'caption'.length, '');
+    });
+
+    await then('the drawing lives on in a run that kept the source run formatting', () => {
+      expect(getParagraphText(p)).toBe('');
+      const drawings = embeddedObjectsIn(p, W.drawing);
+      expect(drawings).toHaveLength(1);
+      const keeperRun = drawings[0]!.parentNode as Element;
+      expect(keeperRun.localName).toBe(W.r);
+      expect(isInsideRevisionWrapper(drawings[0]!, p)).toBe(false);
+      const rPr = getDirectChildrenByName(keeperRun, W.rPr)[0];
+      expect(rPr).toBeTruthy();
+      expect(getDirectChildrenByName(rPr!, W.b)[0]).toBeTruthy();
+      expect(serialize(p)).toContain('r:embed="rId9"');
+    });
+  });
+
+  paragraphDeletionTest('tracked full blanking keeps the drawing live, outside w:del, and keeps the paragraph mark', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a paragraph with text runs around a drawing-only run', () => {
+      const doc = makeDoc(
+        '<w:p>' +
+          '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
+          '<w:r><w:t>before</w:t></w:r>' +
+          `<w:r>${MINIMAL_DRAWING}</w:r>` +
+          '<w:r><w:t>after</w:t></w:r>' +
+        '</w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the full visible text is deleted under tracked changes', () => {
+      replaceParagraphTextRange(p, 0, 'beforeafter'.length, '', trackedCtx());
+    });
+
+    await then('the deletion covers only the text and the paragraph mark stays undeleted', () => {
+      const drawings = embeddedObjectsIn(p, W.drawing);
+      expect(drawings).toHaveLength(1);
+      expect(isInsideRevisionWrapper(drawings[0]!, p)).toBe(false);
+
+      const deletions = embeddedObjectsIn(p, 'del').filter((d) => !isInsideRevisionWrapper(d, p));
+      const deletedText = deletions
+        .flatMap((d) => Array.from(d.getElementsByTagNameNS(W_NS, 'delText')))
+        .map((t) => t.textContent ?? '')
+        .join('');
+      expect(deletedText).toBe('beforeafter');
+      expect(deletions.flatMap((d) => Array.from(d.getElementsByTagNameNS(W_NS, W.drawing)))).toHaveLength(0);
+
+      // The paragraph still visibly carries the image, so its mark must not be deleted.
+      const pPr = getDirectChildrenByName(p, W.pPr)[0];
+      const markRPr = pPr ? getDirectChildrenByName(pPr, W.rPr)[0] : undefined;
+      const markDeletion = markRPr ? getDirectChildrenByName(markRPr, 'del')[0] : undefined;
+      expect(markDeletion).toBeUndefined();
+    });
+  });
+
+  test('tracked replacement of a run with co-resident text and drawing extracts the drawing before the deletion', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a single run holding caption text and a drawing', () => {
+      const doc = makeDoc(`<w:p><w:r><w:t>caption</w:t>${MINIMAL_DRAWING}</w:r></w:p>`);
+      p = firstParagraph(doc);
+    });
+
+    await when('the caption is replaced under tracked changes', () => {
+      replaceParagraphTextRange(p, 0, 'caption'.length, 'new caption', trackedCtx());
+    });
+
+    await then('the drawing stays live while text moves through w:del/w:ins', () => {
+      expect(getParagraphText(p)).toBe('new caption');
+      const drawings = embeddedObjectsIn(p, W.drawing);
+      expect(drawings).toHaveLength(1);
+      expect(isInsideRevisionWrapper(drawings[0]!, p)).toBe(false);
+
+      const del = p.getElementsByTagNameNS(W_NS, 'del').item(0)!;
+      expect(del.getElementsByTagNameNS(W_NS, 'delText').item(0)?.textContent).toBe('caption');
+      expect(del.getElementsByTagNameNS(W_NS, W.drawing)).toHaveLength(0);
+    });
+  });
+
+  test('clean partial replacement inside a run preserves an interior drawing', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('one run with text on both sides of a drawing', () => {
+      const doc = makeDoc(`<w:p><w:r><w:t>abc</w:t>${MINIMAL_DRAWING}<w:t>def</w:t></w:r></w:p>`);
+      p = firstParagraph(doc);
+    });
+
+    await when('the middle of the text is replaced (clean)', () => {
+      replaceParagraphTextRange(p, 1, 5, 'X');
+    });
+
+    await then('the text changes and the drawing survives live', () => {
+      expect(getParagraphText(p)).toBe('aXf');
+      const drawings = embeddedObjectsIn(p, W.drawing);
+      expect(drawings).toHaveLength(1);
+      expect(isInsideRevisionWrapper(drawings[0]!, p)).toBe(false);
+      expect(serialize(p)).toContain('r:embed="rId9"');
+    });
+  });
+
+  test('tracked partial replacement across runs preserves an intervening drawing-only run', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('separate text runs around a drawing-only run', () => {
+      const doc = makeDoc(
+        '<w:p>' +
+          '<w:r><w:t>aaa</w:t></w:r>' +
+          `<w:r>${MINIMAL_DRAWING}</w:r>` +
+          '<w:r><w:t>bbb</w:t></w:r>' +
+        '</w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('a range spanning the drawing is replaced under tracked changes', () => {
+      replaceParagraphTextRange(p, 2, 4, 'X', trackedCtx());
+    });
+
+    await then('the drawing stays a live sibling run outside every revision wrapper', () => {
+      expect(getParagraphText(p)).toBe('aaXbb');
+      const drawings = embeddedObjectsIn(p, W.drawing);
+      expect(drawings).toHaveLength(1);
+      expect(isInsideRevisionWrapper(drawings[0]!, p)).toBe(false);
+    });
+  });
+
+  test('clean full blanking leaves drawing runs before and after the text untouched', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('drawing-only runs before and after a single text run', () => {
+      const doc = makeDoc(
+        '<w:p>' +
+          `<w:r>${MINIMAL_DRAWING}</w:r>` +
+          '<w:r><w:t>text</w:t></w:r>' +
+          `<w:r>${MINIMAL_DRAWING}</w:r>` +
+        '</w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the text is fully blanked (clean)', () => {
+      replaceParagraphTextRange(p, 0, 'text'.length, '');
+    });
+
+    await then('both drawings remain live runs', () => {
+      expect(getParagraphText(p)).toBe('');
+      const drawings = embeddedObjectsIn(p, W.drawing);
+      expect(drawings).toHaveLength(2);
+      for (const d of drawings) expect(isInsideRevisionWrapper(d, p)).toBe(false);
+    });
+  });
+
+  test('clean full blanking preserves a VML w:pict run', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a pict-only run between text runs', () => {
+      const doc = makeDoc(
+        '<w:p>' +
+          '<w:r><w:t>lead</w:t></w:r>' +
+          `<w:r>${MINIMAL_PICT}</w:r>` +
+          '<w:r><w:t>tail</w:t></w:r>' +
+        '</w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the full visible text is blanked (clean)', () => {
+      replaceParagraphTextRange(p, 0, 'leadtail'.length, '');
+    });
+
+    await then('the pict survives as a live run', () => {
+      expect(getParagraphText(p)).toBe('');
+      const picts = embeddedObjectsIn(p, W.pict);
+      expect(picts).toHaveLength(1);
+      expect(isInsideRevisionWrapper(picts[0]!, p)).toBe(false);
+    });
+  });
+
+  test('tracked full blanking preserves an embedded w:object run', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('an object-only run between text runs', () => {
+      const doc = makeDoc(
+        '<w:p>' +
+          '<w:r><w:t>lead</w:t></w:r>' +
+          `<w:r>${MINIMAL_OBJECT}</w:r>` +
+          '<w:r><w:t>tail</w:t></w:r>' +
+        '</w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the full visible text is deleted under tracked changes', () => {
+      replaceParagraphTextRange(p, 0, 'leadtail'.length, '', trackedCtx());
+    });
+
+    await then('the object survives live and outside w:del', () => {
+      const objects = embeddedObjectsIn(p, W.object);
+      expect(objects).toHaveLength(1);
+      expect(isInsideRevisionWrapper(objects[0]!, p)).toBe(false);
+      const del = p.getElementsByTagNameNS(W_NS, 'del').item(0)!;
+      expect(del.getElementsByTagNameNS(W_NS, W.object)).toHaveLength(0);
+    });
+  });
+});

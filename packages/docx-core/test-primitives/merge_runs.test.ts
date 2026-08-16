@@ -488,3 +488,148 @@ describe('merge_runs', () => {
     });
   });
 });
+
+// ── Embedded-object barriers (#739) ────────────────────────────────────
+
+const BARRIER_DRAWING =
+  '<w:drawing>' +
+  '<wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">' +
+  '<wp:extent cx="914400" cy="914400"/><wp:docPr id="1" name="Picture 1"/>' +
+  '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+  '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+  '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+  '<pic:nvPicPr><pic:cNvPr id="1" name="Picture 1"/><pic:cNvPicPr/></pic:nvPicPr>' +
+  '<pic:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId9"/></pic:blipFill>' +
+  '<pic:spPr/></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>';
+
+const BARRIER_PICT =
+  '<w:pict><v:shape xmlns:v="urn:schemas-microsoft-com:vml" id="_s1" style="width:100pt;height:80pt"/></w:pict>';
+
+const BARRIER_OBJECT =
+  '<w:object><v:shape xmlns:v="urn:schemas-microsoft-com:vml" id="_s2" style="width:60pt;height:20pt"/></w:object>';
+
+describe('merge_runs — embedded-object barriers', () => {
+  test('does not merge a drawing-only run into an adjacent format-identical text run', async ({ given, when, then }: AllureBddContext) => {
+    let doc!: Document;
+    let result!: ReturnType<typeof mergeRuns>;
+
+    await given('a caption run followed by a drawing-only run, both without rPr', () => {
+      doc = makeDoc(
+        '<w:p>' +
+        '<w:r><w:t xml:space="preserve">Figure 1 caption.</w:t></w:r>' +
+        `<w:r>${BARRIER_DRAWING}</w:r>` +
+        '</w:p>',
+      );
+    });
+
+    await when('mergeRuns is called', async () => {
+      result = mergeRuns(doc);
+    });
+
+    await then('no runs are merged and the drawing keeps its own run', () => {
+      expect(result.runsMerged).toBe(0);
+      expect(countRuns(doc)).toBe(2);
+      const drawing = doc.getElementsByTagNameNS(W_NS, 'drawing').item(0)!;
+      const drawingRun = drawing.parentNode as Element;
+      expect(drawingRun.localName).toBe(W.r);
+      expect(drawingRun.getElementsByTagNameNS(W_NS, W.t)).toHaveLength(0);
+    });
+  });
+
+  test('does not merge a text run into a preceding pict-only run', async ({ given, when, then }: AllureBddContext) => {
+    let doc!: Document;
+    let result!: ReturnType<typeof mergeRuns>;
+
+    await given('a pict-only run followed by a format-identical text run', () => {
+      doc = makeDoc(
+        '<w:p>' +
+        `<w:r>${BARRIER_PICT}</w:r>` +
+        '<w:r><w:t>after the picture</w:t></w:r>' +
+        '</w:p>',
+      );
+    });
+
+    await when('mergeRuns is called', async () => {
+      result = mergeRuns(doc);
+    });
+
+    await then('no runs are merged', () => {
+      expect(result.runsMerged).toBe(0);
+      expect(countRuns(doc)).toBe(2);
+    });
+  });
+
+  test('does not merge an embedded-object run with its neighbors', async ({ given, when, then }: AllureBddContext) => {
+    let doc!: Document;
+    let result!: ReturnType<typeof mergeRuns>;
+
+    await given('text runs on both sides of an object-only run, all without rPr', () => {
+      doc = makeDoc(
+        '<w:p>' +
+        '<w:r><w:t>lead</w:t></w:r>' +
+        `<w:r>${BARRIER_OBJECT}</w:r>` +
+        '<w:r><w:t>tail</w:t></w:r>' +
+        '</w:p>',
+      );
+    });
+
+    await when('mergeRuns is called', async () => {
+      result = mergeRuns(doc);
+    });
+
+    await then('all three runs remain separate', () => {
+      expect(result.runsMerged).toBe(0);
+      expect(countRuns(doc)).toBe(3);
+      expect(bodyText(doc)).toBe('leadtail');
+    });
+  });
+
+  test('does not merge a run already carrying both text and a drawing', async ({ given, when, then }: AllureBddContext) => {
+    let doc!: Document;
+    let result!: ReturnType<typeof mergeRuns>;
+
+    await given('a mixed text+drawing run next to a plain text run', () => {
+      doc = makeDoc(
+        '<w:p>' +
+        `<w:r><w:t>caption</w:t>${BARRIER_DRAWING}</w:r>` +
+        '<w:r><w:t>plain</w:t></w:r>' +
+        '</w:p>',
+      );
+    });
+
+    await when('mergeRuns is called', async () => {
+      result = mergeRuns(doc);
+    });
+
+    await then('the mixed run is left alone', () => {
+      expect(result.runsMerged).toBe(0);
+      expect(countRuns(doc)).toBe(2);
+    });
+  });
+
+  test('still merges plain text runs in a paragraph that also contains a drawing run', async ({ given, when, then }: AllureBddContext) => {
+    let doc!: Document;
+    let result!: ReturnType<typeof mergeRuns>;
+
+    await given('two mergeable text runs followed by a drawing-only run', () => {
+      doc = makeDoc(
+        '<w:p>' +
+        '<w:r><w:t>Hello </w:t></w:r>' +
+        '<w:r><w:t>World</w:t></w:r>' +
+        `<w:r>${BARRIER_DRAWING}</w:r>` +
+        '</w:p>',
+      );
+    });
+
+    await when('mergeRuns is called', async () => {
+      result = mergeRuns(doc);
+    });
+
+    await then('only the text runs merge and the drawing run survives', () => {
+      expect(result.runsMerged).toBe(1);
+      expect(countRuns(doc)).toBe(2);
+      expect(bodyText(doc)).toBe('Hello World');
+      expect(doc.getElementsByTagNameNS(W_NS, 'drawing')).toHaveLength(1);
+    });
+  });
+});

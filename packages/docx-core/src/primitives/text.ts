@@ -351,6 +351,16 @@ function getRunVisibleLength(run: Element): number {
   return getDirectContentElements(run).reduce((sum, child) => sum + visibleLengthForEl(child), 0);
 }
 
+// OOXML embedded-object run content: DrawingML drawing (w:drawing), VML
+// picture (w:pict), and embedded OLE object (w:object). These carry no
+// visible text length, so a caller-approved text match never covers them —
+// a text replacement must not destroy them (issue #739).
+const EMBEDDED_OBJECT_LOCALS: ReadonlySet<string> = new Set([W.drawing, W.pict, W.object]);
+
+function getEmbeddedObjectElements(run: Element): Element[] {
+  return getDirectContentElements(run).filter((el) => EMBEDDED_OBJECT_LOCALS.has(el.localName ?? ''));
+}
+
 export type AddRunProps = {
   // Additive or subtractive formatting.
   // Set to true to enable, false to explicitly disable/remove.
@@ -655,11 +665,16 @@ function getContainerBoundaryError(
  * remain nested there, while cross-container ranges are refused before the
  * DOM is changed.
  *
+ * Embedded objects (`w:drawing`, `w:pict`, `w:object`) inside the replaced
+ * range are preserved as live runs: they contribute no visible text, so no
+ * text match ever covers them and no text edit may delete them.
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
  * @see #652
  * @see #741
+ * @see #739
  */
 export function replaceParagraphTextRange(
   p: Element,
@@ -786,15 +801,38 @@ export function replaceParagraphTextRange(
   const insertBeforeNode = rangeEndRunEl.nextSibling;
 
   // Remove runs in [rangeStartRunEl, rangeEndRunEl] inclusive (only w:r elements).
+  //
+  // Embedded objects (w:drawing / w:pict / w:object) have zero visible text
+  // length, so the text match the caller approved never covered them. They
+  // must survive the replacement as live content (issue #739): an object-only
+  // run stays in place untouched, and an object co-resident with replaced
+  // text is moved into its own run at the same position before the text run
+  // is removed. Without this, an object-only run would be detached here but
+  // never recorded in removedRuns (getRunVisibleLength returns 0 for it), so
+  // neither the tracked nor the clean branch could re-emit it.
   const removedRuns: Element[] = [];
+  let preservedEmbeddedObjects = false;
   let cur: Node | null = rangeStartRunEl;
   while (cur) {
     const nextNode: Node | null = cur.nextSibling as Node | null;
     if (cur.nodeType === 1 && isW(cur as Element, W.r)) {
       const runEl = cur as Element;
-      runEl.parentNode?.removeChild(runEl);
-      if (getRunVisibleLength(runEl) > 0) {
-        removedRuns.push(runEl);
+      const embeddedObjects = getEmbeddedObjectElements(runEl);
+      if (embeddedObjects.length > 0 && getRunVisibleLength(runEl) === 0) {
+        // Object-only run: the replaced text lives entirely in sibling runs.
+        // Leave it in the paragraph as-is.
+        preservedEmbeddedObjects = true;
+      } else {
+        if (embeddedObjects.length > 0) {
+          const keeper = cloneRunFormattingOnly(doc, runEl);
+          for (const embedded of embeddedObjects) keeper.appendChild(embedded);
+          runEl.parentNode?.insertBefore(keeper, runEl);
+          preservedEmbeddedObjects = true;
+        }
+        runEl.parentNode?.removeChild(runEl);
+        if (getRunVisibleLength(runEl) > 0) {
+          removedRuns.push(runEl);
+        }
       }
     }
     if (cur === rangeEndRunEl) break;
@@ -837,7 +875,11 @@ export function replaceParagraphTextRange(
       parent.insertBefore(insertion, insertBeforeNode);
     }
 
-    if (start === 0 && end === fullText.length && replacementRuns.length === 0) {
+    // Only delete the paragraph mark when the edit leaves nothing live behind.
+    // A preserved embedded object keeps the paragraph meaningful, and merging
+    // it into the following paragraph on accept would move the image the user
+    // never touched (issue #739).
+    if (start === 0 && end === fullText.length && replacementRuns.length === 0 && !preservedEmbeddedObjects) {
       addParagraphMarkDeletion(p, ctx);
     }
   } else {

@@ -52,7 +52,7 @@ export function createTestSessionManager(opts?: { ttlMs?: number; defaultAiAutho
 
 interface OpenSessionOptions {
   xml?: string;
-  extraFiles?: Record<string, string>;
+  extraFiles?: Record<string, string | Buffer | Uint8Array>;
   format?: 'toon' | 'simple' | 'json';
   mgr?: SessionManager;
   prefix?: string;
