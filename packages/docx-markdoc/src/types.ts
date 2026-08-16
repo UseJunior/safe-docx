@@ -8,7 +8,15 @@ export type SourceDescriptor = {
 export type Rationale = {
   operationId: string;
   text: string;
-  category?: string;
+  visibility: 'internal' | 'external-facing';
+};
+
+export type CompilationProfile = {
+  revisionAuthor?: string;
+  commentAuthor?: string;
+  commentInitials?: string;
+  buildDate?: string;
+  externalComments: 'include' | 'omit';
 };
 
 export type DraftRequirement = {
@@ -111,6 +119,7 @@ export type MarkdocEditIR = {
   scaffold: SourceParagraph[];
   operations: EditOperation[];
   rationales: Rationale[];
+  compilation?: CompilationProfile;
   /** Additive v1 fields; omitted legacy IR is treated as having no completeness declarations. */
   requirements?: DraftRequirement[];
   waivers?: RequirementWaiver[];
@@ -145,6 +154,18 @@ export type VerificationCertificate = {
   unchangedPackagePartsPreserved: boolean;
   unsupportedStructures: string[];
   appliedOperations: string[];
+  commentRendering: {
+    configurationSource: 'markdoc' | 'api' | 'cli' | 'default';
+    buildDate: string;
+    revisionAuthor: string;
+    commentAuthor?: string;
+    commentInitials?: string;
+    externalRationalesFound: number;
+    internalRationalesFound: number;
+    externalCommentsIncluded: boolean;
+    internalCommentsIncluded: boolean;
+    warnings: string[];
+  };
   /** Exact source/reject and clean/accept replay verdict. */
   projectionPassed: boolean;
   draftCompletenessPassed: boolean;
@@ -215,13 +236,15 @@ export type CompileResult = {
 export type RationaleCommentOptions = {
   author: string;
   initials: string;
-  date: Date;
 };
 
 export type CompileOptions = {
   author?: string;
   date?: Date;
   rationaleComments?: RationaleCommentOptions;
+  externalComments?: boolean;
+  dangerouslyIncludeInternalComments?: boolean;
+  configurationSource?: 'api' | 'cli';
 };
 
 export type ImportResult = {
@@ -239,7 +262,7 @@ export type EditPair = {
   contextBefore: string[];
   contextAfter: string[];
   rationale?: string;
-  category?: string;
+  visibility?: Rationale['visibility'];
   verified?: boolean;
   provenance?: Record<string, string>;
 };

@@ -26,7 +26,7 @@ export function exportEditPairs(
       contextBefore: index < 0 ? [] : ir.scaffold.slice(Math.max(0, index - context), index).map((p) => p.originalText),
       contextAfter: index < 0 ? [] : ir.scaffold.slice(index + 1, index + context + 1).map((p) => p.originalText),
       rationale: rationale?.text,
-      category: rationale?.category,
+      visibility: rationale?.visibility,
       verified: options.verified,
       provenance: options.provenance,
     };

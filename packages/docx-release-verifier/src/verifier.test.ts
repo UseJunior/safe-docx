@@ -259,7 +259,7 @@ describe('independent release verifier', () => {
       '{% before %}', 'Synthetic old value.', '{% /before %}',
       '{% after %}', 'Synthetic new value.', '{% /after %}', '{% /change %}',
     ].join('\n');
-    const rationale = '\n{% rationale for="edit" category="external-facing" %}\nSynthetic public explanation.\n{% /rationale %}\n';
+    const rationale = '\n{% rationale for="edit" visibility="external-facing" %}\nSynthetic public explanation.\n{% /rationale %}\n';
     const compiled = await compileMarkdoc(imported.anchoredSource, imported.markdoc.replace(block, replacement) + rationale, {
       author: 'Synthetic Revision Author',
       date: new Date('2026-08-16T14:30:00.000Z'),

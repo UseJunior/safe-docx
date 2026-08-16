@@ -25,8 +25,16 @@ function replaceOperation(markdoc: string, before: string, after: string, operat
   ].join('\n'));
 }
 
-function rationale(operationId: string, category: string, text = 'Explain the synthetic edit.'): string {
-  return `\n{% rationale for="${operationId}" category="${category}" %}\n${text}\n{% /rationale %}\n`;
+function rationale(operationId: string, visibility: 'internal' | 'external-facing', text = 'Explain the synthetic edit.'): string {
+  return `\n{% rationale for="${operationId}" visibility="${visibility}" %}\n${text}\n{% /rationale %}\n`;
+}
+
+function compilationProfile(markdoc: string, externalComments: 'include' | 'omit' = 'include'): string {
+  const profile = [
+    '{% compilation revision-author="Profile Revision Author" comment-author="Profile Reviewer"',
+    `comment-initials="PR" build-date="2026-08-16T14:30:00.000Z" external-comments="${externalComments}" /%}`,
+  ].join(' ');
+  return markdoc.replace('\n\n', `\n\n${profile}\n\n`);
 }
 
 async function parts(buffer: Buffer): Promise<{ document: string; comments: string }> {
@@ -44,7 +52,61 @@ function componentCounts(xml: string): number[] {
 }
 
 describe('external-facing rationale comments', () => {
-  itAllure('[SDX-MDOC-34][SDX-MDOC-37] selects only the exact category and emits deterministic identity', async () => {
+  itAllure('[SDX-MDOC-49][SDX-MDOC-58] compiles attributed external comments from Markdoc alone', async () => {
+    const source = await buildSyntheticDocx({ paragraphs: ['Alpha term.'] });
+    const imported = await importDocxToMarkdoc(source);
+    const markdoc = compilationProfile(replaceOperation(imported.markdoc, 'Alpha term.', 'Beta term.'))
+      + rationale('edit', 'external-facing', 'Synthetic explanation.');
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+    const output = await parts(result.tracked);
+    expect(output.comments).toContain('w:author="Profile Reviewer"');
+    expect(output.comments).toContain('w:initials="PR"');
+    expect(output.comments).toContain('w:date="2026-08-16T14:30:00.000Z"');
+    expect(result.certificate.commentRendering).toMatchObject({
+      configurationSource: 'markdoc',
+      buildDate: '2026-08-16T14:30:00.000Z',
+      revisionAuthor: 'Profile Revision Author',
+      externalCommentsIncluded: true,
+      internalCommentsIncluded: false,
+      warnings: [],
+    });
+  });
+
+  itAllure('[SDX-MDOC-52][SDX-MDOC-59] lets CLI policy suppress external comments with a warning', async () => {
+    const source = await buildSyntheticDocx({ paragraphs: ['Alpha term.'] });
+    const imported = await importDocxToMarkdoc(source);
+    const markdoc = compilationProfile(replaceOperation(imported.markdoc, 'Alpha term.', 'Beta term.'))
+      + rationale('edit', 'external-facing');
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc, {
+      externalComments: false,
+      configurationSource: 'cli',
+    });
+    expect((await parts(result.tracked)).comments).toBe('');
+    expect(result.certificate.commentRendering).toMatchObject({
+      configurationSource: 'cli',
+      externalRationalesFound: 1,
+      externalCommentsIncluded: false,
+      warnings: ['1 external-facing rationale(s) were present but not included.'],
+    });
+  });
+
+  itAllure('[SDX-MDOC-53][SDX-MDOC-54] requires explicit dangerous API capability for internal comments', async () => {
+    const source = await buildSyntheticDocx({ paragraphs: ['Alpha term.'] });
+    const imported = await importDocxToMarkdoc(source);
+    const markdoc = compilationProfile(replaceOperation(imported.markdoc, 'Alpha term.', 'Beta term.'))
+      + rationale('edit', 'internal', 'Internal synthetic explanation.');
+    const ordinary = await compileMarkdoc(imported.anchoredSource, markdoc);
+    expect((await parts(ordinary.tracked)).comments).toBe('');
+    expect(ordinary.certificate.commentRendering.warnings).toEqual([]);
+    const dangerous = await compileMarkdoc(imported.anchoredSource, markdoc, {
+      dangerouslyIncludeInternalComments: true,
+      configurationSource: 'api',
+    });
+    expect((await parts(dangerous.tracked)).comments).toContain('Internal synthetic explanation.');
+    expect(dangerous.certificate.commentRendering.internalCommentsIncluded).toBe(true);
+  });
+
+  itAllure('[SDX-MDOC-34][SDX-MDOC-37] selects external visibility and emits deterministic identity', async () => {
     const source = await buildSyntheticDocx({ paragraphs: ['Alpha term.'] });
     const imported = await importDocxToMarkdoc(source);
     const markdoc = replaceOperation(imported.markdoc, 'Alpha term.', 'Beta term.')
@@ -73,24 +135,50 @@ describe('external-facing rationale comments', () => {
     });
   });
 
-  for (const category of ['internal', 'External-facing', 'external-facing ', '']) {
-    itAllure(`[SDX-MDOC-35] leaves ${category || 'unclassified'} rationale passive`, async () => {
+  for (const visibility of ['External-facing', 'external-facing ', '']) {
+    itAllure(`[SDX-MDOC-57] rejects ${visibility || 'unclassified'} rationale visibility`, async () => {
       const source = await buildSyntheticDocx({ paragraphs: ['Alpha term.'] });
       const imported = await importDocxToMarkdoc(source);
-      const categoryAttribute = category ? ` category="${category}"` : '';
+      const visibilityAttribute = visibility ? ` visibility="${visibility}"` : '';
       const markdoc = replaceOperation(imported.markdoc, 'Alpha term.', 'Beta term.')
-        + `\n{% rationale for="edit"${categoryAttribute} %}\nPrivate synthetic note.\n{% /rationale %}\n`;
-      const result = await compileMarkdoc(imported.anchoredSource, markdoc, compileOptions);
-      expect((await parts(result.tracked)).comments).toBe('');
+        + `\n{% rationale for="edit"${visibilityAttribute} %}\nPrivate synthetic note.\n{% /rationale %}\n`;
+      await expect(compileMarkdoc(imported.anchoredSource, markdoc, compileOptions))
+        .rejects.toMatchObject({ code: 'INVALID_MARKDOC' });
     });
   }
+
+  itAllure('[SDX-MDOC-35][SDX-MDOC-51] leaves internal rationale passive without a warning', async () => {
+    const source = await buildSyntheticDocx({ paragraphs: ['Alpha term.'] });
+    const imported = await importDocxToMarkdoc(source);
+    const markdoc = replaceOperation(imported.markdoc, 'Alpha term.', 'Beta term.') + rationale('edit', 'internal');
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc, compileOptions);
+    expect((await parts(result.tracked)).comments).toBe('');
+    expect(result.certificate.commentRendering.warnings).toEqual([]);
+  });
+
+  itAllure('[SDX-MDOC-50][SDX-MDOC-56] rejects invalid compilation metadata identically before replay', async () => {
+    const source = await buildSyntheticDocx({ paragraphs: ['Alpha term.'] });
+    const imported = await importDocxToMarkdoc(source);
+    const duplicate = imported.markdoc.replace('\n\n', [
+      '\n\n{% compilation build-date="not-a-date" /%}',
+      '{% compilation build-date="2026-08-16T14:30:00.000Z" /%}\n\n',
+    ].join('\n'));
+    let validateCode = '';
+    try {
+      requireMarkdoc(duplicate);
+    } catch (error) {
+      validateCode = (error as { code?: string }).code ?? '';
+    }
+    await expect(compileMarkdoc(imported.anchoredSource, duplicate)).rejects.toMatchObject({ code: validateCode });
+    expect(validateCode).toBe('INVALID_MARKDOC');
+  });
 
   itAllure('[SDX-MDOC-38] rejects missing or invalid comment identity without fallback', async () => {
     const source = await buildSyntheticDocx({ paragraphs: ['Alpha term.'] });
     const imported = await importDocxToMarkdoc(source);
     const markdoc = replaceOperation(imported.markdoc, 'Alpha term.', 'Beta term.') + rationale('edit', 'external-facing');
     await expect(compileMarkdoc(imported.anchoredSource, markdoc, {
-      rationaleComments: { author: ' ', initials: 'SR', date: identity.date },
+      rationaleComments: { author: ' ', initials: 'SR' },
     })).rejects.toMatchObject({ code: 'INVALID_RATIONALE_COMMENT_IDENTITY' });
   });
 
