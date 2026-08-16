@@ -20,15 +20,21 @@ function expectedHash(actual: string, expected: string | undefined): boolean {
 }
 
 function expectationVerdict(manifest: ReleaseManifest, accept: string, reject: string): Verdict {
+  const literalCounts = manifest.literalCounts ?? [];
+  const presentOnlyInAccept = manifest.presentOnlyInAccept ?? [];
+  const absentFromAccept = manifest.absentFromAccept ?? [];
+  if (literalCounts.length === 0 && presentOnlyInAccept.length === 0 && absentFromAccept.length === 0) {
+    return { status: 'not_run', required: false, reason: 'No text expectations were declared.' };
+  }
   const failures: string[] = [];
-  for (const literal of manifest.literalCounts ?? []) {
+  for (const literal of literalCounts) {
     const projection = literal.projection === 'reject' ? reject : accept;
     if (count(projection, literal.text) !== literal.count) failures.push(`Expected ${JSON.stringify(literal.text)} ${literal.count} times.`);
   }
-  for (const text of manifest.presentOnlyInAccept ?? []) {
+  for (const text of presentOnlyInAccept) {
     if (!accept.includes(text) || reject.includes(text)) failures.push(`Expected ${JSON.stringify(text)} only in accept projection.`);
   }
-  for (const text of manifest.absentFromAccept ?? []) if (accept.includes(text)) failures.push(`Expected ${JSON.stringify(text)} absent from accept projection.`);
+  for (const text of absentFromAccept) if (accept.includes(text)) failures.push(`Expected ${JSON.stringify(text)} absent from accept projection.`);
   return failures.length ? { status: 'fail', required: true, reason: failures.join(' ') } : { status: 'pass', required: true };
 }
 

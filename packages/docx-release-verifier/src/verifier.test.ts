@@ -335,6 +335,41 @@ describe('independent release verifier', () => {
     expect(reordered.exitCode).toBe(0);
   });
 
+  itAllure('leaves the expectations gate not_run when no expectations are declared', async () => {
+    const { manifest } = await fixture();
+    const base = { version: 1 as const, originalPath: manifest.originalPath, intendedCleanPath: manifest.intendedCleanPath, trackedPath: manifest.trackedPath };
+    // Omitted entirely: the caller requested no expectation checks, so the gate
+    // must label itself not_run/optional like every sibling undeclared gate.
+    const omitted = await verifyRelease(base);
+    expect(omitted.gates.expectations).toEqual({ status: 'not_run', required: false, reason: 'No text expectations were declared.' });
+    // Declared but explicitly empty collections carry zero checks, which is the
+    // same request as omitting them; both shapes get the same label.
+    const empty = await verifyRelease({ ...base, literalCounts: [], presentOnlyInAccept: [], absentFromAccept: [] });
+    expect(empty.gates.expectations).toEqual({ status: 'not_run', required: false, reason: 'No text expectations were declared.' });
+    // finalVerdict only weighs gates marked required, so relabelling the
+    // undeclared case must not move the overall delivery verdict or exit code.
+    for (const certificate of [omitted, empty]) {
+      expect(certificate.delivery).toEqual({ status: 'pass', required: true });
+      expect(certificate.exitCode).toBe(0);
+    }
+  });
+
+  itAllure('keeps any nonempty expectation collection required and failing on unmet checks', async () => {
+    const { manifest } = await fixture();
+    // Nonempty passing set (the fixture declares all three collections): stays a required pass.
+    const passing = await verifyRelease(manifest);
+    expect(passing.gates.expectations).toEqual({ status: 'pass', required: true });
+    expect(passing.exitCode).toBe(0);
+    // Nonempty failing set: a single declared check keeps the gate required and reds the release.
+    const failing = await verifyRelease({
+      version: 1, originalPath: manifest.originalPath, intendedCleanPath: manifest.intendedCleanPath, trackedPath: manifest.trackedPath,
+      presentOnlyInAccept: ['missing everywhere'],
+    });
+    expect(failing.gates.expectations).toEqual({ status: 'fail', required: true, reason: 'Expected "missing everywhere" only in accept projection.' });
+    expect(failing.delivery.status).toBe('fail');
+    expect(failing.exitCode).toBe(1);
+  });
+
   itAllure('fails corrupt packages independently of semantic text', async () => {
     const { manifest } = await fixture();
     await writeFile(manifest.trackedPath, 'not a zip');
