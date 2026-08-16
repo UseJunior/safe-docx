@@ -300,6 +300,33 @@ describe('independent release verifier', () => {
     expect(malformed.exitCode).toBe(1);
   });
 
+  itAllure('fails comment IDs duplicated identically across starts, ends, references, and records', async () => {
+    const { manifest } = await fixture();
+    const revision = '<w:r><w:t xml:space="preserve">Hello </w:t></w:r><w:del w:id="1"><w:r><w:delText>old</w:delText></w:r></w:del><w:ins w:id="2"><w:r><w:t>new</w:t></w:r></w:ins>';
+    // Symmetric duplication: every collection is ['1', '1'], so a set-style
+    // comparison sees equal lengths and full membership on all four sides.
+    await writeDocx(manifest.trackedPath,
+      `<w:p><w:commentRangeStart w:id="1"/><w:commentRangeStart w:id="1"/>${revision}<w:commentRangeEnd w:id="1"/><w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r><w:r><w:commentReference w:id="1"/></w:r></w:p>`,
+      `<w:comments xmlns:w="${W}"><w:comment w:id="1"/><w:comment w:id="1"/></w:comments>`);
+    const symmetric = await verifyRelease({ ...manifest, requireNativeComments: true });
+    expect(symmetric.gates.comments.status).toBe('fail');
+    expect(symmetric.gates.comments.reason).toContain('duplicated');
+    expect(symmetric.gates.comments.reason).toContain('1');
+    expect(symmetric.gates.comments.details).toMatchObject({ duplicates: ['1'] });
+    expect(symmetric.delivery.status).toBe('fail');
+    expect(symmetric.exitCode).toBe(1);
+    // Multiplicity disagreement at equal length: starts double '1' while the
+    // other collections carry '1' and '2'. Membership and total length agree,
+    // so only a multiset comparison can reject it.
+    await writeDocx(manifest.trackedPath,
+      `<w:p><w:commentRangeStart w:id="1"/><w:commentRangeStart w:id="1"/>${revision}<w:commentRangeEnd w:id="1"/><w:commentRangeEnd w:id="2"/><w:r><w:commentReference w:id="1"/></w:r><w:r><w:commentReference w:id="2"/></w:r></w:p>`,
+      `<w:comments xmlns:w="${W}"><w:comment w:id="1"/><w:comment w:id="2"/></w:comments>`);
+    const skewed = await verifyRelease({ ...manifest, requireNativeComments: true });
+    expect(skewed.gates.comments.status).toBe('fail');
+    expect(skewed.gates.comments.reason).toContain('disagree');
+    expect(skewed.exitCode).toBe(1);
+  });
+
   itAllure('fails corrupt packages independently of semantic text', async () => {
     const { manifest } = await fixture();
     await writeFile(manifest.trackedPath, 'not a zip');
