@@ -1,10 +1,10 @@
 import { describe, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { runTaggedTreeShadow } from './taggedTreeShadow.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
 import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
-import { DocxArchive } from '@usejunior/docx-core';
+import { DocxArchive, parseXml } from '@usejunior/docx-core';
+import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 
 const TEST_FEATURE = 'refactor-tagged-tree-redline-construction';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
@@ -38,20 +38,31 @@ describe('tagged-tree offline evaluation', () => {
   test.openspec('Tagged-tree is default with legacy rollback')(
     'uses tagged publication by default while retaining explicit legacy rollback',
     async ({ given, when, then, and }: AllureBddContext) => {
-      let pipelineSource = '';
-      await given('the ordinary comparison pipeline source', () => undefined);
-      await when('its runtime dependencies are inspected', () => {
-        pipelineSource = readFileSync(new URL('./pipeline.ts', import.meta.url), 'utf8');
+      const original = await buildDocxFromBodyXml('<w:p><w:r><w:t>old</w:t></w:r></w:p>');
+      const revised = await buildDocxFromBodyXml('<w:p><w:r><w:t>new</w:t></w:r></w:p>');
+      const options = { author: 'Comparator', date: new Date('2026-08-14T12:00:00Z') };
+      let defaultXml = '';
+      let taggedXml = '';
+      let legacyXml = '';
+      await given('a comparison with a deterministic revision', () => undefined);
+      await when('the omitted, tagged, and rollback strategies are executed', async () => {
+        const [defaultResult, taggedResult, legacyResult] = await Promise.all([
+          compareDocumentsAtomizer(original, revised, options),
+          compareDocumentsAtomizer(original, revised, { ...options, comparisonStrategy: 'tagged-tree' }),
+          compareDocumentsAtomizer(original, revised, { ...options, comparisonStrategy: 'legacy' }),
+        ]);
+        defaultXml = await (await DocxArchive.load(defaultResult.document)).getDocumentXml();
+        taggedXml = await (await DocxArchive.load(taggedResult.document)).getDocumentXml();
+        legacyXml = await (await DocxArchive.load(legacyResult.document)).getDocumentXml();
       });
-      await then('the tagged-tree builder is the ordinary default', () => {
-        expect(pipelineSource).toContain("comparisonStrategy = 'tagged-tree'");
-        expect(pipelineSource).toContain("comparisonStrategy === 'tagged-tree'");
-        expect(pipelineSource).not.toContain('runTaggedTreeShadow');
-        expect(pipelineSource).not.toContain('SAFE_DOCX_TAGGED_TREE');
+      await then('omitting the strategy selects the tagged implementation observably', () => {
+        expect(defaultXml).toBe(taggedXml);
       });
-      await and('the legacy rollback and runtime checks remain in the pipeline', () => {
-        expect(pipelineSource).toContain("'tagged-tree' | 'legacy'");
-        expect(pipelineSource).toContain('evaluateRoundTripSafety');
+      await and('both the default and explicit legacy rollback preserve exact source projections', () => {
+        for (const candidate of [defaultXml, legacyXml]) {
+          expect(parseXml(acceptAllChanges(candidate)).documentElement.textContent).toBe('new');
+          expect(parseXml(rejectAllChanges(candidate)).documentElement.textContent).toBe('old');
+        }
       });
     },
   );

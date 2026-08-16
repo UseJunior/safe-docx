@@ -27,8 +27,64 @@ const RANGE_BOUNDARY_LOCALS = new Set([
   'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
   'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd',
 ]);
+const bookmarkStartsByDocument = new WeakMap<Document, Map<string, WmlElement>>();
+function bookmarkStartFor(element: WmlElement): WmlElement | undefined {
+  if (element.localName === 'bookmarkStart') return element;
+  const owner = element.ownerDocument!;
+  let starts = bookmarkStartsByDocument.get(owner);
+  if (!starts) {
+    starts = new Map();
+    for (const start of Array.from(owner.getElementsByTagNameNS(
+      'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'bookmarkStart',
+    ))) {
+      const id = start.getAttributeNS(
+        'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'id',
+      );
+      if (id && !starts.has(id)) starts.set(id, start as WmlElement);
+    }
+    bookmarkStartsByDocument.set(owner, starts);
+  }
+  const id = element.getAttributeNS(
+    'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'id',
+  );
+  return id ? starts.get(id) : undefined;
+}
+function semanticAttributeSignature(element: WmlElement): string {
+  return JSON.stringify(Array.from(element.attributes)
+    .filter((attribute) => {
+      if (attribute.namespaceURI === 'http://www.w3.org/2000/xmlns/') return false;
+      if (attribute.namespaceURI === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' &&
+          (attribute.localName ?? '').startsWith('rsid')) return false;
+      if (attribute.namespaceURI === 'http://schemas.microsoft.com/office/word/2010/wordml' &&
+          ['paraId', 'textId'].includes(attribute.localName ?? '')) return false;
+      return true;
+    })
+    .map((attribute) => [attribute.namespaceURI ?? '', attribute.localName ?? attribute.name, attribute.value])
+    .sort(([leftNamespace, leftName], [rightNamespace, rightName]) =>
+      `${leftNamespace}:${leftName}`.localeCompare(`${rightNamespace}:${rightName}`)));
+}
 function alignmentKey(element: WmlElement): string {
   const text = element.textContent ?? '';
+  if (element.localName === 'bookmarkStart' || element.localName === 'bookmarkEnd') {
+    const start = bookmarkStartFor(element);
+    return JSON.stringify([
+      'bookmark-boundary',
+      element.localName,
+      JSON.parse(semanticAttributeSignature(element)).filter(
+        ([namespace, name]: [string, string]) => !(
+          namespace === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' && name === 'id'
+        ),
+      ),
+      start
+        ? JSON.parse(semanticAttributeSignature(start)).filter(
+          ([namespace, name]: [string, string]) => !(
+            namespace === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' && name === 'id'
+          ),
+        )
+        : [],
+      revisionProvenance(element).map(({ kind, id: revisionId, author, date }) => [kind, revisionId, author, date]),
+    ]);
+  }
   let runControlSignature = '';
   if (element.localName === 'r') {
     const fieldCharacters = Array.from(element.getElementsByTagNameNS(
@@ -75,6 +131,7 @@ function alignmentKey(element: WmlElement): string {
       ? revisionProvenance(element).map(({ kind, id, author, date }) => [kind, id, author, date])
       : [],
     runControlSignature,
+    semanticAttributeSignature(element),
   ]);
 }
 
@@ -169,6 +226,7 @@ function lcsPairs(original: readonly WmlElement[], revised: readonly WmlElement[
 
 function paragraphSimilarity(left: WmlElement, right: WmlElement): number {
   if (left.localName !== right.localName || !['p', 'r'].includes(left.localName)) return 0;
+  if (semanticAttributeSignature(left) !== semanticAttributeSignature(right)) return 0;
   const words = (value: string): Set<string> => new Set(value.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? []);
   const a = words(left.textContent ?? '');
   const b = words(right.textContent ?? '');
@@ -225,6 +283,7 @@ function constructBoth(
       const right = revisedChildren[ri]!;
       const sameIdentity = (left.namespaceURI ?? '') === (right.namespaceURI ?? '') &&
         (left.localName ?? left.tagName) === (right.localName ?? right.tagName) &&
+        semanticAttributeSignature(left) === semanticAttributeSignature(right) &&
         (childElements(left).length > 0 || childElements(right).length > 0) &&
         (left.localName !== 'r' || (
           left.textContent === right.textContent &&

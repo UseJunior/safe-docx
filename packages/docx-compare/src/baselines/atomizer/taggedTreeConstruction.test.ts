@@ -133,6 +133,78 @@ describe('complete tagged-tree construction', () => {
     }
   });
 
+  test('keeps colliding source-side deletion bookmarks unique across both projections', () => {
+    const paragraph = (value: string, name: string, column: string) => '<w:p>'
+      + `<w:bookmarkStart w:id="7" w:name="${name}" w:colFirst="${column}" w:colLast="${column}"/>`
+      + `<w:r><w:t>${value}</w:t></w:r>`
+      + '<w:bookmarkEnd w:id="7"/></w:p>';
+    const original = documentWithBody(paragraph('Old', 'Clause', '0'));
+    const revised = documentWithBody(paragraph('New', 'Clause', '1'));
+    const result = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(
+      result.tree,
+      createPreservePlan(original, revised, result.tree, {
+        author: 'Comparator', date: '2026-08-14T12:00:00Z',
+      }),
+      { moves: result.moves },
+    );
+
+    for (const xml of [output, acceptAllChanges(output), rejectAllChanges(output)]) {
+      expect(validateBookmarkIntegrity(xml)).toEqual({
+        unmatchedStartIds: [],
+        unmatchedEndIds: [],
+        duplicateStartIds: [],
+        duplicateEndIds: [],
+      });
+    }
+    const accepted = parseXml(acceptAllChanges(output));
+    const rejected = parseXml(rejectAllChanges(output));
+    expect(accepted.getElementsByTagNameNS(W_NS, 'bookmarkStart')[0]!.getAttributeNS(W_NS, 'colFirst')).toBe('1');
+    expect(rejected.getElementsByTagNameNS(W_NS, 'bookmarkStart')[0]!.getAttributeNS(W_NS, 'colFirst')).toBe('0');
+  });
+
+  test('projects changed semantic attributes instead of silently taking the revised representative', () => {
+    const original = documentWithBody(
+      '<w:p><w:fldSimple w:instr=" DATE "><w:r><w:t xml:space="preserve">value </w:t></w:r></w:fldSimple></w:p>',
+    );
+    const revised = documentWithBody(
+      '<w:p><w:fldSimple w:instr=" TIME "><w:r><w:t>value </w:t></w:r></w:fldSimple></w:p>',
+    );
+    const result = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(
+      result.tree,
+      createPreservePlan(original, revised, result.tree, {
+        author: 'Comparator', date: '2026-08-14T12:00:00Z',
+      }),
+      { moves: result.moves },
+    );
+    const accepted = parseXml(acceptAllChanges(output));
+    const rejected = parseXml(rejectAllChanges(output));
+
+    expect(accepted.getElementsByTagNameNS(W_NS, 'fldSimple')[0]!.getAttributeNS(W_NS, 'instr')).toBe(' TIME ');
+    expect(rejected.getElementsByTagNameNS(W_NS, 'fldSimple')[0]!.getAttributeNS(W_NS, 'instr')).toBe(' DATE ');
+    expect(accepted.getElementsByTagNameNS(W_NS, 't')[0]!.getAttribute('xml:space')).toBeNull();
+    expect(rejected.getElementsByTagNameNS(W_NS, 't')[0]!.getAttribute('xml:space')).toBe('preserve');
+  });
+
+  test('projects an isolated xml:space change on otherwise equal text', () => {
+    const original = documentWithBody('<w:p><w:r><w:t xml:space="preserve">same </w:t></w:r></w:p>');
+    const revised = documentWithBody('<w:p><w:r><w:t>same </w:t></w:r></w:p>');
+    const result = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(
+      result.tree,
+      createPreservePlan(original, revised, result.tree, {
+        author: 'Comparator', date: '2026-08-14T12:00:00Z',
+      }),
+      { moves: result.moves },
+    );
+
+    expect(parseXml(acceptAllChanges(output)).getElementsByTagNameNS(W_NS, 't')[0]!
+      .getAttribute('xml:space')).toBeNull();
+    expect(parseXml(rejectAllChanges(output)).getElementsByTagNameNS(W_NS, 't')[0]!
+      .getAttribute('xml:space')).toBe('preserve');
+  });
+
   test('represents direct run properties as a both node with a scoped delta', () => {
     const original = body(['same']);
     const revised = body(['same']);

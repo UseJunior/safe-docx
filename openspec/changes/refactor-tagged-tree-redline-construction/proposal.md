@@ -141,10 +141,13 @@ here rather than quietly dropped:
   the ladder requirement stays until successor C actually deletes the code, so
   the spec never describes a state the engine is not in.
 
-- Affected code (additive; all in `packages/docx-compare/src/`):
-  new tagged-tree construction, serialization, and offline evaluation modules.
-  `hierarchicalLcs.ts` / `atomLcs.ts` gain a tag-emitting output path alongside
-  their existing one; `pipeline.ts` remains on the legacy runtime path.
+- Affected code (all in `packages/docx-compare/src/`): new tagged-tree
+  construction, serialization, and evaluation modules. `hierarchicalLcs.ts` /
+  `atomLcs.ts` gain a tag-emitting output path alongside their existing one.
+  **Correction (2026-08-16):** the earlier proposal text said `pipeline.ts`
+  would remain on the legacy runtime path. That described the initial Stage A
+  checkpoint, not the approved completed change: tagged-tree is now the
+  ordinary default and legacy remains an explicit rollback strategy.
 
 - Post-processing inventory (fates decided here, executed in successor C):
 

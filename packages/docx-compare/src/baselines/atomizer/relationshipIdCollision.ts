@@ -39,7 +39,7 @@
 
 import { posix } from 'node:path';
 import { XMLSerializer } from '@xmldom/xmldom';
-import { parseXml } from '@usejunior/docx-core';
+import { normalizeOpcRelationshipTarget, parseXml } from '@usejunior/docx-core';
 import type { DocxArchive } from '@usejunior/docx-core';
 
 const serializer = new XMLSerializer();
@@ -71,9 +71,7 @@ function relsPathFor(partPath: string): string {
 
 /** Resolve an OPC relationship target against its owning part's directory. */
 function resolveTarget(ownerPart: string, target: string): string {
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(target)) return target;
-  const base = posix.dirname(ownerPart);
-  return posix.normalize(posix.join(base === '.' ? '' : base, target)).replace(/^\/+/, '');
+  return normalizeOpcRelationshipTarget({ ownerPart, target }).target;
 }
 
 async function readRelationships(

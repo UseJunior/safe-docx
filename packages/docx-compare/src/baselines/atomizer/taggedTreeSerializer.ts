@@ -292,15 +292,11 @@ function markWholeParagraph(
     wrapper = undefined;
   };
   for (const child of content) {
-    // Deleted paragraphs keep range boundaries live so Reject All restores
-    // their authored topology. Inserted paragraphs must carry boundaries
-    // inside the insertion; otherwise Reject All leaves zero-width markers
-    // from a paragraph that did not exist on the original side.
+    // Boundaries follow the paragraph's source projection so original-only
+    // markers cannot survive Accept All after a paragraph-mark deletion.
     if (RANGE_BOUNDARY_LOCALS.has(child.localName)) {
       flush();
-      paragraph.appendChild(
-        kind === 'del' ? child : wrapRevision(child, 'ins', contentRevision),
-      );
+      paragraph.appendChild(wrapRevision(child, kind, contentRevision));
       continue;
     }
     if (!wrapper) {
@@ -810,19 +806,82 @@ function moveMarker(
   return marker;
 }
 
-function renumberBookmarkRanges(root: WmlElement, allocateBookmarkId: () => number): void {
-  const replacements = new Map<string, string>();
-  for (const start of Array.from(root.getElementsByTagNameNS(W_NS, 'bookmarkStart'))) {
-    const id = start.getAttributeNS(W_NS, 'id');
+function renumberOriginalBookmarkRanges(
+  root: WmlElement,
+  replacements: Map<string, string>,
+  allocateBookmarkId: () => number,
+): void {
+  const boundaries = [
+    ...(root.localName === 'bookmarkStart' || root.localName === 'bookmarkEnd' ? [root] : []),
+    ...Array.from(root.getElementsByTagNameNS(W_NS, 'bookmarkStart')),
+    ...Array.from(root.getElementsByTagNameNS(W_NS, 'bookmarkEnd')),
+  ];
+  for (const boundary of boundaries) {
+    const id = boundary.getAttributeNS(W_NS, 'id');
     if (!id) continue;
     const replacement = replacements.get(id) ?? String(allocateBookmarkId());
     replacements.set(id, replacement);
-    start.setAttributeNS(W_NS, 'w:id', replacement);
+    boundary.setAttributeNS(W_NS, 'w:id', replacement);
   }
-  for (const end of Array.from(root.getElementsByTagNameNS(W_NS, 'bookmarkEnd'))) {
-    const id = end.getAttributeNS(W_NS, 'id');
-    const replacement = id ? replacements.get(id) : undefined;
-    if (replacement) end.setAttributeNS(W_NS, 'w:id', replacement);
+}
+
+function splitSharedBookmarkBoundaries(
+  base: WmlElement,
+  original: WmlElement,
+  splitBookmarkIds: ReadonlySet<string>,
+  originalBookmarkIds: Map<string, string>,
+  allocateBookmarkId: () => number,
+  allocateRevision: () => ComparisonRevision,
+): void {
+  for (const tag of ['bookmarkStart', 'bookmarkEnd'] as const) {
+    const originalById = new Map(childElements(original)
+      .filter((boundary) => boundary.namespaceURI === W_NS && boundary.localName === tag)
+      .map((boundary) => [boundary.getAttributeNS(W_NS, 'id'), boundary] as const)
+      .filter((entry): entry is [string, Element] => entry[0] !== null));
+    for (const revisedBoundary of childElements(base)
+      .filter((boundary) => boundary.namespaceURI === W_NS && boundary.localName === tag)) {
+      const id = revisedBoundary.getAttributeNS(W_NS, 'id');
+      const originalBoundary = id ? originalById.get(id) : undefined;
+      if (!id || !splitBookmarkIds.has(id) || !originalBoundary || !revisedBoundary.parentNode) continue;
+      const originalClone = cloneElement(originalBoundary as WmlElement);
+      const revisedClone = cloneElement(revisedBoundary as WmlElement);
+      renumberOriginalBookmarkRanges(originalClone, originalBookmarkIds, allocateBookmarkId);
+      const parent = revisedBoundary.parentNode;
+      parent.insertBefore(wrapRevision(originalClone, 'del', allocateRevision()), revisedBoundary);
+      parent.replaceChild(wrapRevision(revisedClone, 'ins', allocateRevision()), revisedBoundary);
+    }
+  }
+}
+
+function splitCrossParagraphBookmarkCounterparts(
+  root: WmlElement,
+  originalBookmarkIds: ReadonlyMap<string, string>,
+  allocateRevision: () => ComparisonRevision,
+): void {
+  const markers = (tag: 'bookmarkStart' | 'bookmarkEnd', id: string): Element[] => [
+    ...(root.localName === tag && root.getAttributeNS(W_NS, 'id') === id ? [root] : []),
+    ...Array.from(root.getElementsByTagNameNS(W_NS, tag))
+      .filter((marker) => marker.getAttributeNS(W_NS, 'id') === id),
+  ];
+  const split = (marker: Element, replacementId: string): void => {
+    const parent = marker.parentNode;
+    if (!parent) return;
+    const originalClone = cloneElement(marker as WmlElement);
+    originalClone.setAttributeNS(W_NS, 'w:id', replacementId);
+    const revisedClone = cloneElement(marker as WmlElement);
+    parent.insertBefore(wrapRevision(originalClone, 'del', allocateRevision()), marker);
+    parent.replaceChild(wrapRevision(revisedClone, 'ins', allocateRevision()), marker);
+  };
+  for (const [sourceId, replacementId] of originalBookmarkIds) {
+    const replacementStarts = markers('bookmarkStart', replacementId);
+    const replacementEnds = markers('bookmarkEnd', replacementId);
+    if (replacementStarts.length === 0 && replacementEnds.length > 0) {
+      const sharedStart = markers('bookmarkStart', sourceId)[0];
+      if (sharedStart) split(sharedStart, replacementId);
+    } else if (replacementEnds.length === 0 && replacementStarts.length > 0) {
+      const sharedEnd = markers('bookmarkEnd', sourceId)[0];
+      if (sharedEnd) split(sharedEnd, replacementId);
+    }
   }
 }
 
@@ -962,6 +1021,8 @@ function emitNode(
   moves: readonly TaggedMoveRelation[] = [],
   allocateRevision: () => ComparisonRevision,
   allocateBookmarkId: () => number,
+  originalBookmarkIds: Map<string, string>,
+  splitBookmarkIds: ReadonlySet<string>,
 ): WmlElement {
   const nodeRevision = allocateRevision();
   const base = cloneElement(representative(node, node.tag === 'original' ? 'original' : node.tag === 'revised' ? 'revised' : bothSide)!);
@@ -986,6 +1047,28 @@ function emitNode(
         // omitting an original-only marker is projection-semantically neutral.
         if (child.tag !== 'original') emitted.push(cloneElement(childElement));
         continue;
+      }
+      if (
+        child.tag === 'both' &&
+        (childElement?.localName === 'bookmarkStart' || childElement?.localName === 'bookmarkEnd')
+      ) {
+        const originalBoundary = representative(child, 'original')!;
+        const revisedBoundary = representative(child, 'revised')!;
+        const originalId = originalBoundary.getAttributeNS(W_NS, 'id');
+        if (originalId && splitBookmarkIds.has(originalId)) {
+          const originalClone = cloneElement(originalBoundary);
+          renumberOriginalBookmarkRanges(originalClone, originalBookmarkIds, allocateBookmarkId);
+          const entry = plan.entries.get(child)!;
+          emitted.push(wrapPreserved(
+            wrapRevision(originalClone, 'del', allocateRevision()),
+            entry.originalStack,
+          ));
+          emitted.push(wrapPreserved(
+            wrapRevision(cloneElement(revisedBoundary), 'ins', allocateRevision()),
+            entry.revisedStack,
+          ));
+          continue;
+        }
       }
       const atomicField = emitAtomicRetargetedField(node.children, index, plan, allocateRevision);
       if (atomicField) {
@@ -1034,17 +1117,34 @@ function emitNode(
       if (relation) {
         const direction = relation.source === child ? 'From' : 'To';
         emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'Start'));
-        emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId));
+        emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds));
         emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'End'));
-      } else emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId));
+      } else emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds));
     }
     replaceElementChildren(base, emitted);
+  }
+  if (node.tag === 'both') {
+    splitSharedBookmarkBoundaries(
+      base,
+      node.original,
+      splitBookmarkIds,
+      originalBookmarkIds,
+      allocateBookmarkId,
+      allocateRevision,
+    );
   }
   applyPropertyDelta(base, node, nodeRevision);
   const entry = plan.entries.get(node)!;
   if (node.tag === 'original') {
     const relation = moveFor(node, moves);
-    if (relation) renumberBookmarkRanges(base, allocateBookmarkId);
+    // Original and revised packages allocate bookmark IDs independently. Give
+    // every original-only boundary a serializer-wide namespace so aligned,
+    // deleted, moved, and cross-paragraph ranges cannot collide in the combined
+    // tracked document. Opaque subtrees are handled here; expanded subtrees
+    // renumber their individual original nodes during recursive emission.
+    if (node.opaque || base.localName === 'bookmarkStart' || base.localName === 'bookmarkEnd') {
+      renumberOriginalBookmarkRanges(base, originalBookmarkIds, allocateBookmarkId);
+    }
     const revision = relation ? { ...plan.comparison, id: relation.sourceRangeId } : nodeRevision;
     if (!relation && base.namespaceURI === W_NS && base.localName === 'p') {
       return wrapPreserved(markWholeParagraph(base, 'del', revision, allocateRevision()), entry.originalStack);
@@ -1088,6 +1188,23 @@ export function serializeTaggedTree(
   ]).map((element) => Number(element.getAttributeNS(W_NS, 'id')))
     .filter((id) => Number.isSafeInteger(id) && id >= 0);
   let nextBookmarkId = Math.max(-1, ...usedBookmarkIds) + 1;
+  const originalBookmarkIds = new Map<string, string>();
+  // When one endpoint of an original range is side-only but its counterpart is
+  // aligned on both sides, the aligned marker cannot remain unconditional: it
+  // would pair with both the deleted original endpoint and the inserted revised
+  // endpoint. Split that shared marker into del/ins alternatives atomically.
+  const splitBookmarkIds = new Set<string>();
+  const findSplitBookmarkIds = (node: TaggedNode): void => {
+    if (node.tag === 'original') {
+      const boundary = representative(node, 'original');
+      if (boundary?.localName === 'bookmarkStart' || boundary?.localName === 'bookmarkEnd') {
+        const id = boundary.getAttributeNS(W_NS, 'id');
+        if (id) splitBookmarkIds.add(id);
+      }
+    }
+    node.children.forEach(findSplitBookmarkIds);
+  };
+  findSplitBookmarkIds(tree);
   const emitted = emitNode(
     tree,
     plan,
@@ -1095,7 +1212,10 @@ export function serializeTaggedTree(
     options.moves ?? [],
     allocateRevision,
     () => nextBookmarkId++,
+    originalBookmarkIds,
+    splitBookmarkIds,
   );
+  splitCrossParagraphBookmarkCounterparts(emitted, originalBookmarkIds, allocateRevision);
   hoistFieldCharactersFromDeletions(emitted);
   hoistLiteralInsertionsFromDeletedFieldInstructions(emitted);
   return new XMLSerializer().serializeToString(emitted);

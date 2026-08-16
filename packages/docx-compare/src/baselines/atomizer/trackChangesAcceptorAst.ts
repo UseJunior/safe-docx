@@ -329,6 +329,19 @@ function hasCounterpartOutsideRemovedParagraphs(
       continue;
     }
     if (!paragraphsToRemove.has(nodeParagraph)) {
+      // A marker inside inserted or move-to content disappears during Reject
+      // even when its containing paragraph remains. It therefore cannot justify
+      // rescuing the opposite boundary from a paragraph being removed.
+      let ancestor = parentElement(node);
+      let removedWithInsertion = false;
+      while (ancestor && ancestor !== nodeParagraph) {
+        if (ancestor.tagName === 'w:ins' || ancestor.tagName === 'w:moveTo') {
+          removedWithInsertion = true;
+          break;
+        }
+        ancestor = parentElement(ancestor);
+      }
+      if (removedWithInsertion) continue;
       return true;
     }
   }

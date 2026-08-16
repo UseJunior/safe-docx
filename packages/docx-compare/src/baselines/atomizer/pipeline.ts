@@ -7,7 +7,9 @@
  */
 
 import { XMLSerializer } from '@xmldom/xmldom';
-import { parseXml } from '@usejunior/docx-core';
+import { createHash } from 'node:crypto';
+import { posix } from 'node:path';
+import { normalizeOpcRelationshipTarget, parseXml } from '@usejunior/docx-core';
 import { DocxArchive } from '@usejunior/docx-core';
 import type {
   CompareResult,
@@ -141,6 +143,109 @@ import {
   compareFootnoteDefinitions,
   findCorrespondingFootnotePairs,
 } from './ancillaryNoteComparison.js';
+
+const OFFICE_RELATIONSHIP_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const PACKAGE_RELATIONSHIP_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+
+function relationshipPartPath(ownerPart: string, target: string): string {
+  return normalizeOpcRelationshipTarget({ ownerPart, target }).target;
+}
+
+function relationshipPartRelsPath(partPath: string): string {
+  const directory = posix.dirname(partPath);
+  return `${directory === '.' ? '' : `${directory}/`}_rels/${posix.basename(partPath)}.rels`;
+}
+
+async function relationshipClosureDigest(
+  archive: DocxArchive,
+  partPath: string,
+  ancestors: ReadonlySet<string> = new Set(),
+  cache: Map<string, Promise<string>> = new Map(),
+): Promise<string> {
+  if (ancestors.has(partPath)) return `cycle:${partPath}`;
+  const cached = cache.get(partPath);
+  if (cached) return cached;
+  const computation = (async (): Promise<string> => {
+    const bytes = await archive.getFileBuffer(partPath);
+    if (!bytes) return `missing:${partPath}`;
+    const nextAncestors = new Set(ancestors).add(partPath);
+    const relsXml = await archive.getFile(relationshipPartRelsPath(partPath));
+    const children: string[] = [];
+    if (relsXml) {
+      const rels = parseXml(relsXml);
+      for (const relationship of Array.from(
+        rels.getElementsByTagNameNS(PACKAGE_RELATIONSHIP_NS, 'Relationship'),
+      )) {
+        const type = relationship.getAttribute('Type') ?? '';
+        const target = relationship.getAttribute('Target') ?? '';
+        const mode = relationship.getAttribute('TargetMode') ?? '';
+        const identity = mode === 'External'
+          ? target
+          : await relationshipClosureDigest(
+            archive, relationshipPartPath(partPath, target), nextAncestors, cache,
+          );
+        children.push(JSON.stringify([type, mode, identity]));
+      }
+      children.sort();
+    }
+    return createHash('sha256')
+      .update(bytes)
+      .update('\0')
+      .update(children.join('\0'))
+      .digest('hex');
+  })();
+  cache.set(partPath, computation);
+  return computation;
+}
+
+async function relationshipSemanticsById(archive: DocxArchive): Promise<Map<string, string>> {
+  const xml = await archive.getFile('word/_rels/document.xml.rels');
+  if (!xml) return new Map();
+  const document = parseXml(xml);
+  const entries = await Promise.all(Array.from(
+    document.getElementsByTagNameNS(PACKAGE_RELATIONSHIP_NS, 'Relationship'),
+  ).map(async (relationship) => {
+    const id = relationship.getAttribute('Id') ?? '';
+    const type = relationship.getAttribute('Type') ?? '';
+    const target = relationship.getAttribute('Target') ?? '';
+    const mode = relationship.getAttribute('TargetMode') ?? '';
+    const identity = mode === 'External'
+      ? target
+      : await relationshipClosureDigest(
+        archive,
+        relationshipPartPath('word/document.xml', target),
+        new Set(),
+        // Keep memoization local to one top-level closure. Sharing in-flight
+        // promises between roots can deadlock when A and B reference each
+        // other from separate concurrent traversals.
+        new Map(),
+      );
+    return [id, JSON.stringify([type, mode, identity])] as const;
+  }));
+  return new Map(entries.filter(([id]) => id.length > 0));
+}
+
+async function canonicalizeRelationshipReferences(
+  xml: string,
+  sourceArchive: DocxArchive,
+  assembledArchive: DocxArchive,
+): Promise<string> {
+  const [sourceById, assembledById] = await Promise.all([
+    relationshipSemanticsById(sourceArchive),
+    relationshipSemanticsById(assembledArchive),
+  ]);
+  const assembledBySemantics = new Map([...assembledById].map(([id, semantics]) => [semantics, id]));
+  const document = parseXml(xml);
+  for (const element of Array.from(document.getElementsByTagName('*'))) {
+    for (const attribute of Array.from(element.attributes)) {
+      if (attribute.namespaceURI !== OFFICE_RELATIONSHIP_NS) continue;
+      const semantics = sourceById.get(attribute.value);
+      const canonicalId = semantics ? assembledBySemantics.get(semantics) : undefined;
+      if (canonicalId) element.setAttributeNS(OFFICE_RELATIONSHIP_NS, attribute.name, canonicalId);
+    }
+  }
+  return new XMLSerializer().serializeToString(document);
+}
 
 /**
  * Options for the atomizer pipeline.
@@ -1368,9 +1473,14 @@ async function compareDocumentsAtomizerCore(
   let { reconciledFootnotes } = assembled;
   let publishedBuffer = resultBuffer;
   if (comparisonStrategy === 'tagged-tree') {
+    const publishedArchive = await DocxArchive.load(resultBuffer);
+    const [taggedOriginalXml, taggedRevisedXml] = await Promise.all([
+      canonicalizeRelationshipReferences(originalXml, originalArchive, publishedArchive),
+      canonicalizeRelationshipReferences(revisedXml, revisedArchive, publishedArchive),
+    ]);
     let taggedXml = buildTaggedTreeShadowXml({
-      originalXml,
-      revisedXml,
+      originalXml: taggedOriginalXml,
+      revisedXml: taggedRevisedXml,
       author,
       date,
       detectFormatChanges: formatSettings.detectFormatChanges,
@@ -1389,7 +1499,6 @@ async function compareDocumentsAtomizerCore(
         typeof summary === 'string' ? summary : JSON.stringify(summary ?? taggedSafety.failureDetails)
       }`);
     }
-    const publishedArchive = await DocxArchive.load(resultBuffer);
     const reconciledFootnotesXml = reconciledFootnotes.length > 0
       ? await publishedArchive.getFile('word/footnotes.xml')
       : null;

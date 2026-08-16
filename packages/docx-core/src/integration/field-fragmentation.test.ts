@@ -29,6 +29,7 @@ import {
   instrText,
   resultText,
 } from '../testing/ooxml-fixtures.js';
+import { validateBookmarkIntegrity } from '../shared/validators/structural.js';
 
 const test = testAllure
   .epic('Document Comparison')
@@ -343,9 +344,18 @@ describe('Field fragmentation — modification scenarios', () => {
         expect(rejected, 'Reject All restores the original bookmark start').toMatch(
           /<w:bookmarkStart[^>]*w:name="bm_inside_field"/,
         );
-        expect(rejected, 'Reject All restores the original bookmark end').toMatch(
-          /<w:bookmarkEnd[^>]*w:id="9"/,
-        );
+        expect(validateBookmarkIntegrity(rejected)).toEqual({
+          unmatchedStartIds: [],
+          unmatchedEndIds: [],
+          duplicateStartIds: [],
+          duplicateEndIds: [],
+        });
+        const rejectedDocument = new DOMParser().parseFromString(rejected, 'application/xml');
+        const starts = Array.from(rejectedDocument.getElementsByTagName('w:bookmarkStart'));
+        const ends = Array.from(rejectedDocument.getElementsByTagName('w:bookmarkEnd'));
+        expect(starts).toHaveLength(1);
+        expect(ends).toHaveLength(1);
+        expect(ends[0]!.getAttribute('w:id')).toBe(starts[0]!.getAttribute('w:id'));
       });
     },
   );

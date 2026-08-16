@@ -17,7 +17,9 @@
  * own evidence. An empty violation list says nothing about them, and the
  * runtime accept/reject checks in `pipeline.ts` are not made redundant by it.
  *
- * Stage A (this module) is additive and has no production caller. See
+ * Correction (2026-08-16): this module began as additive Stage A evidence,
+ * but the completed change now routes ordinary comparison through it by
+ * default while retaining the legacy strategy as an explicit rollback. See
  * `openspec/changes/refactor-tagged-tree-redline-construction/`.
  */
 

@@ -466,7 +466,6 @@ describe('Structural Round-Trip Invariants - ILPA Pair (feature-rich)', () => {
           const rejectedDiagnostics = validateBookmarkIntegrity(rejectedDocumentXml);
           const revisedDiagnostics = validateBookmarkIntegrity(revisedDocumentXml);
           const originalDiagnostics = validateBookmarkIntegrity(originalDocumentXml);
-
           expect(acceptedDiagnostics, `ILPA/${mode}/accept bookmark diagnostics mismatch vs revised`).toEqual(
             revisedDiagnostics
           );

@@ -153,6 +153,58 @@ describe('tagged-tree shadow serializer', () => {
     expect(original.textContent).toBe(before);
   });
 
+  test('splits a shared bookmark endpoint when its cross-paragraph partner moves', () => {
+    const original = documentBody(
+      '<w:p><w:bookmarkStart w:id="7" w:name="Clause"/><w:r><w:t>A</w:t></w:r></w:p>' +
+      '<w:bookmarkEnd w:id="7"/>',
+    );
+    const revised = documentBody(
+      '<w:p><w:bookmarkStart w:id="7" w:name="Clause"/><w:r><w:t>A</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:t>B</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p>',
+    );
+    const originalParagraph = elementChildren(original)[0]!;
+    const revisedParagraph = elementChildren(revised)[0]!;
+    const originalStart = originalParagraph.getElementsByTagNameNS(W_NS, 'bookmarkStart')[0]!;
+    const revisedStart = revisedParagraph.getElementsByTagNameNS(W_NS, 'bookmarkStart')[0]!;
+    const tree: BothNode = {
+      tag: 'both', original, revised, children: [
+        {
+          tag: 'both', original: originalParagraph, revised: revisedParagraph, children: [
+            { tag: 'both', original: originalStart, revised: revisedStart, children: [], opaque: true },
+            {
+              tag: 'both',
+              original: originalParagraph.getElementsByTagNameNS(W_NS, 'r')[0]!,
+              revised: revisedParagraph.getElementsByTagNameNS(W_NS, 'r')[0]!,
+              children: [], opaque: true,
+            },
+          ],
+        },
+        { tag: 'original', node: elementChildren(original)[1]!, children: [], opaque: true },
+        { tag: 'revised', node: elementChildren(revised)[1]!, children: [], opaque: true },
+      ],
+    };
+    const serialized = serializeTaggedTree(tree, createPreservePlan(original, revised, tree, {
+      author: 'Comparator', date: '2026-08-14T12:00:00Z',
+    }));
+    const inventory = (xml: string): { starts: string[]; ends: string[] } => {
+      const document = parseXml(xml);
+      return {
+        starts: Array.from(document.getElementsByTagNameNS(W_NS, 'bookmarkStart'))
+          .map((marker) => marker.getAttributeNS(W_NS, 'id')!),
+        ends: Array.from(document.getElementsByTagNameNS(W_NS, 'bookmarkEnd'))
+          .map((marker) => marker.getAttributeNS(W_NS, 'id')!),
+      };
+    };
+    for (const projection of [serialized, acceptAllChanges(serialized), rejectAllChanges(serialized)]) {
+      const { starts, ends } = inventory(projection);
+      expect(new Set(starts).size).toBe(starts.length);
+      expect(new Set(ends).size).toBe(ends.length);
+      expect([...starts].sort()).toEqual([...ends].sort());
+    }
+    expect(text(acceptAllChanges(serialized))).toBe('AB');
+    expect(text(rejectAllChanges(serialized))).toBe('A');
+  });
+
   test('serializes a both-node direct-property delta as tracked property markup', () => {
     const original = documentBody('<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>A</w:t></w:r></w:p>');
     const revised = documentBody('<w:p><w:r><w:rPr><w:i/></w:rPr><w:t>A</w:t></w:r></w:p>');
