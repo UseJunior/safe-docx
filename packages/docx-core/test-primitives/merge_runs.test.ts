@@ -607,6 +607,30 @@ describe('merge_runs — embedded-object barriers', () => {
     });
   });
 
+  test('does not merge a contentPart reference run into an adjacent text run', async ({ given, when, then }: AllureBddContext) => {
+    let doc!: Document;
+    let result!: ReturnType<typeof mergeRuns>;
+
+    await given('a text run followed by a contentPart-only run, both without rPr', () => {
+      doc = makeDoc(
+        '<w:p>' +
+        '<w:r><w:t>imported content follows</w:t></w:r>' +
+        '<w:r><w:contentPart xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId5"/></w:r>' +
+        '</w:p>',
+      );
+    });
+
+    await when('mergeRuns is called', async () => {
+      result = mergeRuns(doc);
+    });
+
+    await then('no runs are merged and the contentPart keeps its own run', () => {
+      expect(result.runsMerged).toBe(0);
+      expect(countRuns(doc)).toBe(2);
+      expect(doc.getElementsByTagNameNS(W_NS, 'contentPart')).toHaveLength(1);
+    });
+  });
+
   test('still merges plain text runs in a paragraph that also contains a drawing run', async ({ given, when, then }: AllureBddContext) => {
     let doc!: Document;
     let result!: ReturnType<typeof mergeRuns>;

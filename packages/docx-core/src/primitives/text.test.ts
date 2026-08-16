@@ -6,6 +6,8 @@ import { OOXML, W } from './namespaces.js';
 import { SafeDocxError } from './errors.js';
 import { getDirectChildrenByName } from './dom-helpers.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
+import { rejectChanges } from './reject_changes.js';
+import { acceptChanges } from './accept_changes.js';
 import { revisionEvidence, revisionEvidenceCases } from '../testing/revision-evidence.js';
 import {
   fldChar,
@@ -1605,6 +1607,40 @@ function trackedCtx() {
   });
 }
 
+/**
+ * Structural fingerprint of a paragraph's direct content, in document order.
+ * Embedded content renders as a bracketed tag, live runs as their visible
+ * text, and revision wrappers as `del:`/`ins:` plus their concatenated text —
+ * so ordering assertions catch reordering that concatenated-text assertions
+ * cannot.
+ */
+function paragraphContentSequence(p: Element): string[] {
+  const out: string[] = [];
+  const embeddedTag = (el: Element): string | null => {
+    for (const local of ['drawing', 'pict', 'object', 'contentPart']) {
+      if (el.getElementsByTagNameNS(W_NS, local).length > 0 || (el.namespaceURI === W_NS && el.localName === local)) {
+        return `[${local}]`;
+      }
+    }
+    return null;
+  };
+  for (const child of Array.from(p.childNodes)) {
+    if (child.nodeType !== 1) continue;
+    const el = child as Element;
+    if (el.namespaceURI !== W_NS) continue;
+    if (el.localName === W.pPr) continue;
+    if (el.localName === W.r) {
+      const tag = embeddedTag(el);
+      out.push(tag ?? Array.from(el.getElementsByTagNameNS(W_NS, W.t)).map((t) => t.textContent ?? '').join(''));
+    } else if (el.localName === 'del') {
+      out.push('del:' + Array.from(el.getElementsByTagNameNS(W_NS, 'delText')).map((t) => t.textContent ?? '').join(''));
+    } else if (el.localName === 'ins') {
+      out.push('ins:' + Array.from(el.getElementsByTagNameNS(W_NS, W.t)).map((t) => t.textContent ?? '').join(''));
+    }
+  }
+  return out;
+}
+
 describe('replaceParagraphTextRange — embedded object preservation', () => {
   test('clean full blanking preserves a drawing-only run between text runs', async ({ given, when, then }: AllureBddContext) => {
     let p: Element;
@@ -1701,7 +1737,7 @@ describe('replaceParagraphTextRange — embedded object preservation', () => {
     });
   });
 
-  test('tracked replacement of a run with co-resident text and drawing extracts the drawing before the deletion', async ({ given, when, then }: AllureBddContext) => {
+  test('tracked replacement of a run with co-resident text and drawing keeps the drawing live in original order', async ({ given, when, then }: AllureBddContext) => {
     let p: Element;
 
     await given('a single run holding caption text and a drawing', () => {
@@ -1713,7 +1749,7 @@ describe('replaceParagraphTextRange — embedded object preservation', () => {
       replaceParagraphTextRange(p, 0, 'caption'.length, 'new caption', trackedCtx());
     });
 
-    await then('the drawing stays live while text moves through w:del/w:ins', () => {
+    await then('the drawing stays live while text moves through w:del/w:ins, deletion first (original order)', () => {
       expect(getParagraphText(p)).toBe('new caption');
       const drawings = embeddedObjectsIn(p, W.drawing);
       expect(drawings).toHaveLength(1);
@@ -1722,6 +1758,11 @@ describe('replaceParagraphTextRange — embedded object preservation', () => {
       const del = p.getElementsByTagNameNS(W_NS, 'del').item(0)!;
       expect(del.getElementsByTagNameNS(W_NS, 'delText').item(0)?.textContent).toBe('caption');
       expect(del.getElementsByTagNameNS(W_NS, W.drawing)).toHaveLength(0);
+
+      // Original order was caption-then-drawing, so the deletion segment must
+      // precede the preserved drawing run for reject to restore that order.
+      const sequence = paragraphContentSequence(p);
+      expect(sequence).toEqual(['del:caption', '[drawing]', 'ins:new caption']);
     });
   });
 
@@ -1848,6 +1889,118 @@ describe('replaceParagraphTextRange — embedded object preservation', () => {
       expect(isInsideRevisionWrapper(objects[0]!, p)).toBe(false);
       const del = p.getElementsByTagNameNS(W_NS, 'del').item(0)!;
       expect(del.getElementsByTagNameNS(W_NS, W.object)).toHaveLength(0);
+    });
+  });
+
+  test('clean full blanking preserves a w:contentPart reference run', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a contentPart-only run between text runs', () => {
+      const doc = makeDoc(
+        '<w:p>' +
+          '<w:r><w:t>lead</w:t></w:r>' +
+          '<w:r><w:contentPart r:id="rId5"/></w:r>' +
+          '<w:r><w:t>tail</w:t></w:r>' +
+        '</w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the full visible text is blanked (clean)', () => {
+      replaceParagraphTextRange(p, 0, 'leadtail'.length, '');
+    });
+
+    await then('the contentPart survives as a live run with its relationship id', () => {
+      expect(getParagraphText(p)).toBe('');
+      const parts = embeddedObjectsIn(p, W.contentPart);
+      expect(parts).toHaveLength(1);
+      expect(isInsideRevisionWrapper(parts[0]!, p)).toBe(false);
+      expect(serialize(p)).toContain('r:id="rId5"');
+    });
+  });
+
+  test('rejectChanges restores the exact original order around a preserved drawing', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+    let p: Element;
+
+    await given('text runs around a drawing-only run', () => {
+      doc = makeDoc(
+        '<w:p>' +
+          '<w:r><w:t>before</w:t></w:r>' +
+          `<w:r>${MINIMAL_DRAWING}</w:r>` +
+          '<w:r><w:t>after</w:t></w:r>' +
+        '</w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the full visible text is replaced under tracked changes and then rejected', () => {
+      replaceParagraphTextRange(p, 0, 'beforeafter'.length, 'X', trackedCtx());
+      // Deletion segments must sit at the removed text's original positions.
+      expect(paragraphContentSequence(p)).toEqual(['del:before', '[drawing]', 'del:after', 'ins:X']);
+      rejectChanges(doc);
+    });
+
+    await then('the paragraph is structurally identical to the original order', () => {
+      expect(paragraphContentSequence(p)).toEqual(['before', '[drawing]', 'after']);
+      expect(getParagraphText(p)).toBe('beforeafter');
+    });
+  });
+
+  test('acceptChanges keeps the revised ordering with the drawing live', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+    let p: Element;
+
+    await given('text runs around a drawing-only run', () => {
+      doc = makeDoc(
+        '<w:p>' +
+          '<w:r><w:t>before</w:t></w:r>' +
+          `<w:r>${MINIMAL_DRAWING}</w:r>` +
+          '<w:r><w:t>after</w:t></w:r>' +
+        '</w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the full visible text is replaced under tracked changes and then accepted', () => {
+      replaceParagraphTextRange(p, 0, 'beforeafter'.length, 'X', trackedCtx());
+      acceptChanges(doc);
+    });
+
+    await then('the drawing survives live and the replacement text follows it', () => {
+      expect(paragraphContentSequence(p)).toEqual(['[drawing]', 'X']);
+      expect(getParagraphText(p)).toBe('X');
+      expect(embeddedObjectsIn(p, W.drawing)).toHaveLength(1);
+    });
+  });
+
+  test('rejectChanges restores order across multiple preserved objects in one replaced span', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+    let p: Element;
+
+    await given('three text runs interleaved with a drawing and a pict', () => {
+      doc = makeDoc(
+        '<w:p>' +
+          '<w:r><w:t>aa</w:t></w:r>' +
+          `<w:r>${MINIMAL_DRAWING}</w:r>` +
+          '<w:r><w:t>bb</w:t></w:r>' +
+          `<w:r>${MINIMAL_PICT}</w:r>` +
+          '<w:r><w:t>cc</w:t></w:r>' +
+        '</w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the full visible text is deleted under tracked changes and then rejected', () => {
+      replaceParagraphTextRange(p, 0, 'aabbcc'.length, '', trackedCtx());
+      // One deletion segment per contiguous removed stretch, in place.
+      expect(paragraphContentSequence(p)).toEqual(['del:aa', '[drawing]', 'del:bb', '[pict]', 'del:cc']);
+      rejectChanges(doc);
+    });
+
+    await then('every text stretch returns to its original position', () => {
+      expect(paragraphContentSequence(p)).toEqual(['aa', '[drawing]', 'bb', '[pict]', 'cc']);
+      expect(getParagraphText(p)).toBe('aabbcc');
     });
   });
 });
