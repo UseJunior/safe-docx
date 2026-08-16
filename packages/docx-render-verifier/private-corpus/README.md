@@ -8,6 +8,14 @@ gitignored) and keep both input paths outside the Safe DOCX worktree. A fully
 local manifest outside the worktree is also accepted because it cannot be
 committed to this repository.
 
+Set `expectedMarkupTextSha256` to the expected-markup file's 64-character
+lowercase SHA-256 when the local corpus should fail closed on expectation-file
+drift. Replace the example placeholder when pinning, or delete that property
+from the copied manifest when not pinning. The field is optional so existing
+private manifests remain compatible.
+Every expectation file must contain non-whitespace text whether or not this pin
+is present.
+
 The runner rejects a manifest or output directory that Git does not ignore,
 and rejects outputs under public `fixtures/`. Its committed summary format
 contains only a caller label, SHA-256, verdict, and bounded reason—never DOCX,

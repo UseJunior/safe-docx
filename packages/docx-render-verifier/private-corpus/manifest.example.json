@@ -7,6 +7,7 @@
       "trackedDocxPath": "/absolute/local/matter/tracked.docx",
       "expectedMarkupTextPath": "/absolute/local/matter/expected-markup.txt",
       "expectedTrackedSha256": "replace-with-64-lowercase-hex",
+      "expectedMarkupTextSha256": "optional-replace-with-64-lowercase-hex",
       "requireRender": true
     }
   ]

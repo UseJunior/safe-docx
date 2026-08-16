@@ -119,6 +119,7 @@ export type PrivateCorpusCase = {
   trackedDocxPath: string;
   expectedMarkupTextPath: string;
   expectedTrackedSha256: string;
+  expectedMarkupTextSha256?: string;
   requireRender: boolean;
 };
 
