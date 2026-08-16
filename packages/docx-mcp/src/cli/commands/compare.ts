@@ -25,6 +25,10 @@ export interface CompareCommandResult {
   mode: 'inplace' | 'rebuild';
   mode_requested: 'inplace' | 'rebuild';
   fallback_reason?: string;
+  comparison_strategy_requested?: string;
+  comparison_strategy_used?: string;
+  comparison_strategy_fallback_reason?: string;
+  tagged_tree_fallback_diagnostics?: unknown;
   bytes: number;
   stats: unknown;
 }
@@ -100,6 +104,10 @@ export async function runCompareCommand(
     mode: result.reconstructionModeUsed ?? mode,
     mode_requested: mode,
     fallback_reason: result.fallbackReason,
+    comparison_strategy_requested: result.comparisonStrategyRequested,
+    comparison_strategy_used: result.comparisonStrategyUsed,
+    comparison_strategy_fallback_reason: result.comparisonStrategyFallbackReason,
+    tagged_tree_fallback_diagnostics: result.taggedTreeFallbackDiagnostics,
     bytes: result.document.length,
     stats: result.stats,
   };

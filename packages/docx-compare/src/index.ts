@@ -28,6 +28,8 @@ export type {
   AncillaryStorySafetyCategory,
   AncillaryStorySafetyIssue,
   AncillaryStorySummary,
+  ComparisonStrategy,
+  ComparisonStrategyFallbackReason,
   ReconstructionAttemptDiagnostics,
   ReconstructionBookmarkMismatchDetails,
   ReconstructionBookmarkMismatchSummary,
@@ -47,6 +49,7 @@ export type {
   ReconstructionSafetyFailureSummary,
   ReconstructionTextMismatchDetails,
   ReconstructionTextMismatchSummary,
+  TaggedTreeFallbackDiagnostics,
 } from './compare-types.js';
 
 /**

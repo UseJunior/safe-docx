@@ -118,6 +118,9 @@ describe('compare_documents tool', () => {
         expect(result.reconstruction_mode_requested).toBe('inplace');
         expect(result.reconstruction_mode_used).toBe('inplace');
         expect(result.fallback_reason).toBeUndefined();
+        expect(result.comparison_strategy_requested).toBe('tagged-tree');
+        expect(result.comparison_strategy_used).toBe('tagged-tree');
+        expect(result.comparison_strategy_fallback_reason).toBeUndefined();
       });
 
       await then('the requested author is forwarded to generated revisions', async () => {

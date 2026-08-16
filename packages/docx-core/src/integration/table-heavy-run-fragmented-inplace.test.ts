@@ -106,9 +106,9 @@ async function fragmentAtFormattingBoundary(original: Buffer): Promise<Buffer> {
   return archive.save();
 }
 
-describe('Inplace reconstruction pass selection', () => {
+describe('Legacy inplace reconstruction pass selection', () => {
   test.openspec('Inplace reconstruction reports the pass that produced the output')(
-    'reports the winning pass and the earlier pass it superseded',
+    'legacy rollback reports the winning pass and the earlier pass it superseded',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       let original!: Buffer;
       let revised!: Buffer;

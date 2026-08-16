@@ -16,6 +16,7 @@ import type {
   CompareStats,
   AncillaryFallbackDiagnostics,
   AncillaryFieldEvidence,
+  ComparisonStrategy,
   ReconstructionAttemptDiagnostics,
   ReconstructionBookmarkMismatchDetails,
   ReconstructionBookmarkMismatchSummary,
@@ -32,6 +33,7 @@ import type {
   ReconstructionTextMismatchSummary,
   ReconstructionTextMismatchDetails,
   ReconstructionMode,
+  TaggedTreeFallbackDiagnostics,
 } from '../../compare-types.js';
 import { DEFAULT_RECONSTRUCTION_MODE } from '../../comparison-defaults.js';
 import type {
@@ -130,7 +132,7 @@ import {
 } from './ancillaryFieldSafety.js';
 import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.js';
 import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
-import { buildTaggedTreeShadowXml, countTaggedTreePropertyDeltas } from './taggedTreeShadow.js';
+import { buildTaggedTreePublication } from './taggedTreeShadow.js';
 import {
   assembleTextBoxStoryComparison,
   assertAncillaryTextBoxStoryProjection,
@@ -281,7 +283,9 @@ export interface AtomizerOptions {
    */
   reconstructionMode?: ReconstructionMode;
   /** Comparison construction strategy. Tagged-tree is default; legacy is the rollback path. */
-  comparisonStrategy?: 'tagged-tree' | 'legacy';
+  comparisonStrategy?: ComparisonStrategy;
+  /** @internal Test seam for exercising fail-safe publication without malformed fixtures. */
+  taggedTreePublicationSafetyEvaluator?: typeof evaluateSafetyChecks;
 }
 
 interface BookmarkDiagnostics {
@@ -917,6 +921,7 @@ async function compareDocumentsAtomizerCore(
     maxWordRefinementChangeRanges,
     reconstructionMode = DEFAULT_RECONSTRUCTION_MODE,
     comparisonStrategy = 'tagged-tree',
+    taggedTreePublicationSafetyEvaluator,
   } = options;
 
   // Merge settings with defaults
@@ -1472,13 +1477,16 @@ async function compareDocumentsAtomizerCore(
   const { resultBuffer, ancillaryFieldEvidence } = assembled;
   let { reconciledFootnotes } = assembled;
   let publishedBuffer = resultBuffer;
+  let taggedPublicationStats: { formatChanges: number; formatChangeAtoms: number } | undefined;
+  let comparisonStrategyUsed: ComparisonStrategy = comparisonStrategy;
+  let taggedTreeFallbackDiagnostics: TaggedTreeFallbackDiagnostics | undefined;
   if (comparisonStrategy === 'tagged-tree') {
     const publishedArchive = await DocxArchive.load(resultBuffer);
     const [taggedOriginalXml, taggedRevisedXml] = await Promise.all([
       canonicalizeRelationshipReferences(originalXml, originalArchive, publishedArchive),
       canonicalizeRelationshipReferences(revisedXml, revisedArchive, publishedArchive),
     ]);
-    let taggedXml = buildTaggedTreeShadowXml({
+    const taggedPublication = buildTaggedTreePublication({
       originalXml: taggedOriginalXml,
       revisedXml: taggedRevisedXml,
       author,
@@ -1486,56 +1494,72 @@ async function compareDocumentsAtomizerCore(
       detectFormatChanges: formatSettings.detectFormatChanges,
       detectMoves: moveSettings.detectMoves,
     });
+    let taggedXml = taggedPublication.xml;
+    taggedPublicationStats = taggedPublication.stats;
     if (reconciledFootnotes.length > 0) {
       const taggedDocument = parseXml(taggedXml);
       reconciledFootnotes = reconciledFootnotes.filter((pair) =>
         retargetReconciledFootnoteReferences(taggedDocument, pair));
       taggedXml = serializer.serializeToString(taggedDocument);
     }
-    const taggedSafety = evaluateRoundTripSafety(taggedXml);
+    const taggedSafety = taggedTreePublicationSafetyEvaluator
+      ? taggedTreePublicationSafetyEvaluator(
+          originalTextForRoundTrip,
+          revisedTextForRoundTrip,
+          originalBookmarkDiagnostics,
+          revisedBookmarkDiagnostics,
+          taggedXml,
+          auxiliarySidecars,
+        )
+      : evaluateRoundTripSafety(taggedXml);
     if (!taggedSafety.safe) {
-      const summary = taggedSafety.failureSummary;
-      throw new Error(`tagged-tree publication failed: ${
-        typeof summary === 'string' ? summary : JSON.stringify(summary ?? taggedSafety.failureDetails)
-      }`);
+      comparisonStrategyUsed = 'legacy';
+      taggedPublicationStats = undefined;
+      taggedTreeFallbackDiagnostics = {
+        checks: taggedSafety.checks,
+        failedChecks: taggedSafety.failedChecks,
+        failureDetails: taggedSafety.failureDetails,
+        firstDiffSummary: taggedSafety.failureSummary,
+      };
+    } else {
+      const reconciledFootnotesXml = reconciledFootnotes.length > 0
+        ? await publishedArchive.getFile('word/footnotes.xml')
+        : null;
+      publishedArchive.setDocumentXml(taggedXml);
+      await importReferencedRelationships(originalArchive, publishedArchive, taggedXml);
+      // The tagged story can reference definitions that the legacy-shaped
+      // assembly candidate did not expose. Re-run the established auxiliary
+      // merger against both source packages using the actual published story,
+      // so Accept All and Reject All retain their respective note definitions.
+      for (const descriptor of AUXILIARY_PARTS) {
+        await mergeAuxiliaryPartDefinitions(originalArchive, publishedArchive, taggedXml, descriptor);
+        await mergeAuxiliaryPartDefinitions(revisedArchive, publishedArchive, taggedXml, descriptor);
+      }
+      if (reconciledFootnotesXml) {
+        await restoreReconciledFootnoteDefinitions(
+          publishedArchive,
+          reconciledFootnotesXml,
+          reconciledFootnotes,
+        );
+      }
+      publishedBuffer = await publishedArchive.save();
     }
-    const reconciledFootnotesXml = reconciledFootnotes.length > 0
-      ? await publishedArchive.getFile('word/footnotes.xml')
-      : null;
-    publishedArchive.setDocumentXml(taggedXml);
-    await importReferencedRelationships(originalArchive, publishedArchive, taggedXml);
-    // The tagged story can reference definitions that the legacy-shaped
-    // assembly candidate did not expose. Re-run the established auxiliary
-    // merger against both source packages using the actual published story,
-    // so Accept All and Reject All retain their respective note definitions.
-    for (const descriptor of AUXILIARY_PARTS) {
-      await mergeAuxiliaryPartDefinitions(originalArchive, publishedArchive, taggedXml, descriptor);
-      await mergeAuxiliaryPartDefinitions(revisedArchive, publishedArchive, taggedXml, descriptor);
-    }
-    if (reconciledFootnotesXml) {
-      await restoreReconciledFootnoteDefinitions(
-        publishedArchive,
-        reconciledFootnotesXml,
-        reconciledFootnotes,
-      );
-    }
-    publishedBuffer = await publishedArchive.save();
   }
   const stats = computeAtomizerStats(mergedAtoms);
-  if (comparisonStrategy === 'tagged-tree') {
-    const taggedFormatChanges = countTaggedTreePropertyDeltas({
-      originalXml,
-      revisedXml,
-      detectFormatChanges: formatSettings.detectFormatChanges,
-      detectMoves: moveSettings.detectMoves,
-    });
-    stats.formatChanges = taggedFormatChanges;
-    stats.formatChangeAtoms = taggedFormatChanges;
+  if (taggedPublicationStats) {
+    stats.formatChanges = taggedPublicationStats.formatChanges;
+    stats.formatChangeAtoms = taggedPublicationStats.formatChangeAtoms;
   }
   return {
     document: publishedBuffer,
     stats,
     engine: 'atomizer' as const,
+    comparisonStrategyRequested: comparisonStrategy,
+    comparisonStrategyUsed,
+    comparisonStrategyFallbackReason: taggedTreeFallbackDiagnostics
+      ? 'tagged_tree_publication_safety_check_failed'
+      : undefined,
+    taggedTreeFallbackDiagnostics,
     unrepresentedChanges:
       unrepresentedChanges.length > 0 ? unrepresentedChanges : undefined,
     reconstructionModeRequested: reconstructionMode,

@@ -227,6 +227,13 @@ strategy remains the rollback path, and successors C/D remain separate changes.
       `legacy` remains the explicit rollback for one release cycle. Rebuild mode
       remains unchanged.
 
+      **Rollback sunset and fail-safe publication (2026-08-16):** tagged-tree
+      publication safety failure returns the already validated legacy artifact
+      and exposes requested/used strategy, a stable reason, and failed-check
+      diagnostics through the library and MCP response. The rollback sunset is
+      2026-11-16, gated on #837 shipping and #838 release evidence completing;
+      an unmet gate requires an explicit dated extension decision.
+
       **Post-#850 readability gate:** after rebasing onto the canonical
       forward-tie LCS, tagged serialization now consumes the same exported text
       tokenization/alignment boundary as atom comparison. Changed run boundaries

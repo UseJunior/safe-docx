@@ -1,6 +1,6 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
-import { runTaggedTreeShadow } from './taggedTreeShadow.js';
+import { buildTaggedTreeShadowXml, runTaggedTreeShadow } from './taggedTreeShadow.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
 import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
 import { DocxArchive, parseXml } from '@usejunior/docx-core';
@@ -11,8 +11,90 @@ const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_F
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const xml = (value: string) =>
   `<w:document xmlns:w="${W_NS}"><w:body><w:p><w:r><w:t>${value}</w:t></w:r></w:p></w:body></w:document>`;
+const revisionAttributes = 'w:id="7" w:author="Reviewer" w:date="2026-08-14T12:00:00Z"';
+
+function publishPreExistingRevision(documentXml: string): string {
+  return buildTaggedTreeShadowXml({
+    originalXml: documentXml,
+    revisedXml: documentXml,
+    author: 'Comparator',
+    date: new Date('2026-08-14T12:00:00Z'),
+  });
+}
+
+function tableRowRevision(marker: 'ins' | 'del'): string {
+  return `<w:document xmlns:w="${W_NS}"><w:body><w:tbl>`
+    + `<w:tr><w:trPr><w:${marker} ${revisionAttributes}/></w:trPr>`
+    + `<w:tc><w:p><w:r><w:t>TRACKED ROW</w:t></w:r></w:p></w:tc></w:tr>`
+    + `<w:tr><w:tc><w:p><w:r><w:t>STABLE ROW</w:t></w:r></w:p></w:tc></w:tr>`
+    + `</w:tbl></w:body></w:document>`;
+}
+
+function projectTableRows(documentXml: string, projection: 'accept' | 'reject'): string {
+  const document = parseXml(documentXml);
+  for (const row of Array.from(document.getElementsByTagName('w:tr'))) {
+    const rowProperties = Array.from(row.childNodes)
+      .find((node): node is Element => node.nodeType === 1 && (node as Element).tagName === 'w:trPr');
+    const inserted = rowProperties?.getElementsByTagName('w:ins').length === 1;
+    const deleted = rowProperties?.getElementsByTagName('w:del').length === 1;
+    if ((projection === 'accept' && deleted) || (projection === 'reject' && inserted)) {
+      row.parentNode?.removeChild(row);
+    }
+  }
+  return document.documentElement.textContent;
+}
 
 describe('tagged-tree offline evaluation', () => {
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.16' })(
+    'preserves the empty deleted-row marker that makes Accept remove and Reject keep the row',
+    () => {
+      const published = publishPreExistingRevision(tableRowRevision('del'));
+      const document = parseXml(published);
+      const marker = document.getElementsByTagName('w:del').item(0);
+
+      expect(marker?.parentNode && (marker.parentNode as Element).tagName).toBe('w:trPr');
+      expect(marker?.getAttribute('w:id')).toBe('7');
+      expect(published).toContain('TRACKED ROW');
+      expect(published).toContain('STABLE ROW');
+      expect(projectTableRows(published, 'accept')).toBe('STABLE ROW');
+      expect(projectTableRows(published, 'reject')).toBe('TRACKED ROWSTABLE ROW');
+    },
+  );
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.19' })(
+    'preserves the empty inserted-row marker that makes Accept keep and Reject remove the row',
+    () => {
+      const published = publishPreExistingRevision(tableRowRevision('ins'));
+      const document = parseXml(published);
+      const marker = document.getElementsByTagName('w:ins').item(0);
+
+      expect(marker?.parentNode && (marker.parentNode as Element).tagName).toBe('w:trPr');
+      expect(marker?.getAttribute('w:id')).toBe('7');
+      expect(published).toContain('TRACKED ROW');
+      expect(published).toContain('STABLE ROW');
+      expect(projectTableRows(published, 'accept')).toBe('TRACKED ROWSTABLE ROW');
+      expect(projectTableRows(published, 'reject')).toBe('STABLE ROW');
+    },
+  );
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.15' })(
+    'preserves paragraph-mark revisions while removing truly empty content wrappers',
+    () => {
+      const source = `<w:document xmlns:w="${W_NS}"><w:body><w:p>`
+        + `<w:pPr><w:rPr><w:del ${revisionAttributes}/></w:rPr></w:pPr>`
+        + `<w:ins ${revisionAttributes}/><w:del ${revisionAttributes}/>`
+        + `<w:r><w:t>PARAGRAPH</w:t></w:r></w:p></w:body></w:document>`;
+
+      const published = publishPreExistingRevision(source);
+      const document = parseXml(published);
+
+      expect(document.getElementsByTagName('w:del').length).toBe(1);
+      expect(document.getElementsByTagName('w:del').item(0)?.parentNode
+        && (document.getElementsByTagName('w:del').item(0)!.parentNode as Element).tagName).toBe('w:rPr');
+      expect(document.getElementsByTagName('w:ins').length).toBe(0);
+    },
+  );
+
   test('reports without mutating caller-owned legacy output',
     async ({ given, when, then, and }: AllureBddContext) => {
       const legacy = xml('legacy bytes remain caller-owned');
@@ -63,6 +145,64 @@ describe('tagged-tree offline evaluation', () => {
           expect(parseXml(acceptAllChanges(candidate)).documentElement.textContent).toBe('new');
           expect(parseXml(rejectAllChanges(candidate)).documentElement.textContent).toBe('old');
         }
+      });
+    },
+  );
+
+  test.openspec('Tagged-tree publication failure returns the validated legacy redline')(
+    'falls back observably instead of discarding the assembled legacy candidate',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      const original = await buildDocxFromBodyXml('<w:p><w:r><w:t>old</w:t></w:r></w:p>');
+      const revised = await buildDocxFromBodyXml('<w:p><w:r><w:t>new</w:t></w:r></w:p>');
+      const options = { author: 'Comparator', date: new Date('2026-08-14T12:00:00Z') };
+      const forcedFailure = {
+        safe: false,
+        checks: {
+          acceptText: false,
+          rejectText: true,
+          acceptBookmarks: true,
+          rejectBookmarks: true,
+          fieldStructure: true,
+        },
+        failedChecks: ['acceptText' as const],
+        failureDetails: undefined,
+        failureSummary: undefined,
+      };
+      let fallbackResult!: Awaited<ReturnType<typeof compareDocumentsAtomizer>>;
+      let legacyResult!: Awaited<ReturnType<typeof compareDocumentsAtomizer>>;
+
+      await given('a tagged-tree candidate whose publication safety check fails', () => undefined);
+      await when('the ordinary default comparison runs', async () => {
+        [fallbackResult, legacyResult] = await Promise.all([
+          compareDocumentsAtomizer(original, revised, {
+            ...options,
+            taggedTreePublicationSafetyEvaluator: () => forcedFailure,
+          }),
+          compareDocumentsAtomizer(original, revised, {
+            ...options,
+            comparisonStrategy: 'legacy',
+          }),
+        ]);
+      });
+      await then('the already validated legacy redline and stats are returned', async () => {
+        const fallbackXml = await (await DocxArchive.load(fallbackResult.document)).getDocumentXml();
+        const legacyXml = await (await DocxArchive.load(legacyResult.document)).getDocumentXml();
+        expect(fallbackResult.document.equals(legacyResult.document)).toBe(true);
+        expect(fallbackXml).toBe(legacyXml);
+        expect(fallbackResult.stats).toEqual(legacyResult.stats);
+      });
+      await and('the requested default and actual fallback strategy are machine readable', () => {
+        expect(fallbackResult.comparisonStrategyRequested).toBe('tagged-tree');
+        expect(fallbackResult.comparisonStrategyUsed).toBe('legacy');
+        expect(fallbackResult.comparisonStrategyFallbackReason)
+          .toBe('tagged_tree_publication_safety_check_failed');
+        expect(fallbackResult.taggedTreeFallbackDiagnostics).toEqual({
+          checks: forcedFailure.checks,
+          failedChecks: ['acceptText'],
+          failureDetails: undefined,
+          firstDiffSummary: undefined,
+        });
+        expect(fallbackResult.fallbackReason).toBeUndefined();
       });
     },
   );

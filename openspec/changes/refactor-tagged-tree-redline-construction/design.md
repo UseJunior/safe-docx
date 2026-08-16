@@ -53,6 +53,20 @@ artifact verification, and cross-reader tests.
   that infrastructure; this change relies on the current artifact-verification
   boundary instead.
 
+### Decision: legacy fallback is time-bounded and observable
+
+Until the rollback is removed, a tagged-tree candidate that fails publication
+safety checks returns the already assembled, validated legacy buffer. The result
+records requested strategy, used strategy, a stable fallback reason, and the
+failed safety-check diagnostics. This is a strategy fallback, not a
+reconstruction-mode fallback, so reconstruction metadata remains unchanged and
+MCP callers receive a successful artifact with the same diagnostics.
+
+The legacy path sunsets on **2026-11-16**, provided #837 has shipped and #838's
+release-evidence gate is complete. If either gate is incomplete on that date,
+an explicit dated extension decision is required. Legacy SHALL NOT persist by
+default merely because deletion work was not scheduled.
+
 ## Decisions
 
 ### Decision: a side-tagged tree carrying both side representatives

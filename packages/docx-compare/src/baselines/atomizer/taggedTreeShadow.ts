@@ -7,6 +7,7 @@ import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.j
 import { constructTaggedTree, verifyGlobalEqualContentInvariant } from './taggedTreeConstruction.js';
 import { createPreservePlan, serializeTaggedTree, verifySerializedMoveRanges } from './taggedTreeSerializer.js';
 import { formatDate } from './inPlaceModifier-shared.js';
+import { tokenizeComparisonText } from '../../textAlignment.js';
 
 export type TaggedTreeDivergenceClass = 'projection-inequivalent' | 'projection-equivalent';
 
@@ -30,7 +31,36 @@ export interface TaggedTreeShadowInput {
   detectMoves?: boolean;
 }
 
-export function buildTaggedTreeShadowXml(input: Omit<TaggedTreeShadowInput, 'legacyXml'>): string {
+const WORDPROCESSINGML_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+/**
+ * Empty `w:ins`/`w:del` elements are semantic markers when they occur in the
+ * property containers for a paragraph mark or table row. They are not empty
+ * content wrappers and must survive tagged-tree publication.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.16
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.19
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ */
+function isEmptyRevisionMarker(wrapper: Element): boolean {
+  if (wrapper.namespaceURI !== WORDPROCESSINGML_NAMESPACE) return false;
+  if (!['ins', 'del'].includes(wrapper.localName)) return false;
+  const parent = wrapper.parentNode as Element | null;
+  return parent?.namespaceURI === WORDPROCESSINGML_NAMESPACE
+    && ['rPr', 'trPr'].includes(parent.localName);
+}
+
+export interface TaggedTreePublication {
+  xml: string;
+  stats: { formatChanges: number; formatChangeAtoms: number };
+  moves: ReturnType<typeof constructTaggedTree>['moves'];
+}
+
+/** Build the canonical story and its statistics from one tagged construction. */
+export function buildTaggedTreePublication(
+  input: Omit<TaggedTreeShadowInput, 'legacyXml'>,
+): TaggedTreePublication {
   const original = parseXml(input.originalXml).documentElement;
   const revised = parseXml(input.revisedXml).documentElement;
   const constructed = constructTaggedTree(original, revised, {
@@ -48,34 +78,37 @@ export function buildTaggedTreeShadowXml(input: Omit<TaggedTreeShadowInput, 'leg
   const document = parseXml(serialized);
   for (const wrapper of Array.from(document.getElementsByTagName('*'))) {
     if (!['w:ins', 'w:del', 'w:moveFrom', 'w:moveTo'].includes(wrapper.tagName)) continue;
-    if (
-      wrapper.childNodes.length === 0 &&
-      (wrapper.parentNode as Element | null)?.localName !== 'rPr'
-    ) wrapper.parentNode?.removeChild(wrapper);
+    if (wrapper.childNodes.length === 0 && !isEmptyRevisionMarker(wrapper)) {
+      wrapper.parentNode?.removeChild(wrapper);
+    }
   }
   // Tagged publication preserves source-grounded cache projections exactly.
   // Reader recalculation of volatile PAGEREF results is measured separately;
   // silently choosing one source cache would make the other projection false.
-  return new XMLSerializer().serializeToString(document);
+  let formatChanges = 0;
+  let formatChangeAtoms = 0;
+  const visit = (node: typeof constructed.tree): void => {
+    if (node.tag === 'both' && node.propertyDelta) {
+      formatChanges++;
+      // Direct run formatting is measured at the same word/whitespace atom
+      // granularity as the public atomizer stats contract. Structural property
+      // deltas (paragraph, row, cell, section) are one atomic formatting unit.
+      formatChangeAtoms += node.propertyDelta.scope === 'run'
+        ? Math.max(1, tokenizeComparisonText(node.revised.textContent ?? '').length)
+        : 1;
+    }
+    node.children.forEach((child) => visit(child as typeof constructed.tree));
+  };
+  visit(constructed.tree);
+  return {
+    xml: new XMLSerializer().serializeToString(document),
+    stats: { formatChanges, formatChangeAtoms },
+    moves: constructed.moves,
+  };
 }
 
-/** Count the direct-property revisions represented by tagged construction. */
-export function countTaggedTreePropertyDeltas(
-  input: Pick<TaggedTreeShadowInput, 'originalXml' | 'revisedXml' | 'detectFormatChanges' | 'detectMoves'>,
-): number {
-  const original = parseXml(input.originalXml).documentElement;
-  const revised = parseXml(input.revisedXml).documentElement;
-  const { tree } = constructTaggedTree(original, revised, {
-    detectFormatChanges: input.detectFormatChanges,
-    detectMoves: input.detectMoves,
-  });
-  let count = 0;
-  const visit = (node: typeof tree): void => {
-    if (node.tag === 'both' && node.propertyDelta) count++;
-    node.children.forEach((child) => visit(child as typeof tree));
-  };
-  visit(tree);
-  return count;
+export function buildTaggedTreeShadowXml(input: Omit<TaggedTreeShadowInput, 'legacyXml'>): string {
+  return buildTaggedTreePublication(input).xml;
 }
 
 function text(xml: string): string {

@@ -34,7 +34,7 @@ export interface CompareOptions {
    */
   reconstructionMode?: ReconstructionMode;
   /** Select the comparison construction strategy. Tagged-tree is default; legacy is the rollback path. */
-  comparisonStrategy?: 'tagged-tree' | 'legacy';
+  comparisonStrategy?: ComparisonStrategy;
   /**
    * Comparison engine to use:
    * - 'atomizer': Character-level comparison with move detection (recommended)
@@ -79,6 +79,10 @@ export interface CompareStats {
 }
 
 export type ReconstructionMode = 'rebuild' | 'inplace';
+export type ComparisonStrategy = 'tagged-tree' | 'legacy';
+
+export type ComparisonStrategyFallbackReason =
+  | 'tagged_tree_publication_safety_check_failed';
 
 export type UnrepresentedChangeScope = 'section' | 'header' | 'footer';
 export type UnrepresentedChangeKind = 'added' | 'removed' | 'changed';
@@ -201,6 +205,14 @@ export interface ReconstructionAttemptDiagnostics {
 
 export interface ReconstructionFallbackDiagnostics {
   attempts: ReconstructionAttemptDiagnostics[];
+}
+
+/** Safety evidence retained when tagged-tree publication falls back to legacy output. */
+export interface TaggedTreeFallbackDiagnostics {
+  checks: ReconstructionSafetyChecks;
+  failedChecks: ReconstructionSafetyCheckName[];
+  failureDetails?: ReconstructionSafetyFailureDetails;
+  firstDiffSummary?: ReconstructionSafetyFailureSummary;
 }
 
 /**
@@ -341,6 +353,14 @@ export interface CompareResult {
   stats: CompareStats;
   /** Which engine was used */
   engine: 'wmlcomparer' | 'atomizer';
+  /** Strategy requested by the caller, including the tagged-tree default. */
+  comparisonStrategyRequested?: ComparisonStrategy;
+  /** Strategy that constructed the published document. */
+  comparisonStrategyUsed?: ComparisonStrategy;
+  /** Why tagged-tree publication was rejected in favor of validated legacy output. */
+  comparisonStrategyFallbackReason?: ComparisonStrategyFallbackReason;
+  /** Failed tagged-tree publication checks retained for diagnosis and telemetry. */
+  taggedTreeFallbackDiagnostics?: TaggedTreeFallbackDiagnostics;
   /**
    * Input differences that the emitted revision markup does not represent.
    * Absent when no supported package-level difference is detected.

@@ -163,7 +163,10 @@ representation is exercised on any other class of input.
 
 The ordinary comparison pipeline SHALL use tagged-tree construction by default.
 Callers SHALL be able to request the legacy construction explicitly for one
-release-cycle rollback window. Existing runtime safety checks — text, bookmark,
+release-cycle rollback window ending 2026-11-16. Legacy removal SHALL proceed
+on or after that date once #837 has shipped and #838's release-evidence gate is
+complete; if either gate remains incomplete, continued availability SHALL
+require a new dated extension decision. Existing runtime safety checks — text, bookmark,
 field structure, ancillary story, relationship closure, and package integrity —
 SHALL remain in force for both strategies. The public `rebuild` mode SHALL
 remain available and unchanged.
@@ -185,6 +188,24 @@ pinned as a characterization case.
 - **THEN** the tagged-tree strategy SHALL construct the returned redline
 - **AND** an explicit legacy strategy SHALL remain available as a rollback
 - **AND** every existing runtime safety check SHALL still run
+
+#### Scenario: Tagged-tree publication failure returns the validated legacy redline
+
+- **GIVEN** tagged-tree is the requested or default strategy
+- **AND** its publication candidate fails an existing runtime safety check
+- **WHEN** the legacy candidate has already passed its applicable validation
+- **THEN** the pipeline SHALL return the legacy redline instead of throwing
+- **AND** SHALL report tagged-tree as requested and legacy as used
+- **AND** SHALL report a stable fallback reason and the failed-check diagnostics
+- **AND** reconstruction-mode fallback metadata SHALL remain unchanged
+
+#### Scenario: Legacy rollback reaches its sunset
+
+- **GIVEN** the date is on or after 2026-11-16
+- **AND** #837 has shipped and #838's release-evidence gate is complete
+- **WHEN** comparison strategy support is evaluated
+- **THEN** the legacy strategy and automatic fallback SHALL be removed
+- **AND** an unmet gate SHALL require an explicit dated extension decision
 
 #### Scenario: Divergence is recorded with fixture identity
 

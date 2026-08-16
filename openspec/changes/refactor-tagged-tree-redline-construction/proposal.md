@@ -69,7 +69,10 @@ unchanged; deletion and public-surface removal remain successor changes.
 - **Publish tagged-tree output by default after the gates pass.** The ordinary
   pipeline now selects tagged-tree construction when no strategy is specified,
   while `comparisonStrategy: 'legacy'` and the corresponding CLI option retain
-  the prior construction as an explicit rollback.
+  the prior construction as an explicit rollback. The rollback expires on
+  **2026-11-16**: removal proceeds once #837 has shipped and #838's release
+  evidence gate is complete. If either gate is still open on that date, keeping
+  legacy requires a new, dated decision rather than an implicit extension.
 
 - **Sequence PRESERVE evidence in two layers.** Model-level provenance
   splitting, nesting, identifier allocation, and multi-author relationships

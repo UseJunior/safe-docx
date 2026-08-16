@@ -114,6 +114,29 @@ describe('direct paragraph style comparison', () => {
 
     expect(result.stats.formatChanges).toBe(2);
     expect(result.stats.formatChangeAtoms).toBe(2);
+    const publishedXml = await documentXml(result.document);
+    const published = parseDocumentXml(publishedXml);
+    const emittedPropertyRevisions = [
+      ...Array.from(published.getElementsByTagName('w:trPrChange')),
+      ...Array.from(published.getElementsByTagName('w:tcPrChange')),
+    ];
+    expect(emittedPropertyRevisions).toHaveLength(result.stats.formatChanges);
+  });
+
+  test('counts every word-split atom in one direct-run formatting range', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:p><w:r><w:rPr><w:i/></w:rPr><w:t>Alpha beta</w:t></w:r></w:p>',
+    );
+    const revised = await buildDocxFromBodyXml(
+      '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Alpha beta</w:t></w:r></w:p>',
+    );
+
+    const result = await compareDocuments(original, revised, {
+      engine: 'atomizer', reconstructionMode: 'inplace', author: AUTHOR, date: DATE,
+    });
+
+    expect(result.stats.formatChanges).toBe(1);
+    expect(result.stats.formatChangeAtoms).toBe(3);
   });
 
   test.openspec('[SDX-CMP-PSTYLE-01] Non-empty paragraph style replacement is detected once')(
@@ -333,6 +356,10 @@ describe('direct paragraph style comparison', () => {
       );
       await then('the published text replacement and property revision are both counted', () => {
         expect(compared.result.stats.formatChanges).toBe(1);
+        expect(compared.result.stats.formatChangeAtoms).toBe(1);
+        expect(paragraphPropertyChanges(compared.xml)).toHaveLength(
+          compared.result.stats.formatChanges,
+        );
         expect(compared.result.stats.insertions).toBe(1);
         expect(compared.result.stats.deletions).toBe(1);
       });
