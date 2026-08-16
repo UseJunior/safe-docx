@@ -56,13 +56,17 @@ function idMultiset(ids: string[]): Map<string, number> {
  * multiset, and each identifier must be defined exactly once. Comparing
  * multiplicities — not just membership and total length — rejects documents a
  * set-style comparison cannot distinguish from valid ones, such as identifiers
- * duplicated identically across all four collections. The transitional
- * `wml.xsd` alone does not reject duplicate identifiers (it permits unbounded
- * `w:comment` children and carries no uniqueness constraint); the violated
- * rule is the normative prose defining the annotation identifier as a unique
- * identifier for the comment.
+ * duplicated identically across all four collections.
  *
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.2
+ * Rejecting duplicate identifiers is a conservative release-verifier
+ * integrity invariant, deliberately stricter than the spec: unambiguous
+ * comment linkage requires each identifier to resolve to exactly one comment
+ * record. The transitional `wml.xsd` carries no uniqueness constraint (it
+ * permits unbounded `w:comment` children), and the spec prose anticipates
+ * duplicate identifiers by defining consumer fallback behavior for them
+ * rather than prohibiting them. A release gate whose job is to fail closed
+ * does not rely on that fallback.
+ *
  * @see https://github.com/UseJunior/safe-docx/issues/863
  */
 function commentIntegrity(documentXml: string, commentsXml: string | null, required: boolean): Verdict {
