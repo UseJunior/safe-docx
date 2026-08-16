@@ -68,11 +68,26 @@ export async function runPrivateCorpus(manifestPath: string, tools?: RendererToo
       cases.push({ label: entry.label, trackedSha256, status: 'fail', reason: 'tracked SHA-256 mismatch' });
       continue;
     }
+    let expectedMarkupTextBytes: Buffer;
+    try {
+      expectedMarkupTextBytes = await readFile(expectedMarkupTextPath);
+    } catch {
+      cases.push({ label: entry.label, trackedSha256, status: 'fail', reason: 'expected markup text unreadable' });
+      continue;
+    }
+    const expectedMarkupText = expectedMarkupTextBytes.toString('utf8');
+    if (expectedMarkupText.trim().length === 0) {
+      cases.push({ label: entry.label, trackedSha256, status: 'fail', reason: 'expected markup text is empty' });
+      continue;
+    }
+    if (entry.expectedMarkupTextSha256 !== undefined && sha256(expectedMarkupTextBytes) !== entry.expectedMarkupTextSha256) {
+      cases.push({ label: entry.label, trackedSha256, status: 'fail', reason: 'expected markup text SHA-256 mismatch' });
+      continue;
+    }
     if (!entry.requireRender) {
       cases.push({ label: entry.label, trackedSha256, status: 'not_run', reason: 'renderer not required for this case' });
       continue;
     }
-    const expectedMarkupText = await readFile(expectedMarkupTextPath, 'utf8');
     const result = await verifyRenderedMarkup({ trackedDocxPath, expectedMarkupText, outputDir: path.join(outputDir, sha256(Buffer.from(entry.label)).slice(0, 16)), tools });
     // Tool output can contain local paths or document text. Persist only this
     // bounded category so a corpus summary remains safely non-substantive.
