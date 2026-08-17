@@ -1,10 +1,20 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { buildTaggedTreeShadowXml, runTaggedTreeShadow } from './taggedTreeShadow.js';
-import { compareDocumentsAtomizer } from './pipeline.js';
+import {
+  buildStandaloneTaggedPackage,
+  compareDocumentsAtomizer,
+  type TaggedPackageShadowReport,
+} from './pipeline.js';
 import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
-import { DocxArchive, parseXml } from '@usejunior/docx-core';
+import {
+  DEFAULT_FORMAT_DETECTION_SETTINGS,
+  DEFAULT_MOVE_DETECTION_SETTINGS,
+  DocxArchive,
+  parseXml,
+} from '@usejunior/docx-core';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
+import { DEFAULT_NUMBERING_OPTIONS } from './numberingIntegration.js';
 
 const TEST_FEATURE = 'refactor-tagged-tree-redline-construction';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
@@ -45,6 +55,62 @@ function projectTableRows(documentXml: string, projection: 'accept' | 'reject'):
 }
 
 describe('tagged-tree offline evaluation', () => {
+  test.openspec('Standalone publication has no legacy assembly dependency')(
+    'matches the authoritative normalized package without consuming legacy assembly state',
+    async () => {
+      const original = await buildDocxFromBodyXml(
+        '<w:p><w:r><w:t>Original agreement language.</w:t></w:r></w:p>',
+      );
+      const revised = await buildDocxFromBodyXml(
+        '<w:p><w:r><w:t>Revised agreement language.</w:t></w:r></w:p>',
+      );
+      let report: TaggedPackageShadowReport | undefined;
+      const result = await compareDocumentsAtomizer(original, revised, {
+        author: 'Comparator',
+        date: new Date('2026-08-17T12:00:00Z'),
+        standaloneTaggedPackageShadowObserver: (value) => { report = value; },
+      });
+
+      expect(result.comparisonStrategyUsed).toBe('tagged-tree');
+      expect(report).toEqual({
+        missingParts: [],
+        unexpectedParts: [],
+        differentParts: [],
+        standaloneHasNoLegacyAssemblyInputs: true,
+      });
+    },
+  );
+
+  test('reports package-only changes and their source-projected formatting evidence', async () => {
+    const paragraph = '<w:p><w:r><w:t>Stable agreement.</w:t></w:r></w:p>';
+    const withPageSize = async (width: string, height: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(await buildDocxFromBodyXml(paragraph));
+      archive.setDocumentXml(
+        (await archive.getDocumentXml()).replace(
+          '<w:sectPr/>',
+          `<w:sectPr><w:pgSz w:w="${width}" w:h="${height}"/></w:sectPr>`,
+        ),
+      );
+      return archive.save();
+    };
+    const original = await withPageSize('12240', '15840');
+    const revised = await withPageSize('15840', '12240');
+
+    const standalone = await buildStandaloneTaggedPackage(original, revised, {
+      author: 'Comparator',
+      date: new Date('2026-08-17T12:00:00Z'),
+      moveDetection: DEFAULT_MOVE_DETECTION_SETTINGS,
+      formatDetection: DEFAULT_FORMAT_DETECTION_SETTINGS,
+      numbering: DEFAULT_NUMBERING_OPTIONS,
+    });
+
+    expect(standalone.unrepresentedChanges).toEqual([
+      expect.objectContaining({ scope: 'section', kind: 'changed' }),
+    ]);
+    expect(standalone.formattingFidelity.accept.score).toBe(1);
+    expect(standalone.formattingFidelity.reject.score).toBe(1);
+  });
+
   test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.16' })(
     'preserves the empty deleted-row marker that makes Accept remove and Reject keep the row',
     () => {

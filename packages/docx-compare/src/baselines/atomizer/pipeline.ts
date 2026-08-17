@@ -35,6 +35,7 @@ import type {
   ReconstructionMode,
   TaggedTreeFallbackDiagnostics,
   RevisionAttribution,
+  UnrepresentedChange,
 } from '../../compare-types.js';
 import { DEFAULT_RECONSTRUCTION_MODE } from '../../comparison-defaults.js';
 import type {
@@ -134,6 +135,11 @@ import {
 import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.js';
 import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
 import { buildTaggedTreePublication } from './taggedTreeShadow.js';
+import {
+  compareFormattingFidelity,
+  compareSourceProjectedFormattingFidelity,
+  type ProjectedFormattingFidelity,
+} from './formattingFidelity.js';
 import { resolveTaggedRevisionAttributions } from './taggedTreeSerializer.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import {
@@ -156,6 +162,119 @@ import {
 const OFFICE_RELATIONSHIP_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const PACKAGE_RELATIONSHIP_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+
+export interface StandaloneTaggedPackageOptions {
+  author: string;
+  date: Date;
+  moveDetection: MoveDetectionSettings;
+  formatDetection: FormatDetectionSettings;
+  numbering: NumberingIntegrationOptions;
+  revisionAttributionRanges?: readonly import('../../compare-types.js').RevisionAttributionRange[];
+}
+
+export interface StandaloneTaggedPackageResult {
+  document: Buffer;
+  documentXml: string;
+  ancillaryFieldEvidence: AncillaryFieldEvidence;
+  formattingFidelity: ProjectedFormattingFidelity;
+  revisionAttributions?: RevisionAttribution[];
+  unrepresentedChanges?: UnrepresentedChange[];
+}
+
+export interface TaggedPackageShadowReport {
+  missingParts: string[];
+  unexpectedParts: string[];
+  differentParts: string[];
+  standaloneHasNoLegacyAssemblyInputs: true;
+}
+
+/**
+ * Reconcile a collision-renumbered footnote reference with its independently
+ * tagged definition while retaining the reference identifier semantics.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ */
+async function reconcileStandaloneTaggedFootnotes(options: {
+  originalArchive: DocxArchive;
+  revisedArchive: DocxArchive;
+  resultArchive: DocxArchive;
+  documentXml: string;
+  author: string;
+  date: Date;
+  formatDetection: FormatDetectionSettings;
+}): Promise<string> {
+  const [originalXml, revisedXml, resultXml, originalDocumentXml, revisedDocumentXml] =
+    await Promise.all([
+      options.originalArchive.getFile('word/footnotes.xml'),
+      options.revisedArchive.getFile('word/footnotes.xml'),
+      options.resultArchive.getFile('word/footnotes.xml'),
+      options.originalArchive.getDocumentXml(),
+      options.revisedArchive.getDocumentXml(),
+    ]);
+  if (!originalXml || !revisedXml || !resultXml) return options.documentXml;
+  const original = parseEntries(originalXml, 'w:footnote');
+  const revised = parseEntries(revisedXml, 'w:footnote');
+  const result = parseEntries(resultXml, 'w:footnote');
+  const document = parseXml(options.documentXml);
+  const originalDocument = parseXml(originalDocumentXml);
+  const revisedDocument = parseXml(revisedDocumentXml);
+  const pairs: Array<{ originalId: string; revisedId: string }> = [];
+  for (const paragraph of Array.from(document.getElementsByTagName('w:p'))) {
+    const references = Array.from(paragraph.getElementsByTagName('w:footnoteReference'));
+    if (references.length !== 2) continue;
+    const deleted = references.find((reference) => hasAncestorTag(reference, 'w:del'));
+    const inserted = references.find((reference) => hasAncestorTag(reference, 'w:ins'));
+    const originalId = deleted?.getAttribute('w:id');
+    const revisedId = inserted?.getAttribute('w:id');
+    if (originalId && revisedId && originalId !== revisedId) {
+      pairs.push({ originalId, revisedId });
+    }
+  }
+  let changed = false;
+  for (const pair of pairs) {
+    const originalEntry = original.entries.get(pair.originalId);
+    const revisedEntry = revised.entries.get(pair.revisedId);
+    const resultEntry = result.entries.get(pair.revisedId);
+    if (!originalEntry || !revisedEntry || !resultEntry) continue;
+    if (
+      footnoteDefinitionRequiresCollisionSafeFallback(originalEntry) ||
+      footnoteDefinitionRequiresCollisionSafeFallback(revisedEntry) ||
+      !isOnlyFootnoteAnchorInSourceParagraph(originalDocument, pair.originalId) ||
+      !isOnlyFootnoteAnchorInSourceParagraph(revisedDocument, pair.revisedId) ||
+      !hasSafeEmittedFootnoteReferenceShape(
+        document,
+        pair.originalId,
+        pair.revisedId,
+        () => ({
+          accepted: parseXml(acceptAllChanges(options.documentXml)),
+          rejected: parseXml(rejectAllChanges(options.documentXml)),
+        }),
+      )
+    ) continue;
+    const publication = buildTaggedTreePublication({
+      originalXml: serializer.serializeToString(originalEntry),
+      revisedXml: serializer.serializeToString(revisedEntry),
+      author: options.author,
+      date: options.date,
+      detectFormatChanges: options.formatDetection.detectFormatChanges,
+      detectMoves: false,
+    });
+    const comparedEntry = parseXml(publication.xml).documentElement;
+    comparedEntry.setAttribute('w:id', pair.revisedId);
+    resultEntry.parentNode?.replaceChild(result.doc.importNode(comparedEntry, true), resultEntry);
+    for (const reference of Array.from(document.getElementsByTagName('w:footnoteReference'))) {
+      if (reference.getAttribute('w:id') === pair.originalId) {
+        reference.setAttribute('w:id', pair.revisedId);
+      }
+    }
+    changed = true;
+  }
+  if (changed) {
+    options.resultArchive.setFile('word/footnotes.xml', serializer.serializeToString(result.doc));
+    return serializer.serializeToString(document);
+  }
+  return options.documentXml;
+}
 
 function relationshipPartPath(ownerPart: string, target: string): string {
   return normalizeOpcRelationshipTarget({ ownerPart, target }).target;
@@ -192,6 +311,353 @@ function finalizeTaggedDocumentXml(documentXml: string): string {
   );
 }
 
+/**
+ * Assemble a revised-base tagged result without a legacy result buffer, atom
+ * list, or reconstruction-mode decision. Source archives are reopened so the
+ * standalone relationship/auxiliary collision plan cannot inherit mutations
+ * selected for legacy assembly.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ */
+export async function buildStandaloneTaggedPackage(
+  original: Buffer,
+  revised: Buffer,
+  options: StandaloneTaggedPackageOptions,
+): Promise<StandaloneTaggedPackageResult> {
+  const originalArchive = await DocxArchive.load(original);
+  const revisedArchive = await DocxArchive.load(revised);
+  const unrepresentedChanges = await detectUnrepresentedChanges(
+    originalArchive,
+    revisedArchive,
+  );
+  await renumberCollidingAuxiliaryIds(originalArchive, revisedArchive);
+  await restampCollidingCommentParaIds(originalArchive, revisedArchive);
+  await renumberCollidingRelationshipIds(originalArchive, revisedArchive);
+
+  const [originalXml, revisedXml, originalNumberingXml, revisedNumberingXml] = await Promise.all([
+    originalArchive.getDocumentXml(),
+    revisedArchive.getDocumentXml(),
+    originalArchive.getNumberingXml(),
+    revisedArchive.getNumberingXml(),
+  ]);
+  // Canonicalization needs one relationship table containing both sides, but
+  // that temporary clone is discarded so unused original parts never leak
+  // into the published revised-base package.
+  const canonicalArchive = await revisedArchive.clone();
+  await importReferencedRelationships(originalArchive, canonicalArchive, originalXml);
+  const [taggedOriginalXml, taggedRevisedXml] = await Promise.all([
+    canonicalizeRelationshipReferences(originalXml, originalArchive, canonicalArchive),
+    canonicalizeRelationshipReferences(revisedXml, revisedArchive, canonicalArchive),
+  ]);
+  const taggedPublication = buildTaggedTreePublication({
+    originalXml: taggedOriginalXml,
+    revisedXml: taggedRevisedXml,
+    author: options.author,
+    date: options.date,
+    detectFormatChanges: options.formatDetection.detectFormatChanges,
+    detectMoves: options.moveDetection.detectMoves,
+    moveSimilarityThreshold: options.moveDetection.moveSimilarityThreshold,
+    moveMinimumWordCount: options.moveDetection.moveMinimumWordCount,
+    caseInsensitiveMove: options.moveDetection.caseInsensitiveMove,
+    numberingEnabled: options.numbering.enabled,
+    originalNumberingXml: originalNumberingXml ?? undefined,
+    revisedNumberingXml: revisedNumberingXml ?? undefined,
+    revisionAttributionRanges: options.revisionAttributionRanges,
+  });
+  let taggedXml = finalizeTaggedDocumentXml(taggedPublication.xml);
+  let revisionAttributions: RevisionAttribution[] | undefined;
+  if ((options.revisionAttributionRanges?.length ?? 0) > 0) {
+    const resolved = resolveTaggedRevisionAttributions(
+      taggedXml,
+      options.revisionAttributionRanges!.map((range) => range.operationId),
+    );
+    taggedXml = resolved.xml;
+    revisionAttributions = resolved.attributions;
+  }
+
+  const resultArchive = await revisedArchive.clone();
+  taggedXml = await reconcileStandaloneTaggedFootnotes({
+    originalArchive,
+    revisedArchive,
+    resultArchive,
+    documentXml: taggedXml,
+    author: options.author,
+    date: options.date,
+    formatDetection: options.formatDetection,
+  });
+  resultArchive.setDocumentXml(taggedXml);
+  await importReferencedRelationships(originalArchive, resultArchive, taggedXml);
+  const noteMergeResults = new Map<'footnote' | 'endnote', AuxiliaryMergeResult>();
+  for (const descriptor of AUXILIARY_PARTS) {
+    const mergeResult = await mergeAuxiliaryPartDefinitions(
+      originalArchive,
+      resultArchive,
+      taggedXml,
+      descriptor,
+    );
+    await mergeAuxiliaryPartDefinitions(revisedArchive, resultArchive, taggedXml, descriptor);
+    if (descriptor.label === 'footnote' || descriptor.label === 'endnote') {
+      noteMergeResults.set(descriptor.label, mergeResult);
+    }
+  }
+  const rootCommentIds = await collectStoryReferenceIds(
+    resultArchive,
+    taggedXml,
+    'w:commentReference',
+    null,
+  );
+  if (rootCommentIds.size > 0) {
+    await mergeCommentAncillaryParts(originalArchive, resultArchive, rootCommentIds);
+    await mergeCommentAncillaryParts(revisedArchive, resultArchive, rootCommentIds);
+  }
+  const ancillaryFieldEvidence = await evaluateAncillaryFieldSafety({
+    resultArchive,
+    baseArchive: revisedArchive,
+    mergeSourceArchive: originalArchive,
+    reconstructionMode: 'inplace',
+    baseSide: 'revised',
+    mergeSourceSide: 'original',
+    noteMergeResults,
+  });
+  const finalAuxiliarySidecars = {
+    footnotesXmls: [await resultArchive.getFile('word/footnotes.xml')],
+    endnotesXmls: [await resultArchive.getFile('word/endnotes.xml')],
+  };
+  const publicationSafety = evaluateSafetyChecks(
+    extractRoundTripComparisonText(originalXml),
+    extractRoundTripComparisonText(revisedXml),
+    collectBookmarkDiagnostics(originalXml),
+    collectBookmarkDiagnostics(revisedXml),
+    taggedXml,
+    finalAuxiliarySidecars,
+  );
+  if (!publicationSafety.safe) {
+    throw new Error(
+      `Standalone tagged publication failed safety checks: ${publicationSafety.failedChecks.join(', ')}`,
+    );
+  }
+  const formattingFidelity = compareSourceProjectedFormattingFidelity(
+    originalXml,
+    revisedXml,
+    taggedXml,
+  );
+  return {
+    document: await resultArchive.save(),
+    documentXml: taggedXml,
+    ancillaryFieldEvidence,
+    formattingFidelity,
+    revisionAttributions,
+    unrepresentedChanges:
+      unrepresentedChanges.length > 0 ? unrepresentedChanges : undefined,
+  };
+}
+
+async function compareTaggedPackageParts(
+  authoritative: Buffer,
+  standalone: Buffer,
+): Promise<TaggedPackageShadowReport> {
+  const [authoritativeArchive, standaloneArchive] = await Promise.all([
+    DocxArchive.load(authoritative),
+    DocxArchive.load(standalone),
+  ]);
+  const authoritativeParts = new Set(
+    authoritativeArchive.listFiles().filter((path) => !path.endsWith('/')),
+  );
+  const standaloneParts = new Set(
+    standaloneArchive.listFiles().filter((path) => !path.endsWith('/')),
+  );
+  const missingParts = [...authoritativeParts].filter((path) => !standaloneParts.has(path)).sort();
+  const unexpectedParts = [...standaloneParts].filter((path) => !authoritativeParts.has(path)).sort();
+  const differentParts: string[] = [];
+  const projectReachableNoteDefinitions = async (
+    archive: DocxArchive,
+    path: 'word/footnotes.xml' | 'word/endnotes.xml',
+    value: string,
+    projection: typeof acceptAllChanges,
+  ): Promise<string> => {
+    const referenceTag = path === 'word/footnotes.xml'
+      ? 'w:footnoteReference'
+      : 'w:endnoteReference';
+    const entryTag = path === 'word/footnotes.xml' ? 'w:footnote' : 'w:endnote';
+    const projectedDocument = parseXml(projection(await archive.getDocumentXml()));
+    const referencedIds = new Set(Array.from(
+      projectedDocument.getElementsByTagName(referenceTag),
+    ).map((reference) => reference.getAttribute('w:id')).filter(
+      (id): id is string => id !== null,
+    ));
+    const projectedPart = parseXml(projection(value));
+    for (const entry of Array.from(projectedPart.getElementsByTagName(entryTag))) {
+      const id = entry.getAttribute('w:id');
+      if (id !== null && Number(id) >= 0 && !referencedIds.has(id)) {
+        entry.parentNode?.removeChild(entry);
+      }
+    }
+    return serializer.serializeToString(projectedPart);
+  };
+  const normalizePart = async (
+    archive: DocxArchive,
+    path: string,
+    value: Buffer | null,
+  ): Promise<Buffer> => {
+    if (!value) return Buffer.alloc(0);
+    let xmlValue = value.toString('utf8');
+    if (path === 'word/document.xml') {
+      const semantics = await relationshipSemanticsById(archive);
+      const document = parseXml(xmlValue);
+      for (const element of Array.from(document.getElementsByTagName('*'))) {
+        for (const attribute of Array.from(element.attributes)) {
+          if (attribute.namespaceURI !== OFFICE_RELATIONSHIP_NS) continue;
+          const identity = semantics.get(attribute.value);
+          if (identity) attribute.value = identity;
+        }
+      }
+      xmlValue = serializer.serializeToString(document);
+    }
+    if (path === 'word/_rels/document.xml.rels') {
+      const document = parseXml(value.toString('utf8'));
+      const entries = await Promise.all(Array.from(
+        document.getElementsByTagNameNS(PACKAGE_RELATIONSHIP_NS, 'Relationship'),
+      ).map(async (relationship) => {
+        const type = relationship.getAttribute('Type') ?? '';
+        const target = relationship.getAttribute('Target') ?? '';
+        const mode = relationship.getAttribute('TargetMode') ?? '';
+        const identity = mode === 'External'
+          ? target
+          : relationshipPartPath('word/document.xml', target);
+        return JSON.stringify([type, mode, identity]);
+      }));
+      return Buffer.from([...new Set(entries)].sort().join('\n'));
+    }
+    if (!/\.(?:xml|rels)$/iu.test(path)) return value;
+    const semanticSignature = (xml: string): string => {
+      const document = parseXml(xml);
+      premergeAdjacentRuns(document.documentElement);
+      const visit = (node: Node): unknown => {
+        if (node.nodeType === 1) {
+          const element = node as Element;
+          const attributes = Array.from(element.attributes)
+            .filter((attribute) => attribute.namespaceURI !== 'http://www.w3.org/2000/xmlns/')
+            .filter((attribute) => !(
+              element.localName === 't' &&
+              attribute.namespaceURI === 'http://www.w3.org/XML/1998/namespace' &&
+              attribute.localName === 'space' &&
+              (element.textContent ?? '').trim() === (element.textContent ?? '')
+            ))
+            .map((attribute) => [
+              attribute.namespaceURI ?? '',
+              attribute.localName ?? attribute.name,
+              attribute.value,
+            ])
+            .sort(([leftNamespace, leftName], [rightNamespace, rightName]) =>
+              `${leftNamespace}:${leftName}`.localeCompare(`${rightNamespace}:${rightName}`));
+          return [
+            element.namespaceURI ?? '',
+            element.localName ?? element.tagName,
+            attributes,
+            Array.from(element.childNodes)
+              .filter((child) => child.nodeType === 1 || (child.nodeValue ?? '').length > 0)
+              .map(visit)
+              .filter((child) => child !== null),
+          ];
+        }
+        if (node.nodeType === 3 || node.nodeType === 4) {
+          const value = node.nodeValue ?? '';
+          const parent = node.parentNode as Element | null;
+          return value.trim().length > 0 || ['t', 'delText', 'instrText'].includes(parent?.localName ?? '')
+            ? ['text', value]
+            : null;
+        }
+        return null;
+      };
+      return JSON.stringify(visit(document.documentElement));
+    };
+    if (/^word\/(?:document|footnotes|endnotes|header\d+|footer\d+)\.xml$/u.test(path)) {
+      return Buffer.from(JSON.stringify([
+        semanticSignature(acceptAllChanges(xmlValue)),
+        semanticSignature(rejectAllChanges(xmlValue)),
+      ]));
+    }
+    return Buffer.from(semanticSignature(xmlValue));
+  };
+  for (const path of [...authoritativeParts].filter((entry) => standaloneParts.has(entry)).sort()) {
+    const [left, right] = await Promise.all([
+      authoritativeArchive.getFileBuffer(path),
+      standaloneArchive.getFileBuffer(path),
+    ]);
+    if (
+      left && right &&
+      (path === 'word/footnotes.xml' || path === 'word/endnotes.xml')
+    ) {
+      const notePath = path as 'word/footnotes.xml' | 'word/endnotes.xml';
+      const [authoritativeAccept, authoritativeReject, standaloneAccept, standaloneReject] =
+        await Promise.all([
+          projectReachableNoteDefinitions(
+            authoritativeArchive, notePath, left.toString('utf8'), acceptAllChanges,
+          ),
+          projectReachableNoteDefinitions(
+            authoritativeArchive, notePath, left.toString('utf8'), rejectAllChanges,
+          ),
+          projectReachableNoteDefinitions(
+            standaloneArchive, notePath, right.toString('utf8'), acceptAllChanges,
+          ),
+          projectReachableNoteDefinitions(
+            standaloneArchive, notePath, right.toString('utf8'), rejectAllChanges,
+          ),
+        ]);
+      const sameProjectionText =
+        extractRoundTripComparisonText(authoritativeAccept) ===
+          extractRoundTripComparisonText(standaloneAccept) &&
+        extractRoundTripComparisonText(authoritativeReject) ===
+          extractRoundTripComparisonText(standaloneReject);
+      const acceptFidelity = compareFormattingFidelity(
+        authoritativeAccept,
+        standaloneAccept,
+      );
+      const rejectFidelity = compareFormattingFidelity(
+        authoritativeReject,
+        standaloneReject,
+      );
+      if (sameProjectionText && acceptFidelity.score === 1 && rejectFidelity.score === 1) {
+        continue;
+      }
+    }
+    if (
+      left && right &&
+      /^word\/(?:document|header\d+|footer\d+)\.xml$/u.test(path)
+    ) {
+      const authoritativeXml = left.toString('utf8');
+      const standaloneXml = right.toString('utf8');
+      const authoritativeAccept = acceptAllChanges(authoritativeXml);
+      const authoritativeReject = rejectAllChanges(authoritativeXml);
+      const standaloneAccept = acceptAllChanges(standaloneXml);
+      const standaloneReject = rejectAllChanges(standaloneXml);
+      const sameProjectionText =
+        extractRoundTripComparisonText(authoritativeAccept) ===
+          extractRoundTripComparisonText(standaloneAccept) &&
+        extractRoundTripComparisonText(authoritativeReject) ===
+          extractRoundTripComparisonText(standaloneReject);
+      const fidelity = compareSourceProjectedFormattingFidelity(
+        authoritativeReject,
+        authoritativeAccept,
+        standaloneXml,
+      );
+      if (sameProjectionText && fidelity.score === 1) continue;
+    }
+    const [normalizedLeft, normalizedRight] = await Promise.all([
+      normalizePart(authoritativeArchive, path, left),
+      normalizePart(standaloneArchive, path, right),
+    ]);
+    if (!normalizedLeft.equals(normalizedRight)) differentParts.push(path);
+  }
+  return {
+    missingParts,
+    unexpectedParts,
+    differentParts,
+    standaloneHasNoLegacyAssemblyInputs: true,
+  };
+}
+
 async function relationshipClosureDigest(
   archive: DocxArchive,
   partPath: string,
@@ -207,11 +673,13 @@ async function relationshipClosureDigest(
     const nextAncestors = new Set(ancestors).add(partPath);
     const relsXml = await archive.getFile(relationshipPartRelsPath(partPath));
     const children: string[] = [];
+    const childSemanticsById = new Map<string, string>();
     if (relsXml) {
       const rels = parseXml(relsXml);
       for (const relationship of Array.from(
         rels.getElementsByTagNameNS(PACKAGE_RELATIONSHIP_NS, 'Relationship'),
       )) {
+        const id = relationship.getAttribute('Id') ?? '';
         const type = relationship.getAttribute('Type') ?? '';
         const target = relationship.getAttribute('Target') ?? '';
         const mode = relationship.getAttribute('TargetMode') ?? '';
@@ -220,14 +688,34 @@ async function relationshipClosureDigest(
           : await relationshipClosureDigest(
             archive, relationshipPartPath(partPath, target), nextAncestors, cache,
           );
-        children.push(JSON.stringify([type, mode, identity]));
+        const semantics = JSON.stringify([type, mode, identity]);
+        children.push(semantics);
+        if (id) childSemanticsById.set(id, semantics);
       }
       children.sort();
     }
+    let semanticBytes = bytes;
+    if (/\.(?:xml|rels)$/iu.test(partPath)) {
+      try {
+        const document = parseXml(bytes.toString('utf8'));
+        for (const element of Array.from(document.getElementsByTagName('*'))) {
+          for (const attribute of Array.from(element.attributes)) {
+            if (attribute.namespaceURI !== OFFICE_RELATIONSHIP_NS) continue;
+            const semantics = childSemanticsById.get(attribute.value);
+            if (semantics) attribute.value = semantics;
+          }
+        }
+        semanticBytes = Buffer.from(serializer.serializeToString(document));
+      } catch {
+        // An unused malformed auxiliary part is rejected only if publication
+        // provenance selects it. Relationship identity must remain readable
+        // enough for the main comparison to take that established path.
+      }
+    }
     return createHash('sha256')
-      .update(bytes)
+      .update(semanticBytes)
       .update('\0')
-      .update(children.join('\0'))
+      .update([...new Set(children)].join('\0'))
       .digest('hex');
   })();
   cache.set(partPath, computation);
@@ -322,6 +810,10 @@ export interface AtomizerOptions {
   revisionAttributionRanges?: import('../../compare-types.js').RevisionAttributionRange[];
   /** @internal Test seam for exercising fail-safe publication without malformed fixtures. */
   taggedTreePublicationSafetyEvaluator?: typeof evaluateSafetyChecks;
+  /** @internal Opt-in Phase 6 package shadow observer. */
+  standaloneTaggedPackageShadowObserver?: (
+    report: TaggedPackageShadowReport,
+  ) => void | Promise<void>;
 }
 
 /** Atomizer-only result metadata used by internal tagged attribution callers. */
@@ -770,7 +1262,8 @@ export async function compareDocumentsAtomizer(
   if (!textBoxPlan) {
     return compareDocumentsAtomizerCore(original, revised, options);
   }
-  if (options.reconstructionMode !== 'inplace') {
+  const taggedStoryPublication = (options.comparisonStrategy ?? 'tagged-tree') === 'tagged-tree';
+  if (!taggedStoryPublication && options.reconstructionMode !== 'inplace') {
     throw new UnsupportedTextBoxRevisionError([{
       index: textBoxPlan.stories[0]?.visualIndex ?? 0,
       partPath: textBoxPlan.stories[0]?.partPath ?? 'word/document.xml',
@@ -778,16 +1271,22 @@ export async function compareDocumentsAtomizer(
     }]);
   }
 
+  const standaloneShadowReports: TaggedPackageShadowReport[] = [];
+  const standaloneShadowObserver = options.standaloneTaggedPackageShadowObserver;
   const nestedOptions: AtomizerOptions = {
     ...options,
     reconstructionMode: 'inplace',
+    standaloneTaggedPackageShadowObserver:
+      taggedStoryPublication && standaloneShadowObserver
+        ? (report) => { standaloneShadowReports.push(report); }
+        : options.standaloneTaggedPackageShadowObserver,
   };
   const outerResult = await compareDocumentsAtomizerCore(
     textBoxPlan.outerOriginal,
     textBoxPlan.outerRevised,
     nestedOptions,
   );
-  if (outerResult.reconstructionModeUsed !== 'inplace') {
+  if (!taggedStoryPublication && outerResult.reconstructionModeUsed !== 'inplace') {
     throw new UnsupportedTextBoxRevisionError([{
       index: textBoxPlan.stories[0]?.visualIndex ?? 0,
       partPath: textBoxPlan.stories[0]?.partPath ?? 'word/document.xml',
@@ -821,7 +1320,7 @@ export async function compareDocumentsAtomizer(
       story.container === 'ancillaryPart' ? story.original : story.revised,
       nestedOptions,
     );
-    if (result.reconstructionModeUsed !== 'inplace') {
+    if (!taggedStoryPublication && result.reconstructionModeUsed !== 'inplace') {
       throw new UnsupportedTextBoxRevisionError([{
         index: story.visualIndex,
         partPath: story.partPath,
@@ -896,6 +1395,20 @@ export async function compareDocumentsAtomizer(
   ) {
     await assertAncillaryTextBoxStoryProjection(original, revised, document);
   }
+  if (taggedStoryPublication && standaloneShadowObserver) {
+    await standaloneShadowObserver({
+      missingParts: [...new Set(standaloneShadowReports.flatMap(
+        (report) => report.missingParts,
+      ))].sort(),
+      unexpectedParts: [...new Set(standaloneShadowReports.flatMap(
+        (report) => report.unexpectedParts,
+      ))].sort(),
+      differentParts: [...new Set(standaloneShadowReports.flatMap(
+        (report) => report.differentParts,
+      ))].sort(),
+      standaloneHasNoLegacyAssemblyInputs: true,
+    });
+  }
 
   const results = [outerResult, ...storyResults.map(({ result }) => result)];
   const stats = results.reduce<CompareStats>(
@@ -965,6 +1478,7 @@ async function compareDocumentsAtomizerCore(
     comparisonStrategy = 'tagged-tree',
     revisionAttributionRanges = [],
     taggedTreePublicationSafetyEvaluator,
+    standaloneTaggedPackageShadowObserver,
   } = options;
 
   // Merge settings with defaults
@@ -1608,6 +2122,19 @@ async function compareDocumentsAtomizerCore(
         );
       }
       publishedBuffer = await publishedArchive.save();
+      if (standaloneTaggedPackageShadowObserver) {
+        const standalone = await buildStandaloneTaggedPackage(original, revised, {
+          author,
+          date,
+          moveDetection: moveSettings,
+          formatDetection: formatSettings,
+          numbering: numberingSettings,
+          revisionAttributionRanges,
+        });
+        await standaloneTaggedPackageShadowObserver(
+          await compareTaggedPackageParts(publishedBuffer, standalone.document),
+        );
+      }
     }
   }
   const stats = computeAtomizerStats(mergedAtoms);

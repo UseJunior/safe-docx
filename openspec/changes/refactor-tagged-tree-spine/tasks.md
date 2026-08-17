@@ -44,12 +44,12 @@
 
 ## 6. Standalone tagged package assembler
 
-- [ ] 6.1 Assemble from an explicitly revised base without legacy result buffers, merged atoms, or output mode.
-- [ ] 6.2 Own package relationships/content types and every ancillary/package part listed in the design.
-- [ ] 6.3 Move footnote reconciliation and text-box/ancillary publication onto tagged stories.
-- [ ] 6.4 Replace reconstruction-mode text-box guards with per-story safety while preserving the typed error contract.
-- [ ] 6.5 Wire auxiliary sidecar and formatting-fidelity checks into the final publication gate.
-- [ ] 6.6 Run assembler in shadow and compare normalized manifests and parts for the full Phase 1 corpus.
+- [x] 6.1 Assemble from an explicitly revised base without legacy result buffers, merged atoms, or output mode.
+- [x] 6.2 Own package relationships/content types and every ancillary/package part listed in the design.
+- [x] 6.3 Move footnote reconciliation and text-box/ancillary publication onto tagged stories.
+- [x] 6.4 Replace reconstruction-mode text-box guards with per-story safety while preserving the typed error contract.
+- [x] 6.5 Wire auxiliary sidecar and formatting-fidelity checks into the final publication gate.
+- [x] 6.6 Run assembler in shadow and compare normalized manifests and parts for the full Phase 1 corpus.
 
 ## 7. Tagged statistics and portable property naming
 

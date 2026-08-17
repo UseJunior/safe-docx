@@ -22,7 +22,10 @@ import {
 } from '../../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { groupElementsByTagNameNS } from '../../markupCompatibility.js';
-import { compareDocumentsAtomizer } from './pipeline.js';
+import {
+  compareDocumentsAtomizer,
+  type TaggedPackageShadowReport,
+} from './pipeline.js';
 import {
   UnsupportedTextBoxRevisionError,
 } from './textBoxRevisionSafety.js';
@@ -881,7 +884,7 @@ describe('VML text-box story comparison (#713)', () => {
     });
   });
 
-  test('fails closed when a changed story is explicitly rebuilt', async ({
+  test('uses per-story tagged safety when a changed story is explicitly rebuilt', async ({
     given,
     when,
     then,
@@ -900,21 +903,38 @@ describe('VML text-box story comparison (#713)', () => {
         { namespaces: TEXT_BOX_NAMESPACES },
       ),
     );
-    let failure: unknown;
+    let result!: Awaited<ReturnType<typeof compareDocumentsAtomizer>>;
+    let legacyFailure: unknown;
+    const shadowReports: TaggedPackageShadowReport[] = [];
 
     await when('rebuild comparison is explicitly requested', async () => {
+      result = await compareDocumentsAtomizer(original, revised, {
+        reconstructionMode: 'rebuild',
+        comparisonStrategy: 'tagged-tree',
+        standaloneTaggedPackageShadowObserver: (report) => { shadowReports.push(report); },
+      });
       try {
         await compareDocumentsAtomizer(original, revised, {
           reconstructionMode: 'rebuild',
+          comparisonStrategy: 'legacy',
         });
       } catch (error) {
-        failure = error;
+        legacyFailure = error;
       }
     });
 
-    await then('the typed diagnostic states the in-place boundary', () => {
-      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-      expect(failure).toMatchObject({
+    await then('tagged publication round-trips while legacy retains its typed boundary', async () => {
+      const xml = await (await DocxArchive.load(result.document)).getDocumentXml();
+      expect(parseXml(acceptAllChanges(xml)).documentElement.textContent).toContain('Revised');
+      expect(parseXml(rejectAllChanges(xml)).documentElement.textContent).toContain('Original');
+      expect(shadowReports).toEqual([{
+        missingParts: [],
+        unexpectedParts: [],
+        differentParts: [],
+        standaloneHasNoLegacyAssemblyInputs: true,
+      }]);
+      expect(legacyFailure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+      expect(legacyFailure).toMatchObject({
         changes: [
           expect.objectContaining({
             reason: expect.stringContaining('reconstructionMode=inplace'),
