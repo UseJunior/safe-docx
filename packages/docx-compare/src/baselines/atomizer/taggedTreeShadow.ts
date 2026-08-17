@@ -23,7 +23,7 @@ import {
   serializeTaggedTree,
   verifySerializedMoveRanges,
 } from './taggedTreeSerializer.js';
-import { formatDate } from './inPlaceModifier-shared.js';
+import { formatDate } from './revisionMarkup.js';
 import type { CompareStats, RevisionAttributionRange } from '../../compare-types.js';
 import { representative, type TaggedNode } from './taggedTree.js';
 import {

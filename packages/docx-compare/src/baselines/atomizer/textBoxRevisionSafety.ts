@@ -19,13 +19,11 @@ import {
 import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.js';
 import { parseDocumentXml } from './xmlToWmlElement.js';
 import {
+  addParagraphMarkRevisionMarker,
   createRevisionIdState,
   formatDate,
-} from './inPlaceModifier-shared.js';
-import {
-  addParagraphMarkRevisionMarker,
   wrapRunWithTrackChange,
-} from './inPlaceModifier-wrappers.js';
+} from './revisionMarkup.js';
 
 const WORD_2010_NS = 'http://schemas.microsoft.com/office/word/2010/wordml';
 const VML_NS = 'urn:schemas-microsoft-com:vml';

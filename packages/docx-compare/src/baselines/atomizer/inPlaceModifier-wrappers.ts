@@ -17,6 +17,16 @@ import {
   type RevisionIdState,
   W_NS,
 } from './inPlaceModifier-shared.js';
+export {
+  addParagraphMarkRevisionMarker,
+  findParagraphMarkRevisionMarker,
+  placeParagraphMarkRevisionMarker,
+  wrapRunWithTrackChange,
+} from './revisionMarkup.js';
+import {
+  addParagraphMarkRevisionMarker,
+  wrapRunWithTrackChange,
+} from './revisionMarkup.js';
 
 export type TrackChangeTag = 'w:ins' | 'w:del' | 'w:moveFrom' | 'w:moveTo';
 
@@ -186,164 +196,6 @@ export function getRunInsertionAnchor(run: Element): Element {
     return parent;
   }
   return run;
-}
-
-/**
- * Options for wrapping a run with track change markup.
- */
-export interface WrapRunOptions {
-  /** The run element to wrap */
-  run: Element;
-  /** The track change tag name */
-  tagName: TrackChangeTag;
-  /** Author name for track changes */
-  author: string;
-  /** Formatted date string */
-  dateStr: string;
-  /** Revision ID state */
-  state: RevisionIdState;
-  /** Whether to convert w:t to w:delText (for deleted/moveFrom content) */
-  convertTextToDelText?: boolean;
-}
-
-/**
- * Wrap a run element with track change markup.
- *
- * This is the shared implementation for wrapAsInserted, wrapAsDeleted,
- * and the inner wrapping logic of move operations.
- *
- * @param options - Wrapping options
- * @returns true if wrapped, false if run was already wrapped or has no parent
- */
-export function wrapRunWithTrackChange(options: WrapRunOptions): boolean {
-  const { run, tagName, author, dateStr, state, convertTextToDelText: convertText = false } = options;
-
-  // Skip if already wrapped
-  if (state.wrappedRuns.has(run)) {
-    return false;
-  }
-
-  // Skip if the run has no parent in the tree
-  if (!run.parentNode) {
-    return false;
-  }
-
-  // Convert w:t to w:delText if requested (for deleted content)
-  if (convertText) {
-    convertToDelText(run);
-  }
-
-  const id = allocateRevisionId(state);
-  const wrapper = createEl(tagName, {
-    'w:id': String(id),
-    'w:author': author,
-    'w:date': dateStr,
-  });
-
-  wrapElement(run, wrapper);
-  state.wrappedRuns.add(run);
-  return true;
-}
-
-/**
- * Ensure w:pPr/w:rPr exists and add a paragraph-mark revision marker (w:ins/w:del)
- * in the paragraph properties.
- *
- * This is the critical piece for whole-paragraph insert/delete idempotency:
- * - Reject All should remove inserted paragraphs entirely (no stub breaks)
- * - Accept All should remove deleted paragraphs entirely
- */
-export function addParagraphMarkRevisionMarker(
-  paragraph: Element,
-  markerTag: 'w:ins' | 'w:del',
-  author: string,
-  dateStr: string,
-  state: RevisionIdState
-): void {
-  // Find or create pPr.
-  let pPr = findChildByTagName(paragraph, 'w:pPr');
-  if (!pPr) {
-    pPr = createEl('w:pPr');
-    // pPr should be the first child in a paragraph.
-    paragraph.insertBefore(pPr, paragraph.firstChild);
-  }
-
-  const existingMarker = findParagraphMarkRevisionMarker(pPr, markerTag);
-
-  // Find or create rPr within pPr (paragraph mark properties).
-  let rPr = findChildByTagName(pPr, 'w:rPr');
-  if (!rPr) {
-    rPr = createEl('w:rPr');
-    // CT_PPr ordering: ... base props ..., w:rPr, w:sectPr?, w:pPrChange?
-    // Insert rPr in schema-correct position (before sectPr/pPrChange).
-    const sectPr = findChildByTagName(pPr, 'w:sectPr');
-    const pPrChange = findChildByTagName(pPr, 'w:pPrChange');
-    const insertBefore = sectPr ?? pPrChange ?? null;
-    if (insertBefore) {
-      pPr.insertBefore(rPr, insertBefore);
-    } else {
-      pPr.appendChild(rPr);
-    }
-  }
-
-  // Avoid duplicating markers. A legacy/bypass path may already have put the
-  // paragraph-mark marker in another w:rPr under the same pPr; keep that marker
-  // and normalize its revision context instead of adding a second CT_ParaRPr child.
-  if (existingMarker) {
-    existingMarker.setAttribute('w:author', author);
-    existingMarker.setAttribute('w:date', dateStr);
-    if (!existingMarker.getAttribute('w:id')) {
-      existingMarker.setAttribute('w:id', String(allocateRevisionId(state)));
-    }
-    // The bypass path may have left the marker mid-sequence (or in another
-    // w:rPr); move it to the schema-correct slot in the canonical rPr.
-    placeParagraphMarkRevisionMarker(rPr, existingMarker, markerTag);
-    return;
-  }
-
-  const id = allocateRevisionId(state);
-  const marker = createEl(markerTag, {
-    'w:id': String(id),
-    'w:author': author,
-    'w:date': dateStr,
-  });
-
-  placeParagraphMarkRevisionMarker(rPr, marker, markerTag);
-}
-
-/**
- * Position a paragraph-mark revision marker in its schema-correct rPr slot.
- *
- * CT_ParaRPr ordering: the tracked-change group (w:ins, w:del, w:moveFrom,
- * w:moveTo — in that order) comes before every formatting child (w:rStyle,
- * w:rFonts, ...). So w:ins always goes first, and w:del goes right after a
- * w:ins sibling when one exists, else first.
- */
-export function placeParagraphMarkRevisionMarker(
-  rPr: Element,
-  marker: Element,
-  markerTag: 'w:ins' | 'w:del'
-): void {
-  const insSibling = markerTag === 'w:del' ? findChildByTagName(rPr, 'w:ins') : null;
-  if (insSibling) {
-    if (insSibling.nextSibling !== marker) {
-      insertAfterElement(insSibling, marker);
-    }
-  } else if (rPr.firstChild !== marker) {
-    rPr.insertBefore(marker, rPr.firstChild);
-  }
-}
-
-export function findParagraphMarkRevisionMarker(
-  pPr: Element,
-  markerTag: 'w:ins' | 'w:del'
-): Element | null {
-  for (const child of childElements(pPr)) {
-    if (child.tagName !== 'w:rPr') continue;
-    const marker = findChildByTagName(child, markerTag);
-    if (marker) return marker;
-  }
-  return null;
 }
 
 // Field-wrapper emission boundary.
