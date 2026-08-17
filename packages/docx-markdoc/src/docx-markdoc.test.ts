@@ -18,7 +18,7 @@ function withBeforeAfterEdit(markdoc: string): string {
   return markdoc.replace(
     /\{% para ([^\n]+) %\}\nThe Old Name\.\n\{% \/para %\}/,
     `{% change ${match[1]} operation="rename" format="inherit-source-paragraph" %}\n{% before %}\nThe Old Name.\n{% /before %}\n{% after %}\nThe New Name.\n{% /after %}\n{% /change %}`,
-  ) + '\n{% rationale for="rename" category="correction" %}\nUse the current name.\n{% /rationale %}\n';
+  ) + '\n{% rationale for="rename" visibility="internal" %}\nUse the current name.\n{% /rationale %}\n';
 }
 
 describe('brownfield Markdoc authoring', () => {
@@ -46,7 +46,7 @@ describe('brownfield Markdoc authoring', () => {
     expect(result.certificate.acceptAllEqualsClean).toBe(true);
     const clean = await DocxDocument.load(result.clean);
     expect(clean.buildDocumentView().nodes.map((node) => node.raw_text)).toEqual(['The New Name.', 'Second paragraph.']);
-    expect(result.ir.rationales).toEqual([{ operationId: 'rename', text: 'Use the current name.', category: 'correction' }]);
+    expect(result.ir.rationales).toEqual([{ operationId: 'rename', text: 'Use the current name.', visibility: 'internal' }]);
   });
 
   itAllure('[SDX-MDOC-05][SDX-MDOC-15] replaces a canonical before/after paragraph and exports an edit pair', async () => {

@@ -616,18 +616,69 @@ type RationaleMaterialization = {
   text: string;
 };
 
-function validateRationaleCommentOptions(options: CompileOptions, ir: MarkdocEditIR): RationaleMaterialization[] {
-  if (!options.rationaleComments) return [];
-  const { author, initials, date } = options.rationaleComments;
-  if (typeof author !== 'string' || author.trim().length === 0
-    || typeof initials !== 'string' || initials.trim().length === 0
-    || !(date instanceof Date) || !Number.isFinite(date.getTime())) {
+type ResolvedCompilation = {
+  author: string;
+  date: Date;
+  commentIdentity?: { author: string; initials: string };
+  source: 'markdoc' | 'api' | 'cli' | 'default';
+  externalRationalesFound: number;
+  internalRationalesFound: number;
+  externalCommentsIncluded: boolean;
+  internalCommentsIncluded: boolean;
+  warnings: string[];
+};
+
+function resolveCompilation(options: CompileOptions, ir: MarkdocEditIR): ResolvedCompilation {
+  const profile = ir.compilation;
+  const date = options.date ?? (profile?.buildDate ? new Date(profile.buildDate) : new Date());
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) {
+    throw new DocxMarkdocError('INVALID_BUILD_DATE', 'Compilation date must be a valid instant.');
+  }
+  const externalRationalesFound = ir.rationales.filter((rationale) => rationale.visibility === 'external-facing').length;
+  const internalRationalesFound = ir.rationales.filter((rationale) => rationale.visibility === 'internal').length;
+  const includeExternal = options.externalComments ?? profile?.externalComments !== 'omit';
+  const includeInternal = options.dangerouslyIncludeInternalComments === true;
+  const commentAuthor = options.rationaleComments?.author ?? profile?.commentAuthor;
+  const commentInitials = options.rationaleComments?.initials ?? profile?.commentInitials;
+  if ((includeExternal && externalRationalesFound > 0) || (includeInternal && internalRationalesFound > 0)) {
+    if (typeof commentAuthor !== 'string' || commentAuthor.trim().length === 0
+      || typeof commentInitials !== 'string' || commentInitials.trim().length === 0) {
+      throw new DocxMarkdocError(
+        'INVALID_RATIONALE_COMMENT_IDENTITY',
+        'Included rationale comments require explicit non-empty comment author and initials.',
+      );
+    }
+  }
+  const hasApiConfiguration = options.author !== undefined
+    || options.date !== undefined
+    || options.rationaleComments !== undefined
+    || options.externalComments !== undefined
+    || options.dangerouslyIncludeInternalComments !== undefined;
+  return {
+    author: options.author ?? profile?.revisionAuthor ?? 'Markdoc',
+    date,
+    ...(commentAuthor && commentInitials ? { commentIdentity: { author: commentAuthor, initials: commentInitials } } : {}),
+    source: options.configurationSource ?? (hasApiConfiguration ? 'api' : profile ? 'markdoc' : 'default'),
+    externalRationalesFound,
+    internalRationalesFound,
+    externalCommentsIncluded: includeExternal && externalRationalesFound > 0,
+    internalCommentsIncluded: includeInternal && internalRationalesFound > 0,
+    warnings: !includeExternal && externalRationalesFound > 0
+      ? [`${externalRationalesFound} external-facing rationale(s) were present but not included.`]
+      : [],
+  };
+}
+
+function rationaleMaterializations(config: ResolvedCompilation, ir: MarkdocEditIR): RationaleMaterialization[] {
+  const selected = ir.rationales.filter((rationale) =>
+    (rationale.visibility === 'external-facing' && config.externalCommentsIncluded)
+    || (rationale.visibility === 'internal' && config.internalCommentsIncluded));
+  if (selected.length > 0 && !config.commentIdentity) {
     throw new DocxMarkdocError(
       'INVALID_RATIONALE_COMMENT_IDENTITY',
-      'Rationale comment author, initials, and date must be supplied explicitly and be valid.',
+      'Included rationale comments require explicit comment identity.',
     );
   }
-  const selected = ir.rationales.filter((rationale) => rationale.category === 'external-facing');
   const seen = new Set<string>();
   for (const rationale of selected) {
     if (seen.has(rationale.operationId)) {
@@ -761,13 +812,71 @@ async function resolveAndRemoveAttributionMarkers(
   return { buffer: await zip.generateAsync({ type: 'nodebuffer' }), comments };
 }
 
+async function remapResolvedCommentsToOrdinaryComparison(
+  instrumented: Buffer,
+  ordinary: Buffer,
+  comments: ResolvedRationaleComment[],
+): Promise<ResolvedRationaleComment[]> {
+  const revisionNames = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
+  const revisions = async (buffer: Buffer): Promise<Element[]> => {
+    const zip = await JSZip.loadAsync(buffer);
+    const xml = await zip.file('word/document.xml')?.async('string');
+    if (!xml) throw new Error('Tracked DOCX has no word/document.xml.');
+    const document = parseXml(xml);
+    return Array.from(document.getElementsByTagName('*')).filter((element) => revisionNames.has(element.localName));
+  };
+  const [instrumentedRevisions, ordinaryRevisions] = await Promise.all([revisions(instrumented), revisions(ordinary)]);
+  const indexByLocator = new Map(instrumentedRevisions.map((revision, index) => [
+    `${revision.localName}#${getAttributeSafe(revision, OOXML.W_NS, 'id', 'w', { bareFallback: false }) ?? ''}`,
+    index,
+  ]));
+  const remap = (locator: TrackedRevisionLocator): TrackedRevisionLocator => {
+    const index = indexByLocator.get(`${locator.type}#${locator.id}`);
+    const source = index === undefined ? undefined : instrumentedRevisions[index];
+    if (!source) throw new Error(`Attributed revision ${locator.type}#${locator.id} is absent from the instrumented comparison.`);
+    const signature = `${source.localName}\0${source.textContent ?? ''}`;
+    const sourceMatches = instrumentedRevisions.filter((revision) => `${revision.localName}\0${revision.textContent ?? ''}` === signature);
+    const targetMatches = ordinaryRevisions.filter((revision) => `${revision.localName}\0${revision.textContent ?? ''}` === signature);
+    const occurrence = sourceMatches.indexOf(source);
+    let target = targetMatches[occurrence];
+    if (!target) {
+      const sourceText = source.textContent ?? '';
+      const contained = ordinaryRevisions
+        .filter((revision) => revision.localName === locator.type)
+        .filter((revision) => {
+          const text = revision.textContent ?? '';
+          return text.length > 0 && (sourceText.includes(text) || text.includes(sourceText));
+        })
+        .sort((left, right) => (right.textContent?.length ?? 0) - (left.textContent?.length ?? 0));
+      if (contained.length === 1
+        || (contained.length > 1 && (contained[0]!.textContent?.length ?? 0) > (contained[1]!.textContent?.length ?? 0))) {
+        target = contained[0];
+      }
+    }
+    if (!target) {
+      const candidates = ordinaryRevisions
+        .filter((revision) => revision.localName === locator.type)
+        .slice(0, 8)
+        .map((revision) => revision.textContent ?? '');
+      throw new Error(`Attributed revision ${locator.type}#${locator.id} text ${JSON.stringify(source.textContent ?? '')} has no identical ordinary-comparison revision among ${JSON.stringify(candidates)}.`);
+    }
+    return revisionLocator(target);
+  };
+  return comments.map((comment) => ({
+    ...comment,
+    startRevision: remap(comment.startRevision),
+    endRevision: remap(comment.endRevision),
+  }));
+}
+
 export async function compileMarkdoc(
   sourceBuffer: Buffer,
   markdoc: string,
   options: CompileOptions = {},
 ): Promise<CompileResult> {
   const ir = requireMarkdoc(markdoc);
-  const materializations = validateRationaleCommentOptions(options, ir);
+  const resolvedCompilation = resolveCompilation(options, ir);
+  const materializations = rationaleMaterializations(resolvedCompilation, ir);
   const sourceHashMatches = sha256(sourceBuffer) === ir.source.sha256;
   if (!sourceHashMatches) throw new DocxMarkdocError('SOURCE_HASH_DRIFT', 'Source DOCX hash does not match canonical Markdoc.');
   const sourceZip = await JSZip.loadAsync(sourceBuffer);
@@ -802,10 +911,10 @@ export async function compileMarkdoc(
     instrumentRanges(sourceBuffer, sourceMaterializations),
     instrumentRanges(clean, cleanMaterializations),
   ]);
-  const comparison = await compareDocuments(comparisonSource, comparisonClean, {
+  const comparisonOptions = {
     engine: 'atomizer',
-    author: options.author ?? 'Markdoc',
-    date: options.date,
+    author: resolvedCompilation.author,
+    date: resolvedCompilation.date,
     reconstructionMode: 'inplace',
     // No maxWordRefinementChangeRanges budget: a finite budget made dense
     // rewrites fall back to coarse whole-span replacement on the run-level
@@ -813,18 +922,32 @@ export async function compileMarkdoc(
     // verifier proves preservable were deleted and reinserted. Token-level
     // minimality outranks "confetti" readability for authored redlines.
     // See https://github.com/UseJunior/safe-docx/issues/846.
-  });
+  } as const;
+  const comparison = await compareDocuments(comparisonSource, comparisonClean, comparisonOptions);
   let tracked = comparison.document;
   if (materializations.length > 0) {
-    const identity = options.rationaleComments!;
+    const identity = resolvedCompilation.commentIdentity!;
     try {
       const resolved = await resolveAndRemoveAttributionMarkers(tracked, materializations);
-      tracked = await addTrackedRangeComments(resolved.buffer, resolved.comments.map((item) => ({
+      // Attribution markers are private discovery machinery, not authored
+      // document content. Dense multi-operation documents proved that asking
+      // the comparator to align those markers can perturb which source run
+      // supplies formatting even after the markers are removed. Resolve the
+      // operation-to-revision identities in the instrumented comparison, then
+      // place comments on the ordinary comparison so the delivered redline is
+      // byte-for-byte independent of marker text apart from native comments.
+      const ordinaryComparison = await compareDocuments(sourceBuffer, clean, comparisonOptions);
+      const ordinaryComments = await remapResolvedCommentsToOrdinaryComparison(
+        resolved.buffer,
+        ordinaryComparison.document,
+        resolved.comments,
+      );
+      tracked = await addTrackedRangeComments(ordinaryComparison.document, ordinaryComments.map((item) => ({
         startRevision: item.startRevision,
         endRevision: item.endRevision,
         author: identity.author,
         initials: identity.initials,
-        date: identity.date.toISOString(),
+        date: resolvedCompilation.date.toISOString(),
         text: item.text,
       })));
     } catch (error) {
@@ -863,6 +986,20 @@ export async function compileMarkdoc(
     unchangedPackagePartsPreserved,
     unsupportedStructures: unsupported,
     appliedOperations: declaredOperationIds,
+    commentRendering: {
+      configurationSource: resolvedCompilation.source,
+      buildDate: resolvedCompilation.date.toISOString(),
+      revisionAuthor: resolvedCompilation.author,
+      ...(resolvedCompilation.commentIdentity ? {
+        commentAuthor: resolvedCompilation.commentIdentity.author,
+        commentInitials: resolvedCompilation.commentIdentity.initials,
+      } : {}),
+      externalRationalesFound: resolvedCompilation.externalRationalesFound,
+      internalRationalesFound: resolvedCompilation.internalRationalesFound,
+      externalCommentsIncluded: resolvedCompilation.externalCommentsIncluded,
+      internalCommentsIncluded: resolvedCompilation.internalCommentsIncluded,
+      warnings: resolvedCompilation.warnings,
+    },
     projectionPassed: false,
     draftCompletenessPassed: completeness.passed,
     deliveryReady: false,

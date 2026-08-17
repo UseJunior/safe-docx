@@ -1,6 +1,6 @@
 import Markdoc, { type Config, type Node } from '@markdoc/markdoc';
 import { DocxMarkdocError } from './errors.js';
-import { IR_VERSION, type AtomicChangeSet, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type RequirementWaiver, type RunFormat, type RunFormatSpan, type SourceParagraph, type ValidationIssue, type ValidationResult } from './types.js';
+import { IR_VERSION, type AtomicChangeSet, type CompilationProfile, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type RequirementWaiver, type RunFormat, type RunFormatSpan, type SourceParagraph, type ValidationIssue, type ValidationResult } from './types.js';
 
 const stringRequired = { type: String, required: true } as const;
 const runFormatAttributes = {
@@ -15,6 +15,16 @@ export const markdocConfig: Config = {
       attributes: {
         sha256: stringRequired,
         paragraphs: { type: Number, required: true },
+      },
+    },
+    compilation: {
+      selfClosing: true,
+      attributes: {
+        'revision-author': { type: String },
+        'comment-author': { type: String },
+        'comment-initials': { type: String },
+        'build-date': { type: String },
+        'external-comments': { type: String, matches: ['include', 'omit'] },
       },
     },
     para: {
@@ -86,7 +96,7 @@ export const markdocConfig: Config = {
     rationale: {
       attributes: {
         for: stringRequired,
-        category: { type: String },
+        visibility: { type: String, required: true, matches: ['internal', 'external-facing'] },
       },
     },
     requirement: {
@@ -231,6 +241,7 @@ export function parseMarkdoc(source: string): ValidationResult {
     }));
 
   let descriptor: MarkdocEditIR['source'] | undefined;
+  let compilation: CompilationProfile | undefined;
   const scaffold: SourceParagraph[] = [];
   const operations: MarkdocEditIR['operations'] = [];
   const rationales: Rationale[] = [];
@@ -256,11 +267,35 @@ export function parseMarkdoc(source: string): ValidationResult {
       descriptor = { sha256: String(a.sha256 ?? ''), paragraphs: Number(a.paragraphs) };
       continue;
     }
+    if (node.tag === 'compilation') {
+      if (compilation) issues.push(issue('DUPLICATE_COMPILATION_PROFILE', 'At most one compilation tag is permitted.', node));
+      const revisionAuthor = a['revision-author'] === undefined ? undefined : String(a['revision-author']).trim();
+      const commentAuthor = a['comment-author'] === undefined ? undefined : String(a['comment-author']).trim();
+      const commentInitials = a['comment-initials'] === undefined ? undefined : String(a['comment-initials']).trim();
+      const buildDate = a['build-date'] === undefined ? undefined : String(a['build-date']);
+      if (revisionAuthor !== undefined && !revisionAuthor) issues.push(issue('INVALID_COMPILATION_IDENTITY', 'revision-author must be non-empty.', node));
+      if (commentAuthor !== undefined && !commentAuthor) issues.push(issue('INVALID_COMPILATION_IDENTITY', 'comment-author must be non-empty.', node));
+      if (commentInitials !== undefined && !commentInitials) issues.push(issue('INVALID_COMPILATION_IDENTITY', 'comment-initials must be non-empty.', node));
+      if ((commentAuthor === undefined) !== (commentInitials === undefined)) {
+        issues.push(issue('INCOMPLETE_COMMENT_IDENTITY', 'comment-author and comment-initials must be declared together.', node));
+      }
+      if (buildDate !== undefined && (!Number.isFinite(Date.parse(buildDate)) || new Date(buildDate).toISOString() !== buildDate)) {
+        issues.push(issue('INVALID_BUILD_DATE', 'build-date must be a canonical ISO-8601 UTC instant.', node));
+      }
+      compilation = {
+        ...(revisionAuthor === undefined ? {} : { revisionAuthor }),
+        ...(commentAuthor === undefined ? {} : { commentAuthor }),
+        ...(commentInitials === undefined ? {} : { commentInitials }),
+        ...(buildDate === undefined ? {} : { buildDate }),
+        externalComments: a['external-comments'] === 'omit' ? 'omit' : 'include',
+      };
+      continue;
+    }
     if (node.tag === 'rationale') {
       rationales.push({
         operationId: String(a.for ?? ''),
         text: textProjection(node, 'revised').trim(),
-        category: a.category === undefined ? undefined : String(a.category),
+        visibility: a.visibility === 'external-facing' ? 'external-facing' : 'internal',
       });
       continue;
     }
@@ -448,7 +483,7 @@ export function parseMarkdoc(source: string): ValidationResult {
   const rationaleTargets = new Set<string>();
   const externalRationaleTargets = new Set<string>();
   for (const rationale of rationales) {
-    if (rationale.category === 'external-facing') {
+    if (rationale.visibility === 'external-facing') {
       if (externalRationaleTargets.has(rationale.operationId)) {
         issues.push(issue(
           'DUPLICATE_EXTERNAL_RATIONALE',
@@ -465,7 +500,7 @@ export function parseMarkdoc(source: string): ValidationResult {
   if (issues.length > 0 || !descriptor) return { valid: false, issues };
   return {
     valid: true,
-    ir: { version: IR_VERSION, source: descriptor, scaffold, operations, rationales, requirements, waivers, changeSets, assertions },
+    ir: { version: IR_VERSION, source: descriptor, scaffold, operations, rationales, compilation, requirements, waivers, changeSets, assertions },
   };
 }
 

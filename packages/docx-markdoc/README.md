@@ -18,7 +18,7 @@ The New Name.
 {% /after %}
 {% /change %}
 
-{% rationale for="rename" %}
+{% rationale for="rename" visibility="internal" %}
 Use the entity's current legal name.
 {% /rationale %}
 ```
@@ -31,32 +31,69 @@ models and lawyers author familiar complete sentences.
 
 ## External-facing rationale comments
 
-Rationales remain passive metadata unless compilation explicitly enables
-native comments. Only the exact, case-sensitive category `external-facing` is
-eligible; absent, internal, misspelled, or differently cased categories are
-never inferred to be shareable.
+Rationale visibility is required. External-facing rationales become native
+comments by default when complete comment identity is available; internal
+rationales remain private metadata unless each CLI export uses the deliberately
+alarming internal-comment capability. Missing, misspelled, or differently cased
+visibility fails validation rather than guessing.
 
 ```markdoc
-{% rationale for="rename" category="external-facing" %}
+{% rationale for="rename" visibility="external-facing" %}
 The revised name matches the synthetic review record.
 {% /rationale %}
 ```
 
-Supply comment identity separately from tracked-revision identity. All three
-values are required and the compiler never substitutes the revision author,
-revision date, initials, or current time:
+Canonical Markdoc can carry replayable revision and comment identity. One build
+date governs both revisions and comments; omit it to use one UTC instant captured
+at compile time, or pin it for reproducible fixtures:
 
-```ts
-const result = await compileMarkdoc(source, markdoc, {
-  author: 'Revision Author',
-  date: new Date('2026-08-16T14:30:00.000Z'),
-  rationaleComments: {
-    author: 'External Reviewer',
-    initials: 'ER',
-    date: new Date('2026-08-16T14:30:00.000Z'),
-  },
-});
+```markdoc
+{% compilation
+   revision-author="Revision Author"
+   comment-author="External Reviewer"
+   comment-initials="ER"
+   build-date="2026-08-16T14:30:00.000Z"
+   external-comments="include"
+/%}
 ```
+
+The CLI can perform the whole workflow without a JavaScript wrapper:
+
+```bash
+# Preserve the caller's original and create the bookmark-anchored source plus
+# the initial readable revision file. Pandoc is not involved.
+docx-markdoc import source.docx anchored.docx revision.mdoc
+
+# Optional fast lint/editor/CI feedback. Compile runs this same validation
+# automatically before it mutates or compares any document.
+docx-markdoc validate revision.mdoc
+
+# Compile the edited revision file. External-facing rationales are included by
+# default and the filename and CLI output warn when comments are present.
+docx-markdoc compile anchored.docx revision.mdoc output/
+
+# Suppress external-facing comments even if the Markdoc requests them. The CLI
+# override wins and warns that external rationales were present but omitted.
+docx-markdoc compile anchored.docx revision.mdoc output/ --no-external-comments
+```
+
+`anchored.docx` differs from `source.docx` only where Safe DOCX had to add stable
+`_bk_*` paragraph bookmarks. The Markdoc hash and paragraph IDs target that
+anchored copy, so later compilation is stateless and never needs an editing
+session. The caller's original bytes remain untouched.
+
+Internal rationale never becomes a comment merely because it is present in
+Markdoc. Each internal-review export requires both the alarming capability and
+an explicit separate path:
+
+```bash
+docx-markdoc compile anchored.docx revision.mdoc output/ \
+  --dangerously-include-internal-comments \
+  --internal-output review.docx
+```
+
+The actual filename is forced to end in `INTERNAL COMMENTS INCLUDED.docx`, even
+when the requested basename must be truncated to fit the filesystem limit.
 
 Each selected rationale becomes one native root Word comment around the
 tracked edit attributable to its operation. Insertions and replacements prefer
