@@ -4,6 +4,7 @@ import {
   parseXml,
   projectSymbolRun,
 } from '@usejunior/docx-core';
+import { XMLSerializer } from '@xmldom/xmldom';
 
 const PAGEREF_IDENTITY_PREFIX = '__safe_docx_pageref__|';
 
@@ -45,6 +46,109 @@ function fieldInstructionView(field: {
 }): string {
   const current = field.currentInstruction.join('');
   return current.trim().length > 0 ? current : field.deletedInstruction.join('');
+}
+
+/**
+ * Replace volatile TOC PAGEREF result text with its stable instruction identity.
+ *
+ * Formatting fidelity uses visible text to align paragraphs and characters.
+ * Without this projection, a layout-only cache refresh (for example `3` to
+ * `10`) prevents an otherwise identical TOC paragraph from aligning and is
+ * incorrectly reported as formatting loss. This helper mutates only a parsed
+ * comparison copy; published OOXML is never rewritten by it.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.45
+ * @see https://github.com/UseJunior/safe-docx/issues/716
+ */
+export function normalizeVolatilePagerefCachesForComparison(
+  documentXml: string,
+): string {
+  const document = parseXml(documentXml);
+  const paragraphs = Array.from(
+    document.getElementsByTagNameNS(OOXML.W_NS, 'p'),
+  );
+
+  for (const paragraph of paragraphs) {
+    const paragraphStyle = Array.from(
+      paragraph.getElementsByTagNameNS(OOXML.W_NS, 'pStyle'),
+    )[0];
+    const styleId =
+      paragraphStyle?.getAttributeNS(OOXML.W_NS, 'val') ??
+      paragraphStyle?.getAttribute('w:val');
+    if (!isTocParagraphStyle(styleId)) continue;
+
+    const stack: Array<{
+      currentInstruction: string[];
+      deletedInstruction: string[];
+      separated: boolean;
+      comparisonIdentity?: string;
+      resultTextNodes: Element[];
+    }> = [];
+    const normalizeField = (field: (typeof stack)[number]): void => {
+      if (!field.comparisonIdentity || field.resultTextNodes.length === 0) return;
+      field.resultTextNodes[0]!.textContent = field.comparisonIdentity;
+      for (const resultNode of field.resultTextNodes.slice(1)) {
+        resultNode.textContent = '';
+      }
+    };
+    const walk = (node: Node, deleted: boolean): void => {
+      for (let child = node.firstChild; child; child = child.nextSibling) {
+        if (child.nodeType !== 1) continue;
+        const element = child as Element;
+        const withinDeletion =
+          deleted ||
+          (element.namespaceURI === OOXML.W_NS &&
+            (element.localName === 'del' || element.localName === 'moveFrom'));
+        if (element.namespaceURI === OOXML.W_NS && element.localName === 'fldChar') {
+          const type =
+            element.getAttributeNS(OOXML.W_NS, 'fldCharType') ??
+            element.getAttribute('w:fldCharType');
+          if (type === 'begin') {
+            stack.push({
+              currentInstruction: [],
+              deletedInstruction: [],
+              separated: false,
+              resultTextNodes: [],
+            });
+          } else if (type === 'separate' && stack.length > 0) {
+            const field = stack[stack.length - 1]!;
+            field.separated = true;
+            field.comparisonIdentity = pagerefComparisonIdentity(
+              fieldInstructionView(field),
+            );
+          } else if (type === 'end' && stack.length > 0) {
+            normalizeField(stack.pop()!);
+          }
+        } else if (
+          element.namespaceURI === OOXML.W_NS &&
+          (element.localName === 'instrText' ||
+            element.localName === 'delInstrText') &&
+          stack.length > 0 &&
+          !stack[stack.length - 1]!.separated
+        ) {
+          const field = stack[stack.length - 1]!;
+          const target =
+            withinDeletion || element.localName === 'delInstrText'
+              ? field.deletedInstruction
+              : field.currentInstruction;
+          target.push(element.textContent ?? '');
+        } else if (
+          element.namespaceURI === OOXML.W_NS &&
+          (element.localName === 't' || element.localName === 'delText') &&
+          stack.length > 0 &&
+          stack[stack.length - 1]!.separated &&
+          stack[stack.length - 1]!.comparisonIdentity
+        ) {
+          stack[stack.length - 1]!.resultTextNodes.push(element);
+        }
+        walk(element, withinDeletion);
+      }
+    };
+    walk(paragraph, false);
+    for (const field of stack) normalizeField(field);
+  }
+
+  return new XMLSerializer().serializeToString(document);
 }
 
 /** True for the built-in TOC paragraph style identifiers used by Word. */

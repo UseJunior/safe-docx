@@ -36,6 +36,21 @@ function docXml(bodyXml: string): string {
 }
 
 describe('Formatting-fidelity comparison check', () => {
+  humanReadableTest.openspec('format-neutral empty body placeholders preserve fidelity')(
+    'Scenario: a format-neutral empty body placeholder scores perfect fidelity',
+    (_: AllureBddContext) => {
+      const withoutParagraph = docXml('<w:sectPr/>');
+      const withPlaceholder = docXml('<w:p/><w:sectPr/>');
+
+      const report = compareFormattingFidelity(withoutParagraph, withPlaceholder);
+
+      expect(report.score).toBe(1);
+      expect(report.unalignedExpectedParagraphs).toBe(0);
+      expect(report.unalignedActualParagraphs).toBe(0);
+      expect(report.divergences).toEqual([]);
+    },
+  );
+
   humanReadableTest.openspec('identical document views score perfect formatting fidelity')(
     'Scenario: identical document views score perfect formatting fidelity',
     (_: AllureBddContext) => {

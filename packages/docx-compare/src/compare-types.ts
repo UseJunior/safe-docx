@@ -226,10 +226,20 @@ export interface ReconstructionFallbackDiagnostics {
 
 /** Safety evidence retained when tagged-tree publication falls back to legacy output. */
 export interface TaggedTreeFallbackDiagnostics {
-  checks: ReconstructionSafetyChecks;
-  failedChecks: ReconstructionSafetyCheckName[];
+  checks: TaggedPublicationSafetyChecks;
+  failedChecks: TaggedPublicationSafetyCheckName[];
   failureDetails?: ReconstructionSafetyFailureDetails;
   firstDiffSummary?: ReconstructionSafetyFailureSummary;
+  /** Source-projected formatting evidence when formatting rejected publication. */
+  formattingFidelity?: import('./baselines/atomizer/formattingFidelity.js').ProjectedFormattingFidelity;
+}
+
+export type TaggedPublicationSafetyCheckName =
+  | ReconstructionSafetyCheckName
+  | 'formattingFidelity';
+
+export interface TaggedPublicationSafetyChecks extends ReconstructionSafetyChecks {
+  formattingFidelity: boolean;
 }
 
 /**

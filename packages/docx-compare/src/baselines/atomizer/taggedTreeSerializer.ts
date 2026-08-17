@@ -1150,6 +1150,18 @@ function emitNode(
         continue;
       }
       if (
+        childElement?.namespaceURI === W_NS &&
+        childElement.localName === 'sectPr' &&
+        child.tag !== 'both'
+      ) {
+        // A body-level final section property cannot sit inside w:ins/w:del.
+        // Keep the revised-base section live and report the topology/property
+        // delta through unrepresentedChanges. Aligned section properties use
+        // the native w:sectPrChange path in applyPropertyDelta instead.
+        if (child.tag === 'revised') emitted.push(cloneElement(childElement));
+        continue;
+      }
+      if (
         child.tag === 'both' &&
         (childElement?.localName === 'bookmarkStart' || childElement?.localName === 'bookmarkEnd')
       ) {

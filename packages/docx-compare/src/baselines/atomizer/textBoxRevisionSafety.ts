@@ -383,6 +383,51 @@ function relationshipClosureFingerprint(
   return references.join('\n');
 }
 
+/**
+ * Relationship identifiers are local to their owning OPC part. Nested story
+ * comparison temporarily promotes a header/footer text box to document.xml,
+ * whose tagged publication may canonicalize an equivalent hyperlink to a
+ * different id. Translate those temporary ids back through relationship
+ * semantics before splicing the story into its real owner.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.4
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.3
+ * @see https://github.com/UseJunior/safe-docx/issues/713
+ */
+async function remapComparedStoryRelationshipIds(
+  storyArchive: DocxArchive,
+  outerArchive: DocxArchive,
+  ownerPartPath: string,
+  storyBody: Element,
+  visualIndex: number,
+): Promise<void> {
+  const [temporaryRelationships, ownerRelationships] = await Promise.all([
+    storyArchive.getFile('word/_rels/document.xml.rels'),
+    outerArchive.getFile(owningRelationshipsPath(ownerPartPath)),
+  ]);
+  const temporaryTargets = relationshipTargets(temporaryRelationships);
+  const ownerTargets = relationshipTargets(ownerRelationships);
+  const ownerIdByTarget = new Map(
+    [...ownerTargets].map(([id, target]) => [target, id]),
+  );
+
+  for (const element of [storyBody, ...Array.from(storyBody.getElementsByTagName('*'))]) {
+    for (const attribute of Array.from(element.attributes)) {
+      if (attribute.namespaceURI !== RELATIONSHIPS_NS) continue;
+      const semantics = temporaryTargets.get(attribute.value);
+      const ownerId = semantics ? ownerIdByTarget.get(semantics) : undefined;
+      if (!ownerId) {
+        throw new UnsupportedTextBoxRevisionError([{
+          index: visualIndex,
+          partPath: ownerPartPath,
+          reason: 'the compared text-box story relationship closure could not be rebound to its owner',
+        }]);
+      }
+      attribute.value = ownerId;
+    }
+  }
+}
+
 function storyDocumentXml(documentXml: string, textBoxIndex: number): string {
   const document = parseXml(documentXml);
   const body = document.getElementsByTagNameNS(OOXML.W_NS, 'body').item(0);
@@ -1279,6 +1324,13 @@ export async function assembleTextBoxStoryComparison(
     if (!storyBody) {
       throw new Error(`Compared nested story ${storyResult.index} has no w:body`);
     }
+    await remapComparedStoryRelationshipIds(
+      storyArchive,
+      outerArchive,
+      storyResult.partPath,
+      storyBody,
+      storyResult.visualIndex,
+    );
     if (storyResult.container === 'ancillaryPart') {
       const target = targetDocument.documentElement;
       while (target.firstChild) target.removeChild(target.firstChild);

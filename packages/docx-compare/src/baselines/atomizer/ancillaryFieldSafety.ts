@@ -483,7 +483,13 @@ async function evaluateAncillaryFieldSafetyUnsafe(
 
   for (const [targetPath, targetBindings] of [...bindingsByTarget].sort(([a], [b]) => a.localeCompare(b))) {
     const finalXml = resultParts.get(targetPath)!;
-    const sourceXml = await input.baseArchive.getFile(targetPath);
+    const baseXml = await input.baseArchive.getFile(targetPath);
+    const importedXml = baseXml === null
+      ? await input.mergeSourceArchive.getFile(targetPath)
+      : null;
+    const sourceXml = baseXml ?? importedXml;
+    const provenance = baseXml === null ? 'imported' as const : 'base' as const;
+    const sourceSide = provenance === 'base' ? input.baseSide : input.mergeSourceSide;
     const locator = {
       locatorType: 'header_footer_story' as const,
       normalizedPartPath: targetPath,
@@ -496,7 +502,7 @@ async function evaluateAncillaryFieldSafetyUnsafe(
       issues.push({
         category: 'canonical_evidence',
         code: 'FIELD_RANGE_MISSING',
-        detail: `Selected source story '${targetPath}' is absent from the assembly base`,
+        detail: `Selected source story '${targetPath}' is absent from both assembly sources`,
         locator,
       });
       continue;
@@ -505,8 +511,8 @@ async function evaluateAncillaryFieldSafetyUnsafe(
     const comparison = compareInventories(
       inventoryEligibleFields(sourceXml, targetPath, undefined, allowed),
       inventoryEligibleFields(finalXml, targetPath, undefined, allowed),
-      input.baseSide,
-      'base',
+      sourceSide,
+      provenance,
     );
     issues.push(...comparison.issues);
     ranges.push(...comparison.ranges);
@@ -514,8 +520,8 @@ async function evaluateAncillaryFieldSafetyUnsafe(
       storyKind: targetBindings[0]!.kind,
       normalizedPartPath: targetPath,
       selectingBindings: targetBindings.map(publicBindingLocator),
-      sourceSide: input.baseSide,
-      provenance: 'base',
+      sourceSide,
+      provenance,
       strictFieldStructure: 'passed',
     });
   }

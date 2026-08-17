@@ -5,7 +5,7 @@
 This inventory adjudicates every package-root export before the tagged-spine breaking release.
 “Deprecated” means retained for one release; “breaking removal” means intentionally absent now.
 
-- Stable compatibility surface: 61
+- Stable compatibility surface: 64
 - Deprecated for one release: 68
 - Documented breaking removals: 8
 
@@ -139,6 +139,9 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `selectedElementsByTagNameNS` | function | `src/markupCompatibility.ts` | yes | stable compatibility |
 | `sha1` | function | `src/atomizer.ts` | yes | deprecate one release |
 | `splitAtomsIntoWords` | function | `src/atomizer.ts` | yes | deprecate one release |
+| `TaggedPublicationSafetyCheckName` | type | `src/compare-types.ts` | yes | stable compatibility |
+| `TaggedPublicationSafetyChecks` | interface | `src/compare-types.ts` | yes | stable compatibility |
+| `TaggedPublicationSafetyError` | class | `src/baselines/atomizer/pipeline.ts` | yes | stable compatibility |
 | `TaggedTreeFallbackDiagnostics` | interface | `src/compare-types.ts` | yes | deprecate one release |
 | `TextBoxRevisionChange` | interface | `src/baselines/atomizer/textBoxRevisionSafety.ts` | yes | stable compatibility |
 | `tokenizeComparisonText` | function | `src/textAlignment.ts` | yes | stable compatibility |

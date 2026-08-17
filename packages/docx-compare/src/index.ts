@@ -8,6 +8,10 @@
 import { compareDocumentsAtomizer } from './baselines/atomizer/pipeline.js';
 import type { CompareOptions, CompareResult } from './compare-types.js';
 
+// Phase 8 release-soak rollback control. It is deliberately absent from the
+// public option surface and is removed with the legacy implementation.
+const LEGACY_EMERGENCY_FALLBACK_DURING_SOAK = true;
+
 export { DEFAULT_RECONSTRUCTION_MODE } from './comparison-defaults.js';
 
 export type {
@@ -50,6 +54,8 @@ export type {
   ReconstructionTextMismatchDetails,
   ReconstructionTextMismatchSummary,
   TaggedTreeFallbackDiagnostics,
+  TaggedPublicationSafetyCheckName,
+  TaggedPublicationSafetyChecks,
 } from './compare-types.js';
 
 /**
@@ -100,6 +106,7 @@ export async function compareDocuments(
       premergeRuns,
       maxWordRefinementChangeRanges,
       comparisonStrategy,
+      legacyEmergencyFallback: LEGACY_EMERGENCY_FALLBACK_DURING_SOAK,
     });
   }
 
@@ -125,6 +132,7 @@ export {
 export {
   validateFieldStructure,
   compareDocumentsAtomizer,
+  TaggedPublicationSafetyError,
 } from './baselines/atomizer/pipeline.js';
 /** @deprecated fldChar inside w:del is valid; see the docx-core definition. */
 export { hasFldCharInsideDel } from '@usejunior/docx-core';

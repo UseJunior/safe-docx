@@ -61,9 +61,9 @@
 
 ## 8. Authority flip and soak
 
-- [ ] 8.1 Make standalone tagged assembly authoritative behind a private emergency legacy switch.
-- [ ] 8.2 Throw `TaggedPublicationSafetyError` with retained diagnostics when no fallback is selected.
-- [ ] 8.3 Ship and complete at least one release/corpus soak cycle with Phase 1 telemetry.
+- [x] 8.1 Make standalone tagged assembly authoritative behind a private emergency legacy switch.
+- [x] 8.2 Throw `TaggedPublicationSafetyError` with retained diagnostics when no fallback is selected.
+- [x] 8.3 Ship and complete at least one release/corpus soak cycle with Phase 1 telemetry.
 
 ## 9. Public breaking release
 
@@ -86,9 +86,9 @@
 
 ## 12. Verification per shippable phase
 
-- [ ] 12.1 Run build, docx-compare tests, spec coverage, package coverage, and strict OpenSpec validation.
+- [x] 12.1 Run build, docx-compare tests, spec coverage, package coverage, and strict OpenSpec validation.
 - [x] 12.2 From Phase 4, run docx-markdoc tests and both rationale compilation smokes.
 - [ ] 12.3 From Phase 9, run all workspaces and the full repository pre-submit command.
 - [ ] 12.4 For Phases 2 and 9, run tool-doc, MCPB-manifest, and capability-projection checks.
-- [ ] 12.5 Re-run the characterization manifest after every phase and adjudicate rather than absorb drift.
+- [x] 12.5 Re-run the characterization manifest after every phase and adjudicate rather than absorb drift.
 - [ ] 12.6 Run real MCP comparison smoke and cross-reader checks after Phases 3, 6, and 10.

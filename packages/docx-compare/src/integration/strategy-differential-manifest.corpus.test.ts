@@ -107,8 +107,15 @@ describe('strategy differential committed rows', () => {
       const fixtures = await loadStrategyDifferentialFixtures(corpusRoot);
       const rows: StrategyDifferentialRow[] = [];
       for (const fixture of fixtures) {
-        const row = await characterizeStrategyDifferential(fixture);
-        rows.push(row);
+        try {
+          const row = await characterizeStrategyDifferential(fixture);
+          rows.push(row);
+        } catch (error) {
+          throw new Error(
+            `${fixture.id}: strategy characterization failed`,
+            { cause: error },
+          );
+        }
       }
 
       if (process.env[UPDATE_ENV] === '1') {

@@ -33,6 +33,8 @@ import type {
   ReconstructionTextMismatchSummary,
   ReconstructionTextMismatchDetails,
   ReconstructionMode,
+  TaggedPublicationSafetyCheckName,
+  TaggedPublicationSafetyChecks,
   TaggedTreeFallbackDiagnostics,
   RevisionAttribution,
   UnrepresentedChange,
@@ -173,6 +175,10 @@ export interface StandaloneTaggedPackageOptions {
   formatDetection: FormatDetectionSettings;
   numbering: NumberingIntegrationOptions;
   revisionAttributionRanges?: readonly import('../../compare-types.js').RevisionAttributionRange[];
+  /** @internal Test seam for the final structural publication gate. */
+  publicationSafetyEvaluator?: typeof evaluateSafetyChecks;
+  /** @internal Test seam for the final source-formatting publication gate. */
+  formattingFidelityEvaluator?: typeof compareSourceProjectedFormattingFidelity;
 }
 
 export interface StandaloneTaggedPackageResult {
@@ -190,6 +196,35 @@ export interface TaggedPackageShadowReport {
   unexpectedParts: string[];
   differentParts: string[];
   standaloneHasNoLegacyAssemblyInputs: true;
+}
+
+/**
+ * A revised-base tagged package failed a final projection, field, bookmark, or
+ * formatting gate. Structured evidence remains available to callers without
+ * parsing the error message.
+ */
+export class TaggedPublicationSafetyError extends Error {
+  readonly checks: TaggedPublicationSafetyChecks;
+  readonly failedChecks: TaggedPublicationSafetyCheckName[];
+  readonly failureDetails?: ReconstructionSafetyFailureDetails;
+  readonly firstDiffSummary?: ReconstructionSafetyFailureSummary;
+  readonly formattingFidelity: ProjectedFormattingFidelity;
+
+  constructor(options: {
+    checks: TaggedPublicationSafetyChecks;
+    failedChecks: TaggedPublicationSafetyCheckName[];
+    failureDetails?: ReconstructionSafetyFailureDetails;
+    firstDiffSummary?: ReconstructionSafetyFailureSummary;
+    formattingFidelity: ProjectedFormattingFidelity;
+  }) {
+    super(`Tagged publication failed safety checks: ${options.failedChecks.join(', ')}`);
+    this.name = 'TaggedPublicationSafetyError';
+    this.checks = options.checks;
+    this.failedChecks = options.failedChecks;
+    this.failureDetails = options.failureDetails;
+    this.firstDiffSummary = options.firstDiffSummary;
+    this.formattingFidelity = options.formattingFidelity;
+  }
 }
 
 /**
@@ -344,6 +379,12 @@ export async function buildStandaloneTaggedPackage(
     originalArchive.getNumberingXml(),
     revisedArchive.getNumberingXml(),
   ]);
+  if (
+    !findBody(parseDocumentXml(originalXml)) ||
+    !findBody(parseDocumentXml(revisedXml))
+  ) {
+    throw new Error('Could not find w:body in one or both documents');
+  }
   // Canonicalization needs one relationship table containing both sides, but
   // that temporary clone is discarded so unused original parts never leak
   // into the published revised-base package.
@@ -366,6 +407,8 @@ export async function buildStandaloneTaggedPackage(
     numberingEnabled: options.numbering.enabled,
     originalNumberingXml: originalNumberingXml ?? undefined,
     revisedNumberingXml: revisedNumberingXml ?? undefined,
+    statisticsOriginalXml: originalXml,
+    statisticsRevisedXml: revisedXml,
     revisionAttributionRanges: options.revisionAttributionRanges,
     retainStatisticsMarkers: true,
   });
@@ -399,13 +442,27 @@ export async function buildStandaloneTaggedPackage(
   await importReferencedRelationships(originalArchive, resultArchive, taggedXml);
   const noteMergeResults = new Map<'footnote' | 'endnote', AuxiliaryMergeResult>();
   for (const descriptor of AUXILIARY_PARTS) {
-    const mergeResult = await mergeAuxiliaryPartDefinitions(
-      originalArchive,
-      resultArchive,
-      taggedXml,
-      descriptor,
-    );
-    await mergeAuxiliaryPartDefinitions(revisedArchive, resultArchive, taggedXml, descriptor);
+    let mergeResult: AuxiliaryMergeResult;
+    try {
+      mergeResult = await mergeAuxiliaryPartDefinitions(
+        originalArchive,
+        resultArchive,
+        taggedXml,
+        descriptor,
+      );
+      await mergeAuxiliaryPartDefinitions(revisedArchive, resultArchive, taggedXml, descriptor);
+    } catch (error) {
+      if (descriptor.label !== 'footnote' && descriptor.label !== 'endnote') throw error;
+      throw new AncillaryStorySafetyError([{
+        category: 'strict_field_structure',
+        code: 'NOTE_PART_XML_INVALID',
+        detail: error instanceof Error ? error.message : String(error),
+        locator: {
+          locatorType: 'package_part',
+          normalizedPartPath: descriptor.partPath,
+        },
+      }]);
+    }
     if (descriptor.label === 'footnote' || descriptor.label === 'endnote') {
       noteMergeResults.set(descriptor.label, mergeResult);
     }
@@ -433,24 +490,58 @@ export async function buildStandaloneTaggedPackage(
     footnotesXmls: [await resultArchive.getFile('word/footnotes.xml')],
     endnotesXmls: [await resultArchive.getFile('word/endnotes.xml')],
   };
-  const publicationSafety = evaluateSafetyChecks(
-    extractRoundTripComparisonText(originalXml),
-    extractRoundTripComparisonText(revisedXml),
+  // Project pre-existing revisions exactly as the candidate gate does. A raw
+  // revised source can still contain a deletion that accept-all intentionally
+  // removes, while a raw original can contain an insertion that reject-all
+  // intentionally removes. Comparing the candidate projections to those raw
+  // trees would reject a faithful publication.
+  const originalProjectionXml = rejectAllChanges(originalXml);
+  const revisedProjectionXml = acceptAllChanges(revisedXml);
+  const publicationSafety = (options.publicationSafetyEvaluator ?? evaluateSafetyChecks)(
+    extractRoundTripComparisonText(originalProjectionXml),
+    extractRoundTripComparisonText(revisedProjectionXml),
     collectBookmarkDiagnostics(originalXml),
     collectBookmarkDiagnostics(revisedXml),
     taggedXml,
     finalAuxiliarySidecars,
   );
-  if (!publicationSafety.safe) {
-    throw new Error(
-      `Standalone tagged publication failed safety checks: ${publicationSafety.failedChecks.join(', ')}`,
-    );
-  }
-  const formattingFidelity = compareSourceProjectedFormattingFidelity(
-    originalXml,
-    revisedXml,
+  const formattingFidelity = (
+    options.formattingFidelityEvaluator ?? compareSourceProjectedFormattingFidelity
+  )(
+    rejectAllChanges(taggedOriginalXml),
+    acceptAllChanges(taggedRevisedXml),
     taggedXml,
   );
+  const sectionFormattingIsExplicitlyUnrepresented =
+    unrepresentedChanges.some((change) => change.scope === 'section') &&
+    [formattingFidelity.accept, formattingFidelity.reject].every((report) =>
+      report.runFormatting.score === 1 &&
+      report.paragraphFormatting.score === 1 &&
+      report.tableFormatting.score === 1 &&
+      report.unalignedExpectedParagraphs === 0 &&
+      report.unalignedActualParagraphs === 0 &&
+      report.divergences.every((divergence) => divergence.scope === 'section'),
+    );
+  const checks: TaggedPublicationSafetyChecks = {
+    ...publicationSafety.checks,
+    formattingFidelity:
+      !options.formatDetection.detectFormatChanges ||
+      formattingFidelity.score === 1 ||
+      sectionFormattingIsExplicitlyUnrepresented,
+  };
+  const failedChecks: TaggedPublicationSafetyCheckName[] = [
+    ...publicationSafety.failedChecks,
+    ...(checks.formattingFidelity ? [] : ['formattingFidelity' as const]),
+  ];
+  if (failedChecks.length > 0) {
+    throw new TaggedPublicationSafetyError({
+      checks,
+      failedChecks,
+      failureDetails: publicationSafety.failureDetails,
+      firstDiffSummary: publicationSafety.failureSummary,
+      formattingFidelity,
+    });
+  }
   return {
     document: await resultArchive.save(),
     documentXml: taggedXml,
@@ -820,11 +911,17 @@ export interface AtomizerOptions {
   revisionAttributionRanges?: import('../../compare-types.js').RevisionAttributionRange[];
   /** @internal Test seam for exercising fail-safe publication without malformed fixtures. */
   taggedTreePublicationSafetyEvaluator?: typeof evaluateSafetyChecks;
+  /** @internal Test seam for exercising the final formatting-fidelity gate. */
+  taggedTreeFormattingFidelityEvaluator?: typeof compareSourceProjectedFormattingFidelity;
+  /** @internal Temporary release-soak rollback switch; never passed by public front doors. */
+  legacyEmergencyFallback?: boolean;
   /** @internal Opt-in Phase 6 package shadow observer. */
   standaloneTaggedPackageShadowObserver?: (
     report: TaggedPackageShadowReport,
   ) => void | Promise<void>;
 }
+
+type PublicationAuthority = ComparisonStrategy | 'compat-tagged-tree';
 
 /** Atomizer-only result metadata used by internal tagged attribution callers. */
 export interface AtomizerCompareResult extends CompareResult {
@@ -1235,6 +1332,66 @@ function evaluateSafetyChecks(
   };
 }
 
+/** Build the authoritative revised-base result without legacy construction. */
+async function compareDocumentsTaggedCore(
+  original: Buffer,
+  revised: Buffer,
+  options: AtomizerOptions,
+): Promise<AtomizerCompareResult> {
+  const standalone = await buildStandaloneTaggedPackage(original, revised, {
+    author: options.author ?? 'Comparison',
+    date: options.date ?? new Date(),
+    moveDetection: {
+      ...DEFAULT_MOVE_DETECTION_SETTINGS,
+      ...options.moveDetection,
+    },
+    formatDetection: {
+      ...DEFAULT_FORMAT_DETECTION_SETTINGS,
+      ...options.formatDetection,
+    },
+    numbering: {
+      ...DEFAULT_NUMBERING_OPTIONS,
+      ...options.numbering,
+    },
+    revisionAttributionRanges: options.revisionAttributionRanges,
+    publicationSafetyEvaluator: options.taggedTreePublicationSafetyEvaluator,
+    formattingFidelityEvaluator: options.taggedTreeFormattingFidelityEvaluator,
+  });
+  if (options.standaloneTaggedPackageShadowObserver) {
+    await options.standaloneTaggedPackageShadowObserver(
+      await compareTaggedPackageParts(standalone.document, standalone.document),
+    );
+  }
+  return {
+    document: standalone.document,
+    stats: standalone.stats,
+    engine: 'atomizer',
+    comparisonStrategyRequested: 'tagged-tree',
+    comparisonStrategyUsed: 'tagged-tree',
+    unrepresentedChanges: standalone.unrepresentedChanges,
+    reconstructionModeRequested:
+      options.reconstructionMode ?? DEFAULT_RECONSTRUCTION_MODE,
+    reconstructionModeUsed: 'inplace',
+    ancillaryFieldEvidence: standalone.ancillaryFieldEvidence,
+    revisionAttributions: standalone.revisionAttributions,
+  };
+}
+
+function compareDocumentsAuthorityCore(
+  authority: PublicationAuthority,
+  original: Buffer,
+  revised: Buffer,
+  options: AtomizerOptions,
+): Promise<AtomizerCompareResult> {
+  return authority === 'tagged-tree'
+    ? compareDocumentsTaggedCore(original, revised, options)
+    : compareDocumentsAtomizerCore(original, revised, {
+        ...options,
+        comparisonStrategy:
+          authority === 'legacy' ? 'legacy' : 'tagged-tree',
+      });
+}
+
 /**
  * Compare two DOCX documents using the atomizer-based approach.
  *
@@ -1263,16 +1420,17 @@ function evaluateSafetyChecks(
  * @conformance ECMA-376 edition 5, Part 4 § 19.1.2.22
  * @see https://github.com/UseJunior/safe-docx/issues/713
  */
-export async function compareDocumentsAtomizer(
+async function compareDocumentsAtomizerWithAuthority(
   original: Buffer,
   revised: Buffer,
-  options: AtomizerOptions = {},
+  options: AtomizerOptions,
+  authority: PublicationAuthority,
 ): Promise<AtomizerCompareResult> {
   const textBoxPlan = await prepareTextBoxStoryComparison(original, revised);
   if (!textBoxPlan) {
-    return compareDocumentsAtomizerCore(original, revised, options);
+    return compareDocumentsAuthorityCore(authority, original, revised, options);
   }
-  const taggedStoryPublication = (options.comparisonStrategy ?? 'tagged-tree') === 'tagged-tree';
+  const taggedStoryPublication = authority !== 'legacy';
   if (!taggedStoryPublication && options.reconstructionMode !== 'inplace') {
     throw new UnsupportedTextBoxRevisionError([{
       index: textBoxPlan.stories[0]?.visualIndex ?? 0,
@@ -1291,7 +1449,8 @@ export async function compareDocumentsAtomizer(
         ? (report) => { standaloneShadowReports.push(report); }
         : options.standaloneTaggedPackageShadowObserver,
   };
-  const outerResult = await compareDocumentsAtomizerCore(
+  const outerResult = await compareDocumentsAuthorityCore(
+    authority,
     textBoxPlan.outerOriginal,
     textBoxPlan.outerRevised,
     nestedOptions,
@@ -1325,7 +1484,8 @@ export async function compareDocumentsAtomizer(
     ) {
       continue;
     }
-    let result = await compareDocumentsAtomizerCore(
+    let result = await compareDocumentsAuthorityCore(
+      authority,
       story.original,
       story.container === 'ancillaryPart' ? story.original : story.revised,
       nestedOptions,
@@ -1469,6 +1629,61 @@ export async function compareDocumentsAtomizer(
         ? unrepresentedChanges
         : undefined,
   };
+}
+
+/**
+ * Publish through the standalone tagged assembler. The explicit legacy
+ * selector remains temporarily compatible during the staged public-option
+ * removal, while automatic legacy fallback requires the private soak switch.
+ */
+export async function compareDocumentsAtomizer(
+  original: Buffer,
+  revised: Buffer,
+  options: AtomizerOptions = {},
+): Promise<AtomizerCompareResult> {
+  // Phase 8 flips the ordinary/default path without pre-empting Phase 9's
+  // separately released removal of explicit legacy/rebuild compatibility.
+  const authority: PublicationAuthority = options.comparisonStrategy === 'legacy'
+    ? 'legacy'
+    : options.reconstructionMode === 'rebuild'
+      ? 'compat-tagged-tree'
+      : 'tagged-tree';
+  try {
+    return await compareDocumentsAtomizerWithAuthority(
+      original,
+      revised,
+      options,
+      authority,
+    );
+  } catch (error) {
+    if (
+      authority !== 'tagged-tree' ||
+      !options.legacyEmergencyFallback ||
+      !(error instanceof TaggedPublicationSafetyError)
+    ) {
+      throw error;
+    }
+    const legacy = await compareDocumentsAtomizerWithAuthority(
+      original,
+      revised,
+      options,
+      'legacy',
+    );
+    return {
+      ...legacy,
+      comparisonStrategyRequested: 'tagged-tree',
+      comparisonStrategyUsed: 'legacy',
+      comparisonStrategyFallbackReason:
+        'tagged_tree_publication_safety_check_failed',
+      taggedTreeFallbackDiagnostics: {
+        checks: error.checks,
+        failedChecks: error.failedChecks,
+        failureDetails: error.failureDetails,
+        firstDiffSummary: error.firstDiffSummary,
+        formattingFidelity: error.formattingFidelity,
+      },
+    };
+  }
 }
 
 async function compareDocumentsAtomizerCore(
@@ -2115,7 +2330,7 @@ async function compareDocumentsAtomizerCore(
       taggedPublicationStats = undefined;
       revisionAttributions = undefined;
       taggedTreeFallbackDiagnostics = {
-        checks: taggedSafety.checks,
+        checks: { ...taggedSafety.checks, formattingFidelity: true },
         failedChecks: taggedSafety.failedChecks,
         failureDetails: taggedSafety.failureDetails,
         firstDiffSummary: taggedSafety.failureSummary,

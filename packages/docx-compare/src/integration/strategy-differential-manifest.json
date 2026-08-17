@@ -444,9 +444,9 @@
           "introducedIssues": []
         },
         "formatting": {
-          "score": 0,
+          "score": 1,
           "acceptScore": 1,
-          "rejectScore": 0,
+          "rejectScore": 1,
           "acceptDivergences": 0,
           "rejectDivergences": 0
         },
@@ -560,9 +560,9 @@
           "introducedIssues": []
         },
         "formatting": {
-          "score": 0,
+          "score": 1,
           "acceptScore": 1,
-          "rejectScore": 0,
+          "rejectScore": 1,
           "acceptDivergences": 0,
           "rejectDivergences": 0
         },
@@ -1138,9 +1138,9 @@
           "introducedIssues": []
         },
         "formatting": {
-          "score": 0.7470202290753544,
-          "acceptScore": 0.984936268829664,
-          "rejectScore": 0.7470202290753544,
+          "score": 0.7470066043664094,
+          "acceptScore": 1,
+          "rejectScore": 0.7470066043664094,
           "acceptDivergences": 0,
           "rejectDivergences": 36
         },
@@ -1155,14 +1155,14 @@
         "strategy": "tagged-tree",
         "projections": {
           "accept": {
-            "xmlSha256": "a7851458e5254de492f72f77db0634815337831e571a1e4a406afa6cd793147a",
+            "xmlSha256": "6e39e1c13d54d6b7d2ac4dbe446daed9fc4f37a774c711ddbf8f2a74537b4ad3",
             "textSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "sourceTextSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "matchesSourceText": true,
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "767105a5a690be4ebf3b7d4dd324b991a13eed98b63f3d1d1eaf37621117eda9",
+            "xmlSha256": "d9e3d5f3cd240360051c7a9b90ddc97ff031a0a4d924a4892e852d568019918e",
             "textSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "sourceTextSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "matchesSourceText": true,
@@ -1220,8 +1220,8 @@
           },
           {
             "path": "word/_rels/document.xml.rels",
-            "bytes": 6809,
-            "sha256": "3223a1e1732f787e6d2306915947c264c3a3f7b3c2c73ae5db0e662051898bd2",
+            "bytes": 6942,
+            "sha256": "f91da0cb6b4a673729e620634def8faac44df959b9ba0f9c6ad054bb282fe4e7",
             "kind": "xml"
           },
           {
@@ -1232,8 +1232,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 1195726,
-            "sha256": "aa6ac01bd01a17446931b17d8c4354de02f0cf1bc7f95fcfae7356540817a2ad",
+            "bytes": 1195728,
+            "sha256": "a5571fba09c9890bc9b0f953817161934794c3a13ef899e741c0d1ef326ed003",
             "kind": "xml"
           },
           {
@@ -1729,7 +1729,7 @@
         },
         "formatting": {
           "score": 0.75,
-          "acceptScore": 0.984936268829664,
+          "acceptScore": 1,
           "rejectScore": 0.75,
           "acceptDivergences": 0,
           "rejectDivergences": 11
@@ -8065,9 +8065,9 @@
           "introducedIssues": []
         },
         "formatting": {
-          "score": 0.8,
-          "acceptScore": 0.8,
-          "rejectScore": 0.8,
+          "score": 1,
+          "acceptScore": 1,
+          "rejectScore": 1,
           "acceptDivergences": 0,
           "rejectDivergences": 0
         },

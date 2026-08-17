@@ -62,9 +62,8 @@ describe('pipeline safety and input guards', () => {
     then,
     and,
   }: AllureBddContext) => {
-    // The inplace attempt throws AncillaryStorySafetyError; the pipeline then
-    // retries in rebuild mode, whose base archive still carries the corrupted
-    // footnotes.xml. The terminal error retains diagnostics from both attempts.
+    // Tagged authority has no automatic rebuild fallback. A malformed
+    // contributing note therefore fails once with its typed package evidence.
     let original: Buffer;
     let revised: Buffer;
     let failure: unknown;
@@ -107,24 +106,6 @@ describe('pipeline safety and input guards', () => {
               normalizedPartPath: 'word/footnotes.xml',
             }),
           }),
-        ],
-        attempts: [
-          {
-            reconstructionMode: 'inplace',
-            issues: [
-              expect.objectContaining({
-                code: 'NOTE_PART_XML_INVALID',
-              }),
-            ],
-          },
-          {
-            reconstructionMode: 'rebuild',
-            issues: [
-              expect.objectContaining({
-                code: 'NOTE_PART_XML_INVALID',
-              }),
-            ],
-          },
         ],
       });
     });

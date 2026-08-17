@@ -241,6 +241,7 @@ describe('ancillary field story publication boundary', () => {
 
       const result = await compareDocuments(original, revised, {
         engine: 'atomizer',
+        comparisonStrategy: 'legacy',
         reconstructionMode: 'inplace',
       });
 
@@ -454,6 +455,7 @@ describe('ancillary field story publication boundary', () => {
 
       await expect(compareDocuments(original, revised, {
         engine: 'atomizer',
+        comparisonStrategy: 'legacy',
         reconstructionMode: 'inplace',
       })).rejects.toMatchObject({
         name: 'AncillaryStorySafetyError',

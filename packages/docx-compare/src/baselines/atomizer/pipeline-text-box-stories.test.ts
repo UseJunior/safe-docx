@@ -1114,10 +1114,16 @@ describe('VML text-box story comparison (#713)', () => {
       archive.getFile('word/_rels/header1.xml.rels'),
     ]);
 
-    await then('the revised relationship closure remains selected and resolvable', () => {
-      expect(output).toContain('r:id="rIdLink9"');
-      expect(output).not.toContain('r:id="rIdLink1"');
-      expect(relationships).toContain('Id="rIdLink9"');
+    await then('the selected relationship closure remains resolvable after id normalization', () => {
+      const outputRelationshipId = parseXml(output!)
+        .getElementsByTagNameNS(OOXML.W_NS, 'hyperlink')[0]
+        ?.getAttributeNS(OOXML.R_NS, 'id');
+      const relationship = Array.from(
+        parseXml(relationships!).getElementsByTagName('Relationship'),
+      ).find((candidate) => candidate.getAttribute('Id') === outputRelationshipId);
+      expect(outputRelationshipId).toBeTruthy();
+      expect(relationship?.getAttribute('Target')).toBe('https://example.test/notice');
+      expect(relationship?.getAttribute('TargetMode')).toBe('External');
       expect(textBoxText(acceptAllChanges(output!))).toBe('Revised linked header');
       expect(textBoxText(rejectAllChanges(output!))).toBe('Original linked header');
     });
