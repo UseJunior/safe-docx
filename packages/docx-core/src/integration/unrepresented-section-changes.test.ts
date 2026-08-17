@@ -92,6 +92,9 @@ describe('unrepresented section and header/footer reporting', () => {
       const [original, revised] = await issue648Pair();
       const result = await compareDocuments(original, revised, {
         engine: 'atomizer',
+        // This scenario characterizes the rollback engine's deliberate
+        // classification of section topology as unrepresented.
+        comparisonStrategy: 'legacy',
         reconstructionMode: 'inplace',
       });
       expect(result.stats.insertions).toBe(0);
@@ -103,6 +106,24 @@ describe('unrepresented section and header/footer reporting', () => {
           kind: 'added',
           role: 'default',
         }),
+      ]));
+
+      const tagged = await compareDocuments(original, revised, {
+        engine: 'atomizer',
+        comparisonStrategy: 'tagged-tree',
+        reconstructionMode: 'inplace',
+      });
+      // Tagged package assembly compares the selected added footer story, so
+      // its public stats describe that emitted insertion. Legacy intentionally
+      // reports the same package delta only through unrepresentedChanges.
+      expect(tagged.stats.insertions).toBe(1);
+      expect(tagged.stats.deletions).toBe(0);
+      expect(tagged.reconstructionModeUsed).toBe('inplace');
+      expect(tagged.unrepresentedChanges).toEqual(expect.arrayContaining([
+        expect.objectContaining({ scope: 'section', kind: 'added' }),
+      ]));
+      expect(tagged.unrepresentedChanges).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ scope: 'footer' }),
       ]));
     },
   );

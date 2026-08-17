@@ -923,8 +923,13 @@ export async function compileMarkdoc(
     // minimality outranks "confetti" readability for authored redlines.
     // See https://github.com/UseJunior/safe-docx/issues/846.
   } as const;
-  const comparison = await compareDocuments(comparisonSource, comparisonClean, comparisonOptions);
-  let tracked = comparison.document;
+  const comparison = ir.operations.length === 0
+    ? undefined
+    : await compareDocuments(comparisonSource, comparisonClean, comparisonOptions);
+  // A no-operation replay has no comparison to represent. Preserve the exact
+  // source package instead of needlessly reassembling relationship IDs and
+  // turning package-normalization noise into a false formatting failure.
+  let tracked = comparison?.document ?? sourceBuffer;
   if (materializations.length > 0) {
     const identity = resolvedCompilation.commentIdentity!;
     try {

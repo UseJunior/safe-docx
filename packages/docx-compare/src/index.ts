@@ -28,6 +28,8 @@ export type {
   AncillaryStorySafetyCategory,
   AncillaryStorySafetyIssue,
   AncillaryStorySummary,
+  ComparisonStrategy,
+  ComparisonStrategyFallbackReason,
   ReconstructionAttemptDiagnostics,
   ReconstructionBookmarkMismatchDetails,
   ReconstructionBookmarkMismatchSummary,
@@ -47,6 +49,7 @@ export type {
   ReconstructionSafetyFailureSummary,
   ReconstructionTextMismatchDetails,
   ReconstructionTextMismatchSummary,
+  TaggedTreeFallbackDiagnostics,
 } from './compare-types.js';
 
 /**
@@ -71,6 +74,7 @@ export async function compareDocuments(
     reconstructionMode,
     premergeRuns,
     maxWordRefinementChangeRanges,
+    comparisonStrategy,
   } = options;
 
   if ((engine as string) === 'diffmatch') {
@@ -95,6 +99,7 @@ export async function compareDocuments(
       reconstructionMode,
       premergeRuns,
       maxWordRefinementChangeRanges,
+      comparisonStrategy,
     });
   }
 
@@ -134,6 +139,7 @@ export {
 } from './baselines/atomizer/textBoxRevisionSafety.js';
 export type { TextBoxRevisionChange } from './baselines/atomizer/textBoxRevisionSafety.js';
 export { computeAtomLcs, markCorrelationStatus } from './baselines/atomizer/atomLcs.js';
+export { alignComparisonSequences, tokenizeComparisonText } from './textAlignment.js';
 export {
   MC_NAMESPACE,
   groupElementsByTagNameNS,

@@ -99,6 +99,7 @@ describe('pipeline comment ancillary publication', () => {
     await when('the comparison publishes the inserted comment through rebuild mode', async () => {
       result = await compareDocumentsAtomizer(original, revised, {
         reconstructionMode: 'rebuild',
+        comparisonStrategy: 'tagged-tree',
         author: 'Pipeline test',
       });
     });

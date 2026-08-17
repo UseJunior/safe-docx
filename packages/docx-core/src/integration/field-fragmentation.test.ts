@@ -29,6 +29,7 @@ import {
   instrText,
   resultText,
 } from '../testing/ooxml-fixtures.js';
+import { validateBookmarkIntegrity } from '../shared/validators/structural.js';
 
 const test = testAllure
   .epic('Document Comparison')
@@ -43,10 +44,15 @@ const test = testAllure
 // Helpers
 // =============================================================================
 
-async function compareInplace(original: Buffer, revised: Buffer): Promise<string> {
+async function compareInplace(
+  original: Buffer,
+  revised: Buffer,
+  comparisonStrategy: 'tagged-tree' | 'legacy' = 'tagged-tree',
+): Promise<string> {
   const result = await compareDocuments(original, revised, {
     engine: 'atomizer',
     reconstructionMode: 'inplace',
+    comparisonStrategy,
   });
   if (result.reconstructionModeUsed !== 'inplace') {
     throw new Error(
@@ -111,6 +117,13 @@ function assertFieldStructureSurvives(combined: string): void {
 function countTag(combined: string, tag: string): number {
   const doc = new DOMParser().parseFromString(combined, 'application/xml');
   return doc.getElementsByTagName(tag).length;
+}
+
+function visibleText(xml: string): string {
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  return Array.from(doc.getElementsByTagName('w:t'))
+    .map((node) => node.textContent ?? '')
+    .join('');
 }
 
 // Guards against a vacuous pass: wrapper-shape + validateFieldStructure
@@ -315,22 +328,34 @@ describe('Field fragmentation — modification scenarios', () => {
 
       await when('the inplace combined output is produced', async () => {});
 
-      await then('the whole deleted field is redlined and its bookmark survives', () => {
-        assertWholeFieldInside(combined, 'w:del');
+      await then('accept and reject reproduce the revised and original behavior exactly', () => {
         assertFieldStructureSurvives(combined);
-        // The pre-existing engine behavior hoists the bookmarkStart found
-        // adjacent to the first source run BEFORE the first emitted element
-        // (the begin fldChar). It does NOT walk per-source-run, so a bookmark
-        // sitting between later field runs would not be cloned. That is a
-        // known limitation documented in the OpenSpec design Risks section
-        // and tracked as a follow-up. This fixture only guards the first-run
-        // case from regressing.
-        expect(combined, 'bookmarkStart cloned into combined output').toMatch(
+
+        const accepted = acceptAllChanges(combined);
+        const rejected = rejectAllChanges(combined);
+
+        expect(visibleText(accepted)).toBe('Pages total.');
+        expect(accepted).not.toContain('NUMPAGES');
+        expect(accepted).not.toContain('bm_inside_field');
+
+        expect(visibleText(rejected)).toBe('Pages 3 total.');
+        expect(countTag(rejected, 'w:fldChar')).toBe(3);
+        expect(rejected).toContain('NUMPAGES');
+        expect(rejected, 'Reject All restores the original bookmark start').toMatch(
           /<w:bookmarkStart[^>]*w:name="bm_inside_field"/,
         );
-        expect(combined, 'bookmarkEnd cloned into combined output').toMatch(
-          /<w:bookmarkEnd[^>]*w:id="9"/,
-        );
+        expect(validateBookmarkIntegrity(rejected)).toEqual({
+          unmatchedStartIds: [],
+          unmatchedEndIds: [],
+          duplicateStartIds: [],
+          duplicateEndIds: [],
+        });
+        const rejectedDocument = new DOMParser().parseFromString(rejected, 'application/xml');
+        const starts = Array.from(rejectedDocument.getElementsByTagName('w:bookmarkStart'));
+        const ends = Array.from(rejectedDocument.getElementsByTagName('w:bookmarkEnd'));
+        expect(starts).toHaveLength(1);
+        expect(ends).toHaveLength(1);
+        expect(ends[0]!.getAttribute('w:id')).toBe(starts[0]!.getAttribute('w:id'));
       });
     },
   );
@@ -378,12 +403,21 @@ describe('Field fragmentation — modification scenarios', () => {
 
       await when('the inplace combined output is produced', async () => {});
 
-      await then('the optimization falls back to whole-field replacement without dropping nested markers', () => {
+      await then('both projections preserve the balanced nested fields and select the intended cache', () => {
         assertEmitsTrackedChanges(combined);
-        expect(countTag(combined, 'w:fldChar')).toBe(12);
-        expect(rejectAllChanges(combined)).toContain('3');
-        expect(acceptAllChanges(combined)).toContain('4');
         assertFieldStructureSurvives(combined);
+
+        const accepted = acceptAllChanges(combined);
+        const rejected = rejectAllChanges(combined);
+
+        // One balanced outer field and one balanced nested field remain live.
+        // Duplicating both skeletons would produce 12 controls and needlessly
+        // expose reader-specific field topology in the tracked document.
+        expect(countTag(combined, 'w:fldChar')).toBe(6);
+        expect(countTag(accepted, 'w:fldChar')).toBe(6);
+        expect(countTag(rejected, 'w:fldChar')).toBe(6);
+        expect(visibleText(accepted)).toBe('74');
+        expect(visibleText(rejected)).toBe('73');
       });
     },
   );
@@ -526,7 +560,7 @@ describe('Field fragmentation — edge cases', () => {
           const revised = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Page check: </w:t></w:r>${makeNestedField(' NUMPAGES ', 'second')}</w:p>`,
           );
-          combined = await compareInplace(original, revised);
+          combined = await compareInplace(original, revised, 'legacy');
         },
       );
 
@@ -577,7 +611,7 @@ describe('Field fragmentation — edge cases', () => {
           const revised = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Item  done.</w:t></w:r></w:p>`,
           );
-          combined = await compareInplace(original, revised);
+          combined = await compareInplace(original, revised, 'legacy');
         },
       );
 

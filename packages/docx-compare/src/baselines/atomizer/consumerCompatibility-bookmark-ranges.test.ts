@@ -72,7 +72,11 @@ function bookmarkedParagraph(id: string, name: string, text: string, pPr = ''): 
 async function compare(
   originalBody: string,
   revisedBody: string,
-  reconstructionMode: ReconstructionMode
+  reconstructionMode: ReconstructionMode,
+  // This suite exercises the legacy consumer-compatibility postprocessor's
+  // exact marker-hoisting topology. Tagged projection behavior is covered by
+  // the tagged serializer and source-grounded package invariant suites.
+  comparisonStrategy: 'tagged-tree' | 'legacy' = 'legacy',
 ): Promise<string> {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
@@ -80,6 +84,7 @@ async function compare(
     author: AUTHOR,
     date: DATE,
     reconstructionMode,
+    comparisonStrategy,
   });
   expect(result.reconstructionModeUsed).toBe(reconstructionMode);
   return (await DocxArchive.load(result.document)).getDocumentXml();
@@ -207,16 +212,13 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
         ]);
       });
 
-      await and('Accept All leaves the emptied bookmark in the paragraph flow, not at body level', () => {
-        // Keeping the name once its text is gone is safe-docx policy, unchanged
-        // by this fix: the pass has always preserved bookmark names so a REF or
-        // PAGEREF still resolves. What changes is placement — the emptied range
-        // lands at the paragraph merge point instead of detached at body level.
-        // Word's own output for this scenario has not been captured, and the
-        // repo's LibreOffice oracle drops the bookmark outright on accept, so
-        // this asserts our policy rather than a consumer's behavior (issue #641).
+      await and('Accept All matches the revised source by removing the deleted range', () => {
+        // Correction (2026-08-16): this formerly asserted a safe-docx-specific
+        // policy that retained an empty bookmark after its paragraph was
+        // deleted. That contradicted both the revised source projection and the
+        // existing LibreOffice oracle, and orphaned cross-paragraph endpoints.
         const accepted = acceptAllChanges(documentXml);
-        expect(accepted).toContain('w:name="DeletedBoundary"');
+        expect(accepted).not.toContain('w:name="DeletedBoundary"');
         expect(bodyChildTags(accepted)).not.toContain('w:bookmarkStart');
         expect(bodyChildTags(accepted)).not.toContain('w:bookmarkEnd');
       });
@@ -407,7 +409,11 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
           '<w:bookmarkEnd w:id="50"/>' +
           '<w:r><w:t>outside-range</w:t></w:r></w:p>',
         '<w:p><w:r><w:t>kept</w:t></w:r></w:p>',
-        'inplace'
+        'inplace',
+        // This assertion specifically exercises the legacy inplace
+        // postprocessor's wrapper splitting. Tagged construction deliberately
+        // does not vary its revision semantics by reconstruction mode.
+        'legacy',
       );
     });
 
@@ -453,7 +459,7 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
       // The inplace pipeline runs its wrapper-merging postprocess passes over
       // this tree, so this asserts end-to-end that none of them re-merge the
       // split halves across the boundary.
-      documentXml = await compare(trackedBody, trackedBody, 'inplace');
+      documentXml = await compare(trackedBody, trackedBody, 'inplace', 'legacy');
     });
 
     await then('the pre-existing wrapper is split with the boundary between the halves', () => {

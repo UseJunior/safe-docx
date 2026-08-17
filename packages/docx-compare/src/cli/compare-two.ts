@@ -5,7 +5,7 @@ import { DEFAULT_RECONSTRUCTION_MODE } from '../comparison-defaults.js';
 
 const USAGE =
   'Usage: docx-comparison <original.docx> <revised.docx> [output.docx] ' +
-  '[--engine atomizer|auto] [--mode inplace|rebuild] [--author "Name"] [--premerge-runs true|false]\n' +
+  '[--engine atomizer|auto] [--mode inplace|rebuild] [--comparison-strategy tagged-tree|legacy] [--author "Name"] [--premerge-runs true|false]\n' +
   `Mode defaults to ${DEFAULT_RECONSTRUCTION_MODE}; the pipeline may fall back to rebuild when safety checks fail ` +
   '(reported via mode vs mode_requested and fallback_reason).\n' +
   'Stats: insertions/deletions count contiguous revision ranges; insertedAtoms/deletedAtoms count granular word atoms; ' +
@@ -20,6 +20,7 @@ export interface ParsedCompareCliArgs {
     reconstructionMode: 'inplace' | 'rebuild';
     author: string;
     premergeRuns: boolean;
+    comparisonStrategy: 'tagged-tree' | 'legacy';
   };
 }
 
@@ -38,6 +39,10 @@ export interface CompareCliRunResult {
   mode_requested: 'inplace' | 'rebuild';
   /** Present only when the pipeline fell back from the requested mode. */
   fallback_reason?: string;
+  comparison_strategy_requested?: string;
+  comparison_strategy_used?: string;
+  comparison_strategy_fallback_reason?: string;
+  tagged_tree_fallback_diagnostics?: unknown;
   bytes: number;
   stats: unknown;
 }
@@ -66,6 +71,7 @@ export function parseCompareCliArgs(argv: string[]): ParsedCompareCliArgs {
     reconstructionMode: DEFAULT_RECONSTRUCTION_MODE,
     author: 'Comparison',
     premergeRuns: true,
+    comparisonStrategy: 'tagged-tree',
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -106,6 +112,14 @@ export function parseCompareCliArgs(argv: string[]): ParsedCompareCliArgs {
       case '--author':
         options.author = consumeValue(token);
         break;
+      case '--comparison-strategy': {
+        const strategy = consumeValue(token);
+        if (strategy !== 'tagged-tree' && strategy !== 'legacy') {
+          throw new Error(`Unsupported comparison strategy: ${strategy}. Use tagged-tree or legacy.`);
+        }
+        options.comparisonStrategy = strategy;
+        break;
+      }
       case '--premerge-runs':
         options.premergeRuns = parseBooleanFlag(consumeValue(token), token);
         break;
@@ -159,6 +173,7 @@ export async function runCompareCli(
     author: parsed.options.author,
     reconstructionMode: parsed.options.reconstructionMode,
     premergeRuns: parsed.options.premergeRuns,
+    comparisonStrategy: parsed.options.comparisonStrategy,
   });
 
   await mkdir(dirname(outputAbs), { recursive: true });
@@ -170,6 +185,10 @@ export async function runCompareCli(
     mode: result.reconstructionModeUsed ?? parsed.options.reconstructionMode,
     mode_requested: parsed.options.reconstructionMode,
     fallback_reason: result.fallbackReason,
+    comparison_strategy_requested: result.comparisonStrategyRequested,
+    comparison_strategy_used: result.comparisonStrategyUsed,
+    comparison_strategy_fallback_reason: result.comparisonStrategyFallbackReason,
+    tagged_tree_fallback_diagnostics: result.taggedTreeFallbackDiagnostics,
     bytes: result.document.length,
     stats: result.stats,
   };

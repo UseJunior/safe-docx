@@ -335,6 +335,7 @@ describe('selective word refinement for aligned paragraphs (#717)', () => {
 
     const comparison = await when('the in-place atomizer compares the documents', () =>
       compareDocumentsAtomizer(original, revised, {
+        comparisonStrategy: 'legacy',
         reconstructionMode: 'inplace',
         date: new Date('2026-07-28T12:00:00Z'),
       }),
@@ -388,6 +389,7 @@ describe('selective word refinement for aligned paragraphs (#717)', () => {
     );
     const comparison = await when('the documents are compared in place', () =>
       compareDocumentsAtomizer(original, revised, {
+        comparisonStrategy: 'legacy',
         reconstructionMode: 'inplace',
         date: new Date('2026-07-29T12:00:00Z'),
       }),

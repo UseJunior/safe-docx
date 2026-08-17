@@ -29,6 +29,7 @@ import {
   validateSdtNamespaceOwnership,
 } from './baselines/atomizer/opaquePassthrough.js';
 import { canonicalizeParagraphPropertiesForIdentity } from './baselines/atomizer/formattingFidelity.js';
+import { tokenizeComparisonText } from './textAlignment.js';
 
 // =============================================================================
 // Shared synthetic document for creating virtual elements
@@ -1183,36 +1184,6 @@ export function collapseFieldSequences(
  * input is document-controlled text and an end-anchored `[...]+$` pattern is
  * quadratic on adversarial inputs (CodeQL js/polynomial-redos).
  */
-const LEADING_EDGE_PUNCTUATION = new Set(["'", '"', '(', '[', '{', '<']);
-const TRAILING_EDGE_PUNCTUATION = new Set([',', '.', ':', ';', '!', '?', "'", '"', ')', ']', '}', '>']);
-
-/**
- * Split a whitespace-free token into leading punctuation, core, and trailing
- * punctuation parts, dropping empty parts.
- *
- * Tokenization must be a pure function of paragraph text — not of run
- * boundaries — or identical text on the two sides of a comparison can
- * tokenize differently and produce delete+insert pairs over unchanged words.
- * Splitting edge punctuation into its own atoms keeps a punctuation-only edit
- * (e.g. removing template brackets: "[or officer]" -> "or officer") from
- * consuming its neighbouring unchanged words (issue #675).
- */
-function splitTokenAtPunctuationEdges(token: string): string[] {
-  let coreStart = 0;
-  while (coreStart < token.length && LEADING_EDGE_PUNCTUATION.has(token[coreStart]!)) {
-    coreStart++;
-  }
-  let coreEnd = token.length;
-  while (coreEnd > coreStart && TRAILING_EDGE_PUNCTUATION.has(token[coreEnd - 1]!)) {
-    coreEnd--;
-  }
-  const parts: string[] = [];
-  if (coreStart > 0) parts.push(token.slice(0, coreStart));
-  if (coreEnd > coreStart) parts.push(token.slice(coreStart, coreEnd));
-  if (coreEnd < token.length) parts.push(token.slice(coreEnd));
-  return parts.length > 0 ? parts : [token];
-}
-
 function splitAtomIntoWords(atom: ComparisonUnitAtom): ComparisonUnitAtom[] {
   // Only split w:t elements
   if (atom.contentElement.tagName !== 'w:t') {
@@ -1234,10 +1205,7 @@ function splitAtomIntoWords(atom: ComparisonUnitAtom): ComparisonUnitAtom[] {
   // Split into words and whitespace, preserving both, then split edge
   // punctuation off each word so tokenization does not depend on how runs
   // happened to fragment the text.
-  const parts = text
-    .split(/(\s+)/)
-    .filter((part) => part !== '')
-    .flatMap((part) => (/^\s+$/.test(part) ? [part] : splitTokenAtPunctuationEdges(part)));
+  const parts = tokenizeComparisonText(text);
   if (parts.length <= 1) {
     return [atom];
   }

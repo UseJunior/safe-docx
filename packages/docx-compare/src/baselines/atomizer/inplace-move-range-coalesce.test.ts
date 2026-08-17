@@ -59,6 +59,7 @@ describe('Inplace move-range marker coalescing', () => {
         result = await compareDocuments(original, revised, {
           engine: 'atomizer',
           reconstructionMode: 'inplace',
+          comparisonStrategy: 'legacy',
         });
         xml = await documentXml(result.document);
       });
@@ -113,6 +114,7 @@ describe('Inplace move-range marker coalescing', () => {
       const result = await compareDocuments(original, revised, {
         engine: 'atomizer',
         reconstructionMode: 'inplace',
+        comparisonStrategy: 'legacy',
       });
       const xml = await documentXml(result.document);
       const starts = Array.from(parseXml(xml).getElementsByTagName('w:moveFromRangeStart'));

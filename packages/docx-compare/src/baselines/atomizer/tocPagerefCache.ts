@@ -35,29 +35,6 @@ function hasTrackedInsertionOrDeletion(paragraph: Element): boolean {
   );
 }
 
-function namespaceDeclarations(document: Document): string {
-  return Array.from(document.documentElement.attributes)
-    .filter(
-      (attribute) =>
-        attribute.name === 'xmlns' || attribute.name.startsWith('xmlns:'),
-    )
-    .map(
-      (attribute) =>
-        `${attribute.name}="${attribute.value
-          .replaceAll('&', '&amp;')
-          .replaceAll('"', '&quot;')}"`,
-    )
-    .join(' ');
-}
-
-function wrapParagraph(document: Document, paragraph: Element): string {
-  return (
-    `<w:document ${namespaceDeclarations(document)}>` +
-    `<w:body>${serializer.serializeToString(paragraph)}</w:body>` +
-    '</w:document>'
-  );
-}
-
 function firstParagraph(documentXml: string): Element | undefined {
   return Array.from(
     parseXml(documentXml).getElementsByTagNameNS(OOXML.W_NS, 'p'),
@@ -112,7 +89,8 @@ function cacheInsensitiveFingerprint(paragraph: Element): string | undefined {
       ) {
         const instructionText = element.textContent ?? '';
         stack[stack.length - 1]!.instruction.push(instructionText);
-        tokens.push(`instruction:${instructionText.trim().replace(/\s+/gu, ' ')}`);
+        const normalizedInstruction = instructionText.trim().replace(/\s+/gu, ' ');
+        if (normalizedInstruction) tokens.push(`instruction:${normalizedInstruction}`);
       } else if (
         element.namespaceURI === OOXML.W_NS &&
         (element.localName === 't' || element.localName === 'delText') &&
@@ -145,7 +123,9 @@ function cacheInsensitiveFingerprint(paragraph: Element): string | undefined {
             return (
               siblingElement.namespaceURI === OOXML.W_NS &&
               (siblingElement.localName === 'rPr' ||
-                siblingElement.localName === 'fldChar')
+                siblingElement.localName === 'fldChar' ||
+                (siblingElement.localName === 'instrText' &&
+                  !(siblingElement.textContent ?? '').trim()))
             );
           })
       ) {
@@ -216,24 +196,62 @@ export function suppressVolatileTocPagerefCacheRevisions(
       continue;
     }
 
-    const wrapped = wrapParagraph(document, paragraph);
-    const accepted = firstParagraph(acceptAllChanges(wrapped));
-    const rejected = firstParagraph(rejectAllChanges(wrapped));
-    if (!accepted || !rejected) continue;
-
-    const acceptedFingerprint = cacheInsensitiveFingerprint(accepted);
-    const rejectedFingerprint = cacheInsensitiveFingerprint(rejected);
-    if (
-      acceptedFingerprint === undefined ||
-      acceptedFingerprint !== rejectedFingerprint
-    ) {
-      continue;
-    }
-
-    paragraph.parentNode?.replaceChild(
-      document.importNode(rejected, true),
-      paragraph,
-    );
+    const suppressInContainer = (container: Element): void => {
+      for (const nested of Array.from(container.children)) {
+        if (nested.namespaceURI === OOXML.W_NS && nested.localName === 'hyperlink') {
+          suppressInContainer(nested);
+        }
+      }
+      const children = Array.from(container.children);
+      let begin = -1;
+      let depth = 0;
+      for (let index = 0; index < children.length; index += 1) {
+        const fieldCharacters = Array.from(
+          children[index]!.getElementsByTagNameNS(OOXML.W_NS, 'fldChar'),
+        );
+        for (const fieldCharacter of fieldCharacters) {
+          const type =
+            fieldCharacter.getAttributeNS(OOXML.W_NS, 'fldCharType') ??
+            fieldCharacter.getAttribute('w:fldCharType');
+          if (type === 'begin') {
+            if (depth === 0) begin = index;
+            depth++;
+          } else if (type === 'end' && depth > 0) {
+            depth--;
+            if (depth !== 0 || begin < 0) continue;
+            const fragmentDocument = parseXml(
+              `<w:document xmlns:w="${OOXML.W_NS}"><w:body><w:p/></w:body></w:document>`,
+            );
+            const fragmentParagraph = fragmentDocument.getElementsByTagNameNS(OOXML.W_NS, 'p')[0]!;
+            for (const child of children.slice(begin, index + 1)) {
+              fragmentParagraph.appendChild(fragmentDocument.importNode(child, true));
+            }
+            const wrapped = serializer.serializeToString(fragmentDocument);
+            const acceptedField = firstParagraph(acceptAllChanges(wrapped));
+            const rejectedField = firstParagraph(rejectAllChanges(wrapped));
+            const hasFieldRevision = children.slice(begin, index + 1).some((child) =>
+              child.getElementsByTagNameNS(OOXML.W_NS, 'ins').length > 0 ||
+              child.getElementsByTagNameNS(OOXML.W_NS, 'del').length > 0,
+            );
+            if (
+              hasFieldRevision && acceptedField && rejectedField &&
+              cacheInsensitiveFingerprint(acceptedField) !== undefined &&
+              cacheInsensitiveFingerprint(acceptedField) === cacheInsensitiveFingerprint(rejectedField)
+            ) {
+              const insertionPoint = children[begin]!;
+              for (const rejectedChild of Array.from(rejectedField.childNodes)) {
+                container.insertBefore(document.importNode(rejectedChild, true), insertionPoint);
+              }
+              for (const child of children.slice(begin, index + 1)) container.removeChild(child);
+              suppressInContainer(container);
+              return;
+            }
+            begin = -1;
+          }
+        }
+      }
+    };
+    suppressInContainer(paragraph);
   }
 
   return serializer.serializeToString(document);

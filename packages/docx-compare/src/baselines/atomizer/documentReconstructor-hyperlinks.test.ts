@@ -50,6 +50,7 @@ async function rebuildCompare(originalBody: string, revisedBody: string) {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
   const result = await compareDocumentsAtomizer(original, revised, {
+    comparisonStrategy: 'legacy',
     author: 'Hyperlink Test',
     date: new Date('2026-06-10T00:00:00Z'),
     reconstructionMode: 'rebuild',
@@ -107,9 +108,11 @@ describe('Rebuild reconstruction preserves w:hyperlink wrappers', () => {
       );
       const options = { author: 'Hyperlink Test', date: new Date('2026-06-10T00:00:00Z') };
       const inplace = await compareDocumentsAtomizer(original, revised, {
+        comparisonStrategy: 'legacy',
         ...options, reconstructionMode: 'inplace',
       });
       const rebuild = await compareDocumentsAtomizer(original, revised, {
+        comparisonStrategy: 'legacy',
         ...options, reconstructionMode: 'rebuild',
       });
       inplaceXml = await (await DocxArchive.load(inplace.document)).getDocumentXml();
@@ -296,11 +299,9 @@ describe('Retargeted / inserted hyperlinks ship a resolvable relationship', () =
       ));
     });
 
-    await then('the deleted old link and inserted new link sit in SEPARATE wrappers, both resolvable', () => {
-      expect(documentXml).toMatch(
-        /<w:hyperlink[^>]*r:id="rId7"[^>]*><w:del[\s\S]*?alpha target[\s\S]*?<\/w:del><\/w:hyperlink>/,
-      );
-      const insMatch = /<w:hyperlink[^>]*r:id="(rId\d+)"[^>]*><w:ins[\s\S]*?beta target[\s\S]*?<\/w:ins><\/w:hyperlink>/.exec(documentXml);
+    await then('the candidate carries distinct old and new resolvable link relationships', () => {
+      expect(documentXml).toMatch(/<w:del[\s\S]*?<w:hyperlink[^>]*r:id="rId7"[\s\S]*?alpha target/);
+      const insMatch = /<w:ins[\s\S]*?<w:hyperlink[^>]*r:id="(rId\d+)"[\s\S]*?beta target/.exec(documentXml);
       expect(insMatch).not.toBeNull();
       const insId = insMatch![1]!;
       expect(insId).not.toBe('rId7');
@@ -324,6 +325,26 @@ describe('Retargeted / inserted hyperlinks ship a resolvable relationship', () =
     });
   });
 
+  test('a same-text hyperlink retarget projects each relationship target under the tagged default', async () => {
+    const { documentXml, relsXml } = await rebuildWithRels(
+      linkPara('rId7', 'unchanged label'),
+      [{ id: 'rId7', target: 'https://old.example.com' }],
+      linkPara('rId7', 'unchanged label'),
+      [{ id: 'rId7', target: 'https://new.example.com' }],
+    );
+    const accepted = acceptAllChanges(documentXml);
+    const rejected = rejectAllChanges(documentXml);
+    const acceptedId = /<w:hyperlink[^>]*r:id="([^"]+)"/.exec(accepted)?.[1];
+    const rejectedId = /<w:hyperlink[^>]*r:id="([^"]+)"/.exec(rejected)?.[1];
+
+    expect(acceptedId).toBeDefined();
+    expect(rejectedId).toBeDefined();
+    expect(relTarget(relsXml, acceptedId!)).toBe('https://new.example.com');
+    expect(relTarget(relsXml, rejectedId!)).toBe('https://old.example.com');
+    expect(accepted).toContain('unchanged label');
+    expect(rejected).toContain('unchanged label');
+  });
+
   test('a retarget to a fresh r:id allocates a collision-free relationship id in the original-based package', async ({ given, when, then }: AllureBddContext) => {
     let documentXml: string;
     let relsXml: string;
@@ -340,7 +361,7 @@ describe('Retargeted / inserted hyperlinks ship a resolvable relationship', () =
     });
 
     await then('the inserted link ships a freshly-allocated id (not rId99, which never existed in the base) resolving to beta, with no dangling references', () => {
-      const insId = /<w:hyperlink[^>]*r:id="(rId\d+)"[^>]*><w:ins[\s\S]*?beta target[\s\S]*?<\/w:ins><\/w:hyperlink>/.exec(documentXml)?.[1];
+      const insId = /<w:ins[\s\S]*?<w:hyperlink[^>]*r:id="(rId\d+)"[\s\S]*?beta target/.exec(documentXml)?.[1];
       expect(insId).toBeDefined();
       expect(relTarget(relsXml, insId!)).toBe('https://beta.example.com');
       expect(relTarget(relsXml, 'rId7')).toBe('https://alpha.example.com');
@@ -389,7 +410,7 @@ describe('Retargeted / inserted hyperlinks ship a resolvable relationship', () =
     });
 
     await then('the insertion is wrapped in a hyperlink whose id resolves to the new target', () => {
-      const insId = /<w:hyperlink[^>]*r:id="(rId\d+)"[^>]*><w:ins[\s\S]*?brand-new\.example\.com[\s\S]*?<\/w:ins><\/w:hyperlink>/.exec(documentXml)?.[1];
+      const insId = /<w:ins[\s\S]*?<w:hyperlink[^>]*r:id="(rId\d+)"[\s\S]*?brand-new\.example\.com/.exec(documentXml)?.[1];
       expect(insId).toBeDefined();
       expect(relTarget(relsXml, insId!)).toBe('https://brand-new.example.com');
       expectNoDanglingHyperlinkRids(documentXml, relsXml);

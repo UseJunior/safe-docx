@@ -14,6 +14,7 @@ async function compareInplace(originalBody: string, revisedBody: string) {
   const result = await compareDocuments(original, revised, {
     engine: 'atomizer',
     reconstructionMode: 'inplace',
+    comparisonStrategy: 'legacy',
   });
   expect(result.reconstructionModeUsed).toBe('inplace');
 

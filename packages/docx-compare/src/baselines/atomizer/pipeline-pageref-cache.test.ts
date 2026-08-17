@@ -112,6 +112,7 @@ describe('cached PAGEREF comparison (#716)', () => {
 
     const result = await when('the adaptive in-place comparison runs', () =>
       compareDocumentsAtomizer(original, revised, {
+        comparisonStrategy: 'legacy',
         reconstructionMode: 'inplace',
         date: new Date('2026-07-28T12:00:00Z'),
       }),
@@ -156,6 +157,7 @@ describe('cached PAGEREF comparison (#716)', () => {
 
     const result = await when('the adaptive in-place comparison runs', () =>
       compareDocumentsAtomizer(original, revised, {
+        comparisonStrategy: 'legacy',
         reconstructionMode: 'inplace',
         date: new Date('2026-07-28T12:00:00Z'),
       }),

@@ -13,6 +13,7 @@ import {
   type PropertyDelta,
   type ProjectionViolation,
   type TaggedNode,
+  verifyMoveRelations,
 } from './taggedTree.js';
 
 const TEST_FEATURE = 'refactor-tagged-tree-redline-construction';
@@ -532,6 +533,45 @@ describe('side-tagged tree: falsification', () => {
     const revised = body([para('A')]);
     const tree: TaggedNode = { tag: 'both', original, revised, children: [] };
     expect(verifyTaggedTree(original, revised, tree)).not.toEqual([]);
+  });
+});
+
+describe('side-tagged tree: move relations', () => {
+  test('certifies one non-crossing source/destination subtree pair per move name', () => {
+    const source = { tag: 'original' as const, node: el('w:p', {}, [el('w:r')]), children: [], opaque: true as const };
+    const destination = { tag: 'revised' as const, node: el('w:p', {}, [el('w:r')]), children: [], opaque: true as const };
+    expect(verifyMoveRelations([{
+      source,
+      destination,
+      name: 'move1',
+      sourceRangeId: 7,
+      destinationRangeId: 8,
+    }])).toEqual([]);
+  });
+
+  test('rejects duplicate names, duplicate directional IDs, and non-decimal-number IDs', () => {
+    const source = { tag: 'original' as const, node: el('w:p'), children: [] };
+    const destination = { tag: 'revised' as const, node: el('w:p'), children: [] };
+    const violations = verifyMoveRelations([
+      { source, destination, name: 'move1', sourceRangeId: 1, destinationRangeId: 2 },
+      { source, destination, name: 'move1', sourceRangeId: 1, destinationRangeId: -1 },
+    ]);
+    expect(violations.map((violation) => violation.detail)).toEqual(expect.arrayContaining([
+      'move name must be non-empty and one-to-one',
+      'source range id must be a unique non-negative integer',
+      'destination range id must be a unique non-negative integer',
+    ]));
+  });
+
+  test('requires range IDs to be unique across both move directions', () => {
+    const source = { tag: 'original' as const, node: el('w:p'), children: [] };
+    const destination = { tag: 'revised' as const, node: el('w:p'), children: [] };
+    expect(verifyMoveRelations([
+      { source, destination, name: 'move1', sourceRangeId: 4, destinationRangeId: 4 },
+    ])).toContainEqual({
+      relation: 0,
+      detail: 'destination range id must be a unique non-negative integer',
+    });
   });
 });
 

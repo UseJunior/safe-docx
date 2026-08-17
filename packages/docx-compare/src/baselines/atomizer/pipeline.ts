@@ -7,13 +7,16 @@
  */
 
 import { XMLSerializer } from '@xmldom/xmldom';
-import { parseXml } from '@usejunior/docx-core';
+import { createHash } from 'node:crypto';
+import { posix } from 'node:path';
+import { normalizeOpcRelationshipTarget, parseXml } from '@usejunior/docx-core';
 import { DocxArchive } from '@usejunior/docx-core';
 import type {
   CompareResult,
   CompareStats,
   AncillaryFallbackDiagnostics,
   AncillaryFieldEvidence,
+  ComparisonStrategy,
   ReconstructionAttemptDiagnostics,
   ReconstructionBookmarkMismatchDetails,
   ReconstructionBookmarkMismatchSummary,
@@ -30,6 +33,7 @@ import type {
   ReconstructionTextMismatchSummary,
   ReconstructionTextMismatchDetails,
   ReconstructionMode,
+  TaggedTreeFallbackDiagnostics,
 } from '../../compare-types.js';
 import { DEFAULT_RECONSTRUCTION_MODE } from '../../comparison-defaults.js';
 import type {
@@ -128,6 +132,7 @@ import {
 } from './ancillaryFieldSafety.js';
 import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.js';
 import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
+import { buildTaggedTreePublication } from './taggedTreeShadow.js';
 import {
   assembleTextBoxStoryComparison,
   assertAncillaryTextBoxStoryProjection,
@@ -140,6 +145,109 @@ import {
   compareFootnoteDefinitions,
   findCorrespondingFootnotePairs,
 } from './ancillaryNoteComparison.js';
+
+const OFFICE_RELATIONSHIP_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const PACKAGE_RELATIONSHIP_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+
+function relationshipPartPath(ownerPart: string, target: string): string {
+  return normalizeOpcRelationshipTarget({ ownerPart, target }).target;
+}
+
+function relationshipPartRelsPath(partPath: string): string {
+  const directory = posix.dirname(partPath);
+  return `${directory === '.' ? '' : `${directory}/`}_rels/${posix.basename(partPath)}.rels`;
+}
+
+async function relationshipClosureDigest(
+  archive: DocxArchive,
+  partPath: string,
+  ancestors: ReadonlySet<string> = new Set(),
+  cache: Map<string, Promise<string>> = new Map(),
+): Promise<string> {
+  if (ancestors.has(partPath)) return `cycle:${partPath}`;
+  const cached = cache.get(partPath);
+  if (cached) return cached;
+  const computation = (async (): Promise<string> => {
+    const bytes = await archive.getFileBuffer(partPath);
+    if (!bytes) return `missing:${partPath}`;
+    const nextAncestors = new Set(ancestors).add(partPath);
+    const relsXml = await archive.getFile(relationshipPartRelsPath(partPath));
+    const children: string[] = [];
+    if (relsXml) {
+      const rels = parseXml(relsXml);
+      for (const relationship of Array.from(
+        rels.getElementsByTagNameNS(PACKAGE_RELATIONSHIP_NS, 'Relationship'),
+      )) {
+        const type = relationship.getAttribute('Type') ?? '';
+        const target = relationship.getAttribute('Target') ?? '';
+        const mode = relationship.getAttribute('TargetMode') ?? '';
+        const identity = mode === 'External'
+          ? target
+          : await relationshipClosureDigest(
+            archive, relationshipPartPath(partPath, target), nextAncestors, cache,
+          );
+        children.push(JSON.stringify([type, mode, identity]));
+      }
+      children.sort();
+    }
+    return createHash('sha256')
+      .update(bytes)
+      .update('\0')
+      .update(children.join('\0'))
+      .digest('hex');
+  })();
+  cache.set(partPath, computation);
+  return computation;
+}
+
+async function relationshipSemanticsById(archive: DocxArchive): Promise<Map<string, string>> {
+  const xml = await archive.getFile('word/_rels/document.xml.rels');
+  if (!xml) return new Map();
+  const document = parseXml(xml);
+  const entries = await Promise.all(Array.from(
+    document.getElementsByTagNameNS(PACKAGE_RELATIONSHIP_NS, 'Relationship'),
+  ).map(async (relationship) => {
+    const id = relationship.getAttribute('Id') ?? '';
+    const type = relationship.getAttribute('Type') ?? '';
+    const target = relationship.getAttribute('Target') ?? '';
+    const mode = relationship.getAttribute('TargetMode') ?? '';
+    const identity = mode === 'External'
+      ? target
+      : await relationshipClosureDigest(
+        archive,
+        relationshipPartPath('word/document.xml', target),
+        new Set(),
+        // Keep memoization local to one top-level closure. Sharing in-flight
+        // promises between roots can deadlock when A and B reference each
+        // other from separate concurrent traversals.
+        new Map(),
+      );
+    return [id, JSON.stringify([type, mode, identity])] as const;
+  }));
+  return new Map(entries.filter(([id]) => id.length > 0));
+}
+
+async function canonicalizeRelationshipReferences(
+  xml: string,
+  sourceArchive: DocxArchive,
+  assembledArchive: DocxArchive,
+): Promise<string> {
+  const [sourceById, assembledById] = await Promise.all([
+    relationshipSemanticsById(sourceArchive),
+    relationshipSemanticsById(assembledArchive),
+  ]);
+  const assembledBySemantics = new Map([...assembledById].map(([id, semantics]) => [semantics, id]));
+  const document = parseXml(xml);
+  for (const element of Array.from(document.getElementsByTagName('*'))) {
+    for (const attribute of Array.from(element.attributes)) {
+      if (attribute.namespaceURI !== OFFICE_RELATIONSHIP_NS) continue;
+      const semantics = sourceById.get(attribute.value);
+      const canonicalId = semantics ? assembledBySemantics.get(semantics) : undefined;
+      if (canonicalId) element.setAttributeNS(OFFICE_RELATIONSHIP_NS, attribute.name, canonicalId);
+    }
+  }
+  return new XMLSerializer().serializeToString(document);
+}
 
 /**
  * Options for the atomizer pipeline.
@@ -174,6 +282,10 @@ export interface AtomizerOptions {
    * Default: {@link DEFAULT_RECONSTRUCTION_MODE}.
    */
   reconstructionMode?: ReconstructionMode;
+  /** Comparison construction strategy. Tagged-tree is default; legacy is the rollback path. */
+  comparisonStrategy?: ComparisonStrategy;
+  /** @internal Test seam for exercising fail-safe publication without malformed fixtures. */
+  taggedTreePublicationSafetyEvaluator?: typeof evaluateSafetyChecks;
 }
 
 interface BookmarkDiagnostics {
@@ -649,7 +761,11 @@ export async function compareDocumentsAtomizer(
     result: CompareResult;
   }> = [];
   const rejectedSelectedStoryPaths =
-    await rejectedSelectedAncillaryStoryPaths(outerResult.document);
+    await rejectedSelectedAncillaryStoryPaths(
+      (options.comparisonStrategy ?? 'tagged-tree') === 'tagged-tree'
+        ? textBoxPlan.outerOriginal
+        : outerResult.document,
+    );
   const representedPartPaths = new Set<string>();
   for (const story of textBoxPlan.stories) {
     if (
@@ -804,6 +920,8 @@ async function compareDocumentsAtomizerCore(
     premergeRuns = true,
     maxWordRefinementChangeRanges,
     reconstructionMode = DEFAULT_RECONSTRUCTION_MODE,
+    comparisonStrategy = 'tagged-tree',
+    taggedTreePublicationSafetyEvaluator,
   } = options;
 
   // Merge settings with defaults
@@ -1231,6 +1349,7 @@ async function compareDocumentsAtomizerCore(
   const assembleCandidate = async (candidate: typeof comparisonResult): Promise<{
     resultBuffer: Buffer;
     ancillaryFieldEvidence: AncillaryFieldEvidence;
+    reconciledFootnotes: ReconciledFootnotePair[];
   }> => {
     let { newDocumentXml } = candidate;
     // Step 12: Clone the mode-selected archive and update document.xml.
@@ -1239,7 +1358,7 @@ async function compareDocumentsAtomizerCore(
     const baseSide = candidate.outputMode === 'inplace' ? 'revised' : 'original';
     const mergeSourceSide = candidate.outputMode === 'inplace' ? 'original' : 'revised';
     const resultArchive = await baseArchive.clone();
-    newDocumentXml = await reconcileCorrespondingFootnoteDefinitions({
+    const footnoteReconciliation = await reconcileCorrespondingFootnoteDefinitions({
       originalArchive,
       revisedArchive,
       resultArchive,
@@ -1253,6 +1372,7 @@ async function compareDocumentsAtomizerCore(
       premergeRuns,
       maxWordRefinementChangeRanges,
     });
+    newDocumentXml = footnoteReconciliation.documentXml;
     maybeCaptureEmittedDocumentXml(newDocumentXml);
     resultArchive.setDocumentXml(newDocumentXml);
 
@@ -1306,6 +1426,7 @@ async function compareDocumentsAtomizerCore(
     return {
       resultBuffer: await resultArchive.save(),
       ancillaryFieldEvidence,
+      reconciledFootnotes: footnoteReconciliation.reconciledPairs,
     };
   };
 
@@ -1354,11 +1475,91 @@ async function compareDocumentsAtomizerCore(
 
   const { mergedAtoms } = comparisonResult;
   const { resultBuffer, ancillaryFieldEvidence } = assembled;
+  let { reconciledFootnotes } = assembled;
+  let publishedBuffer = resultBuffer;
+  let taggedPublicationStats: { formatChanges: number; formatChangeAtoms: number } | undefined;
+  let comparisonStrategyUsed: ComparisonStrategy = comparisonStrategy;
+  let taggedTreeFallbackDiagnostics: TaggedTreeFallbackDiagnostics | undefined;
+  if (comparisonStrategy === 'tagged-tree') {
+    const publishedArchive = await DocxArchive.load(resultBuffer);
+    const [taggedOriginalXml, taggedRevisedXml] = await Promise.all([
+      canonicalizeRelationshipReferences(originalXml, originalArchive, publishedArchive),
+      canonicalizeRelationshipReferences(revisedXml, revisedArchive, publishedArchive),
+    ]);
+    const taggedPublication = buildTaggedTreePublication({
+      originalXml: taggedOriginalXml,
+      revisedXml: taggedRevisedXml,
+      author,
+      date,
+      detectFormatChanges: formatSettings.detectFormatChanges,
+      detectMoves: moveSettings.detectMoves,
+    });
+    let taggedXml = taggedPublication.xml;
+    taggedPublicationStats = taggedPublication.stats;
+    if (reconciledFootnotes.length > 0) {
+      const taggedDocument = parseXml(taggedXml);
+      reconciledFootnotes = reconciledFootnotes.filter((pair) =>
+        retargetReconciledFootnoteReferences(taggedDocument, pair));
+      taggedXml = serializer.serializeToString(taggedDocument);
+    }
+    const taggedSafety = taggedTreePublicationSafetyEvaluator
+      ? taggedTreePublicationSafetyEvaluator(
+          originalTextForRoundTrip,
+          revisedTextForRoundTrip,
+          originalBookmarkDiagnostics,
+          revisedBookmarkDiagnostics,
+          taggedXml,
+          auxiliarySidecars,
+        )
+      : evaluateRoundTripSafety(taggedXml);
+    if (!taggedSafety.safe) {
+      comparisonStrategyUsed = 'legacy';
+      taggedPublicationStats = undefined;
+      taggedTreeFallbackDiagnostics = {
+        checks: taggedSafety.checks,
+        failedChecks: taggedSafety.failedChecks,
+        failureDetails: taggedSafety.failureDetails,
+        firstDiffSummary: taggedSafety.failureSummary,
+      };
+    } else {
+      const reconciledFootnotesXml = reconciledFootnotes.length > 0
+        ? await publishedArchive.getFile('word/footnotes.xml')
+        : null;
+      publishedArchive.setDocumentXml(taggedXml);
+      await importReferencedRelationships(originalArchive, publishedArchive, taggedXml);
+      // The tagged story can reference definitions that the legacy-shaped
+      // assembly candidate did not expose. Re-run the established auxiliary
+      // merger against both source packages using the actual published story,
+      // so Accept All and Reject All retain their respective note definitions.
+      for (const descriptor of AUXILIARY_PARTS) {
+        await mergeAuxiliaryPartDefinitions(originalArchive, publishedArchive, taggedXml, descriptor);
+        await mergeAuxiliaryPartDefinitions(revisedArchive, publishedArchive, taggedXml, descriptor);
+      }
+      if (reconciledFootnotesXml) {
+        await restoreReconciledFootnoteDefinitions(
+          publishedArchive,
+          reconciledFootnotesXml,
+          reconciledFootnotes,
+        );
+      }
+      publishedBuffer = await publishedArchive.save();
+    }
+  }
   const stats = computeAtomizerStats(mergedAtoms);
+  if (taggedPublicationStats) {
+    stats.formatChanges = taggedPublicationStats.formatChanges;
+    stats.formatChangeAtoms = taggedPublicationStats.formatChangeAtoms;
+  }
   return {
-    document: resultBuffer,
+    document: publishedBuffer,
     stats,
     engine: 'atomizer' as const,
+    comparisonStrategyRequested: comparisonStrategy,
+    comparisonStrategyUsed,
+    comparisonStrategyFallbackReason: taggedTreeFallbackDiagnostics
+      ? 'tagged_tree_publication_safety_check_failed'
+      : undefined,
+    taggedTreeFallbackDiagnostics,
     unrepresentedChanges:
       unrepresentedChanges.length > 0 ? unrepresentedChanges : undefined,
     reconstructionModeRequested: reconstructionMode,
@@ -1402,6 +1603,17 @@ interface ReconcileFootnoteDefinitionsOptions {
   maxWordRefinementChangeRanges?: number;
 }
 
+interface ReconciledFootnotePair {
+  originalId: string;
+  revisedId: string;
+  targetId: string;
+}
+
+interface FootnoteReconciliationResult {
+  documentXml: string;
+  reconciledPairs: ReconciledFootnotePair[];
+}
+
 /**
  * Collapse an aligned delete/insert footnote reference pair back onto one
  * definition and compare that definition as an independent story. Collision
@@ -1412,12 +1624,14 @@ interface ReconcileFootnoteDefinitionsOptions {
  */
 async function reconcileCorrespondingFootnoteDefinitions(
   options: ReconcileFootnoteDefinitionsOptions,
-): Promise<string> {
+): Promise<FootnoteReconciliationResult> {
   const pairs = findCorrespondingFootnotePairs(
     options.mergedAtoms,
     options.auxiliaryIdRenumberings,
   );
-  if (pairs.length === 0) return options.documentXml;
+  if (pairs.length === 0) {
+    return { documentXml: options.documentXml, reconciledPairs: [] };
+  }
 
   const [originalXml, revisedXml, resultXml, originalDocumentXml, revisedDocumentXml] = await Promise.all([
     options.originalArchive.getFile('word/footnotes.xml'),
@@ -1426,7 +1640,9 @@ async function reconcileCorrespondingFootnoteDefinitions(
     options.originalArchive.getDocumentXml(),
     options.revisedArchive.getDocumentXml(),
   ]);
-  if (!originalXml || !revisedXml || !resultXml) return options.documentXml;
+  if (!originalXml || !revisedXml || !resultXml) {
+    return { documentXml: options.documentXml, reconciledPairs: [] };
+  }
 
   const originalParsed = parseEntries(originalXml, 'w:footnote');
   const revisedParsed = parseEntries(revisedXml, 'w:footnote');
@@ -1435,6 +1651,7 @@ async function reconcileCorrespondingFootnoteDefinitions(
   const originalDocumentDoc = parseXml(originalDocumentXml);
   const revisedDocumentDoc = parseXml(revisedDocumentXml);
   let projectionDocs: FootnoteReferenceProjectionDocs | undefined;
+  const reconciledPairs: ReconciledFootnotePair[] = [];
   const getProjectionDocs = (): FootnoteReferenceProjectionDocs => {
     projectionDocs ??= {
       accepted: parseXml(acceptAllChanges(options.documentXml)),
@@ -1491,10 +1708,81 @@ async function reconcileCorrespondingFootnoteDefinitions(
       const reference = references[i] as Element;
       if (reference.getAttribute('w:id') === discardedId) reference.setAttribute('w:id', targetId);
     }
+    reconciledPairs.push({ ...pair, targetId });
   }
 
   options.resultArchive.setFile('word/footnotes.xml', serializer.serializeToString(resultParsed.doc));
-  return serializer.serializeToString(documentDoc);
+  return {
+    documentXml: serializer.serializeToString(documentDoc),
+    reconciledPairs,
+  };
+}
+
+/**
+ * A successfully compared footnote definition contains both source
+ * projections, so both tracked main-story anchors must resolve to that one
+ * definition. Unsafe or ambiguous pairs never reach this function.
+ */
+function retargetReconciledFootnoteReferences(
+  documentDoc: Document,
+  pair: ReconciledFootnotePair,
+): boolean {
+  const references = Array.from(documentDoc.getElementsByTagName('w:footnoteReference'))
+    .filter((reference) => {
+      const id = reference.getAttribute('w:id');
+      return id === pair.originalId || id === pair.revisedId;
+    });
+  if (references.length !== 2) return false;
+
+  const deleted = references.find((reference) => hasAncestorTag(reference, 'w:del'));
+  const inserted = references.find((reference) => hasAncestorTag(reference, 'w:ins'));
+  if (!deleted || !inserted) return false;
+  const deletedRun = ancestorElement(deleted, 'w:r');
+  const insertedRun = ancestorElement(inserted, 'w:r');
+  const deletedWrapper = ancestorElement(deleted, 'w:del');
+  const insertedWrapper = ancestorElement(inserted, 'w:ins');
+  if (!deletedRun || !insertedRun || !deletedWrapper || !insertedWrapper) return false;
+  const wrappersAroundRuns =
+    deletedWrapper.parentNode === insertedWrapper.parentNode &&
+    deletedWrapper.childNodes.length === 1 && deletedWrapper.firstChild === deletedRun &&
+    insertedWrapper.childNodes.length === 1 && insertedWrapper.firstChild === insertedRun;
+  const wrappersInsideRun =
+    deletedRun === insertedRun &&
+    deletedWrapper.parentNode === deletedRun && insertedWrapper.parentNode === insertedRun &&
+    deletedWrapper.childNodes.length === 1 && deletedWrapper.firstChild === deleted &&
+    insertedWrapper.childNodes.length === 1 && insertedWrapper.firstChild === inserted;
+  if (!wrappersAroundRuns && !wrappersInsideRun) return false;
+
+  deleted.setAttribute('w:id', pair.targetId);
+  inserted.setAttribute('w:id', pair.targetId);
+  return true;
+}
+
+async function restoreReconciledFootnoteDefinitions(
+  archive: DocxArchive,
+  reconciledXml: string,
+  pairs: readonly ReconciledFootnotePair[],
+): Promise<void> {
+  const publishedXml = await archive.getFile('word/footnotes.xml');
+  if (!publishedXml) return;
+  const source = parseEntries(reconciledXml, 'w:footnote');
+  const published = parseEntries(publishedXml, 'w:footnote');
+  for (const pair of pairs) {
+    const sourceEntry = source.entries.get(pair.targetId);
+    const publishedEntry = published.entries.get(pair.targetId);
+    if (!sourceEntry || !publishedEntry) {
+      throw new Error(`tagged-tree publication lost reconciled footnote definition w:id="${pair.targetId}"`);
+    }
+    publishedEntry.parentNode?.replaceChild(
+      published.doc.importNode(sourceEntry, true),
+      publishedEntry,
+    );
+    const discardedId = pair.targetId === pair.originalId ? pair.revisedId : pair.originalId;
+    published.entries.get(discardedId)?.parentNode?.removeChild(
+      published.entries.get(discardedId)!,
+    );
+  }
+  archive.setFile('word/footnotes.xml', serializer.serializeToString(published.doc));
 }
 
 function isOnlyFootnoteAnchorInSourceParagraph(documentDoc: Document, id: string): boolean {

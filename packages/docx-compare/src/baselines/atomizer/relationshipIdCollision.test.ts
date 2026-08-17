@@ -21,10 +21,11 @@
 
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
-import { DocxArchive } from '@usejunior/docx-core';
+import { DocxArchive, normalizeOpcRelationshipTarget } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
+import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import {
   importReferencedRelationships,
   renumberCollidingRelationshipIds,
@@ -484,5 +485,73 @@ describe('relationship ID collision resolution', () => {
       expect(bound?.type).toBe('image');
       expect(bound?.target).toBe('media/revised.png');
     });
+  });
+
+  test('same-path internal targets with different bytes project to their respective parts', async () => {
+    const replaceParts = async (input: Buffer, id: string, bytes: string): Promise<Buffer> => {
+      const zip = await JSZip.loadAsync(input);
+      zip.file('[Content_Types].xml', contentTypes());
+      zip.file('word/_rels/document.xml.rels', relsPart([
+        { id, type: 'image', target: '/word/media/logo.png' },
+      ]));
+      zip.file('word/media/logo.png', bytes);
+      return zip.generateAsync({ type: 'nodebuffer' });
+    };
+    const original = await replaceParts(
+      await buildDocxFromBodyXml(`<w:p xmlns:r="${R_NS}">${inlinePicture('rId7')}</w:p>`),
+      'rId7', 'ORIGINAL_IMAGE',
+    );
+    const revised = await replaceParts(
+      await buildDocxFromBodyXml(`<w:p xmlns:r="${R_NS}">${inlinePicture('rId3')}</w:p>`),
+      'rId3', 'REVISED_IMAGE',
+    );
+    const result = await compareDocumentsAtomizer(original, revised, {
+      reconstructionMode: 'rebuild',
+      author: 'Relationship Test',
+      date: new Date('2026-08-16T12:00:00Z'),
+    });
+    const output = await DocxArchive.load(result.document);
+    const documentXml = await output.getDocumentXml();
+    const rels = await readRels(output);
+    const projectedBytes = async (xml: string): Promise<string> => {
+      const id = /<a:blip[^>]+r:embed="([^"]+)"/.exec(xml)?.[1];
+      const target = id ? rels.get(id)?.target : undefined;
+      expect(target).toBeDefined();
+      const partPath = normalizeOpcRelationshipTarget({
+        ownerPart: 'word/document.xml', target: target!,
+      }).target;
+      return (await output.getFileBuffer(partPath))!.toString();
+    };
+
+    expect(await projectedBytes(acceptAllChanges(documentXml))).toBe('REVISED_IMAGE');
+    expect(await projectedBytes(rejectAllChanges(documentXml))).toBe('ORIGINAL_IMAGE');
+  });
+
+  test('cyclic internal relationship closures terminate during tagged comparison', async () => {
+    const base = await buildDocxFromBodyXml(
+      `<w:p xmlns:r="${R_NS}">${inlinePicture('rId7')}${inlinePicture('rId8')}</w:p>`,
+    );
+    const zip = await JSZip.loadAsync(base);
+    zip.file('[Content_Types].xml', contentTypes());
+    zip.file('word/_rels/document.xml.rels', relsPart([
+      { id: 'rId7', type: 'image', target: 'media/a.png' },
+      { id: 'rId8', type: 'image', target: 'media/b.png' },
+    ]));
+    zip.file('word/media/a.png', 'A');
+    zip.file('word/media/b.png', 'B');
+    zip.file('word/media/_rels/a.png.rels', relsPart([
+      { id: 'rId1', type: 'image', target: 'b.png' },
+    ]));
+    zip.file('word/media/_rels/b.png.rels', relsPart([
+      { id: 'rId1', type: 'image', target: 'a.png' },
+    ]));
+    const cyclic = await zip.generateAsync({ type: 'nodebuffer' });
+
+    const result = await compareDocumentsAtomizer(cyclic, cyclic, {
+      reconstructionMode: 'rebuild',
+      author: 'Relationship Test',
+      date: new Date('2026-08-16T12:00:00Z'),
+    });
+    expect(result.document.byteLength).toBeGreaterThan(0);
   });
 });

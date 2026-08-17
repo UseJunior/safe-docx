@@ -17,7 +17,9 @@
  * own evidence. An empty violation list says nothing about them, and the
  * runtime accept/reject checks in `pipeline.ts` are not made redundant by it.
  *
- * Stage A (this module) is additive and has no production caller. See
+ * Correction (2026-08-16): this module began as additive Stage A evidence,
+ * but the completed change now routes ordinary comparison through it by
+ * default while retaining the legacy strategy as an explicit rollback. See
  * `openspec/changes/refactor-tagged-tree-redline-construction/`.
  */
 
@@ -176,6 +178,81 @@ export interface RevisedNode extends TaggedNodeBase {
 }
 
 export type TaggedNode = BothNode | OriginalNode | RevisedNode;
+
+/** A complete side-tagged comparison tree. */
+export type TaggedTree = TaggedNode;
+
+/**
+ * A logical move connects two side-only subtrees without pretending their
+ * document positions are a `both` match.  Range identifiers are distinct per
+ * direction, while the non-empty name is the source/destination pairing key.
+ */
+export interface TaggedMoveRelation {
+  source: OriginalNode;
+  destination: RevisedNode;
+  name: string;
+  sourceRangeId: number;
+  destinationRangeId: number;
+}
+
+export interface MoveRelationViolation {
+  relation: number;
+  detail: string;
+}
+
+/**
+ * Certify the construction-time portion of the live tracked-move contract.
+ *
+ * One relation is exactly one source range and one destination range. Unique
+ * non-negative integer IDs make markers pairable, and unique names make the
+ * two directions one-to-one. The serializer remains responsible for proving
+ * tree membership, non-crossing placement, and exactly one balanced start/end
+ * pair for each recorded direction.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.23
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.24
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.27
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.28
+ * @see #814
+ */
+export function verifyMoveRelations(
+  relations: readonly TaggedMoveRelation[],
+  tree?: TaggedNode,
+): MoveRelationViolation[] {
+  const violations: MoveRelationViolation[] = [];
+  const names = new Set<string>();
+  const rangeIds = new Set<number>();
+  const members = new Set<TaggedNode>();
+  if (tree) {
+    const visit = (node: TaggedNode): void => {
+      members.add(node);
+      node.children.forEach(visit);
+    };
+    visit(tree);
+  }
+  relations.forEach((relation, index) => {
+    if (relation.source.tag !== 'original' || relation.destination.tag !== 'revised') {
+      violations.push({ relation: index, detail: 'move endpoints must be original and revised subtrees' });
+    }
+    if (tree && (!members.has(relation.source) || !members.has(relation.destination))) {
+      violations.push({ relation: index, detail: 'move endpoints must belong to the certified tagged tree' });
+    }
+    if (relation.name.trim().length === 0 || names.has(relation.name)) {
+      violations.push({ relation: index, detail: 'move name must be non-empty and one-to-one' });
+    }
+    names.add(relation.name);
+    for (const [direction, id] of [
+      ['source', relation.sourceRangeId],
+      ['destination', relation.destinationRangeId],
+    ] as const) {
+      if (!Number.isSafeInteger(id) || id < 0 || rangeIds.has(id)) {
+        violations.push({ relation: index, detail: `${direction} range id must be a unique non-negative integer` });
+      }
+      rangeIds.add(id);
+    }
+  });
+  return violations;
+}
 
 /** True when `node` contributes to the projection of `side`. */
 export function appearsOn(node: TaggedNode, side: Side): boolean {

@@ -127,8 +127,14 @@ The representation SHALL specify:
   pre-existing one;
 - **revision-identifier allocation**: identifiers SHALL NOT collide with any
   already present in either input;
-- **multi-author resolution**: accept and reject over stacked revisions from
-  several authors SHALL agree with the reject-projection oracle.
+- **multi-author relationships**: the model SHALL retain the ordered prior
+  revision stacks from both representatives and SHALL define how comparison
+  revisions nest relative to them.
+
+After a tagged-tree serializer exists, accept and reject over serialized stacked
+revisions from several authors SHALL agree with the corresponding tree
+projections. This serialized evidence SHALL pass before offline corpus evidence
+is treated as complete.
 
 These invariants SHALL be evidenced on the multi-author corpus before the
 representation is exercised on any other class of input.
@@ -146,14 +152,26 @@ representation is exercised on any other class of input.
 - **WHEN** the tree allocates identifiers for the comparison's own revisions
 - **THEN** no allocated identifier SHALL equal one present in either input
 
-### Requirement: The tagged-tree path runs in shadow and changes no behavior
+#### Scenario: Serialized multi-author stacks preserve both projections
 
-The tagged-tree representation SHALL run beside the existing pipeline behind an
-opt-in shadow mode, and SHALL NOT supply the output of any comparison while this
-requirement is in force. Existing runtime safety checks — text, bookmark, field
-structure, and ancillary story — SHALL remain in place unchanged.
+- **GIVEN** a tagged tree retaining ordered revision stacks from several authors
+- **WHEN** the offline serializer emits tracked markup and accept/reject are applied
+- **THEN** accept SHALL reproduce the revised tree projection
+- **AND** reject SHALL reproduce the original tree projection
 
-Shadow mode SHALL record divergence between the two constructions across the
+### Requirement: Tagged-tree construction is the default with an explicit legacy rollback
+
+The ordinary comparison pipeline SHALL use tagged-tree construction by default.
+Callers SHALL be able to request the legacy construction explicitly for one
+release-cycle rollback window ending 2026-11-16. Legacy removal SHALL proceed
+on or after that date once #837 has shipped and #838's release-evidence gate is
+complete; if either gate remains incomplete, continued availability SHALL
+require a new dated extension decision. Existing runtime safety checks — text, bookmark,
+field structure, ancillary story, relationship closure, and package integrity —
+SHALL remain in force for both strategies. The public `rebuild` mode SHALL
+remain available and unchanged.
+
+The offline harness SHALL continue recording divergence between the two constructions across the
 formatting-fidelity corpus, the multi-author fixtures, the OpenAgreements and
 NVCA/ILPA templates, and the pinned engine-bug characterization cases.
 
@@ -163,16 +181,35 @@ as blocking. A divergence that is projection-equivalent but textually different
 SHALL be recorded for individual review and either accepted with a rationale or
 pinned as a characterization case.
 
-#### Scenario: Shadow mode does not affect returned output
+#### Scenario: Tagged-tree is default with legacy rollback
 
-- **GIVEN** shadow mode enabled
-- **WHEN** a document pair is compared
-- **THEN** the returned output SHALL be the existing pipeline's output, unchanged
+- **GIVEN** a document pair and no comparison-strategy override
+- **WHEN** the pair is compared through the ordinary pipeline
+- **THEN** the tagged-tree strategy SHALL construct the returned redline
+- **AND** an explicit legacy strategy SHALL remain available as a rollback
 - **AND** every existing runtime safety check SHALL still run
+
+#### Scenario: Tagged-tree publication failure returns the validated legacy redline
+
+- **GIVEN** tagged-tree is the requested or default strategy
+- **AND** its publication candidate fails an existing runtime safety check
+- **WHEN** the legacy candidate has already passed its applicable validation
+- **THEN** the pipeline SHALL return the legacy redline instead of throwing
+- **AND** SHALL report tagged-tree as requested and legacy as used
+- **AND** SHALL report a stable fallback reason and the failed-check diagnostics
+- **AND** reconstruction-mode fallback metadata SHALL remain unchanged
+
+#### Scenario: Legacy rollback reaches its sunset
+
+- **GIVEN** the date is on or after 2026-11-16
+- **AND** #837 has shipped and #838's release-evidence gate is complete
+- **WHEN** comparison strategy support is evaluated
+- **THEN** the legacy strategy and automatic fallback SHALL be removed
+- **AND** an unmet gate SHALL require an explicit dated extension decision
 
 #### Scenario: Divergence is recorded with fixture identity
 
-- **GIVEN** a corpus run in shadow mode
+- **GIVEN** a controlled offline corpus run
 - **WHEN** the two constructions differ
 - **THEN** the report SHALL name the fixture and the diverging projection
 - **AND** SHALL classify the divergence as projection-inequivalent (blocking) or

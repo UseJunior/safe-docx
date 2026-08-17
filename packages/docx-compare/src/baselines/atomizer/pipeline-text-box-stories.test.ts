@@ -328,6 +328,7 @@ describe('VML text-box story comparison (#713)', () => {
     const result = await when('the documents are compared in place', () =>
       compareDocumentsAtomizer(original, revised, {
         reconstructionMode: 'inplace',
+        comparisonStrategy: 'tagged-tree',
       }),
     );
     const outputXml = await documentXml(result.document);

@@ -1,8 +1,9 @@
 import { describe, expect } from 'vitest';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { acceptAllChanges, compareDocuments } from '@usejunior/docx-compare';
 import { generateDocx } from '../generation/compile.js';
 import type { BorderSpec, DocumentSpec, TableRowSpec, TableSpec } from '../generation/types.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
+import { parseXml } from '../primitives/xml.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 
 const TEST_FEATURE = 'Inplace Reconstruction Cross-Run Recovery';
@@ -105,9 +106,9 @@ async function fragmentAtFormattingBoundary(original: Buffer): Promise<Buffer> {
   return archive.save();
 }
 
-describe('Inplace reconstruction pass selection', () => {
+describe('Legacy inplace reconstruction pass selection', () => {
   test.openspec('Inplace reconstruction reports the pass that produced the output')(
-    'reports the winning pass and the earlier pass it superseded',
+    'legacy rollback reports the winning pass and the earlier pass it superseded',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       let original!: Buffer;
       let revised!: Buffer;
@@ -129,6 +130,7 @@ describe('Inplace reconstruction pass selection', () => {
           engine: 'atomizer',
           reconstructionMode: 'inplace',
           premergeRuns: false,
+          comparisonStrategy: 'legacy',
         });
         await attachPrettyJson('inplace-pass-diagnostics.json', {
           reconstructionModeUsed: result.reconstructionModeUsed,
@@ -201,7 +203,7 @@ describe('Inplace reconstruction on table-heavy run-fragmented templates', () =>
         expect(resultXml).toContain('<w:tbl>');
         expect((resultXml.match(/<w:tbl>/g) ?? []).length).toBe(1);
         expect(resultXml).toContain('Delaware');
-        expect(resultXml).toContain('<w:t xml:space="preserve">New </w:t></w:r><w:r><w:t>York</w:t>');
+        expect(parseXml(acceptAllChanges(resultXml)).documentElement.textContent).toContain('New York');
       });
     },
   );

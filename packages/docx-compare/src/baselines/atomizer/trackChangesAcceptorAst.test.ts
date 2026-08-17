@@ -857,6 +857,67 @@ describe('trackChangesAcceptorAst', () => {
   });
 });
 
+describe('table property change projections', () => {
+  const document = (tableProperties: string): string =>
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>` +
+    `<w:tbl><w:tr><w:trPr>${tableProperties}</w:trPr><w:tc><w:tcPr>` +
+    `<w:tcW w:w="2400" w:type="dxa"/><w:tcPrChange w:id="8" w:author="T"><w:tcPr>` +
+    `<w:tcW w:w="1200" w:type="dxa"/></w:tcPr></w:tcPrChange></w:tcPr>` +
+    `<w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>` +
+    `<w:sectPr/></w:body></w:document>`;
+
+  const tracked = document(
+    `<w:tblHeader/><w:trPrChange w:id="7" w:author="T"><w:trPr><w:cantSplit/></w:trPr></w:trPrChange>`,
+  );
+
+  test('accept keeps revised row/cell properties and strips their snapshots', () => {
+    const accepted = acceptAllChanges(tracked);
+    expect(accepted).toContain('<w:tblHeader/>');
+    expect(accepted).toContain('w:w="2400"');
+    expect(accepted).not.toContain('w:cantSplit');
+    expect(accepted).not.toContain('PrChange');
+  });
+
+  test('reject restores exact original row/cell properties and strips revised values', () => {
+    const rejected = rejectAllChanges(tracked);
+    expect(rejected).toContain('<w:cantSplit/>');
+    expect(rejected).toContain('w:w="1200"');
+    expect(rejected).not.toContain('w:tblHeader');
+    expect(rejected).not.toContain('w:w="2400"');
+    expect(rejected).not.toContain('PrChange');
+  });
+
+  test('property additions disappear completely on reject for rows and cells', () => {
+    const added =
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>` +
+      `<w:tbl><w:tr><w:trPr><w:tblHeader/><w:trPrChange w:id="1" w:author="T"><w:trPr/></w:trPrChange></w:trPr>` +
+      `<w:tc><w:tcPr><w:gridSpan w:val="2"/><w:tcPrChange w:id="2" w:author="T"><w:tcPr/></w:tcPrChange></w:tcPr>` +
+      `<w:p/></w:tc></w:tr></w:tbl><w:sectPr/></w:body></w:document>`;
+    const accepted = acceptAllChanges(added);
+    expect(accepted).toContain('<w:tblHeader/>');
+    expect(accepted).toContain('<w:gridSpan w:val="2"/>');
+    const rejected = rejectAllChanges(added);
+    expect(rejected).not.toContain('<w:trPr');
+    expect(rejected).not.toContain('<w:tcPr');
+    expect(rejected).not.toContain('PrChange');
+  });
+
+  test('property removals leave no empty containers on accept and restore originals on reject', () => {
+    const removed =
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>` +
+      `<w:tbl><w:tr><w:trPr><w:trPrChange w:id="1" w:author="T"><w:trPr><w:cantSplit/></w:trPr></w:trPrChange></w:trPr>` +
+      `<w:tc><w:tcPr><w:tcPrChange w:id="2" w:author="T"><w:tcPr><w:gridSpan w:val="2"/></w:tcPr></w:tcPrChange></w:tcPr>` +
+      `<w:p/></w:tc></w:tr></w:tbl><w:sectPr/></w:body></w:document>`;
+    const accepted = acceptAllChanges(removed);
+    expect(accepted).not.toContain('<w:trPr');
+    expect(accepted).not.toContain('<w:tcPr');
+    const rejected = rejectAllChanges(removed);
+    expect(rejected).toContain('<w:cantSplit/>');
+    expect(rejected).toContain('<w:gridSpan w:val="2"/>');
+    expect(rejected).not.toContain('PrChange');
+  });
+});
+
 // ── G5 regression: Accept-All paragraph-mark handling is purely mark-based (both accept paths) ──
 //
 // Closes G5 — the accept-side mirror of #337's reject fix. Both accept entry points — the

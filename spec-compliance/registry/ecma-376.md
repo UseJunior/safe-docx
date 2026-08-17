@@ -1563,6 +1563,21 @@ contents themselves are deleted only where they carry their own run-level
 `packages/docx-core/src/primitives/accept_changes.ts` and
 `packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
 
+## [ECMA-PART1-17-13-5-16] Deleted table row (w:del under w:trPr)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.16"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del
+verifiedBy: packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.test.ts
+```
+
+ECMA-376 Part 1 §17.13.5.16 defines an empty `w:del` inside `w:trPr` as a
+tracked deletion of the enclosing table row. It is a semantic marker rather
+than an empty deleted-content wrapper, so tagged-tree publication preserves it.
+
 ## [ECMA-PART1-17-13-5-20] Inserted paragraph mark (w:ins under w:pPr/w:rPr)
 
 ```yaml
@@ -1585,6 +1600,21 @@ paths implement this merge in
 Section-break insertion uses the same paragraph-mark form on a dedicated empty
 boundary paragraph so rejecting removes the new topology and accepting retains
 the boundary.
+
+## [ECMA-PART1-17-13-5-19] Inserted table row (w:ins under w:trPr)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.19"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins
+verifiedBy: packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.test.ts
+```
+
+ECMA-376 Part 1 §17.13.5.19 defines an empty `w:ins` inside `w:trPr` as a
+tracked insertion of the enclosing table row. It must remain attached to that
+row so accepting keeps it and rejecting removes it.
 
 ## [ECMA-PART1-17-13-5-4] Custom XML deletion range end
 

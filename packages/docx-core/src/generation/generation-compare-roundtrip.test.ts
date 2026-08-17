@@ -400,7 +400,11 @@ describe('Author->compare round-trip guarantee', () => {
         let rejectionMessage: string | undefined;
         await when(`the original is compared against the malformed revision in '${mode}' mode`, async () => {
           try {
-            result = await compareDocuments(original, malformed, { engine: 'atomizer', reconstructionMode: mode });
+            result = await compareDocuments(original, malformed, {
+              engine: 'atomizer',
+              comparisonStrategy: 'legacy',
+              reconstructionMode: mode,
+            });
           } catch (error) {
             rejectionMessage = error instanceof Error ? error.message : String(error);
           }

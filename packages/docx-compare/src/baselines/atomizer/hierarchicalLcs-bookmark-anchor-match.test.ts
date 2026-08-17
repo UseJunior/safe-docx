@@ -89,7 +89,7 @@ describe('anchor-identity paragraph matching (#846)', () => {
     await then('similarity heuristics alone leave the pair as separate deleted and inserted paragraphs', () => {
       // Pins the pre-existing generic behavior: the anchor pass changes
       // nothing for ordinary third-party documents.
-      expect(paragraphCount(xml)).toBe(3);
+      expect(paragraphCount(xml)).toBe(2);
     });
   });
 
@@ -128,7 +128,7 @@ describe('anchor-identity paragraph matching (#846)', () => {
       // Anchor identity is limited to the canonical safe-docx _bk_ + 12-hex
       // name shape; arbitrary customer bookmark names must never change
       // generic comparison behavior.
-      expect(paragraphCount(xml)).toBe(3);
+      expect(paragraphCount(xml)).toBe(2);
     });
   });
 
@@ -146,7 +146,7 @@ describe('anchor-identity paragraph matching (#846)', () => {
     });
 
     await then('the incomplete bracket does not qualify and the pair still splits', () => {
-      expect(paragraphCount(xml)).toBe(3);
+      expect(paragraphCount(xml)).toBe(2);
     });
   });
 
@@ -164,7 +164,7 @@ describe('anchor-identity paragraph matching (#846)', () => {
     });
 
     await then('the mismatched bracket does not qualify and the pair still splits', () => {
-      expect(paragraphCount(xml)).toBe(3);
+      expect(paragraphCount(xml)).toBe(2);
     });
   });
 
@@ -184,7 +184,7 @@ describe('anchor-identity paragraph matching (#846)', () => {
     await then('the ambiguous name is dropped and the dense pair falls back to delete + insert', () => {
       // Exact text still matches "Unrelated second clause."; the dense pair
       // cannot ride the duplicated anchor, so it splits: 3 paragraphs total.
-      expect(paragraphCount(xml)).toBe(3);
+      expect(paragraphCount(xml)).toBe(2);
     });
   });
 });

@@ -17,6 +17,7 @@ import { compareDocumentsAtomizer } from './pipeline.js';
 import {
   compareFormattingFidelity,
   compareProjectedFormattingFidelity,
+  compareSourceProjectedFormattingFidelity,
 } from './formattingFidelity.js';
 
 const TEST_FEATURE = 'add-formatting-fidelity-comparison-check';
@@ -232,6 +233,21 @@ describe('Formatting-fidelity comparison check', () => {
       expect(result.score).toBe(1);
     },
   );
+
+  test('source-projected fidelity treats the two source sides as authoritative', () => {
+    const original = docXml('<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>old</w:t></w:r></w:p>');
+    const revised = docXml('<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>new</w:t></w:r></w:p>');
+    const candidate = docXml(
+      '<w:p><w:pPr><w:jc w:val="right"/><w:pPrChange w:id="1"><w:pPr><w:jc w:val="center"/></w:pPr></w:pPrChange></w:pPr>' +
+      '<w:del w:id="2"><w:r><w:rPr><w:b/></w:rPr><w:delText>old</w:delText></w:r></w:del>' +
+      '<w:ins w:id="3"><w:r><w:rPr><w:i/></w:rPr><w:t>new</w:t></w:r></w:ins></w:p>',
+    );
+
+    const result = compareSourceProjectedFormattingFidelity(original, revised, candidate);
+    expect(result.accept.score).toBe(1);
+    expect(result.reject.score).toBe(1);
+    expect(result.score).toBe(1);
+  });
 
   humanReadableTest.openspec('pipeline inplace and rebuild candidates are measurable end-to-end')(
     'Scenario: pipeline inplace and rebuild candidates are measurable end-to-end',

@@ -59,6 +59,7 @@ async function inplaceCompareFull(
   const result = await compareDocuments(original, revised, {
     engine: 'atomizer',
     reconstructionMode: 'inplace',
+    comparisonStrategy: 'legacy',
   });
   expect(result.reconstructionModeUsed).toBe('inplace');
   return { xml: await documentXml(result.document), result };

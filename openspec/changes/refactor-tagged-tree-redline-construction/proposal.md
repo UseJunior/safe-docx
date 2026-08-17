@@ -1,4 +1,4 @@
-# Change: Add a side-tagged tree IR for redline construction, proved in shadow
+# Change: Construct redlines with a side-tagged tree
 
 Tracking issue: #814. Related: #542 (cross-run passes as candidate dead code), #469.
 
@@ -40,9 +40,12 @@ afterwards.
 
 ## What Changes
 
-This change is **stage A only**: it adds the representation and proves it in
-shadow. It deletes nothing and changes no user-visible behavior. Deletion of the
-pass ladder and any public-surface decisions are successor changes, named below.
+This change began as stage-A offline validation. On 2026-08-14, after the
+source-grounded, Aspose, LibreOffice, package, story, and full-suite gates became
+exact, the user expressly expanded the approved scope to make tagged-tree
+construction the ordinary default. The legacy strategy remains an explicit
+rollback for one release cycle. Nothing is deleted, and public `rebuild` mode is
+unchanged; deletion and public-surface removal remain successor changes.
 
 - **Add a side-tagged tree IR (`TaggedTree`).** Every node carries a tag of
   `both`, `original`, or `revised`. A `both` node holds **both side
@@ -58,18 +61,36 @@ pass ladder and any public-surface decisions are successor changes, named below.
   exactly one IR occurrence. Membership-and-multiplicity alone is provably
   insufficient (see `design.md` for the rejected counterexample).
 
-- **Run the IR in shadow.** The existing pipeline stays authoritative. The IR
-  path runs beside it behind `SAFE_DOCX_TAGGED_TREE=shadow` and records
-  divergence over the differential corpus. No production caller switches.
+- **Run the IR offline.** The existing pipeline stays authoritative. Tests and
+  controlled corpus jobs call the tagged evaluator directly and record
+  divergence. The ordinary comparison pipeline does not run the new engine,
+  emit telemetry, or incur duplicate work.
+
+- **Publish tagged-tree output by default after the gates pass.** The ordinary
+  pipeline now selects tagged-tree construction when no strategy is specified,
+  while `comparisonStrategy: 'legacy'` and the corresponding CLI option retain
+  the prior construction as an explicit rollback. The rollback expires on
+  **2026-11-16**: removal proceeds once #837 has shipped and #838's release
+  evidence gate is complete. If either gate is still open on that date, keeping
+  legacy requires a new, dated decision rather than an implicit extension.
+
+- **Sequence PRESERVE evidence in two layers.** Model-level provenance
+  splitting, nesting, identifier allocation, and multi-author relationships
+  gate the serializer. Accept/reject evidence over those relationships follows
+  immediately after the offline serializer exists; it cannot coherently
+  precede the serializer whose output it evaluates. This ordering correction
+  was authorized on 2026-08-14 and does not weaken the PRESERVE requirement.
 
 - **Keep every runtime check.** Text, bookmark, field-structure, and ancillary
   story checks all remain exactly as they are. This change adds a construction
   invariant; it does not yet cash it in against any existing safety net.
 
-**Explicitly deferred to successor changes** (so this one stays reviewable):
+**Implemented in this change after the expanded approval:**
 
-- **B — default flip.** Make the IR path default while retaining the legacy path
-  and all existing diagnostics.
+- **B — default flip.** The IR path is default while the legacy path and all
+  existing diagnostics remain available for a rollback window.
+
+**Explicitly deferred to successor changes:**
 - **C — remove the retry ladder and automatic fallback**, and delete
   `suppressNoOpChangePairs` /
   `suppressDuplicatedFormatChangesInTextReplacements` with their cause. Gated on
@@ -119,14 +140,17 @@ here rather than quietly dropped:
 ## Impact
 
 - Affected specs: `docx-comparison` — ADDED only (tagged-tree IR, projection
-  isomorphism, shadow-differential gate). **No REMOVED delta in this change**:
+  isomorphism, offline differential gate). **No REMOVED delta in this change**:
   the ladder requirement stays until successor C actually deletes the code, so
   the spec never describes a state the engine is not in.
 
-- Affected code (additive; all in `packages/docx-compare/src/`):
-  new `baselines/atomizer/taggedTree.ts`, plus shadow-mode wiring in
-  `baselines/atomizer/pipeline.ts`. `hierarchicalLcs.ts` / `atomLcs.ts` gain a
-  tag-emitting output path alongside their existing one.
+- Affected code (all in `packages/docx-compare/src/`): new tagged-tree
+  construction, serialization, and evaluation modules. `hierarchicalLcs.ts` /
+  `atomLcs.ts` gain a tag-emitting output path alongside their existing one.
+  **Correction (2026-08-16):** the earlier proposal text said `pipeline.ts`
+  would remain on the legacy runtime path. That described the initial Stage A
+  checkpoint, not the approved completed change: tagged-tree is now the
+  ordinary default and legacy remains an explicit rollback strategy.
 
 - Post-processing inventory (fates decided here, executed in successor C):
 
@@ -148,7 +172,7 @@ here rather than quietly dropped:
 - Non-goal: **effective** (style-chain / `docDefaults`-resolved) formatting.
   The current detector (`format-detection.ts:299`) and fidelity oracle
   (`formattingFidelity.ts:290`) both compare *direct* `w:rPr` / `w:pPr` only, so
-  the shadow gate cannot establish correctness for inherited toggles. This
+  the offline gate cannot establish correctness for inherited toggles. This
   change scopes `PropertyDelta` to direct properties and records resolved
   formatting as out of scope; it is already tracked separately as a
   known-divergence class.
@@ -160,4 +184,4 @@ here rather than quietly dropped:
 
 - Safety net: the LibreOffice/Word differential oracles, pinned engine-bug
   characterization cases, and the fidelity corpus are what make this attemptable
-  at all. The shadow gate runs against them, not unit tests alone.
+  at all. The offline corpus gate runs against them, not unit tests alone.

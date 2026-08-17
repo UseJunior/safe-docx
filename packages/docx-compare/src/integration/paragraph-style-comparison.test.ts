@@ -96,6 +96,50 @@ function snapshotStyle(change: Element): string | null {
 }
 
 describe('direct paragraph style comparison', () => {
+  test('tagged publication reports row and cell direct-property revisions in public stats', async () => {
+    const table = (row: string, cell: string) =>
+      `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>` +
+      `<w:tr>${row}<w:tc>${cell}<w:p><w:r><w:t>same</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+    const original = await buildDocxFromBodyXml(table('', ''));
+    const revised = await buildDocxFromBodyXml(table(
+      '<w:trPr><w:tblHeader/></w:trPr>',
+      '<w:tcPr><w:gridSpan w:val="2"/></w:tcPr>',
+    ));
+
+    const result = await compareDocuments(original, revised, {
+      engine: 'atomizer',
+      reconstructionMode: 'inplace',
+      author: AUTHOR,
+      date: DATE,
+    });
+
+    expect(result.stats.formatChanges).toBe(2);
+    expect(result.stats.formatChangeAtoms).toBe(2);
+    const publishedXml = await documentXml(result.document);
+    const published = parseDocumentXml(publishedXml);
+    const emittedPropertyRevisions = [
+      ...Array.from(published.getElementsByTagName('w:trPrChange')),
+      ...Array.from(published.getElementsByTagName('w:tcPrChange')),
+    ];
+    expect(emittedPropertyRevisions).toHaveLength(result.stats.formatChanges);
+  });
+
+  test('counts every word-split atom in one direct-run formatting range', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:p><w:r><w:rPr><w:i/></w:rPr><w:t>Alpha beta</w:t></w:r></w:p>',
+    );
+    const revised = await buildDocxFromBodyXml(
+      '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Alpha beta</w:t></w:r></w:p>',
+    );
+
+    const result = await compareDocuments(original, revised, {
+      engine: 'atomizer', reconstructionMode: 'inplace', author: AUTHOR, date: DATE,
+    });
+
+    expect(result.stats.formatChanges).toBe(1);
+    expect(result.stats.formatChangeAtoms).toBe(3);
+  });
+
   test.openspec('[SDX-CMP-PSTYLE-01] Non-empty paragraph style replacement is detected once')(
     'tracks one paragraph change for fragmented non-empty text',
     async ({ given, when, then, and }: AllureBddContext) => {
@@ -299,7 +343,7 @@ describe('direct paragraph style comparison', () => {
   );
 
   test(
-    'does not classify a text-divergent paragraph as style-only',
+    'reports both text and direct-style changes in a divergent paragraph',
     async ({ given, when, then }: AllureBddContext) => {
       const original = await given('a Heading1 paragraph with original text', () =>
         styledParagraph('Heading1', textRun('Original text')),
@@ -311,8 +355,12 @@ describe('direct paragraph style comparison', () => {
       const compared = await when('comparison runs', () =>
         compareBodies(original, revised, 'rebuild'),
       );
-      await then('the paragraph is a text replacement, not a style-only change', () => {
-        expect(compared.result.stats.formatChanges).toBe(0);
+      await then('the published text replacement and property revision are both counted', () => {
+        expect(compared.result.stats.formatChanges).toBe(1);
+        expect(compared.result.stats.formatChangeAtoms).toBe(1);
+        expect(paragraphPropertyChanges(compared.xml)).toHaveLength(
+          compared.result.stats.formatChanges,
+        );
         expect(compared.result.stats.insertions).toBe(1);
         expect(compared.result.stats.deletions).toBe(1);
       });

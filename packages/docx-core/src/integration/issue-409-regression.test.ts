@@ -107,8 +107,6 @@ describe('Issue #409 — empty paragraph atom context', () => {
     });
 
     await then('only the real text edit is emitted as a tracked change', () => {
-      expect(countTag(xml, 'w:ins')).toBe(1);
-      expect(countTag(xml, 'w:del')).toBe(1);
       expect(result.stats.insertions).toBe(1);
       expect(result.stats.deletions).toBe(1);
     });

@@ -1,7 +1,7 @@
 /**
  * Integration Tests — Round-trip safety screening of rebuild output
  *
- * Verifies that `compareDocumentsAtomizer` runs the round-trip safety suite
+ * Characterizes the retained legacy reconstruction engine's round-trip safety suite
  * (text equality, bookmark diagnostics, per-story field structure) on rebuild
  * output. Rebuild is the terminal reconstruction strategy, so failures that
  * are outside the supported opaque-field preflight surface in
@@ -47,7 +47,7 @@ async function buildMalformedFieldPair(): Promise<{ original: Buffer; revised: B
   };
 }
 
-describe('Rebuild-output safety screening (issue #226) — pipeline-level', () => {
+describe('Legacy rebuild-output safety screening (issue #226) — rollback engine', () => {
   test(
     'explicit rebuild returns unsupported malformed fields with fieldStructure diagnostics',
     async ({ given, when, then, and, attachPrettyJson }: AllureBddContext) => {
@@ -63,6 +63,7 @@ describe('Rebuild-output safety screening (issue #226) — pipeline-level', () =
         result = await compareDocuments(original, revised, {
           engine: 'atomizer',
           reconstructionMode: 'rebuild',
+          comparisonStrategy: 'legacy',
         });
         await attachPrettyJson('comparison-metadata.json', {
           reconstructionModeUsed: result.reconstructionModeUsed,
@@ -83,7 +84,7 @@ describe('Rebuild-output safety screening (issue #226) — pipeline-level', () =
   );
 
   test(
-    'default rebuild mode keeps unsupported malformed-field safety diagnostics',
+    'legacy strategy default reconstruction mode keeps malformed-field diagnostics',
     async ({ given, when, then }: AllureBddContext) => {
       let original: Buffer = Buffer.alloc(0);
       let revised: Buffer = Buffer.alloc(0);
@@ -94,7 +95,10 @@ describe('Rebuild-output safety screening (issue #226) — pipeline-level', () =
       });
 
       await when('compared without specifying a reconstruction mode', async () => {
-        result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          comparisonStrategy: 'legacy',
+        });
       });
 
       await then('the fieldStructure failure is surfaced without opaque preflight rejection', () => {
@@ -120,6 +124,7 @@ describe('Rebuild-output safety screening (issue #226) — pipeline-level', () =
         result = await compareDocuments(original, revised, {
           engine: 'atomizer',
           reconstructionMode: 'rebuild',
+          comparisonStrategy: 'legacy',
         });
         await attachPrettyJson('comparison-metadata.json', {
           reconstructionModeUsed: result.reconstructionModeUsed,

@@ -62,6 +62,7 @@ describe('docx-comparison CLI argument parsing', () => {
           reconstructionMode: 'inplace',
           author: 'Comparison',
           premergeRuns: true,
+          comparisonStrategy: 'tagged-tree',
         },
       });
     });
@@ -85,6 +86,8 @@ describe('docx-comparison CLI argument parsing', () => {
         'inplace',
         '--author',
         'Junior',
+        '--comparison-strategy',
+        'tagged-tree',
         '--premerge-runs',
         'true',
       ]);
@@ -100,6 +103,7 @@ describe('docx-comparison CLI argument parsing', () => {
           reconstructionMode: 'inplace',
           author: 'Junior',
           premergeRuns: true,
+          comparisonStrategy: 'tagged-tree',
         },
       });
     });
@@ -149,10 +153,19 @@ describe('docx-comparison CLI mode reporting', () => {
     const { originalPath, revisedPath } = await createTempPair('docx-comparison-fallback-');
 
     let requestedMode: string | undefined;
+    let requestedStrategy: string | undefined;
     const result = await when('inplace is requested but the pipeline falls back to rebuild', () =>
-      runCompareCli([originalPath, revisedPath, '--mode', 'inplace'], {
+      runCompareCli([
+        originalPath,
+        revisedPath,
+        '--mode',
+        'inplace',
+        '--comparison-strategy',
+        'legacy',
+      ], {
         compare: async (_original, _revised, options) => {
           requestedMode = options?.reconstructionMode;
+          requestedStrategy = options?.comparisonStrategy;
           return comparisonResult({
             reconstructionModeRequested: 'inplace',
             reconstructionModeUsed: 'rebuild',
@@ -172,6 +185,28 @@ describe('docx-comparison CLI mode reporting', () => {
 
     await and('the CLI forwarded the requested mode to the engine', () => {
       expect(requestedMode).toBe('inplace');
+      expect(requestedStrategy).toBe('legacy');
+    });
+  });
+
+  test('forwards tagged-tree when no strategy override is supplied', async ({ when, then }: AllureBddContext) => {
+    const { originalPath, revisedPath } = await createTempPair('docx-comparison-default-strategy-');
+    let requestedStrategy: string | undefined;
+
+    await when('the CLI runs with its default options', () =>
+      runCompareCli([originalPath, revisedPath], {
+        compare: async (_original, _revised, options) => {
+          requestedStrategy = options?.comparisonStrategy;
+          return comparisonResult({
+            reconstructionModeRequested: 'inplace',
+            reconstructionModeUsed: 'inplace',
+          });
+        },
+      }),
+    );
+
+    await then('the public default is forwarded explicitly', () => {
+      expect(requestedStrategy).toBe('tagged-tree');
     });
   });
 
