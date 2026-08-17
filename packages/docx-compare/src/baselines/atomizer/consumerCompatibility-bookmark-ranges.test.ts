@@ -498,7 +498,10 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 /** Run the pass over one hand-written paragraph and report where markers landed. */
-function markerLayout(paragraphXml: string): {
+function markerLayout(
+  paragraphXml: string,
+  repairBookmarkInventory = true,
+): {
   paragraph: string[];
   body: string[];
   paragraphEl: Element;
@@ -506,7 +509,7 @@ function markerLayout(paragraphXml: string): {
   const doc = parseXml(`<w:document xmlns:w="${W_NS}"><w:body>${paragraphXml}</w:body></w:document>`);
   const body = doc.getElementsByTagName('w:body')[0] as Element;
   let nextRevisionId = 900;
-  enforceConsumerCompatibility(body, () => nextRevisionId++);
+  enforceConsumerCompatibility(body, () => nextRevisionId++, { repairBookmarkInventory });
   const paragraph = body.getElementsByTagName('w:p')[0] as Element;
   const label = (child: Element) =>
     child.tagName.startsWith('w:bookmark')
@@ -520,6 +523,61 @@ function markerLayout(paragraphXml: string): {
 }
 
 describe('Bookmark boundaries relative to an inline revision wrapper', () => {
+  test('tagged projection preserves only ranges with matching revision semantics', () => {
+    const enclosed = markerLayout(
+      '<w:p><w:del w:id="1">' +
+        '<w:bookmarkStart w:id="70" w:name="Enclosed"/>' +
+        '<w:r><w:delText>enclosed</w:delText></w:r>' +
+        '<w:bookmarkEnd w:id="70"/></w:del></w:p>',
+      false,
+    );
+    const matchingSiblings = markerLayout(
+      '<w:p><w:del w:id="1"><w:bookmarkStart w:id="71" w:name="Matching"/>' +
+        '<w:r><w:delText>left</w:delText></w:r></w:del>' +
+        '<w:del w:id="2"><w:r><w:delText>right</w:delText></w:r>' +
+        '<w:sdt><w:sdtContent><w:bookmarkEnd w:id="71"/></w:sdtContent></w:sdt>' +
+        '</w:del></w:p>',
+      false,
+    );
+    const mismatched = markerLayout(
+      '<w:p><w:del w:id="1"><w:bookmarkStart w:id="72" w:name="Mismatched"/>' +
+        '<w:r><w:delText>deleted</w:delText></w:r></w:del>' +
+        '<w:ins w:id="2"><w:r><w:t>inserted</w:t></w:r>' +
+        '<w:bookmarkEnd w:id="72"/></w:ins></w:p>',
+      false,
+    );
+    const orphan = markerLayout(
+      '<w:p><w:del w:id="1"><w:bookmarkStart w:id="73" w:name="Orphan"/>' +
+        '<w:r><w:delText>deleted</w:delText></w:r></w:del></w:p>',
+      false,
+    );
+    const missingId = markerLayout(
+      '<w:p><w:del w:id="1"><w:bookmarkStart w:name="MissingId"/>' +
+        '<w:r><w:delText>deleted</w:delText></w:r></w:del></w:p>',
+      false,
+    );
+
+    expect(enclosed.paragraph).toEqual(['w:del']);
+    expect(enclosed.paragraphEl.getElementsByTagName('w:del')[0]!
+      .getElementsByTagName('w:bookmarkStart')).toHaveLength(1);
+
+    expect(matchingSiblings.paragraph).toEqual(['w:del', 'w:del']);
+    expect(Array.from(matchingSiblings.paragraphEl.getElementsByTagName('w:del'))
+      .map((wrapper) => [
+        wrapper.getElementsByTagName('w:bookmarkStart').length,
+        wrapper.getElementsByTagName('w:bookmarkEnd').length,
+      ])).toEqual([[1, 0], [0, 1]]);
+
+    expect(mismatched.paragraph).toEqual([
+      'w:bookmarkStart#72',
+      'w:del',
+      'w:ins',
+      'w:bookmarkEnd#72',
+    ]);
+    expect(orphan.paragraph).toEqual(['w:bookmarkStart#73', 'w:del']);
+    expect(missingId.paragraph).toEqual(['w:bookmarkStart#null', 'w:del']);
+  });
+
   test('a range the wrapper encloses is placed around the wrapper', async (
     { given, when, then, and }: AllureBddContext
   ) => {

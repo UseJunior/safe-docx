@@ -83,7 +83,6 @@ function bookmarkRangeHasMatchingRevisionWrappers(
   const counterpartTag =
     marker.tagName === 'w:bookmarkStart' ? 'w:bookmarkEnd' : 'w:bookmarkStart';
   const document = marker.ownerDocument;
-  if (!document) return false;
   const counterpart = Array.from(document.getElementsByTagName(counterpartTag))
     .find((candidate) => candidate.getAttribute('w:id') === id);
   if (!counterpart) return false;
