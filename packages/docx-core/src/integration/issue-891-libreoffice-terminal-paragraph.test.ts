@@ -19,11 +19,15 @@ const test = testAllure
 const paragraph = (text: string, alignment: string): string =>
   `<w:p><w:pPr><w:jc w:val="${alignment}"/></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
 const soffice = resolveSoffice();
-const describeOracle = soffice ? describe : describe.skip;
+// Probe once at collection time. An installed-but-unusable binary (a held profile
+// lock, a sandbox) must surface as a skipped suite: skipping the assertions inside
+// a running test would report green having verified nothing, which is
+// indistinguishable from real oracle evidence.
+const sofficeUsable = soffice ? await probeSofficeUsable(soffice) : false;
+const describeOracle = sofficeUsable ? describe : describe.skip;
 
 describeOracle('issue #891 — LibreOffice terminal paragraph deletion', () => {
   test('Accept removes the terminal paragraph and Reject restores it', async ({ then }: AllureBddContext) => {
-    if (!soffice || !(await probeSofficeUsable(soffice))) return;
     const original = await buildDocxFromBodyXml(
       paragraph('Alpha', 'left') + paragraph('Bravo', 'center') + paragraph('Charlie', 'right'),
     );
