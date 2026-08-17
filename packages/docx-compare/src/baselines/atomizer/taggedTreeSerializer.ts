@@ -1,7 +1,12 @@
 import { XMLSerializer } from '@xmldom/xmldom';
 import type { WmlElement } from '@usejunior/docx-core';
-import { childElements, parseXml } from '@usejunior/docx-core';
+import {
+  childElements,
+  parseXml,
+  REVISION_ID_ELEMENT_NAME_SET,
+} from '@usejunior/docx-core';
 import { alignComparisonSequences, tokenizeComparisonText } from '../../textAlignment.js';
+import { placeParagraphMarkRevisionMarker } from './inPlaceModifier-wrappers.js';
 import {
   nextRevisionId,
   PROPERTY_SCOPE_ELEMENT,
@@ -282,7 +287,7 @@ function markWholeParagraph(
   marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
   marker.setAttributeNS(W_NS, 'w:author', revision.author);
   marker.setAttributeNS(W_NS, 'w:date', revision.date);
-  paraRPr.appendChild(marker);
+  placeParagraphMarkRevisionMarker(paraRPr, marker, `w:${kind}`);
 
   const content = childElements(paragraph).filter((child) => child !== pPr);
   for (const child of content) paragraph.removeChild(child);
@@ -313,6 +318,153 @@ function markWholeParagraph(
   }
   flush();
   return paragraph;
+}
+
+/**
+ * Encode a deleted paragraph break on the preceding paragraph when one exists.
+ *
+ * A whole-paragraph deletion has two independent edits: delete the paragraph's
+ * contents and delete the break immediately before those contents.  Keeping the
+ * break marker on the deleted paragraph works for Safe DOCX's internal projector,
+ * but LibreOffice cannot remove a terminal paragraph container that way and leaves
+ * an empty final paragraph.  Moving the marker to the preceding paragraph lets
+ * Accept All merge that survivor into the deleted container.  The deleted
+ * container temporarily carries the survivor's properties so the merged paragraph
+ * keeps its revised formatting; a conforming pPrChange snapshot restores the
+ * deleted paragraph's original properties on Reject All.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @see https://github.com/UseJunior/safe-docx/issues/891
+ */
+function normalizeWholeParagraphDeletions(
+  root: WmlElement,
+  generatedRevisionIds: ReadonlySet<number>,
+  allocateRevision: () => ComparisonRevision,
+): void {
+  const visit = (container: WmlElement): void => {
+    const children = childElements(container);
+    for (let index = 0; index < children.length; index++) {
+      const paragraph = children[index]!;
+      if (paragraph.namespaceURI !== W_NS || paragraph.localName !== 'p') {
+        visit(paragraph);
+        continue;
+      }
+      const predecessor = children.slice(0, index).reverse().find(
+        (candidate) => candidate.namespaceURI === W_NS && candidate.localName === 'p',
+      );
+      if (!predecessor) continue;
+      const revisionElements = (scope: WmlElement): WmlElement[] => {
+        const revisions: WmlElement[] = [];
+        const collect = (element: WmlElement): void => {
+          if (element.namespaceURI === W_NS && REVISION_ID_ELEMENT_NAME_SET.has(element.localName)) {
+            revisions.push(element);
+          }
+          for (const child of childElements(element)) collect(child);
+        };
+        collect(scope);
+        return revisions;
+      };
+      const revisionWasGenerated = (element: WmlElement): boolean => {
+        const id = Number(element.getAttributeNS(W_NS, 'id'));
+        return Number.isSafeInteger(id) && generatedRevisionIds.has(id);
+      };
+      const predecessorPropertiesBefore = childElements(predecessor).find((child) => child.localName === 'pPr');
+      const predecessorRevisions = predecessorPropertiesBefore
+        ? revisionElements(predecessorPropertiesBefore)
+        : [];
+      if (predecessorRevisions.some((element) => !revisionWasGenerated(element)) ||
+          predecessorRevisions.some((element) => ['ins', 'moveFrom', 'moveTo'].includes(element.localName))) {
+        continue;
+      }
+      const pPr = childElements(paragraph).find((child) => child.localName === 'pPr');
+      const markProperties = pPr && childElements(pPr).find((child) => child.localName === 'rPr');
+      const marker = markProperties && childElements(markProperties).find((child) => {
+        if (child.localName !== 'del') return false;
+        const id = Number(child.getAttributeNS(W_NS, 'id'));
+        return Number.isSafeInteger(id) && generatedRevisionIds.has(id);
+      });
+      const content = childElements(paragraph).filter((child) =>
+        child !== pPr && !RANGE_BOUNDARY_LOCALS.has(child.localName));
+      if (!pPr || !markProperties || !marker || content.length === 0 ||
+          content.some((child) => child.namespaceURI !== W_NS || child.localName !== 'del')) continue;
+      if (revisionElements(pPr).some((element) => element !== marker)) continue;
+
+      const originalProperties = cloneElement(pPr);
+      const originalMarkProperties = childElements(originalProperties).find((child) => child.localName === 'rPr');
+      const originalMarker = originalMarkProperties && childElements(originalMarkProperties).find((child) =>
+        child.localName === 'del' && child.getAttributeNS(W_NS, 'id') === marker.getAttributeNS(W_NS, 'id'));
+      originalMarker?.parentNode?.removeChild(originalMarker);
+      if (originalMarkProperties && childElements(originalMarkProperties).length === 0) {
+        originalProperties.removeChild(originalMarkProperties);
+      }
+
+      let predecessorProperties = childElements(predecessor).find((child) => child.localName === 'pPr');
+      const revisedProperties = predecessorProperties
+        ? cloneElement(predecessorProperties)
+        : predecessor.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
+      for (const stale of revisionElements(revisedProperties)) {
+        stale.parentNode?.removeChild(stale);
+      }
+      if (!predecessorProperties) {
+        predecessorProperties = predecessor.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
+        predecessor.insertBefore(predecessorProperties, predecessor.firstChild);
+      }
+      let predecessorMarkProperties = childElements(predecessorProperties).find((child) => child.localName === 'rPr');
+      if (!predecessorMarkProperties) {
+        predecessorMarkProperties = predecessor.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
+        const boundary = childElements(predecessorProperties).find((child) =>
+          ['sectPr', 'pPrChange'].includes(child.localName));
+        predecessorProperties.insertBefore(predecessorMarkProperties, boundary ?? null);
+      }
+      marker.parentNode!.removeChild(marker);
+      placeParagraphMarkRevisionMarker(predecessorMarkProperties, marker, 'w:del');
+      if (childElements(markProperties).length === 0) pPr.removeChild(markProperties);
+
+      applyParagraphPropertyDelta(
+        paragraph,
+        originalProperties,
+        revisedProperties,
+        allocateRevision(),
+      );
+    }
+  };
+  visit(root);
+}
+
+/**
+ * Keep generated revision identifiers monotonic in serialized document order.
+ *
+ * Post-serialization normalizers can insert a later-allocated property change
+ * before an earlier content revision. Word tolerates that ordering, but
+ * LibreOffice can resolve the paragraph break incorrectly. A single mapping per
+ * old identifier preserves linked move-range identities while placing every
+ * generated equivalence class in first-occurrence order above all authored IDs.
+ */
+function renumberGeneratedRevisionsInDocumentOrder(
+  root: WmlElement,
+  generatedRevisionIds: ReadonlySet<number>,
+): void {
+  const revisions: WmlElement[] = [];
+  const collect = (element: WmlElement): void => {
+    if (element.namespaceURI === W_NS && REVISION_ID_ELEMENT_NAME_SET.has(element.localName)) revisions.push(element);
+    for (const child of childElements(element)) collect(child);
+  };
+  collect(root);
+  const authoredIds = revisions
+    .map((element) => Number(element.getAttributeNS(W_NS, 'id')))
+    .filter((id) => Number.isSafeInteger(id) && id >= 0 && !generatedRevisionIds.has(id));
+  let nextId = Math.max(-1, ...authoredIds) + 1;
+  const replacements = new Map<number, number>();
+  for (const revision of revisions) {
+    const oldId = Number(revision.getAttributeNS(W_NS, 'id'));
+    if (!Number.isSafeInteger(oldId) || !generatedRevisionIds.has(oldId)) continue;
+    let replacement = replacements.get(oldId);
+    if (replacement === undefined) {
+      replacement = nextId++;
+      replacements.set(oldId, replacement);
+    }
+    revision.setAttributeNS(W_NS, 'w:id', String(replacement));
+  }
 }
 
 function markWholeTableRow(
@@ -1207,12 +1359,22 @@ export function serializeTaggedTree(
   options: TaggedTreeSerializerOptions = {},
 ): string {
   if (!plan.entries.has(tree)) throw new Error('PreservePlan does not belong to this TaggedTree');
+  const representatives = tree.tag === 'both' ? [tree.original, tree.revised] : [tree.node];
+  const usedRevisionIds = representatives.flatMap((root) => [...REVISION_ID_ELEMENT_NAME_SET].flatMap((localName) =>
+    Array.from(root.getElementsByTagNameNS(W_NS, localName))))
+    .map((element) => Number(element.getAttributeNS(W_NS, 'id')))
+    .filter((id) => Number.isSafeInteger(id) && id >= 0);
   let nextId = Math.max(
     plan.comparison.id,
     ...((options.moves ?? []).flatMap((move) => [move.sourceRangeId, move.destinationRangeId])),
+    ...usedRevisionIds,
   ) + 1;
-  const allocateRevision = (): ComparisonRevision => ({ ...plan.comparison, id: nextId++ });
-  const representatives = tree.tag === 'both' ? [tree.original, tree.revised] : [tree.node];
+  const generatedRevisionIds = new Set<number>();
+  const allocateRevision = (): ComparisonRevision => {
+    const revision = { ...plan.comparison, id: nextId++ };
+    generatedRevisionIds.add(revision.id);
+    return revision;
+  };
   const usedBookmarkIds = representatives.flatMap((root) => [
     ...Array.from(root.getElementsByTagNameNS(W_NS, 'bookmarkStart')),
     ...Array.from(root.getElementsByTagNameNS(W_NS, 'bookmarkEnd')),
@@ -1247,8 +1409,10 @@ export function serializeTaggedTree(
     splitBookmarkIds,
   );
   splitCrossParagraphBookmarkCounterparts(emitted, originalBookmarkIds, allocateRevision);
+  normalizeWholeParagraphDeletions(emitted, generatedRevisionIds, allocateRevision);
   hoistFieldCharactersFromDeletions(emitted);
   hoistLiteralInsertionsFromDeletedFieldInstructions(emitted);
+  renumberGeneratedRevisionsInDocumentOrder(emitted, generatedRevisionIds);
   return new XMLSerializer().serializeToString(emitted);
 }
 
