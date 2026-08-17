@@ -7,5 +7,12 @@
     "declarationMap": true
   },
   "include": ["src/**/*"],
-  "exclude": ["src/**/*.test.ts", "src/testing/**/*", "src/debug/**/*", "src/benchmark/**/*"]
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/testing/**/*",
+    "src/debug/**/*",
+    "src/benchmark/**/*",
+    "src/integration/strategy-differential-fixtures.ts",
+    "src/integration/strategy-differential-harness.ts"
+  ]
 }

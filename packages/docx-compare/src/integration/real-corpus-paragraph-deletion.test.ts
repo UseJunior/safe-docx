@@ -19,13 +19,10 @@
  * @see https://github.com/UseJunior/safe-docx/issues/646
  */
 
-import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   DOMParser,
-  XMLSerializer,
   type Document as XmlDocument,
   type Element as XmlElement,
   type Node as XmlNode,
@@ -35,30 +32,16 @@ import { describe, expect } from 'vitest';
 import { compareDocumentsAtomizer } from '../baselines/atomizer/pipeline.js';
 import type { ReconstructionMode } from '../compare-types.js';
 import { testAllure } from '../testing/allure-test.js';
+import {
+  deleteOneRealParagraph,
+  REAL_CORPUS_ENV,
+  REAL_CORPUS_REQUIRED_ENV,
+  resolveRealCorpusAvailability,
+  type RealCorpusEntry,
+} from './real-corpus-fixtures.js';
 
-const CORPUS_ENV = 'SAFE_DOCX_REAL_CORPUS_DIR';
-const REQUIRED_ENV = 'SAFE_DOCX_REAL_CORPUS_REQUIRED';
-const INTEGRATION_DIR = dirname(fileURLToPath(import.meta.url));
-const MANIFEST_PATH = join(INTEGRATION_DIR, 'real-corpus-manifest.json');
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const TEST_FEATURE = 'docx-comparison';
-
-interface CorpusEntry {
-  id: string;
-  sourceUrl: string;
-  sha256: string;
-}
-
-interface CorpusAvailability {
-  available: boolean;
-  skipWarning: string | null;
-  entries: CorpusEntry[];
-}
-
-interface ParagraphDeletion {
-  revised: Buffer;
-  targetedBookmarkNames: string[];
-}
 
 type CellOutcome =
   | { kind: 'pass' }
@@ -77,8 +60,6 @@ type ExpectedFailure =
       errorName: string;
       messageIncludes: string;
     };
-
-const corpusEntries = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')) as CorpusEntry[];
 
 const expectedFailures: Readonly<
   Record<string, Partial<Record<ReconstructionMode, ExpectedFailure>>>
@@ -117,10 +98,6 @@ const expectedFailures: Readonly<
   },
 };
 
-const preferredDeletionTarget: Readonly<Partial<Record<string, string>>> = {
-  'nvca-voting-agreement': '_Ref444624639',
-};
-
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({
@@ -140,169 +117,8 @@ const paragraphStyleTest = test.conformance({
   section: '17.13.5.29',
 });
 
-function sha256(buffer: Buffer): string {
-  return createHash('sha256').update(buffer).digest('hex');
-}
-
-function resolveCorpusAvailability(corpusRoot: string): CorpusAvailability {
-  const problems: string[] = [];
-  if (!corpusRoot) {
-    problems.push(`${CORPUS_ENV} is unset`);
-  } else {
-    for (const entry of corpusEntries) {
-      const sourcePath = join(corpusRoot, entry.id, 'source.docx');
-      if (!existsSync(sourcePath)) {
-        problems.push(`${entry.id}/source.docx is missing`);
-        continue;
-      }
-      const actualSha256 = sha256(readFileSync(sourcePath));
-      if (actualSha256 !== entry.sha256) {
-        problems.push(`${entry.id}/source.docx failed SHA-256 verification`);
-      }
-    }
-  }
-
-  return {
-    available: problems.length === 0,
-    entries: corpusEntries,
-    skipWarning:
-      problems.length === 0
-        ? null
-        : `[real-corpus-paragraph-deletion] SKIP: set ${CORPUS_ENV} to the ` +
-          `SHA-256-verified Open Agreements cache root. ${problems.join('; ')}.`,
-  };
-}
-
 function elements(node: XmlDocument | XmlElement, tagName: string): XmlElement[] {
   return Array.from(node.getElementsByTagName(tagName));
-}
-
-function fieldTargetNames(documentXml: string): Set<string> {
-  const document = new DOMParser().parseFromString(documentXml, 'text/xml');
-  const instructions = [
-    ...elements(document, 'w:instrText').map((node) => node.textContent ?? ''),
-    ...elements(document, 'w:fldSimple').map(
-      (node) => node.getAttribute('w:instr') ?? node.getAttributeNS(W_NS, 'instr') ?? '',
-    ),
-  ];
-  const names = new Set<string>();
-  for (const instruction of instructions) {
-    const match = instruction.match(/\b(?:REF|PAGEREF)\s+(?:"([^"]+)"|([^\s\\]+))/i);
-    const name = match?.[1] ?? match?.[2];
-    if (name) names.add(name);
-  }
-  return names;
-}
-
-function directBodyParagraphs(document: XmlDocument): XmlElement[] {
-  const body = elements(document, 'w:body')[0];
-  if (!body) throw new Error('word/document.xml has no w:body');
-  return Array.from(body.childNodes).filter(
-    (node): node is XmlElement =>
-      node.nodeType === 1 && (node as XmlElement).tagName === 'w:p',
-  );
-}
-
-function targetedBookmarkNames(
-  paragraph: XmlElement,
-  targets: Set<string>,
-): { all: string[]; midParagraph: string[] } {
-  const orderedNodes: XmlNode[] = [];
-  const visit = (node: XmlNode): void => {
-    orderedNodes.push(node);
-    for (const child of Array.from(node.childNodes)) visit(child);
-  };
-  visit(paragraph);
-
-  const all: string[] = [];
-  const midParagraph: string[] = [];
-  for (const start of elements(paragraph, 'w:bookmarkStart')) {
-    const name = start.getAttribute('w:name') ?? start.getAttributeNS(W_NS, 'name');
-    const id = start.getAttribute('w:id') ?? start.getAttributeNS(W_NS, 'id');
-    if (!name || !id || !targets.has(name)) continue;
-    const end = elements(paragraph, 'w:bookmarkEnd').find(
-      (candidate) =>
-        (candidate.getAttribute('w:id') ?? candidate.getAttributeNS(W_NS, 'id')) === id,
-    );
-    if (!end) continue;
-    const startIndex = orderedNodes.indexOf(start);
-    const endIndex = orderedNodes.indexOf(end);
-    const hasTextInside = orderedNodes.some(
-      (node, index) =>
-        index > startIndex &&
-        index < endIndex &&
-        node.nodeType === 3 &&
-        (node.nodeValue ?? '').trim() !== '',
-    );
-    if (!hasTextInside) continue;
-    all.push(name);
-    const hasTextAfter = orderedNodes.some(
-      (node, index) =>
-        index > endIndex && node.nodeType === 3 && (node.nodeValue ?? '').trim() !== '',
-    );
-    if (hasTextAfter) midParagraph.push(name);
-  }
-  return { all, midParagraph };
-}
-
-function selectDeletionParagraph(
-  paragraphs: XmlElement[],
-  targetNames: Set<string>,
-  preferredTargetName?: string,
-): { paragraph: XmlElement; targetedBookmarkNames: string[] } {
-  const candidates = paragraphs
-    .map((paragraph) => {
-      const targets = targetedBookmarkNames(paragraph, targetNames);
-      return {
-        paragraph,
-        targetedBookmarkNames: targets.all,
-        midParagraphTargetedBookmarkNames: targets.midParagraph,
-        text: paragraph.textContent?.trim() ?? '',
-      };
-    })
-    .filter((candidate) => candidate.text.length >= 20);
-
-  const selected =
-    candidates.find((candidate) =>
-      candidate.midParagraphTargetedBookmarkNames.includes(preferredTargetName ?? ''),
-    ) ??
-    candidates.find((candidate) => candidate.midParagraphTargetedBookmarkNames.length > 0) ??
-    candidates.find((candidate) => candidate.targetedBookmarkNames.length > 0) ??
-    candidates.find((_candidate, index) => index > 0 && index < candidates.length - 1);
-
-  if (!selected) throw new Error('no suitable body-level paragraph found for deletion');
-  return {
-    paragraph: selected.paragraph,
-    targetedBookmarkNames:
-      preferredTargetName &&
-      selected.midParagraphTargetedBookmarkNames.includes(preferredTargetName)
-        ? [preferredTargetName]
-        : selected.midParagraphTargetedBookmarkNames.length > 0
-        ? selected.midParagraphTargetedBookmarkNames
-        : selected.targetedBookmarkNames,
-  };
-}
-
-async function deleteOneRealParagraph(
-  original: Buffer,
-  preferredTargetName?: string,
-): Promise<ParagraphDeletion> {
-  const zip = await JSZip.loadAsync(original);
-  const documentPart = zip.file('word/document.xml');
-  if (!documentPart) throw new Error('DOCX has no word/document.xml');
-  const documentXml = await documentPart.async('string');
-  const document = new DOMParser().parseFromString(documentXml, 'text/xml');
-  const selected = selectDeletionParagraph(
-    directBodyParagraphs(document),
-    fieldTargetNames(documentXml),
-    preferredTargetName,
-  );
-  selected.paragraph.parentNode?.removeChild(selected.paragraph);
-  zip.file('word/document.xml', new XMLSerializer().serializeToString(document));
-  return {
-    revised: await zip.generateAsync({ type: 'nodebuffer' }),
-    targetedBookmarkNames: selected.targetedBookmarkNames,
-  };
 }
 
 function collapsedTargetedBookmarkNames(
@@ -354,14 +170,11 @@ function collapsedTargetedBookmarkNames(
 }
 
 async function runCell(
-  entry: CorpusEntry,
+  entry: RealCorpusEntry,
   reconstructionMode: ReconstructionMode,
 ): Promise<CellOutcome> {
   const original = readFileSync(join(corpusRoot, entry.id, 'source.docx'));
-  const deletion = await deleteOneRealParagraph(
-    original,
-    preferredDeletionTarget[entry.id],
-  );
+  const deletion = await deleteOneRealParagraph(original, entry.id);
   try {
     const result = await compareDocumentsAtomizer(original, deletion.revised, {
       author: 'Real Corpus Gate',
@@ -415,21 +228,21 @@ function assertExpectedOutcome(outcome: CellOutcome, expectedFailure?: ExpectedF
   }
 }
 
-const corpusRoot = process.env[CORPUS_ENV] ?? '';
-const corpusAvailability = resolveCorpusAvailability(corpusRoot);
+const corpusRoot = process.env[REAL_CORPUS_ENV] ?? '';
+const corpusAvailability = resolveRealCorpusAvailability(corpusRoot);
 if (!corpusAvailability.available) {
   console.warn(corpusAvailability.skipWarning);
 }
 
 describe('real-corpus gate availability', () => {
   test('an unset corpus directory resolves to a logged skip warning naming the variable', () => {
-    const resolution = resolveCorpusAvailability('');
+    const resolution = resolveRealCorpusAvailability('');
     expect(resolution.available).toBe(false);
     expect(resolution.skipWarning).toContain('SKIP');
-    expect(resolution.skipWarning).toContain(CORPUS_ENV);
+    expect(resolution.skipWarning).toContain(REAL_CORPUS_ENV);
   });
 
-  if (process.env[REQUIRED_ENV] === '1') {
+  if (process.env[REAL_CORPUS_REQUIRED_ENV] === '1') {
     test('required CI corpus is complete and SHA-256 verified', () => {
       expect(corpusAvailability.skipWarning).toBeNull();
       expect(corpusAvailability.available).toBe(true);

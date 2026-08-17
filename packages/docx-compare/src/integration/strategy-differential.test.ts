@@ -26,6 +26,12 @@ import {
   rejectAllChanges,
 } from '../baselines/atomizer/trackChangesAcceptorAst.js';
 import { testAllure } from '../testing/allure-test.js';
+import {
+  assertCharacterizationSafety,
+  assertExpectedPackageParts,
+  characterizeStrategyDifferential,
+  type StrategyDifferentialFixture,
+} from './strategy-differential-harness.js';
 
 const TEST_FEATURE = 'refactor-tagged-tree-spine';
 const test = testAllure
@@ -55,7 +61,9 @@ async function compareXml(
     comparisonStrategy,
   });
   expect(result.comparisonStrategyUsed).toBe(comparisonStrategy);
-  return (await DocxArchive.load(result.document)).getDocumentXml();
+  const documentXml = await (await DocxArchive.load(result.document)).getDocumentXml();
+  expect(documentXml.startsWith('<?xml')).toBe(true);
+  return documentXml;
 }
 
 function paragraphChildTags(documentXml: string): string[] {
@@ -150,6 +158,87 @@ describe('strategy differential characterization', () => {
       expect(cacheInsensitiveText(rejectAllChanges(taggedXml))).toBe(
         cacheInsensitiveText(await compareSourceXml(originalBody)),
       );
+    },
+  );
+});
+
+describe('strategy differential manifest evidence', () => {
+  test.openspec('Missing corpus evidence fails loudly')(
+    'records complete deterministic evidence and rejects missing package coverage',
+    async () => {
+      const [original, revised] = await Promise.all([
+        buildDocxFromBodyXml(
+          '<w:p><w:bookmarkStart w:id="1" w:name="Evidence"/>' +
+            '<w:r><w:t>Alpha old</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>',
+        ),
+        buildDocxFromBodyXml(
+          '<w:p><w:bookmarkStart w:id="1" w:name="Evidence"/>' +
+            '<w:r><w:t>Alpha new</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>',
+        ),
+      ]);
+      const fixture: StrategyDifferentialFixture = {
+        id: 'synthetic-bookmark-replacement',
+        original,
+        revised,
+        capabilityTags: ['bookmarks', 'formatting', 'relationships'],
+        expectedPackageParts: [
+          '[Content_Types].xml',
+          '_rels/.rels',
+          'word/document.xml',
+          'word/_rels/document.xml.rels',
+        ],
+      };
+
+      const first = await characterizeStrategyDifferential(fixture);
+      const second = await characterizeStrategyDifferential(fixture);
+
+      expect(second).toEqual(first);
+      expect(first.fixture.capabilityTags).toEqual([
+        'bookmarks',
+        'formatting',
+        'relationships',
+      ]);
+      expect(first.fixture.originalSha256).not.toBe(first.fixture.revisedSha256);
+      expect(first.legacy.stats).toEqual(first.taggedTree.stats);
+      assertCharacterizationSafety(first);
+      assertExpectedPackageParts(fixture, first);
+
+      expect(() => assertExpectedPackageParts(
+        { ...fixture, expectedPackageParts: ['word/comments.xml'] },
+        first,
+      )).toThrow(/no longer exercises expected source part word\/comments\.xml/u);
+    },
+  );
+
+  test.openspec('Missing corpus evidence fails loudly')(
+    'rejects fallback and projection drift instead of recording a green row',
+    async () => {
+      const [original, revised] = await Promise.all([
+        buildDocxFromBodyXml('<w:p><w:r><w:t>old</w:t></w:r></w:p>'),
+        buildDocxFromBodyXml('<w:p><w:r><w:t>new</w:t></w:r></w:p>'),
+      ]);
+      const row = await characterizeStrategyDifferential({
+        id: 'synthetic-safety-failure',
+        original,
+        revised,
+        capabilityTags: ['fallbacks', 'projections'],
+      });
+      const fallback = structuredClone(row);
+      fallback.taggedTree.fallback.comparisonStrategyUsed = 'legacy';
+      expect(() => assertCharacterizationSafety(fallback)).toThrow(/fell back to legacy/u);
+
+      const projectionDrift = structuredClone(row);
+      projectionDrift.legacy.projections.accept.matchesSourceText = false;
+      expect(() => assertCharacterizationSafety(projectionDrift))
+        .toThrow(/accept projection drifted/u);
+      expect(() => assertCharacterizationSafety(
+        projectionDrift,
+        new Set(['legacy.acceptProjection']),
+      )).not.toThrow();
+      expect(() => assertCharacterizationSafety(
+        projectionDrift,
+        new Set(['legacy.rejectProjection']),
+      )).toThrow(/accept projection drifted/u);
     },
   );
 });

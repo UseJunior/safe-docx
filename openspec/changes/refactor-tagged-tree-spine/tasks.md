@@ -6,10 +6,10 @@
 
 ## 1. Characterization harness
 
-- [ ] 1.1 Add `strategy-differential.test.ts` over the real corpus manifest, ILPA pair, and synthetic capability fixtures.
+- [x] 1.1 Add `strategy-differential.test.ts` over the real corpus manifest, ILPA pair, and synthetic capability fixtures.
 - [ ] 1.2 Record fixture hashes, capability tags, source projections, normalized package parts, stats, fallbacks, unrepresented changes, schema results, and closure checks.
-- [ ] 1.3 Fail on unavailable corpus, missing entries/parts, fallback, or unreviewed divergence drift.
-- [ ] 1.4 Add explicit divergence rows for fuzzy moves, numbering, consumer compatibility, and volatile PAGEREF caches.
+- [x] 1.3 Fail on unavailable corpus, missing entries/parts, fallback, or unreviewed divergence drift.
+- [x] 1.4 Add explicit divergence rows for fuzzy moves, numbering, consumer compatibility, and volatile PAGEREF caches.
 - [ ] 1.5 Cover field integrity, notes/comments, bookmarks, moves, formatting, relationships, auxiliary definitions, rationale leakage, text boxes, and unsupported stories.
 
 ## 2. Dead code and public API inventory
