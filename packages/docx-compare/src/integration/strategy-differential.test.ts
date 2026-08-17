@@ -55,7 +55,9 @@ async function compareXml(
     comparisonStrategy,
   });
   expect(result.comparisonStrategyUsed).toBe(comparisonStrategy);
-  return (await DocxArchive.load(result.document)).getDocumentXml();
+  const documentXml = await (await DocxArchive.load(result.document)).getDocumentXml();
+  expect(documentXml.startsWith('<?xml')).toBe(true);
+  return documentXml;
 }
 
 function paragraphChildTags(documentXml: string): string[] {

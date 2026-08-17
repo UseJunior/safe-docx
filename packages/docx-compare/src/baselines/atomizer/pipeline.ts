@@ -153,6 +153,7 @@ import {
 
 const OFFICE_RELATIONSHIP_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const PACKAGE_RELATIONSHIP_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
 function relationshipPartPath(ownerPart: string, target: string): string {
   return normalizeOpcRelationshipTarget({ ownerPart, target }).target;
@@ -183,8 +184,9 @@ function finalizeTaggedDocumentXml(documentXml: string): string {
     () => allocateRevisionId(revisionIds),
     { repairBookmarkInventory: false },
   );
+  const serialized = new XMLSerializer().serializeToString(document);
   return suppressVolatileTocPagerefCacheRevisions(
-    new XMLSerializer().serializeToString(document),
+    serialized.startsWith('<?xml') ? serialized : XML_DECLARATION + serialized,
   );
 }
 
