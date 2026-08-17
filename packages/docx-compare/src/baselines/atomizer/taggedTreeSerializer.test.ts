@@ -376,7 +376,8 @@ describe('tagged-tree shadow serializer', () => {
   ]) {
     test(`serializes table row/cell property ${scenario.name} with exact source projections`, () => {
       const table = (row: string, cell: string) =>
-        `<w:tbl><w:tr>${row}<w:tc>${cell}<w:p><w:r><w:t>same</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+        `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>` +
+        `<w:tr>${row}<w:tc>${cell}<w:p><w:r><w:t>same</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
       const original = documentBody(table(scenario.originalRow, scenario.originalCell));
       const revised = documentBody(table(scenario.revisedRow, scenario.revisedCell));
       const constructed = constructTaggedTree(original, revised);
@@ -638,5 +639,56 @@ describe('tagged-tree shadow serializer', () => {
     expect(document.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(0);
     expect(extractRoundTripComparisonText(acceptAllChanges(output))).toBe(textValue);
     expect(extractRoundTripComparisonText(rejectAllChanges(output))).toBe(textValue);
+  });
+
+  test('keeps deleted-paragraph bookmark boundaries around the tracked text', () => {
+    const original = documentBody(
+      '<w:p><w:bookmarkStart w:id="7" w:name="Clause"/>' +
+      '<w:r><w:t>Deleted clause</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p>',
+    );
+    const revised = documentBody('');
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(
+      original, revised, constructed.tree,
+      { author: 'Comparator', date: '2026-08-14T12:00:00Z' },
+    ));
+    const document = parseXml(output);
+    const start = document.getElementsByTagNameNS(W_NS, 'bookmarkStart')[0]!;
+    const end = document.getElementsByTagNameNS(W_NS, 'bookmarkEnd')[0]!;
+    expect((start.parentNode as Element).localName).toBe('p');
+    expect(end.parentNode).toBe(start.parentNode);
+    expect(document.getElementsByTagNameNS(W_NS, 'delText')).toHaveLength(1);
+    const accepted = acceptAllChanges(output);
+    const rejected = rejectAllChanges(output);
+    expect(extractRoundTripComparisonText(accepted)).toBe('');
+    expect(parseXml(accepted).getElementsByTagNameNS(W_NS, 'bookmarkStart')).toHaveLength(0);
+    expect(parseXml(accepted).getElementsByTagNameNS(W_NS, 'bookmarkEnd')).toHaveLength(0);
+    expect(extractRoundTripComparisonText(rejected)).toBe('Deleted clause');
+    expect(parseXml(rejected).getElementsByTagNameNS(W_NS, 'bookmarkStart')).toHaveLength(1);
+    expect(parseXml(rejected).getElementsByTagNameNS(W_NS, 'bookmarkEnd')).toHaveLength(1);
+  });
+
+  test('serializes whole-row changes as row-property markers', () => {
+    const row = '<w:tr><w:tc><w:p><w:r><w:t>Row</w:t></w:r></w:p></w:tc></w:tr>';
+    for (const [originalXml, revisedXml, kind] of [
+      [`<w:tbl>${row}</w:tbl>`, '<w:tbl/>', 'del'],
+      ['<w:tbl/>', `<w:tbl>${row}</w:tbl>`, 'ins'],
+    ] as const) {
+      const original = documentBody(originalXml);
+      const revised = documentBody(revisedXml);
+      const constructed = constructTaggedTree(original, revised);
+      const output = serializeTaggedTree(constructed.tree, createPreservePlan(
+        original, revised, constructed.tree,
+        { author: 'Comparator', date: '2026-08-14T12:00:00Z' },
+      ));
+      const document = parseXml(output);
+      const marker = document.getElementsByTagNameNS(W_NS, kind)[0]!;
+      expect((marker.parentNode as Element).localName).toBe('trPr');
+      expect((marker.parentNode?.parentNode as Element).localName).toBe('tr');
+      expect(Array.from(document.getElementsByTagNameNS(W_NS, kind)).some((wrapper) =>
+        wrapper.getElementsByTagNameNS(W_NS, 'tr').length > 0)).toBe(false);
+      expect(extractRoundTripComparisonText(acceptAllChanges(output))).toBe(kind === 'ins' ? 'Row' : '');
+      expect(extractRoundTripComparisonText(rejectAllChanges(output))).toBe(kind === 'del' ? 'Row' : '');
+    }
   });
 });

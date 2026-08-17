@@ -377,6 +377,54 @@ export function acceptChanges(
     }
   }
 
+  // A bookmark endpoint inside a selected deletion can have its paired endpoint
+  // live outside that wrapper so the combined redline visibly brackets deleted
+  // text. Accepting the deletion must remove that live original-side endpoint
+  // as well; otherwise a cross-paragraph range becomes orphaned.
+  const deletedBookmarkIds = new Set<string>();
+  for (const deletion of collectByLocalName(root, 'del').filter(filter)) {
+    for (const localName of ['bookmarkStart', 'bookmarkEnd']) {
+      for (const boundary of collectByLocalName(deletion, localName)) {
+        const id = boundary.getAttributeNS(W_NS, 'id') ?? boundary.getAttribute('w:id');
+        if (id) deletedBookmarkIds.add(id);
+      }
+    }
+  }
+  for (const paragraph of markDeletedParagraphs) {
+    const direct = Array.from(paragraph.childNodes)
+      .filter((child): child is Element => child.nodeType === 1);
+    const substantive = direct.filter((child) =>
+      !isW(child, 'pPr') && !isW(child, 'bookmarkStart') && !isW(child, 'bookmarkEnd'));
+    if (substantive.length === 0 || !substantive.every((child) => isW(child, 'del') && filter(child))) {
+      continue;
+    }
+    for (const boundary of direct.filter((child) =>
+      isW(child, 'bookmarkStart') || isW(child, 'bookmarkEnd'))) {
+      const id = boundary.getAttributeNS(W_NS, 'id') ?? boundary.getAttribute('w:id');
+      if (id) deletedBookmarkIds.add(id);
+    }
+  }
+  const isInsideRevision = (marker: Element): boolean => {
+    let current: Node | null = marker.parentNode;
+    while (current && current !== root) {
+      if (isW(current, 'del') || isW(current, 'ins') || isW(current, 'moveFrom') || isW(current, 'moveTo')) {
+        return true;
+      }
+      current = current.parentNode;
+    }
+    return false;
+  };
+  if (deletedBookmarkIds.size > 0) {
+    for (const localName of ['bookmarkStart', 'bookmarkEnd']) {
+      for (const marker of collectByLocalName(root, localName)) {
+        const id = marker.getAttributeNS(W_NS, 'id') ?? marker.getAttribute('w:id');
+        if (id && deletedBookmarkIds.has(id) && !isInsideRevision(marker)) {
+          marker.parentNode?.removeChild(marker);
+        }
+      }
+    }
+  }
+
   // Phase B — Remove deletions and move sources.
   //
   // A `w:trPr > w:del` marks the ROW as deleted; accepting it should remove the

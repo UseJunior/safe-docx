@@ -480,6 +480,40 @@ export function rejectChanges(
     relocateBookmarks(p, markInsertedParagraphs);
   }
 
+  // Mirror Accept All's projection-aware bookmark cleanup: an endpoint inside
+  // a selected insertion can have a live counterpart outside the wrapper so
+  // the combined redline visibly brackets inserted text. Rejecting the
+  // insertion must remove that revised-side counterpart as well.
+  const insertedBookmarkIds = new Set<string>();
+  for (const insertion of collectByLocalName(root, 'ins').filter(filter)) {
+    for (const localName of ['bookmarkStart', 'bookmarkEnd']) {
+      for (const boundary of collectByLocalName(insertion, localName)) {
+        const id = boundary.getAttributeNS(W_NS, 'id') ?? boundary.getAttribute('w:id');
+        if (id) insertedBookmarkIds.add(id);
+      }
+    }
+  }
+  const isInsideRevision = (marker: Element): boolean => {
+    let current: Node | null = marker.parentNode;
+    while (current && current !== root) {
+      if (isW(current, 'del') || isW(current, 'ins') || isW(current, 'moveFrom') || isW(current, 'moveTo')) {
+        return true;
+      }
+      current = current.parentNode;
+    }
+    return false;
+  };
+  if (insertedBookmarkIds.size > 0) {
+    for (const localName of ['bookmarkStart', 'bookmarkEnd']) {
+      for (const marker of collectByLocalName(root, localName)) {
+        const id = marker.getAttributeNS(W_NS, 'id') ?? marker.getAttribute('w:id');
+        if (id && insertedBookmarkIds.has(id) && !isInsideRevision(marker)) {
+          marker.parentNode?.removeChild(marker);
+        }
+      }
+    }
+  }
+
   // Phase C — Remove insertions and move destinations
   // A `w:trPr > w:ins` marks the ROW as inserted; rejecting it should remove the
   // whole `w:tr`, which this engine does not implement (conformance-adapter.ts

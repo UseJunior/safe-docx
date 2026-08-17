@@ -286,6 +286,21 @@ strategy remains the rollback path, and successors C/D remain separate changes.
       regression matrix now asserts exact accepted/rejected visible text,
       balanced field structure, and bookmark restoration instead of legacy
       wrapper topology.
+
+      **CI structural correction (2026-08-16):** the first default-path CI run
+      exposed two gaps that the earlier focused evidence did not exercise.
+      Whole deleted paragraphs had their bookmark boundaries revision-wrapped,
+      collapsing the visible range around deleted text in eight public NVCA
+      corpus cells. The serializer now keeps collision-safe boundaries live in
+      the combined redline, while both accept/reject engines remove the live
+      counterpart whenever the paired endpoint belongs to the disappearing
+      projection. The real-corpus paragraph-deletion matrix is `29/29`, and the
+      ILPA accept/reject bookmark-integrity invariant is exact. Separately,
+      whole table rows were emitted inside generic `w:ins`/`w:del` wrappers,
+      which is invalid OOXML. Row insertion/deletion is now represented by an
+      empty marker under `w:trPr`, with behavioral projection and schema-shape
+      regressions. The prior green focused suite was insufficient because it
+      covered pre-existing row markers, not construction of new row changes.
 - [x] 4.5 Produce the field-case evidence that successor C's deletion of
       `suppressNoOpChangePairs` depends on: field-stable, field-modification,
       field-delete, nested-field, and paragraph-spanning-field cases showing no

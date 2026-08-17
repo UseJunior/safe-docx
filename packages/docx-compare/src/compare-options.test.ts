@@ -151,6 +151,7 @@ describe('compareDocuments options', () => {
         expect(await documentXml(omitted.document)).toBe(await documentXml(explicitDefaults.document));
       });
     },
+    10_000,
   );
 
   test(

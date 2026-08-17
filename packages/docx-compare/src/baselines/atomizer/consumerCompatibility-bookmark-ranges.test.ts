@@ -212,16 +212,13 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
         ]);
       });
 
-      await and('Accept All leaves the emptied bookmark in the paragraph flow, not at body level', () => {
-        // Keeping the name once its text is gone is safe-docx policy, unchanged
-        // by this fix: the pass has always preserved bookmark names so a REF or
-        // PAGEREF still resolves. What changes is placement — the emptied range
-        // lands at the paragraph merge point instead of detached at body level.
-        // Word's own output for this scenario has not been captured, and the
-        // repo's LibreOffice oracle drops the bookmark outright on accept, so
-        // this asserts our policy rather than a consumer's behavior (issue #641).
+      await and('Accept All matches the revised source by removing the deleted range', () => {
+        // Correction (2026-08-16): this formerly asserted a safe-docx-specific
+        // policy that retained an empty bookmark after its paragraph was
+        // deleted. That contradicted both the revised source projection and the
+        // existing LibreOffice oracle, and orphaned cross-paragraph endpoints.
         const accepted = acceptAllChanges(documentXml);
-        expect(accepted).toContain('w:name="DeletedBoundary"');
+        expect(accepted).not.toContain('w:name="DeletedBoundary"');
         expect(bodyChildTags(accepted)).not.toContain('w:bookmarkStart');
         expect(bodyChildTags(accepted)).not.toContain('w:bookmarkEnd');
       });

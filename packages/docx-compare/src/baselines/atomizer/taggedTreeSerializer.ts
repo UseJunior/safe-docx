@@ -293,10 +293,13 @@ function markWholeParagraph(
   };
   for (const child of content) {
     // Boundaries follow the paragraph's source projection so original-only
-    // markers cannot survive Accept All after a paragraph-mark deletion.
+    // markers continue to delimit the deleted text in the combined redline.
+    // The paragraph-mark revision removes the entire paragraph on Accept All,
+    // so keeping these zero-width markers live does not leak them into the
+    // accepted projection.
     if (RANGE_BOUNDARY_LOCALS.has(child.localName)) {
       flush();
-      paragraph.appendChild(wrapRevision(child, kind, contentRevision));
+      paragraph.appendChild(child);
       continue;
     }
     if (!wrapper) {
@@ -310,6 +313,28 @@ function markWholeParagraph(
   }
   flush();
   return paragraph;
+}
+
+function markWholeTableRow(
+  row: WmlElement,
+  kind: 'ins' | 'del',
+  revision: ComparisonRevision,
+): WmlElement {
+  let trPr = childElements(row).find((child) => child.localName === 'trPr');
+  if (!trPr) {
+    trPr = row.ownerDocument!.createElementNS(W_NS, 'w:trPr') as WmlElement;
+    row.insertBefore(trPr, row.firstChild);
+  }
+  const marker = row.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
+  marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
+  marker.setAttributeNS(W_NS, 'w:author', revision.author);
+  marker.setAttributeNS(W_NS, 'w:date', revision.date);
+  const boundary = childElements(trPr).find((child) =>
+    kind === 'ins'
+      ? ['del', 'trPrChange'].includes(child.localName)
+      : child.localName === 'trPrChange');
+  trPr.insertBefore(marker, boundary ?? null);
+  return row;
 }
 
 const CHANGE_ELEMENT_BY_SCOPE = {
@@ -1149,6 +1174,9 @@ function emitNode(
     if (!relation && base.namespaceURI === W_NS && base.localName === 'p') {
       return wrapPreserved(markWholeParagraph(base, 'del', revision, allocateRevision()), entry.originalStack);
     }
+    if (!relation && base.namespaceURI === W_NS && base.localName === 'tr') {
+      return wrapPreserved(markWholeTableRow(base, 'del', revision), entry.originalStack);
+    }
     return wrapPreserved(wrapRevision(base, relation ? 'moveFrom' : 'del', revision), entry.originalStack);
   }
   if (node.tag === 'revised') {
@@ -1156,6 +1184,9 @@ function emitNode(
     const revision = relation ? { ...plan.comparison, id: relation.destinationRangeId } : nodeRevision;
     if (!relation && base.namespaceURI === W_NS && base.localName === 'p') {
       return wrapPreserved(markWholeParagraph(base, 'ins', revision, allocateRevision()), entry.revisedStack);
+    }
+    if (!relation && base.namespaceURI === W_NS && base.localName === 'tr') {
+      return wrapPreserved(markWholeTableRow(base, 'ins', revision), entry.revisedStack);
     }
     return wrapPreserved(wrapRevision(base, relation ? 'moveTo' : 'ins', revision), entry.revisedStack);
   }

@@ -18,6 +18,8 @@ import {
   NODE_TYPE,
 } from '@usejunior/docx-core';
 
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
 /**
  * Remove w:hyperlink elements left with no element children after change
  * resolution. Word drops a hyperlink whose entire content was a resolved
@@ -59,6 +61,16 @@ function paragraphHasParaMarker(p: Element, tagName: 'w:ins' | 'w:del'): boolean
   const rPr = childElements(pPr).find((c) => c.tagName === 'w:rPr');
   if (!rPr) return false;
   return childElements(rPr).some((c) => c.tagName === tagName);
+}
+
+function rowsWithRevisionMarker(root: Element, tagName: 'w:ins' | 'w:del'): Element[] {
+  const rows = new Set<Element>();
+  for (const marker of findAllByTagName(root, tagName)) {
+    const trPr = parentElement(marker);
+    const row = trPr?.tagName === 'w:trPr' ? parentElement(trPr) : undefined;
+    if (row?.tagName === 'w:tr') rows.add(row);
+  }
+  return [...rows];
 }
 
 function removeParaMarkers(root: Element): void {
@@ -522,6 +534,11 @@ function preserveCrossParagraphBookmarksForReject(
 export function acceptAllChanges(documentXml: string): string {
   const root = parseDocumentXml(documentXml);
 
+  // Row revisions are empty markers under w:trPr, not content wrappers.
+  // Accepting a deleted row removes the row itself before the generic w:del
+  // sweep removes ordinary deleted content.
+  for (const row of rowsWithRevisionMarker(root, 'w:del')) row.parentNode?.removeChild(row);
+
   // Merge a paragraph on Accept All iff its paragraph MARK is a tracked deletion
   // (<w:pPr><w:rPr><w:del .../></w:rPr>) — the paragraph BREAK itself was deleted, so accepting
   // the deletion merges the paragraph's surviving content into the following paragraph
@@ -539,6 +556,48 @@ export function acceptAllChanges(documentXml: string): string {
   for (const p of findAllByTagName(root, 'w:p')) {
     if (paragraphHasParaMarker(p, 'w:del')) {
       markDeletedParagraphs.push(p);
+    }
+  }
+
+  // A deleted bookmark endpoint may have a live counterpart outside its
+  // wrapper so the combined redline visibly brackets deleted text. Remove that
+  // original-side counterpart before accepting the deletion.
+  const deletedBookmarkIds = new Set<string>();
+  for (const deletion of findAllByTagName(root, 'w:del')) {
+    for (const tagName of ['w:bookmarkStart', 'w:bookmarkEnd']) {
+      for (const boundary of findAllByTagName(deletion, tagName)) {
+        const id = boundary.getAttribute('w:id') ?? boundary.getAttributeNS(
+          'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'id');
+        if (id) deletedBookmarkIds.add(id);
+      }
+    }
+  }
+  for (const paragraph of markDeletedParagraphs) {
+    const direct = childElements(paragraph);
+    const substantive = direct.filter((child) =>
+      !['w:pPr', 'w:bookmarkStart', 'w:bookmarkEnd'].includes(child.tagName));
+    if (substantive.length === 0 || !substantive.every((child) => child.tagName === 'w:del')) continue;
+    for (const boundary of direct.filter((child) =>
+      child.tagName === 'w:bookmarkStart' || child.tagName === 'w:bookmarkEnd')) {
+      const id = boundary.getAttribute('w:id') ?? boundary.getAttributeNS(W_NS, 'id');
+      if (id) deletedBookmarkIds.add(id);
+    }
+  }
+  const isInsideRevision = (marker: Element): boolean => {
+    let current = parentElement(marker);
+    while (current && current !== root) {
+      if (['w:del', 'w:ins', 'w:moveFrom', 'w:moveTo'].includes(current.tagName)) return true;
+      current = parentElement(current);
+    }
+    return false;
+  };
+  for (const tagName of ['w:bookmarkStart', 'w:bookmarkEnd']) {
+    for (const marker of findAllByTagName(root, tagName)) {
+      const id = marker.getAttribute('w:id') ?? marker.getAttributeNS(
+        'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'id');
+      if (id && deletedBookmarkIds.has(id) && !isInsideRevision(marker)) {
+        marker.parentNode?.removeChild(marker);
+      }
     }
   }
 
@@ -599,6 +658,10 @@ export function acceptAllChanges(documentXml: string): string {
 export function rejectAllChanges(documentXml: string): string {
   const root = parseDocumentXml(documentXml);
 
+  // Rejecting an inserted row removes the row itself before the generic w:ins
+  // sweep removes ordinary inserted content.
+  for (const row of rowsWithRevisionMarker(root, 'w:ins')) row.parentNode?.removeChild(row);
+
   // Step 1: Merge a paragraph on Reject All iff its paragraph MARK is a tracked
   // insertion (<w:pPr><w:rPr><w:ins .../></w:rPr>) — i.e. the paragraph break itself
   // was inserted, so rejecting the insertion merges the paragraph's surviving content
@@ -619,10 +682,37 @@ export function rejectAllChanges(documentXml: string): string {
     }
   }
 
+  const insertedBookmarkIds = new Set<string>();
+  for (const insertion of findAllByTagName(root, 'w:ins')) {
+    for (const tagName of ['w:bookmarkStart', 'w:bookmarkEnd']) {
+      for (const boundary of findAllByTagName(insertion, tagName)) {
+        const id = boundary.getAttribute('w:id') ?? boundary.getAttributeNS(W_NS, 'id');
+        if (id) insertedBookmarkIds.add(id);
+      }
+    }
+  }
+
   // Bookmarks nested inside w:ins content are dropped with Step 2's wrapper
   // removal, so boundaries whose counterpart lives in a kept paragraph must
   // move out first. (Direct-child bookmarks would survive the Step-3 merge.)
   preserveCrossParagraphBookmarksForReject(root, markInsertedParagraphs);
+
+  const isInsideRevision = (marker: Element): boolean => {
+    let current = parentElement(marker);
+    while (current && current !== root) {
+      if (['w:del', 'w:ins', 'w:moveFrom', 'w:moveTo'].includes(current.tagName)) return true;
+      current = parentElement(current);
+    }
+    return false;
+  };
+  for (const tagName of ['w:bookmarkStart', 'w:bookmarkEnd']) {
+    for (const marker of findAllByTagName(root, tagName)) {
+      const id = marker.getAttribute('w:id') ?? marker.getAttributeNS(W_NS, 'id');
+      if (id && insertedBookmarkIds.has(id) && !isInsideRevision(marker)) {
+        marker.parentNode?.removeChild(marker);
+      }
+    }
+  }
 
   // Step 2: Remove w:ins elements entirely (inserted content disappears)
   removeAllByTagName(root, 'w:ins');

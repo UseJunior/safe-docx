@@ -98,7 +98,8 @@ function snapshotStyle(change: Element): string | null {
 describe('direct paragraph style comparison', () => {
   test('tagged publication reports row and cell direct-property revisions in public stats', async () => {
     const table = (row: string, cell: string) =>
-      `<w:tbl><w:tr>${row}<w:tc>${cell}<w:p><w:r><w:t>same</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+      `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>` +
+      `<w:tr>${row}<w:tc>${cell}<w:p><w:r><w:t>same</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
     const original = await buildDocxFromBodyXml(table('', ''));
     const revised = await buildDocxFromBodyXml(table(
       '<w:trPr><w:tblHeader/></w:trPr>',
