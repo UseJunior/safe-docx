@@ -90,6 +90,11 @@ export {
   type StructuralCheckResult,
   type StructuralIssue,
 } from './generation/index.js';
+
+export {
+  REVISION_ID_ELEMENT_NAMES,
+  REVISION_ID_ELEMENT_NAME_SET,
+} from './primitives/revision-vocabulary.js';
 export type {
   BlockSpec,
   BorderSpec,
