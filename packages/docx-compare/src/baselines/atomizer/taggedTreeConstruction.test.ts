@@ -2,7 +2,11 @@ import { describe, expect } from 'vitest';
 import { parseXml, validateBookmarkIntegrity, validateFieldStructure } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { verifyMoveRelations, verifyTaggedTree } from './taggedTree.js';
-import { constructTaggedTree, verifyGlobalEqualContentInvariant } from './taggedTreeConstruction.js';
+import {
+  constructTaggedTree,
+  globallyPairCandidates,
+  verifyGlobalEqualContentInvariant,
+} from './taggedTreeConstruction.js';
 import { createPreservePlan, serializeTaggedTree, verifySerializedMoveRanges } from './taggedTreeSerializer.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 
@@ -95,6 +99,250 @@ describe('complete tagged-tree construction', () => {
     const result = constructTaggedTree(original, revised);
     expect(verifyMoveRelations(result.moves, result.tree)).toEqual([]);
     expect(result.moves[0]?.sourceRangeId).not.toBe(result.moves[0]?.destinationRangeId);
+  });
+
+  test.openspec('Exact move matching precedes fuzzy matching')(
+    'binds an exact relocation before assigning a similar residual relocation',
+    () => {
+      const original = body([
+        'Stable opening anchor remains unchanged.',
+        'Exact moved clause remains stable and intact.',
+        'Supplier shall deliver quarterly reports to buyer promptly.',
+        'Stable closing anchor remains unchanged.',
+      ]);
+      const revised = body([
+        'Stable opening anchor remains unchanged.',
+        'Stable closing anchor remains unchanged.',
+        'Exact moved clause remains stable and intact.',
+        'Supplier shall deliver all quarterly reports to buyer promptly.',
+      ]);
+      const result = constructTaggedTree(original, revised, {
+        moveSimilarityThreshold: 0.8,
+        moveMinimumWordCount: 5,
+      });
+      expect(result.moves).toHaveLength(2);
+      expect(result.moves[0]?.source.node.textContent).toBe(
+        'Exact moved clause remains stable and intact.',
+      );
+      expect(result.moves[0]?.destination.node.textContent).toBe(
+        'Exact moved clause remains stable and intact.',
+      );
+      expect(result.moves[1]?.source.node.textContent).toContain('quarterly reports');
+      expect(result.moves[1]?.destination.node.textContent).toContain('all quarterly reports');
+      const output = serializeTaggedTree(
+        result.tree,
+        createPreservePlan(original, revised, result.tree, {
+          author: 'Comparator', date: '2026-08-17T12:00:00Z',
+        }),
+        { moves: result.moves },
+      );
+      expect(verifySerializedMoveRanges(output, result.moves)).toEqual([]);
+      expect(resolvedText(rejectAllChanges(output))).toBe(original.textContent);
+      expect(resolvedText(acceptAllChanges(output))).toBe(revised.textContent);
+    },
+  );
+
+  test.openspec('Residual matching is globally deterministic')(
+    'chooses the maximum-weight assignment instead of consuming the first local best match',
+    () => {
+      expect(globallyPairCandidates([
+        [0.9, 0.8],
+        [0.85, undefined],
+      ])).toEqual([
+        [0, 1],
+        [1, 0],
+      ]);
+      expect(globallyPairCandidates([
+        [0.8, 0.8],
+        [0.8, 0.8],
+      ])).toEqual(globallyPairCandidates([
+        [0.8, 0.8],
+        [0.8, 0.8],
+      ]));
+    },
+  );
+
+  test.openspec('Paired paragraph representatives are not moves')(
+    'keeps a similar in-place paragraph rewrite as ordinary insertion and deletion ranges',
+    () => {
+      const original = body(['The supplier delivers detailed monthly reports to the purchaser.']);
+      const revised = body(['The supplier delivers detailed quarterly reports to the purchaser.']);
+      const result = constructTaggedTree(original, revised, {
+        moveSimilarityThreshold: 0.1,
+        moveMinimumWordCount: 1,
+      });
+      expect(result.tree.children[0]?.tag).toBe('both');
+      expect(result.moves).toEqual([]);
+    },
+  );
+
+  test('honors fuzzy move threshold, minimum word count, and case behavior', () => {
+    const original = body([
+      'Opening anchor remains unchanged.',
+      'ALPHA BETA GAMMA DELTA EPSILON',
+      'Closing anchor remains unchanged.',
+    ]);
+    const revised = body([
+      'Opening anchor remains unchanged.',
+      'Closing anchor remains unchanged.',
+      'alpha beta gamma delta epsilon zeta',
+    ]);
+    expect(constructTaggedTree(original, revised, {
+      moveSimilarityThreshold: 0.8,
+      moveMinimumWordCount: 5,
+      caseInsensitiveMove: true,
+    }).moves).toHaveLength(1);
+    expect(constructTaggedTree(original, revised, {
+      moveSimilarityThreshold: 0.8,
+      moveMinimumWordCount: 5,
+      caseInsensitiveMove: false,
+    }).moves).toHaveLength(0);
+    expect(constructTaggedTree(original, revised, {
+      moveSimilarityThreshold: 0.8,
+      moveMinimumWordCount: 7,
+      caseInsensitiveMove: true,
+    }).moves).toHaveLength(0);
+  });
+
+  test('pairs only outermost overlapping candidates and remains stable for repeated similar blocks', () => {
+    const nested = (text: string) => '<w:sdt><w:sdtContent>'
+      + `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
+      + '</w:sdtContent></w:sdt>';
+    const originalNested = parseXml(`<w:body xmlns:w="${W_NS}">`
+      + nested('Nested moved clause has enough stable words here')
+      + '<w:p><w:r><w:t>Stable closing anchor</w:t></w:r></w:p></w:body>').documentElement;
+    const revisedNested = parseXml(`<w:body xmlns:w="${W_NS}">`
+      + '<w:p><w:r><w:t>Stable closing anchor</w:t></w:r></w:p>'
+      + nested('Nested moved clause has enough stable words now')
+      + '</w:body>');
+    const nestedResult = constructTaggedTree(originalNested, revisedNested.documentElement, {
+      moveMinimumWordCount: 5,
+      moveSimilarityThreshold: 0.7,
+    });
+    expect(nestedResult.moves).toHaveLength(1);
+    expect(nestedResult.moves[0]?.source.node.localName).toBe('sdt');
+    expect(nestedResult.moves[0]?.destination.node.localName).toBe('sdt');
+
+    const repeatedOriginalXml = [
+      'Opening anchor remains unchanged.',
+      'Alpha beta gamma delta first repeated clause.',
+      'Alpha beta gamma delta second repeated clause.',
+      'Closing anchor remains unchanged.',
+    ];
+    const repeatedRevisedXml = [
+      'Opening anchor remains unchanged.',
+      'Closing anchor remains unchanged.',
+      'Alpha beta gamma delta first revised clause.',
+      'Alpha beta gamma delta second revised clause.',
+    ];
+    const summarize = () => constructTaggedTree(
+      body(repeatedOriginalXml),
+      body(repeatedRevisedXml),
+      { moveMinimumWordCount: 5, moveSimilarityThreshold: 0.7 },
+    ).moves.map((move) => ({
+      source: move.source.node.textContent,
+      destination: move.destination.node.textContent,
+      name: move.name,
+      sourceRangeId: move.sourceRangeId,
+      destinationRangeId: move.destinationRangeId,
+    }));
+    expect(summarize()).toEqual(summarize());
+    expect(summarize()).toHaveLength(2);
+  });
+
+  test('excludes fields, ranges, tables, text boxes, notes, and preserved moves from fuzzy pairing', () => {
+    const movedStory = (unsafe: string): [Element, Element] => [
+      parseXml(`<w:body xmlns:w="${W_NS}">${unsafe}`
+        + '<w:p><w:r><w:t>Stable closing anchor</w:t></w:r></w:p></w:body>').documentElement,
+      parseXml(`<w:body xmlns:w="${W_NS}">`
+        + '<w:p><w:r><w:t>Stable closing anchor</w:t></w:r></w:p>'
+        + `${unsafe.replace('original', 'revised')}</w:body>`).documentElement,
+    ];
+    const cases: Array<[string, string]> = [
+      ['field', '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText>original field words here</w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'],
+      ['range', '<w:p><w:moveFromRangeStart w:id="8" w:name="prior"/><w:r><w:t>original range words remain here</w:t></w:r><w:moveFromRangeEnd w:id="8"/></w:p>'],
+      ['table', '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>original table words remain here</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'],
+      ['text box', '<w:p><w:r><w:drawing><w:txbxContent><w:p><w:r><w:t>original text box words remain here</w:t></w:r></w:p></w:txbxContent></w:drawing></w:r></w:p>'],
+      ['preserved move', '<w:p><w:moveFrom w:id="9" w:author="Prior"><w:r><w:t>original preserved move words here</w:t></w:r></w:moveFrom></w:p>'],
+    ];
+    for (const [name, unsafe] of cases) {
+      const [original, revised] = movedStory(unsafe);
+      expect(constructTaggedTree(original, revised, {
+        moveMinimumWordCount: 1,
+        moveSimilarityThreshold: 0.1,
+      }).moves, name).toEqual([]);
+    }
+    const equalTable = cases.find(([name]) => name === 'table')![1];
+    const equalOriginal = parseXml(`<w:body xmlns:w="${W_NS}">${equalTable}`
+      + '<w:p><w:r><w:t>Stable closing anchor</w:t></w:r></w:p></w:body>').documentElement;
+    const equalRevised = parseXml(`<w:body xmlns:w="${W_NS}">`
+      + '<w:p><w:r><w:t>Stable closing anchor</w:t></w:r></w:p>'
+      + `${equalTable}</w:body>`).documentElement;
+    const equalResult = constructTaggedTree(equalOriginal, equalRevised);
+    expect(equalResult.moves).toEqual([]);
+    expect(verifyGlobalEqualContentInvariant(equalResult.tree, equalResult.moves)).toEqual([]);
+    const originalNote = parseXml(`<w:footnote xmlns:w="${W_NS}" w:id="3">`
+      + '<w:p><w:r><w:t>original note words remain here</w:t></w:r></w:p>'
+      + '<w:p><w:r><w:t>Stable closing anchor</w:t></w:r></w:p></w:footnote>').documentElement;
+    const revisedNote = parseXml(`<w:footnote xmlns:w="${W_NS}" w:id="3">`
+      + '<w:p><w:r><w:t>Stable closing anchor</w:t></w:r></w:p>'
+      + '<w:p><w:r><w:t>revised note words remain here</w:t></w:r></w:p></w:footnote>').documentElement;
+    expect(constructTaggedTree(originalNote, revisedNote, {
+      moveMinimumWordCount: 1,
+      moveSimilarityThreshold: 0.1,
+    }).moves).toEqual([]);
+  });
+
+  test('uses rendered numbering identities without serializing virtual labels', () => {
+    const numberedParagraph = (text: string) => '<w:p><w:pPr><w:numPr>'
+      + '<w:ilvl w:val="0"/><w:numId w:val="1"/>'
+      + `</w:numPr></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+    const numberingXml = `<w:numbering xmlns:w="${W_NS}">`
+      + '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0">'
+      + '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>'
+      + '</w:lvl></w:abstractNum>'
+      + '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>'
+      + '</w:numbering>';
+    const originalDocument = documentWithBody(numberedParagraph('Same clause'));
+    const revisedDocument = documentWithBody(
+      numberedParagraph('New clause') + numberedParagraph('Same clause'),
+    );
+    const original = originalDocument.getElementsByTagNameNS(W_NS, 'body')[0]!;
+    const revised = revisedDocument.getElementsByTagNameNS(W_NS, 'body')[0]!;
+    const withoutVirtualization = constructTaggedTree(original, revised, {
+      detectMoves: false,
+      numberingEnabled: false,
+      originalNumberingXml: numberingXml,
+      revisedNumberingXml: numberingXml,
+    });
+    expect(withoutVirtualization.tree.children.map((child) => child.tag)).toEqual([
+      'revised',
+      'both',
+    ]);
+
+    const result = constructTaggedTree(original, revised, {
+      detectMoves: false,
+      numberingEnabled: true,
+      originalNumberingXml: numberingXml,
+      revisedNumberingXml: numberingXml,
+    });
+    expect(result.tree.children.map((child) => child.tag)).toEqual(['both', 'revised']);
+    expect(result.tree.children[0]?.tag === 'both'
+      ? result.tree.children[0].original.textContent
+      : undefined).toBe('Same clause');
+    expect(result.tree.children[0]?.tag === 'both'
+      ? result.tree.children[0].revised.textContent
+      : undefined).toBe('New clause');
+    const output = serializeTaggedTree(
+      result.tree,
+      createPreservePlan(original, revised, result.tree, {
+        author: 'Comparator', date: '2026-08-17T12:00:00Z',
+      }),
+      { moves: result.moves },
+    );
+    expect(resolvedText(rejectAllChanges(output))).toBe(original.textContent);
+    expect(resolvedText(acceptAllChanges(output))).toBe(revised.textContent);
+    expect(output).not.toContain('1:0:1.');
   });
 
   test.openspec('Move source markup structure')(

@@ -3,9 +3,9 @@
   "divergences": [
     {
       "id": "TD-FUZZY-MOVE-001",
-      "status": "active",
+      "status": "resolved",
       "issue": "#839",
-      "summary": "Tagged comparison does not yet perform legacy fuzzy move pairing.",
+      "summary": "Tagged comparison now performs deterministic globally optimal fuzzy move pairing.",
       "dimensions": [
         "legacy-tagged.semanticDifference"
       ]
@@ -31,9 +31,9 @@
     },
     {
       "id": "TD-NUMBERING-001",
-      "status": "active",
+      "status": "resolved",
       "issue": "#838",
-      "summary": "Tagged comparison does not yet reproduce legacy numbering virtualization.",
+      "summary": "Tagged alignment now uses rendered numbering identities without publishing virtual labels.",
       "dimensions": [
         "legacy-tagged.semanticDifference"
       ]
@@ -655,9 +655,7 @@
         ]
       },
       "approvedDivergenceIds": [
-        "TD-FUZZY-MOVE-001",
-        "TD-LEGACY-ILPA-REJECT-001",
-        "TD-NUMBERING-001"
+        "TD-LEGACY-ILPA-REJECT-001"
       ],
       "legacy": {
         "strategy": "legacy",
@@ -1157,14 +1155,14 @@
         "strategy": "tagged-tree",
         "projections": {
           "accept": {
-            "xmlSha256": "9e7f935a247c57c2e9e03d159a89c44fa6fc42e8466a6d07e1a12f38395b3515",
+            "xmlSha256": "a7851458e5254de492f72f77db0634815337831e571a1e4a406afa6cd793147a",
             "textSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "sourceTextSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "matchesSourceText": true,
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "43f94ba652e8b596cb5dc509ae54de52404a7baf0fb51213c9428c4fa0b44fa1",
+            "xmlSha256": "767105a5a690be4ebf3b7d4dd324b991a13eed98b63f3d1d1eaf37621117eda9",
             "textSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "sourceTextSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "matchesSourceText": true,
@@ -1234,8 +1232,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 946988,
-            "sha256": "b2d8c14d5ab45b882bde263b000702ae3bdf02c71fee662a235c19c24d1781ea",
+            "bytes": 1195726,
+            "sha256": "aa6ac01bd01a17446931b17d8c4354de02f0cf1bc7f95fcfae7356540817a2ad",
             "kind": "xml"
           },
           {

@@ -30,6 +30,12 @@ export interface TaggedTreeShadowInput {
   fixtureIdentity?: string;
   detectFormatChanges?: boolean;
   detectMoves?: boolean;
+  moveSimilarityThreshold?: number;
+  moveMinimumWordCount?: number;
+  caseInsensitiveMove?: boolean;
+  numberingEnabled?: boolean;
+  originalNumberingXml?: string;
+  revisedNumberingXml?: string;
   /** @internal Operation ranges whose emitted revisions require exact attribution. */
   revisionAttributionRanges?: readonly RevisionAttributionRange[];
 }
@@ -69,6 +75,12 @@ export function buildTaggedTreePublication(
   const constructed = constructTaggedTree(original, revised, {
     detectFormatChanges: input.detectFormatChanges,
     detectMoves: input.detectMoves,
+    moveSimilarityThreshold: input.moveSimilarityThreshold,
+    moveMinimumWordCount: input.moveMinimumWordCount,
+    caseInsensitiveMove: input.caseInsensitiveMove,
+    numberingEnabled: input.numberingEnabled,
+    originalNumberingXml: input.originalNumberingXml,
+    revisedNumberingXml: input.revisedNumberingXml,
     revisionAttributionRanges: input.revisionAttributionRanges,
   });
   const serialized = serializeTaggedTree(
@@ -142,6 +154,12 @@ export function runTaggedTreeShadow(input: TaggedTreeShadowInput): TaggedTreeSha
   const constructed = constructTaggedTree(original, revised, {
     detectFormatChanges: input.detectFormatChanges,
     detectMoves: input.detectMoves,
+    moveSimilarityThreshold: input.moveSimilarityThreshold,
+    moveMinimumWordCount: input.moveMinimumWordCount,
+    caseInsensitiveMove: input.caseInsensitiveMove,
+    numberingEnabled: input.numberingEnabled,
+    originalNumberingXml: input.originalNumberingXml,
+    revisedNumberingXml: input.revisedNumberingXml,
   });
   const diagnostics = verifyGlobalEqualContentInvariant(constructed.tree, constructed.moves);
   const shadowXml = buildTaggedTreeShadowXml(input);

@@ -83,10 +83,10 @@ describe('strategy differential manifest contract', () => {
       const ids = manifest.divergences.map((entry) => entry.id);
       expect(new Set(ids).size).toBe(ids.length);
       expect(manifest.divergences).toEqual(expect.arrayContaining([
-        expect.objectContaining({ id: 'TD-FUZZY-MOVE-001', status: 'active' }),
+        expect.objectContaining({ id: 'TD-FUZZY-MOVE-001', status: 'resolved' }),
         expect.objectContaining({ id: 'TD-LEGACY-ILPA-REJECT-001', status: 'active' }),
         expect.objectContaining({ id: 'TD-LEGACY-MOVE-PROJECTION-001', status: 'active' }),
-        expect.objectContaining({ id: 'TD-NUMBERING-001', status: 'active' }),
+        expect.objectContaining({ id: 'TD-NUMBERING-001', status: 'resolved' }),
         expect.objectContaining({ id: 'TD-CONSUMER-COMPAT-001', status: 'resolved' }),
         expect.objectContaining({ id: 'TD-PAGEREF-CACHE-001', status: 'resolved' }),
       ]));

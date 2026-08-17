@@ -56,7 +56,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `ComparisonStrategy` | type | `src/compare-types.ts` | yes | deprecate one release |
 | `ComparisonStrategyFallbackReason` | type | `src/compare-types.ts` | yes | deprecate one release |
 | `computeAtomLcs` | function | `src/baselines/atomizer/atomLcs.ts` | yes | deprecate one release |
-| `countWords` | function | `src/move-detection.ts` | yes | deprecate one release |
+| `countWords` | function | `src/textSimilarity.ts` | yes | deprecate one release |
 | `CreateAtomOptions` | interface | `src/atomizer.ts` | yes | deprecate one release |
 | `createComparisonUnitAtom` | function | `src/atomizer.ts` | yes | deprecate one release |
 | `createRevisionIdState` | function | `src/move-detection.ts` | no | breaking removal |
@@ -96,7 +96,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `IdentityInterner` | class | `src/atomizer.ts` | yes | deprecate one release |
 | `isLeafNode` | function | `src/atomizer.ts` | yes | deprecate one release |
 | `isParagraphLevelLeaf` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `jaccardWordSimilarity` | function | `src/move-detection.ts` | yes | stable compatibility |
+| `jaccardWordSimilarity` | function | `src/textSimilarity.ts` | yes | stable compatibility |
 | `markAsMove` | function | `src/move-detection.ts` | yes | deprecate one release |
 | `markCorrelationStatus` | function | `src/baselines/atomizer/atomLcs.ts` | yes | deprecate one release |
 | `MarkupCompatibilityGroup` | interface | `src/markupCompatibility.ts` | yes | stable compatibility |
@@ -147,7 +147,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `UnrepresentedChangeScope` | type | `src/compare-types.ts` | yes | stable compatibility |
 | `UnsupportedTextBoxRevisionError` | class | `src/baselines/atomizer/textBoxRevisionSafety.ts` | yes | stable compatibility |
 | `validateFieldStructure` | function | `@usejunior/docx-core` | yes | stable compatibility |
-| `wordContainmentSimilarity` | function | `src/move-detection.ts` | yes | stable compatibility |
+| `wordContainmentSimilarity` | function | `src/textSimilarity.ts` | yes | stable compatibility |
 
 ## Public option fields
 

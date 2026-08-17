@@ -1541,6 +1541,12 @@ async function compareDocumentsAtomizerCore(
       date,
       detectFormatChanges: formatSettings.detectFormatChanges,
       detectMoves: moveSettings.detectMoves,
+      moveSimilarityThreshold: moveSettings.moveSimilarityThreshold,
+      moveMinimumWordCount: moveSettings.moveMinimumWordCount,
+      caseInsensitiveMove: moveSettings.caseInsensitiveMove,
+      numberingEnabled: numberingSettings.enabled,
+      originalNumberingXml,
+      revisedNumberingXml,
       revisionAttributionRanges,
     });
     let taggedXml = taggedPublication.xml;

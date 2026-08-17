@@ -4,14 +4,14 @@
  * Applies numbering resolution to atoms before comparison.
  * This allows detection of list renumbering changes.
  *
- * Note: Full implementation would parse numbering.xml and inject
- * computed list labels as virtual tokens. For v1, this is a stub
- * that can be extended later.
+ * Rendered labels remain virtual comparison identity and are never emitted as
+ * document text. Both atom and tagged-tree alignment consume this module.
  */
 
 import type { ComparisonUnitAtom, WmlElement, ListLevelInfo } from '@usejunior/docx-core';
 import {
   createNumberingState,
+  getCounters,
   processNumberedParagraph,
   expandLevelTextWithLegal,
   parseLevelElement,
@@ -129,13 +129,7 @@ function findAbstractNumIdRef(numElement: WmlElement): string | null {
 /**
  * Get the numId from a paragraph's numbering properties.
  */
-function getNumIdFromAtom(atom: ComparisonUnitAtom): string | null {
-  // Find w:p ancestor
-  const pAncestor = atom.ancestorElements.find((a) => a.tagName === 'w:p');
-  if (!pAncestor) {
-    return null;
-  }
-
+function getNumIdFromParagraph(pAncestor: WmlElement): string | null {
   // Find w:pPr
   const pPr = childElements(pAncestor).find((c) => c.tagName === 'w:pPr');
   if (!pPr) {
@@ -156,13 +150,7 @@ function getNumIdFromAtom(atom: ComparisonUnitAtom): string | null {
 /**
  * Get the ilvl from a paragraph's numbering properties.
  */
-function getIlvlFromAtom(atom: ComparisonUnitAtom): number {
-  // Find w:p ancestor
-  const pAncestor = atom.ancestorElements.find((a) => a.tagName === 'w:p');
-  if (!pAncestor) {
-    return 0;
-  }
-
+function getIlvlFromParagraph(pAncestor: WmlElement): number {
   // Find w:pPr
   const pPr = childElements(pAncestor).find((c) => c.tagName === 'w:pPr');
   if (!pPr) {
@@ -181,10 +169,60 @@ function getIlvlFromAtom(atom: ComparisonUnitAtom): number {
   return val ? parseInt(val, 10) : 0;
 }
 
+function numberingIdentity(
+  paragraph: WmlElement,
+  definitions: NumberingDefinitions,
+  numberingState: ReturnType<typeof createNumberingState>,
+): string | undefined {
+  const numId = getNumIdFromParagraph(paragraph);
+  const ilvl = getIlvlFromParagraph(paragraph);
+  if (!numId) return undefined;
+  const numericNumId = Number.parseInt(numId, 10);
+  if (!Number.isFinite(numericNumId)) return undefined;
+  const abstractNumId = definitions.numToAbstractNum.get(numId);
+  const levels = abstractNumId ? definitions.abstractNums.get(abstractNumId) : undefined;
+  const levelInfo = levels?.[ilvl];
+  if (!levels || !levelInfo) return undefined;
+  const counter = processNumberedParagraph(numberingState, numericNumId, ilvl, levelInfo);
+  const storedCounters = getCounters(numberingState, numericNumId);
+  const counters = Array.from(
+    { length: ilvl + 1 },
+    (_, level) => storedCounters[level] ?? counter,
+  );
+  const label = expandLevelTextWithLegal(levelInfo.lvlText, counters, levels, ilvl);
+  return label ? `${numId}:${ilvl}:${label}` : undefined;
+}
+
+/**
+ * Compute the rendered numbering identity for every list paragraph in story order.
+ * The identity is virtual comparison input only; it is never serialized.
+ */
+export function computeNumberingIdentities(
+  root: WmlElement,
+  numberingXml?: string,
+  options: NumberingIntegrationOptions = DEFAULT_NUMBERING_OPTIONS,
+): ReadonlyMap<WmlElement, string> {
+  const identities = new Map<WmlElement, string>();
+  if (!options.enabled || !numberingXml) return identities;
+  const definitions = parseNumberingXml(numberingXml);
+  if (definitions.abstractNums.size === 0) return identities;
+  const paragraphs = Array.from(root.getElementsByTagNameNS(
+    'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+    'p',
+  )) as WmlElement[];
+  if (root.localName === 'p') paragraphs.unshift(root);
+  const numberingState = createNumberingState();
+  for (const paragraph of paragraphs) {
+    const identity = numberingIdentity(paragraph, definitions, numberingState);
+    if (identity) identities.set(paragraph, identity);
+  }
+  return identities;
+}
+
 /**
  * Apply numbering labels to atoms for comparison.
  *
- * This is a stub implementation. Full implementation would:
+ * The implementation:
  * 1. Parse numbering.xml
  * 2. Walk through paragraphs tracking numbering state
  * 3. Compute the rendered list label for each numbered paragraph
@@ -219,8 +257,8 @@ export function virtualizeNumberingLabels(
       lastParagraph = pAncestor;
 
       // Check if this paragraph has numbering
-      const numId = getNumIdFromAtom(atom);
-      const ilvl = getIlvlFromAtom(atom);
+      const numId = getNumIdFromParagraph(pAncestor);
+      const ilvl = getIlvlFromParagraph(pAncestor);
 
       if (numId) {
         const abstractNumId = definitions.numToAbstractNum.get(numId);

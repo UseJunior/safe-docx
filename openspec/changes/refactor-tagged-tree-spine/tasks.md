@@ -36,11 +36,11 @@
 
 ## 5. Tagged comparison behavior
 
-- [ ] 5.1 Extract portable text-similarity helpers without adding a dependency.
-- [ ] 5.2 Add exact-first, globally one-to-one deterministic fuzzy move pairing.
-- [ ] 5.3 Cover minimum words, containment, case, repetition, nesting, overlap, paragraph-pair exclusion, fields, ranges, tables, text boxes, notes, and preserved moves.
-- [ ] 5.4 Publish and complete the option-to-observable matrix, porting or explicitly removing every option.
-- [ ] 5.5 Port numbering virtualization and audit hyperlink, property, field, opaque, provenance, and effective-style identity.
+- [x] 5.1 Extract portable text-similarity helpers without adding a dependency.
+- [x] 5.2 Add exact-first, globally one-to-one deterministic fuzzy move pairing.
+- [x] 5.3 Cover minimum words, containment, case, repetition, nesting, overlap, paragraph-pair exclusion, fields, ranges, tables, text boxes, notes, and preserved moves.
+- [x] 5.4 Publish and complete the option-to-observable matrix, porting or explicitly removing every option.
+- [x] 5.5 Port numbering virtualization and audit hyperlink, property, field, opaque, provenance, and effective-style identity.
 
 ## 6. Standalone tagged package assembler
 

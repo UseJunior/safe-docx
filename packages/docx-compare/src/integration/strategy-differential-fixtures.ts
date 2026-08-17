@@ -42,9 +42,7 @@ async function loadCheckedInFixtures(): Promise<StrategyDifferentialFixture[]> {
     approvedDivergenceIds:
       fixture.name === 'ILPA'
         ? [
-            'TD-FUZZY-MOVE-001',
             'TD-LEGACY-ILPA-REJECT-001',
-            'TD-NUMBERING-001',
           ]
         : [],
   })));

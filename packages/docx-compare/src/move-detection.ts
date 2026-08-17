@@ -18,6 +18,15 @@ import {
   MoveDetectionSettings,
 } from '@usejunior/docx-core';
 import { getLeafText } from '@usejunior/docx-core';
+import {
+  countWords,
+  jaccardWordSimilarity,
+} from './textSimilarity.js';
+export {
+  countWords,
+  jaccardWordSimilarity,
+  wordContainmentSimilarity,
+} from './textSimilarity.js';
 
 // =============================================================================
 // Text Extraction
@@ -58,98 +67,6 @@ export function getAtomText(atom: ComparisonUnitAtom): string {
  */
 export function getAtomsText(atoms: ComparisonUnitAtom[]): string {
   return atoms.map(getAtomText).join('');
-}
-
-/**
- * Count words in text.
- *
- * @param text - The text to count words in
- * @returns Number of words
- */
-export function countWords(text: string): number {
-  const words = text.split(/\s+/).filter(Boolean);
-  return words.length;
-}
-
-function normalizedWordSet(text: string, caseInsensitive: boolean): Set<string> {
-  const normalized = caseInsensitive ? text.toLowerCase() : text;
-  return new Set(normalized.split(/\s+/).filter(Boolean));
-}
-
-// =============================================================================
-// Jaccard Similarity
-// =============================================================================
-
-/**
- * Calculate Jaccard similarity between two texts based on word sets.
- *
- * Jaccard index = |intersection| / |union|
- *
- * Benefits:
- * - Order-independent: "fox quick brown" matches "brown quick fox"
- * - Handles insertions/deletions well: adding one word to a 10-word block only slightly reduces similarity
- * - O(n) complexity where n = total words
- *
- * @param text1 - First text
- * @param text2 - Second text
- * @param caseInsensitive - Whether to ignore case (default: true)
- * @returns Similarity score between 0 and 1
- *
- * @example
- * jaccardWordSimilarity("The quick brown fox", "The quick brown dog")
- * // Returns 0.6 (3 common words / 5 total unique words)
- */
-export function jaccardWordSimilarity(
-  text1: string,
-  text2: string,
-  caseInsensitive = true
-): number {
-  const words1 = normalizedWordSet(text1, caseInsensitive);
-  const words2 = normalizedWordSet(text2, caseInsensitive);
-
-  if (words1.size === 0 && words2.size === 0) {
-    return 1; // Both empty = identical
-  }
-
-  if (words1.size === 0 || words2.size === 0) {
-    return 0; // One empty = completely different
-  }
-
-  // Calculate intersection
-  let intersectionSize = 0;
-  for (const word of words1) {
-    if (words2.has(word)) {
-      intersectionSize++;
-    }
-  }
-
-  // Calculate union (|A| + |B| - |A ∩ B|)
-  const unionSize = words1.size + words2.size - intersectionSize;
-
-  return intersectionSize / unionSize;
-}
-
-/**
- * Calculate how completely the smaller word set is contained in the larger.
- *
- * Unlike Jaccard similarity, containment remains high when an aligned run keeps
- * all of its old vocabulary but adds substantial new text.
- */
-export function wordContainmentSimilarity(
-  text1: string,
-  text2: string,
-  caseInsensitive = true,
-): number {
-  const words1 = normalizedWordSet(text1, caseInsensitive);
-  const words2 = normalizedWordSet(text2, caseInsensitive);
-  if (words1.size === 0 && words2.size === 0) return 1;
-  if (words1.size === 0 || words2.size === 0) return 0;
-
-  let intersectionSize = 0;
-  for (const word of words1) {
-    if (words2.has(word)) intersectionSize++;
-  }
-  return intersectionSize / Math.min(words1.size, words2.size);
 }
 
 // =============================================================================

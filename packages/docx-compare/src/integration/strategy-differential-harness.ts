@@ -274,9 +274,13 @@ async function characterizeStrategy(
     stats: result.stats,
     fallback: {
       comparisonStrategyUsed: result.comparisonStrategyUsed,
-      comparisonStrategyFallbackReason: result.comparisonStrategyFallbackReason,
+      ...(result.comparisonStrategyFallbackReason === undefined
+        ? {}
+        : { comparisonStrategyFallbackReason: result.comparisonStrategyFallbackReason }),
       reconstructionModeUsed: result.reconstructionModeUsed,
-      fallbackReason: result.fallbackReason,
+      ...(result.fallbackReason === undefined
+        ? {}
+        : { fallbackReason: result.fallbackReason }),
     },
     unrepresentedChanges: result.unrepresentedChanges ?? [],
     schema: {
