@@ -613,7 +613,7 @@ type RationaleMaterialization = {
   range: AttributedRange;
   startSentinel: string;
   endSentinel: string;
-  text: string;
+  texts: string[];
 };
 
 type ResolvedCompilation = {
@@ -679,21 +679,15 @@ function rationaleMaterializations(config: ResolvedCompilation, ir: MarkdocEditI
       'Included rationale comments require explicit comment identity.',
     );
   }
-  const seen = new Set<string>();
+  const grouped = new Map<string, string[]>();
   for (const rationale of selected) {
-    if (seen.has(rationale.operationId)) {
-      throw new DocxMarkdocError(
-        'DUPLICATE_EXTERNAL_RATIONALE',
-        `Operation ${rationale.operationId} has more than one external-facing rationale.`,
-      );
-    }
-    seen.add(rationale.operationId);
+    grouped.set(rationale.operationId, [...(grouped.get(rationale.operationId) ?? []), rationale.text]);
   }
-  return selected.map((rationale, index) => ({
-    range: { operationId: rationale.operationId } as AttributedRange,
+  return [...grouped].map(([operationId, texts], index) => ({
+    range: { operationId } as AttributedRange,
     startSentinel: `\u{E000}safe-docx-rationale-${index}-start\u{E001}`,
     endSentinel: `\u{E000}safe-docx-rationale-${index}-end\u{E001}`,
-    text: rationale.text,
+    texts,
   }));
 }
 
@@ -790,7 +784,7 @@ async function resolveAndRemoveAttributionMarkers(
   const file = zip.file('word/document.xml');
   if (!file) throw new Error('Tracked DOCX has no word/document.xml.');
   const documentXml = parseXml(await file.async('string'));
-  const comments = materializations.map((item) => {
+  const comments = materializations.flatMap((item) => {
     const start = resolveSentinel(documentXml, item.startSentinel);
     const end = resolveSentinel(documentXml, item.endSentinel);
     const attributableText = start.revision === end.revision
@@ -802,11 +796,10 @@ async function resolveAndRemoveAttributionMarkers(
     const resolved = {
       startRevision: revisionLocator(start.revision),
       endRevision: revisionLocator(end.revision),
-      text: item.text,
     };
     removeAttributionMarker(start.textNode, item.startSentinel);
     removeAttributionMarker(end.textNode, item.endSentinel);
-    return resolved;
+    return item.texts.map((text) => ({ ...resolved, text }));
   });
   zip.file('word/document.xml', serializeXml(documentXml));
   return { buffer: await zip.generateAsync({ type: 'nodebuffer' }), comments };

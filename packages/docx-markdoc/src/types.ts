@@ -261,7 +261,10 @@ export type EditPair = {
   after: string;
   contextBefore: string[];
   contextAfter: string[];
+  rationales: Rationale[];
+  /** @deprecated Read `rationales`; populated only when exactly one rationale exists. */
   rationale?: string;
+  /** @deprecated Read `rationales`; populated only when exactly one rationale exists. */
   visibility?: Rationale['visibility'];
   verified?: boolean;
   provenance?: Record<string, string>;

@@ -65,6 +65,24 @@ describe('brownfield Markdoc authoring', () => {
     const result = await compileMarkdoc(imported.anchoredSource, markdoc);
     const pairs = exportEditPairs(result.ir, { verified: result.certificate.passed });
     expect(pairs[0]).toMatchObject({ before: 'Original provision.', after: 'Revised provision.', verified: true });
+    expect(pairs[0]?.rationales).toEqual([]);
+  });
+
+  itAllure('[SDX-MDOC-63] exports paired rationale records without collapsing visibility', async () => {
+    const original = await buildSyntheticDocx({ paragraphs: ['Original provision.'] });
+    const imported = await importDocxToMarkdoc(original);
+    const paragraph = requireMarkdoc(imported.markdoc).scaffold[0]!;
+    const markdoc = imported.markdoc.replace(
+      new RegExp(`\\{% para id="${paragraph.id}"[\\s\\S]*?\\{% /para %\\}`),
+      `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="rewrite" format="inherit-source-paragraph" %}\n{% before %}\nOriginal provision.\n{% /before %}\n{% after %}\nRevised provision.\n{% /after %}\n{% /change %}`,
+    ) + '\n{% rationale for="rewrite" visibility="internal" %}\nPrivate record.\n{% /rationale %}\n{% rationale for="rewrite" visibility="external-facing" %}\nPublic explanation.\n{% /rationale %}\n';
+    const pair = exportEditPairs(requireMarkdoc(markdoc))[0]!;
+    expect(pair.rationales).toEqual([
+      { operationId: 'rewrite', text: 'Private record.', visibility: 'internal' },
+      { operationId: 'rewrite', text: 'Public explanation.', visibility: 'external-facing' },
+    ]);
+    expect(pair).not.toHaveProperty('rationale');
+    expect(pair).not.toHaveProperty('visibility');
   });
 
   itAllure('[SDX-MDOC-04][SDX-MDOC-08] rejects nested revisions and orphan rationale', async () => {
