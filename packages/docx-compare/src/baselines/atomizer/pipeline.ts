@@ -133,6 +133,11 @@ import {
 import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.js';
 import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
 import { buildTaggedTreePublication } from './taggedTreeShadow.js';
+import { enforceConsumerCompatibility } from './consumerCompatibility.js';
+import {
+  allocateRevisionId,
+  createRevisionIdState,
+} from './inPlaceModifier-shared.js';
 import {
   assembleTextBoxStoryComparison,
   assertAncillaryTextBoxStoryProjection,
@@ -156,6 +161,31 @@ function relationshipPartPath(ownerPart: string, target: string): string {
 function relationshipPartRelsPath(partPath: string): string {
   const directory = posix.dirname(partPath);
   return `${directory === '.' ? '' : `${directory}/`}_rels/${posix.basename(partPath)}.rels`;
+}
+
+/**
+ * Apply consumer-facing repairs to the complete tagged main story before its
+ * bytes enter the publication gates. Bookmark identifiers and revision
+ * identifiers are distinct OOXML spaces, but every surviving numeric `w:id`
+ * is conservatively reserved so a split wrapper cannot collide with either.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.45
+ */
+function finalizeTaggedDocumentXml(documentXml: string): string {
+  const document = parseXml(documentXml);
+  const root = document.documentElement;
+  const revisionIds = createRevisionIdState([root]);
+  enforceConsumerCompatibility(
+    root,
+    () => allocateRevisionId(revisionIds),
+    { repairBookmarkInventory: false },
+  );
+  return suppressVolatileTocPagerefCacheRevisions(
+    new XMLSerializer().serializeToString(document),
+  );
 }
 
 async function relationshipClosureDigest(
@@ -1502,6 +1532,7 @@ async function compareDocumentsAtomizerCore(
         retargetReconciledFootnoteReferences(taggedDocument, pair));
       taggedXml = serializer.serializeToString(taggedDocument);
     }
+    taggedXml = finalizeTaggedDocumentXml(taggedXml);
     const taggedSafety = taggedTreePublicationSafetyEvaluator
       ? taggedTreePublicationSafetyEvaluator(
           originalTextForRoundTrip,

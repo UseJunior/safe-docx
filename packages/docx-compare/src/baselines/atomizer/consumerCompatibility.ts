@@ -70,6 +70,30 @@ function bookmarkRangeIsEnclosedBy(container: Element, marker: Element): boolean
   return counterparts.some((candidate) => candidate.getAttribute('w:id') === id);
 }
 
+/**
+ * Whether both boundaries are carried by wrappers with the same projection
+ * semantics, even when tagged serialization emitted separate sibling wrappers.
+ */
+function bookmarkRangeHasMatchingRevisionWrappers(
+  wrapper: Element,
+  marker: Element,
+): boolean {
+  const id = marker.getAttribute('w:id');
+  if (!id) return false;
+  const counterpartTag =
+    marker.tagName === 'w:bookmarkStart' ? 'w:bookmarkEnd' : 'w:bookmarkStart';
+  const document = marker.ownerDocument;
+  if (!document) return false;
+  const counterpart = Array.from(document.getElementsByTagName(counterpartTag))
+    .find((candidate) => candidate.getAttribute('w:id') === id);
+  if (!counterpart) return false;
+  let ancestor = counterpart.parentNode as Element | null;
+  while (ancestor && !REVISION_WRAPPER_TAGS.has(ancestor.tagName)) {
+    ancestor = ancestor.parentNode as Element | null;
+  }
+  return ancestor?.tagName === wrapper.tagName;
+}
+
 /** Whether the marker has any sibling before/after it inside its parent. */
 function hasSibling(marker: Element, direction: 'previous' | 'next'): boolean {
   let node = direction === 'previous' ? marker.previousSibling : marker.nextSibling;
@@ -158,7 +182,11 @@ function splitWrapperAtMarker(
  * @see https://github.com/UseJunior/safe-docx/issues/641
  * @see https://github.com/UseJunior/safe-docx/issues/643
  */
-function liftMarkersAroundWrapper(wrapper: Element, allocateRevisionId: () => number): void {
+function liftMarkersAroundWrapper(
+  wrapper: Element,
+  allocateRevisionId: () => number,
+  preserveEnclosedRanges: boolean,
+): void {
   const parent = wrapper.parentNode;
   if (!parent) return;
 
@@ -177,6 +205,15 @@ function liftMarkersAroundWrapper(wrapper: Element, allocateRevisionId: () => nu
 
   const createdTails: Element[] = [];
   for (const marker of markers) {
+    // Tagged construction owns both source bookmark inventories. When both
+    // boundaries belong to one side-only wrapper, keeping them inside is what
+    // makes the range disappear and return with that side's content. Legacy
+    // repair mode retains its historical hoisting policy.
+    if (
+      preserveEnclosedRanges &&
+      (bookmarkRangeIsEnclosedBy(wrapper, marker) ||
+        bookmarkRangeHasMatchingRevisionWrappers(wrapper, marker))
+    ) continue;
     splitWrapperAtMarker(marker, parent, allocateRevisionId, createdTails);
   }
 
@@ -206,14 +243,18 @@ function liftMarkersAroundWrapper(wrapper: Element, allocateRevisionId: () => nu
  *    text it was created for, and such a range is meant to travel with the
  *    content it covers (issue #641).
  */
-function hoistBookmarkMarkers(node: Element, allocateRevisionId: () => number): void {
+function hoistBookmarkMarkers(
+  node: Element,
+  allocateRevisionId: () => number,
+  preserveEnclosedRanges: boolean,
+): void {
   if (REVISION_WRAPPER_TAGS.has(node.tagName)) {
-    liftMarkersAroundWrapper(node, allocateRevisionId);
+    liftMarkersAroundWrapper(node, allocateRevisionId, preserveEnclosedRanges);
     return;
   }
 
   for (const child of childElements(node)) {
-    hoistBookmarkMarkers(child, allocateRevisionId);
+    hoistBookmarkMarkers(child, allocateRevisionId, preserveEnclosedRanges);
   }
 
   if (node.tagName !== 'w:p' || !isParagraphInsertedOrDeleted(node) || !node.parentNode) {
@@ -236,7 +277,11 @@ export function enforceConsumerCompatibility(
   options: { repairBookmarkInventory?: boolean } = {},
 ): void {
   // 1. Reposition bookmark markers so their ranges survive both projections.
-  hoistBookmarkMarkers(root, allocateRevisionId);
+  hoistBookmarkMarkers(
+    root,
+    allocateRevisionId,
+    options.repairBookmarkInventory === false,
+  );
 
   // 2. Remove empty w:t tags
   const textNodes = Array.from(root.getElementsByTagName('w:t'));

@@ -28,7 +28,15 @@ import {
 import { testAllure } from '../testing/allure-test.js';
 
 const TEST_FEATURE = 'refactor-tagged-tree-spine';
-const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
+const test = testAllure
+  .epic('Document Comparison')
+  .withLabels({ feature: TEST_FEATURE })
+  .conformance(
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.6.1' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.6.2' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.5.45' },
+  );
 const DATE = new Date('2026-08-17T12:00:00Z');
 
 async function compareXml(
@@ -92,7 +100,7 @@ function cacheInsensitiveText(documentXml: string): string {
 
 describe('strategy differential characterization', () => {
   test.openspec('Revision and bookmark identifiers may overlap numerically')(
-    'records tagged bookmark-hoisting divergence before compatibility is ported',
+    'keeps tagged bookmark hoisting equivalent with overlapping ID spaces',
     async () => {
       const trackedBody = '<w:p><w:bookmarkStart w:id="1" w:name="Overlap"/>'
         + '<w:r><w:t>kept</w:t></w:r>'
@@ -109,16 +117,23 @@ describe('strategy differential characterization', () => {
       expect(paragraphChildTags(legacyXml)).toEqual([
         'w:bookmarkStart', 'w:r', 'w:del', 'w:bookmarkEnd', 'w:del',
       ]);
-      expect(paragraphChildTags(taggedXml)).not.toEqual(paragraphChildTags(legacyXml));
+      expect(paragraphChildTags(taggedXml)).toEqual(paragraphChildTags(legacyXml));
       expect(new Set(wrapperIds(legacyXml)).size).toBe(wrapperIds(legacyXml).length);
+      expect(new Set(wrapperIds(taggedXml)).size).toBe(wrapperIds(taggedXml).length);
       expect(parseXml(rejectAllChanges(taggedXml)).documentElement.textContent).toBe(
         'keptinsideoutside',
       );
+
+      const enclosedOriginal = '<w:p><w:bookmarkStart w:id="1" w:name="DeletedRange"/>'
+        + '<w:r><w:t>deleted</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>';
+      const enclosedTaggedXml = await compareXml(enclosedOriginal, '<w:p/>', 'tagged-tree');
+      expect(acceptAllChanges(enclosedTaggedXml)).not.toContain('DeletedRange');
+      expect(rejectAllChanges(enclosedTaggedXml)).toContain('DeletedRange');
     },
   );
 
   test.openspec('Volatile TOC cache changes are suppressed before final gates')(
-    'records tagged PAGEREF cache divergence before finalization is ported',
+    'keeps volatile PAGEREF cache refreshes out of both strategies',
     async () => {
       const originalBody = tocBody('3');
       const revisedBody = tocBody('10');
@@ -128,7 +143,7 @@ describe('strategy differential characterization', () => {
       ]);
 
       expect(revisionTexts(legacyXml)).toEqual([]);
-      expect(revisionTexts(taggedXml)).not.toEqual([]);
+      expect(revisionTexts(taggedXml)).toEqual([]);
       expect(cacheInsensitiveText(acceptAllChanges(taggedXml))).toBe(
         cacheInsensitiveText(await compareSourceXml(revisedBody)),
       );

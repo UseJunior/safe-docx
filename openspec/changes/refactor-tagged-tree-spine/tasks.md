@@ -22,10 +22,10 @@
 ## 3. Tagged correctness fixes
 
 - [x] 3.1 Add tagged divergence tests for consumer compatibility and volatile TOC PAGEREF caches.
-- [ ] 3.2 Extract/use one revision allocator seeded from all surviving numeric revision IDs in complete tagged markup.
-- [ ] 3.3 Enforce consumer compatibility before serialization without repairing bookmark inventory.
-- [ ] 3.4 Suppress volatile PAGEREF revisions after compatibility enforcement and before final gates.
-- [ ] 3.5 Add overlapping bookmark/revision ID and refreshed-TOC cache regressions, then close their divergence rows.
+- [x] 3.2 Extract/use one revision allocator seeded from all surviving numeric revision IDs in complete tagged markup.
+- [x] 3.3 Enforce consumer compatibility before serialization without repairing bookmark inventory.
+- [x] 3.4 Suppress volatile PAGEREF revisions after compatibility enforcement and before final gates.
+- [x] 3.5 Add overlapping bookmark/revision ID and refreshed-TOC cache regressions, then close their divergence rows.
 
 ## 4. Markdoc rationale attribution
 
