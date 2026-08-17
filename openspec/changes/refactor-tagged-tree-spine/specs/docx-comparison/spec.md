@@ -59,6 +59,13 @@ final safety and formatting checks.
 - **THEN** the newly allocated revision ID SHALL avoid every surviving revision ID
 - **AND** bookmark IDs SHALL remain unchanged
 
+#### Scenario: Volatile TOC cache changes are suppressed before final gates
+
+- **GIVEN** a TOC PAGEREF field whose instruction and surrounding content are unchanged but whose cached page number differs
+- **WHEN** tagged publication is finalized
+- **THEN** the cached page number SHALL NOT be emitted as an authored insertion or deletion
+- **AND** both cache-insensitive projections SHALL preserve their source TOC
+
 ### Requirement: Tagged statistics describe emitted markup
 
 The system SHALL derive range-level comparison statistics from final serialized

@@ -21,7 +21,7 @@
 
 ## 3. Tagged correctness fixes
 
-- [ ] 3.1 Add tagged divergence tests for consumer compatibility and volatile TOC PAGEREF caches.
+- [x] 3.1 Add tagged divergence tests for consumer compatibility and volatile TOC PAGEREF caches.
 - [ ] 3.2 Extract/use one revision allocator seeded from all surviving numeric revision IDs in complete tagged markup.
 - [ ] 3.3 Enforce consumer compatibility before serialization without repairing bookmark inventory.
 - [ ] 3.4 Suppress volatile PAGEREF revisions after compatibility enforcement and before final gates.
