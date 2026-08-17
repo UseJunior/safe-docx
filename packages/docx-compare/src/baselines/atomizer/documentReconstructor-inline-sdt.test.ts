@@ -600,6 +600,10 @@ describe('Real block content-control corpus preservation', () => {
         }
       });
     },
-    120_000,
+    // Node 20 coverage instrumentation has exceeded two minutes on hosted
+    // runners even though the same corpus proof passes under Node 22 and in
+    // non-coverage runs. Keep the higher budget scoped to this two-document,
+    // forced-rebuild oracle rather than weakening the suite-wide timeout.
+    240_000,
   );
 });
