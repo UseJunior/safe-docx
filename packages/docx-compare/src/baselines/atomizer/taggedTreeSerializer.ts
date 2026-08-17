@@ -2,6 +2,7 @@ import { XMLSerializer } from '@xmldom/xmldom';
 import type { WmlElement } from '@usejunior/docx-core';
 import { childElements, parseXml } from '@usejunior/docx-core';
 import { alignComparisonSequences, tokenizeComparisonText } from '../../textAlignment.js';
+import type { RevisionAttribution } from '../../compare-types.js';
 import {
   nextRevisionId,
   PROPERTY_SCOPE_ELEMENT,
@@ -14,6 +15,7 @@ import {
 } from './taggedTree.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const OPERATION_PROVENANCE_ATTRIBUTE = 'data-safe-docx-operation';
 const DIRECT_PROPERTY_BY_CONTAINER: Readonly<Record<string, string>> = {
   p: 'w:pPr',
   r: 'w:rPr',
@@ -126,11 +128,31 @@ function convertDeletedText(root: WmlElement): WmlElement {
   return convertedRoot;
 }
 
-function wrapRevision(node: WmlElement, kind: 'ins' | 'del' | 'moveFrom' | 'moveTo', revision: ComparisonRevision): WmlElement {
+function operationProvenance(node: TaggedNode): readonly string[] {
+  return node.operationProvenance ?? [];
+}
+
+function markOperationProvenance(
+  revision: WmlElement,
+  operationIds: readonly string[] = [],
+): void {
+  if (operationIds.length > 1) {
+    throw new Error('one generated revision cannot be attributed to overlapping operations');
+  }
+  if (operationIds[0]) revision.setAttribute(OPERATION_PROVENANCE_ATTRIBUTE, operationIds[0]);
+}
+
+function wrapRevision(
+  node: WmlElement,
+  kind: 'ins' | 'del' | 'moveFrom' | 'moveTo',
+  revision: ComparisonRevision,
+  operationIds: readonly string[] = [],
+): WmlElement {
   const wrapper = node.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
   wrapper.setAttributeNS(W_NS, 'w:id', String(revision.id));
   wrapper.setAttributeNS(W_NS, 'w:author', revision.author);
   wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
+  markOperationProvenance(wrapper, operationIds);
   if (kind === 'del' || kind === 'moveFrom') node = convertDeletedText(node);
   wrapper.appendChild(node);
   return wrapper;
@@ -266,6 +288,7 @@ function markWholeParagraph(
   kind: 'ins' | 'del',
   revision: ComparisonRevision,
   contentRevision: ComparisonRevision,
+  operationIds: readonly string[] = [],
 ): WmlElement {
   let pPr = childElements(paragraph).find((child) => child.localName === 'pPr');
   if (!pPr) {
@@ -307,6 +330,7 @@ function markWholeParagraph(
       wrapper.setAttributeNS(W_NS, 'w:id', String(contentRevision.id));
       wrapper.setAttributeNS(W_NS, 'w:author', revision.author);
       wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
+      markOperationProvenance(wrapper, operationIds);
     }
     if (kind === 'del') convertDeletedText(child);
     wrapper.appendChild(child);
@@ -319,6 +343,7 @@ function markWholeTableRow(
   row: WmlElement,
   kind: 'ins' | 'del',
   revision: ComparisonRevision,
+  operationIds: readonly string[] = [],
 ): WmlElement {
   let trPr = childElements(row).find((child) => child.localName === 'trPr');
   if (!trPr) {
@@ -329,6 +354,7 @@ function markWholeTableRow(
   marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
   marker.setAttributeNS(W_NS, 'w:author', revision.author);
   marker.setAttributeNS(W_NS, 'w:date', revision.date);
+  markOperationProvenance(marker, operationIds);
   const boundary = childElements(trPr).find((child) =>
     kind === 'ins'
       ? ['del', 'trPrChange'].includes(child.localName)
@@ -552,8 +578,18 @@ function refineRunReplacement(
       if (new XMLSerializer().serializeToString(beforeChild) === new XMLSerializer().serializeToString(afterChild)) {
         emitted.push(fragmentRun(revised, afterChild));
       } else {
-        emitted.push(wrapRevision(fragmentRun(original, beforeChild), 'del', allocateRevision()));
-        emitted.push(wrapRevision(fragmentRun(revised, afterChild), 'ins', allocateRevision()));
+        emitted.push(wrapRevision(
+          fragmentRun(original, beforeChild),
+          'del',
+          allocateRevision(),
+          operationProvenance(originalNode),
+        ));
+        emitted.push(wrapRevision(
+          fragmentRun(revised, afterChild),
+          'ins',
+          allocateRevision(),
+          operationProvenance(revisedNode),
+        ));
       }
     }
     return emitted;
@@ -580,13 +616,23 @@ function refineRunReplacement(
   if (deletedText) {
     const deletionRun = cloneElement(original);
     deletionRun.getElementsByTagNameNS(W_NS, 't')[0]!.textContent = deletedText;
-    emitted.push(wrapRevision(deletionRun, 'del', allocateRevision()));
+    emitted.push(wrapRevision(
+      deletionRun,
+      'del',
+      allocateRevision(),
+      operationProvenance(originalNode),
+    ));
   }
   const insertedText = after.slice(prefixLength);
   if (insertedText) {
     const insertionRun = cloneElement(revised);
     insertionRun.getElementsByTagNameNS(W_NS, 't')[0]!.textContent = insertedText;
-    emitted.push(wrapRevision(insertionRun, 'ins', allocateRevision()));
+    emitted.push(wrapRevision(
+      insertionRun,
+      'ins',
+      allocateRevision(),
+      operationProvenance(revisedNode),
+    ));
   }
   return emitted;
 }
@@ -647,7 +693,9 @@ interface TextToken { value: string; run: WmlElement; start: number }
 
 function appendCoalescedTextEmission(emitted: WmlElement[], next: WmlElement): void {
   const previous = emitted[emitted.length - 1];
-  if (!previous || previous.localName !== next.localName) {
+  if (!previous || previous.localName !== next.localName ||
+      previous.getAttribute(OPERATION_PROVENANCE_ATTRIBUTE) !==
+        next.getAttribute(OPERATION_PROVENANCE_ATTRIBUTE)) {
     emitted.push(next);
     return;
   }
@@ -754,6 +802,7 @@ function refineSimpleRunGap(
   originals: readonly WmlElement[],
   revised: readonly WmlElement[],
   allocateRevision: () => ComparisonRevision,
+  provenanceByRun: ReadonlyMap<WmlElement, readonly string[]>,
 ): WmlElement[] | undefined {
   if (originals.length === 0 || revised.length === 0) return undefined;
   const before = originals.map(runText).join('');
@@ -810,9 +859,19 @@ function refineSimpleRunGap(
       }
       i++; j++;
     } else if (i < left.length && deleted.has(i)) {
-      appendCoalescedTextEmission(emitted, wrapRevision(runFragment(left[i]!.run, left[i]!.value), 'del', allocateRevision())); i++;
+      appendCoalescedTextEmission(emitted, wrapRevision(
+        runFragment(left[i]!.run, left[i]!.value),
+        'del',
+        allocateRevision(),
+        provenanceByRun.get(left[i]!.run) ?? [],
+      )); i++;
     } else {
-      appendCoalescedTextEmission(emitted, wrapRevision(runFragment(right[j]!.run, right[j]!.value), 'ins', allocateRevision())); j++;
+      appendCoalescedTextEmission(emitted, wrapRevision(
+        runFragment(right[j]!.run, right[j]!.value),
+        'ins',
+        allocateRevision(),
+        provenanceByRun.get(right[j]!.run) ?? [],
+      )); j++;
     }
   }
   return emitted;
@@ -1111,16 +1170,23 @@ function emitNode(
         let end = index;
         const originals: WmlElement[] = [];
         const revisions: WmlElement[] = [];
+        const provenanceByRun = new Map<WmlElement, readonly string[]>();
         while (end < node.children.length) {
           const candidate = node.children[end]!;
           if (candidate.tag === 'both' || moveFor(candidate, moves)) break;
           const run = simpleTextRun(candidate, candidate.tag);
           if (!run) break;
           (candidate.tag === 'original' ? originals : revisions).push(run);
+          provenanceByRun.set(run, operationProvenance(candidate));
           end++;
         }
         if (end > index + 1) {
-          const refined = refineSimpleRunGap(originals, revisions, allocateRevision);
+          const refined = refineSimpleRunGap(
+            originals,
+            revisions,
+            allocateRevision,
+            provenanceByRun,
+          );
           if (refined) {
             emitted.push(...refined);
             index = end - 1;
@@ -1172,23 +1238,55 @@ function emitNode(
     }
     const revision = relation ? { ...plan.comparison, id: relation.sourceRangeId } : nodeRevision;
     if (!relation && base.namespaceURI === W_NS && base.localName === 'p') {
-      return wrapPreserved(markWholeParagraph(base, 'del', revision, allocateRevision()), entry.originalStack);
+      return wrapPreserved(markWholeParagraph(
+        base,
+        'del',
+        revision,
+        allocateRevision(),
+        operationProvenance(node),
+      ), entry.originalStack);
     }
     if (!relation && base.namespaceURI === W_NS && base.localName === 'tr') {
-      return wrapPreserved(markWholeTableRow(base, 'del', revision), entry.originalStack);
+      return wrapPreserved(markWholeTableRow(
+        base,
+        'del',
+        revision,
+        operationProvenance(node),
+      ), entry.originalStack);
     }
-    return wrapPreserved(wrapRevision(base, relation ? 'moveFrom' : 'del', revision), entry.originalStack);
+    return wrapPreserved(wrapRevision(
+      base,
+      relation ? 'moveFrom' : 'del',
+      revision,
+      operationProvenance(node),
+    ), entry.originalStack);
   }
   if (node.tag === 'revised') {
     const relation = moveFor(node, moves);
     const revision = relation ? { ...plan.comparison, id: relation.destinationRangeId } : nodeRevision;
     if (!relation && base.namespaceURI === W_NS && base.localName === 'p') {
-      return wrapPreserved(markWholeParagraph(base, 'ins', revision, allocateRevision()), entry.revisedStack);
+      return wrapPreserved(markWholeParagraph(
+        base,
+        'ins',
+        revision,
+        allocateRevision(),
+        operationProvenance(node),
+      ), entry.revisedStack);
     }
     if (!relation && base.namespaceURI === W_NS && base.localName === 'tr') {
-      return wrapPreserved(markWholeTableRow(base, 'ins', revision), entry.revisedStack);
+      return wrapPreserved(markWholeTableRow(
+        base,
+        'ins',
+        revision,
+        operationProvenance(node),
+      ), entry.revisedStack);
     }
-    return wrapPreserved(wrapRevision(base, relation ? 'moveTo' : 'ins', revision), entry.revisedStack);
+    return wrapPreserved(wrapRevision(
+      base,
+      relation ? 'moveTo' : 'ins',
+      revision,
+      operationProvenance(node),
+    ), entry.revisedStack);
   }
   const stack = entry.revisedStack.length > 0 ? entry.revisedStack : entry.originalStack;
   return wrapPreserved(base, stack);
@@ -1250,6 +1348,88 @@ export function serializeTaggedTree(
   hoistFieldCharactersFromDeletions(emitted);
   hoistLiteralInsertionsFromDeletedFieldInstructions(emitted);
   return new XMLSerializer().serializeToString(emitted);
+}
+
+/**
+ * Resolve private serializer provenance after all wrapper-splitting rewrites,
+ * then remove it before the OOXML story reaches validation or publication.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
+ * @see #895
+ */
+export function resolveTaggedRevisionAttributions(
+  xml: string,
+  expectedOperationIds: readonly string[],
+): { xml: string; attributions: RevisionAttribution[] } {
+  const document = parseXml(xml);
+  const revisionKinds = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
+  const attributed = new Map<string, Array<{
+    index: number;
+    type: RevisionAttribution['startRevision']['type'];
+    id: string;
+  }>>();
+  const elements = Array.from(document.getElementsByTagName('*'));
+  elements.forEach((element, index) => {
+    const operationId = element.getAttribute(OPERATION_PROVENANCE_ATTRIBUTE);
+    if (!operationId) return;
+    element.removeAttribute(OPERATION_PROVENANCE_ATTRIBUTE);
+    if (!revisionKinds.has(element.localName)) {
+      throw new Error(`operation ${operationId} provenance is not attached to a tracked revision`);
+    }
+    const id = element.getAttributeNS(W_NS, 'id');
+    if (!id) throw new Error(`operation ${operationId} revision has no w:id`);
+    const entries = attributed.get(operationId) ?? [];
+    entries.push({
+      index,
+      type: element.localName as RevisionAttribution['startRevision']['type'],
+      id,
+    });
+    attributed.set(operationId, entries);
+  });
+
+  const expected = [...new Set(expectedOperationIds)];
+  const unexpected = [...attributed.keys()].filter((operationId) => !expected.includes(operationId));
+  if (unexpected.length > 0) {
+    throw new Error(`unexpected operation provenance: ${unexpected.join(', ')}`);
+  }
+  const intervals = expected.map((operationId) => {
+    const entries = attributed.get(operationId) ?? [];
+    if (entries.length === 0) {
+      throw new Error(`operation ${operationId} has no emitted attributed revision`);
+    }
+    return { operationId, entries, start: entries[0]!.index, end: entries.at(-1)!.index };
+  });
+  const ordered = [...intervals].sort((left, right) => left.start - right.start);
+  for (let index = 1; index < ordered.length; index++) {
+    if (ordered[index]!.start <= ordered[index - 1]!.end) {
+      throw new Error(
+        `operation attribution ranges overlap: ${ordered[index - 1]!.operationId} and ${ordered[index]!.operationId}`,
+      );
+    }
+  }
+  for (const interval of intervals) {
+    for (const boundary of [interval.entries[0]!, interval.entries.at(-1)!]) {
+      const count = elements.filter((element) =>
+        element.localName === boundary.type && element.getAttributeNS(W_NS, 'id') === boundary.id).length;
+      if (count !== 1) {
+        throw new Error(
+          `operation ${interval.operationId} boundary ${boundary.type}#${boundary.id} must be unique; found ${count}`,
+        );
+      }
+    }
+  }
+  const cleaned = new XMLSerializer().serializeToString(document);
+  if (cleaned.includes(OPERATION_PROVENANCE_ATTRIBUTE)) {
+    throw new Error('private operation provenance leaked from tagged serialization');
+  }
+  return {
+    xml: cleaned,
+    attributions: intervals.map(({ operationId, entries }) => ({
+      operationId,
+      startRevision: { type: entries[0]!.type, id: entries[0]!.id },
+      endRevision: { type: entries.at(-1)!.type, id: entries.at(-1)!.id },
+    })),
+  };
 }
 
 /**

@@ -29,10 +29,10 @@
 
 ## 4. Markdoc rationale attribution
 
-- [ ] 4.1 Carry rationale provenance on tagged nodes through alignment and serialization.
-- [ ] 4.2 Prove one operation maps to one exact, bounded, non-overlapping emitted range.
-- [ ] 4.3 Prove no rationale or sentinel text leaks into any ZIP part.
-- [ ] 4.4 Remove the legacy/inplace Markdoc pin only after dense rewrites and internal/external real-document smoke pass.
+- [x] 4.1 Carry rationale provenance on tagged nodes through alignment and serialization.
+- [x] 4.2 Prove one operation maps to one exact, bounded, non-overlapping emitted range.
+- [x] 4.3 Prove no rationale or sentinel text leaks into any ZIP part.
+- [x] 4.4 Remove the legacy/inplace Markdoc pin only after dense rewrites and internal/external real-document smoke pass.
 
 ## 5. Tagged comparison behavior
 
@@ -87,7 +87,7 @@
 ## 12. Verification per shippable phase
 
 - [ ] 12.1 Run build, docx-compare tests, spec coverage, package coverage, and strict OpenSpec validation.
-- [ ] 12.2 From Phase 4, run docx-markdoc tests and both rationale compilation smokes.
+- [x] 12.2 From Phase 4, run docx-markdoc tests and both rationale compilation smokes.
 - [ ] 12.3 From Phase 9, run all workspaces and the full repository pre-submit command.
 - [ ] 12.4 For Phases 2 and 9, run tool-doc, MCPB-manifest, and capability-projection checks.
 - [ ] 12.5 Re-run the characterization manifest after every phase and adjudicate rather than absorb drift.

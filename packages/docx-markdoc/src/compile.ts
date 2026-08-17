@@ -4,14 +4,13 @@ import {
   addTrackedRangeComments,
   computeContentFingerprint,
   getParagraphRuns,
-  getAttributeSafe,
-  OOXML,
-  parseXml,
-  serializeXml,
   type ReplacementPart,
-  type TrackedRevisionLocator,
 } from '@usejunior/docx-core';
-import { compareDocuments, compareFormattingFidelity, type FormattingFidelityReport } from '@usejunior/docx-compare';
+import {
+  compareDocumentsAtomizer,
+  compareFormattingFidelity,
+  type FormattingFidelityReport,
+} from '@usejunior/docx-compare';
 import { DocxMarkdocError } from './errors.js';
 import { sha256 } from './hash.js';
 import { requireMarkdoc } from './markdoc.js';
@@ -611,8 +610,6 @@ async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise
 
 type RationaleMaterialization = {
   range: AttributedRange;
-  startSentinel: string;
-  endSentinel: string;
   texts: string[];
 };
 
@@ -683,182 +680,9 @@ function rationaleMaterializations(config: ResolvedCompilation, ir: MarkdocEditI
   for (const rationale of selected) {
     grouped.set(rationale.operationId, [...(grouped.get(rationale.operationId) ?? []), rationale.text]);
   }
-  return [...grouped].map(([operationId, texts], index) => ({
+  return [...grouped].map(([operationId, texts]) => ({
     range: { operationId } as AttributedRange,
-    startSentinel: `\u{E000}safe-docx-rationale-${index}-start\u{E001}`,
-    endSentinel: `\u{E000}safe-docx-rationale-${index}-end\u{E001}`,
     texts,
-  }));
-}
-
-async function instrumentRanges(buffer: Buffer, materializations: RationaleMaterialization[]): Promise<Buffer> {
-  const document = await DocxDocument.load(buffer);
-  for (const item of [...materializations].reverse()) {
-    const { range } = item;
-    if (range.startParagraphId === range.endParagraphId) {
-      const paragraphText = document.getParagraphTextById(range.startParagraphId);
-      if (paragraphText === null || range.start >= range.end || range.end > paragraphText.length) {
-        throw new DocxMarkdocError('RATIONALE_ANCHOR_UNAVAILABLE', `Operation ${range.operationId} has no anchorable tracked content.`);
-      }
-      document.replaceTextAtRange({
-        targetParagraphId: range.startParagraphId,
-        start: range.start,
-        end: range.end,
-        replaceText: `${item.startSentinel}${paragraphText.slice(range.start, range.end)}${item.endSentinel}`,
-      });
-      continue;
-    }
-    const startText = document.getParagraphTextById(range.startParagraphId);
-    const endText = document.getParagraphTextById(range.endParagraphId);
-    if (startText === null || endText === null || range.start > startText.length || range.end <= 0 || range.end > endText.length) {
-      throw new DocxMarkdocError('RATIONALE_ANCHOR_UNAVAILABLE', `Operation ${range.operationId} has no anchorable tracked content.`);
-    }
-    document.replaceTextAtRange({
-      targetParagraphId: range.endParagraphId,
-      start: range.end,
-      end: range.end,
-      replaceText: item.endSentinel,
-    });
-    document.replaceTextAtRange({
-      targetParagraphId: range.startParagraphId,
-      start: range.start,
-      end: range.start,
-      replaceText: item.startSentinel,
-    });
-  }
-  return (await document.toBuffer({ cleanBookmarks: false })).buffer;
-}
-
-type ResolvedRationaleComment = {
-  startRevision: TrackedRevisionLocator;
-  endRevision: TrackedRevisionLocator;
-  text: string;
-};
-
-function nearestRevision(node: Node): Element | null {
-  let current: Node | null = node.parentNode;
-  while (current) {
-    const element = current.nodeType === 1 ? current as Element : null;
-    if (element && ['ins', 'del', 'moveFrom', 'moveTo'].includes(element.localName)) return element;
-    current = current.parentNode;
-  }
-  return null;
-}
-
-function resolveSentinel(documentXml: Document, sentinel: string): { textNode: Text; revision: Element } {
-  const matches: Text[] = [];
-  const visit = (node: Node): void => {
-    if (node.nodeType === 3 && (node.nodeValue ?? '').includes(sentinel)) matches.push(node as Text);
-    for (let child = node.firstChild; child; child = child.nextSibling) visit(child);
-  };
-  visit(documentXml.documentElement);
-  if (matches.length !== 1) throw new Error(`Private attribution marker must occur exactly once; found ${matches.length}.`);
-  const revision = nearestRevision(matches[0]!);
-  if (!revision) throw new Error('Private attribution marker is not inside tracked revision markup.');
-  return { textNode: matches[0]!, revision };
-}
-
-function revisionLocator(revision: Element): TrackedRevisionLocator {
-  const id = getAttributeSafe(revision, OOXML.W_NS, 'id', 'w', { bareFallback: false });
-  if (!id || !['ins', 'del', 'moveFrom', 'moveTo'].includes(revision.localName)) {
-    throw new Error('Attributed tracked revision has no stable OOXML identity.');
-  }
-  return { type: revision.localName as TrackedRevisionLocator['type'], id };
-}
-
-function removeAttributionMarker(textNode: Text, marker: string): void {
-  textNode.data = textNode.data.replace(marker, '');
-  if (/^\s|\s$/u.test(textNode.data)) {
-    const textElement = textNode.parentNode;
-    if (textElement?.nodeType === 1) {
-      (textElement as Element).setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
-    }
-  }
-}
-
-async function resolveAndRemoveAttributionMarkers(
-  buffer: Buffer,
-  materializations: RationaleMaterialization[],
-): Promise<{ buffer: Buffer; comments: ResolvedRationaleComment[] }> {
-  const zip = await JSZip.loadAsync(buffer);
-  const file = zip.file('word/document.xml');
-  if (!file) throw new Error('Tracked DOCX has no word/document.xml.');
-  const documentXml = parseXml(await file.async('string'));
-  const comments = materializations.flatMap((item) => {
-    const start = resolveSentinel(documentXml, item.startSentinel);
-    const end = resolveSentinel(documentXml, item.endSentinel);
-    const attributableText = start.revision === end.revision
-      ? start.revision.textContent ?? ''
-      : `${start.revision.textContent ?? ''}${end.revision.textContent ?? ''}`;
-    const foreignMarker = attributableText.match(/\uE000safe-docx-rationale-\d+-(?:start|end)\uE001/gu)
-      ?.some((marker) => marker !== item.startSentinel && marker !== item.endSentinel);
-    if (foreignMarker) throw new Error('Tracked comment attribution overlaps another operation revision.');
-    const resolved = {
-      startRevision: revisionLocator(start.revision),
-      endRevision: revisionLocator(end.revision),
-    };
-    removeAttributionMarker(start.textNode, item.startSentinel);
-    removeAttributionMarker(end.textNode, item.endSentinel);
-    return item.texts.map((text) => ({ ...resolved, text }));
-  });
-  zip.file('word/document.xml', serializeXml(documentXml));
-  return { buffer: await zip.generateAsync({ type: 'nodebuffer' }), comments };
-}
-
-async function remapResolvedCommentsToOrdinaryComparison(
-  instrumented: Buffer,
-  ordinary: Buffer,
-  comments: ResolvedRationaleComment[],
-): Promise<ResolvedRationaleComment[]> {
-  const revisionNames = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
-  const revisions = async (buffer: Buffer): Promise<Element[]> => {
-    const zip = await JSZip.loadAsync(buffer);
-    const xml = await zip.file('word/document.xml')?.async('string');
-    if (!xml) throw new Error('Tracked DOCX has no word/document.xml.');
-    const document = parseXml(xml);
-    return Array.from(document.getElementsByTagName('*')).filter((element) => revisionNames.has(element.localName));
-  };
-  const [instrumentedRevisions, ordinaryRevisions] = await Promise.all([revisions(instrumented), revisions(ordinary)]);
-  const indexByLocator = new Map(instrumentedRevisions.map((revision, index) => [
-    `${revision.localName}#${getAttributeSafe(revision, OOXML.W_NS, 'id', 'w', { bareFallback: false }) ?? ''}`,
-    index,
-  ]));
-  const remap = (locator: TrackedRevisionLocator): TrackedRevisionLocator => {
-    const index = indexByLocator.get(`${locator.type}#${locator.id}`);
-    const source = index === undefined ? undefined : instrumentedRevisions[index];
-    if (!source) throw new Error(`Attributed revision ${locator.type}#${locator.id} is absent from the instrumented comparison.`);
-    const signature = `${source.localName}\0${source.textContent ?? ''}`;
-    const sourceMatches = instrumentedRevisions.filter((revision) => `${revision.localName}\0${revision.textContent ?? ''}` === signature);
-    const targetMatches = ordinaryRevisions.filter((revision) => `${revision.localName}\0${revision.textContent ?? ''}` === signature);
-    const occurrence = sourceMatches.indexOf(source);
-    let target = targetMatches[occurrence];
-    if (!target) {
-      const sourceText = source.textContent ?? '';
-      const contained = ordinaryRevisions
-        .filter((revision) => revision.localName === locator.type)
-        .filter((revision) => {
-          const text = revision.textContent ?? '';
-          return text.length > 0 && (sourceText.includes(text) || text.includes(sourceText));
-        })
-        .sort((left, right) => (right.textContent?.length ?? 0) - (left.textContent?.length ?? 0));
-      if (contained.length === 1
-        || (contained.length > 1 && (contained[0]!.textContent?.length ?? 0) > (contained[1]!.textContent?.length ?? 0))) {
-        target = contained[0];
-      }
-    }
-    if (!target) {
-      const candidates = ordinaryRevisions
-        .filter((revision) => revision.localName === locator.type)
-        .slice(0, 8)
-        .map((revision) => revision.textContent ?? '');
-      throw new Error(`Attributed revision ${locator.type}#${locator.id} text ${JSON.stringify(source.textContent ?? '')} has no identical ordinary-comparison revision among ${JSON.stringify(candidates)}.`);
-    }
-    return revisionLocator(target);
-  };
-  return comments.map((comment) => ({
-    ...comment,
-    startRevision: remap(comment.startRevision),
-    endRevision: remap(comment.endRevision),
   }));
 }
 
@@ -898,33 +722,28 @@ export async function compileMarkdoc(
     if (!range) throw new DocxMarkdocError('RATIONALE_ANCHOR_UNAVAILABLE', `Operation ${item.range.operationId} has no attributable edit range.`);
     item.range = range;
   }
-  const sourceMaterializations = materializations.filter((item) => item.range.projection === 'source');
-  const cleanMaterializations = materializations.filter((item) => item.range.projection === 'clean');
-  const [comparisonSource, comparisonClean] = await Promise.all([
-    instrumentRanges(sourceBuffer, sourceMaterializations),
-    instrumentRanges(clean, cleanMaterializations),
-  ]);
-  const comparisonOptions = {
-    engine: 'atomizer',
-    // Rationale attribution compares a sentinel-instrumented document and then
-    // remaps the discovered revision onto an ordinary comparison. Keep those
-    // two private passes on the strategy whose alignment is marker-stable;
-    // inheriting the repository-wide default can otherwise change attribution
-    // semantics when the comparator default evolves.
-    comparisonStrategy: 'legacy',
+  const comparisonOptions: NonNullable<Parameters<typeof compareDocumentsAtomizer>[2]> = {
+    comparisonStrategy: 'tagged-tree',
     author: resolvedCompilation.author,
     date: resolvedCompilation.date,
-    reconstructionMode: 'inplace',
+    revisionAttributionRanges: materializations.map(({ range }) => ({
+      operationId: range.operationId,
+      side: range.projection === 'source' ? 'original' : 'revised',
+      startParagraphId: range.startParagraphId,
+      start: range.start,
+      endParagraphId: range.endParagraphId,
+      end: range.end,
+    })),
     // No maxWordRefinementChangeRanges budget: a finite budget made dense
     // rewrites fall back to coarse whole-span replacement on the run-level
     // reconstruction paths, so ordinary source tokens the independent release
     // verifier proves preservable were deleted and reinserted. Token-level
     // minimality outranks "confetti" readability for authored redlines.
     // See https://github.com/UseJunior/safe-docx/issues/846.
-  } as const;
+  };
   const comparison = ir.operations.length === 0
     ? undefined
-    : await compareDocuments(comparisonSource, comparisonClean, comparisonOptions);
+    : await compareDocumentsAtomizer(sourceBuffer, clean, comparisonOptions);
   // A no-operation replay has no comparison to represent. Preserve the exact
   // source package instead of needlessly reassembling relationship IDs and
   // turning package-normalization noise into a false formatting failure.
@@ -932,27 +751,28 @@ export async function compileMarkdoc(
   if (materializations.length > 0) {
     const identity = resolvedCompilation.commentIdentity!;
     try {
-      const resolved = await resolveAndRemoveAttributionMarkers(tracked, materializations);
-      // Attribution markers are private discovery machinery, not authored
-      // document content. Dense multi-operation documents proved that asking
-      // the comparator to align those markers can perturb which source run
-      // supplies formatting even after the markers are removed. Resolve the
-      // operation-to-revision identities in the instrumented comparison, then
-      // place comments on the ordinary comparison so the delivered redline is
-      // byte-for-byte independent of marker text apart from native comments.
-      const ordinaryComparison = await compareDocuments(sourceBuffer, clean, comparisonOptions);
-      const ordinaryComments = await remapResolvedCommentsToOrdinaryComparison(
-        resolved.buffer,
-        ordinaryComparison.document,
-        resolved.comments,
+      if (comparison?.comparisonStrategyUsed !== 'tagged-tree') {
+        throw new Error('tagged attribution comparison did not publish the tagged strategy');
+      }
+      const attributedByOperation = new Map(
+        (comparison.revisionAttributions ?? []).map((item) => [item.operationId, item]),
       );
-      tracked = await addTrackedRangeComments(ordinaryComparison.document, ordinaryComments.map((item) => ({
-        startRevision: item.startRevision,
-        endRevision: item.endRevision,
+      const comments = materializations.flatMap((item) => {
+        const attributed = attributedByOperation.get(item.range.operationId);
+        if (!attributed) {
+          throw new Error(`operation ${item.range.operationId} has no exact tagged revision range`);
+        }
+        return item.texts.map((text) => ({
+          startRevision: attributed.startRevision,
+          endRevision: attributed.endRevision,
+          text,
+        }));
+      });
+      tracked = await addTrackedRangeComments(comparison.document, comments.map((item) => ({
+        ...item,
         author: identity.author,
         initials: identity.initials,
         date: resolvedCompilation.date.toISOString(),
-        text: item.text,
       })));
     } catch (error) {
       throw new DocxMarkdocError(

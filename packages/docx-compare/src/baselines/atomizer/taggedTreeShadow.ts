@@ -8,6 +8,7 @@ import { constructTaggedTree, verifyGlobalEqualContentInvariant } from './tagged
 import { createPreservePlan, serializeTaggedTree, verifySerializedMoveRanges } from './taggedTreeSerializer.js';
 import { formatDate } from './inPlaceModifier-shared.js';
 import { tokenizeComparisonText } from '../../textAlignment.js';
+import type { RevisionAttributionRange } from '../../compare-types.js';
 
 export type TaggedTreeDivergenceClass = 'projection-inequivalent' | 'projection-equivalent';
 
@@ -29,6 +30,8 @@ export interface TaggedTreeShadowInput {
   fixtureIdentity?: string;
   detectFormatChanges?: boolean;
   detectMoves?: boolean;
+  /** @internal Operation ranges whose emitted revisions require exact attribution. */
+  revisionAttributionRanges?: readonly RevisionAttributionRange[];
 }
 
 const WORDPROCESSINGML_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -66,6 +69,7 @@ export function buildTaggedTreePublication(
   const constructed = constructTaggedTree(original, revised, {
     detectFormatChanges: input.detectFormatChanges,
     detectMoves: input.detectMoves,
+    revisionAttributionRanges: input.revisionAttributionRanges,
   });
   const serialized = serializeTaggedTree(
     constructed.tree,

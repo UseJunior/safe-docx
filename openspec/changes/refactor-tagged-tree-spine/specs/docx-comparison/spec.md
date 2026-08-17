@@ -29,6 +29,29 @@ without review.
 - **THEN** its projection and package invariants SHALL pass
 - **AND** removal of the divergence SHALL be an explicit reviewed manifest change
 
+### Requirement: Tagged rationale attribution is exact and private
+
+Markdoc compilation SHALL carry each selected rationale's operation identity as
+tagged-tree provenance rather than authored sentinel text. Serialization SHALL
+resolve every operation to exactly one bounded interval of generated tracked
+revision containers after compatibility rewrites. Operation intervals SHALL be
+unambiguous and non-overlapping. Private provenance metadata and omitted
+rationale text SHALL NOT occur in any published package part.
+
+#### Scenario: Multiple operations retain disjoint rationale ranges
+
+- **GIVEN** multiple Markdoc operations with selected rationales
+- **WHEN** tagged comparison serializes and compatibility-finalizes the redline
+- **THEN** each operation SHALL map to one balanced comment range around its own revisions
+- **AND** no operation's attributed interval SHALL overlap another operation's interval
+
+#### Scenario: Private attribution data does not leak
+
+- **GIVEN** internal and external rationales compiled under an external-only policy
+- **WHEN** the tracked DOCX is published
+- **THEN** no private provenance marker or sentinel text SHALL occur in any package part
+- **AND** omitted internal rationale text SHALL NOT occur in any package part
+
 ### Requirement: Tagged publication owns the complete result package
 
 The comparison engine SHALL build the tracked result from the revised package and

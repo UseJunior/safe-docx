@@ -34,6 +34,7 @@ import type {
   ReconstructionTextMismatchDetails,
   ReconstructionMode,
   TaggedTreeFallbackDiagnostics,
+  RevisionAttribution,
 } from '../../compare-types.js';
 import { DEFAULT_RECONSTRUCTION_MODE } from '../../comparison-defaults.js';
 import type {
@@ -133,6 +134,7 @@ import {
 import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.js';
 import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
 import { buildTaggedTreePublication } from './taggedTreeShadow.js';
+import { resolveTaggedRevisionAttributions } from './taggedTreeSerializer.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import {
   allocateRevisionId,
@@ -316,8 +318,16 @@ export interface AtomizerOptions {
   reconstructionMode?: ReconstructionMode;
   /** Comparison construction strategy. Tagged-tree is default; legacy is the rollback path. */
   comparisonStrategy?: ComparisonStrategy;
+  /** @internal Exact source ranges to carry through tagged serialization. */
+  revisionAttributionRanges?: import('../../compare-types.js').RevisionAttributionRange[];
   /** @internal Test seam for exercising fail-safe publication without malformed fixtures. */
   taggedTreePublicationSafetyEvaluator?: typeof evaluateSafetyChecks;
+}
+
+/** Atomizer-only result metadata used by internal tagged attribution callers. */
+export interface AtomizerCompareResult extends CompareResult {
+  /** Exact tagged revision ranges requested through private attribution input. @internal */
+  revisionAttributions?: RevisionAttribution[];
 }
 
 interface BookmarkDiagnostics {
@@ -755,7 +765,7 @@ export async function compareDocumentsAtomizer(
   original: Buffer,
   revised: Buffer,
   options: AtomizerOptions = {},
-): Promise<CompareResult> {
+): Promise<AtomizerCompareResult> {
   const textBoxPlan = await prepareTextBoxStoryComparison(original, revised);
   if (!textBoxPlan) {
     return compareDocumentsAtomizerCore(original, revised, options);
@@ -942,7 +952,7 @@ async function compareDocumentsAtomizerCore(
   original: Buffer,
   revised: Buffer,
   options: AtomizerOptions = {}
-): Promise<CompareResult> {
+): Promise<AtomizerCompareResult> {
   const {
     author = 'Comparison',
     date = new Date(),
@@ -953,6 +963,7 @@ async function compareDocumentsAtomizerCore(
     maxWordRefinementChangeRanges,
     reconstructionMode = DEFAULT_RECONSTRUCTION_MODE,
     comparisonStrategy = 'tagged-tree',
+    revisionAttributionRanges = [],
     taggedTreePublicationSafetyEvaluator,
   } = options;
 
@@ -966,6 +977,10 @@ async function compareDocumentsAtomizerCore(
     ...DEFAULT_FORMAT_DETECTION_SETTINGS,
     ...formatDetection,
   };
+
+  if (revisionAttributionRanges.length > 0 && comparisonStrategy !== 'tagged-tree') {
+    throw new Error('revision attribution ranges require comparisonStrategy=tagged-tree');
+  }
 
   const numberingSettings: NumberingIntegrationOptions = {
     ...DEFAULT_NUMBERING_OPTIONS,
@@ -1510,6 +1525,7 @@ async function compareDocumentsAtomizerCore(
   let { reconciledFootnotes } = assembled;
   let publishedBuffer = resultBuffer;
   let taggedPublicationStats: { formatChanges: number; formatChangeAtoms: number } | undefined;
+  let revisionAttributions: RevisionAttribution[] | undefined;
   let comparisonStrategyUsed: ComparisonStrategy = comparisonStrategy;
   let taggedTreeFallbackDiagnostics: TaggedTreeFallbackDiagnostics | undefined;
   if (comparisonStrategy === 'tagged-tree') {
@@ -1525,6 +1541,7 @@ async function compareDocumentsAtomizerCore(
       date,
       detectFormatChanges: formatSettings.detectFormatChanges,
       detectMoves: moveSettings.detectMoves,
+      revisionAttributionRanges,
     });
     let taggedXml = taggedPublication.xml;
     taggedPublicationStats = taggedPublication.stats;
@@ -1535,6 +1552,14 @@ async function compareDocumentsAtomizerCore(
       taggedXml = serializer.serializeToString(taggedDocument);
     }
     taggedXml = finalizeTaggedDocumentXml(taggedXml);
+    if (revisionAttributionRanges.length > 0) {
+      const resolved = resolveTaggedRevisionAttributions(
+        taggedXml,
+        revisionAttributionRanges.map((range) => range.operationId),
+      );
+      taggedXml = resolved.xml;
+      revisionAttributions = resolved.attributions;
+    }
     const taggedSafety = taggedTreePublicationSafetyEvaluator
       ? taggedTreePublicationSafetyEvaluator(
           originalTextForRoundTrip,
@@ -1548,6 +1573,7 @@ async function compareDocumentsAtomizerCore(
     if (!taggedSafety.safe) {
       comparisonStrategyUsed = 'legacy';
       taggedPublicationStats = undefined;
+      revisionAttributions = undefined;
       taggedTreeFallbackDiagnostics = {
         checks: taggedSafety.checks,
         failedChecks: taggedSafety.failedChecks,
@@ -1603,6 +1629,7 @@ async function compareDocumentsAtomizerCore(
     rebuildSafetyDiagnostics,
     inplaceSuccessDiagnostics,
     ancillaryFieldEvidence,
+    revisionAttributions,
   };
 }
 

@@ -46,6 +46,23 @@ export interface CompareOptions {
   engine?: 'wmlcomparer' | 'atomizer' | 'auto';
 }
 
+/** @internal A source-side range whose generated revision must remain attributable. */
+export interface RevisionAttributionRange {
+  operationId: string;
+  side: 'original' | 'revised';
+  startParagraphId: string;
+  start: number;
+  endParagraphId: string;
+  end: number;
+}
+
+/** @internal The exact generated revision interval for one attributed operation. */
+export interface RevisionAttribution {
+  operationId: string;
+  startRevision: { type: 'ins' | 'del' | 'moveFrom' | 'moveTo'; id: string };
+  endRevision: { type: 'ins' | 'del' | 'moveFrom' | 'moveTo'; id: string };
+}
+
 export interface CompareStats {
   /**
    * Human-facing inserted change ranges. This counts contiguous inserted atom

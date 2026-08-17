@@ -1,5 +1,6 @@
 import type { WmlElement } from '@usejunior/docx-core';
-import { childElements } from '@usejunior/docx-core';
+import { childElements, findParagraphByBookmarkId, getParagraphRuns } from '@usejunior/docx-core';
+import type { RevisionAttributionRange } from '../../compare-types.js';
 import {
   nextRevisionId,
   PROPERTY_SCOPE_ELEMENT,
@@ -266,6 +267,8 @@ export interface TaggedTreeConstructionOptions {
   detectFormatChanges?: boolean;
   /** Classify equal-content side-only nodes as moves. Default: true. */
   detectMoves?: boolean;
+  /** @internal Markdoc operation ranges to retain as tagged-node provenance. */
+  revisionAttributionRanges?: readonly RevisionAttributionRange[];
 }
 
 function constructBoth(
@@ -355,6 +358,85 @@ function constructBoth(
   };
 }
 
+function paragraphsIn(root: WmlElement): WmlElement[] {
+  const paragraphs = Array.from(root.getElementsByTagNameNS(
+    'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+    'p',
+  )) as WmlElement[];
+  if (root.localName === 'p') paragraphs.unshift(root);
+  return paragraphs;
+}
+
+function runsOverlappingRange(
+  root: WmlElement,
+  range: RevisionAttributionRange,
+): Set<WmlElement> {
+  const document = root.ownerDocument!;
+  const startParagraph = findParagraphByBookmarkId(document, range.startParagraphId) as WmlElement | null;
+  const endParagraph = findParagraphByBookmarkId(document, range.endParagraphId) as WmlElement | null;
+  if (!startParagraph || !endParagraph) {
+    throw new Error(`operation ${range.operationId} names an unavailable paragraph attribution anchor`);
+  }
+  const paragraphs = paragraphsIn(root);
+  const startIndex = paragraphs.indexOf(startParagraph);
+  const endIndex = paragraphs.indexOf(endParagraph);
+  if (startIndex < 0 || endIndex < startIndex) {
+    throw new Error(`operation ${range.operationId} has a reversed or out-of-story attribution range`);
+  }
+  const marked = new Set<WmlElement>();
+  for (let paragraphIndex = startIndex; paragraphIndex <= endIndex; paragraphIndex++) {
+    const paragraph = paragraphs[paragraphIndex]!;
+    const runs = getParagraphRuns(paragraph);
+    const paragraphLength = runs.reduce((length, run) => length + run.text.length, 0);
+    const segmentStart = paragraphIndex === startIndex ? range.start : 0;
+    const segmentEnd = paragraphIndex === endIndex ? range.end : paragraphLength;
+    if (segmentStart < 0 || segmentEnd > paragraphLength || segmentStart >= segmentEnd) {
+      throw new Error(`operation ${range.operationId} has an empty or invalid attribution range`);
+    }
+    let offset = 0;
+    for (const run of runs) {
+      const runStart = offset;
+      const runEnd = offset + run.text.length;
+      if (runEnd > segmentStart && runStart < segmentEnd) marked.add(run.r as WmlElement);
+      offset = runEnd;
+    }
+  }
+  if (marked.size === 0) {
+    throw new Error(`operation ${range.operationId} has no attributable text runs`);
+  }
+  return marked;
+}
+
+function carryOperationProvenance(
+  tree: TaggedNode,
+  original: WmlElement,
+  revised: WmlElement,
+  ranges: readonly RevisionAttributionRange[],
+): void {
+  for (const range of ranges) {
+    const markedRuns = runsOverlappingRange(range.side === 'original' ? original : revised, range);
+    let attributedNodes = 0;
+    const intersectsMarkedRun = (element: WmlElement): boolean => [...markedRuns].some((run) =>
+      element === run || element.contains(run) || run.contains(element));
+    const visit = (node: TaggedNode): void => {
+      if (node.tag === range.side && intersectsMarkedRun(node.node)) {
+        const existing = node.operationProvenance ?? [];
+        if (existing.some((operationId) => operationId !== range.operationId)) {
+          throw new Error(`operation ${range.operationId} overlaps another attributed tagged node`);
+        }
+        node.operationProvenance = [...new Set([...existing, range.operationId])];
+        attributedNodes++;
+        return;
+      }
+      node.children.forEach(visit);
+    };
+    visit(tree);
+    if (attributedNodes === 0) {
+      throw new Error(`operation ${range.operationId} does not intersect a generated ${range.side} revision`);
+    }
+  }
+}
+
 function collectSideOnly(
   node: TaggedNode,
   originals: OriginalNode[],
@@ -441,10 +523,12 @@ export function constructTaggedTree(
   const settings: Required<TaggedTreeConstructionOptions> = {
     detectFormatChanges: options.detectFormatChanges ?? true,
     detectMoves: options.detectMoves ?? true,
+    revisionAttributionRanges: options.revisionAttributionRanges ?? [],
   };
   const tree = constructBoth(original, revised, settings);
   const violations = verifyTaggedTree(original, revised, tree);
   if (violations.length > 0) throw new Error(`constructed tagged tree violates P1-P5: ${violations[0]!.detail}`);
+  carryOperationProvenance(tree, original, revised, settings.revisionAttributionRanges);
   const moves = settings.detectMoves ? classifyMoves(tree, nextRevisionId(original, revised)) : [];
   const moveViolations = verifyMoveRelations(moves, tree);
   if (moveViolations.length > 0) throw new Error(`constructed move relation is invalid: ${moveViolations[0]!.detail}`);

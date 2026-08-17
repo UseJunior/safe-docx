@@ -147,6 +147,8 @@ export function nextRevisionId(originalRoot: WmlElement, revisedRoot: WmlElement
 interface TaggedNodeBase {
   children: TaggedNode[];
   opaque?: true;
+  /** Markdoc operation IDs whose exact emitted revision range includes this node. */
+  operationProvenance?: readonly string[];
 }
 
 /**
