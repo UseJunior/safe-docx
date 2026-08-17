@@ -65,7 +65,6 @@ export default defineConfig({
         'src/testing/**',
         'src/benchmark/**',
         'src/baselines/wmlcomparer/**',
-        'src/baselines/atomizer/trackChangesAcceptor.ts',
       ],
     },
     setupFiles: hasAllure ? [allureSetup!] : [],

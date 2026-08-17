@@ -46,10 +46,10 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Inplace reconstruction reports the pass that produced the output | covered | `packages/docx-core/src/integration/table-heavy-run-fragmented-inplace.test.ts` |  |
 | Legacy rollback reaches its sunset | covered | `packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.test.ts` |  |
 | Matched-but-differing nodes retain both representatives | covered | `packages/docx-compare/src/baselines/atomizer/taggedTree.test.ts` |  |
-| Move destination markup structure | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Move destination markup structure | covered | `packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts` |  |
 | Move detected between similar blocks | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Move detection disabled | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Move source markup structure | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Move source markup structure | covered | `packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts` |  |
 | Multiple properties changed | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | No common words returns 0.0 | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | No format change | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
@@ -61,7 +61,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Proper nested list renders hierarchically | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Property delta scope matches the property level | covered | `packages/docx-compare/src/baselines/atomizer/taggedTree.test.ts` |  |
 | Provenance survives a boundary split | covered | `packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.test.ts` |  |
-| Range IDs properly paired | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Range IDs properly paired | covered | `packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts` |  |
 | Rebuild fallback only after all inplace passes fail | covered | `packages/docx-core/src/integration/field-cross-story-pipeline.test.ts` |  |
 | Remove existing revision tracking | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Reordering that satisfies coverage is rejected | covered | `packages/docx-compare/src/baselines/atomizer/taggedTree.test.ts` |  |

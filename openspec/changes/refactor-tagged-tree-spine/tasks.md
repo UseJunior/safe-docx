@@ -14,9 +14,9 @@
 
 ## 2. Dead code and public API inventory
 
-- [ ] 2.1 Delete unused WmlComparer baseline adapters and regex track-change acceptor.
-- [ ] 2.2 Delete unused legacy move-markup generators and their isolated tests.
-- [ ] 2.3 Generate the wildcard-export inventory and adjudicate every symbol as stable, deprecated, or breaking removal.
+- [x] 2.1 Delete unused WmlComparer baseline adapters and regex track-change acceptor.
+- [x] 2.2 Delete unused legacy move-markup generators and their isolated tests.
+- [x] 2.3 Generate the wildcard-export inventory and adjudicate every symbol as stable, deprecated, or breaking removal.
 - [ ] 2.4 Include MCP `engine` schema changes and regenerate tool documentation.
 
 ## 3. Tagged correctness fixes

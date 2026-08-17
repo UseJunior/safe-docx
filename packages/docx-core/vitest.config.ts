@@ -71,7 +71,6 @@ export default defineConfig({
         'src/integration/libreoffice-oracle.ts',
         // Optional/legacy baselines that are not part of default runtime engine selection.
         'src/baselines/wmlcomparer/**',
-        'src/baselines/atomizer/trackChangesAcceptor.ts',
       ],
     },
     setupFiles: hasAllure ? [allureSetup!] : [],

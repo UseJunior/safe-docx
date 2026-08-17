@@ -24,8 +24,6 @@ import {
 } from './format-detection.js';
 import {
   detectMovesInAtomList,
-  generateMoveDestinationMarkup,
-  generateMoveSourceMarkup,
   jaccardWordSimilarity,
 } from './move-detection.js';
 import { testAllure, type AllureBddContext } from './testing/allure-test.js';
@@ -573,60 +571,6 @@ describe('OpenSpec traceability: docx-comparison', () => {
 
       expect(atoms[0]!.correlationStatus).toBe(CorrelationStatus.MovedSource);
       expect(atoms[2]!.correlationStatus).toBe(CorrelationStatus.MovedDestination);
-    },
-  );
-
-  // Move markup generation
-  humanReadableTest.openspec('Move source markup structure')(
-    'Scenario: Move source markup structure',
-    (_: AllureBddContext) => {
-      const content: Element[] = [el('w:r')];
-      const markup = generateMoveSourceMarkup('move1', content, {
-        author: 'Tester',
-        dateTime: new Date('2026-01-01T00:00:00.000Z'),
-        startId: 1,
-      });
-
-      expect(markup.rangeStart.tagName).toBe('w:moveFromRangeStart');
-      expect(markup.moveWrapper.tagName).toBe('w:moveFrom');
-      expect(markup.rangeEnd.tagName).toBe('w:moveFromRangeEnd');
-      expect(markup.rangeStart.getAttribute('w:name')).toBe('move1');
-    },
-  );
-
-  humanReadableTest.openspec('Move destination markup structure')(
-    'Scenario: Move destination markup structure',
-    (_: AllureBddContext) => {
-      const content: Element[] = [el('w:r')];
-      const markup = generateMoveDestinationMarkup('move1', content, {
-        author: 'Tester',
-        dateTime: new Date('2026-01-01T00:00:00.000Z'),
-        startId: 5,
-      });
-
-      expect(markup.rangeStart.tagName).toBe('w:moveToRangeStart');
-      expect(markup.moveWrapper.tagName).toBe('w:moveTo');
-      expect(markup.rangeEnd.tagName).toBe('w:moveToRangeEnd');
-      expect(markup.rangeStart.getAttribute('w:name')).toBe('move1');
-    },
-  );
-
-  humanReadableTest.openspec('Range IDs properly paired')(
-    'Scenario: Range IDs properly paired',
-    (_: AllureBddContext) => {
-      const source = generateMoveSourceMarkup('move2', [], {
-        author: 'Tester',
-        dateTime: new Date('2026-01-01T00:00:00.000Z'),
-        startId: 11,
-      });
-      const destination = generateMoveDestinationMarkup('move2', [], {
-        author: 'Tester',
-        dateTime: new Date('2026-01-01T00:00:00.000Z'),
-        startId: 21,
-      });
-
-      expect(source.rangeStart.getAttribute('w:id')).toBe(source.rangeEnd.getAttribute('w:id'));
-      expect(destination.rangeStart.getAttribute('w:id')).toBe(destination.rangeEnd.getAttribute('w:id'));
     },
   );
 

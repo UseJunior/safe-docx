@@ -25,6 +25,19 @@ function documentWithBody(bodyXml: string): Element {
   return parseXml(`<w:document xmlns:w="${W_NS}"><w:body>${bodyXml}</w:body></w:document>`).documentElement;
 }
 
+function serializedReorderedMove(): string {
+  const original = body(['A', 'B']);
+  const revised = body(['B', 'A']);
+  const result = constructTaggedTree(original, revised);
+  return serializeTaggedTree(
+    result.tree,
+    createPreservePlan(original, revised, result.tree, {
+      author: 'Comparator', date: '2026-08-14T12:00:00Z',
+    }),
+    { moves: result.moves },
+  );
+}
+
 describe('complete tagged-tree construction', () => {
   test('constructs projection-isomorphic trees for insertion, deletion, and replacement', () => {
     const original = body(['A', 'B', 'C']);
@@ -67,6 +80,7 @@ describe('complete tagged-tree construction', () => {
       await when('the complete tree is constructed', () => { result = constructTaggedTree(original, revised); });
       await then('the projections remain isomorphic', () => {
         expect(verifyTaggedTree(original, revised, result.tree)).toEqual([]);
+        expect(result.tree.children.some((child) => child.tag === 'both')).toBe(true);
       });
       await and('every surviving equal-content side pair belongs to a move relation', () => {
         expect(result.moves).toHaveLength(1);
@@ -83,7 +97,43 @@ describe('complete tagged-tree construction', () => {
     expect(result.moves[0]?.sourceRangeId).not.toBe(result.moves[0]?.destinationRangeId);
   });
 
-  test('serializes one balanced, named range per move direction', () => {
+  test.openspec('Move source markup structure')(
+    'serializes the tagged source range around moved-from content',
+    () => {
+      const output = serializedReorderedMove();
+      const document = parseXml(output);
+      const start = document.getElementsByTagNameNS(W_NS, 'moveFromRangeStart')[0]!;
+      const wrapper = document.getElementsByTagNameNS(W_NS, 'moveFrom')[0]!;
+      const end = document.getElementsByTagNameNS(W_NS, 'moveFromRangeEnd')[0]!;
+      expect(output.indexOf('<w:moveFromRangeStart')).toBeLessThan(output.indexOf('<w:moveFrom '));
+      expect(output.indexOf('<w:moveFrom ')).toBeLessThan(output.indexOf('<w:moveFromRangeEnd'));
+      expect(start.getAttributeNS(W_NS, 'name')).not.toBe('');
+      expect(wrapper.textContent).toBe('A');
+      expect(end.getAttributeNS(W_NS, 'id')).toBe(start.getAttributeNS(W_NS, 'id'));
+    },
+  );
+
+  test.openspec('Move destination markup structure')(
+    'serializes the tagged destination range around moved-to content',
+    () => {
+      const output = serializedReorderedMove();
+      const document = parseXml(output);
+      const start = document.getElementsByTagNameNS(W_NS, 'moveToRangeStart')[0]!;
+      const wrapper = document.getElementsByTagNameNS(W_NS, 'moveTo')[0]!;
+      const end = document.getElementsByTagNameNS(W_NS, 'moveToRangeEnd')[0]!;
+      const sourceName = document.getElementsByTagNameNS(W_NS, 'moveFromRangeStart')[0]!
+        .getAttributeNS(W_NS, 'name');
+      expect(output.indexOf('<w:moveToRangeStart')).toBeLessThan(output.indexOf('<w:moveTo '));
+      expect(output.indexOf('<w:moveTo ')).toBeLessThan(output.indexOf('<w:moveToRangeEnd'));
+      expect(start.getAttributeNS(W_NS, 'name')).toBe(sourceName);
+      expect(wrapper.textContent).toBe('A');
+      expect(end.getAttributeNS(W_NS, 'id')).toBe(start.getAttributeNS(W_NS, 'id'));
+    },
+  );
+
+  test.openspec('Range IDs properly paired')(
+    'serializes one balanced, named range per move direction',
+    () => {
     const original = body(['A', 'B']);
     const revised = body(['B', 'A']);
     const result = constructTaggedTree(original, revised);
@@ -97,7 +147,8 @@ describe('complete tagged-tree construction', () => {
     expect(verifySerializedMoveRanges(output, result.moves)).toEqual([]);
     expect(resolvedText(rejectAllChanges(output))).toBe('AB');
     expect(resolvedText(acceptAllChanges(output))).toBe('BA');
-  });
+    },
+  );
 
   test('serializes bookmarked moves with unique paired IDs in the combined candidate', () => {
     const paragraph = (value: string, bookmarked = false) => `<w:p>${
