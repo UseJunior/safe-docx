@@ -15,7 +15,7 @@ const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Struc
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { createHash } from 'crypto';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive, DOCX_PATHS } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
@@ -95,7 +95,6 @@ async function buildRoundTripArtifacts(
   mode: ReconstructionMode
 ): Promise<RoundTripArtifacts> {
   const result = await compareDocuments(originalBuffer, revisedBuffer, {
-    engine: 'atomizer',
     reconstructionMode: mode,
   });
 

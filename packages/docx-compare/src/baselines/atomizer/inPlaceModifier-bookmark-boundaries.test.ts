@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
-import { compareDocuments } from '../../index.js';
+import { compareDocumentsAtomizer as compareDocuments } from './pipeline.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
 
@@ -12,7 +12,6 @@ async function compareInplace(originalBody: string, revisedBody: string) {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
   const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
     reconstructionMode: 'inplace',
     comparisonStrategy: 'legacy',
   });

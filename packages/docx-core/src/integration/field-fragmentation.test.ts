@@ -15,7 +15,7 @@
 
 import { describe, expect } from 'vitest';
 import { DOMParser } from '@xmldom/xmldom';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { validateFieldStructure } from '@usejunior/docx-compare';
 import {
@@ -50,7 +50,6 @@ async function compareInplace(
   comparisonStrategy: 'tagged-tree' | 'legacy' = 'tagged-tree',
 ): Promise<string> {
   const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
     reconstructionMode: 'inplace',
     comparisonStrategy,
   });

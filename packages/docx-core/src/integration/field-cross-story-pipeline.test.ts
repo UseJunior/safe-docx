@@ -12,7 +12,7 @@
 import { describe, expect } from 'vitest';
 import JSZip from 'jszip';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { AncillaryStorySafetyError, compareDocuments } from '@usejunior/docx-compare';
+import { AncillaryStorySafetyError, compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 
 const TEST_FEATURE = 'Cross-story Field Closure (#212)';
 const test = testAllure
@@ -152,7 +152,6 @@ describe('Cross-story field-closure check (issue #212) — pipeline-level', () =
 
       await when('compared in inplace mode', async () => {
         rejection = compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'inplace',
         });
       });
@@ -212,7 +211,6 @@ describe('Cross-story field-closure check (issue #212) — pipeline-level', () =
 
       await when('compared in inplace mode', async () => {
         rejection = compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'inplace',
         });
       });
@@ -260,7 +258,6 @@ describe('Cross-story field-closure check (issue #212) — pipeline-level', () =
 
       await when('compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'inplace',
         });
         await attachPrettyJson('comparison-metadata.json', {

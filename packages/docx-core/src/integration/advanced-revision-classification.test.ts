@@ -7,7 +7,7 @@ import { OOXML } from '../primitives/namespaces.js';
 import { DocxDocument } from '../primitives/document.js';
 import { createZipBuffer, readZipText } from '../primitives/zip.js';
 import { validateAiRevisions } from '../primitives/validate_ai_revisions.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
 import { revisionEvidence, revisionEvidenceCases } from '../testing/revision-evidence.js';
 
@@ -264,7 +264,7 @@ describe('ECMA-376 advanced revision records', () => {
         const outputByMode = new Map<string, Document>();
         for (const mode of ['inplace', 'rebuild'] as const) {
           const result = await when(`${mode} compares replacement text`, () =>
-            compareDocuments(original, revised, { engine: 'atomizer', reconstructionMode: mode }),
+            compareDocuments(original, revised, { reconstructionMode: mode }),
           );
           const doc = parseXml((await getResultParts(result.document)).documentXml);
           outputByMode.set(mode, doc);
@@ -287,7 +287,7 @@ describe('ECMA-376 advanced revision records', () => {
             for (const mode of modes) {
               const left = await buildSyntheticDocx({ paragraphs: [fixture.original] });
               const right = await buildSyntheticDocx({ paragraphs: [fixture.revised] });
-              const result = await compareDocuments(left, right, { engine: 'atomizer', reconstructionMode: mode });
+              const result = await compareDocuments(left, right, { reconstructionMode: mode });
               if (result.reconstructionModeUsed !== mode) return { documents: new Map<string, Document>() };
               documents.set(mode, parseXml((await getResultParts(result.document)).documentXml));
             }
@@ -680,7 +680,6 @@ describe('ECMA-376 advanced revision records', () => {
         for (const mode of ['inplace', 'rebuild'] as const) {
           const result = await when(`the pair is compared in ${mode} mode`, () =>
             compareDocuments(original, revised, {
-              engine: 'atomizer',
               reconstructionMode: mode,
             }),
           );
@@ -715,7 +714,7 @@ describe('ECMA-376 advanced revision records', () => {
             for (const mode of modes) {
               const left = await buildSyntheticDocx({ paragraphs: fixture.original });
               const right = await buildSyntheticDocx({ paragraphs: fixture.revised });
-              const result = await compareDocuments(left, right, { engine: 'atomizer', reconstructionMode: mode });
+              const result = await compareDocuments(left, right, { reconstructionMode: mode });
               if (result.reconstructionModeUsed !== mode) return { documents: new Map<string, Document>() };
               documents.set(mode, parseXml((await getResultParts(result.document)).documentXml));
             }
@@ -784,7 +783,6 @@ describe('ECMA-376 advanced revision records', () => {
         for (const mode of ['inplace', 'rebuild'] as const) {
           const result = await when(`the identical pair is compared in ${mode} mode`, () =>
             compareDocuments(input, input, {
-              engine: 'atomizer',
               comparisonStrategy: 'legacy',
               reconstructionMode: mode,
             }),
@@ -852,7 +850,6 @@ describe('ECMA-376 advanced revision records', () => {
             const mode = context.operation.endsWith('.rebuild') ? 'rebuild' : 'inplace';
             const bytes = await packageWithDocumentXml(serializeXml(fixture));
             const result = await compareDocuments(bytes, bytes, {
-              engine: 'atomizer',
               comparisonStrategy: 'legacy',
               reconstructionMode: mode,
             });

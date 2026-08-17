@@ -51,7 +51,7 @@ import {
   assignIdentityIds,
   IdentityInterner,
 } from '../../atomizer.js';
-import { compareDocuments } from '../../index.js';
+import { compareDocumentsAtomizer as compareDocuments } from './pipeline.js';
 import { computeAtomLcs } from './atomLcs.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Atom LCS' });
@@ -167,10 +167,9 @@ describe('LCS alignment pinning (#584)', () => {
 
     await when('the documents are compared with format detection on and move detection off', async () => {
       const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         date: FIXED_DATE,
-        ignoreFormatting: false,
-        detectMoves: false,
+        formatDetection: { detectFormatChanges: true },
+        moveDetection: { detectMoves: false },
         comparisonStrategy: 'legacy',
       });
       stats = result.stats;
@@ -216,10 +215,9 @@ describe('LCS alignment pinning (#584)', () => {
 
     await when('the documents are compared with format detection on and move detection off', async () => {
       const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         date: FIXED_DATE,
-        ignoreFormatting: false,
-        detectMoves: false,
+        formatDetection: { detectFormatChanges: true },
+        moveDetection: { detectMoves: false },
         comparisonStrategy: 'legacy',
       });
       stats = result.stats;

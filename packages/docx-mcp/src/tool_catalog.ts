@@ -610,14 +610,13 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'compare_documents',
     surface: 'revisionable',
     description:
-      'Compare two documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original. DOCX and ODF (.odt) support both modes. DOCX stats count insertions/deletions as contiguous ranges, expose atom totals as insertedAtoms/deletedAtoms, and report formatChanges separately from modifiedParagraphs. ODF compares at inline granularity (a modified paragraph is marked up in place — only the changed spans are struck or inserted).',
+      'Compare two documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original. DOCX and ODF (.odt) support both modes. DOCX output always uses the revised archive as its package base and publishes tagged revisions; engine, strategy, reconstruction, premerge, and refinement selectors are not exposed. DOCX stats count insertions/deletions as contiguous ranges, expose atom totals as insertedAtoms/deletedAtoms, and report formatChanges separately from modifiedParagraphs. ODF compares at inline granularity (a modified paragraph is marked up in place — only the changed spans are struck or inserted).',
     input: z.object({
       original_file_path: z.string().optional().describe('Path to the original DOCX or .odt file.'),
       revised_file_path: z.string().optional().describe('Path to the revised DOCX or .odt file.'),
       ...FILE_FIELD_OPTIONAL,
       save_to_local_path: z.string().describe('Path to save the tracked-changes output (DOCX or .odt).'),
       author: z.string().optional().describe("Author name for track changes. Default: 'Comparison' (DOCX) or the configured AI author (ODF)."),
-      engine: z.enum(['auto', 'atomizer']).optional().describe("Comparison engine (DOCX only). Default: 'auto'."),
       ignore_formatting: z.boolean().optional().describe('Ignore formatting differences (DOCX only). Default: false.'),
       compare_moves: z.boolean().optional().describe('Detect moved content (DOCX only). Default: true.'),
     }),

@@ -7,7 +7,7 @@
 import { buildSyntheticDocx, parseXml, serializeXml } from '@usejunior/docx-core';
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
-import { compareDocuments } from '../../index.js';
+import { compareDocumentsAtomizer as compareDocuments } from './pipeline.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { coalesceMoveRangeMarkers } from './inPlaceModifier-postprocess.js';
 import { buildDocxFromBodyXml, paragraphWithText } from '../../testing/ooxml-fixtures.js';
@@ -57,7 +57,6 @@ describe('Inplace move-range marker coalescing', () => {
 
       await when('the documents are compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'inplace',
           comparisonStrategy: 'legacy',
         });
@@ -112,7 +111,6 @@ describe('Inplace move-range marker coalescing', () => {
       );
 
       const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'inplace',
         comparisonStrategy: 'legacy',
       });

@@ -9,7 +9,7 @@ import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Reconstruction Metadata' });
 
@@ -54,7 +54,6 @@ describe('Reconstruction metadata', () => {
 
     await when('documents are compared with inplace mode requested', async () => {
       result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'inplace',
       });
     });
@@ -79,7 +78,6 @@ describe('Reconstruction metadata', () => {
 
     await when('documents are compared with rebuild mode requested', async () => {
       result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'rebuild',
       });
     });
@@ -109,7 +107,6 @@ describe('Reconstruction metadata', () => {
 
       await when('documents are compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'inplace',
         });
       });
@@ -142,7 +139,6 @@ describe('Reconstruction metadata', () => {
 
       await when('documents are compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'inplace',
         });
       });

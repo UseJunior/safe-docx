@@ -18,7 +18,7 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { generateDocx } from './compile.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import type { CompareResult, ReconstructionMode } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
@@ -217,7 +217,6 @@ async function buildRoundTripArtifacts(
   mode: ReconstructionMode,
 ): Promise<RoundTripArtifacts> {
   const result = await compareDocuments(originalBuffer, revisedBuffer, {
-    engine: 'atomizer',
     reconstructionMode: mode,
   });
 
@@ -266,7 +265,7 @@ describe('Author->compare round-trip guarantee', () => {
 
       let result!: CompareResult;
       await when('the two authored buffers are compared', async () => {
-        result = await compareDocuments(original, copy, { engine: 'atomizer' });
+        result = await compareDocuments(original, copy, {});
         await attachPrettyJson('self-compare-stats', result.stats);
       });
 
@@ -313,7 +312,7 @@ describe('Author->compare round-trip guarantee', () => {
       await then('a format-only edit reports a format change and no text atoms', async () => {
         const formatOriginal = await generateDocx(emphasisSpec(false));
         const formatRevised = await generateDocx(emphasisSpec(true));
-        const formatResult = await compareDocuments(formatOriginal, formatRevised, { engine: 'atomizer' });
+        const formatResult = await compareDocuments(formatOriginal, formatRevised, {});
         await attachPrettyJson('format-edit-stats', formatResult.stats);
         expect(formatResult.stats.formatChanges).toBeGreaterThanOrEqual(1);
         expect(formatResult.stats.insertedAtoms).toBe(0);
@@ -401,7 +400,6 @@ describe('Author->compare round-trip guarantee', () => {
         await when(`the original is compared against the malformed revision in '${mode}' mode`, async () => {
           try {
             result = await compareDocuments(original, malformed, {
-              engine: 'atomizer',
               comparisonStrategy: 'legacy',
               reconstructionMode: mode,
             });
@@ -440,7 +438,7 @@ describe('Author->compare round-trip guarantee', () => {
 
         await then('a well-formed revision in the same mode surfaces no safety failures (control)', async () => {
           const goodRevised = await generateDocx(bodyFieldSpec());
-          const goodResult = await compareDocuments(original, goodRevised, { engine: 'atomizer', reconstructionMode: mode });
+          const goodResult = await compareDocuments(original, goodRevised, { reconstructionMode: mode });
           expect(goodResult.rebuildSafetyDiagnostics).toBeUndefined();
         });
       },

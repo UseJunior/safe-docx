@@ -169,9 +169,9 @@ describe('ODF compare_documents lane (two-file)', () => {
           save_to_local_path: path.join(dir, 'out.docx'),
         });
       });
-      await then('the DOCX engine runs (engine_used present) and no ODF granularity is set', () => {
+      await then('the revised-based DOCX comparison runs and no ODF granularity is set', () => {
         assertSuccess(result, 'compare_documents');
-        expect(result.engine_used).toBeDefined();
+        expect(result.package_base).toBe('revised');
         expect(result.granularity).toBeUndefined();
         expect(result.provider).not.toBe('odf');
       });

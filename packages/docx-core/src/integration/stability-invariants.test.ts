@@ -11,7 +11,7 @@ import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
-import { compareDocuments, type ReconstructionMode } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments, type ReconstructionMode } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
@@ -96,7 +96,6 @@ async function runAndSnapshot(
   opts?: { premergeRuns?: boolean },
 ): Promise<RunSnapshot> {
   const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
     reconstructionMode,
     premergeRuns: opts?.premergeRuns,
   });
@@ -131,7 +130,6 @@ describe('Stability invariants', () => {
 
         await when(`documents are compared in ${mode} mode and transforms are applied`, async () => {
           const result = await compareDocuments(original, revised, {
-            engine: 'atomizer',
             reconstructionMode: mode,
           });
 
@@ -272,7 +270,10 @@ describe('Stability invariants', () => {
         expect(first.failedChecks).toEqual(second.failedChecks);
       });
     },
-    180000
+    // V8 coverage instrumentation roughly doubles the two concurrent ILPA
+    // comparisons on CI-class hosts; keep the assertion strict without racing
+    // the coverage runner's former 180-second ceiling.
+    240000
   );
 
   for (const mode of MODES) {
@@ -288,7 +289,6 @@ describe('Stability invariants', () => {
 
       await when(`original document is compared against itself in ${mode} mode`, async () => {
         result = await compareDocuments(original, original, {
-          engine: 'atomizer',
           reconstructionMode: mode,
         });
 

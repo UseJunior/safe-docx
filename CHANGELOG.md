@@ -2,20 +2,20 @@
 
 ## Unreleased
 
-- Behavior change: comparison now defaults to `reconstructionMode: 'inplace'`
-  everywhere. Previously the `@usejunior/docx-compare` library and its
-  `docx-comparison` / `safe-docx-compare` binaries defaulted to `'rebuild'`
-  while the MCP `compare_documents` tool and the `safe-docx` CLI defaulted to
-  `'inplace'`, so the same pair of documents produced different output
-  depending on which entry point you used. Callers that omit
-  `reconstructionMode` now get in-place reconstruction, which preserves the
-  revised document's existing structure; it falls back to `'rebuild'`
-  automatically when round-trip safety checks fail. Pass
-  `reconstructionMode: 'rebuild'` explicitly to keep the old behavior.
-- The `docx-comparison` / `safe-docx-compare` CLI JSON output now reports
-  `mode` as the mode actually used, alongside `mode_requested` and
-  `fallback_reason`. It previously reported the requested mode as the mode
-  used, hiding silent in-place to rebuild fallbacks.
+- **Breaking:** DOCX comparison now has one public behavior: tagged revisions
+  are assembled into the revised archive and publication fails closed if its
+  safety gates do not pass. `CompareOptions` no longer accepts `engine`,
+  `comparisonStrategy`, `reconstructionMode`, `premergeRuns`, or
+  `maxWordRefinementChangeRanges`; the library throws when JavaScript callers
+  pass one of those retired keys, and the CLIs and MCP schemas no longer expose
+  them.
+- Migration: callers that selected `reconstructionMode: 'rebuild'` previously
+  received an original-based package. Output now retains revised-side package
+  provenance, including rsids, section properties, headers and footers,
+  relationships, and content types. Update metadata assertions and integrations
+  that assumed original-side package identities.
+- CLI and MCP comparison results now report `package_base: 'revised'` instead
+  of engine, strategy, mode, or fallback metadata.
 - Migration note: DOCX comparison and redline generation moved from
   `@usejunior/docx-core` to `@usejunior/docx-compare`. Update comparison
   imports such as `compareDocuments` to use the new package name.

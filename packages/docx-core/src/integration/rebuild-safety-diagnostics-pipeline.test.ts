@@ -20,7 +20,7 @@ import {
   paragraphWithText,
   resultText,
 } from '../testing/ooxml-fixtures.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 
 const test = testAllure
   .epic('Document Comparison')
@@ -61,7 +61,6 @@ describe('Legacy rebuild-output safety screening (issue #226) — rollback engin
 
       await when('compared with reconstructionMode: rebuild requested explicitly', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
           comparisonStrategy: 'legacy',
         });
@@ -96,7 +95,6 @@ describe('Legacy rebuild-output safety screening (issue #226) — rollback engin
 
       await when('compared without specifying a reconstruction mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           comparisonStrategy: 'legacy',
         });
       });
@@ -122,7 +120,6 @@ describe('Legacy rebuild-output safety screening (issue #226) — rollback engin
 
       await when('compared with reconstructionMode: rebuild requested explicitly', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
           comparisonStrategy: 'legacy',
         });

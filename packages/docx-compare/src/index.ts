@@ -8,11 +8,13 @@
 import { compareDocumentsAtomizer } from './baselines/atomizer/pipeline.js';
 import type { CompareOptions, CompareResult } from './compare-types.js';
 
-// Phase 8 release-soak rollback control. It is deliberately absent from the
-// public option surface and is removed with the legacy implementation.
-const LEGACY_EMERGENCY_FALLBACK_DURING_SOAK = true;
-
-export { DEFAULT_RECONSTRUCTION_MODE } from './comparison-defaults.js';
+const REMOVED_COMPARISON_OPTIONS = [
+  'reconstructionMode',
+  'comparisonStrategy',
+  'engine',
+  'premergeRuns',
+  'maxWordRefinementChangeRanges',
+] as const;
 
 export type {
   CompareOptions,
@@ -71,49 +73,33 @@ export async function compareDocuments(
   revised: Buffer,
   options: CompareOptions = {},
 ): Promise<CompareResult> {
+  for (const option of REMOVED_COMPARISON_OPTIONS) {
+    if (Object.hasOwn(options, option)) {
+      throw new TypeError(
+        `Unsupported comparison option: ${option}. ` +
+        'Comparison now always publishes the revised-based tagged result.',
+      );
+    }
+  }
   const {
-    engine = 'auto',
     author,
     date,
     ignoreFormatting,
     detectMoves,
-    reconstructionMode,
-    premergeRuns,
-    maxWordRefinementChangeRanges,
-    comparisonStrategy,
   } = options;
 
-  if ((engine as string) === 'diffmatch') {
-    throw new Error(
-      "The 'diffmatch' engine has been removed from the public API. " +
-        "Use engine: 'atomizer' (recommended) or 'auto'.",
-    );
-  }
-
-  if (engine === 'atomizer' || engine === 'auto') {
-    return compareDocumentsAtomizer(original, revised, {
-      author,
-      date,
-      formatDetection:
-        ignoreFormatting === undefined
-          ? undefined
-          : { detectFormatChanges: !ignoreFormatting },
-      moveDetection:
-        detectMoves === undefined
-          ? undefined
-          : { detectMoves },
-      reconstructionMode,
-      premergeRuns,
-      maxWordRefinementChangeRanges,
-      comparisonStrategy,
-      legacyEmergencyFallback: LEGACY_EMERGENCY_FALLBACK_DURING_SOAK,
-    });
-  }
-
-  throw new Error(
-    'WmlComparer engine is only available through the benchmark CLI. ' +
-      'Use engine: "atomizer" or "auto" for programmatic access.',
-  );
+  return compareDocumentsAtomizer(original, revised, {
+    author,
+    date,
+    formatDetection:
+      ignoreFormatting === undefined
+        ? undefined
+        : { detectFormatChanges: !ignoreFormatting },
+    moveDetection:
+      detectMoves === undefined
+        ? undefined
+        : { detectMoves },
+  });
 }
 
 export * from './atomizer.js';

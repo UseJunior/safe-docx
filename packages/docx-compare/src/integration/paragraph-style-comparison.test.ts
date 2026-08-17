@@ -7,7 +7,7 @@ import {
   parseXml,
 } from '@usejunior/docx-core';
 import { describe, expect } from 'vitest';
-import { compareDocuments } from '../index.js';
+import { compareDocumentsAtomizer as compareDocuments } from '../baselines/atomizer/pipeline.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
@@ -57,9 +57,8 @@ async function compareBodies(
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
   const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
     reconstructionMode: mode,
-    ignoreFormatting,
+    formatDetection: { detectFormatChanges: !ignoreFormatting },
     author: AUTHOR,
     date: DATE,
   });
@@ -107,7 +106,6 @@ describe('direct paragraph style comparison', () => {
     ));
 
     const result = await compareDocuments(original, revised, {
-      engine: 'atomizer',
       reconstructionMode: 'inplace',
       author: AUTHOR,
       date: DATE,
@@ -133,7 +131,7 @@ describe('direct paragraph style comparison', () => {
     );
 
     const result = await compareDocuments(original, revised, {
-      engine: 'atomizer', reconstructionMode: 'inplace', author: AUTHOR, date: DATE,
+      reconstructionMode: 'inplace', author: AUTHOR, date: DATE,
     });
 
     expect(result.stats.formatChanges).toBe(1);

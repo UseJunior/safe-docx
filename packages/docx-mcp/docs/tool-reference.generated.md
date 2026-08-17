@@ -351,7 +351,7 @@ Delete a comment and all its threaded replies from the document. Cascade-deletes
 
 ## `compare_documents`
 
-Compare two documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original. DOCX and ODF (.odt) support both modes. DOCX stats count insertions/deletions as contiguous ranges, expose atom totals as insertedAtoms/deletedAtoms, and report formatChanges separately from modifiedParagraphs. ODF compares at inline granularity (a modified paragraph is marked up in place — only the changed spans are struck or inserted).
+Compare two documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original. DOCX and ODF (.odt) support both modes. DOCX output always uses the revised archive as its package base and publishes tagged revisions; engine, strategy, reconstruction, premerge, and refinement selectors are not exposed. DOCX stats count insertions/deletions as contiguous ranges, expose atom totals as insertedAtoms/deletedAtoms, and report formatChanges separately from modifiedParagraphs. ODF compares at inline granularity (a modified paragraph is marked up in place — only the changed spans are struck or inserted).
 
 - readOnly: `true`
 - destructive: `false`
@@ -363,7 +363,6 @@ Compare two documents and produce a tracked-changes output document. Provide ori
 | `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `save_to_local_path` | `string` | yes | Path to save the tracked-changes output (DOCX or .odt). |
 | `author` | `string` | no | Author name for track changes. Default: 'Comparison' (DOCX) or the configured AI author (ODF). |
-| `engine` | `enum("auto", "atomizer")` | no | Comparison engine (DOCX only). Default: 'auto'. |
 | `ignore_formatting` | `boolean` | no | Ignore formatting differences (DOCX only). Default: false. |
 | `compare_moves` | `boolean` | no | Detect moved content (DOCX only). Default: true. |
 

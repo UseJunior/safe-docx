@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
-import { compareDocuments } from './dist/index.js';
+import { compareDocuments } from '../docx-compare/dist/index.js';
 
 const projectRoot = process.env.ILPA_FIXTURE_ROOT ?? process.cwd();
 const ORIGINAL_DOC = join(projectRoot, 'tests/test_documents/redline/ILPA-Model-Limited-Partnership-Agreement-WOF_v2.docx');
@@ -13,10 +13,9 @@ async function main() {
     readFile(REVISED_DOC),
   ]);
 
-  console.log('Running comparison with INPLACE mode...');
+  console.log('Running revised-based tagged comparison...');
   const result = await compareDocuments(originalBuffer, revisedBuffer, {
-    engine: 'atomizer',
-    reconstructionMode: 'inplace',
+    author: 'Safe-Docx',
   });
 
   const outputPath = join(process.cwd(), 'ILPA-comparison-result.docx');

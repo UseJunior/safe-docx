@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { compareDocuments } from './dist/index.js';
+import { compareDocumentsAtomizer as compareDocuments } from '../docx-compare/dist/index.js';
 import { rejectAllChanges, extractTextWithParagraphs } from './dist/baselines/atomizer/trackChangesAcceptorAst.js';
 import { DocxArchive } from './dist/shared/docx/DocxArchive.js';
 
@@ -21,7 +21,6 @@ async function main() {
 
   console.log('Running comparison with REBUILD mode...');
   const result = await compareDocuments(originalBuffer, revisedBuffer, {
-    engine: 'atomizer',
     reconstructionMode: 'rebuild',
   });
 

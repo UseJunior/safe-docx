@@ -11,10 +11,7 @@ const test = testAllure
 async function compareInplace(originalBody: string, revisedBody: string) {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
-  const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
-    reconstructionMode: 'inplace',
-  });
+  const result = await compareDocuments(original, revised);
   expect(result.reconstructionModeUsed).toBe('inplace');
 
   const documentPart = (await JSZip.loadAsync(result.document)).file('word/document.xml');
@@ -34,7 +31,7 @@ describe('inplace original insertion provenance restoration', () => {
 
     await given('matched text that is pre-tracked as inserted only in the original input', () => {});
 
-    await when('the documents are compared using inplace reconstruction', async () => {
+    await when('the documents are compared through tagged publication', async () => {
       const comparison = await compareInplace(
         '<w:p><w:r><w:t>settled prefix </w:t></w:r>'
           + '<w:ins w:id="17" w:author="Original Reviewer" w:date="2024-03-04T05:06:07Z">'

@@ -28,7 +28,7 @@
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { parseXml } from '../primitives/xml.js';
 import { buildSyntheticDocx } from './synthetic-docx-fixture.js';
@@ -163,7 +163,6 @@ describe('Issue #94 — rebuild output structural completeness', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('comparing in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -196,7 +195,6 @@ describe('Issue #94 — rebuild output structural completeness', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('comparing in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -230,7 +228,6 @@ describe('Issue #94 — rebuild output structural completeness', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('comparing the document against itself in rebuild mode', async () => {
         result = await compareDocuments(doc, doc, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -294,7 +291,6 @@ describe('Issue #94 — rebuild output structural completeness', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('comparing in rebuild mode (forces revision-wrapper emission)', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });

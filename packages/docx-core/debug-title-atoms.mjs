@@ -4,7 +4,7 @@
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { compareDocuments } from './dist/index.js';
+import { compareDocumentsAtomizer as compareDocuments } from '../docx-compare/dist/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, '../..');

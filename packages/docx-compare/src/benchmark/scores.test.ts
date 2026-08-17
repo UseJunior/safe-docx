@@ -37,7 +37,7 @@ describe('Q1: Diff minimality', () => {
 
     await given('simple-word-change fixture is compared with atomizer', async () => {
       const { originalBuffer, revisedBuffer } = await loadFixture('simple-word-change');
-      const result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer' });
+      const result = await compareDocuments(originalBuffer, revisedBuffer, {});
       resultDocXml = await getDocumentXml(result.document);
     });
 
@@ -54,7 +54,7 @@ describe('Q1: Diff minimality', () => {
 
     await given('simple-word-change fixture is compared and same output used as oracle', async () => {
       const { originalBuffer, revisedBuffer } = await loadFixture('simple-word-change');
-      const result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer' });
+      const result = await compareDocuments(originalBuffer, revisedBuffer, {});
       resultDocXml = await getDocumentXml(result.document);
     });
 
@@ -71,7 +71,7 @@ describe('Q1: Diff minimality', () => {
 
     await given('no-change fixture is compared with atomizer', async () => {
       const { originalBuffer, revisedBuffer } = await loadFixture('no-change');
-      const result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer' });
+      const result = await compareDocuments(originalBuffer, revisedBuffer, {});
       resultDocXml = await getDocumentXml(result.document);
     });
 
@@ -88,7 +88,7 @@ describe('Q2: Compatibility', () => {
 
     await given('simple-word-change fixture is compared with atomizer', async () => {
       const { originalBuffer, revisedBuffer } = await loadFixture('simple-word-change');
-      result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer' });
+      result = await compareDocuments(originalBuffer, revisedBuffer, {});
     });
 
     await then('Q2 reports binary_missing when no LO path is given', async () => {
@@ -103,7 +103,7 @@ describe('Q2: Compatibility', () => {
 
     await given('simple-word-change fixture is compared with atomizer', async () => {
       const { originalBuffer, revisedBuffer } = await loadFixture('simple-word-change');
-      result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer' });
+      result = await compareDocuments(originalBuffer, revisedBuffer, {});
     });
 
     await then('Q2 reports binary_missing for a non-existent LO path', async () => {
@@ -120,7 +120,7 @@ describe('Q4: Extras', () => {
 
     await given('simple-word-change fixture is compared with atomizer', async () => {
       const { originalBuffer, revisedBuffer } = await loadFixture('simple-word-change');
-      const result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer' });
+      const result = await compareDocuments(originalBuffer, revisedBuffer, {});
       resultDocXml = await getDocumentXml(result.document);
     });
 
@@ -135,7 +135,7 @@ describe('Q4: Extras', () => {
 
     await given('simple-word-change fixture is compared with atomizer', async () => {
       const { originalBuffer, revisedBuffer } = await loadFixture('simple-word-change');
-      const result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer' });
+      const result = await compareDocuments(originalBuffer, revisedBuffer, {});
       resultDocXml = await getDocumentXml(result.document);
     });
 

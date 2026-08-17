@@ -18,7 +18,7 @@
 
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
 import { parseXml } from '../primitives/xml.js';
 import type JSZip from 'jszip';
@@ -206,7 +206,6 @@ describe('Auxiliary part ID collisions (issue #107)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -226,7 +225,6 @@ describe('Auxiliary part ID collisions (issue #107)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'inplace',
         });
       });
@@ -256,7 +254,6 @@ describe('Auxiliary part ID collisions (issue #107)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -299,7 +296,6 @@ describe('Auxiliary part ID collisions (issue #107)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -386,7 +382,6 @@ describe('Auxiliary part ID collisions (issue #107)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -456,7 +451,6 @@ describe('Auxiliary part ID collisions (issue #107)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -505,7 +499,6 @@ describe('Comment paraId collisions (issue #448)', () => {
     let result: Awaited<ReturnType<typeof compareDocuments>>;
     await when('documents are compared in rebuild mode', async () => {
       result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'rebuild',
       });
     });
@@ -525,7 +518,6 @@ describe('Comment paraId collisions (issue #448)', () => {
     let result: Awaited<ReturnType<typeof compareDocuments>>;
     await when('documents are compared in inplace mode', async () => {
       result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'inplace',
       });
     });
@@ -562,7 +554,6 @@ describe('Comment paraId collisions (issue #448)', () => {
     let result: Awaited<ReturnType<typeof compareDocuments>>;
     await when('documents are compared in rebuild mode', async () => {
       result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'rebuild',
       });
     });
@@ -616,7 +607,6 @@ describe('Comment paraId collisions (issue #448)', () => {
     let result: Awaited<ReturnType<typeof compareDocuments>>;
     await when('documents are compared in rebuild mode', async () => {
       result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'rebuild',
       });
     });
@@ -672,7 +662,6 @@ describe('Comment paraId collisions (issue #448)', () => {
     let result: Awaited<ReturnType<typeof compareDocuments>>;
     await when('documents are compared in inplace mode', async () => {
       result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'inplace',
       });
     });
@@ -726,7 +715,6 @@ describe('Comment paraId collisions (issue #448)', () => {
     let result: Awaited<ReturnType<typeof compareDocuments>>;
     await when('documents are compared in inplace mode', async () => {
       result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'inplace',
       });
     });

@@ -2,7 +2,7 @@ import { beforeAll, describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
@@ -169,7 +169,6 @@ async function runInplaceComparison(originalPath: string, revisedPath: string): 
   // with premerge enabled. See GitHub issue #35 (premerge-enabled inplace safety
   // check failure).
   const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
     reconstructionMode: 'inplace',
   });
 

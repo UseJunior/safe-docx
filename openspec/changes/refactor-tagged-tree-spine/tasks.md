@@ -67,9 +67,9 @@
 
 ## 9. Public breaking release
 
-- [ ] 9.1 Remove public `reconstructionMode`, `comparisonStrategy`, `engine`, `premergeRuns`, and `maxWordRefinementChangeRanges` across library, CLIs, MCP, scripts, and tests.
-- [ ] 9.2 Document revised-base package provenance and migration from rebuild output.
-- [ ] 9.3 Regenerate and validate tool docs, MCPB manifest, and capability projection.
+- [x] 9.1 Remove public `reconstructionMode`, `comparisonStrategy`, `engine`, `premergeRuns`, and `maxWordRefinementChangeRanges` across library, CLIs, MCP, scripts, and tests.
+- [x] 9.2 Document revised-base package provenance and migration from rebuild output.
+- [x] 9.3 Regenerate and validate tool docs, MCPB manifest, and capability projection.
 
 ## 10. Legacy deletion
 
@@ -88,7 +88,7 @@
 
 - [x] 12.1 Run build, docx-compare tests, spec coverage, package coverage, and strict OpenSpec validation.
 - [x] 12.2 From Phase 4, run docx-markdoc tests and both rationale compilation smokes.
-- [ ] 12.3 From Phase 9, run all workspaces and the full repository pre-submit command.
-- [ ] 12.4 For Phases 2 and 9, run tool-doc, MCPB-manifest, and capability-projection checks.
+- [x] 12.3 From Phase 9, run all workspaces and the full repository pre-submit command.
+- [x] 12.4 For Phases 2 and 9, run tool-doc, MCPB-manifest, and capability-projection checks.
 - [x] 12.5 Re-run the characterization manifest after every phase and adjudicate rather than absorb drift.
 - [ ] 12.6 Run real MCP comparison smoke and cross-reader checks after Phases 3, 6, and 10.

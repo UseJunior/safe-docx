@@ -16,11 +16,11 @@ import {
 } from '@usejunior/docx-core';
 import {
   acceptAllChanges,
-  compareDocuments,
   extractTextWithParagraphs,
   normalizeText,
   rejectAllChanges,
 } from '../../index.js';
+import { compareDocumentsAtomizer as compareDocuments } from './pipeline.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import {
   buildDocxFromBodyXml,
@@ -96,7 +96,6 @@ describe('Inplace revised insertion provenance collisions', () => {
 
       await given('settled original text matched by a revised-side inline insertion', () => {});
       const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'inplace',
         comparisonStrategy: 'legacy',
       });
@@ -131,7 +130,6 @@ describe('Inplace revised insertion provenance collisions', () => {
 
       await given('a settled original paragraph marked inserted on the revised side', () => {});
       const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'inplace',
         comparisonStrategy: 'legacy',
       });
@@ -162,7 +160,6 @@ describe('Inplace revised insertion provenance collisions', () => {
 
       await given('settled text whose revised insertion also changes formatting', () => {});
       const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'inplace',
         comparisonStrategy: 'legacy',
       });

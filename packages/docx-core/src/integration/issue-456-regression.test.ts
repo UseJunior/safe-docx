@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { acceptAllChanges, compareDocuments, rejectAllChanges } from '@usejunior/docx-compare';
+import { acceptAllChanges, compareDocumentsAtomizer as compareDocuments, rejectAllChanges } from '@usejunior/docx-compare';
 import { parseXml } from '../primitives/xml.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 
@@ -50,7 +50,6 @@ async function compareBodyXml(
   const original = await buildDocxFromBodyXml(originalBodyXml);
   const revised = await buildDocxFromBodyXml(revisedBodyXml);
   const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
     reconstructionMode,
     ...(comparisonStrategy ? { comparisonStrategy } : {}),
   });

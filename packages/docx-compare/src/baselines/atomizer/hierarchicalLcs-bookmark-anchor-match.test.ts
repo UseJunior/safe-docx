@@ -38,7 +38,7 @@ function anchored(name: string, text: string, id: number): string {
 async function compareBodies(originalBody: string, revisedBody: string): Promise<string> {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
-  const result = await compareDocuments(original, revised, { engine: 'atomizer', date: FIXED_DATE, detectMoves: false });
+  const result = await compareDocuments(original, revised, { date: FIXED_DATE, detectMoves: false });
   return (await DocxArchive.load(result.document)).getDocumentXml();
 }
 

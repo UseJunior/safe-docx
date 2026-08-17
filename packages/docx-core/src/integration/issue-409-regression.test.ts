@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { parseXml } from '../primitives/xml.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 
@@ -100,7 +100,6 @@ describe('Issue #409 — empty paragraph atom context', () => {
 
     await when('comparing in atomizer rebuild mode', async () => {
       result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'rebuild',
       });
       xml = await documentXml(result.document);
@@ -133,7 +132,6 @@ describe('Issue #409 — empty paragraph atom context', () => {
 
     await when('comparing in atomizer rebuild mode', async () => {
       result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'rebuild',
       });
       xml = await documentXml(result.document);
@@ -160,7 +158,6 @@ describe('Issue #409 — empty paragraph atom context', () => {
 
     await when('comparing in atomizer rebuild mode', async () => {
       result = await compareDocuments(doc, doc, {
-        engine: 'atomizer',
         reconstructionMode: 'rebuild',
       });
       xml = await documentXml(result.document);

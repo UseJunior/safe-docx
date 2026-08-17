@@ -11,7 +11,7 @@ import path from 'path';
 import { describe, expect } from 'vitest';
 import {
   acceptAllChanges,
-  compareDocuments,
+  compareDocumentsAtomizer as compareDocuments,
   compareTexts,
   extractTextWithParagraphs,
   rejectAllChanges,
@@ -56,7 +56,7 @@ async function deriveMinimallyEditedRevision(source: Buffer): Promise<Buffer> {
 }
 
 describe('NVCA COI Regression', () => {
-  test('should compare COI source vs filled in inplace mode without safety fallback', async ({
+  test('should compare COI source vs filled through the internal inplace rollback path', async ({
     given,
     when,
     then,
@@ -75,10 +75,10 @@ describe('NVCA COI Regression', () => {
       filledBuf = fs.readFileSync(filledPath);
     });
 
-    await when('documents are compared in inplace mode', async () => {
+    await when('documents are compared through the internal legacy rollback path', async () => {
       res = await compareDocuments(sourceBuf, filledBuf, {
-        engine: 'atomizer',
         reconstructionMode: 'inplace',
+        comparisonStrategy: 'legacy',
         author: 'RegressionTest',
       });
     });
@@ -149,7 +149,6 @@ describe('NVCA COI ancillary field evidence', () => {
         const revised = await deriveMinimallyEditedRevision(source);
 
         const result = await compareDocuments(source, revised, {
-          engine: 'atomizer',
           reconstructionMode,
           author: 'RegressionTest',
         });

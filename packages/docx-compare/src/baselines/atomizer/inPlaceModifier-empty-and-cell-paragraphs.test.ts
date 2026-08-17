@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
-import { compareDocuments } from '../../index.js';
+import { compareDocumentsAtomizer as compareDocuments } from './pipeline.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
@@ -33,7 +33,6 @@ async function compareInMode(
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
   const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
     reconstructionMode: mode,
     comparisonStrategy: 'legacy',
   });

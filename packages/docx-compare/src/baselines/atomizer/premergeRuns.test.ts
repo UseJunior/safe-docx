@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
-import { compareDocuments } from '../../index.js';
+import { compareDocumentsAtomizer as compareDocuments } from './pipeline.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { premergeAdjacentRuns } from './premergeRuns.js';
 import { el, testDoc } from '../../testing/dom-test-helpers.js';
@@ -497,12 +497,10 @@ describe('rsid-fragmented runs through the comparison pipeline (issue #675)', ()
     await when('both pairs are compared in inplace mode', async () => {
       alternatingResult = await compareDocuments(alternating, revised, {
         comparisonStrategy: 'legacy',
-        engine: 'atomizer',
         reconstructionMode: 'inplace',
       });
       uniformResult = await compareDocuments(uniform, revised, {
         comparisonStrategy: 'legacy',
-        engine: 'atomizer',
         reconstructionMode: 'inplace',
       });
       alternatingXml = await documentXml(alternatingResult.document);
@@ -553,7 +551,6 @@ describe('rsid-fragmented runs through the comparison pipeline (issue #675)', ()
     await when('the documents are compared in inplace mode', async () => {
       const result = await compareDocuments(source, revised, {
         comparisonStrategy: 'legacy',
-        engine: 'atomizer',
         reconstructionMode: 'inplace',
       });
       xml = await documentXml(result.document);

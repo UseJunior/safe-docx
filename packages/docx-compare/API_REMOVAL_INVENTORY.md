@@ -6,8 +6,8 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 “Deprecated” means retained for one release; “breaking removal” means intentionally absent now.
 
 - Stable compatibility surface: 64
-- Deprecated for one release: 68
-- Documented breaking removals: 8
+- Deprecated for one release: 67
+- Documented breaking removals: 9
 
 | Symbol | Kind | Source | Present | Disposition |
 | --- | --- | --- | --- | --- |
@@ -60,7 +60,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `CreateAtomOptions` | interface | `src/atomizer.ts` | yes | deprecate one release |
 | `createComparisonUnitAtom` | function | `src/atomizer.ts` | yes | deprecate one release |
 | `createRevisionIdState` | function | `src/move-detection.ts` | no | breaking removal |
-| `DEFAULT_RECONSTRUCTION_MODE` | value | `src/comparison-defaults.ts` | yes | deprecate one release |
+| `DEFAULT_RECONSTRUCTION_MODE` | value | `src/comparison-defaults.ts` | no | breaking removal |
 | `detectFormatChangesInAtomList` | function | `src/format-detection.ts` | yes | deprecate one release |
 | `detectMovesInAtomList` | function | `src/move-detection.ts` | yes | deprecate one release |
 | `detectParagraphStyleChanges` | function | `src/paragraph-style-detection.ts` | yes | deprecate one release |
@@ -157,12 +157,12 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `CompareOptions` field | Disposition |
 | --- | --- |
 | `author` | stable compatibility |
-| `comparisonStrategy` | deprecate one release |
+| `comparisonStrategy` | breaking removal |
 | `date` | stable compatibility |
 | `detectMoves` | stable compatibility |
-| `engine` | deprecate one release |
+| `engine` | breaking removal |
 | `ignoreFormatting` | stable compatibility |
-| `maxWordRefinementChangeRanges` | deprecate one release |
-| `premergeRuns` | deprecate one release |
-| `reconstructionMode` | deprecate one release |
+| `maxWordRefinementChangeRanges` | breaking removal |
+| `premergeRuns` | breaking removal |
+| `reconstructionMode` | breaking removal |
 

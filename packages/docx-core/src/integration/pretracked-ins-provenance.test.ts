@@ -30,7 +30,7 @@
 
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments, type ReconstructionMode } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments, type ReconstructionMode } from '@usejunior/docx-compare';
 import {
   acceptAllChanges,
   rejectAllChanges,
@@ -238,7 +238,6 @@ async function runComparison(
   comparisonStrategy: 'tagged-tree' | 'legacy' = 'tagged-tree',
 ): Promise<ProjectionReport> {
   const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
     reconstructionMode,
     comparisonStrategy,
   });

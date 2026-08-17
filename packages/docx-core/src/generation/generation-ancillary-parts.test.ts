@@ -14,7 +14,7 @@ import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readZipText } from '../primitives/zip.js';
 import { parseXml } from '../primitives/xml.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { generateDocx } from './compile.js';
 import { checkGeneratedPackage } from './structural-checks.js';
@@ -153,7 +153,7 @@ describe('Standard ancillary parts', () => {
       });
 
       await then('self-comparing the authored document keeps the theme in the result', async () => {
-        const result = await compareDocuments(buffer, buffer, { engine: 'atomizer', reconstructionMode: 'rebuild' });
+        const result = await compareDocuments(buffer, buffer, { reconstructionMode: 'rebuild' });
         const resultArchive = await DocxArchive.load(result.document);
         expect(resultArchive.listFiles()).toContain('word/theme/theme1.xml');
       });

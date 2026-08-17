@@ -6,7 +6,7 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { compareDocuments } from './dist/index.js';
+import { compareDocumentsAtomizer as compareDocuments } from '../docx-compare/dist/index.js';
 import { DocxArchive } from './dist/shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
@@ -51,7 +51,6 @@ async function main() {
 
   console.log('\n=== Running INPLACE mode comparison ===');
   const inplaceResult = await compareDocuments(originalBuffer, revisedBuffer, {
-    engine: 'atomizer',
     reconstructionMode: 'inplace',
     author: 'Debug',
   });
@@ -74,7 +73,6 @@ async function main() {
 
   console.log('\n=== Running REBUILD mode comparison ===');
   const rebuildResult = await compareDocuments(originalBuffer, revisedBuffer, {
-    engine: 'atomizer',
     reconstructionMode: 'rebuild',
     author: 'Debug',
   });

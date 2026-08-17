@@ -14,7 +14,7 @@
 
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { buildSyntheticDocx, buildDocxFromParts, getResultParts } from './synthetic-docx-fixture.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { parseXml } from '../primitives/xml.js';
@@ -116,7 +116,6 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -170,7 +169,6 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -241,7 +239,6 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -305,7 +302,6 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -361,7 +357,6 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -449,7 +444,6 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -508,7 +502,6 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -562,7 +555,6 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -649,7 +641,6 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -702,7 +693,6 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -739,7 +729,6 @@ describe('Paragraph-level marker reconstruction on rebuild (issue #106)', () => 
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -780,7 +769,6 @@ describe('Paragraph-level marker reconstruction on rebuild (issue #106)', () => 
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -819,7 +807,6 @@ describe('Paragraph-level marker reconstruction on rebuild (issue #106)', () => 
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'inplace',
         });
       });
@@ -857,7 +844,6 @@ describe('Multi-paragraph sibling comment ranges on rebuild (issue #103)', () =>
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -901,7 +887,6 @@ describe('Multi-paragraph sibling comment ranges on rebuild (issue #103)', () =>
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
           comparisonStrategy: 'legacy',
         });
@@ -959,7 +944,6 @@ describe('Move-range marker reconstruction on rebuild (issue #110)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -1006,7 +990,6 @@ describe('Move-range marker reconstruction on rebuild (issue #110)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'inplace',
         });
       });
@@ -1053,7 +1036,6 @@ describe('Move-range marker reconstruction on rebuild (issue #110)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -1089,7 +1071,6 @@ describe('Move-range marker reconstruction on rebuild (issue #110)', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
           comparisonStrategy: 'legacy',
         });
@@ -1122,7 +1103,6 @@ describe('Range-permission marker reconstruction on rebuild (issue #111)', () =>
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
         });
       });
@@ -1167,7 +1147,6 @@ describe('Range-permission marker reconstruction on rebuild (issue #111)', () =>
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in rebuild mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'rebuild',
           comparisonStrategy: 'legacy',
         });
@@ -1207,7 +1186,6 @@ describe('Range-permission marker reconstruction on rebuild (issue #111)', () =>
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'inplace',
         });
       });

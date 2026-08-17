@@ -1,6 +1,6 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import fs from 'fs';
 import path from 'path';
 
@@ -10,7 +10,7 @@ describe('NVCA Structural Regression', () => {
   const sourcePath = path.resolve(__dirname, '../../../../tests/test_documents/nvca-regression/source.docx');
   const filledPath = path.resolve(__dirname, '../../../../tests/test_documents/nvca-regression/filled.docx');
 
-  test('should compare NVCA source vs filled in inplace mode without safety fallback', async ({ given, when, then, and }: AllureBddContext) => {
+  test('should compare NVCA source vs filled through the internal inplace rollback path', async ({ given, when, then, and }: AllureBddContext) => {
     let sourceBuf: Buffer;
     let filledBuf: Buffer;
     let res: Awaited<ReturnType<typeof compareDocuments>>;
@@ -22,10 +22,10 @@ describe('NVCA Structural Regression', () => {
       filledBuf = fs.readFileSync(filledPath);
     });
 
-    await when('documents are compared in inplace mode', async () => {
+    await when('documents are compared through the internal legacy rollback path', async () => {
       res = await compareDocuments(sourceBuf, filledBuf, {
-        engine: 'atomizer',
         reconstructionMode: 'inplace',
+        comparisonStrategy: 'legacy',
         author: 'RegressionTest'
       });
     });

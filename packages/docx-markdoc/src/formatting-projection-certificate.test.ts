@@ -21,8 +21,6 @@ async function formattingFixture(): Promise<{ source: Buffer; clean: Buffer; tra
     '<w:r><w:rPr><w:highlight w:val="yellow"/><w:u w:val="single"/></w:rPr><w:t>Replacement words.</w:t></w:r>',
   ));
   const compared = await compareDocuments(source, clean, {
-    engine: 'atomizer',
-    reconstructionMode: 'inplace',
     author: 'Formatting certificate test',
     date: new Date('2026-08-12T00:00:00.000Z'),
   });

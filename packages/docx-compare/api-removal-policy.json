@@ -83,7 +83,6 @@
       "countWords",
       "CreateAtomOptions",
       "createComparisonUnitAtom",
-      "DEFAULT_RECONSTRUCTION_MODE",
       "detectFormatChangesInAtomList",
       "detectMovesInAtomList",
       "detectParagraphStyleChanges",
@@ -145,17 +144,18 @@
     { "symbol": "generateMoveSourceMarkup", "kind": "function", "source": "src/move-detection.ts" },
     { "symbol": "MoveMarkup", "kind": "interface", "source": "src/move-detection.ts" },
     { "symbol": "MoveMarkupOptions", "kind": "interface", "source": "src/move-detection.ts" },
-    { "symbol": "RevisionIdState", "kind": "interface", "source": "src/move-detection.ts" }
+    { "symbol": "RevisionIdState", "kind": "interface", "source": "src/move-detection.ts" },
+    { "symbol": "DEFAULT_RECONSTRUCTION_MODE", "kind": "value", "source": "src/comparison-defaults.ts" }
   ],
   "publicOptions": {
     "author": "stable compatibility",
-    "comparisonStrategy": "deprecate one release",
+    "comparisonStrategy": "breaking removal",
     "date": "stable compatibility",
     "detectMoves": "stable compatibility",
-    "engine": "deprecate one release",
+    "engine": "breaking removal",
     "ignoreFormatting": "stable compatibility",
-    "maxWordRefinementChangeRanges": "deprecate one release",
-    "premergeRuns": "deprecate one release",
-    "reconstructionMode": "deprecate one release"
+    "maxWordRefinementChangeRanges": "breaking removal",
+    "premergeRuns": "breaking removal",
+    "reconstructionMode": "breaking removal"
   }
 }

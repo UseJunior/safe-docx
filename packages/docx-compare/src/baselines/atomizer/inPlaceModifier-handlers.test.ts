@@ -15,11 +15,11 @@ import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import {
   acceptAllChanges,
-  compareDocuments,
   extractTextWithParagraphs,
   normalizeText,
   rejectAllChanges,
 } from '../../index.js';
+import { compareDocumentsAtomizer as compareDocuments } from './pipeline.js';
 import { findAllByTagName, parseXml } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
@@ -57,7 +57,6 @@ async function inplaceCompareFull(
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
   const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
     reconstructionMode: 'inplace',
     comparisonStrategy: 'legacy',
   });

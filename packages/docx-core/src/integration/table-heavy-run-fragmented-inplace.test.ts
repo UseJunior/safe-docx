@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { acceptAllChanges, compareDocuments } from '@usejunior/docx-compare';
+import { acceptAllChanges, compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { generateDocx } from '../generation/compile.js';
 import type { BorderSpec, DocumentSpec, TableRowSpec, TableSpec } from '../generation/types.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
@@ -127,7 +127,6 @@ describe('Legacy inplace reconstruction pass selection', () => {
 
       await when('the fragmented pair is compared in inplace mode with run premerge disabled', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'inplace',
           premergeRuns: false,
           comparisonStrategy: 'legacy',
@@ -179,7 +178,6 @@ describe('Inplace reconstruction on table-heavy run-fragmented templates', () =>
 
       await when('the small table-cell text edit is compared in inplace mode with run premerge disabled', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
           reconstructionMode: 'inplace',
           premergeRuns: false,
         });

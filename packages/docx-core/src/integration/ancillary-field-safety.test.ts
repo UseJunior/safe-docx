@@ -1,7 +1,7 @@
 import { describe, expect } from 'vitest';
 import {
   AncillaryStorySafetyError,
-  compareDocuments,
+  compareDocumentsAtomizer as compareDocuments,
   type AncillaryFieldRangeEvidence,
 } from '@usejunior/docx-compare';
 import {
@@ -185,7 +185,6 @@ describe('ancillary field story publication boundary', () => {
       });
 
       const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'inplace',
       });
       const ranges = evidenceRanges(result);
@@ -240,7 +239,6 @@ describe('ancillary field story publication boundary', () => {
       });
 
       const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         comparisonStrategy: 'legacy',
         reconstructionMode: 'inplace',
       });
@@ -288,7 +286,6 @@ describe('ancillary field story publication boundary', () => {
       });
 
       await expect(compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'rebuild',
       })).rejects.toMatchObject({
         name: 'AncillaryStorySafetyError',
@@ -318,7 +315,6 @@ describe('ancillary field story publication boundary', () => {
       });
 
       const rejection = compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'rebuild',
       });
       await expect(rejection).rejects.toBeInstanceOf(AncillaryStorySafetyError);
@@ -354,7 +350,6 @@ describe('ancillary field story publication boundary', () => {
       });
 
       await expect(compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'rebuild',
       })).rejects.toMatchObject({
         name: 'AncillaryStorySafetyError',
@@ -383,7 +378,6 @@ describe('ancillary field story publication boundary', () => {
       });
 
       const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'rebuild',
       });
       const ranges = evidenceRanges(result);
@@ -420,7 +414,6 @@ describe('ancillary field story publication boundary', () => {
       });
 
       const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'rebuild',
       });
       expect(evidenceRanges(result)).toEqual([
@@ -454,7 +447,6 @@ describe('ancillary field story publication boundary', () => {
       });
 
       await expect(compareDocuments(original, revised, {
-        engine: 'atomizer',
         comparisonStrategy: 'legacy',
         reconstructionMode: 'inplace',
       })).rejects.toMatchObject({
@@ -486,7 +478,6 @@ describe('ancillary field story publication boundary', () => {
       });
 
       const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode: 'rebuild',
       });
 

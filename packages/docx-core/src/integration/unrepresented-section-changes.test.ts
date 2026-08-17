@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { auditSectPr } from '../primitives/sectPrAudit.js';
 import {
@@ -91,7 +91,6 @@ describe('unrepresented section and header/footer reporting', () => {
       });
       const [original, revised] = await issue648Pair();
       const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         // This scenario characterizes the rollback engine's deliberate
         // classification of section topology as unrepresented.
         comparisonStrategy: 'legacy',
@@ -109,7 +108,6 @@ describe('unrepresented section and header/footer reporting', () => {
       ]));
 
       const tagged = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         comparisonStrategy: 'tagged-tree',
         reconstructionMode: 'inplace',
       });
@@ -133,7 +131,6 @@ describe('unrepresented section and header/footer reporting', () => {
     const revised = await packageWithFooter('rIdRevised', 'Revised footer');
     for (const reconstructionMode of ['inplace', 'rebuild'] as const) {
       const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
         reconstructionMode,
       });
       expect(result.unrepresentedChanges).toEqual([{
@@ -149,7 +146,6 @@ describe('unrepresented section and header/footer reporting', () => {
     const original = await packageWithFooter('rIdOriginal', 'Same footer');
     const revised = await packageWithFooter('rIdRevised', 'Same footer');
     const result = await compareDocuments(original, revised, {
-      engine: 'atomizer',
       reconstructionMode: 'inplace',
     });
     expect(result.unrepresentedChanges).toBeUndefined();
@@ -173,7 +169,6 @@ describe('unrepresented section and header/footer reporting', () => {
       auditSectPr(await revisedArchive.getDocumentXml()).stats.totalSectPrCount,
     ).toBe(1);
     const result = await compareDocuments(original, revised, {
-      engine: 'atomizer',
       reconstructionMode: 'inplace',
     });
     expect(result.unrepresentedChanges).toBeUndefined();
@@ -184,7 +179,6 @@ describe('unrepresented section and header/footer reporting', () => {
     async () => {
       const [document] = await issue648Pair();
       const result = await compareDocuments(document, document, {
-        engine: 'atomizer',
         reconstructionMode: 'inplace',
       });
       expect(result.unrepresentedChanges).toBeUndefined();

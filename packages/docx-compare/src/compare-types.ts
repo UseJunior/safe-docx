@@ -10,40 +10,6 @@ export interface CompareOptions {
   ignoreFormatting?: boolean;
   /** Detect content moved within the document. Default: true */
   detectMoves?: boolean;
-  /**
-   * Atomizer-only normalization: merge adjacent <w:r> siblings with identical formatting
-   * prior to comparison. This can reduce overly-granular diffs for heavily-fragmented docs.
-   *
-   * Default: true.
-   */
-  premergeRuns?: boolean;
-  /**
-   * Maximum contiguous inserted/deleted ranges that selective word refinement
-   * may create for one candidate aligned run pair. When that pair would exceed
-   * the budget, the comparer keeps its coarser run-level replacement without
-   * disabling sparse refinement elsewhere. Omit to preserve unrestricted
-   * surgical refinement.
-   */
-  maxWordRefinementChangeRanges?: number;
-  /**
-   * How to reconstruct the output DOCX when using the atomizer engine:
-   * - 'rebuild': rebuild document.xml from scratch (more reject/accept stable)
-   * - 'inplace': modify the revised document AST in place (more experimental)
-   *
-   * Default: {@link DEFAULT_RECONSTRUCTION_MODE}.
-   */
-  reconstructionMode?: ReconstructionMode;
-  /** Select the comparison construction strategy. Tagged-tree is default; legacy is the rollback path. */
-  comparisonStrategy?: ComparisonStrategy;
-  /**
-   * Comparison engine to use:
-   * - 'atomizer': Character-level comparison with move detection (recommended)
-   * - 'wmlcomparer': .NET WmlComparer (requires external runtime)
-   * - 'auto': Automatically select best available engine (currently 'atomizer')
-   *
-   * Default: 'auto'
-   */
-  engine?: 'wmlcomparer' | 'atomizer' | 'auto';
 }
 
 /** @internal A source-side range whose generated revision must remain attributable. */
