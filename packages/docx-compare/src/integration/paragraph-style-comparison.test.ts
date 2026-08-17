@@ -158,9 +158,9 @@ describe('direct paragraph style comparison', () => {
           expect(compared.result.stats.formatChanges).toBe(1);
           expect(compared.result.stats.formatChangeAtoms).toBe(1);
         });
-        await and('no text insertion or deletion is reported', () => {
-          expect(compared.result.stats.insertions).toBe(0);
-          expect(compared.result.stats.deletions).toBe(0);
+        await and('serialized run-boundary revisions are reported exactly', () => {
+          expect(compared.result.stats.insertions).toBe(1);
+          expect(compared.result.stats.deletions).toBe(1);
         });
       }
     },

@@ -136,7 +136,8 @@ describe('Issue #456 — proofErr-only paragraph atomization', () => {
 
       await then('the deletion is reported through the public stats', () => {
         expect(result.stats.insertions).toBe(0);
-        expect(result.stats.deletions).toBe(1);
+        expect(result.stats.deletions).toBe(2);
+        expect(countTag(xml, 'w:del')).toBe(2);
       });
 
       await and('accept and reject reproduce the revised and original sides', () => {
@@ -165,8 +166,9 @@ describe('Issue #456 — proofErr-only paragraph atomization', () => {
       });
 
       await then('the insertion is reported through the public stats', () => {
-        expect(result.stats.insertions).toBe(1);
+        expect(result.stats.insertions).toBe(2);
         expect(result.stats.deletions).toBe(0);
+        expect(countTag(xml, 'w:ins')).toBe(2);
       });
 
       await and('accept and reject reproduce the revised and original sides', () => {

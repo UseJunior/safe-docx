@@ -6,6 +6,7 @@ import {
   getParagraphRuns,
 } from '@usejunior/docx-core';
 import type { RevisionAttributionRange } from '../../compare-types.js';
+import { getChangedPropertyNames } from '../../propertyNaming.js';
 import {
   countWords,
   jaccardWordSimilarity,
@@ -179,7 +180,7 @@ function propertyDelta(original: WmlElement, revised: WmlElement): PropertyDelta
     scope: descriptor.scope,
     original: originalProperty,
     revised: revisedProperty,
-    changedProperties: ['directProperties'],
+    changedProperties: getChangedPropertyNames(originalProperty, revisedProperty),
   };
 }
 

@@ -280,11 +280,11 @@
           }
         ],
         "stats": {
-          "insertions": 2,
-          "deletions": 3,
+          "insertions": 4,
+          "deletions": 6,
           "modifications": 0,
-          "insertedRanges": 2,
-          "deletedRanges": 3,
+          "insertedRanges": 4,
+          "deletedRanges": 6,
           "insertedAtoms": 16,
           "deletedAtoms": 18,
           "modifiedParagraphs": 0,
@@ -538,10 +538,10 @@
           }
         ],
         "stats": {
-          "insertions": 1,
+          "insertions": 2,
           "deletions": 0,
           "modifications": 0,
-          "insertedRanges": 1,
+          "insertedRanges": 2,
           "deletedRanges": 0,
           "insertedAtoms": 10,
           "deletedAtoms": 0,
@@ -834,8 +834,8 @@
           },
           {
             "path": "word/footnotes.xml",
-            "bytes": 21856,
-            "sha256": "93bd913eae7352c6ee0c666b611a55a062df9f752ab3e53511e5c63b3af19f40",
+            "bytes": 21022,
+            "sha256": "ba113eb1c4e6b65c41b2bce039da8db252e0abe43b7cb0c90688c8dc29682b17",
             "kind": "xml"
           },
           {
@@ -1382,8 +1382,8 @@
           },
           {
             "path": "word/footnotes.xml",
-            "bytes": 23998,
-            "sha256": "f69b7928909b3fdbb71c84aaec288293eba4a309813acdaadd545bf969651ffe",
+            "bytes": 24500,
+            "sha256": "ad7e472e6a0e540f17586e6ddf4207db3c1eafb20573d249d90a5a1381104586",
             "kind": "xml"
           },
           {
@@ -1562,14 +1562,14 @@
           }
         ],
         "stats": {
-          "insertions": 84,
-          "deletions": 79,
-          "modifications": 53,
-          "insertedRanges": 84,
-          "deletedRanges": 79,
+          "insertions": 855,
+          "deletions": 790,
+          "modifications": 496,
+          "insertedRanges": 855,
+          "deletedRanges": 790,
           "insertedAtoms": 1865,
           "deletedAtoms": 171,
-          "modifiedParagraphs": 53,
+          "modifiedParagraphs": 496,
           "formatChanges": 17,
           "formatChangeAtoms": 17
         },
@@ -2481,10 +2481,10 @@
         ],
         "stats": {
           "insertions": 0,
-          "deletions": 1,
+          "deletions": 2,
           "modifications": 0,
           "insertedRanges": 0,
-          "deletedRanges": 1,
+          "deletedRanges": 2,
           "insertedAtoms": 0,
           "deletedAtoms": 10,
           "modifiedParagraphs": 0,
@@ -2738,10 +2738,10 @@
           }
         ],
         "stats": {
-          "insertions": 1,
+          "insertions": 2,
           "deletions": 0,
           "modifications": 0,
-          "insertedRanges": 1,
+          "insertedRanges": 2,
           "deletedRanges": 0,
           "insertedAtoms": 12,
           "deletedAtoms": 0,
@@ -2996,11 +2996,11 @@
           }
         ],
         "stats": {
-          "insertions": 1,
-          "deletions": 1,
+          "insertions": 2,
+          "deletions": 2,
           "modifications": 1,
-          "insertedRanges": 1,
-          "deletedRanges": 1,
+          "insertedRanges": 2,
+          "deletedRanges": 2,
           "insertedAtoms": 3,
           "deletedAtoms": 3,
           "modifiedParagraphs": 1,
@@ -3512,11 +3512,11 @@
           }
         ],
         "stats": {
-          "insertions": 2,
-          "deletions": 2,
+          "insertions": 3,
+          "deletions": 4,
           "modifications": 1,
-          "insertedRanges": 2,
-          "deletedRanges": 2,
+          "insertedRanges": 3,
+          "deletedRanges": 4,
           "insertedAtoms": 4,
           "deletedAtoms": 10,
           "modifiedParagraphs": 1,
@@ -4230,14 +4230,14 @@
           }
         ],
         "stats": {
-          "insertions": 10,
-          "deletions": 11,
-          "modifications": 10,
-          "insertedRanges": 10,
-          "deletedRanges": 11,
+          "insertions": 0,
+          "deletions": 5,
+          "modifications": 0,
+          "insertedRanges": 0,
+          "deletedRanges": 5,
           "insertedAtoms": 10,
           "deletedAtoms": 193,
-          "modifiedParagraphs": 10,
+          "modifiedParagraphs": 0,
           "formatChanges": 0,
           "formatChangeAtoms": 0
         },
@@ -4831,10 +4831,10 @@
         ],
         "stats": {
           "insertions": 0,
-          "deletions": 1,
+          "deletions": 8,
           "modifications": 0,
           "insertedRanges": 0,
-          "deletedRanges": 1,
+          "deletedRanges": 8,
           "insertedAtoms": 0,
           "deletedAtoms": 350,
           "modifiedParagraphs": 0,
@@ -5457,10 +5457,10 @@
         ],
         "stats": {
           "insertions": 0,
-          "deletions": 1,
+          "deletions": 2,
           "modifications": 0,
           "insertedRanges": 0,
-          "deletedRanges": 1,
+          "deletedRanges": 2,
           "insertedAtoms": 0,
           "deletedAtoms": 4,
           "modifiedParagraphs": 0,
@@ -5864,10 +5864,10 @@
         ],
         "stats": {
           "insertions": 0,
-          "deletions": 1,
+          "deletions": 2,
           "modifications": 0,
           "insertedRanges": 0,
-          "deletedRanges": 1,
+          "deletedRanges": 2,
           "insertedAtoms": 0,
           "deletedAtoms": 243,
           "modifiedParagraphs": 0,
@@ -6517,10 +6517,10 @@
         ],
         "stats": {
           "insertions": 0,
-          "deletions": 1,
+          "deletions": 3,
           "modifications": 0,
           "insertedRanges": 0,
-          "deletedRanges": 1,
+          "deletedRanges": 3,
           "insertedAtoms": 0,
           "deletedAtoms": 21,
           "modifiedParagraphs": 0,
@@ -7059,14 +7059,14 @@
           }
         ],
         "stats": {
-          "insertions": 0,
-          "deletions": 1,
-          "modifications": 0,
-          "insertedRanges": 0,
-          "deletedRanges": 1,
+          "insertions": 1,
+          "deletions": 4,
+          "modifications": 1,
+          "insertedRanges": 1,
+          "deletedRanges": 4,
           "insertedAtoms": 0,
           "deletedAtoms": 288,
-          "modifiedParagraphs": 0,
+          "modifiedParagraphs": 1,
           "formatChanges": 0,
           "formatChangeAtoms": 0
         },
@@ -7674,10 +7674,10 @@
         ],
         "stats": {
           "insertions": 0,
-          "deletions": 1,
+          "deletions": 4,
           "modifications": 0,
           "insertedRanges": 0,
-          "deletedRanges": 1,
+          "deletedRanges": 4,
           "insertedAtoms": 0,
           "deletedAtoms": 176,
           "modifiedParagraphs": 0,

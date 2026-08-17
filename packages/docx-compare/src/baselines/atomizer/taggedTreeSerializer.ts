@@ -3,6 +3,7 @@ import type { WmlElement } from '@usejunior/docx-core';
 import { childElements, parseXml } from '@usejunior/docx-core';
 import { alignComparisonSequences, tokenizeComparisonText } from '../../textAlignment.js';
 import type { RevisionAttribution } from '../../compare-types.js';
+import { getChangedPropertyNames } from '../../propertyNaming.js';
 import {
   nextRevisionId,
   PROPERTY_SCOPE_ELEMENT,
@@ -16,6 +17,7 @@ import {
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const OPERATION_PROVENANCE_ATTRIBUTE = 'data-safe-docx-operation';
+export const COMPARISON_REVISION_ATTRIBUTE = 'data-safe-docx-comparison-revision';
 const DIRECT_PROPERTY_BY_CONTAINER: Readonly<Record<string, string>> = {
   p: 'w:pPr',
   r: 'w:rPr',
@@ -142,6 +144,10 @@ function markOperationProvenance(
   if (operationIds[0]) revision.setAttribute(OPERATION_PROVENANCE_ATTRIBUTE, operationIds[0]);
 }
 
+function markComparisonRevision(revision: WmlElement): void {
+  revision.setAttribute(COMPARISON_REVISION_ATTRIBUTE, '1');
+}
+
 function wrapRevision(
   node: WmlElement,
   kind: 'ins' | 'del' | 'moveFrom' | 'moveTo',
@@ -152,6 +158,7 @@ function wrapRevision(
   wrapper.setAttributeNS(W_NS, 'w:id', String(revision.id));
   wrapper.setAttributeNS(W_NS, 'w:author', revision.author);
   wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
+  markComparisonRevision(wrapper);
   markOperationProvenance(wrapper, operationIds);
   if (kind === 'del' || kind === 'moveFrom') node = convertDeletedText(node);
   wrapper.appendChild(node);
@@ -305,6 +312,7 @@ function markWholeParagraph(
   marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
   marker.setAttributeNS(W_NS, 'w:author', revision.author);
   marker.setAttributeNS(W_NS, 'w:date', revision.date);
+  markComparisonRevision(marker);
   paraRPr.appendChild(marker);
 
   const content = childElements(paragraph).filter((child) => child !== pPr);
@@ -330,6 +338,7 @@ function markWholeParagraph(
       wrapper.setAttributeNS(W_NS, 'w:id', String(contentRevision.id));
       wrapper.setAttributeNS(W_NS, 'w:author', revision.author);
       wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
+      markComparisonRevision(wrapper);
       markOperationProvenance(wrapper, operationIds);
     }
     if (kind === 'del') convertDeletedText(child);
@@ -354,6 +363,7 @@ function markWholeTableRow(
   marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
   marker.setAttributeNS(W_NS, 'w:author', revision.author);
   marker.setAttributeNS(W_NS, 'w:date', revision.date);
+  markComparisonRevision(marker);
   markOperationProvenance(marker, operationIds);
   const boundary = childElements(trPr).find((child) =>
     kind === 'ins'
@@ -423,6 +433,7 @@ function applyPropertyDelta(node: WmlElement, tagged: TaggedNode, revision: Comp
   change.setAttributeNS(W_NS, 'w:id', String(revision.id));
   change.setAttributeNS(W_NS, 'w:author', revision.author);
   change.setAttributeNS(W_NS, 'w:date', revision.date);
+  markComparisonRevision(change);
   // A property addition still needs a typed, empty old-value snapshot.  A
   // self-closing *PrChange element is ambiguous to consumers (and gives the
   // reject projector nothing to restore), whereas OOXML represents the
@@ -437,6 +448,7 @@ function appendChangeMetadata(change: WmlElement, revision: ComparisonRevision):
   change.setAttributeNS(W_NS, 'w:id', String(revision.id));
   change.setAttributeNS(W_NS, 'w:author', revision.author);
   change.setAttributeNS(W_NS, 'w:date', revision.date);
+  markComparisonRevision(change);
 }
 
 function applyParagraphPropertyDelta(
@@ -683,7 +695,12 @@ function emitCommonRun(
   if (serialize(before) !== serialize(after)) {
     applyPropertyDelta(live, {
       tag: 'both', original, revised, children: [], opaque: true,
-      propertyDelta: { scope: 'run', original: before, revised: after, changedProperties: ['directProperties'] },
+      propertyDelta: {
+        scope: 'run',
+        original: before,
+        revised: after,
+        changedProperties: getChangedPropertyNames(before, after),
+      },
     }, allocateRevision());
   }
   return live;
@@ -1297,6 +1314,8 @@ export interface TaggedTreeSerializerOptions {
   /** Package/story skeleton. Tracked content still projects to both sides. */
   baseSide?: Side;
   moves?: readonly TaggedMoveRelation[];
+  /** @internal Retain private markers until publication statistics are read. */
+  retainComparisonRevisionMarkers?: boolean;
 }
 
 export function serializeTaggedTree(
@@ -1347,6 +1366,14 @@ export function serializeTaggedTree(
   splitCrossParagraphBookmarkCounterparts(emitted, originalBookmarkIds, allocateRevision);
   hoistFieldCharactersFromDeletions(emitted);
   hoistLiteralInsertionsFromDeletedFieldInstructions(emitted);
+  if (!options.retainComparisonRevisionMarkers) {
+    if (emitted.hasAttribute(COMPARISON_REVISION_ATTRIBUTE)) {
+      emitted.removeAttribute(COMPARISON_REVISION_ATTRIBUTE);
+    }
+    for (const element of Array.from(emitted.getElementsByTagName('*'))) {
+      element.removeAttribute(COMPARISON_REVISION_ATTRIBUTE);
+    }
+  }
   return new XMLSerializer().serializeToString(emitted);
 }
 

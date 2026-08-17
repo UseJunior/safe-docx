@@ -1,6 +1,10 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
-import { buildTaggedTreeShadowXml, runTaggedTreeShadow } from './taggedTreeShadow.js';
+import {
+  buildTaggedTreePublication,
+  buildTaggedTreeShadowXml,
+  runTaggedTreeShadow,
+} from './taggedTreeShadow.js';
 import {
   buildStandaloneTaggedPackage,
   compareDocumentsAtomizer,
@@ -55,6 +59,66 @@ function projectTableRows(documentXml: string, projection: 'accept' | 'reject'):
 }
 
 describe('tagged-tree offline evaluation', () => {
+  test.openspec('Tagged statistics describe emitted markup')(
+    'derives every range total after serializer wrapper transformations',
+    () => {
+      const original = `<w:document xmlns:w="${W_NS}"><w:body><w:p>`
+        + '<w:bookmarkStart w:id="0" w:name="clause"/>'
+        + '<w:r><w:t>old words</w:t></w:r><w:bookmarkEnd w:id="0"/>'
+        + '</w:p></w:body></w:document>';
+      const revised = `<w:document xmlns:w="${W_NS}"><w:body><w:p>`
+        + '<w:bookmarkStart w:id="0" w:name="clause"/>'
+        + '<w:r><w:t>new words</w:t></w:r><w:bookmarkEnd w:id="0"/>'
+        + '</w:p></w:body></w:document>';
+
+      const publication = buildTaggedTreePublication({
+        originalXml: original,
+        revisedXml: revised,
+        author: 'Comparator',
+        date: new Date('2026-08-17T12:00:00Z'),
+      });
+      const document = parseXml(publication.xml);
+
+      expect(publication.stats.insertedRanges).toBe(document.getElementsByTagName('w:ins').length);
+      expect(publication.stats.deletedRanges).toBe(document.getElementsByTagName('w:del').length);
+      expect(publication.serializedRangeStats.moveFromRanges)
+        .toBe(document.getElementsByTagName('w:moveFrom').length);
+      expect(publication.serializedRangeStats.moveToRanges)
+        .toBe(document.getElementsByTagName('w:moveTo').length);
+      expect(publication.xml).not.toContain('data-safe-docx-comparison-revision');
+    },
+  );
+
+  test.openspec('Atom metrics do not silently change units')(
+    'weights a tagged multi-token leaf with the documented word atomization',
+    () => {
+      const publication = buildTaggedTreePublication({
+        originalXml: `<w:document xmlns:w="${W_NS}"><w:body/></w:document>`,
+        revisedXml: xml('Alpha beta'),
+        author: 'Comparator',
+        date: new Date('2026-08-17T12:00:00Z'),
+      });
+
+      expect(publication.stats.insertedAtoms).toBe(3);
+      expect(publication.stats.deletedAtoms).toBe(0);
+    },
+  );
+
+  test.openspec('Modified paragraphs use logical tagged identity')(
+    'counts one paragraph once when it contains multiple replacement ranges',
+    () => {
+      const publication = buildTaggedTreePublication({
+        originalXml: xml('alpha OLD middle STALE omega'),
+        revisedXml: xml('alpha NEW middle FRESH omega'),
+        author: 'Comparator',
+        date: new Date('2026-08-17T12:00:00Z'),
+      });
+
+      expect(publication.stats.modifiedParagraphs).toBe(1);
+      expect(publication.stats.modifications).toBe(1);
+    },
+  );
+
   test.openspec('Standalone publication has no legacy assembly dependency')(
     'matches the authoritative normalized package without consuming legacy assembly state',
     async () => {

@@ -17,10 +17,22 @@ import {
   DEFAULT_FORMAT_DETECTION_SETTINGS,
   FormatChangeInfo,
   FormatDetectionSettings,
-  RUN_PROPERTY_FRIENDLY_NAMES,
 } from '@usejunior/docx-core';
-import { getLeafText, childElements } from '@usejunior/docx-core';
+import { childElements } from '@usejunior/docx-core';
 import { parseXml } from '@usejunior/docx-core';
+import {
+  areRunPropertiesEqual,
+  getChangedPropertyNames,
+  normalizeDirectProperties,
+} from './propertyNaming.js';
+
+export {
+  areRunPropertiesEqual,
+  areNormalizedRunPropertiesEqual,
+  categorizePropertyChanges,
+  getChangedPropertyNames,
+  normalizeRunProperties,
+} from './propertyNaming.js';
 
 // =============================================================================
 // Run Property Extraction
@@ -52,217 +64,6 @@ export function getRunPropertiesFromAtom(
     if (child.tagName === 'w:rPr') return child;
   }
   return null;
-}
-
-// =============================================================================
-// Run Property Normalization
-// =============================================================================
-
-/**
- * Lightweight property descriptor for normalized comparison.
- * These are NOT DOM Elements — they're ephemeral comparison objects.
- */
-interface NormalizedProperty {
-  tagName: string;
-  attrs: [string, string][];
-  text?: string;
-}
-
-interface NormalizedRPr {
-  children: NormalizedProperty[];
-}
-
-function extractNormalizedProperties(rPr: Element | null): NormalizedRPr {
-  if (!rPr) {
-    return { children: [] };
-  }
-
-  const normalizedChildren: NormalizedProperty[] = childElements(rPr)
-    // Remove revision tracking elements
-    .filter((e) => e.tagName !== 'w:rPrChange')
-    // Sort by tag name for deterministic comparison
-    .sort((a, b) => a.tagName.localeCompare(b.tagName))
-    // Normalize each child
-    .map((e) => {
-      const attrs: [string, string][] = [];
-      for (let i = 0; i < e.attributes.length; i++) {
-        const attr = e.attributes[i]!;
-        attrs.push([attr.name, attr.value]);
-      }
-      attrs.sort(([a], [b]) => a.localeCompare(b));
-
-      const text = getLeafText(e);
-      const prop: NormalizedProperty = { tagName: e.tagName, attrs };
-      if (text !== undefined) prop.text = text;
-      return prop;
-    });
-
-  return { children: normalizedChildren };
-}
-
-// =============================================================================
-// Run Property Comparison
-// =============================================================================
-
-/**
- * Serialize normalized properties to a string for comparison.
- */
-function serializeNormalizedProperties(rPr: NormalizedRPr): string {
-  const parts: string[] = [];
-
-  for (const child of rPr.children) {
-    const attrs = child.attrs
-      .map(([k, v]) => `${k}="${v}"`)
-      .join(' ');
-    const textPart = child.text ? `|${child.text}` : '';
-    parts.push(`<${child.tagName} ${attrs}${textPart}/>`);
-  }
-
-  return parts.join('');
-}
-
-/**
- * Check if two run properties are equal after normalization.
- */
-export function areRunPropertiesEqual(
-  rPr1: Element | null,
-  rPr2: Element | null,
-): boolean {
-  const norm1 = extractNormalizedProperties(rPr1);
-  const norm2 = extractNormalizedProperties(rPr2);
-  return serializeNormalizedProperties(norm1) === serializeNormalizedProperties(norm2);
-}
-
-// Keep legacy overload for callers that pass WmlElement (= Element)
-export { areRunPropertiesEqual as areNormalizedRunPropertiesEqual };
-
-// =============================================================================
-// Changed Property Detection
-// =============================================================================
-
-/**
- * Get the set of property tag names from a normalized rPr.
- */
-function getPropertyTagNames(rPr: NormalizedRPr): Set<string> {
-  return new Set(rPr.children.map((c) => c.tagName));
-}
-
-/**
- * Find a property element by tag name in a normalized rPr.
- */
-function findPropertyByTag(
-  rPr: NormalizedRPr,
-  tagName: string,
-): NormalizedProperty | undefined {
-  return rPr.children.find((c) => c.tagName === tagName);
-}
-
-/**
- * Check if two property elements have the same value.
- */
-function arePropertiesValueEqual(
-  prop1: NormalizedProperty | undefined,
-  prop2: NormalizedProperty | undefined,
-): boolean {
-  if (!prop1 && !prop2) return true;
-  if (!prop1 || !prop2) return false;
-
-  const str1 = serializeNormalizedProperties({ children: [prop1] });
-  const str2 = serializeNormalizedProperties({ children: [prop2] });
-  return str1 === str2;
-}
-
-/**
- * Get the list of property names that changed between two run properties.
- *
- * Returns friendly names (e.g., "bold", "italic") when available,
- * otherwise returns the OOXML tag name.
- *
- * @param oldRPr - Old run properties element (or null)
- * @param newRPr - New run properties element (or null)
- * @returns Array of changed property names
- */
-export function getChangedPropertyNames(
-  oldRPr: Element | null,
-  newRPr: Element | null,
-): string[] {
-  const changed: string[] = [];
-
-  const normalizedOld = extractNormalizedProperties(oldRPr);
-  const normalizedNew = extractNormalizedProperties(newRPr);
-  const oldTags = getPropertyTagNames(normalizedOld);
-  const newTags = getPropertyTagNames(normalizedNew);
-
-  // All unique tags from both
-  const allTags = new Set([...oldTags, ...newTags]);
-
-  for (const tag of allTags) {
-    const oldProp = findPropertyByTag(normalizedOld, tag);
-    const newProp = findPropertyByTag(normalizedNew, tag);
-
-    if (!arePropertiesValueEqual(oldProp, newProp)) {
-      // Use friendly name if available
-      const friendlyName = RUN_PROPERTY_FRIENDLY_NAMES[tag] ?? tag;
-      changed.push(friendlyName);
-    }
-  }
-
-  return changed.sort();
-}
-
-/**
- * Categorize changed properties into added, removed, and modified.
- *
- * @param oldRPr - Old run properties element (or null)
- * @param newRPr - New run properties element (or null)
- * @returns Object with added, removed, and changed arrays
- */
-export function categorizePropertyChanges(
-  oldRPr: Element | null,
-  newRPr: Element | null,
-): { added: string[]; removed: string[]; changed: string[] } {
-  const added: string[] = [];
-  const removed: string[] = [];
-  const changed: string[] = [];
-
-  const normalizedOld = extractNormalizedProperties(oldRPr);
-  const normalizedNew = extractNormalizedProperties(newRPr);
-  const oldTags = getPropertyTagNames(normalizedOld);
-  const newTags = getPropertyTagNames(normalizedNew);
-
-  // Check for added properties (in new but not old)
-  for (const tag of newTags) {
-    if (!oldTags.has(tag)) {
-      const friendlyName = RUN_PROPERTY_FRIENDLY_NAMES[tag] ?? tag;
-      added.push(friendlyName);
-    }
-  }
-
-  // Check for removed properties (in old but not new)
-  for (const tag of oldTags) {
-    if (!newTags.has(tag)) {
-      const friendlyName = RUN_PROPERTY_FRIENDLY_NAMES[tag] ?? tag;
-      removed.push(friendlyName);
-    }
-  }
-
-  // Check for changed properties (in both but different value)
-  for (const tag of oldTags) {
-    if (newTags.has(tag)) {
-      const oldProp = findPropertyByTag(normalizedOld, tag);
-      const newProp = findPropertyByTag(normalizedNew, tag);
-      if (!arePropertiesValueEqual(oldProp, newProp)) {
-        const friendlyName = RUN_PROPERTY_FRIENDLY_NAMES[tag] ?? tag;
-        changed.push(friendlyName);
-      }
-    }
-  }
-
-  return {
-    added: added.sort(),
-    removed: removed.sort(),
-    changed: changed.sort(),
-  };
 }
 
 // =============================================================================
@@ -415,15 +216,8 @@ export const PARAGRAPH_PROPERTY_FRIENDLY_NAMES: Record<string, string> = {
 /**
  * @deprecated Use areRunPropertiesEqual directly with Element params
  */
-export function normalizeRunProperties(rPr: Element | null): NormalizedRPr {
-  return extractNormalizedProperties(rPr);
-}
-
-/**
- * @deprecated Use getParagraphProperties directly
- */
-export function normalizeParagraphProperties(pPr: Element | null): NormalizedRPr {
-  return extractNormalizedProperties(pPr);
+export function normalizeParagraphProperties(pPr: Element | null) {
+  return normalizeDirectProperties(pPr);
 }
 
 /**

@@ -54,8 +54,8 @@ describe('inplace original insertion provenance restoration', () => {
       );
     });
 
-    await and('the comparison does not misclassify the matched text as a new insertion', () => {
-      expect(insertions).toBe(0);
+    await and('the range statistics report the comparison wrapper actually emitted', () => {
+      expect(insertions).toBe(1);
       expect(xml).toContain('settled prefix ');
       expect(xml).toContain(' settled suffix');
     });

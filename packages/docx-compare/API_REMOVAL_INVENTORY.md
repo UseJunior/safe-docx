@@ -32,15 +32,15 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `AncillaryStorySummary` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `appendIdentitySalt` | function | `src/atomizer.ts` | yes | deprecate one release |
 | `applyHyperlinkDestinationSalt` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `areNormalizedRunPropertiesEqual` | function | `src/format-detection.ts` | yes | stable compatibility |
-| `areRunPropertiesEqual` | function | `src/format-detection.ts` | yes | stable compatibility |
+| `areNormalizedRunPropertiesEqual` | function | `src/propertyNaming.ts` | yes | stable compatibility |
+| `areRunPropertiesEqual` | function | `src/propertyNaming.ts` | yes | stable compatibility |
 | `assertTextBoxContentUnchanged` | function | `src/baselines/atomizer/textBoxRevisionSafety.ts` | yes | stable compatibility |
 | `assignIdentityIds` | function | `src/atomizer.ts` | yes | deprecate one release |
 | `assignParagraphIndices` | function | `src/atomizer.ts` | yes | deprecate one release |
 | `atomizeTree` | function | `src/atomizer.ts` | yes | deprecate one release |
 | `AtomizeTreeOptions` | interface | `src/atomizer.ts` | yes | deprecate one release |
 | `canonicalizeParagraphPropertiesForIdentity` | function | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
-| `categorizePropertyChanges` | function | `src/format-detection.ts` | yes | stable compatibility |
+| `categorizePropertyChanges` | function | `src/propertyNaming.ts` | yes | stable compatibility |
 | `COLLAPSED_FIELD_TAG` | value | `src/atomizer.ts` | yes | deprecate one release |
 | `collapseFieldSequences` | function | `src/atomizer.ts` | yes | deprecate one release |
 | `collectPreservedMoveNames` | function | `src/move-detection.ts` | yes | deprecate one release |
@@ -84,7 +84,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `getAncestors` | function | `src/atomizer.ts` | yes | deprecate one release |
 | `getAtomsText` | function | `src/move-detection.ts` | yes | deprecate one release |
 | `getAtomText` | function | `src/move-detection.ts` | yes | deprecate one release |
-| `getChangedPropertyNames` | function | `src/format-detection.ts` | yes | stable compatibility |
+| `getChangedPropertyNames` | function | `src/propertyNaming.ts` | yes | stable compatibility |
 | `getIdentityId` | function | `src/atomizer.ts` | yes | deprecate one release |
 | `getParagraphProperties` | function | `src/format-detection.ts` | yes | deprecate one release |
 | `getRunPropertiesFromAtom` | function | `src/format-detection.ts` | yes | deprecate one release |
@@ -110,7 +110,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `MoveMarkupOptions` | interface | `src/move-detection.ts` | no | breaking removal |
 | `nearestHyperlinkAncestor` | function | `src/atomizer.ts` | yes | deprecate one release |
 | `normalizeParagraphProperties` | function | `src/format-detection.ts` | yes | deprecate one release |
-| `normalizeRunProperties` | function | `src/format-detection.ts` | yes | stable compatibility |
+| `normalizeRunProperties` | function | `src/propertyNaming.ts` | yes | stable compatibility |
 | `normalizeText` | function | `src/baselines/atomizer/trackChangesAcceptorAst.ts` | yes | stable compatibility |
 | `PARAGRAPH_LEVEL_TAGS` | value | `src/atomizer.ts` | yes | deprecate one release |
 | `PARAGRAPH_PROPERTY_FRIENDLY_NAMES` | value | `src/format-detection.ts` | yes | deprecate one release |
