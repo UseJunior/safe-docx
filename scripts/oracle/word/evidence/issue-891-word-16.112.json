@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-17T22:52:00Z",
+  "purpose": "Behavioral reference evidence for issue #891; not an ECMA-376 conformance verdict.",
+  "word": {
+    "host": "Word",
+    "platform": "Mac",
+    "version": "16.112.810.0",
+    "wordApiDesktop11": true
+  },
+  "options": {
+    "compareTarget": "Current",
+    "compareFormatting": true,
+    "authorName": "Safe-DOCX-Word-Oracle"
+  },
+  "cases": {
+    "table-terminal-deletion": {
+      "inputs": {
+        "originalSha256": "2affe3876eb112fc6b4a045ba328289009a665bf3247419484feaa90d08a3cb6",
+        "revisedSha256": "41831649f1596f70bbd8fed48478a6c7ad29b2bb0fd2df8beb3046ee81eb1c47"
+      },
+      "wordOutputSha256": "bcbc999751d38fcdd8920165762a92b471a6ac4018fba386ce5f9d61e624f07a",
+      "wordTopology": [
+        "B paragraph: paragraph-mark w:del plus content w:del",
+        "C paragraph: content w:del only"
+      ],
+      "libreOffice": {
+        "accept": { "actualShape": [true, false], "expectedShape": [true], "actualText": "AT", "expectedText": "AT", "matches": false },
+        "reject": { "actualShape": [true, true, true], "expectedShape": [true, true, true], "actualText": "ATBC", "expectedText": "ATBC", "matches": true }
+      },
+      "finding": "Word independently emits the same paragraph-mark topology that triggers LibreOffice's extra empty paragraph on accept."
+    },
+    "section-boundary-deletion": {
+      "inputs": {
+        "originalSha256": "6a6b2ae310a24e8b1d9174692fa1dfc985671895f3cf256b560c1ba9088884f4",
+        "revisedSha256": "65394aaf0b39d3e61495365a08e0e08536e2eae273de09713876b8c5b750bb87"
+      },
+      "wordOutputSha256": "29e0dbf12fc4a0da8623c7c60a08a3649d9523a605d7fadb7a4b6e4c0a580320",
+      "wordTopology": [
+        "A paragraph: paragraph-mark w:del",
+        "B section-boundary paragraph: paragraph-mark w:del plus content w:del",
+        "terminal section paragraph survives"
+      ],
+      "libreOffice": {
+        "accept": { "actualShape": [true], "expectedShape": [true], "actualText": "A", "expectedText": "A", "matches": true },
+        "reject": { "actualShape": [true, true, false, false], "expectedShape": [true, true, false, false], "actualText": "AB", "expectedText": "AB", "matches": true }
+      },
+      "finding": "LibreOffice accepts and rejects the Word-native section-boundary comparison with the expected text and paragraph shape."
+    }
+  },
+  "references": ["#891"]
+}
