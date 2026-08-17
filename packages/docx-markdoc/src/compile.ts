@@ -906,6 +906,12 @@ export async function compileMarkdoc(
   ]);
   const comparisonOptions = {
     engine: 'atomizer',
+    // Rationale attribution compares a sentinel-instrumented document and then
+    // remaps the discovered revision onto an ordinary comparison. Keep those
+    // two private passes on the strategy whose alignment is marker-stable;
+    // inheriting the repository-wide default can otherwise change attribution
+    // semantics when the comparator default evolves.
+    comparisonStrategy: 'legacy',
     author: resolvedCompilation.author,
     date: resolvedCompilation.date,
     reconstructionMode: 'inplace',

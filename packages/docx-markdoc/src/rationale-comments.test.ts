@@ -176,6 +176,46 @@ describe('external-facing rationale comments', () => {
     expect((output.comments.match(/<w:comment /g) ?? [])).toHaveLength(2);
   });
 
+  itAllure('[SDX-MDOC-44][SDX-MDOC-60][SDX-MDOC-62] keeps paired attribution stable for multi-operation partial rewrites', async () => {
+    const firstBefore = 'The purchaser shall ensure all personnel remain employees of the purchaser.';
+    const firstAfter = 'The purchaser shall ensure all personnel remain employees of the purchaser, and not the supplier.';
+    const secondBefore = 'Reports are delivered monthly.';
+    const secondAfter = 'Reports are delivered every calendar month.';
+    const source = await buildSyntheticDocx({ paragraphs: [firstBefore, secondBefore] });
+    const imported = await importDocxToMarkdoc(source);
+    const internalText = 'Private synthetic attribution record.';
+    const externalText = 'Clarifies responsibility for the assigned personnel.';
+    let markdoc = replaceOperation(imported.markdoc, firstBefore, firstAfter, 'personnel');
+    markdoc = replaceOperation(markdoc, secondBefore, secondAfter, 'reports');
+    markdoc = compilationProfile(markdoc)
+      + rationale('personnel', 'internal', internalText)
+      + rationale('personnel', 'external-facing', externalText)
+      + rationale('reports', 'external-facing', 'Clarifies the reporting cadence.');
+
+    const externalOnly = await compileMarkdoc(imported.anchoredSource, markdoc);
+    const externalZip = await JSZip.loadAsync(externalOnly.tracked);
+    const externalContents = (await Promise.all(Object.values(externalZip.files)
+      .filter((entry) => !entry.dir)
+      .map((entry) => entry.async('string')))).join('\n');
+    expect(externalContents).toContain(externalText);
+    expect(externalContents).not.toContain(internalText);
+    expect(externalOnly.certificate).toMatchObject({
+      rejectAllEqualsSource: true,
+      acceptAllEqualsClean: true,
+      rejectAllFormattingEqualsSource: true,
+      acceptAllFormattingEqualsClean: true,
+    });
+
+    const dangerous = await compileMarkdoc(imported.anchoredSource, markdoc, {
+      dangerouslyIncludeInternalComments: true,
+      configurationSource: 'cli',
+    });
+    const dangerousComments = (await parts(dangerous.tracked)).comments;
+    expect(dangerousComments).toContain(internalText);
+    expect(dangerousComments).toContain(externalText);
+    expect((dangerousComments.match(/<w:comment /g) ?? [])).toHaveLength(3);
+  });
+
   for (const visibility of ['internal', 'external-facing'] as const) {
     itAllure(`[SDX-MDOC-61] rejects duplicate ${visibility} rationales`, async () => {
       const source = await buildSyntheticDocx({ paragraphs: ['Alpha term.'] });
