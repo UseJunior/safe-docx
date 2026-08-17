@@ -158,6 +158,24 @@ describe('external-facing rationale comments', () => {
     });
   });
 
+  itAllure('[SDX-MDOC-62] dangerous compilation renders both paired rationales as distinct comments', async () => {
+    const source = await buildSyntheticDocx({ paragraphs: ['Alpha term.'] });
+    const imported = await importDocxToMarkdoc(source);
+    const internalText = 'Private synthetic decision record.';
+    const externalText = 'External synthetic explanation.';
+    const markdoc = compilationProfile(replaceOperation(imported.markdoc, 'Alpha term.', 'Beta term.'))
+      + rationale('edit', 'internal', internalText)
+      + rationale('edit', 'external-facing', externalText);
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc, {
+      dangerouslyIncludeInternalComments: true,
+      configurationSource: 'cli',
+    });
+    const output = await parts(result.tracked);
+    expect(output.comments).toContain(internalText);
+    expect(output.comments).toContain(externalText);
+    expect((output.comments.match(/<w:comment /g) ?? [])).toHaveLength(2);
+  });
+
   for (const visibility of ['internal', 'external-facing'] as const) {
     itAllure(`[SDX-MDOC-61] rejects duplicate ${visibility} rationales`, async () => {
       const source = await buildSyntheticDocx({ paragraphs: ['Alpha term.'] });

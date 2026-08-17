@@ -9,14 +9,19 @@ export function exportEditPairs(
   options: { contextParagraphs?: number; verified?: boolean; provenance?: Record<string, string> } = {},
 ): EditPair[] {
   const context = Math.max(0, options.contextParagraphs ?? 1);
-  const rationales = new Map(ir.rationales.map((item) => [item.operationId, item]));
+  const rationales = new Map<string, MarkdocEditIR['rationales']>();
+  for (const item of ir.rationales) {
+    const existing = rationales.get(item.operationId) ?? [];
+    rationales.set(item.operationId, [...existing, item]);
+  }
   const indexById = new Map(ir.scaffold.map((paragraph, index) => [paragraph.id, index]));
   return ir.operations.map((operation) => {
     const anchorId = isInsertOperation(operation) ? operation.anchorId : operation.id;
     const index = indexById.get(anchorId) ?? -1;
     const before = isInsertOperation(operation) ? '' : operation.originalText;
     const after = operation.kind === 'delete-source' ? '' : operation.revisedText;
-    const rationale = rationales.get(operation.operationId);
+    const operationRationales = rationales.get(operation.operationId) ?? [];
+    const legacyRationale = operationRationales.length === 1 ? operationRationales[0] : undefined;
     return {
       operationId: operation.operationId,
       kind: operation.kind,
@@ -25,8 +30,8 @@ export function exportEditPairs(
       after,
       contextBefore: index < 0 ? [] : ir.scaffold.slice(Math.max(0, index - context), index).map((p) => p.originalText),
       contextAfter: index < 0 ? [] : ir.scaffold.slice(index + 1, index + context + 1).map((p) => p.originalText),
-      rationale: rationale?.text,
-      visibility: rationale?.visibility,
+      rationales: operationRationales,
+      ...(legacyRationale ? { rationale: legacyRationale.text, visibility: legacyRationale.visibility } : {}),
       verified: options.verified,
       provenance: options.provenance,
     };

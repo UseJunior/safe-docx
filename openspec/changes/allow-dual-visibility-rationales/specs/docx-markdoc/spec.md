@@ -16,3 +16,13 @@ visibility and SHALL preserve the existing rendering authorization boundary.
 - **GIVEN** one operation with more than one rationale in the same visibility class
 - **WHEN** validation runs
 - **THEN** validation SHALL fail before document mutation with a stable duplicate-visibility diagnostic
+
+#### Scenario: [SDX-MDOC-62] Dangerous export renders both paired explanations
+- **GIVEN** one operation with one internal and one external-facing rationale
+- **WHEN** compilation explicitly enables both external and dangerous internal comments
+- **THEN** both rationales SHALL become distinct native comments attributed to that operation
+
+#### Scenario: [SDX-MDOC-63] Structured export preserves paired explanations
+- **GIVEN** one operation with one internal and one external-facing rationale
+- **WHEN** structured edit pairs are exported
+- **THEN** both rationale records and their visibility values SHALL be preserved without overwrite
