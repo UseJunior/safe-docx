@@ -131,9 +131,46 @@ describe('external-facing rationale comments', () => {
       + rationale('edit', 'external-facing', 'Second synthetic explanation.');
     await expect(compileMarkdoc(imported.anchoredSource, markdoc, compileOptions)).rejects.toMatchObject({
       code: 'INVALID_MARKDOC',
-      issues: expect.arrayContaining([expect.objectContaining({ code: 'DUPLICATE_EXTERNAL_RATIONALE' })]),
+      issues: expect.arrayContaining([expect.objectContaining({ code: 'DUPLICATE_RATIONALE_VISIBILITY' })]),
     });
   });
+
+  itAllure('[SDX-MDOC-60] keeps internal reasoning private while exporting a paired external rationale', async () => {
+    const source = await buildSyntheticDocx({ paragraphs: ['Alpha term.'] });
+    const imported = await importDocxToMarkdoc(source);
+    const internalText = 'Private synthetic decision record.';
+    const externalText = 'External synthetic explanation.';
+    const markdoc = compilationProfile(replaceOperation(imported.markdoc, 'Alpha term.', 'Beta term.'))
+      + rationale('edit', 'internal', internalText)
+      + rationale('edit', 'external-facing', externalText);
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+    const zip = await JSZip.loadAsync(result.tracked);
+    const contents = await Promise.all(Object.values(zip.files)
+      .filter((entry) => !entry.dir)
+      .map((entry) => entry.async('string')));
+    expect(contents.join('\n')).toContain(externalText);
+    expect(contents.join('\n')).not.toContain(internalText);
+    expect(result.certificate.commentRendering).toMatchObject({
+      externalRationalesFound: 1,
+      internalRationalesFound: 1,
+      externalCommentsIncluded: true,
+      internalCommentsIncluded: false,
+    });
+  });
+
+  for (const visibility of ['internal', 'external-facing'] as const) {
+    itAllure(`[SDX-MDOC-61] rejects duplicate ${visibility} rationales`, async () => {
+      const source = await buildSyntheticDocx({ paragraphs: ['Alpha term.'] });
+      const imported = await importDocxToMarkdoc(source);
+      const markdoc = replaceOperation(imported.markdoc, 'Alpha term.', 'Beta term.')
+        + rationale('edit', visibility, 'First synthetic explanation.')
+        + rationale('edit', visibility, 'Second synthetic explanation.');
+      await expect(compileMarkdoc(imported.anchoredSource, markdoc, compileOptions)).rejects.toMatchObject({
+        code: 'INVALID_MARKDOC',
+        issues: expect.arrayContaining([expect.objectContaining({ code: 'DUPLICATE_RATIONALE_VISIBILITY' })]),
+      });
+    });
+  }
 
   for (const visibility of ['External-facing', 'external-facing ', '']) {
     itAllure(`[SDX-MDOC-57] rejects ${visibility || 'unclassified'} rationale visibility`, async () => {
