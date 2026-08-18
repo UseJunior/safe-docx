@@ -77,7 +77,7 @@
 - [x] 10.2 Extract revision allocation/wrapping survivors into `revisionMarkup.ts` and update keeper dependencies.
 - [x] 10.3 Delete atomization, atom LCS, hierarchical LCS, reconstruction, in-place, selective-refinement, and legacy format/move code plus superseded tests.
 - [x] 10.4 Re-home ECMA claims, remove stale debug imports, regenerate conformance artifacts, and re-baseline Allure/coverage evidence.
-- [ ] 10.5 Run the complete differential, package, conformance, and cross-reader evidence without legacy fallback.
+- [x] 10.5 Run the complete differential, package, conformance, and cross-reader evidence without legacy fallback.
 
 ## 11. Post-rollback rename
 
@@ -91,4 +91,4 @@
 - [x] 12.3 From Phase 9, run all workspaces and the full repository pre-submit command.
 - [x] 12.4 For Phases 2 and 9, run tool-doc, MCPB-manifest, and capability-projection checks.
 - [x] 12.5 Re-run the characterization manifest after every phase and adjudicate rather than absorb drift.
-- [ ] 12.6 Run real MCP comparison smoke and cross-reader checks after Phases 3, 6, and 10.
+- [x] 12.6 Run real MCP comparison smoke and cross-reader checks after Phases 3, 6, and 10.
