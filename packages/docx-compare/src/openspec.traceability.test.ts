@@ -1,5 +1,6 @@
 import { describe, expect } from 'vitest';
 import { XMLSerializer } from '@xmldom/xmldom';
+import { readFileSync } from 'node:fs';
 import * as publicApi from './index.js';
 import {
   CorrelationStatus,
@@ -7,7 +8,9 @@ import {
   FootnoteNumberingTracker,
   createNumberingState,
   detectContinuationPattern,
+  extractRevisions,
   findReferencesInOrder,
+  insertParagraphBookmarks,
   parseXml,
   processNumberedParagraph,
   type ListLevelInfo,
@@ -230,7 +233,10 @@ describe('OpenSpec traceability: tagged docx comparison', () => {
     expect(parseXml(`<w:t xmlns:w="${W_NS}">Hello</w:t>`).documentElement.textContent).toBe('Hello');
   });
   test.openspec('Element with attributes')('retains expanded XML attributes', () => {
-    expect(parseXml(`<w:p xmlns:w="${W_NS}" w:rsidR="abc"/>`).documentElement.getAttribute('w:rsidR')).toBe('abc');
+    const element = parseXml(
+      `<w:p xmlns:w="${W_NS}" xmlns:pt14="urn:safe-docx:test" pt14:Unid="abc123"/>`,
+    ).documentElement;
+    expect(element.getAttribute('pt14:Unid')).toBe('abc123');
   });
   test.openspec('Part from main document')('uses the canonical main document part', () => {
     expect('word/document.xml').toBe('word/document.xml');
@@ -304,9 +310,68 @@ describe('OpenSpec traceability: tagged docx comparison', () => {
   });
   test.openspec('Get format change revisions')('reports and serializes a format revision', () => {
     const xml = serializeFormatting('', '<w:b/>');
-    expect(xml).toContain('w:rPrChange');
-    expect(xml).toContain('w:b');
+    const doc = parseXml(xml);
+    insertParagraphBookmarks(doc, 'tagged-format-change');
+    const formatChange = extractRevisions(doc, []).changes[0]?.revisions[0];
+    expect(formatChange).toMatchObject({
+      type: 'FORMAT_CHANGE',
+      author: 'Comparison',
+    });
   });
+
+  test.openspec('Tagged emission produces one range pair per logical move')(
+    'serializes one balanced range in each direction',
+    () => {
+      const original = paragraphs(['this complete paragraph moves away', 'stable paragraph']);
+      const revised = paragraphs(['stable paragraph', 'this complete paragraph moves away']);
+      const result = constructTaggedTree(original, revised);
+      expect(result.moves).toHaveLength(1);
+      const xml = serializeTaggedTree(
+        result.tree,
+        createPreservePlan(original, revised, result.tree, {
+          author: 'Comparison',
+          date: '2026-08-17T12:00:00Z',
+        }),
+        { moves: result.moves },
+      );
+      expect(xml).toContain('<w:moveFromRangeStart');
+      expect(xml).toContain('<w:moveFromRangeEnd');
+      expect(xml).toContain('<w:moveToRangeStart');
+      expect(xml).toContain('<w:moveToRangeEnd');
+      const emitted = parseXml(xml);
+      const range = (localName: string) => Array.from(
+        emitted.getElementsByTagNameNS(W_NS, localName),
+      );
+      for (const direction of ['moveFrom', 'moveTo']) {
+        const starts = range(`${direction}RangeStart`);
+        const ends = range(`${direction}RangeEnd`);
+        expect(starts).toHaveLength(1);
+        expect(ends).toHaveLength(1);
+        expect(ends[0]!.getAttributeNS(W_NS, 'id')).toBe(starts[0]!.getAttributeNS(W_NS, 'id'));
+      }
+      expect(range('moveFromRangeStart')[0]!.getAttributeNS(W_NS, 'name')).toBe(
+        range('moveToRangeStart')[0]!.getAttributeNS(W_NS, 'name'),
+      );
+    },
+  );
+
+  test.openspec('Soak evidence gates legacy deletion')(
+    'pins the soak manifest and exact multi-commit rollback procedure',
+    () => {
+      const manifest = JSON.parse(readFileSync(
+        new URL('./integration/strategy-differential-manifest.json', import.meta.url),
+        'utf8',
+      )) as { rows: unknown[] };
+      const rollback = readFileSync(
+        new URL('../../../openspec/changes/refactor-tagged-tree-spine/rollback.md', import.meta.url),
+        'utf8',
+      );
+      expect(manifest.rows.length).toBeGreaterThan(0);
+      expect(rollback).toContain('legacy-comparison-final-20260817');
+      expect(rollback).toContain('f352beaafbb9902d3ba71601b029bbe7fade299a');
+      expect(rollback).toContain('19d6c82617003bd00e346e1babc1c8bf24e84a0f');
+    },
+  );
 
   test('normalizes null properties after legacy detector removal', () => {
     expect(normalizeRunProperties(null).children).toEqual([]);

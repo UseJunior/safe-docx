@@ -158,6 +158,34 @@ text-box, auxiliary-sidecar, and formatting-fidelity checks SHALL remain in forc
 
 ## MODIFIED Requirements
 
+### Requirement: Tracked move ranges are structurally paired
+
+The system SHALL emit exactly one source range and one destination range per
+logical tagged move. Each direction SHALL have one balanced start/end pair with
+a schema-valid integer identifier, both directions SHALL share one non-empty
+move name, and wrapper revision identifiers SHALL remain independent from range
+identifiers.
+
+#### Scenario: Tagged emission produces one range pair per logical move
+
+- **GIVEN** one tagged move whose source spans a complete paragraph
+- **WHEN** the tagged serializer emits tracked move markup
+- **THEN** exactly one `w:moveFromRangeStart` / `w:moveFromRangeEnd` pair SHALL be emitted
+- **AND** exactly one `w:moveToRangeStart` / `w:moveToRangeEnd` pair SHALL be emitted
+- **AND** each end SHALL reuse its start identifier and both directions SHALL use the same non-empty move name
+
+### Requirement: Format Change Revision Reporting
+
+The system SHALL include emitted property revisions in `extractRevisions()`
+output with type `FORMAT_CHANGE`. Each result SHALL retain the comparison
+author and expose the affected paragraph's before/after projection.
+
+#### Scenario: Get format change revisions
+
+- **GIVEN** a document containing emitted `w:rPrChange` markup
+- **WHEN** `extractRevisions()` runs after paragraph bookmarks are assigned
+- **THEN** the result SHALL include a `FORMAT_CHANGE` revision with its `author`
+
 ### Requirement: Correlation Status Enumeration
 
 The system SHALL provide a `CorrelationStatus` enum with `Nil`, `Normal`,
