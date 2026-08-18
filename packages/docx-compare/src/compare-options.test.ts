@@ -11,9 +11,10 @@ import {
   paragraphWithText,
 } from './testing/ooxml-fixtures.js';
 
+const TEST_FEATURE = 'Comparison Options';
 const test = testAllure
   .epic('Document Comparison')
-  .withLabels({ feature: 'Comparison Options' });
+  .withLabels({ feature: TEST_FEATURE });
 const formatTest = test.conformance({
   spec: 'ECMA-376',
   edition: 5,

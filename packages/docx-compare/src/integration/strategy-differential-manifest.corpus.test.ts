@@ -26,6 +26,7 @@ import {
   type StrategyDifferentialRow,
 } from './strategy-differential-harness.js';
 
+const TEST_FEATURE = 'Refactor Tagged Tree Spine';
 const REQUIRED_ENV = 'SAFE_DOCX_STRATEGY_DIFFERENTIAL_REQUIRED';
 const INTEGRATION_DIR = dirname(fileURLToPath(import.meta.url));
 const MANIFEST_PATH = join(INTEGRATION_DIR, 'strategy-differential-manifest.json');
@@ -50,7 +51,7 @@ const manifest = JSON.parse(await readFile(MANIFEST_PATH, 'utf8')) as Characteri
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({
-    feature: 'refactor-tagged-tree-spine',
+    feature: TEST_FEATURE,
     story: 'Strategy Differential Manifest',
     severity: 'critical',
   })

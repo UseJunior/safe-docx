@@ -8,6 +8,7 @@ import { compileMarkdoc } from './compile.js';
 import { importDocxToMarkdoc } from './import.js';
 import { requireMarkdoc } from './markdoc.js';
 
+const TEST_FEATURE = 'Refactor Tagged Tree Spine';
 const identity = {
   author: 'Synthetic Reviewer',
   initials: 'SR',
@@ -17,7 +18,7 @@ const compileOptions = { author: 'Synthetic Revision Author', date: identity.dat
 const openspecTest = testAllure
   .epic('Document Comparison')
   .withLabels({
-    feature: 'refactor-tagged-tree-spine',
+    feature: TEST_FEATURE,
     story: 'Tagged Rationale Attribution',
     severity: 'critical',
   });

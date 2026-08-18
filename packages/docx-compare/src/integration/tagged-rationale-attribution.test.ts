@@ -18,10 +18,11 @@ import { compareDocumentsAtomizer } from '../index.js';
 import { testAllure } from '../testing/allure-test.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const TEST_FEATURE = 'Refactor Tagged Tree Spine';
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({
-    feature: 'refactor-tagged-tree-spine',
+    feature: TEST_FEATURE,
     story: 'Tagged Rationale Attribution',
     severity: 'critical',
   })

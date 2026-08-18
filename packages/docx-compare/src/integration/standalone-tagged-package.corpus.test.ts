@@ -15,13 +15,14 @@ import { testAllure } from '../testing/allure-test.js';
 import { REAL_CORPUS_ENV, resolveRealCorpusAvailability } from './real-corpus-fixtures.js';
 import { loadStrategyDifferentialFixtures } from './strategy-differential-fixtures.js';
 
+const TEST_FEATURE = 'Refactor Tagged Tree Spine';
 const REQUIRED_ENV = 'SAFE_DOCX_STANDALONE_TAGGED_PACKAGE_REQUIRED';
 const corpusRoot = process.env[REAL_CORPUS_ENV] ?? '';
 const availability = resolveRealCorpusAvailability(corpusRoot);
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({
-    feature: 'refactor-tagged-tree-spine',
+    feature: TEST_FEATURE,
     story: 'Standalone Tagged Package',
     severity: 'critical',
   })
