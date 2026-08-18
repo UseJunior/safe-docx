@@ -319,6 +319,188 @@ describe('tagged-tree shadow serializer', () => {
     expect(compareSourceProjectedFormattingFidelity(originalXml, revisedXml, candidateXml).score).toBe(1);
   });
 
+  test('places a terminal paragraph deletion on the preceding break with exact projections', () => {
+    const original = documentBody(
+      '<w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:t>Alpha</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Bravo</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>Charlie</w:t></w:r></w:p>',
+    );
+    const revised = documentBody(
+      '<w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:t>Alpha</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Bravo</w:t></w:r></w:p>',
+    );
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+      author: 'Comparator', date: '2026-08-17T00:00:00Z',
+    }));
+    const parsed = parseXml(output);
+    const paragraphs = Array.from(parsed.getElementsByTagNameNS(W_NS, 'p'));
+
+    expect(paragraphs).toHaveLength(3);
+    expect(paragraphs[1]!.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(1);
+    expect(paragraphs[2]!.getElementsByTagNameNS(W_NS, 'pPrChange')).toHaveLength(1);
+    const originalXml = `<w:document xmlns:w="${W_NS}">${new XMLSerializer().serializeToString(original)}</w:document>`;
+    const revisedXml = `<w:document xmlns:w="${W_NS}">${new XMLSerializer().serializeToString(revised)}</w:document>`;
+    const candidateXml = `<w:document xmlns:w="${W_NS}">${output}</w:document>`;
+    expect(compareSourceProjectedFormattingFidelity(originalXml, revisedXml, candidateXml).score).toBe(1);
+    expect(text(acceptAllChanges(candidateXml))).toBe('AlphaBravo');
+    expect(text(rejectAllChanges(candidateXml))).toBe('AlphaBravoCharlie');
+  });
+
+  test('never places two tracked-change markers on one paragraph mark', () => {
+    const original = documentBody(
+      '<w:p><w:r><w:t>A</w:t></w:r></w:p><w:p><w:r><w:t>B</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:t>C</w:t></w:r></w:p><w:p><w:r><w:t>D</w:t></w:r></w:p>',
+    );
+    const revised = documentBody('');
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+      author: 'Comparator', date: '2026-08-17T00:00:00Z',
+    }));
+    const markProperties = Array.from(parseXml(output).getElementsByTagNameNS(W_NS, 'p'))
+      .flatMap((paragraph) => elementChildren(paragraph).filter((child) => child.localName === 'pPr'))
+      .flatMap((pPr) => elementChildren(pPr).filter((child) => child.localName === 'rPr'));
+
+    // CT_ParaRPr admits at most one of w:ins/w:del/w:moveFrom/w:moveTo.
+    for (const rPr of markProperties) {
+      const markers = elementChildren(rPr).filter((child) =>
+        ['ins', 'del', 'moveFrom', 'moveTo'].includes(child.localName));
+      expect(markers.length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test('does not move a deletion marker across an intervening table', () => {
+    const table = '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:p><w:r><w:t>T</w:t></w:r></w:p></w:tc></w:tr></w:tbl>';
+    const original = documentBody(
+      `<w:p><w:r><w:t>A</w:t></w:r></w:p>${table}<w:p><w:r><w:t>B</w:t></w:r></w:p>`,
+    );
+    const revised = documentBody(`<w:p><w:r><w:t>A</w:t></w:r></w:p>${table}`);
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+      author: 'Comparator', date: '2026-08-17T00:00:00Z',
+    }));
+    const parsed = parseXml(output);
+    const bodyParagraphs = elementChildren(
+      Array.from(parsed.getElementsByTagNameNS(W_NS, 'body'))[0] ?? parsed.documentElement!,
+    ).filter((child) => child.localName === 'p');
+
+    // "A" sits before the table, so its break is not the one preceding "B".
+    const paragraphMarkDels = (paragraph: Element): number => elementChildren(paragraph)
+      .filter((child) => child.localName === 'pPr')
+      .flatMap((pPr) => elementChildren(pPr).filter((child) => child.localName === 'rPr'))
+      .flatMap((rPr) => elementChildren(rPr).filter((child) => child.localName === 'del')).length;
+    expect(paragraphMarkDels(bodyParagraphs[0]!)).toBe(0);
+  });
+
+  test('leaves a section-bearing terminal deletion in the unrelocated topology', () => {
+    const original = documentBody(
+      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>A</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:jc w:val="right"/><w:sectPr><w:type w:val="continuous"/></w:sectPr></w:pPr>' +
+      '<w:r><w:t>B</w:t></w:r></w:p>',
+    );
+    const revised = documentBody(
+      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>A</w:t></w:r></w:p>',
+    );
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+      author: 'Comparator', date: '2026-08-17T00:00:00Z',
+    }));
+    const paragraphs = Array.from(parseXml(output).getElementsByTagNameNS(W_NS, 'p'));
+    const paragraphMarkDels = (paragraph: Element): number => elementChildren(paragraph)
+      .filter((child) => child.localName === 'pPr')
+      .flatMap((pPr) => elementChildren(pPr).filter((child) => child.localName === 'rPr'))
+      .flatMap((rPr) => elementChildren(rPr).filter((child) => child.localName === 'del')).length;
+
+    // Relocating across a w:sectPr boundary makes LibreOffice mis-resolve Reject All.
+    expect(paragraphMarkDels(paragraphs[0]!)).toBe(0);
+    expect(paragraphMarkDels(paragraphs[1]!)).toBe(1);
+  });
+
+  test('orders a relocated paragraph deletion before paragraph-mark formatting', () => {
+    const markProperties = '<w:rPr><w:b/></w:rPr>';
+    const original = documentBody(
+      `<w:p><w:pPr>${markProperties}</w:pPr><w:r><w:t>Keep</w:t></w:r></w:p>` +
+      '<w:p><w:r><w:t>Delete</w:t></w:r></w:p>',
+    );
+    const revised = documentBody(`<w:p><w:pPr>${markProperties}</w:pPr><w:r><w:t>Keep</w:t></w:r></w:p>`);
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+      author: 'Comparator', date: '2026-08-17T00:00:00Z',
+    }));
+    const predecessorRPr = parseXml(output).getElementsByTagNameNS(W_NS, 'p')[0]!
+      .getElementsByTagNameNS(W_NS, 'rPr')[0]!;
+
+    expect(elementChildren(predecessorRPr).map((child) => child.localName)).toEqual(['del', 'b']);
+  });
+
+  test('does not rewrite a predecessor carrying prior paragraph-mark revisions', () => {
+    const markProperties = '<w:rPr><w:b/><w:rPrChange w:id="2" w:author="Prior" w:date="2026-08-01T00:00:00Z"><w:rPr><w:i/></w:rPr></w:rPrChange></w:rPr>';
+    const original = documentBody(
+      `<w:p><w:pPr>${markProperties}</w:pPr><w:r><w:t>Keep</w:t></w:r></w:p>` +
+      '<w:p><w:r><w:t>Delete</w:t></w:r></w:p>',
+    );
+    const revised = documentBody(`<w:p><w:pPr>${markProperties}</w:pPr><w:r><w:t>Keep</w:t></w:r></w:p>`);
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+      author: 'Comparator', date: '2026-08-17T00:00:00Z',
+    }));
+    const paragraphs = Array.from(parseXml(output).getElementsByTagNameNS(W_NS, 'p'));
+
+    expect(paragraphs[0]!.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(0);
+    expect(paragraphs[1]!.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(2);
+  });
+
+  test('allocates generated IDs above every authored revision vocabulary element', () => {
+    const table = '<w:tbl><w:tblPr><w:tblPrChange w:id="0" w:author="Prior"><w:tblPr/></w:tblPrChange></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>T</w:t></w:r></w:p></w:tc></w:tr></w:tbl>';
+    const original = documentBody(`${table}<w:p><w:r><w:t>old</w:t></w:r></w:p>`);
+    const revised = documentBody(`${table}<w:p><w:r><w:t>new</w:t></w:r></w:p>`);
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+      author: 'Comparator', date: '2026-08-17T00:00:00Z',
+    }));
+    const ids = Array.from(output.matchAll(/w:id="(\d+)"/gu), (match) => Number(match[1]));
+
+    expect(ids[0]).toBe(0);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.slice(1).every((id) => id > 0)).toBe(true);
+  });
+
+  test('keeps exact projections for middle, consecutive, ranged, and section-bearing deletions', () => {
+    const cases = [
+      {
+        original: '<w:p><w:r><w:t>A</w:t></w:r></w:p><w:p><w:r><w:t>B</w:t></w:r></w:p><w:p><w:r><w:t>C</w:t></w:r></w:p>',
+        revised: '<w:p><w:r><w:t>A</w:t></w:r></w:p><w:p><w:r><w:t>C</w:t></w:r></w:p>',
+      },
+      {
+        original: '<w:p><w:r><w:t>A</w:t></w:r></w:p><w:p><w:r><w:t>B</w:t></w:r></w:p><w:p><w:r><w:t>C</w:t></w:r></w:p><w:p><w:r><w:t>D</w:t></w:r></w:p>',
+        revised: '<w:p><w:r><w:t>A</w:t></w:r></w:p><w:p><w:r><w:t>B</w:t></w:r></w:p>',
+      },
+      {
+        original: '<w:p><w:r><w:t>A</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="Deleted"/><w:r><w:t>B</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:r><w:t>C</w:t></w:r></w:p>',
+        revised: '<w:p><w:r><w:t>A</w:t></w:r></w:p><w:p><w:r><w:t>C</w:t></w:r></w:p>',
+      },
+      {
+        original: '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>A</w:t></w:r></w:p><w:p><w:pPr><w:jc w:val="right"/><w:sectPr><w:type w:val="continuous"/></w:sectPr></w:pPr><w:r><w:t>B</w:t></w:r></w:p>',
+        revised: '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>A</w:t></w:r></w:p>',
+      },
+    ];
+
+    for (const fixture of cases) {
+      const original = documentBody(fixture.original);
+      const revised = documentBody(fixture.revised);
+      const constructed = constructTaggedTree(original, revised);
+      const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+        author: 'Comparator', date: '2026-08-17T00:00:00Z',
+      }));
+      const originalXml = `<w:document xmlns:w="${W_NS}">${new XMLSerializer().serializeToString(original)}</w:document>`;
+      const revisedXml = `<w:document xmlns:w="${W_NS}">${new XMLSerializer().serializeToString(revised)}</w:document>`;
+      const candidateXml = `<w:document xmlns:w="${W_NS}">${output}</w:document>`;
+      expect(compareSourceProjectedFormattingFidelity(originalXml, revisedXml, candidateXml).score).toBe(1);
+    }
+  });
+
   test('serializes paragraph property families only through conforming property changes', () => {
     const original = documentBody(
       '<w:p><w:pPr><w:pStyle w:val="Old"/><w:numPr><w:ilvl w:val="1"/><w:numId w:val="4"/></w:numPr>' +
