@@ -73,10 +73,10 @@
 
 ## 10. Legacy deletion
 
-- [ ] 10.1 Tag the last legacy-capable commit, retain a maintenance branch, and document the exact rollback sequence.
-- [ ] 10.2 Extract revision allocation/wrapping survivors into `revisionMarkup.ts` and update keeper dependencies.
-- [ ] 10.3 Delete atomization, atom LCS, hierarchical LCS, reconstruction, in-place, selective-refinement, and legacy format/move code plus superseded tests.
-- [ ] 10.4 Re-home ECMA claims, remove stale debug imports, regenerate conformance artifacts, and re-baseline Allure/coverage evidence.
+- [x] 10.1 Tag the last legacy-capable commit, retain a maintenance branch, and document the exact rollback sequence.
+- [x] 10.2 Extract revision allocation/wrapping survivors into `revisionMarkup.ts` and update keeper dependencies.
+- [x] 10.3 Delete atomization, atom LCS, hierarchical LCS, reconstruction, in-place, selective-refinement, and legacy format/move code plus superseded tests.
+- [x] 10.4 Re-home ECMA claims, remove stale debug imports, regenerate conformance artifacts, and re-baseline Allure/coverage evidence.
 - [ ] 10.5 Run the complete differential, package, conformance, and cross-reader evidence without legacy fallback.
 
 ## 11. Post-rollback rename
