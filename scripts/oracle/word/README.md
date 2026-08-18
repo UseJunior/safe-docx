@@ -1,7 +1,7 @@
 # Microsoft Word comparison oracle
 
 This developer-only harness asks Microsoft Word for Mac to compare two DOCX files through the supported
-Office.js `Document.compareFromBase64` API (`WordApiDesktop 1.1`). It does not send keystrokes, activate an
+Office.js `Document.compareFromBase64` API (`WordApiDesktop 1.2`). It does not send keystrokes, activate an
 assumed window, use a file picker, or automate Save As.
 
 Word is behavioral reference evidence, not the ECMA-376 conformance authority. Normal builds, tests, and
@@ -9,7 +9,7 @@ published packages do not require this harness.
 
 ## Prerequisites
 
-- A current Microsoft Word for Mac build with `WordApiDesktop 1.1`.
+- A current Microsoft Word for Mac build with `WordApiDesktop 1.2`.
 - Node.js 20 or newer.
 - A localhost HTTPS certificate trusted by macOS and Word.
 - The add-in manifest sideloaded into Word.
@@ -80,7 +80,7 @@ Useful options:
 
 ## Failure modes
 
-- `WORD_API_UNSUPPORTED`: update Word or use a build exposing `WordApiDesktop 1.1`.
+- `WORD_API_UNSUPPORTED`: update Word or use a build exposing `WordApiDesktop 1.2`.
 - `WORD_EXPORT_UNAVAILABLE`: the host compared the documents but cannot export the current compressed DOCX
   through Office.js. This harness deliberately stops; it never falls back to Save As automation.
 - `WRONG_CURRENT_DOCUMENT`: open the exact uniquely named staged original printed by the current CLI job,
@@ -89,8 +89,9 @@ Useful options:
 - Browser/network errors: confirm both the fixed asset server and ephemeral bridge certificate are trusted,
   and paste the exact URL printed for the current job.
 
-A failed job publishes no compared DOCX. It does write a diagnostic provenance manifest when the CLI reaches
-normal teardown.
+A failed job publishes no compared DOCX. Once a job and bridge have been created, the CLI closes the bridge in
+a `finally` path and writes a diagnostic provenance manifest for staging, launch, timeout, bridge-close, and
+output-publication failures. Failures before input validation/job creation cannot produce a job manifest.
 
 ## Tests and cleanup
 

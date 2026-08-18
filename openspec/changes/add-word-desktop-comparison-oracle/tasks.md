@@ -14,7 +14,7 @@
 - [x] 2.1 Add a sideloadable Word add-in manifest and minimal task pane under `scripts/oracle/word/`, isolated
       from published package runtime dependencies.
 - [x] 2.2 Claim the bridge job only after `Office.onReady`, report host/platform/version data, and explicitly
-      require `WordApiDesktop 1.1` before accepting document bytes.
+      require `WordApiDesktop 1.2` before accepting document bytes.
 - [x] 2.3 Invoke `compareFromBase64` against the disposable current original with explicit comparison options,
       synchronize, export compressed OOXML in ordered slices, and report terminal success/failure.
 - [x] 2.4 Add focused unit tests for add-in job handling and error mapping without requiring Word.

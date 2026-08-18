@@ -17,6 +17,6 @@ test('gated real-Word comparison produces a successful attributable artifact', {
   await execFileAsync(process.execPath, args, { timeout: 590_000 });
   const manifest = JSON.parse(await readFile(`${process.env.SAFE_DOCX_WORD_ORACLE_OUTPUT}.word-oracle.json`, 'utf8'));
   assert.equal(manifest.status, 'succeeded');
-  assert.equal(manifest.word.wordApiDesktop11, true);
+  assert.equal(manifest.word.wordApiDesktop12, true);
   assert.match(manifest.output.sha256, /^[0-9a-f]{64}$/);
 });

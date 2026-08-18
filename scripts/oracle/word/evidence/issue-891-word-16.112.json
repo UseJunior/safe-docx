@@ -6,7 +6,7 @@
     "host": "Word",
     "platform": "Mac",
     "version": "16.112.810.0",
-    "wordApiDesktop11": true
+    "wordApiDesktop12": true
   },
   "options": {
     "compareTarget": "Current",

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { WordOracleJob, normalizeCompareOptions, sha256 } from './protocol.mjs';
 
 const zipLike = Buffer.from([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]);
-const host = { host: 'Word', platform: 'Mac', version: '16.99', wordApiDesktop11: true };
+const host = { host: 'Word', platform: 'Mac', version: '16.99', wordApiDesktop12: true };
 const original = { sha256: 'a'.repeat(64), bytes: 7, stagedFileName: 'job-original.docx' };
 
 test('normalizes only supported comparison options', () => {
@@ -42,4 +42,13 @@ test('rejects oversized revised and result payloads', () => {
 
 test('hashes bytes deterministically', () => {
   assert.equal(sha256(Buffer.from('safe-docx')), '494be122cb9e7e454b0ba2ed2b710d22304353b527410a735b06bd8ffc2e5437');
+});
+
+test('expiration is terminal and carries an attributable timeout diagnostic', () => {
+  const job = new WordOracleJob({ revisedBytes: zipLike, original, options: {} });
+  job.expire();
+  assert.equal(job.status, 'expired');
+  assert.deepEqual(job.failure, {
+    code: 'TIMEOUT', message: 'Word did not complete the comparison before the configured timeout',
+  });
 });

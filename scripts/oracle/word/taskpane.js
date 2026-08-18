@@ -41,13 +41,13 @@ async function begin(connection) {
 }
 
 async function runJob(connection) {
-  const supported = Office.context.requirements.isSetSupported('WordApiDesktop', '1.1');
+  const supported = Office.context.requirements.isSetSupported('WordApiDesktop', '1.2');
   const diagnostics = Office.context.diagnostics ?? {};
   const host = {
     host: diagnostics.host ?? 'Word', platform: diagnostics.platform ?? 'unknown',
-    version: diagnostics.version ?? 'unknown', wordApiDesktop11: supported,
+    version: diagnostics.version ?? 'unknown', wordApiDesktop12: supported,
   };
-  if (!supported) throw Object.assign(new Error('WordApiDesktop 1.1 is unavailable in this Word build.'), { code: 'WORD_API_UNSUPPORTED' });
+  if (!supported) throw Object.assign(new Error('WordApiDesktop 1.2 is unavailable in this Word build.'), { code: 'WORD_API_UNSUPPORTED' });
   status.textContent = 'Claiming comparison job…';
   const job = await request(connection, '/v1/job/claim', { jobId: connection.jobId, host });
   status.textContent = 'Verifying the active staged original…';
@@ -90,13 +90,16 @@ function exportCurrentDocument() {
       const slices = [];
       const read = index => file.getSliceAsync(index, sliceResult => {
         if (sliceResult.status !== Office.AsyncResultStatus.Succeeded) {
-          file.closeAsync();
-          reject(Object.assign(new Error(sliceResult.error?.message ?? 'DOCX slice export failed.'), { code: 'WORD_EXPORT_FAILED' }));
+          const sliceError = Object.assign(new Error(sliceResult.error?.message ?? 'DOCX slice export failed.'), { code: 'WORD_EXPORT_FAILED' });
+          file.closeAsync(() => reject(sliceError));
           return;
         }
         slices.push(new Uint8Array(sliceResult.value.data));
         if (index + 1 < file.sliceCount) read(index + 1);
-        else file.closeAsync(() => resolve(slices));
+        else file.closeAsync(closeResult => {
+          if (closeResult.status === Office.AsyncResultStatus.Succeeded) resolve(slices);
+          else reject(Object.assign(new Error(closeResult.error?.message ?? 'DOCX export handle did not close.'), { code: 'WORD_EXPORT_CLOSE_FAILED' }));
+        });
       });
       read(0);
     });

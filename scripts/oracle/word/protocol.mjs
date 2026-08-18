@@ -154,7 +154,10 @@ export class WordOracleJob {
   }
 
   expire() {
-    if (!['succeeded', 'failed'].includes(this.status)) this.status = 'expired';
+    if (!['succeeded', 'failed'].includes(this.status)) {
+      this.failure = { code: 'TIMEOUT', message: 'Word did not complete the comparison before the configured timeout' };
+      this.status = 'expired';
+    }
   }
 }
 
@@ -170,6 +173,6 @@ function sanitizeHost(host) {
     host: pick(host.host),
     platform: pick(host.platform),
     version: pick(host.version),
-    wordApiDesktop11: host.wordApiDesktop11 === true,
+    wordApiDesktop12: host.wordApiDesktop12 === true,
   };
 }

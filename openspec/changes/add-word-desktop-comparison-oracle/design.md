@@ -7,7 +7,7 @@ same relevant table topology as the current safe-docx candidate, yet manual file
 developer workflow.
 
 Word for Mac exposes native comparison through Office.js `Word.Document.compareFromBase64`, in the
-desktop-only `WordApiDesktop 1.1` requirement set. It does not expose a supported headless command-line
+desktop-only `WordApiDesktop 1.2` requirement set. It does not expose a supported headless command-line
 interface. The design therefore separates orchestration from execution: a local CLI owns files and job
 provenance, while code running inside Word calls the supported API.
 
@@ -97,7 +97,7 @@ including:
 - SHA-256 hashes and byte sizes for original, revised, and (on success) output;
 - normalized comparison options;
 - Word host/platform/version information reported by Office.js;
-- whether `WordApiDesktop 1.1` was supported;
+- whether `WordApiDesktop 1.2` was supported;
 - job identifier, timestamps, terminal status, and diagnostic code; and
 - the local harness version/schema version.
 
@@ -116,7 +116,7 @@ command and hash-addressed local result manifest are the durable evidence.
 
 ## Risks / Trade-offs
 
-- **`WordApiDesktop 1.1` availability varies by Word build.** The add-in performs an explicit requirement-set
+- **`WordApiDesktop 1.2` availability varies by Word build.** The add-in performs an explicit requirement-set
   check and fails with build/version diagnostics.
 - **Office add-ins need HTTPS and sideloading setup.** Provide a documented development-certificate workflow
   and a deterministic manifest; do not weaken browser or Office security settings.

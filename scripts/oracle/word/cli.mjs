@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { constants } from 'node:fs';
-import { access, mkdir, mkdtemp, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
@@ -44,26 +44,44 @@ const job = new WordOracleJob({
   options,
   credentials,
 });
-const bridge = await startBridge({ job, certPath: paths.cert, keyPath: paths.key });
-const bridgePort = Number(new URL(bridge.origin).port);
-const stagedName = stagedFileName({ port: bridgePort, jobId: job.jobId, token: job.token, originalFileName: basename(paths.original) });
-job.original.stagedFileName = stagedName;
-const stagedOriginal = resolve(stagingDir, stagedName);
-await writeFile(stagedOriginal, await embedAutoOpenAddin(originalBytes), { flag: 'wx' });
-const connectUrl = `https://localhost:38491/taskpane.html#bridge=${encodeURIComponent(bridge.origin)}&job=${encodeURIComponent(job.jobId)}&token=${encodeURIComponent(job.token)}`;
 const timeoutMs = parsePositiveSeconds(values.timeout) * 1000;
+let bridge;
 
-console.log(`Staged original (open this in Microsoft Word): ${stagedOriginal}`);
-console.log(`Fallback task-pane job URL: ${connectUrl}`);
-console.log('Waiting for Word; no keyboard or window-activation automation will be used.');
-if (!values['no-open']) await openInWordBackground(stagedOriginal);
+try {
+  bridge = await startBridge({ job, certPath: paths.cert, keyPath: paths.key });
+  const bridgePort = Number(new URL(bridge.origin).port);
+  const stagedName = stagedFileName({ port: bridgePort, jobId: job.jobId, token: job.token, originalFileName: basename(paths.original) });
+  job.original.stagedFileName = stagedName;
+  const stagedOriginal = resolve(stagingDir, stagedName);
+  await writeFile(stagedOriginal, await embedAutoOpenAddin(originalBytes), { flag: 'wx' });
+  const connectUrl = `https://localhost:38491/taskpane.html#bridge=${encodeURIComponent(bridge.origin)}&job=${encodeURIComponent(job.jobId)}&token=${encodeURIComponent(job.token)}`;
 
-await waitForTerminal(job, timeoutMs);
-await bridge.close();
+  console.log(`Staged original (open this in Microsoft Word): ${stagedOriginal}`);
+  console.log(`Fallback task-pane job URL: ${connectUrl}`);
+  console.log('Waiting for Word; no keyboard or window-activation automation will be used.');
+  if (!values['no-open']) await openInWordBackground(stagedOriginal);
+  await waitForTerminal(job, timeoutMs);
+} catch (error) {
+  recordHarnessFailure(job, error);
+} finally {
+  if (bridge) {
+    try {
+      await bridge.close();
+    } catch (error) {
+      recordHarnessFailure(job, error, 'BRIDGE_CLOSE_FAILED');
+    }
+  }
+}
+
 if (job.status === 'succeeded') {
   const partial = `${paths.output}.partial-${job.jobId}`;
-  await writeFile(partial, job.resultBytes, { flag: 'wx' });
-  await rename(partial, paths.output);
+  try {
+    await writeFile(partial, job.resultBytes, { flag: 'wx' });
+    await rename(partial, paths.output);
+  } catch (error) {
+    await unlink(partial).catch(() => {});
+    recordHarnessFailure(job, error, 'OUTPUT_PUBLICATION_FAILED');
+  }
 }
 
 const endedAt = new Date().toISOString();
@@ -115,4 +133,16 @@ function openInWordBackground(path) {
     child.once('error', rejectOpen);
     child.once('exit', code => code === 0 ? resolveOpen() : rejectOpen(new Error(`macOS open exited with ${code}`)));
   });
+}
+
+function recordHarnessFailure(activeJob, error, fallbackCode = 'HARNESS_ERROR') {
+  if (activeJob.status === 'failed' && activeJob.failure) return;
+  const errorCode = typeof error?.code === 'string' && /^[A-Z0-9_]+$/.test(error.code)
+    ? error.code
+    : fallbackCode;
+  activeJob.failure = {
+    code: errorCode.slice(0, 80),
+    message: (typeof error?.message === 'string' ? error.message : String(error)).slice(0, 1000),
+  };
+  activeJob.status = 'failed';
 }

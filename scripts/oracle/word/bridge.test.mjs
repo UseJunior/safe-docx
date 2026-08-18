@@ -18,7 +18,7 @@ test('HTTP bridge rejects missing credentials and accepts one authenticated job'
   assert.equal((await denied.json()).error, 'UNAUTHORIZED');
 
   const headers = { authorization: `Bearer ${job.token}`, 'content-type': 'application/json' };
-  const claimed = await post('/v1/job/claim', { jobId: job.jobId, host: { host: 'Word', wordApiDesktop11: true } });
+  const claimed = await post('/v1/job/claim', { jobId: job.jobId, host: { host: 'Word', wordApiDesktop12: true } });
   assert.equal(claimed.status, 200);
   assert.equal(Buffer.from((await claimed.json()).revisedBase64, 'base64').compare(revised), 0);
   assert.equal((await post('/v1/job/result/slice', { jobId: job.jobId, index: 0, total: 1, data: output.toString('base64') })).status, 200);

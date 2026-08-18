@@ -4,7 +4,7 @@
 
 The repository SHALL provide an opt-in developer harness that compares an explicit original DOCX and revised
 DOCX with Microsoft Word's native comparison engine through the Office.js
-`Word.Document.compareFromBase64` API. The add-in SHALL require `WordApiDesktop 1.1` and SHALL report a clear,
+`Word.Document.compareFromBase64` API. The add-in SHALL require `WordApiDesktop 1.2` and SHALL report a clear,
 version-attributed capability failure when the installed Word host does not support it.
 
 The harness SHALL operate on a disposable copy of the original and SHALL leave both caller-provided inputs
@@ -33,7 +33,7 @@ reference evidence and SHALL NOT be represented as the normative definition of E
 
 #### Scenario: [WORD-ORACLE-01] A supported Word host returns a native compared DOCX with provenance
 
-- **GIVEN** explicit readable original and revised DOCX inputs, a writable output location, a ready sideloaded add-in, and a Word host supporting `WordApiDesktop 1.1`
+- **GIVEN** explicit readable original and revised DOCX inputs, a writable output location, a ready sideloaded add-in, and a Word host supporting `WordApiDesktop 1.2`
 - **WHEN** the developer runs one Word comparison job
 - **THEN** Word compares the staged original against the revised bytes, the bridge atomically publishes a valid compared DOCX, and the adjacent manifest records matching input/output hashes, Word/API metadata, normalized options, and a successful terminal status
 
@@ -45,7 +45,7 @@ reference evidence and SHALL NOT be represented as the normative definition of E
 
 #### Scenario: [WORD-ORACLE-03] Unsupported or unavailable Word fails explicitly without fabricated output
 
-- **GIVEN** Word is missing, the task pane does not become ready, `WordApiDesktop 1.1` is unsupported, comparison throws, or compressed OOXML export is unavailable
+- **GIVEN** Word is missing, the task pane does not become ready, `WordApiDesktop 1.2` is unsupported, comparison throws, or compressed OOXML export is unavailable
 - **WHEN** the gated oracle command runs
 - **THEN** it skips or fails with a specific diagnostic and attributable manifest, publishes no partial output as successful, and does not fall back to UI scripting
 

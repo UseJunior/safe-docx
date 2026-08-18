@@ -15,7 +15,7 @@ make the native comparison reproducible without blind keystrokes.
 
 ## What Changes
 
-- Add an opt-in, developer-only Microsoft Word task-pane add-in that checks for `WordApiDesktop 1.1`, receives
+- Add an opt-in, developer-only Microsoft Word task-pane add-in that checks for `WordApiDesktop 1.2`, receives
   a comparison job from a loopback bridge, invokes Word's native `compareFromBase64` API against a disposable
   copy of the original document, and exports the compared DOCX.
 - Add a local CLI/bridge that stages original and revised DOCX files, authenticates a single Word add-in
@@ -44,5 +44,5 @@ make the native comparison reproducible without blind keystrokes.
 ## References
 
 - Ref: #891
-- Microsoft Word JavaScript API: `Document.compareFromBase64` (`WordApiDesktop 1.1`)
+- Microsoft Word JavaScript API: `Document.compareFromBase64` (`WordApiDesktop 1.2`)
 - Microsoft Office add-in sideloading on Mac
