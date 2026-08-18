@@ -104,6 +104,19 @@ const OFFICE_RELATIONSHIP_NS = 'http://schemas.openxmlformats.org/officeDocument
 const PACKAGE_RELATIONSHIP_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
+function debugTaggedComparison(message: string, data?: unknown): void {
+  const setting = process.env.DOCX_COMPARISON_DEBUG;
+  if (!setting) return;
+  const enabled = ['1', 'true', '*'].includes(setting) || setting
+    .split(',')
+    .map((entry) => entry.trim())
+    .some((entry) => ['tagged', 'pipeline', 'atomizer'].includes(entry));
+  if (!enabled) return;
+  const formatted = `[${new Date().toISOString()}] [DEBUG] [tagged] ${message}`;
+  if (data === undefined) console.error(formatted);
+  else console.error(formatted, data);
+}
+
 export interface StandaloneTaggedPackageOptions {
   author: string;
   date: Date;
@@ -1479,6 +1492,10 @@ export async function compareDocumentsAtomizer(
   revised: Buffer,
   options: AtomizerOptions = {},
 ): Promise<AtomizerCompareResult> {
+  debugTaggedComparison('starting revised-base comparison', {
+    originalBytes: original.length,
+    revisedBytes: revised.length,
+  });
   return compareDocumentsTagged(original, revised, options);
 }
 
