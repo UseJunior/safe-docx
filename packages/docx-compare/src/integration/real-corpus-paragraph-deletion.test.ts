@@ -4,7 +4,7 @@
  * Synthetic fixtures are deliberately insufficient here: Word-authored NVCA
  * agreements contain field and bookmark layouts that previously escaped a
  * completely green suite. Each corpus source is SHA-256-pinned and exercised
- * in both reconstruction modes after removing one real paragraph.
+ * through the sole tagged spine after removing one real paragraph.
  *
  * Known defects use exact characterization outcomes so a behavior change fails
  * the gate in either direction. A different failure is a regression; a cell
@@ -30,7 +30,6 @@ import {
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { compareDocumentsAtomizer } from '../baselines/atomizer/pipeline.js';
-import type { ReconstructionMode } from '../compare-types.js';
 import { testAllure } from '../testing/allure-test.js';
 import {
   deleteOneRealParagraph,
@@ -47,56 +46,6 @@ type CellOutcome =
   | { kind: 'pass' }
   | { kind: 'bookmark-range-failure'; names: string[] }
   | { kind: 'comparison-error'; errorName: string; message: string };
-
-type ExpectedFailure =
-  | {
-      issue: string;
-      kind: 'bookmark-range-failure';
-      names: string[];
-    }
-  | {
-      issue: string;
-      kind: 'comparison-error';
-      errorName: string;
-      messageIncludes: string;
-    };
-
-const expectedFailures: Readonly<
-  Record<string, Partial<Record<ReconstructionMode, ExpectedFailure>>>
-> = {
-  'nvca-indemnification-agreement': {
-    rebuild: {
-      issue: '#646',
-      kind: 'comparison-error',
-      errorName: 'OpaquePassthroughError',
-      messageIncludes: 'boundary count changed (108 original, 106 revised)',
-    },
-  },
-  'nvca-investors-rights-agreement': {
-    rebuild: {
-      issue: '#646',
-      kind: 'comparison-error',
-      errorName: 'OpaquePassthroughError',
-      messageIncludes: 'unsupported REF field instruction shape',
-    },
-  },
-  'nvca-stock-purchase-agreement': {
-    rebuild: {
-      issue: '#646',
-      kind: 'comparison-error',
-      errorName: 'OpaquePassthroughError',
-      messageIncludes: 'boundary count changed (68 original, 67 revised)',
-    },
-  },
-  'nvca-voting-agreement': {
-    rebuild: {
-      issue: '#646',
-      kind: 'comparison-error',
-      errorName: 'OpaquePassthroughError',
-      messageIncludes: 'boundary count changed (64 original, 63 revised)',
-    },
-  },
-};
 
 const test = testAllure
   .epic('Document Comparison')
@@ -171,7 +120,6 @@ function collapsedTargetedBookmarkNames(
 
 async function runCell(
   entry: RealCorpusEntry,
-  reconstructionMode: ReconstructionMode,
 ): Promise<CellOutcome> {
   const original = readFileSync(join(corpusRoot, entry.id, 'source.docx'));
   const deletion = await deleteOneRealParagraph(original, entry.id);
@@ -179,15 +127,7 @@ async function runCell(
     const result = await compareDocumentsAtomizer(original, deletion.revised, {
       author: 'Real Corpus Gate',
       date: new Date('2026-07-26T00:00:00Z'),
-      reconstructionMode,
     });
-    if (result.reconstructionModeUsed !== reconstructionMode) {
-      return {
-        kind: 'comparison-error',
-        errorName: 'ReconstructionModeMismatch',
-        message: `requested ${reconstructionMode}, used ${String(result.reconstructionModeUsed)}`,
-      };
-    }
     const comparedZip = await JSZip.loadAsync(result.document);
     const comparedDocumentXml = await comparedZip.file('word/document.xml')!.async('string');
     const collapsedNames = collapsedTargetedBookmarkNames(
@@ -204,27 +144,6 @@ async function runCell(
       errorName: error.constructor.name,
       message: error.message,
     };
-  }
-}
-
-function assertExpectedOutcome(outcome: CellOutcome, expectedFailure?: ExpectedFailure): void {
-  if (!expectedFailure) {
-    expect(outcome).toEqual({ kind: 'pass' });
-    return;
-  }
-  expect(outcome.kind, `${expectedFailure.issue} characterization kind`).toBe(
-    expectedFailure.kind,
-  );
-  if (
-    outcome.kind === 'bookmark-range-failure' &&
-    expectedFailure.kind === 'bookmark-range-failure'
-  ) {
-    expect(outcome.names).toEqual(expectedFailure.names);
-    return;
-  }
-  if (outcome.kind === 'comparison-error' && expectedFailure.kind === 'comparison-error') {
-    expect(outcome.errorName).toBe(expectedFailure.errorName);
-    expect(outcome.message).toContain(expectedFailure.messageIncludes);
   }
 }
 
@@ -252,47 +171,27 @@ describe('real-corpus gate availability', () => {
 
 describe.skipIf(!corpusAvailability.available)('real-corpus paragraph deletion matrix', () => {
   for (const entry of corpusAvailability.entries) {
-    for (const reconstructionMode of ['inplace', 'rebuild'] as const) {
-      const expectedFailure = expectedFailures[entry.id]?.[reconstructionMode];
-      const title =
-        `${entry.id} × ${reconstructionMode} × paragraph-deletion` +
-        (expectedFailure ? ` characterizes ${expectedFailure.issue}` : '');
-      test(
-        title,
-        async () => {
-          assertExpectedOutcome(
-            await runCell(entry, reconstructionMode),
-            expectedFailure,
-          );
-        },
-        120_000,
-      );
-    }
+    test(
+      `${entry.id} × tagged-spine × paragraph-deletion`,
+      async () => {
+        expect(await runCell(entry)).toEqual({ kind: 'pass' });
+      },
+      120_000,
+    );
   }
 });
 
 describe.skipIf(!corpusAvailability.available)('real-corpus paragraph style no-phantom matrix', () => {
   for (const entry of corpusAvailability.entries) {
-    // The investors-rights rebuild cell is blocked before style detection by
-    // the exact unsupported-REF characterization pinned to #646 above. Inplace
-    // still exercises that SHA-pinned document, while every currently
-    // rebuild-supported corpus member exercises both reconstruction modes.
-    const reconstructionModes: readonly ReconstructionMode[] =
-      entry.id === 'nvca-investors-rights-agreement'
-        ? ['inplace']
-        : ['inplace', 'rebuild'];
-    for (const reconstructionMode of reconstructionModes) {
-      paragraphStyleTest.openspec('[SDX-CMP-PSTYLE-07] Unchanged real paragraph styles produce no phantom markup')(
-        `${entry.id} × ${reconstructionMode} × unchanged paragraph styles`,
+    paragraphStyleTest.openspec('[SDX-CMP-PSTYLE-07] Unchanged real paragraph styles produce no phantom markup')(
+        `${entry.id} × tagged-spine × unchanged paragraph styles`,
         async () => {
           const source = readFileSync(join(corpusRoot, entry.id, 'source.docx'));
           const author = 'Real Corpus Paragraph Style Gate';
           const result = await compareDocumentsAtomizer(source, source, {
             author,
             date: new Date('2026-07-28T00:00:00Z'),
-            reconstructionMode,
           });
-          expect(result.reconstructionModeUsed).toBe(reconstructionMode);
           expect(result.stats.formatChanges).toBe(0);
 
           const comparedZip = await JSZip.loadAsync(result.document);
@@ -312,6 +211,5 @@ describe.skipIf(!corpusAvailability.available)('real-corpus paragraph style no-p
         },
         120_000,
       );
-    }
   }
 });

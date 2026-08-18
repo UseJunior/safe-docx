@@ -44,15 +44,12 @@ function documentParagraphCount(xml: string): number {
 async function compareBodyXml(
   originalBodyXml: string,
   revisedBodyXml: string,
-  reconstructionMode: ReconstructionMode,
-  comparisonStrategy?: 'tagged-tree' | 'legacy',
+  _reconstructionMode: ReconstructionMode,
+  _comparisonStrategy?: 'tagged-tree' | 'legacy',
 ): Promise<{ result: Awaited<ReturnType<typeof compareDocuments>>; xml: string }> {
   const original = await buildDocxFromBodyXml(originalBodyXml);
   const revised = await buildDocxFromBodyXml(revisedBodyXml);
-  const result = await compareDocuments(original, revised, {
-    reconstructionMode,
-    ...(comparisonStrategy ? { comparisonStrategy } : {}),
-  });
+  const result = await compareDocuments(original, revised);
   return { result, xml: await documentXml(result.document) };
 }
 
@@ -61,7 +58,7 @@ const strippedFixture = paragraph('alpha') + emptyParagraph() + paragraph('omega
 const withoutMiddleFixture = paragraph('alpha') + paragraph('omega');
 
 describe('Issue #456 — proofErr-only paragraph atomization', () => {
-  for (const mode of ['rebuild', 'inplace'] as const) {
+  for (const mode of ['inplace'] as const) {
     test(`${mode} identity comparison preserves the proofErr-only paragraph without changes`, async ({
       given,
       when,

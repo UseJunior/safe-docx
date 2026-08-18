@@ -161,7 +161,6 @@ describe('Collapsed field inplace reconstruction', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          reconstructionMode: 'inplace',
         });
         const archive = await DocxArchive.load(result.document);
         resultXml = await archive.getDocumentXml();
@@ -208,7 +207,6 @@ describe('Collapsed field inplace reconstruction', () => {
           buildDocxFromBodyXml(DEDICATED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
-          reconstructionMode: 'inplace',
         });
         const archive = await DocxArchive.load(result.document);
         xml = await archive.getDocumentXml();
@@ -232,7 +230,6 @@ describe('Collapsed field inplace reconstruction', () => {
           buildDocxFromBodyXml(DEDICATED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
-          reconstructionMode: 'inplace',
         });
         const archive = await DocxArchive.load(result.document);
         xml = await archive.getDocumentXml();
@@ -250,7 +247,6 @@ describe('Collapsed field inplace reconstruction', () => {
           buildDocxFromBodyXml(DEDICATED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
-          reconstructionMode: 'inplace',
         });
         const archive = await DocxArchive.load(result.document);
         xml = await archive.getDocumentXml();
@@ -270,7 +266,6 @@ describe('Collapsed field inplace reconstruction', () => {
           buildDocxFromBodyXml(DEDICATED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
-          reconstructionMode: 'inplace',
         });
         const archive = await DocxArchive.load(result.document);
         xml = await archive.getDocumentXml();
@@ -290,7 +285,6 @@ describe('Collapsed field inplace reconstruction', () => {
           buildDocxFromBodyXml(DEDICATED_RUN_FIELD_REVISED),
         ]);
         result = await compareDocuments(original, revised, {
-          reconstructionMode: 'inplace',
         });
       });
       await then('reconstructionModeUsed is inplace with no fallback', async () => {
@@ -316,7 +310,6 @@ describe('Collapsed field inplace reconstruction', () => {
           buildDocxFromBodyXml(MIXED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
-          reconstructionMode: 'inplace',
         });
         const archive = await DocxArchive.load(result.document);
         xml = await archive.getDocumentXml();
@@ -343,7 +336,6 @@ describe('Collapsed field inplace reconstruction', () => {
           buildDocxFromBodyXml(MIXED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
-          reconstructionMode: 'inplace',
         });
         const archive = await DocxArchive.load(result.document);
         xml = await archive.getDocumentXml();
@@ -363,7 +355,6 @@ describe('Collapsed field inplace reconstruction', () => {
           buildDocxFromBodyXml(MIXED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
-          reconstructionMode: 'inplace',
         });
         const archive = await DocxArchive.load(result.document);
         xml = await archive.getDocumentXml();
@@ -383,7 +374,6 @@ describe('Collapsed field inplace reconstruction', () => {
           buildDocxFromBodyXml(MIXED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
-          reconstructionMode: 'inplace',
         });
         const archive = await DocxArchive.load(result.document);
         xml = await archive.getDocumentXml();
@@ -409,7 +399,6 @@ describe('Collapsed field inplace reconstruction', () => {
           buildDocxFromBodyXml(DEDICATED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
-          reconstructionMode: 'inplace',
         });
         const archive = await DocxArchive.load(result.document);
         xml = await archive.getDocumentXml();
@@ -451,7 +440,6 @@ describe('Collapsed field inplace reconstruction', () => {
         ]);
 
         const result = await compareDocuments(original, revised, {
-          reconstructionMode: 'inplace',
         });
 
         const archive = await DocxArchive.load(result.document);

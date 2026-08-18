@@ -3,7 +3,6 @@ import { testAllure, type AllureBddContext } from './testing/allure-test.js';
 import {
   CorrelationStatus,
   WmlElement,
-  ComparisonUnitAtom,
   OpcPart,
   DEFAULT_MOVE_DETECTION_SETTINGS,
   DEFAULT_FORMAT_DETECTION_SETTINGS,
@@ -147,84 +146,6 @@ describe('OpcPart', () => {
     await then('the uri and content type are correct', () => {
       expect(part.uri).toBe('word/document.xml');
       expect(part.contentType).toContain('wordprocessingml');
-    });
-  });
-});
-
-describe('ComparisonUnitAtom', () => {
-  test('can represent a text atom', async ({ given, when, then }: AllureBddContext) => {
-    let atom: ComparisonUnitAtom;
-
-    await given('a text atom with Equal status', () => {
-      const part: OpcPart = { uri: 'word/document.xml', contentType: 'text/xml' };
-      atom = {
-        sha1Hash: 'abc123',
-        correlationStatus: CorrelationStatus.Equal,
-        contentElement: el('w:t', {}, undefined, 'Hello'),
-        ancestorElements: [],
-        ancestorUnids: [],
-        part,
-      };
-    });
-
-    await when('the atom is inspected', () => {});
-
-    await then('the text content and status are correct', () => {
-      expect(atom.contentElement.textContent).toBe('Hello');
-      expect(atom.correlationStatus).toBe(CorrelationStatus.Equal);
-    });
-  });
-
-  test('can have move tracking properties', async ({ given, when, then }: AllureBddContext) => {
-    let atom: ComparisonUnitAtom;
-
-    await given('an atom with move tracking properties', () => {
-      const part: OpcPart = { uri: 'word/document.xml', contentType: 'text/xml' };
-      atom = {
-        sha1Hash: 'def456',
-        correlationStatus: CorrelationStatus.MovedSource,
-        contentElement: el('w:t', {}, undefined, 'Moved'),
-        ancestorElements: [],
-        ancestorUnids: [],
-        part,
-        moveGroupId: 1,
-        moveName: 'move1',
-      };
-    });
-
-    await when('the atom is inspected', () => {});
-
-    await then('the move properties are correct', () => {
-      expect(atom.moveGroupId).toBe(1);
-      expect(atom.moveName).toBe('move1');
-    });
-  });
-
-  test('can have format change information', async ({ given, when, then }: AllureBddContext) => {
-    let atom: ComparisonUnitAtom;
-
-    await given('an atom with format change information', () => {
-      const part: OpcPart = { uri: 'word/document.xml', contentType: 'text/xml' };
-      atom = {
-        sha1Hash: 'ghi789',
-        correlationStatus: CorrelationStatus.FormatChanged,
-        contentElement: el('w:t', {}, undefined, 'Formatted'),
-        ancestorElements: [],
-        ancestorUnids: [],
-        part,
-        formatChange: {
-          oldRunProperties: el('w:rPr'),
-          newRunProperties: el('w:rPr', {}, [el('w:b')]),
-          changedProperties: ['bold'],
-        },
-      };
-    });
-
-    await when('the atom is inspected', () => {});
-
-    await then('the format change contains bold', () => {
-      expect(atom.formatChange).toBeDefined();
-      expect(atom.formatChange!.changedProperties).toContain('bold');
     });
   });
 });

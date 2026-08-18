@@ -18,7 +18,6 @@ import { parseDocumentXml } from '../baselines/atomizer/xmlToWmlElement.js';
 
 const AUTHOR = 'Paragraph Style Comparison';
 const DATE = new Date('2026-07-28T16:00:00Z');
-const MODES = ['inplace', 'rebuild'] as const;
 const TEST_FEATURE = 'docx-comparison';
 
 const test = testAllure
@@ -51,18 +50,15 @@ async function documentXml(docx: Buffer): Promise<string> {
 async function compareBodies(
   originalBody: string,
   revisedBody: string,
-  mode: (typeof MODES)[number],
   ignoreFormatting = false,
 ) {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
   const result = await compareDocuments(original, revised, {
-    reconstructionMode: mode,
     formatDetection: { detectFormatChanges: !ignoreFormatting },
     author: AUTHOR,
     date: DATE,
   });
-  expect(result.reconstructionModeUsed).toBe(mode);
   return {
     result,
     xml: await documentXml(result.document),
@@ -106,7 +102,6 @@ describe('direct paragraph style comparison', () => {
     ));
 
     const result = await compareDocuments(original, revised, {
-      reconstructionMode: 'inplace',
       author: AUTHOR,
       date: DATE,
     });
@@ -131,7 +126,7 @@ describe('direct paragraph style comparison', () => {
     );
 
     const result = await compareDocuments(original, revised, {
-      reconstructionMode: 'inplace', author: AUTHOR, date: DATE,
+      author: AUTHOR, date: DATE,
     });
 
     expect(result.stats.formatChanges).toBe(1);
@@ -148,10 +143,9 @@ describe('direct paragraph style comparison', () => {
         styledParagraph('Normal', textRun('Same text')),
       );
 
-      for (const mode of MODES) {
-        const compared = await when(`${mode} comparison runs`, () =>
-          compareBodies(original, revised, mode),
-        );
+      const compared = await when('comparison runs', () =>
+        compareBodies(original, revised),
+      );
         await then('one paragraph-level format change is reported', () => {
           expect(compared.result.stats.formatChanges).toBe(1);
           expect(compared.result.stats.formatChangeAtoms).toBe(1);
@@ -160,7 +154,6 @@ describe('direct paragraph style comparison', () => {
           expect(compared.result.stats.insertions).toBe(1);
           expect(compared.result.stats.deletions).toBe(1);
         });
-      }
     },
   );
 
@@ -174,10 +167,9 @@ describe('direct paragraph style comparison', () => {
         styledParagraph('Normal', ''),
       );
 
-      for (const mode of MODES) {
-        const compared = await when(`${mode} comparison runs`, () =>
-          compareBodies(original, revised, mode),
-        );
+      const compared = await when('comparison runs', () =>
+        compareBodies(original, revised),
+      );
         await then('the empty paragraph contributes one format change', () => {
           expect(compared.result.stats.formatChanges).toBe(1);
         });
@@ -186,7 +178,6 @@ describe('direct paragraph style comparison', () => {
           expect(compared.result.stats.deletions).toBe(0);
           expect(compared.xml).not.toMatch(/<w:rPr><w:(?:ins|del)\b/);
         });
-      }
     },
   );
 
@@ -207,7 +198,7 @@ describe('direct paragraph style comparison', () => {
       );
 
       const compared = await when('comparison runs', () =>
-        compareBodies(original, revised, 'rebuild'),
+        compareBodies(original, revised),
       );
       await then('one style revision is emitted and counted', () => {
         expect(compared.result.stats.formatChanges).toBe(1);
@@ -217,7 +208,7 @@ describe('direct paragraph style comparison', () => {
   );
 
   test.openspec('[SDX-CMP-PSTYLE-04] Style replacement emits a reversible pPrChange')(
-    'emits revised live style and an extractable original snapshot in both modes',
+    'emits revised live style and an extractable original snapshot',
     async ({ given, when, then, and }: AllureBddContext) => {
       const original = await given('a Heading1 paragraph', () =>
         styledParagraph('Heading1', textRun('Reversible')),
@@ -226,11 +217,10 @@ describe('direct paragraph style comparison', () => {
         styledParagraph('Normal', textRun('Reversible')),
       );
 
-      for (const mode of MODES) {
-        const compared = await when(`${mode} comparison runs`, () =>
-          compareBodies(original, revised, mode),
-        );
-        const changes = paragraphPropertyChanges(compared.xml);
+      const compared = await when('comparison runs', () =>
+        compareBodies(original, revised),
+      );
+      const changes = paragraphPropertyChanges(compared.xml);
         await then('the live and snapshotted styles use the correct sides', () => {
           expect(liveStyle(compared.xml)).toBe('Normal');
           expect(changes).toHaveLength(1);
@@ -255,12 +245,11 @@ describe('direct paragraph style comparison', () => {
             }),
           ]);
         });
-      }
     },
   );
 
   test.openspec('[SDX-CMP-PSTYLE-05] Style addition and removal remain reversible')(
-    'tracks direct style addition and removal in both modes',
+    'tracks direct style addition and removal',
     async ({ given, when, then }: AllureBddContext) => {
       const cases = await given('paragraph pairs that add and remove a direct style', () => [
         { original: null, revised: 'Normal' },
@@ -268,26 +257,23 @@ describe('direct paragraph style comparison', () => {
       ] as const);
 
       for (const pair of cases) {
-        for (const mode of MODES) {
-          const compared = await when(`${mode} compares ${pair.original} to ${pair.revised}`, () =>
-            compareBodies(
-              styledParagraph(pair.original, textRun('Same')),
-              styledParagraph(pair.revised, textRun('Same')),
-              mode,
-            ),
-          );
+        const compared = await when(`comparison maps ${pair.original} to ${pair.revised}`, () =>
+          compareBodies(
+            styledParagraph(pair.original, textRun('Same')),
+            styledParagraph(pair.revised, textRun('Same')),
+          ),
+        );
           await then('accept and reject recover the corresponding style states', () => {
             expect(liveStyle(acceptAllChanges(compared.xml))).toBe(pair.revised);
             expect(liveStyle(rejectAllChanges(compared.xml))).toBe(pair.original);
             expect(paragraphPropertyChanges(compared.xml)).toHaveLength(1);
           });
-        }
       }
     },
   );
 
   test.openspec('[SDX-CMP-PSTYLE-06] ignoreFormatting suppresses paragraph style markup')(
-    'keeps the revised style untracked in both modes',
+    'keeps the revised style untracked',
     async ({ given, when, then, and }: AllureBddContext) => {
       const original = await given('an empty Heading1 paragraph', () =>
         styledParagraph('Heading1', ''),
@@ -296,10 +282,9 @@ describe('direct paragraph style comparison', () => {
         styledParagraph('Normal', ''),
       );
 
-      for (const mode of MODES) {
-        const compared = await when(`${mode} ignores formatting`, () =>
-          compareBodies(original, revised, mode, true),
-        );
+      const compared = await when('comparison ignores formatting', () =>
+        compareBodies(original, revised, true),
+      );
         await then('no format change or paragraph property markup is emitted', () => {
           expect(compared.result.stats.formatChanges).toBe(0);
           expect(paragraphPropertyChanges(compared.xml)).toHaveLength(0);
@@ -308,7 +293,6 @@ describe('direct paragraph style comparison', () => {
           expect(liveStyle(acceptAllChanges(compared.xml))).toBe('Normal');
           expect(liveStyle(rejectAllChanges(compared.xml))).toBe('Normal');
         });
-      }
     },
   );
 
@@ -331,7 +315,7 @@ describe('direct paragraph style comparison', () => {
       );
 
       const compared = await when('comparison runs', () =>
-        compareBodies(original, revised, 'rebuild'),
+        compareBodies(original, revised),
       );
       await then('exactly one paragraph style revision is emitted', () => {
         expect(compared.result.stats.formatChanges).toBe(1);
@@ -351,7 +335,7 @@ describe('direct paragraph style comparison', () => {
       );
 
       const compared = await when('comparison runs', () =>
-        compareBodies(original, revised, 'rebuild'),
+        compareBodies(original, revised),
       );
       await then('the published text replacement and property revision are both counted', () => {
         expect(compared.result.stats.formatChanges).toBe(1);

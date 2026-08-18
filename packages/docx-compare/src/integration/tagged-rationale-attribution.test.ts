@@ -56,7 +56,6 @@ async function fixture(): Promise<Awaited<ReturnType<typeof compareDocumentsAtom
   });
   const revisedBuffer = (await revised.toBuffer({ cleanBookmarks: false })).buffer;
   return compareDocumentsAtomizer(anchoredBuffer, revisedBuffer, {
-    comparisonStrategy: 'tagged-tree',
     author: 'Attribution Test',
     date: new Date('2026-08-17T12:00:00.000Z'),
     revisionAttributionRanges: [

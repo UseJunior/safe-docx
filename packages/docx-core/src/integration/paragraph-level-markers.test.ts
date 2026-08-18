@@ -39,7 +39,6 @@ describe('Paragraph-Level Track Changes Markers (Aspose-Style)', () => {
 
     await when('documents are compared in rebuild mode', async () => {
       result = await compareDocuments(originalBuf, revisedBuf, {
-        reconstructionMode: 'rebuild',
         author: 'Test',
       });
 

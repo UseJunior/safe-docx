@@ -103,7 +103,6 @@ export interface StrategyDifferentialRow {
     sourceStructuralIssues: Array<{ check: string; part: string; message: string }>;
   };
   approvedDivergenceIds: string[];
-  legacy: StrategyEvidence;
   taggedTree: StrategyEvidence;
 }
 
@@ -231,7 +230,6 @@ function structuralIssueKey(issue: { check: string; part: string; message: strin
 
 async function characterizeStrategy(
   fixture: StrategyDifferentialFixture,
-  strategy: ComparisonStrategy,
   originalXml: string,
   revisedXml: string,
   inheritedStructuralIssueKeys: ReadonlySet<string>,
@@ -239,8 +237,6 @@ async function characterizeStrategy(
   const result = await compareDocumentsAtomizer(fixture.original, fixture.revised, {
     author: AUTHOR,
     date: DATE,
-    comparisonStrategy: strategy,
-    reconstructionMode: 'inplace',
   });
   const candidateXml = await documentXml(result.document);
   const acceptedXml = acceptAllChanges(candidateXml);
@@ -265,7 +261,7 @@ async function characterizeStrategy(
     .sort();
 
   return {
-    strategy,
+    strategy: 'tagged-tree',
     projections: {
       accept: projectionSummary(acceptedXml, revisedXml),
       reject: projectionSummary(rejectedXml, originalXml),
@@ -332,22 +328,12 @@ export async function characterizeStrategyDifferential(
       === index,
   );
   const inheritedStructuralIssueKeys = new Set(sourceStructuralIssues.map(structuralIssueKey));
-  const [legacy, taggedTree] = await Promise.all([
-    characterizeStrategy(
-      fixture,
-      'legacy',
-      originalXml,
-      revisedXml,
-      inheritedStructuralIssueKeys,
-    ),
-    characterizeStrategy(
-      fixture,
-      'tagged-tree',
-      originalXml,
-      revisedXml,
-      inheritedStructuralIssueKeys,
-    ),
-  ]);
+  const taggedTree = await characterizeStrategy(
+    fixture,
+    originalXml,
+    revisedXml,
+    inheritedStructuralIssueKeys,
+  );
   // Hash normalized package contents rather than ZIP container bytes. JSZip's
   // entry timestamps are not comparison evidence and may vary when a fixture
   // is materialized without changing any OOXML or binary part.
@@ -369,7 +355,6 @@ export async function characterizeStrategyDifferential(
       sourceStructuralIssues,
     },
     approvedDivergenceIds: [...new Set(fixture.approvedDivergenceIds ?? [])].sort(),
-    legacy,
     taggedTree,
   };
 }
@@ -378,7 +363,7 @@ export function assertCharacterizationSafety(
   row: StrategyDifferentialRow,
   approvedDimensions: ReadonlySet<ApprovedDivergenceDimension> = new Set(),
 ): void {
-  for (const evidence of [row.legacy, row.taggedTree]) {
+  for (const evidence of [row.taggedTree]) {
     if (evidence.fallback.comparisonStrategyUsed !== evidence.strategy) {
       throw new Error(
         `${row.fixture.id}/${evidence.strategy} fell back to ` +
@@ -427,7 +412,7 @@ export function assertExpectedPackageParts(
     if (!row.fixture.sourcePackageParts.includes(expectedPath)) {
       throw new Error(`${fixture.id} no longer exercises expected source part ${expectedPath}`);
     }
-    for (const evidence of [row.legacy, row.taggedTree]) {
+    for (const evidence of [row.taggedTree]) {
       if (!evidence.packageParts.some((part) => part.path === expectedPath)) {
         throw new Error(`${fixture.id}/${evidence.strategy} dropped expected part ${expectedPath}`);
       }

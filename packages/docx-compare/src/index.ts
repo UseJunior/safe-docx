@@ -102,10 +102,14 @@ export async function compareDocuments(
   });
 }
 
-export * from './atomizer.js';
 export * from './move-detection.js';
-export * from './format-detection.js';
-export * from './paragraph-style-detection.js';
+export {
+  areRunPropertiesEqual,
+  areNormalizedRunPropertiesEqual,
+  categorizePropertyChanges,
+  getChangedPropertyNames,
+  normalizeRunProperties,
+} from './propertyNaming.js';
 export { extractRoundTripComparisonText } from './fieldComparisonSemantics.js';
 export * from './baselines/atomizer/formattingFidelity.js';
 export {
@@ -132,7 +136,6 @@ export {
   assertTextBoxContentUnchanged,
 } from './baselines/atomizer/textBoxRevisionSafety.js';
 export type { TextBoxRevisionChange } from './baselines/atomizer/textBoxRevisionSafety.js';
-export { computeAtomLcs, markCorrelationStatus } from './baselines/atomizer/atomLcs.js';
 export { alignComparisonSequences, tokenizeComparisonText } from './textAlignment.js';
 export {
   MC_NAMESPACE,

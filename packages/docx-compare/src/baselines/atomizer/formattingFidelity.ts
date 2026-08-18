@@ -28,7 +28,7 @@ import { parseDocumentXml } from './xmlToWmlElement.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { childElements, findChildByTagName } from '@usejunior/docx-core';
 import { RUN_PROPERTY_FRIENDLY_NAMES } from '@usejunior/docx-core';
-import { PARAGRAPH_PROPERTY_FRIENDLY_NAMES } from '../../format-detection.js';
+import { PARAGRAPH_PROPERTY_FRIENDLY_NAMES } from '../../propertyNaming.js';
 import { normalizeVolatilePagerefCachesForComparison } from '../../fieldComparisonSemantics.js';
 
 // =============================================================================

@@ -8,7 +8,7 @@
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  */
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect } from 'vitest';
@@ -27,7 +27,6 @@ import {
 } from './strategy-differential-harness.js';
 
 const REQUIRED_ENV = 'SAFE_DOCX_STRATEGY_DIFFERENTIAL_REQUIRED';
-const UPDATE_ENV = 'SAFE_DOCX_UPDATE_STRATEGY_DIFFERENTIAL';
 const INTEGRATION_DIR = dirname(fileURLToPath(import.meta.url));
 const MANIFEST_PATH = join(INTEGRATION_DIR, 'strategy-differential-manifest.json');
 const corpusRoot = process.env[REAL_CORPUS_ENV] ?? '';
@@ -44,7 +43,7 @@ interface DivergenceRecord {
 interface CharacterizationManifest {
   schemaVersion: 1;
   divergences: DivergenceRecord[];
-  rows: StrategyDifferentialRow[];
+  rows: Array<StrategyDifferentialRow & { legacy: unknown }>;
 }
 
 const manifest = JSON.parse(await readFile(MANIFEST_PATH, 'utf8')) as CharacterizationManifest;
@@ -118,11 +117,6 @@ describe('strategy differential committed rows', () => {
         }
       }
 
-      if (process.env[UPDATE_ENV] === '1') {
-        const updated: CharacterizationManifest = { ...manifest, rows };
-        await writeFile(MANIFEST_PATH, `${JSON.stringify(updated, null, 2)}\n`, 'utf8');
-      }
-
       const activeDivergences = new Map(
         manifest.divergences
           .filter((entry) => entry.status === 'active')
@@ -144,9 +138,12 @@ describe('strategy differential committed rows', () => {
         }
       }
 
-      if (process.env[UPDATE_ENV] !== '1') {
-        expect(rows).toEqual(manifest.rows);
-      }
+      const expectedRows = manifest.rows.map((row) => ({
+        fixture: row.fixture,
+        approvedDivergenceIds: row.approvedDivergenceIds,
+        taggedTree: row.taggedTree,
+      }));
+      expect(rows).toEqual(expectedRows);
     },
     600_000,
   );

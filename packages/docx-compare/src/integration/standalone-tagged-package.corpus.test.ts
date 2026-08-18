@@ -48,8 +48,6 @@ describe('standalone tagged package corpus shadow', () => {
         const result = await compareDocumentsAtomizer(fixture.original, fixture.revised, {
           author: 'Strategy Differential',
           date: new Date('2026-08-17T12:00:00.000Z'),
-          comparisonStrategy: 'tagged-tree',
-          reconstructionMode: 'inplace',
           standaloneTaggedPackageShadowObserver: (value) => { report = value; },
         });
         expect(result.comparisonStrategyUsed, fixture.id).toBe('tagged-tree');

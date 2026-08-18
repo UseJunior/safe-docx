@@ -74,7 +74,7 @@ test('does not allow emission evidence to masquerade as accept evidence', async 
   );
 });
 
-test('binds comparison and reconstruction evidence to the exact mode', async () => {
+test('binds comparison and reconstruction evidence to the exact classified path', async () => {
   const candidate = cloneManifest();
   const moves = candidate.records.find((record) => record.id === 'advanced-revision.moves-content');
   const comparison = moves.evidence.find((evidence) => evidence.id === 'ADV-COMPARE-MOVE-EMISSION-01');

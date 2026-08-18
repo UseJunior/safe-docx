@@ -100,7 +100,6 @@ describe('Issue #409 — empty paragraph atom context', () => {
 
     await when('comparing in atomizer rebuild mode', async () => {
       result = await compareDocuments(original, revised, {
-        reconstructionMode: 'rebuild',
       });
       xml = await documentXml(result.document);
     });
@@ -132,7 +131,6 @@ describe('Issue #409 — empty paragraph atom context', () => {
 
     await when('comparing in atomizer rebuild mode', async () => {
       result = await compareDocuments(original, revised, {
-        reconstructionMode: 'rebuild',
       });
       xml = await documentXml(result.document);
     });
@@ -158,7 +156,6 @@ describe('Issue #409 — empty paragraph atom context', () => {
 
     await when('comparing in atomizer rebuild mode', async () => {
       result = await compareDocuments(doc, doc, {
-        reconstructionMode: 'rebuild',
       });
       xml = await documentXml(result.document);
     });

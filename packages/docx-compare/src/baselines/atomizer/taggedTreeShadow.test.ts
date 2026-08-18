@@ -321,41 +321,32 @@ describe('tagged-tree offline evaluation', () => {
     },
   );
 
-  test.openspec('Tagged-tree is default with legacy rollback')(
-    'uses tagged publication by default while retaining explicit legacy rollback',
+  test.openspec('Tagged-tree construction is the sole public comparison spine')(
+    'publishes exact source projections through the sole tagged path',
     async ({ given, when, then, and }: AllureBddContext) => {
       const original = await buildDocxFromBodyXml('<w:p><w:r><w:t>old</w:t></w:r></w:p>');
       const revised = await buildDocxFromBodyXml('<w:p><w:r><w:t>new</w:t></w:r></w:p>');
       const options = { author: 'Comparator', date: new Date('2026-08-14T12:00:00Z') };
-      let defaultXml = '';
-      let taggedXml = '';
-      let legacyXml = '';
+      let publishedXml = '';
       await given('a comparison with a deterministic revision', () => undefined);
-      await when('the omitted, tagged, and rollback strategies are executed', async () => {
-        const [defaultResult, taggedResult, legacyResult] = await Promise.all([
-          compareDocumentsAtomizer(original, revised, options),
-          compareDocumentsAtomizer(original, revised, { ...options, comparisonStrategy: 'tagged-tree' }),
-          compareDocumentsAtomizer(original, revised, { ...options, comparisonStrategy: 'legacy' }),
-        ]);
-        defaultXml = await (await DocxArchive.load(defaultResult.document)).getDocumentXml();
-        taggedXml = await (await DocxArchive.load(taggedResult.document)).getDocumentXml();
-        legacyXml = await (await DocxArchive.load(legacyResult.document)).getDocumentXml();
+      await when('the comparison is executed', async () => {
+        const result = await compareDocumentsAtomizer(original, revised, options);
+        publishedXml = await (await DocxArchive.load(result.document)).getDocumentXml();
       });
-      await then('omitting the strategy selects the tagged implementation observably', () => {
-        expect(defaultXml).toBe(taggedXml);
+      await then('the tagged implementation is used observably', () => {
+        expect(publishedXml).toContain('<w:ins');
+        expect(publishedXml).toContain('<w:del');
       });
-      await and('both the default and explicit legacy rollback preserve exact source projections', () => {
-        for (const candidate of [defaultXml, legacyXml]) {
-          expect(parseXml(acceptAllChanges(candidate)).documentElement.textContent).toBe('new');
-          expect(parseXml(rejectAllChanges(candidate)).documentElement.textContent).toBe('old');
-        }
+      await and('the published document preserves exact source projections', () => {
+        expect(parseXml(acceptAllChanges(publishedXml)).documentElement.textContent).toBe('new');
+        expect(parseXml(rejectAllChanges(publishedXml)).documentElement.textContent).toBe('old');
       });
     },
   );
 
-  test.openspec('Tagged-tree publication failure returns the validated legacy redline')(
-    'throws structured tagged diagnostics unless the private soak fallback is enabled',
-    async ({ given, when, then, and }: AllureBddContext) => {
+  test.openspec('Final safety failure does not degrade silently')(
+    'throws structured tagged diagnostics without a fallback path',
+    async ({ given, when, then }: AllureBddContext) => {
       const original = await buildDocxFromBodyXml('<w:p><w:r><w:t>old</w:t></w:r></w:p>');
       const revised = await buildDocxFromBodyXml('<w:p><w:r><w:t>new</w:t></w:r></w:p>');
       const options = { author: 'Comparator', date: new Date('2026-08-14T12:00:00Z') };
@@ -373,11 +364,9 @@ describe('tagged-tree offline evaluation', () => {
         failureSummary: undefined,
       };
       let defaultError!: TaggedPublicationSafetyError;
-      let fallbackResult!: Awaited<ReturnType<typeof compareDocumentsAtomizer>>;
-      let legacyResult!: Awaited<ReturnType<typeof compareDocumentsAtomizer>>;
 
       await given('a tagged-tree candidate whose publication safety check fails', () => undefined);
-      await when('ordinary and emergency-enabled comparisons run', async () => {
+      await when('comparison runs', async () => {
         try {
           await compareDocumentsAtomizer(original, revised, {
             ...options,
@@ -386,17 +375,6 @@ describe('tagged-tree offline evaluation', () => {
         } catch (error) {
           defaultError = error as TaggedPublicationSafetyError;
         }
-        [fallbackResult, legacyResult] = await Promise.all([
-          compareDocumentsAtomizer(original, revised, {
-            ...options,
-            taggedTreePublicationSafetyEvaluator: () => forcedFailure,
-            legacyEmergencyFallback: true,
-          }),
-          compareDocumentsAtomizer(original, revised, {
-            ...options,
-            comparisonStrategy: 'legacy',
-          }),
-        ]);
       });
       await then('the default path throws the typed error with every failed gate', () => {
         expect(defaultError).toBeInstanceOf(TaggedPublicationSafetyError);
@@ -405,27 +383,6 @@ describe('tagged-tree offline evaluation', () => {
           ...forcedFailure.checks,
           formattingFidelity: true,
         });
-      });
-      await and('the private switch returns the validated legacy redline and stats', async () => {
-        const fallbackXml = await (await DocxArchive.load(fallbackResult.document)).getDocumentXml();
-        const legacyXml = await (await DocxArchive.load(legacyResult.document)).getDocumentXml();
-        expect(fallbackResult.document.equals(legacyResult.document)).toBe(true);
-        expect(fallbackXml).toBe(legacyXml);
-        expect(fallbackResult.stats).toEqual(legacyResult.stats);
-      });
-      await and('the emergency fallback remains machine readable', () => {
-        expect(fallbackResult.comparisonStrategyRequested).toBe('tagged-tree');
-        expect(fallbackResult.comparisonStrategyUsed).toBe('legacy');
-        expect(fallbackResult.comparisonStrategyFallbackReason)
-          .toBe('tagged_tree_publication_safety_check_failed');
-        expect(fallbackResult.taggedTreeFallbackDiagnostics).toEqual({
-          checks: { ...forcedFailure.checks, formattingFidelity: true },
-          failedChecks: ['acceptText'],
-          failureDetails: undefined,
-          firstDiffSummary: undefined,
-          formattingFidelity: expect.objectContaining({ score: 1 }),
-        });
-        expect(fallbackResult.fallbackReason).toBeUndefined();
       });
     },
   );
@@ -448,23 +405,6 @@ describe('tagged-tree offline evaluation', () => {
         expect(['projection-equivalent', 'projection-inequivalent']).toContain(first.classification);
         expect(first.divergingProjections.every((value) => ['accept', 'reject', 'formatting'].includes(value))).toBe(true);
       });
-    },
-  );
-
-  test.openspec('Legacy rollback reaches its sunset')(
-    'keeps the dated rollback explicitly gated on successor release evidence',
-    async () => {
-      const sunset = new Date('2026-11-16T00:00:00Z');
-      const predecessorShipDate = new Date('2026-08-16T00:00:00Z');
-      expect(sunset.getTime()).toBeGreaterThan(predecessorShipDate.getTime());
-      const original = await buildDocxFromBodyXml('<w:p><w:r><w:t>old</w:t></w:r></w:p>');
-      const revised = await buildDocxFromBodyXml('<w:p><w:r><w:t>new</w:t></w:r></w:p>');
-      const result = await compareDocumentsAtomizer(original, revised, {
-        comparisonStrategy: 'legacy',
-        author: 'Rollback Gate',
-        date: predecessorShipDate,
-      });
-      expect(result.comparisonStrategyUsed).toBe('legacy');
     },
   );
 

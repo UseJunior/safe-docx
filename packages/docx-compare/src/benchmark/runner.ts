@@ -83,8 +83,6 @@ async function produceRedline(
     // and fallback reason in the artifacts when making it.
     const result = await compareDocumentsAtomizer(originalBuffer, revisedBuffer, {
       author,
-      reconstructionMode: 'rebuild',
-      comparisonStrategy: 'legacy',
     });
     return result.document;
   }

@@ -333,7 +333,6 @@ export interface AncillaryFieldRangeEvidence {
 
 export interface AncillaryFieldEvidence {
   status: 'passed';
-  reconstructionMode: ReconstructionMode;
   selectedBindings: AncillarySelectedBindingSummary[];
   stories: AncillaryStorySummary[];
   ranges: AncillaryFieldRangeEvidence[];

@@ -6,8 +6,8 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 “Deprecated” means retained for one release; “breaking removal” means intentionally absent now.
 
 - Stable compatibility surface: 64
-- Deprecated for one release: 67
-- Documented breaking removals: 9
+- Deprecated for one release: 21
+- Documented breaking removals: 57
 
 | Symbol | Kind | Source | Present | Disposition |
 | --- | --- | --- | --- | --- |
@@ -30,20 +30,20 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `AncillaryStorySafetyError` | class | `src/baselines/atomizer/ancillaryFieldSafety.ts` | yes | stable compatibility |
 | `AncillaryStorySafetyIssue` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `AncillaryStorySummary` | interface | `src/compare-types.ts` | yes | stable compatibility |
-| `appendIdentitySalt` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `applyHyperlinkDestinationSalt` | function | `src/atomizer.ts` | yes | deprecate one release |
+| `appendIdentitySalt` | function | `src/atomizer.ts` | no | breaking removal |
+| `applyHyperlinkDestinationSalt` | function | `src/atomizer.ts` | no | breaking removal |
 | `areNormalizedRunPropertiesEqual` | function | `src/propertyNaming.ts` | yes | stable compatibility |
 | `areRunPropertiesEqual` | function | `src/propertyNaming.ts` | yes | stable compatibility |
 | `assertTextBoxContentUnchanged` | function | `src/baselines/atomizer/textBoxRevisionSafety.ts` | yes | stable compatibility |
-| `assignIdentityIds` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `assignParagraphIndices` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `atomizeTree` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `AtomizeTreeOptions` | interface | `src/atomizer.ts` | yes | deprecate one release |
+| `assignIdentityIds` | function | `src/atomizer.ts` | no | breaking removal |
+| `assignParagraphIndices` | function | `src/atomizer.ts` | no | breaking removal |
+| `atomizeTree` | function | `src/atomizer.ts` | no | breaking removal |
+| `AtomizeTreeOptions` | interface | `src/atomizer.ts` | no | breaking removal |
 | `canonicalizeParagraphPropertiesForIdentity` | function | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
 | `categorizePropertyChanges` | function | `src/propertyNaming.ts` | yes | stable compatibility |
-| `COLLAPSED_FIELD_TAG` | value | `src/atomizer.ts` | yes | deprecate one release |
-| `collapseFieldSequences` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `collectPreservedMoveNames` | function | `src/move-detection.ts` | yes | deprecate one release |
+| `COLLAPSED_FIELD_TAG` | value | `src/atomizer.ts` | no | breaking removal |
+| `collapseFieldSequences` | function | `src/atomizer.ts` | no | breaking removal |
+| `collectPreservedMoveNames` | function | `src/move-detection.ts` | no | breaking removal |
 | `compareDocuments` | function | `src/index.ts` | yes | stable compatibility |
 | `compareDocumentsAtomizer` | function | `src/baselines/atomizer/pipeline.ts` | yes | deprecate one release |
 | `compareFormattingFidelity` | function | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
@@ -55,65 +55,67 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `compareTexts` | function | `src/baselines/atomizer/trackChangesAcceptorAst.ts` | yes | stable compatibility |
 | `ComparisonStrategy` | type | `src/compare-types.ts` | yes | deprecate one release |
 | `ComparisonStrategyFallbackReason` | type | `src/compare-types.ts` | yes | deprecate one release |
-| `computeAtomLcs` | function | `src/baselines/atomizer/atomLcs.ts` | yes | deprecate one release |
+| `ComparisonUnit` | interface | `@usejunior/docx-core` | no | breaking removal |
+| `ComparisonUnitAtom` | interface | `@usejunior/docx-core` | no | breaking removal |
+| `computeAtomLcs` | function | `src/baselines/atomizer/atomLcs.ts` | no | breaking removal |
 | `countWords` | function | `src/textSimilarity.ts` | yes | deprecate one release |
-| `CreateAtomOptions` | interface | `src/atomizer.ts` | yes | deprecate one release |
-| `createComparisonUnitAtom` | function | `src/atomizer.ts` | yes | deprecate one release |
+| `CreateAtomOptions` | interface | `src/atomizer.ts` | no | breaking removal |
+| `createComparisonUnitAtom` | function | `src/atomizer.ts` | no | breaking removal |
 | `createRevisionIdState` | function | `src/move-detection.ts` | no | breaking removal |
 | `DEFAULT_RECONSTRUCTION_MODE` | value | `src/comparison-defaults.ts` | no | breaking removal |
-| `detectFormatChangesInAtomList` | function | `src/format-detection.ts` | yes | deprecate one release |
-| `detectMovesInAtomList` | function | `src/move-detection.ts` | yes | deprecate one release |
-| `detectParagraphStyleChanges` | function | `src/paragraph-style-detection.ts` | yes | deprecate one release |
-| `elementIdentityString` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `EMPTY_PARAGRAPH_TAG` | value | `src/atomizer.ts` | yes | deprecate one release |
-| `extractAncestorUnids` | function | `src/atomizer.ts` | yes | deprecate one release |
+| `detectFormatChangesInAtomList` | function | `src/format-detection.ts` | no | breaking removal |
+| `detectMovesInAtomList` | function | `src/move-detection.ts` | no | breaking removal |
+| `detectParagraphStyleChanges` | function | `src/paragraph-style-detection.ts` | no | breaking removal |
+| `elementIdentityString` | function | `src/atomizer.ts` | no | breaking removal |
+| `EMPTY_PARAGRAPH_TAG` | value | `src/atomizer.ts` | no | breaking removal |
+| `extractAncestorUnids` | function | `src/atomizer.ts` | no | breaking removal |
 | `extractRoundTripComparisonText` | function | `src/fieldComparisonSemantics.ts` | yes | stable compatibility |
 | `extractTextWithParagraphs` | function | `src/baselines/atomizer/trackChangesAcceptorAst.ts` | yes | stable compatibility |
-| `findBestMatch` | function | `src/move-detection.ts` | yes | deprecate one release |
-| `findRevisionTrackingElement` | function | `src/atomizer.ts` | yes | deprecate one release |
+| `findBestMatch` | function | `src/move-detection.ts` | no | breaking removal |
+| `findRevisionTrackingElement` | function | `src/atomizer.ts` | no | breaking removal |
 | `fixUpRevisionIds` | function | `src/move-detection.ts` | no | breaking removal |
-| `FormatChangeMarkupOptions` | interface | `src/format-detection.ts` | yes | deprecate one release |
+| `FormatChangeMarkupOptions` | interface | `src/format-detection.ts` | no | breaking removal |
 | `FormattingDimensionTally` | interface | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
 | `FormattingDivergence` | interface | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
 | `FormattingDivergenceKind` | type | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
 | `FormattingFidelityReport` | interface | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
 | `FormattingScope` | type | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
-| `generateFormatChangeMarkup` | function | `src/format-detection.ts` | yes | deprecate one release |
+| `generateFormatChangeMarkup` | function | `src/format-detection.ts` | no | breaking removal |
 | `generateMoveDestinationMarkup` | function | `src/move-detection.ts` | no | breaking removal |
 | `generateMoveSourceMarkup` | function | `src/move-detection.ts` | no | breaking removal |
-| `getAncestors` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `getAtomsText` | function | `src/move-detection.ts` | yes | deprecate one release |
-| `getAtomText` | function | `src/move-detection.ts` | yes | deprecate one release |
+| `getAncestors` | function | `src/atomizer.ts` | no | breaking removal |
+| `getAtomsText` | function | `src/move-detection.ts` | no | breaking removal |
+| `getAtomText` | function | `src/move-detection.ts` | no | breaking removal |
 | `getChangedPropertyNames` | function | `src/propertyNaming.ts` | yes | stable compatibility |
-| `getIdentityId` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `getParagraphProperties` | function | `src/format-detection.ts` | yes | deprecate one release |
-| `getRunPropertiesFromAtom` | function | `src/format-detection.ts` | yes | deprecate one release |
-| `getStatusFromRevisionTracking` | function | `src/atomizer.ts` | yes | deprecate one release |
+| `getIdentityId` | function | `src/atomizer.ts` | no | breaking removal |
+| `getParagraphProperties` | function | `src/format-detection.ts` | no | breaking removal |
+| `getRunPropertiesFromAtom` | function | `src/format-detection.ts` | no | breaking removal |
+| `getStatusFromRevisionTracking` | function | `src/atomizer.ts` | no | breaking removal |
 | `groupElementsByTagNameNS` | function | `src/markupCompatibility.ts` | yes | stable compatibility |
-| `groupIntoBlocks` | function | `src/move-detection.ts` | yes | deprecate one release |
+| `groupIntoBlocks` | function | `src/move-detection.ts` | no | breaking removal |
 | `hasFldCharInsideDel` | function | `@usejunior/docx-core` | yes | stable compatibility |
-| `hashElement` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `IdentityInterner` | class | `src/atomizer.ts` | yes | deprecate one release |
-| `isLeafNode` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `isParagraphLevelLeaf` | function | `src/atomizer.ts` | yes | deprecate one release |
+| `hashElement` | function | `src/atomizer.ts` | no | breaking removal |
+| `IdentityInterner` | class | `src/atomizer.ts` | no | breaking removal |
+| `isLeafNode` | function | `src/atomizer.ts` | no | breaking removal |
+| `isParagraphLevelLeaf` | function | `src/atomizer.ts` | no | breaking removal |
 | `jaccardWordSimilarity` | function | `src/textSimilarity.ts` | yes | stable compatibility |
-| `markAsMove` | function | `src/move-detection.ts` | yes | deprecate one release |
-| `markCorrelationStatus` | function | `src/baselines/atomizer/atomLcs.ts` | yes | deprecate one release |
+| `markAsMove` | function | `src/move-detection.ts` | no | breaking removal |
+| `markCorrelationStatus` | function | `src/baselines/atomizer/atomLcs.ts` | no | breaking removal |
 | `MarkupCompatibilityGroup` | interface | `src/markupCompatibility.ts` | yes | stable compatibility |
 | `MarkupCompatibilityOptions` | interface | `src/markupCompatibility.ts` | yes | stable compatibility |
 | `MC_NAMESPACE` | value | `src/markupCompatibility.ts` | yes | stable compatibility |
-| `mergeContiguousTextAtoms` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `mergeFormatChangeIntoRun` | function | `src/format-detection.ts` | yes | deprecate one release |
-| `mergePunctuationAtoms` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `MoveCandidateGuard` | type | `src/move-detection.ts` | yes | deprecate one release |
+| `mergeContiguousTextAtoms` | function | `src/atomizer.ts` | no | breaking removal |
+| `mergeFormatChangeIntoRun` | function | `src/format-detection.ts` | no | breaking removal |
+| `mergePunctuationAtoms` | function | `src/atomizer.ts` | no | breaking removal |
+| `MoveCandidateGuard` | type | `src/move-detection.ts` | no | breaking removal |
 | `MoveMarkup` | interface | `src/move-detection.ts` | no | breaking removal |
 | `MoveMarkupOptions` | interface | `src/move-detection.ts` | no | breaking removal |
-| `nearestHyperlinkAncestor` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `normalizeParagraphProperties` | function | `src/format-detection.ts` | yes | deprecate one release |
+| `nearestHyperlinkAncestor` | function | `src/atomizer.ts` | no | breaking removal |
+| `normalizeParagraphProperties` | function | `src/format-detection.ts` | no | breaking removal |
 | `normalizeRunProperties` | function | `src/propertyNaming.ts` | yes | stable compatibility |
 | `normalizeText` | function | `src/baselines/atomizer/trackChangesAcceptorAst.ts` | yes | stable compatibility |
-| `PARAGRAPH_LEVEL_TAGS` | value | `src/atomizer.ts` | yes | deprecate one release |
-| `PARAGRAPH_PROPERTY_FRIENDLY_NAMES` | value | `src/format-detection.ts` | yes | deprecate one release |
+| `PARAGRAPH_LEVEL_TAGS` | value | `src/atomizer.ts` | no | breaking removal |
+| `PARAGRAPH_PROPERTY_FRIENDLY_NAMES` | value | `src/format-detection.ts` | no | breaking removal |
 | `parseDocumentXml` | function | `src/baselines/atomizer/xmlToWmlElement.ts` | yes | stable compatibility |
 | `ProjectedFormattingFidelity` | interface | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
 | `ReconstructionAttemptDiagnostics` | interface | `src/compare-types.ts` | yes | deprecate one release |
@@ -137,8 +139,8 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `RevisionIdState` | interface | `src/move-detection.ts` | no | breaking removal |
 | `selectAlternateContentBranch` | function | `src/markupCompatibility.ts` | yes | stable compatibility |
 | `selectedElementsByTagNameNS` | function | `src/markupCompatibility.ts` | yes | stable compatibility |
-| `sha1` | function | `src/atomizer.ts` | yes | deprecate one release |
-| `splitAtomsIntoWords` | function | `src/atomizer.ts` | yes | deprecate one release |
+| `sha1` | function | `src/atomizer.ts` | no | breaking removal |
+| `splitAtomsIntoWords` | function | `src/atomizer.ts` | no | breaking removal |
 | `TaggedPublicationSafetyCheckName` | type | `src/compare-types.ts` | yes | stable compatibility |
 | `TaggedPublicationSafetyChecks` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `TaggedPublicationSafetyError` | class | `src/baselines/atomizer/pipeline.ts` | yes | stable compatibility |

@@ -188,7 +188,6 @@ describe('Round-Trip Tests - Accept All Changes', () => {
       revisedBuffer = await readFile(REVISED_DOC);
       comparisonResult = await compareDocuments(originalBuffer, revisedBuffer, {
         date: FIXTURE_STABLE_DATE,
-        reconstructionMode: 'inplace',
       });
     }, 120000);
 
@@ -372,7 +371,6 @@ describe('Round-Trip Tests - Reject All Changes', () => {
       revisedBuffer = await readFile(REVISED_DOC);
       comparisonResult = await compareDocuments(originalBuffer, revisedBuffer, {
         date: FIXTURE_STABLE_DATE,
-        reconstructionMode: 'inplace',
       });
     }, 120000);
 

@@ -79,7 +79,6 @@ export interface AncillaryFieldSafetyInput {
   resultArchive: DocxArchive;
   baseArchive: DocxArchive;
   mergeSourceArchive: DocxArchive;
-  reconstructionMode: ReconstructionMode;
   baseSide: 'original' | 'revised';
   mergeSourceSide: 'original' | 'revised';
   noteMergeResults: ReadonlyMap<'footnote' | 'endnote', AncillaryNoteMergeResult>;
@@ -641,7 +640,6 @@ async function evaluateAncillaryFieldSafetyUnsafe(
   if (issues.length > 0) throw new AncillaryStorySafetyError(issues);
   return {
     status: 'passed',
-    reconstructionMode: input.reconstructionMode,
     selectedBindings: bindings,
     stories,
     ranges,

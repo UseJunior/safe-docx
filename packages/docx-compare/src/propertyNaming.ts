@@ -51,6 +51,23 @@ const FRIENDLY_PROPERTY_NAMES: Readonly<Record<string, string>> = {
   'w:outlineLvl': 'outlineLevel',
 };
 
+/** Friendly names used when reporting paragraph-level formatting divergence. */
+export const PARAGRAPH_PROPERTY_FRIENDLY_NAMES: Readonly<Record<string, string>> = {
+  'w:jc': 'alignment',
+  'w:ind': 'indentation',
+  'w:spacing': 'spacing',
+  'w:pStyle': 'style',
+  'w:numPr': 'numbering',
+  'w:pBdr': 'borders',
+  'w:shd': 'shading',
+  'w:tabs': 'tabs',
+  'w:keepNext': 'keepWithNext',
+  'w:keepLines': 'keepLinesTogether',
+  'w:pageBreakBefore': 'pageBreakBefore',
+  'w:widowControl': 'widowControl',
+  'w:outlineLvl': 'outlineLevel',
+};
+
 function isPriorPropertyRevision(element: Element): boolean {
   return element.localName.endsWith('PrChange');
 }

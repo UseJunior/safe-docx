@@ -153,7 +153,7 @@ describe('Standard ancillary parts', () => {
       });
 
       await then('self-comparing the authored document keeps the theme in the result', async () => {
-        const result = await compareDocuments(buffer, buffer, { reconstructionMode: 'rebuild' });
+        const result = await compareDocuments(buffer, buffer);
         const resultArchive = await DocxArchive.load(result.document);
         expect(resultArchive.listFiles()).toContain('word/theme/theme1.xml');
       });

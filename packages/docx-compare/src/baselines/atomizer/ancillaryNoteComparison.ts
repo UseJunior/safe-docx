@@ -7,12 +7,6 @@ import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.j
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { buildTaggedTreePublication } from './taggedTreeShadow.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
-import { premergeAdjacentRuns } from './premergeRuns.js';
-import {
-  backfillParentReferences,
-  findBody,
-  parseDocumentXml,
-} from './xmlToWmlElement.js';
 
 const serializer = new XMLSerializer();
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -21,9 +15,6 @@ export interface NoteDefinitionComparisonOptions {
   author: string;
   date: Date;
   formatDetection?: FormatDetectionSettings;
-  premergeRuns?: boolean;
-  maxWordRefinementChangeRanges?: number;
-  preservedRoots?: readonly Element[];
 }
 
 function namespaceAttributes(entry: Element): string {
@@ -52,17 +43,6 @@ function wrapDefinition(entry: Element): string {
   return `<w:document${namespaceAttributes(entry)}><w:body>${content}</w:body></w:document>`;
 }
 
-function prepareDefinition(entry: Element, premergeRuns: boolean): string {
-  const wrapped = wrapDefinition(entry);
-  if (!premergeRuns) return wrapped;
-  const root = parseDocumentXml(wrapped);
-  backfillParentReferences(root);
-  const body = findBody(root);
-  if (!body) throw new Error('Could not create footnote comparison story');
-  premergeAdjacentRuns(body);
-  return serializer.serializeToString(root);
-}
-
 /**
  * Compare one corresponding footnote definition as an independent Word story.
  * Tagged construction and publication are reused so paragraphs, runs, fields,
@@ -78,8 +58,8 @@ export function compareFootnoteDefinitions(
   revisedEntry: Element,
   options: NoteDefinitionComparisonOptions,
 ): Element[] {
-  const originalXml = prepareDefinition(originalEntry, options.premergeRuns !== false);
-  const revisedXml = prepareDefinition(revisedEntry, options.premergeRuns !== false);
+  const originalXml = wrapDefinition(originalEntry);
+  const revisedXml = wrapDefinition(revisedEntry);
   if (
     extractRoundTripComparisonText(originalXml) === extractRoundTripComparisonText(revisedXml) &&
     compareSourceProjectedFormattingFidelity(originalXml, revisedXml, revisedXml).reject.score === 1

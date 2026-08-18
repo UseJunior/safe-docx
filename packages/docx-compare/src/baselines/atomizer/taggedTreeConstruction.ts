@@ -164,15 +164,22 @@ function propertyDelta(original: WmlElement, revised: WmlElement): PropertyDelta
   const propertySignature = (property: WmlElement | null): string => {
     if (!property) return '';
     const normalized = property.cloneNode(true) as WmlElement;
-    const stripWhitespace = (element: Element): void => {
+    const stripPriorRevisionsAndWhitespace = (element: Element): void => {
       for (const child of Array.from(element.childNodes)) {
-        if (child.nodeType === 1) stripWhitespace(child as Element);
+        if (child.nodeType === 1) {
+          const childElement = child as Element;
+          if (childElement.localName.endsWith('PrChange')) {
+            element.removeChild(childElement);
+          } else {
+            stripPriorRevisionsAndWhitespace(childElement);
+          }
+        }
         else if ((child.nodeType === 3 || child.nodeType === 4) && !(child.nodeValue ?? '').trim()) {
           element.removeChild(child);
         }
       }
     };
-    stripWhitespace(normalized);
+    stripPriorRevisionsAndWhitespace(normalized);
     return subtreeSignature(normalized);
   };
   if (propertySignature(originalProperty) === propertySignature(revisedProperty)) return undefined;

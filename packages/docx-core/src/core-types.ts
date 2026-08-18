@@ -70,172 +70,6 @@ export interface OpcPart {
 export type WmlElement = Element;
 
 // =============================================================================
-// Comparison Unit Interfaces
-// =============================================================================
-
-/**
- * Base interface for any comparison unit (atom or group).
- *
- * Represents a unit of content that can be compared between documents.
- *
- * @see ComparisonUnit abstract class in WmlComparer.cs lines 2230-2270
- */
-export interface ComparisonUnit {
-  /** SHA1 hash of the unit's content for quick equality check */
-  sha1Hash: string;
-  /** Current correlation status after comparison */
-  correlationStatus: CorrelationStatus;
-  /** Child comparison units (for groups) */
-  contents?: ComparisonUnit[];
-}
-
-/**
- * Format change information for atoms where text matches but formatting differs.
- *
- * Stores the old and new run properties along with the specific property names
- * that changed (e.g., "bold", "italic").
- */
-export interface FormatChangeInfo {
-  /** Run properties from the original document (before changes) */
-  oldRunProperties: WmlElement | null;
-  /** Run properties from the modified document (after changes) */
-  newRunProperties: WmlElement | null;
-  /** List of property names that changed (e.g., "bold", "italic", "fontSize") */
-  changedProperties: string[];
-}
-
-/**
- * Paragraph-scoped direct-style change detected after content alignment.
- *
- * The payload is attached to every atom in the aligned paragraph so either
- * reconstruction path can recover it without making run fragmentation part
- * of the revision identity.
- */
-export interface ParagraphStyleChangeInfo {
-  /** Original paragraph properties captured before the direct style change. */
-  oldParagraphProperties: WmlElement | null;
-  /** Revised paragraph properties that remain live in comparison output. */
-  newParagraphProperties: WmlElement | null;
-  /** Whether comparison should emit/report the change instead of ignoring it. */
-  tracked: boolean;
-}
-
-/**
- * Process-local payload for a comparison atom owned by an opaque XML boundary.
- *
- * The comparison model is already DOM-backed; this descriptor intentionally
- * retains a cloned element rather than exposing a serialized public contract.
- * `documentOrdinal` identifies the boundary among other captured boundaries in
- * source order. The reconstructor validates original/revised counterparts before
- * assigning `emissionElements` from the original side.
- */
-export interface OpaquePassthroughNode {
-  /** Determines whether paragraph-run emission or a structural scaffold owns output. */
-  placementKind: 'inline-run' | 'inline-range' | 'body-block' | 'row-block' | 'cell-block';
-  namespaceUri: string;
-  localName: string;
-  documentOrdinal: number;
-  /** Source-order paragraph fallback used when no stable Word identity is available. */
-  paragraphOrdinal: number;
-  /** Stable Word paragraph identity when the source paragraph carries w14:paraId. */
-  paragraphIdentity?: string;
-  /** Structural parent path (body or table/cell position) owning the paragraph. */
-  containerIdentity: string;
-  /** Direct body-child position for a scaffold-owned block boundary. */
-  bodyChildOrdinal?: number;
-  /** Direct parent-child position for a table-scoped scaffold boundary. */
-  containerChildOrdinal?: number;
-  /** Inclusive direct paragraph-child range for an ordered inline payload. */
-  inlineChildStartOrdinal?: number;
-  inlineChildEndOrdinal?: number;
-  /** Stable sequence position among captured field ranges in this paragraph. */
-  inlineRangeOrdinal?: number;
-  /** Number of contiguous source-order paragraph slots owned by a block boundary. */
-  ownedParagraphCount?: number;
-  semanticFingerprint: string;
-  /** First retained XML element; kept for source compatibility with single-node owners. */
-  sourceElement: WmlElement;
-  /** Ordered XML payload retained by this boundary. */
-  sourceElements?: WmlElement[];
-  effectiveNamespaces: Readonly<Record<string, string>>;
-  effectiveMceDeclarations: Readonly<Record<string, string>>;
-  /** Package relationship closure rooted at relationship attributes in a block subtree. */
-  relationshipClosureFingerprint?: string;
-  /** Revised-side canonical owner for an equal original empty-paragraph atom. */
-  correlatedNode?: OpaquePassthroughNode;
-  emissionElement?: WmlElement;
-  emissionElements?: WmlElement[];
-}
-
-/**
- * Atomic leaf-node unit used in LCS comparison.
- *
- * Represents the smallest comparable unit of content. Created by atomizing
- * the document tree into individual text nodes, breaks, and other leaf elements.
- *
- * @see ComparisonUnitAtom class in WmlComparer.cs lines 2305-2350
- */
-export interface ComparisonUnitAtom extends ComparisonUnit {
-  /** The leaf element (w:t, w:br, w:cr, etc.) */
-  contentElement: WmlElement;
-  /**
-   * Convenience references used by some reconstruction paths (e.g. in-place mode).
-   * These are optional because they can be derived from `ancestorElements`.
-   */
-  sourceRunElement?: WmlElement;
-  sourceParagraphElement?: WmlElement;
-  /** Ancestor elements from root to parent of contentElement */
-  ancestorElements: WmlElement[];
-  /** Unique identifiers extracted from ancestors (w:Unid attributes) */
-  ancestorUnids: string[];
-  /** The OPC part this atom belongs to */
-  part: OpcPart;
-  /** Revision tracking element if this atom is inside w:ins or w:del */
-  revTrackElement?: WmlElement;
-  /** Sequential index of the paragraph this atom belongs to (0-indexed) */
-  paragraphIndex?: number;
-
-  // Move detection properties
-  /** Group ID for atoms that are part of a move operation */
-  moveGroupId?: number;
-  /** Move name for linking source and destination (e.g., "move1") */
-  moveName?: string;
-
-  // Format change properties
-  /** Format change details when text is equal but formatting differs */
-  formatChange?: FormatChangeInfo;
-  /** Direct w:pStyle change shared by the atom's aligned paragraph. */
-  paragraphStyleChange?: ParagraphStyleChangeInfo;
-  /** Reference to the corresponding atom in the other document (for Equal atoms) */
-  comparisonUnitAtomBefore?: ComparisonUnitAtom;
-
-  // Empty paragraph marker
-  /** True if this atom represents an empty paragraph (paragraph with only w:pPr, no content) */
-  isEmptyParagraph?: boolean;
-
-  // Collapsed field marker
-  /** Original atoms when this atom represents a collapsed field sequence */
-  collapsedFieldAtoms?: ComparisonUnitAtom[];
-
-  // Word-level splitting marker
-  /** Reference to the parent atom when this atom was created by word-level splitting */
-  splitFromAtom?: ComparisonUnitAtom;
-
-  // Source document tracking
-  /** Which document this atom originated from (for correct formatting application) */
-  sourceDocument?: 'original' | 'revised';
-
-  // Run formatting snapshot
-  /** Cloned run properties (w:rPr) captured at atomization time, or null if no formatting */
-  rPr?: Element | null;
-
-  /** Opaque XML boundary that owns this atom, when bounded passthrough is enabled. */
-  opaquePassthrough?: OpaquePassthroughNode;
-  /** Zero-based paragraph position inside a scaffold-owned opaque block. */
-  opaquePassthroughRelativeParagraphOrdinal?: number;
-}
-
-// =============================================================================
 // Move Detection Types
 // =============================================================================
 
@@ -264,22 +98,6 @@ export const DEFAULT_MOVE_DETECTION_SETTINGS: MoveDetectionSettings = {
   moveMinimumWordCount: 5,
   caseInsensitiveMove: true,
 };
-
-/**
- * Block of consecutive atoms with the same status.
- *
- * Used during move detection to group atoms into comparable blocks.
- */
-export interface AtomBlock {
-  /** Status of all atoms in this block (Deleted or Inserted) */
-  status: CorrelationStatus;
-  /** The atoms in this block */
-  atoms: ComparisonUnitAtom[];
-  /** Joined text content from all atoms */
-  text: string;
-  /** Number of words in the text */
-  wordCount: number;
-}
 
 // =============================================================================
 // Format Detection Types
@@ -436,9 +254,7 @@ export interface FootnoteReference {
 // Revision Reporting Types
 // =============================================================================
 
-/**
- * Types of revisions that can be detected.
- */
+/** Types of revisions that can be detected. */
 export enum WmlComparerRevisionType {
   /** Text was inserted */
   Insertion = 'Insertion',

@@ -469,7 +469,6 @@ describe('relationship ID collision resolution', () => {
     let bound: { type: string; target: string } | undefined;
     await when('compared in rebuild mode, which mints a relationship for the new hyperlink', async () => {
       const compared = await compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'rebuild',
         moveDetection: { detectMoves: false },
       });
       const output = await DocxArchive.load(compared.document);
@@ -506,7 +505,6 @@ describe('relationship ID collision resolution', () => {
       'rId3', 'REVISED_IMAGE',
     );
     const result = await compareDocumentsAtomizer(original, revised, {
-      reconstructionMode: 'rebuild',
       author: 'Relationship Test',
       date: new Date('2026-08-16T12:00:00Z'),
     });
@@ -548,7 +546,6 @@ describe('relationship ID collision resolution', () => {
     const cyclic = await zip.generateAsync({ type: 'nodebuffer' });
 
     const result = await compareDocumentsAtomizer(cyclic, cyclic, {
-      reconstructionMode: 'rebuild',
       author: 'Relationship Test',
       date: new Date('2026-08-16T12:00:00Z'),
     });

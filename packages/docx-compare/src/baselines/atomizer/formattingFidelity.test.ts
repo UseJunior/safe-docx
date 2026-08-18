@@ -281,11 +281,9 @@ describe('Formatting-fidelity comparison check', () => {
       const options = { author: 'Fidelity Test', date: new Date('2026-06-01T00:00:00Z') };
       const inplace = await compareDocumentsAtomizer(original, revised, {
         ...options,
-        reconstructionMode: 'inplace',
       });
       const rebuild = await compareDocumentsAtomizer(original, revised, {
         ...options,
-        reconstructionMode: 'rebuild',
       });
       const inplaceXml = await (await DocxArchive.load(inplace.document)).getDocumentXml();
       const rebuildXml = await (await DocxArchive.load(rebuild.document)).getDocumentXml();

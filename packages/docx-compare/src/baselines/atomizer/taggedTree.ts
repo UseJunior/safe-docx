@@ -24,7 +24,7 @@
  */
 
 import type { WmlElement } from '@usejunior/docx-core';
-import { childElements } from '@usejunior/docx-core';
+import { childElements, CorrelationStatus } from '@usejunior/docx-core';
 
 /** The two input documents a comparison projects back to. */
 export type Side = 'original' | 'revised';
@@ -71,6 +71,18 @@ export interface PropertyDelta {
   revised: WmlElement | null;
   /** Names of the properties that differ, for reporting. */
   changedProperties: string[];
+}
+
+/** Resolve the public correlation status represented by one tagged node. */
+export function correlationStatus(
+  node: TaggedNode,
+  moves: readonly TaggedMoveRelation[] = [],
+): CorrelationStatus {
+  if (moves.some((move) => move.source === node)) return CorrelationStatus.MovedSource;
+  if (moves.some((move) => move.destination === node)) return CorrelationStatus.MovedDestination;
+  if (node.tag === 'original') return CorrelationStatus.Deleted;
+  if (node.tag === 'revised') return CorrelationStatus.Inserted;
+  return node.propertyDelta ? CorrelationStatus.FormatChanged : CorrelationStatus.Equal;
 }
 
 /** Metadata retained from an input revision wrapper rather than flattened into text. */

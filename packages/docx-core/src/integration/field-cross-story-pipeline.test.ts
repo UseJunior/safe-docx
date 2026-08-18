@@ -152,7 +152,6 @@ describe('Cross-story field-closure check (issue #212) — pipeline-level', () =
 
       await when('compared in inplace mode', async () => {
         rejection = compareDocuments(original, revised, {
-          reconstructionMode: 'inplace',
         });
       });
 
@@ -211,7 +210,6 @@ describe('Cross-story field-closure check (issue #212) — pipeline-level', () =
 
       await when('compared in inplace mode', async () => {
         rejection = compareDocuments(original, revised, {
-          reconstructionMode: 'inplace',
         });
       });
 
@@ -258,7 +256,6 @@ describe('Cross-story field-closure check (issue #212) — pipeline-level', () =
 
       await when('compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          reconstructionMode: 'inplace',
         });
         await attachPrettyJson('comparison-metadata.json', {
           reconstructionModeUsed: result.reconstructionModeUsed,

@@ -8,7 +8,7 @@
  * document text. Both atom and tagged-tree alignment consume this module.
  */
 
-import type { ComparisonUnitAtom, WmlElement, ListLevelInfo } from '@usejunior/docx-core';
+import type { WmlElement, ListLevelInfo } from '@usejunior/docx-core';
 import {
   createNumberingState,
   getCounters,
@@ -18,7 +18,6 @@ import {
 } from '@usejunior/docx-core';
 import { findElement, parseDocumentXml } from './xmlToWmlElement.js';
 import { childElements } from '@usejunior/docx-core';
-import { appendIdentitySalt } from '../../atomizer.js';
 
 /**
  * Options for numbering integration.
@@ -217,106 +216,4 @@ export function computeNumberingIdentities(
     if (identity) identities.set(paragraph, identity);
   }
   return identities;
-}
-
-/**
- * Apply numbering labels to atoms for comparison.
- *
- * The implementation:
- * 1. Parse numbering.xml
- * 2. Walk through paragraphs tracking numbering state
- * 3. Compute the rendered list label for each numbered paragraph
- * 4. Inject the label as a virtual atom or modify the hash
- *
- * @param atoms - Atoms to process
- * @param numberingXml - Raw numbering.xml content (optional)
- * @param options - Numbering integration options
- */
-export function virtualizeNumberingLabels(
-  atoms: ComparisonUnitAtom[],
-  numberingXml?: string,
-  options: NumberingIntegrationOptions = DEFAULT_NUMBERING_OPTIONS
-): void {
-  if (!options.enabled || !numberingXml) {
-    return;
-  }
-
-  const definitions = parseNumberingXml(numberingXml);
-  if (definitions.abstractNums.size === 0) {
-    return;
-  }
-
-  const numberingState = createNumberingState();
-  let lastParagraph: WmlElement | null = null;
-
-  for (const atom of atoms) {
-    // Find paragraph ancestor
-    const pAncestor = atom.ancestorElements.find((a) => a.tagName === 'w:p');
-
-    if (pAncestor && pAncestor !== lastParagraph) {
-      lastParagraph = pAncestor;
-
-      // Check if this paragraph has numbering
-      const numId = getNumIdFromParagraph(pAncestor);
-      const ilvl = getIlvlFromParagraph(pAncestor);
-
-      if (numId) {
-        const abstractNumId = definitions.numToAbstractNum.get(numId);
-        if (abstractNumId) {
-          const levels = definitions.abstractNums.get(abstractNumId);
-          if (levels && levels[ilvl]) {
-            const levelInfo = levels[ilvl]!;
-            const counter = processNumberedParagraph(
-              numberingState,
-              parseInt(numId, 10),
-              ilvl,
-              levelInfo
-            );
-
-            // Build counter array for level text expansion
-            const counters: number[] = [];
-            const storedCounters = numberingState.counters.get(numId);
-            for (let i = 0; i <= ilvl; i++) {
-              counters.push(storedCounters?.[i] ?? counter);
-            }
-
-            // Compute the rendered label
-            const label = expandLevelTextWithLegal(
-              levelInfo.lvlText,
-              counters,
-              levels,
-              ilvl
-            );
-
-            // Store the computed label on the atom for hash modification
-            // This affects comparison by making atoms with different labels
-            // have different hashes even if the text is the same
-            if (label) {
-              // Modify the atom's identity to include the numbering label so
-              // atoms with different labels differ even when their text matches.
-              appendIdentitySalt(atom, `:${numId}:${ilvl}:${label}`);
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-/**
- * Check if an atom is the first atom in its paragraph.
- * Used to determine when to process numbering.
- */
-export function isFirstAtomInParagraph(
-  atom: ComparisonUnitAtom,
-  previousAtom: ComparisonUnitAtom | null
-): boolean {
-  if (!previousAtom) {
-    return true;
-  }
-
-  const currentP = atom.ancestorElements.find((a) => a.tagName === 'w:p');
-  const previousP = previousAtom.ancestorElements.find((a) => a.tagName === 'w:p');
-
-  return currentP !== previousP;
 }

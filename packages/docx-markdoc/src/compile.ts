@@ -723,7 +723,6 @@ export async function compileMarkdoc(
     item.range = range;
   }
   const comparisonOptions: NonNullable<Parameters<typeof compareDocumentsAtomizer>[2]> = {
-    comparisonStrategy: 'tagged-tree',
     author: resolvedCompilation.author,
     date: resolvedCompilation.date,
     revisionAttributionRanges: materializations.map(({ range }) => ({

@@ -1,6 +1,6 @@
 import { XMLSerializer } from '@xmldom/xmldom';
 import type { WmlElement } from '@usejunior/docx-core';
-import { childElements, parseXml } from '@usejunior/docx-core';
+import { childElements, parseXml, WML } from '@usejunior/docx-core';
 import { alignComparisonSequences, tokenizeComparisonText } from '../../textAlignment.js';
 import type { RevisionAttribution } from '../../compare-types.js';
 import { getChangedPropertyNames } from '../../propertyNaming.js';
@@ -170,13 +170,15 @@ function wrapRevision(
  * matching the established hardened deletion path.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.fields.deleted-field-code
  */
 function hoistFieldCharactersFromDeletions(root: WmlElement): void {
   const deletions = Array.from(root.getElementsByTagNameNS(W_NS, 'del')) as WmlElement[];
   for (const deletion of deletions) {
     const parent = deletion.parentNode;
     if (!parent) continue;
-    const deletedFields = Array.from(deletion.getElementsByTagNameNS(W_NS, 'fldChar'));
+    const deletedFields = Array.from(deletion.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName));
     const deletedFieldTypes = deletedFields.map((field) =>
       field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '');
     if (deletedFieldTypes.join('|') === 'begin|separate|end') continue;
@@ -184,7 +186,7 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
     while (nextElement && nextElement.nodeType !== 1) nextElement = nextElement.nextSibling;
     if (nextElement && (nextElement as WmlElement).localName === 'ins') {
       const types = (element: WmlElement): string[] => Array.from(
-        element.getElementsByTagNameNS(W_NS, 'fldChar'),
+        element.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName),
         (field) => field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '',
       );
       const deletedTypes = types(deletion);
@@ -196,7 +198,7 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
     }
     if (deletedFields.length === 1 && nextElement && (nextElement as WmlElement).localName === 'ins') {
       const insertedFields = Array.from(
-        (nextElement as WmlElement).getElementsByTagNameNS(W_NS, 'fldChar'),
+        (nextElement as WmlElement).getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName),
       );
       const fieldType = (field: Element): string | null =>
         field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType');
@@ -244,7 +246,7 @@ function hoistLiteralInsertionsFromDeletedFieldInstructions(root: WmlElement): v
       const stack: Array<{ begin: WmlElement; instructionNodes: WmlElement[] }> = [];
       let changed = false;
       for (const sibling of siblings) {
-        const fieldCharacters = Array.from(sibling.getElementsByTagNameNS(W_NS, 'fldChar'));
+        const fieldCharacters = Array.from(sibling.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName));
         const types = fieldCharacters.map((field) => field.getAttributeNS(W_NS, 'fldCharType'));
         if (types.includes('begin')) {
           stack.push({ begin: sibling, instructionNodes: [] });
@@ -255,8 +257,8 @@ function hoistLiteralInsertionsFromDeletedFieldInstructions(root: WmlElement): v
         if (types.includes('separate')) {
           const deletedInstruction = active.instructionNodes.some((node) =>
             (node.localName === 'del' || node.getElementsByTagNameNS(W_NS, 'del').length > 0) &&
-            (node.getElementsByTagNameNS(W_NS, 'instrText').length > 0 ||
-              node.getElementsByTagNameNS(W_NS, 'delInstrText').length > 0),
+            (node.getElementsByTagNameNS(W_NS, WML.INSTR_TEXT.localName).length > 0 ||
+              node.getElementsByTagNameNS(W_NS, WML.DEL_INSTR_TEXT.localName).length > 0),
           );
           if (deletedInstruction) {
             const literalInsertions = active.instructionNodes.filter((node) => {
@@ -451,6 +453,13 @@ function appendChangeMetadata(change: WmlElement, revision: ComparisonRevision):
   markComparisonRevision(change);
 }
 
+/**
+ * Keep revised paragraph properties live and append the original CT_PPrBase
+ * snapshot as the final child required by CT_PPr.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @see https://github.com/UseJunior/safe-docx/issues/679
+ */
 function applyParagraphPropertyDelta(
   paragraph: WmlElement,
   original: WmlElement | null,
@@ -1013,7 +1022,7 @@ function emitAtomicRetargetedField(
     ) break;
     if (!oldRun || !newRun || oldRun.localName !== 'r' || newRun.localName !== 'r') break;
     const fieldTypes = (run: WmlElement): string[] => Array.from(
-      run.getElementsByTagNameNS(W_NS, 'fldChar'),
+      run.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName),
       (field) => field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '',
     );
     const oldTypes = fieldTypes(oldRun);
@@ -1021,19 +1030,19 @@ function emitAtomicRetargetedField(
     if (oldTypes.join('|') !== newTypes.join('|')) break;
     if (cursor === start && oldTypes[0] !== 'begin') break;
     instructions.original.push(...Array.from(
-      oldRun.getElementsByTagNameNS(W_NS, 'instrText'),
+      oldRun.getElementsByTagNameNS(W_NS, WML.INSTR_TEXT.localName),
       (instruction) => instruction.textContent ?? '',
     ));
     instructions.revised.push(...Array.from(
-      newRun.getElementsByTagNameNS(W_NS, 'instrText'),
+      newRun.getElementsByTagNameNS(W_NS, WML.INSTR_TEXT.localName),
       (instruction) => instruction.textContent ?? '',
     ));
     controls.original.push(...Array.from(
-      oldRun.getElementsByTagNameNS(W_NS, 'fldChar'),
+      oldRun.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName),
       (field) => new XMLSerializer().serializeToString(field),
     ));
     controls.revised.push(...Array.from(
-      newRun.getElementsByTagNameNS(W_NS, 'fldChar'),
+      newRun.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName),
       (field) => new XMLSerializer().serializeToString(field),
     ));
     originals.push(oldRun);
@@ -1088,7 +1097,7 @@ function emitAtomicSideOnlyField(
     const run = representative(child, side);
     if (!run || run.localName !== 'r') break;
     const types = Array.from(
-      run.getElementsByTagNameNS(W_NS, 'fldChar'),
+      run.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName),
       (field) => field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '',
     );
     if (cursor === start && types[0] !== 'begin') break;
@@ -1330,6 +1339,13 @@ export interface TaggedTreeSerializerOptions {
   retainComparisonRevisionMarkers?: boolean;
 }
 
+/**
+ * Emit run-level revisions inside their retained structural wrappers, including
+ * hyperlinks whose relationship identity comes from the selected package base.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see https://github.com/UseJunior/safe-docx/issues/368
+ */
 export function serializeTaggedTree(
   tree: TaggedNode,
   plan: PreservePlan,

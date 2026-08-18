@@ -81,17 +81,13 @@ describe('adaptive word-split whitespace parity (#720)', () => {
 
     const result = await when('the adaptive in-place comparison runs', () =>
       compareDocumentsAtomizer(original, revised, {
-        comparisonStrategy: 'legacy',
-        reconstructionMode: 'inplace',
         date: new Date('2026-07-28T12:00:00Z'),
       }),
     );
     const xml = await documentXml(result.document);
 
-    await then('the highest-fidelity word-split pass satisfies the safety gate', () => {
-      expect(result.reconstructionModeUsed).toBe('inplace');
-      expect(result.inplaceSuccessDiagnostics?.passUsed).toBe('inplace_word_split');
-      expect(result.inplaceSuccessDiagnostics?.precedingFailedAttempts).toEqual([]);
+    await then('the sole tagged path satisfies the safety gate', () => {
+      expect(result.comparisonStrategyUsed).toBe('tagged-tree');
     });
 
     await and('accept and reject preserve every character, including spaces', () => {

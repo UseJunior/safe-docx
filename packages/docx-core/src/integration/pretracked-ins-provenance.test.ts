@@ -234,13 +234,10 @@ interface ProjectionReport {
 async function runComparison(
   original: Buffer,
   revised: Buffer,
-  reconstructionMode: ReconstructionMode,
-  comparisonStrategy: 'tagged-tree' | 'legacy' = 'tagged-tree',
+  _reconstructionMode: ReconstructionMode,
+  _comparisonStrategy: 'tagged-tree' | 'legacy' = 'tagged-tree',
 ): Promise<ProjectionReport> {
-  const result = await compareDocuments(original, revised, {
-    reconstructionMode,
-    comparisonStrategy,
-  });
+  const result = await compareDocuments(original, revised);
   const [combinedXml, originalXml, revisedXml] = await Promise.all([
     getDocumentXml(result.document),
     getDocumentXml(original),
@@ -292,79 +289,4 @@ describe('Original-side pre-tracked insertion provenance (issue #358)', () => {
     },
   );
 
-  test(
-    'rebuild comparison output satisfies both INV-RT-001 projections across the repro matrix',
-    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
-      const reports: Record<string, unknown>[] = [];
-
-      await given('the same pre-tracked-insertion pairs as the inplace matrix', async () => {});
-
-      await when('each pair runs through the rebuild-requested comparison', async () => {});
-
-      await then('the rebuilt output projects to its inputs on accept and reject', async () => {
-        for (const provenanceCase of CASES) {
-          const { original, revised } = await provenanceCase.build();
-          const report = await runComparison(original, revised, 'rebuild');
-          reports.push({ name: provenanceCase.name, modeUsed: report.modeUsed });
-
-          expect(report.acceptCombined, `${provenanceCase.name}: accept projection`).toBe(
-            report.acceptRevised,
-          );
-          expect(report.rejectCombined, `${provenanceCase.name}: reject projection`).toBe(
-            report.rejectOriginal,
-          );
-        }
-        await attachPrettyJson('rebuild-provenance-reports', reports);
-      });
-    },
-  );
-
-  test(
-    'combined output preserves the original author on the restored w:ins and nests the comparison w:del inside it',
-    async ({ given, when, then, and }: AllureBddContext) => {
-      let matchedXml = '';
-      let deletedXml = '';
-
-      await given('an inline-ins original compared against matched and reverted revised texts', async () => {
-        const original = await buildInlineInsOriginal(['Alpha'], 0, 'Alpha'.length, ' beta');
-        matchedXml = (
-          await runComparison(
-            original,
-            await buildSyntheticDocx({ paragraphs: ['Alpha beta'] }),
-            'inplace',
-            'legacy',
-          )
-        ).combinedXml;
-        deletedXml = (
-          await runComparison(
-            original,
-            await buildSyntheticDocx({ paragraphs: ['Alpha'] }),
-            'inplace',
-            'legacy',
-          )
-        ).combinedXml;
-      });
-
-      await when('the combined markup is inspected', async () => {});
-
-      await then('matched pre-tracked content keeps an original-author w:ins wrapper', async () => {
-        expect(matchedXml).toMatch(
-          new RegExp(`<w:ins[^>]*w:author="${ORIGINAL_AUTHOR}"[^>]*>(?:(?!</w:ins>).)*beta`),
-        );
-      });
-
-      await and(
-        'comparison-deleted pre-tracked content nests w:del(Comparison) inside w:ins(original-author)',
-        async () => {
-          expect(deletedXml).toMatch(
-            new RegExp(
-              `<w:ins[^>]*w:author="${ORIGINAL_AUTHOR}"[^>]*>` +
-                `(?:(?!</w:ins>).)*<w:del[^>]*w:author="Comparison"[^>]*>` +
-                `(?:(?!</w:del>).)*<w:delText[^>]*>[^<]*beta`,
-            ),
-          );
-        },
-      );
-    },
-  );
 });

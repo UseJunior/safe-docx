@@ -299,7 +299,6 @@ describe('mc:AlternateContent text-box ordinals', () => {
       const compared = await when('the documents are compared in place', () =>
         compareDocumentsAtomizer(original, revised, {
           date: FIXED_DATE,
-          reconstructionMode: 'inplace',
         }),
       );
       const comparedXml = await (

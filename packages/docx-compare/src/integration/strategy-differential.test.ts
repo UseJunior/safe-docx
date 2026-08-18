@@ -48,7 +48,6 @@ const DATE = new Date('2026-08-17T12:00:00Z');
 async function compareXml(
   originalBody: string,
   revisedBody: string,
-  comparisonStrategy: 'legacy' | 'tagged-tree',
 ): Promise<string> {
   const [original, revised] = await Promise.all([
     buildDocxFromBodyXml(originalBody),
@@ -57,10 +56,8 @@ async function compareXml(
   const result = await compareDocumentsAtomizer(original, revised, {
     author: 'Strategy Differential',
     date: DATE,
-    reconstructionMode: 'inplace',
-    comparisonStrategy,
   });
-  expect(result.comparisonStrategyUsed).toBe(comparisonStrategy);
+  expect(result.comparisonStrategyUsed).toBe('tagged-tree');
   const documentXml = await (await DocxArchive.load(result.document)).getDocumentXml();
   expect(documentXml.startsWith('<?xml')).toBe(true);
   return documentXml;
@@ -106,7 +103,7 @@ function cacheInsensitiveText(documentXml: string): string {
   return extractTextWithParagraphs(documentXml).replace(/\d+/gu, '{PAGE}');
 }
 
-describe('strategy differential characterization', () => {
+describe('sole tagged-spine characterization', () => {
   test.openspec('Revision and bookmark identifiers may overlap numerically')(
     'keeps tagged bookmark hoisting equivalent with overlapping ID spaces',
     async () => {
@@ -117,16 +114,11 @@ describe('strategy differential characterization', () => {
         + '<w:bookmarkEnd w:id="1"/>'
         + '<w:r><w:delText>outside</w:delText></w:r></w:del></w:p>';
 
-      const [legacyXml, taggedXml] = await Promise.all([
-        compareXml(trackedBody, trackedBody, 'legacy'),
-        compareXml(trackedBody, trackedBody, 'tagged-tree'),
-      ]);
+      const taggedXml = await compareXml(trackedBody, trackedBody);
 
-      expect(paragraphChildTags(legacyXml)).toEqual([
+      expect(paragraphChildTags(taggedXml)).toEqual([
         'w:bookmarkStart', 'w:r', 'w:del', 'w:bookmarkEnd', 'w:del',
       ]);
-      expect(paragraphChildTags(taggedXml)).toEqual(paragraphChildTags(legacyXml));
-      expect(new Set(wrapperIds(legacyXml)).size).toBe(wrapperIds(legacyXml).length);
       expect(new Set(wrapperIds(taggedXml)).size).toBe(wrapperIds(taggedXml).length);
       expect(parseXml(rejectAllChanges(taggedXml)).documentElement.textContent).toBe(
         'keptinsideoutside',
@@ -134,23 +126,19 @@ describe('strategy differential characterization', () => {
 
       const enclosedOriginal = '<w:p><w:bookmarkStart w:id="1" w:name="DeletedRange"/>'
         + '<w:r><w:t>deleted</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>';
-      const enclosedTaggedXml = await compareXml(enclosedOriginal, '<w:p/>', 'tagged-tree');
+      const enclosedTaggedXml = await compareXml(enclosedOriginal, '<w:p/>');
       expect(acceptAllChanges(enclosedTaggedXml)).not.toContain('DeletedRange');
       expect(rejectAllChanges(enclosedTaggedXml)).toContain('DeletedRange');
     },
   );
 
   test.openspec('Volatile TOC cache changes are suppressed before final gates')(
-    'keeps volatile PAGEREF cache refreshes out of both strategies',
+    'keeps volatile PAGEREF cache refreshes out of tracked revisions',
     async () => {
       const originalBody = tocBody('3');
       const revisedBody = tocBody('10');
-      const [legacyXml, taggedXml] = await Promise.all([
-        compareXml(originalBody, revisedBody, 'legacy'),
-        compareXml(originalBody, revisedBody, 'tagged-tree'),
-      ]);
+      const taggedXml = await compareXml(originalBody, revisedBody);
 
-      expect(revisionTexts(legacyXml)).toEqual([]);
       expect(revisionTexts(taggedXml)).toEqual([]);
       expect(cacheInsensitiveText(acceptAllChanges(taggedXml))).toBe(
         cacheInsensitiveText(await compareSourceXml(revisedBody)),
@@ -199,7 +187,7 @@ describe('strategy differential manifest evidence', () => {
         'relationships',
       ]);
       expect(first.fixture.originalSha256).not.toBe(first.fixture.revisedSha256);
-      expect(first.legacy.stats).toEqual(first.taggedTree.stats);
+      expect(first.taggedTree.strategy).toBe('tagged-tree');
       assertCharacterizationSafety(first);
       assertExpectedPackageParts(fixture, first);
 
@@ -228,16 +216,16 @@ describe('strategy differential manifest evidence', () => {
       expect(() => assertCharacterizationSafety(fallback)).toThrow(/fell back to legacy/u);
 
       const projectionDrift = structuredClone(row);
-      projectionDrift.legacy.projections.accept.matchesSourceText = false;
+      projectionDrift.taggedTree.projections.accept.matchesSourceText = false;
       expect(() => assertCharacterizationSafety(projectionDrift))
         .toThrow(/accept projection drifted/u);
       expect(() => assertCharacterizationSafety(
         projectionDrift,
-        new Set(['legacy.acceptProjection']),
+        new Set(['tagged-tree.acceptProjection']),
       )).not.toThrow();
       expect(() => assertCharacterizationSafety(
         projectionDrift,
-        new Set(['legacy.rejectProjection']),
+        new Set(['tagged-tree.rejectProjection']),
       )).toThrow(/accept projection drifted/u);
     },
   );

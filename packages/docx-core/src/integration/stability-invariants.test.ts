@@ -35,7 +35,7 @@ interface RunSnapshot {
   failedChecks: string[];
 }
 
-const MODES: ReconstructionMode[] = ['rebuild', 'inplace'];
+const MODES: ReconstructionMode[] = ['inplace'];
 const FIXTURES = ['simple-word-change', 'split-run-boundary-change'] as const;
 
 const integrationDir = dirname(import.meta.url.replace('file://', ''));
@@ -92,13 +92,8 @@ function semanticViewFromXml(documentXml: string): SemanticView {
 async function runAndSnapshot(
   original: Buffer,
   revised: Buffer,
-  reconstructionMode: ReconstructionMode,
-  opts?: { premergeRuns?: boolean },
 ): Promise<RunSnapshot> {
-  const result = await compareDocuments(original, revised, {
-    reconstructionMode,
-    premergeRuns: opts?.premergeRuns,
-  });
+  const result = await compareDocuments(original, revised);
   const documentXml = await getDocXml(result.document);
   const failedChecks = result.fallbackDiagnostics
     ? result.fallbackDiagnostics.attempts.flatMap((attempt) => attempt.failedChecks).sort()
@@ -130,7 +125,6 @@ describe('Stability invariants', () => {
 
         await when(`documents are compared in ${mode} mode and transforms are applied`, async () => {
           const result = await compareDocuments(original, revised, {
-            reconstructionMode: mode,
           });
 
           resultXml = await getDocXml(result.document);
@@ -162,9 +156,9 @@ describe('Stability invariants', () => {
 
     await when('documents are compared in inplace mode three times concurrently', async () => {
       runs = await Promise.all([
-        runAndSnapshot(original, revised, 'inplace'),
-        runAndSnapshot(original, revised, 'inplace'),
-        runAndSnapshot(original, revised, 'inplace'),
+        runAndSnapshot(original, revised),
+        runAndSnapshot(original, revised),
+        runAndSnapshot(original, revised),
       ]);
     });
 
@@ -207,8 +201,8 @@ describe('Stability invariants', () => {
 
       await when('documents are compared in inplace mode twice concurrently', async () => {
         runs = await Promise.all([
-          runAndSnapshot(original, revised, 'inplace'),
-          runAndSnapshot(original, revised, 'inplace'),
+          runAndSnapshot(original, revised),
+          runAndSnapshot(original, revised),
         ]);
       });
 
@@ -245,12 +239,9 @@ describe('Stability invariants', () => {
       });
 
       await when('documents are compared in inplace mode twice concurrently', async () => {
-        // premergeRuns defaults to true — do not override.
-        // Issue #35 fixed: setLeafText now syncs both `data` and `nodeValue` on xmldom
-        // text nodes, so ILPA no longer falls back to rebuild with premerge enabled.
         runs = await Promise.all([
-          runAndSnapshot(original, revised, 'inplace'),
-          runAndSnapshot(original, revised, 'inplace'),
+          runAndSnapshot(original, revised),
+          runAndSnapshot(original, revised),
         ]);
       });
 
@@ -289,7 +280,6 @@ describe('Stability invariants', () => {
 
       await when(`original document is compared against itself in ${mode} mode`, async () => {
         result = await compareDocuments(original, original, {
-          reconstructionMode: mode,
         });
 
         const originalXml = await getDocXml(original);
