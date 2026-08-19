@@ -189,7 +189,9 @@ describe('Round-Trip Tests - Accept All Changes', () => {
       comparisonResult = await compareDocuments(originalBuffer, revisedBuffer, {
         date: FIXTURE_STABLE_DATE,
       });
-    }, 120000);
+    // V8 coverage instrumentation pushes the sole tagged comparison spine past
+    // the historical 120-second ceiling on CI-class hosts.
+    }, 180000);
 
     test('accept all changes should produce text matching revised document', async ({ given, when, then }: AllureBddContext) => {
       await given('ILPA comparison result is pre-computed in beforeAll', () => {});
@@ -372,7 +374,8 @@ describe('Round-Trip Tests - Reject All Changes', () => {
       comparisonResult = await compareDocuments(originalBuffer, revisedBuffer, {
         date: FIXTURE_STABLE_DATE,
       });
-    }, 120000);
+    // Keep the reject projection on the same coverage-aware budget as accept.
+    }, 180000);
 
     test('reject all changes should produce text matching original document', async ({ given, when, then }: AllureBddContext) => {
       await given('ILPA comparison result is pre-computed in beforeAll', () => {});

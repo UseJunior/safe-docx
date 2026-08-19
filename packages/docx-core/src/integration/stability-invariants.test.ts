@@ -261,10 +261,10 @@ describe('Stability invariants', () => {
         expect(first.failedChecks).toEqual(second.failedChecks);
       });
     },
-    // V8 coverage instrumentation roughly doubles the two concurrent ILPA
-    // comparisons on CI-class hosts; keep the assertion strict without racing
-    // the coverage runner's former 180-second ceiling.
-    240000
+    // V8 coverage instrumentation compounds across the two concurrent ILPA
+    // comparisons now that the tagged path is the sole comparison spine. Keep
+    // the determinism assertion strict without racing the instrumented runner.
+    360000
   );
 
   for (const mode of MODES) {
