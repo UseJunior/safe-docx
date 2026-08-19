@@ -783,6 +783,8 @@ export type Comment = {
   startCharOffset?: number;
   endRunIndex?: number;
   endCharOffset?: number;
+  startTextOffset?: number;
+  endTextOffset?: number;
   replies: Comment[];
 };
 
@@ -790,6 +792,7 @@ type CommentRangePoint = {
   paragraphId: string | null;
   runIndex?: number;
   charOffset?: number;
+  textOffset?: number;
 };
 
 type RunBoundary = {
@@ -803,6 +806,7 @@ type RunBoundary = {
 //   resolution depends on the boundary direction and the surrounding runs.
 type MarkerCharPosition = {
   id: number;
+  textOffset: number;
   inside?: { runIndex: number; charOffset: number };
   between?: { afterRunIndex: number };
 };
@@ -882,6 +886,8 @@ export async function getComments(zip: DocxZip, documentXml: Document): Promise<
       startCharOffset: startPoint?.charOffset,
       endRunIndex: endPoint?.runIndex,
       endCharOffset: endPoint?.charOffset,
+      startTextOffset: startPoint?.textOffset,
+      endTextOffset: endPoint?.textOffset,
       replies: [],
     };
 
@@ -970,6 +976,7 @@ function resolveCommentRangeMetadataInParagraph(
     if (startById.has(marker.id)) continue;
     startById.set(marker.id, {
       paragraphId,
+      textOffset: marker.textOffset,
       ...resolveMarkerToRunBoundary(walkState.allRuns, marker, 'start'),
     });
   }
@@ -978,6 +985,7 @@ function resolveCommentRangeMetadataInParagraph(
     if (endById.has(marker.id)) continue;
     endById.set(marker.id, {
       paragraphId,
+      textOffset: marker.textOffset,
       ...resolveMarkerToRunBoundary(walkState.allRuns, marker, 'end'),
     });
   }
@@ -1015,11 +1023,11 @@ function walkRunForCommentMarkers(run: Element, state: ParagraphMarkerWalkState)
 
   for (const child of childElements(run)) {
     if (isW(child, W.commentRangeStart)) {
-      recordInRunMarker(child, state.startMarkers, runIndex, state.charPos - runVisibleStart);
+      recordInRunMarker(child, state.startMarkers, runIndex, state.charPos - runVisibleStart, state.charPos);
       continue;
     }
     if (isW(child, W.commentRangeEnd)) {
-      recordInRunMarker(child, state.endMarkers, runIndex, state.charPos - runVisibleStart);
+      recordInRunMarker(child, state.endMarkers, runIndex, state.charPos - runVisibleStart, state.charPos);
       continue;
     }
     if (!child.namespaceURI || child.namespaceURI !== OOXML.W_NS) continue;
@@ -1051,10 +1059,11 @@ function recordInRunMarker(
   bucket: MarkerCharPosition[],
   runIndex: number,
   charOffset: number,
+  textOffset: number,
 ): void {
   const id = getCommentMarkerId(markerEl);
   if (id == null) return;
-  bucket.push({ id, inside: { runIndex, charOffset } });
+  bucket.push({ id, textOffset, inside: { runIndex, charOffset } });
 }
 
 function recordParagraphLevelMarker(
@@ -1064,7 +1073,7 @@ function recordParagraphLevelMarker(
 ): void {
   const id = getCommentMarkerId(markerEl);
   if (id == null) return;
-  bucket.push({ id, between: { afterRunIndex: state.currentRunIndex - 1 } });
+  bucket.push({ id, textOffset: state.charPos, between: { afterRunIndex: state.currentRunIndex - 1 } });
 }
 
 function getCommentMarkerId(markerEl: Element): number | null {

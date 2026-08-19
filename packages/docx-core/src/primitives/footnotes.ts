@@ -96,6 +96,22 @@ export type AddFootnoteParams = {
   paragraphEl: Element;
   afterText?: string;
   text: string;
+  presentation?: FootnoteNotePresentation;
+};
+
+export type FootnoteRunStyle = {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  color?: string;
+  highlight?: 'black' | 'blue' | 'cyan' | 'green' | 'magenta' | 'red' | 'yellow' | 'white' | 'darkBlue' | 'darkCyan' | 'darkGreen' | 'darkMagenta' | 'darkRed' | 'darkYellow' | 'darkGray' | 'lightGray' | 'none';
+};
+
+export type FootnoteNotePresentation = {
+  prefix?: string;
+  prefixSeparator?: string;
+  prefixStyle?: FootnoteRunStyle;
+  bodyStyle?: FootnoteRunStyle;
 };
 
 export type AddFootnoteResult = {
@@ -452,7 +468,7 @@ export async function addFootnote(
   params: AddFootnoteParams,
   ctx?: RevisionContext,
 ): Promise<AddFootnoteResult> {
-  const { paragraphEl, afterText, text } = params;
+  const { paragraphEl, afterText, text, presentation } = params;
 
   // Load or bootstrap footnotes.xml
   const footnotesXml = await zip.readText('word/footnotes.xml');
@@ -465,7 +481,7 @@ export async function addFootnote(
   insertFootnoteReference(documentXml, paragraphEl, noteId, afterText, ctx);
 
   // Add footnote body to footnotes.xml
-  const footnoteEl = addFootnoteElement(footnotesDoc, noteId, text);
+  const footnoteEl = addFootnoteElement(footnotesDoc, noteId, text, presentation);
   if (ctx) {
     wrapFootnoteParagraphTextRuns(getFirstFootnoteParagraph(footnoteEl), 'ins', ctx);
   }
@@ -487,6 +503,12 @@ function insertFootnoteReference(
   const rStyle = documentXml.createElementNS(OOXML.W_NS, 'w:rStyle');
   rStyle.setAttributeNS(OOXML.W_NS, 'w:val', 'FootnoteReference');
   rPr.appendChild(rStyle);
+  // Some source documents omit or redefine the FootnoteReference character
+  // style. Keep the semantic style and make the required visual elevation
+  // explicit so the marker remains superscript across those documents.
+  const vertAlign = documentXml.createElementNS(OOXML.W_NS, 'w:vertAlign');
+  vertAlign.setAttributeNS(OOXML.W_NS, 'w:val', 'superscript');
+  rPr.appendChild(vertAlign);
   refRun.appendChild(rPr);
   const fnRef = documentXml.createElementNS(OOXML.W_NS, 'w:footnoteReference');
   fnRef.setAttributeNS(OOXML.W_NS, 'w:id', String(noteId));
@@ -657,7 +679,12 @@ function setXmlSpacePreserve(t: Element, text: string): void {
   }
 }
 
-function addFootnoteElement(footnotesDoc: Document, noteId: number, text: string): Element {
+function addFootnoteElement(
+  footnotesDoc: Document,
+  noteId: number,
+  text: string,
+  presentation?: FootnoteNotePresentation,
+): Element {
   const root = footnotesDoc.documentElement;
 
   const footnoteEl = footnotesDoc.createElementNS(OOXML.W_NS, 'w:footnote');
@@ -679,6 +706,9 @@ function addFootnoteElement(footnotesDoc: Document, noteId: number, text: string
   const refRStyle = footnotesDoc.createElementNS(OOXML.W_NS, 'w:rStyle');
   refRStyle.setAttributeNS(OOXML.W_NS, 'w:val', 'FootnoteReference');
   refRPr.appendChild(refRStyle);
+  const refVertAlign = footnotesDoc.createElementNS(OOXML.W_NS, 'w:vertAlign');
+  refVertAlign.setAttributeNS(OOXML.W_NS, 'w:val', 'superscript');
+  refRPr.appendChild(refVertAlign);
   refRun.appendChild(refRPr);
   const fnRefEl = footnotesDoc.createElementNS(OOXML.W_NS, 'w:footnoteRef');
   refRun.appendChild(fnRefEl);
@@ -692,19 +722,53 @@ function addFootnoteElement(footnotesDoc: Document, noteId: number, text: string
   spaceRun.appendChild(spaceT);
   p.appendChild(spaceRun);
 
-  // User text run
-  const textRun = footnotesDoc.createElementNS(OOXML.W_NS, 'w:r');
-  const t = footnotesDoc.createElementNS(OOXML.W_NS, 'w:t');
-  if (text.startsWith(' ') || text.endsWith(' ')) {
-    t.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+  if (presentation?.prefix) {
+    p.appendChild(buildStyledTextRun(footnotesDoc, presentation.prefix, presentation.prefixStyle));
+    if (presentation.prefixSeparator) {
+      p.appendChild(buildStyledTextRun(footnotesDoc, presentation.prefixSeparator));
+    }
   }
-  t.appendChild(footnotesDoc.createTextNode(text));
-  textRun.appendChild(t);
-  p.appendChild(textRun);
+  p.appendChild(buildStyledTextRun(footnotesDoc, text, presentation?.bodyStyle));
 
   footnoteEl.appendChild(p);
   root.appendChild(footnoteEl);
   return footnoteEl;
+}
+
+function buildStyledTextRun(doc: Document, text: string, style?: FootnoteRunStyle): Element {
+  const run = doc.createElementNS(OOXML.W_NS, 'w:r');
+  if (style && Object.values(style).some((value) => value !== undefined && value !== false)) {
+    const rPr = doc.createElementNS(OOXML.W_NS, 'w:rPr');
+    const onOff = (name: string): void => {
+      const el = doc.createElementNS(OOXML.W_NS, `w:${name}`);
+      rPr.appendChild(el);
+    };
+    if (style.bold) onOff('b');
+    if (style.italic) onOff('i');
+    if (style.underline) {
+      const u = doc.createElementNS(OOXML.W_NS, 'w:u');
+      u.setAttributeNS(OOXML.W_NS, 'w:val', 'single');
+      rPr.appendChild(u);
+    }
+    if (style.color) {
+      const color = doc.createElementNS(OOXML.W_NS, 'w:color');
+      color.setAttributeNS(OOXML.W_NS, 'w:val', style.color);
+      rPr.appendChild(color);
+    }
+    if (style.highlight && style.highlight !== 'none') {
+      const highlight = doc.createElementNS(OOXML.W_NS, 'w:highlight');
+      highlight.setAttributeNS(OOXML.W_NS, 'w:val', style.highlight);
+      rPr.appendChild(highlight);
+    }
+    run.appendChild(rPr);
+  }
+  const t = doc.createElementNS(OOXML.W_NS, 'w:t');
+  if (text.startsWith(' ') || text.endsWith(' ')) {
+    t.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+  }
+  t.appendChild(doc.createTextNode(text));
+  run.appendChild(t);
+  return run;
 }
 
 // ── Update ──────────────────────────────────────────────────────────────

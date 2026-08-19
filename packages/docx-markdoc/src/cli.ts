@@ -6,6 +6,7 @@ import { exportEditPairs } from './export.js';
 import { importDocxToMarkdoc } from './import.js';
 import { inspectMarkdocSource } from './inspect.js';
 import { requireMarkdoc } from './markdoc.js';
+import { convertCommentsToFootnotes } from '@usejunior/docx-core';
 import { DocxMarkdocError } from './errors.js';
 import { assertDistinctInternalPath, EXTERNAL_FILENAME, parseRenderingFlags, warnedInternalPath } from './cli-options.js';
 
@@ -19,6 +20,7 @@ function usage(): never {
     '    [--dangerously-include-internal-comments --internal-output <path.docx>]',
     '  docx-markdoc verify <anchored.docx> <document.mdoc> [--external-comments|--no-external-comments]',
     '  docx-markdoc export-edits <document.mdoc> <output.json>',
+    '  docx-markdoc comments-to-footnotes <input.docx> <output.docx> [--prefix TEXT] [--prefix-separator TEXT] [--bold-prefix] [--prefix-color RRGGBB] [--prefix-highlight COLOR] [--body-color RRGGBB] [--body-highlight COLOR] [--flatten-threads]',
   ].join('\n'));
 }
 
@@ -107,6 +109,31 @@ async function main(): Promise<void> {
     if (!markdocPath || !outputPath) usage();
     const ir = requireMarkdoc(await readFile(markdocPath, 'utf8'));
     await writeFile(outputPath, `${JSON.stringify(exportEditPairs(ir), null, 2)}\n`);
+    return;
+  }
+  if (command === 'comments-to-footnotes') {
+    const [inputPath, outputPath, ...flags] = args;
+    if (!inputPath || !outputPath) usage();
+    const valueAfter = (flag: string): string | undefined => {
+      const index = flags.indexOf(flag);
+      return index < 0 ? undefined : flags[index + 1];
+    };
+    const prefix = valueAfter('--prefix');
+    const prefixColor = valueAfter('--prefix-color');
+    const prefixHighlight = valueAfter('--prefix-highlight') as import('@usejunior/docx-core').FootnoteRunStyle['highlight'];
+    const bodyColor = valueAfter('--body-color') ?? valueAfter('--color');
+    const bodyHighlight = (valueAfter('--body-highlight') ?? valueAfter('--highlight')) as import('@usejunior/docx-core').FootnoteRunStyle['highlight'];
+    const result = await convertCommentsToFootnotes(await readFile(inputPath), {
+      flattenThreads: flags.includes('--flatten-threads'),
+      presentation: {
+        prefix,
+        prefixSeparator: valueAfter('--prefix-separator'),
+        prefixStyle: { bold: flags.includes('--bold-prefix'), color: prefixColor, highlight: prefixHighlight },
+        bodyStyle: { color: bodyColor, highlight: bodyHighlight },
+      },
+    });
+    await writeFile(outputPath, result.buffer);
+    process.stdout.write(`${JSON.stringify(result.report, null, 2)}\n`);
     return;
   }
   usage();

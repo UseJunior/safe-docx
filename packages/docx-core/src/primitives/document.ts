@@ -108,7 +108,29 @@ import {
   deleteFootnote as deleteFootnoteImpl,
   type Footnote,
   type AddFootnoteResult,
+  type FootnoteNotePresentation,
 } from './footnotes.js';
+
+export type ConvertCommentsToFootnotesOptions = {
+  commentIds?: number[];
+  flattenThreads?: boolean;
+  presentation?: FootnoteNotePresentation;
+};
+
+export type ConvertedCommentFootnote = {
+  commentId: number;
+  footnoteId: number;
+  paragraphId: string;
+  flattenedReplies: number;
+};
+
+export type ConvertCommentsToFootnotesReport = {
+  selected: number;
+  converted: ConvertedCommentFootnote[];
+  before: { comments: number; footnotes: number };
+  after: { comments: number; footnotes: number };
+  lossy: boolean;
+};
 
 export type NormalizationResult = {
   runsMerged: number;
@@ -1173,6 +1195,107 @@ export class DocxDocument {
     this.documentViewCache = null;
   }
 
+  /**
+   * Convert selected root Word comments to footnotes in document order.
+   * The method preflights the complete selection before mutating the package;
+   * callers that need buffer-level atomicity should invoke it on a freshly
+   * loaded document and publish only the returned serialization.
+   *
+   * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.2
+   * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+   */
+  async convertCommentsToFootnotes(
+    options: ConvertCommentsToFootnotesOptions = {},
+  ): Promise<ConvertCommentsToFootnotesReport> {
+    const colors = [options.presentation?.prefixStyle?.color, options.presentation?.bodyStyle?.color];
+    for (const color of colors) {
+      if (color && !/^[0-9A-Fa-f]{6}$/.test(color)) {
+        throw new Error(`Invalid Word color '${color}'; expected six hexadecimal digits`);
+      }
+    }
+    const allowedHighlights = new Set([
+      'black', 'blue', 'cyan', 'green', 'magenta', 'red', 'yellow', 'white',
+      'darkBlue', 'darkCyan', 'darkGreen', 'darkMagenta', 'darkRed',
+      'darkYellow', 'darkGray', 'lightGray', 'none',
+    ]);
+    const highlights = [options.presentation?.prefixStyle?.highlight, options.presentation?.bodyStyle?.highlight];
+    for (const highlight of highlights) {
+      if (highlight && !allowedHighlights.has(highlight)) {
+        throw new Error(`Invalid Word highlight '${highlight}'`);
+      }
+    }
+    // Materialize stable paragraph bookmarks before comment-range extraction;
+    // source DOCX files are not required to carry Safe DOCX anchors already.
+    this.insertParagraphBookmarks('note-conversion');
+    const roots = await this.getComments();
+    const beforeFootnotes = (await this.getFootnotes()).length;
+    const requested = options.commentIds ? new Set(options.commentIds) : null;
+    const selected = requested ? roots.filter((comment) => requested.has(comment.id)) : roots;
+    if (requested) {
+      const found = new Set(selected.map((comment) => comment.id));
+      const missing = [...requested].filter((id) => !found.has(id));
+      if (missing.length) throw new Error(`Root comment IDs not found: ${missing.join(', ')}`);
+    }
+
+    const prepared = selected.map((comment) => {
+      if (!comment.anchoredParagraphId || !comment.endParagraphId || comment.anchoredParagraphId !== comment.endParagraphId) {
+        throw new Error(`Comment ID ${comment.id} does not have one supported paragraph anchor`);
+      }
+      if (comment.replies.length && !options.flattenThreads) {
+        throw new Error(`Comment ID ${comment.id} has replies; pass flattenThreads to perform a lossy conversion`);
+      }
+      const paragraph = findParagraphByBookmarkId(this.documentXml, comment.anchoredParagraphId);
+      if (!paragraph) throw new Error(`Comment ID ${comment.id} anchor was not found`);
+      let afterText: string | undefined;
+      if (comment.endTextOffset !== undefined) {
+        const paragraphText = getParagraphText(paragraph);
+        if (comment.endTextOffset > paragraphText.length) {
+          throw new Error(`Comment ID ${comment.id} has an invalid visible-text range endpoint`);
+        }
+        afterText = paragraphText.slice(0, comment.endTextOffset);
+        if (!afterText) afterText = undefined;
+      }
+      const replyText = comment.replies.map((reply) => `\n${reply.author ? `${reply.author}: ` : ''}${reply.text}`).join('');
+      return {
+        comment,
+        paragraph,
+        afterText,
+        text: `${comment.text}${replyText}`,
+      };
+    });
+
+    const converted: ConvertedCommentFootnote[] = [];
+    if (prepared.length > 0) await bootstrapFootnoteParts(this.zip);
+    for (const item of prepared) {
+      // Insert first while the preflighted comment markers still identify the
+      // source range. deleteComment removes only comment markers/references,
+      // not the adjacent footnote run introduced here.
+      const result = await addFootnoteImpl(this.documentXml, this.zip, {
+        paragraphEl: item.paragraph,
+        afterText: item.afterText,
+        text: item.text,
+        presentation: options.presentation,
+      });
+      await deleteCommentImpl(this.documentXml, this.zip, { commentId: item.comment.id });
+      converted.push({
+        commentId: item.comment.id,
+        footnoteId: result.noteId,
+        paragraphId: item.comment.anchoredParagraphId!,
+        flattenedReplies: item.comment.replies.length,
+      });
+    }
+    await this.refreshFootnotesXml();
+    this.dirty = converted.length > 0;
+    this.documentViewCache = null;
+    return {
+      selected: selected.length,
+      converted,
+      before: { comments: roots.length, footnotes: beforeFootnotes },
+      after: { comments: (await this.getComments()).length, footnotes: (await this.getFootnotes()).length },
+      lossy: converted.some((entry) => entry.flattenedReplies > 0),
+    };
+  }
+
   // ── Footnote methods ──────────────────────────────────────────────────
 
   private async refreshFootnotesXml(): Promise<void> {
@@ -1242,6 +1365,7 @@ export class DocxDocument {
     paragraphId: string;
     afterText?: string;
     text: string;
+    presentation?: FootnoteNotePresentation;
   }, ctx?: RevisionContext): Promise<AddFootnoteResult> {
     const p = findParagraphByBookmarkId(this.documentXml, params.paragraphId);
     if (!p) throw new Error(`Paragraph not found: ${params.paragraphId}`);
@@ -1251,6 +1375,7 @@ export class DocxDocument {
       paragraphEl: p,
       afterText: params.afterText,
       text: params.text,
+      presentation: params.presentation,
     }, ctx);
 
     await this.refreshFootnotesXml();

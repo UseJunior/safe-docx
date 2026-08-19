@@ -30,6 +30,7 @@ export * from './accept_ai_edits.js';
 export * from './extract_revisions.js';
 export * from './comments.js';
 export * from './footnotes.js';
+export * from './note_conversion.js';
 export * from './relationships.js';
 export * from './opc-target.js';
 export * from './sectPrAudit.js';
