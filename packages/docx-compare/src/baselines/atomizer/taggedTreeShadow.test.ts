@@ -228,22 +228,25 @@ describe('tagged-tree offline evaluation', () => {
     },
   );
 
-  test.openspec('Legacy rollback reaches its sunset')(
-    'keeps the dated rollback explicitly gated on successor release evidence',
-    async () => {
-      const sunset = new Date('2026-11-16T00:00:00Z');
-      const predecessorShipDate = new Date('2026-08-16T00:00:00Z');
-      expect(sunset.getTime()).toBeGreaterThan(predecessorShipDate.getTime());
-      const original = await buildDocxFromBodyXml('<w:p><w:r><w:t>old</w:t></w:r></w:p>');
-      const revised = await buildDocxFromBodyXml('<w:p><w:r><w:t>new</w:t></w:r></w:p>');
-      const result = await compareDocumentsAtomizer(original, revised, {
-        comparisonStrategy: 'legacy',
-        author: 'Rollback Gate',
-        date: predecessorShipDate,
-      });
-      expect(result.comparisonStrategyUsed).toBe('legacy');
+  test.openspec('Legacy rollback reaches its sunset').skip(
+    'removes the legacy selector only after the dated release-evidence gate',
+    () => {
+      // Intentionally pending until 2026-11-16 and the successor-release evidence gate.
+      // PR #898 implements this assertion but must not merge before that gate is complete.
     },
   );
+
+  test('keeps the legacy rollback available before its dated sunset', async () => {
+    const predecessorShipDate = new Date('2026-08-16T00:00:00Z');
+    const original = await buildDocxFromBodyXml('<w:p><w:r><w:t>old</w:t></w:r></w:p>');
+    const revised = await buildDocxFromBodyXml('<w:p><w:r><w:t>new</w:t></w:r></w:p>');
+    const result = await compareDocumentsAtomizer(original, revised, {
+      comparisonStrategy: 'legacy',
+      author: 'Rollback Gate',
+      date: predecessorShipDate,
+    });
+    expect(result.comparisonStrategyUsed).toBe('legacy');
+  });
 
   test('proves direct paragraph and run formatting against source projections', async () => {
     const originalBody = '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>SYNTHETIC OLD</w:t></w:r></w:p>';

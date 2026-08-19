@@ -74,6 +74,13 @@ function wrapperIds(documentXml: string): string[] {
   );
 }
 
+function bookmarkIds(documentXml: string): string[] {
+  const document = parseXml(documentXml);
+  return ['w:bookmarkStart', 'w:bookmarkEnd'].flatMap((tag) =>
+    Array.from(document.getElementsByTagName(tag)).map((element) => element.getAttribute('w:id') ?? ''),
+  );
+}
+
 function tocBody(page: string): string {
   return '<w:p>'
     + fldChar('begin')
@@ -122,6 +129,8 @@ describe('strategy differential characterization', () => {
       expect(paragraphChildTags(taggedXml)).toEqual(paragraphChildTags(legacyXml));
       expect(new Set(wrapperIds(legacyXml)).size).toBe(wrapperIds(legacyXml).length);
       expect(new Set(wrapperIds(taggedXml)).size).toBe(wrapperIds(taggedXml).length);
+      expect(bookmarkIds(legacyXml)).toEqual(['1', '1']);
+      expect(bookmarkIds(taggedXml)).toEqual(bookmarkIds(legacyXml));
       expect(parseXml(rejectAllChanges(taggedXml)).documentElement.textContent).toBe(
         'keptinsideoutside',
       );
