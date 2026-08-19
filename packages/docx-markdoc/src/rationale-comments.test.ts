@@ -482,5 +482,7 @@ describe('external-facing rationale comments', () => {
     expect(pairedParts).toContain(externalText);
     expect(pairedParts).toContain(internalText);
     expect(pairedParts).not.toContain('data-safe-docx-operation');
-  }, 60_000);
+  // This smoke compiles the real agreement twice through the sole tagged-tree
+  // comparison spine; shared CI runners can exceed the former 60-second budget.
+  }, 120_000);
 });
