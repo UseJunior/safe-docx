@@ -74,12 +74,6 @@
       "tags": ["real-world", "contract", "edgar-derived", "anonymized", "tables"]
     },
     {
-      "name": "p-unit-agreement-alternate",
-      "original": "p-unit-agreement/original.docx",
-      "revised": "p-unit-agreement/revised-alternate.docx",
-      "tags": ["real-world", "contract", "edgar-derived", "anonymized", "tables"]
-    },
-    {
       "name": "ILPA",
       "original": "../../../../../tests/test_documents/redline/ILPA-Model-Limited-Partnership-Agreement-WOF_v2.docx",
       "revised": "../../../../../tests/test_documents/redline/ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx",

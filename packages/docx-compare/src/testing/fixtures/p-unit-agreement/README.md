@@ -7,5 +7,5 @@ classification was confirmed by the fixture owner on 2026-08-19.
 The SEC states that EDGAR public filing content is free to access and reuse:
 <https://www.sec.gov/about/webmaster-frequently-asked-questions#general-questions>.
 
-`original.docx` is shared by three independently revised documents. Keeping one copy of
+`original.docx` is shared by two independently revised documents. Keeping one copy of
 the original makes the byte relationship explicit and avoids duplicating the fixture.

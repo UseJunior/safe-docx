@@ -9,7 +9,7 @@
 
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect } from 'vitest';
@@ -25,6 +25,7 @@ const PRIVATE_CORPUS_ENV = 'SAFE_DOCX_PRIVATE_COMPARISON_CORPUS_DIR';
 const PRIVATE_CORPUS_REQUIRED_ENV = 'SAFE_DOCX_PRIVATE_COMPARISON_CORPUS_REQUIRED';
 const INTEGRATION_DIR = dirname(fileURLToPath(import.meta.url));
 const MANIFEST_PATH = resolve(INTEGRATION_DIR, 'private-comparison-corpus-manifest.json');
+const PUBLIC_FIXTURE_ROOT = resolve(INTEGRATION_DIR, '../testing/fixtures');
 
 interface PrivateCorpusEntry {
   id: string;
@@ -47,6 +48,16 @@ const available = corpusRoot.length > 0 && missingFiles.length === 0;
 
 function sha256(value: Buffer): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+async function docxFiles(root: string): Promise<string[]> {
+  const entries = await readdir(root, { withFileTypes: true });
+  const nested = await Promise.all(entries.map(async (entry) => {
+    const path = resolve(root, entry.name);
+    if (entry.isDirectory()) return docxFiles(path);
+    return entry.isFile() && entry.name.toLowerCase().endsWith('.docx') ? [path] : [];
+  }));
+  return nested.flat();
 }
 
 async function loadFixture(entry: PrivateCorpusEntry): Promise<StrategyDifferentialFixture> {
@@ -82,11 +93,23 @@ const test = testAllure
 
 describe('private comparison corpus availability', () => {
   test('fails loudly when private evidence is required but unavailable', () => {
+    expect(manifest.length).toBeGreaterThan(0);
+    expect(missingFiles.length === 0).toBe(available);
+    if (!corpusRoot) expect(available).toBe(false);
     if (process.env[PRIVATE_CORPUS_REQUIRED_ENV] === '1') {
       expect(
         available,
         `set ${PRIVATE_CORPUS_ENV} to the hash-pinned private corpus; missing: ${missingFiles.join(', ')}`,
       ).toBe(true);
+    }
+  });
+
+  test('keeps hash-identical private evidence out of public fixtures', async () => {
+    const privateHashes = new Set(
+      manifest.flatMap((entry) => [entry.originalSha256, entry.revisedSha256]),
+    );
+    for (const path of await docxFiles(PUBLIC_FIXTURE_ROOT)) {
+      expect(privateHashes.has(sha256(await readFile(path))), path).toBe(false);
     }
   });
 });
