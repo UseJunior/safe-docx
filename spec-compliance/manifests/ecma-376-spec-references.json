@@ -14,11 +14,11 @@
       "coverageStatus": "partial",
       "relatedRegistryIds": ["ECMA-PART1-17-16-13"],
       "relatedSource": [
-        "packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts"
+        "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
       ],
       "relatedTests": [
-        "packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.test.ts",
-        "packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts"
+        "packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts",
+        "packages/docx-compare/src/tagged/pipeline.field-validation.test.ts"
       ],
       "notes": "Covers deleted field-code containment and generated vocabulary linkage. Part 4 is retained only as the Transitional XSD provenance for generated names."
     },

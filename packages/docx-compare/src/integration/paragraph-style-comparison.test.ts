@@ -7,14 +7,14 @@ import {
   parseXml,
 } from '@usejunior/docx-core';
 import { describe, expect } from 'vitest';
-import { compareDocumentsAtomizer as compareDocuments } from '../baselines/atomizer/pipeline.js';
+import { compareDocumentsAtomizer as compareDocuments } from '../tagged/pipeline.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
-import { parseDocumentXml } from '../baselines/atomizer/xmlToWmlElement.js';
+} from '../tagged/trackChangesAcceptorAst.js';
+import { parseDocumentXml } from '../tagged/xmlToWmlElement.js';
 
 const AUTHOR = 'Paragraph Style Comparison';
 const DATE = new Date('2026-07-28T16:00:00Z');

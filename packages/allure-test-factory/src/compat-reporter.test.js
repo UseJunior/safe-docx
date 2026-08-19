@@ -83,16 +83,15 @@ describe('compat-reporter normalizeResultLabels', () => {
       labels: [
         {
           name: 'package',
-          value: '@usejunior/docx-core.src.baselines.atomizer.pipeline.field-validation.test.ts',
+          value: '@usejunior/docx-core.src.tagged.pipeline.field-validation.test.ts',
         },
       ],
       fullName:
-        '@usejunior/docx-core:src/baselines/atomizer/pipeline.field-validation.test.ts#validateFieldStructure rejects',
+        '@usejunior/docx-core:src/tagged/pipeline.field-validation.test.ts#validateFieldStructure rejects',
       titlePath: [
         '@usejunior/docx-core',
         'src',
-        'baselines',
-        'atomizer',
+        'tagged',
         'pipeline.field-validation.test.ts',
         'validateFieldStructure',
       ],
@@ -101,16 +100,15 @@ describe('compat-reporter normalizeResultLabels', () => {
     const { 'c-result.json': r } = await normalize();
 
     expect(r.labels.find((l) => l.name === 'package').value).toBe(
-      'DOCX Comparison.baselines.atomizer.pipeline.field-validation.test.ts',
+      'DOCX Comparison.tagged.pipeline.field-validation.test.ts',
     );
     expect(r.fullName).toBe(
-      'DOCX Comparison/baselines/atomizer/pipeline.field-validation.test.ts#validateFieldStructure rejects',
+      'DOCX Comparison/tagged/pipeline.field-validation.test.ts#validateFieldStructure rejects',
     );
     // Only a top-level source file (index 1) is stripped; nested dirs are kept.
     expect(r.titlePath).toEqual([
       'DOCX Comparison',
-      'baselines',
-      'atomizer',
+      'tagged',
       'pipeline.field-validation.test.ts',
       'validateFieldStructure',
     ]);

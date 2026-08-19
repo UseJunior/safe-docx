@@ -12,7 +12,7 @@ import {
   rejectAllChanges,
   compareTexts,
   extractTextWithParagraphs,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
+} from '../tagged/trackChangesAcceptorAst.js';
 import {
   validateNumberingIntegrity,
   validateNoteIntegrity,

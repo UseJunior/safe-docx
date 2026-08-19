@@ -19,12 +19,12 @@ import {
   instrText,
   resultText,
 } from '../testing/ooxml-fixtures.js';
-import { compareDocumentsAtomizer } from '../baselines/atomizer/pipeline.js';
+import { compareDocumentsAtomizer } from '../tagged/pipeline.js';
 import {
   acceptAllChanges,
   extractTextWithParagraphs,
   rejectAllChanges,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
+} from '../tagged/trackChangesAcceptorAst.js';
 import { testAllure } from '../testing/allure-test.js';
 import {
   assertCharacterizationSafety,

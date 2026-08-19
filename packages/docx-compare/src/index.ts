@@ -5,7 +5,7 @@
  * in `@usejunior/docx-core`; comparison depends on core, never the reverse.
  */
 
-import { compareDocumentsAtomizer } from './baselines/atomizer/pipeline.js';
+import { compareDocumentsAtomizer } from './tagged/pipeline.js';
 import type { CompareOptions, CompareResult } from './compare-types.js';
 
 const REMOVED_COMPARISON_OPTIONS = [
@@ -111,31 +111,31 @@ export {
   normalizeRunProperties,
 } from './propertyNaming.js';
 export { extractRoundTripComparisonText } from './fieldComparisonSemantics.js';
-export * from './baselines/atomizer/formattingFidelity.js';
+export * from './tagged/formattingFidelity.js';
 export {
   acceptAllChanges,
   rejectAllChanges,
   extractTextWithParagraphs,
   normalizeText,
   compareTexts,
-} from './baselines/atomizer/trackChangesAcceptorAst.js';
+} from './tagged/trackChangesAcceptorAst.js';
 export {
   validateFieldStructure,
   compareDocumentsAtomizer,
   TaggedPublicationSafetyError,
-} from './baselines/atomizer/pipeline.js';
+} from './tagged/pipeline.js';
 /** @deprecated fldChar inside w:del is valid; see the docx-core definition. */
 export { hasFldCharInsideDel } from '@usejunior/docx-core';
-export { parseDocumentXml } from './baselines/atomizer/xmlToWmlElement.js';
+export { parseDocumentXml } from './tagged/xmlToWmlElement.js';
 export {
   AncillaryStorySafetyError,
   type AncillaryStorySafetyAttempt,
-} from './baselines/atomizer/ancillaryFieldSafety.js';
+} from './tagged/ancillaryFieldSafety.js';
 export {
   UnsupportedTextBoxRevisionError,
   assertTextBoxContentUnchanged,
-} from './baselines/atomizer/textBoxRevisionSafety.js';
-export type { TextBoxRevisionChange } from './baselines/atomizer/textBoxRevisionSafety.js';
+} from './tagged/textBoxRevisionSafety.js';
+export type { TextBoxRevisionChange } from './tagged/textBoxRevisionSafety.js';
 export { alignComparisonSequences, tokenizeComparisonText } from './textAlignment.js';
 export {
   MC_NAMESPACE,

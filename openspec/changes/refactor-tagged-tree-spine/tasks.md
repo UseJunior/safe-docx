@@ -7,17 +7,17 @@
 ## 1. Characterization harness
 
 - [x] 1.1 Add `strategy-differential.test.ts` over the real corpus manifest, ILPA pair, and synthetic capability fixtures.
-- [ ] 1.2 Record fixture hashes, capability tags, source projections, normalized package parts, stats, fallbacks, unrepresented changes, schema results, and closure checks.
+- [x] 1.2 Record fixture hashes, capability tags, source projections, normalized package parts, stats, fallbacks, unrepresented changes, schema results, and closure checks.
 - [x] 1.3 Fail on unavailable corpus, missing entries/parts, fallback, or unreviewed divergence drift.
 - [x] 1.4 Add explicit divergence rows for fuzzy moves, numbering, consumer compatibility, and volatile PAGEREF caches.
-- [ ] 1.5 Cover field integrity, notes/comments, bookmarks, moves, formatting, relationships, auxiliary definitions, rationale leakage, text boxes, and unsupported stories.
+- [x] 1.5 Cover field integrity, notes/comments, bookmarks, moves, formatting, relationships, auxiliary definitions, rationale leakage, text boxes, and unsupported stories.
 
 ## 2. Dead code and public API inventory
 
 - [x] 2.1 Delete unused WmlComparer baseline adapters and regex track-change acceptor.
 - [x] 2.2 Delete unused legacy move-markup generators and their isolated tests.
 - [x] 2.3 Generate the wildcard-export inventory and adjudicate every symbol as stable, deprecated, or breaking removal.
-- [ ] 2.4 Include MCP `engine` schema changes and regenerate tool documentation.
+- [x] 2.4 Include MCP `engine` schema changes and regenerate tool documentation.
 
 ## 3. Tagged correctness fixes
 
@@ -81,8 +81,8 @@
 
 ## 11. Post-rollback rename
 
-- [ ] 11.1 Rename surviving tagged modules out of `baselines/` after the rollback window.
-- [ ] 11.2 Update Vitest, conformance registry/docs, Allure fixtures, MCP scripts, imports, and generated evidence.
+- [x] 11.1 Rename surviving tagged modules out of `baselines/` after the rollback window.
+- [x] 11.2 Update Vitest, conformance registry/docs, Allure fixtures, MCP scripts, imports, and generated evidence.
 
 ## 12. Verification per shippable phase
 

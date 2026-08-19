@@ -1,0 +1,436 @@
+import { describe, expect } from 'vitest';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
+import {
+  buildTaggedTreePublication,
+  buildTaggedTreeShadowXml,
+  runTaggedTreeShadow,
+} from './taggedTreeShadow.js';
+import {
+  buildStandaloneTaggedPackage,
+  compareDocumentsAtomizer,
+  TaggedPublicationSafetyError,
+  type TaggedPackageShadowReport,
+} from './pipeline.js';
+import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
+import {
+  DEFAULT_FORMAT_DETECTION_SETTINGS,
+  DEFAULT_MOVE_DETECTION_SETTINGS,
+  DocxArchive,
+  parseXml,
+} from '@usejunior/docx-core';
+import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
+import { DEFAULT_NUMBERING_OPTIONS } from './numberingIntegration.js';
+import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
+
+const TEST_FEATURE = 'refactor-tagged-tree-redline-construction';
+const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const xml = (value: string) =>
+  `<w:document xmlns:w="${W_NS}"><w:body><w:p><w:r><w:t>${value}</w:t></w:r></w:p></w:body></w:document>`;
+const revisionAttributes = 'w:id="7" w:author="Reviewer" w:date="2026-08-14T12:00:00Z"';
+
+function publishPreExistingRevision(documentXml: string): string {
+  return buildTaggedTreeShadowXml({
+    originalXml: documentXml,
+    revisedXml: documentXml,
+    author: 'Comparator',
+    date: new Date('2026-08-14T12:00:00Z'),
+  });
+}
+
+function tableRowRevision(marker: 'ins' | 'del'): string {
+  return `<w:document xmlns:w="${W_NS}"><w:body><w:tbl>`
+    + `<w:tr><w:trPr><w:${marker} ${revisionAttributes}/></w:trPr>`
+    + `<w:tc><w:p><w:r><w:t>TRACKED ROW</w:t></w:r></w:p></w:tc></w:tr>`
+    + `<w:tr><w:tc><w:p><w:r><w:t>STABLE ROW</w:t></w:r></w:p></w:tc></w:tr>`
+    + `</w:tbl></w:body></w:document>`;
+}
+
+function projectTableRows(documentXml: string, projection: 'accept' | 'reject'): string {
+  const document = parseXml(documentXml);
+  for (const row of Array.from(document.getElementsByTagName('w:tr'))) {
+    const rowProperties = Array.from(row.childNodes)
+      .find((node): node is Element => node.nodeType === 1 && (node as Element).tagName === 'w:trPr');
+    const inserted = rowProperties?.getElementsByTagName('w:ins').length === 1;
+    const deleted = rowProperties?.getElementsByTagName('w:del').length === 1;
+    if ((projection === 'accept' && deleted) || (projection === 'reject' && inserted)) {
+      row.parentNode?.removeChild(row);
+    }
+  }
+  return document.documentElement.textContent;
+}
+
+describe('tagged-tree offline evaluation', () => {
+  test.openspec('Tagged statistics describe emitted markup')(
+    'derives every range total after serializer wrapper transformations',
+    () => {
+      const original = `<w:document xmlns:w="${W_NS}"><w:body><w:p>`
+        + '<w:bookmarkStart w:id="0" w:name="clause"/>'
+        + '<w:r><w:t>old words</w:t></w:r><w:bookmarkEnd w:id="0"/>'
+        + '</w:p></w:body></w:document>';
+      const revised = `<w:document xmlns:w="${W_NS}"><w:body><w:p>`
+        + '<w:bookmarkStart w:id="0" w:name="clause"/>'
+        + '<w:r><w:t>new words</w:t></w:r><w:bookmarkEnd w:id="0"/>'
+        + '</w:p></w:body></w:document>';
+
+      const publication = buildTaggedTreePublication({
+        originalXml: original,
+        revisedXml: revised,
+        author: 'Comparator',
+        date: new Date('2026-08-17T12:00:00Z'),
+      });
+      const document = parseXml(publication.xml);
+
+      expect(publication.stats.insertedRanges).toBe(document.getElementsByTagName('w:ins').length);
+      expect(publication.stats.deletedRanges).toBe(document.getElementsByTagName('w:del').length);
+      expect(publication.serializedRangeStats.moveFromRanges)
+        .toBe(document.getElementsByTagName('w:moveFrom').length);
+      expect(publication.serializedRangeStats.moveToRanges)
+        .toBe(document.getElementsByTagName('w:moveTo').length);
+      expect(publication.xml).not.toContain('data-safe-docx-comparison-revision');
+    },
+  );
+
+  test.openspec('Atom metrics do not silently change units')(
+    'versions and weights tagged comparison tokens independently of the deleted atomizer',
+    () => {
+      const publication = buildTaggedTreePublication({
+        originalXml: `<w:document xmlns:w="${W_NS}"><w:body/></w:document>`,
+        revisedXml: xml('Alpha beta'),
+        author: 'Comparator',
+        date: new Date('2026-08-17T12:00:00Z'),
+      });
+
+      expect(publication.stats.atomMetricVersion).toBe('tagged-token-v1');
+      expect(publication.stats.insertedAtoms).toBe(3);
+      expect(publication.stats.deletedAtoms).toBe(0);
+    },
+  );
+
+  test.openspec('Modified paragraphs use logical tagged identity')(
+    'counts one paragraph once when it contains multiple replacement ranges',
+    () => {
+      const publication = buildTaggedTreePublication({
+        originalXml: xml('alpha OLD middle STALE omega'),
+        revisedXml: xml('alpha NEW middle FRESH omega'),
+        author: 'Comparator',
+        date: new Date('2026-08-17T12:00:00Z'),
+      });
+
+      expect(publication.stats.modifiedParagraphs).toBe(1);
+      expect(publication.stats.modifications).toBe(1);
+    },
+  );
+
+  test.openspec('Standalone publication has no legacy assembly dependency')(
+    'matches the authoritative normalized package without consuming legacy assembly state',
+    async () => {
+      const original = await buildDocxFromBodyXml(
+        '<w:p><w:r><w:t>Original agreement language.</w:t></w:r></w:p>',
+      );
+      const revised = await buildDocxFromBodyXml(
+        '<w:p><w:r><w:t>Revised agreement language.</w:t></w:r></w:p>',
+      );
+      let report: TaggedPackageShadowReport | undefined;
+      const result = await compareDocumentsAtomizer(original, revised, {
+        author: 'Comparator',
+        date: new Date('2026-08-17T12:00:00Z'),
+        standaloneTaggedPackageShadowObserver: (value) => { report = value; },
+      });
+
+      expect(result.comparisonStrategyUsed).toBe('tagged-tree');
+      expect(report).toEqual({
+        missingParts: [],
+        unexpectedParts: [],
+        differentParts: [],
+        standaloneHasNoLegacyAssemblyInputs: true,
+      });
+    },
+  );
+
+  test.openspec('Public comparison uses revised-based tagged publication')(
+    'preserves revised-only package state and excludes unreferenced original-only state',
+    async () => {
+      const originalArchive = await DocxArchive.load(await buildDocxFromBodyXml(
+        '<w:p><w:r><w:t>Original.</w:t></w:r></w:p>',
+      ));
+      originalArchive.setFile('customXml/original-only.xml', '<original-only/>');
+      const revisedArchive = await DocxArchive.load(await buildDocxFromBodyXml(
+        '<w:p><w:r><w:t>Revised.</w:t></w:r></w:p>',
+      ));
+      revisedArchive.setFile('customXml/revised-only.xml', '<revised-only/>');
+
+      const result = await compareDocumentsAtomizer(
+        await originalArchive.save(),
+        await revisedArchive.save(),
+        { author: 'Comparator', date: new Date('2026-08-17T12:00:00Z') },
+      );
+      const published = await DocxArchive.load(result.document);
+
+      expect(result.comparisonStrategyUsed).toBe('tagged-tree');
+      expect(await published.getFile('customXml/revised-only.xml')).toBe('<revised-only/>');
+      expect(await published.getFile('customXml/original-only.xml')).toBeNull();
+    },
+  );
+
+  test.openspec('Final safety failure does not degrade silently')(
+    'treats source-projected formatting fidelity as a load-bearing final gate',
+    async () => {
+      const original = await buildDocxFromBodyXml('<w:p><w:r><w:t>old</w:t></w:r></w:p>');
+      const revised = await buildDocxFromBodyXml('<w:p><w:r><w:t>new</w:t></w:r></w:p>');
+
+      await expect(compareDocumentsAtomizer(original, revised, {
+        author: 'Comparator',
+        date: new Date('2026-08-17T12:00:00Z'),
+        taggedTreeFormattingFidelityEvaluator: (originalXml, revisedXml, candidateXml) => {
+          const actual = compareSourceProjectedFormattingFidelity(
+            originalXml,
+            revisedXml,
+            candidateXml,
+          );
+          return { ...actual, score: 0.5 };
+        },
+      })).rejects.toMatchObject({
+        name: 'TaggedPublicationSafetyError',
+        failedChecks: ['formattingFidelity'],
+        checks: expect.objectContaining({ formattingFidelity: false }),
+        formattingFidelity: expect.objectContaining({ score: 0.5 }),
+      });
+    },
+  );
+
+  test('reports package-only changes and their source-projected formatting evidence', async () => {
+    const paragraph = '<w:p><w:r><w:t>Stable agreement.</w:t></w:r></w:p>';
+    const withPageSize = async (width: string, height: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(await buildDocxFromBodyXml(paragraph));
+      archive.setDocumentXml(
+        (await archive.getDocumentXml()).replace(
+          '<w:sectPr/>',
+          `<w:sectPr><w:pgSz w:w="${width}" w:h="${height}"/></w:sectPr>`,
+        ),
+      );
+      return archive.save();
+    };
+    const original = await withPageSize('12240', '15840');
+    const revised = await withPageSize('15840', '12240');
+
+    const standalone = await buildStandaloneTaggedPackage(original, revised, {
+      author: 'Comparator',
+      date: new Date('2026-08-17T12:00:00Z'),
+      moveDetection: DEFAULT_MOVE_DETECTION_SETTINGS,
+      formatDetection: DEFAULT_FORMAT_DETECTION_SETTINGS,
+      numbering: DEFAULT_NUMBERING_OPTIONS,
+    });
+
+    expect(standalone.unrepresentedChanges).toEqual([
+      expect.objectContaining({ scope: 'section', kind: 'changed' }),
+    ]);
+    expect(standalone.formattingFidelity.accept.score).toBe(1);
+    expect(standalone.formattingFidelity.reject.score).toBe(1);
+  });
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.17' })(
+    'keeps a revised-only final section property directly under the document body',
+    () => {
+      const publication = buildTaggedTreePublication({
+        originalXml: `<w:document xmlns:w="${W_NS}"><w:body><w:p/></w:body></w:document>`,
+        revisedXml: `<w:document xmlns:w="${W_NS}"><w:body><w:p/>`
+          + '<w:sectPr><w:pgSz w:w="15840" w:h="12240"/></w:sectPr>'
+          + '</w:body></w:document>',
+        author: 'Comparator',
+        date: new Date('2026-08-17T12:00:00Z'),
+      });
+      const document = parseXml(publication.xml);
+      const sectionProperties = document.getElementsByTagName('w:sectPr');
+
+      expect(sectionProperties.length).toBe(1);
+      expect((sectionProperties.item(0)?.parentNode as Element | null)?.tagName).toBe('w:body');
+      expect(document.getElementsByTagName('w:ins').length).toBe(0);
+      expect(document.getElementsByTagName('w:del').length).toBe(0);
+    },
+  );
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.16' })(
+    'preserves the empty deleted-row marker that makes Accept remove and Reject keep the row',
+    () => {
+      const published = publishPreExistingRevision(tableRowRevision('del'));
+      const document = parseXml(published);
+      const marker = document.getElementsByTagName('w:del').item(0);
+
+      expect(marker?.parentNode && (marker.parentNode as Element).tagName).toBe('w:trPr');
+      expect(marker?.getAttribute('w:id')).toBe('7');
+      expect(published).toContain('TRACKED ROW');
+      expect(published).toContain('STABLE ROW');
+      expect(projectTableRows(published, 'accept')).toBe('STABLE ROW');
+      expect(projectTableRows(published, 'reject')).toBe('TRACKED ROWSTABLE ROW');
+    },
+  );
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.19' })(
+    'preserves the empty inserted-row marker that makes Accept keep and Reject remove the row',
+    () => {
+      const published = publishPreExistingRevision(tableRowRevision('ins'));
+      const document = parseXml(published);
+      const marker = document.getElementsByTagName('w:ins').item(0);
+
+      expect(marker?.parentNode && (marker.parentNode as Element).tagName).toBe('w:trPr');
+      expect(marker?.getAttribute('w:id')).toBe('7');
+      expect(published).toContain('TRACKED ROW');
+      expect(published).toContain('STABLE ROW');
+      expect(projectTableRows(published, 'accept')).toBe('TRACKED ROWSTABLE ROW');
+      expect(projectTableRows(published, 'reject')).toBe('STABLE ROW');
+    },
+  );
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.15' })(
+    'preserves paragraph-mark revisions while removing truly empty content wrappers',
+    () => {
+      const source = `<w:document xmlns:w="${W_NS}"><w:body><w:p>`
+        + `<w:pPr><w:rPr><w:del ${revisionAttributes}/></w:rPr></w:pPr>`
+        + `<w:ins ${revisionAttributes}/><w:del ${revisionAttributes}/>`
+        + `<w:r><w:t>PARAGRAPH</w:t></w:r></w:p></w:body></w:document>`;
+
+      const published = publishPreExistingRevision(source);
+      const document = parseXml(published);
+
+      expect(document.getElementsByTagName('w:del').length).toBe(1);
+      expect(document.getElementsByTagName('w:del').item(0)?.parentNode
+        && (document.getElementsByTagName('w:del').item(0)!.parentNode as Element).tagName).toBe('w:rPr');
+      expect(document.getElementsByTagName('w:ins').length).toBe(0);
+    },
+  );
+
+  test('reports without mutating caller-owned legacy output',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      const legacy = xml('legacy bytes remain caller-owned');
+      let report!: ReturnType<typeof runTaggedTreeShadow>;
+      await given('an explicit offline evaluation and a legacy candidate', () => undefined);
+      await when('the tagged tree is constructed and serialized beside it', () => {
+        report = runTaggedTreeShadow({
+          originalXml: xml('old'), revisedXml: xml('new'), legacyXml: legacy,
+          author: 'Comparator', date: new Date('2026-08-14T12:00:00Z'), fixtureIdentity: 'unit-replacement',
+        });
+      });
+      await then('the report records that the legacy output remains authoritative', () => {
+        expect(report.legacyOutputUnchanged).toBe(true);
+        expect(legacy).toBe(xml('legacy bytes remain caller-owned'));
+      });
+      await and('source projections are equivalent even if formatting differs from the legacy candidate', () => {
+        expect(report.divergingProjections).not.toContain('accept');
+        expect(report.divergingProjections).not.toContain('reject');
+      });
+    },
+  );
+
+  test.openspec('Tagged-tree construction is the sole public comparison spine')(
+    'publishes exact source projections through the sole tagged path',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      const original = await buildDocxFromBodyXml('<w:p><w:r><w:t>old</w:t></w:r></w:p>');
+      const revised = await buildDocxFromBodyXml('<w:p><w:r><w:t>new</w:t></w:r></w:p>');
+      const options = { author: 'Comparator', date: new Date('2026-08-14T12:00:00Z') };
+      let publishedXml = '';
+      await given('a comparison with a deterministic revision', () => undefined);
+      await when('the comparison is executed', async () => {
+        const result = await compareDocumentsAtomizer(original, revised, options);
+        publishedXml = await (await DocxArchive.load(result.document)).getDocumentXml();
+      });
+      await then('the tagged implementation is used observably', () => {
+        expect(publishedXml).toContain('<w:ins');
+        expect(publishedXml).toContain('<w:del');
+      });
+      await and('the published document preserves exact source projections', () => {
+        expect(parseXml(acceptAllChanges(publishedXml)).documentElement.textContent).toBe('new');
+        expect(parseXml(rejectAllChanges(publishedXml)).documentElement.textContent).toBe('old');
+      });
+    },
+  );
+
+  test.openspec('Final safety failure does not degrade silently')(
+    'throws structured tagged diagnostics without a fallback path',
+    async ({ given, when, then }: AllureBddContext) => {
+      const original = await buildDocxFromBodyXml('<w:p><w:r><w:t>old</w:t></w:r></w:p>');
+      const revised = await buildDocxFromBodyXml('<w:p><w:r><w:t>new</w:t></w:r></w:p>');
+      const options = { author: 'Comparator', date: new Date('2026-08-14T12:00:00Z') };
+      const forcedFailure = {
+        safe: false,
+        checks: {
+          acceptText: false,
+          rejectText: true,
+          acceptBookmarks: true,
+          rejectBookmarks: true,
+          fieldStructure: true,
+        },
+        failedChecks: ['acceptText' as const],
+        failureDetails: undefined,
+        failureSummary: undefined,
+      };
+      let defaultError!: TaggedPublicationSafetyError;
+
+      await given('a tagged-tree candidate whose publication safety check fails', () => undefined);
+      await when('comparison runs', async () => {
+        try {
+          await compareDocumentsAtomizer(original, revised, {
+            ...options,
+            taggedTreePublicationSafetyEvaluator: () => forcedFailure,
+          });
+        } catch (error) {
+          defaultError = error as TaggedPublicationSafetyError;
+        }
+      });
+      await then('the default path throws the typed error with every failed gate', () => {
+        expect(defaultError).toBeInstanceOf(TaggedPublicationSafetyError);
+        expect(defaultError.failedChecks).toEqual(['acceptText']);
+        expect(defaultError.checks).toEqual({
+          ...forcedFailure.checks,
+          formattingFidelity: true,
+        });
+      });
+    },
+  );
+
+  test.openspec('Divergence is recorded with fixture identity')(
+    'uses a stable opaque hash when no corpus identity is supplied',
+    async ({ when, then, and }: AllureBddContext) => {
+      const input = {
+        originalXml: xml('A'), revisedXml: xml('B'), legacyXml: xml('B'),
+        author: 'Comparator', date: new Date('2026-08-14T12:00:00Z'),
+      };
+      const first = runTaggedTreeShadow(input);
+      const second = runTaggedTreeShadow(input);
+      await when('the same fixture pair is evaluated twice', () => undefined);
+      await then('the report carries the same opaque identity', () => {
+        expect(first.fixtureIdentity).toMatch(/^[0-9a-f]{24}$/);
+        expect(second.fixtureIdentity).toBe(first.fixtureIdentity);
+      });
+      await and('the divergence classification and projection names are machine readable', () => {
+        expect(['projection-equivalent', 'projection-inequivalent']).toContain(first.classification);
+        expect(first.divergingProjections.every((value) => ['accept', 'reject', 'formatting'].includes(value))).toBe(true);
+      });
+    },
+  );
+
+  test('proves direct paragraph and run formatting against source projections', async () => {
+    const originalBody = '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>SYNTHETIC OLD</w:t></w:r></w:p>';
+    const revisedBody = '<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>SYNTHETIC NEW</w:t></w:r></w:p>';
+    const original = await buildDocxFromBodyXml(originalBody);
+    const revised = await buildDocxFromBodyXml(revisedBody);
+    const legacy = await compareDocumentsAtomizer(original, revised, {
+      author: 'Safe DOCX Synthetic Test', date: new Date('2026-08-14T12:00:00Z'),
+    });
+    const legacyXml = await (await DocxArchive.load(legacy.document)).getDocumentXml();
+    const report = runTaggedTreeShadow({
+      originalXml: xml('SYNTHETIC OLD').replace('<w:p>', '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>').replace('<w:r>', '<w:r><w:rPr><w:b/></w:rPr>'),
+      revisedXml: xml('SYNTHETIC NEW').replace('<w:p>', '<w:p><w:pPr><w:jc w:val="right"/></w:pPr>').replace('<w:r>', '<w:r><w:rPr><w:i/></w:rPr>'),
+      legacyXml,
+      author: 'Safe DOCX Synthetic Test', date: new Date('2026-08-14T12:00:00Z'),
+      fixtureIdentity: 'synthetic-paragraph-formatting-divergence',
+    });
+
+    expect(report.divergingProjections).not.toContain('accept');
+    expect(report.divergingProjections).not.toContain('reject');
+    expect(report.divergingProjections).not.toContain('formatting');
+    expect(report.fidelityScore).toBe(1);
+    expect(report.diagnostics).toEqual([]);
+    expect(report.classification).toBe('projection-equivalent');
+  });
+});

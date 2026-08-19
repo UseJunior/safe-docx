@@ -5,7 +5,7 @@ import { extractRoundTripComparisonText } from './fieldComparisonSemantics.js';
 import {
   compareTexts,
   extractTextWithParagraphs,
-} from './baselines/atomizer/trackChangesAcceptorAst.js';
+} from './tagged/trackChangesAcceptorAst.js';
 
 const test = testAllure
   .epic('Document Comparison')
