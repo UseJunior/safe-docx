@@ -67,9 +67,15 @@
 
 ## 9. Public breaking release
 
-- [ ] 9.1 Remove public `reconstructionMode`, `comparisonStrategy`, `engine`, `premergeRuns`, and `maxWordRefinementChangeRanges` across library, CLIs, MCP, scripts, and tests while retaining `baseSide`.
-- [x] 9.2 Add and document `baseSide: 'original' | 'revised'` package provenance, its revised default, actual-result provenance, and migration from `inplace`/`rebuild`.
-- [ ] 9.3 Regenerate and validate tool docs, MCPB manifest, and capability projection.
+- [ ] 9.1 Remove public `reconstructionMode`, `comparisonStrategy`, `engine`, `premergeRuns`, and `maxWordRefinementChangeRanges` across library, CLIs, MCP, scripts, and tests.
+- [ ] 9.2 Specify and verify the fixed dual-projection package contract: accepting
+  all comparison revisions preserves revised semantics and rejecting all revisions
+  preserves original semantics, including referenced ancillary parts, with no
+  caller-selectable package base.
+- [ ] 9.3 Define deterministic provenance, collision allocation, reference rewriting,
+  and unreferenced-payload rules for parts, relationships, content types, and
+  auxiliary identifiers.
+- [ ] 9.4 Regenerate and validate tool docs, MCPB manifest, and capability projection.
 
 ## 10. Legacy deletion
 

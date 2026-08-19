@@ -134,7 +134,6 @@ export async function compareWithDotnet(
       document: outputBuffer,
       stats,
       engine: 'wmlcomparer',
-      baseSide: 'original',
     };
   } finally {
     // Clean up temporary files

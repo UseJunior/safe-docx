@@ -81,27 +81,43 @@ properties, fields, opaque payload, preserved revision provenance, and effective
 styles. Each has a tagged call path plus tagged-specific test or appears in the
 spec-visible removal inventory.
 
-### Standalone publication starts from the selected archive
+### Standalone publication reconciles both input archives
 
-The assembler receives original/revised packages, an explicit `baseSide`, and tagged publications, never
-legacy `resultBuffer`, `mergedAtoms`, or `comparisonResult.outputMode`. It owns
+The assembler receives original/revised packages and tagged publications, never
+legacy `resultBuffer`, `mergedAtoms`, or `comparisonResult.outputMode`. Neither
+archive is exposed as a caller-selectable base. The assembler deterministically
+reconciles both inputs so accepting every emitted comparison revision preserves
+the revised document semantics and rejecting every revision preserves the
+original document semantics. That invariant includes every referenced ancillary
+part, not only the main document story.
+
+The assembler owns
 relationship/content-type closure; headers, footers, notes, comments, people,
 numbering, styles, media and custom XML; auxiliary-ID collisions; footnote
 reconciliation; text-box and ancillary stories; unrepresented changes; and final
-safety/fidelity gates. Shadow comparison covers package manifests and normalized
-parts, not only main-story projections.
+safety/fidelity gates. When the two inputs assign the same relationship, part,
+content-type, or auxiliary identifier to different resources, fixed provenance
+and collision rules allocate deterministic identities and rewrite every affected
+reference. Byte-identical resources with the same content type coalesce. For a
+distinct-resource collision, the revised resource retains its source identity and
+the original resource receives the first collision-free identity in a stable sort
+of normalized source keys; original/deleted markup is rewritten to the original
+resource and revised/inserted markup to the revised resource. A remapped part gets
+an explicit content-type override when a shared extension default would be
+ambiguous. Unreferenced payload uses the same union rule: identical entries
+coalesce, the revised entry retains a conflicting canonical identity, and the
+original entry is deterministically remapped.
+
+Allocation order is lexicographic by normalized OPC part URI and, within an
+owning part, relationship type, normalized target, source relationship ID, and
+source side. Auxiliary identifiers additionally sort by identifier kind, source
+value, and canonical serialized payload. Input ZIP order, object enumeration
+order, and a public option cannot change the result. Shadow comparison covers
+package manifests and normalized parts, not only main-story projections.
 
 Text-box re-homing replaces reconstruction-mode guards with per-story tagged
 publication checks while preserving `UnsupportedTextBoxRevisionError` and the
 implementation in `textBoxRevisionSafety.ts`.
-
-`baseSide: 'revised'` is the public default and durable semantic selector;
-`baseSide: 'original'` preserves the original package when that provenance is
-required. During the dual-engine migration, these values map internally to
-`inplace` and `rebuild`, respectively. Supplying both selectors with conflicting
-meaning is an error. Results report the package side actually used, including
-after safety fallback. The implementation-oriented `reconstructionMode` remains
-deprecated only until the dedicated public-removal release.
 
 ### Stats come from final tagged markup
 
@@ -154,8 +170,9 @@ is retained only if the option matrix establishes tagged observability.
   the safety gate; both become load-bearing before the flip.
 - Deleting implementation and its only tests can conceal lost behavior; the
   capability manifest must own every retained behavior first.
-- Supporting two explicit package bases increases the standalone assembler's test
-  matrix, but prevents provenance from being coupled to a deleted implementation.
+- Package provenance changes from a mode-dependent archive choice to one
+  dual-projection invariant. This increases reconciliation and collision testing,
+  but prevents callers from producing semantically different comparison packages.
 - Coverage, Allure filename, ECMA citation, generated spec, tool-doc, MCPB, and
   capability-projection ratchets all require deliberate re-baselining.
 
@@ -166,8 +183,8 @@ is retained only if the option matrix establishes tagged observability.
 3. Port correctness, Markdoc provenance, options, moves, package assembly, and
    stats while legacy remains authoritative.
 4. Flip authority behind an internal switch and soak for one release/corpus cycle.
-5. Remove implementation-oriented public options in a dedicated breaking release,
-   retaining `baseSide` as the package-provenance selector.
+5. Remove public options in a dedicated breaking release; package provenance
+   becomes a fixed dual-projection invariant rather than a replacement selector.
 6. Tag the rollback point, extract keepers, delete legacy, regenerate evidence,
    and document the exact rollback sequence.
 7. Rename surviving tagged modules after the rollback window.

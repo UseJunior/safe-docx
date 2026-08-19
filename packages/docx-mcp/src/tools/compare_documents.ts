@@ -10,6 +10,7 @@ import {
   validateAndLoadDocxFromPath,
 } from './session_resolution.js';
 import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
+import { DEFAULT_RECONSTRUCTION_MODE } from './comparison_defaults.js';
 
 function expandPath(inputPath: string): string {
   return inputPath.startsWith('~') ? path.join(process.env.HOME || '', inputPath.slice(1)) : inputPath;
@@ -26,7 +27,6 @@ export async function compareDocuments_tool(
     engine?: string;
     ignore_formatting?: boolean;
     compare_moves?: boolean;
-    base_side?: 'original' | 'revised';
   },
 ): Promise<ToolResponse> {
   try {
@@ -116,7 +116,7 @@ export async function compareDocuments_tool(
       engine: compareEngine,
       ignoreFormatting: params.ignore_formatting,
       detectMoves: params.compare_moves,
-      baseSide: params.base_side ?? 'revised',
+      reconstructionMode: DEFAULT_RECONSTRUCTION_MODE,
     });
 
     // Validate and write output
@@ -134,8 +134,6 @@ export async function compareDocuments_tool(
       size_bytes: result.document.length,
       engine_requested: compareEngine,
       engine_used: result.engine,
-      base_side_requested: params.base_side ?? 'revised',
-      base_side: result.baseSide,
       comparison_strategy_requested: result.comparisonStrategyRequested,
       comparison_strategy_used: result.comparisonStrategyUsed,
       comparison_strategy_fallback_reason: result.comparisonStrategyFallbackReason,

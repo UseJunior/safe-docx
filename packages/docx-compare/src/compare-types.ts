@@ -2,12 +2,6 @@ export interface CompareOptions {
   /** Author name for revision tracking. Default: "Comparison" */
   author?: string;
   /**
-   * Which input package supplies the non-revision package structure and metadata.
-   * The revised package is the default. This semantic selector replaces the
-   * implementation-oriented `reconstructionMode` option.
-   */
-  baseSide?: PackageBaseSide;
-  /**
    * Revision timestamp used for generated track changes (`w:date`).
    * Default: current time.
    */
@@ -37,8 +31,6 @@ export interface CompareOptions {
    * - 'inplace': modify the revised document AST in place (more experimental)
    *
    * Default: {@link DEFAULT_RECONSTRUCTION_MODE}.
-   *
-   * @deprecated Use `baseSide`: `revised` maps to `inplace`, `original` to `rebuild`.
    */
   reconstructionMode?: ReconstructionMode;
   /** Select the comparison construction strategy. Tagged-tree is default; legacy is the rollback path. */
@@ -87,7 +79,6 @@ export interface CompareStats {
 }
 
 export type ReconstructionMode = 'rebuild' | 'inplace';
-export type PackageBaseSide = 'original' | 'revised';
 export type ComparisonStrategy = 'tagged-tree' | 'legacy';
 
 export type ComparisonStrategyFallbackReason =
@@ -362,8 +353,6 @@ export interface CompareResult {
   stats: CompareStats;
   /** Which engine was used */
   engine: 'wmlcomparer' | 'atomizer';
-  /** Input package that supplied the returned package's non-revision structure and metadata. */
-  baseSide: PackageBaseSide;
   /** Strategy requested by the caller, including the tagged-tree default. */
   comparisonStrategyRequested?: ComparisonStrategy;
   /** Strategy that constructed the published document. */

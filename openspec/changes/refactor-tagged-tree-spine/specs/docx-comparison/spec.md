@@ -31,13 +31,32 @@ without review.
 
 ### Requirement: Tagged publication owns the complete result package
 
-The comparison engine SHALL build the tracked result from the revised package and
-tagged story publications without consuming a legacy result buffer, merged atom
-list, or legacy output-mode decision. Publication SHALL own relationship and
+The comparison engine SHALL build one tracked result by reconciling the original
+and revised packages with tagged story publications, without consuming a legacy
+result buffer, merged atom list, or legacy output-mode decision. The public API
+SHALL NOT expose a caller-selectable package base. Accepting every comparison
+revision SHALL preserve the revised document semantics, and rejecting every
+comparison revision SHALL preserve the original document semantics, including
+each projection's referenced ancillary parts.
+
+Publication SHALL own relationship and
 content-type closure; headers, footers, notes, comments, people, numbering,
 styles, media and custom XML; auxiliary identifier collisions; footnote
 reconciliation; text-box and ancillary stories; unrepresented changes; and final
 schema, projection, field, bookmark, relationship and formatting-fidelity gates.
+Conflicts in part names, relationship identifiers, content types, and auxiliary
+identifiers SHALL follow fixed deterministic provenance and collision-allocation
+rules, with every affected reference rewritten consistently. The result SHALL be
+independent of archive enumeration order and SHALL NOT vary through a public
+provenance option. Identical resources with the same content type SHALL coalesce.
+For distinct-resource collisions, the revised resource SHALL retain its source
+identity and the original resource SHALL receive the first collision-free identity
+under a stable normalized-source-key ordering. Original/deleted references SHALL
+resolve to the original resource; revised/inserted references SHALL resolve to the
+revised resource. Remapped parts SHALL receive explicit content-type overrides
+where a shared extension default would be ambiguous. Unreferenced entries SHALL
+use the same deterministic union, coalescing identical entries and remapping the
+original entry when distinct entries collide.
 
 Consumer compatibility SHALL run against the complete tagged document using one
 revision-ID allocator seeded from every surviving numeric revision identifier.
@@ -51,6 +70,22 @@ final safety and formatting checks.
 - **WHEN** the result package is assembled
 - **THEN** assembly SHALL succeed without a legacy result buffer or merged atoms
 - **AND** normalized main and ancillary package parts SHALL satisfy the publication gates
+
+#### Scenario: One package preserves both source projections
+
+- **GIVEN** original and revised packages with changes in main and ancillary stories
+- **WHEN** the comparison package is assembled
+- **THEN** accepting every comparison revision SHALL preserve the revised document semantics and its referenced ancillary resources
+- **AND** rejecting every comparison revision SHALL preserve the original document semantics and its referenced ancillary resources
+- **AND** the caller SHALL NOT select an original-based or revised-based output
+
+#### Scenario: Cross-package collisions resolve deterministically
+
+- **GIVEN** original and revised packages that reuse a part name, relationship identifier, content type, or auxiliary identifier for different resources
+- **WHEN** the comparison package is assembled repeatedly with different archive enumeration orders
+- **THEN** each result SHALL allocate the same collision-free identities
+- **AND** the revised resource SHALL retain its source identity while a distinct colliding original resource is deterministically remapped
+- **AND** every reference SHALL resolve to the resource required by its accepted or rejected projection
 
 #### Scenario: Revision and bookmark identifiers may overlap numerically
 
@@ -108,9 +143,8 @@ SHALL NOT silently return a degraded or partially assembled result.
 ### Requirement: Tagged-tree construction is the sole public comparison spine
 
 The ordinary comparison pipeline SHALL construct and publish tracked results
-through the tagged tree. Public comparison SHALL accept `baseSide` as either
-`original` or `revised`, SHALL default it to `revised`, and SHALL report the side
-actually used in the result.
+through the tagged tree. The result package SHALL reconcile both input archives
+under the fixed dual-projection package contract.
 Legacy construction MAY exist only behind a private emergency switch during a
 measured release/corpus soak and SHALL NOT be selectable through library, CLI, or
 MCP public inputs. After the soak gate, the legacy switch and automatic fallback
@@ -121,20 +155,13 @@ Public `reconstructionMode`, `comparisonStrategy`, `engine`, `premergeRuns`, and
 projection, field, bookmark, ancillary-story, relationship, package-integrity,
 text-box, auxiliary-sidecar, and formatting-fidelity checks SHALL remain in force.
 
-#### Scenario: Public comparison defaults to revised-based tagged publication
+#### Scenario: Public comparison uses one deterministic tagged publication
 
 - **GIVEN** a document pair and no private emergency override
 - **WHEN** the pair is compared through any public entry point
-- **THEN** the tagged tree SHALL construct and publish the returned revised-based package
-- **AND** the result SHALL report `baseSide` as `revised`
+- **THEN** the tagged tree SHALL construct and publish one package whose accept-all projection preserves revised semantics and whose reject-all projection preserves original semantics
 - **AND** no public strategy, engine, or reconstruction-mode selector SHALL be accepted
-
-#### Scenario: Caller selects original package provenance
-
-- **GIVEN** a document pair and `baseSide` set to `original`
-- **WHEN** the pair is compared through any public entry point
-- **THEN** the tagged tree SHALL construct and publish an original-based package
-- **AND** the result SHALL report `baseSide` as `original`
+- **AND** no public package-base or provenance selector SHALL be accepted
 
 #### Scenario: Soak evidence gates legacy deletion
 

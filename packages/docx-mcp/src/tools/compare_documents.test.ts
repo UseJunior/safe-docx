@@ -115,8 +115,6 @@ describe('compare_documents tool', () => {
       });
 
       await then('the handler requests and uses the shared inplace default (#808)', () => {
-        expect(result.base_side_requested).toBe('revised');
-        expect(result.base_side).toBe('revised');
         expect(result.reconstruction_mode_requested).toBe('inplace');
         expect(result.reconstruction_mode_used).toBe('inplace');
         expect(result.fallback_reason).toBeUndefined();
@@ -130,24 +128,6 @@ describe('compare_documents tool', () => {
       });
     },
   );
-
-  test('base_side selects and reports original package provenance', async () => {
-    const mgr = createTestSessionManager();
-    const dir = await createTrackedTempDir();
-    const originalPath = await writeTestDocx(dir, 'base-original.docx', ['Original']);
-    const revisedPath = await writeTestDocx(dir, 'base-revised.docx', ['Revised']);
-    const result = await compareDocuments_tool(mgr, {
-      original_file_path: originalPath,
-      revised_file_path: revisedPath,
-      save_to_local_path: path.join(dir, 'base-redline.docx'),
-      base_side: 'original',
-    });
-
-    assertSuccess(result, 'compare_documents');
-    expect(result.base_side_requested).toBe('original');
-    expect(result.base_side).toBe('original');
-    expect(result.reconstruction_mode_requested).toBe('rebuild');
-  });
 
   test(
     'ignore_formatting suppresses formatting revisions',

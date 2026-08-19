@@ -19,11 +19,9 @@ without several compatibility passes already learned by the legacy path.
 - Port consumer compatibility, volatile PAGEREF suppression, Markdoc rationale
   attribution, fuzzy move detection, numbering and every retained option onto the
   tagged tree.
-- Build a standalone tagged package assembler over the explicitly selected input archive, then
-  derive public statistics and footnote publication from tagged output.
-- Add durable package provenance as `baseSide: 'original' | 'revised'`, defaulting
-  to `revised`; retain `reconstructionMode` only as a deprecated adapter until
-  the public-removal release.
+- Build a standalone tagged package assembler that reconciles both input
+  archives into one deterministic comparison package, then derive public
+  statistics and footnote publication from tagged output.
 - Make the standalone tagged assembler authoritative while retaining a private,
   measured emergency rollback for at least one release/corpus soak cycle.
 - **BREAKING** Remove public `reconstructionMode`, `comparisonStrategy`, `engine`,
@@ -40,8 +38,10 @@ without several compatibility passes already learned by the legacy path.
 - Affected specs: `docx-comparison`.
 - Affected packages: `docx-compare`, `docx-markdoc`, `docx-mcp`, `docx-core`, and
   generated conformance/tool documentation.
-- Compatibility: package provenance becomes explicit and observable. Callers migrate
-  `inplace` to `baseSide: 'revised'` and `rebuild` to `baseSide: 'original'`.
+- Compatibility: package provenance is no longer caller-selectable. Every result
+  preserves both source projections by construction: accepting all comparison
+  revisions yields the revised document semantics, while rejecting all revisions
+  yields the original document semantics, including referenced ancillary parts.
 - Dependencies: none added; leaf alignment continues to use `textAlignment.ts`.
 - Delivery: one OpenSpec change, one independently reviewed PR per phase, and
   separate releases for the authority flip, public removals, and legacy deletion.

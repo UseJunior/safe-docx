@@ -620,7 +620,6 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       engine: z.enum(['auto', 'atomizer']).optional().describe("Comparison engine (DOCX only). Default: 'auto'."),
       ignore_formatting: z.boolean().optional().describe('Ignore formatting differences (DOCX only). Default: false.'),
       compare_moves: z.boolean().optional().describe('Detect moved content (DOCX only). Default: true.'),
-      base_side: z.enum(['original', 'revised']).optional().describe("Input package used as the comparison output base (DOCX only). Default: 'revised'."),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },

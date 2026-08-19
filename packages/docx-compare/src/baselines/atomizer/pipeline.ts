@@ -1587,7 +1587,6 @@ async function compareDocumentsAtomizerCore(
     document: publishedBuffer,
     stats,
     engine: 'atomizer' as const,
-    baseSide: comparisonResult.outputMode === 'inplace' ? 'revised' : 'original',
     comparisonStrategyRequested: comparisonStrategy,
     comparisonStrategyUsed,
     comparisonStrategyFallbackReason: taggedTreeFallbackDiagnostics

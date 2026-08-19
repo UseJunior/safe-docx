@@ -141,7 +141,6 @@ describe('docx-comparison CLI mode reporting', () => {
       document: Buffer.from('redline-bytes'),
       stats: zeroStats,
       engine: 'atomizer',
-      baseSide: 'revised',
       ...overrides,
     };
   }

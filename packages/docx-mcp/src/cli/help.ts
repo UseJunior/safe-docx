@@ -45,8 +45,7 @@ export function renderTopLevelHelp(): string {
   lines.push('  serve                                       Start the MCP server (default)');
   lines.push('  compare <original> <revised> [output]       Compare two DOCX files and write redline output');
   lines.push('    -o, --output <path>                       Write redline output to this path');
-  lines.push('    --base-side <original|revised>             Base package provenance (default: revised)');
-  lines.push('    --mode <inplace|rebuild>                   Deprecated compatibility alias');
+  lines.push('    --mode <inplace|rebuild>                   Reconstruction mode (default: inplace)');
   lines.push('                                                Compare stats count revision ranges; atom totals use *Atoms fields');
   lines.push('  edit <file> [--replace ...] [-o output]     Batch edit a DOCX file');
   lines.push('  grep "pattern" <file> [files...]            Search DOCX files for text');

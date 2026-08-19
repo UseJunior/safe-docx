@@ -68,9 +68,6 @@ function parseCompareArgs(args: string[]): CompareCommandArgs {
       case '--mode':
         options.mode = consumeValue(token);
         break;
-      case '--base-side':
-        options.baseSide = consumeValue(token);
-        break;
       case '--author':
         options.author = consumeValue(token);
         break;

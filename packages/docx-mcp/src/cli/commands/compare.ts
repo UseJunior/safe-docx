@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { compareDocuments, type CompareOptions, type PackageBaseSide } from '@usejunior/docx-compare';
+import { compareDocuments, type CompareOptions } from '@usejunior/docx-compare';
 import { DEFAULT_RECONSTRUCTION_MODE } from '../../tools/comparison_defaults.js';
 
 const SUPPORTED_ENGINES: ReadonlySet<NonNullable<CompareOptions['engine']>> = new Set([
@@ -15,7 +15,6 @@ export interface CompareCommandArgs {
   outputPath?: string;
   engine?: string;
   mode?: string;
-  baseSide?: string;
   author?: string;
   premergeRuns?: boolean;
 }
@@ -25,8 +24,6 @@ export interface CompareCommandResult {
   engine: string;
   mode: 'inplace' | 'rebuild';
   mode_requested: 'inplace' | 'rebuild';
-  base_side: PackageBaseSide;
-  base_side_requested: PackageBaseSide;
   fallback_reason?: string;
   comparison_strategy_requested?: string;
   comparison_strategy_used?: string;
@@ -74,14 +71,6 @@ function normalizeMode(raw: string | undefined): 'inplace' | 'rebuild' {
   return candidate;
 }
 
-function normalizeBaseSide(raw: string | undefined, mode: 'inplace' | 'rebuild' | undefined): PackageBaseSide {
-  const candidate = (raw ?? (mode === 'rebuild' ? 'original' : 'revised')).trim().toLowerCase();
-  if (candidate !== 'original' && candidate !== 'revised') {
-    throw new Error(`Unsupported base side: ${String(raw)}. Use original or revised.`);
-  }
-  return candidate;
-}
-
 function defaultOutputPath(revisedPath: string, engine: string, mode: 'inplace' | 'rebuild'): string {
   return revisedPath.replace(/\.docx$/i, '') + `.REDLINE.${engine}.${mode}.docx`;
 }
@@ -91,13 +80,11 @@ export async function runCompareCommand(
   dependencies: CompareCommandDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<CompareCommandResult> {
   const engine = normalizeEngine(args.engine);
-  const mode = args.mode === undefined ? undefined : normalizeMode(args.mode);
-  const baseSide = normalizeBaseSide(args.baseSide, mode);
-  const mappedMode = baseSide === 'revised' ? 'inplace' : 'rebuild';
+  const mode = normalizeMode(args.mode);
 
   const originalAbs = resolve(args.originalPath);
   const revisedAbs = resolve(args.revisedPath);
-  const outputAbs = resolve(args.outputPath ?? defaultOutputPath(revisedAbs, engine, mappedMode));
+  const outputAbs = resolve(args.outputPath ?? defaultOutputPath(revisedAbs, engine, mode));
   const [originalBuffer, revisedBuffer] = await Promise.all([
     readFile(originalAbs),
     readFile(revisedAbs),
@@ -106,7 +93,6 @@ export async function runCompareCommand(
   const result = await dependencies.compare(originalBuffer, revisedBuffer, {
     engine,
     author: args.author ?? 'Comparison',
-    baseSide,
     reconstructionMode: mode,
     premergeRuns: args.premergeRuns,
   });
@@ -115,10 +101,8 @@ export async function runCompareCommand(
   return {
     output: outputAbs,
     engine: result.engine,
-    mode: result.reconstructionModeUsed ?? mappedMode,
-    mode_requested: mode ?? mappedMode,
-    base_side: result.baseSide,
-    base_side_requested: baseSide,
+    mode: result.reconstructionModeUsed ?? mode,
+    mode_requested: mode,
     fallback_reason: result.fallbackReason,
     comparison_strategy_requested: result.comparisonStrategyRequested,
     comparison_strategy_used: result.comparisonStrategyUsed,
