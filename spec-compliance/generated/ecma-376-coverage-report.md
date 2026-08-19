@@ -58,9 +58,9 @@ This operation-specific matrix distinguishes semantic implementation from preser
 
 | Constant | QName | Kind | Source use |
 | --- | --- | --- | --- |
-| `WML.FLD_CHAR` | `w:fldChar` | element | `packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts` |
-| `WML.INSTR_TEXT` | `w:instrText` | element | `packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts` |
-| `WML.DEL_INSTR_TEXT` | `w:delInstrText` | element | `packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts` |
+| `WML.FLD_CHAR` | `w:fldChar` | element | `packages/docx-compare/src/tagged/taggedTreeSerializer.ts` |
+| `WML.INSTR_TEXT` | `w:instrText` | element | `packages/docx-compare/src/tagged/taggedTreeSerializer.ts` |
+| `WML.DEL_INSTR_TEXT` | `w:delInstrText` | element | `packages/docx-compare/src/tagged/taggedTreeSerializer.ts` |
 | `WML.INS` | `w:ins` | element | Not yet migrated |
 | `WML.DEL` | `w:del` | element | Not yet migrated |
 | `WML.FLD_CHAR_TYPE` | `w:fldCharType` | attribute | Not yet migrated |

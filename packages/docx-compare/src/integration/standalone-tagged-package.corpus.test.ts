@@ -10,7 +10,7 @@ import { describe, expect } from 'vitest';
 import {
   compareDocumentsAtomizer,
   type TaggedPackageShadowReport,
-} from '../baselines/atomizer/pipeline.js';
+} from '../tagged/pipeline.js';
 import { testAllure } from '../testing/allure-test.js';
 import { REAL_CORPUS_ENV, resolveRealCorpusAvailability } from './real-corpus-fixtures.js';
 import { loadStrategyDifferentialFixtures } from './strategy-differential-fixtures.js';

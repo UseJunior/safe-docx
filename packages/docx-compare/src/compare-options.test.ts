@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { DocxArchive, parseXml } from '@usejunior/docx-core';
 import { describe, expect } from 'vitest';
 import { compareDocuments, type CompareOptions } from './index.js';
-import { acceptAllChanges, rejectAllChanges } from './baselines/atomizer/trackChangesAcceptorAst.js';
+import { acceptAllChanges, rejectAllChanges } from './tagged/trackChangesAcceptorAst.js';
 import { testAllure, type AllureBddContext } from './testing/allure-test.js';
 import {
   buildDocxFromBodyXml,

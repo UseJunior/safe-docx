@@ -82,7 +82,7 @@ correlated all 108 captured `REF` boundaries, but success proved only that the
 mutation perturbed none of them. Because the split landed outside every opaque
 descriptor, their stability says nothing about the guard's sensitivity to a
 run split. The authoritative comparison is in
-`packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts`.
+`packages/docx-compare/src/tagged/opaquePassthrough.ts`.
 
 An equivalent pure run split deliberately placed inside a supported `REF` field
 result does make `rebuild` throw the expected `OpaquePassthroughError` while

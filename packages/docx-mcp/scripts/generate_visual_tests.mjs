@@ -12,13 +12,13 @@ import { insertParagraph } from '../dist/tools/insert_paragraph.js';
 import { download } from '../dist/tools/download.js';
 
 import { compareDocuments } from '../../docx-compare/dist/index.js';
-import { DocxArchive } from '../../docx-compare/dist/shared/docx/DocxArchive.js';
+import { DocxArchive } from '../../docx-core/dist/shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
   extractTextWithParagraphs,
   compareTexts,
-} from '../../docx-comparison/dist/baselines/atomizer/trackChangesAcceptorAst.js';
+} from '../../docx-compare/dist/tagged/trackChangesAcceptorAst.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');

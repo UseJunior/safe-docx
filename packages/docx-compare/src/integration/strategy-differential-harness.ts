@@ -7,12 +7,12 @@ import type {
   ComparisonStrategy,
   UnrepresentedChange,
 } from '../compare-types.js';
-import { compareDocumentsAtomizer } from '../baselines/atomizer/pipeline.js';
-import { compareSourceProjectedFormattingFidelity } from '../baselines/atomizer/formattingFidelity.js';
+import { compareDocumentsAtomizer } from '../tagged/pipeline.js';
+import { compareSourceProjectedFormattingFidelity } from '../tagged/formattingFidelity.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
+} from '../tagged/trackChangesAcceptorAst.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
 
 const AUTHOR = 'Strategy Differential';

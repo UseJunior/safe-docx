@@ -204,7 +204,7 @@ export interface TaggedTreeFallbackDiagnostics {
   failureDetails?: ReconstructionSafetyFailureDetails;
   firstDiffSummary?: ReconstructionSafetyFailureSummary;
   /** Source-projected formatting evidence when formatting rejected publication. */
-  formattingFidelity?: import('./baselines/atomizer/formattingFidelity.js').ProjectedFormattingFidelity;
+  formattingFidelity?: import('./tagged/formattingFidelity.js').ProjectedFormattingFidelity;
 }
 
 export type TaggedPublicationSafetyCheckName =

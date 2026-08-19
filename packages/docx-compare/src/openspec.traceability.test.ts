@@ -25,16 +25,16 @@ import {
   jaccardWordSimilarity,
   wordContainmentSimilarity,
 } from './textSimilarity.js';
-import { constructTaggedTree } from './baselines/atomizer/taggedTreeConstruction.js';
+import { constructTaggedTree } from './tagged/taggedTreeConstruction.js';
 import {
   correlationStatus,
   type TaggedNode,
-} from './baselines/atomizer/taggedTree.js';
+} from './tagged/taggedTree.js';
 import {
   createPreservePlan,
   serializeTaggedTree,
-} from './baselines/atomizer/taggedTreeSerializer.js';
-import { buildTaggedTreePublication } from './baselines/atomizer/taggedTreeShadow.js';
+} from './tagged/taggedTreeSerializer.js';
+import { buildTaggedTreePublication } from './tagged/taggedTreeShadow.js';
 
 const TEST_FEATURE = 'refactor-tagged-tree-spine';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });

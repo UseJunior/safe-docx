@@ -11,7 +11,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 
 | Symbol | Kind | Source | Present | Disposition |
 | --- | --- | --- | --- | --- |
-| `acceptAllChanges` | function | `src/baselines/atomizer/trackChangesAcceptorAst.ts` | yes | stable compatibility |
+| `acceptAllChanges` | function | `src/tagged/trackChangesAcceptorAst.ts` | yes | stable compatibility |
 | `alignComparisonSequences` | function | `src/textAlignment.ts` | yes | stable compatibility |
 | `allocateMoveIds` | function | `src/move-detection.ts` | no | breaking removal |
 | `AncillaryBindingLocator` | interface | `src/compare-types.ts` | yes | stable compatibility |
@@ -25,34 +25,34 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `AncillaryPackageLocator` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `AncillarySelectedBindingSummary` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `AncillaryStoryLocator` | type | `src/compare-types.ts` | yes | stable compatibility |
-| `AncillaryStorySafetyAttempt` | interface | `src/baselines/atomizer/ancillaryFieldSafety.ts` | yes | stable compatibility |
+| `AncillaryStorySafetyAttempt` | interface | `src/tagged/ancillaryFieldSafety.ts` | yes | stable compatibility |
 | `AncillaryStorySafetyCategory` | type | `src/compare-types.ts` | yes | stable compatibility |
-| `AncillaryStorySafetyError` | class | `src/baselines/atomizer/ancillaryFieldSafety.ts` | yes | stable compatibility |
+| `AncillaryStorySafetyError` | class | `src/tagged/ancillaryFieldSafety.ts` | yes | stable compatibility |
 | `AncillaryStorySafetyIssue` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `AncillaryStorySummary` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `appendIdentitySalt` | function | `src/atomizer.ts` | no | breaking removal |
 | `applyHyperlinkDestinationSalt` | function | `src/atomizer.ts` | no | breaking removal |
 | `areNormalizedRunPropertiesEqual` | function | `src/propertyNaming.ts` | yes | stable compatibility |
 | `areRunPropertiesEqual` | function | `src/propertyNaming.ts` | yes | stable compatibility |
-| `assertTextBoxContentUnchanged` | function | `src/baselines/atomizer/textBoxRevisionSafety.ts` | yes | stable compatibility |
+| `assertTextBoxContentUnchanged` | function | `src/tagged/textBoxRevisionSafety.ts` | yes | stable compatibility |
 | `assignIdentityIds` | function | `src/atomizer.ts` | no | breaking removal |
 | `assignParagraphIndices` | function | `src/atomizer.ts` | no | breaking removal |
 | `atomizeTree` | function | `src/atomizer.ts` | no | breaking removal |
 | `AtomizeTreeOptions` | interface | `src/atomizer.ts` | no | breaking removal |
-| `canonicalizeParagraphPropertiesForIdentity` | function | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
+| `canonicalizeParagraphPropertiesForIdentity` | function | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `categorizePropertyChanges` | function | `src/propertyNaming.ts` | yes | stable compatibility |
 | `COLLAPSED_FIELD_TAG` | value | `src/atomizer.ts` | no | breaking removal |
 | `collapseFieldSequences` | function | `src/atomizer.ts` | no | breaking removal |
 | `collectPreservedMoveNames` | function | `src/move-detection.ts` | no | breaking removal |
 | `compareDocuments` | function | `src/index.ts` | yes | stable compatibility |
-| `compareDocumentsAtomizer` | function | `src/baselines/atomizer/pipeline.ts` | yes | deprecate one release |
-| `compareFormattingFidelity` | function | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
+| `compareDocumentsAtomizer` | function | `src/tagged/pipeline.ts` | yes | deprecate one release |
+| `compareFormattingFidelity` | function | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `CompareOptions` | interface | `src/compare-types.ts` | yes | stable compatibility |
-| `compareProjectedFormattingFidelity` | function | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
+| `compareProjectedFormattingFidelity` | function | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `CompareResult` | interface | `src/compare-types.ts` | yes | stable compatibility |
-| `compareSourceProjectedFormattingFidelity` | function | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
+| `compareSourceProjectedFormattingFidelity` | function | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `CompareStats` | interface | `src/compare-types.ts` | yes | stable compatibility |
-| `compareTexts` | function | `src/baselines/atomizer/trackChangesAcceptorAst.ts` | yes | stable compatibility |
+| `compareTexts` | function | `src/tagged/trackChangesAcceptorAst.ts` | yes | stable compatibility |
 | `ComparisonStrategy` | type | `src/compare-types.ts` | yes | deprecate one release |
 | `ComparisonStrategyFallbackReason` | type | `src/compare-types.ts` | yes | deprecate one release |
 | `ComparisonUnit` | interface | `@usejunior/docx-core` | no | breaking removal |
@@ -70,16 +70,16 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `EMPTY_PARAGRAPH_TAG` | value | `src/atomizer.ts` | no | breaking removal |
 | `extractAncestorUnids` | function | `src/atomizer.ts` | no | breaking removal |
 | `extractRoundTripComparisonText` | function | `src/fieldComparisonSemantics.ts` | yes | stable compatibility |
-| `extractTextWithParagraphs` | function | `src/baselines/atomizer/trackChangesAcceptorAst.ts` | yes | stable compatibility |
+| `extractTextWithParagraphs` | function | `src/tagged/trackChangesAcceptorAst.ts` | yes | stable compatibility |
 | `findBestMatch` | function | `src/move-detection.ts` | no | breaking removal |
 | `findRevisionTrackingElement` | function | `src/atomizer.ts` | no | breaking removal |
 | `fixUpRevisionIds` | function | `src/move-detection.ts` | no | breaking removal |
 | `FormatChangeMarkupOptions` | interface | `src/format-detection.ts` | no | breaking removal |
-| `FormattingDimensionTally` | interface | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
-| `FormattingDivergence` | interface | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
-| `FormattingDivergenceKind` | type | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
-| `FormattingFidelityReport` | interface | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
-| `FormattingScope` | type | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
+| `FormattingDimensionTally` | interface | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
+| `FormattingDivergence` | interface | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
+| `FormattingDivergenceKind` | type | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
+| `FormattingFidelityReport` | interface | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
+| `FormattingScope` | type | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `generateFormatChangeMarkup` | function | `src/format-detection.ts` | no | breaking removal |
 | `generateMoveDestinationMarkup` | function | `src/move-detection.ts` | no | breaking removal |
 | `generateMoveSourceMarkup` | function | `src/move-detection.ts` | no | breaking removal |
@@ -113,11 +113,11 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `nearestHyperlinkAncestor` | function | `src/atomizer.ts` | no | breaking removal |
 | `normalizeParagraphProperties` | function | `src/format-detection.ts` | no | breaking removal |
 | `normalizeRunProperties` | function | `src/propertyNaming.ts` | yes | stable compatibility |
-| `normalizeText` | function | `src/baselines/atomizer/trackChangesAcceptorAst.ts` | yes | stable compatibility |
+| `normalizeText` | function | `src/tagged/trackChangesAcceptorAst.ts` | yes | stable compatibility |
 | `PARAGRAPH_LEVEL_TAGS` | value | `src/atomizer.ts` | no | breaking removal |
 | `PARAGRAPH_PROPERTY_FRIENDLY_NAMES` | value | `src/format-detection.ts` | no | breaking removal |
-| `parseDocumentXml` | function | `src/baselines/atomizer/xmlToWmlElement.ts` | yes | stable compatibility |
-| `ProjectedFormattingFidelity` | interface | `src/baselines/atomizer/formattingFidelity.ts` | yes | stable compatibility |
+| `parseDocumentXml` | function | `src/tagged/xmlToWmlElement.ts` | yes | stable compatibility |
+| `ProjectedFormattingFidelity` | interface | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `ReconstructionAttemptDiagnostics` | interface | `src/compare-types.ts` | yes | deprecate one release |
 | `ReconstructionBookmarkMismatchDetails` | interface | `src/compare-types.ts` | yes | deprecate one release |
 | `ReconstructionBookmarkMismatchSummary` | interface | `src/compare-types.ts` | yes | deprecate one release |
@@ -134,7 +134,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `ReconstructionSafetyFailureSummary` | interface | `src/compare-types.ts` | yes | deprecate one release |
 | `ReconstructionTextMismatchDetails` | interface | `src/compare-types.ts` | yes | deprecate one release |
 | `ReconstructionTextMismatchSummary` | interface | `src/compare-types.ts` | yes | deprecate one release |
-| `rejectAllChanges` | function | `src/baselines/atomizer/trackChangesAcceptorAst.ts` | yes | stable compatibility |
+| `rejectAllChanges` | function | `src/tagged/trackChangesAcceptorAst.ts` | yes | stable compatibility |
 | `RequiredNamespace` | interface | `src/markupCompatibility.ts` | yes | stable compatibility |
 | `RevisionIdState` | interface | `src/move-detection.ts` | no | breaking removal |
 | `selectAlternateContentBranch` | function | `src/markupCompatibility.ts` | yes | stable compatibility |
@@ -143,14 +143,14 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `splitAtomsIntoWords` | function | `src/atomizer.ts` | no | breaking removal |
 | `TaggedPublicationSafetyCheckName` | type | `src/compare-types.ts` | yes | stable compatibility |
 | `TaggedPublicationSafetyChecks` | interface | `src/compare-types.ts` | yes | stable compatibility |
-| `TaggedPublicationSafetyError` | class | `src/baselines/atomizer/pipeline.ts` | yes | stable compatibility |
+| `TaggedPublicationSafetyError` | class | `src/tagged/pipeline.ts` | yes | stable compatibility |
 | `TaggedTreeFallbackDiagnostics` | interface | `src/compare-types.ts` | yes | deprecate one release |
-| `TextBoxRevisionChange` | interface | `src/baselines/atomizer/textBoxRevisionSafety.ts` | yes | stable compatibility |
+| `TextBoxRevisionChange` | interface | `src/tagged/textBoxRevisionSafety.ts` | yes | stable compatibility |
 | `tokenizeComparisonText` | function | `src/textAlignment.ts` | yes | stable compatibility |
 | `UnrepresentedChange` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `UnrepresentedChangeKind` | type | `src/compare-types.ts` | yes | stable compatibility |
 | `UnrepresentedChangeScope` | type | `src/compare-types.ts` | yes | stable compatibility |
-| `UnsupportedTextBoxRevisionError` | class | `src/baselines/atomizer/textBoxRevisionSafety.ts` | yes | stable compatibility |
+| `UnsupportedTextBoxRevisionError` | class | `src/tagged/textBoxRevisionSafety.ts` | yes | stable compatibility |
 | `validateFieldStructure` | function | `@usejunior/docx-core` | yes | stable compatibility |
 | `wordContainmentSimilarity` | function | `src/textSimilarity.ts` | yes | stable compatibility |
 

@@ -29,7 +29,7 @@ import {
 } from '@xmldom/xmldom';
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
-import { compareDocumentsAtomizer } from '../baselines/atomizer/pipeline.js';
+import { compareDocumentsAtomizer } from '../tagged/pipeline.js';
 import { testAllure } from '../testing/allure-test.js';
 import {
   deleteOneRealParagraph,

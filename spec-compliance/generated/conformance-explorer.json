@@ -88,11 +88,11 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
@@ -116,11 +116,11 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
@@ -144,11 +144,11 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
@@ -180,11 +180,11 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
@@ -368,11 +368,11 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange",
-      "claimRationale": "Specific OOXML elements (notably `w:commentRangeStart`, `w:commentRangeEnd`,\n`w:bookmarkStart`, `w:bookmarkEnd`, `w:permStart`, `w:permEnd`, and the\n`pPrChange`/`rPrChange`\nrevision markers) are valid as direct children of `<w:p>` (and of revision\nwrappers like `<w:ins>` / `<w:del>` / `<w:moveFrom>` / `<w:moveTo>`) but\nnever inside `<w:r>`. safe-docx's tagged serializer emits them as\nsiblings of `<w:r>`, not as leaves wrapped in a synthetic run. The\nauthoritative list lives in `packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts`.",
+      "claimRationale": "Specific OOXML elements (notably `w:commentRangeStart`, `w:commentRangeEnd`,\n`w:bookmarkStart`, `w:bookmarkEnd`, `w:permStart`, `w:permEnd`, and the\n`pPrChange`/`rPrChange`\nrevision markers) are valid as direct children of `<w:p>` (and of revision\nwrappers like `<w:ins>` / `<w:del>` / `<w:moveFrom>` / `<w:moveTo>`) but\nnever inside `<w:r>`. safe-docx's tagged serializer emits them as\nsiblings of `<w:r>`, not as leaves wrapped in a synthetic run. The\nauthoritative list lives in `packages/docx-compare/src/tagged/taggedTreeSerializer.ts`.",
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
         },
         {
           "kind": "test",
@@ -455,7 +455,7 @@
       "evidence": [
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts"
         }
       ]
     },
@@ -471,7 +471,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del",
-      "claimRationale": "ECMA-376 Part 1 §17.13.5.15 defines `w:del` inside `w:pPr/w:rPr` as a tracked\ndeletion of the *paragraph mark* (the glyph ending the paragraph), not of the\nparagraph's contents. Accepting the revision removes the paragraph break, so\nthe paragraph's remaining content merges into the following paragraph; the\ncontents themselves are deleted only where they carry their own run-level\n`w:del` wrappers. safe-docx's accept paths implement this merge in\n`packages/docx-core/src/primitives/accept_changes.ts` and\n`packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.",
+      "claimRationale": "ECMA-376 Part 1 §17.13.5.15 defines `w:del` inside `w:pPr/w:rPr` as a tracked\ndeletion of the *paragraph mark* (the glyph ending the paragraph), not of the\nparagraph's contents. Accepting the revision removes the paragraph break, so\nthe paragraph's remaining content merges into the following paragraph; the\ncontents themselves are deleted only where they carry their own run-level\n`w:del` wrappers. safe-docx's accept paths implement this merge in\n`packages/docx-core/src/primitives/accept_changes.ts` and\n`packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts`.",
       "evidence": [
         {
           "kind": "source",
@@ -479,11 +479,11 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts"
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts"
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.test.ts"
         },
         {
           "kind": "source",
@@ -511,11 +511,11 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeShadow.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeShadow.test.ts"
         }
       ]
     },
@@ -535,7 +535,7 @@
       "evidence": [
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts"
         }
       ]
     },
@@ -555,11 +555,11 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeShadow.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeShadow.test.ts"
         }
       ]
     },
@@ -590,7 +590,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins",
-      "claimRationale": "ECMA-376 Part 1 §17.13.5.20 defines `w:ins` inside `w:pPr/w:rPr` as a tracked\ninsertion of the *paragraph mark*, not of the paragraph's contents. Rejecting\nthe revision removes the inserted paragraph break, so the paragraph's\nsurviving content merges into the following paragraph; the contents disappear\nonly where they carry their own run-level `w:ins` wrappers. safe-docx's reject\npaths implement this merge in\n`packages/docx-core/src/primitives/reject_changes.ts` and\n`packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.\nSection-break insertion uses the same paragraph-mark form on a dedicated empty\nboundary paragraph so rejecting removes the new topology and accepting retains\nthe boundary.",
+      "claimRationale": "ECMA-376 Part 1 §17.13.5.20 defines `w:ins` inside `w:pPr/w:rPr` as a tracked\ninsertion of the *paragraph mark*, not of the paragraph's contents. Rejecting\nthe revision removes the inserted paragraph break, so the paragraph's\nsurviving content merges into the following paragraph; the contents disappear\nonly where they carry their own run-level `w:ins` wrappers. safe-docx's reject\npaths implement this merge in\n`packages/docx-core/src/primitives/reject_changes.ts` and\n`packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts`.\nSection-break insertion uses the same paragraph-mark form on a dedicated empty\nboundary paragraph so rejecting removes the new topology and accepting retains\nthe boundary.",
       "evidence": [
         {
           "kind": "source",
@@ -606,11 +606,11 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts"
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts"
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.test.ts"
         },
         {
           "kind": "test",
@@ -702,7 +702,7 @@
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -726,7 +726,7 @@
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -798,7 +798,7 @@
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -822,7 +822,7 @@
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -1327,7 +1327,7 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
         }
       ]
     },
@@ -1371,19 +1371,19 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:delInstrText",
-      "claimRationale": "Part 1 §17.16.13 requires every `w:delInstrText` run to sit inside `<w:del>`\nand describes it as deleted field code within a complex field. The runtime\nenforcement lives in\n`packages/docx-compare/src/baselines/atomizer/pipeline.ts` (the\n`validateFieldStructure` function). This requirement does not constrain the\nplacement of sibling `w:fldChar` runs relative to the enclosing deletion.",
+      "claimRationale": "Part 1 §17.16.13 requires every `w:delInstrText` run to sit inside `<w:del>`\nand describes it as deleted field code within a complex field. The runtime\nenforcement lives in\n`packages/docx-compare/src/tagged/pipeline.ts` (the\n`validateFieldStructure` function). This requirement does not constrain the\nplacement of sibling `w:fldChar` runs relative to the enclosing deletion.",
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline.field-validation.test.ts"
         }
       ]
     },
@@ -1423,27 +1423,27 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline.field-validation.test.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts"
         },
         {
           "kind": "test",
@@ -1467,15 +1467,15 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink",
-      "claimRationale": "`w:hyperlink` (CT_Hyperlink) is a run container inside `<w:p>` whose\n`r:id` attribute carries the relationship reference to the link target.\nIts content model (EG_PContent) admits run-level revision wrappers, so\ntracked edits to link text nest as `<w:hyperlink><w:ins>…` /\n`<w:hyperlink><w:del>…`; the reverse nesting is invalid because\nCT_RunTrackChange (the `w:ins` / `w:del` content model) does not admit\n`w:hyperlink`. safe-docx's comparison engine preserves the wrapper and\nits attributes when serializing tagged paragraphs that contain hyperlinks,\nand never merges text atoms across a hyperlink boundary. The enforcement\nlives in `packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.ts`\n(`nearestHyperlinkAncestor`) and\n`packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts`\n(tagged hyperlink wrapper emission).",
+      "claimRationale": "`w:hyperlink` (CT_Hyperlink) is a run container inside `<w:p>` whose\n`r:id` attribute carries the relationship reference to the link target.\nIts content model (EG_PContent) admits run-level revision wrappers, so\ntracked edits to link text nest as `<w:hyperlink><w:ins>…` /\n`<w:hyperlink><w:del>…`; the reverse nesting is invalid because\nCT_RunTrackChange (the `w:ins` / `w:del` content model) does not admit\n`w:hyperlink`. safe-docx's comparison engine preserves the wrapper and\nits attributes when serializing tagged paragraphs that contain hyperlinks,\nand never merges text atoms across a hyperlink boundary. The enforcement\nlives in `packages/docx-compare/src/tagged/taggedTreeConstruction.ts`\n(`nearestHyperlinkAncestor`) and\n`packages/docx-compare/src/tagged/taggedTreeSerializer.ts`\n(tagged hyperlink wrapper emission).",
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts"
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
         },
         {
           "kind": "source",
@@ -1519,19 +1519,19 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts"
         }
       ]
     },
@@ -1567,19 +1567,19 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts"
         },
         {
           "kind": "test",
@@ -1627,19 +1627,19 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts"
         }
       ]
     },
@@ -1683,19 +1683,19 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts"
         },
         {
           "kind": "test",
@@ -1919,7 +1919,7 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts"
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
         },
         {
           "kind": "test",
@@ -2367,11 +2367,11 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -2391,11 +2391,11 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -2415,11 +2415,11 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -2439,11 +2439,11 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -2463,11 +2463,11 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -2487,11 +2487,11 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -2511,11 +2511,11 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -2623,7 +2623,7 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/unrepresentedChanges.ts"
+          "path": "packages/docx-compare/src/tagged/unrepresentedChanges.ts"
         },
         {
           "kind": "source",
@@ -3115,15 +3115,15 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts"
+          "path": "packages/docx-compare/src/tagged/textBoxRevisionSafety.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts"
         }
       ]
     },
@@ -3143,15 +3143,15 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts"
+          "path": "packages/docx-compare/src/tagged/textBoxRevisionSafety.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts"
         }
       ]
     }

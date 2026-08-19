@@ -20,7 +20,7 @@ part: 4
 section: "14.9.1.1"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent
-verifiedBy: packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts; packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts
+verifiedBy: packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts
 ```
 
 Part 4 §14.9.1.1 defines `w:txbxContent` as the rich
@@ -59,7 +59,7 @@ part: 4
 section: "19.1.2.22"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox
-verifiedBy: packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts; packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts
+verifiedBy: packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts
 ```
 
 Part 4 §19.1.2.22 defines the Transitional VML `v:textbox` host. Throughout the
@@ -90,7 +90,7 @@ part: 1
 section: "17.13.5.14"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del
-verifiedBy: packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts
+verifiedBy: packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts
 ```
 
 Part 1 §17.13.5.14 defines `w:del` as deleted inline run content.
@@ -106,7 +106,7 @@ part: 1
 section: "17.13.5.18"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins
-verifiedBy: packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts
+verifiedBy: packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts
 ```
 
 Part 1 §17.13.5.18 defines `w:ins` as inserted inline run content.
@@ -122,13 +122,13 @@ part: 1
 section: "17.16.13"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:delInstrText
-verifiedBy: packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts
+verifiedBy: packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/pipeline.field-validation.test.ts
 ```
 
 Part 1 §17.16.13 requires every `w:delInstrText` run to sit inside `<w:del>`
 and describes it as deleted field code within a complex field. The runtime
 enforcement lives in
-`packages/docx-compare/src/baselines/atomizer/pipeline.ts` (the
+`packages/docx-compare/src/tagged/pipeline.ts` (the
 `validateFieldStructure` function). This requirement does not constrain the
 placement of sibling `w:fldChar` runs relative to the enclosing deletion.
 
@@ -140,7 +140,7 @@ part: 1
 section: "17.13.5"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange
-verifiedBy: packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts; packages/docx-core/src/integration/libreoffice-oracle-trust-boundary.test.ts
+verifiedBy: packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts; packages/docx-core/src/integration/libreoffice-oracle-trust-boundary.test.ts
 ```
 
 Specific OOXML elements (notably `w:commentRangeStart`, `w:commentRangeEnd`,
@@ -150,7 +150,7 @@ revision markers) are valid as direct children of `<w:p>` (and of revision
 wrappers like `<w:ins>` / `<w:del>` / `<w:moveFrom>` / `<w:moveTo>`) but
 never inside `<w:r>`. safe-docx's tagged serializer emits them as
 siblings of `<w:r>`, not as leaves wrapped in a synthetic run. The
-authoritative list lives in `packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts`.
+authoritative list lives in `packages/docx-compare/src/tagged/taggedTreeSerializer.ts`.
 
 ## [ECMA-PART1-17-13-6-1] Bookmark end
 
@@ -217,7 +217,7 @@ part: 1
 section: "17.13.8.1"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:proofErr
-verifiedBy: packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts
+verifiedBy: packages/docx-compare/src/tagged/taggedTreeSerializer.ts
 ```
 
 `w:proofErr` anchors mark spelling or grammar proofing state. They are
@@ -261,7 +261,7 @@ part: 1
 section: "17.16.22"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink
-verifiedBy: packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/text.ts
+verifiedBy: packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/text.ts
 ```
 
 `w:hyperlink` (CT_Hyperlink) is a run container inside `<w:p>` whose
@@ -273,9 +273,9 @@ CT_RunTrackChange (the `w:ins` / `w:del` content model) does not admit
 `w:hyperlink`. safe-docx's comparison engine preserves the wrapper and
 its attributes when serializing tagged paragraphs that contain hyperlinks,
 and never merges text atoms across a hyperlink boundary. The enforcement
-lives in `packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.ts`
+lives in `packages/docx-compare/src/tagged/taggedTreeConstruction.ts`
 (`nearestHyperlinkAncestor`) and
-`packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts`
+`packages/docx-compare/src/tagged/taggedTreeSerializer.ts`
 (tagged hyperlink wrapper emission).
 
 ## [ECMA-PART1-17-5-2-29] w:sdt block-level structured document tag
@@ -286,7 +286,7 @@ part: 1
 section: "17.5.2.29"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtBlock
-verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts
+verifiedBy: packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts
 ```
 
 A block `w:sdt` surrounds one or more block-level structures and orders its
@@ -304,7 +304,7 @@ part: 1
 section: "17.5.2.31"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtRun
-verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts
+verifiedBy: packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts
 ```
 
 An inline `w:sdt` is a run-level structured document tag whose ordered children
@@ -320,7 +320,7 @@ part: 1
 section: "17.5.2.32"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtCell
-verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts
+verifiedBy: packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts
 ```
 
 A cell-level `w:sdt` surrounds one or more `w:tc` elements within a table row
@@ -336,7 +336,7 @@ part: 1
 section: "17.5.2.33"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentCell
-verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts
+verifiedBy: packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts
 ```
 
 Cell-level `w:sdtContent` contains controlled table cells. The bounded tagged
@@ -351,7 +351,7 @@ part: 1
 section: "17.5.2.34"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentBlock
-verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts
+verifiedBy: packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts
 ```
 
 Block-level `w:sdtContent` contains the controlled block structures. The bounded
@@ -368,7 +368,7 @@ part: 1
 section: "17.5.2.36"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentRun
-verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts
+verifiedBy: packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts
 ```
 
 The pilot retains the inline control's run-level `w:sdtContent` subtree and its
@@ -382,7 +382,7 @@ part: 1
 section: "17.5.2.38"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr
-verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts
+verifiedBy: packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts
 ```
 
 The pilot retains known and ignorable-extension children under `w:sdtPr` in
@@ -397,7 +397,7 @@ part: 1
 section: "17.6.17"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr
-verifiedBy: packages/docx-compare/src/baselines/atomizer/unrepresentedChanges.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/generation/emit/document-part.ts
+verifiedBy: packages/docx-compare/src/tagged/unrepresentedChanges.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/generation/emit/document-part.ts
 ```
 
 The final section of a document binds its properties through a `w:sectPr`
@@ -704,7 +704,7 @@ part: 1
 section: "17.10.5"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:headerReference
-verifiedBy: packages/docx-core/src/primitives/sectPrAudit.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
+verifiedBy: packages/docx-core/src/primitives/sectPrAudit.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 ```
 
 Each declared header slot (first/default/even) becomes its own part bound
@@ -733,7 +733,7 @@ part: 1
 section: "17.10.2"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footerReference
-verifiedBy: packages/docx-core/src/primitives/sectPrAudit.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
+verifiedBy: packages/docx-core/src/primitives/sectPrAudit.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 ```
 
 Footer references follow the same typed-binding discipline as header
@@ -768,7 +768,7 @@ part: 1
 section: "17.10.4"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hdr
-verifiedBy: packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
+verifiedBy: packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 ```
 
 Header parts are emitted as standalone `w:hdr` documents
@@ -784,7 +784,7 @@ part: 1
 section: "17.10.3"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ftr
-verifiedBy: packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
+verifiedBy: packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 ```
 
 Footer parts mirror header parts as `w:ftr` documents (word/footerN.xml);
@@ -848,7 +848,7 @@ part: 1
 section: "17.16.18"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar
-verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/shared/field-structure.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/shared/field-structure.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/pipeline.field-validation.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 ```
 
 This claim is bounded to the runtime and test evidence listed above.
@@ -865,7 +865,7 @@ part: 1
 section: "17.16.5.44"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
-verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 ```
 
 The PAGE instruction is emitted with canonical surrounding spaces
@@ -880,7 +880,7 @@ part: 1
 section: "17.16.5.42"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
-verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts
 ```
 
 The NUMPAGES instruction follows the same emission discipline as PAGE
@@ -895,7 +895,7 @@ part: 1
 section: "17.16.5.45"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
-verifiedBy: packages/docx-core/src/shared/field-semantics.ts; packages/docx-core/src/shared/field-semantics.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.test.ts
+verifiedBy: packages/docx-core/src/shared/field-semantics.ts; packages/docx-core/src/shared/field-semantics.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts
 ```
 
 Tagged main-document publication classifies a self-contained PAGEREF instruction
@@ -915,7 +915,7 @@ part: 1
 section: "17.16.5.51"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
-verifiedBy: packages/docx-core/src/shared/field-semantics.ts; packages/docx-core/src/shared/field-semantics.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
+verifiedBy: packages/docx-core/src/shared/field-semantics.ts; packages/docx-core/src/shared/field-semantics.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 ```
 
 Tagged main-document publication classifies a self-contained REF instruction with
@@ -1551,7 +1551,7 @@ part: 1
 section: "17.13.5.15"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del
-verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts
+verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts
 ```
 
 ECMA-376 Part 1 §17.13.5.15 defines `w:del` inside `w:pPr/w:rPr` as a tracked
@@ -1561,7 +1561,7 @@ the paragraph's remaining content merges into the following paragraph; the
 contents themselves are deleted only where they carry their own run-level
 `w:del` wrappers. safe-docx's accept paths implement this merge in
 `packages/docx-core/src/primitives/accept_changes.ts` and
-`packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
+`packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts`.
 
 ## [ECMA-PART1-17-13-5-16] Deleted table row (w:del under w:trPr)
 
@@ -1571,7 +1571,7 @@ part: 1
 section: "17.13.5.16"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del
-verifiedBy: packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.test.ts
+verifiedBy: packages/docx-compare/src/tagged/taggedTreeShadow.ts; packages/docx-compare/src/tagged/taggedTreeShadow.test.ts
 ```
 
 ECMA-376 Part 1 §17.13.5.16 defines an empty `w:del` inside `w:trPr` as a
@@ -1586,7 +1586,7 @@ part: 1
 section: "17.13.5.20"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins
-verifiedBy: packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts
+verifiedBy: packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts
 ```
 
 ECMA-376 Part 1 §17.13.5.20 defines `w:ins` inside `w:pPr/w:rPr` as a tracked
@@ -1596,7 +1596,7 @@ surviving content merges into the following paragraph; the contents disappear
 only where they carry their own run-level `w:ins` wrappers. safe-docx's reject
 paths implement this merge in
 `packages/docx-core/src/primitives/reject_changes.ts` and
-`packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
+`packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts`.
 Section-break insertion uses the same paragraph-mark form on a dedicated empty
 boundary paragraph so rejecting removes the new topology and accepting retains
 the boundary.
@@ -1609,7 +1609,7 @@ part: 1
 section: "17.13.5.19"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins
-verifiedBy: packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.test.ts
+verifiedBy: packages/docx-compare/src/tagged/taggedTreeShadow.ts; packages/docx-compare/src/tagged/taggedTreeShadow.test.ts
 ```
 
 ECMA-376 Part 1 §17.13.5.19 defines an empty `w:ins` inside `w:trPr` as a
@@ -1763,7 +1763,7 @@ part: 1
 section: "17.13.5.23"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeEnd
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts
 ```
 
 The engine coalesces generated source markers to one pair per logical move.
@@ -1779,7 +1779,7 @@ part: 1
 section: "17.13.5.24"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeStart
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts
 ```
 
 The engine emits one source start per logical move. In both the Strict and
@@ -1825,7 +1825,7 @@ part: 1
 section: "17.13.5.27"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeEnd
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts
 ```
 
 The engine coalesces generated destination markers to one pair per logical move.
@@ -1841,7 +1841,7 @@ part: 1
 section: "17.13.5.28"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeStart
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts
 ```
 
 The engine emits one destination start per logical move. In both the Strict and
@@ -1953,7 +1953,7 @@ part: 1
 section: "17.3.3.30"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Sym
-verifiedBy: packages/docx-core/src/primitives/symbol_run_content.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/symbol_run_content.test.ts; packages/docx-compare/src/symbolCharacterProjection.test.ts
+verifiedBy: packages/docx-core/src/primitives/symbol_run_content.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/symbol_run_content.test.ts; packages/docx-compare/src/symbolCharacterProjection.test.ts
 ```
 
 Part 1 §17.3.3.30 defines `w:sym` as run content that specifies a single

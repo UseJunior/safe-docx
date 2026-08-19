@@ -10,7 +10,7 @@ import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { compareDocuments } from '../index.js';
-import { extractTextWithParagraphs } from '../baselines/atomizer/trackChangesAcceptorAst.js';
+import { extractTextWithParagraphs } from '../tagged/trackChangesAcceptorAst.js';
 import { DocxArchive } from '@usejunior/docx-core';
 import { gateTextRoundTrip, gateFormattingProjection, gateStructuralIntegrity, runGates } from './gates.js';
 

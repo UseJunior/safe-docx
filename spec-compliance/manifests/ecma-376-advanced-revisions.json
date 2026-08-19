@@ -96,7 +96,7 @@
         {
           "id": "ADV-CONTENT-EMISSION-01",
           "sources": [
-            "packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts"
+            "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
@@ -127,7 +127,7 @@
         {
           "id": "ADV-COMPARE-MODE-PRESERVATION-01",
           "sources": [
-            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+            "packages/docx-compare/src/tagged/pipeline.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
@@ -625,7 +625,7 @@
           "id": "ADV-COMPARE-MOVE-EMISSION-01",
           "sources": [
             "packages/docx-compare/src/move-detection.ts",
-            "packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.ts"
+            "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
@@ -656,7 +656,7 @@
         {
           "id": "ADV-COMPARE-MODE-PRESERVATION-01",
           "sources": [
-            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+            "packages/docx-compare/src/tagged/pipeline.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
@@ -852,7 +852,7 @@
         {
           "id": "ADV-COMPARE-MODE-PRESERVATION-01",
           "sources": [
-            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+            "packages/docx-compare/src/tagged/pipeline.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
@@ -1357,7 +1357,7 @@
         {
           "id": "ADV-COMPARE-MODE-PRESERVATION-01",
           "sources": [
-            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+            "packages/docx-compare/src/tagged/pipeline.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
@@ -1556,7 +1556,7 @@
         {
           "id": "ADV-COMPARE-MODE-PRESERVATION-01",
           "sources": [
-            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+            "packages/docx-compare/src/tagged/pipeline.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
@@ -1635,7 +1635,7 @@
         {
           "id": "ADV-COMPARE-MODE-PRESERVATION-01",
           "sources": [
-            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+            "packages/docx-compare/src/tagged/pipeline.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
