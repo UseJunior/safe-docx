@@ -44,7 +44,7 @@ interface DivergenceRecord {
 interface CharacterizationManifest {
   schemaVersion: 1;
   divergences: DivergenceRecord[];
-  rows: Array<StrategyDifferentialRow & { legacy: unknown }>;
+  rows: Array<StrategyDifferentialRow & { legacy?: unknown }>;
 }
 
 const manifest = JSON.parse(await readFile(MANIFEST_PATH, 'utf8')) as CharacterizationManifest;

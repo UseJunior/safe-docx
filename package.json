@@ -48,6 +48,7 @@
     "test:release-isolation": "node --test scripts/check-release-isolation.test.mjs",
     "check:docx-formatting-loss": "node scripts/check_docx_formatting_loss.mjs",
     "test:docx-formatting-loss": "node --test scripts/check_docx_formatting_loss.test.mjs && node scripts/check_docx_formatting_loss.mjs --self-test",
+    "update:strategy-differential-manifest": "tsx scripts/update_strategy_differential_manifest.ts",
     "oracle:aspose-fields": "python3 scripts/aspose_field_oracle.py --output packages/docx-compare/src/testing/oracles/aspose-field-oracle.v1.json",
     "oracle:word:serve": "node scripts/oracle/word/serve-addin.mjs",
     "oracle:word:compare": "node scripts/oracle/word/cli.mjs",

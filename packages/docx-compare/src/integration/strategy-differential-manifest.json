@@ -3066,6 +3066,202 @@
     },
     {
       "fixture": {
+        "id": "checked-in/simple-price-change",
+        "pairSha256": "424ccb25fd34d10f44d14396c65b14a5d6ab5e445ffd358d02a988b43fdf4894",
+        "originalSha256": "41d0a9258e54b517c7a315b5924b57e42d0cda75e0df2d920a9c5828b2da3c9d",
+        "revisedSha256": "8fdee90ab2cf1a5fe24837da7c6317555b8154fdd3800c66571a245c47821c11",
+        "capabilityTags": [
+          "contract",
+          "price-change",
+          "synthetic",
+          "word-level"
+        ],
+        "sourcePackageParts": [
+          "[Content_Types].xml",
+          "_rels/.rels",
+          "customXml/_rels/item1.xml.rels",
+          "customXml/item1.xml",
+          "customXml/itemProps1.xml",
+          "docProps/app.xml",
+          "docProps/core.xml",
+          "docProps/thumbnail.jpeg",
+          "word/_rels/document.xml.rels",
+          "word/document.xml",
+          "word/fontTable.xml",
+          "word/numbering.xml",
+          "word/settings.xml",
+          "word/styles.xml",
+          "word/stylesWithEffects.xml",
+          "word/theme/theme1.xml",
+          "word/webSettings.xml"
+        ],
+        "sourceStructuralIssues": []
+      },
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
+      "taggedTree": {
+        "strategy": "tagged-tree",
+        "projections": {
+          "accept": {
+            "xmlSha256": "8c4c79c17e32d574dc1ca3c8c1e8c8f495466a7a28eee36c2b8263bac638d797",
+            "textSha256": "20fab9464a1745d8ca71135f4efb6ba205b2d460a070d4a3856ace1780580195",
+            "sourceTextSha256": "20fab9464a1745d8ca71135f4efb6ba205b2d460a070d4a3856ace1780580195",
+            "matchesSourceText": true,
+            "firstDifference": null
+          },
+          "reject": {
+            "xmlSha256": "99b2bb1cdba80bd70b72ac486ba5768206aeeb5ca8dab27e3a71e871c3d4ff80",
+            "textSha256": "dcf6338286faee87bbbb9a1c86f9c87323b829794c560fa3f4dfd32cb216dbb1",
+            "sourceTextSha256": "dcf6338286faee87bbbb9a1c86f9c87323b829794c560fa3f4dfd32cb216dbb1",
+            "matchesSourceText": true,
+            "firstDifference": null
+          }
+        },
+        "packageParts": [
+          {
+            "path": "[Content_Types].xml",
+            "bytes": 1738,
+            "sha256": "66c84fb7a6aa3c4ead49f895e4a7044df1fb57de1ed76d09b2686e91f5bed5b4",
+            "kind": "xml"
+          },
+          {
+            "path": "_rels/.rels",
+            "bytes": 734,
+            "sha256": "a9ae57efe9186f07d48303bcac5d54c7e359bf3f503939c03ad2954e5c59a5c4",
+            "kind": "xml"
+          },
+          {
+            "path": "customXml/_rels/item1.xml.rels",
+            "bytes": 295,
+            "sha256": "1ca6c9a64edcebe24ee703a54403611b322d96da33371779e742d2d3f7ed7a6c",
+            "kind": "xml"
+          },
+          {
+            "path": "customXml/item1.xml",
+            "bytes": 262,
+            "sha256": "a86086ffc5d8e83ebd6c71a55d1d2efaa31b137977f5f3a752366e1023612144",
+            "kind": "xml"
+          },
+          {
+            "path": "customXml/itemProps1.xml",
+            "bytes": 354,
+            "sha256": "c542307b13ec29a8b546217bb37936ab4822e044b265d2952985ec3d6afed24e",
+            "kind": "xml"
+          },
+          {
+            "path": "docProps/app.xml",
+            "bytes": 1132,
+            "sha256": "be664981c3141cddfc59362beb287ebf20d0773660e2dd6faac5968a5930a081",
+            "kind": "xml"
+          },
+          {
+            "path": "docProps/core.xml",
+            "bytes": 721,
+            "sha256": "d14be8284e406d14dc2a576b19f15e7f637b955f9e27a3d9ed871ec99606f7ba",
+            "kind": "xml"
+          },
+          {
+            "path": "docProps/thumbnail.jpeg",
+            "bytes": 8324,
+            "sha256": "96367138dc44ce09bf2c8f0f8e49348a1478d2c5c0af69bbc2bbc38b63cdcead",
+            "kind": "binary"
+          },
+          {
+            "path": "word/_rels/document.xml.rels",
+            "bytes": 1227,
+            "sha256": "1e7f0eb144a98e199249314f61ff32a8de2a27e56d8e9ee6b524e1c6b235d377",
+            "kind": "xml"
+          },
+          {
+            "path": "word/document.xml",
+            "bytes": 1990,
+            "sha256": "c78e95a838a2a57f033b33ac2a3e76ec788bc943a913a12cca0696c72a27aac1",
+            "kind": "xml"
+          },
+          {
+            "path": "word/fontTable.xml",
+            "bytes": 2811,
+            "sha256": "79385fb7f60247507ecaffc292e9ebd52ea0657b8634f629ba6fccc54011d6bb",
+            "kind": "xml"
+          },
+          {
+            "path": "word/numbering.xml",
+            "bytes": 5513,
+            "sha256": "70976f19cbcd896e51890859fe6ecb3467a5a7ad0c040160fedc5a1993cb09ce",
+            "kind": "xml"
+          },
+          {
+            "path": "word/settings.xml",
+            "bytes": 2535,
+            "sha256": "51a0d348fe85965c66e4748a03c3c0d055d78455514f03cb121c334af7d73689",
+            "kind": "xml"
+          },
+          {
+            "path": "word/styles.xml",
+            "bytes": 349458,
+            "sha256": "02d71a68ddb92c055e84526d6a9e45700be3872781ababf759241694bc30e384",
+            "kind": "xml"
+          },
+          {
+            "path": "word/stylesWithEffects.xml",
+            "bytes": 438131,
+            "sha256": "463ae0928cf0d84775dbf8cf18d6c3029f6707c81bf590f6d6dd8757a5e93f15",
+            "kind": "xml"
+          },
+          {
+            "path": "word/theme/theme1.xml",
+            "bytes": 10939,
+            "sha256": "e3a8ab7db9ca7afca56f5f2820a56e8b660016c647773555b060b0a02ac76941",
+            "kind": "xml"
+          },
+          {
+            "path": "word/webSettings.xml",
+            "bytes": 438,
+            "sha256": "349d36de7434d09f86987ff671d8814964a0588c1e630c06e562cda7e75e9f95",
+            "kind": "xml"
+          }
+        ],
+        "stats": {
+          "atomMetricVersion": "tagged-token-v1",
+          "insertions": 1,
+          "deletions": 1,
+          "modifications": 1,
+          "insertedRanges": 1,
+          "deletedRanges": 1,
+          "insertedAtoms": 1,
+          "deletedAtoms": 1,
+          "modifiedParagraphs": 1,
+          "formatChanges": 0,
+          "formatChangeAtoms": 0
+        },
+        "fallback": {
+          "comparisonStrategyUsed": "tagged-tree",
+          "reconstructionModeUsed": "inplace"
+        },
+        "unrepresentedChanges": [],
+        "schema": {
+          "packageStructural": "passed",
+          "issues": [],
+          "introducedIssues": []
+        },
+        "formatting": {
+          "score": 1,
+          "acceptScore": 1,
+          "rejectScore": 1,
+          "acceptDivergences": 0,
+          "rejectDivergences": 0
+        },
+        "closure": {
+          "relationshipIssues": [],
+          "auxiliaryDefinitionIssues": []
+        },
+        "unsupportedStoryDiagnostics": [],
+        "forbiddenPayloadLeaks": []
+      }
+    },
+    {
+      "fixture": {
         "id": "checked-in/simple-word-change",
         "pairSha256": "d41b883e3647f5886d2927f943726ec84a79fa688eff9e9d963cd13d77c94166",
         "originalSha256": "6c4b5b9d008bbb5daec6a07c224a5c510ab90eec035500eb72a20d513d26f749",
