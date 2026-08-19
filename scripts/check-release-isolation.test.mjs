@@ -48,6 +48,7 @@ test('snapshot flags a missing suite package', () => {
 test('split runtime packages are on every release loop and the publish surface', () => {
   // The 2026-06 revision folded odf-core into the suite train; #128 split
   // docx-compare out of docx-core while keeping the suite version-locked.
+  // docx-markdoc joined the public train in v0.20.0 and depends on both.
   for (const loop of EXPECTED_LOOPS) {
     assert.ok(
       loop.includes('packages/odf-core') || loop.includes('@usejunior/odf-core'),
@@ -57,9 +58,14 @@ test('split runtime packages are on every release loop and the publish surface',
       loop.includes('packages/docx-compare') || loop.includes('@usejunior/docx-compare'),
       `expected docx-compare in loop: ${loop.join(', ')}`,
     );
+    assert.ok(
+      loop.includes('packages/docx-markdoc') || loop.includes('@usejunior/docx-markdoc'),
+      `expected docx-markdoc in loop: ${loop.join(', ')}`,
+    );
   }
   assert.ok(PUBLISH_DIRS.includes('packages/odf-core'));
   assert.ok(PUBLISH_DIRS.includes('packages/docx-compare'));
+  assert.ok(PUBLISH_DIRS.includes('packages/docx-markdoc'));
 });
 
 test('snapshot flags a wrong loop count', () => {

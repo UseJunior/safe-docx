@@ -45,7 +45,7 @@ jobs:
         run: |
           TAG_REF="${RELEASE_TAG:-$GITHUB_REF_NAME}"
           TAG_VERSION="${TAG_REF#v}"
-          for pkg in packages/docx-core packages/docx-compare packages/odf-core packages/docx-mcp packages/google-docs-core packages/safe-docx packages/safe-docx-mcpb; do
+          for pkg in packages/docx-core packages/docx-compare packages/docx-markdoc packages/odf-core packages/docx-mcp packages/google-docs-core packages/safe-docx packages/safe-docx-mcpb; do
             PKG_VERSION="$(node -p "require('./${pkg}/package.json').version")"
             if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
               echo "Tag version ($TAG_VERSION) must match ${pkg}/package.json version ($PKG_VERSION)."
@@ -131,7 +131,7 @@ jobs:
           VERSION="${TAG_REF#v}"
           published=0
           total=0
-          for pkg in @usejunior/docx-core @usejunior/docx-compare @usejunior/odf-core @usejunior/docx-mcp @usejunior/google-docs-core @usejunior/safe-docx; do
+          for pkg in @usejunior/docx-core @usejunior/docx-compare @usejunior/docx-markdoc @usejunior/odf-core @usejunior/docx-mcp @usejunior/google-docs-core @usejunior/safe-docx; do
             total=$((total + 1))
             if npm view "$pkg@$VERSION" version >/dev/null 2>&1; then
               echo "$pkg@$VERSION already exists on npm — will be skipped."
@@ -167,6 +167,7 @@ jobs:
         run: |
           npm run test:run -w @usejunior/docx-core
           npm run test:run -w @usejunior/docx-compare
+          npm run test:run -w @usejunior/docx-markdoc
           npm run test:run -w @usejunior/docx-mcp
           npm run test:run -w @usejunior/safe-docx
           npm run test:run -w @usejunior/safedocx-mcpb
@@ -188,7 +189,7 @@ jobs:
 
       - name: Verify package contents (dry-run)
         run: |
-          for pkg in packages/docx-core packages/docx-compare packages/odf-core packages/docx-mcp packages/google-docs-core packages/safe-docx; do
+          for pkg in packages/docx-core packages/docx-compare packages/docx-markdoc packages/odf-core packages/docx-mcp packages/google-docs-core packages/safe-docx; do
             echo "Dry-run pack: $pkg"
             (cd "$pkg" && npm pack --dry-run)
           done
@@ -207,7 +208,7 @@ jobs:
           # the registry — at preflight time this run's versions aren't on npm
           # yet, so a registry fallback always ETARGETs (issue #395).
           tarballs=()
-          for pkg in packages/docx-core packages/docx-compare packages/odf-core packages/docx-mcp packages/google-docs-core packages/safe-docx; do
+          for pkg in packages/docx-core packages/docx-compare packages/docx-markdoc packages/odf-core packages/docx-mcp packages/google-docs-core packages/safe-docx; do
             tgz="$(cd "$pkg" && npm pack --silent --pack-destination "$pack_dir")"
             tarballs+=("$pack_dir/$tgz")
           done
@@ -217,7 +218,8 @@ jobs:
             echo "runtime smoke attempt ${attempt}/3"
             rm -rf node_modules package-lock.json
             if npm install --no-audit --no-fund "${tarballs[@]}" >/dev/null \
-              && ./node_modules/.bin/safe-docx --help; then
+              && ./node_modules/.bin/safe-docx --help \
+              && ./node_modules/.bin/docx-markdoc --help; then
               popd
               rm -rf "$pack_dir" "$run_dir"
               exit 0
@@ -279,6 +281,7 @@ jobs:
         run: |
           npm run build -w @usejunior/docx-core
           npm run build -w @usejunior/docx-compare
+          npm run build -w @usejunior/docx-markdoc
           npm run build -w @usejunior/docx-mcp
           npm run build -w @usejunior/google-docs-core
           npm run build -w @usejunior/safe-docx
@@ -291,7 +294,7 @@ jobs:
           npm config delete //registry.npmjs.org/:_authToken || true
 
           # Publish in dependency order.
-          for entry in "@usejunior/docx-core:packages/docx-core" "@usejunior/docx-compare:packages/docx-compare" "@usejunior/odf-core:packages/odf-core" "@usejunior/docx-mcp:packages/docx-mcp" "@usejunior/google-docs-core:packages/google-docs-core" "@usejunior/safe-docx:packages/safe-docx"; do
+          for entry in "@usejunior/docx-core:packages/docx-core" "@usejunior/docx-compare:packages/docx-compare" "@usejunior/docx-markdoc:packages/docx-markdoc" "@usejunior/odf-core:packages/odf-core" "@usejunior/docx-mcp:packages/docx-mcp" "@usejunior/google-docs-core:packages/google-docs-core" "@usejunior/safe-docx:packages/safe-docx"; do
             PKG_NAME="${entry%%:*}"
             PKG_DIR="${entry##*:}"
             # Skip rather than abort: a re-run of a partially-published tag must

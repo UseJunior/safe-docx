@@ -25,7 +25,10 @@ const PACKAGE_JSONS = [
   'packages/allure-test-factory/package.json',
   'packages/docx-core/package.json',
   'packages/docx-compare/package.json',
+  'packages/docx-markdoc/package.json',
   'packages/docx-mcp/package.json',
+  'packages/docx-release-verifier/package.json',
+  'packages/docx-render-verifier/package.json',
   'packages/odf-core/package.json',
   'packages/google-docs-core/package.json',
   'packages/safe-docx-mcpb/package.json',
@@ -40,6 +43,7 @@ const SMITHERY_MANIFEST_JSON = 'packages/safe-docx/.smithery/shttp/manifest.json
 const WORKSPACE_DEPS = [
   '@usejunior/docx-core',
   '@usejunior/docx-compare',
+  '@usejunior/docx-markdoc',
   '@usejunior/odf-core',
   '@usejunior/docx-mcp',
   '@usejunior/google-docs-core',
