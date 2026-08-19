@@ -15,7 +15,7 @@ const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Struc
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { createHash } from 'crypto';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive, DOCX_PATHS } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
@@ -41,7 +41,7 @@ interface RoundTripArtifacts {
 }
 
 
-const MODES: ReconstructionMode[] = ['rebuild', 'inplace'];
+const MODES: ReconstructionMode[] = ['inplace'];
 const ILPA_MODES: ReconstructionMode[] = ['inplace'];
 const CORE_PARTS = [
   DOCX_PATHS.DOCUMENT,
@@ -92,12 +92,9 @@ async function getArchivePart(archive: DocxArchive, path: string): Promise<strin
 async function buildRoundTripArtifacts(
   originalBuffer: Buffer,
   revisedBuffer: Buffer,
-  mode: ReconstructionMode
+  _mode: ReconstructionMode
 ): Promise<RoundTripArtifacts> {
-  const result = await compareDocuments(originalBuffer, revisedBuffer, {
-    engine: 'atomizer',
-    reconstructionMode: mode,
-  });
+  const result = await compareDocuments(originalBuffer, revisedBuffer);
 
   const originalArchive = await DocxArchive.load(originalBuffer);
   const revisedArchive = await DocxArchive.load(revisedBuffer);
@@ -320,19 +317,6 @@ describe('Structural Round-Trip Invariants - ILPA Pair (feature-rich)', () => {
       artifactsByMode.set(mode, await buildRoundTripArtifacts(original, revised, mode));
     }
   }, 240000);
-
-  test(
-    'fails closed when rebuild would launder changed block content controls',
-    async () => {
-      const original = await readFile(ILPA_ORIGINAL_DOC);
-      const revised = await readFile(ILPA_REVISED_DOC);
-
-      await expect(buildRoundTripArtifacts(original, revised, 'rebuild')).rejects.toThrow(
-        /Opaque passthrough: (?:boundary count changed|boundary 0 changed paragraph ownership, moved, or mutated)/
-      );
-    },
-    120000
-  );
 
   for (const mode of ILPA_MODES) {
     test(

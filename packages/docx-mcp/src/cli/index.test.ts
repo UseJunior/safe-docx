@@ -17,9 +17,7 @@ describe('safe-docx CLI routing', () => {
     const serve = vi.fn(async () => undefined);
     const compare = vi.fn(async () => ({
       output: '/tmp/out.docx',
-      engine: 'atomizer',
-      mode: 'rebuild' as const,
-      mode_requested: 'rebuild' as const,
+      package_base: 'revised' as const,
       bytes: 12,
       stats: {},
     }));
@@ -50,9 +48,7 @@ describe('safe-docx CLI routing', () => {
     const serve = vi.fn(async () => undefined);
     const compare = vi.fn(async (args: CompareCommandArgs) => ({
       output: args.outputPath ?? '/tmp/default.docx',
-      engine: args.engine ?? 'atomizer',
-      mode: (args.mode as 'inplace' | 'rebuild') ?? 'rebuild',
-      mode_requested: (args.mode as 'inplace' | 'rebuild') ?? 'rebuild',
+      package_base: 'revised' as const,
       bytes: 99,
       stats: { ok: true },
     }));
@@ -72,14 +68,8 @@ describe('safe-docx CLI routing', () => {
         'original.docx',
         'revised.docx',
         'result.docx',
-        '--engine',
-        'atomizer',
-        '--mode',
-        'inplace',
         '--author',
         'Junior',
-        '--premerge-runs',
-        'true',
       ]);
     });
 
@@ -89,10 +79,7 @@ describe('safe-docx CLI routing', () => {
         originalPath: 'original.docx',
         revisedPath: 'revised.docx',
         outputPath: 'result.docx',
-        engine: 'atomizer',
-        mode: 'inplace',
         author: 'Junior',
-        premergeRuns: true,
       });
       expect(serve).not.toHaveBeenCalled();
       expect(output).toHaveLength(1);
@@ -105,9 +92,7 @@ describe('safe-docx CLI routing', () => {
     async ({ when, then }: AllureBddContext) => {
       const compare = vi.fn(async (args: CompareCommandArgs) => ({
         output: args.outputPath ?? '/tmp/default.docx',
-        engine: 'atomizer',
-        mode: 'inplace' as const,
-        mode_requested: 'inplace' as const,
+        package_base: 'revised' as const,
         bytes: 1,
         stats: {},
       }));
@@ -128,9 +113,7 @@ describe('safe-docx CLI routing', () => {
     async ({ when, then }: AllureBddContext) => {
       const compare = vi.fn(async (args: CompareCommandArgs) => ({
         output: args.outputPath ?? '/tmp/default.docx',
-        engine: 'atomizer',
-        mode: 'inplace' as const,
-        mode_requested: 'inplace' as const,
+        package_base: 'revised' as const,
         bytes: 1,
         stats: {},
       }));
@@ -185,9 +168,7 @@ describe('safe-docx CLI routing', () => {
     const serve = vi.fn(async () => undefined);
     const compare = vi.fn(async () => ({
       output: '/tmp/out.docx',
-      engine: 'atomizer',
-      mode: 'rebuild' as const,
-      mode_requested: 'rebuild' as const,
+      package_base: 'revised' as const,
       bytes: 1,
       stats: {},
     }));
@@ -208,50 +189,27 @@ describe('safe-docx CLI routing', () => {
       expect(output[0]).toContain('safe-docx CLI');
       expect(output[0]).toContain('compare <original> <revised> [output]');
       expect(output[0]).toContain('-o, --output <path>');
-      expect(output[0]).toContain('Reconstruction mode (default: inplace)');
+      expect(output[0]).toContain('Output always uses the revised-based tagged package');
       expect(serve).not.toHaveBeenCalled();
       expect(compare).not.toHaveBeenCalled();
     });
   });
 
-  test('reports actual mode when inplace falls back to rebuild', async ({ given, then }: AllureBddContext) => {
-    const serve = vi.fn(async () => undefined);
-    const compare = vi.fn(async () => ({
-      output: '/tmp/out.docx',
-      engine: 'atomizer',
-      mode: 'rebuild' as const,
-      mode_requested: 'inplace' as const,
-      fallback_reason: 'round_trip_safety_check_failed',
-      bytes: 50,
-      stats: {},
-    }));
+  test('rejects retired comparison selectors', async ({ when }: AllureBddContext) => {
+    const program = createProgram({ write: () => undefined });
 
-    const output: string[] = [];
-    const program = createProgram({
-      serve,
-      compare,
-      write: (line) => output.push(line),
-    });
-
-    await given('a compare that falls back from inplace to rebuild', async () => {
-      await program.parseAsync([
-        'node',
-        'safe-docx',
-        'compare',
-        'original.docx',
-        'revised.docx',
-        '/tmp/out.docx',
-        '--mode',
-        'inplace',
-      ]);
-    });
-
-    await then('CLI output reports actual mode=rebuild and mode_requested=inplace', () => {
-      expect(output).toHaveLength(1);
-      const json = JSON.parse(output[0]!);
-      expect(json.mode).toBe('rebuild');
-      expect(json.mode_requested).toBe('inplace');
-      expect(json.fallback_reason).toBe('round_trip_safety_check_failed');
+    await when('a retired comparison selector is supplied', async () => {
+      for (const option of ['--engine', '--mode', '--premerge-runs']) {
+        await expect(program.parseAsync([
+          'node',
+          'safe-docx',
+          'compare',
+          'original.docx',
+          'revised.docx',
+          option,
+          'legacy-value',
+        ])).rejects.toThrow(`Unknown option for compare command: ${option}`);
+      }
     });
   });
 
@@ -260,9 +218,7 @@ describe('safe-docx CLI routing', () => {
       serve: vi.fn(async () => undefined),
       compare: vi.fn(async () => ({
         output: '/tmp/out.docx',
-        engine: 'atomizer',
-        mode: 'rebuild' as const,
-        mode_requested: 'rebuild' as const,
+        package_base: 'revised' as const,
         bytes: 1,
         stats: {},
       })),
@@ -288,7 +244,7 @@ describe('safe-docx CLI — generic tool routing', () => {
     const errors: string[] = [];
     const program = createProgram({
       serve: vi.fn(async () => undefined),
-      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, bytes: 0, stats: {} })),
+      compare: vi.fn(async () => ({ output: '', package_base: 'revised' as const, bytes: 0, stats: {} })),
       write: (line) => output.push(line),
       writeError: (line) => errors.push(line),
     });
@@ -310,7 +266,7 @@ describe('safe-docx CLI — generic tool routing', () => {
     const output: string[] = [];
     const program = createProgram({
       serve: vi.fn(async () => undefined),
-      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, bytes: 0, stats: {} })),
+      compare: vi.fn(async () => ({ output: '', package_base: 'revised' as const, bytes: 0, stats: {} })),
       write: (line) => output.push(line),
       writeError: () => undefined,
     });
@@ -330,7 +286,7 @@ describe('safe-docx CLI — generic tool routing', () => {
     const output: string[] = [];
     const program = createProgram({
       serve: vi.fn(async () => undefined),
-      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, bytes: 0, stats: {} })),
+      compare: vi.fn(async () => ({ output: '', package_base: 'revised' as const, bytes: 0, stats: {} })),
       write: (line) => output.push(line),
       writeError: () => undefined,
     });
@@ -361,7 +317,7 @@ describe('safe-docx CLI — generic tool routing', () => {
     const errors: string[] = [];
     const program = createProgram({
       serve: vi.fn(async () => undefined),
-      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, bytes: 0, stats: {} })),
+      compare: vi.fn(async () => ({ output: '', package_base: 'revised' as const, bytes: 0, stats: {} })),
       write: (line) => output.push(line),
       writeError: (line) => errors.push(line),
     });
@@ -378,7 +334,7 @@ describe('safe-docx CLI — generic tool routing', () => {
     const serve = vi.fn(async () => undefined);
     const program = createProgram({
       serve,
-      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, bytes: 0, stats: {} })),
+      compare: vi.fn(async () => ({ output: '', package_base: 'revised' as const, bytes: 0, stats: {} })),
       write: () => undefined,
       writeError: () => undefined,
     });

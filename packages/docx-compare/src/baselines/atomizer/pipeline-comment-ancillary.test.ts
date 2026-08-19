@@ -98,8 +98,6 @@ describe('pipeline comment ancillary publication', () => {
 
     await when('the comparison publishes the inserted comment through rebuild mode', async () => {
       result = await compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'rebuild',
-        comparisonStrategy: 'tagged-tree',
         author: 'Pipeline test',
       });
     });
@@ -111,13 +109,13 @@ describe('pipeline comment ancillary publication', () => {
       expect(parts.commentsXml).toContain('Thread reply');
     });
 
-    await and('threading, durable ids, and both authors are retained without unrelated rows', async () => {
+    await and('threading, durable ids, authors, and revised-base metadata are retained', async () => {
       const parts = await resultParts(result.document);
       expect(parts.commentsExtendedXml).toContain('w15:paraId="00000002"');
       expect(parts.commentsExtendedXml).toContain('w15:paraIdParent="00000001"');
       expect(parts.commentsIdsXml).toContain('w16cid:durableId="11111111"');
       expect(parts.commentsIdsXml).toContain('w16cid:durableId="22222222"');
-      expect(parts.commentsIdsXml).not.toContain('99999999');
+      expect(parts.commentsIdsXml).toContain('99999999');
       expect(parts.peopleXml).toContain('w15:author="Root Author"');
       expect(parts.peopleXml).toContain('w15:author="Reply Author"');
     });
@@ -179,7 +177,6 @@ describe('pipeline comment ancillary publication', () => {
 
     await when('the pipeline resolves collisions and merges the revised graph', async () => {
       result = await compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'rebuild',
         moveDetection: { detectMoves: false },
       });
     });

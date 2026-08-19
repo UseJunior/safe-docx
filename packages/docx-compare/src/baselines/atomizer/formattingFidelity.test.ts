@@ -36,6 +36,21 @@ function docXml(bodyXml: string): string {
 }
 
 describe('Formatting-fidelity comparison check', () => {
+  humanReadableTest.openspec('format-neutral empty body placeholders preserve fidelity')(
+    'Scenario: a format-neutral empty body placeholder scores perfect fidelity',
+    (_: AllureBddContext) => {
+      const withoutParagraph = docXml('<w:sectPr/>');
+      const withPlaceholder = docXml('<w:p/><w:sectPr/>');
+
+      const report = compareFormattingFidelity(withoutParagraph, withPlaceholder);
+
+      expect(report.score).toBe(1);
+      expect(report.unalignedExpectedParagraphs).toBe(0);
+      expect(report.unalignedActualParagraphs).toBe(0);
+      expect(report.divergences).toEqual([]);
+    },
+  );
+
   humanReadableTest.openspec('identical document views score perfect formatting fidelity')(
     'Scenario: identical document views score perfect formatting fidelity',
     (_: AllureBddContext) => {
@@ -266,11 +281,9 @@ describe('Formatting-fidelity comparison check', () => {
       const options = { author: 'Fidelity Test', date: new Date('2026-06-01T00:00:00Z') };
       const inplace = await compareDocumentsAtomizer(original, revised, {
         ...options,
-        reconstructionMode: 'inplace',
       });
       const rebuild = await compareDocumentsAtomizer(original, revised, {
         ...options,
-        reconstructionMode: 'rebuild',
       });
       const inplaceXml = await (await DocxArchive.load(inplace.document)).getDocumentXml();
       const rebuildXml = await (await DocxArchive.load(rebuild.document)).getDocumentXml();

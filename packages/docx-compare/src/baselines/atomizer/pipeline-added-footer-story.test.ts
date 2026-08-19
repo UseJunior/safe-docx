@@ -103,7 +103,6 @@ describe('relationship-selected footer story comparison (#648)', () => {
 
     const result = await when('the pair is compared in place', () =>
       compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'inplace',
         author: 'Comparison',
         date: new Date('2026-07-29T00:00:00.000Z'),
       }),

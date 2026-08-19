@@ -3,7 +3,7 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { rejectAllChanges } from '@usejunior/docx-compare';
 
 function countParagraphs(xml: string): number {
@@ -39,8 +39,6 @@ describe('Paragraph-Level Track Changes Markers (Aspose-Style)', () => {
 
     await when('documents are compared in rebuild mode', async () => {
       result = await compareDocuments(originalBuf, revisedBuf, {
-        engine: 'atomizer',
-        reconstructionMode: 'rebuild',
         author: 'Test',
       });
 

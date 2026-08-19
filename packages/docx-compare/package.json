@@ -13,7 +13,9 @@
     "test:run": "node ../../node_modules/vitest/vitest.mjs run",
     "test:baseline": "node ../../node_modules/vitest/vitest.mjs run -c vitest.baseline.config.ts",
     "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
-    "lint": "tsc --noEmit",
+    "check:api-removal-inventory": "node scripts/generate-api-removal-inventory.mjs --check",
+    "generate:api-removal-inventory": "node scripts/generate-api-removal-inventory.mjs --write",
+    "lint": "tsc --noEmit && npm run check:api-removal-inventory",
     "benchmark": "tsx src/benchmark/runner.ts",
     "cli": "node dist/cli/index.js"
   },

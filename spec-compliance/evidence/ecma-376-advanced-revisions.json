@@ -17,34 +17,8 @@
     },
     {
       "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "bookmarkEnd",
-      "operation": "reconstruction.rebuild",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
       "element": "bookmarkStart",
       "operation": "reconstruction.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "bookmarkStart",
-      "operation": "reconstruction.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -69,34 +43,8 @@
     },
     {
       "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "commentRangeEnd",
-      "operation": "reconstruction.rebuild",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
       "element": "commentRangeStart",
       "operation": "reconstruction.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "commentRangeStart",
-      "operation": "reconstruction.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -121,34 +69,8 @@
     },
     {
       "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "commentReference",
-      "operation": "reconstruction.rebuild",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
       "element": "customXmlDelRangeEnd",
       "operation": "reconstruction.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "customXmlDelRangeEnd",
-      "operation": "reconstruction.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -173,34 +95,8 @@
     },
     {
       "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "customXmlDelRangeStart",
-      "operation": "reconstruction.rebuild",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
       "element": "customXmlInsRangeEnd",
       "operation": "reconstruction.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "customXmlInsRangeEnd",
-      "operation": "reconstruction.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -225,34 +121,8 @@
     },
     {
       "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "customXmlInsRangeStart",
-      "operation": "reconstruction.rebuild",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
       "element": "customXmlMoveFromRangeEnd",
       "operation": "reconstruction.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "customXmlMoveFromRangeEnd",
-      "operation": "reconstruction.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -277,34 +147,8 @@
     },
     {
       "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "customXmlMoveFromRangeStart",
-      "operation": "reconstruction.rebuild",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
       "element": "customXmlMoveToRangeEnd",
       "operation": "reconstruction.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "customXmlMoveToRangeEnd",
-      "operation": "reconstruction.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -329,34 +173,8 @@
     },
     {
       "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "customXmlMoveToRangeStart",
-      "operation": "reconstruction.rebuild",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
       "element": "del",
       "operation": "reconstruction.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "del",
-      "operation": "reconstruction.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -381,34 +199,8 @@
     },
     {
       "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "ins",
-      "operation": "reconstruction.rebuild",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
       "element": "moveFrom",
       "operation": "reconstruction.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "moveFrom",
-      "operation": "reconstruction.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -433,34 +225,8 @@
     },
     {
       "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "moveFromRangeEnd",
-      "operation": "reconstruction.rebuild",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
       "element": "moveFromRangeStart",
       "operation": "reconstruction.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "moveFromRangeStart",
-      "operation": "reconstruction.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -485,19 +251,6 @@
     },
     {
       "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "moveTo",
-      "operation": "reconstruction.rebuild",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
       "element": "moveToRangeEnd",
       "operation": "reconstruction.inplace",
       "story": "main",
@@ -511,34 +264,8 @@
     },
     {
       "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "moveToRangeEnd",
-      "operation": "reconstruction.rebuild",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
       "element": "moveToRangeStart",
       "operation": "reconstruction.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "moveToRangeStart",
-      "operation": "reconstruction.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -563,34 +290,8 @@
     },
     {
       "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "permEnd",
-      "operation": "reconstruction.rebuild",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
       "element": "permStart",
       "operation": "reconstruction.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "permStart",
-      "operation": "reconstruction.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -615,19 +316,6 @@
     },
     {
       "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "proofErr",
-      "operation": "reconstruction.rebuild",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
       "element": "w14:conflictDel",
       "operation": "reconstruction.inplace",
       "story": "main",
@@ -641,34 +329,8 @@
     },
     {
       "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "w14:conflictDel",
-      "operation": "reconstruction.rebuild",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
       "element": "w14:conflictIns",
       "operation": "reconstruction.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
-      "element": "w14:conflictIns",
-      "operation": "reconstruction.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -682,19 +344,6 @@
       "id": "ADV-COMPARE-MOVE-EMISSION-01",
       "element": "moveFrom",
       "operation": "comparison.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MOVE-EMISSION-01",
-      "element": "moveFrom",
-      "operation": "comparison.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -733,19 +382,6 @@
     {
       "id": "ADV-COMPARE-MOVE-EMISSION-01",
       "element": "moveFromRangeEnd",
-      "operation": "comparison.rebuild",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MOVE-EMISSION-01",
-      "element": "moveFromRangeEnd",
       "operation": "emit",
       "story": "main",
       "assertions": {
@@ -760,19 +396,6 @@
       "id": "ADV-COMPARE-MOVE-EMISSION-01",
       "element": "moveFromRangeStart",
       "operation": "comparison.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MOVE-EMISSION-01",
-      "element": "moveFromRangeStart",
-      "operation": "comparison.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -799,19 +422,6 @@
       "id": "ADV-COMPARE-MOVE-EMISSION-01",
       "element": "moveTo",
       "operation": "comparison.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MOVE-EMISSION-01",
-      "element": "moveTo",
-      "operation": "comparison.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -838,19 +448,6 @@
       "id": "ADV-COMPARE-MOVE-EMISSION-01",
       "element": "moveToRangeEnd",
       "operation": "comparison.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MOVE-EMISSION-01",
-      "element": "moveToRangeEnd",
-      "operation": "comparison.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -877,19 +474,6 @@
       "id": "ADV-COMPARE-MOVE-EMISSION-01",
       "element": "moveToRangeStart",
       "operation": "comparison.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-COMPARE-MOVE-EMISSION-01",
-      "element": "moveToRangeStart",
-      "operation": "comparison.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -916,19 +500,6 @@
       "id": "ADV-CONTENT-EMISSION-01",
       "element": "del",
       "operation": "comparison.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-CONTENT-EMISSION-01",
-      "element": "del",
-      "operation": "comparison.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -955,19 +526,6 @@
       "id": "ADV-CONTENT-EMISSION-01",
       "element": "ins",
       "operation": "comparison.inplace",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-CONTENT-EMISSION-01",
-      "element": "ins",
-      "operation": "comparison.rebuild",
       "story": "main",
       "assertions": {
         "observable": true,

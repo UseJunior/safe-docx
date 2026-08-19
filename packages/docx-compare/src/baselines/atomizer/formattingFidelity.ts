@@ -28,7 +28,8 @@ import { parseDocumentXml } from './xmlToWmlElement.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { childElements, findChildByTagName } from '@usejunior/docx-core';
 import { RUN_PROPERTY_FRIENDLY_NAMES } from '@usejunior/docx-core';
-import { PARAGRAPH_PROPERTY_FRIENDLY_NAMES } from '../../format-detection.js';
+import { PARAGRAPH_PROPERTY_FRIENDLY_NAMES } from '../../propertyNaming.js';
+import { normalizeVolatilePagerefCachesForComparison } from '../../fieldComparisonSemantics.js';
 
 // =============================================================================
 // Report types
@@ -342,7 +343,18 @@ function collectParagraphUnits(
 ): void {
   for (const child of childElements(container)) {
     if (child.tagName === 'w:p') {
-      out.push(buildParagraphUnit(child, chain, out.length));
+      const unit = buildParagraphUnit(child, chain, out.length);
+      // A serializer may materialize a placeholder paragraph for an otherwise
+      // empty body. With no text, direct paragraph properties, or table
+      // context, it carries no formatting dimension to compare; section
+      // properties are measured independently below.
+      if (
+        unit.text.length > 0 ||
+        unit.pPrProps.size > 0 ||
+        unit.tableChain.length > 0
+      ) {
+        out.push(unit);
+      }
       continue;
     }
     if (child.tagName === 'w:tbl') {
@@ -605,8 +617,12 @@ export function compareFormattingFidelity(
   expectedDocumentXml: string,
   actualDocumentXml: string,
 ): FormattingFidelityReport {
-  const expectedRoot = parseDocumentXml(expectedDocumentXml);
-  const actualRoot = parseDocumentXml(actualDocumentXml);
+  const expectedRoot = parseDocumentXml(
+    normalizeVolatilePagerefCachesForComparison(expectedDocumentXml),
+  );
+  const actualRoot = parseDocumentXml(
+    normalizeVolatilePagerefCachesForComparison(actualDocumentXml),
+  );
 
   const expectedUnits: ParagraphUnit[] = [];
   const actualUnits: ParagraphUnit[] = [];

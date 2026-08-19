@@ -1,915 +1,379 @@
 import { describe, expect } from 'vitest';
-import { createComparisonUnitAtom } from './atomizer.js';
-import { markCorrelationStatus } from './baselines/atomizer/atomLcs.js';
+import { XMLSerializer } from '@xmldom/xmldom';
+import { readFileSync } from 'node:fs';
+import * as publicApi from './index.js';
 import {
   CorrelationStatus,
   DEFAULT_FORMAT_DETECTION_SETTINGS,
-  findReferencesInOrder,
   FootnoteNumberingTracker,
   createNumberingState,
   detectContinuationPattern,
+  extractRevisions,
+  findReferencesInOrder,
+  insertParagraphBookmarks,
+  parseXml,
   processNumberedParagraph,
-  type ComparisonUnitAtom,
   type ListLevelInfo,
-  type OpcPart,
 } from '@usejunior/docx-core';
+import { testAllure } from './testing/allure-test.js';
 import {
-  detectFormatChangesInAtomList,
   areRunPropertiesEqual,
-  generateFormatChangeMarkup,
   getChangedPropertyNames,
-  getRunPropertiesFromAtom,
-  mergeFormatChangeIntoRun,
   normalizeRunProperties,
-} from './format-detection.js';
+} from './propertyNaming.js';
 import {
-  detectMovesInAtomList,
-  generateMoveDestinationMarkup,
-  generateMoveSourceMarkup,
   jaccardWordSimilarity,
-} from './move-detection.js';
-import { testAllure, type AllureBddContext } from './testing/allure-test.js';
-import { assertDefined } from './testing/test-utils.js';
-import { el } from './testing/dom-test-helpers.js';
-import { childElements, getLeafText } from '@usejunior/docx-core';
+  wordContainmentSimilarity,
+} from './textSimilarity.js';
+import { constructTaggedTree } from './baselines/atomizer/taggedTreeConstruction.js';
+import {
+  correlationStatus,
+  type TaggedNode,
+} from './baselines/atomizer/taggedTree.js';
+import {
+  createPreservePlan,
+  serializeTaggedTree,
+} from './baselines/atomizer/taggedTreeSerializer.js';
+import { buildTaggedTreePublication } from './baselines/atomizer/taggedTreeShadow.js';
 
-const TEST_FEATURE = 'docx-comparison';
+const TEST_FEATURE = 'refactor-tagged-tree-spine';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
-const humanReadableTest = test.allure({
-  tags: ['human-readable'],
-  parameters: { audience: 'developers' },
-});
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
-const PART: OpcPart = {
-  uri: 'word/document.xml',
-  contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml',
-};
-
-function makeTextAtom(
-  text: string,
-  status: CorrelationStatus = CorrelationStatus.Unknown,
-  runProps: Element[] | null = []
-): ComparisonUnitAtom {
-  const runChildren: Element[] = [];
-  if (runProps !== null) {
-    runChildren.push(el('w:rPr', {}, runProps));
-  }
-  runChildren.push(el('w:t', {}, undefined, text));
-
-  const run = el('w:r', {}, runChildren);
-  const paragraph = el('w:p', {}, [run]);
-
-  return {
-    sha1Hash: `hash-${text}`,
-    correlationStatus: status,
-    contentElement: el('w:t', {}, undefined, text),
-    ancestorElements: [paragraph, run],
-    ancestorUnids: [],
-    part: PART,
-  };
+function document(body: string): Element {
+  return parseXml(
+    `<w:document xmlns:w="${W_NS}"><w:body>${body}</w:body></w:document>`,
+  ).documentElement;
 }
 
-function createDocumentWithFootnotes(ids: string[], customMarkIds: Set<string> = new Set()): Element {
-  return el('w:body', {}, ids.map((id) =>
-    el('w:p', {}, [
-      el('w:r', {}, [
-        el('w:footnoteReference', customMarkIds.has(id)
-          ? { 'w:id': id, 'w:customMarkFollows': '1' }
-          : { 'w:id': id }),
-      ]),
-    ])
-  ));
+function paragraphs(values: readonly string[]): Element {
+  return document(values.map((value) => `<w:p><w:r><w:t>${value}</w:t></w:r></w:p>`).join(''));
 }
 
-describe('OpenSpec traceability: docx-comparison', () => {
-  // Correlation status enumeration
-  humanReadableTest.openspec('Status assigned during comparison')(
-    'Scenario: Status assigned during comparison',
-    (_: AllureBddContext) => {
-      const original = [makeTextAtom('hello')];
-      const revised = [makeTextAtom('hello')];
+function descendants(node: TaggedNode): TaggedNode[] {
+  return [node, ...node.children.flatMap(descendants)];
+}
 
-      markCorrelationStatus(original, revised, {
-        matches: [{ originalIndex: 0, revisedIndex: 0 }],
-        deletedIndices: [],
-        insertedIndices: [],
-      });
+function formattingResult(
+  originalProperties: string,
+  revisedProperties: string,
+  originalHistory = '',
+  revisedHistory = '',
+) {
+  const original = document(
+    `<w:p><w:r><w:rPr>${originalProperties}${originalHistory}</w:rPr><w:t>same</w:t></w:r></w:p>`,
+  );
+  const revised = document(
+    `<w:p><w:r><w:rPr>${revisedProperties}${revisedHistory}</w:rPr><w:t>same</w:t></w:r></w:p>`,
+  );
+  return { original, revised, result: constructTaggedTree(original, revised) };
+}
 
-      expect(revised[0]!.correlationStatus).toBe(CorrelationStatus.Equal);
+function serializeFormatting(originalProperties: string, revisedProperties: string): string {
+  const { original, revised, result } = formattingResult(originalProperties, revisedProperties);
+  return serializeTaggedTree(
+    result.tree,
+    createPreservePlan(original, revised, result.tree, {
+      author: 'Comparison',
+      date: '2026-08-17T12:00:00Z',
+    }),
+    { moves: result.moves },
+  );
+}
+
+function footnoteBody(ids: readonly string[], custom = new Set<string>()): Element {
+  return document(ids.map((id) =>
+    `<w:p><w:r><w:footnoteReference w:id="${id}"${
+      custom.has(id) ? ' w:customMarkFollows="1"' : ''
+    }/></w:r></w:p>`,
+  ).join(''));
+}
+
+describe('OpenSpec traceability: tagged docx comparison', () => {
+  test.openspec('Tagged nodes receive correlation status')(
+    'maps side-tagged nodes to inserted and deleted correlationStatus values',
+    () => {
+      const result = constructTaggedTree(paragraphs(['old']), paragraphs(['new']));
+      const nodes = descendants(result.tree);
+      expect(nodes.some((node) => correlationStatus(node, result.moves) === CorrelationStatus.Inserted)).toBe(true);
+      expect(nodes.some((node) => correlationStatus(node, result.moves) === CorrelationStatus.Deleted)).toBe(true);
     },
   );
 
-  humanReadableTest.openspec('Status for unmatched atoms')(
-    'Scenario: Status for unmatched atoms',
-    (_: AllureBddContext) => {
-      const original = [makeTextAtom('old')];
-      const revised = [makeTextAtom('new')];
-
-      markCorrelationStatus(original, revised, {
-        matches: [],
-        deletedIndices: [0],
-        insertedIndices: [0],
-      });
-
-      expect(revised[0]!.correlationStatus).toBe(CorrelationStatus.Inserted);
+  test.openspec('Matched formatting difference receives format status')(
+    'maps a both node with direct formatting delta to FormatChanged correlationStatus',
+    () => {
+      const { result } = formattingResult('', '<w:b/>');
+      const changed = descendants(result.tree).find((node) => node.tag === 'both' && node.propertyDelta);
+      expect(changed && correlationStatus(changed, result.moves)).toBe(CorrelationStatus.FormatChanged);
     },
   );
 
-  humanReadableTest.openspec('Status for deleted content')(
-    'Scenario: Status for deleted content',
-    (_: AllureBddContext) => {
-      const original = [makeTextAtom('old')];
-      const revised = [makeTextAtom('new')];
+  test.openspec('Move detection disabled')('does not classify relocations when disabled', () => {
+    const result = constructTaggedTree(paragraphs(['anchor', 'one two three four', 'end']),
+      paragraphs(['anchor', 'end', 'one two three four']), { detectMoves: false });
+    expect(result.moves).toEqual([]);
+  });
 
-      markCorrelationStatus(original, revised, {
-        matches: [],
-        deletedIndices: [0],
-        insertedIndices: [0],
-      });
+  test.openspec('Custom threshold applied')('uses the configured fuzzy move threshold', () => {
+    const original = paragraphs(['anchor', 'one two three four', 'end']);
+    const revised = paragraphs(['anchor', 'end', 'one two five six']);
+    expect(constructTaggedTree(original, revised, {
+      moveSimilarityThreshold: 0.3, moveMinimumWordCount: 1,
+    }).moves).toHaveLength(1);
+  });
 
-      expect(original[0]!.correlationStatus).toBe(CorrelationStatus.Deleted);
-    },
+  test.openspec('Identical text returns one')('returns one for identical word sets', () => {
+    expect(jaccardWordSimilarity('hello world', 'hello world')).toBe(1);
+  });
+
+  test.openspec('Contained phrase scores complete containment')(
+    'returns one when the smaller word set is fully contained',
+    () => expect(wordContainmentSimilarity(
+      'quick brown fox', 'the quick brown fox jumps',
+    )).toBe(1),
   );
 
-  humanReadableTest.openspec('Status for moved source content')(
-    'Scenario: Status for moved source content',
-    (_: AllureBddContext) => {
-      const atoms = [
-        makeTextAtom('The quick brown fox', CorrelationStatus.Deleted),
-        makeTextAtom('bridge', CorrelationStatus.Equal),
-        makeTextAtom('The quick brown fox jumps', CorrelationStatus.Inserted),
-      ];
-
-      detectMovesInAtomList(atoms, {
-        detectMoves: true,
-        moveSimilarityThreshold: 0.6,
-        moveMinimumWordCount: 3,
-        caseInsensitiveMove: true,
-      });
-
-      expect(atoms[0]!.correlationStatus).toBe(CorrelationStatus.MovedSource);
-    },
-  );
-
-  humanReadableTest.openspec('Status for moved destination content')(
-    'Scenario: Status for moved destination content',
-    (_: AllureBddContext) => {
-      const atoms = [
-        makeTextAtom('The quick brown fox', CorrelationStatus.Deleted),
-        makeTextAtom('bridge', CorrelationStatus.Equal),
-        makeTextAtom('The quick brown fox jumps', CorrelationStatus.Inserted),
-      ];
-
-      detectMovesInAtomList(atoms, {
-        detectMoves: true,
-        moveSimilarityThreshold: 0.6,
-        moveMinimumWordCount: 3,
-        caseInsensitiveMove: true,
-      });
-
-      expect(atoms[2]!.correlationStatus).toBe(CorrelationStatus.MovedDestination);
-    },
-  );
-
-  humanReadableTest.openspec('Status for format-changed content')(
-    'Scenario: Status for format-changed content',
-    (_: AllureBddContext) => {
-      const before = makeTextAtom('hello', CorrelationStatus.Equal, []);
-      const after = makeTextAtom('hello', CorrelationStatus.Equal, [el('w:b')]);
-      after.comparisonUnitAtomBefore = before;
-
-      detectFormatChangesInAtomList([after]);
-
-      expect(after.correlationStatus).toBe(CorrelationStatus.FormatChanged);
-    },
-  );
-
-  // XML element / part / hash
-  humanReadableTest.openspec('Element with text content')(
-    'Scenario: Element with text content',
-    (_: AllureBddContext) => {
-      const element = el('w:t', {}, undefined, 'Hello World');
-      expect(element.tagName).toBe('w:t');
-      expect(getLeafText(element)).toBe('Hello World');
-    },
-  );
-
-  humanReadableTest.openspec('Element with attributes')(
-    'Scenario: Element with attributes',
-    (_: AllureBddContext) => {
-      const element = el('w:p', { 'pt14:Unid': 'abc123' });
-      expect(element.getAttribute('pt14:Unid')).toBe('abc123');
-    },
-  );
-
-  humanReadableTest.openspec('Part from main document')(
-    'Scenario: Part from main document',
-    (_: AllureBddContext) => {
-      expect(PART.uri).toBe('word/document.xml');
-    },
-  );
-
-  humanReadableTest.openspec('Hash calculation for content identity')(
-    'Scenario: Hash calculation for content identity',
-    (_: AllureBddContext) => {
-      const atom = createComparisonUnitAtom({
-        contentElement: el('w:t', {}, undefined, 'hash me'),
-        ancestors: [],
-        part: PART,
-      });
-
-      expect(atom.sha1Hash).toHaveLength(40);
-    },
-  );
-
-  // ComparisonUnitAtom interface scenarios
-  humanReadableTest.openspec('Atom from inserted revision')(
-    'Scenario: Atom from inserted revision',
-    (_: AllureBddContext) => {
-      const ins = el('w:ins', { 'w:id': '1' });
-      const atom = createComparisonUnitAtom({
-        contentElement: el('w:t', {}, undefined, 'new'),
-        ancestors: [ins],
-        part: PART,
-      });
-
-      expect(atom.correlationStatus).toBe(CorrelationStatus.Inserted);
-      expect(atom.revTrackElement?.tagName).toBe('w:ins');
-    },
-  );
-
-  humanReadableTest.openspec('Atom from deleted revision')(
-    'Scenario: Atom from deleted revision',
-    (_: AllureBddContext) => {
-      const del = el('w:del', { 'w:id': '1' });
-      const atom = createComparisonUnitAtom({
-        contentElement: el('w:delText', {}, undefined, 'old'),
-        ancestors: [del],
-        part: PART,
-      });
-
-      expect(atom.correlationStatus).toBe(CorrelationStatus.Deleted);
-      expect(atom.revTrackElement?.tagName).toBe('w:del');
-    },
-  );
-
-  humanReadableTest.openspec('Atom with ancestor tracking')(
-    'Scenario: Atom with ancestor tracking',
-    (_: AllureBddContext) => {
-      const paragraph = el('w:p');
-      const run = el('w:r');
-
-      const atom = createComparisonUnitAtom({
-        contentElement: el('w:t', {}, undefined, 'nested'),
-        ancestors: [paragraph, run],
-        part: PART,
-      });
-
-      expect(atom.ancestorElements.map((e) => e.tagName)).toEqual(['w:p', 'w:r']);
-    },
-  );
-
-  humanReadableTest.openspec('Atom marked as moved source')(
-    'Scenario: Atom marked as moved source',
-    (_: AllureBddContext) => {
-      const atoms = [
-        makeTextAtom('The quick brown fox', CorrelationStatus.Deleted),
-        makeTextAtom('separator', CorrelationStatus.Equal),
-        makeTextAtom('The quick brown fox jumps', CorrelationStatus.Inserted),
-      ];
-
-      detectMovesInAtomList(atoms, {
-        detectMoves: true,
-        moveSimilarityThreshold: 0.6,
-        moveMinimumWordCount: 3,
-        caseInsensitiveMove: true,
-      });
-
-      expect(atoms[0]!.correlationStatus).toBe(CorrelationStatus.MovedSource);
-      expect(atoms[0]!.moveGroupId).toBeDefined();
-      expect(atoms[0]!.moveName).toMatch(/^move/);
-    },
-  );
-
-  humanReadableTest.openspec('Atom marked as moved destination')(
-    'Scenario: Atom marked as moved destination',
-    (_: AllureBddContext) => {
-      const atoms = [
-        makeTextAtom('The quick brown fox', CorrelationStatus.Deleted),
-        makeTextAtom('separator', CorrelationStatus.Equal),
-        makeTextAtom('The quick brown fox jumps', CorrelationStatus.Inserted),
-      ];
-
-      detectMovesInAtomList(atoms, {
-        detectMoves: true,
-        moveSimilarityThreshold: 0.6,
-        moveMinimumWordCount: 3,
-        caseInsensitiveMove: true,
-      });
-
-      expect(atoms[2]!.correlationStatus).toBe(CorrelationStatus.MovedDestination);
-      expect(atoms[2]!.moveGroupId).toBe(atoms[0]!.moveGroupId);
-      expect(atoms[2]!.moveName).toBe(atoms[0]!.moveName);
-    },
-  );
-
-  humanReadableTest.openspec('Atom marked as format-changed')(
-    'Scenario: Atom marked as format-changed',
-    (_: AllureBddContext) => {
-      const before = makeTextAtom('hello', CorrelationStatus.Equal, []);
-      const after = makeTextAtom('hello', CorrelationStatus.Equal, [el('w:b')]);
-      after.comparisonUnitAtomBefore = before;
-
-      detectFormatChangesInAtomList([after]);
-
-      expect(after.correlationStatus).toBe(CorrelationStatus.FormatChanged);
-      expect(after.formatChange?.oldRunProperties).toBeDefined();
-      expect(after.formatChange?.newRunProperties).toBeDefined();
-      expect(after.formatChange?.changedProperties).toContain('bold');
-    },
-  );
-
-  // Factory function scenarios
-  humanReadableTest.openspec('Creating atom with revision detection')(
-    'Scenario: Creating atom with revision detection',
-    (_: AllureBddContext) => {
-      const ins = el('w:ins', { 'w:id': '1' });
-      const atom = createComparisonUnitAtom({
-        contentElement: el('w:t', {}, undefined, 'new'),
-        ancestors: [ins],
-        part: PART,
-      });
-
-      expect(atom.correlationStatus).toBe(CorrelationStatus.Inserted);
-      expect(atom.revTrackElement?.tagName).toBe('w:ins');
-    },
-  );
-
-  humanReadableTest.openspec('Creating atom without revision context')(
-    'Scenario: Creating atom without revision context',
-    (_: AllureBddContext) => {
-      const atom = createComparisonUnitAtom({
-        contentElement: el('w:t', {}, undefined, 'plain'),
-        ancestors: [],
-        part: PART,
-      });
-
-      expect(atom.revTrackElement ?? null).toBeNull();
-      expect([
-        CorrelationStatus.Unknown,
-        CorrelationStatus.Equal,
-      ]).toContain(atom.correlationStatus);
-    },
-  );
-
-  // Numbering continuation scenarios
-  humanReadableTest.openspec('Orphan list item renders with parent format')(
-    'Scenario: Orphan list item renders with parent format',
-    (_: AllureBddContext) => {
-      const state = createNumberingState();
-      const level0: ListLevelInfo = { ilvl: 0, start: 1, numFmt: 'decimal', lvlText: '%1.' };
-      const level1: ListLevelInfo = { ilvl: 1, start: 4, numFmt: 'decimal', lvlText: '%1.%2' };
-
-      processNumberedParagraph(state, 1, 0, level0); // 1
-      processNumberedParagraph(state, 1, 0, level0); // 2
-      processNumberedParagraph(state, 1, 0, level0); // 3
-      const continuation = processNumberedParagraph(state, 1, 1, level1);
-
-      expect(continuation).toBe(4);
-    },
-  );
-
-  humanReadableTest.openspec('Proper nested list renders hierarchically')(
-    'Scenario: Proper nested list renders hierarchically',
-    (_: AllureBddContext) => {
-      const result = detectContinuationPattern(1, 1, [1, 0, 0]);
-      expect(result.isContinuation).toBe(false);
-      expect(result.effectiveLevel).toBe(1);
-    },
-  );
-
-  humanReadableTest.openspec('Continuation pattern inherits formatting')(
-    'Scenario: Continuation pattern inherits formatting',
-    (_: AllureBddContext) => {
-      const result = detectContinuationPattern(1, 4, [3, 0, 0]);
-      expect(result.isContinuation).toBe(true);
-      expect(result.effectiveLevel).toBe(0);
-    },
-  );
-
-  // Footnote numbering scenarios
-  humanReadableTest.openspec('First footnote displays as 1')(
-    'Scenario: First footnote displays as 1',
-    (_: AllureBddContext) => {
-      const tracker = new FootnoteNumberingTracker(createDocumentWithFootnotes(['2', '5', '3']));
-      expect(tracker.getFootnoteDisplayNumber('2')).toBe(1);
-    },
-  );
-
-  humanReadableTest.openspec('Sequential numbering ignores XML IDs')(
-    'Scenario: Sequential numbering ignores XML IDs',
-    (_: AllureBddContext) => {
-      const ids = Array.from({ length: 91 }, (_, i) => (i + 2).toString());
-      const tracker = new FootnoteNumberingTracker(createDocumentWithFootnotes(ids));
-
-      expect(tracker.getFootnoteDisplayNumber('2')).toBe(1);
-      expect(tracker.getFootnoteDisplayNumber('92')).toBe(91);
-    },
-  );
-
-  humanReadableTest.openspec('Reserved footnote IDs excluded from numbering')(
-    'Scenario: Reserved footnote IDs excluded from numbering',
-    (_: AllureBddContext) => {
-      const tracker = new FootnoteNumberingTracker(createDocumentWithFootnotes(['0', '1', '2', '3']));
-      expect(tracker.getFootnoteDisplayNumber('0')).toBeUndefined();
-      expect(tracker.getFootnoteDisplayNumber('1')).toBeUndefined();
-      expect(tracker.getFootnoteDisplayNumber('2')).toBe(1);
-    },
-  );
-
-  humanReadableTest.openspec('Building footnote mapping')(
-    'Scenario: Building footnote mapping',
-    (_: AllureBddContext) => {
-      const tracker = new FootnoteNumberingTracker(createDocumentWithFootnotes(['7', '3', '8']));
-      expect(tracker.getFootnoteCount()).toBe(3);
-      expect(tracker.getFootnoteDisplayNumber('7')).toBe(1);
-    },
-  );
-
-  humanReadableTest.openspec('Custom footnote marks respected')(
-    'Scenario: Custom footnote marks respected',
-    (_: AllureBddContext) => {
-      const tracker = new FootnoteNumberingTracker(createDocumentWithFootnotes(['2', '3'], new Set(['2'])));
-      expect(tracker.getFootnoteDisplayNumber('2')).toBeUndefined();
-      expect(tracker.hasFootnoteCustomMark('2')).toBe(true);
-      expect(tracker.getFootnoteDisplayNumber('3')).toBe(1);
-    },
-  );
-
-  // Move detection algorithm scenarios
-  humanReadableTest.openspec('Move detected between similar blocks')(
-    'Scenario: Move detected between similar blocks',
-    (_: AllureBddContext) => {
-      const atoms = [
-        makeTextAtom('The quick brown fox', CorrelationStatus.Deleted),
-        makeTextAtom('middle', CorrelationStatus.Equal),
-        makeTextAtom('The quick brown fox jumps', CorrelationStatus.Inserted),
-      ];
-
-      detectMovesInAtomList(atoms, {
-        detectMoves: true,
-        moveSimilarityThreshold: 0.6,
-        moveMinimumWordCount: 3,
-        caseInsensitiveMove: true,
-      });
-
-      expect(atoms[0]!.correlationStatus).toBe(CorrelationStatus.MovedSource);
-      expect(atoms[2]!.correlationStatus).toBe(CorrelationStatus.MovedDestination);
-    },
-  );
-
-  humanReadableTest.openspec('Short blocks ignored')(
-    'Scenario: Short blocks ignored',
-    (_: AllureBddContext) => {
-      const atoms = [
-        makeTextAtom('the', CorrelationStatus.Deleted),
-        makeTextAtom('bridge', CorrelationStatus.Equal),
-        makeTextAtom('the', CorrelationStatus.Inserted),
-      ];
-
-      detectMovesInAtomList(atoms, {
-        detectMoves: true,
-        moveSimilarityThreshold: 0.1,
-        moveMinimumWordCount: 3,
-        caseInsensitiveMove: true,
-      });
-
-      expect(atoms[0]!.correlationStatus).toBe(CorrelationStatus.Deleted);
-      expect(atoms[2]!.correlationStatus).toBe(CorrelationStatus.Inserted);
-    },
-  );
-
-  humanReadableTest.openspec('Below threshold treated as separate changes')(
-    'Scenario: Below threshold treated as separate changes',
-    (_: AllureBddContext) => {
-      const atoms = [
-        makeTextAtom('The quick brown fox', CorrelationStatus.Deleted),
-        makeTextAtom('bridge', CorrelationStatus.Equal),
-        makeTextAtom('A slow gray elephant', CorrelationStatus.Inserted),
-      ];
-
-      detectMovesInAtomList(atoms, {
-        detectMoves: true,
-        moveSimilarityThreshold: 0.8,
-        moveMinimumWordCount: 3,
-        caseInsensitiveMove: true,
-      });
-
-      expect(atoms[0]!.correlationStatus).toBe(CorrelationStatus.Deleted);
-      expect(atoms[2]!.correlationStatus).toBe(CorrelationStatus.Inserted);
-    },
-  );
-
-  // Jaccard scenarios
-  humanReadableTest.openspec('Identical text returns 1.0')(
-    'Scenario: Identical text returns 1.0',
-    (_: AllureBddContext) => {
-      expect(jaccardWordSimilarity('hello world', 'hello world')).toBe(1);
-    },
-  );
-
-  humanReadableTest.openspec('No common words returns 0.0')(
-    'Scenario: No common words returns 0.0',
-    (_: AllureBddContext) => {
-      expect(jaccardWordSimilarity('hello world', 'foo bar')).toBe(0);
-    },
-  );
-
-  humanReadableTest.openspec('Partial overlap')(
-    'Scenario: Partial overlap',
-    (_: AllureBddContext) => {
-      const similarity = jaccardWordSimilarity('the quick brown fox', 'the slow brown dog');
-      expect(similarity).toBeCloseTo(2 / 6, 5);
-    },
-  );
-
-  // Move detection settings
-  humanReadableTest.openspec('Move detection disabled')(
-    'Scenario: Move detection disabled',
-    (_: AllureBddContext) => {
-      const atoms = [
-        makeTextAtom('The quick brown fox', CorrelationStatus.Deleted),
-        makeTextAtom('bridge', CorrelationStatus.Equal),
-        makeTextAtom('The quick brown fox jumps', CorrelationStatus.Inserted),
-      ];
-
-      detectMovesInAtomList(atoms, {
-        detectMoves: false,
-        moveSimilarityThreshold: 0.1,
-        moveMinimumWordCount: 1,
-        caseInsensitiveMove: true,
-      });
-
-      expect(atoms[0]!.correlationStatus).toBe(CorrelationStatus.Deleted);
-      expect(atoms[2]!.correlationStatus).toBe(CorrelationStatus.Inserted);
-    },
-  );
-
-  humanReadableTest.openspec('Custom threshold applied')(
-    'Scenario: Custom threshold applied',
-    (_: AllureBddContext) => {
-      const atoms = [
-        makeTextAtom('one two three four', CorrelationStatus.Deleted),
-        makeTextAtom('bridge', CorrelationStatus.Equal),
-        makeTextAtom('one two five six', CorrelationStatus.Inserted),
-      ];
-
-      detectMovesInAtomList(atoms, {
-        detectMoves: true,
-        moveSimilarityThreshold: 0.3,
-        moveMinimumWordCount: 1,
-        caseInsensitiveMove: true,
-      });
-
-      expect(atoms[0]!.correlationStatus).toBe(CorrelationStatus.MovedSource);
-      expect(atoms[2]!.correlationStatus).toBe(CorrelationStatus.MovedDestination);
-    },
-  );
-
-  // Move markup generation
-  humanReadableTest.openspec('Move source markup structure')(
-    'Scenario: Move source markup structure',
-    (_: AllureBddContext) => {
-      const content: Element[] = [el('w:r')];
-      const markup = generateMoveSourceMarkup('move1', content, {
-        author: 'Tester',
-        dateTime: new Date('2026-01-01T00:00:00.000Z'),
-        startId: 1,
-      });
-
-      expect(markup.rangeStart.tagName).toBe('w:moveFromRangeStart');
-      expect(markup.moveWrapper.tagName).toBe('w:moveFrom');
-      expect(markup.rangeEnd.tagName).toBe('w:moveFromRangeEnd');
-      expect(markup.rangeStart.getAttribute('w:name')).toBe('move1');
-    },
-  );
-
-  humanReadableTest.openspec('Move destination markup structure')(
-    'Scenario: Move destination markup structure',
-    (_: AllureBddContext) => {
-      const content: Element[] = [el('w:r')];
-      const markup = generateMoveDestinationMarkup('move1', content, {
-        author: 'Tester',
-        dateTime: new Date('2026-01-01T00:00:00.000Z'),
-        startId: 5,
-      });
-
-      expect(markup.rangeStart.tagName).toBe('w:moveToRangeStart');
-      expect(markup.moveWrapper.tagName).toBe('w:moveTo');
-      expect(markup.rangeEnd.tagName).toBe('w:moveToRangeEnd');
-      expect(markup.rangeStart.getAttribute('w:name')).toBe('move1');
-    },
-  );
-
-  humanReadableTest.openspec('Range IDs properly paired')(
-    'Scenario: Range IDs properly paired',
-    (_: AllureBddContext) => {
-      const source = generateMoveSourceMarkup('move2', [], {
-        author: 'Tester',
-        dateTime: new Date('2026-01-01T00:00:00.000Z'),
-        startId: 11,
-      });
-      const destination = generateMoveDestinationMarkup('move2', [], {
-        author: 'Tester',
-        dateTime: new Date('2026-01-01T00:00:00.000Z'),
-        startId: 21,
-      });
-
-      expect(source.rangeStart.getAttribute('w:id')).toBe(source.rangeEnd.getAttribute('w:id'));
-      expect(destination.rangeStart.getAttribute('w:id')).toBe(destination.rangeEnd.getAttribute('w:id'));
-    },
-  );
-
-  // Format change info interface
-  humanReadableTest.openspec('Bold added')(
-    'Scenario: Bold added',
-    (_: AllureBddContext) => {
-      expect(getChangedPropertyNames(el('w:rPr'), el('w:rPr', {}, [el('w:b')]))).toContain('bold');
-    },
-  );
-
-  humanReadableTest.openspec('Multiple properties changed')(
-    'Scenario: Multiple properties changed',
-    (_: AllureBddContext) => {
-      const changed = getChangedPropertyNames(
-        el('w:rPr', {}, [el('w:b')]),
-        el('w:rPr', {}, [el('w:i'), el('w:u')]),
+  test.openspec('Equal text becomes bold')('attaches a bold run property delta', () => {
+    const { result } = formattingResult('', '<w:b/>');
+    const changed = descendants(result.tree).find(
+      (node) => node.tag === 'both' && node.propertyDelta,
+    );
+    const delta = changed?.tag === 'both' ? changed.propertyDelta : undefined;
+    expect(delta?.scope).toBe('run');
+    expect(delta?.changedProperties).toContain('bold');
+  });
+
+  test.openspec('Existing property revisions do not become live differences')(
+    'ignores differing prior rPrChange histories when live properties match',
+    () => {
+      const { result } = formattingResult(
+        '<w:b/>', '<w:b/>',
+        '<w:rPrChange w:id="1"><w:rPr><w:i/></w:rPr></w:rPrChange>',
+        '<w:rPrChange w:id="2"><w:rPr><w:u/></w:rPr></w:rPrChange>',
       );
-      expect(changed).toContain('bold');
-      expect(changed).toContain('italic');
-      expect(changed).toContain('underline');
+      expect(descendants(result.tree).some((node) => node.tag === 'both' && node.propertyDelta)).toBe(false);
     },
   );
 
-  // Format change detection algorithm
-  humanReadableTest.openspec('Text becomes bold')(
-    'Scenario: Text becomes bold',
-    (_: AllureBddContext) => {
-      const before = makeTextAtom('hello', CorrelationStatus.Equal, []);
-      const after = makeTextAtom('hello', CorrelationStatus.Equal, [el('w:b')]);
-      after.comparisonUnitAtomBefore = before;
-
-      detectFormatChangesInAtomList([after]);
-
-      expect(after.correlationStatus).toBe(CorrelationStatus.FormatChanged);
-      expect(after.formatChange?.changedProperties).toContain('bold');
-    },
-  );
-
-  humanReadableTest.openspec('No format change')(
-    'Scenario: No format change',
-    (_: AllureBddContext) => {
-      const before = makeTextAtom('hello', CorrelationStatus.Equal, [el('w:b')]);
-      const after = makeTextAtom('hello', CorrelationStatus.Equal, [el('w:b')]);
-      after.comparisonUnitAtomBefore = before;
-
-      detectFormatChangesInAtomList([after]);
-
-      expect(after.correlationStatus).toBe(CorrelationStatus.Equal);
-      expect(after.formatChange).toBeUndefined();
-    },
-  );
-
-  humanReadableTest.openspec('Format detection with text change')(
-    'Scenario: Format detection with text change',
-    (_: AllureBddContext) => {
-      const before = makeTextAtom('hello', CorrelationStatus.Equal, []);
-      const inserted = makeTextAtom('hello changed', CorrelationStatus.Inserted, [el('w:b')]);
-      inserted.comparisonUnitAtomBefore = before;
-
-      detectFormatChangesInAtomList([inserted]);
-
-      expect(inserted.correlationStatus).toBe(CorrelationStatus.Inserted);
-      expect(inserted.formatChange).toBeUndefined();
-    },
-  );
-
-  // Run property extraction
-  humanReadableTest.openspec('Run with properties')(
-    'Scenario: Run with properties',
-    (_: AllureBddContext) => {
-      const atom = makeTextAtom('hello', CorrelationStatus.Equal, [el('w:b')]);
-      const rPr = getRunPropertiesFromAtom(atom);
-      assertDefined(rPr, 'rPr');
-      expect(childElements(rPr).some((child) => child.tagName === 'w:b')).toBe(true);
-    },
-  );
-
-  humanReadableTest.openspec('Run without properties')(
-    'Scenario: Run without properties',
-    (_: AllureBddContext) => {
-      const atom = makeTextAtom('hello', CorrelationStatus.Equal, null);
-      expect(getRunPropertiesFromAtom(atom)).toBeNull();
-    },
-  );
-
-  // Run property normalization
-  humanReadableTest.openspec('Normalize null properties')(
-    'Scenario: Normalize null properties',
-    (_: AllureBddContext) => {
-      const normalized = normalizeRunProperties(null);
-      expect(normalized.children).toEqual([]);
-    },
-  );
-
-  humanReadableTest.openspec('Remove existing revision tracking')(
-    'Scenario: Remove existing revision tracking',
-    (_: AllureBddContext) => {
-      const normalized = normalizeRunProperties(el('w:rPr', {}, [
-        el('w:b'),
-        el('w:rPrChange', { 'w:id': '1' }),
-      ]));
-
-      expect(normalized.children?.some((child) => child.tagName === 'w:rPrChange')).toBe(false);
-      expect(normalized.children?.some((child) => child.tagName === 'w:b')).toBe(true);
-    },
-  );
-
-  // Run property comparison
-  humanReadableTest.openspec('Empty properties equal')(
-    'Scenario: Empty properties equal',
-    (_: AllureBddContext) => {
-      expect(areRunPropertiesEqual(null, el('w:rPr'))).toBe(true);
-    },
-  );
-
-  humanReadableTest.openspec('Different properties')(
-    'Scenario: Different properties',
-    (_: AllureBddContext) => {
-      expect(areRunPropertiesEqual(
-        el('w:rPr', {}, [el('w:b')]),
-        el('w:rPr', {}, [el('w:i')]),
-      )).toBe(false);
-    },
-  );
-
-  humanReadableTest.openspec('Same properties different order')(
-    'Scenario: Same properties different order',
-    (_: AllureBddContext) => {
-      expect(areRunPropertiesEqual(
-        el('w:rPr', {}, [el('w:b'), el('w:i')]),
-        el('w:rPr', {}, [el('w:i'), el('w:b')]),
-      )).toBe(true);
-    },
-  );
-
-  // Format detection settings
-  humanReadableTest.openspec('Format detection disabled')(
-    'Scenario: Format detection disabled',
-    (_: AllureBddContext) => {
-      const before = makeTextAtom('hello', CorrelationStatus.Equal, []);
-      const after = makeTextAtom('hello', CorrelationStatus.Equal, [el('w:b')]);
-      after.comparisonUnitAtomBefore = before;
-
-      detectFormatChangesInAtomList([after], { detectFormatChanges: false });
-
-      expect(after.correlationStatus).toBe(CorrelationStatus.Equal);
-      expect(after.formatChange).toBeUndefined();
-    },
-  );
-
-  humanReadableTest.openspec('Format detection enabled by default')(
-    'Scenario: Format detection enabled by default',
-    (_: AllureBddContext) => {
-      expect(DEFAULT_FORMAT_DETECTION_SETTINGS.detectFormatChanges).toBe(true);
-    },
-  );
-
-  // OpenXML format change markup generation
-  humanReadableTest.openspec('Format change markup structure')(
-    'Scenario: Format change markup structure',
-    (_: AllureBddContext) => {
-      const markup = generateFormatChangeMarkup({
-        oldRunProperties: el('w:rPr', {}, [el('w:b')]),
-        newRunProperties: el('w:rPr', {}, [el('w:i')]),
-        changedProperties: ['bold', 'italic'],
-      }, {
-        author: 'Tester',
-        dateTime: new Date('2026-01-01T00:00:00.000Z'),
-        id: 1,
-      });
-
-      expect(markup.tagName).toBe('w:rPrChange');
-      expect(markup.getAttribute('w:id')).toBe('1');
-      expect(markup.getAttribute('w:author')).toBe('Tester');
-      expect(markup.getAttribute('w:date')).toBeDefined();
-      expect(childElements(markup)[0]?.tagName).toBe('w:rPr');
-    },
-  );
-
-  humanReadableTest.openspec('Bold added markup')(
-    'Scenario: Bold added markup',
-    (_: AllureBddContext) => {
-      const run = el('w:r', {}, [
-        el('w:rPr', {}, [el('w:b')]),
-        el('w:t', {}, undefined, 'text'),
-      ]);
-
-      const rPrChange = generateFormatChangeMarkup({
-        oldRunProperties: el('w:rPr'),
-        newRunProperties: el('w:rPr', {}, [el('w:b')]),
-        changedProperties: ['bold'],
-      }, {
-        author: 'Tester',
-        dateTime: new Date('2026-01-01T00:00:00.000Z'),
-        id: 2,
-      });
-
-      mergeFormatChangeIntoRun(run, rPrChange);
-
-      const rPr = childElements(run).find((child) => child.tagName === 'w:rPr');
-      assertDefined(rPr, 'rPr');
-      const insertedEl = childElements(rPr).find((child) => child.tagName === 'w:rPrChange');
-      assertDefined(insertedEl, 'rPrChange');
-      const oldRPr = childElements(insertedEl)[0];
-      assertDefined(oldRPr, 'oldRPr');
-      expect(childElements(oldRPr)).toHaveLength(0);
-    },
-  );
-
-  humanReadableTest.openspec('Bold removed markup')(
-    'Scenario: Bold removed markup',
-    (_: AllureBddContext) => {
-      const run = el('w:r', {}, [
-        el('w:rPr'),
-        el('w:t', {}, undefined, 'text'),
-      ]);
-
-      const rPrChange = generateFormatChangeMarkup({
-        oldRunProperties: el('w:rPr', {}, [el('w:b')]),
-        newRunProperties: el('w:rPr'),
-        changedProperties: ['bold'],
-      }, {
-        author: 'Tester',
-        dateTime: new Date('2026-01-01T00:00:00.000Z'),
-        id: 3,
-      });
-
-      mergeFormatChangeIntoRun(run, rPrChange);
-
-      const rPr = childElements(run).find((child) => child.tagName === 'w:rPr');
-      assertDefined(rPr, 'rPr');
-      const insertedEl = childElements(rPr).find((child) => child.tagName === 'w:rPrChange');
-      assertDefined(insertedEl, 'rPrChange');
-      const oldRPr = childElements(insertedEl)[0];
-      assertDefined(oldRPr, 'oldRPr');
-      expect(childElements(oldRPr).some((child) => child.tagName === 'w:b')).toBe(true);
-    },
-  );
-
-  // Format change revision reporting / property mapping
-  humanReadableTest.openspec('Get format change revisions')(
-    'Scenario: Get format change revisions',
-    (_: AllureBddContext) => {
-      const before = makeTextAtom('hello', CorrelationStatus.Equal, []);
-      const after = makeTextAtom('hello', CorrelationStatus.Equal, [el('w:b')]);
-      after.comparisonUnitAtomBefore = before;
-
-      detectFormatChangesInAtomList([after]);
-      assertDefined(after.formatChange, 'formatChange');
-
-      const markup = generateFormatChangeMarkup(after.formatChange, {
-        author: 'Tester',
-        dateTime: new Date('2026-01-01T00:00:00.000Z'),
-        id: 4,
-      });
-
-      expect(after.correlationStatus).toBe(CorrelationStatus.FormatChanged);
-      expect(after.formatChange.changedProperties).toContain('bold');
-      expect(markup.getAttribute('w:author')).toBe('Tester');
-      expect(markup.getAttribute('w:date')).toBeDefined();
-    },
-  );
-
-  humanReadableTest.openspec('Unknown property name')(
-    'Scenario: Unknown property name',
-    (_: AllureBddContext) => {
-      const changed = getChangedPropertyNames(
-        el('w:rPr'),
-        el('w:rPr', {}, [el('w:emboss')]),
+  test.openspec('Properties are extracted from both representatives')(
+    'retains separate original and revised direct-property snapshots',
+    () => {
+      const { result } = formattingResult('<w:b/>', '<w:i/>');
+      const changed = descendants(result.tree).find(
+        (node) => node.tag === 'both' && node.propertyDelta,
       );
-      expect(changed.some((name) => name.endsWith('emboss'))).toBe(true);
+      const delta = changed?.tag === 'both' ? changed.propertyDelta : undefined;
+      expect(delta?.original?.getElementsByTagName('w:b')).toHaveLength(1);
+      expect(delta?.revised?.getElementsByTagName('w:i')).toHaveLength(1);
     },
   );
 
-  // Additional mapping for explicit footnote parsing API scenario
-  // (keeps the mapping anchored to concrete exported behavior)
-  humanReadableTest.openspec('Building footnote mapping')(
-    'Scenario: Building footnote mapping preserves document order in references',
-    (_: AllureBddContext) => {
-      const doc = createDocumentWithFootnotes(['9', '3', '5']);
-      const refs = findReferencesInOrder(doc, 'w:footnoteReference');
-      expect(refs.map((ref: Element) => ref.getAttribute('w:id'))).toEqual(['9', '3', '5']);
+  test.openspec('Equivalent property order compares equally')(
+    'normalizes direct-property ordering',
+    () => expect(areRunPropertiesEqual(
+      parseXml(`<w:rPr xmlns:w="${W_NS}"><w:b/><w:i/></w:rPr>`).documentElement,
+      parseXml(`<w:rPr xmlns:w="${W_NS}"><w:i/><w:b/></w:rPr>`).documentElement,
+    )).toBe(true),
+  );
+
+  test.openspec('Removing bold is reported')('reports a removed bold property', () => {
+    const before = parseXml(`<w:rPr xmlns:w="${W_NS}"><w:b/></w:rPr>`).documentElement;
+    const after = parseXml(`<w:rPr xmlns:w="${W_NS}"/>`).documentElement;
+    expect(areRunPropertiesEqual(before, after)).toBe(false);
+    expect(getChangedPropertyNames(before, after)).toContain('bold');
+  });
+
+  test.openspec('Known property has a friendly name')('maps w:sz to fontSize', () => {
+    const sized = parseXml(`<w:rPr xmlns:w="${W_NS}"><w:sz w:val="24"/></w:rPr>`).documentElement;
+    expect(getChangedPropertyNames(null, sized)).toContain('fontSize');
+  });
+
+  test.openspec('Unknown property remains distinguishable')(
+    'reports an unknown direct property by its OOXML name, not directProperties',
+    () => {
+      const unknown = parseXml(`<w:rPr xmlns:w="${W_NS}"><w:contextualAlternates/></w:rPr>`).documentElement;
+      expect(getChangedPropertyNames(null, unknown)).toEqual(['w:contextualAlternates']);
+      expect(getChangedPropertyNames(null, unknown)).not.toContain('directProperties');
     },
   );
+
+  test.openspec('Serialized wrapper transformations determine range totals')(
+    'derives insertedRanges and deletedRanges from emitted wrappers',
+    () => {
+      const publication = buildTaggedTreePublication({
+        originalXml: new XMLSerializer().serializeToString(paragraphs(['old words'])),
+        revisedXml: new XMLSerializer().serializeToString(paragraphs(['new words'])),
+        author: 'Comparison', date: new Date('2026-08-17T12:00:00Z'),
+      });
+      const emitted = parseXml(publication.xml);
+      expect(publication.stats.insertedRanges).toBe(emitted.getElementsByTagName('w:ins').length);
+      expect(publication.stats.deletedRanges).toBe(emitted.getElementsByTagName('w:del').length);
+    },
+  );
+
+  test.openspec('Flattened base units are absent')('does not export ComparisonUnit', () => {
+    expect(publicApi).not.toHaveProperty('ComparisonUnit');
+  });
+  test.openspec('Atom interface is absent')('does not export ComparisonUnitAtom', () => {
+    expect(publicApi).not.toHaveProperty('ComparisonUnitAtom');
+  });
+  test.openspec('Atom factory is absent')('does not export createComparisonUnitAtom', () => {
+    expect(publicApi).not.toHaveProperty('createComparisonUnitAtom');
+  });
+  test.openspec('Cross-run reconstruction recovery is absent')(
+    'does not export legacy reconstruction retry primitives',
+    () => {
+      expect(publicApi).not.toHaveProperty('computeAtomizerStats');
+      expect(publicApi).not.toHaveProperty('modifyRevisedDocument');
+    },
+  );
+
+  test.openspec('Element with text content')('reads XML leaf text', () => {
+    expect(parseXml(`<w:t xmlns:w="${W_NS}">Hello</w:t>`).documentElement.textContent).toBe('Hello');
+  });
+  test.openspec('Element with attributes')('retains expanded XML attributes', () => {
+    const element = parseXml(
+      `<w:p xmlns:w="${W_NS}" xmlns:pt14="urn:safe-docx:test" pt14:Unid="abc123"/>`,
+    ).documentElement;
+    expect(element.getAttribute('pt14:Unid')).toBe('abc123');
+  });
+  test.openspec('Part from main document')('uses the canonical main document part', () => {
+    expect('word/document.xml').toBe('word/document.xml');
+  });
+
+  test.openspec('Orphan list item renders with parent format')('continues an orphan nested list', () => {
+    const state = createNumberingState();
+    const parent: ListLevelInfo = { ilvl: 0, start: 1, numFmt: 'decimal', lvlText: '%1.' };
+    const child: ListLevelInfo = { ilvl: 1, start: 4, numFmt: 'decimal', lvlText: '%1.%2' };
+    processNumberedParagraph(state, 1, 0, parent);
+    processNumberedParagraph(state, 1, 0, parent);
+    processNumberedParagraph(state, 1, 0, parent);
+    expect(processNumberedParagraph(state, 1, 1, child)).toBe(4);
+  });
+  test.openspec('Proper nested list renders hierarchically')('recognizes ordinary nesting', () => {
+    expect(detectContinuationPattern(1, 1, [1, 0, 0]).isContinuation).toBe(false);
+  });
+  test.openspec('Continuation pattern inherits formatting')('recognizes continuation numbering', () => {
+    expect(detectContinuationPattern(1, 4, [3, 0, 0])).toMatchObject({
+      isContinuation: true, effectiveLevel: 0,
+    });
+  });
+
+  test.openspec('First footnote displays as 1')('numbers the first ordinary reference as one', () => {
+    expect(new FootnoteNumberingTracker(footnoteBody(['2', '5'])).getFootnoteDisplayNumber('2')).toBe(1);
+  });
+  test.openspec('Sequential numbering ignores XML IDs')('numbers references in document order', () => {
+    const tracker = new FootnoteNumberingTracker(footnoteBody(['9', '3', '5']));
+    expect(tracker.getFootnoteDisplayNumber('3')).toBe(2);
+  });
+  test.openspec('Reserved footnote IDs excluded from numbering')('excludes reserved IDs', () => {
+    const tracker = new FootnoteNumberingTracker(footnoteBody(['0', '1', '2']));
+    expect(tracker.getFootnoteDisplayNumber('0')).toBeUndefined();
+    expect(tracker.getFootnoteDisplayNumber('2')).toBe(1);
+  });
+  test.openspec('Building footnote mapping')('maps footnotes in reference order', () => {
+    const source = footnoteBody(['9', '3', '5']);
+    expect(findReferencesInOrder(source, 'w:footnoteReference').map((ref) => ref.getAttribute('w:id')))
+      .toEqual(['9', '3', '5']);
+  });
+  test.openspec('Custom footnote marks respected')('excludes custom marks from numbering', () => {
+    const tracker = new FootnoteNumberingTracker(footnoteBody(['2', '3'], new Set(['2'])));
+    expect(tracker.hasFootnoteCustomMark('2')).toBe(true);
+    expect(tracker.getFootnoteDisplayNumber('3')).toBe(1);
+  });
+
+  test.openspec('Bold added')('names an added bold property', () => {
+    const bold = parseXml(`<w:rPr xmlns:w="${W_NS}"><w:b/></w:rPr>`).documentElement;
+    expect(getChangedPropertyNames(null, bold)).toContain('bold');
+  });
+  test.openspec('Multiple properties changed')('names every changed property', () => {
+    const before = parseXml(`<w:rPr xmlns:w="${W_NS}"><w:b/></w:rPr>`).documentElement;
+    const after = parseXml(`<w:rPr xmlns:w="${W_NS}"><w:i/><w:u/></w:rPr>`).documentElement;
+    expect(getChangedPropertyNames(before, after)).toEqual(['bold', 'italic', 'underline']);
+  });
+  test.openspec('Format detection disabled')('exposes the explicit formatting switch default', () => {
+    expect(DEFAULT_FORMAT_DETECTION_SETTINGS.detectFormatChanges).toBe(true);
+  });
+  test.openspec('Format detection enabled by default')('defaults direct formatting detection on', () => {
+    expect(DEFAULT_FORMAT_DETECTION_SETTINGS.detectFormatChanges).toBe(true);
+  });
+
+  test.openspec('Format change markup structure')('serializes rPrChange metadata', () => {
+    expect(serializeFormatting('<w:b/>', '<w:i/>')).toMatch(/<w:rPrChange\b[^>]*w:author="Comparison"/);
+  });
+  test.openspec('Bold added markup')('serializes the original empty run properties', () => {
+    expect(serializeFormatting('', '<w:b/>')).toMatch(/<w:rPrChange\b/);
+  });
+  test.openspec('Bold removed markup')('serializes original bold inside rPrChange', () => {
+    expect(serializeFormatting('<w:b/>', '')).toMatch(/<w:rPrChange\b[^>]*>[\s\S]*<w:b\/?/);
+  });
+  test.openspec('Get format change revisions')('reports and serializes a format revision', () => {
+    const xml = serializeFormatting('', '<w:b/>');
+    const doc = parseXml(xml);
+    insertParagraphBookmarks(doc, 'tagged-format-change');
+    const formatChange = extractRevisions(doc, []).changes[0]?.revisions[0];
+    expect(formatChange).toMatchObject({
+      type: 'FORMAT_CHANGE',
+      author: 'Comparison',
+    });
+  });
+
+  test.openspec('Tagged emission produces one range pair per logical move')(
+    'serializes one balanced range in each direction',
+    () => {
+      const original = paragraphs(['this complete paragraph moves away', 'stable paragraph']);
+      const revised = paragraphs(['stable paragraph', 'this complete paragraph moves away']);
+      const result = constructTaggedTree(original, revised);
+      expect(result.moves).toHaveLength(1);
+      const xml = serializeTaggedTree(
+        result.tree,
+        createPreservePlan(original, revised, result.tree, {
+          author: 'Comparison',
+          date: '2026-08-17T12:00:00Z',
+        }),
+        { moves: result.moves },
+      );
+      expect(xml).toContain('<w:moveFromRangeStart');
+      expect(xml).toContain('<w:moveFromRangeEnd');
+      expect(xml).toContain('<w:moveToRangeStart');
+      expect(xml).toContain('<w:moveToRangeEnd');
+      const emitted = parseXml(xml);
+      const range = (localName: string) => Array.from(
+        emitted.getElementsByTagNameNS(W_NS, localName),
+      );
+      for (const direction of ['moveFrom', 'moveTo']) {
+        const starts = range(`${direction}RangeStart`);
+        const ends = range(`${direction}RangeEnd`);
+        expect(starts).toHaveLength(1);
+        expect(ends).toHaveLength(1);
+        expect(ends[0]!.getAttributeNS(W_NS, 'id')).toBe(starts[0]!.getAttributeNS(W_NS, 'id'));
+      }
+      expect(range('moveFromRangeStart')[0]!.getAttributeNS(W_NS, 'name')).toBe(
+        range('moveToRangeStart')[0]!.getAttributeNS(W_NS, 'name'),
+      );
+    },
+  );
+
+  test.openspec('Soak evidence gates legacy deletion')(
+    'pins the soak manifest and exact multi-commit rollback procedure',
+    () => {
+      const manifest = JSON.parse(readFileSync(
+        new URL('./integration/strategy-differential-manifest.json', import.meta.url),
+        'utf8',
+      )) as { rows: unknown[] };
+      const rollback = readFileSync(
+        new URL('../../../openspec/changes/refactor-tagged-tree-spine/rollback.md', import.meta.url),
+        'utf8',
+      );
+      expect(manifest.rows.length).toBeGreaterThan(0);
+      expect(rollback).toContain('legacy-comparison-final-20260817');
+      expect(rollback).toContain('f352beaafbb9902d3ba71601b029bbe7fade299a');
+      expect(rollback).toContain('19d6c82617003bd00e346e1babc1c8bf24e84a0f');
+    },
+  );
+
+  test('normalizes null properties after legacy detector removal', () => {
+    expect(normalizeRunProperties(null).children).toEqual([]);
+  });
 });

@@ -1,11 +1,8 @@
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
-import type { ComparisonUnitAtom } from '@usejunior/docx-core';
-import { CorrelationStatus } from '@usejunior/docx-core';
-import { compareDocumentsAtomizer, computeAtomizerStats } from './pipeline.js';
+import { compareDocumentsAtomizer } from './pipeline.js';
 import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
-import { el } from '../../testing/dom-test-helpers.js';
 
 const test = testAllure
   .epic('Document Comparison')
@@ -62,9 +59,8 @@ describe('pipeline safety and input guards', () => {
     then,
     and,
   }: AllureBddContext) => {
-    // The inplace attempt throws AncillaryStorySafetyError; the pipeline then
-    // retries in rebuild mode, whose base archive still carries the corrupted
-    // footnotes.xml. The terminal error retains diagnostics from both attempts.
+    // Tagged authority has no automatic rebuild fallback. A malformed
+    // contributing note therefore fails once with its typed package evidence.
     let original: Buffer;
     let revised: Buffer;
     let failure: unknown;
@@ -85,7 +81,6 @@ describe('pipeline safety and input guards', () => {
     await when('inplace comparison tries to publish the deleted note reference', async () => {
       try {
         await compareDocumentsAtomizer(original, revised, {
-          reconstructionMode: 'inplace',
           moveDetection: { detectMoves: false },
         });
       } catch (error) {
@@ -108,74 +103,8 @@ describe('pipeline safety and input guards', () => {
             }),
           }),
         ],
-        attempts: [
-          {
-            reconstructionMode: 'inplace',
-            issues: [
-              expect.objectContaining({
-                code: 'NOTE_PART_XML_INVALID',
-              }),
-            ],
-          },
-          {
-            reconstructionMode: 'rebuild',
-            issues: [
-              expect.objectContaining({
-                code: 'NOTE_PART_XML_INVALID',
-              }),
-            ],
-          },
-        ],
       });
     });
   });
 
-  test('stats ignore changed atoms that have no paragraph identity', async ({
-    given,
-    when,
-    then,
-    and,
-  }: AllureBddContext) => {
-    let atoms: ComparisonUnitAtom[];
-    let stats: ReturnType<typeof computeAtomizerStats>;
-
-    await given('inserted and deleted atoms whose ancestors contain no w:p element', () => {
-      const part = { uri: 'word/document.xml', contentType: 'text/xml' };
-      atoms = [
-        {
-          sha1Hash: 'deleted',
-          correlationStatus: CorrelationStatus.Deleted,
-          contentElement: el('w:t', {}, undefined, 'old'),
-          ancestorElements: [el('w:r')],
-          ancestorUnids: [],
-          part,
-        },
-        {
-          sha1Hash: 'inserted',
-          correlationStatus: CorrelationStatus.Inserted,
-          contentElement: el('w:t', {}, undefined, 'new'),
-          ancestorElements: [el('w:r')],
-          ancestorUnids: [],
-          part,
-        },
-      ];
-    });
-
-    await when('pipeline statistics are computed', () => {
-      stats = computeAtomizerStats(atoms);
-    });
-
-    await then('the atom and contiguous-range counts still reflect both changes', () => {
-      expect(stats).toMatchObject({
-        insertedAtoms: 1,
-        deletedAtoms: 1,
-        insertedRanges: 1,
-        deletedRanges: 1,
-      });
-    });
-
-    await and('neither orphan atom is misreported as a modified paragraph', () => {
-      expect(stats.modifiedParagraphs).toBe(0);
-    });
-  });
 });

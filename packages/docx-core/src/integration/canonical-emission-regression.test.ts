@@ -706,7 +706,6 @@ describe('Round-trip with comparison', () => {
       await when('compareDocuments runs against the tracked document', async () => {
         const compared = await compareDocuments(baseline, modifiedParts.buffer, {
           author: AI_AUTHOR,
-          engine: 'atomizer',
         });
         comparedDocumentXml = (await readZipText(compared.document, 'word/document.xml'))!;
       });
@@ -782,7 +781,6 @@ describe('Round-trip with comparison', () => {
       await when('compareDocuments runs against the tracked insertion', async () => {
         const compared = await compareDocuments(baseline, modified, {
           author: AI_AUTHOR,
-          engine: 'atomizer',
         });
         comparedDocumentXml = (await readZipText(compared.document, 'word/document.xml'))!;
       });
@@ -830,7 +828,6 @@ describe('Round-trip with comparison', () => {
       await when('compareDocuments runs against the tracked comment document', async () => {
         const compared = await compareDocuments(baseline, modifiedParts.buffer, {
           author: AI_AUTHOR,
-          engine: 'atomizer',
         });
         const parts = await getResultParts(compared.document);
         comparedDocumentXml = parts.documentXml;
@@ -864,7 +861,6 @@ describe('Round-trip with comparison', () => {
       await when('compareDocuments runs against the tracked footnote document', async () => {
         const compared = await compareDocuments(baseline, modifiedParts.buffer, {
           author: AI_AUTHOR,
-          engine: 'atomizer',
         });
         const parts = await getResultParts(compared.document);
         comparedDocumentXml = parts.documentXml;

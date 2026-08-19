@@ -35,7 +35,7 @@ The build step is a real dependency, not hygiene: formatting resolution comes fr
 
 Both inputs must be clean documents. The tool refuses a redline, because in a document carrying `w:del` the deleted text is still present and "empty" does not mean what D2 assumes.
 
-**Coverage is enforced, not merely reported.** The match key is the tool's sharpest edge: `reconstructionMode: 'rebuild'` emits output carrying no `w14:paraId` at all, so every paragraph fails to match, every detector reports zero, and the run reads as a clean pass having inspected nothing. Coverage below 95% of the larger side's paragraph count is therefore reported as `INCONCLUSIVE` and exits 2. Use `--min-coverage` to move the floor once you have decided what the gap means. In practice an `inplace` output keeps its ids; a real contract pair measured 97%, the shortfall being duplicate ids.
+**Coverage is enforced, not merely reported.** The match key is the tool's sharpest edge: historical rebuild output carried no `w14:paraId` at all, so every paragraph failed to match, every detector reported zero, and the run looked clean despite inspecting nothing. Public comparison now always starts from the revised package and preserves its paragraph identities. Coverage below 95% of the larger side's paragraph count is still reported as `INCONCLUSIVE` and exits 2 because missing or duplicate ids remain possible. Use `--min-coverage` only after deciding what the gap means.
 
 What the detectors do not see, stated rather than hidden:
 
@@ -53,8 +53,8 @@ A diagnostic run is a pass only when all five hold. Anything short of all five i
 1. **Round-trip identity.** Accepting all revisions in the produced redline reproduces the revised document's extracted text exactly. Text inside `w:txbxContent` is the one documented boundary: text boxes are passed through opaquely and never carry redline markup, so their content is outside the compared projection. Note what this does *not* license. A text-box difference is not a benign residue to be waved through — `assertTextBoxContentUnchanged` fails closed and aborts the comparison before atomization when text-box content differs between the two sides (issue #647). Any residue confined to `w:txbxContent` therefore has to be named and explained, not absorbed into an expected-exception bucket.
 2. **`PAGEREF` field count preserved** between input and output. This is how table-of-contents destruction shows up.
 3. **Zero `w:ins` and `w:del` markers** in any clean output.
-4. **Both formatting-loss detectors report zero, on a run that was conclusive.** An `INCONCLUSIVE` result is not a pass, and neither is a zero count taken from one. Rebuild output cannot satisfy this criterion by paraId matching alone.
-5. **`reconstructionModeUsed` reported** for both an `inplace` and a `rebuild` run — reported, not merely requested. Every front door — the library, the MCP tool, the `safe-docx` CLIs, and the `docx-comparison`/`safe-docx-compare` bins — shares one default: `DEFAULT_RECONSTRUCTION_MODE`, which is `inplace` (`packages/docx-compare/src/comparison-defaults.ts`, re-exported by `packages/docx-mcp/src/tools/comparison_defaults.ts`; issues #649, #808). Every `compare` CLI accepts an explicit `mode` and falls back to that shared default. `inplace` can still silently fall back to `rebuild` — which is why the mode that ran, not the mode requested, is what gets recorded.
+4. **Both formatting-loss detectors report zero, on a run that was conclusive.** An `INCONCLUSIVE` result is not a pass, and neither is a zero count taken from one.
+5. **Package provenance is revised-based.** The library, MCP tool, and both CLI families expose one comparison behavior: tagged revisions assembled into the revised archive. The retired engine, strategy, reconstruction, premerge, and refinement selectors are not accepted.
 
 Report every detector count explicitly, including the zeros. A detector that prints nothing when it finds nothing cannot be told apart from a detector that never ran.
 
@@ -71,10 +71,10 @@ the run-split abort.** A 2026-07-27 reconstruction attempt for
 [#693](https://github.com/UseJunior/safe-docx/issues/693) scrubbed the public
 NVCA indemnification agreement in place, preserving its package structure and
 109 `w:instrText` field instructions. The revised side changed one character of
-a 17-character scrubbed text run and split that run in two. The public
-`compareDocuments` entry point succeeded in both requested modes: `inplace`
-reported `reconstructionModeUsed: 'inplace'`, and `rebuild` reported
-`reconstructionModeUsed: 'rebuild'`.
+a 17-character scrubbed text run and split that run in two. The then-public
+legacy modes both succeeded. That selector surface has since been removed; the
+result remains historical evidence about the retired reconstruction
+implementation, not a recipe for the current public API.
 
 Later review established the limit of that result: the chosen run followed the
 end of a `SEQ` field and therefore sat outside the field range. Rebuild still

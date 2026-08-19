@@ -1,6 +1,7 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 import {
+  applySpecDeltas,
   extractTestBody,
   extractThenTokens,
   findThenKeywordViolations,
@@ -54,6 +55,45 @@ const SPEC = [
 ].join('\n');
 
 describe('validate_openspec_coverage THEN-keyword check', () => {
+  describe('applySpecDeltas', () => {
+    test('adds, replaces, and removes whole requirements before coverage is measured', (_: AllureBddContext) => {
+      const base = `
+### Requirement: Retained
+#### Scenario: Old retained scenario
+- **WHEN** old behavior runs
+- **THEN** old output appears
+
+### Requirement: Removed
+#### Scenario: Obsolete scenario
+- **WHEN** old behavior runs
+- **THEN** old output appears
+`;
+      const delta = `
+## ADDED Requirements
+### Requirement: Added
+#### Scenario: Added scenario
+- **WHEN** new behavior runs
+- **THEN** new output appears
+
+## MODIFIED Requirements
+### Requirement: Retained
+#### Scenario: New retained scenario
+- **WHEN** tagged behavior runs
+- **THEN** tagged output appears
+
+## REMOVED Requirements
+### Requirement: Removed
+#### Scenario: Removal migration evidence
+- **WHEN** the API is inspected
+- **THEN** the old export is absent
+`;
+
+      const scenarios = parseScenariosFromSpec(applySpecDeltas(base, [delta]))
+        .map((entry) => entry.name);
+      expect(scenarios).toEqual(['New retained scenario', 'Added scenario']);
+    });
+  });
+
   describe('tokenizeCodeSpan', () => {
     test('keeps namespaced names and splits dotted/value expressions', (_: AllureBddContext) => {
       expect(tokenizeCodeSpan('w:tbl')).toEqual(['w:tbl']);

@@ -2,7 +2,7 @@ import { beforeAll, describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
@@ -165,12 +165,7 @@ function assertSemanticBookmarkParity(
 
 async function runInplaceComparison(originalPath: string, revisedPath: string): Promise<InplaceRun> {
   const [original, revised] = await Promise.all([readFile(originalPath), readFile(revisedPath)]);
-  // premergeRuns defaults to true — do not override. ILPA falls back to rebuild
-  // with premerge enabled. See GitHub issue #35 (premerge-enabled inplace safety
-  // check failure).
   const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
-    reconstructionMode: 'inplace',
   });
 
   const [originalArchive, revisedArchive, resultArchive] = await Promise.all([
@@ -291,8 +286,6 @@ describe('Inplace bookmark semantic regression coverage (Allure)', () => {
       });
 
       await then('reconstruction succeeds in inplace mode', () => {
-        // Issue #35 fixed: setLeafText now correctly syncs both `data` and `nodeValue`
-        // on xmldom text nodes, so premergeRuns: true no longer causes round-trip failure.
         expect(ilpa.reconstructionModeUsed).toBe('inplace');
         expect(ilpa.fallbackReason).toBeUndefined();
       });

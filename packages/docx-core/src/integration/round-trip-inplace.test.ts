@@ -11,7 +11,7 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import JSZip from 'jszip';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
@@ -47,8 +47,6 @@ describe('Round-Trip Tests - Inplace Reconstruction', () => {
 
       await when('documents are compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
-          reconstructionMode: 'inplace',
         });
 
         const resultArchive = await DocxArchive.load(result.document);
@@ -78,8 +76,6 @@ describe('Round-Trip Tests - Inplace Reconstruction', () => {
 
       await when('documents are compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
-          reconstructionMode: 'inplace',
         });
 
         const resultArchive = await DocxArchive.load(result.document);
@@ -109,8 +105,6 @@ test('multiple-changes inplace: deleted text preserves xml:space on whitespace f
 
   await when('documents are compared in inplace mode', async () => {
     const result = await compareDocuments(original, revised, {
-      engine: 'atomizer',
-      reconstructionMode: 'inplace',
     });
     const resultArchive = await DocxArchive.load(result.document);
     resultXml = await resultArchive.getDocumentXml();
@@ -148,8 +142,6 @@ test('multiple-changes inplace: produces word-level inline changes, not full par
 
   await when('compared in inplace mode', async () => {
     result = await compareDocuments(original, revised, {
-      engine: 'atomizer',
-      reconstructionMode: 'inplace',
     });
   });
 
@@ -231,8 +223,6 @@ test('split-run-boundary-change: reject changes should match original', async ({
 
   await when('documents are compared in inplace mode', async () => {
     result = await compareDocuments(original, revised, {
-      engine: 'atomizer',
-      reconstructionMode: 'inplace',
     });
 
     const resultArchive = await DocxArchive.load(result.document);

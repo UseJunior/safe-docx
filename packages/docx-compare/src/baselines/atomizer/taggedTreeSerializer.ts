@@ -4,9 +4,12 @@ import {
   childElements,
   parseXml,
   REVISION_ID_ELEMENT_NAME_SET,
+  WML,
 } from '@usejunior/docx-core';
 import { alignComparisonSequences, tokenizeComparisonText } from '../../textAlignment.js';
-import { placeParagraphMarkRevisionMarker } from './inPlaceModifier-wrappers.js';
+import type { RevisionAttribution } from '../../compare-types.js';
+import { getChangedPropertyNames } from '../../propertyNaming.js';
+import { placeParagraphMarkRevisionMarker } from './revisionMarkup.js';
 import {
   nextRevisionId,
   PROPERTY_SCOPE_ELEMENT,
@@ -19,6 +22,8 @@ import {
 } from './taggedTree.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const OPERATION_PROVENANCE_ATTRIBUTE = 'data-safe-docx-operation';
+export const COMPARISON_REVISION_ATTRIBUTE = 'data-safe-docx-comparison-revision';
 const DIRECT_PROPERTY_BY_CONTAINER: Readonly<Record<string, string>> = {
   p: 'w:pPr',
   r: 'w:rPr',
@@ -133,11 +138,36 @@ function convertDeletedText(root: WmlElement): WmlElement {
   return convertedRoot;
 }
 
-function wrapRevision(node: WmlElement, kind: 'ins' | 'del' | 'moveFrom' | 'moveTo', revision: ComparisonRevision): WmlElement {
+function operationProvenance(node: TaggedNode): readonly string[] {
+  return node.operationProvenance ?? [];
+}
+
+function markOperationProvenance(
+  revision: WmlElement,
+  operationIds: readonly string[] = [],
+): void {
+  if (operationIds.length > 1) {
+    throw new Error('one generated revision cannot be attributed to overlapping operations');
+  }
+  if (operationIds[0]) revision.setAttribute(OPERATION_PROVENANCE_ATTRIBUTE, operationIds[0]);
+}
+
+function markComparisonRevision(revision: WmlElement): void {
+  revision.setAttribute(COMPARISON_REVISION_ATTRIBUTE, '1');
+}
+
+function wrapRevision(
+  node: WmlElement,
+  kind: 'ins' | 'del' | 'moveFrom' | 'moveTo',
+  revision: ComparisonRevision,
+  operationIds: readonly string[] = [],
+): WmlElement {
   const wrapper = node.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
   wrapper.setAttributeNS(W_NS, 'w:id', String(revision.id));
   wrapper.setAttributeNS(W_NS, 'w:author', revision.author);
   wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
+  markComparisonRevision(wrapper);
+  markOperationProvenance(wrapper, operationIds);
   if (kind === 'del' || kind === 'moveFrom') node = convertDeletedText(node);
   wrapper.appendChild(node);
   return wrapper;
@@ -148,13 +178,15 @@ function wrapRevision(node: WmlElement, kind: 'ins' | 'del' | 'moveFrom' | 'move
  * matching the established hardened deletion path.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.fields.deleted-field-code
  */
 function hoistFieldCharactersFromDeletions(root: WmlElement): void {
   const deletions = Array.from(root.getElementsByTagNameNS(W_NS, 'del')) as WmlElement[];
   for (const deletion of deletions) {
     const parent = deletion.parentNode;
     if (!parent) continue;
-    const deletedFields = Array.from(deletion.getElementsByTagNameNS(W_NS, 'fldChar'));
+    const deletedFields = Array.from(deletion.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName));
     const deletedFieldTypes = deletedFields.map((field) =>
       field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '');
     if (deletedFieldTypes.join('|') === 'begin|separate|end') continue;
@@ -162,7 +194,7 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
     while (nextElement && nextElement.nodeType !== 1) nextElement = nextElement.nextSibling;
     if (nextElement && (nextElement as WmlElement).localName === 'ins') {
       const types = (element: WmlElement): string[] => Array.from(
-        element.getElementsByTagNameNS(W_NS, 'fldChar'),
+        element.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName),
         (field) => field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '',
       );
       const deletedTypes = types(deletion);
@@ -174,7 +206,7 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
     }
     if (deletedFields.length === 1 && nextElement && (nextElement as WmlElement).localName === 'ins') {
       const insertedFields = Array.from(
-        (nextElement as WmlElement).getElementsByTagNameNS(W_NS, 'fldChar'),
+        (nextElement as WmlElement).getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName),
       );
       const fieldType = (field: Element): string | null =>
         field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType');
@@ -222,7 +254,7 @@ function hoistLiteralInsertionsFromDeletedFieldInstructions(root: WmlElement): v
       const stack: Array<{ begin: WmlElement; instructionNodes: WmlElement[] }> = [];
       let changed = false;
       for (const sibling of siblings) {
-        const fieldCharacters = Array.from(sibling.getElementsByTagNameNS(W_NS, 'fldChar'));
+        const fieldCharacters = Array.from(sibling.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName));
         const types = fieldCharacters.map((field) => field.getAttributeNS(W_NS, 'fldCharType'));
         if (types.includes('begin')) {
           stack.push({ begin: sibling, instructionNodes: [] });
@@ -233,8 +265,8 @@ function hoistLiteralInsertionsFromDeletedFieldInstructions(root: WmlElement): v
         if (types.includes('separate')) {
           const deletedInstruction = active.instructionNodes.some((node) =>
             (node.localName === 'del' || node.getElementsByTagNameNS(W_NS, 'del').length > 0) &&
-            (node.getElementsByTagNameNS(W_NS, 'instrText').length > 0 ||
-              node.getElementsByTagNameNS(W_NS, 'delInstrText').length > 0),
+            (node.getElementsByTagNameNS(W_NS, WML.INSTR_TEXT.localName).length > 0 ||
+              node.getElementsByTagNameNS(W_NS, WML.DEL_INSTR_TEXT.localName).length > 0),
           );
           if (deletedInstruction) {
             const literalInsertions = active.instructionNodes.filter((node) => {
@@ -273,6 +305,7 @@ function markWholeParagraph(
   kind: 'ins' | 'del',
   revision: ComparisonRevision,
   contentRevision: ComparisonRevision,
+  operationIds: readonly string[] = [],
 ): WmlElement {
   let pPr = childElements(paragraph).find((child) => child.localName === 'pPr');
   if (!pPr) {
@@ -289,6 +322,7 @@ function markWholeParagraph(
   marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
   marker.setAttributeNS(W_NS, 'w:author', revision.author);
   marker.setAttributeNS(W_NS, 'w:date', revision.date);
+  markComparisonRevision(marker);
   placeParagraphMarkRevisionMarker(paraRPr, marker, `w:${kind}`);
 
   const content = childElements(paragraph).filter((child) => child !== pPr);
@@ -314,6 +348,8 @@ function markWholeParagraph(
       wrapper.setAttributeNS(W_NS, 'w:id', String(contentRevision.id));
       wrapper.setAttributeNS(W_NS, 'w:author', revision.author);
       wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
+      markComparisonRevision(wrapper);
+      markOperationProvenance(wrapper, operationIds);
     }
     if (kind === 'del') convertDeletedText(child);
     wrapper.appendChild(child);
@@ -406,7 +442,12 @@ function normalizeWholeParagraphDeletions(
     });
     const content = childElements(paragraph).filter((child) =>
       child !== pPr && !RANGE_BOUNDARY_LOCALS.has(child.localName));
+    // Moving the paragraph mark would also move these zero-width anchors into
+    // the predecessor on Accept All, changing bookmark/comment/move scope.
+    const carriesRangeBoundary = childElements(paragraph).some((child) =>
+      RANGE_BOUNDARY_LOCALS.has(child.localName));
     if (!pPr || !markProperties || !marker || content.length === 0 ||
+        carriesRangeBoundary ||
         content.some((child) => child.namespaceURI !== W_NS || child.localName !== 'del')) return;
     if (revisionElements(pPr).some((element) => element !== marker)) return;
 
@@ -471,6 +512,7 @@ function markWholeTableRow(
   row: WmlElement,
   kind: 'ins' | 'del',
   revision: ComparisonRevision,
+  operationIds: readonly string[] = [],
 ): WmlElement {
   let trPr = childElements(row).find((child) => child.localName === 'trPr');
   if (!trPr) {
@@ -481,6 +523,8 @@ function markWholeTableRow(
   marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
   marker.setAttributeNS(W_NS, 'w:author', revision.author);
   marker.setAttributeNS(W_NS, 'w:date', revision.date);
+  markComparisonRevision(marker);
+  markOperationProvenance(marker, operationIds);
   const boundary = childElements(trPr).find((child) =>
     kind === 'ins'
       ? ['del', 'trPrChange'].includes(child.localName)
@@ -549,6 +593,7 @@ function applyPropertyDelta(node: WmlElement, tagged: TaggedNode, revision: Comp
   change.setAttributeNS(W_NS, 'w:id', String(revision.id));
   change.setAttributeNS(W_NS, 'w:author', revision.author);
   change.setAttributeNS(W_NS, 'w:date', revision.date);
+  markComparisonRevision(change);
   // A property addition still needs a typed, empty old-value snapshot.  A
   // self-closing *PrChange element is ambiguous to consumers (and gives the
   // reject projector nothing to restore), whereas OOXML represents the
@@ -563,8 +608,16 @@ function appendChangeMetadata(change: WmlElement, revision: ComparisonRevision):
   change.setAttributeNS(W_NS, 'w:id', String(revision.id));
   change.setAttributeNS(W_NS, 'w:author', revision.author);
   change.setAttributeNS(W_NS, 'w:date', revision.date);
+  markComparisonRevision(change);
 }
 
+/**
+ * Keep revised paragraph properties live and append the original CT_PPrBase
+ * snapshot as the final child required by CT_PPr.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @see https://github.com/UseJunior/safe-docx/issues/679
+ */
 function applyParagraphPropertyDelta(
   paragraph: WmlElement,
   original: WmlElement | null,
@@ -704,8 +757,18 @@ function refineRunReplacement(
       if (new XMLSerializer().serializeToString(beforeChild) === new XMLSerializer().serializeToString(afterChild)) {
         emitted.push(fragmentRun(revised, afterChild));
       } else {
-        emitted.push(wrapRevision(fragmentRun(original, beforeChild), 'del', allocateRevision()));
-        emitted.push(wrapRevision(fragmentRun(revised, afterChild), 'ins', allocateRevision()));
+        emitted.push(wrapRevision(
+          fragmentRun(original, beforeChild),
+          'del',
+          allocateRevision(),
+          operationProvenance(originalNode),
+        ));
+        emitted.push(wrapRevision(
+          fragmentRun(revised, afterChild),
+          'ins',
+          allocateRevision(),
+          operationProvenance(revisedNode),
+        ));
       }
     }
     return emitted;
@@ -732,13 +795,23 @@ function refineRunReplacement(
   if (deletedText) {
     const deletionRun = cloneElement(original);
     deletionRun.getElementsByTagNameNS(W_NS, 't')[0]!.textContent = deletedText;
-    emitted.push(wrapRevision(deletionRun, 'del', allocateRevision()));
+    emitted.push(wrapRevision(
+      deletionRun,
+      'del',
+      allocateRevision(),
+      operationProvenance(originalNode),
+    ));
   }
   const insertedText = after.slice(prefixLength);
   if (insertedText) {
     const insertionRun = cloneElement(revised);
     insertionRun.getElementsByTagNameNS(W_NS, 't')[0]!.textContent = insertedText;
-    emitted.push(wrapRevision(insertionRun, 'ins', allocateRevision()));
+    emitted.push(wrapRevision(
+      insertionRun,
+      'ins',
+      allocateRevision(),
+      operationProvenance(revisedNode),
+    ));
   }
   return emitted;
 }
@@ -789,7 +862,12 @@ function emitCommonRun(
   if (serialize(before) !== serialize(after)) {
     applyPropertyDelta(live, {
       tag: 'both', original, revised, children: [], opaque: true,
-      propertyDelta: { scope: 'run', original: before, revised: after, changedProperties: ['directProperties'] },
+      propertyDelta: {
+        scope: 'run',
+        original: before,
+        revised: after,
+        changedProperties: getChangedPropertyNames(before, after),
+      },
     }, allocateRevision());
   }
   return live;
@@ -799,7 +877,9 @@ interface TextToken { value: string; run: WmlElement; start: number }
 
 function appendCoalescedTextEmission(emitted: WmlElement[], next: WmlElement): void {
   const previous = emitted[emitted.length - 1];
-  if (!previous || previous.localName !== next.localName) {
+  if (!previous || previous.localName !== next.localName ||
+      previous.getAttribute(OPERATION_PROVENANCE_ATTRIBUTE) !==
+        next.getAttribute(OPERATION_PROVENANCE_ATTRIBUTE)) {
     emitted.push(next);
     return;
   }
@@ -906,6 +986,7 @@ function refineSimpleRunGap(
   originals: readonly WmlElement[],
   revised: readonly WmlElement[],
   allocateRevision: () => ComparisonRevision,
+  provenanceByRun: ReadonlyMap<WmlElement, readonly string[]>,
 ): WmlElement[] | undefined {
   if (originals.length === 0 || revised.length === 0) return undefined;
   const before = originals.map(runText).join('');
@@ -962,9 +1043,19 @@ function refineSimpleRunGap(
       }
       i++; j++;
     } else if (i < left.length && deleted.has(i)) {
-      appendCoalescedTextEmission(emitted, wrapRevision(runFragment(left[i]!.run, left[i]!.value), 'del', allocateRevision())); i++;
+      appendCoalescedTextEmission(emitted, wrapRevision(
+        runFragment(left[i]!.run, left[i]!.value),
+        'del',
+        allocateRevision(),
+        provenanceByRun.get(left[i]!.run) ?? [],
+      )); i++;
     } else {
-      appendCoalescedTextEmission(emitted, wrapRevision(runFragment(right[j]!.run, right[j]!.value), 'ins', allocateRevision())); j++;
+      appendCoalescedTextEmission(emitted, wrapRevision(
+        runFragment(right[j]!.run, right[j]!.value),
+        'ins',
+        allocateRevision(),
+        provenanceByRun.get(right[j]!.run) ?? [],
+      )); j++;
     }
   }
   return emitted;
@@ -1089,7 +1180,7 @@ function emitAtomicRetargetedField(
     ) break;
     if (!oldRun || !newRun || oldRun.localName !== 'r' || newRun.localName !== 'r') break;
     const fieldTypes = (run: WmlElement): string[] => Array.from(
-      run.getElementsByTagNameNS(W_NS, 'fldChar'),
+      run.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName),
       (field) => field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '',
     );
     const oldTypes = fieldTypes(oldRun);
@@ -1097,19 +1188,19 @@ function emitAtomicRetargetedField(
     if (oldTypes.join('|') !== newTypes.join('|')) break;
     if (cursor === start && oldTypes[0] !== 'begin') break;
     instructions.original.push(...Array.from(
-      oldRun.getElementsByTagNameNS(W_NS, 'instrText'),
+      oldRun.getElementsByTagNameNS(W_NS, WML.INSTR_TEXT.localName),
       (instruction) => instruction.textContent ?? '',
     ));
     instructions.revised.push(...Array.from(
-      newRun.getElementsByTagNameNS(W_NS, 'instrText'),
+      newRun.getElementsByTagNameNS(W_NS, WML.INSTR_TEXT.localName),
       (instruction) => instruction.textContent ?? '',
     ));
     controls.original.push(...Array.from(
-      oldRun.getElementsByTagNameNS(W_NS, 'fldChar'),
+      oldRun.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName),
       (field) => new XMLSerializer().serializeToString(field),
     ));
     controls.revised.push(...Array.from(
-      newRun.getElementsByTagNameNS(W_NS, 'fldChar'),
+      newRun.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName),
       (field) => new XMLSerializer().serializeToString(field),
     ));
     originals.push(oldRun);
@@ -1164,7 +1255,7 @@ function emitAtomicSideOnlyField(
     const run = representative(child, side);
     if (!run || run.localName !== 'r') break;
     const types = Array.from(
-      run.getElementsByTagNameNS(W_NS, 'fldChar'),
+      run.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName),
       (field) => field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '',
     );
     if (cursor === start && types[0] !== 'begin') break;
@@ -1226,6 +1317,18 @@ function emitNode(
         continue;
       }
       if (
+        childElement?.namespaceURI === W_NS &&
+        childElement.localName === 'sectPr' &&
+        child.tag !== 'both'
+      ) {
+        // A body-level final section property cannot sit inside w:ins/w:del.
+        // Keep the revised-base section live and report the topology/property
+        // delta through unrepresentedChanges. Aligned section properties use
+        // the native w:sectPrChange path in applyPropertyDelta instead.
+        if (child.tag === 'revised') emitted.push(cloneElement(childElement));
+        continue;
+      }
+      if (
         child.tag === 'both' &&
         (childElement?.localName === 'bookmarkStart' || childElement?.localName === 'bookmarkEnd')
       ) {
@@ -1263,16 +1366,23 @@ function emitNode(
         let end = index;
         const originals: WmlElement[] = [];
         const revisions: WmlElement[] = [];
+        const provenanceByRun = new Map<WmlElement, readonly string[]>();
         while (end < node.children.length) {
           const candidate = node.children[end]!;
           if (candidate.tag === 'both' || moveFor(candidate, moves)) break;
           const run = simpleTextRun(candidate, candidate.tag);
           if (!run) break;
           (candidate.tag === 'original' ? originals : revisions).push(run);
+          provenanceByRun.set(run, operationProvenance(candidate));
           end++;
         }
         if (end > index + 1) {
-          const refined = refineSimpleRunGap(originals, revisions, allocateRevision);
+          const refined = refineSimpleRunGap(
+            originals,
+            revisions,
+            allocateRevision,
+            provenanceByRun,
+          );
           if (refined) {
             emitted.push(...refined);
             index = end - 1;
@@ -1324,23 +1434,55 @@ function emitNode(
     }
     const revision = relation ? { ...plan.comparison, id: relation.sourceRangeId } : nodeRevision;
     if (!relation && base.namespaceURI === W_NS && base.localName === 'p') {
-      return wrapPreserved(markWholeParagraph(base, 'del', revision, allocateRevision()), entry.originalStack);
+      return wrapPreserved(markWholeParagraph(
+        base,
+        'del',
+        revision,
+        allocateRevision(),
+        operationProvenance(node),
+      ), entry.originalStack);
     }
     if (!relation && base.namespaceURI === W_NS && base.localName === 'tr') {
-      return wrapPreserved(markWholeTableRow(base, 'del', revision), entry.originalStack);
+      return wrapPreserved(markWholeTableRow(
+        base,
+        'del',
+        revision,
+        operationProvenance(node),
+      ), entry.originalStack);
     }
-    return wrapPreserved(wrapRevision(base, relation ? 'moveFrom' : 'del', revision), entry.originalStack);
+    return wrapPreserved(wrapRevision(
+      base,
+      relation ? 'moveFrom' : 'del',
+      revision,
+      operationProvenance(node),
+    ), entry.originalStack);
   }
   if (node.tag === 'revised') {
     const relation = moveFor(node, moves);
     const revision = relation ? { ...plan.comparison, id: relation.destinationRangeId } : nodeRevision;
     if (!relation && base.namespaceURI === W_NS && base.localName === 'p') {
-      return wrapPreserved(markWholeParagraph(base, 'ins', revision, allocateRevision()), entry.revisedStack);
+      return wrapPreserved(markWholeParagraph(
+        base,
+        'ins',
+        revision,
+        allocateRevision(),
+        operationProvenance(node),
+      ), entry.revisedStack);
     }
     if (!relation && base.namespaceURI === W_NS && base.localName === 'tr') {
-      return wrapPreserved(markWholeTableRow(base, 'ins', revision), entry.revisedStack);
+      return wrapPreserved(markWholeTableRow(
+        base,
+        'ins',
+        revision,
+        operationProvenance(node),
+      ), entry.revisedStack);
     }
-    return wrapPreserved(wrapRevision(base, relation ? 'moveTo' : 'ins', revision), entry.revisedStack);
+    return wrapPreserved(wrapRevision(
+      base,
+      relation ? 'moveTo' : 'ins',
+      revision,
+      operationProvenance(node),
+    ), entry.revisedStack);
   }
   const stack = entry.revisedStack.length > 0 ? entry.revisedStack : entry.originalStack;
   return wrapPreserved(base, stack);
@@ -1351,8 +1493,17 @@ export interface TaggedTreeSerializerOptions {
   /** Package/story skeleton. Tracked content still projects to both sides. */
   baseSide?: Side;
   moves?: readonly TaggedMoveRelation[];
+  /** @internal Retain private markers until publication statistics are read. */
+  retainComparisonRevisionMarkers?: boolean;
 }
 
+/**
+ * Emit run-level revisions inside their retained structural wrappers, including
+ * hyperlinks whose relationship identity comes from the selected package base.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see https://github.com/UseJunior/safe-docx/issues/368
+ */
 export function serializeTaggedTree(
   tree: TaggedNode,
   plan: PreservePlan,
@@ -1419,7 +1570,97 @@ export function serializeTaggedTree(
   normalizeWholeParagraphDeletions(emitted, generatedRevisionIds, allocateRevision);
   hoistFieldCharactersFromDeletions(emitted);
   hoistLiteralInsertionsFromDeletedFieldInstructions(emitted);
+  if (!options.retainComparisonRevisionMarkers) {
+    if (emitted.hasAttribute(COMPARISON_REVISION_ATTRIBUTE)) {
+      emitted.removeAttribute(COMPARISON_REVISION_ATTRIBUTE);
+    }
+    for (const element of Array.from(emitted.getElementsByTagName('*'))) {
+      element.removeAttribute(COMPARISON_REVISION_ATTRIBUTE);
+    }
+  }
   return new XMLSerializer().serializeToString(emitted);
+}
+
+/**
+ * Resolve private serializer provenance after all wrapper-splitting rewrites,
+ * then remove it before the OOXML story reaches validation or publication.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
+ * @see #895
+ */
+export function resolveTaggedRevisionAttributions(
+  xml: string,
+  expectedOperationIds: readonly string[],
+): { xml: string; attributions: RevisionAttribution[] } {
+  const document = parseXml(xml);
+  const revisionKinds = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
+  const attributed = new Map<string, Array<{
+    index: number;
+    type: RevisionAttribution['startRevision']['type'];
+    id: string;
+  }>>();
+  const elements = Array.from(document.getElementsByTagName('*'));
+  elements.forEach((element, index) => {
+    const operationId = element.getAttribute(OPERATION_PROVENANCE_ATTRIBUTE);
+    if (!operationId) return;
+    element.removeAttribute(OPERATION_PROVENANCE_ATTRIBUTE);
+    if (!revisionKinds.has(element.localName)) {
+      throw new Error(`operation ${operationId} provenance is not attached to a tracked revision`);
+    }
+    const id = element.getAttributeNS(W_NS, 'id');
+    if (!id) throw new Error(`operation ${operationId} revision has no w:id`);
+    const entries = attributed.get(operationId) ?? [];
+    entries.push({
+      index,
+      type: element.localName as RevisionAttribution['startRevision']['type'],
+      id,
+    });
+    attributed.set(operationId, entries);
+  });
+
+  const expected = [...new Set(expectedOperationIds)];
+  const unexpected = [...attributed.keys()].filter((operationId) => !expected.includes(operationId));
+  if (unexpected.length > 0) {
+    throw new Error(`unexpected operation provenance: ${unexpected.join(', ')}`);
+  }
+  const intervals = expected.map((operationId) => {
+    const entries = attributed.get(operationId) ?? [];
+    if (entries.length === 0) {
+      throw new Error(`operation ${operationId} has no emitted attributed revision`);
+    }
+    return { operationId, entries, start: entries[0]!.index, end: entries.at(-1)!.index };
+  });
+  const ordered = [...intervals].sort((left, right) => left.start - right.start);
+  for (let index = 1; index < ordered.length; index++) {
+    if (ordered[index]!.start <= ordered[index - 1]!.end) {
+      throw new Error(
+        `operation attribution ranges overlap: ${ordered[index - 1]!.operationId} and ${ordered[index]!.operationId}`,
+      );
+    }
+  }
+  for (const interval of intervals) {
+    for (const boundary of [interval.entries[0]!, interval.entries.at(-1)!]) {
+      const count = elements.filter((element) =>
+        element.localName === boundary.type && element.getAttributeNS(W_NS, 'id') === boundary.id).length;
+      if (count !== 1) {
+        throw new Error(
+          `operation ${interval.operationId} boundary ${boundary.type}#${boundary.id} must be unique; found ${count}`,
+        );
+      }
+    }
+  }
+  const cleaned = new XMLSerializer().serializeToString(document);
+  if (cleaned.includes(OPERATION_PROVENANCE_ATTRIBUTE)) {
+    throw new Error('private operation provenance leaked from tagged serialization');
+  }
+  return {
+    xml: cleaned,
+    attributions: intervals.map(({ operationId, entries }) => ({
+      operationId,
+      startRevision: { type: entries[0]!.type, id: entries[0]!.id },
+      endRevision: { type: entries.at(-1)!.type, id: entries.at(-1)!.id },
+    })),
+  };
 }
 
 /**

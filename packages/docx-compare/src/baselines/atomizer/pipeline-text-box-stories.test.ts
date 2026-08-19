@@ -22,7 +22,10 @@ import {
 } from '../../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { groupElementsByTagNameNS } from '../../markupCompatibility.js';
-import { compareDocumentsAtomizer } from './pipeline.js';
+import {
+  compareDocumentsAtomizer,
+  type TaggedPackageShadowReport,
+} from './pipeline.js';
 import {
   UnsupportedTextBoxRevisionError,
 } from './textBoxRevisionSafety.js';
@@ -327,8 +330,6 @@ describe('VML text-box story comparison (#713)', () => {
 
     const result = await when('the documents are compared in place', () =>
       compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'inplace',
-        comparisonStrategy: 'tagged-tree',
       }),
     );
     const outputXml = await documentXml(result.document);
@@ -382,7 +383,6 @@ describe('VML text-box story comparison (#713)', () => {
 
     const result = await when('the documents are compared in place', () =>
       compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'inplace',
       }),
     );
     const outputXml = await documentXml(result.document);
@@ -433,7 +433,6 @@ describe('VML text-box story comparison (#713)', () => {
 
     const result = await when('the documents are compared', () =>
       compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'inplace',
       }),
     );
     const outputXml = await documentXml(result.document);
@@ -475,7 +474,6 @@ describe('VML text-box story comparison (#713)', () => {
 
     const result = await when('the documents are compared', () =>
       compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'inplace',
       }),
     );
     const outputXml = await documentXml(result.document);
@@ -518,7 +516,6 @@ describe('VML text-box story comparison (#713)', () => {
 
     const result = await when('the formatted field-bearing story is compared', () =>
       compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'inplace',
       }),
     );
     const outputXml = await documentXml(result.document);
@@ -563,7 +560,6 @@ describe('VML text-box story comparison (#713)', () => {
     await when('comparison classifies the changed topology', async () => {
       try {
         await compareDocumentsAtomizer(original, revised, {
-          reconstructionMode: 'inplace',
         });
       } catch (error) {
         failure = error;
@@ -613,7 +609,6 @@ describe('VML text-box story comparison (#713)', () => {
     await when('comparison classifies the unpairable scaffold', async () => {
       try {
         await compareDocumentsAtomizer(original, revised, {
-          reconstructionMode: 'inplace',
         });
       } catch (error) {
         failure = error;
@@ -660,7 +655,6 @@ describe('VML text-box story comparison (#713)', () => {
     await when('comparison classifies the ancillary scaffold', async () => {
       try {
         await compareDocumentsAtomizer(original, revised, {
-          reconstructionMode: 'inplace',
         });
       } catch (error) {
         failure = error;
@@ -708,7 +702,7 @@ describe('VML text-box story comparison (#713)', () => {
           await buildDocxFromBodyXml(hostedBox(host, 'Revised'), [], {
             namespaces: TEXT_BOX_NAMESPACES,
           }),
-          { reconstructionMode: 'inplace' },
+          {},
         );
         const outputXml = await documentXml(result.document);
         if (
@@ -751,7 +745,6 @@ describe('VML text-box story comparison (#713)', () => {
 
     const result = await when('the twinned box is compared', () =>
       compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'inplace',
       }),
     );
 
@@ -782,7 +775,6 @@ describe('VML text-box story comparison (#713)', () => {
 
     const result = await when('the pairable story is compared in place', () =>
       compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'inplace',
       }),
     );
     const outputXml = await documentXml(result.document);
@@ -814,7 +806,6 @@ describe('VML text-box story comparison (#713)', () => {
     await when('comparison classifies the changed topology', async () => {
       try {
         await compareDocumentsAtomizer(original, revised, {
-          reconstructionMode: 'inplace',
         });
       } catch (error) {
         failure = error;
@@ -862,7 +853,6 @@ describe('VML text-box story comparison (#713)', () => {
     await when('comparison classifies the prohibited nesting', async () => {
       try {
         await compareDocumentsAtomizer(original, revised, {
-          reconstructionMode: 'inplace',
         });
       } catch (error) {
         failure = error;
@@ -881,7 +871,7 @@ describe('VML text-box story comparison (#713)', () => {
     });
   });
 
-  test('fails closed when a changed story is explicitly rebuilt', async ({
+  test('uses per-story tagged safety for a changed story', async ({
     given,
     when,
     then,
@@ -900,27 +890,25 @@ describe('VML text-box story comparison (#713)', () => {
         { namespaces: TEXT_BOX_NAMESPACES },
       ),
     );
-    let failure: unknown;
+    let result!: Awaited<ReturnType<typeof compareDocumentsAtomizer>>;
+    const shadowReports: TaggedPackageShadowReport[] = [];
 
-    await when('rebuild comparison is explicitly requested', async () => {
-      try {
-        await compareDocumentsAtomizer(original, revised, {
-          reconstructionMode: 'rebuild',
-        });
-      } catch (error) {
-        failure = error;
-      }
+    await when('comparison runs', async () => {
+      result = await compareDocumentsAtomizer(original, revised, {
+        standaloneTaggedPackageShadowObserver: (report) => { shadowReports.push(report); },
+      });
     });
 
-    await then('the typed diagnostic states the in-place boundary', () => {
-      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-      expect(failure).toMatchObject({
-        changes: [
-          expect.objectContaining({
-            reason: expect.stringContaining('reconstructionMode=inplace'),
-          }),
-        ],
-      });
+    await then('tagged publication round-trips independently', async () => {
+      const xml = await (await DocxArchive.load(result.document)).getDocumentXml();
+      expect(parseXml(acceptAllChanges(xml)).documentElement.textContent).toContain('Revised');
+      expect(parseXml(rejectAllChanges(xml)).documentElement.textContent).toContain('Original');
+      expect(shadowReports).toEqual([{
+        missingParts: [],
+        unexpectedParts: [],
+        differentParts: [],
+        standaloneHasNoLegacyAssemblyInputs: true,
+      }]);
     });
   });
 
@@ -948,7 +936,6 @@ describe('VML text-box story comparison (#713)', () => {
     await when('comparison resolves the relationship closure', async () => {
       try {
         await compareDocumentsAtomizer(original, revised, {
-          reconstructionMode: 'inplace',
         });
       } catch (error) {
         failure = error;
@@ -996,7 +983,6 @@ describe('VML text-box story comparison (#713)', () => {
     );
     const result = await when('comparison resolves only selected stories', () =>
       compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'inplace',
       }),
     );
 
@@ -1019,7 +1005,7 @@ describe('VML text-box story comparison (#713)', () => {
     );
 
     const result = await when('the selected story is compared in place', () =>
-      compareDocumentsAtomizer(original, revised, { reconstructionMode: 'inplace' }),
+      compareDocumentsAtomizer(original, revised),
     );
     const archive = await DocxArchive.load(result.document);
     const output = await archive.getFile('word/header1.xml');
@@ -1050,7 +1036,6 @@ describe('VML text-box story comparison (#713)', () => {
 
     const result = await when('comparison pairs the binding-selected scaffolds', () =>
       compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'inplace',
       }),
     );
     const output = await (await DocxArchive.load(result.document))
@@ -1085,7 +1070,6 @@ describe('VML text-box story comparison (#713)', () => {
 
     const result = await when('the owning relationship table follows the nested story', () =>
       compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'inplace',
       }),
     );
     const archive = await DocxArchive.load(result.document);
@@ -1094,10 +1078,16 @@ describe('VML text-box story comparison (#713)', () => {
       archive.getFile('word/_rels/header1.xml.rels'),
     ]);
 
-    await then('the revised relationship closure remains selected and resolvable', () => {
-      expect(output).toContain('r:id="rIdLink9"');
-      expect(output).not.toContain('r:id="rIdLink1"');
-      expect(relationships).toContain('Id="rIdLink9"');
+    await then('the selected relationship closure remains resolvable after id normalization', () => {
+      const outputRelationshipId = parseXml(output!)
+        .getElementsByTagNameNS(OOXML.W_NS, 'hyperlink')[0]
+        ?.getAttributeNS(OOXML.R_NS, 'id');
+      const relationship = Array.from(
+        parseXml(relationships!).getElementsByTagName('Relationship'),
+      ).find((candidate) => candidate.getAttribute('Id') === outputRelationshipId);
+      expect(outputRelationshipId).toBeTruthy();
+      expect(relationship?.getAttribute('Target')).toBe('https://example.test/notice');
+      expect(relationship?.getAttribute('TargetMode')).toBe('External');
       expect(textBoxText(acceptAllChanges(output!))).toBe('Revised linked header');
       expect(textBoxText(rejectAllChanges(output!))).toBe('Original linked header');
     });
@@ -1126,7 +1116,6 @@ describe('VML text-box story comparison (#713)', () => {
 
     const result = await when('the relationship-aware lifecycle check runs', () =>
       compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'inplace',
       }),
     );
 
@@ -1160,7 +1149,6 @@ describe('VML text-box story comparison (#713)', () => {
     await when('relationship-aware classification refuses to guess', async () => {
       try {
         await compareDocumentsAtomizer(original, revised, {
-          reconstructionMode: 'inplace',
         });
       } catch (error) {
         failure = error;
@@ -1363,7 +1351,7 @@ describe('Word-authored text-box corpus (#795)', () => {
       const result = await compareDocumentsAtomizer(
         documents.source,
         documents.revised,
-        { reconstructionMode: 'inplace' },
+        {},
       );
       redlined = await documentXml(result.document);
       accepted = acceptAllChanges(redlined);
@@ -1424,7 +1412,7 @@ describe('Word-authored text-box corpus (#795)', () => {
       const result = await compareDocumentsAtomizer(
         documents.source,
         documents.revised,
-        { reconstructionMode: 'inplace' },
+        {},
       );
       outsideTextBoxes = (await documentXml(result.document)).replace(
         /<w:txbxContent\b[\s\S]*?<\/w:txbxContent>/g,
@@ -1463,7 +1451,6 @@ describe('Word-authored text-box corpus (#795)', () => {
     await when('comparison refuses the now-standalone second box', async () => {
       try {
         await compareDocumentsAtomizer(derived.source, derived.revised, {
-          reconstructionMode: 'inplace',
         });
       } catch (error) {
         failure = error;
@@ -1523,7 +1510,6 @@ describe('Word-authored text-box corpus (#795)', () => {
     await when('comparison classifies the unpairable scaffold', async () => {
       try {
         await compareDocumentsAtomizer(derived.source, derived.revised, {
-          reconstructionMode: 'inplace',
         });
       } catch (error) {
         failure = error;
@@ -1591,7 +1577,6 @@ describe('Word-authored text-box corpus (#795)', () => {
         expect(sourceXml).not.toContain('<mc:AlternateContent');
 
         const result = await compareDocumentsAtomizer(source, revised, {
-          reconstructionMode: 'inplace',
         });
         if (result.reconstructionModeUsed === 'inplace') admitted.push(host);
       }

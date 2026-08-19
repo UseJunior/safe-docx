@@ -1,17 +1,27 @@
 import { describe, expect } from 'vitest';
 import JSZip from 'jszip';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { buildSyntheticDocx, DocxDocument, getParagraphRuns, parseXml } from '@usejunior/docx-core';
-import { itAllure } from '../../docx-core/src/testing/allure-test.js';
+import { itAllure, testAllure } from '../../docx-core/src/testing/allure-test.js';
 import { compileMarkdoc } from './compile.js';
 import { importDocxToMarkdoc } from './import.js';
 import { requireMarkdoc } from './markdoc.js';
 
+const TEST_FEATURE = 'Refactor Tagged Tree Spine';
 const identity = {
   author: 'Synthetic Reviewer',
   initials: 'SR',
   date: new Date('2026-08-16T14:30:00.000Z'),
 };
 const compileOptions = { author: 'Synthetic Revision Author', date: identity.date, rationaleComments: identity };
+const openspecTest = testAllure
+  .epic('Document Comparison')
+  .withLabels({
+    feature: TEST_FEATURE,
+    story: 'Tagged Rationale Attribution',
+    severity: 'critical',
+  });
 
 function replaceOperation(markdoc: string, before: string, after: string, operationId = 'edit'): string {
   const paragraph = requireMarkdoc(markdoc).scaffold.find((item) => item.originalText === before);
@@ -49,6 +59,26 @@ function componentCounts(xml: string): number[] {
   const doc = parseXml(xml);
   return ['commentRangeStart', 'commentRangeEnd', 'commentReference']
     .map((name) => doc.getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', name).length);
+}
+
+function expectNonOverlappingCommentRanges(xml: string, expected: number): void {
+  const document = parseXml(xml);
+  const stack: string[] = [];
+  const completed = new Set<string>();
+  for (const element of Array.from(document.getElementsByTagName('*'))) {
+    if (element.localName === 'commentRangeStart') {
+      // One operation owns one bounded interval. Another range cannot begin
+      // until the current operation's interval has closed.
+      expect(stack).toHaveLength(0);
+      stack.push(element.getAttribute('w:id') ?? '');
+    } else if (element.localName === 'commentRangeEnd') {
+      const id = element.getAttribute('w:id') ?? '';
+      expect(stack.pop()).toBe(id);
+      completed.add(id);
+    }
+  }
+  expect(stack).toEqual([]);
+  expect(completed.size).toBe(expected);
 }
 
 describe('external-facing rationale comments', () => {
@@ -135,7 +165,9 @@ describe('external-facing rationale comments', () => {
     });
   });
 
-  itAllure('[SDX-MDOC-60] keeps internal reasoning private while exporting a paired external rationale', async () => {
+  openspecTest.openspec('Private attribution data does not leak')(
+    '[SDX-MDOC-60] keeps internal reasoning private while exporting a paired external rationale',
+    async () => {
     const source = await buildSyntheticDocx({ paragraphs: ['Alpha term.'] });
     const imported = await importDocxToMarkdoc(source);
     const internalText = 'Private synthetic decision record.';
@@ -150,13 +182,16 @@ describe('external-facing rationale comments', () => {
       .map((entry) => entry.async('string')));
     expect(contents.join('\n')).toContain(externalText);
     expect(contents.join('\n')).not.toContain(internalText);
+    expect(contents.join('\n')).not.toContain('data-safe-docx-operation');
+    expect(contents.join('\n')).not.toContain('safe-docx-rationale-');
     expect(result.certificate.commentRendering).toMatchObject({
       externalRationalesFound: 1,
       internalRationalesFound: 1,
       externalCommentsIncluded: true,
       internalCommentsIncluded: false,
     });
-  });
+    },
+  );
 
   itAllure('[SDX-MDOC-62] dangerous compilation renders both paired rationales as distinct comments', async () => {
     const source = await buildSyntheticDocx({ paragraphs: ['Alpha term.'] });
@@ -176,7 +211,9 @@ describe('external-facing rationale comments', () => {
     expect((output.comments.match(/<w:comment /g) ?? [])).toHaveLength(2);
   });
 
-  itAllure('[SDX-MDOC-44][SDX-MDOC-60][SDX-MDOC-62] keeps paired attribution stable for multi-operation partial rewrites', async () => {
+  openspecTest.openspec('Multiple operations retain disjoint rationale ranges')(
+    '[SDX-MDOC-44][SDX-MDOC-60][SDX-MDOC-62] keeps paired attribution stable for multi-operation partial rewrites',
+    async () => {
     const firstBefore = 'The purchaser shall ensure all personnel remain employees of the purchaser.';
     const firstAfter = 'The purchaser shall ensure all personnel remain employees of the purchaser, and not the supplier.';
     const secondBefore = 'Reports are delivered monthly.';
@@ -199,6 +236,11 @@ describe('external-facing rationale comments', () => {
       .map((entry) => entry.async('string')))).join('\n');
     expect(externalContents).toContain(externalText);
     expect(externalContents).not.toContain(internalText);
+    const externalDocumentXml = (await externalZip.file('word/document.xml')?.async('string')) ?? '';
+    expect(componentCounts(externalDocumentXml)).toEqual([2, 2, 2]);
+    expectNonOverlappingCommentRanges(externalDocumentXml, 2);
+    expect(externalContents).not.toContain('data-safe-docx-operation');
+    expect(externalContents).not.toContain('safe-docx-rationale-');
     expect(externalOnly.certificate).toMatchObject({
       rejectAllEqualsSource: true,
       acceptAllEqualsClean: true,
@@ -214,7 +256,8 @@ describe('external-facing rationale comments', () => {
     expect(dangerousComments).toContain(internalText);
     expect(dangerousComments).toContain(externalText);
     expect((dangerousComments.match(/<w:comment /g) ?? [])).toHaveLength(3);
-  });
+    },
+  );
 
   for (const visibility of ['internal', 'external-facing'] as const) {
     itAllure(`[SDX-MDOC-61] rejects duplicate ${visibility} rationales`, async () => {
@@ -332,10 +375,11 @@ describe('external-facing rationale comments', () => {
       projected[1].buffer,
     ]) {
       expect(JSON.stringify(await parts(artifact))).not.toContain('safe-docx-rationale-');
+      expect(JSON.stringify(await parts(artifact))).not.toContain('data-safe-docx-operation');
     }
   });
 
-  itAllure('[SDX-MDOC-44] preserves boundary whitespace exposed by private marker removal', async () => {
+  itAllure('[SDX-MDOC-44] preserves boundary whitespace through tagged provenance stripping', async () => {
     const source = await buildSyntheticDocx({ paragraphs: ['Letter of Intent'] });
     const imported = await importDocxToMarkdoc(source);
     const markdoc = replaceOperation(imported.markdoc, 'Letter of Intent', 'Mutual Letter of Intent')
@@ -393,4 +437,52 @@ describe('external-facing rationale comments', () => {
     expect(serialized).toContain('Synthetic public rationale.');
     expect(serialized).not.toMatch(/matter|client|privileged|private corpus/iu);
   });
+
+  itAllure('[SDX-MDOC-13][SDX-MDOC-44][SDX-MDOC-60] attributes paired rationale modes on a real public agreement', async () => {
+    const fixture = fileURLToPath(new URL(
+      '../../../tests/test_documents/nvca-regression/source.docx',
+      import.meta.url,
+    ));
+    const imported = await importDocxToMarkdoc(await readFile(fixture));
+    const paragraph = requireMarkdoc(imported.markdoc).scaffold.find((item) =>
+      item.originalText.length >= 30 &&
+      item.originalText.length <= 180 &&
+      !item.originalText.includes('\n'));
+    if (!paragraph) throw new Error('real rationale smoke paragraph not found');
+    const block = new RegExp(`\\{% para id="${paragraph.id}"[\\s\\S]*?\\{% /para %\\}`);
+    const replacement = [
+      `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="real-rationale" format="inherit-source-paragraph" %}`,
+      '{% before %}', paragraph.originalText, '{% /before %}',
+      '{% after %}', `${paragraph.originalText} Clarified.`, '{% /after %}',
+      '{% /change %}',
+    ].join('\n');
+    const internalText = 'Internal synthetic review note for the public fixture.';
+    const externalText = 'Clarifies the public agreement language.';
+    const markdoc = imported.markdoc.replace(block, replacement)
+      + rationale('real-rationale', 'internal', internalText)
+      + rationale('real-rationale', 'external-facing', externalText);
+
+    const externalOnly = await compileMarkdoc(imported.anchoredSource, markdoc, compileOptions);
+    const externalParts = JSON.stringify(await parts(externalOnly.tracked));
+    expect(externalOnly.certificate).toMatchObject({
+      passed: true,
+      rejectAllEqualsSource: true,
+      acceptAllEqualsClean: true,
+    });
+    expect(externalParts).toContain(externalText);
+    expect(externalParts).not.toContain(internalText);
+    expect(externalParts).not.toContain('data-safe-docx-operation');
+
+    const paired = await compileMarkdoc(imported.anchoredSource, markdoc, {
+      ...compileOptions,
+      dangerouslyIncludeInternalComments: true,
+    });
+    const pairedParts = JSON.stringify(await parts(paired.tracked));
+    expect(paired.certificate.passed).toBe(true);
+    expect(pairedParts).toContain(externalText);
+    expect(pairedParts).toContain(internalText);
+    expect(pairedParts).not.toContain('data-safe-docx-operation');
+  // This smoke compiles the real agreement twice through the sole tagged-tree
+  // comparison spine; shared CI runners can exceed the former 60-second budget.
+  }, 120_000);
 });

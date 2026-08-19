@@ -10,7 +10,7 @@ import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Auxiliary Part Merging' });
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
 
 function countOccurrences(xml: string, pattern: RegExp): number {
@@ -42,8 +42,6 @@ describe('Inplace Auxiliary Part Merging', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
-          reconstructionMode: 'inplace',
         });
       });
       await then('result contains merged comment definition and OPC metadata', async () => {
@@ -103,8 +101,6 @@ describe('Inplace Auxiliary Part Merging', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
-          reconstructionMode: 'inplace',
         });
       });
       await then('comments.xml does not contain duplicate entries', async () => {
@@ -140,8 +136,6 @@ describe('Inplace Auxiliary Part Merging', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
-          reconstructionMode: 'inplace',
         });
       });
       await then('result contains merged footnote definition and OPC infrastructure', async () => {
@@ -185,8 +179,6 @@ describe('Inplace Auxiliary Part Merging', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
-          reconstructionMode: 'inplace',
         });
       });
       await then('footnotes.xml contains exactly one user-defined footnote entry', async () => {
@@ -223,8 +215,6 @@ describe('Inplace Auxiliary Part Merging', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await when('documents are compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
-          reconstructionMode: 'inplace',
         });
       });
       await then('every footnoteReference ID in document.xml has a matching entry in footnotes.xml', async () => {

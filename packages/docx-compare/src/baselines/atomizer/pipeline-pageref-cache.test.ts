@@ -112,8 +112,6 @@ describe('cached PAGEREF comparison (#716)', () => {
 
     const result = await when('the adaptive in-place comparison runs', () =>
       compareDocumentsAtomizer(original, revised, {
-        comparisonStrategy: 'legacy',
-        reconstructionMode: 'inplace',
         date: new Date('2026-07-28T12:00:00Z'),
       }),
     );
@@ -122,9 +120,8 @@ describe('cached PAGEREF comparison (#716)', () => {
     await then('the cached page numbers produce no insertion or deletion', async () => {
       expect(revisionTexts(outputXml)).toEqual([]);
     });
-    await then('the highest-fidelity pass succeeds without a fallback attempt', () => {
-      expect(result.inplaceSuccessDiagnostics?.passUsed).toBe('inplace_word_split');
-      expect(result.inplaceSuccessDiagnostics?.precedingFailedAttempts).toEqual([]);
+    await then('the sole tagged path succeeds', () => {
+      expect(result.comparisonStrategyUsed).toBe('tagged-tree');
     });
     await then('both cache-insensitive projections preserve their source TOC', async () => {
       expect(cacheInsensitiveText(acceptAllChanges(outputXml))).toBe(
@@ -157,8 +154,6 @@ describe('cached PAGEREF comparison (#716)', () => {
 
     const result = await when('the adaptive in-place comparison runs', () =>
       compareDocumentsAtomizer(original, revised, {
-        comparisonStrategy: 'legacy',
-        reconstructionMode: 'inplace',
         date: new Date('2026-07-28T12:00:00Z'),
       }),
     );

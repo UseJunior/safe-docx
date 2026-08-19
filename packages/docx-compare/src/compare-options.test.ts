@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DocxArchive, parseXml } from '@usejunior/docx-core';
 import { describe, expect } from 'vitest';
-import { compareDocuments, DEFAULT_RECONSTRUCTION_MODE } from './index.js';
+import { compareDocuments, type CompareOptions } from './index.js';
 import { acceptAllChanges, rejectAllChanges } from './baselines/atomizer/trackChangesAcceptorAst.js';
 import { testAllure, type AllureBddContext } from './testing/allure-test.js';
 import {
@@ -11,9 +11,10 @@ import {
   paragraphWithText,
 } from './testing/ooxml-fixtures.js';
 
+const TEST_FEATURE = 'Comparison Options';
 const test = testAllure
   .epic('Document Comparison')
-  .withLabels({ feature: 'Comparison Options' });
+  .withLabels({ feature: TEST_FEATURE });
 const formatTest = test.conformance({
   spec: 'ECMA-376',
   edition: 5,
@@ -52,14 +53,12 @@ describe('compareDocuments options', () => {
 
       const detected = await when('formatting comparison is explicitly enabled', () =>
         compareDocuments(original, revised, {
-          engine: 'atomizer',
           date: FIXED_DATE,
           ignoreFormatting: false,
         }),
       );
       const ignored = await when('formatting differences are ignored', () =>
         compareDocuments(original, revised, {
-          engine: 'atomizer',
           date: FIXED_DATE,
           ignoreFormatting: true,
         }),
@@ -94,14 +93,12 @@ describe('compareDocuments options', () => {
 
       const compared = await when('move comparison is explicitly enabled', () =>
         compareDocuments(original, revised, {
-          engine: 'atomizer',
           date: FIXED_DATE,
           detectMoves: true,
         }),
       );
       const disabled = await when('move comparison is disabled', () =>
         compareDocuments(original, revised, {
-          engine: 'atomizer',
           date: FIXED_DATE,
           detectMoves: false,
         }),
@@ -134,13 +131,11 @@ describe('compareDocuments options', () => {
 
       const omitted = await when('the fixture is compared with both options omitted', () =>
         compareDocuments(fixture, fixture, {
-          engine: 'atomizer',
           date: FIXED_DATE,
         }),
       );
       const explicitDefaults = await when('the fixture is compared with current defaults explicit', () =>
         compareDocuments(fixture, fixture, {
-          engine: 'atomizer',
           date: FIXED_DATE,
           ignoreFormatting: false,
           detectMoves: true,
@@ -177,7 +172,6 @@ describe('compareDocuments options', () => {
 
       const omitted = await when('the pair is compared with both options omitted', () =>
         compareDocuments(original, revised, {
-          engine: 'atomizer',
           date: FIXED_DATE,
         }),
       );
@@ -193,16 +187,15 @@ describe('compareDocuments options', () => {
     },
   );
 
-  test(
-    'explicit tagged-tree strategy publishes source-exact projections through the package pipeline',
+  test.openspec('Public comparison uses revised-based tagged publication')(
+    'publishes source-exact projections through the sole revised-based package pipeline',
     async ({ given, when, then }: AllureBddContext) => {
       const original = await given('a package with original paragraph formatting', () =>
         buildDocxFromBodyXml('<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Original package text</w:t></w:r></w:p>'));
       const revised = await given('the revised package and formatting', () =>
         buildDocxFromBodyXml('<w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t>Revised package text</w:t></w:r></w:p>'));
-      const result = await when('tagged-tree is selected explicitly', () => compareDocuments(original, revised, {
-        engine: 'atomizer', date: FIXED_DATE, comparisonStrategy: 'tagged-tree',
-      }));
+      const result = await when('the pair is compared without a private override', () =>
+        compareDocuments(original, revised, { date: FIXED_DATE }));
       const output = await documentXml(result.document);
       await then('the package carries both exact text projections', async () => {
         expect(parseXml(acceptAllChanges(output)).documentElement.textContent).toContain('Revised package text');
@@ -211,30 +204,32 @@ describe('compareDocuments options', () => {
     },
   );
 
-  test(
-    'omitting reconstructionMode requests the shared inplace front-door default',
-    async ({ given, when, then, and }: AllureBddContext) => {
-      const original = await given('a one-paragraph document', () =>
+  test.openspec('Public legacy rollback is absent')(
+    'rejects every retired public comparison selector instead of ignoring it',
+    async ({ given, when, then }: AllureBddContext) => {
+      const original = await given('an original one-paragraph document', () =>
         buildDocxFromBodyXml(paragraphWithText('Original library-default text')),
       );
-      const revised = await given('the same document with revised text', () =>
+      const revised = await given('a revised one-paragraph document', () =>
         buildDocxFromBodyXml(paragraphWithText('Revised library-default text')),
       );
 
-      const result = await when('the pair is compared with reconstructionMode omitted', () =>
-        compareDocuments(original, revised, {
-          engine: 'atomizer',
-          date: FIXED_DATE,
-        }),
-      );
+      const removedOptions = await when('each removed selector is supplied by a JavaScript caller', () => [
+        { reconstructionMode: 'rebuild' },
+        { comparisonStrategy: 'legacy' },
+        { engine: 'atomizer' },
+        { premergeRuns: false },
+        { maxWordRefinementChangeRanges: 2 },
+      ] as const);
 
-      await then('the pipeline records the shared default as the requested mode', () => {
-        expect(DEFAULT_RECONSTRUCTION_MODE).toBe('inplace');
-        expect(result.reconstructionModeRequested).toBe(DEFAULT_RECONSTRUCTION_MODE);
-      });
-      await and('this trivially safe pair is produced in place without fallback', () => {
-        expect(result.reconstructionModeUsed).toBe('inplace');
-        expect(result.fallbackReason).toBeUndefined();
+      await then('every retired selector is rejected as unsupported', async () => {
+        for (const removed of removedOptions) {
+          await expect(compareDocuments(
+            original,
+            revised,
+            removed as unknown as CompareOptions,
+          )).rejects.toThrow(`Unsupported comparison option: ${Object.keys(removed)[0]}`);
+        }
       });
     },
   );

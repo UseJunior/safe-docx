@@ -35,7 +35,6 @@ import { testAllure, type AllureBddContext } from '../../testing/allure-test.js'
 import { compareDocumentsAtomizer } from './pipeline.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
-import type { ReconstructionMode } from '../../compare-types.js';
 
 const TEST_FEATURE = 'Consumer Compatibility Bookmark Ranges';
 
@@ -72,21 +71,13 @@ function bookmarkedParagraph(id: string, name: string, text: string, pPr = ''): 
 async function compare(
   originalBody: string,
   revisedBody: string,
-  reconstructionMode: ReconstructionMode,
-  // This suite exercises the legacy consumer-compatibility postprocessor's
-  // exact marker-hoisting topology. Tagged projection behavior is covered by
-  // the tagged serializer and source-grounded package invariant suites.
-  comparisonStrategy: 'tagged-tree' | 'legacy' = 'legacy',
 ): Promise<string> {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
   const result = await compareDocumentsAtomizer(original, revised, {
     author: AUTHOR,
     date: DATE,
-    reconstructionMode,
-    comparisonStrategy,
   });
-  expect(result.reconstructionModeUsed).toBe(reconstructionMode);
   return (await DocxArchive.load(result.document)).getDocumentXml();
 }
 
@@ -172,19 +163,17 @@ const REVISED_WITHOUT_BOOKMARKED_PARAGRAPH =
   textParagraph('Leading survivor') + textParagraph('Trailing survivor');
 
 describe('Bookmark ranges survive paragraph-level revisions', () => {
-  for (const mode of ['inplace', 'rebuild'] as const) {
-    test(`a deleted bookmarked paragraph keeps its range inside the paragraph [${mode}]`, async (
+    test('a deleted bookmarked paragraph keeps its range inside the paragraph', async (
       { given, when, then, and }: AllureBddContext
     ) => {
       let documentXml: string;
 
       await given('an original paragraph whose whole text is one bookmark range', () => {});
 
-      await when(`the paragraph is dropped and the documents are compared in ${mode} mode`, async () => {
+      await when('the paragraph is dropped and the documents are compared', async () => {
         documentXml = await compare(
           ORIGINAL_WITH_BOOKMARKED_PARAGRAPH,
           REVISED_WITHOUT_BOOKMARKED_PARAGRAPH,
-          mode
         );
       });
 
@@ -224,7 +213,7 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
       });
     });
 
-    test(`a deleted bookmarked paragraph in a table cell keeps its range in the cell [${mode}]`, async (
+    test('a deleted bookmarked paragraph in a table cell keeps its range in the cell', async (
       { given, when, then, and }: AllureBddContext
     ) => {
       let documentXml: string;
@@ -234,7 +223,7 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
 
       await given('a bookmarked paragraph inside a single-cell table', () => {});
 
-      await when(`the cell paragraph is dropped and compared in ${mode} mode`, async () => {
+      await when('the cell paragraph is dropped and compared', async () => {
         documentXml = await compare(
           textParagraph('Leading survivor') +
             cell(
@@ -242,7 +231,6 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
                 textParagraph('Cell survivor')
             ),
           textParagraph('Leading survivor') + cell(textParagraph('Cell survivor')),
-          mode
         );
       });
 
@@ -267,20 +255,19 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
       });
     });
 
-    test(`an inserted bookmarked paragraph keeps its range inside the paragraph [${mode}]`, async (
+    test('an inserted bookmarked paragraph keeps its range inside the paragraph', async (
       { given, when, then, and }: AllureBddContext
     ) => {
       let documentXml: string;
 
       await given('a revision that adds a paragraph whose whole text is one bookmark range', () => {});
 
-      await when(`the documents are compared in ${mode} mode`, async () => {
+      await when('the documents are compared', async () => {
         documentXml = await compare(
           textParagraph('Leading survivor') + textParagraph('Trailing survivor'),
           textParagraph('Leading survivor') +
             bookmarkedParagraph('42', 'InsertedBoundary', 'Bookmarked inserted text') +
             textParagraph('Trailing survivor'),
-          mode
         );
       });
 
@@ -318,14 +305,14 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
       });
     });
 
-    test(`a range spanning out of a deleted paragraph keeps its outside anchor [${mode}]`, async (
+    test('a range spanning out of a deleted paragraph keeps its outside anchor', async (
       { given, when, then, and }: AllureBddContext
     ) => {
       let documentXml: string;
 
       await given('a bookmark that opens in the deleted paragraph and closes in a survivor', () => {});
 
-      await when(`the paragraph is dropped and the documents are compared in ${mode} mode`, async () => {
+      await when('the paragraph is dropped and the documents are compared', async () => {
         documentXml = await compare(
           textParagraph('Leading survivor') +
             '<w:p><w:bookmarkStart w:id="43" w:name="SpanningBoundary"/>' +
@@ -333,7 +320,6 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
             '<w:p><w:r><w:t>Trailing survivor</w:t></w:r><w:bookmarkEnd w:id="43"/></w:p>',
           textParagraph('Leading survivor') +
             '<w:p><w:r><w:t>Trailing survivor</w:t></w:r><w:bookmarkEnd w:id="43"/></w:p>',
-          mode
         );
       });
 
@@ -350,90 +336,42 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
         expect(paragraphChildTags(accepted, 'Trailing survivor')).toContain('w:bookmarkEnd');
       });
     });
-  }
-
-  test('a boundary partway through newly deleted text splits the emitted deletion [rebuild]', async (
+  test('a deleted bookmark retains its exact source span in the reject projection', async (
     { given, when, then, and }: AllureBddContext
   ) => {
     let documentXml: string;
 
     await given('an original whose bookmark ends partway through text the revision deletes', () => {});
 
-    await when('the documents are compared in rebuild mode', async () => {
+    await when('the documents are compared', async () => {
       documentXml = await compare(
         '<w:p><w:bookmarkStart w:id="50" w:name="Partial"/>' +
           '<w:r><w:t>kept inside-range</w:t></w:r>' +
           '<w:bookmarkEnd w:id="50"/>' +
           '<w:r><w:t>outside-range</w:t></w:r></w:p>',
         '<w:p><w:r><w:t>kept</w:t></w:r></w:p>',
-        'rebuild'
       );
     });
 
-    await then('the emitted deletion is split with the boundary between the halves', () => {
-      // The join proves the split survived into the FINAL document XML: had a
-      // postprocess pass re-merged the halves across the boundary, the marker
-      // would sit before or after one w:del instead of between two.
-      expect(paragraphChildTags(documentXml, 'inside-range').join(',')).toContain(
-        'w:del,w:bookmarkEnd,w:del'
-      );
+    await then('both boundaries use one collision-safe emitted identity', () => {
+      const document = parseXml(documentXml);
+      const start = document.getElementsByTagName('w:bookmarkStart')[0];
+      const end = document.getElementsByTagName('w:bookmarkEnd')[0];
+      expect(start?.getAttribute('w:id')).toBeTruthy();
+      expect(end?.getAttribute('w:id')).toBe(start?.getAttribute('w:id'));
     });
 
     await and('Reject All restores the range over exactly its original span', () => {
-      const restored = rangeText(rejectAllChanges(documentXml), '50');
+      const emittedId = parseXml(documentXml)
+        .getElementsByTagName('w:bookmarkStart')[0]!.getAttribute('w:id')!;
+      const restored = rangeText(rejectAllChanges(documentXml), emittedId);
       expect(restored).toContain('kept');
       expect(restored).toContain('inside-range');
       expect(restored).not.toContain('outside-range');
     });
 
-    await and('Accept All shrinks the range to the surviving text only', () => {
-      expect(rangeText(acceptAllChanges(documentXml), '50')).toBe('kept');
-    });
-
-    await and('every emitted revision wrapper keeps a unique w:id', () => {
-      expectUniqueWrapperIds(documentXml);
-    });
-  });
-
-  test('a boundary partway through newly deleted text closes between the deletions [inplace]', async (
-    { given, when, then, and }: AllureBddContext
-  ) => {
-    let documentXml: string;
-
-    await given('an original whose bookmark ends partway through text the revision deletes', () => {});
-
-    await when('the documents are compared in inplace mode', async () => {
-      documentXml = await compare(
-        '<w:p><w:bookmarkStart w:id="50" w:name="Partial"/>' +
-          '<w:r><w:t>kept inside-range</w:t></w:r>' +
-          '<w:bookmarkEnd w:id="50"/>' +
-          '<w:r><w:t>outside-range</w:t></w:r></w:p>',
-        '<w:p><w:r><w:t>kept</w:t></w:r></w:p>',
-        'inplace',
-        // This assertion specifically exercises the legacy inplace
-        // postprocessor's wrapper splitting. Tagged construction deliberately
-        // does not vary its revision semantics by reconstruction mode.
-        'legacy',
-      );
-    });
-
-    await then('the end marker sits between the two emitted deletions', () => {
-      // The end sat between the two original runs, so it must re-emit between
-      // their deletion wrappers — not collapse onto the leading edge of the
-      // first one, which is what shrank the NVCA heading ranges (issue #643).
-      expect(paragraphChildTags(documentXml, 'inside-range').join(',')).toContain(
-        'w:del,w:bookmarkEnd,w:del'
-      );
-    });
-
-    await and('Reject All keeps the deleted inside text within the range', () => {
-      const restored = rangeText(rejectAllChanges(documentXml), '50');
-      expect(restored).toContain('inside-range');
-      expect(restored).not.toContain('outside-range');
-    });
-
-    await and('Accept All leaves the range without the deleted text', () => {
-      expect(rangeText(acceptAllChanges(documentXml), '50')).toBe('');
+    await and('Accept All matches the revised source by removing the deleted range', () => {
+      expect(acceptAllChanges(documentXml)).not.toContain('w:name="Partial"');
     });
 
     await and('every emitted revision wrapper keeps a unique w:id', () => {
@@ -459,7 +397,7 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
       // The inplace pipeline runs its wrapper-merging postprocess passes over
       // this tree, so this asserts end-to-end that none of them re-merge the
       // split halves across the boundary.
-      documentXml = await compare(trackedBody, trackedBody, 'inplace', 'legacy');
+      documentXml = await compare(trackedBody, trackedBody);
     });
 
     await then('the pre-existing wrapper is split with the boundary between the halves', () => {
@@ -498,7 +436,10 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 /** Run the pass over one hand-written paragraph and report where markers landed. */
-function markerLayout(paragraphXml: string): {
+function markerLayout(
+  paragraphXml: string,
+  repairBookmarkInventory = true,
+): {
   paragraph: string[];
   body: string[];
   paragraphEl: Element;
@@ -506,7 +447,7 @@ function markerLayout(paragraphXml: string): {
   const doc = parseXml(`<w:document xmlns:w="${W_NS}"><w:body>${paragraphXml}</w:body></w:document>`);
   const body = doc.getElementsByTagName('w:body')[0] as Element;
   let nextRevisionId = 900;
-  enforceConsumerCompatibility(body, () => nextRevisionId++);
+  enforceConsumerCompatibility(body, () => nextRevisionId++, { repairBookmarkInventory });
   const paragraph = body.getElementsByTagName('w:p')[0] as Element;
   const label = (child: Element) =>
     child.tagName.startsWith('w:bookmark')
@@ -520,6 +461,61 @@ function markerLayout(paragraphXml: string): {
 }
 
 describe('Bookmark boundaries relative to an inline revision wrapper', () => {
+  test('tagged projection preserves only ranges with matching revision semantics', () => {
+    const enclosed = markerLayout(
+      '<w:p><w:del w:id="1">' +
+        '<w:bookmarkStart w:id="70" w:name="Enclosed"/>' +
+        '<w:r><w:delText>enclosed</w:delText></w:r>' +
+        '<w:bookmarkEnd w:id="70"/></w:del></w:p>',
+      false,
+    );
+    const matchingSiblings = markerLayout(
+      '<w:p><w:del w:id="1"><w:bookmarkStart w:id="71" w:name="Matching"/>' +
+        '<w:r><w:delText>left</w:delText></w:r></w:del>' +
+        '<w:del w:id="2"><w:r><w:delText>right</w:delText></w:r>' +
+        '<w:sdt><w:sdtContent><w:bookmarkEnd w:id="71"/></w:sdtContent></w:sdt>' +
+        '</w:del></w:p>',
+      false,
+    );
+    const mismatched = markerLayout(
+      '<w:p><w:del w:id="1"><w:bookmarkStart w:id="72" w:name="Mismatched"/>' +
+        '<w:r><w:delText>deleted</w:delText></w:r></w:del>' +
+        '<w:ins w:id="2"><w:r><w:t>inserted</w:t></w:r>' +
+        '<w:bookmarkEnd w:id="72"/></w:ins></w:p>',
+      false,
+    );
+    const orphan = markerLayout(
+      '<w:p><w:del w:id="1"><w:bookmarkStart w:id="73" w:name="Orphan"/>' +
+        '<w:r><w:delText>deleted</w:delText></w:r></w:del></w:p>',
+      false,
+    );
+    const missingId = markerLayout(
+      '<w:p><w:del w:id="1"><w:bookmarkStart w:name="MissingId"/>' +
+        '<w:r><w:delText>deleted</w:delText></w:r></w:del></w:p>',
+      false,
+    );
+
+    expect(enclosed.paragraph).toEqual(['w:del']);
+    expect(enclosed.paragraphEl.getElementsByTagName('w:del')[0]!
+      .getElementsByTagName('w:bookmarkStart')).toHaveLength(1);
+
+    expect(matchingSiblings.paragraph).toEqual(['w:del', 'w:del']);
+    expect(Array.from(matchingSiblings.paragraphEl.getElementsByTagName('w:del'))
+      .map((wrapper) => [
+        wrapper.getElementsByTagName('w:bookmarkStart').length,
+        wrapper.getElementsByTagName('w:bookmarkEnd').length,
+      ])).toEqual([[1, 0], [0, 1]]);
+
+    expect(mismatched.paragraph).toEqual([
+      'w:bookmarkStart#72',
+      'w:del',
+      'w:ins',
+      'w:bookmarkEnd#72',
+    ]);
+    expect(orphan.paragraph).toEqual(['w:bookmarkStart#73', 'w:del']);
+    expect(missingId.paragraph).toEqual(['w:bookmarkStart#null', 'w:del']);
+  });
+
   test('a range the wrapper encloses is placed around the wrapper', async (
     { given, when, then, and }: AllureBddContext
   ) => {

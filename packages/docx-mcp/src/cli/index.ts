@@ -4,7 +4,7 @@ import { runServeCommand } from './commands/serve.js';
 import { runCompareCommand, type CompareCommandArgs, type CompareCommandResult } from './commands/compare.js';
 import { parseEditArgs, runEditCommand } from './commands/edit.js';
 import { parseGrepArgs, runGrepCommand } from './commands/grep.js';
-import { parseBoolean, toSnakeCase } from './parse_utils.js';
+import { toSnakeCase } from './parse_utils.js';
 import { parseToolFlags, generateToolHelp } from './flag_parser.js';
 import { renderTopLevelHelp } from './help.js';
 import { runToolCommand } from './tool_runner.js';
@@ -62,17 +62,8 @@ function parseCompareArgs(args: string[]): CompareCommandArgs {
         }
         flaggedOutputPath = consumeValue(token);
         break;
-      case '--engine':
-        options.engine = consumeValue(token);
-        break;
-      case '--mode':
-        options.mode = consumeValue(token);
-        break;
       case '--author':
         options.author = consumeValue(token);
-        break;
-      case '--premerge-runs':
-        options.premergeRuns = parseBoolean(consumeValue(token), token);
         break;
       default:
         throw new Error(`Unknown option for compare command: ${token}`);

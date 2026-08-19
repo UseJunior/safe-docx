@@ -18,7 +18,7 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { generateDocx } from './compile.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import type { CompareResult, ReconstructionMode } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
@@ -72,7 +72,7 @@ function signatureLines(parties: Array<{ party: string; name: string; title: str
 const TEST_FEATURE = 'add-generation-compare-roundtrip';
 const test = testAllure.epic('Document Generation').withLabels({ feature: TEST_FEATURE });
 
-const MODES: ReconstructionMode[] = ['rebuild', 'inplace'];
+const MODES: ReconstructionMode[] = ['inplace'];
 
 // --- Spec builders ----------------------------------------------------------
 
@@ -214,11 +214,9 @@ interface RoundTripArtifacts {
 async function buildRoundTripArtifacts(
   originalBuffer: Buffer,
   revisedBuffer: Buffer,
-  mode: ReconstructionMode,
+  _mode: ReconstructionMode,
 ): Promise<RoundTripArtifacts> {
   const result = await compareDocuments(originalBuffer, revisedBuffer, {
-    engine: 'atomizer',
-    reconstructionMode: mode,
   });
 
   const originalArchive = await DocxArchive.load(originalBuffer);
@@ -266,7 +264,7 @@ describe('Author->compare round-trip guarantee', () => {
 
       let result!: CompareResult;
       await when('the two authored buffers are compared', async () => {
-        result = await compareDocuments(original, copy, { engine: 'atomizer' });
+        result = await compareDocuments(original, copy, {});
         await attachPrettyJson('self-compare-stats', result.stats);
       });
 
@@ -313,7 +311,7 @@ describe('Author->compare round-trip guarantee', () => {
       await then('a format-only edit reports a format change and no text atoms', async () => {
         const formatOriginal = await generateDocx(emphasisSpec(false));
         const formatRevised = await generateDocx(emphasisSpec(true));
-        const formatResult = await compareDocuments(formatOriginal, formatRevised, { engine: 'atomizer' });
+        const formatResult = await compareDocuments(formatOriginal, formatRevised, {});
         await attachPrettyJson('format-edit-stats', formatResult.stats);
         expect(formatResult.stats.formatChanges).toBeGreaterThanOrEqual(1);
         expect(formatResult.stats.insertedAtoms).toBe(0);
@@ -401,9 +399,6 @@ describe('Author->compare round-trip guarantee', () => {
         await when(`the original is compared against the malformed revision in '${mode}' mode`, async () => {
           try {
             result = await compareDocuments(original, malformed, {
-              engine: 'atomizer',
-              comparisonStrategy: 'legacy',
-              reconstructionMode: mode,
             });
           } catch (error) {
             rejectionMessage = error instanceof Error ? error.message : String(error);
@@ -421,26 +416,16 @@ describe('Author->compare round-trip guarantee', () => {
           );
         });
 
-        await then('the reconstruction guard reports a fieldStructure failure rather than passing silently', async () => {
-          if (mode === 'rebuild') {
-            expect(result).toBeUndefined();
-            expect(rejectionMessage).toMatch(
-              /Opaque passthrough: complex field has unmatched begin marker/,
-            );
-            return;
-          }
-
-          expect(result).toBeDefined();
-          expect(result?.rebuildSafetyDiagnostics?.failedChecks ?? []).toContain('fieldStructure');
-          expect(result?.fallbackReason).toBe('round_trip_safety_check_failed');
-          const attempts = result?.fallbackDiagnostics?.attempts ?? [];
-          expect(attempts.length).toBeGreaterThan(0);
-          expect(attempts.every((a) => a.failedChecks.includes('fieldStructure'))).toBe(true);
+        await then('the tagged guard fails closed instead of publishing malformed fields', async () => {
+          expect(result).toBeUndefined();
+          expect(rejectionMessage).toMatch(
+            /Tagged publication failed safety checks: fieldStructure/,
+          );
         });
 
         await then('a well-formed revision in the same mode surfaces no safety failures (control)', async () => {
           const goodRevised = await generateDocx(bodyFieldSpec());
-          const goodResult = await compareDocuments(original, goodRevised, { engine: 'atomizer', reconstructionMode: mode });
+          const goodResult = await compareDocuments(original, goodRevised);
           expect(goodResult.rebuildSafetyDiagnostics).toBeUndefined();
         });
       },

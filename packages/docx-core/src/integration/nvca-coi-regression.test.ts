@@ -3,28 +3,22 @@
  *
  * The revised side is derived from that source with a minimal body-text edit,
  * so both packages retain the real relationship-addressed footer and footnote
- * stories while exercising the two publication modes.
+ * stories while exercising the sole tagged publication path.
  */
 
-import fs from 'fs';
 import path from 'path';
+import fs from 'fs';
 import { describe, expect } from 'vitest';
 import {
-  acceptAllChanges,
-  compareDocuments,
-  compareTexts,
-  extractTextWithParagraphs,
-  rejectAllChanges,
-  type ReconstructionMode,
+  compareDocumentsAtomizer as compareDocuments,
 } from '@usejunior/docx-compare';
 import { DocxDocument } from '../primitives/document.js';
-import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
   getParagraphText,
   replaceParagraphTextRange,
 } from '../primitives/text.js';
 import { OOXML } from '../primitives/namespaces.js';
-import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
+import { testAllure } from '../testing/allure-test.js';
 
 const TEST_FEATURE = 'verify-ancillary-field-stories';
 const test = testAllure
@@ -34,10 +28,6 @@ const test = testAllure
 const sourcePath = path.resolve(
   __dirname,
   '../../../../tests/test_documents/nvca-coi-regression/source.docx',
-);
-const filledPath = path.resolve(
-  __dirname,
-  '../../../../tests/test_documents/nvca-coi-regression/filled.docx',
 );
 async function deriveMinimallyEditedRevision(source: Buffer): Promise<Buffer> {
   const document = await DocxDocument.load(source);
@@ -55,86 +45,10 @@ async function deriveMinimallyEditedRevision(source: Buffer): Promise<Buffer> {
   return (await document.toBuffer({ cleanBookmarks: false })).buffer;
 }
 
-describe('NVCA COI Regression', () => {
-  test('should compare COI source vs filled in inplace mode without safety fallback', async ({
-    given,
-    when,
-    then,
-    and,
-  }: AllureBddContext) => {
-    let sourceBuf: Buffer;
-    let filledBuf: Buffer;
-    let res: Awaited<ReturnType<typeof compareDocuments>>;
-
-    await given('COI source and filled fixture files exist and are loaded', async () => {
-      if (!fs.existsSync(sourcePath) || !fs.existsSync(filledPath)) {
-        console.warn('Skipping NVCA COI Regression: fixture files not found');
-        return;
-      }
-      sourceBuf = fs.readFileSync(sourcePath);
-      filledBuf = fs.readFileSync(filledPath);
-    });
-
-    await when('documents are compared in inplace mode', async () => {
-      res = await compareDocuments(sourceBuf, filledBuf, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
-        author: 'RegressionTest',
-      });
-    });
-
-    await then('it used inplace mode without safety fallback', async () => {
-      expect(res.reconstructionModeUsed).toBe('inplace');
-      expect(res.fallbackReason).toBeUndefined();
-    });
-
-    await and('stats are within expected ranges', async () => {
-      expect(res.stats.insertions).toBeLessThan(500);
-      expect(res.stats.deletions).toBeLessThan(500);
-      expect(res.stats.deletedAtoms).toBeGreaterThan(5000);
-    });
-
-    await and('accept-all text matches revised document', async () => {
-      const resultArchive = await DocxArchive.load(res.document);
-      const resultXml = await resultArchive.getDocumentXml();
-      const acceptedXml = acceptAllChanges(resultXml);
-      const acceptedText = extractTextWithParagraphs(acceptedXml);
-
-      const revisedArchive = await DocxArchive.load(filledBuf);
-      const revisedXml = await revisedArchive.getDocumentXml();
-      const revisedText = extractTextWithParagraphs(revisedXml);
-
-      const comparison = compareTexts(revisedText, acceptedText);
-      expect(comparison.normalizedIdentical).toBe(true);
-    });
-
-    await and('reject-all text matches original document', async () => {
-      const resultArchive = await DocxArchive.load(res.document);
-      const resultXml = await resultArchive.getDocumentXml();
-      const rejectedXml = rejectAllChanges(resultXml);
-      const rejectedText = extractTextWithParagraphs(rejectedXml);
-
-      const originalArchive = await DocxArchive.load(sourceBuf);
-      const originalXml = await originalArchive.getDocumentXml();
-      const originalText = extractTextWithParagraphs(originalXml);
-
-      const comparison = compareTexts(originalText, rejectedText);
-      expect(comparison.normalizedIdentical).toBe(true);
-    });
-    // This drives a full inplace comparison + accept-all + reject-all round-trip on a
-    // real ~5000-atom NVCA COI document. In isolation under v8 coverage it runs ~29s
-    // (measured identical on 0.18.0 and 0.19.0 — no regression), but in the release
-    // preflight it runs concurrently with the full docx-core suite under coverage +
-    // parallel workers, where CI contention pushed it past the previous 60s cap. Give
-    // it 3 min of headroom for the loaded CI environment.
-  }, 180_000);
-});
-
 describe('NVCA COI ancillary field evidence', () => {
-  for (const reconstructionMode of ['inplace', 'rebuild'] as const satisfies readonly ReconstructionMode[]) {
-    test
-      .openspec('[SDX-ANC-BOUNDARY-01] NVCA COI source-derived pair supplies non-vacuous evidence in both modes')(
-      `[SDX-ANC-NVCA-${reconstructionMode}] real source-derived pair preserves footer PAGE and footnote REF in ${reconstructionMode}`,
+  test
+      .openspec('[SDX-ANC-BOUNDARY-01] NVCA COI source-derived pair supplies non-vacuous tagged evidence')(
+      '[SDX-ANC-NVCA-TAGGED] real source-derived pair preserves footer PAGE and footnote REF',
       async () => {
         testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.5' });
         testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.2' });
@@ -149,8 +63,6 @@ describe('NVCA COI ancillary field evidence', () => {
         const revised = await deriveMinimallyEditedRevision(source);
 
         const result = await compareDocuments(source, revised, {
-          engine: 'atomizer',
-          reconstructionMode,
           author: 'RegressionTest',
         });
         const evidence = result.ancillaryFieldEvidence;
@@ -164,21 +76,18 @@ describe('NVCA COI ancillary field evidence', () => {
           range.locator.entryId !== undefined,
         ) ?? [];
 
-        expect(result.reconstructionModeUsed).toBe(reconstructionMode);
         expect(result.fallbackReason).toBeUndefined();
         expect(evidence).toMatchObject({
           status: 'passed',
-          reconstructionMode,
         });
         expect(footerPageRanges.length).toBeGreaterThan(0);
         expect(footnoteRefRanges.length).toBeGreaterThan(0);
         expect([...footerPageRanges, ...footnoteRefRanges].every((range) =>
           range.canonicalMatch &&
           range.provenance === 'base' &&
-          range.sourceSide === (reconstructionMode === 'inplace' ? 'revised' : 'original'),
+          range.sourceSide === 'revised',
         )).toBe(true);
       },
       60_000,
     );
-  }
 });

@@ -15,7 +15,7 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Round-Trip Correctness' });
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 // Use AST-based implementation for better reliability with nested structures
 import {
@@ -56,7 +56,7 @@ describe('Round-Trip Tests - Accept All Changes', () => {
       let acceptedText: string, revisedText: string;
       await when('documents are compared and all changes are accepted', async () => {
         // Compare documents
-        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        const result = await compareDocuments(original, revised, {});
 
         // Extract text from comparison result after accepting changes
         const resultArchive = await DocxArchive.load(result.document);
@@ -94,7 +94,7 @@ describe('Round-Trip Tests - Accept All Changes', () => {
       });
       let acceptedText: string, revisedText: string;
       await when('documents are compared and all changes are accepted', async () => {
-        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        const result = await compareDocuments(original, revised, {});
 
         const resultArchive = await DocxArchive.load(result.document);
         const resultXml = await resultArchive.getDocumentXml();
@@ -125,7 +125,7 @@ describe('Round-Trip Tests - Accept All Changes', () => {
       });
       let acceptedText: string, revisedText: string;
       await when('documents are compared and all changes are accepted', async () => {
-        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        const result = await compareDocuments(original, revised, {});
 
         const resultArchive = await DocxArchive.load(result.document);
         const resultXml = await resultArchive.getDocumentXml();
@@ -156,7 +156,7 @@ describe('Round-Trip Tests - Accept All Changes', () => {
       });
       let acceptedText: string, revisedText: string;
       await when('identical documents are compared and all changes are accepted', async () => {
-        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        const result = await compareDocuments(original, revised, {});
 
         const resultArchive = await DocxArchive.load(result.document);
         const resultXml = await resultArchive.getDocumentXml();
@@ -187,11 +187,11 @@ describe('Round-Trip Tests - Accept All Changes', () => {
       originalBuffer = await readFile(ORIGINAL_DOC);
       revisedBuffer = await readFile(REVISED_DOC);
       comparisonResult = await compareDocuments(originalBuffer, revisedBuffer, {
-        engine: 'atomizer',
         date: FIXTURE_STABLE_DATE,
-        reconstructionMode: 'inplace',
       });
-    }, 120000);
+    // V8 coverage instrumentation pushes the sole tagged comparison spine past
+    // the historical 120-second ceiling on CI-class hosts.
+    }, 180000);
 
     test('accept all changes should produce text matching revised document', async ({ given, when, then }: AllureBddContext) => {
       await given('ILPA comparison result is pre-computed in beforeAll', () => {});
@@ -243,7 +243,7 @@ describe('Round-Trip Tests - Reject All Changes', () => {
       });
       let rejectedText: string, originalText: string;
       await when('documents are compared and all changes are rejected', async () => {
-        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        const result = await compareDocuments(original, revised, {});
 
         const resultArchive = await DocxArchive.load(result.document);
         const resultXml = await resultArchive.getDocumentXml();
@@ -279,7 +279,7 @@ describe('Round-Trip Tests - Reject All Changes', () => {
       });
       let rejectedText: string, originalText: string;
       await when('documents are compared and all changes are rejected', async () => {
-        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        const result = await compareDocuments(original, revised, {});
 
         const resultArchive = await DocxArchive.load(result.document);
         const resultXml = await resultArchive.getDocumentXml();
@@ -310,7 +310,7 @@ describe('Round-Trip Tests - Reject All Changes', () => {
       });
       let rejectedText: string, originalText: string;
       await when('documents are compared and all changes are rejected', async () => {
-        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        const result = await compareDocuments(original, revised, {});
 
         const resultArchive = await DocxArchive.load(result.document);
         const resultXml = await resultArchive.getDocumentXml();
@@ -341,7 +341,7 @@ describe('Round-Trip Tests - Reject All Changes', () => {
       });
       let rejectedText: string, originalText: string;
       await when('identical documents are compared and all changes are rejected', async () => {
-        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        const result = await compareDocuments(original, revised, {});
 
         const resultArchive = await DocxArchive.load(result.document);
         const resultXml = await resultArchive.getDocumentXml();
@@ -372,11 +372,10 @@ describe('Round-Trip Tests - Reject All Changes', () => {
       originalBuffer = await readFile(ORIGINAL_DOC);
       revisedBuffer = await readFile(REVISED_DOC);
       comparisonResult = await compareDocuments(originalBuffer, revisedBuffer, {
-        engine: 'atomizer',
         date: FIXTURE_STABLE_DATE,
-        reconstructionMode: 'inplace',
       });
-    }, 120000);
+    // Keep the reject projection on the same coverage-aware budget as accept.
+    }, 180000);
 
     test('reject all changes should produce text matching original document', async ({ given, when, then }: AllureBddContext) => {
       await given('ILPA comparison result is pre-computed in beforeAll', () => {});

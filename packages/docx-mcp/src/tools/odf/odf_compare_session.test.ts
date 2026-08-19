@@ -319,7 +319,7 @@ describe('ODF compare_documents session mode', () => {
       await then('the DOCX two-file comparison runs and no ODF session logic is involved', () => {
         assertSuccess(result, 'compare_documents');
         expect(result.mode).toBe('two_file');
-        expect(result.engine_used).toBeDefined();
+        expect(result.package_base).toBe('revised');
         expect(result.provider).not.toBe('odf');
         expect(result.session_resolution).toBeUndefined();
       });

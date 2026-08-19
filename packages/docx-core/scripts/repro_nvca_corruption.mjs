@@ -19,7 +19,6 @@ async function run() {
   console.log(`Comparing ${sourcePath} vs ${revisedPath} (FORCED INPLACE)`);
   
   const res = await compareDocumentsAtomizer(sourceBuf, revisedBuf, {
-    reconstructionMode: 'inplace',
     author: 'Repro'
   });
 

@@ -111,15 +111,17 @@ describe('compare_documents tool', () => {
         expect(result.stats).toBeDefined();
         expect(result.saved_to).toBe(outputPath);
         expect(result.size_bytes).toBeGreaterThan(0);
-        expect(result.engine_used).toBeDefined();
+        expect(result.package_base).toBe('revised');
       });
 
-      await then('the handler requests and uses the shared inplace default (#808)', () => {
-        expect(result.reconstruction_mode_requested).toBe('inplace');
-        expect(result.reconstruction_mode_used).toBe('inplace');
+      await then('retired selector and fallback metadata are absent', () => {
+        expect(result.engine_requested).toBeUndefined();
+        expect(result.engine_used).toBeUndefined();
+        expect(result.reconstruction_mode_requested).toBeUndefined();
+        expect(result.reconstruction_mode_used).toBeUndefined();
         expect(result.fallback_reason).toBeUndefined();
-        expect(result.comparison_strategy_requested).toBe('tagged-tree');
-        expect(result.comparison_strategy_used).toBe('tagged-tree');
+        expect(result.comparison_strategy_requested).toBeUndefined();
+        expect(result.comparison_strategy_used).toBeUndefined();
         expect(result.comparison_strategy_fallback_reason).toBeUndefined();
       });
 
@@ -300,29 +302,6 @@ describe('compare_documents tool', () => {
     },
   );
 
-  test(
-    'Invalid engine: rejected with error',
-    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
-      const mgr = createTestSessionManager();
-      const dir = await createTrackedTempDir();
-
-      const originalPath = await writeTestDocx(dir, 'original.docx', ['Hello']);
-      const revisedPath = await writeTestDocx(dir, 'revised.docx', ['Hello world']);
-      const outputPath = path.join(dir, 'output.docx');
-
-      const result = await when('Call compare_documents with wmlcomparer engine', () =>
-        compareDocuments_tool(mgr, {
-          original_file_path: originalPath,
-          revised_file_path: revisedPath,
-          save_to_local_path: outputPath,
-          engine: 'wmlcomparer',
-        }),
-      );
-      assertFailure(result, 'INVALID_ENGINE', 'compare_documents');
-      await attachPrettyJson('result', result);
-    },
-  );
-
   // ── Path policy (issue #313) ─────────────────────────────────────
 
   test(
@@ -402,7 +381,7 @@ describe('compare_documents tool', () => {
       expect(tool!.inputSchema.properties).toHaveProperty('original_file_path');
       expect(tool!.inputSchema.properties).toHaveProperty('revised_file_path');
       expect(tool!.inputSchema.properties).toHaveProperty('file_path');
-      expect(tool!.inputSchema.properties).toHaveProperty('engine');
+      expect(tool!.inputSchema.properties).not.toHaveProperty('engine');
       expect(tool!.inputSchema.properties).toHaveProperty('ignore_formatting');
       expect(tool!.inputSchema.properties).toHaveProperty('compare_moves');
     },

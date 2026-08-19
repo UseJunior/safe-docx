@@ -8,7 +8,7 @@ import { readFile, access } from 'fs/promises';
 import { resolve, dirname } from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { compareDocuments } from '../index.js';
+import { compareDocumentsAtomizer } from '../baselines/atomizer/pipeline.js';
 import { extractTextWithParagraphs } from '../baselines/atomizer/trackChangesAcceptorAst.js';
 import { DocxArchive } from '@usejunior/docx-core';
 import { createTimer } from './metrics.js';
@@ -81,10 +81,8 @@ async function produceRedline(
     // with the library default. Switching the benchmark to measure the
     // shipped default is a deliberate decision — record requested/used mode
     // and fallback reason in the artifacts when making it.
-    const result = await compareDocuments(originalBuffer, revisedBuffer, {
-      engine: 'atomizer',
+    const result = await compareDocumentsAtomizer(originalBuffer, revisedBuffer, {
       author,
-      reconstructionMode: 'rebuild',
     });
     return result.document;
   }

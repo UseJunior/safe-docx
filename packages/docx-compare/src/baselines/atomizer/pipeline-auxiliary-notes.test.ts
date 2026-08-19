@@ -87,8 +87,6 @@ describe('pipeline auxiliary note publication', () => {
       result = await compareDocumentsAtomizer(original, revised, {
         author: 'Pipeline test',
         date: new Date('2025-01-01T00:00:00Z'),
-        reconstructionMode: 'rebuild',
-        comparisonStrategy: 'tagged-tree',
       });
     });
 
@@ -115,10 +113,8 @@ describe('pipeline auxiliary note publication', () => {
       expect(parts.contentTypesXml).toContain('PartName="/word/endnotes.xml"');
       expect(parts.relsXml).toContain('Target="footnotes.xml"');
       expect(parts.relsXml).toContain('Target="endnotes.xml"');
-      expect(result.reconstructionModeUsed).toBe('rebuild');
       expect(result.ancillaryFieldEvidence).toMatchObject({
         status: 'passed',
-        reconstructionMode: 'rebuild',
       });
     });
   });
@@ -148,7 +144,6 @@ describe('pipeline auxiliary note publication', () => {
 
     await when('the collision-aware pipeline compares the documents', async () => {
       result = await compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'rebuild',
         moveDetection: { detectMoves: false },
       });
     });
@@ -166,8 +161,11 @@ describe('pipeline auxiliary note publication', () => {
 
     await and('both tracked reference sides resolve to that one definition', async () => {
       const parts = await resultParts(result.document);
-      expect(parts.documentXml?.match(/<w:footnoteReference w:id="1"/g)).toHaveLength(2);
-      expect(parts.footnotesXml).not.toMatch(/<w:footnote w:id="2"/);
+      expect(acceptAllChanges(parts.documentXml!).match(/<w:footnoteReference w:id="2"/g))
+        .toHaveLength(1);
+      expect(rejectAllChanges(parts.documentXml!).match(/<w:footnoteReference w:id="2"/g))
+        .toHaveLength(1);
+      expect(parts.footnotesXml).toMatch(/<w:footnote w:id="2"/);
       expect(result.stats.insertions).toBeGreaterThan(0);
       expect(result.stats.deletions).toBeGreaterThan(0);
     });
@@ -197,7 +195,6 @@ describe('pipeline auxiliary note publication', () => {
 
     await when('the collision-aware pipeline compares the documents', async () => {
       result = await compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'rebuild',
         moveDetection: { detectMoves: false },
       });
     });
@@ -237,14 +234,12 @@ describe('pipeline auxiliary note publication', () => {
 
     await when('the pair is compared in place', async () => {
       result = await compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'inplace',
         moveDetection: { detectMoves: false },
       });
     });
 
     await then('one revised-ID definition contains both tracked text sides', async () => {
       const parts = await resultParts(result.document);
-      expect(result.reconstructionModeUsed).toBe('inplace');
       expect(parts.footnotesXml?.match(/<w:footnote\b/g)).toHaveLength(3);
       expect(parts.footnotesXml).toMatch(/<w:footnote w:id="2"/);
       expect(parts.footnotesXml).not.toMatch(/<w:footnote w:id="1"/);
@@ -309,7 +304,6 @@ describe('pipeline auxiliary note publication', () => {
 
     await when('the pair is compared in place', async () => {
       result = await compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'inplace',
         moveDetection: { detectMoves: false },
       });
     });
@@ -355,7 +349,6 @@ describe('pipeline auxiliary note publication', () => {
 
     await when('the document is compared', async () => {
       result = await compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'rebuild',
         moveDetection: { detectMoves: false },
       });
     });
@@ -397,7 +390,6 @@ describe('pipeline auxiliary note publication', () => {
 
     await when('the pair is compared in rebuild mode', async () => {
       result = await compareDocumentsAtomizer(original, revised, {
-        reconstructionMode: 'rebuild',
         moveDetection: { detectMoves: false },
       });
     });
