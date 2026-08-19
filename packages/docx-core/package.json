@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/docx-core",
-  "version": "0.19.1",
+  "version": "0.20.0",
   "description": "OOXML (.docx) core library: primitives, document generation, and track changes",
   "type": "module",
   "main": "dist/index.js",
@@ -26,7 +26,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "@usejunior/docx-compare": "^0.19.1",
+    "@usejunior/docx-compare": "^0.20.0",
     "@vitest/coverage-v8": "^4.1.8",
     "@vitest/runner": "^4.1.8",
     "allure-vitest": "^3.9.0",
