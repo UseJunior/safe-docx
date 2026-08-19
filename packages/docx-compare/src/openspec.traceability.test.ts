@@ -363,7 +363,10 @@ describe('OpenSpec traceability: tagged docx comparison', () => {
         'utf8',
       )) as { rows: unknown[] };
       const rollback = readFileSync(
-        new URL('../../../openspec/changes/refactor-tagged-tree-spine/rollback.md', import.meta.url),
+        new URL(
+          '../../../openspec/changes/archive/2026-08-19-refactor-tagged-tree-spine/rollback.md',
+          import.meta.url,
+        ),
         'utf8',
       );
       expect(manifest.rows.length).toBeGreaterThan(0);
