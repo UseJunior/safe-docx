@@ -27,6 +27,9 @@ without several compatibility passes already learned by the legacy path.
   `premergeRuns`, and `maxWordRefinementChangeRanges` in a dedicated release.
 - **BREAKING** Remove exported atom, atom-LCS, legacy move/format detection, and
   reconstruction APIs according to a generated and reviewed removal inventory.
+- **BREAKING** Version `insertedAtoms`, `deletedAtoms`, and `formatChangeAtoms`
+  as `tagged-token-v1` because the deleted flattened atom/LCS engine's weighting
+  cannot be retained without preserving that engine as a shadow statistics path.
 - Delete the legacy WmlComparer implementation only after the release-evidence
   gate passes, while extracting portable revision-markup helpers first.
 - Rename the surviving tagged implementation out of `baselines/` only after the

@@ -7,6 +7,12 @@ import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.j
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { buildTaggedTreePublication } from './taggedTreeShadow.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
+import { premergeAdjacentRuns } from './premergeRuns.js';
+import {
+  backfillParentReferences,
+  findBody,
+  parseDocumentXml,
+} from './xmlToWmlElement.js';
 
 const serializer = new XMLSerializer();
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -43,6 +49,15 @@ function wrapDefinition(entry: Element): string {
   return `<w:document${namespaceAttributes(entry)}><w:body>${content}</w:body></w:document>`;
 }
 
+function prepareDefinition(entry: Element): string {
+  const root = parseDocumentXml(wrapDefinition(entry));
+  backfillParentReferences(root);
+  const body = findBody(root);
+  if (!body) throw new Error('Could not create note comparison story');
+  premergeAdjacentRuns(body);
+  return serializer.serializeToString(root);
+}
+
 /**
  * Compare one corresponding footnote definition as an independent Word story.
  * Tagged construction and publication are reused so paragraphs, runs, fields,
@@ -58,8 +73,8 @@ export function compareFootnoteDefinitions(
   revisedEntry: Element,
   options: NoteDefinitionComparisonOptions,
 ): Element[] {
-  const originalXml = wrapDefinition(originalEntry);
-  const revisedXml = wrapDefinition(revisedEntry);
+  const originalXml = prepareDefinition(originalEntry);
+  const revisedXml = prepareDefinition(revisedEntry);
   if (
     extractRoundTripComparisonText(originalXml) === extractRoundTripComparisonText(revisedXml) &&
     compareSourceProjectedFormattingFidelity(originalXml, revisedXml, revisedXml).reject.score === 1

@@ -14,6 +14,7 @@ const FIXTURE_MANIFEST_PATH = resolve(
   REPO_ROOT,
   'packages/docx-compare/src/testing/fixtures/manifest.json',
 );
+const TAGGED_ATOM_STATISTICS_DIVERGENCE = 'TD-ATOM-STATS-SEMANTICS-001';
 
 interface FixtureManifest {
   base_dir: string;
@@ -170,5 +171,12 @@ export async function loadStrategyDifferentialFixtures(
     loadRealCorpusFixtures(corpusRoot),
   ]);
   return [...checkedIn, ancillary, textBox, move, ...real]
+    .map((fixture) => ({
+      ...fixture,
+      approvedDivergenceIds: [
+        ...(fixture.approvedDivergenceIds ?? []),
+        TAGGED_ATOM_STATISTICS_DIVERGENCE,
+      ],
+    }))
     .sort((left, right) => left.id.localeCompare(right.id));
 }

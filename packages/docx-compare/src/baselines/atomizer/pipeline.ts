@@ -1438,6 +1438,7 @@ async function compareDocumentsTagged(
   const results = [outerResult, ...storyResults.map(({ result }) => result)];
   const stats = results.reduce<CompareStats>(
     (combined, result) => ({
+      atomMetricVersion: 'tagged-token-v1',
       insertions: combined.insertions + result.stats.insertions,
       deletions: combined.deletions + result.stats.deletions,
       modifications: combined.modifications + result.stats.modifications,
@@ -1452,6 +1453,7 @@ async function compareDocumentsTagged(
         combined.formatChangeAtoms + result.stats.formatChangeAtoms,
     }),
     {
+      atomMetricVersion: 'tagged-token-v1',
       insertions: 0,
       deletions: 0,
       modifications: 0,

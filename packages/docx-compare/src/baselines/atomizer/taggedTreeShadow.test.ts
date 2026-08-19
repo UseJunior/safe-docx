@@ -92,7 +92,7 @@ describe('tagged-tree offline evaluation', () => {
   );
 
   test.openspec('Atom metrics do not silently change units')(
-    'weights a tagged multi-token leaf with the documented word atomization',
+    'versions and weights tagged comparison tokens independently of the deleted atomizer',
     () => {
       const publication = buildTaggedTreePublication({
         originalXml: `<w:document xmlns:w="${W_NS}"><w:body/></w:document>`,
@@ -101,6 +101,7 @@ describe('tagged-tree offline evaluation', () => {
         date: new Date('2026-08-17T12:00:00Z'),
       });
 
+      expect(publication.stats.atomMetricVersion).toBe('tagged-token-v1');
       expect(publication.stats.insertedAtoms).toBe(3);
       expect(publication.stats.deletedAtoms).toBe(0);
     },

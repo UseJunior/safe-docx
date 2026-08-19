@@ -55,6 +55,15 @@
       "dimensions": [
         "tagged-tree.acceptProjection"
       ]
+    },
+    {
+      "id": "TD-ATOM-STATS-SEMANTICS-001",
+      "status": "active",
+      "issue": "#838",
+      "summary": "Tagged publication reports versioned comparison-token statistics instead of shadow-running the deleted flattened atom engine.",
+      "dimensions": [
+        "tagged-tree.atomStatisticsSemantics"
+      ]
     }
   ],
   "rows": [
@@ -82,7 +91,9 @@
         ],
         "sourceStructuralIssues": []
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -280,6 +291,7 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 4,
           "deletions": 6,
           "modifications": 0,
@@ -340,7 +352,9 @@
         ],
         "sourceStructuralIssues": []
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -538,6 +552,7 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 2,
           "deletions": 0,
           "modifications": 0,
@@ -655,6 +670,7 @@
         ]
       },
       "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001",
         "TD-LEGACY-ILPA-REJECT-001"
       ],
       "legacy": {
@@ -1562,13 +1578,14 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 855,
           "deletions": 790,
           "modifications": 496,
           "insertedRanges": 855,
           "deletedRanges": 790,
-          "insertedAtoms": 1865,
-          "deletedAtoms": 171,
+          "insertedAtoms": 3660,
+          "deletedAtoms": 2095,
           "modifiedParagraphs": 496,
           "formatChanges": 17,
           "formatChangeAtoms": 17
@@ -1766,7 +1783,9 @@
         ],
         "sourceStructuralIssues": []
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -1964,6 +1983,7 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 3,
           "deletions": 3,
           "modifications": 1,
@@ -2024,7 +2044,9 @@
         ],
         "sourceStructuralIssues": []
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -2222,6 +2244,7 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 0,
           "deletions": 0,
           "modifications": 0,
@@ -2282,7 +2305,9 @@
         ],
         "sourceStructuralIssues": []
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -2450,8 +2475,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 691,
-            "sha256": "ecfac45c5de2d9b457c3a348407ac0c4c7e9643700b3ad391f8b7ffcc7fd6678",
+            "bytes": 814,
+            "sha256": "0c1b9aa32f1ff3c57f4cd2b5871a22cbd214d6910083e78aed27e4ef0e1e2ba6",
             "kind": "xml"
           },
           {
@@ -2480,6 +2505,7 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 0,
           "deletions": 2,
           "modifications": 0,
@@ -2540,7 +2566,9 @@
         ],
         "sourceStructuralIssues": []
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -2738,6 +2766,7 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 2,
           "deletions": 0,
           "modifications": 0,
@@ -2798,7 +2827,9 @@
         ],
         "sourceStructuralIssues": []
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -2996,13 +3027,14 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 2,
           "deletions": 2,
           "modifications": 1,
           "insertedRanges": 2,
           "deletedRanges": 2,
-          "insertedAtoms": 3,
-          "deletedAtoms": 3,
+          "insertedAtoms": 2,
+          "deletedAtoms": 2,
           "modifiedParagraphs": 1,
           "formatChanges": 0,
           "formatChangeAtoms": 0
@@ -3056,7 +3088,9 @@
         ],
         "sourceStructuralIssues": []
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -3254,6 +3288,7 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 1,
           "deletions": 1,
           "modifications": 1,
@@ -3314,7 +3349,9 @@
         ],
         "sourceStructuralIssues": []
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -3512,12 +3549,13 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 3,
           "deletions": 4,
           "modifications": 1,
           "insertedRanges": 3,
           "deletedRanges": 4,
-          "insertedAtoms": 4,
+          "insertedAtoms": 3,
           "deletedAtoms": 10,
           "modifiedParagraphs": 1,
           "formatChanges": 0,
@@ -3618,7 +3656,9 @@
           }
         ]
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -4069,7 +4109,7 @@
           {
             "path": "word/document.xml",
             "bytes": 568987,
-            "sha256": "8eab3378260b9703496391c17c95b57ccf3c780b5831c9fd7f28039f1ff0bc97",
+            "sha256": "408c4b45e17d04fbb64df0f8b7db1f819cd037484c914595091fb5aeaa45add4",
             "kind": "xml"
           },
           {
@@ -4230,13 +4270,14 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 0,
           "deletions": 5,
           "modifications": 0,
           "insertedRanges": 0,
           "deletedRanges": 5,
-          "insertedAtoms": 10,
-          "deletedAtoms": 193,
+          "insertedAtoms": 0,
+          "deletedAtoms": 185,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
           "formatChangeAtoms": 0
@@ -4364,7 +4405,9 @@
           }
         ]
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -4705,7 +4748,7 @@
           {
             "path": "word/document.xml",
             "bytes": 335304,
-            "sha256": "6f36b461fb94120b497db514f64eb6804607eedbbc4e5f636b4933330c319cfb",
+            "sha256": "8f02b89a2bed43f7bc21f2e5a91ba6bf6453d4addb7042fa9901e77f9d2e251b",
             "kind": "xml"
           },
           {
@@ -4830,13 +4873,14 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 0,
           "deletions": 8,
           "modifications": 0,
           "insertedRanges": 0,
           "deletedRanges": 8,
           "insertedAtoms": 0,
-          "deletedAtoms": 350,
+          "deletedAtoms": 362,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
           "formatChangeAtoms": 0
@@ -4994,7 +5038,9 @@
         ],
         "sourceStructuralIssues": []
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -5456,6 +5502,7 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 0,
           "deletions": 2,
           "modifications": 0,
@@ -5533,7 +5580,9 @@
         ],
         "sourceStructuralIssues": []
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -5720,7 +5769,7 @@
         "strategy": "tagged-tree",
         "projections": {
           "accept": {
-            "xmlSha256": "f31889fc1ccead38f23ea3afa52cdf1a0a37f9e83cfc5cc0a4856f8e9816bd5a",
+            "xmlSha256": "837b2fad08e6fdf6d62a9ea56486d1f58f17606f7ec9ceb878f7243b98628bd9",
             "textSha256": "568c7b6ebd9faa4e5878fce85038fdabd4579d90303f33837a0d97d9d836674d",
             "sourceTextSha256": "568c7b6ebd9faa4e5878fce85038fdabd4579d90303f33837a0d97d9d836674d",
             "matchesSourceText": true,
@@ -5767,8 +5816,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 26497,
-            "sha256": "1bedfd62c2faf0cd2c5c9a190492b466c484255553345e1896f8975dcf92a785",
+            "bytes": 26787,
+            "sha256": "4aca15a548b7b27427aa244f1bc35422668f19e8eedf68729dd3db73b95910d1",
             "kind": "xml"
           },
           {
@@ -5863,13 +5912,14 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 0,
           "deletions": 2,
           "modifications": 0,
           "insertedRanges": 0,
           "deletedRanges": 2,
           "insertedAtoms": 0,
-          "deletedAtoms": 243,
+          "deletedAtoms": 249,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
           "formatChangeAtoms": 0
@@ -5964,7 +6014,9 @@
           }
         ]
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -6385,7 +6437,7 @@
           {
             "path": "word/document.xml",
             "bytes": 293933,
-            "sha256": "85f6b8dadf2a8e5fae85724d82d81aa29ea4e91d3c9596fa8d75674c0d66242a",
+            "sha256": "a6c09e6fccc7a018231afb85f6e806716f2177a317a9c77a9b1c72ba80218ef2",
             "kind": "xml"
           },
           {
@@ -6516,6 +6568,7 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 0,
           "deletions": 3,
           "modifications": 0,
@@ -6609,7 +6662,9 @@
         ],
         "sourceStructuralIssues": []
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -6922,7 +6977,7 @@
           {
             "path": "word/document.xml",
             "bytes": 387507,
-            "sha256": "600f869255dc8ded56c151f564f2278dcf927c03ff930930af6cdacc65d3f4f3",
+            "sha256": "518c30b6106219c49d4de85334319f0afdcf965c62693b22c0c44df1e8a81c01",
             "kind": "xml"
           },
           {
@@ -7059,13 +7114,14 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 1,
           "deletions": 4,
           "modifications": 1,
           "insertedRanges": 1,
           "deletedRanges": 4,
           "insertedAtoms": 0,
-          "deletedAtoms": 288,
+          "deletedAtoms": 294,
           "modifiedParagraphs": 1,
           "formatChanges": 0,
           "formatChangeAtoms": 0
@@ -7157,7 +7213,9 @@
           }
         ]
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -7673,13 +7731,14 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 0,
           "deletions": 4,
           "modifications": 0,
           "insertedRanges": 0,
           "deletedRanges": 4,
           "insertedAtoms": 0,
-          "deletedAtoms": 176,
+          "deletedAtoms": 181,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
           "formatChangeAtoms": 0
@@ -7742,7 +7801,9 @@
         ],
         "sourceStructuralIssues": []
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -7928,6 +7989,7 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 1,
           "deletions": 1,
           "modifications": 1,
@@ -7984,6 +8046,7 @@
         "sourceStructuralIssues": []
       },
       "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001",
         "TD-LEGACY-MOVE-PROJECTION-001"
       ],
       "legacy": {
@@ -8123,6 +8186,7 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 0,
           "deletions": 0,
           "modifications": 0,
@@ -8178,7 +8242,9 @@
         ],
         "sourceStructuralIssues": []
       },
-      "approvedDivergenceIds": [],
+      "approvedDivergenceIds": [
+        "TD-ATOM-STATS-SEMANTICS-001"
+      ],
       "legacy": {
         "strategy": "legacy",
         "projections": {
@@ -8304,6 +8370,7 @@
           }
         ],
         "stats": {
+          "atomMetricVersion": "tagged-token-v1",
           "insertions": 1,
           "deletions": 1,
           "modifications": 1,

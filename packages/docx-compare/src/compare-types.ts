@@ -31,6 +31,13 @@ export interface RevisionAttribution {
 
 export interface CompareStats {
   /**
+   * Versioned unit contract for the atom-named metrics below. `tagged-token-v1`
+   * counts comparison-text tokens (including whitespace and edge punctuation)
+   * plus supported non-text comparison leaves in the tagged alignment. It does
+   * not reproduce the deleted flattened-atom/LCS engine's weighting.
+   */
+  atomMetricVersion: 'tagged-token-v1';
+  /**
    * Human-facing inserted change ranges. This counts contiguous inserted atom
    * runs, matching the coalesced w:ins regions emitted in OOXML.
    */
@@ -49,15 +56,15 @@ export interface CompareStats {
   insertedRanges: number;
   /** Same value as deletions, exposed with explicit range-level semantics. */
   deletedRanges: number;
-  /** Atom-level inserted units for granular/benchmark consumers. */
+  /** Inserted `tagged-token-v1` units for granular/benchmark consumers. */
   insertedAtoms: number;
-  /** Atom-level deleted units for granular/benchmark consumers. */
+  /** Deleted `tagged-token-v1` units for granular/benchmark consumers. */
   deletedAtoms: number;
   /** Same value as modifications, exposed without overloading the term. */
   modifiedParagraphs: number;
   /** Contiguous format-only change ranges. */
   formatChanges: number;
-  /** Atom-level format-only units for granular/benchmark consumers. */
+  /** Format-only `tagged-token-v1` units for granular/benchmark consumers. */
   formatChangeAtoms: number;
 }
 

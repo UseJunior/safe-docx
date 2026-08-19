@@ -230,6 +230,7 @@ export function consumeTaggedPublicationStatistics(
   const document = parseXml(xml);
   const serializedRangeStats = consumeSerializedRangeStats(document);
   const stats: CompareStats = {
+    atomMetricVersion: 'tagged-token-v1',
     insertions: serializedRangeStats.insertedRanges,
     deletions: serializedRangeStats.deletedRanges,
     modifications: treeStats.modifiedParagraphs,

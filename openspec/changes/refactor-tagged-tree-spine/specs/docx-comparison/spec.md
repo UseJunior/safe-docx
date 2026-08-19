@@ -97,10 +97,10 @@ range boundaries, property nodes, opaque subtrees, paragraph and row revisions,
 existing revision provenance, and field controls. Modified paragraphs SHALL be
 counted by logical tagged node, and paragraph-style deltas SHALL contribute once.
 
-Public atom-named metrics SHALL retain their names only when an explicit tagged
-atomization preserves their existing observable weighting. If exact semantics
-cannot be preserved, those metrics SHALL be renamed or versioned in the breaking
-release and SHALL document their new unit.
+Public atom-named metrics SHALL carry `atomMetricVersion: 'tagged-token-v1'`.
+That version SHALL count canonical comparison-text tokens, including whitespace
+and edge punctuation, plus supported non-text comparison leaves in the tagged
+alignment. A future weighting change SHALL use a new version value.
 
 #### Scenario: Serialized wrapper transformations determine range totals
 
@@ -112,8 +112,8 @@ release and SHALL document their new unit.
 
 - **GIVEN** a tagged leaf spanning multiple text tokens
 - **WHEN** atom-named statistics are derived
-- **THEN** their weighting SHALL match the documented legacy atom contract
-- **AND** a different weighting SHALL require a renamed or versioned metric
+- **THEN** the result SHALL identify the `tagged-token-v1` unit
+- **AND** a different weighting SHALL require a new atom metric version
 
 ### Requirement: Unsafe tagged publication raises a typed diagnostic error
 

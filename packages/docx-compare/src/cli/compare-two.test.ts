@@ -9,6 +9,7 @@ import { parseCompareCliArgs, runCompareCli } from './compare-two.js';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'CLI Compare Two' });
 
 const zeroStats = {
+  atomMetricVersion: 'tagged-token-v1' as const,
   insertions: 0,
   deletions: 0,
   modifications: 0,

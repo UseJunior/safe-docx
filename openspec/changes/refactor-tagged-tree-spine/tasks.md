@@ -55,7 +55,7 @@
 
 - [x] 7.1 Derive range stats from final serialized markup across every wrapper transformation.
 - [x] 7.2 Key modified paragraphs by tagged node and count paragraph-style deltas once.
-- [x] 7.3 Preserve exact atom metric meaning or rename/version the metrics and document the break.
+- [x] 7.3 Version atom-named metrics as `tagged-token-v1` and document the break.
 - [x] 7.4 Build footnote definitions through tagged publication rather than merged atoms.
 - [x] 7.5 Extract portable property normalization/naming and replace literal direct-property reporting.
 

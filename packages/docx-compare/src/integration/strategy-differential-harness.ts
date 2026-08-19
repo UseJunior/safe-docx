@@ -34,7 +34,8 @@ export type ApprovedDivergenceDimension =
   | 'legacy.acceptProjection'
   | 'legacy.rejectProjection'
   | 'tagged-tree.acceptProjection'
-  | 'tagged-tree.rejectProjection';
+  | 'tagged-tree.rejectProjection'
+  | 'tagged-tree.atomStatisticsSemantics';
 
 export interface PackagePartSummary {
   path: string;

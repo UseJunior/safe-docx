@@ -89,6 +89,7 @@ describe('strategy differential manifest contract', () => {
         expect.objectContaining({ id: 'TD-NUMBERING-001', status: 'resolved' }),
         expect.objectContaining({ id: 'TD-CONSUMER-COMPAT-001', status: 'resolved' }),
         expect.objectContaining({ id: 'TD-PAGEREF-CACHE-001', status: 'resolved' }),
+        expect.objectContaining({ id: 'TD-ATOM-STATS-SEMANTICS-001', status: 'active' }),
       ]));
       for (const divergence of manifest.divergences) {
         expect(divergence.issue).toMatch(/^#\d+$/u);

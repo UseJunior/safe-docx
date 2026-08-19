@@ -103,10 +103,11 @@ opaque subtrees, whole-paragraph/row revisions, and existing provenance.
 Modified paragraphs are keyed by `TaggedNode`, not either representative.
 Paragraph-style deltas count once.
 
-`insertedAtoms`, `deletedAtoms`, and `formatChangeAtoms` retain their names only
-if an explicit tagged atomization reproduces their legacy contract. Otherwise
-they are renamed/versioned in the breaking release and the spec documents the
-new meaning. Silent token-weighting changes are forbidden.
+`insertedAtoms`, `deletedAtoms`, and `formatChangeAtoms` carry the required
+`atomMetricVersion: 'tagged-token-v1'` discriminator. Version 1 counts canonical
+comparison-text tokens (including whitespace and edge punctuation) plus supported
+non-text comparison leaves in the tagged alignment. It deliberately does not
+shadow-run the deleted flattened atom/LCS engine merely to preserve its weighting.
 
 Footnotes use `buildTaggedTreePublication` for wrapped definition pairs.
 Property naming moves to a portable `propertyNaming.ts` before legacy format
@@ -170,6 +171,6 @@ it is not represented as a one-commit revert.
 
 - The API-removal inventory decides compatibility shims versus deprecation for
   each wildcard-exported symbol before Phase 2 ships.
-- The stats phase must choose exact legacy atom semantics or renamed/versioned
-  metrics based on differential evidence; it may not claim both.
+- Tagged atom statistics use the explicit `tagged-token-v1` contract; changing
+  that unit requires a new version rather than a silent reweighting.
 - `premergeRuns` survives only if a tagged observable is justified and tested.
