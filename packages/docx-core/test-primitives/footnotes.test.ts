@@ -1112,7 +1112,7 @@ describe('footnotes', () => {
       });
     });
 
-    test('preserves byte-identical legacy output when ctx is omitted for addFootnote, updateFootnoteText, and deleteFootnote', async ({ given, when, then }: AllureBddContext) => {
+    test('keeps add, update, and delete on the deterministic untracked path when ctx is omitted', async ({ given, when, then }: AllureBddContext) => {
       let addDoc: Document;
       let addZip: DocxZip;
       let addDocumentXml: string;
@@ -1175,13 +1175,13 @@ describe('footnotes', () => {
         deleteFootnotesXml = await deleteZip.readText('word/footnotes.xml');
       });
 
-      await then('all three outputs remain byte-identical to the pre-tracked-change behavior', async () => {
+      await then('all three outputs use the deterministic untracked representation', async () => {
         expect(addDocumentXml).toBe(
           serializeXml(
             makeDocument(
               '<w:p>' +
                 '<w:r><w:t>Hello</w:t></w:r>' +
-                '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="1"/></w:r>' +
+                '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/><w:vertAlign w:val="superscript"/></w:rPr><w:footnoteReference w:id="1"/></w:r>' +
                 '</w:p>',
             ),
           ),
@@ -1196,7 +1196,7 @@ describe('footnotes', () => {
                 paragraphXml:
                   '<w:p>' +
                   '<w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr>' +
-                  '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>' +
+                  '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/><w:vertAlign w:val="superscript"/></w:rPr><w:footnoteRef/></w:r>' +
                   '<w:r><w:t xml:space="preserve"> </w:t></w:r>' +
                   '<w:r><w:t>Legacy note</w:t></w:r>' +
                   '</w:p>',

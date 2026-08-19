@@ -1332,9 +1332,9 @@ function removeCommentMarkersFromDocument(
       // If the run lived inside a tracked-change wrapper (e.g., the comment
       // was added with ctx earlier and is now being deleted without ctx),
       // the wrapper is left orphaned with no content. Clean it up.
-      if (runParent && isW(runParent, 'ins')) {
+      if (runParent && isW(runParent, 'ins') && !hasElementChildren(runParent)) {
         runParent.parentNode?.removeChild(runParent);
-      } else if (runParent && isW(runParent, 'del')) {
+      } else if (runParent && isW(runParent, 'del') && !hasElementChildren(runParent)) {
         runParent.parentNode?.removeChild(runParent);
       }
     }
@@ -1350,6 +1350,10 @@ function hasVisibleRunContent(run: Element): boolean {
     return true;
   }
   return false;
+}
+
+function hasElementChildren(element: Element): boolean {
+  return Array.from(element.childNodes).some((child) => child.nodeType === 1);
 }
 
 function extractCommentText(commentEl: Element): string {

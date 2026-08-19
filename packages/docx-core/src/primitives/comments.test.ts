@@ -1795,6 +1795,63 @@ describe('comments — edge cases and branch coverage', () => {
       });
     });
 
+    test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.5' })(
+      'preserves sibling runs when an untracked comment reference shares a tracked-insertion wrapper',
+      async ({ given, when, then }: AllureBddContext) => {
+        let zip: DocxZip;
+        let doc: Document;
+        let paragraph: Element;
+        let insertion: Element;
+
+        await given('a comment reference run inside an insertion that also contains visible sibling runs', async () => {
+          ({ zip, doc, p: paragraph } = await setupWithComment());
+          await withDeterministicMetadata([0.777777777], async () => {
+            await addComment(doc, zip, {
+              paragraphEl: paragraph,
+              start: 0,
+              end: 5,
+              author: 'Reviewer',
+              text: 'Delete only the comment',
+            });
+          });
+
+          const reference = paragraph.getElementsByTagNameNS(W_NS, W.commentReference).item(0) as Element;
+          const referenceRun = reference.parentNode as Element;
+          insertion = doc.createElementNS(W_NS, 'w:ins');
+          insertion.setAttributeNS(W_NS, 'w:id', '99');
+
+          const beforeRun = doc.createElementNS(W_NS, 'w:r');
+          const beforeText = doc.createElementNS(W_NS, 'w:t');
+          beforeText.appendChild(doc.createTextNode('Keep before'));
+          beforeRun.appendChild(beforeText);
+
+          const afterRun = doc.createElementNS(W_NS, 'w:r');
+          const afterText = doc.createElementNS(W_NS, 'w:t');
+          afterText.appendChild(doc.createTextNode('Keep after'));
+          afterRun.appendChild(afterText);
+
+          paragraph.replaceChild(insertion, referenceRun);
+          insertion.appendChild(beforeRun);
+          insertion.appendChild(referenceRun);
+          insertion.appendChild(afterRun);
+        });
+
+        await when('the comment is deleted without recording a new revision', async () => {
+          await deleteComment(doc, zip, { commentId: 0 });
+        });
+
+        await then('only the reference run is removed and the non-empty insertion remains intact', () => {
+          expect(paragraph.getElementsByTagNameNS(W_NS, W.commentRangeStart)).toHaveLength(0);
+          expect(paragraph.getElementsByTagNameNS(W_NS, W.commentRangeEnd)).toHaveLength(0);
+          expect(paragraph.getElementsByTagNameNS(W_NS, W.commentReference)).toHaveLength(0);
+          expect(paragraph.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(1);
+          expect(insertion.parentNode).toBe(paragraph);
+          expect(insertion.getElementsByTagNameNS(W_NS, W.r)).toHaveLength(2);
+          expect(insertion.textContent).toBe('Keep beforeKeep after');
+        });
+      },
+    );
+
     test('allocates distinct revision IDs across tracked addComment and deleteComment operations sharing one context', async ({ given, when, then }: AllureBddContext) => {
       let zip: DocxZip;
       let doc: Document;
