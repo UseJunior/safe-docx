@@ -1,0 +1,21 @@
+[
+  {
+    "id": "escrow-template-v2",
+    "classification": "licensed-template",
+    "redistribution": "prohibited",
+    "original": "escrow-template-v2/original.docx",
+    "revised": "escrow-template-v2/revised.docx",
+    "originalSha256": "ccc37714ee3760dce0712196f6739d08dcae25279f93b02e52b9d99bc0e2c579",
+    "revisedSha256": "516298ce51c4fe0be61b836f738e7d22c762dfbaf9ce3070d75b5aa60461efb6",
+    "capabilityTags": [
+      "contract",
+      "formatting",
+      "headers-footers",
+      "licensed-template",
+      "numbering",
+      "private-corpus",
+      "relationships",
+      "tables"
+    ]
+  }
+]
