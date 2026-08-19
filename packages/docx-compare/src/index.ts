@@ -30,6 +30,7 @@ export type {
   AncillaryStorySummary,
   ComparisonStrategy,
   ComparisonStrategyFallbackReason,
+  PackageBaseSide,
   ReconstructionAttemptDiagnostics,
   ReconstructionBookmarkMismatchDetails,
   ReconstructionBookmarkMismatchSummary,
@@ -72,10 +73,23 @@ export async function compareDocuments(
     ignoreFormatting,
     detectMoves,
     reconstructionMode,
+    baseSide,
     premergeRuns,
     maxWordRefinementChangeRanges,
     comparisonStrategy,
   } = options;
+
+  if (baseSide !== undefined && baseSide !== 'original' && baseSide !== 'revised') {
+    throw new Error(`Invalid baseSide '${String(baseSide)}'. Use 'original' or 'revised'.`);
+  }
+  const mappedReconstructionMode =
+    baseSide === undefined ? reconstructionMode : baseSide === 'revised' ? 'inplace' : 'rebuild';
+  if (baseSide !== undefined && reconstructionMode !== undefined && reconstructionMode !== mappedReconstructionMode) {
+    throw new Error(
+      `Conflicting package provenance selectors: baseSide '${baseSide}' does not match reconstructionMode '${reconstructionMode}'. ` +
+        "Use baseSide only ('revised' replaces 'inplace'; 'original' replaces 'rebuild').",
+    );
+  }
 
   if ((engine as string) === 'diffmatch') {
     throw new Error(
@@ -96,7 +110,7 @@ export async function compareDocuments(
         detectMoves === undefined
           ? undefined
           : { detectMoves },
-      reconstructionMode,
+      reconstructionMode: mappedReconstructionMode,
       premergeRuns,
       maxWordRefinementChangeRanges,
       comparisonStrategy,

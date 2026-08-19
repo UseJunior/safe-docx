@@ -108,7 +108,9 @@ SHALL NOT silently return a degraded or partially assembled result.
 ### Requirement: Tagged-tree construction is the sole public comparison spine
 
 The ordinary comparison pipeline SHALL construct and publish tracked results
-through the tagged tree. The result package SHALL be based on the revised archive.
+through the tagged tree. Public comparison SHALL accept `baseSide` as either
+`original` or `revised`, SHALL default it to `revised`, and SHALL report the side
+actually used in the result.
 Legacy construction MAY exist only behind a private emergency switch during a
 measured release/corpus soak and SHALL NOT be selectable through library, CLI, or
 MCP public inputs. After the soak gate, the legacy switch and automatic fallback
@@ -119,12 +121,20 @@ Public `reconstructionMode`, `comparisonStrategy`, `engine`, `premergeRuns`, and
 projection, field, bookmark, ancillary-story, relationship, package-integrity,
 text-box, auxiliary-sidecar, and formatting-fidelity checks SHALL remain in force.
 
-#### Scenario: Public comparison uses revised-based tagged publication
+#### Scenario: Public comparison defaults to revised-based tagged publication
 
 - **GIVEN** a document pair and no private emergency override
 - **WHEN** the pair is compared through any public entry point
 - **THEN** the tagged tree SHALL construct and publish the returned revised-based package
+- **AND** the result SHALL report `baseSide` as `revised`
 - **AND** no public strategy, engine, or reconstruction-mode selector SHALL be accepted
+
+#### Scenario: Caller selects original package provenance
+
+- **GIVEN** a document pair and `baseSide` set to `original`
+- **WHEN** the pair is compared through any public entry point
+- **THEN** the tagged tree SHALL construct and publish an original-based package
+- **AND** the result SHALL report `baseSide` as `original`
 
 #### Scenario: Soak evidence gates legacy deletion
 

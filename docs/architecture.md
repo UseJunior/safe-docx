@@ -112,7 +112,9 @@ Comments, footnotes, relationships, and other DOCX package parts are handled aut
 
 Pre-existing revisions from other authors remain distinct from the current session's changes.
 
-For a fresh comparison between an original and a revised document, use `compare_documents`. It produces a DOCX whose tracked changes describe the difference between those two files.
+For a fresh comparison between an original and a revised document, use `compare_documents`. It produces a DOCX whose tracked changes describe the difference between those two files. Package provenance is explicit: `baseSide: 'revised'` in the library, `base_side: 'revised'` in MCP, and `--base-side revised` in the CLI are the defaults. Select `original` when the output must retain original-side package metadata. Results report the side actually used.
+
+The old library `reconstructionMode` selector and CLI `--mode` flag are deprecated compatibility adapters during the tagged-tree migration. Migrate `inplace` to `revised` and `rebuild` to `original`. Passing both old and new selectors with conflicting meanings is rejected.
 
 ## Conversion
 

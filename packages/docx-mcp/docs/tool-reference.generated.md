@@ -366,6 +366,7 @@ Compare two documents and produce a tracked-changes output document. Provide ori
 | `engine` | `enum("auto", "atomizer")` | no | Comparison engine (DOCX only). Default: 'auto'. |
 | `ignore_formatting` | `boolean` | no | Ignore formatting differences (DOCX only). Default: false. |
 | `compare_moves` | `boolean` | no | Detect moved content (DOCX only). Default: true. |
+| `base_side` | `enum("original", "revised")` | no | Input package used as the comparison output base (DOCX only). Default: 'revised'. |
 
 ## `get_footnotes`
 

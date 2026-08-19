@@ -233,9 +233,29 @@ describe('compareDocuments options', () => {
         expect(result.reconstructionModeRequested).toBe(DEFAULT_RECONSTRUCTION_MODE);
       });
       await and('this trivially safe pair is produced in place without fallback', () => {
+        expect(result.baseSide).toBe('revised');
         expect(result.reconstructionModeUsed).toBe('inplace');
         expect(result.fallbackReason).toBeUndefined();
       });
     },
   );
+
+  test('baseSide selects package provenance and rejects a conflicting deprecated mode', async () => {
+    const original = await buildDocxFromBodyXml(paragraphWithText('Original base'));
+    const revised = await buildDocxFromBodyXml(paragraphWithText('Revised base'));
+
+    const originalBased = await compareDocuments(original, revised, {
+      engine: 'atomizer',
+      date: FIXED_DATE,
+      baseSide: 'original',
+    });
+    expect(originalBased.baseSide).toBe('original');
+    expect(originalBased.reconstructionModeRequested).toBe('rebuild');
+
+    await expect(compareDocuments(original, revised, {
+      engine: 'atomizer',
+      baseSide: 'revised',
+      reconstructionMode: 'rebuild',
+    })).rejects.toThrow('Conflicting package provenance selectors');
+  });
 });

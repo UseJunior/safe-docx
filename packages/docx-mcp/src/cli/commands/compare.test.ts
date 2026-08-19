@@ -50,6 +50,8 @@ describe('safe-docx compare command', () => {
 
     await then('inplace is requested and reflected in the default output name', async () => {
       expect(result.mode_requested).toBe('inplace');
+      expect(result.base_side_requested).toBe('revised');
+      expect(result.base_side).toBe('revised');
       expect(result.output).toBe(path.join(tmpDir, 'revised.REDLINE.atomizer.inplace.docx'));
       expect((await fs.stat(result.output)).isFile()).toBe(true);
     });
@@ -73,8 +75,26 @@ describe('safe-docx compare command', () => {
 
     await then('the explicit mode remains authoritative', () => {
       expect(result.mode_requested).toBe('rebuild');
+      expect(result.base_side).toBe('original');
       expect(result.output).toBe(path.join(tmpDir, 'revised.REDLINE.atomizer.rebuild.docx'));
     });
+  });
+
+  test('rejects conflicting base-side and deprecated mode selectors', async () => {
+    const tmpDir = await createTrackedTempDir('safe-docx-compare-conflict-');
+    const originalPath = path.join(tmpDir, 'original.docx');
+    const revisedPath = path.join(tmpDir, 'revised.docx');
+    await Promise.all([
+      fs.writeFile(originalPath, await makeMinimalDocx(['Original text'])),
+      fs.writeFile(revisedPath, await makeMinimalDocx(['Revised text'])),
+    ]);
+
+    await expect(runCompareCommand({
+      originalPath,
+      revisedPath,
+      baseSide: 'revised',
+      mode: 'rebuild',
+    })).rejects.toThrow('Conflicting package provenance selectors');
   });
 
 });

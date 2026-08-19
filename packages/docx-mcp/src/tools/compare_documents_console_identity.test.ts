@@ -71,6 +71,7 @@ function mockCompareResult(): CompareResult {
   return {
     document: Buffer.from('mock comparison output'),
     engine: 'atomizer',
+    baseSide: 'revised',
     stats: {
       insertions: 0,
       deletions: 0,

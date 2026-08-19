@@ -20,6 +20,8 @@ describe('safe-docx CLI routing', () => {
       engine: 'atomizer',
       mode: 'rebuild' as const,
       mode_requested: 'rebuild' as const,
+      base_side: 'original' as const,
+      base_side_requested: 'original' as const,
       bytes: 12,
       stats: {},
     }));
@@ -53,6 +55,8 @@ describe('safe-docx CLI routing', () => {
       engine: args.engine ?? 'atomizer',
       mode: (args.mode as 'inplace' | 'rebuild') ?? 'rebuild',
       mode_requested: (args.mode as 'inplace' | 'rebuild') ?? 'rebuild',
+      base_side: (args.baseSide as 'original' | 'revised') ?? 'original',
+      base_side_requested: (args.baseSide as 'original' | 'revised') ?? 'original',
       bytes: 99,
       stats: { ok: true },
     }));
@@ -76,6 +80,8 @@ describe('safe-docx CLI routing', () => {
         'atomizer',
         '--mode',
         'inplace',
+        '--base-side',
+        'revised',
         '--author',
         'Junior',
         '--premerge-runs',
@@ -91,6 +97,7 @@ describe('safe-docx CLI routing', () => {
         outputPath: 'result.docx',
         engine: 'atomizer',
         mode: 'inplace',
+        baseSide: 'revised',
         author: 'Junior',
         premergeRuns: true,
       });
@@ -108,6 +115,8 @@ describe('safe-docx CLI routing', () => {
         engine: 'atomizer',
         mode: 'inplace' as const,
         mode_requested: 'inplace' as const,
+        base_side: 'revised' as const,
+        base_side_requested: 'revised' as const,
         bytes: 1,
         stats: {},
       }));
@@ -131,6 +140,8 @@ describe('safe-docx CLI routing', () => {
         engine: 'atomizer',
         mode: 'inplace' as const,
         mode_requested: 'inplace' as const,
+        base_side: 'revised' as const,
+        base_side_requested: 'revised' as const,
         bytes: 1,
         stats: {},
       }));
@@ -188,6 +199,8 @@ describe('safe-docx CLI routing', () => {
       engine: 'atomizer',
       mode: 'rebuild' as const,
       mode_requested: 'rebuild' as const,
+      base_side: 'original' as const,
+      base_side_requested: 'original' as const,
       bytes: 1,
       stats: {},
     }));
@@ -208,7 +221,7 @@ describe('safe-docx CLI routing', () => {
       expect(output[0]).toContain('safe-docx CLI');
       expect(output[0]).toContain('compare <original> <revised> [output]');
       expect(output[0]).toContain('-o, --output <path>');
-      expect(output[0]).toContain('Reconstruction mode (default: inplace)');
+      expect(output[0]).toContain('Base package provenance (default: revised)');
       expect(serve).not.toHaveBeenCalled();
       expect(compare).not.toHaveBeenCalled();
     });
@@ -221,6 +234,8 @@ describe('safe-docx CLI routing', () => {
       engine: 'atomizer',
       mode: 'rebuild' as const,
       mode_requested: 'inplace' as const,
+      base_side: 'original' as const,
+      base_side_requested: 'revised' as const,
       fallback_reason: 'round_trip_safety_check_failed',
       bytes: 50,
       stats: {},
@@ -263,6 +278,8 @@ describe('safe-docx CLI routing', () => {
         engine: 'atomizer',
         mode: 'rebuild' as const,
         mode_requested: 'rebuild' as const,
+        base_side: 'original' as const,
+        base_side_requested: 'original' as const,
         bytes: 1,
         stats: {},
       })),
@@ -288,7 +305,7 @@ describe('safe-docx CLI — generic tool routing', () => {
     const errors: string[] = [];
     const program = createProgram({
       serve: vi.fn(async () => undefined),
-      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, bytes: 0, stats: {} })),
+      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, base_side: 'original' as const, base_side_requested: 'original' as const, bytes: 0, stats: {} })),
       write: (line) => output.push(line),
       writeError: (line) => errors.push(line),
     });
@@ -310,7 +327,7 @@ describe('safe-docx CLI — generic tool routing', () => {
     const output: string[] = [];
     const program = createProgram({
       serve: vi.fn(async () => undefined),
-      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, bytes: 0, stats: {} })),
+      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, base_side: 'original' as const, base_side_requested: 'original' as const, bytes: 0, stats: {} })),
       write: (line) => output.push(line),
       writeError: () => undefined,
     });
@@ -330,7 +347,7 @@ describe('safe-docx CLI — generic tool routing', () => {
     const output: string[] = [];
     const program = createProgram({
       serve: vi.fn(async () => undefined),
-      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, bytes: 0, stats: {} })),
+      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, base_side: 'original' as const, base_side_requested: 'original' as const, bytes: 0, stats: {} })),
       write: (line) => output.push(line),
       writeError: () => undefined,
     });
@@ -361,7 +378,7 @@ describe('safe-docx CLI — generic tool routing', () => {
     const errors: string[] = [];
     const program = createProgram({
       serve: vi.fn(async () => undefined),
-      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, bytes: 0, stats: {} })),
+      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, base_side: 'original' as const, base_side_requested: 'original' as const, bytes: 0, stats: {} })),
       write: (line) => output.push(line),
       writeError: (line) => errors.push(line),
     });
@@ -378,7 +395,7 @@ describe('safe-docx CLI — generic tool routing', () => {
     const serve = vi.fn(async () => undefined);
     const program = createProgram({
       serve,
-      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, bytes: 0, stats: {} })),
+      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, base_side: 'original' as const, base_side_requested: 'original' as const, bytes: 0, stats: {} })),
       write: () => undefined,
       writeError: () => undefined,
     });
