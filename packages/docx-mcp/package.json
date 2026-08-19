@@ -26,7 +26,7 @@
     "lint": "tsc --noEmit --pretty false"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@usejunior/docx-compare": "^0.20.0",
     "@usejunior/docx-core": "^0.20.0",
     "@usejunior/odf-core": "^0.20.0",
