@@ -96,7 +96,7 @@
     "@vitest/runner": "4.1.8",
     "@xmldom/xmldom": "^0.9.10",
     "ajv": "^8.18.0",
-    "allure": "3.8.2",
+    "allure": "3.15.0",
     "eslint": "^10.0.1",
     "fast-xml-parser": "^5.7.0",
     "jszip": "^3.10.1",
@@ -104,8 +104,7 @@
     "prismjs": "^1.30.0"
   },
   "overrides": {
-    "@vitest/runner": "4.1.8",
-    "uuid": "^11.1.1"
+    "@vitest/runner": "4.1.8"
   },
   "engines": {
     "node": ">=20"

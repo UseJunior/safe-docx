@@ -15,7 +15,7 @@
     "test:e2e": "node ../../node_modules/vitest/vitest.mjs run src/__tests__/e2e/"
   },
   "dependencies": {
-    "google-auth-library": "^9.0.0"
+    "google-auth-library": "^10.9.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
