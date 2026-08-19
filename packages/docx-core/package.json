@@ -12,7 +12,7 @@
     "test": "node ../../node_modules/vitest/vitest.mjs",
     "test:run": "node ../../node_modules/vitest/vitest.mjs run",
     "test:baseline": "node ../../node_modules/vitest/vitest.mjs run -c vitest.baseline.config.ts",
-    "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
+    "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1 --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
     "check:spec-coverage": "npm run check:spec-coverage:openspec && npm run check:spec-coverage:primitives -- --strict && npm run check:spec-coverage:tag-density",
     "check:spec-coverage:openspec": "node scripts/validate_openspec_coverage.mjs",
     "check:spec-coverage:primitives": "node scripts/validate_primitives_openspec_coverage.mjs",
