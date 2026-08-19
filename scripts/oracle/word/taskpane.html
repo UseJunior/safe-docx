@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Safe DOCX Word Oracle</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <style>
+    body { font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 20px; color: #242424; }
+    textarea { box-sizing: border-box; min-height: 120px; width: 100%; }
+    button { margin-top: 12px; padding: 8px 14px; }
+    #status { margin-top: 16px; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <h1>Word comparison oracle</h1>
+  <p>Paste the one-time task-pane job URL printed by the CLI. The token is used only for this job.</p>
+  <textarea id="job-url" aria-label="Task-pane job URL" autocomplete="off" spellcheck="false"></textarea>
+  <button id="connect" disabled>Connect to job</button>
+  <p id="status">Waiting for Office…</p>
+  <script type="module" src="./taskpane.js"></script>
+</body>
+</html>

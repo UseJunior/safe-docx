@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+  xsi:type="TaskPaneApp">
+  <Id>9b95a185-9477-4e27-92fb-df7290c18891</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>safe-docx contributors</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Safe DOCX Word Oracle"/>
+  <Description DefaultValue="Local, developer-only native Word comparison oracle."/>
+  <IconUrl DefaultValue="https://localhost:38491/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:38491/assets/icon-80.png"/>
+  <SupportUrl DefaultValue="https://github.com/UseJunior/safe-docx"/>
+  <AppDomains><AppDomain>https://localhost:38491</AppDomain></AppDomains>
+  <Hosts><Host Name="Document"/></Hosts>
+  <DefaultSettings><SourceLocation DefaultValue="https://localhost:38491/taskpane.html"/></DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Requirements><bt:Sets DefaultMinVersion="1.1"><bt:Set Name="WordApi"/></bt:Sets></Requirements>
+    <Hosts>
+      <Host xsi:type="Document">
+        <DesktopFormFactor>
+          <GetStarted><Title resid="GetStarted.Title"/><Description resid="GetStarted.Description"/><LearnMoreUrl resid="GetStarted.LearnMoreUrl"/></GetStarted>
+          <FunctionFile resid="Taskpane.Url"/>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="WordOracle.Group">
+                <Label resid="WordOracle.GroupLabel"/>
+                <Icon><bt:Image size="16" resid="Icon.32"/><bt:Image size="32" resid="Icon.32"/><bt:Image size="80" resid="Icon.80"/></Icon>
+                <Control xsi:type="Button" id="WordOracle.ShowTaskpane">
+                  <Label resid="WordOracle.ButtonLabel"/><Supertip><Title resid="WordOracle.ButtonLabel"/><Description resid="WordOracle.ButtonDescription"/></Supertip>
+                  <Icon><bt:Image size="16" resid="Icon.32"/><bt:Image size="32" resid="Icon.32"/><bt:Image size="80" resid="Icon.80"/></Icon>
+                  <Action xsi:type="ShowTaskpane"><TaskpaneId>Office.AutoShowTaskpaneWithDocument</TaskpaneId><SourceLocation resid="Taskpane.Url"/></Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images><bt:Image id="Icon.32" DefaultValue="https://localhost:38491/assets/icon-32.png"/><bt:Image id="Icon.80" DefaultValue="https://localhost:38491/assets/icon-80.png"/></bt:Images>
+      <bt:Urls><bt:Url id="Taskpane.Url" DefaultValue="https://localhost:38491/taskpane.html"/><bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://github.com/UseJunior/safe-docx"/></bt:Urls>
+      <bt:ShortStrings><bt:String id="GetStarted.Title" DefaultValue="Safe DOCX Word Oracle"/><bt:String id="WordOracle.GroupLabel" DefaultValue="Safe DOCX Oracle"/><bt:String id="WordOracle.ButtonLabel" DefaultValue="Word Oracle"/></bt:ShortStrings>
+      <bt:LongStrings><bt:String id="GetStarted.Description" DefaultValue="Run local native Word comparison jobs."/><bt:String id="WordOracle.ButtonDescription" DefaultValue="Open the local Word comparison oracle task pane."/></bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>
