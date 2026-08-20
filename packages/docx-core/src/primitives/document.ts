@@ -1246,20 +1246,17 @@ export class DocxDocument {
       }
       const paragraph = findParagraphByBookmarkId(this.documentXml, comment.anchoredParagraphId);
       if (!paragraph) throw new Error(`Comment ID ${comment.id} anchor was not found`);
-      let afterText: string | undefined;
       if (comment.endTextOffset !== undefined) {
         const paragraphText = getParagraphText(paragraph);
         if (comment.endTextOffset > paragraphText.length) {
           throw new Error(`Comment ID ${comment.id} has an invalid visible-text range endpoint`);
         }
-        afterText = paragraphText.slice(0, comment.endTextOffset);
-        if (!afterText) afterText = undefined;
       }
       const replyText = comment.replies.map((reply) => `\n${reply.author ? `${reply.author}: ` : ''}${reply.text}`).join('');
       return {
         comment,
         paragraph,
-        afterText,
+        visibleOffset: comment.endTextOffset,
         text: `${comment.text}${replyText}`,
       };
     });
@@ -1272,7 +1269,7 @@ export class DocxDocument {
       // not the adjacent footnote run introduced here.
       const result = await addFootnoteImpl(this.documentXml, this.zip, {
         paragraphEl: item.paragraph,
-        afterText: item.afterText,
+        visibleOffset: item.visibleOffset,
         text: item.text,
         presentation: options.presentation,
       });

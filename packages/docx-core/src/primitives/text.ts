@@ -1,12 +1,13 @@
 import { OOXML, W } from './namespaces.js';
 import { SafeDocxError } from './errors.js';
-import { getAttributeSafe, getFirstChild } from './xml-helpers.js';
+import { getFirstChild } from './xml-helpers.js';
 import {
   buildRPrChangeElement,
   createRevisionContainer,
   prepareElementForDeletion,
   type RevisionContext,
 } from './track-changes-emitter.js';
+import { buildParagraphIndex } from './paragraph-index.js';
 
 export type TextRun = {
   r: Element; // w:r
@@ -25,106 +26,15 @@ export type TextRun = {
  * @see #651
  */
 export function getParagraphRuns(p: Element): TextRun[] {
-  type FieldFrame = {
-    id: number;
-    phase: 'instruction' | 'result';
-    instruction: string;
-  };
-
-  type PendingTextRun = Pick<TextRun, 'r' | 'text' | 'isFieldResult'> & {
-    fieldResultId: number | null;
-  };
-
-  function currentResultId(stack: readonly FieldFrame[]): number | null {
-    if (stack.length === 0 || stack.some((frame) => frame.phase === 'instruction')) return null;
-    return stack.at(-1)!.id;
-  }
-
-  function getWAttr(el: Element, localName: string): string | null {
-    return getAttributeSafe(el, OOXML.W_NS, localName, 'w');
-  }
-
-  const runs: PendingTextRun[] = [];
-  const rElems = Array.from(p.getElementsByTagNameNS(OOXML.W_NS, W.r));
-
-  const fieldStack: FieldFrame[] = [];
-  const fieldInstructions = new Map<number, string>();
-  let nextFieldId = 1;
-  for (const r of rElems) {
-    let runText = '';
-    let sawResult = false;
-    let runFieldResultId: number | null | undefined;
-
-    const appendVisibleText = (text: string): void => {
-      const resultId = currentResultId(fieldStack);
-      sawResult ||= resultId !== null;
-      if (runFieldResultId === undefined) {
-        runFieldResultId = resultId;
-      } else if (runFieldResultId !== resultId) {
-        // A run whose visible content straddles a field boundary cannot be
-        // rewritten as one unit without moving content across that boundary.
-        runFieldResultId = null;
-      }
-      runText += text;
-    };
-
-    // Walk children in order so we can handle rare cases where fldChar and result text
-    // appear in the same run.
-    for (const child of Array.from(r.childNodes)) {
-      if (child.nodeType !== 1) continue;
-      const el = child as Element;
-      if (el.namespaceURI !== OOXML.W_NS) continue;
-
-      if (el.localName === W.fldChar) {
-        const typ = getWAttr(el, 'fldCharType') ?? '';
-        if (typ === 'begin') {
-          fieldStack.push({ id: nextFieldId++, phase: 'instruction', instruction: '' });
-        } else if (typ === 'separate') {
-          const frame = fieldStack.at(-1);
-          if (frame) {
-            frame.phase = 'result';
-            fieldInstructions.set(frame.id, frame.instruction.trim());
-          }
-        } else if (typ === 'end') {
-          fieldStack.pop();
-        }
-        continue;
-      }
-
-      const instructionFrame = [...fieldStack].reverse().find((frame) => frame.phase === 'instruction');
-      if (instructionFrame) {
-        if (el.localName === W.instrText || el.localName === 'delInstrText') {
-          instructionFrame.instruction += el.textContent ?? '';
-        }
-        // Skip field code/instruction text.
-        continue;
-      }
-
-      if (el.localName === W.t) {
-        appendVisibleText(el.textContent ?? '');
-      } else if (el.localName === W.tab) {
-        appendVisibleText('\t');
-      } else if (el.localName === W.br) {
-        appendVisibleText('\n');
-      }
-    }
-
-    if (runText) {
-      runs.push({
-        r,
-        text: runText,
-        isFieldResult: sawResult,
-        fieldResultId: runFieldResultId ?? null,
-      });
-    }
-  }
-
-  return runs.map((run) => ({
-    ...run,
-    fieldInstruction: run.fieldResultId === null
-      ? null
-      : (fieldInstructions.get(run.fieldResultId) ?? null),
-  }));
+  return buildParagraphIndex(p).runs
+    .filter((run) => run.visibleText.length > 0)
+    .map((run) => ({
+      r: run.element,
+      text: run.visibleText,
+      isFieldResult: run.isFieldResult,
+      fieldResultId: run.fieldResultId,
+      fieldInstruction: run.fieldInstruction,
+    }));
 }
 
 export function getParagraphText(p: Element): string {
