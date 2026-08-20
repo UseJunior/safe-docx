@@ -123,17 +123,18 @@ may publish before npm rejects the new package; after the one-time manual
 bootstrap and trusted-publisher setup, dispatch `release.yml` again with the
 same tag. The rerun skips published versions and continues in dependency order.
 
-For v0.20.0 specifically, do not publish `@usejunior/docx-markdoc@0.19.1` and do
-not manually publish `@usejunior/docx-markdoc@0.20.0` until
-`@usejunior/docx-core@0.20.0` is visible on npm. If the first trusted-publishing
+For the initial v0.20.1 publication specifically, do not publish
+`@usejunior/docx-markdoc@0.19.1` and do not manually publish
+`@usejunior/docx-markdoc@0.20.1` until `@usejunior/docx-core@0.20.1` is visible
+on npm. If the first trusted-publishing
 run stops at `docx-markdoc`, run the locally prepared bootstrap script:
 
 ```bash
-/private/tmp/publish-docx-markdoc-release.sh 0.20.0
+/private/tmp/publish-docx-markdoc-release.sh 0.20.1
 ```
 
 It performs npm web login and publishes only `docx-markdoc` from a clean,
-detached checkout of `v0.20.0`. Then configure npm trusted publishing for
+detached checkout of `v0.20.1`. Then configure npm trusted publishing for
 `UseJunior/safe-docx` and workflow `release.yml` before rerunning that tag.
 
 ## Fixing Bad Release Notes
