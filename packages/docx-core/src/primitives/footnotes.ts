@@ -8,7 +8,7 @@
 import { OOXML, W } from './namespaces.js';
 import { parseXml, serializeXml } from './xml.js';
 import { DocxZip } from './zip.js';
-import { getParagraphRuns } from './text.js';
+import { buildParagraphIndex } from './paragraph-index.js';
 import { getParagraphBookmarkId } from './bookmarks.js';
 import { findUniqueSubstringMatch } from './matching.js';
 import { childElements, isW } from './dom-helpers.js';
@@ -95,6 +95,7 @@ export type Footnote = {
 export type AddFootnoteParams = {
   paragraphEl: Element;
   afterText?: string;
+  visibleOffset?: number;
   text: string;
   presentation?: FootnoteNotePresentation;
 };
@@ -468,7 +469,10 @@ export async function addFootnote(
   params: AddFootnoteParams,
   ctx?: RevisionContext,
 ): Promise<AddFootnoteResult> {
-  const { paragraphEl, afterText, text, presentation } = params;
+  const { paragraphEl, afterText, visibleOffset, text, presentation } = params;
+  if (afterText !== undefined && visibleOffset !== undefined) {
+    throw new Error('afterText and visibleOffset are mutually exclusive footnote anchors');
+  }
 
   // Load or bootstrap footnotes.xml
   const footnotesXml = await zip.readText('word/footnotes.xml');
@@ -478,7 +482,7 @@ export async function addFootnote(
   const noteId = allocateNextFootnoteId(footnotesDoc);
 
   // Insert footnoteReference run in document body
-  insertFootnoteReference(documentXml, paragraphEl, noteId, afterText, ctx);
+  insertFootnoteReference(documentXml, paragraphEl, noteId, afterText, visibleOffset, ctx);
 
   // Add footnote body to footnotes.xml
   const footnoteEl = addFootnoteElement(footnotesDoc, noteId, text, presentation);
@@ -495,6 +499,7 @@ function insertFootnoteReference(
   paragraphEl: Element,
   noteId: number,
   afterText?: string,
+  requestedVisibleOffset?: number,
   ctx?: RevisionContext,
 ): void {
   // Create the reference run
@@ -518,51 +523,51 @@ function insertFootnoteReference(
     refAnchor.appendChild(refRun);
   }
 
-  if (!afterText) {
+  if (afterText === undefined && requestedVisibleOffset === undefined) {
     // Default: append at end of paragraph
     paragraphEl.appendChild(refAnchor);
     return;
   }
 
-  // Find the text boundary using unique substring matching
-  const runs = getParagraphRuns(paragraphEl);
-  const fullText = runs.map((r) => r.text).join('');
-  const match = findUniqueSubstringMatch(fullText, afterText);
-
-  if (match.status === 'not_found') {
-    throw new Error(`after_text '${afterText}' not found in paragraph`);
+  const index = buildParagraphIndex(paragraphEl);
+  const runs = index.runs.filter((run) => run.visibleText.length > 0);
+  let insertOffset: number;
+  if (requestedVisibleOffset !== undefined) {
+    if (!Number.isInteger(requestedVisibleOffset) || requestedVisibleOffset < 0 || requestedVisibleOffset > index.text.length) {
+      throw new Error(`visibleOffset ${requestedVisibleOffset} is outside paragraph visible text [0, ${index.text.length}]`);
+    }
+    insertOffset = requestedVisibleOffset;
+  } else {
+    const match = findUniqueSubstringMatch(index.text, afterText!);
+    if (match.status === 'not_found') throw new Error(`after_text '${afterText}' not found in paragraph`);
+    if (match.status === 'multiple') throw new Error(`after_text '${afterText}' found ${match.matchCount} times in paragraph`);
+    insertOffset = match.end;
   }
-  if (match.status === 'multiple') {
-    throw new Error(`after_text '${afterText}' found ${match.matchCount} times in paragraph`);
-  }
-
-  // We need to insert after the end of the matched text
-  const insertOffset = match.end;
 
   // Map offset to run position
   let pos = 0;
   for (let i = 0; i < runs.length; i++) {
     const run = runs[i]!;
-    const runEnd = pos + run.text.length;
+    const runEnd = pos + run.visibleText.length;
 
     if (insertOffset <= pos) {
       // Insert before this run
-      const parent = run.r.parentNode!;
-      parent.insertBefore(refAnchor, run.r);
+      const parent = run.element.parentNode!;
+      parent.insertBefore(refAnchor, run.element);
       return;
     }
 
     if (insertOffset > pos && insertOffset < runEnd) {
       // Need to split this run at the offset
       const splitOffset = insertOffset - pos;
-      splitRunAndInsertReference(run.r, splitOffset, refAnchor);
+      splitRunAndInsertReference(run.element, splitOffset, refAnchor);
       return;
     }
 
     if (insertOffset === runEnd) {
       // Insert after this run
-      const parent = run.r.parentNode!;
-      parent.insertBefore(refAnchor, run.r.nextSibling);
+      const parent = run.element.parentNode!;
+      parent.insertBefore(refAnchor, run.element.nextSibling);
       return;
     }
 

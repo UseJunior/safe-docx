@@ -11,7 +11,8 @@ import { parseXml, serializeXml } from './xml.js';
 import { DocxZip } from './zip.js';
 import { getParagraphRuns, getParagraphText, splitRunAtVisibleOffset, type TextRun } from './text.js';
 import { getParagraphBookmarkId } from './bookmarks.js';
-import { childElements, getLeafText, isW } from './dom-helpers.js';
+import { isW } from './dom-helpers.js';
+import { buildParagraphIndex, type IndexedParagraphNode, type ParagraphIndex } from './paragraph-index.js';
 import { getAttributeSafe } from './xml-helpers.js';
 import {
   createRevisionContainer,
@@ -795,40 +796,6 @@ type CommentRangePoint = {
   textOffset?: number;
 };
 
-type RunBoundary = {
-  visibleLength: number;
-};
-
-// A marker is recorded with one of two shapes:
-// - `inside`: marker was seen INSIDE a `<w:r>`; runIndex is exact, charOffset is the
-//   visible-text offset within that run.
-// - `between`: marker was seen at paragraph level (between/around `<w:r>` elements);
-//   resolution depends on the boundary direction and the surrounding runs.
-type MarkerCharPosition = {
-  id: number;
-  textOffset: number;
-  inside?: { runIndex: number; charOffset: number };
-  between?: { afterRunIndex: number };
-};
-
-enum FieldState {
-  OUTSIDE_FIELD = 0,
-  IN_FIELD_CODE = 1,
-  IN_FIELD_RESULT = 2,
-}
-
-type ParagraphMarkerWalkState = {
-  charPos: number;
-  fieldState: FieldState;
-  // `allRuns` records every `<w:r>` in document order, including zero-length ones.
-  // This is the source of truth for `runIndex` per the issue contract.
-  allRuns: RunBoundary[];
-  // Number of `<w:r>` entered so far during the walk; equals allRuns.length once a run exits.
-  currentRunIndex: number;
-  startMarkers: MarkerCharPosition[];
-  endMarkers: MarkerCharPosition[];
-};
-
 /**
  * Read all comments from a document, building a threaded tree.
  *
@@ -961,119 +928,26 @@ function resolveCommentRangeMetadataInParagraph(
   startById: Map<number, CommentRangePoint>,
   endById: Map<number, CommentRangePoint>,
 ): void {
-  const walkState: ParagraphMarkerWalkState = {
-    charPos: 0,
-    fieldState: FieldState.OUTSIDE_FIELD,
-    allRuns: [],
-    currentRunIndex: 0,
-    startMarkers: [],
-    endMarkers: [],
-  };
-  walkParagraphForCommentMarkers(paragraph, paragraph, walkState);
-
+  const index = buildParagraphIndex(paragraph);
   const paragraphId = getParagraphBookmarkId(paragraph);
-  for (const marker of walkState.startMarkers) {
-    if (startById.has(marker.id)) continue;
-    startById.set(marker.id, {
+  for (const marker of index.nodes.filter((node) => node.kind === 'comment-range-start')) {
+    const id = getCommentMarkerId(marker.element);
+    if (id == null || startById.has(id)) continue;
+    startById.set(id, {
       paragraphId,
-      textOffset: marker.textOffset,
-      ...resolveMarkerToRunBoundary(walkState.allRuns, marker, 'start'),
+      textOffset: marker.visibleStart,
+      ...resolveIndexedMarkerBoundary(index, marker, 'start'),
     });
   }
-
-  for (const marker of walkState.endMarkers) {
-    if (endById.has(marker.id)) continue;
-    endById.set(marker.id, {
+  for (const marker of index.nodes.filter((node) => node.kind === 'comment-range-end')) {
+    const id = getCommentMarkerId(marker.element);
+    if (id == null || endById.has(id)) continue;
+    endById.set(id, {
       paragraphId,
-      textOffset: marker.textOffset,
-      ...resolveMarkerToRunBoundary(walkState.allRuns, marker, 'end'),
+      textOffset: marker.visibleStart,
+      ...resolveIndexedMarkerBoundary(index, marker, 'end'),
     });
   }
-}
-
-function walkParagraphForCommentMarkers(
-  rootParagraph: Element,
-  node: Element,
-  state: ParagraphMarkerWalkState,
-): void {
-  for (const child of childElements(node)) {
-    if (child !== rootParagraph && isW(child, W.p)) continue;
-
-    if (isW(child, W.commentRangeStart)) {
-      recordParagraphLevelMarker(child, state.startMarkers, state);
-      continue;
-    }
-    if (isW(child, W.commentRangeEnd)) {
-      recordParagraphLevelMarker(child, state.endMarkers, state);
-      continue;
-    }
-    if (isW(child, W.r)) {
-      walkRunForCommentMarkers(child, state);
-      continue;
-    }
-
-    walkParagraphForCommentMarkers(rootParagraph, child, state);
-  }
-}
-
-function walkRunForCommentMarkers(run: Element, state: ParagraphMarkerWalkState): void {
-  const runIndex = state.currentRunIndex;
-  state.currentRunIndex += 1;
-  const runVisibleStart = state.charPos;
-
-  for (const child of childElements(run)) {
-    if (isW(child, W.commentRangeStart)) {
-      recordInRunMarker(child, state.startMarkers, runIndex, state.charPos - runVisibleStart, state.charPos);
-      continue;
-    }
-    if (isW(child, W.commentRangeEnd)) {
-      recordInRunMarker(child, state.endMarkers, runIndex, state.charPos - runVisibleStart, state.charPos);
-      continue;
-    }
-    if (!child.namespaceURI || child.namespaceURI !== OOXML.W_NS) continue;
-
-    if (child.localName === W.fldChar) {
-      const type = getWordAttribute(child, 'fldCharType') ?? '';
-      if (type === 'begin') state.fieldState = FieldState.IN_FIELD_CODE;
-      else if (type === 'separate') state.fieldState = FieldState.IN_FIELD_RESULT;
-      else if (type === 'end') state.fieldState = FieldState.OUTSIDE_FIELD;
-      continue;
-    }
-
-    if (state.fieldState === FieldState.IN_FIELD_CODE) continue;
-
-    if (child.localName === W.t) {
-      state.charPos += (getLeafText(child) ?? '').length;
-      continue;
-    }
-    if (child.localName === W.tab || child.localName === W.br) {
-      state.charPos += 1;
-    }
-  }
-
-  state.allRuns.push({ visibleLength: state.charPos - runVisibleStart });
-}
-
-function recordInRunMarker(
-  markerEl: Element,
-  bucket: MarkerCharPosition[],
-  runIndex: number,
-  charOffset: number,
-  textOffset: number,
-): void {
-  const id = getCommentMarkerId(markerEl);
-  if (id == null) return;
-  bucket.push({ id, textOffset, inside: { runIndex, charOffset } });
-}
-
-function recordParagraphLevelMarker(
-  markerEl: Element,
-  bucket: MarkerCharPosition[],
-  state: ParagraphMarkerWalkState,
-): void {
-  const id = getCommentMarkerId(markerEl);
-  if (id == null) return;
-  bucket.push({ id, textOffset: state.charPos, between: { afterRunIndex: state.currentRunIndex - 1 } });
 }
 
 function getCommentMarkerId(markerEl: Element): number | null {
@@ -1083,45 +957,20 @@ function getCommentMarkerId(markerEl: Element): number | null {
   return Number.isNaN(id) ? null : id;
 }
 
-function getWordAttribute(el: Element, localName: string): string | null {
-  return getAttributeSafe(el, OOXML.W_NS, localName, 'w');
-}
-
-function resolveMarkerToRunBoundary(
-  allRuns: RunBoundary[],
-  marker: MarkerCharPosition,
+function resolveIndexedMarkerBoundary(
+  index: ParagraphIndex,
+  marker: IndexedParagraphNode,
   boundary: 'start' | 'end',
 ): Pick<CommentRangePoint, 'runIndex' | 'charOffset'> {
-  // Marker seen INSIDE a run already carries the exact runIndex + charOffset.
-  if (marker.inside) {
-    return { runIndex: marker.inside.runIndex, charOffset: marker.inside.charOffset };
-  }
-  if (!marker.between) return {};
-  if (allRuns.length === 0) return {};
-
-  const { afterRunIndex } = marker.between;
-  const lastIndex = allRuns.length - 1;
-
-  if (boundary === 'start') {
-    // Marker sits between run `afterRunIndex` and run `afterRunIndex + 1`.
-    // For a `start` marker, the range opens at offset 0 of the next run if it exists.
-    const nextIdx = afterRunIndex + 1;
-    if (nextIdx <= lastIndex) {
-      return { runIndex: nextIdx, charOffset: 0 };
-    }
-    // Marker is past the last run — clamp to end of last run.
-    return { runIndex: lastIndex, charOffset: allRuns[lastIndex]!.visibleLength };
-  }
-
-  // boundary === 'end': range closes at the end of the previous run if one exists.
-  if (afterRunIndex < 0) {
-    // Marker is before the first run — empty range starting at run 0.
-    return { runIndex: 0, charOffset: 0 };
-  }
-  if (afterRunIndex <= lastIndex) {
-    return { runIndex: afterRunIndex, charOffset: allRuns[afterRunIndex]!.visibleLength };
-  }
-  return { runIndex: lastIndex, charOffset: allRuns[lastIndex]!.visibleLength };
+  if (marker.runIndex !== null) return { runIndex: marker.runIndex, charOffset: marker.runVisibleOffset };
+  if (index.runs.length === 0) return {};
+  const before = [...index.runs].reverse().find((run) => run.structuralIndex < marker.structuralIndex);
+  const after = index.runs.find((run) => run.structuralIndex > marker.structuralIndex);
+  if (boundary === 'start' && after) return { runIndex: after.runIndex!, charOffset: 0 };
+  if (before) return { runIndex: before.runIndex!, charOffset: before.visibleText.length };
+  // At least one run exists, and a marker with no preceding run must sort
+  // before the first run, so `after` is necessarily defined here.
+  return { runIndex: after!.runIndex!, charOffset: 0 };
 }
 
 /**
