@@ -36,7 +36,7 @@ import {
   parseDocumentXml,
   findBody,
 } from './xmlToWmlElement.js';
-import { childElements, findAllByTagName, getLeafText } from '@usejunior/docx-core';
+import { childElements, findAllByTagName } from '@usejunior/docx-core';
 import {
   acceptAllChanges,
   rejectAllChanges,
@@ -84,6 +84,13 @@ import {
 import { resolveTaggedRevisionAttributions } from './taggedTreeSerializer.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import {
+  collectBookmarkReferenceNamesInXml,
+  collectWordPartBookmarkNames,
+  createOriginalBookmarkRenameMap,
+  disambiguateOriginalBookmarkIds,
+  renameOriginalBookmarkTargetsAcrossWordParts,
+} from './bookmarkProjectionCompatibility.js';
+import {
   allocateRevisionId,
   createRevisionIdState,
 } from './revisionMarkup.js';
@@ -128,6 +135,8 @@ export interface StandaloneTaggedPackageOptions {
   publicationSafetyEvaluator?: typeof evaluateSafetyChecks;
   /** @internal Test seam for the final source-formatting publication gate. */
   formattingFidelityEvaluator?: typeof compareSourceProjectedFormattingFidelity;
+  /** @internal Comparison-wide generated bookmark-name reservations. */
+  bookmarkNameReservations?: Set<string>;
 }
 
 export interface StandaloneTaggedPackageResult {
@@ -322,47 +331,89 @@ export async function buildStandaloneTaggedPackage(
   await restampCollidingCommentParaIds(originalArchive, revisedArchive);
   await renumberCollidingRelationshipIds(originalArchive, revisedArchive);
 
-  const [originalXml, revisedXml, originalNumberingXml, revisedNumberingXml] = await Promise.all([
+  let [originalXml, revisedXml, originalNumberingXml, revisedNumberingXml] = await Promise.all([
     originalArchive.getDocumentXml(),
     revisedArchive.getDocumentXml(),
     originalArchive.getNumberingXml(),
     revisedArchive.getNumberingXml(),
   ]);
+  const disambiguatedBookmarks = disambiguateOriginalBookmarkIds(originalXml, revisedXml);
+  if (disambiguatedBookmarks.remappedRanges > 0) {
+    originalXml = disambiguatedBookmarks.xml;
+    originalArchive.setDocumentXml(originalXml);
+  }
   if (
     !findBody(parseDocumentXml(originalXml)) ||
     !findBody(parseDocumentXml(revisedXml))
   ) {
     throw new Error('Could not find w:body in one or both documents');
   }
-  // Canonicalization needs one relationship table containing both sides, but
-  // that temporary clone is discarded so unused original parts never leak
-  // into the published revised-base package.
-  const canonicalArchive = await revisedArchive.clone();
-  await importReferencedRelationships(originalArchive, canonicalArchive, originalXml);
-  const [taggedOriginalXml, taggedRevisedXml] = await Promise.all([
-    canonicalizeRelationshipReferences(originalXml, originalArchive, canonicalArchive),
-    canonicalizeRelationshipReferences(revisedXml, revisedArchive, canonicalArchive),
-  ]);
-  const taggedPublication = buildTaggedTreePublication({
-    originalXml: taggedOriginalXml,
-    revisedXml: taggedRevisedXml,
-    author: options.author,
-    date: options.date,
-    detectFormatChanges: options.formatDetection.detectFormatChanges,
-    detectMoves: options.moveDetection.detectMoves,
-    moveSimilarityThreshold: options.moveDetection.moveSimilarityThreshold,
-    moveMinimumWordCount: options.moveDetection.moveMinimumWordCount,
-    caseInsensitiveMove: options.moveDetection.caseInsensitiveMove,
-    numberingEnabled: options.numbering.enabled,
-    originalNumberingXml: originalNumberingXml ?? undefined,
-    revisedNumberingXml: revisedNumberingXml ?? undefined,
-    revisionAttributionRanges: options.revisionAttributionRanges,
-    retainStatisticsMarkers: true,
-  });
-  const finalizedPublication = consumeTaggedPublicationStatistics(
-    finalizeTaggedDocumentXml(taggedPublication.xml),
-    taggedPublication.stats,
+  const publish = async (): Promise<{
+    taggedOriginalXml: string;
+    taggedRevisedXml: string;
+    finalizedPublication: ReturnType<typeof consumeTaggedPublicationStatistics>;
+  }> => {
+    // Canonicalization needs one relationship table containing both sides, but
+    // that temporary clone is discarded so unused original parts never leak
+    // into the published revised-base package.
+    const canonicalArchive = await revisedArchive.clone();
+    await importReferencedRelationships(originalArchive, canonicalArchive, originalXml);
+    const [taggedOriginalXml, taggedRevisedXml] = await Promise.all([
+      canonicalizeRelationshipReferences(originalXml, originalArchive, canonicalArchive),
+      canonicalizeRelationshipReferences(revisedXml, revisedArchive, canonicalArchive),
+    ]);
+    const taggedPublication = buildTaggedTreePublication({
+      originalXml: taggedOriginalXml,
+      revisedXml: taggedRevisedXml,
+      author: options.author,
+      date: options.date,
+      detectFormatChanges: options.formatDetection.detectFormatChanges,
+      detectMoves: options.moveDetection.detectMoves,
+      moveSimilarityThreshold: options.moveDetection.moveSimilarityThreshold,
+      moveMinimumWordCount: options.moveDetection.moveMinimumWordCount,
+      caseInsensitiveMove: options.moveDetection.caseInsensitiveMove,
+      numberingEnabled: options.numbering.enabled,
+      originalNumberingXml: originalNumberingXml ?? undefined,
+      revisedNumberingXml: revisedNumberingXml ?? undefined,
+      revisionAttributionRanges: options.revisionAttributionRanges,
+      retainStatisticsMarkers: true,
+    });
+    return {
+      taggedOriginalXml,
+      taggedRevisedXml,
+      finalizedPublication: consumeTaggedPublicationStatistics(
+        finalizeTaggedDocumentXml(taggedPublication.xml),
+        taggedPublication.stats,
+      ),
+    };
+  };
+
+  let publication = await publish();
+  const originalBookmarks = collectBookmarkDiagnostics(originalXml);
+  const revisedBookmarks = collectBookmarkDiagnostics(revisedXml);
+  const generatedDuplicateNames = collectBookmarkDiagnostics(
+    publication.finalizedPublication.xml,
+  ).duplicateStartNames.filter((name) =>
+    originalBookmarks.startNames.includes(name) &&
+    revisedBookmarks.startNames.includes(name) &&
+    !originalBookmarks.duplicateStartNames.includes(name) &&
+    !revisedBookmarks.duplicateStartNames.includes(name),
   );
+  if (generatedDuplicateNames.length > 0) {
+    const existingNames = await collectWordPartBookmarkNames([
+      originalArchive,
+      revisedArchive,
+    ]);
+    const reservedNames = options.bookmarkNameReservations ?? new Set<string>();
+    for (const name of existingNames) reservedNames.add(name);
+    const renames = createOriginalBookmarkRenameMap(generatedDuplicateNames, reservedNames);
+    for (const name of renames.values()) reservedNames.add(name);
+    await renameOriginalBookmarkTargetsAcrossWordParts(originalArchive, renames);
+    originalXml = await originalArchive.getDocumentXml();
+    originalNumberingXml = await originalArchive.getNumberingXml();
+    publication = await publish();
+  }
+  const { taggedOriginalXml, taggedRevisedXml, finalizedPublication } = publication;
   let taggedXml = finalizedPublication.xml;
   let revisionAttributions: RevisionAttribution[] | undefined;
   if ((options.revisionAttributionRanges?.length ?? 0) > 0) {
@@ -862,29 +913,6 @@ interface BookmarkDiagnostics {
   unmatchedEndIds: string[];
 }
 
-function arraysEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
-}
-
-function collectReferencedBookmarkNames(root: ReturnType<typeof parseDocumentXml>): string[] {
-  const refs = new Set<string>();
-  const refRegex = /\b(?:PAGEREF|REF)\s+([^\s\\]+)/g;
-
-  for (const node of findAllByTagName(root, 'w:instrText')) {
-    const instr = getLeafText(node) ?? '';
-    for (const match of instr.matchAll(refRegex)) {
-      const name = match[1]?.trim();
-      if (name) refs.add(name);
-    }
-  }
-
-  return Array.from(refs).sort();
-}
-
 function collectBookmarkDiagnostics(documentXml: string): BookmarkDiagnostics {
   const root = parseDocumentXml(documentXml);
 
@@ -918,7 +946,7 @@ function collectBookmarkDiagnostics(documentXml: string): BookmarkDiagnostics {
   const startIds = Array.from(startSet).sort();
   const endIds = Array.from(endSet).sort();
   const startNames = Array.from(startNameSet).sort();
-  const referencedBookmarkNames = collectReferencedBookmarkNames(root);
+  const referencedBookmarkNames = collectBookmarkReferenceNamesInXml(documentXml);
   const unresolvedReferenceNames = referencedBookmarkNames
     .filter((name) => !startNameSet.has(name))
     .sort();
@@ -940,25 +968,56 @@ function collectBookmarkDiagnostics(documentXml: string): BookmarkDiagnostics {
 }
 
 /**
- * Bookmark round-trip safety is semantic, not byte/ID exact:
- * - Bookmark IDs may be renumbered by reconstruction/Word and still be valid.
- * - Bookmark names and field-reference targets must stay intact.
- * - Structural integrity (balanced, no duplicates) must remain intact.
+ * Bookmark publication can normalize IDs and which source marker carries a
+ * name, but it must not introduce structural or reference anomalies absent
+ * from the corresponding source inventory.
  */
-function bookmarkDiagnosticsSemanticallyEqual(
-  expected: BookmarkDiagnostics,
-  actual: BookmarkDiagnostics
+function containsNoNewValues(actual: string[], allowed: ReadonlySet<string>): boolean {
+  return actual.every((value) => allowed.has(value));
+}
+
+function bookmarkDiagnosticsIntroduceNoStructuralAnomalies(
+  actual: BookmarkDiagnostics,
+  allowed: BookmarkDiagnostics,
 ): boolean {
-  return (
-    arraysEqual(expected.startNames, actual.startNames) &&
-    arraysEqual(expected.duplicateStartNames, actual.duplicateStartNames) &&
-    arraysEqual(expected.referencedBookmarkNames, actual.referencedBookmarkNames) &&
-    arraysEqual(expected.unresolvedReferenceNames, actual.unresolvedReferenceNames) &&
-    arraysEqual(expected.duplicateStartIds, actual.duplicateStartIds) &&
-    arraysEqual(expected.duplicateEndIds, actual.duplicateEndIds) &&
-    arraysEqual(expected.unmatchedStartIds, actual.unmatchedStartIds) &&
-    arraysEqual(expected.unmatchedEndIds, actual.unmatchedEndIds)
+  return containsNoNewValues(
+    actual.duplicateStartNames,
+    new Set(allowed.duplicateStartNames),
+  ) && containsNoNewValues(
+    actual.unresolvedReferenceNames,
+    new Set(allowed.unresolvedReferenceNames),
+  ) && containsNoNewValues(
+    actual.duplicateStartIds,
+    new Set(allowed.duplicateStartIds),
+  ) && containsNoNewValues(
+    actual.duplicateEndIds,
+    new Set(allowed.duplicateEndIds),
   );
+}
+
+function combinedBookmarkAllowance(
+  original: BookmarkDiagnostics,
+  revised: BookmarkDiagnostics,
+): BookmarkDiagnostics {
+  const union = (left: string[], right: string[]): string[] => [...new Set([...left, ...right])];
+  return {
+    startIds: union(original.startIds, revised.startIds),
+    endIds: union(original.endIds, revised.endIds),
+    startNames: union(original.startNames, revised.startNames),
+    duplicateStartNames: union(original.duplicateStartNames, revised.duplicateStartNames),
+    referencedBookmarkNames: union(
+      original.referencedBookmarkNames,
+      revised.referencedBookmarkNames,
+    ),
+    unresolvedReferenceNames: union(
+      original.unresolvedReferenceNames,
+      revised.unresolvedReferenceNames,
+    ),
+    duplicateStartIds: union(original.duplicateStartIds, revised.duplicateStartIds),
+    duplicateEndIds: union(original.duplicateEndIds, revised.duplicateEndIds),
+    unmatchedStartIds: union(original.unmatchedStartIds, revised.unmatchedStartIds),
+    unmatchedEndIds: union(original.unmatchedEndIds, revised.unmatchedEndIds),
+  };
 }
 
 function diffIds(expected: string[], actual: string[]): { missing: string[]; unexpected: string[] } {
@@ -1170,17 +1229,24 @@ function evaluateSafetyChecks(
   const rejectedText = extractRoundTripComparisonText(rejectedXml);
   const acceptedBookmarkDiagnostics = collectBookmarkDiagnostics(acceptedXml);
   const rejectedBookmarkDiagnostics = collectBookmarkDiagnostics(rejectedXml);
+  const combinedBookmarkDiagnostics = collectBookmarkDiagnostics(candidateXml);
   const acceptTextComparison = compareTexts(revisedTextForRoundTrip, acceptedText);
   const rejectTextComparison = compareTexts(originalTextForRoundTrip, rejectedText);
 
-  const acceptBookmarksOk = bookmarkDiagnosticsSemanticallyEqual(
-    revisedBookmarkDiagnostics,
-    acceptedBookmarkDiagnostics
+  const combinedBookmarksOk = bookmarkDiagnosticsIntroduceNoStructuralAnomalies(
+    combinedBookmarkDiagnostics,
+    combinedBookmarkAllowance(originalBookmarkDiagnostics, revisedBookmarkDiagnostics),
   );
-  const rejectBookmarksOk = bookmarkDiagnosticsSemanticallyEqual(
-    originalBookmarkDiagnostics,
-    rejectedBookmarkDiagnostics
-  );
+  const acceptBookmarksOk = combinedBookmarksOk &&
+    bookmarkDiagnosticsIntroduceNoStructuralAnomalies(
+      acceptedBookmarkDiagnostics,
+      revisedBookmarkDiagnostics,
+    );
+  const rejectBookmarksOk = combinedBookmarksOk &&
+    bookmarkDiagnosticsIntroduceNoStructuralAnomalies(
+      rejectedBookmarkDiagnostics,
+      originalBookmarkDiagnostics,
+    );
 
   // Validate field structure for the main-story round-trip projection. Final
   // note entries are validated after mode-specific assembly, where the gate
@@ -1207,11 +1273,14 @@ function evaluateSafetyChecks(
   const checks: ReconstructionSafetyChecks = {
     acceptText: acceptTextComparison.normalizedIdentical,
     rejectText: rejectTextComparison.normalizedIdentical,
-    // Bookmark checks are soft: consumer compatibility pass legitimately alters
-    // bookmarks (deduplication, orphan repair, hoisting out of revision wrappers).
-    // Log mismatches in diagnostics but don't trigger fallback to rebuild.
-    acceptBookmarks: true,
-    rejectBookmarks: true,
+    // Hoisting may intentionally normalize which source marker carries a
+    // bookmark name, so source-inventory equality is too strict. Publication
+    // still fails closed on new balance, uniqueness, and reference anomalies
+    // in the combined document or either projection. An anomaly already
+    // present in a source remains diagnostic rather than being silently
+    // repaired by the tagged path.
+    acceptBookmarks: acceptBookmarksOk,
+    rejectBookmarks: rejectBookmarksOk,
     fieldStructure: fieldStructureOk,
   };
 
@@ -1228,8 +1297,6 @@ function evaluateSafetyChecks(
   if (!checks.rejectText) {
     failureDetails.rejectText = buildTextMismatchDetails(originalTextForRoundTrip, rejectedText);
   }
-  // Bookmark mismatches are always collected for diagnostics even though the
-  // check itself is soft (doesn't trigger fallback).
   if (!acceptBookmarksOk) {
     failureDetails.acceptBookmarks = buildBookmarkMismatchDetails(
       revisedBookmarkDiagnostics,
@@ -1257,6 +1324,7 @@ async function compareDocumentsTaggedCore(
   original: Buffer,
   revised: Buffer,
   options: AtomizerOptions,
+  bookmarkNameReservations?: Set<string>,
 ): Promise<AtomizerCompareResult> {
   const standalone = await buildStandaloneTaggedPackage(original, revised, {
     author: options.author ?? 'Comparison',
@@ -1276,6 +1344,7 @@ async function compareDocumentsTaggedCore(
     revisionAttributionRanges: options.revisionAttributionRanges,
     publicationSafetyEvaluator: options.taggedTreePublicationSafetyEvaluator,
     formattingFidelityEvaluator: options.taggedTreeFormattingFidelityEvaluator,
+    bookmarkNameReservations,
   });
   if (options.standaloneTaggedPackageShadowObserver) {
     await options.standaloneTaggedPackageShadowObserver(
@@ -1322,10 +1391,19 @@ async function compareDocumentsTagged(
         ? (report) => { standaloneShadowReports.push(report); }
         : options.standaloneTaggedPackageShadowObserver,
   };
+  const [originalArchive, revisedArchive] = await Promise.all([
+    DocxArchive.load(original),
+    DocxArchive.load(revised),
+  ]);
+  const bookmarkNameReservations = await collectWordPartBookmarkNames([
+    originalArchive,
+    revisedArchive,
+  ]);
   const outerResult = await compareDocumentsTaggedCore(
     textBoxPlan.outerOriginal,
     textBoxPlan.outerRevised,
     nestedOptions,
+    bookmarkNameReservations,
   );
 
   const storyResults: Array<{
@@ -1351,6 +1429,7 @@ async function compareDocumentsTagged(
       story.original,
       story.container === 'ancillaryPart' ? story.original : story.revised,
       nestedOptions,
+      bookmarkNameReservations,
     );
     if (story.container === 'ancillaryPart') {
       const marked = await markInsertedAncillaryStoryParagraphs(
@@ -1396,6 +1475,23 @@ async function compareDocumentsTagged(
   );
   const comparedArchive = await DocxArchive.load(document);
   const comparedDocumentXml = await comparedArchive.getDocumentXml();
+  const assembledBookmarkDiagnostics = collectBookmarkDiagnostics(comparedDocumentXml);
+  const sourceDuplicateBookmarkNames = new Set([
+    ...collectBookmarkDiagnostics(textBoxPlan.originalDocumentXml).duplicateStartNames,
+    ...collectBookmarkDiagnostics(textBoxPlan.revisedDocumentXml).duplicateStartNames,
+  ]);
+  const introducedDuplicateBookmarkNames =
+    assembledBookmarkDiagnostics.duplicateStartNames.filter(
+      (name) => !sourceDuplicateBookmarkNames.has(name),
+    );
+  if (introducedDuplicateBookmarkNames.length > 0) {
+    throw new UnsupportedTextBoxRevisionError([{
+      index: textBoxPlan.stories[0]?.visualIndex ?? 0,
+      partPath: textBoxPlan.stories[0]?.partPath ?? 'word/document.xml',
+      reason: 'assembled nested stories introduced duplicate bookmark names: ' +
+        introducedDuplicateBookmarkNames.join(', '),
+    }]);
+  }
   const acceptedComparison = compareTexts(
     extractRoundTripComparisonText(textBoxPlan.revisedDocumentXml),
     extractRoundTripComparisonText(acceptAllChanges(comparedDocumentXml)),

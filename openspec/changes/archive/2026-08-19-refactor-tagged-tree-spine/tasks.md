@@ -26,6 +26,7 @@
 - [x] 3.3 Enforce consumer compatibility before serialization without repairing bookmark inventory.
 - [x] 3.4 Suppress volatile PAGEREF revisions after compatibility enforcement and before final gates.
 - [x] 3.5 Add overlapping bookmark/revision ID and refreshed-TOC cache regressions, then close their divergence rows.
+- [x] 3.6 Disambiguate package-local bookmark IDs, rewrite original-side bookmark targets across WordprocessingML parts, and make bookmark publication gates fail closed on comparison-created anomalies.
 
 ## 4. Markdoc rationale attribution
 

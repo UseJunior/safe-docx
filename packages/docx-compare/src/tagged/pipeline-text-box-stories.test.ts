@@ -111,6 +111,14 @@ function paragraphWithTextBoxStory(
   );
 }
 
+function paragraphWithTextBoxParagraphs(storyParagraphs: string): string {
+  return (
+    '<w:p><w:r><w:pict><v:shape id="bookmark-shape" o:spid="_x0000_s1099">' +
+    '<v:textbox><w:txbxContent>' + storyParagraphs +
+    '</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>'
+  );
+}
+
 /**
  * A DrawingML text box: `wps:txbx/w:txbxContent`, with no VML anywhere.
  *
@@ -307,6 +315,45 @@ function hasTrackedRevisionAncestor(element: Element): boolean {
 }
 
 describe('VML text-box story comparison (#713)', () => {
+  test('reserves generated bookmark names across outer and text-box stories', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:p><w:bookmarkStart w:id="1" w:name="OuterRange"/>' +
+        '<w:r><w:t>outer doomed</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>outer survivor</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>' +
+        paragraphWithTextBoxParagraphs(
+          '<w:p w14:paraId="21000001" w14:textId="21000001">' +
+            '<w:bookmarkStart w:id="2" w:name="BoxRange"/>' +
+            '<w:r><w:t>box doomed</w:t></w:r></w:p>' +
+          '<w:p w14:paraId="21000002" w14:textId="21000002">' +
+            '<w:r><w:t>box survivor</w:t></w:r><w:bookmarkEnd w:id="2"/></w:p>',
+        ),
+      [],
+      { namespaces: TEXT_BOX_NAMESPACES },
+    );
+    const revised = await buildDocxFromBodyXml(
+      '<w:p><w:bookmarkStart w:id="1" w:name="OuterRange"/>' +
+        '<w:r><w:t>outer survivor</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>' +
+        paragraphWithTextBoxParagraphs(
+          '<w:p w14:paraId="21000002" w14:textId="21000002">' +
+            '<w:bookmarkStart w:id="2" w:name="BoxRange"/>' +
+            '<w:r><w:t>box survivor</w:t></w:r><w:bookmarkEnd w:id="2"/></w:p>',
+        ),
+      [],
+      { namespaces: TEXT_BOX_NAMESPACES },
+    );
+
+    const result = await compareDocumentsAtomizer(original, revised);
+    const output = parseXml(await documentXml(result.document));
+    const names = Array.from(output.getElementsByTagName('w:bookmarkStart'))
+      .map((start) => start.getAttribute('w:name'))
+      .filter((name): name is string => name !== null);
+    const generatedNames = names.filter((name) => name.startsWith('_safe_docx_original_'));
+
+    expect(new Set(names).size).toBe(names.length);
+    expect(generatedNames).toHaveLength(2);
+    expect(new Set(generatedNames).size).toBe(2);
+  });
+
   test('emits a text-only revision inside w:txbxContent', async ({
     given,
     when,
