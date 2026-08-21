@@ -4,8 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { DocxArchive, parseXml } from '@usejunior/docx-core';
 import { describe, expect } from 'vitest';
 import { testAllure } from '../testing/allure-test.js';
+import { compareDocuments } from '../index.js';
+import { collectBookmarkReferenceNamesInXml } from '../tagged/bookmarkProjectionCompatibility.js';
 import { buildTaggedTreeShadowXml } from '../tagged/taggedTreeShadow.js';
 import { compareSourceProjectedFormattingFidelity } from '../tagged/formattingFidelity.js';
+import { acceptAllChanges, rejectAllChanges } from '../tagged/trackChangesAcceptorAst.js';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../../');
 const ORIGINAL = resolve(ROOT, 'tests/test_documents/redline/ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx');
@@ -13,6 +16,64 @@ const REVISED = resolve(ROOT, 'tests/test_documents/redline/ILPA-Model-Limited-P
 
 describe('public ILPA tagged-tree redline minimality', () => {
   const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Tagged-tree corpus minimality' });
+  test('publishes balanced, unique, resolved bookmarks in both ILPA directions', async () => {
+    const [deal, wof] = await Promise.all([readFile(ORIGINAL), readFile(REVISED)]);
+    const projectionIssues = (xml: string): {
+      duplicateNames: string[];
+      duplicateStartIds: string[];
+      duplicateEndIds: string[];
+      unmatchedStartIds: string[];
+      unmatchedEndIds: string[];
+      unresolvedReferences: string[];
+    } => {
+      const document = parseXml(xml);
+      const starts = Array.from(document.getElementsByTagName('w:bookmarkStart'));
+      const ends = Array.from(document.getElementsByTagName('w:bookmarkEnd'));
+      const names = starts.map((start) => start.getAttribute('w:name'))
+        .filter((name): name is string => name !== null);
+      const startIds = starts.map((start) => start.getAttribute('w:id'))
+        .filter((id): id is string => id !== null);
+      const endIds = ends.map((end) => end.getAttribute('w:id'))
+        .filter((id): id is string => id !== null);
+      const duplicates = (values: readonly string[]): string[] => [...new Set(
+        values.filter((value, index) => values.indexOf(value) !== index),
+      )].sort();
+      return {
+        duplicateNames: duplicates(names),
+        duplicateStartIds: duplicates(startIds),
+        duplicateEndIds: duplicates(endIds),
+        unmatchedStartIds: startIds.filter((id) => !endIds.includes(id)),
+        unmatchedEndIds: endIds.filter((id) => !startIds.includes(id)),
+        unresolvedReferences: collectBookmarkReferenceNamesInXml(xml)
+          .filter((name) => !names.includes(name)),
+      };
+    };
+    const expected = {
+      duplicateNames: [],
+      duplicateStartIds: [],
+      duplicateEndIds: [],
+      unmatchedStartIds: [],
+      unmatchedEndIds: [],
+      unresolvedReferences: [],
+    };
+
+    for (const [label, original, revised] of [
+      ['Deal-to-WOF', deal, wof],
+      ['WOF-to-Deal', wof, deal],
+    ] as const) {
+      const result = await compareDocuments(original, revised, {
+        author: `Corpus bookmark regression ${label}`,
+        date: new Date('2026-08-21T12:00:00Z'),
+      });
+      const combinedXml = await (await DocxArchive.load(result.document)).getDocumentXml();
+      expect(projectionIssues(combinedXml), `${label} combined`).toEqual(expected);
+      expect(projectionIssues(acceptAllChanges(combinedXml)), `${label} Accept All`)
+        .toEqual(expected);
+      expect(projectionIssues(rejectAllChanges(combinedXml)), `${label} Reject All`)
+        .toEqual(expected);
+    }
+  }, 600_000);
+
   test('preserves the four reported common-text anchors and exact source projections', async () => {
     const [original, revised] = await Promise.all([readFile(ORIGINAL), readFile(REVISED)]);
     const originalXml = await (await DocxArchive.load(original)).getDocumentXml();

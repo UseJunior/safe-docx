@@ -20,6 +20,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Contained phrase scores complete containment | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Continuation pattern inherits formatting | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Contract violations name the offending node | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |
+| Cross-version bookmark IDs are package-local | covered | `packages/docx-compare/src/tagged/bookmarkProjectionCompatibility.test.ts` |  |
 | Custom footnote marks respected | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Custom threshold applied | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Element with attributes | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
@@ -44,6 +45,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Multiple operations retain disjoint rationale ranges | covered | `packages/docx-compare/src/integration/tagged-rationale-attribution.test.ts` |  |
 | Multiple properties changed | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | One package preserves both source projections | covered | `packages/docx-compare/src/tagged/relationshipIdCollision.test.ts` |  |
+| Original-side bookmark collisions preserve reference targets | covered | `packages/docx-compare/src/tagged/bookmarkProjectionCompatibility.test.ts`, `packages/docx-compare/src/tagged/consumerCompatibility-bookmark-ranges.test.ts` |  |
 | Orphan list item renders with parent format | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Paired paragraph representatives are not moves | covered | `packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts` |  |
 | Part from main document | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |

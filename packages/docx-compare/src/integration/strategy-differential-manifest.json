@@ -1171,14 +1171,14 @@
         "strategy": "tagged-tree",
         "projections": {
           "accept": {
-            "xmlSha256": "6e39e1c13d54d6b7d2ac4dbe446daed9fc4f37a774c711ddbf8f2a74537b4ad3",
+            "xmlSha256": "517fef3af69097a670cfcdf49616472869aab39c0c748e6f560a8e7e56a329fa",
             "textSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "sourceTextSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "matchesSourceText": true,
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "d9e3d5f3cd240360051c7a9b90ddc97ff031a0a4d924a4892e852d568019918e",
+            "xmlSha256": "1852d0679a7a4e0a2781c2d9124a7178138ce857e4e9c6cf7314328b8d3ca7db",
             "textSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "sourceTextSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "matchesSourceText": true,
@@ -1248,8 +1248,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 1195728,
-            "sha256": "a5571fba09c9890bc9b0f953817161934794c3a13ef899e741c0d1ef326ed003",
+            "bytes": 1202363,
+            "sha256": "419cf4705157175f566597b35477a86b44cc938c09775ba79a5826ab7165b013",
             "kind": "xml"
           },
           {
@@ -1579,13 +1579,13 @@
         ],
         "stats": {
           "atomMetricVersion": "tagged-token-v1",
-          "insertions": 855,
-          "deletions": 790,
+          "insertions": 869,
+          "deletions": 802,
           "modifications": 496,
-          "insertedRanges": 855,
-          "deletedRanges": 790,
-          "insertedAtoms": 3660,
-          "deletedAtoms": 2095,
+          "insertedRanges": 869,
+          "deletedRanges": 802,
+          "insertedAtoms": 3662,
+          "deletedAtoms": 2101,
           "modifiedParagraphs": 496,
           "formatChanges": 17,
           "formatChangeAtoms": 17

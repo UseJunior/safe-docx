@@ -139,6 +139,15 @@ function rangeText(documentXml: string, id: string): string {
   return text;
 }
 
+function fieldInstructions(documentXml: string): string {
+  const document = parseXml(documentXml);
+  return Array.from(document.getElementsByTagName('*'))
+    .filter((element) =>
+      element.tagName === 'w:instrText' || element.tagName === 'w:delInstrText')
+    .map((element) => element.textContent ?? '')
+    .join('');
+}
+
 const REVISION_WRAPPER_TAGS = ['w:ins', 'w:del', 'w:moveFrom', 'w:moveTo'] as const;
 
 /** Assert every emitted revision wrapper carries a unique `w:id`. */
@@ -152,6 +161,23 @@ function expectUniqueWrapperIds(documentXml: string): void {
     }
   }
   expect(new Set(ids).size).toBe(ids.length);
+}
+
+/** Assert every emitted bookmark start carries a document-unique `w:name`. */
+function expectUniqueBookmarkNames(documentXml: string): void {
+  const body = bodyOf(documentXml);
+  const starts = Array.from(body.getElementsByTagName('w:bookmarkStart'));
+  const names = starts
+    .map((start) => start.getAttribute('w:name'))
+    .filter((name): name is string => name !== null);
+  expect(
+    new Set(names).size,
+    JSON.stringify(starts.map((start) => ({
+      id: start.getAttribute('w:id'),
+      name: start.getAttribute('w:name'),
+      parent: start.parentNode?.nodeName,
+    }))),
+  ).toBe(names.length);
 }
 
 const ORIGINAL_WITH_BOOKMARKED_PARAGRAPH =
@@ -336,6 +362,65 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
         expect(paragraphChildTags(accepted, 'Trailing survivor')).toContain('w:bookmarkEnd');
       });
     });
+
+  test.openspec('Original-side bookmark collisions preserve reference targets')(
+    'publishes a straddling bookmark under projection-safe names and retargets fragmented REF fields', async (
+    { given, when, then, and }: AllureBddContext
+  ) => {
+    let documentXml: string;
+    const originalReference =
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> REF Straddling</w:instrText></w:r>' +
+      '<w:r><w:instrText>Range \\h </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>clause</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>';
+    const revisedReference =
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> REF StraddlingRange \\h </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>clause</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>';
+
+    await given('both source versions carry the same named bookmark across a deletion boundary', () => {});
+
+    await when('the paragraph containing the original start boundary is deleted', async () => {
+      documentXml = await compare(
+        '<w:p><w:r><w:t xml:space="preserve">doomed paragraph </w:t></w:r>' +
+          '<w:bookmarkStart w:id="1" w:name="StraddlingRange"/>' +
+          '<w:r><w:t>more doomed</w:t></w:r></w:p>' +
+          '<w:p><w:r><w:t xml:space="preserve">surviving text </w:t></w:r>' +
+          '<w:bookmarkEnd w:id="1"/><w:r><w:t>tail</w:t></w:r></w:p>' +
+          originalReference,
+        '<w:p><w:bookmarkStart w:id="1" w:name="StraddlingRange"/>' +
+          '<w:r><w:t xml:space="preserve">surviving text </w:t></w:r>' +
+          '<w:bookmarkEnd w:id="1"/><w:r><w:t>tail</w:t></w:r></w:p>' +
+          revisedReference,
+      );
+    });
+
+    await then('the published document has no duplicate bookmark name and retains both projections', () => {
+      expectUniqueBookmarkNames(documentXml);
+      const document = parseXml(documentXml);
+      const starts = Array.from(document.getElementsByTagName('w:bookmarkStart'));
+      const generated = starts.find((start) =>
+        start.getAttribute('w:name')?.startsWith('_safe_docx_original_'));
+      expect(generated).toBeDefined();
+      const generatedId = generated!.getAttribute('w:id')!;
+      expect(rangeText(acceptAllChanges(documentXml), generatedId)).toBe('surviving text ');
+      expect(rangeText(rejectAllChanges(documentXml), generatedId)).toBe(
+        'doomed paragraph more doomedsurviving text ',
+      );
+    });
+
+    await and('the accepted and rejected field instructions target their own bookmark names', () => {
+      const accepted = fieldInstructions(acceptAllChanges(documentXml));
+      const rejected = fieldInstructions(rejectAllChanges(documentXml));
+      expect(accepted).toContain('REF StraddlingRange \\h');
+      expect(accepted).not.toContain('_safe_docx_original_');
+      expect(rejected).toMatch(/REF _safe_docx_original_\d+ \\h/u);
+      expect(rejected).not.toContain('REF StraddlingRange \\h');
+    });
+  });
+
   test('a deleted bookmark retains its exact source span in the reject projection', async (
     { given, when, then, and }: AllureBddContext
   ) => {
