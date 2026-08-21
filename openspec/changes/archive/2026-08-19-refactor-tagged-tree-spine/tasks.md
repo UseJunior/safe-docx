@@ -68,7 +68,9 @@
 ## 9. Public breaking release
 
 - [x] 9.1 Remove public `reconstructionMode`, `comparisonStrategy`, `engine`, `premergeRuns`, and `maxWordRefinementChangeRanges` across library, CLIs, MCP, scripts, and tests.
-- [x] 9.2 Document revised-base package provenance and migration from rebuild output.
+- [x] 9.2 Document and verify the fixed dual-projection package contract: Accept
+  preserves revised semantics and Reject preserves original semantics, including
+  referenced ancillary resources, with no caller-selectable package base.
 - [x] 9.3 Regenerate and validate tool docs, MCPB manifest, and capability projection.
 
 ## 10. Legacy deletion

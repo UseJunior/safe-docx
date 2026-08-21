@@ -54,9 +54,13 @@ rationale text SHALL NOT occur in any published package part.
 
 ### Requirement: Tagged publication owns the complete result package
 
-The comparison engine SHALL build the tracked result from the revised package and
-tagged story publications without consuming a legacy result buffer, merged atom
-list, or legacy output-mode decision. Publication SHALL own relationship and
+The comparison engine SHALL build one tracked result by deterministically
+reconciling the original and revised packages with tagged story publications,
+without consuming a legacy result buffer, merged atom list, or legacy output-mode
+decision. The public API SHALL NOT expose a caller-selectable package base.
+Accepting every comparison revision SHALL preserve revised semantics, and
+rejecting every comparison revision SHALL preserve original semantics, including
+each projection's referenced ancillary resources. Publication SHALL own relationship and
 content-type closure; headers, footers, notes, comments, people, numbering,
 styles, media and custom XML; auxiliary identifier collisions; footnote
 reconciliation; text-box and ancillary stories; unrepresented changes; and final
@@ -74,6 +78,14 @@ final safety and formatting checks.
 - **WHEN** the result package is assembled
 - **THEN** assembly SHALL succeed without a legacy result buffer or merged atoms
 - **AND** normalized main and ancillary package parts SHALL satisfy the publication gates
+
+#### Scenario: One package preserves both source projections
+
+- **GIVEN** original and revised packages with changes in main and ancillary stories
+- **WHEN** the comparison package is assembled
+- **THEN** accepting every comparison revision SHALL preserve revised semantics and referenced ancillary resources
+- **AND** rejecting every comparison revision SHALL preserve original semantics and referenced ancillary resources
+- **AND** the caller SHALL NOT select an original-based or revised-based output
 
 #### Scenario: Revision and bookmark identifiers may overlap numerically
 
@@ -131,7 +143,8 @@ SHALL NOT silently return a degraded or partially assembled result.
 ### Requirement: Tagged-tree construction is the sole public comparison spine
 
 The ordinary comparison pipeline SHALL construct and publish tracked results
-through the tagged tree. The result package SHALL be based on the revised archive.
+through the tagged tree. The result package SHALL reconcile both input archives
+under the fixed dual-projection package contract.
 Legacy construction MAY exist only behind a private emergency switch during a
 measured release/corpus soak and SHALL NOT be selectable through library, CLI, or
 MCP public inputs. After the soak gate, the legacy switch and automatic fallback
@@ -142,12 +155,13 @@ Public `reconstructionMode`, `comparisonStrategy`, `engine`, `premergeRuns`, and
 projection, field, bookmark, ancillary-story, relationship, package-integrity,
 text-box, auxiliary-sidecar, and formatting-fidelity checks SHALL remain in force.
 
-#### Scenario: Public comparison uses revised-based tagged publication
+#### Scenario: Public comparison uses one deterministic tagged publication
 
 - **GIVEN** a document pair and no private emergency override
 - **WHEN** the pair is compared through any public entry point
-- **THEN** the tagged tree SHALL construct and publish the returned revised-based package
+- **THEN** the tagged tree SHALL construct and publish one package whose accept-all projection preserves revised semantics and whose reject-all projection preserves original semantics
 - **AND** no public strategy, engine, or reconstruction-mode selector SHALL be accepted
+- **AND** no public package-base or provenance selector SHALL be accepted
 
 #### Scenario: Soak evidence gates legacy deletion
 

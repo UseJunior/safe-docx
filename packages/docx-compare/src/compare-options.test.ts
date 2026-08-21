@@ -187,8 +187,8 @@ describe('compareDocuments options', () => {
     },
   );
 
-  test.openspec('Public comparison uses revised-based tagged publication')(
-    'publishes source-exact projections through the sole revised-based package pipeline',
+  test.openspec('Public comparison uses one deterministic tagged publication')(
+    'publishes source-exact projections through the sole deterministic package pipeline',
     async ({ given, when, then }: AllureBddContext) => {
       const original = await given('a package with original paragraph formatting', () =>
         buildDocxFromBodyXml('<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Original package text</w:t></w:r></w:p>'));

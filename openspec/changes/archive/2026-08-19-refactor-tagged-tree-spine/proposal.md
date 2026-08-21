@@ -19,8 +19,9 @@ without several compatibility passes already learned by the legacy path.
 - Port consumer compatibility, volatile PAGEREF suppression, Markdoc rationale
   attribution, fuzzy move detection, numbering and every retained option onto the
   tagged tree.
-- Build a standalone tagged package assembler over the revised archive, then
-  derive public statistics and footnote publication from tagged output.
+- Build one standalone tagged package that deterministically reconciles both
+  input archives, then derive public statistics and footnote publication from
+  tagged output.
 - Make the standalone tagged assembler authoritative while retaining a private,
   measured emergency rollback for at least one release/corpus soak cycle.
 - **BREAKING** Remove public `reconstructionMode`, `comparisonStrategy`, `engine`,
@@ -40,9 +41,10 @@ without several compatibility passes already learned by the legacy path.
 - Affected specs: `docx-comparison`.
 - Affected packages: `docx-compare`, `docx-markdoc`, `docx-mcp`, `docx-core`, and
   generated conformance/tool documentation.
-- Compatibility: the result package becomes revised-based; callers that requested
-  `rebuild` previously received an original-based package and must stop relying on
-  original-side package metadata.
+- Compatibility: package provenance is not caller-selectable. Every result
+  preserves both source projections by construction: accepting all comparison
+  revisions yields revised semantics, while rejecting all revisions yields
+  original semantics, including referenced ancillary resources.
 - Dependencies: none added; leaf alignment continues to use `textAlignment.ts`.
 - Delivery: one OpenSpec change, one independently reviewed PR per phase, and
   separate releases for the authority flip, public removals, and legacy deletion.

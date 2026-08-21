@@ -43,6 +43,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Move detection disabled | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Multiple operations retain disjoint rationale ranges | covered | `packages/docx-compare/src/integration/tagged-rationale-attribution.test.ts` |  |
 | Multiple properties changed | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| One package preserves both source projections | covered | `packages/docx-compare/src/tagged/relationshipIdCollision.test.ts` |  |
 | Orphan list item renders with parent format | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Paired paragraph representatives are not moves | covered | `packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts` |  |
 | Part from main document | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
@@ -52,7 +53,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Properties are extracted from both representatives | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Property delta scope matches the property level | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |
 | Provenance survives a boundary split | covered | `packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts` |  |
-| Public comparison uses revised-based tagged publication | covered | `packages/docx-compare/src/compare-options.test.ts`, `packages/docx-compare/src/tagged/taggedTreeShadow.test.ts` |  |
+| Public comparison uses one deterministic tagged publication | covered | `packages/docx-compare/src/compare-options.test.ts`, `packages/docx-compare/src/tagged/taggedTreeShadow.test.ts` |  |
 | Removing bold is reported | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Reordering that satisfies coverage is rejected | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |
 | Reserved footnote IDs excluded from numbering | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |

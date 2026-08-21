@@ -148,7 +148,7 @@ describe('tagged-tree offline evaluation', () => {
     },
   );
 
-  test.openspec('Public comparison uses revised-based tagged publication')(
+  test.openspec('Public comparison uses one deterministic tagged publication')(
     'preserves revised-only package state and excludes unreferenced original-only state',
     async () => {
       const originalArchive = await DocxArchive.load(await buildDocxFromBodyXml(

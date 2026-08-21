@@ -81,15 +81,18 @@ properties, fields, opaque payload, preserved revision provenance, and effective
 styles. Each has a tagged call path plus tagged-specific test or appears in the
 spec-visible removal inventory.
 
-### Standalone publication starts from the revised archive
+### Standalone publication reconciles both input archives
 
 The assembler receives original/revised packages and tagged publications, never
-legacy `resultBuffer`, `mergedAtoms`, or `comparisonResult.outputMode`. It owns
+legacy `resultBuffer`, `mergedAtoms`, or `comparisonResult.outputMode`. Neither
+archive is a caller-selectable base. The assembler owns
 relationship/content-type closure; headers, footers, notes, comments, people,
 numbering, styles, media and custom XML; auxiliary-ID collisions; footnote
 reconciliation; text-box and ancillary stories; unrepresented changes; and final
-safety/fidelity gates. Shadow comparison covers package manifests and normalized
-parts, not only main-story projections.
+safety/fidelity gates. It deterministically reconciles collisions and rewrites
+references so Accept preserves revised semantics and Reject preserves original
+semantics, including referenced ancillary resources. Shadow comparison covers
+package manifests and normalized parts, not only main-story projections.
 
 Text-box re-homing replaces reconstruction-mode guards with per-story tagged
 publication checks while preserving `UnsupportedTextBoxRevisionError` and the
@@ -147,7 +150,8 @@ is retained only if the option matrix establishes tagged observability.
   the safety gate; both become load-bearing before the flip.
 - Deleting implementation and its only tests can conceal lost behavior; the
   capability manifest must own every retained behavior first.
-- Public package provenance changes from mode-dependent to revised-based.
+- Public package provenance changes from a mode-dependent archive choice to one
+  fixed dual-projection invariant.
 - Coverage, Allure filename, ECMA citation, generated spec, tool-doc, MCPB, and
   capability-projection ratchets all require deliberate re-baselining.
 
