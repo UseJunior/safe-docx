@@ -31,9 +31,11 @@ import {
   renumberCollidingRelationshipIds,
 } from './relationshipIdCollision.js';
 
+const TEST_FEATURE = 'Relationship ID Collision';
+
 const test = testAllure
   .epic('Document Comparison')
-  .withLabels({ feature: 'Relationship ID Collision' })
+  .withLabels({ feature: TEST_FEATURE })
   .conformance({ spec: 'ECMA-376', edition: 5, part: 2, section: '6.5.3.4' });
 
 const REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
