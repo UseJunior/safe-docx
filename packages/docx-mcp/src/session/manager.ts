@@ -15,11 +15,6 @@ import {
   type RevisionContext,
   type RevisionIdState,
 } from '@usejunior/docx-core';
-import type {
-  ReconstructionMode,
-  ReconstructionFallbackReason,
-  ReconstructionFallbackDiagnostics,
-} from '@usejunior/docx-compare';
 // NOTE: @usejunior/odf-core is an OPTIONAL provider (private/unpublished, like
 // @usejunior/google-docs-core) and is intentionally NOT imported here. A static
 // import in this always-loaded module would make a production install of the

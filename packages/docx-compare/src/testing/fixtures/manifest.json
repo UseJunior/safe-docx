@@ -56,6 +56,24 @@
       "tags": ["synthetic", "run-boundary"]
     },
     {
+      "name": "simple-price-change",
+      "original": "simple-price-change/original.docx",
+      "revised": "simple-price-change/revised.docx",
+      "tags": ["synthetic", "contract", "word-level", "price-change"]
+    },
+    {
+      "name": "p-unit-agreement-v1",
+      "original": "p-unit-agreement/original.docx",
+      "revised": "p-unit-agreement/revised-v1.docx",
+      "tags": ["real-world", "contract", "edgar-derived", "anonymized", "tables"]
+    },
+    {
+      "name": "p-unit-agreement-v2",
+      "original": "p-unit-agreement/original.docx",
+      "revised": "p-unit-agreement/revised-v2.docx",
+      "tags": ["real-world", "contract", "edgar-derived", "anonymized", "tables"]
+    },
+    {
       "name": "ILPA",
       "original": "../../../../../tests/test_documents/redline/ILPA-Model-Limited-Partnership-Agreement-WOF_v2.docx",
       "revised": "../../../../../tests/test_documents/redline/ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx",

@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/docx-render-verifier",
-  "version": "0.19.1",
+  "version": "0.20.1",
   "description": "Optional independent LibreOffice and PDF renderer checks for finished tracked DOCX artifacts.",
   "type": "module",
   "main": "dist/index.js",
@@ -21,7 +21,12 @@
     "@xmldom/xmldom": "^0.9.10",
     "jszip": "^3.10.1"
   },
-  "engines": { "node": ">=20.0.0" },
-  "repository": { "type": "git", "url": "git+https://github.com/UseJunior/safe-docx.git" },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/UseJunior/safe-docx.git"
+  },
   "license": "Apache-2.0"
 }

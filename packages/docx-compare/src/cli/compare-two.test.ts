@@ -2,7 +2,6 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect } from 'vitest';
-import { DEFAULT_RECONSTRUCTION_MODE } from '../comparison-defaults.js';
 import type { CompareResult } from '../compare-types.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { parseCompareCliArgs, runCompareCli } from './compare-two.js';
@@ -10,6 +9,7 @@ import { parseCompareCliArgs, runCompareCli } from './compare-two.js';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'CLI Compare Two' });
 
 const zeroStats = {
+  atomMetricVersion: 'tagged-token-v1' as const,
   insertions: 0,
   deletions: 0,
   modifications: 0,
@@ -58,17 +58,9 @@ describe('docx-comparison CLI argument parsing', () => {
         revisedPath: 'revised.docx',
         outputPath: undefined,
         options: {
-          engine: 'atomizer',
-          reconstructionMode: 'inplace',
           author: 'Comparison',
-          premergeRuns: true,
-          comparisonStrategy: 'tagged-tree',
         },
       });
-    });
-
-    await then('the CLI default is the shared front-door default', () => {
-      expect(parsed!.options.reconstructionMode).toBe(DEFAULT_RECONSTRUCTION_MODE);
     });
   });
 
@@ -80,16 +72,8 @@ describe('docx-comparison CLI argument parsing', () => {
         'a.docx',
         'b.docx',
         'out.docx',
-        '--engine',
-        'atomizer',
-        '--mode',
-        'inplace',
         '--author',
         'Junior',
-        '--comparison-strategy',
-        'tagged-tree',
-        '--premerge-runs',
-        'true',
       ]);
     });
 
@@ -99,11 +83,7 @@ describe('docx-comparison CLI argument parsing', () => {
         revisedPath: 'b.docx',
         outputPath: 'out.docx',
         options: {
-          engine: 'atomizer',
-          reconstructionMode: 'inplace',
           author: 'Junior',
-          premergeRuns: true,
-          comparisonStrategy: 'tagged-tree',
         },
       });
     });
@@ -129,13 +109,23 @@ describe('docx-comparison CLI argument parsing', () => {
   });
 
   test('rejects unsupported option names', async ({ when }: AllureBddContext) => {
-    await when('an unsupported option is passed', () => {
-      expect(() => parseCompareCliArgs(['a.docx', 'b.docx', '--unknown', 'x'])).toThrow('Unknown option: --unknown');
+    await when('an unsupported or retired option is passed', () => {
+      for (const option of [
+        '--unknown',
+        '--engine',
+        '--mode',
+        '--comparison-strategy',
+        '--premerge-runs',
+        '--max-word-refinement-change-ranges',
+      ]) {
+        expect(() => parseCompareCliArgs(['a.docx', 'b.docx', option, 'x']))
+          .toThrow(`Unknown option: ${option}`);
+      }
     });
   });
 });
 
-describe('docx-comparison CLI mode reporting', () => {
+describe('docx-comparison CLI fixed tagged publication', () => {
   function comparisonResult(overrides: Partial<CompareResult>): CompareResult {
     return {
       document: Buffer.from('redline-bytes'),
@@ -145,95 +135,31 @@ describe('docx-comparison CLI mode reporting', () => {
     };
   }
 
-  test('reports the mode actually used and the fallback reason on inplace fallback', async ({
+  test('forwards only author and reports revised package provenance', async ({
     when,
     then,
     and,
   }: AllureBddContext) => {
-    const { originalPath, revisedPath } = await createTempPair('docx-comparison-fallback-');
+    const { dir, originalPath, revisedPath } = await createTempPair('docx-comparison-fixed-');
+    let receivedOptions: unknown;
 
-    let requestedMode: string | undefined;
-    let requestedStrategy: string | undefined;
-    const result = await when('inplace is requested but the pipeline falls back to rebuild', () =>
-      runCompareCli([
-        originalPath,
-        revisedPath,
-        '--mode',
-        'inplace',
-        '--comparison-strategy',
-        'legacy',
-      ], {
+    const result = await when('the CLI runs with the retained author option', () =>
+      runCompareCli([originalPath, revisedPath, '--author', 'Junior'], {
         compare: async (_original, _revised, options) => {
-          requestedMode = options?.reconstructionMode;
-          requestedStrategy = options?.comparisonStrategy;
-          return comparisonResult({
-            reconstructionModeRequested: 'inplace',
-            reconstructionModeUsed: 'rebuild',
-            fallbackReason: 'round_trip_safety_check_failed',
-          });
+          receivedOptions = options;
+          return comparisonResult({});
         },
       }),
     );
 
-    await then('requested mode, actual mode, and fallback reason are reported separately', async () => {
+    await then('only the retained author option reaches the public comparison API', () => {
+      expect(receivedOptions).toEqual({ author: 'Junior' });
+    });
+    await and('the output names and reports the fixed revised package base', async () => {
       if ('help' in result && result.help) throw new Error('expected a run result');
-      expect(result.mode).toBe('rebuild');
-      expect(result.mode_requested).toBe('inplace');
-      expect(result.fallback_reason).toBe('round_trip_safety_check_failed');
+      expect(result.package_base).toBe('revised');
+      expect(result.output).toBe(join(dir, 'revised.REDLINE.docx'));
       expect(await readFile(result.output, 'utf8')).toBe('redline-bytes');
-    });
-
-    await and('the CLI forwarded the requested mode to the engine', () => {
-      expect(requestedMode).toBe('inplace');
-      expect(requestedStrategy).toBe('legacy');
-    });
-  });
-
-  test('forwards tagged-tree when no strategy override is supplied', async ({ when, then }: AllureBddContext) => {
-    const { originalPath, revisedPath } = await createTempPair('docx-comparison-default-strategy-');
-    let requestedStrategy: string | undefined;
-
-    await when('the CLI runs with its default options', () =>
-      runCompareCli([originalPath, revisedPath], {
-        compare: async (_original, _revised, options) => {
-          requestedStrategy = options?.comparisonStrategy;
-          return comparisonResult({
-            reconstructionModeRequested: 'inplace',
-            reconstructionModeUsed: 'inplace',
-          });
-        },
-      }),
-    );
-
-    await then('the public default is forwarded explicitly', () => {
-      expect(requestedStrategy).toBe('tagged-tree');
-    });
-  });
-
-  test('reports the shared default as both requested and used when no fallback occurs', async ({
-    when,
-    then,
-  }: AllureBddContext) => {
-    const { dir, originalPath, revisedPath } = await createTempPair('docx-comparison-default-');
-
-    const result = await when('the CLI runs without an explicit mode', () =>
-      runCompareCli([originalPath, revisedPath], {
-        compare: async (_original, _revised, options) =>
-          comparisonResult({
-            reconstructionModeRequested: options?.reconstructionMode as 'inplace' | 'rebuild',
-            reconstructionModeUsed: options?.reconstructionMode as 'inplace' | 'rebuild',
-          }),
-      }),
-    );
-
-    await then('the shared default flows through requested mode, actual mode, and output name', () => {
-      if ('help' in result && result.help) throw new Error('expected a run result');
-      expect(result.mode_requested).toBe(DEFAULT_RECONSTRUCTION_MODE);
-      expect(result.mode).toBe(DEFAULT_RECONSTRUCTION_MODE);
-      expect(result.fallback_reason).toBeUndefined();
-      expect(result.output).toBe(
-        join(dir, `revised.REDLINE.atomizer.${DEFAULT_RECONSTRUCTION_MODE}.docx`),
-      );
     });
   });
 });

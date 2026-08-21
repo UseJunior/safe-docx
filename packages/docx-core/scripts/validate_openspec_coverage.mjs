@@ -21,6 +21,17 @@ const SPEC_CONFIGS = [
     id: 'docx-comparison',
     title: 'DOCX Comparison',
     specPath: path.join(REPO_ROOT, 'openspec', 'specs', 'docx-comparison', 'spec.md'),
+    deltaPaths: [
+      path.join(
+        REPO_ROOT,
+        'openspec',
+        'changes',
+        'refactor-tagged-tree-spine',
+        'specs',
+        'docx-comparison',
+        'spec.md',
+      ),
+    ],
   },
   {
     id: 'cross-implementation-conformance',
@@ -264,6 +275,77 @@ export function parseScenariosFromSpec(content) {
   return scenarios;
 }
 
+function parseRequirementBlocks(content, isDelta) {
+  const lines = content.split(/\r?\n/);
+  const blocks = [];
+  let operation = isDelta ? null : 'BASE';
+  let start = -1;
+  let title = '';
+
+  const flush = (end) => {
+    if (start < 0) return;
+    blocks.push({
+      title,
+      operation,
+      content: lines.slice(start, end).join('\n').trim(),
+    });
+    start = -1;
+    title = '';
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const operationMatch = lines[index].match(/^##\s+(ADDED|MODIFIED|REMOVED|RENAMED)\s+Requirements\s*$/);
+    if (operationMatch) {
+      flush(index);
+      operation = operationMatch[1];
+      continue;
+    }
+    const requirementMatch = lines[index].match(/^###\s+Requirement:\s*(.+?)\s*$/);
+    if (!requirementMatch) continue;
+    flush(index);
+    if (!operation) {
+      throw new Error(`Requirement appears before a delta operation heading: ${requirementMatch[1]}`);
+    }
+    start = index;
+    title = requirementMatch[1].trim();
+  }
+  flush(lines.length);
+  return blocks;
+}
+
+/** Apply active OpenSpec requirement deltas for implementation-time coverage. */
+export function applySpecDeltas(baseContent, deltaContents) {
+  const baseBlocks = parseRequirementBlocks(baseContent, false);
+  const order = baseBlocks.map((block) => block.title);
+  const byTitle = new Map(baseBlocks.map((block) => [block.title, block]));
+
+  for (const deltaContent of deltaContents) {
+    for (const block of parseRequirementBlocks(deltaContent, true)) {
+      if (block.operation === 'ADDED') {
+        if (byTitle.has(block.title)) throw new Error(`ADDED requirement already exists: ${block.title}`);
+        byTitle.set(block.title, block);
+        order.push(block.title);
+        continue;
+      }
+      if (block.operation === 'MODIFIED') {
+        if (!byTitle.has(block.title)) throw new Error(`MODIFIED requirement does not exist: ${block.title}`);
+        byTitle.set(block.title, block);
+        continue;
+      }
+      if (block.operation === 'REMOVED') {
+        if (!byTitle.delete(block.title)) throw new Error(`REMOVED requirement does not exist: ${block.title}`);
+        continue;
+      }
+      throw new Error(`Unsupported requirement delta operation: ${block.operation}`);
+    }
+  }
+
+  return order
+    .filter((requirement) => byTitle.has(requirement))
+    .map((requirement) => byTitle.get(requirement).content)
+    .join('\n\n');
+}
+
 function parseStoriesFromTest(content) {
   const stories = new Set();
   const storyIdsByName = new Map();
@@ -474,7 +556,16 @@ async function main() {
       return;
     }
 
-    const scenarioEntries = parseScenariosFromSpec(specContent);
+    const deltaContents = [];
+    for (const deltaPath of config.deltaPaths ?? []) {
+      try {
+        deltaContents.push(await fs.readFile(deltaPath, 'utf-8'));
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+    }
+    const effectiveSpecContent = applySpecDeltas(specContent, deltaContents);
+    const scenarioEntries = parseScenariosFromSpec(effectiveSpecContent);
     const scenarios = scenarioEntries.map((entry) => entry.name).sort();
     if (scenarios.length === 0) {
       console.error(`No '#### Scenario:' entries found in ${config.specPath}`);
@@ -482,7 +573,7 @@ async function main() {
       return;
     }
 
-    for (const [id, name] of parseSerialIdMap(specContent)) {
+    for (const [id, name] of parseSerialIdMap(effectiveSpecContent)) {
       serialIdMap.set(id, name);
     }
     for (const scenario of scenarios) {

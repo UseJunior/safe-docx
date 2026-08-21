@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/google-docs-core",
-  "version": "0.19.1",
+  "version": "0.20.1",
   "description": "Google Docs core library: read, write, and anchor management via Google Docs API",
   "type": "module",
   "main": "dist/index.js",
@@ -15,7 +15,7 @@
     "test:e2e": "node ../../node_modules/vitest/vitest.mjs run src/__tests__/e2e/"
   },
   "dependencies": {
-    "google-auth-library": "^9.0.0"
+    "google-auth-library": "^10.9.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

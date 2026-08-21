@@ -33,7 +33,6 @@ describeOracle('issue #891 — LibreOffice terminal paragraph deletion', () => {
     );
     const revised = await buildDocxFromBodyXml(paragraph('Alpha', 'left') + paragraph('Bravo', 'center'));
     const compared = await compareDocuments(original, revised, {
-      comparisonStrategy: 'tagged-tree',
       author: 'Comparator',
       date: new Date('2026-08-17T00:00:00Z'),
     });

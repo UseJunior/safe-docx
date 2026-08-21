@@ -10,7 +10,7 @@ import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { compareDocuments } from '../index.js';
-import { extractTextWithParagraphs } from '../baselines/atomizer/trackChangesAcceptorAst.js';
+import { extractTextWithParagraphs } from '../tagged/trackChangesAcceptorAst.js';
 import { DocxArchive } from '@usejunior/docx-core';
 import { gateTextRoundTrip, gateFormattingProjection, gateStructuralIntegrity, runGates } from './gates.js';
 
@@ -38,7 +38,7 @@ describe('G1: Text round-trip gate', () => {
 
     await given('simple-word-change fixture is compared with atomizer', async () => {
       const { originalBuffer, revisedBuffer } = await loadFixture('simple-word-change');
-      const result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer' });
+      const result = await compareDocuments(originalBuffer, revisedBuffer, {});
       resultDocXml = await getDocumentXml(result.document);
       originalText = extractTextWithParagraphs(await getDocumentXml(originalBuffer));
       revisedText = extractTextWithParagraphs(await getDocumentXml(revisedBuffer));
@@ -57,7 +57,7 @@ describe('G1: Text round-trip gate', () => {
 
     await given('simple-word-change fixture is compared and texts are swapped', async () => {
       const { originalBuffer, revisedBuffer } = await loadFixture('simple-word-change');
-      const result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer' });
+      const result = await compareDocuments(originalBuffer, revisedBuffer, {});
       resultDocXml = await getDocumentXml(result.document);
       originalText = extractTextWithParagraphs(await getDocumentXml(originalBuffer));
       revisedText = extractTextWithParagraphs(await getDocumentXml(revisedBuffer));
@@ -80,7 +80,7 @@ describe('G1: Text round-trip gate', () => {
 
     await given('simple-word-change fixture is compared with atomizer', async () => {
       const { originalBuffer, revisedBuffer } = await loadFixture('simple-word-change');
-      const result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer' });
+      const result = await compareDocuments(originalBuffer, revisedBuffer, {});
       resultDocXml = await getDocumentXml(result.document);
       originalText = extractTextWithParagraphs(await getDocumentXml(originalBuffer));
       revisedText = extractTextWithParagraphs(await getDocumentXml(revisedBuffer));
@@ -113,7 +113,7 @@ describe('G1: Text round-trip gate', () => {
 
     await given('no-change fixture is compared with atomizer', async () => {
       const { originalBuffer, revisedBuffer } = await loadFixture('no-change');
-      const result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer' });
+      const result = await compareDocuments(originalBuffer, revisedBuffer, {});
       resultDocXml = await getDocumentXml(result.document);
       originalText = extractTextWithParagraphs(await getDocumentXml(originalBuffer));
       revisedText = extractTextWithParagraphs(await getDocumentXml(revisedBuffer));
@@ -136,7 +136,7 @@ describe('G2: Formatting projection gate (soft)', () => {
 
     await given('simple-word-change fixture is compared with atomizer', async () => {
       ({ originalBuffer, revisedBuffer } = await loadFixture('simple-word-change'));
-      result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer' });
+      result = await compareDocuments(originalBuffer, revisedBuffer, {});
     });
 
     await then('G2 runs and returns a result object', async () => {
@@ -155,7 +155,7 @@ describe('G3: Structural integrity gate', () => {
 
     await given('simple-word-change fixture is compared with atomizer', async () => {
       const { originalBuffer, revisedBuffer } = await loadFixture('simple-word-change');
-      result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer' });
+      result = await compareDocuments(originalBuffer, revisedBuffer, {});
     });
 
     await then('G3 structural integrity passes', async () => {
@@ -169,7 +169,7 @@ describe('G3: Structural integrity gate', () => {
 
     await given('simple-word-change result has a broken bookmark injected', async () => {
       const { originalBuffer, revisedBuffer } = await loadFixture('simple-word-change');
-      const result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer' });
+      const result = await compareDocuments(originalBuffer, revisedBuffer, {});
 
       // Inject broken bookmark into the result
       const archive = await DocxArchive.load(result.document);
@@ -206,7 +206,7 @@ describe('runGates orchestrator', () => {
 
     await given('simple-word-change fixture is compared with atomizer', async () => {
       ({ originalBuffer, revisedBuffer } = await loadFixture('simple-word-change'));
-      result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer' });
+      result = await compareDocuments(originalBuffer, revisedBuffer, {});
       resultDocXml = await getDocumentXml(result.document);
       originalText = extractTextWithParagraphs(await getDocumentXml(originalBuffer));
       revisedText = extractTextWithParagraphs(await getDocumentXml(revisedBuffer));

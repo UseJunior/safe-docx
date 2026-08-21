@@ -72,6 +72,7 @@ function mockCompareResult(): CompareResult {
     document: Buffer.from('mock comparison output'),
     engine: 'atomizer',
     stats: {
+      atomMetricVersion: 'tagged-token-v1',
       insertions: 0,
       deletions: 0,
       modifications: 0,

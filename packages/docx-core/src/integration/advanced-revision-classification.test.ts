@@ -7,7 +7,7 @@ import { OOXML } from '../primitives/namespaces.js';
 import { DocxDocument } from '../primitives/document.js';
 import { createZipBuffer, readZipText } from '../primitives/zip.js';
 import { validateAiRevisions } from '../primitives/validate_ai_revisions.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
 import { revisionEvidence, revisionEvidenceCases } from '../testing/revision-evidence.js';
 
@@ -257,40 +257,31 @@ describe('ECMA-376 advanced revision records', () => {
 
   test
     .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5' })(
-      '[ADV-CONTENT-EMISSION-01] emits insertion and deletion wrappers in both comparison modes',
+      '[ADV-CONTENT-EMISSION-01] emits insertion and deletion wrappers through the tagged spine',
       async ({ when, then }: AllureBddContext) => {
         const original = await buildSyntheticDocx({ paragraphs: ['old clause'] });
         const revised = await buildSyntheticDocx({ paragraphs: ['new clause'] });
-        const outputByMode = new Map<string, Document>();
-        for (const mode of ['inplace', 'rebuild'] as const) {
-          const result = await when(`${mode} compares replacement text`, () =>
-            compareDocuments(original, revised, { engine: 'atomizer', reconstructionMode: mode }),
-          );
-          const doc = parseXml((await getResultParts(result.document)).documentXml);
-          outputByMode.set(mode, doc);
-          await then(`${mode} emits both content wrappers`, () => {
-            expect(result.reconstructionModeUsed).toBe(mode);
-            expect(doc.getElementsByTagNameNS(W_NS, 'ins').length).toBeGreaterThan(0);
-            expect(doc.getElementsByTagNameNS(W_NS, 'del').length).toBeGreaterThan(0);
-          });
-        }
+        const result = await when('the tagged spine compares replacement text', () =>
+          compareDocuments(original, revised),
+        );
+        const doc = parseXml((await getResultParts(result.document)).documentXml);
+        await then('tagged publication emits both content wrappers', () => {
+          expect(result.reconstructionModeUsed).toBe('inplace');
+          expect(doc.getElementsByTagNameNS(W_NS, 'ins').length).toBeGreaterThan(0);
+          expect(doc.getElementsByTagNameNS(W_NS, 'del').length).toBeGreaterThan(0);
+        });
         await revisionEvidence('ADV-CONTENT-EMISSION-01', revisionEvidenceCases({
           elements: ['ins', 'del'],
-          operations: ['emit', 'comparison.inplace', 'comparison.rebuild'],
+          operations: ['emit', 'comparison.inplace'],
           story: 'main',
           buildFixture: () => ({ original: 'old clause', revised: 'new clause' }),
-          run: async (fixture, _element, context) => {
-            const modes = context.operation === 'emit'
-              ? ['inplace', 'rebuild'] as const
-              : [context.operation.endsWith('.rebuild') ? 'rebuild' : 'inplace'] as const;
+          run: async (fixture) => {
             const documents = new Map<string, Document>();
-            for (const mode of modes) {
-              const left = await buildSyntheticDocx({ paragraphs: [fixture.original] });
-              const right = await buildSyntheticDocx({ paragraphs: [fixture.revised] });
-              const result = await compareDocuments(left, right, { engine: 'atomizer', reconstructionMode: mode });
-              if (result.reconstructionModeUsed !== mode) return { documents: new Map<string, Document>() };
-              documents.set(mode, parseXml((await getResultParts(result.document)).documentXml));
-            }
+            const left = await buildSyntheticDocx({ paragraphs: [fixture.original] });
+            const right = await buildSyntheticDocx({ paragraphs: [fixture.revised] });
+            const result = await compareDocuments(left, right);
+            if (result.reconstructionModeUsed !== 'inplace') return { documents };
+            documents.set('tagged', parseXml((await getResultParts(result.document)).documentXml));
             return { documents };
           },
           observe: (run, element) => run.documents.size > 0 &&
@@ -669,56 +660,43 @@ describe('ECMA-376 advanced revision records', () => {
     );
 
   test(
-      '[ADV-COMPARE-MOVE-EMISSION-01] emits move wrappers and all range markers in both reconstruction modes',
+      '[ADV-COMPARE-MOVE-EMISSION-01] emits move wrappers and all range markers through the tagged spine',
       async ({ given, when, then }: AllureBddContext) => {
         const original = await given('a three-paragraph source document', () =>
           buildSyntheticDocx({ paragraphs: ['this entire clause moves to another location', 'stable text', 'tail text'] }),
         );
         const revised = await buildSyntheticDocx({ paragraphs: ['stable text', 'this entire clause moves to another location', 'tail text'] });
-        const outputByMode = new Map<string, Document>();
-
-        for (const mode of ['inplace', 'rebuild'] as const) {
-          const result = await when(`the pair is compared in ${mode} mode`, () =>
-            compareDocuments(original, revised, {
-              engine: 'atomizer',
-              reconstructionMode: mode,
-            }),
-          );
-          const xml = (await getResultParts(result.document)).documentXml;
-          outputByMode.set(mode, parseXml(xml));
-          await then(`${mode} output carries complete move markup`, () => {
-            expect(result.reconstructionModeUsed).toBe(mode);
-            for (const local of [
-              'moveFrom', 'moveTo', 'moveFromRangeStart', 'moveFromRangeEnd',
-              'moveToRangeStart', 'moveToRangeEnd',
-            ]) {
-              expect(
-                parseXml(xml).getElementsByTagNameNS(W_NS, local).length,
-                `${mode} should emit ${local}`,
-              ).toBeGreaterThan(0);
-            }
-          });
-        }
+        const result = await when('the pair is compared through the tagged spine', () =>
+          compareDocuments(original, revised),
+        );
+        const xml = (await getResultParts(result.document)).documentXml;
+        await then('tagged output carries complete move markup', () => {
+          expect(result.reconstructionModeUsed).toBe('inplace');
+          for (const local of [
+            'moveFrom', 'moveTo', 'moveFromRangeStart', 'moveFromRangeEnd',
+            'moveToRangeStart', 'moveToRangeEnd',
+          ]) {
+            expect(
+              parseXml(xml).getElementsByTagNameNS(W_NS, local).length,
+              `tagged publication should emit ${local}`,
+            ).toBeGreaterThan(0);
+          }
+        });
         await revisionEvidence('ADV-COMPARE-MOVE-EMISSION-01', revisionEvidenceCases({
           elements: ['moveFrom', 'moveTo', 'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd'],
-          operations: ['emit', 'comparison.inplace', 'comparison.rebuild'],
+          operations: ['emit', 'comparison.inplace'],
           story: 'main',
           buildFixture: () => ({
             original: ['this entire clause moves to another location', 'stable text', 'tail text'],
             revised: ['stable text', 'this entire clause moves to another location', 'tail text'],
           }),
-          run: async (fixture, _element, context) => {
-            const modes = context.operation === 'emit'
-              ? ['inplace', 'rebuild'] as const
-              : [context.operation.endsWith('.rebuild') ? 'rebuild' : 'inplace'] as const;
+          run: async (fixture) => {
             const documents = new Map<string, Document>();
-            for (const mode of modes) {
-              const left = await buildSyntheticDocx({ paragraphs: fixture.original });
-              const right = await buildSyntheticDocx({ paragraphs: fixture.revised });
-              const result = await compareDocuments(left, right, { engine: 'atomizer', reconstructionMode: mode });
-              if (result.reconstructionModeUsed !== mode) return { documents: new Map<string, Document>() };
-              documents.set(mode, parseXml((await getResultParts(result.document)).documentXml));
-            }
+            const left = await buildSyntheticDocx({ paragraphs: fixture.original });
+            const right = await buildSyntheticDocx({ paragraphs: fixture.revised });
+            const result = await compareDocuments(left, right);
+            if (result.reconstructionModeUsed !== 'inplace') return { documents };
+            documents.set('tagged', parseXml((await getResultParts(result.document)).documentXml));
             return { documents };
           },
           observe: (run, element) => run.documents.size > 0 && [...run.documents.values()].every((doc) =>
@@ -747,7 +725,7 @@ describe('ECMA-376 advanced revision records', () => {
     );
 
   test(
-      '[ADV-COMPARE-MODE-PRESERVATION-01] records legacy reconstruction advanced-markup preservation by mode',
+      '[ADV-COMPARE-MODE-PRESERVATION-01] records tagged advanced-markup preservation',
       async ({ given, when, then }: AllureBddContext) => {
         const advanced =
           `<q:bookmarkStart q:id="20" q:name="b"/><q:bookmarkEnd q:id="20"/>` +
@@ -778,23 +756,13 @@ describe('ECMA-376 advanced revision records', () => {
           packageWithDocumentXml(sourceXml),
         );
 
-        // This is an explicit compatibility characterization of the retained
-        // legacy reconstruction engines, including their known rebuild gaps.
-        const outputByMode = new Map<string, Document>();
-        for (const mode of ['inplace', 'rebuild'] as const) {
-          const result = await when(`the identical pair is compared in ${mode} mode`, () =>
-            compareDocuments(input, input, {
-              engine: 'atomizer',
-              comparisonStrategy: 'legacy',
-              reconstructionMode: mode,
-            }),
-          );
-          expect(result.reconstructionModeUsed).toBe(mode);
-          outputByMode.set(mode, parseXml((await getResultParts(result.document)).documentXml));
-        }
+        const result = await when('the identical pair is compared through the tagged spine', () =>
+          compareDocuments(input, input),
+        );
+        expect(result.reconstructionModeUsed).toBe('inplace');
+        const tagged = parseXml((await getResultParts(result.document)).documentXml);
 
-        await then('inplace preserves every sampled record and namespace aliases compare successfully', () => {
-          const inplace = outputByMode.get('inplace')!;
+        await then('tagged publication preserves every sampled record and namespace aliases compare successfully', () => {
           for (const local of [
             'ins', 'del', 'moveFrom', 'moveTo', 'moveFromRangeStart', 'moveFromRangeEnd',
             'moveToRangeStart', 'moveToRangeEnd', 'customXmlInsRangeStart', 'customXmlInsRangeEnd',
@@ -802,33 +770,11 @@ describe('ECMA-376 advanced revision records', () => {
             'customXmlMoveFromRangeEnd', 'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd',
             'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
             'commentReference', 'permStart', 'permEnd', 'proofErr',
-          ]) expect(inplace.getElementsByTagNameNS(W_NS, local).length).toBeGreaterThan(0);
-          expect(inplace.getElementsByTagNameNS('http://schemas.microsoft.com/office/word/2010/wordml', 'conflictIns').length).toBe(1);
-          expect(inplace.getElementsByTagNameNS('http://schemas.microsoft.com/office/word/2010/wordml', 'conflictDel').length).toBe(1);
+          ]) expect(tagged.getElementsByTagNameNS(W_NS, local).length).toBeGreaterThan(0);
+          expect(tagged.getElementsByTagNameNS('http://schemas.microsoft.com/office/word/2010/wordml', 'conflictIns').length).toBe(1);
+          expect(tagged.getElementsByTagNameNS('http://schemas.microsoft.com/office/word/2010/wordml', 'conflictDel').length).toBe(1);
         });
 
-        await then('rebuild behavior remains an explicit bounded gap for existing records', () => {
-          const rebuild = outputByMode.get('rebuild')!;
-          for (const local of ['ins', 'del', 'moveFrom', 'moveTo']) {
-            expect(rebuild.getElementsByTagNameNS(W_NS, local).length).toBe(0);
-          }
-          for (const local of ['moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd']) {
-            expect(rebuild.getElementsByTagNameNS(W_NS, local).length).toBeGreaterThan(0);
-          }
-          for (const local of [
-            'customXmlInsRangeStart', 'customXmlInsRangeEnd', 'customXmlDelRangeStart',
-            'customXmlDelRangeEnd', 'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd',
-            'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd', 'proofErr',
-          ]) expect(rebuild.getElementsByTagNameNS(W_NS, local).length).toBe(0);
-          expect(rebuild.getElementsByTagNameNS('http://schemas.microsoft.com/office/word/2010/wordml', 'conflictIns').length).toBe(0);
-          expect(rebuild.getElementsByTagNameNS('http://schemas.microsoft.com/office/word/2010/wordml', 'conflictDel').length).toBe(0);
-        });
-        const absentFromRebuild = new Set([
-          'ins', 'del', 'moveFrom', 'moveTo', 'customXmlInsRangeStart', 'customXmlInsRangeEnd',
-          'customXmlDelRangeStart', 'customXmlDelRangeEnd', 'customXmlMoveFromRangeStart',
-          'customXmlMoveFromRangeEnd', 'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd',
-          'proofErr', 'w14:conflictIns', 'w14:conflictDel',
-        ]);
         const preservationElements = [
           'ins', 'del', 'moveFrom', 'moveTo', 'moveFromRangeStart', 'moveFromRangeEnd',
           'moveToRangeStart', 'moveToRangeEnd', 'customXmlInsRangeStart', 'customXmlInsRangeEnd',
@@ -845,17 +791,12 @@ describe('ECMA-376 advanced revision records', () => {
         });
         await revisionEvidence('ADV-COMPARE-MODE-PRESERVATION-01', revisionEvidenceCases({
           elements: preservationElements,
-          operations: ['reconstruction.inplace', 'reconstruction.rebuild'],
+          operations: ['reconstruction.inplace'],
           story: 'main',
           buildFixture: () => cloneDocument(sourceDocument),
-          run: async (fixture, _element, context) => {
-            const mode = context.operation.endsWith('.rebuild') ? 'rebuild' : 'inplace';
+          run: async (fixture) => {
             const bytes = await packageWithDocumentXml(serializeXml(fixture));
-            const result = await compareDocuments(bytes, bytes, {
-              engine: 'atomizer',
-              comparisonStrategy: 'legacy',
-              reconstructionMode: mode,
-            });
+            const result = await compareDocuments(bytes, bytes);
             return {
               input: fixture,
               output: parseXml((await getResultParts(result.document)).documentXml),
@@ -870,7 +811,7 @@ describe('ECMA-376 advanced revision records', () => {
             const inputTarget = run.input.getElementsByTagNameNS(namespace, local).item(0);
             if (!expectedTarget || !inputTarget || inputTarget.toString() !== expectedTarget.toString() || run.modeUsed !== mode) return false;
             const present = run.output.getElementsByTagNameNS(namespace, local).length > 0;
-            return mode === 'inplace' ? present : present === !absentFromRebuild.has(element);
+            return mode === 'inplace' && present;
           },
           mutations: (element) => [
             {

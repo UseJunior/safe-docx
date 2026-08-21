@@ -88,11 +88,11 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-core/src/integration/ancillary-field-safety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
@@ -116,11 +116,11 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-core/src/integration/ancillary-field-safety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
@@ -144,11 +144,11 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-core/src/integration/ancillary-field-safety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
@@ -180,11 +180,11 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-core/src/integration/ancillary-field-safety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
@@ -368,11 +368,11 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange",
-      "claimRationale": "Specific OOXML elements (notably `w:commentRangeStart`, `w:commentRangeEnd`,\n`w:bookmarkStart`, `w:bookmarkEnd`, `w:permStart`, `w:permEnd`, and the\n`pPrChange`/`rPrChange`\nrevision markers) are valid as direct children of `<w:p>` (and of revision\nwrappers like `<w:ins>` / `<w:del>` / `<w:moveFrom>` / `<w:moveTo>`) but\nnever inside `<w:r>`. safe-docx's rebuild reconstructor emits them as\nsiblings of `<w:r>`, not as leaves wrapped in a synthetic run. The\nauthoritative list lives in `packages/docx-compare/src/atomizer.ts`.",
+      "claimRationale": "Specific OOXML elements (notably `w:commentRangeStart`, `w:commentRangeEnd`,\n`w:bookmarkStart`, `w:bookmarkEnd`, `w:permStart`, `w:permEnd`, and the\n`pPrChange`/`rPrChange`\nrevision markers) are valid as direct children of `<w:p>` (and of revision\nwrappers like `<w:ins>` / `<w:del>` / `<w:moveFrom>` / `<w:moveTo>`) but\nnever inside `<w:r>`. safe-docx's tagged serializer emits them as\nsiblings of `<w:r>`, not as leaves wrapped in a synthetic run. The\nauthoritative list lives in `packages/docx-compare/src/tagged/taggedTreeSerializer.ts`.",
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/atomizer.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
         },
         {
           "kind": "test",
@@ -455,7 +455,7 @@
       "evidence": [
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts"
         }
       ]
     },
@@ -471,7 +471,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del",
-      "claimRationale": "ECMA-376 Part 1 §17.13.5.15 defines `w:del` inside `w:pPr/w:rPr` as a tracked\ndeletion of the *paragraph mark* (the glyph ending the paragraph), not of the\nparagraph's contents. Accepting the revision removes the paragraph break, so\nthe paragraph's remaining content merges into the following paragraph; the\ncontents themselves are deleted only where they carry their own run-level\n`w:del` wrappers. safe-docx's accept paths implement this merge in\n`packages/docx-core/src/primitives/accept_changes.ts` and\n`packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.",
+      "claimRationale": "ECMA-376 Part 1 §17.13.5.15 defines `w:del` inside `w:pPr/w:rPr` as a tracked\ndeletion of the *paragraph mark* (the glyph ending the paragraph), not of the\nparagraph's contents. Accepting the revision removes the paragraph break, so\nthe paragraph's remaining content merges into the following paragraph; the\ncontents themselves are deleted only where they carry their own run-level\n`w:del` wrappers. safe-docx's accept paths implement this merge in\n`packages/docx-core/src/primitives/accept_changes.ts` and\n`packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts`.",
       "evidence": [
         {
           "kind": "source",
@@ -479,11 +479,11 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts"
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts"
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.test.ts"
         },
         {
           "kind": "source",
@@ -492,6 +492,30 @@
         {
           "kind": "test",
           "path": "packages/docx-release-verifier/src/paragraph-mark-projection.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-13-5-16",
+      "title": "Deleted table row (w:del under w:trPr)",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.13.5.16"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del",
+      "claimRationale": "ECMA-376 Part 1 §17.13.5.16 defines an empty `w:del` inside `w:trPr` as a\ntracked deletion of the enclosing table row. It is a semantic marker rather\nthan an empty deleted-content wrapper, so tagged-tree publication preserves it.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/taggedTreeShadow.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/taggedTreeShadow.test.ts"
         }
       ]
     },
@@ -511,7 +535,31 @@
       "evidence": [
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-13-5-19",
+      "title": "Inserted table row (w:ins under w:trPr)",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.13.5.19"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins",
+      "claimRationale": "ECMA-376 Part 1 §17.13.5.19 defines an empty `w:ins` inside `w:trPr` as a\ntracked insertion of the enclosing table row. It must remain attached to that\nrow so accepting keeps it and rejecting removes it.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/taggedTreeShadow.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/taggedTreeShadow.test.ts"
         }
       ]
     },
@@ -542,7 +590,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins",
-      "claimRationale": "ECMA-376 Part 1 §17.13.5.20 defines `w:ins` inside `w:pPr/w:rPr` as a tracked\ninsertion of the *paragraph mark*, not of the paragraph's contents. Rejecting\nthe revision removes the inserted paragraph break, so the paragraph's\nsurviving content merges into the following paragraph; the contents disappear\nonly where they carry their own run-level `w:ins` wrappers. safe-docx's reject\npaths implement this merge in\n`packages/docx-core/src/primitives/reject_changes.ts` and\n`packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.\nSection-break insertion uses the same paragraph-mark form on a dedicated empty\nboundary paragraph so rejecting removes the new topology and accepting retains\nthe boundary.",
+      "claimRationale": "ECMA-376 Part 1 §17.13.5.20 defines `w:ins` inside `w:pPr/w:rPr` as a tracked\ninsertion of the *paragraph mark*, not of the paragraph's contents. Rejecting\nthe revision removes the inserted paragraph break, so the paragraph's\nsurviving content merges into the following paragraph; the contents disappear\nonly where they carry their own run-level `w:ins` wrappers. safe-docx's reject\npaths implement this merge in\n`packages/docx-core/src/primitives/reject_changes.ts` and\n`packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts`.\nSection-break insertion uses the same paragraph-mark form on a dedicated empty\nboundary paragraph so rejecting removes the new topology and accepting retains\nthe boundary.",
       "evidence": [
         {
           "kind": "source",
@@ -558,11 +606,11 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts"
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts"
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.test.ts"
         },
         {
           "kind": "test",
@@ -654,7 +702,7 @@
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -678,7 +726,7 @@
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -750,7 +798,7 @@
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -774,7 +822,7 @@
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -1075,7 +1123,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeEnd",
-      "claimRationale": "`w:customXmlDelRangeEnd` is retained by ordinary accept/reject and sampled\nin-place reconstruction. Rebuild retention and custom-XML semantics are gaps.",
+      "claimRationale": "`w:customXmlDelRangeEnd` is retained by ordinary accept/reject and sampled\ntagged publication. Custom-XML revision semantics remain a gap.",
       "evidence": [
         {
           "kind": "test",
@@ -1275,11 +1323,11 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:proofErr",
-      "claimRationale": "`w:proofErr` anchors mark spelling or grammar proofing state. They are\nconsumer-rewritable metadata and carry no document content, so safe-docx\ntreats a paragraph whose only children are proofing anchors as an empty\nparagraph for comparison. Rebuild reconstruction does not re-emit those\nanchors.",
+      "claimRationale": "`w:proofErr` anchors mark spelling or grammar proofing state. They are\nconsumer-rewritable metadata and carry no document content, so safe-docx\ntreats a paragraph whose only children are proofing anchors as an empty\nparagraph for comparison. Tagged publication retains the sampled anchors as\nnon-content metadata.",
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/atomizer.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
         }
       ]
     },
@@ -1323,19 +1371,19 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:delInstrText",
-      "claimRationale": "Part 1 §17.16.13 requires every `w:delInstrText` run to sit inside `<w:del>`\nand describes it as deleted field code within a complex field. The runtime\nenforcement lives in\n`packages/docx-compare/src/baselines/atomizer/pipeline.ts` (the\n`validateFieldStructure` function). The related `w:fldChar` placement rule is\ntracked separately under `ECMA-PART1-17-16-18`; Part 4 supplies the\nTransitional XSD declaration but is not the prose authority for this claim.",
+      "claimRationale": "Part 1 §17.16.13 requires every `w:delInstrText` run to sit inside `<w:del>`\nand describes it as deleted field code within a complex field. The runtime\nenforcement lives in\n`packages/docx-compare/src/tagged/pipeline.ts` (the\n`validateFieldStructure` function). This requirement does not constrain the\nplacement of sibling `w:fldChar` runs relative to the enclosing deletion.",
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline.field-validation.test.ts"
         }
       ]
     },
@@ -1351,7 +1399,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar",
-      "claimRationale": "This claim is bounded to the runtime and test evidence listed above.",
+      "claimRationale": "This claim is bounded to the runtime and test evidence listed above.\nIn particular, §17.16.18 does not prohibit `w:fldChar` below `<w:del>`: the\nTransitional schema permits that ancestry, and Word 16.112 and Aspose.Words\n25.10 were measured on 2026-08-14 emitting deleted complex fields that way.\nThe former issue-#217 placement rule was therefore retracted.",
       "evidence": [
         {
           "kind": "source",
@@ -1375,35 +1423,31 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline.field-validation.test.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts"
         },
         {
           "kind": "test",
           "path": "packages/docx-core/src/generation/generation-sections-fields.test.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-core/src/integration/ancillary-field-safety.test.ts"
         },
         {
           "kind": "test",
@@ -1423,19 +1467,15 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink",
-      "claimRationale": "`w:hyperlink` (CT_Hyperlink) is a run container inside `<w:p>` whose\n`r:id` attribute carries the relationship reference to the link target.\nIts content model (EG_PContent) admits run-level revision wrappers, so\ntracked edits to link text nest as `<w:hyperlink><w:ins>…` /\n`<w:hyperlink><w:del>…`; the reverse nesting is invalid because\nCT_RunTrackChange (the `w:ins` / `w:del` content model) does not admit\n`w:hyperlink`. safe-docx's comparison engine preserves the wrapper and\nits attributes when reconstructing paragraphs that contain hyperlinks,\nand never merges text atoms across a hyperlink boundary. The enforcement\nlives in `packages/docx-core/src/atomizer.ts`\n(`nearestHyperlinkAncestor`) and\n`packages/docx-core/src/baselines/atomizer/documentReconstructor.ts`\n(hyperlink wrapper re-emission).",
+      "claimRationale": "`w:hyperlink` (CT_Hyperlink) is a run container inside `<w:p>` whose\n`r:id` attribute carries the relationship reference to the link target.\nIts content model (EG_PContent) admits run-level revision wrappers, so\ntracked edits to link text nest as `<w:hyperlink><w:ins>…` /\n`<w:hyperlink><w:del>…`; the reverse nesting is invalid because\nCT_RunTrackChange (the `w:ins` / `w:del` content model) does not admit\n`w:hyperlink`. safe-docx's comparison engine preserves the wrapper and\nits attributes when serializing tagged paragraphs that contain hyperlinks,\nand never merges text atoms across a hyperlink boundary. The enforcement\nlives in `packages/docx-compare/src/tagged/taggedTreeConstruction.ts`\n(`nearestHyperlinkAncestor`) and\n`packages/docx-compare/src/tagged/taggedTreeSerializer.ts`\n(tagged hyperlink wrapper emission).",
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/atomizer.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts"
-        },
-        {
-          "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor.ts"
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
         },
         {
           "kind": "source",
@@ -1479,23 +1519,19 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-core/src/integration/ancillary-field-safety.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts"
         }
       ]
     },
@@ -1531,23 +1567,19 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-core/src/integration/ancillary-field-safety.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts"
         },
         {
           "kind": "test",
@@ -1567,7 +1599,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText",
-      "claimRationale": "Forced main-document rebuild classifies a self-contained PAGEREF instruction\nwith one bookmark argument and a bounded switch vocabulary. When the complete\nfield range is unchanged, comparison preserves its ordered XML topology as a\nSafeDocX metamorphic invariant. Safe Docx does not paginate PAGEREF. The\nopt-in refresh primitive can mark its begin marker dirty for a layout-capable\nhost, and TOC comparison uses the same instruction classifier to distinguish\nits volatile cached result. The unchanged-rebuild invariant does not claim\npagination, cached-result correctness, or complete field-engine equivalence.",
+      "claimRationale": "Tagged main-document publication classifies a self-contained PAGEREF instruction\nwith one bookmark argument and a bounded switch vocabulary. When the complete\nfield range is unchanged, comparison preserves its ordered XML topology as a\nSafeDocX metamorphic invariant. Safe Docx does not paginate PAGEREF. The\nopt-in refresh primitive can mark its begin marker dirty for a layout-capable\nhost, and TOC comparison uses the same instruction classifier to distinguish\nits volatile cached result. The unchanged-publication invariant does not claim\npagination, cached-result correctness, or complete field-engine equivalence.",
       "evidence": [
         {
           "kind": "source",
@@ -1595,23 +1627,19 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-core/src/integration/ancillary-field-safety.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts"
         }
       ]
     },
@@ -1627,7 +1655,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText",
-      "claimRationale": "Forced main-document rebuild classifies a self-contained REF instruction with\none bookmark argument and a bounded switch vocabulary; the `\\d` switch requires\nand consumes one separator argument. When the complete field range is unchanged,\ncomparison preserves its ordered XML topology as a SafeDocX metamorphic\ninvariant. The scoped refresh primitive resolves a unique, ID-paired bookmark\nand refreshes the cached result only for the admitted bookmarked-text\nprojection; numbering, position, separator, and unknown projections remain\nunsupported. Because Word writes a REF result structurally, the primitive also\ndeclines any projection carrying a tab, a break, or a paragraph transition\nrather than flattening it into literal characters. That separately tested\ncapability does not broaden unchanged rebuild preservation into complete\nfield-engine equivalence.",
+      "claimRationale": "Tagged main-document publication classifies a self-contained REF instruction with\none bookmark argument and a bounded switch vocabulary; the `\\d` switch requires\nand consumes one separator argument. When the complete field range is unchanged,\ncomparison preserves its ordered XML topology as a SafeDocX metamorphic\ninvariant. The scoped refresh primitive resolves a unique, ID-paired bookmark\nand refreshes the cached result only for the admitted bookmarked-text\nprojection; numbering, position, separator, and unknown projections remain\nunsupported. Because Word writes a REF result structurally, the primitive also\ndeclines any projection carrying a tab, a break, or a paragraph transition\nrather than flattening it into literal characters. That separately tested\ncapability does not broaden unchanged publication preservation into complete\nfield-engine equivalence.",
       "evidence": [
         {
           "kind": "source",
@@ -1655,23 +1683,19 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts"
+          "path": "packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-core/src/integration/ancillary-field-safety.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts"
         },
         {
           "kind": "test",
@@ -1895,7 +1919,7 @@
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts"
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
         },
         {
           "kind": "test",
@@ -2339,23 +2363,15 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtBlock",
-      "claimRationale": "A block `w:sdt` surrounds one or more block-level structures and orders its\nproperties, optional end properties, and content under the CT_SdtBlock model.\nsafe-docx preserves an unchanged direct `w:body/w:sdt` as one scaffold-owned\nboundary during forced rebuild and reconstructs controlled paragraphs for a\nblock control directly inside `w:tc`. Exact subtree/wrapper preservation is a\nbounded metamorphic invariant rather than a requirement imposed by ECMA-376.",
+      "claimRationale": "A block `w:sdt` surrounds one or more block-level structures and orders its\nproperties, optional end properties, and content under the CT_SdtBlock model.\nsafe-docx preserves an unchanged direct `w:body/w:sdt` as one scaffold-owned\nboundary during tagged serialization and emits controlled paragraphs for a\nblock control directly inside `w:tc`. Exact subtree/wrapper preservation is a\nbounded metamorphic invariant rather than a requirement imposed by ECMA-376.",
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-table-sdt.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -2371,15 +2387,15 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtRun",
-      "claimRationale": "An inline `w:sdt` is a run-level structured document tag whose ordered children\nare its properties, optional end properties, and content. The issue #582 pilot\npreserves an unchanged inline SDT as one opaque semantic boundary during rebuild;\nit does not author or edit controls and makes no claim about row or cell SDTs.",
+      "claimRationale": "An inline `w:sdt` is a run-level structured document tag whose ordered children\nare its properties, optional end properties, and content. The issue #582 pilot\npreserves an unchanged inline SDT as one opaque semantic boundary during tagged publication;\nit does not author or edit controls and makes no claim about row or cell SDTs.",
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -2395,15 +2411,15 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtCell",
-      "claimRationale": "A cell-level `w:sdt` surrounds one or more `w:tc` elements within a table row\nand orders its properties, optional end properties, and content under the\nCT_SdtCell model. safe-docx correlates the wrapper at its direct `w:tr` child\nposition while rebuilding controlled paragraphs inside the cells.",
+      "claimRationale": "A cell-level `w:sdt` surrounds one or more `w:tc` elements within a table row\nand orders its properties, optional end properties, and content under the\nCT_SdtCell model. safe-docx correlates the wrapper at its direct `w:tr` child\nposition while serializing controlled paragraphs inside the cells.",
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-table-sdt.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -2419,15 +2435,15 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentCell",
-      "claimRationale": "Cell-level `w:sdtContent` contains controlled table cells. The bounded rebuild\npath recognizes one or more direct `w:tc` children and fails closed on wrapper\nor cell-scaffold mutation.",
+      "claimRationale": "Cell-level `w:sdtContent` contains controlled table cells. The bounded tagged\npath recognizes one or more direct `w:tc` children and fails closed on wrapper\nor cell-scaffold mutation.",
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-table-sdt.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -2443,23 +2459,15 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentBlock",
-      "claimRationale": "Block-level `w:sdtContent` contains the controlled block structures. The bounded\nrebuild path recognizes a contiguous sequence of direct controlled paragraphs\nunder a direct body-level control, or direct paragraph/table children when the\nblock control is inside `w:tc`; nested controls remain outside the supported\nplacement.",
+      "claimRationale": "Block-level `w:sdtContent` contains the controlled block structures. The bounded\ntagged path recognizes a contiguous sequence of direct controlled paragraphs\nunder a direct body-level control, or direct paragraph/table children when the\nblock control is inside `w:tc`; nested controls remain outside the supported\nplacement.",
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-table-sdt.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -2479,11 +2487,11 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -2503,19 +2511,11 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts"
+          "path": "packages/docx-compare/src/tagged/opaquePassthrough.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/documentReconstructor-table-sdt.test.ts"
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
         }
       ]
     },
@@ -2623,7 +2623,7 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/unrepresentedChanges.ts"
+          "path": "packages/docx-compare/src/tagged/unrepresentedChanges.ts"
         },
         {
           "kind": "source",
@@ -3115,15 +3115,15 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts"
+          "path": "packages/docx-compare/src/tagged/textBoxRevisionSafety.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts"
         }
       ]
     },
@@ -3143,15 +3143,15 @@
       "evidence": [
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts"
+          "path": "packages/docx-compare/src/tagged/textBoxRevisionSafety.ts"
         },
         {
           "kind": "source",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline.ts"
         },
         {
           "kind": "test",
-          "path": "packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts"
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts"
         }
       ]
     }

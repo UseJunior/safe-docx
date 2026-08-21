@@ -56,6 +56,12 @@ git tag vX.Y.Z <commit-sha>
 git push origin vX.Y.Z
 ```
 
+When post-merge verification must finish before the tag is created, commit a
+`.release-manual-tag` file containing exactly the release version. The auto-tag
+workflow will deliberately skip that version regardless of merge strategy;
+after verifying the exact `main` commit, create and push the tag with the manual
+fallback commands above. Remove the sentinel in a later maintenance PR.
+
 Two constraints to preserve when touching this machinery:
 
 - The tag must be pushed with a GitHub App or PAT credential. Tags created with
@@ -74,7 +80,7 @@ preflight → publish-suite → ensure-release → publish-mcpb-asset → update
 ```
 
 - **preflight**: Full CI gate (build, lint, test, coverage, spec checks)
-- **publish-suite**: Publishes `@usejunior/docx-core`, `@usejunior/docx-mcp`, `@usejunior/safe-docx` to npm
+- **publish-suite**: Publishes the version-locked npm suite in dependency order. `@usejunior/docx-markdoc` follows `docx-core` and `docx-compare`.
 - **ensure-release**: Creates the GitHub Release with auto-generated notes
 - **publish-mcp-registry**: Publishes `server.json` to the official MCP Registry via OIDC (soft-fail; does not block other jobs)
 - **publish-mcpb-asset**: Attaches `safe-docx.mcpb` + checksum to the release
@@ -107,6 +113,29 @@ After npm publish, submit the package to each registry target:
 ## Monorepo Version Coupling
 
 All publishable packages share the same version. The preflight job verifies that the tag version matches all files managed by `bump_version.mjs`. If any mismatch exists, the release fails before publishing.
+
+### Bootstrapping a new npm package
+
+The publish loop is resumable: it skips package versions that already exist and
+fails only when every suite package is already present. This matters when a new
+package has no npm trusted-publisher configuration yet. Earlier dependencies
+may publish before npm rejects the new package; after the one-time manual
+bootstrap and trusted-publisher setup, dispatch `release.yml` again with the
+same tag. The rerun skips published versions and continues in dependency order.
+
+For the initial v0.20.1 publication specifically, do not publish
+`@usejunior/docx-markdoc@0.19.1` and do not manually publish
+`@usejunior/docx-markdoc@0.20.1` until `@usejunior/docx-core@0.20.1` is visible
+on npm. If the first trusted-publishing
+run stops at `docx-markdoc`, run the locally prepared bootstrap script:
+
+```bash
+/private/tmp/publish-docx-markdoc-release.sh 0.20.1
+```
+
+It performs npm web login and publishes only `docx-markdoc` from a clean,
+detached checkout of `v0.20.1`. Then configure npm trusted publishing for
+`UseJunior/safe-docx` and workflow `release.yml` before rerunning that tag.
 
 ## Fixing Bad Release Notes
 

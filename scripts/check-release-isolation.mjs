@@ -41,6 +41,7 @@ export const EXPECTED_LOOPS = [
   [
     'packages/docx-core',
     'packages/docx-compare',
+    'packages/docx-markdoc',
     'packages/odf-core',
     'packages/docx-mcp',
     'packages/google-docs-core',
@@ -51,6 +52,7 @@ export const EXPECTED_LOOPS = [
   [
     '@usejunior/docx-core',
     '@usejunior/docx-compare',
+    '@usejunior/docx-markdoc',
     '@usejunior/odf-core',
     '@usejunior/docx-mcp',
     '@usejunior/google-docs-core',
@@ -60,6 +62,7 @@ export const EXPECTED_LOOPS = [
   [
     'packages/docx-core',
     'packages/docx-compare',
+    'packages/docx-markdoc',
     'packages/odf-core',
     'packages/docx-mcp',
     'packages/google-docs-core',
@@ -70,6 +73,7 @@ export const EXPECTED_LOOPS = [
   [
     'packages/docx-core',
     'packages/docx-compare',
+    'packages/docx-markdoc',
     'packages/odf-core',
     'packages/docx-mcp',
     'packages/google-docs-core',
@@ -79,12 +83,14 @@ export const EXPECTED_LOOPS = [
   [
     '@usejunior/docx-core',
     '@usejunior/docx-compare',
+    '@usejunior/docx-markdoc',
     '@usejunior/odf-core',
     '@usejunior/docx-mcp',
     '@usejunior/google-docs-core',
     '@usejunior/safe-docx',
     'packages/docx-core',
     'packages/docx-compare',
+    'packages/docx-markdoc',
     'packages/odf-core',
     'packages/docx-mcp',
     'packages/google-docs-core',
@@ -98,6 +104,7 @@ export const EXPECTED_LOOPS = [
 export const PUBLISH_DIRS = [
   'packages/docx-core',
   'packages/docx-compare',
+  'packages/docx-markdoc',
   'packages/odf-core',
   'packages/docx-mcp',
   'packages/google-docs-core',

@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { DocxArchive, parseXml } from '@usejunior/docx-core';
 import { describe, expect } from 'vitest';
 import { testAllure } from '../testing/allure-test.js';
-import { buildTaggedTreeShadowXml } from '../baselines/atomizer/taggedTreeShadow.js';
-import { compareSourceProjectedFormattingFidelity } from '../baselines/atomizer/formattingFidelity.js';
+import { buildTaggedTreeShadowXml } from '../tagged/taggedTreeShadow.js';
+import { compareSourceProjectedFormattingFidelity } from '../tagged/formattingFidelity.js';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../../');
 const ORIGINAL = resolve(ROOT, 'tests/test_documents/redline/ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx');
@@ -55,5 +55,7 @@ describe('public ILPA tagged-tree redline minimality', () => {
     expect(liveText(party)).toContain('such party to the Fund;');
     expect(revisionText(party, 'ins')).not.toContain('such party to the Fund;');
     expect(revisionText(party, 'del')).not.toContain('such party to the Fund;');
-  }, 180_000);
+  // V8 coverage instrumentation can push this real ILPA comparison past three
+  // minutes on CI while the uninstrumented suite remains substantially faster.
+  }, 300_000);
 });

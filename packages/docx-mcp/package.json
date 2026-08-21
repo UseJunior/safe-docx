@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/docx-mcp",
-  "version": "0.19.1",
+  "version": "0.20.1",
   "description": "MCP server for reading, editing, and comparing Word (.docx) and OpenDocument (.odt) files with tracked changes. For Claude, Gemini CLI, Cursor, and any MCP client. Apache-2.0 licensed.",
   "type": "module",
   "main": "dist/index.js",
@@ -27,9 +27,9 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "@usejunior/docx-compare": "^0.19.1",
-    "@usejunior/docx-core": "^0.19.1",
-    "@usejunior/odf-core": "^0.19.1",
+    "@usejunior/docx-compare": "^0.20.1",
+    "@usejunior/docx-core": "^0.20.1",
+    "@usejunior/odf-core": "^0.20.1",
     "@xmldom/xmldom": "^0.9.10",
     "zod": "^4.3.6"
   },
@@ -57,7 +57,7 @@
     "NOTICE"
   ],
   "peerDependencies": {
-    "@usejunior/google-docs-core": "^0.19.1"
+    "@usejunior/google-docs-core": "^0.20.1"
   },
   "peerDependenciesMeta": {
     "@usejunior/google-docs-core": {

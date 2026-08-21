@@ -11,7 +11,7 @@ import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
-import { compareDocuments, type ReconstructionMode } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments, type ReconstructionMode } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
@@ -35,7 +35,7 @@ interface RunSnapshot {
   failedChecks: string[];
 }
 
-const MODES: ReconstructionMode[] = ['rebuild', 'inplace'];
+const MODES: ReconstructionMode[] = ['inplace'];
 const FIXTURES = ['simple-word-change', 'split-run-boundary-change'] as const;
 
 const integrationDir = dirname(import.meta.url.replace('file://', ''));
@@ -92,14 +92,8 @@ function semanticViewFromXml(documentXml: string): SemanticView {
 async function runAndSnapshot(
   original: Buffer,
   revised: Buffer,
-  reconstructionMode: ReconstructionMode,
-  opts?: { premergeRuns?: boolean },
 ): Promise<RunSnapshot> {
-  const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
-    reconstructionMode,
-    premergeRuns: opts?.premergeRuns,
-  });
+  const result = await compareDocuments(original, revised);
   const documentXml = await getDocXml(result.document);
   const failedChecks = result.fallbackDiagnostics
     ? result.fallbackDiagnostics.attempts.flatMap((attempt) => attempt.failedChecks).sort()
@@ -131,8 +125,6 @@ describe('Stability invariants', () => {
 
         await when(`documents are compared in ${mode} mode and transforms are applied`, async () => {
           const result = await compareDocuments(original, revised, {
-            engine: 'atomizer',
-            reconstructionMode: mode,
           });
 
           resultXml = await getDocXml(result.document);
@@ -164,9 +156,9 @@ describe('Stability invariants', () => {
 
     await when('documents are compared in inplace mode three times concurrently', async () => {
       runs = await Promise.all([
-        runAndSnapshot(original, revised, 'inplace'),
-        runAndSnapshot(original, revised, 'inplace'),
-        runAndSnapshot(original, revised, 'inplace'),
+        runAndSnapshot(original, revised),
+        runAndSnapshot(original, revised),
+        runAndSnapshot(original, revised),
       ]);
     });
 
@@ -209,8 +201,8 @@ describe('Stability invariants', () => {
 
       await when('documents are compared in inplace mode twice concurrently', async () => {
         runs = await Promise.all([
-          runAndSnapshot(original, revised, 'inplace'),
-          runAndSnapshot(original, revised, 'inplace'),
+          runAndSnapshot(original, revised),
+          runAndSnapshot(original, revised),
         ]);
       });
 
@@ -247,12 +239,9 @@ describe('Stability invariants', () => {
       });
 
       await when('documents are compared in inplace mode twice concurrently', async () => {
-        // premergeRuns defaults to true — do not override.
-        // Issue #35 fixed: setLeafText now syncs both `data` and `nodeValue` on xmldom
-        // text nodes, so ILPA no longer falls back to rebuild with premerge enabled.
         runs = await Promise.all([
-          runAndSnapshot(original, revised, 'inplace'),
-          runAndSnapshot(original, revised, 'inplace'),
+          runAndSnapshot(original, revised),
+          runAndSnapshot(original, revised),
         ]);
       });
 
@@ -272,7 +261,10 @@ describe('Stability invariants', () => {
         expect(first.failedChecks).toEqual(second.failedChecks);
       });
     },
-    180000
+    // V8 coverage instrumentation compounds across the two concurrent ILPA
+    // comparisons now that the tagged path is the sole comparison spine. Keep
+    // the determinism assertion strict without racing the instrumented runner.
+    360000
   );
 
   for (const mode of MODES) {
@@ -288,8 +280,6 @@ describe('Stability invariants', () => {
 
       await when(`original document is compared against itself in ${mode} mode`, async () => {
         result = await compareDocuments(original, original, {
-          engine: 'atomizer',
-          reconstructionMode: mode,
         });
 
         const originalXml = await getDocXml(original);

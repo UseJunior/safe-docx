@@ -4,7 +4,7 @@ import {
   extractRoundTripComparisonText,
   pagerefComparisonIdentity,
 } from './fieldComparisonSemantics.js';
-import { classifyFieldInstruction } from './baselines/atomizer/opaquePassthrough.js';
+import { classifyFieldInstruction } from './tagged/opaquePassthrough.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const TEST_FEATURE = 'add-scoped-field-evaluation';

@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/docx-markdoc",
-  "version": "0.19.1",
+  "version": "0.20.1",
   "description": "Hash-pinned Markdoc authoring and replay for brownfield DOCX documents.",
   "type": "module",
   "main": "dist/index.js",
@@ -10,15 +10,15 @@
   },
   "scripts": {
     "clean:dist": "node -e \"const { rmSync } = require('node:fs'); rmSync('dist', { recursive: true, force: true });\"",
-    "build": "npm run clean:dist && tsc -p tsconfig.build.json",
+    "build": "npm run clean:dist && tsc -p tsconfig.build.json && node -e \"require('node:fs').chmodSync('dist/cli.js', 0o755)\"",
     "test": "node ../../node_modules/vitest/vitest.mjs",
     "test:run": "node ../../node_modules/vitest/vitest.mjs run",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@markdoc/markdoc": "^0.5.0",
-    "@usejunior/docx-compare": "^0.19.1",
-    "@usejunior/docx-core": "^0.19.1",
+    "@usejunior/docx-compare": "^0.20.1",
+    "@usejunior/docx-core": "^0.20.1",
     "jszip": "^3.10.1"
   },
   "devDependencies": {

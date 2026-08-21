@@ -11,14 +11,14 @@ import { replaceText } from '../dist/tools/replace_text.js';
 import { insertParagraph } from '../dist/tools/insert_paragraph.js';
 import { download } from '../dist/tools/download.js';
 
-import { compareDocuments } from '../../docx-comparison/dist/index.js';
-import { DocxArchive } from '../../docx-comparison/dist/shared/docx/DocxArchive.js';
+import { compareDocuments } from '../../docx-compare/dist/index.js';
+import { DocxArchive } from '../../docx-core/dist/shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
   extractTextWithParagraphs,
   compareTexts,
-} from '../../docx-comparison/dist/baselines/atomizer/trackChangesAcceptorAst.js';
+} from '../../docx-compare/dist/tagged/trackChangesAcceptorAst.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
@@ -84,8 +84,7 @@ async function runCase(params) {
 
   const originalCopy = path.join(outDir, 'original.docx');
   const revisedPath = path.join(outDir, 'revised.docx');
-  const redlineRebuildPath = path.join(outDir, 'redline.rebuild.docx');
-  const redlineInplacePath = path.join(outDir, 'redline.inplace.docx');
+  const redlinePath = path.join(outDir, 'redline.docx');
 
   await fs.copyFile(inputPath, originalCopy);
 
@@ -110,50 +109,33 @@ async function runCase(params) {
   const originalBytes = await fs.readFile(inputPath);
   const revisedBytes = await fs.readFile(revisedPath);
 
-  const rebuild = await compareDocuments(originalBytes, revisedBytes, {
+  const comparison = await compareDocuments(originalBytes, revisedBytes, {
     author: 'Safe-Docx TS',
-    engine: 'atomizer',
-    reconstructionMode: 'rebuild',
-    premergeRuns: false,
   });
-  await fs.writeFile(redlineRebuildPath, rebuild.document);
+  await fs.writeFile(redlinePath, comparison.document);
 
-  const inplace = await compareDocuments(originalBytes, revisedBytes, {
-    author: 'Safe-Docx TS',
-    engine: 'atomizer',
-    reconstructionMode: 'inplace',
-    premergeRuns: false,
-  });
-  await fs.writeFile(redlineInplacePath, inplace.document);
-
-  const [originalArchive, revisedArchive, rebuildArchive, inplaceArchive] = await Promise.all([
+  const [originalArchive, revisedArchive, comparisonArchive] = await Promise.all([
     DocxArchive.load(originalBytes),
     DocxArchive.load(revisedBytes),
-    DocxArchive.load(rebuild.document),
-    DocxArchive.load(inplace.document),
+    DocxArchive.load(comparison.document),
   ]);
-  const [originalXml, revisedXml, rebuildXml, inplaceXml] = await Promise.all([
+  const [originalXml, revisedXml, comparisonXml] = await Promise.all([
     originalArchive.getDocumentXml(),
     revisedArchive.getDocumentXml(),
-    rebuildArchive.getDocumentXml(),
-    inplaceArchive.getDocumentXml(),
+    comparisonArchive.getDocumentXml(),
   ]);
 
   const originalText = extractTextWithParagraphs(originalXml);
   const revisedText = extractTextWithParagraphs(revisedXml);
-  const rebuildAcceptedText = extractTextWithParagraphs(acceptAllChanges(rebuildXml));
-  const rebuildRejectedText = extractTextWithParagraphs(rejectAllChanges(rebuildXml));
-  const inplaceAcceptedText = extractTextWithParagraphs(acceptAllChanges(inplaceXml));
-  const inplaceRejectedText = extractTextWithParagraphs(rejectAllChanges(inplaceXml));
+  const acceptedText = extractTextWithParagraphs(acceptAllChanges(comparisonXml));
+  const rejectedText = extractTextWithParagraphs(rejectAllChanges(comparisonXml));
 
   const stats = {
-    rebuild: rebuild.stats,
-    inplace: inplace.stats,
+    comparison: comparison.stats,
+    package_base: 'revised',
     roundtrip: {
-      rebuild_accept_normalized: compareTexts(revisedText, rebuildAcceptedText).normalizedIdentical,
-      rebuild_reject_normalized: compareTexts(originalText, rebuildRejectedText).normalizedIdentical,
-      inplace_accept_normalized: compareTexts(revisedText, inplaceAcceptedText).normalizedIdentical,
-      inplace_reject_normalized: compareTexts(originalText, inplaceRejectedText).normalizedIdentical,
+      accept_normalized: compareTexts(revisedText, acceptedText).normalizedIdentical,
+      reject_normalized: compareTexts(originalText, rejectedText).normalizedIdentical,
     },
   };
   await writeText(path.join(outDir, 'stats.json'), JSON.stringify(stats, null, 2));
@@ -343,8 +325,7 @@ await writeText(path.join(OUT_ROOT, 'README.txt'),
     'Each subfolder contains:',
     '- original.docx',
     '- revised.docx (edited by Safe-Docx TS)',
-    '- redline.rebuild.docx (docx-comparison, rebuild mode)',
-    '- redline.inplace.docx (docx-comparison, inplace mode)',
+    '- redline.docx (revised-based tagged comparison package)',
     '- before.toon.txt / after.toon.txt (TOON snapshots)',
     '- stats.json (includes round-trip accept/reject parity checks)',
     '',

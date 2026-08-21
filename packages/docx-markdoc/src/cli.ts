@@ -6,11 +6,12 @@ import { exportEditPairs } from './export.js';
 import { importDocxToMarkdoc } from './import.js';
 import { inspectMarkdocSource } from './inspect.js';
 import { requireMarkdoc } from './markdoc.js';
+import { convertCommentsToFootnotes } from '@usejunior/docx-core';
 import { DocxMarkdocError } from './errors.js';
 import { assertDistinctInternalPath, EXTERNAL_FILENAME, parseRenderingFlags, warnedInternalPath } from './cli-options.js';
 
-function usage(): never {
-  throw new Error([
+function usage(): string {
+  return [
     'Usage:',
     '  docx-markdoc import <source.docx> <anchored.docx> <document.mdoc>',
     '  docx-markdoc validate <document.mdoc>',
@@ -19,29 +20,34 @@ function usage(): never {
     '    [--dangerously-include-internal-comments --internal-output <path.docx>]',
     '  docx-markdoc verify <anchored.docx> <document.mdoc> [--external-comments|--no-external-comments]',
     '  docx-markdoc export-edits <document.mdoc> <output.json>',
-  ].join('\n'));
+    '  docx-markdoc comments-to-footnotes <input.docx> <output.docx> [--prefix TEXT] [--prefix-separator TEXT] [--bold-prefix] [--prefix-color RRGGBB] [--prefix-highlight COLOR] [--body-color RRGGBB] [--body-highlight COLOR] [--flatten-threads]',
+  ].join('\n');
 }
 
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
-  if (!command) usage();
+  if (command === '--help' || command === '-h') {
+    process.stdout.write(`${usage()}\n`);
+    return;
+  }
+  if (!command) throw new Error(usage());
   if (command === 'import') {
     const [sourcePath, anchoredPath, markdocPath] = args;
-    if (!sourcePath || !anchoredPath || !markdocPath) usage();
+    if (!sourcePath || !anchoredPath || !markdocPath) throw new Error(usage());
     const result = await importDocxToMarkdoc(await readFile(sourcePath));
     await Promise.all([writeFile(anchoredPath, result.anchoredSource), writeFile(markdocPath, result.markdoc)]);
     return;
   }
   if (command === 'validate') {
     const [markdocPath] = args;
-    if (!markdocPath) usage();
+    if (!markdocPath) throw new Error(usage());
     const ir = requireMarkdoc(await readFile(markdocPath, 'utf8'));
     process.stdout.write(`${JSON.stringify(ir, null, 2)}\n`);
     return;
   }
   if (command === 'inspect') {
     const [sourcePath, ...ids] = args;
-    if (!sourcePath) usage();
+    if (!sourcePath) throw new Error(usage());
     const records = await inspectMarkdocSource(await readFile(sourcePath), { paragraphIds: ids.length ? ids : undefined });
     process.stdout.write(`${JSON.stringify(records, null, 2)}\n`);
     return;
@@ -49,7 +55,7 @@ async function main(): Promise<void> {
   if (command === 'compile' || command === 'verify') {
     const flags = parseRenderingFlags(args);
     const [sourcePath, markdocPath, outputDir] = flags.positional;
-    if (!sourcePath || !markdocPath || (command === 'compile' && !outputDir)) usage();
+    if (!sourcePath || !markdocPath || (command === 'compile' && !outputDir)) throw new Error(usage());
     if (command === 'verify' && flags.includeInternalComments) {
       throw new Error('Internal comments can be materialized only by compile with an explicit output path.');
     }
@@ -104,12 +110,37 @@ async function main(): Promise<void> {
   }
   if (command === 'export-edits') {
     const [markdocPath, outputPath] = args;
-    if (!markdocPath || !outputPath) usage();
+    if (!markdocPath || !outputPath) throw new Error(usage());
     const ir = requireMarkdoc(await readFile(markdocPath, 'utf8'));
     await writeFile(outputPath, `${JSON.stringify(exportEditPairs(ir), null, 2)}\n`);
     return;
   }
-  usage();
+  if (command === 'comments-to-footnotes') {
+    const [inputPath, outputPath, ...flags] = args;
+    if (!inputPath || !outputPath) throw new Error(usage());
+    const valueAfter = (flag: string): string | undefined => {
+      const index = flags.indexOf(flag);
+      return index < 0 ? undefined : flags[index + 1];
+    };
+    const prefix = valueAfter('--prefix');
+    const prefixColor = valueAfter('--prefix-color');
+    const prefixHighlight = valueAfter('--prefix-highlight') as import('@usejunior/docx-core').FootnoteRunStyle['highlight'];
+    const bodyColor = valueAfter('--body-color') ?? valueAfter('--color');
+    const bodyHighlight = (valueAfter('--body-highlight') ?? valueAfter('--highlight')) as import('@usejunior/docx-core').FootnoteRunStyle['highlight'];
+    const result = await convertCommentsToFootnotes(await readFile(inputPath), {
+      flattenThreads: flags.includes('--flatten-threads'),
+      presentation: {
+        prefix,
+        prefixSeparator: valueAfter('--prefix-separator'),
+        prefixStyle: { bold: flags.includes('--bold-prefix'), color: prefixColor, highlight: prefixHighlight },
+        bodyStyle: { color: bodyColor, highlight: bodyHighlight },
+      },
+    });
+    await writeFile(outputPath, result.buffer);
+    process.stdout.write(`${JSON.stringify(result.report, null, 2)}\n`);
+    return;
+  }
+  throw new Error(usage());
 }
 
 main().catch((error: unknown) => {

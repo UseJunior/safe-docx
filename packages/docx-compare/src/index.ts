@@ -5,10 +5,16 @@
  * in `@usejunior/docx-core`; comparison depends on core, never the reverse.
  */
 
-import { compareDocumentsAtomizer } from './baselines/atomizer/pipeline.js';
+import { compareDocumentsAtomizer } from './tagged/pipeline.js';
 import type { CompareOptions, CompareResult } from './compare-types.js';
 
-export { DEFAULT_RECONSTRUCTION_MODE } from './comparison-defaults.js';
+const REMOVED_COMPARISON_OPTIONS = [
+  'reconstructionMode',
+  'comparisonStrategy',
+  'engine',
+  'premergeRuns',
+  'maxWordRefinementChangeRanges',
+] as const;
 
 export type {
   CompareOptions,
@@ -50,6 +56,8 @@ export type {
   ReconstructionTextMismatchDetails,
   ReconstructionTextMismatchSummary,
   TaggedTreeFallbackDiagnostics,
+  TaggedPublicationSafetyCheckName,
+  TaggedPublicationSafetyChecks,
 } from './compare-types.js';
 
 /**
@@ -65,80 +73,69 @@ export async function compareDocuments(
   revised: Buffer,
   options: CompareOptions = {},
 ): Promise<CompareResult> {
+  for (const option of REMOVED_COMPARISON_OPTIONS) {
+    if (Object.hasOwn(options, option)) {
+      throw new TypeError(
+        `Unsupported comparison option: ${option}. ` +
+        'Comparison now always publishes the revised-based tagged result.',
+      );
+    }
+  }
   const {
-    engine = 'auto',
     author,
     date,
     ignoreFormatting,
     detectMoves,
-    reconstructionMode,
-    premergeRuns,
-    maxWordRefinementChangeRanges,
-    comparisonStrategy,
   } = options;
 
-  if ((engine as string) === 'diffmatch') {
-    throw new Error(
-      "The 'diffmatch' engine has been removed from the public API. " +
-        "Use engine: 'atomizer' (recommended) or 'auto'.",
-    );
-  }
-
-  if (engine === 'atomizer' || engine === 'auto') {
-    return compareDocumentsAtomizer(original, revised, {
-      author,
-      date,
-      formatDetection:
-        ignoreFormatting === undefined
-          ? undefined
-          : { detectFormatChanges: !ignoreFormatting },
-      moveDetection:
-        detectMoves === undefined
-          ? undefined
-          : { detectMoves },
-      reconstructionMode,
-      premergeRuns,
-      maxWordRefinementChangeRanges,
-      comparisonStrategy,
-    });
-  }
-
-  throw new Error(
-    'WmlComparer engine is only available through the benchmark CLI. ' +
-      'Use engine: "atomizer" or "auto" for programmatic access.',
-  );
+  return compareDocumentsAtomizer(original, revised, {
+    author,
+    date,
+    formatDetection:
+      ignoreFormatting === undefined
+        ? undefined
+        : { detectFormatChanges: !ignoreFormatting },
+    moveDetection:
+      detectMoves === undefined
+        ? undefined
+        : { detectMoves },
+  });
 }
 
-export * from './atomizer.js';
 export * from './move-detection.js';
-export * from './format-detection.js';
-export * from './paragraph-style-detection.js';
+export {
+  areRunPropertiesEqual,
+  areNormalizedRunPropertiesEqual,
+  categorizePropertyChanges,
+  getChangedPropertyNames,
+  normalizeRunProperties,
+} from './propertyNaming.js';
 export { extractRoundTripComparisonText } from './fieldComparisonSemantics.js';
-export * from './baselines/atomizer/formattingFidelity.js';
+export * from './tagged/formattingFidelity.js';
 export {
   acceptAllChanges,
   rejectAllChanges,
   extractTextWithParagraphs,
   normalizeText,
   compareTexts,
-} from './baselines/atomizer/trackChangesAcceptorAst.js';
+} from './tagged/trackChangesAcceptorAst.js';
 export {
   validateFieldStructure,
   compareDocumentsAtomizer,
-} from './baselines/atomizer/pipeline.js';
+  TaggedPublicationSafetyError,
+} from './tagged/pipeline.js';
 /** @deprecated fldChar inside w:del is valid; see the docx-core definition. */
 export { hasFldCharInsideDel } from '@usejunior/docx-core';
-export { parseDocumentXml } from './baselines/atomizer/xmlToWmlElement.js';
+export { parseDocumentXml } from './tagged/xmlToWmlElement.js';
 export {
   AncillaryStorySafetyError,
   type AncillaryStorySafetyAttempt,
-} from './baselines/atomizer/ancillaryFieldSafety.js';
+} from './tagged/ancillaryFieldSafety.js';
 export {
   UnsupportedTextBoxRevisionError,
   assertTextBoxContentUnchanged,
-} from './baselines/atomizer/textBoxRevisionSafety.js';
-export type { TextBoxRevisionChange } from './baselines/atomizer/textBoxRevisionSafety.js';
-export { computeAtomLcs, markCorrelationStatus } from './baselines/atomizer/atomLcs.js';
+} from './tagged/textBoxRevisionSafety.js';
+export type { TextBoxRevisionChange } from './tagged/textBoxRevisionSafety.js';
 export { alignComparisonSequences, tokenizeComparisonText } from './textAlignment.js';
 export {
   MC_NAMESPACE,

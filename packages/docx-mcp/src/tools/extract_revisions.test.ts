@@ -80,10 +80,7 @@ async function createRealTrackedChangesFixture(): Promise<string> {
     fs.readFile(path.join(SIMPLE_FIXTURE_DIR, 'original.docx')),
     fs.readFile(path.join(SIMPLE_FIXTURE_DIR, 'revised.docx')),
   ]);
-  const compared = await compareDocuments(original, revised, {
-    engine: 'atomizer',
-    reconstructionMode: 'rebuild',
-  });
+  const compared = await compareDocuments(original, revised);
   const tmpDir = await createTrackedTempDir('extract-revisions-real-redline-');
   const outputPath = path.join(tmpDir, 'simple-word-change.tracked.docx');
   await fs.writeFile(outputPath, compared.document);

@@ -5,37 +5,20 @@ TBD - created by archiving change add-wmlcomparer-core-types. Update Purpose aft
 ## Requirements
 ### Requirement: Correlation Status Enumeration
 
-The system SHALL provide a `CorrelationStatus` enum with the following values: `Nil`, `Normal`, `Unknown`, `Inserted`, `Deleted`, `Equal`, `Group`, `MovedSource`, `MovedDestination`, `FormatChanged`.
+The system SHALL provide a `CorrelationStatus` enum with `Nil`, `Normal`,
+`Unknown`, `Inserted`, `Deleted`, `Equal`, `Group`, `MovedSource`,
+`MovedDestination`, and `FormatChanged`. Statuses SHALL describe tagged nodes or
+serialized tracked ranges and SHALL NOT require a flattened comparison atom.
 
-#### Scenario: Status assigned during comparison
+#### Scenario: Tagged nodes receive correlation status
 
-- **WHEN** an atom is correlated with another atom during LCS comparison
-- **THEN** its `correlationStatus` is set to `Equal`
+- **WHEN** aligned content exists only on the revised side
+- **THEN** the corresponding tagged node's `correlationStatus` is `Inserted`
 
-#### Scenario: Status for unmatched atoms
+#### Scenario: Matched formatting difference receives format status
 
-- **WHEN** an atom exists only in the revised document
-- **THEN** its `correlationStatus` is set to `Inserted`
-
-#### Scenario: Status for deleted content
-
-- **WHEN** an atom exists only in the original document
-- **THEN** its `correlationStatus` is set to `Deleted`
-
-#### Scenario: Status for moved source content
-
-- **WHEN** deleted content is detected as relocated elsewhere in the document
-- **THEN** its `correlationStatus` is set to `MovedSource`
-
-#### Scenario: Status for moved destination content
-
-- **WHEN** inserted content is detected as relocated from elsewhere in the document
-- **THEN** its `correlationStatus` is set to `MovedDestination`
-
-#### Scenario: Status for format-changed content
-
-- **WHEN** an atom's text content is equal but run properties differ
-- **THEN** its `correlationStatus` is set to `FormatChanged`
+- **WHEN** a `both` node has equal text and a scoped direct-property delta
+- **THEN** its `correlationStatus` is `FormatChanged`
 
 ### Requirement: Abstract XML Element Representation
 
@@ -59,85 +42,6 @@ The system SHALL provide an `OpcPart` interface with `uri` (e.g., `"word/documen
 
 - **WHEN** content is extracted from `word/document.xml`
 - **THEN** the `OpcPart.uri` is `"word/document.xml"`
-
-### Requirement: Comparison Unit Base Interface
-
-The system SHALL provide a `ComparisonUnit` interface with `contents` array, `sha1Hash` string, and `correlationStatus` property as the base for all comparison units.
-
-#### Scenario: Hash calculation for content identity
-
-- **WHEN** a comparison unit is created
-- **THEN** a SHA1 hash is calculated from its content for identity comparison
-
-### Requirement: Comparison Unit Atom Interface
-
-The system SHALL provide a `ComparisonUnitAtom` interface extending `ComparisonUnit` with:
-- `ancestorElements`: Array of ancestor `WmlElement` nodes from root to parent
-- `ancestorUnids`: Array of `pt14:Unid` values extracted from ancestors
-- `contentElement`: The leaf `WmlElement` this atom represents
-- `contentElementBefore`: Optional reference to corresponding original element
-- `comparisonUnitAtomBefore`: Optional reference to correlated atom in original document
-- `part`: The `OpcPart` identifying the source file
-- `revTrackElement`: Optional revision tracking container (`w:ins` or `w:del`)
-- `moveGroupId`: Optional numeric ID linking moved source and destination atoms
-- `moveName`: Optional string name for the move (used in `w:name` attribute)
-- `formatChange`: Optional `FormatChangeInfo` storing old/new run properties when format differs
-
-#### Scenario: Atom from inserted revision
-
-- **WHEN** an atom's ancestry includes a `w:ins` element
-- **THEN** `revTrackElement` references that `w:ins` element and `correlationStatus` is `Inserted`
-
-#### Scenario: Atom from deleted revision
-
-- **WHEN** an atom's ancestry includes a `w:del` element
-- **THEN** `revTrackElement` references that `w:del` element and `correlationStatus` is `Deleted`
-
-#### Scenario: Atom with ancestor tracking
-
-- **WHEN** an atom is created from a `<w:t>` nested inside `<w:p>` and `<w:r>` elements
-- **THEN** `ancestorElements` contains references to the `<w:p>` and `<w:r>` elements in order
-
-#### Scenario: Atom marked as moved source
-
-- **WHEN** move detection identifies an atom as relocated content source
-- **THEN** `correlationStatus` is `MovedSource`
-- **AND** `moveGroupId` is set to a unique numeric ID
-- **AND** `moveName` is set (e.g., "move1")
-
-#### Scenario: Atom marked as moved destination
-
-- **WHEN** move detection identifies an atom as relocated content destination
-- **THEN** `correlationStatus` is `MovedDestination`
-- **AND** `moveGroupId` matches the corresponding source atom
-- **AND** `moveName` matches the corresponding source atom
-
-#### Scenario: Atom marked as format-changed
-
-- **WHEN** format detection identifies an atom with different run properties
-- **THEN** `correlationStatus` is `FormatChanged`
-- **AND** `formatChange.oldRunProperties` contains the original document's `w:rPr`
-- **AND** `formatChange.newRunProperties` contains the modified document's `w:rPr`
-- **AND** `formatChange.changedProperties` lists the property names that differ
-
-### Requirement: Atom Factory Function
-
-The system SHALL provide a `createComparisonUnitAtom()` factory function that:
-1. Accepts a content element, ancestor stack, and part reference
-2. Searches ancestors for revision tracking elements (`w:ins`, `w:del`)
-3. Sets initial `correlationStatus` based on revision context
-4. Extracts `pt14:Unid` values from ancestor elements
-5. Calculates SHA1 hash from content
-
-#### Scenario: Creating atom with revision detection
-
-- **WHEN** `createComparisonUnitAtom()` is called with ancestors containing `w:ins`
-- **THEN** the returned atom has `correlationStatus: Inserted` and `revTrackElement` set
-
-#### Scenario: Creating atom without revision context
-
-- **WHEN** `createComparisonUnitAtom()` is called with no revision ancestors
-- **THEN** the returned atom has `correlationStatus: Equal` and `revTrackElement: null`
 
 ### Requirement: Legal Numbering Continuation Pattern Detection
 
@@ -211,59 +115,53 @@ The system SHALL provide a `FootnoteNumberingTracker` that:
 
 ### Requirement: Move Detection Algorithm
 
-The system SHALL provide a `detectMovesInAtomList()` function that identifies relocated content after LCS comparison. The algorithm:
-1. Groups consecutive atoms by `correlationStatus` into blocks (Deleted blocks, Inserted blocks)
-2. Extracts text from each block by joining content element values
-3. Filters blocks by minimum word count (configurable, default: 3)
-4. Calculates Jaccard word similarity between deleted and inserted blocks
-5. Converts matching pairs (above threshold) to `MovedSource` and `MovedDestination`
+The system SHALL classify moves on tagged subtrees. It SHALL first pair exact
+subtree signatures, then globally pair residual original/revised candidates using
+word Jaccard and containment similarity. Residual matching SHALL be one-to-one,
+deterministic, independent of candidate enumeration order, and governed by the
+configured threshold, minimum word count, and case behavior.
 
-#### Scenario: Move detected between similar blocks
+Matching SHALL reject overlapping and ancestor/descendant conflicts, the two
+paragraph representatives of one `both` node, and candidates whose fields,
+ranges, tables, text boxes, notes, or preserved input revisions cannot be emitted
+safely. Repeated equal or similar blocks SHALL receive stable move names and IDs.
 
-- **GIVEN** a deleted block with text "The quick brown fox"
-- **AND** an inserted block with text "The quick brown fox jumps"
-- **WHEN** Jaccard similarity is calculated
-- **THEN** similarity is above threshold (default: 0.8)
-- **AND** atoms are marked as `MovedSource` and `MovedDestination`
+#### Scenario: Exact move matching precedes fuzzy matching
 
-#### Scenario: Short blocks ignored
+- **GIVEN** exact-signature and merely similar residual move candidates
+- **WHEN** tagged move classification runs
+- **THEN** every safe exact pair SHALL bind before residual fuzzy pairing begins
 
-- **GIVEN** a deleted block with text "the"
-- **AND** an inserted block with text "the"
-- **WHEN** move detection runs with `moveMinimumWordCount: 3`
-- **THEN** the blocks are NOT converted to moves
-- **AND** they remain as `Deleted` and `Inserted`
+#### Scenario: Residual matching is globally deterministic
 
-#### Scenario: Below threshold treated as separate changes
+- **GIVEN** repeated similar original and revised subtrees with tied scores
+- **WHEN** candidates are enumerated in different orders
+- **THEN** the same one-to-one move pairs, names, and IDs SHALL be produced
 
-- **GIVEN** a deleted block with text "The quick brown fox"
-- **AND** an inserted block with text "A slow gray elephant"
-- **WHEN** Jaccard similarity is calculated
-- **THEN** similarity is below threshold
-- **AND** atoms remain as `Deleted` and `Inserted`
+#### Scenario: Paired paragraph representatives are not moves
+
+- **GIVEN** original and revised candidates whose nearest paragraphs are the two representatives of one `both` node
+- **WHEN** fuzzy move classification runs
+- **THEN** those candidates SHALL remain ordinary changes rather than a move pair
 
 ### Requirement: Jaccard Word Similarity
 
-The system SHALL provide a `jaccardWordSimilarity()` function that calculates similarity between two text strings:
-- Tokenizes both strings into word sets
-- Calculates: `|intersection| / |union|`
-- Returns a value between 0.0 (no similarity) and 1.0 (identical)
-- Optionally supports case-insensitive comparison
+The system SHALL provide portable `jaccardWordSimilarity()` and
+`wordContainmentSimilarity()` string functions. Jaccard similarity SHALL
+tokenize strings into word sets and return intersection size divided by union
+size from `0.0` to `1.0`. Containment similarity SHALL report how completely the
+smaller word set occurs in the larger. Both SHALL support explicit
+case-sensitive or case-insensitive comparison without an external diff library.
 
-#### Scenario: Identical text returns 1.0
+#### Scenario: Identical text returns one
 
-- **WHEN** comparing "hello world" to "hello world"
-- **THEN** similarity is `1.0`
+- **WHEN** `jaccardWordSimilarity()` compares "hello world" with "hello world"
+- **THEN** it SHALL return `1.0`
 
-#### Scenario: No common words returns 0.0
+#### Scenario: Contained phrase scores complete containment
 
-- **WHEN** comparing "hello world" to "foo bar"
-- **THEN** similarity is `0.0`
-
-#### Scenario: Partial overlap
-
-- **WHEN** comparing "the quick brown fox" to "the slow brown dog"
-- **THEN** similarity is `|{the, brown}| / |{the, quick, brown, fox, slow, dog}|` = `2/6` ≈ `0.33`
+- **WHEN** `wordContainmentSimilarity()` compares "quick brown fox" with "the quick brown fox jumps"
+- **THEN** it SHALL return `1.0` for the smaller word set's containment
 
 ### Requirement: Move Detection Settings
 
@@ -285,62 +183,21 @@ The system SHALL provide configurable settings for move detection:
 - **WHEN** blocks have 55% word overlap
 - **THEN** they are converted to moves
 
-### Requirement: OpenXML Move Markup Generation
-
-The system SHALL generate native Word move tracking markup when moves are detected:
-
-For moved source (content moved FROM):
-- `w:moveFromRangeStart` with `w:id`, `w:name`, `w:author`, `w:date`
-- `w:moveFrom` containing the moved content
-- `w:moveFromRangeEnd` with matching `w:id`
-
-For moved destination (content moved TO):
-- `w:moveToRangeStart` with `w:id`, `w:name`, `w:author`, `w:date`
-- `w:moveTo` containing the moved content
-- `w:moveToRangeEnd` with matching `w:id`
-
-#### Scenario: Move source markup structure
-
-- **WHEN** atoms are marked as `MovedSource`
-- **THEN** output contains `w:moveFromRangeStart` before content
-- **AND** output contains `w:moveFrom` wrapping content runs
-- **AND** output contains `w:moveFromRangeEnd` after content
-- **AND** `w:name` attribute links to corresponding destination
-
-#### Scenario: Move destination markup structure
-
-- **WHEN** atoms are marked as `MovedDestination`
-- **THEN** output contains `w:moveToRangeStart` before content
-- **AND** output contains `w:moveTo` wrapping content runs
-- **AND** output contains `w:moveToRangeEnd` after content
-- **AND** `w:name` matches the corresponding source
-
-#### Scenario: Range IDs properly paired
-
-- **WHEN** move markup is generated
-- **THEN** `w:moveFromRangeStart` and `w:moveFromRangeEnd` share the same `w:id`
-- **AND** `w:moveToRangeStart` and `w:moveToRangeEnd` share the same `w:id`
-
 ### Requirement: Tracked move ranges are structurally paired
 
 The system SHALL emit exactly one source range and one destination range per
-logical tracked move. The emitted structure SHALL use unique
-schema-valid `ST_DecimalNumber` range ids canonicalized as integers, non-empty
-move names, balanced non-crossing same-direction start/end markers, one range
-per direction and `w:name`, and a one-to-one match between source and
-destination move names. Both Strict and Transitional use the same integer type
-for these ids. The non-empty name rule deliberately strengthens the required
-`ST_String` schema attribute, whose lexical space includes the empty string.
-Individual `w:moveFrom` or `w:moveTo` wrapper revision IDs are not required to
-match the range IDs.
+logical tagged move. Each direction SHALL have one balanced start/end pair with
+a schema-valid integer identifier, both directions SHALL share one non-empty
+move name, and wrapper revision identifiers SHALL remain independent from range
+identifiers.
 
-#### Scenario: [MOVE-RANGE-PAIR-01] Inplace emission produces one range pair per logical move
+#### Scenario: Tagged emission produces one range pair per logical move
 
-- **GIVEN** one detected move whose source is split across multiple runs or paragraphs
-- **WHEN** inplace reconstruction emits tracked move markup
-- **THEN** the output contains exactly one `w:moveFromRangeStart` / `w:moveFromRangeEnd` pair
-- **AND** the output contains exactly one `w:moveToRangeStart` / `w:moveToRangeEnd` pair
-- **AND** each end reuses its start id and both directions use the same move name
+- **GIVEN** one tagged move whose source spans a complete paragraph
+- **WHEN** the tagged serializer emits tracked move markup
+- **THEN** exactly one `w:moveFromRangeStart` / `w:moveFromRangeEnd` pair SHALL be emitted
+- **AND** exactly one `w:moveToRangeStart` / `w:moveToRangeEnd` pair SHALL be emitted
+- **AND** each end SHALL reuse its start identifier and both directions SHALL use the same non-empty move name
 
 ### Requirement: Format Change Info Interface
 
@@ -365,92 +222,63 @@ The system SHALL provide a `FormatChangeInfo` interface with:
 
 ### Requirement: Format Change Detection Algorithm
 
-The system SHALL provide a `detectFormatChangesInAtomList()` function that identifies formatting differences in Equal atoms after LCS comparison. The algorithm:
-1. Iterates through atoms with `correlationStatus === Equal`
-2. Skips atoms without `comparisonUnitAtomBefore` reference
-3. Extracts `w:rPr` from ancestor `w:r` element for both original and modified atoms
-4. Normalizes `w:rPr` elements (removes existing `w:rPrChange`, sorts children)
-5. Compares normalized properties for equality
-6. Converts non-equal atoms to `FormatChanged` status with `formatChange` info
+The system SHALL detect direct formatting differences between the original and
+revised representatives of `both` tagged nodes. It SHALL normalize the relevant
+run, paragraph-mark, paragraph, row, cell, or section property snapshots; ignore
+existing property-change children while comparing live properties; and attach a
+scoped `PropertyDelta` containing original/revised snapshots and friendly changed
+property names. Effective formatting resolved through styles remains explicitly
+out of scope unless separately supplied.
 
-#### Scenario: Text becomes bold
+#### Scenario: Equal text becomes bold
 
-- **GIVEN** an Equal atom with text "hello"
-- **AND** original atom has no `w:rPr` children
-- **AND** modified atom has `<w:b/>` in `w:rPr`
-- **WHEN** format detection runs
-- **THEN** atom status becomes `FormatChanged`
-- **AND** `formatChange.changedProperties` contains `"bold"`
+- **GIVEN** a `both` run node with equal text, no original `w:b`, and revised `w:b`
+- **WHEN** tagged property detection runs
+- **THEN** it SHALL attach a run-scoped property delta naming `bold`
 
-#### Scenario: No format change
+#### Scenario: Existing property revisions do not become live differences
 
-- **GIVEN** an Equal atom with text "hello"
-- **AND** both original and modified atoms have identical `w:rPr`
-- **WHEN** format detection runs
-- **THEN** atom status remains `Equal`
-- **AND** `formatChange` is not set
-
-#### Scenario: Format detection with text change
-
-- **GIVEN** an atom with `correlationStatus === Inserted`
-- **WHEN** format detection runs
-- **THEN** the atom is skipped (not checked for format changes)
+- **GIVEN** representatives whose live properties are equal but whose prior `w:rPrChange` histories differ
+- **WHEN** tagged property detection runs
+- **THEN** no new direct-formatting delta SHALL be created solely from that history
 
 ### Requirement: Run Property Extraction
 
-The system SHALL provide a `getRunPropertiesFromAtom()` function that extracts the `w:rPr` element from an atom's ancestor `w:r` element.
+The system SHALL extract direct run-property snapshots from each representative
+of a tagged run and SHALL return `null` when the representative has no direct
+`w:rPr`. Extraction SHALL preserve the source tree and prior revision provenance.
 
-#### Scenario: Run with properties
+#### Scenario: Properties are extracted from both representatives
 
-- **GIVEN** an atom with `ancestorElements` containing a `w:r` element
-- **AND** the `w:r` has a `w:rPr` child
-- **WHEN** `getRunPropertiesFromAtom()` is called
-- **THEN** the `w:rPr` element is returned
-
-#### Scenario: Run without properties
-
-- **GIVEN** an atom with `ancestorElements` containing a `w:r` element
-- **AND** the `w:r` has no `w:rPr` child
-- **WHEN** `getRunPropertiesFromAtom()` is called
-- **THEN** `null` is returned
+- **GIVEN** a `both` run whose original and revised `w:rPr` differ
+- **WHEN** run properties are extracted
+- **THEN** separate original and revised snapshots SHALL be returned without mutating either representative
 
 ### Requirement: Run Property Normalization
 
-The system SHALL provide a `normalizeRunProperties()` function that prepares `w:rPr` elements for comparison by:
-1. Treating `null` as equivalent to empty `w:rPr`
-2. Removing `w:rPrChange` elements (existing revision tracking)
-3. Sorting child elements by tag name
-4. Sorting attributes within each child by attribute name
+The system SHALL normalize direct property snapshots for semantic comparison by
+removing prior property-change history, normalizing insignificant XML variation,
+and applying deterministic child ordering. It SHALL NOT discard meaningful
+property values or rewrite the source representatives.
 
-#### Scenario: Normalize null properties
+#### Scenario: Equivalent property order compares equally
 
-- **WHEN** `normalizeRunProperties(null)` is called
-- **THEN** an empty `w:rPr` element is returned
-
-#### Scenario: Remove existing revision tracking
-
-- **GIVEN** `w:rPr` containing `<w:b/>` and `<w:rPrChange>...</w:rPrChange>`
-- **WHEN** `normalizeRunProperties()` is called
-- **THEN** only `<w:b/>` remains in the result
+- **GIVEN** two `w:rPr` snapshots with the same properties in different child order
+- **WHEN** the snapshots are normalized
+- **THEN** their normalized forms SHALL be equal
 
 ### Requirement: Run Property Comparison
 
-The system SHALL provide an `areRunPropertiesEqual()` function that compares two `w:rPr` elements after normalization.
+The system SHALL compare normalized direct run-property snapshots and SHALL
+return both equality and the friendly names of changed properties. Missing and
+present snapshots SHALL compare according to their semantic property values,
+including toggle removal.
 
-#### Scenario: Empty properties equal
+#### Scenario: Removing bold is reported
 
-- **WHEN** comparing `null` to empty `<w:rPr/>`
-- **THEN** the result is `true`
-
-#### Scenario: Different properties
-
-- **WHEN** comparing `<w:rPr><w:b/></w:rPr>` to `<w:rPr><w:i/></w:rPr>`
-- **THEN** the result is `false`
-
-#### Scenario: Same properties different order
-
-- **WHEN** comparing `<w:rPr><w:b/><w:i/></w:rPr>` to `<w:rPr><w:i/><w:b/></w:rPr>`
-- **THEN** the result is `true` (after normalization sorts children)
+- **GIVEN** original direct run properties contain `w:b` and revised properties do not
+- **WHEN** the snapshots are compared
+- **THEN** equality SHALL be false and changed properties SHALL include `bold`
 
 ### Requirement: Format Change Detection Settings
 
@@ -524,65 +352,35 @@ For format-changed content:
 
 ### Requirement: Format Change Revision Reporting
 
-The system SHALL include format changes in `GetRevisions()` output with type `FormatChanged`, extracting revision information from `w:rPrChange` elements.
+The system SHALL include emitted property revisions in `extractRevisions()`
+output with type `FORMAT_CHANGE`. Each result SHALL retain the comparison
+author and expose the affected paragraph's before/after projection.
 
 #### Scenario: Get format change revisions
 
-- **GIVEN** a document with `w:rPrChange` elements
-- **WHEN** `GetRevisions()` is called
-- **THEN** format changes are included in the revision list
-- **AND** each has `revisionType: FormatChanged`
-- **AND** each has `author`, `date`, and `text` properties
-- **AND** each has `formatChange` details with old/new properties
+- **GIVEN** a document containing emitted `w:rPrChange` markup
+- **WHEN** `extractRevisions()` runs after paragraph bookmarks are assigned
+- **THEN** the result SHALL include a `FORMAT_CHANGE` revision with its `author`
 
 ### Requirement: Property Name Mapping
 
-The system SHALL provide friendly names for common run properties:
+The system SHALL map OOXML property names to stable friendly names in a portable
+`propertyNaming` module used by tagged construction and public statistics. Known
+run properties SHALL include `bold`, `italic`, `underline`, `color`, `fontSize`,
+`fontFamily`, `strike`, `highlight`, `verticalAlign`, and `caps`. Unknown direct
+properties SHALL be reported deterministically rather than collapsed into the
+literal `directProperties` placeholder.
 
-| OOXML Element | Friendly Name |
-|--------------|---------------|
-| `w:b` | bold |
-| `w:i` | italic |
-| `w:u` | underline |
-| `w:strike` | strikethrough |
-| `w:sz` | fontSize |
-| `w:szCs` | fontSizeComplex |
-| `w:rFonts` | font |
-| `w:color` | color |
-| `w:highlight` | highlight |
-| `w:vertAlign` | verticalAlign |
-| `w:caps` | allCaps |
-| `w:smallCaps` | smallCaps |
+#### Scenario: Known property has a friendly name
 
-#### Scenario: Unknown property name
+- **WHEN** a changed `w:sz` property is categorized
+- **THEN** the changed-property list SHALL contain `fontSize`
 
-- **WHEN** a property without a friendly name is changed (e.g., `w:emboss`)
-- **THEN** the local name (`emboss`) is used as the property name
+#### Scenario: Unknown property remains distinguishable
 
-### Requirement: Inplace Reconstruction Cross-Run Recovery
-The atomizer comparison pipeline SHALL evaluate cross-run inplace reconstruction passes before using rebuild fallback when `reconstructionMode` is `inplace`, and SHALL report which inplace pass produced the output.
-
-The pipeline evaluates inplace passes in a fixed order — `inplace_word_split`, `inplace_run_level`, `inplace_word_split_cross_run`, `inplace_run_level_cross_run` — selecting the first whose reconstruction satisfies every round-trip safety check. The cross-run passes are a safety net for run-fragmented documents that the no-cross-run passes cannot reconstruct safely.
-
-As of this requirement's last revision that safety net is not reachable by any known input: `inplace_run_level` deletes and re-inserts whole runs, which preserves normalized text by construction, so it satisfies the round-trip text checks on every case that `inplace_word_split` fails — the cross-run passes are therefore never the selected rescuer. A prior "Cross-run pass rescues inplace output" scenario asserted that unreachable branch and could not be honestly mapped to a test; it is reclassified as a documented residual rather than a routinely-exercised path. The general recovery guarantee is preserved by the "Rebuild fallback only after all inplace passes fail" scenario, which requires the cross-run passes to be evaluated before any rebuild fallback. Reachability of the cross-run passes (candidate dead code superseded by `inplace_word_split` / premerge improvements) is tracked as an engine follow-up. See #469.
-
-#### Scenario: Inplace reconstruction reports the pass that produced the output
-- **GIVEN** a run-fragmented document pair compared with `reconstructionMode: inplace` whose first inplace pass fails a round-trip safety check
-- **WHEN** a later inplace pass satisfies every safety check and is selected
-- **THEN** the result SHALL report `inplaceSuccessDiagnostics.passUsed` naming the selected pass
-- **AND** `inplaceSuccessDiagnostics.precedingFailedAttempts` SHALL list every earlier pass that failed a safety check, in evaluation order
-
-#### Scenario: Rebuild fallback only after all inplace passes fail
-- **GIVEN** all inplace passes (no-cross-run and cross-run) fail at least one safety check
-- **WHEN** comparison completes
-- **THEN** the pipeline SHALL use `reconstructionModeUsed: rebuild`
-- **AND** `fallbackReason` SHALL be `round_trip_safety_check_failed`
-
-#### Scenario: Table-heavy run-fragmented templates preserve tracked table structure
-- **GIVEN** table-heavy OpenAgreements templates with differing run segmentation across original and revised documents
-- **WHEN** a small text edit is applied and tracked output is downloaded with `fail_on_rebuild_fallback: true`
-- **THEN** download SHALL succeed without rebuild fallback
-- **AND** tracked output SHALL preserve table structure (`w:tbl` remains present)
+- **WHEN** an unrecognized direct property changes
+- **THEN** its deterministic OOXML-derived name SHALL be reported
+- **AND** it SHALL NOT be reported only as `directProperties`
 
 ### Requirement: Side-tagged comparison tree carries both side representatives
 
@@ -743,59 +541,172 @@ representation is exercised on any other class of input.
 - **THEN** accept SHALL reproduce the revised tree projection
 - **AND** reject SHALL reproduce the original tree projection
 
-### Requirement: Tagged-tree construction is the default with an explicit legacy rollback
+### Requirement: Tagged migration evidence is capability-complete
 
-The ordinary comparison pipeline SHALL use tagged-tree construction by default.
-Callers SHALL be able to request the legacy construction explicitly for one
-release-cycle rollback window ending 2026-11-16. Legacy removal SHALL proceed
-on or after that date once #837 has shipped and #838's release-evidence gate is
-complete; if either gate remains incomplete, continued availability SHALL
-require a new dated extension decision. Existing runtime safety checks — text, bookmark,
-field structure, ancillary story, relationship closure, and package integrity —
-SHALL remain in force for both strategies. The public `rebuild` mode SHALL
-remain available and unchanged.
+Before a legacy comparison capability is removed or changed, the system SHALL
+record that capability in a committed legacy-versus-tagged characterization
+manifest. Each fixture row SHALL identify and hash the fixture, list exercised
+capabilities and package parts, report original/revised projection results,
+summarize normalized package parts and public statistics, and record fallback,
+schema, formatting, relationship, auxiliary-definition, unrepresented-change,
+and unsupported-story diagnostics.
 
-The offline harness SHALL continue recording divergence between the two constructions across the
-formatting-fidelity corpus, the multi-author fixtures, the OpenAgreements and
-NVCA/ILPA templates, and the pinned engine-bug characterization cases.
+Legacy equality SHALL be characterization rather than a correctness oracle. A
+known difference SHALL carry a stable, explicitly adjudicated divergence ID.
+The harness SHALL fail when its corpus is unavailable, a fixture or exercised
+package part disappears, either strategy falls back, or a divergence changes
+without review.
 
-Divergence SHALL be assessed on projections and fidelity scores rather than
-output bytes. A divergence that is not projection-equivalent SHALL be reported
-as blocking. A divergence that is projection-equivalent but textually different
-SHALL be recorded for individual review and either accepted with a rationale or
-pinned as a characterization case.
+#### Scenario: Missing corpus evidence fails loudly
 
-#### Scenario: Tagged-tree is default with legacy rollback
+- **GIVEN** the strategy-differential corpus is unavailable or incomplete
+- **WHEN** the characterization suite runs
+- **THEN** the suite SHALL fail rather than skip or report the evidence as passing
 
-- **GIVEN** a document pair and no comparison-strategy override
-- **WHEN** the pair is compared through the ordinary pipeline
-- **THEN** the tagged-tree strategy SHALL construct the returned redline
-- **AND** an explicit legacy strategy SHALL remain available as a rollback
-- **AND** every existing runtime safety check SHALL still run
+#### Scenario: A behavior fix closes an explicit divergence
 
-#### Scenario: Tagged-tree publication failure returns the validated legacy redline
+- **GIVEN** a known tagged defect recorded under a stable divergence ID
+- **WHEN** the tagged implementation is corrected
+- **THEN** its projection and package invariants SHALL pass
+- **AND** removal of the divergence SHALL be an explicit reviewed manifest change
 
-- **GIVEN** tagged-tree is the requested or default strategy
-- **AND** its publication candidate fails an existing runtime safety check
-- **WHEN** the legacy candidate has already passed its applicable validation
-- **THEN** the pipeline SHALL return the legacy redline instead of throwing
-- **AND** SHALL report tagged-tree as requested and legacy as used
-- **AND** SHALL report a stable fallback reason and the failed-check diagnostics
-- **AND** reconstruction-mode fallback metadata SHALL remain unchanged
+### Requirement: Tagged rationale attribution is exact and private
 
-#### Scenario: Legacy rollback reaches its sunset
+Markdoc compilation SHALL carry each selected rationale's operation identity as
+tagged-tree provenance rather than authored sentinel text. Serialization SHALL
+resolve every operation to exactly one bounded interval of generated tracked
+revision containers after compatibility rewrites. Operation intervals SHALL be
+unambiguous and non-overlapping. Private provenance metadata and omitted
+rationale text SHALL NOT occur in any published package part.
 
-- **GIVEN** the date is on or after 2026-11-16
-- **AND** #837 has shipped and #838's release-evidence gate is complete
-- **WHEN** comparison strategy support is evaluated
-- **THEN** the legacy strategy and automatic fallback SHALL be removed
-- **AND** an unmet gate SHALL require an explicit dated extension decision
+#### Scenario: Multiple operations retain disjoint rationale ranges
 
-#### Scenario: Divergence is recorded with fixture identity
+- **GIVEN** multiple Markdoc operations with selected rationales
+- **WHEN** tagged comparison serializes and compatibility-finalizes the redline
+- **THEN** each operation SHALL map to one balanced comment range around its own revisions
+- **AND** no operation's attributed interval SHALL overlap another operation's interval
 
-- **GIVEN** a controlled offline corpus run
-- **WHEN** the two constructions differ
-- **THEN** the report SHALL name the fixture and the diverging projection
-- **AND** SHALL classify the divergence as projection-inequivalent (blocking) or
-  projection-equivalent (for review)
+#### Scenario: Private attribution data does not leak
 
+- **GIVEN** internal and external rationales compiled under an external-only policy
+- **WHEN** the tracked DOCX is published
+- **THEN** no private provenance marker or sentinel text SHALL occur in any package part
+- **AND** omitted internal rationale text SHALL NOT occur in any package part
+
+### Requirement: Tagged publication owns the complete result package
+
+The comparison engine SHALL build one tracked result by deterministically
+reconciling the original and revised packages with tagged story publications,
+without consuming a legacy result buffer, merged atom list, or legacy output-mode
+decision. The public API SHALL NOT expose a caller-selectable package base.
+Accepting every comparison revision SHALL preserve revised semantics, and
+rejecting every comparison revision SHALL preserve original semantics, including
+each projection's referenced ancillary resources. Publication SHALL own relationship and
+content-type closure; headers, footers, notes, comments, people, numbering,
+styles, media and custom XML; auxiliary identifier collisions; footnote
+reconciliation; text-box and ancillary stories; unrepresented changes; and final
+schema, projection, field, bookmark, relationship and formatting-fidelity gates.
+
+Consumer compatibility SHALL run against the complete tagged document using one
+revision-ID allocator seeded from every surviving numeric revision identifier.
+Bookmark identifiers SHALL NOT seed that allocator. Volatile TOC PAGEREF cache
+revisions SHALL be suppressed after compatibility enforcement and before the
+final safety and formatting checks.
+
+#### Scenario: Standalone publication has no legacy assembly dependency
+
+- **GIVEN** original and revised packages and their tagged story publications
+- **WHEN** the result package is assembled
+- **THEN** assembly SHALL succeed without a legacy result buffer or merged atoms
+- **AND** normalized main and ancillary package parts SHALL satisfy the publication gates
+
+#### Scenario: One package preserves both source projections
+
+- **GIVEN** original and revised packages with changes in main and ancillary stories
+- **WHEN** the comparison package is assembled
+- **THEN** accepting every comparison revision SHALL preserve revised semantics and referenced ancillary resources
+- **AND** rejecting every comparison revision SHALL preserve original semantics and referenced ancillary resources
+- **AND** the caller SHALL NOT select an original-based or revised-based output
+
+#### Scenario: Revision and bookmark identifiers may overlap numerically
+
+- **GIVEN** tagged markup containing the same numeric value in revision and bookmark ID spaces
+- **WHEN** consumer compatibility splits a revision wrapper while hoisting bookmarks
+- **THEN** the newly allocated revision ID SHALL avoid every surviving revision ID
+- **AND** bookmark IDs SHALL remain unchanged
+
+#### Scenario: Volatile TOC cache changes are suppressed before final gates
+
+- **GIVEN** a TOC PAGEREF field whose instruction and surrounding content are unchanged but whose cached page number differs
+- **WHEN** tagged publication is finalized
+- **THEN** the cached page number SHALL NOT be emitted as an authored insertion or deletion
+- **AND** both cache-insensitive projections SHALL preserve their source TOC
+
+### Requirement: Tagged statistics describe emitted markup
+
+The system SHALL derive range-level comparison statistics from final serialized
+tracked markup, after coalescing and splitting around word refinement, bookmarks,
+range boundaries, property nodes, opaque subtrees, paragraph and row revisions,
+existing revision provenance, and field controls. Modified paragraphs SHALL be
+counted by logical tagged node, and paragraph-style deltas SHALL contribute once.
+
+Public atom-named metrics SHALL carry `atomMetricVersion: 'tagged-token-v1'`.
+That version SHALL count canonical comparison-text tokens, including whitespace
+and edge punctuation, plus supported non-text comparison leaves in the tagged
+alignment. A future weighting change SHALL use a new version value.
+
+#### Scenario: Serialized wrapper transformations determine range totals
+
+- **GIVEN** a tagged change whose serializer splits or coalesces tracked wrappers
+- **WHEN** comparison statistics are reported
+- **THEN** inserted, deleted, moved, and formatting range totals SHALL equal the final emitted markup
+
+#### Scenario: Atom metrics do not silently change units
+
+- **GIVEN** a tagged leaf spanning multiple text tokens
+- **WHEN** atom-named statistics are derived
+- **THEN** the result SHALL identify the `tagged-token-v1` unit
+- **AND** a different weighting SHALL require a new atom metric version
+
+### Requirement: Unsafe tagged publication raises a typed diagnostic error
+
+After the private legacy soak switch is retired, a tagged publication that fails a safety or formatting gate SHALL throw `TaggedPublicationSafetyError`. The error
+SHALL carry the failed checks and the existing structured diagnostics; the system
+SHALL NOT silently return a degraded or partially assembled result.
+
+#### Scenario: Final safety failure does not degrade silently
+
+- **GIVEN** an authoritative tagged candidate that fails a publication gate
+- **WHEN** no private emergency fallback is enabled
+- **THEN** comparison SHALL throw `TaggedPublicationSafetyError`
+- **AND** the error SHALL identify every failed check and its diagnostics
+
+### Requirement: Tagged-tree construction is the sole public comparison spine
+
+The ordinary comparison pipeline SHALL construct and publish tracked results
+through the tagged tree. The result package SHALL reconcile both input archives
+under the fixed dual-projection package contract.
+Legacy construction MAY exist only behind a private emergency switch during a
+measured release/corpus soak and SHALL NOT be selectable through library, CLI, or
+MCP public inputs. After the soak gate, the legacy switch and automatic fallback
+SHALL be deleted.
+
+Public `reconstructionMode`, `comparisonStrategy`, `engine`, `premergeRuns`, and
+`maxWordRefinementChangeRanges` options SHALL be absent. Existing schema,
+projection, field, bookmark, ancillary-story, relationship, package-integrity,
+text-box, auxiliary-sidecar, and formatting-fidelity checks SHALL remain in force.
+
+#### Scenario: Public comparison uses one deterministic tagged publication
+
+- **GIVEN** a document pair and no private emergency override
+- **WHEN** the pair is compared through any public entry point
+- **THEN** the tagged tree SHALL construct and publish one package whose accept-all projection preserves revised semantics and whose reject-all projection preserves original semantics
+- **AND** no public strategy, engine, or reconstruction-mode selector SHALL be accepted
+- **AND** no public package-base or provenance selector SHALL be accepted
+
+#### Scenario: Soak evidence gates legacy deletion
+
+- **GIVEN** the tagged assembler is authoritative
+- **WHEN** legacy deletion is proposed
+- **THEN** at least one release/corpus cycle SHALL have stable capability-manifest evidence
+- **AND** the last legacy-capable commit and multi-commit rollback procedure SHALL be recorded

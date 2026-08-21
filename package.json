@@ -1,6 +1,6 @@
 {
   "name": "safe-docx-suite",
-  "version": "0.19.1",
+  "version": "0.20.1",
   "private": true,
   "description": "Monorepo for Safe DOCX packages",
   "repository": {
@@ -48,6 +48,7 @@
     "test:release-isolation": "node --test scripts/check-release-isolation.test.mjs",
     "check:docx-formatting-loss": "node scripts/check_docx_formatting_loss.mjs",
     "test:docx-formatting-loss": "node --test scripts/check_docx_formatting_loss.test.mjs && node scripts/check_docx_formatting_loss.mjs --self-test",
+    "update:strategy-differential-manifest": "tsx scripts/update_strategy_differential_manifest.ts",
     "oracle:aspose-fields": "python3 scripts/aspose_field_oracle.py --output packages/docx-compare/src/testing/oracles/aspose-field-oracle.v1.json",
     "oracle:word:serve": "node scripts/oracle/word/serve-addin.mjs",
     "oracle:word:compare": "node scripts/oracle/word/cli.mjs",
@@ -96,7 +97,7 @@
     "@vitest/runner": "4.1.8",
     "@xmldom/xmldom": "^0.9.10",
     "ajv": "^8.18.0",
-    "allure": "3.8.2",
+    "allure": "3.15.0",
     "eslint": "^10.0.1",
     "fast-xml-parser": "^5.7.0",
     "jszip": "^3.10.1",
@@ -104,8 +105,7 @@
     "prismjs": "^1.30.0"
   },
   "overrides": {
-    "@vitest/runner": "4.1.8",
-    "uuid": "^11.1.1"
+    "@vitest/runner": "4.1.8"
   },
   "engines": {
     "node": ">=20"

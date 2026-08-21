@@ -13,8 +13,8 @@
   "operationSemantics": {
     "comparison": "whether comparison authors the record from an original/revised pair",
     "reconstruction": "whether an already-present equal record survives reconstruction",
-    "inplace": "the atomizer in-place reconstruction path",
-    "rebuild": "the atomizer rebuild reconstruction path"
+    "inplace": "the tagged revised-base publication path, reported as inplace in compatibility result metadata",
+    "rebuild": "the retired legacy rebuild path; classified explicitly as a non-goal"
   },
   "storyScope": {
     "acceptReject": [
@@ -53,11 +53,11 @@
         "reject": "implemented",
         "comparison": {
           "inplace": "implemented",
-          "rebuild": "implemented"
+          "rebuild": "non-goal"
         },
         "reconstruction": {
           "inplace": "preservation-only",
-          "rebuild": "conformance-gap"
+          "rebuild": "non-goal"
         }
       },
       "evidence": [
@@ -96,8 +96,7 @@
         {
           "id": "ADV-CONTENT-EMISSION-01",
           "sources": [
-            "packages/docx-compare/src/baselines/atomizer/inPlaceModifier.ts",
-            "packages/docx-compare/src/baselines/atomizer/documentReconstructor.ts"
+            "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
@@ -114,11 +113,6 @@
               "story": "main"
             },
             {
-              "element": "ins",
-              "operation": "comparison.rebuild",
-              "story": "main"
-            },
-            {
               "element": "del",
               "operation": "emit",
               "story": "main"
@@ -126,11 +120,6 @@
             {
               "element": "del",
               "operation": "comparison.inplace",
-              "story": "main"
-            },
-            {
-              "element": "del",
-              "operation": "comparison.rebuild",
               "story": "main"
             }
           ]
@@ -138,7 +127,7 @@
         {
           "id": "ADV-COMPARE-MODE-PRESERVATION-01",
           "sources": [
-            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+            "packages/docx-compare/src/tagged/pipeline.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
@@ -150,24 +139,14 @@
               "story": "main"
             },
             {
-              "element": "ins",
-              "operation": "reconstruction.rebuild",
-              "story": "main"
-            },
-            {
               "element": "del",
               "operation": "reconstruction.inplace",
-              "story": "main"
-            },
-            {
-              "element": "del",
-              "operation": "reconstruction.rebuild",
               "story": "main"
             }
           ]
         }
       ],
-      "notes": "Comparison authors ordinary content revisions in both modes. Equal pre-existing wrappers survive in-place reconstruction but rebuild resolves them."
+      "notes": "Comparison authors ordinary content revisions through tagged publication. Equal pre-existing wrappers survive the tagged revised-base path."
     },
     {
       "id": "advanced-revision.run-properties",
@@ -602,11 +581,11 @@
         "reject": "implemented",
         "comparison": {
           "inplace": "implemented",
-          "rebuild": "implemented"
+          "rebuild": "non-goal"
         },
         "reconstruction": {
           "inplace": "preservation-only",
-          "rebuild": "conformance-gap"
+          "rebuild": "non-goal"
         }
       },
       "evidence": [
@@ -646,8 +625,7 @@
           "id": "ADV-COMPARE-MOVE-EMISSION-01",
           "sources": [
             "packages/docx-compare/src/move-detection.ts",
-            "packages/docx-compare/src/baselines/atomizer/inPlaceModifier.ts",
-            "packages/docx-compare/src/baselines/atomizer/documentReconstructor.ts"
+            "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
@@ -664,11 +642,6 @@
               "story": "main"
             },
             {
-              "element": "moveFrom",
-              "operation": "comparison.rebuild",
-              "story": "main"
-            },
-            {
               "element": "moveTo",
               "operation": "emit",
               "story": "main"
@@ -676,11 +649,6 @@
             {
               "element": "moveTo",
               "operation": "comparison.inplace",
-              "story": "main"
-            },
-            {
-              "element": "moveTo",
-              "operation": "comparison.rebuild",
               "story": "main"
             }
           ]
@@ -688,7 +656,7 @@
         {
           "id": "ADV-COMPARE-MODE-PRESERVATION-01",
           "sources": [
-            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+            "packages/docx-compare/src/tagged/pipeline.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
@@ -700,24 +668,14 @@
               "story": "main"
             },
             {
-              "element": "moveFrom",
-              "operation": "reconstruction.rebuild",
-              "story": "main"
-            },
-            {
               "element": "moveTo",
               "operation": "reconstruction.inplace",
-              "story": "main"
-            },
-            {
-              "element": "moveTo",
-              "operation": "reconstruction.rebuild",
               "story": "main"
             }
           ]
         }
       ],
-      "notes": "Generated moves are supported in both modes."
+      "notes": "Generated moves are supported through tagged publication."
     },
     {
       "id": "advanced-revision.moves-ranges",
@@ -749,11 +707,11 @@
         "validate": "implemented",
         "comparison": {
           "inplace": "implemented",
-          "rebuild": "implemented"
+          "rebuild": "non-goal"
         },
         "reconstruction": {
           "inplace": "preservation-only",
-          "rebuild": "preservation-only"
+          "rebuild": "non-goal"
         }
       },
       "evidence": [
@@ -860,11 +818,6 @@
               "story": "main"
             },
             {
-              "element": "moveFromRangeStart",
-              "operation": "comparison.rebuild",
-              "story": "main"
-            },
-            {
               "element": "moveFromRangeEnd",
               "operation": "emit",
               "story": "main"
@@ -872,11 +825,6 @@
             {
               "element": "moveFromRangeEnd",
               "operation": "comparison.inplace",
-              "story": "main"
-            },
-            {
-              "element": "moveFromRangeEnd",
-              "operation": "comparison.rebuild",
               "story": "main"
             },
             {
@@ -890,11 +838,6 @@
               "story": "main"
             },
             {
-              "element": "moveToRangeStart",
-              "operation": "comparison.rebuild",
-              "story": "main"
-            },
-            {
               "element": "moveToRangeEnd",
               "operation": "emit",
               "story": "main"
@@ -902,11 +845,6 @@
             {
               "element": "moveToRangeEnd",
               "operation": "comparison.inplace",
-              "story": "main"
-            },
-            {
-              "element": "moveToRangeEnd",
-              "operation": "comparison.rebuild",
               "story": "main"
             }
           ]
@@ -914,7 +852,7 @@
         {
           "id": "ADV-COMPARE-MODE-PRESERVATION-01",
           "sources": [
-            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+            "packages/docx-compare/src/tagged/pipeline.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
@@ -926,18 +864,8 @@
               "story": "main"
             },
             {
-              "element": "moveFromRangeStart",
-              "operation": "reconstruction.rebuild",
-              "story": "main"
-            },
-            {
               "element": "moveFromRangeEnd",
               "operation": "reconstruction.inplace",
-              "story": "main"
-            },
-            {
-              "element": "moveFromRangeEnd",
-              "operation": "reconstruction.rebuild",
               "story": "main"
             },
             {
@@ -946,18 +874,8 @@
               "story": "main"
             },
             {
-              "element": "moveToRangeStart",
-              "operation": "reconstruction.rebuild",
-              "story": "main"
-            },
-            {
               "element": "moveToRangeEnd",
               "operation": "reconstruction.inplace",
-              "story": "main"
-            },
-            {
-              "element": "moveToRangeEnd",
-              "operation": "reconstruction.rebuild",
               "story": "main"
             }
           ]
@@ -1289,7 +1207,7 @@
         },
         "reconstruction": {
           "inplace": "preservation-only",
-          "rebuild": "conformance-gap"
+          "rebuild": "non-goal"
         }
       },
       "evidence": [
@@ -1439,7 +1357,7 @@
         {
           "id": "ADV-COMPARE-MODE-PRESERVATION-01",
           "sources": [
-            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+            "packages/docx-compare/src/tagged/pipeline.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
@@ -1451,18 +1369,8 @@
               "story": "main"
             },
             {
-              "element": "customXmlInsRangeStart",
-              "operation": "reconstruction.rebuild",
-              "story": "main"
-            },
-            {
               "element": "customXmlInsRangeEnd",
               "operation": "reconstruction.inplace",
-              "story": "main"
-            },
-            {
-              "element": "customXmlInsRangeEnd",
-              "operation": "reconstruction.rebuild",
               "story": "main"
             },
             {
@@ -1471,18 +1379,8 @@
               "story": "main"
             },
             {
-              "element": "customXmlDelRangeStart",
-              "operation": "reconstruction.rebuild",
-              "story": "main"
-            },
-            {
               "element": "customXmlDelRangeEnd",
               "operation": "reconstruction.inplace",
-              "story": "main"
-            },
-            {
-              "element": "customXmlDelRangeEnd",
-              "operation": "reconstruction.rebuild",
               "story": "main"
             },
             {
@@ -1491,18 +1389,8 @@
               "story": "main"
             },
             {
-              "element": "customXmlMoveFromRangeStart",
-              "operation": "reconstruction.rebuild",
-              "story": "main"
-            },
-            {
               "element": "customXmlMoveFromRangeEnd",
               "operation": "reconstruction.inplace",
-              "story": "main"
-            },
-            {
-              "element": "customXmlMoveFromRangeEnd",
-              "operation": "reconstruction.rebuild",
               "story": "main"
             },
             {
@@ -1511,24 +1399,14 @@
               "story": "main"
             },
             {
-              "element": "customXmlMoveToRangeStart",
-              "operation": "reconstruction.rebuild",
-              "story": "main"
-            },
-            {
               "element": "customXmlMoveToRangeEnd",
               "operation": "reconstruction.inplace",
-              "story": "main"
-            },
-            {
-              "element": "customXmlMoveToRangeEnd",
-              "operation": "reconstruction.rebuild",
               "story": "main"
             }
           ]
         }
       ],
-      "notes": "Accept/reject preserves these markers and validates balanced IDs. In-place preserves sampled equal markers; rebuild removes them."
+      "notes": "Accept/reject preserves these markers and validates balanced IDs. Tagged publication preserves sampled equal markers."
     },
     {
       "id": "advanced-revision.annotations-and-ranges",
@@ -1579,7 +1457,7 @@
         },
         "reconstruction": {
           "inplace": "preservation-only",
-          "rebuild": "conformance-gap"
+          "rebuild": "non-goal"
         }
       },
       "evidence": [
@@ -1678,7 +1556,7 @@
         {
           "id": "ADV-COMPARE-MODE-PRESERVATION-01",
           "sources": [
-            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+            "packages/docx-compare/src/tagged/pipeline.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
@@ -1690,18 +1568,8 @@
               "story": "main"
             },
             {
-              "element": "bookmarkStart",
-              "operation": "reconstruction.rebuild",
-              "story": "main"
-            },
-            {
               "element": "bookmarkEnd",
               "operation": "reconstruction.inplace",
-              "story": "main"
-            },
-            {
-              "element": "bookmarkEnd",
-              "operation": "reconstruction.rebuild",
               "story": "main"
             },
             {
@@ -1710,18 +1578,8 @@
               "story": "main"
             },
             {
-              "element": "commentRangeStart",
-              "operation": "reconstruction.rebuild",
-              "story": "main"
-            },
-            {
               "element": "commentRangeEnd",
               "operation": "reconstruction.inplace",
-              "story": "main"
-            },
-            {
-              "element": "commentRangeEnd",
-              "operation": "reconstruction.rebuild",
               "story": "main"
             },
             {
@@ -1730,18 +1588,8 @@
               "story": "main"
             },
             {
-              "element": "commentReference",
-              "operation": "reconstruction.rebuild",
-              "story": "main"
-            },
-            {
               "element": "permStart",
               "operation": "reconstruction.inplace",
-              "story": "main"
-            },
-            {
-              "element": "permStart",
-              "operation": "reconstruction.rebuild",
               "story": "main"
             },
             {
@@ -1750,24 +1598,14 @@
               "story": "main"
             },
             {
-              "element": "permEnd",
-              "operation": "reconstruction.rebuild",
-              "story": "main"
-            },
-            {
               "element": "proofErr",
               "operation": "reconstruction.inplace",
-              "story": "main"
-            },
-            {
-              "element": "proofErr",
-              "operation": "reconstruction.rebuild",
               "story": "main"
             }
           ]
         }
       ],
-      "notes": "These records have their own normative sections. Preservation does not prove bookmark, comment, permission, or proofing semantics. Rebuild drops proofErr."
+      "notes": "These records have their own normative sections. Tagged preservation does not prove bookmark, comment, permission, or proofing semantics."
     },
     {
       "id": "advanced-revision.conflicts",
@@ -1776,12 +1614,8 @@
         "w14:conflictDel"
       ],
       "normativeSections": {
-        "w14:conflictIns": [
-
-        ],
-        "w14:conflictDel": [
-
-        ]
+        "w14:conflictIns": [],
+        "w14:conflictDel": []
       },
       "classification": "non-goal",
       "operations": {
@@ -1794,14 +1628,14 @@
         },
         "reconstruction": {
           "inplace": "preservation-only",
-          "rebuild": "conformance-gap"
+          "rebuild": "non-goal"
         }
       },
       "evidence": [
         {
           "id": "ADV-COMPARE-MODE-PRESERVATION-01",
           "sources": [
-            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+            "packages/docx-compare/src/tagged/pipeline.ts"
           ],
           "test": {
             "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
@@ -1813,18 +1647,8 @@
               "story": "main"
             },
             {
-              "element": "w14:conflictIns",
-              "operation": "reconstruction.rebuild",
-              "story": "main"
-            },
-            {
               "element": "w14:conflictDel",
               "operation": "reconstruction.inplace",
-              "story": "main"
-            },
-            {
-              "element": "w14:conflictDel",
-              "operation": "reconstruction.rebuild",
               "story": "main"
             }
           ]
@@ -1839,12 +1663,8 @@
         "footer story revisions"
       ],
       "normativeSections": {
-        "header story revisions": [
-
-        ],
-        "footer story revisions": [
-
-        ]
+        "header story revisions": [],
+        "footer story revisions": []
       },
       "classification": "preservation-only",
       "operations": {

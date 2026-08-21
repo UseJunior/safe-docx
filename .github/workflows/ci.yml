@@ -411,7 +411,7 @@ jobs:
             packages/docx-mcp/allure-results/
 
   real-corpus-comparison:
-    name: Real-corpus paragraph deletion
+    name: Real-corpus comparison gates
     runs-on: ubuntu-latest
     needs: workspace-lint
     permissions:
@@ -439,13 +439,15 @@ jobs:
         env:
           SAFE_DOCX_REAL_CORPUS_DIR: ${{ runner.temp }}/open-agreements-cache
         run: node scripts/prepare_real_comparison_corpus.mjs "$SAFE_DOCX_REAL_CORPUS_DIR"
-      - name: Run real-corpus paragraph-deletion gate
+      - name: Run real-corpus comparison gates
         env:
           SAFE_DOCX_REAL_CORPUS_DIR: ${{ runner.temp }}/open-agreements-cache
           SAFE_DOCX_REAL_CORPUS_REQUIRED: "1"
+          SAFE_DOCX_STRATEGY_DIFFERENTIAL_REQUIRED: "1"
         run: >-
           npm run test:run -w @usejunior/docx-compare --
           src/integration/real-corpus-paragraph-deletion.test.ts
+          src/integration/strategy-differential-manifest.corpus.test.ts
 
   mcpb-bundle:
     runs-on: ubuntu-latest

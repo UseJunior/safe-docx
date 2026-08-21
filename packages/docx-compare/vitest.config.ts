@@ -50,7 +50,7 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     exclude: [
-      'src/baselines/**/*.traceability.test.ts',
+      'src/tagged/**/*.traceability.test.ts',
     ],
     coverage: {
       provider: 'v8',
@@ -64,8 +64,6 @@ export default defineConfig({
         'src/**/*.allure.test.ts',
         'src/testing/**',
         'src/benchmark/**',
-        'src/baselines/wmlcomparer/**',
-        'src/baselines/atomizer/trackChangesAcceptor.ts',
       ],
     },
     setupFiles: hasAllure ? [allureSetup!] : [],

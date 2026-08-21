@@ -17,7 +17,7 @@ This initial denominator classifies only seeded references. Unlisted ECMA-376 pr
 
 | ID | Part / locator | Status | Source links |
 | --- | --- | --- | --- |
-| `ooxml.ecma376.5ed.part1.fields.deleted-field-code` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.16.13 | `partial` | 2 source / 2 tests |
+| `ooxml.ecma376.5ed.part1.fields.deleted-field-code` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.16.13 | `partial` | 1 source / 2 tests |
 | `ooxml.ecma376.5ed.part1.fields.complex-field-characters` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.16.18 | `partial` | 1 source / 1 tests |
 | `ooxml.ecma376.5ed.part1.notes.footnote-reference-numbering` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.11.14 | `partial` | 1 source / 1 tests |
 | `ooxml.ecma376.5ed.part1.comments.collection` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.4.6 | `partial` | 1 source / 1 tests |
@@ -36,7 +36,7 @@ This operation-specific matrix distinguishes semantic implementation from preser
 
 | Record | Classification | Operations |
 | --- | --- | --- |
-| `advanced-revision.content-insert-delete` | `implemented` | emit=`implemented`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`implemented`<br>comparison.rebuild=`implemented`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`conformance-gap` |
+| `advanced-revision.content-insert-delete` | `implemented` | emit=`implemented`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`implemented`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`non-goal` |
 | `advanced-revision.run-properties` | `implemented` | emit=`implemented`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal` |
 | `advanced-revision.paragraph-mark-run-properties` | `implemented` | emit=`non-goal`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal` |
 | `advanced-revision.paragraph-properties` | `implemented` | emit=`implemented`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal` |
@@ -44,23 +44,23 @@ This operation-specific matrix distinguishes semantic implementation from preser
 | `advanced-revision.table-cell-properties` | `implemented` | emit=`implemented`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal` |
 | `advanced-revision.section-properties` | `implemented` | emit=`non-goal`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal` |
 | `advanced-revision.table-properties` | `implemented` | emit=`non-goal`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal` |
-| `advanced-revision.moves-content` | `implemented` | emit=`implemented`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`implemented`<br>comparison.rebuild=`implemented`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`conformance-gap` |
-| `advanced-revision.moves-ranges` | `conformance-gap` | emit=`implemented`<br>accept=`conformance-gap`<br>reject=`conformance-gap`<br>validate=`implemented`<br>comparison.inplace=`implemented`<br>comparison.rebuild=`implemented`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`preservation-only` |
+| `advanced-revision.moves-content` | `implemented` | emit=`implemented`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`implemented`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`non-goal` |
+| `advanced-revision.moves-ranges` | `conformance-gap` | emit=`implemented`<br>accept=`conformance-gap`<br>reject=`conformance-gap`<br>validate=`implemented`<br>comparison.inplace=`implemented`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`non-goal` |
 | `advanced-revision.numbering-properties` | `conformance-gap` | emit=`non-goal`<br>accept=`conformance-gap`<br>reject=`conformance-gap`<br>validate=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal` |
 | `advanced-revision.table-grid-and-exceptions` | `conformance-gap` | emit=`non-goal`<br>accept=`conformance-gap`<br>reject=`conformance-gap`<br>validate=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal` |
 | `advanced-revision.cell-topology` | `preservation-only` | emit=`non-goal`<br>accept=`conformance-gap`<br>reject=`conformance-gap`<br>preserve=`preservation-only`<br>validate=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal` |
-| `advanced-revision.custom-xml-ranges` | `preservation-only` | emit=`non-goal`<br>accept=`preservation-only`<br>reject=`preservation-only`<br>validate=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`conformance-gap` |
-| `advanced-revision.annotations-and-ranges` | `preservation-only` | emit=`non-goal`<br>accept=`preservation-only`<br>reject=`preservation-only`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`conformance-gap` |
-| `advanced-revision.conflicts` | `non-goal` | emit=`non-goal`<br>accept=`non-goal`<br>reject=`non-goal`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`conformance-gap` |
+| `advanced-revision.custom-xml-ranges` | `preservation-only` | emit=`non-goal`<br>accept=`preservation-only`<br>reject=`preservation-only`<br>validate=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`non-goal` |
+| `advanced-revision.annotations-and-ranges` | `preservation-only` | emit=`non-goal`<br>accept=`preservation-only`<br>reject=`preservation-only`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`non-goal` |
+| `advanced-revision.conflicts` | `non-goal` | emit=`non-goal`<br>accept=`non-goal`<br>reject=`non-goal`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`non-goal` |
 | `advanced-revision.header-footer-stories` | `preservation-only` | emit=`non-goal`<br>accept=`conformance-gap`<br>reject=`conformance-gap`<br>preserve=`preservation-only`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal` |
 
 ## Generated vocabulary use
 
 | Constant | QName | Kind | Source use |
 | --- | --- | --- | --- |
-| `WML.FLD_CHAR` | `w:fldChar` | element | `packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts` |
-| `WML.INSTR_TEXT` | `w:instrText` | element | `packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts` |
-| `WML.DEL_INSTR_TEXT` | `w:delInstrText` | element | `packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts` |
+| `WML.FLD_CHAR` | `w:fldChar` | element | `packages/docx-compare/src/tagged/taggedTreeSerializer.ts` |
+| `WML.INSTR_TEXT` | `w:instrText` | element | `packages/docx-compare/src/tagged/taggedTreeSerializer.ts` |
+| `WML.DEL_INSTR_TEXT` | `w:delInstrText` | element | `packages/docx-compare/src/tagged/taggedTreeSerializer.ts` |
 | `WML.INS` | `w:ins` | element | Not yet migrated |
 | `WML.DEL` | `w:del` | element | Not yet migrated |
 | `WML.FLD_CHAR_TYPE` | `w:fldCharType` | attribute | Not yet migrated |

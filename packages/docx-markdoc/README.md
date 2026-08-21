@@ -6,6 +6,13 @@ This package is an experimental compiler and conversion surface; its Markdoc
 syntax and transient comparison-attribution machinery are intentionally kept
 out of the general-purpose `@usejunior/docx-core` package.
 
+Install it from npm and inspect the complete CLI surface with:
+
+```bash
+npm install @usejunior/docx-markdoc
+npx docx-markdoc --help
+```
+
 ```markdoc
 {% source sha256="..." paragraphs=2 /%}
 

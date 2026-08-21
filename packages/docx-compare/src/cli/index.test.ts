@@ -50,7 +50,7 @@ describe('docx-comparison bin entry guard', () => {
 
     await then('the CLI runs and prints usage instead of silently exiting 0', () => {
       expect(result.error).toBeUndefined();
-      expect(result.status).toBe(0);
+      expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain('Usage: docx-comparison');
     });
   });
@@ -64,7 +64,7 @@ describe('docx-comparison bin entry guard', () => {
 
     await then('the CLI prints usage', () => {
       expect(result.error).toBeUndefined();
-      expect(result.status).toBe(0);
+      expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain('Usage: docx-comparison');
     });
   });

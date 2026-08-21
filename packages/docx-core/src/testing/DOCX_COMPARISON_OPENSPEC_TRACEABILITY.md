@@ -9,80 +9,65 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 
 | Scenario | Status | Test Files | Notes |
 |---|---|---|---|
-| Allocated revision identifiers avoid input collisions | covered | `packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.test.ts` |  |
-| An unmodeled subtree must declare itself opaque | covered | `packages/docx-compare/src/baselines/atomizer/taggedTree.test.ts` |  |
-| Atom from deleted revision | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Atom from inserted revision | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Atom marked as format-changed | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Atom marked as moved destination | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Atom marked as moved source | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Atom with ancestor tracking | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Below threshold treated as separate changes | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| A behavior fix closes an explicit divergence | covered | `packages/docx-compare/src/integration/strategy-differential-manifest.corpus.test.ts` |  |
+| Allocated revision identifiers avoid input collisions | covered | `packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts` |  |
+| An unmodeled subtree must declare itself opaque | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |
+| Atom metrics do not silently change units | covered | `packages/docx-compare/src/tagged/taggedTreeShadow.test.ts` |  |
 | Bold added | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Bold added markup | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Bold removed markup | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Building footnote mapping | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Contained phrase scores complete containment | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Continuation pattern inherits formatting | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Contract violations name the offending node | covered | `packages/docx-compare/src/baselines/atomizer/taggedTree.test.ts` |  |
-| Creating atom with revision detection | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Creating atom without revision context | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Contract violations name the offending node | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |
 | Custom footnote marks respected | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Custom threshold applied | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Different properties | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Divergence is recorded with fixture identity | covered | `packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.test.ts` |  |
 | Element with attributes | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Element with text content | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Empty properties equal | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Equal content is tagged both | covered | `packages/docx-compare/src/baselines/atomizer/taggedTree.test.ts`, `packages/docx-compare/src/baselines/atomizer/taggedTreeConstruction.test.ts` |  |
+| Equal content is tagged both | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts`, `packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts` |  |
+| Equal text becomes bold | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Equivalent property order compares equally | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Exact move matching precedes fuzzy matching | covered | `packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts` |  |
+| Existing property revisions do not become live differences | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Final safety failure does not degrade silently | covered | `packages/docx-compare/src/tagged/taggedTreeShadow.test.ts` |  |
 | First footnote displays as 1 | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Format change markup structure | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Format detection disabled | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Format detection disabled | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Format detection enabled by default | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Format detection with text change | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Get format change revisions | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Hash calculation for content identity | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Identical text returns 1.0 | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Inplace emission produces one range pair per logical move | covered | `packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts` |  |
-| Inplace reconstruction reports the pass that produced the output | covered | `packages/docx-core/src/integration/table-heavy-run-fragmented-inplace.test.ts` |  |
-| Legacy rollback reaches its sunset | covered | `packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.test.ts` |  |
-| Matched-but-differing nodes retain both representatives | covered | `packages/docx-compare/src/baselines/atomizer/taggedTree.test.ts` |  |
-| Move destination markup structure | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Move detected between similar blocks | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Move detection disabled | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Move source markup structure | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Identical text returns one | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Known property has a friendly name | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Matched formatting difference receives format status | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Matched-but-differing nodes retain both representatives | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |
+| Missing corpus evidence fails loudly | covered | `packages/docx-compare/src/integration/strategy-differential-manifest.corpus.test.ts`, `packages/docx-compare/src/integration/strategy-differential.test.ts` |  |
+| Move detection disabled | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Multiple operations retain disjoint rationale ranges | covered | `packages/docx-compare/src/integration/tagged-rationale-attribution.test.ts` |  |
 | Multiple properties changed | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| No common words returns 0.0 | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| No format change | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Normalize null properties | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| One package preserves both source projections | covered | `packages/docx-compare/src/tagged/relationshipIdCollision.test.ts` |  |
 | Orphan list item renders with parent format | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Paired paragraph representatives are not moves | covered | `packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts` |  |
 | Part from main document | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Partial overlap | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Projections reproduce their input sides | covered | `packages/docx-compare/src/baselines/atomizer/taggedTree.test.ts` |  |
+| Private attribution data does not leak | covered | `packages/docx-compare/src/integration/tagged-rationale-attribution.test.ts` |  |
+| Projections reproduce their input sides | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |
 | Proper nested list renders hierarchically | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Property delta scope matches the property level | covered | `packages/docx-compare/src/baselines/atomizer/taggedTree.test.ts` |  |
-| Provenance survives a boundary split | covered | `packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.test.ts` |  |
-| Range IDs properly paired | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Rebuild fallback only after all inplace passes fail | covered | `packages/docx-core/src/integration/field-cross-story-pipeline.test.ts` |  |
-| Remove existing revision tracking | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Reordering that satisfies coverage is rejected | covered | `packages/docx-compare/src/baselines/atomizer/taggedTree.test.ts` |  |
+| Properties are extracted from both representatives | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Property delta scope matches the property level | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |
+| Provenance survives a boundary split | covered | `packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts` |  |
+| Public comparison uses one deterministic tagged publication | covered | `packages/docx-compare/src/compare-options.test.ts`, `packages/docx-compare/src/tagged/taggedTreeShadow.test.ts` |  |
+| Removing bold is reported | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Reordering that satisfies coverage is rejected | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |
 | Reserved footnote IDs excluded from numbering | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Run with properties | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Run without properties | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Same properties different order | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Residual matching is globally deterministic | covered | `packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts` |  |
+| Revision and bookmark identifiers may overlap numerically | covered | `packages/docx-compare/src/integration/strategy-differential.test.ts` |  |
 | Sequential numbering ignores XML IDs | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Serialized multi-author stacks preserve both projections | covered | `packages/docx-compare/src/baselines/atomizer/taggedTreeSerializer.test.ts` |  |
-| Short blocks ignored | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Status assigned during comparison | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Status for deleted content | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Status for format-changed content | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Status for moved destination content | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Status for moved source content | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Status for unmatched atoms | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Table-heavy run-fragmented templates preserve tracked table structure | covered | `packages/docx-core/src/integration/table-heavy-run-fragmented-inplace.test.ts` |  |
-| Tagged-tree is default with legacy rollback | covered | `packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.test.ts` |  |
-| Tagged-tree publication failure returns the validated legacy redline | covered | `packages/docx-compare/src/baselines/atomizer/taggedTreeShadow.test.ts` |  |
-| Text becomes bold | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
-| Unknown property name | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Serialized multi-author stacks preserve both projections | covered | `packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts` |  |
+| Serialized wrapper transformations determine range totals | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Soak evidence gates legacy deletion | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Standalone publication has no legacy assembly dependency | covered | `packages/docx-compare/src/tagged/taggedTreeShadow.test.ts` |  |
+| Tagged emission produces one range pair per logical move | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Tagged nodes receive correlation status | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Unknown property remains distinguishable | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Volatile TOC cache changes are suppressed before final gates | covered | `packages/docx-compare/src/integration/strategy-differential.test.ts` |  |
 
 ## Cross-Implementation Conformance
 

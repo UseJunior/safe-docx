@@ -3,14 +3,13 @@ import { errorCode, errorMessage } from "../error_utils.js";
 import fs from 'node:fs/promises';
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
-import { compareDocuments, type CompareOptions } from '@usejunior/docx-compare';
+import { compareDocuments } from '@usejunior/docx-compare';
 import {
   mergeSessionResolutionMetadata,
   resolveSessionForTool,
   validateAndLoadDocxFromPath,
 } from './session_resolution.js';
 import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
-import { DEFAULT_RECONSTRUCTION_MODE } from './comparison_defaults.js';
 
 function expandPath(inputPath: string): string {
   return inputPath.startsWith('~') ? path.join(process.env.HOME || '', inputPath.slice(1)) : inputPath;
@@ -24,7 +23,6 @@ export async function compareDocuments_tool(
     file_path?: string;
     save_to_local_path: string;
     author?: string;
-    engine?: string;
     ignore_formatting?: boolean;
     compare_moves?: boolean;
   },
@@ -45,16 +43,6 @@ export async function compareDocuments_tool(
         'Two-file mode compares two DOCX files. Session mode compares the current session state against the original.',
       );
     }
-
-    // Validate engine
-    const engine = params.engine ?? 'auto';
-    if (engine !== 'auto' && engine !== 'atomizer') {
-      if (engine === 'wmlcomparer') {
-        return err('INVALID_ENGINE', "Engine 'wmlcomparer' is not supported.", "Use 'auto' or 'atomizer'.");
-      }
-      return err('INVALID_ENGINE', `Invalid engine: ${String(engine)}`, "Use 'auto' or 'atomizer'.");
-    }
-    const compareEngine: CompareOptions['engine'] = engine;
 
     const author = params.author ?? 'Comparison';
 
@@ -113,10 +101,8 @@ export async function compareDocuments_tool(
     // never concurrency-safe across an await (issue #809).
     const result = await compareDocuments(originalBuffer, revisedBuffer, {
       author,
-      engine: compareEngine,
       ignoreFormatting: params.ignore_formatting,
       detectMoves: params.compare_moves,
-      reconstructionMode: DEFAULT_RECONSTRUCTION_MODE,
     });
 
     // Validate and write output
@@ -132,17 +118,9 @@ export async function compareDocuments_tool(
       revised_file_path: revisedFilePath,
       saved_to: savePath,
       size_bytes: result.document.length,
-      engine_requested: compareEngine,
-      engine_used: result.engine,
-      comparison_strategy_requested: result.comparisonStrategyRequested,
-      comparison_strategy_used: result.comparisonStrategyUsed,
-      comparison_strategy_fallback_reason: result.comparisonStrategyFallbackReason,
-      tagged_tree_fallback_diagnostics: result.taggedTreeFallbackDiagnostics,
+      package_base: 'revised',
       author,
       stats: result.stats,
-      reconstruction_mode_requested: result.reconstructionModeRequested,
-      reconstruction_mode_used: result.reconstructionModeUsed,
-      fallback_reason: result.fallbackReason,
       message: twoFileMode
         ? `Redline comparing '${path.basename(originalFilePath!)}' vs '${path.basename(revisedFilePath!)}' saved to ${savePath}`
         : `Redline of session edits saved to ${savePath}`,

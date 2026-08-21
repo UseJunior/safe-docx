@@ -10,43 +10,33 @@ export interface CompareOptions {
   ignoreFormatting?: boolean;
   /** Detect content moved within the document. Default: true */
   detectMoves?: boolean;
-  /**
-   * Atomizer-only normalization: merge adjacent <w:r> siblings with identical formatting
-   * prior to comparison. This can reduce overly-granular diffs for heavily-fragmented docs.
-   *
-   * Default: true.
-   */
-  premergeRuns?: boolean;
-  /**
-   * Maximum contiguous inserted/deleted ranges that selective word refinement
-   * may create for one candidate aligned run pair. When that pair would exceed
-   * the budget, the comparer keeps its coarser run-level replacement without
-   * disabling sparse refinement elsewhere. Omit to preserve unrestricted
-   * surgical refinement.
-   */
-  maxWordRefinementChangeRanges?: number;
-  /**
-   * How to reconstruct the output DOCX when using the atomizer engine:
-   * - 'rebuild': rebuild document.xml from scratch (more reject/accept stable)
-   * - 'inplace': modify the revised document AST in place (more experimental)
-   *
-   * Default: {@link DEFAULT_RECONSTRUCTION_MODE}.
-   */
-  reconstructionMode?: ReconstructionMode;
-  /** Select the comparison construction strategy. Tagged-tree is default; legacy is the rollback path. */
-  comparisonStrategy?: ComparisonStrategy;
-  /**
-   * Comparison engine to use:
-   * - 'atomizer': Character-level comparison with move detection (recommended)
-   * - 'wmlcomparer': .NET WmlComparer (requires external runtime)
-   * - 'auto': Automatically select best available engine (currently 'atomizer')
-   *
-   * Default: 'auto'
-   */
-  engine?: 'wmlcomparer' | 'atomizer' | 'auto';
+}
+
+/** @internal A source-side range whose generated revision must remain attributable. */
+export interface RevisionAttributionRange {
+  operationId: string;
+  side: 'original' | 'revised';
+  startParagraphId: string;
+  start: number;
+  endParagraphId: string;
+  end: number;
+}
+
+/** @internal The exact generated revision interval for one attributed operation. */
+export interface RevisionAttribution {
+  operationId: string;
+  startRevision: { type: 'ins' | 'del' | 'moveFrom' | 'moveTo'; id: string };
+  endRevision: { type: 'ins' | 'del' | 'moveFrom' | 'moveTo'; id: string };
 }
 
 export interface CompareStats {
+  /**
+   * Versioned unit contract for the atom-named metrics below. `tagged-token-v1`
+   * counts comparison-text tokens (including whitespace and edge punctuation)
+   * plus supported non-text comparison leaves in the tagged alignment. It does
+   * not reproduce the deleted flattened-atom/LCS engine's weighting.
+   */
+  atomMetricVersion: 'tagged-token-v1';
   /**
    * Human-facing inserted change ranges. This counts contiguous inserted atom
    * runs, matching the coalesced w:ins regions emitted in OOXML.
@@ -66,15 +56,15 @@ export interface CompareStats {
   insertedRanges: number;
   /** Same value as deletions, exposed with explicit range-level semantics. */
   deletedRanges: number;
-  /** Atom-level inserted units for granular/benchmark consumers. */
+  /** Inserted `tagged-token-v1` units for granular/benchmark consumers. */
   insertedAtoms: number;
-  /** Atom-level deleted units for granular/benchmark consumers. */
+  /** Deleted `tagged-token-v1` units for granular/benchmark consumers. */
   deletedAtoms: number;
   /** Same value as modifications, exposed without overloading the term. */
   modifiedParagraphs: number;
   /** Contiguous format-only change ranges. */
   formatChanges: number;
-  /** Atom-level format-only units for granular/benchmark consumers. */
+  /** Format-only `tagged-token-v1` units for granular/benchmark consumers. */
   formatChangeAtoms: number;
 }
 
@@ -209,10 +199,20 @@ export interface ReconstructionFallbackDiagnostics {
 
 /** Safety evidence retained when tagged-tree publication falls back to legacy output. */
 export interface TaggedTreeFallbackDiagnostics {
-  checks: ReconstructionSafetyChecks;
-  failedChecks: ReconstructionSafetyCheckName[];
+  checks: TaggedPublicationSafetyChecks;
+  failedChecks: TaggedPublicationSafetyCheckName[];
   failureDetails?: ReconstructionSafetyFailureDetails;
   firstDiffSummary?: ReconstructionSafetyFailureSummary;
+  /** Source-projected formatting evidence when formatting rejected publication. */
+  formattingFidelity?: import('./tagged/formattingFidelity.js').ProjectedFormattingFidelity;
+}
+
+export type TaggedPublicationSafetyCheckName =
+  | ReconstructionSafetyCheckName
+  | 'formattingFidelity';
+
+export interface TaggedPublicationSafetyChecks extends ReconstructionSafetyChecks {
+  formattingFidelity: boolean;
 }
 
 /**
@@ -340,7 +340,6 @@ export interface AncillaryFieldRangeEvidence {
 
 export interface AncillaryFieldEvidence {
   status: 'passed';
-  reconstructionMode: ReconstructionMode;
   selectedBindings: AncillarySelectedBindingSummary[];
   stories: AncillaryStorySummary[];
   ranges: AncillaryFieldRangeEvidence[];

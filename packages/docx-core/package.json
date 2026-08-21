@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/docx-core",
-  "version": "0.19.1",
+  "version": "0.20.1",
   "description": "OOXML (.docx) core library: primitives, document generation, and track changes",
   "type": "module",
   "main": "dist/index.js",
@@ -12,7 +12,7 @@
     "test": "node ../../node_modules/vitest/vitest.mjs",
     "test:run": "node ../../node_modules/vitest/vitest.mjs run",
     "test:baseline": "node ../../node_modules/vitest/vitest.mjs run -c vitest.baseline.config.ts",
-    "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
+    "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1 --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
     "check:spec-coverage": "npm run check:spec-coverage:openspec && npm run check:spec-coverage:primitives -- --strict && npm run check:spec-coverage:tag-density",
     "check:spec-coverage:openspec": "node scripts/validate_openspec_coverage.mjs",
     "check:spec-coverage:primitives": "node scripts/validate_primitives_openspec_coverage.mjs",
@@ -26,7 +26,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "@usejunior/docx-compare": "^0.19.1",
+    "@usejunior/docx-compare": "^0.20.1",
     "@vitest/coverage-v8": "^4.1.8",
     "@vitest/runner": "^4.1.8",
     "allure-vitest": "^3.9.0",

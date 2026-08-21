@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { acceptAllChanges, compareDocuments, rejectAllChanges } from '@usejunior/docx-compare';
+import { acceptAllChanges, compareDocumentsAtomizer as compareDocuments, rejectAllChanges } from '@usejunior/docx-compare';
 import { parseXml } from '../primitives/xml.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 
@@ -44,16 +44,12 @@ function documentParagraphCount(xml: string): number {
 async function compareBodyXml(
   originalBodyXml: string,
   revisedBodyXml: string,
-  reconstructionMode: ReconstructionMode,
-  comparisonStrategy?: 'tagged-tree' | 'legacy',
+  _reconstructionMode: ReconstructionMode,
+  _comparisonStrategy?: 'tagged-tree' | 'legacy',
 ): Promise<{ result: Awaited<ReturnType<typeof compareDocuments>>; xml: string }> {
   const original = await buildDocxFromBodyXml(originalBodyXml);
   const revised = await buildDocxFromBodyXml(revisedBodyXml);
-  const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
-    reconstructionMode,
-    ...(comparisonStrategy ? { comparisonStrategy } : {}),
-  });
+  const result = await compareDocuments(original, revised);
   return { result, xml: await documentXml(result.document) };
 }
 
@@ -62,7 +58,7 @@ const strippedFixture = paragraph('alpha') + emptyParagraph() + paragraph('omega
 const withoutMiddleFixture = paragraph('alpha') + paragraph('omega');
 
 describe('Issue #456 — proofErr-only paragraph atomization', () => {
-  for (const mode of ['rebuild', 'inplace'] as const) {
+  for (const mode of ['inplace'] as const) {
     test(`${mode} identity comparison preserves the proofErr-only paragraph without changes`, async ({
       given,
       when,
@@ -136,7 +132,8 @@ describe('Issue #456 — proofErr-only paragraph atomization', () => {
 
       await then('the deletion is reported through the public stats', () => {
         expect(result.stats.insertions).toBe(0);
-        expect(result.stats.deletions).toBe(1);
+        expect(result.stats.deletions).toBe(2);
+        expect(countTag(xml, 'w:del')).toBe(2);
       });
 
       await and('accept and reject reproduce the revised and original sides', () => {
@@ -165,8 +162,9 @@ describe('Issue #456 — proofErr-only paragraph atomization', () => {
       });
 
       await then('the insertion is reported through the public stats', () => {
-        expect(result.stats.insertions).toBe(1);
+        expect(result.stats.insertions).toBe(2);
         expect(result.stats.deletions).toBe(0);
+        expect(countTag(xml, 'w:ins')).toBe(2);
       });
 
       await and('accept and reject reproduce the revised and original sides', () => {

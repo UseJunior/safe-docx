@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { auditSectPr } from '../primitives/sectPrAudit.js';
 import {
@@ -75,7 +75,7 @@ async function packageWithFooter(id: string, text: string): Promise<Buffer> {
 
 describe('unrepresented section and header/footer reporting', () => {
   test.openspec('[SDX-CMP-UNREP-01] Added section and footer are surfaced')(
-    'reports issue #648 package-level changes on the successful inplace path',
+    'reports issue #648 package-level changes on the tagged path',
     async () => {
       testAllure.conformance({
         spec: 'ECMA-376',
@@ -90,67 +90,34 @@ describe('unrepresented section and header/footer reporting', () => {
         section: '17.10.2',
       });
       const [original, revised] = await issue648Pair();
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        // This scenario characterizes the rollback engine's deliberate
-        // classification of section topology as unrepresented.
-        comparisonStrategy: 'legacy',
-        reconstructionMode: 'inplace',
-      });
-      expect(result.stats.insertions).toBe(0);
+      const result = await compareDocuments(original, revised);
+      expect(result.stats.insertions).toBe(1);
       expect(result.stats.deletions).toBe(0);
       expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
         expect.objectContaining({ scope: 'section', kind: 'added' }),
-        expect.objectContaining({
-          scope: 'footer',
-          kind: 'added',
-          role: 'default',
-        }),
       ]));
-
-      const tagged = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        comparisonStrategy: 'tagged-tree',
-        reconstructionMode: 'inplace',
-      });
-      // Tagged package assembly compares the selected added footer story, so
-      // its public stats describe that emitted insertion. Legacy intentionally
-      // reports the same package delta only through unrepresentedChanges.
-      expect(tagged.stats.insertions).toBe(1);
-      expect(tagged.stats.deletions).toBe(0);
-      expect(tagged.reconstructionModeUsed).toBe('inplace');
-      expect(tagged.unrepresentedChanges).toEqual(expect.arrayContaining([
-        expect.objectContaining({ scope: 'section', kind: 'added' }),
-      ]));
-      expect(tagged.unrepresentedChanges).not.toEqual(expect.arrayContaining([
+      expect(result.unrepresentedChanges).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ scope: 'footer' }),
       ]));
     },
   );
 
-  test('reports changed selected footer content in both reconstruction modes', async () => {
+  test('reports changed selected footer content', async () => {
     const original = await packageWithFooter('rIdOriginal', 'Original footer');
     const revised = await packageWithFooter('rIdRevised', 'Revised footer');
-    for (const reconstructionMode of ['inplace', 'rebuild'] as const) {
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        reconstructionMode,
-      });
+    const result = await compareDocuments(original, revised);
       expect(result.unrepresentedChanges).toEqual([{
         scope: 'footer',
         kind: 'changed',
         sectionIndex: 0,
         role: 'default',
       }]);
-    }
   });
 
   test('does not mistake relationship identifier changes for story changes', async () => {
     const original = await packageWithFooter('rIdOriginal', 'Same footer');
     const revised = await packageWithFooter('rIdRevised', 'Same footer');
     const result = await compareDocuments(original, revised, {
-      engine: 'atomizer',
-      reconstructionMode: 'inplace',
     });
     expect(result.unrepresentedChanges).toBeUndefined();
   });
@@ -173,8 +140,6 @@ describe('unrepresented section and header/footer reporting', () => {
       auditSectPr(await revisedArchive.getDocumentXml()).stats.totalSectPrCount,
     ).toBe(1);
     const result = await compareDocuments(original, revised, {
-      engine: 'atomizer',
-      reconstructionMode: 'inplace',
     });
     expect(result.unrepresentedChanges).toBeUndefined();
   });
@@ -184,8 +149,6 @@ describe('unrepresented section and header/footer reporting', () => {
     async () => {
       const [document] = await issue648Pair();
       const result = await compareDocuments(document, document, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
       });
       expect(result.unrepresentedChanges).toBeUndefined();
     },
