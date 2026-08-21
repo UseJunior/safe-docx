@@ -76,7 +76,7 @@
 
 ## 10. Legacy deletion
 
-- [x] 10.1 Tag the last legacy-capable commit, retain a maintenance branch, and document the exact rollback sequence.
+- [x] 10.1 Tag the last legacy-capable commit, retain a maintenance branch, and document the durable remote-ref recovery procedure.
 - [x] 10.2 Extract revision allocation/wrapping survivors into `revisionMarkup.ts` and update keeper dependencies.
 - [x] 10.3 Delete atomization, atom LCS, hierarchical LCS, reconstruction, in-place, selective-refinement, and legacy format/move code plus superseded tests.
 - [x] 10.4 Re-home ECMA claims, remove stale debug imports, regenerate conformance artifacts, and re-baseline Allure/coverage evidence.

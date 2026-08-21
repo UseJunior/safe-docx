@@ -123,7 +123,7 @@ with a private emergency switch. At least one release/corpus cycle must show the
 characterization manifest stable before public options are removed. The public
 break ships separately. Legacy deletion occurs only after the soak gate; the last
 legacy-capable commit is tagged and a maintenance branch retained with a written
-multi-commit rollback procedure.
+remote-ref recovery procedure.
 
 Before deletion, portable revision helpers move to `revisionMarkup.ts`:
 `formatDate`, `RevisionIdState`, allocator creation/seeding/allocation,

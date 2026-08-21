@@ -7,22 +7,36 @@ before either Phase 10 change is retained at all of these equivalent refs:
 - Branch: `838-legacy-comparison-maintenance-20260817`
 - Annotated tag: `legacy-comparison-final-20260817`
 
-## Revert the deletion on a descendant release
+## Restore the retained legacy tree on a descendant release
 
-Create a normal rollback branch from the deployed release, then revert the two
-Phase 10 commits in reverse order:
+The Phase 10 commits were squash-merged and are not reachable from `main`, so
+they cannot be reverted from a fresh clone. Create a normal rollback branch
+from the deployed release, fetch both retained remote anchors, and verify that
+they resolve to the audited legacy boundary before restoring any files:
 
 ```bash
 git switch -c rollback-legacy-comparison-YYYYMMDD <deployed-release>
-git revert f352beaafbb9902d3ba71601b029bbe7fade299a
-git revert 19d6c82617003bd00e346e1babc1c8bf24e84a0f
+git fetch origin \
+  refs/heads/838-legacy-comparison-maintenance-20260817:refs/remotes/origin/838-legacy-comparison-maintenance-20260817 \
+  refs/tags/legacy-comparison-final-20260817:refs/tags/legacy-comparison-final-20260817
+test "$(git rev-parse 'legacy-comparison-final-20260817^{commit}')" = \
+  11315af1f135e9f5515053f48dc514a5b23303c3
+test "$(git rev-parse 'origin/838-legacy-comparison-maintenance-20260817^{commit}')" = \
+  11315af1f135e9f5515053f48dc514a5b23303c3
+git restore --source=legacy-comparison-final-20260817 --staged --worktree -- \
+  packages/docx-compare packages/docx-core packages/docx-markdoc \
+  spec-compliance
+git commit -m "revert(docx-compare): restore retained legacy comparison tree"
 ```
 
-The first revert restores the legacy atom/LCS/reconstruction modules in their
-post-extraction layout. The second restores their original revision-helper
-ownership and removes `revisionMarkup.ts`, producing the exact tree at
-`legacy-comparison-final-20260817` unless later commits overlap these files.
-Resolve any such overlap in favor of the tagged rollback point, then confirm:
+The annotated tag is the restore source; the retained branch is an independent
+remote anchor for the same commit. Both equality checks intentionally stop the
+procedure if either ref has disappeared or moved. Using `--staged --worktree`
+is required because a worktree-only restore cannot resurrect paths deleted from
+the current index. This restores the four audited trees exactly as retained,
+including deleted legacy modules and their tests. Review later changes in those
+trees before shipping, and reapply only changes independently compatible with
+the legacy line. Then confirm the restored tree:
 
 ```bash
 git diff --exit-code legacy-comparison-final-20260817 -- \
@@ -33,6 +47,12 @@ git diff --exit-code legacy-comparison-final-20260817 -- \
 Run the repository pre-submit command and a real DOCX comparison smoke before
 merging the rollback. Do not revert only the extraction commit: the deleted
 legacy modules would then reference helpers that no longer exist.
+
+This procedure was executed from `origin/main` at `a1566dd0` on 2026-08-21.
+Both durable remote refs resolved to
+`11315af1f135e9f5515053f48dc514a5b23303c3`, the restore changed 209 indexed
+paths, and the documented `git diff --exit-code` command returned 0. See
+[`rollback-validation.md`](rollback-validation.md) for the recorded output.
 
 ## Continue legacy maintenance directly
 

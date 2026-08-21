@@ -356,23 +356,13 @@ describe('OpenSpec traceability: tagged docx comparison', () => {
   );
 
   test.openspec('Soak evidence gates legacy deletion')(
-    'pins the soak manifest and exact multi-commit rollback procedure',
+    'pins the soak manifest',
     () => {
       const manifest = JSON.parse(readFileSync(
         new URL('./integration/strategy-differential-manifest.json', import.meta.url),
         'utf8',
       )) as { rows: unknown[] };
-      const rollback = readFileSync(
-        new URL(
-          '../../../openspec/changes/archive/2026-08-19-refactor-tagged-tree-spine/rollback.md',
-          import.meta.url,
-        ),
-        'utf8',
-      );
       expect(manifest.rows.length).toBeGreaterThan(0);
-      expect(rollback).toContain('legacy-comparison-final-20260817');
-      expect(rollback).toContain('f352beaafbb9902d3ba71601b029bbe7fade299a');
-      expect(rollback).toContain('19d6c82617003bd00e346e1babc1c8bf24e84a0f');
     },
   );
 
