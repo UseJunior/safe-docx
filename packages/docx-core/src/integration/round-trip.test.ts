@@ -42,6 +42,29 @@ const REVISED_DOC = join(
   'tests/test_documents/redline/ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx'
 );
 
+interface IlpaRoundTripFixture {
+  originalBuffer: Buffer;
+  revisedBuffer: Buffer;
+  comparisonResult: Awaited<ReturnType<typeof compareDocuments>>;
+}
+
+let ilpaRoundTripFixturePromise: Promise<IlpaRoundTripFixture> | undefined;
+const ILPA_COMPARISON_HOOK_TIMEOUT_MS = 300_000;
+
+function loadIlpaRoundTripFixture(): Promise<IlpaRoundTripFixture> {
+  ilpaRoundTripFixturePromise ??= (async () => {
+    const [originalBuffer, revisedBuffer] = await Promise.all([
+      readFile(ORIGINAL_DOC),
+      readFile(REVISED_DOC),
+    ]);
+    const comparisonResult = await compareDocuments(originalBuffer, revisedBuffer, {
+      date: FIXTURE_STABLE_DATE,
+    });
+    return { originalBuffer, revisedBuffer, comparisonResult };
+  })();
+  return ilpaRoundTripFixturePromise;
+}
+
 // Test fixtures
 const fixturesPath = join(dirname(import.meta.url.replace('file://', '')), '../testing/fixtures');
 
@@ -179,19 +202,14 @@ describe('Round-Trip Tests - Accept All Changes', () => {
   });
 
   describe('Large Documents (ILPA)', () => {
-    let originalBuffer: Buffer;
     let revisedBuffer: Buffer;
     let comparisonResult: Awaited<ReturnType<typeof compareDocuments>>;
 
     beforeAll(async () => {
-      originalBuffer = await readFile(ORIGINAL_DOC);
-      revisedBuffer = await readFile(REVISED_DOC);
-      comparisonResult = await compareDocuments(originalBuffer, revisedBuffer, {
-        date: FIXTURE_STABLE_DATE,
-      });
-    // V8 coverage instrumentation pushes the sole tagged comparison spine past
-    // the historical 120-second ceiling on CI-class hosts.
-    }, 180000);
+      ({ revisedBuffer, comparisonResult } = await loadIlpaRoundTripFixture());
+    // V8 coverage plus bookmark-collision repair can push this real comparison
+    // close to the historical 180-second ceiling on CI-class hosts.
+    }, ILPA_COMPARISON_HOOK_TIMEOUT_MS);
 
     test('accept all changes should produce text matching revised document', async ({ given, when, then }: AllureBddContext) => {
       await given('ILPA comparison result is pre-computed in beforeAll', () => {});
@@ -365,17 +383,12 @@ describe('Round-Trip Tests - Reject All Changes', () => {
 
   describe('Large Documents (ILPA)', () => {
     let originalBuffer: Buffer;
-    let revisedBuffer: Buffer;
     let comparisonResult: Awaited<ReturnType<typeof compareDocuments>>;
 
     beforeAll(async () => {
-      originalBuffer = await readFile(ORIGINAL_DOC);
-      revisedBuffer = await readFile(REVISED_DOC);
-      comparisonResult = await compareDocuments(originalBuffer, revisedBuffer, {
-        date: FIXTURE_STABLE_DATE,
-      });
+      ({ originalBuffer, comparisonResult } = await loadIlpaRoundTripFixture());
     // Keep the reject projection on the same coverage-aware budget as accept.
-    }, 180000);
+    }, ILPA_COMPARISON_HOOK_TIMEOUT_MS);
 
     test('reject all changes should produce text matching original document', async ({ given, when, then }: AllureBddContext) => {
       await given('ILPA comparison result is pre-computed in beforeAll', () => {});
