@@ -1,8 +1,7 @@
 /**
- * Focused legacy/tagged characterization rows that must exist before the
- * corresponding tagged behavior changes. The full external-corpus manifest is
- * intentionally a later Phase 1 task; these synthetic rows are always present
- * and make the two known default-path defects independently reproducible.
+ * Focused tagged-tree characterization rows retained after the authority flip.
+ * These synthetic rows are always present and keep the formerly known
+ * default-path defects independently reproducible.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
@@ -27,9 +26,11 @@ import {
 } from '../tagged/trackChangesAcceptorAst.js';
 import { testAllure } from '../testing/allure-test.js';
 import {
+  assertActiveDivergencesConsumed,
   assertCharacterizationSafety,
   assertExpectedPackageParts,
   characterizeStrategyDifferential,
+  collectRevisionIdIssues,
   type StrategyDifferentialFixture,
 } from './strategy-differential-harness.js';
 
@@ -211,9 +212,9 @@ describe('strategy differential manifest evidence', () => {
         revised,
         capabilityTags: ['fallbacks', 'projections'],
       });
-      const fallback = structuredClone(row);
-      fallback.taggedTree.fallback.comparisonStrategyUsed = 'legacy';
-      expect(() => assertCharacterizationSafety(fallback)).toThrow(/fell back to legacy/u);
+      const missingAuthority = structuredClone(row);
+      delete missingAuthority.taggedTree.authority.comparisonStrategyUsed;
+      expect(() => assertCharacterizationSafety(missingAuthority)).toThrow(/fell back to undefined/u);
 
       const projectionDrift = structuredClone(row);
       projectionDrift.taggedTree.projections.accept.matchesSourceText = false;
@@ -227,8 +228,113 @@ describe('strategy differential manifest evidence', () => {
         projectionDrift,
         new Set(['tagged-tree.rejectProjection']),
       )).toThrow(/accept projection drifted/u);
+
+      const formattingDrift = structuredClone(row);
+      formattingDrift.taggedTree.formatting.score = 0.75;
+      expect(() => assertCharacterizationSafety(formattingDrift))
+        .toThrow(/formatting fidelity drifted/u);
+      expect(assertCharacterizationSafety(
+        formattingDrift,
+        new Set(['tagged-tree.formattingFidelity']),
+      )).toEqual(new Set(['tagged-tree.formattingFidelity']));
+
+      const unsupportedStory = structuredClone(row);
+      unsupportedStory.taggedTree.unsupportedStoryDiagnostics.push('text-box:unsupported');
+      expect(() => assertCharacterizationSafety(unsupportedStory))
+        .toThrow(/unsupported story diagnostics/u);
+
+      const invalidField = structuredClone(row);
+      invalidField.taggedTree.integrity.fieldIssues.push('combined:FIELD_UNCLOSED');
+      expect(() => assertCharacterizationSafety(invalidField))
+        .toThrow(/failed fieldIssues/u);
+
+      const invalidBookmark = structuredClone(row);
+      invalidBookmark.taggedTree.integrity.bookmarkIssues.push('combined:duplicate-name:Target');
+      expect(() => assertCharacterizationSafety(invalidBookmark))
+        .toThrow(/failed bookmarkIssues/u);
+
+      const reusedRevisionId = structuredClone(row);
+      reusedRevisionId.taggedTree.integrity.revisionIdIssues.push(
+        'revision-id-reused-across-identities:7',
+      );
+      expect(() => assertCharacterizationSafety(reusedRevisionId))
+        .toThrow(/failed revisionIdIssues/u);
+
+      const unbalancedMove = structuredClone(row);
+      unbalancedMove.taggedTree.integrity.moveBalanceIssues.push(
+        'moveFrom:range-boundaries-unbalanced',
+      );
+      expect(() => assertCharacterizationSafety(unbalancedMove))
+        .toThrow(/failed moveBalanceIssues/u);
     },
   );
+
+  test('rejects active divergences that did not suppress an observed assertion', () => {
+    expect(() => assertActiveDivergencesConsumed(
+      new Set(['TD-OBSERVED-001', 'TD-UNOBSERVED-002']),
+      new Set(['TD-OBSERVED-001']),
+    )).toThrow(/TD-UNOBSERVED-002/u);
+  });
+
+  test('distinguishes split revision wrappers from allocator collisions', () => {
+    const documentBodyXml = (body: string): string =>
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body>${body}</w:body></w:document>`;
+    const documentXml = (body: string): string => documentBodyXml(`<w:p>${body}</w:p>`);
+    const source = documentXml(
+      '<w:ins w:id="7" w:author="Human" w:date="2026-01-01T00:00:00Z">' +
+      '<w:r><w:t>source</w:t></w:r></w:ins>',
+    );
+    const comparison = (kind: 'ins' | 'del', text: string): string =>
+      `<w:${kind} w:id="7" w:author="Strategy Differential" ` +
+      `w:date="2026-08-17T12:00:00Z"><w:r><w:t>${text}</w:t></w:r></w:${kind}>`;
+
+    expect(collectRevisionIdIssues(
+      documentXml(comparison('ins', 'a') + comparison('ins', 'b')),
+      documentXml(''),
+      documentXml(''),
+    )).toEqual([]);
+    expect(collectRevisionIdIssues(
+      documentBodyXml(
+        `<w:p>${comparison('ins', 'first')}</w:p>` +
+        `<w:p>${comparison('ins', 'second')}</w:p>`,
+      ),
+      documentXml(''),
+      documentXml(''),
+    )).toContain('revision-id-reused-across-identities:7');
+    const linkedPropertyChange = (kind: 'pPrChange' | 'rPrChange' | 'sectPrChange'): string =>
+      `<w:${kind} w:id="8" w:author="Strategy Differential" ` +
+      `w:date="2026-08-17T12:00:00Z"/>`;
+    expect(collectRevisionIdIssues(
+      documentXml(linkedPropertyChange('pPrChange') + linkedPropertyChange('sectPrChange')),
+      documentXml(''),
+      documentXml(''),
+    )).toEqual([]);
+    expect(collectRevisionIdIssues(
+      documentXml(linkedPropertyChange('pPrChange') + linkedPropertyChange('rPrChange')),
+      documentXml(''),
+      documentXml(''),
+    )).toEqual([]);
+    expect(collectRevisionIdIssues(
+      documentXml(comparison('ins', 'a')),
+      source,
+      documentXml(''),
+    )).toContain('comparison-id-collides-with-source:7');
+    expect(collectRevisionIdIssues(
+      documentXml(comparison('ins', 'a') + comparison('del', 'b')),
+      documentXml(''),
+      documentXml(''),
+    )).toContain('revision-id-reused-across-identities:7');
+    expect(collectRevisionIdIssues(
+      documentXml(
+        comparison('ins', 'a') +
+        '<w:pPrChange w:id="7" w:author="Strategy Differential" ' +
+        'w:date="2026-08-17T12:00:00Z"/>',
+      ),
+      documentXml(''),
+      documentXml(''),
+    )).toContain('revision-id-reused-across-identities:7');
+  });
 });
 
 async function compareSourceXml(bodyXml: string): Promise<string> {

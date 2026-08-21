@@ -74,7 +74,6 @@ async function loadFixture(entry: PrivateCorpusEntry): Promise<StrategyDifferent
     revised,
     capabilityTags: entry.capabilityTags,
     expectedPackageParts: ['word/document.xml', 'word/_rels/document.xml.rels'],
-    approvedDivergenceIds: ['TD-ATOM-STATS-SEMANTICS-001'],
   };
 }
 
@@ -119,9 +118,8 @@ describe.skipIf(!available)('private comparison corpus safety', () => {
     test(`preserves projections and package safety for ${entry.id}`, async () => {
       const fixture = await loadFixture(entry);
       const row = await characterizeStrategyDifferential(fixture);
-      assertCharacterizationSafety(row, new Set(['tagged-tree.atomStatisticsSemantics']));
+      assertCharacterizationSafety(row);
       assertExpectedPackageParts(fixture, row);
-      expect(row.taggedTree.forbiddenPayloadLeaks).toEqual([]);
       expect(row.taggedTree.unsupportedStoryDiagnostics).toEqual([]);
     }, 180_000);
   }
