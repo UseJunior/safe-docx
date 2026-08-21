@@ -9,7 +9,6 @@ import {
   buildStandaloneTaggedPackage,
   compareDocumentsAtomizer,
   TaggedPublicationSafetyError,
-  type TaggedPackageShadowReport,
 } from './pipeline.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import {
@@ -123,7 +122,7 @@ describe('tagged-tree offline evaluation', () => {
   );
 
   test.openspec('Standalone publication has no legacy assembly dependency')(
-    'matches the authoritative normalized package without consuming legacy assembly state',
+    'builds a projection-safe revised-base package through the standalone API',
     async () => {
       const original = await buildDocxFromBodyXml(
         '<w:p><w:r><w:t>Original agreement language.</w:t></w:r></w:p>',
@@ -131,20 +130,20 @@ describe('tagged-tree offline evaluation', () => {
       const revised = await buildDocxFromBodyXml(
         '<w:p><w:r><w:t>Revised agreement language.</w:t></w:r></w:p>',
       );
-      let report: TaggedPackageShadowReport | undefined;
-      const result = await compareDocumentsAtomizer(original, revised, {
+      const result = await buildStandaloneTaggedPackage(original, revised, {
         author: 'Comparator',
         date: new Date('2026-08-17T12:00:00Z'),
-        standaloneTaggedPackageShadowObserver: (value) => { report = value; },
+        moveDetection: DEFAULT_MOVE_DETECTION_SETTINGS,
+        formatDetection: DEFAULT_FORMAT_DETECTION_SETTINGS,
+        numbering: DEFAULT_NUMBERING_OPTIONS,
       });
+      const outputXml = await (await DocxArchive.load(result.document)).getDocumentXml();
 
-      expect(result.comparisonStrategyUsed).toBe('tagged-tree');
-      expect(report).toEqual({
-        missingParts: [],
-        unexpectedParts: [],
-        differentParts: [],
-        standaloneHasNoLegacyAssemblyInputs: true,
-      });
+      expect(parseXml(acceptAllChanges(outputXml)).documentElement.textContent)
+        .toContain('Revised agreement language.');
+      expect(parseXml(rejectAllChanges(outputXml)).documentElement.textContent)
+        .toContain('Original agreement language.');
+      expect(result.documentXml).toBe(outputXml);
     },
   );
 
