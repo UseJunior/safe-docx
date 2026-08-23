@@ -64,7 +64,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Revision and bookmark identifiers may overlap numerically | covered | `packages/docx-compare/src/integration/strategy-differential.test.ts` |  |
 | Sequential numbering ignores XML IDs | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Serialized multi-author stacks preserve both projections | covered | `packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts` |  |
-| Serialized wrapper transformations determine range totals | covered | `packages/docx-compare/src/openspec.traceability.test.ts`, `packages/docx-compare/src/tagged/taggedTreeStatistics.test.ts` |  |
+| Serialized wrapper transformations determine range totals | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Skipped soak remains explicit | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Standalone publication has no legacy assembly dependency | covered | `packages/docx-compare/src/tagged/taggedTreeShadow.test.ts` |  |
 | Tagged emission produces one range pair per logical move | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
