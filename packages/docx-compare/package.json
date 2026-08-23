@@ -12,7 +12,6 @@
     "test": "node ../../node_modules/vitest/vitest.mjs",
     "test:run": "node ../../node_modules/vitest/vitest.mjs run",
     "test:real-corpus": "node ../../node_modules/vitest/vitest.mjs run -c vitest.corpus.config.ts",
-    "test:baseline": "node ../../node_modules/vitest/vitest.mjs run -c vitest.baseline.config.ts",
     "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
     "check:api-removal-inventory": "node scripts/generate-api-removal-inventory.mjs --check",
     "generate:api-removal-inventory": "node scripts/generate-api-removal-inventory.mjs --write",
