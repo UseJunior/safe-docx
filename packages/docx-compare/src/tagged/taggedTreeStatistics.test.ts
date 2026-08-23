@@ -91,9 +91,8 @@ describe('tagged publication range statistics', () => {
     expectRangeStatsMatchSerializedMarkup(publication);
     expect(publication.stats.insertedRanges).toBe(1);
     expect(publication.stats.deletedRanges).toBe(1);
-    expect(publication.xml).toContain('Shared prefix ');
-    expect(publication.xml).toContain(' shared suffix.');
-    expect(publicPublication.stats).toEqual(publication.stats);
+    expect(generatedElements(publication, 'del')[0]!.textContent).toBe('old');
+    expect(generatedElements(publication, 'ins')[0]!.textContent).toBe('new');
     expect(publicPublication.xml).not.toContain(COMPARISON_REVISION_ATTRIBUTE);
   });
 
@@ -136,13 +135,22 @@ describe('tagged publication range statistics', () => {
         paragraph('alpha new omega'),
       );
       const emitted = parseXml(publication.xml);
+      const generatedDeletions = generatedElements(publication, 'del');
+      const generatedInsertions = generatedElements(publication, 'ins');
 
       expectRangeStatsMatchSerializedMarkup(publication);
       expect(publication.stats.insertedRanges, boundary.name).toBe(1);
-      // Characterization: two boundary-only wrappers currently contribute to
-      // this public total. #938 tracks whether they should remain ranges.
       expect(publication.stats.deletedRanges, boundary.name).toBe(4);
       expect(withoutBoundary.stats.deletedRanges, boundary.name).toBe(1);
+      // Characterization: compared with the control's one text deletion, this
+      // public total contains two boundary-only wrappers plus a separate
+      // trailing-text deletion caused by suffix-alignment loss. #938 tracks
+      // both the range-counting rule and the avoidable alignment churn.
+      expect(generatedDeletions.filter((element) => element.textContent === ''), boundary.name)
+        .toHaveLength(2);
+      expect(generatedDeletions.map((element) => element.textContent), boundary.name)
+        .toEqual(['', 'beta gamma', '', ' omega']);
+      expect(generatedInsertions[0]!.textContent, boundary.name).toBe('new omega');
       expect(emitted.getElementsByTagNameNS(W_NS, boundary.startLocalName), boundary.name)
         .toHaveLength(1);
       expect(emitted.getElementsByTagNameNS(W_NS, boundary.endLocalName), boundary.name)
@@ -246,8 +254,10 @@ describe('tagged publication range statistics', () => {
     const emitted = parseXml(publication.xml);
 
     expectRangeStatsMatchSerializedMarkup(publication);
-    expect(publication.stats.insertedRanges).toBeGreaterThan(0);
-    expect(publication.stats.deletedRanges).toBeGreaterThan(0);
+    expect(publication.stats.insertedRanges).toBe(1);
+    expect(publication.stats.deletedRanges).toBe(1);
+    expect(generatedElements(publication, 'del')[0]!
+      .getElementsByTagNameNS(W_NS, 'fldChar')).toHaveLength(3);
     expect(emitted.getElementsByTagNameNS(W_NS, 'fldChar')).toHaveLength(6);
     expect(Array.from(emitted.getElementsByTagNameNS(W_NS, 'fldChar')).filter((field) =>
       field.getAttributeNS(W_NS, 'fldCharType') === 'begin',
