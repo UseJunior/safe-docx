@@ -20,8 +20,10 @@ records, for every fixture:
 - typed unsupported-story diagnostics and forbidden-payload leakage.
 
 `strategy-differential-manifest.corpus.test.ts` requires the committed rows to
-match the harness output, fails closed when the required real corpus is absent,
-and rejects unapproved drift. `strategy-differential-fixtures.ts` maps the
+match the harness output and rejects unapproved drift. At the archived change's
+merge, corpus absence failed only when required-mode environment variables were
+armed; ordinary local invocation could skip. Issue #917 owns making the
+registered corpus command fail closed by default. `strategy-differential-fixtures.ts` maps the
 required capability surface to checked-in, synthetic, and real fixtures:
 
 | Capability | Executable evidence |

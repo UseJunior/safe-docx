@@ -1,4 +1,4 @@
-# Tagged-authority soak postmortem — 2026-08-22
+# Tagged-authority soak postmortem — 2026-08-23 UTC
 
 ## Decision and scope
 
@@ -50,11 +50,10 @@ v0.17.0          v0.17.0  2026-07-23T01:59:43Z
 ```
 
 No preserved evidence identifies a deliberate decision to waive the gate before
-deletion. The archive was marked complete because phase work was collapsed into
-the squash-merged migration and later checks were treated as if they established
-the required sequence. That was a process and evidence-classification failure:
-a passing check after deletion cannot prove that a pre-deletion observation
-window occurred.
+deletion. The observable history is that task 8.3 first appeared checked in
+`fe941d4d`, the same commit that removed the legacy spine. No recorded release or
+corpus interval separates those events. A passing check after deletion cannot
+prove that a pre-deletion observation window occurred.
 
 ## Impact
 
@@ -100,11 +99,12 @@ self-comparison observer was deleted and archived task 6.6 was corrected to
 incomplete. This improves the truthfulness of the evidence chain; it is not an
 independent legacy-versus-tagged comparand.
 
-### Fresh public-corpus replay — 2026-08-22 America/New_York
+### Fresh public-corpus replay — 2026-08-23 UTC
 
 The repository's seven public NVCA sources were downloaded and individually
-SHA-256 verified, then the three public real-document suites were run with
-required-mode environment variables:
+SHA-256 verified. The transcript below is the subsequent warm-cache verification,
+followed by the three public real-document suites with required-mode environment
+variables:
 
 ```text
 $ node scripts/prepare_real_comparison_corpus.mjs .probe/public-corpus
@@ -148,22 +148,30 @@ evidence.
 ## Current rollback and remediation triggers
 
 The following outcomes require action; a green aggregate job must not override
-the underlying failure.
+the underlying failure. The release owner owns the decision and records it on
+the failing PR or a linked issue. For this table, an **isolated** corpus failure
+means exactly one of the current 23 hash-pinned manifest rows fails while the
+other 22 pass and publication fails closed. A **systemic** failure means two or
+more independent rows fail the same invariant, any unsafe package escapes a
+publication gate, or one source-projection failure reaches a published release.
+An isolated failure may use fix-forward only before the next comparison release;
+if the affected version is already published and a validated fix is not ready
+within 24 hours, the release owner invokes the #919 rollback procedure.
 
 | Trigger | Required response |
 | --- | --- |
 | A required public-corpus run cannot materialize or verify every hash-pinned source, silently skips, or has an unconsumed active divergence | Stop release/merge progression, repair the evidence gate, and rerun it. Do not characterize the missing run as a pass. |
-| Accept All or Reject All stops matching its source projection on a previously passing public fixture | Treat as a release blocker. Fix forward if the defect is isolated and the unsafe result fails closed; use the #919 rollback procedure if affected releases can emit a document whose source projection cannot be recovered safely. |
-| A comparison introduces schema, relationship, field, bookmark, revision-ID, move-balance, unsupported-story, auxiliary-definition, or formatting-fidelity failures not present in either input | Stop publication for that result and open a focused remediation issue with the fixture hash and diagnostics. Roll back if the failure is systemic or publication does not fail closed. |
-| Microsoft Word or another configured reader reports repair/recovery, cannot open a previously supported emitted DOCX, or changes its semantic projection on open/save | Quarantine the fixture and compare the emitted package against the last known-good release. Fix forward for an isolated, fail-closed case; invoke rollback for a reproducible systemic regression. |
+| Accept All or Reject All stops matching its source projection on a previously passing public fixture | Treat as a release blocker. Fix forward only under the isolated-failure definition above; use the #919 rollback procedure for a systemic failure or when the 24-hour published-release limit expires. |
+| A comparison introduces schema, relationship, field, bookmark, revision-ID, move-balance, unsupported-story, auxiliary-definition, or formatting-fidelity failures not present in either input | Stop publication for that result and open a focused remediation issue with the fixture hash and diagnostics. Apply the isolated/systemic and 24-hour rules above. |
+| The mandatory manual reader check before a comparison-affecting release tag reports Microsoft Word repair/recovery, inability to open a previously supported emitted DOCX, or a changed semantic projection on open/save | Quarantine the public fixture and compare the emitted package with the last known-good release. Run Word through the repository's local oracle workflow on at least one public pair; if Word is unavailable, record that limitation and run a LibreOffice open/export without representing it as Word evidence. Apply the isolated/systemic and 24-hour rules above. This is a manual release-owner check, not a CI monitor. |
 | The tagged result or reviewed manifest changes nondeterministically for identical hash-pinned inputs and fixed comparison metadata | Treat as a release blocker, preserve both outputs, and remediate before updating any baseline. |
 | A required safety gate throws on a previously supported public fixture after a tagged change | Do not weaken or bypass the gate. Revert/fix the causative change, or use the tested rollback path when the failure is broad and urgent. |
+| An archived task is marked complete without the dated, reproducible command transcript or external event its acceptance text requires | Uncheck the task, block archive/release completion, and open a linked correction or postmortem. Later evidence must retain its real timing and must not be relabeled as the missing gate. |
 
-Rollback is not automatic for every isolated assertion failure: a documented
-fix-forward is safer when publication already fails closed. Rollback becomes the
-preferred recovery when a regression is reproducible across multiple supported
-documents, escapes a publication gate, prevents safe source projection, or makes
-the tagged-only line unusable while a fix cannot be validated promptly.
+Rollback is not automatic for the isolated case defined above: a documented
+fix-forward is safer when publication already fails closed. The explicit
+systemic and 24-hour conditions above prevent indefinite re-election of that
+exception.
 
 ## Closure conditions
 
