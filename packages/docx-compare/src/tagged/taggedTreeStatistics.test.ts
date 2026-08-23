@@ -53,7 +53,10 @@ function generatedElements(publication: TaggedTreePublication, localName: string
     .filter((element) => element.getAttribute(COMPARISON_REVISION_ATTRIBUTE) === '1');
 }
 
-function expectRangeStatsMatchSerializedMarkup(publication: TaggedTreePublication): void {
+function expectRangeStatsMatchSerializedMarkup(
+  publication: TaggedTreePublication,
+  options: { assertFormatting?: boolean } = {},
+): void {
   const inserted = generatedElements(publication, 'ins');
   const deleted = generatedElements(publication, 'del');
   const movedFrom = generatedElements(publication, 'moveFrom');
@@ -70,6 +73,11 @@ function expectRangeStatsMatchSerializedMarkup(publication: TaggedTreePublicatio
     moveFromRanges: movedFrom.length,
     moveToRanges: movedTo.length,
   });
+  if (options.assertFormatting !== false) {
+    const propertyChanges = generatedElements(publication, 'rPrChange').length
+      + generatedElements(publication, 'pPrChange').length;
+    expect(publication.stats.formatChanges).toBe(propertyChanges);
+  }
 }
 
 describe('tagged publication range statistics', () => {
@@ -104,6 +112,7 @@ describe('tagged publication range statistics', () => {
     expectRangeStatsMatchSerializedMarkup(publication);
     expect(publication.stats.insertedRanges).toBe(0);
     expect(publication.stats.deletedRanges).toBe(1);
+    expect(generatedElements(publication, 'del')[0]!.textContent).toBe('beta gamma ');
   });
 
   transformationTest('counts wrappers split around bookmark and comment-range boundaries', () => {
@@ -206,7 +215,7 @@ describe('tagged publication range statistics', () => {
       paragraph('stable'),
     );
 
-    expectRangeStatsMatchSerializedMarkup(publication);
+    expectRangeStatsMatchSerializedMarkup(publication, { assertFormatting: false });
     expect(publication.stats.deletedRanges).toBe(2);
     // Characterize the serializer-restorative property wrapper separately:
     // #937 tracks why it does not yet contribute to formatChanges.
