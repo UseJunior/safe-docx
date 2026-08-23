@@ -53,7 +53,7 @@ describe('pipeline safety and input guards', () => {
     });
   });
 
-  test('inplace publication fails closed — the rebuild fallback also rejects a malformed contributing note part', async ({
+  test('tagged publication fails closed on a malformed contributing note part', async ({
     given,
     when,
     then,
@@ -78,7 +78,7 @@ describe('pipeline safety and input guards', () => {
       revised = await buildDocxFromBodyXml(paragraph('Shared'));
     });
 
-    await when('inplace comparison tries to publish the deleted note reference', async () => {
+    await when('tagged comparison tries to publish the deleted note reference', async () => {
       try {
         await compareDocumentsAtomizer(original, revised, {
           moveDetection: { detectMoves: false },
