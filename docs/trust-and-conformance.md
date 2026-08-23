@@ -82,5 +82,6 @@ Safe Docx makes document mutations inspectable and repeatable. It does not repla
 | [Invariant registry](../verification/INVARIANTS.md) | Verification claims, caveats, and falsifiers |
 | [Invariant registry](../verification/INVARIANTS.md) | Empirical and conventional evidence boundaries |
 | [Testing and evidence](testing-and-evidence.md) | Behavioral specifications, automated tests, and verification layers |
+| [Revision identifier policy](revision-id-policy.md) | Scoped logical revision IDs and consumer-oracle evidence |
 | [Core support contract](../packages/docx-core/SUPPORT.md) | AI-attributable edit behavior |
 | [MCP assumptions](../packages/docx-mcp/assumptions.md) | Runtime and tool assumptions |

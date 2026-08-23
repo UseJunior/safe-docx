@@ -44,6 +44,9 @@ const test = testAllure
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' },
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.5.45' },
   );
+const policyTest = testAllure
+  .epic('Document Comparison')
+  .withLabels({ feature: TEST_FEATURE });
 const DATE = new Date('2026-08-17T12:00:00Z');
 
 async function compareXml(
@@ -276,65 +279,96 @@ describe('strategy differential manifest evidence', () => {
     )).toThrow(/TD-UNOBSERVED-002/u);
   });
 
-  test('distinguishes split revision wrappers from allocator collisions', () => {
-    const documentBodyXml = (body: string): string =>
-      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
-      `<w:body>${body}</w:body></w:document>`;
-    const documentXml = (body: string): string => documentBodyXml(`<w:p>${body}</w:p>`);
-    const source = documentXml(
-      '<w:ins w:id="7" w:author="Human" w:date="2026-01-01T00:00:00Z">' +
-      '<w:r><w:t>source</w:t></w:r></w:ins>',
-    );
-    const comparison = (kind: 'ins' | 'del', text: string): string =>
-      `<w:${kind} w:id="7" w:author="Strategy Differential" ` +
-      `w:date="2026-08-17T12:00:00Z"><w:r><w:t>${text}</w:t></w:r></w:${kind}>`;
+  const revision = (
+    kind: 'ins' | 'del',
+    text: string,
+    author = 'Strategy Differential',
+    date = '2026-08-17T12:00:00Z',
+  ): string => {
+    const textElement = kind === 'del' ? 'delText' : 't';
+    return `<w:${kind} w:id="7" w:author="${author}" w:date="${date}">` +
+      `<w:r><w:${textElement}>${text}</w:${textElement}></w:r></w:${kind}>`;
+  };
 
-    expect(collectRevisionIdIssues(
-      documentXml(comparison('ins', 'a') + comparison('ins', 'b')),
-      documentXml(''),
-      documentXml(''),
-    )).toEqual([]);
-    expect(collectRevisionIdIssues(
-      documentBodyXml(
-        `<w:p>${comparison('ins', 'first')}</w:p>` +
-        `<w:p>${comparison('ins', 'second')}</w:p>`,
-      ),
-      documentXml(''),
-      documentXml(''),
-    )).toContain('revision-id-reused-across-identities:7');
-    const linkedPropertyChange = (kind: 'pPrChange' | 'rPrChange' | 'sectPrChange'): string =>
-      `<w:${kind} w:id="8" w:author="Strategy Differential" ` +
-      `w:date="2026-08-17T12:00:00Z"/>`;
-    expect(collectRevisionIdIssues(
-      documentXml(linkedPropertyChange('pPrChange') + linkedPropertyChange('sectPrChange')),
-      documentXml(''),
-      documentXml(''),
-    )).toEqual([]);
-    expect(collectRevisionIdIssues(
-      documentXml(linkedPropertyChange('pPrChange') + linkedPropertyChange('rPrChange')),
-      documentXml(''),
-      documentXml(''),
-    )).toEqual([]);
-    expect(collectRevisionIdIssues(
-      documentXml(comparison('ins', 'a')),
-      source,
-      documentXml(''),
-    )).toContain('comparison-id-collides-with-source:7');
-    expect(collectRevisionIdIssues(
-      documentXml(comparison('ins', 'a') + comparison('del', 'b')),
-      documentXml(''),
-      documentXml(''),
-    )).toContain('revision-id-reused-across-identities:7');
-    expect(collectRevisionIdIssues(
-      documentXml(
-        comparison('ins', 'a') +
-        '<w:pPrChange w:id="7" w:author="Strategy Differential" ' +
-        'w:date="2026-08-17T12:00:00Z"/>',
-      ),
-      documentXml(''),
-      documentXml(''),
-    )).toContain('revision-id-reused-across-identities:7');
-  });
+  policyTest.openspec('Sibling fragments of one logical revision may share an identifier')(
+    'allows same-signature sibling fragments separated by a bookmark boundary',
+    async () => {
+      const [candidate, emptySource] = await Promise.all([
+        compareSourceXml(
+          '<w:p>' + revision('del', 'first') +
+          '<w:bookmarkStart w:id="1" w:name="Boundary"/>' +
+          revision('del', 'second') +
+          '<w:bookmarkEnd w:id="1"/></w:p>',
+        ),
+        compareSourceXml('<w:p/>'),
+      ]);
+
+      expect(collectRevisionIdIssues(candidate, emptySource, emptySource)).toEqual([]);
+    },
+  );
+
+  policyTest.openspec('Revision identifier reuse across logical signatures fails')(
+    'rejects cross-scope, cross-kind, metadata, and source collisions',
+    async () => {
+      const [emptySource, source] = await Promise.all([
+        compareSourceXml('<w:p/>'),
+        compareSourceXml(`<w:p>${revision(
+          'ins',
+          'source',
+          'Human',
+          '2026-01-01T00:00:00Z',
+        )}</w:p>`),
+      ]);
+      const issue = 'revision-id-reused-across-identities:7';
+      const cases = await Promise.all([
+        compareSourceXml(
+          `<w:p>${revision('ins', 'first')}</w:p>` +
+          `<w:p>${revision('ins', 'second')}</w:p>`,
+        ),
+        compareSourceXml(`<w:p>${revision('ins', 'first')}${revision('del', 'second')}</w:p>`),
+        compareSourceXml(
+          `<w:p>${revision('ins', 'first')}${revision('ins', 'second', 'Another Author')}</w:p>`,
+        ),
+        compareSourceXml(
+          `<w:p>${revision('ins', 'first')}` +
+          `${revision('ins', 'second', 'Strategy Differential', '2026-08-18T12:00:00Z')}</w:p>`,
+        ),
+        compareSourceXml(
+          `<w:p>${revision('ins', 'first')}` +
+          '<w:pPrChange w:id="7" w:author="Strategy Differential" ' +
+          'w:date="2026-08-17T12:00:00Z"><w:pPr/></w:pPrChange></w:p>',
+        ),
+      ]);
+
+      for (const candidate of cases) {
+        expect(collectRevisionIdIssues(candidate, emptySource, emptySource)).toContain(issue);
+      }
+
+      const candidate = await compareSourceXml(`<w:p>${revision('ins', 'comparison')}</w:p>`);
+      expect(collectRevisionIdIssues(candidate, source, emptySource))
+        .toContain('comparison-id-collides-with-source:7');
+    },
+  );
+
+  policyTest.openspec('Linked property-change facets share a normalized logical signature')(
+    'allows linked property-change facets in the same paragraph scope',
+    async () => {
+      const propertyChangeAttributes =
+        'w:id="8" w:author="Strategy Differential" w:date="2026-08-17T12:00:00Z"';
+      const [candidate, emptySource] = await Promise.all([
+        compareSourceXml(
+          '<w:p><w:pPr>' +
+          `<w:pPrChange ${propertyChangeAttributes}><w:pPr/></w:pPrChange>` +
+          '<w:rPr>' +
+          `<w:rPrChange ${propertyChangeAttributes}><w:rPr/></w:rPrChange>` +
+          '</w:rPr></w:pPr><w:r><w:t>same paragraph</w:t></w:r></w:p>',
+        ),
+        compareSourceXml('<w:p/>'),
+      ]);
+
+      expect(collectRevisionIdIssues(candidate, emptySource, emptySource)).toEqual([]);
+    },
+  );
 });
 
 async function compareSourceXml(bodyXml: string): Promise<string> {

@@ -541,6 +541,45 @@ representation is exercised on any other class of input.
 - **THEN** accept SHALL reproduce the revised tree projection
 - **AND** reject SHALL reproduce the original tree projection
 
+### Requirement: Revision identifier reuse is scoped to one logical comparison revision
+
+The comparison evidence gate SHALL treat a revision identifier as identifying
+one scoped logical revision signature. A signature consists of the normalized
+revision family, author, timestamp, and nearest containing paragraph, table
+cell, table row, or table scope. Sibling wrappers MAY share an identifier only
+when every component of that signature is equal; the split wrappers then
+represent fragments of the same logical revision.
+
+Property-change elements (`w:pPrChange`, `w:rPrChange`, `w:sectPrChange`, the
+table property-change forms, and `w:numberingChange`) SHALL share one normalized
+property-change family so linked facets of one formatting revision can retain
+one identifier. Other element kinds SHALL remain distinct revision families.
+
+Reuse across scopes, normalized families, authors, or timestamps SHALL fail the
+evidence gate as an allocator collision. A comparison-authored identifier that
+collides with an input identifier carrying a different signature SHALL also
+fail. This is a repository safety policy backed by consumer evidence; it SHALL
+NOT be represented as an ECMA-376 uniqueness requirement.
+
+#### Scenario: Sibling fragments of one logical revision may share an identifier
+
+- **GIVEN** sibling wrappers with the same identifier, normalized family, author, timestamp, and containing scope
+- **WHEN** the revision-identifier evidence gate evaluates them
+- **THEN** it SHALL treat them as fragments of one logical revision
+
+#### Scenario: Revision identifier reuse across logical signatures fails
+
+- **GIVEN** wrappers that share an identifier across a different scope, normalized family, author, or timestamp
+- **WHEN** the revision-identifier evidence gate evaluates them
+- **THEN** it SHALL report `revision-id-reused-across-identities`
+- **AND** a comparison-authored collision with a differently signed input revision SHALL report `comparison-id-collides-with-source`
+
+#### Scenario: Linked property-change facets share a normalized logical signature
+
+- **GIVEN** linked property-change elements in the same scope with equal identifier, author, and timestamp
+- **WHEN** the revision-identifier evidence gate evaluates them
+- **THEN** it SHALL treat those facets as one normalized formatting revision
+
 ### Requirement: Tagged migration evidence is capability-complete
 
 Before a comparison capability is removed or changed, the system SHALL record
