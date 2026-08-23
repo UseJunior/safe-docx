@@ -356,7 +356,7 @@ describe('OpenSpec traceability: tagged docx comparison', () => {
   );
 
   test.openspec('Soak evidence gates legacy deletion')(
-    'pins the soak manifest and exact multi-commit rollback procedure',
+    'pins the soak manifest and executable durable-ref rollback blocks',
     () => {
       const manifest = JSON.parse(readFileSync(
         new URL('./integration/strategy-differential-manifest.json', import.meta.url),
@@ -369,10 +369,82 @@ describe('OpenSpec traceability: tagged docx comparison', () => {
         ),
         'utf8',
       );
+      const rollbackShellBlocks = [...rollback.matchAll(/```bash\n([\s\S]*?)\n```/g)]
+        .map((match) => match[1])
+        .filter((shell): shell is string => shell !== undefined);
+      const rollbackShell = rollbackShellBlocks.find((shell) => shell.includes('LEGACY_ROLLBACK_COMMIT='));
+      const reconciliationShell = rollbackShellBlocks.find((shell) => shell.includes('NOTE_PRESENTATION_COMMIT='));
+      const validationShell = rollbackShellBlocks.find((shell) => shell.includes('npm run build &&'));
+      const validationEvidence = readFileSync(
+        new URL(
+          '../../../openspec/changes/archive/2026-08-19-refactor-tagged-tree-spine/rollback-validation.md',
+          import.meta.url,
+        ),
+        'utf8',
+      );
+      const legacySmoke = readFileSync(
+        new URL(
+          '../../../openspec/changes/archive/2026-08-19-refactor-tagged-tree-spine/check-legacy-rollback-nvca.mjs',
+          import.meta.url,
+        ),
+        'utf8',
+      );
       expect(manifest.rows.length).toBeGreaterThan(0);
-      expect(rollback).toContain('legacy-comparison-final-20260817');
-      expect(rollback).toContain('f352beaafbb9902d3ba71601b029bbe7fade299a');
-      expect(rollback).toContain('19d6c82617003bd00e346e1babc1c8bf24e84a0f');
+      expect(rollbackShell).toBeDefined();
+      expect(rollbackShell).toContain('set -euo pipefail');
+      expect(rollbackShell).toContain('legacy-comparison-final-20260817');
+      expect(rollbackShell).toContain('838-legacy-comparison-maintenance-20260817');
+      expect(rollbackShell).toContain('11315af1f135e9f5515053f48dc514a5b23303c3');
+      expect(rollbackShell).toContain('git fetch origin');
+      expect(rollbackShell).toContain(
+        'refs/tags/legacy-comparison-final-20260817:refs/tags/legacy-comparison-final-20260817',
+      );
+      expect(rollbackShell).not.toContain('+refs/tags/legacy-comparison-final-20260817');
+      expect(rollbackShell).toContain(
+        'refs/heads/838-legacy-comparison-maintenance-20260817:refs/remotes/origin/',
+      );
+      expect(rollbackShell).toContain(
+        'test "$(git rev-parse \'legacy-comparison-final-20260817^{commit}\')" =',
+      );
+      expect(rollbackShell).toContain(
+        'test "$(git rev-parse \'origin/838-legacy-comparison-maintenance-20260817^{commit}\')" =',
+      );
+      expect(rollbackShell).toContain('git restore --source="$LEGACY_ROLLBACK_COMMIT"');
+      expect(rollbackShell).toContain('git diff --exit-code "$LEGACY_ROLLBACK_COMMIT"');
+      expect(reconciliationShell).toContain('set -euo pipefail');
+      expect(reconciliationShell).toContain('LEGACY_ROLLBACK_COMMIT:?run the restore block first');
+      expect(reconciliationShell).toContain('DEPLOYED_RELEASE_COMMIT:?run the restore block first');
+      expect(reconciliationShell).toContain('openspec/specs/docx-comparison/spec.md');
+      expect(reconciliationShell).toContain('packages/docx-mcp/src/tool_catalog.ts');
+      expect(reconciliationShell).toContain('src/primitives/document.ts');
+      expect(reconciliationShell).toContain('src/primitives/footnotes.ts');
+      expect(reconciliationShell).toContain('src/primitives/note_conversion.ts');
+      expect(reconciliationShell).toContain('packages/docx-compare/vitest.corpus.config.ts');
+      expect(reconciliationShell).toContain('perl -0pi -e \\');
+      expect(reconciliationShell).toContain(
+        's{../../docx-compare/dist/tagged/trackChangesAcceptorAst\\.js}' +
+        '{../../docx-compare/dist/baselines/atomizer/trackChangesAcceptorAst.js}g',
+      );
+      expect(reconciliationShell).toContain("! git grep -q 'dist/tagged/trackChangesAcceptorAst.js'");
+      expect(reconciliationShell).toContain('dist/baselines/atomizer/trackChangesAcceptorAst.js');
+      expect(reconciliationShell).toContain('npm install');
+      expect(reconciliationShell).toContain('docs:generate:tools');
+      expect(reconciliationShell).toContain('git diff --name-status');
+      expect(validationShell).toContain('npm run build && npm run lint:workspaces');
+      expect(validationShell).toContain(
+        'npm run test:real-corpus -w @usejunior/docx-compare',
+      );
+      expect(validationShell).toContain('check-legacy-rollback-nvca.mjs');
+      expect(validationEvidence).toContain('## Remote-anchor and fail-closed checks');
+      expect(validationEvidence).toContain('## Real-DOCX legacy-path smoke');
+      expect(validationEvidence).toContain('The inventory listed 14 commits');
+      expect(validationEvidence).toContain('`0f9855bd` (#929 / #918)');
+      expect(validationEvidence).toContain('MUST NOT be cited as proof of legacy independence');
+      expect(legacySmoke).toContain("comparisonStrategy: 'legacy'");
+      expect(legacySmoke).toContain("result.comparisonStrategyUsed !== 'legacy'");
+      expect(legacySmoke).toContain('JSZip.loadAsync(result.document)');
+      expect(legacySmoke).toContain('acceptAllChanges(resultXml)');
+      expect(legacySmoke).toContain('rejectAllChanges(resultXml)');
     },
   );
 

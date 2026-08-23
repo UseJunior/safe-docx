@@ -190,7 +190,7 @@ text-box, auxiliary-sidecar, and formatting-fidelity checks SHALL remain in forc
 - **GIVEN** the tagged assembler is authoritative
 - **WHEN** legacy deletion is proposed
 - **THEN** at least one release/corpus cycle SHALL have stable capability-manifest evidence
-- **AND** the last legacy-capable commit and multi-commit rollback procedure SHALL be recorded
+- **AND** the last legacy-capable commit and durable remote-ref rollback procedure SHALL be recorded
 
 ## MODIFIED Requirements
 

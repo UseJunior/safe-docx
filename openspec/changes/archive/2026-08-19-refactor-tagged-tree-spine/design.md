@@ -126,6 +126,9 @@ That independent comparison did not occur: the observer compared the published
 package with itself. Audit remediation removed that observer rather than retaining
 false evidence. Direct standalone publication tests and the registered public
 corpus suite remain, but do not retroactively satisfy the shadow gate.
+The shipped descendant therefore cannot claim that the planned shadow gate was
+satisfied. Operational recovery still uses the retained legacy commit's durable
+remote tag and maintenance branch rather than unreachable squash-internal SHAs.
 
 Before deletion, portable revision helpers move to `revisionMarkup.ts`:
 `formatDate`, `RevisionIdState`, allocator creation/seeding/allocation,
@@ -167,12 +170,13 @@ is retained only if the option matrix establishes tagged observability.
 4. Flip authority behind an internal switch and soak for one release/corpus cycle.
 5. Remove public options in a dedicated breaking release.
 6. Tag the rollback point, extract keepers, delete legacy, regenerate evidence,
-   and document the exact rollback sequence.
+   and document the durable remote-ref recovery procedure.
 7. Rename surviving tagged modules after the rollback window.
 
 Rollback before deletion selects the private legacy switch. Rollback after
-deletion follows the documented multi-commit sequence from the maintenance tag;
-it is not represented as a one-commit revert.
+deletion follows the documented pinned-tree recovery from the maintenance tag
+and branch; it is not represented as a revert of unreachable squash-internal
+commits.
 
 ## Open Questions
 
