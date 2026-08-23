@@ -28,9 +28,12 @@ function paragraph(text: string): string {
 }
 
 function table(rowTexts: readonly string[]): string {
-  return `<w:tbl>${rowTexts.map((text) =>
+  return '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>'
+    + '<w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>'
+    + rowTexts.map((text) =>
     `<w:tr><w:tc><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc></w:tr>`,
-  ).join('')}</w:tbl>`;
+    ).join('')
+    + '</w:tbl>';
 }
 
 function publish(
@@ -154,8 +157,6 @@ describe('tagged publication range statistics', () => {
       // public total contains two boundary-only wrappers plus a separate
       // trailing-text deletion caused by suffix-alignment loss. #938 tracks
       // both the range-counting rule and the avoidable alignment churn.
-      expect(generatedDeletions.filter((element) => element.textContent === ''), boundary.name)
-        .toHaveLength(2);
       expect(generatedDeletions.map((element) => element.textContent), boundary.name)
         .toEqual(['', 'beta gamma', '', ' omega']);
       expect(generatedInsertions[0]!.textContent, boundary.name).toBe('new omega');
@@ -239,7 +240,7 @@ describe('tagged publication range statistics', () => {
     expect((deletions[0]!.parentNode?.parentNode as Element).localName).toBe('tr');
   });
 
-  transformationTest('excludes preserved prior-author revisions while counting nested comparison ranges', () => {
+  transformationTest('excludes preserved same-author prior revisions from comparison counts', () => {
     const priorRevision = (value: string) => '<w:p>'
       + `<w:ins w:id="4" w:author="${AUTHOR}" w:date="2026-08-01T00:00:00Z">`
       + `<w:r><w:t>${value}</w:t></w:r></w:ins>`
@@ -285,6 +286,9 @@ describe('tagged publication range statistics', () => {
     expectRangeStatsMatchSerializedMarkup(publication);
     expect(publication.serializedRangeStats.moveFromRanges).toBe(1);
     expect(publication.serializedRangeStats.moveToRanges).toBe(1);
+    // CompareStats has no public move fields, so pure moves otherwise report
+    // all-zero public stats (#940). The serialized move shape itself also has
+    // a separately tracked ECMA schema defect (#941).
     expect(publication.stats.insertedRanges).toBe(0);
     expect(publication.stats.deletedRanges).toBe(0);
   });
