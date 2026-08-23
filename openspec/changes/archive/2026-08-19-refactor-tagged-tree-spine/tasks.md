@@ -65,7 +65,7 @@
 - [x] 8.1 Make standalone tagged assembly authoritative behind a private emergency legacy switch.
 - [x] 8.2 Throw `TaggedPublicationSafetyError` with retained diagnostics when no fallback is selected.
 - [ ] 8.3 Ship and complete at least one release/corpus soak cycle with Phase 1 telemetry. The authority flip and legacy deletion shipped together, so this sequencing gate was not completed.
-- [ ] 8.4 Record the missed sequencing gate, post-deletion compensating evidence, and rollback/remediation triggers in `soak-postmortem.md` (#920). Complete only after #917 and #919 evidence is merged and recorded.
+- [x] 8.4 Record the missed sequencing gate, post-deletion compensating evidence, and rollback/remediation triggers in `soak-postmortem.md` (#920). PRs #930 and #933 supply the merged fail-closed corpus and exercised rollback evidence.
 
 ## 9. Public breaking release
 

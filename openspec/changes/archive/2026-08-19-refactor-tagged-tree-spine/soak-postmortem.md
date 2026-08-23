@@ -64,9 +64,10 @@ failure: no evidence reviewed for this postmortem establishes that the skipped
 soak itself caused document corruption.
 
 The skipped gate was more consequential because the archived rollback commands
-also named non-durable squash-branch commits. Issue #919 owns the corrected and
-executed rollback procedure. This postmortem consumes that evidence after it
-lands; it does not duplicate or redefine the recovery steps.
+also named non-durable squash-branch commits. PR #933 replaced them with a
+fail-closed procedure pinned to two durable remote refs and recorded an actual
+restore/reconciliation exercise. This postmortem cites that evidence; it does
+not duplicate or redefine the recovery steps.
 
 ## Post-deletion compensating evidence
 
@@ -99,42 +100,81 @@ self-comparison observer was deleted and archived task 6.6 was corrected to
 incomplete. This improves the truthfulness of the evidence chain; it is not an
 independent legacy-versus-tagged comparand.
 
-### Fresh public-corpus replay — 2026-08-23 UTC
+### Fail-closed public corpus and load-bearing oracles — 2026-08-23 UTC
 
-The repository's seven public NVCA sources were downloaded and individually
-SHA-256 verified. The transcript below is the subsequent warm-cache verification,
-followed by the three public real-document suites with required-mode environment
-variables:
+PR #930 merged as `271a8cbf695998da990b99461569a2096f7ae6d2`
+at `2026-08-23T03:19:27Z`. It replaced the optional local corpus path with one
+registered command and made field, bookmark, revision-ID, move-balance,
+unsupported-story, formatting, projection, package, relationship, and auxiliary
+definition checks load-bearing. It also requires every active divergence to be
+consumed by an observed assertion.
+
+The no-corpus invocation failed rather than returning a skipped pass:
 
 ```text
-$ node scripts/prepare_real_comparison_corpus.mjs .probe/public-corpus
-[real-comparison-corpus] cached verified nvca-certificate-of-incorporation
-[real-comparison-corpus] cached verified nvca-indemnification-agreement
-[real-comparison-corpus] cached verified nvca-investors-rights-agreement
-[real-comparison-corpus] cached verified nvca-management-rights-letter
-[real-comparison-corpus] cached verified nvca-rofr-co-sale-agreement
-[real-comparison-corpus] cached verified nvca-stock-purchase-agreement
-[real-comparison-corpus] cached verified nvca-voting-agreement
-EXIT=0
+$ env -u SAFE_DOCX_REAL_CORPUS_DIR \
+    npm run test:real-corpus -w @usejunior/docx-compare
+Tests  1 failed | 5 passed | 14 skipped
+Failure: manifest availability assertion reports the required corpus is absent
+EXIT=1
+```
 
-$ SAFE_DOCX_REAL_CORPUS_DIR=$PWD/.probe/public-corpus \
+The required replay used the SHA-256-verified seven-document public NVCA cache:
+
+```text
+$ SAFE_DOCX_REAL_CORPUS_DIR=/private/tmp/safe-docx-audit-838/.probe/corpus \
     SAFE_DOCX_REAL_CORPUS_REQUIRED=1 \
     SAFE_DOCX_STRATEGY_DIFFERENTIAL_REQUIRED=1 \
-    npm run test:run -w @usejunior/docx-compare -- \
-      src/integration/real-corpus-paragraph-deletion.test.ts \
-      src/integration/strategy-differential-manifest.corpus.test.ts \
-      src/integration/taggedTreeMinimality.corpus.test.ts
+    npm run test:real-corpus -w @usejunior/docx-compare
 Test Files  3 passed (3)
 Tests       21 passed (21)
+Duration    312.72s
 EXIT=0
 ```
 
-This replay covers source projections, package structure, relationships,
-auxiliary definitions, formatting, bookmark/revision integrity, and tagged-tree
-minimality to the extent asserted by the tests at that commit. Issue #917 owns
-making corpus absence fail closed and making every retained oracle and active
-divergence load-bearing. Its merged evidence must be added here before this
-postmortem ships.
+The post-merge full build/workspace suite and local LibreOffice probes also
+passed. The CI real-corpus job passed in 14m51s. The advisory `codecov/patch`
+status reported 73.63% against 85% even though the package coverage ratchet
+remained green at approximately 87.58%; #932 tracks corpus-job coverage
+publication and #931 tracks making the real-corpus job required. This advisory
+red status is retained here rather than represented as a clean aggregate pass.
+
+### Executed durable-ref rollback — 2026-08-23 UTC
+
+PR #933 merged as `a68b7d06b6d1c08a746ee20d06f8a04f738f38e4`
+at `2026-08-23T04:29:45Z`. Starting from exact main at `271a8cbf`, its disposable
+v5 exercise verified that both retained remote anchors peel to
+`11315af1f135e9f5515053f48dc514a5b23303c3`, restored the four audited trees,
+and proved exact equality before descendant reconciliation:
+
+```text
+$ git ls-remote origin refs/heads/838-legacy-comparison-maintenance-20260817 \
+    refs/tags/legacy-comparison-final-20260817 \
+    'refs/tags/legacy-comparison-final-20260817^{}'
+11315af1f135e9f5515053f48dc514a5b23303c3 refs/heads/838-legacy-comparison-maintenance-20260817
+972cf96fed54a03aeb89958fa27c1d46b8890f21 refs/tags/legacy-comparison-final-20260817
+11315af1f135e9f5515053f48dc514a5b23303c3 refs/tags/legacy-comparison-final-20260817^{}
+EXIT=0
+
+$ git status --short | wc -l
+210
+$ git diff --cached --stat
+210 files changed, 44874 insertions(+), 6495 deletions(-)
+$ git diff --exit-code "$LEGACY_ROLLBACK_COMMIT" -- \
+    packages/docx-compare packages/docx-core packages/docx-markdoc \
+    spec-compliance
+EXIT=0
+```
+
+The reconciliation adjudicated all 14 intervening commits, including preserving
+#930's deployed corpus config and explicitly retaining #929's conclusion that
+restored self-shadow assertions are not independent evidence. The full build,
+lint, workspace tests, spec coverage, conformance checks, and public NVCA legacy
+smoke passed. The smoke selected `comparisonStrategyUsed: "legacy"`, produced a
+31-entry DOCX package, and proved Accept All matched revised while Reject All
+matched original. Claude's final dynamic review approved #933, all required CI
+checks passed, and its exact-merge post-smoke reverified both remote anchors.
+The full transcript remains in `rollback-validation.md`.
 
 ### Oracle boundary
 
@@ -173,16 +213,17 @@ fix-forward is safer when publication already fails closed. The explicit
 systemic and 24-hour conditions above prevent indefinite re-election of that
 exception.
 
-## Closure conditions
+## Closure evidence
 
-This postmortem can close #920 when:
+This postmortem closes the evidentiary record because:
 
 1. task 8.3 remains visibly unchecked;
-2. #917's fail-closed corpus and oracle evidence is merged and recorded here with
-   exact commands, commit, date, and outcome;
-3. #919's exercised rollback evidence is merged and linked here with exact
+2. #930's fail-closed corpus and oracle evidence is merged and recorded above
+   with exact commands, commit, date, and outcome;
+3. #933's exercised rollback evidence is merged and recorded above with exact
    commit, date, and outcome; and
-4. the complete change passes repository pre-submit and dynamic Claude review.
+4. this correction is independently gated by repository pre-submit and dynamic
+   Claude review before merge.
 
 Closing #920 records the missed gate and the accepted compensating controls. It
 does not change task 8.3 to complete and does not claim that time was replayed.
