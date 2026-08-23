@@ -147,10 +147,11 @@ gate pass by installing published descendant packages. Do not attempt a partial
 Phase 10 tree restoration: the deleted legacy modules would then reference
 helpers that no longer exist.
 
-This procedure was executed from `origin/main` at `a1566dd0` on 2026-08-22.
+This procedure was executed from `origin/main` at `271a8cbf` on 2026-08-22.
 Both durable remote refs resolved to
 `11315af1f135e9f5515053f48dc514a5b23303c3`, the restore changed 209 indexed
-paths, and the documented pinned `git diff --exit-code` command returned 0. See
+paths before the ordered corpus-harness integration and 210 paths after it, and
+the documented pinned `git diff --exit-code` command returned 0. See
 [`rollback-validation.md`](rollback-validation.md) for the recorded output.
 
 ## Continue legacy maintenance directly

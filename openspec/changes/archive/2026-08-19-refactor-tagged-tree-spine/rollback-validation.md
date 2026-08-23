@@ -8,9 +8,9 @@ commits are not durable recovery anchors.
 ## Environment
 
 - Starting revision: `origin/main` at
-  `a1566dd074971150e3fdc72ed34eb70ccb2a5db7`
-- Disposable worktree: `/private/tmp/safe-docx-rollback-execution-919-v3`
-- Validation branch: `rollback-legacy-comparison-validation-v3-20260822`
+  `271a8cbf695998da990b99461569a2096f7ae6d2`
+- Disposable worktree: `/private/tmp/safe-docx-rollback-execution-919-v4`
+- Validation branch: `rollback-legacy-comparison-validation-v4-20260822`
 - Restore source: pinned audited commit
   `11315af1f135e9f5515053f48dc514a5b23303c3`
 
@@ -46,7 +46,7 @@ missing remote anchors        non-zero    0            0
 
 ```text
 $ git rev-parse HEAD
-a1566dd074971150e3fdc72ed34eb70ccb2a5db7
+271a8cbf695998da990b99461569a2096f7ae6d2
 
 $ test "$(git rev-parse 'legacy-comparison-final-20260817^{commit}')" = \
     "$LEGACY_ROLLBACK_COMMIT"
@@ -62,10 +62,10 @@ $ git restore --source="$LEGACY_ROLLBACK_COMMIT" --staged --worktree -- \
 EXIT=0
 
 $ git status --short | wc -l
-209
+210
 
 $ git diff --cached --stat
-209 files changed, 39619 insertions(+), 4973 deletions(-)
+210 files changed, 44874 insertions(+), 6495 deletions(-)
 
 $ git diff --exit-code "$LEGACY_ROLLBACK_COMMIT" -- \
     packages/docx-compare packages/docx-core packages/docx-markdoc \
@@ -101,7 +101,7 @@ three TypeScript errors and six failing tests. The complete set built and its
 
 ## Descendant-change adjudication
 
-The inventory listed 12 commits touching the restored trees between the
+The inventory listed 13 commits touching the restored trees between the
 retained boundary and the deployed revision:
 
 | Commit | Decision | Reason |
@@ -118,6 +118,7 @@ retained boundary and the deployed revision:
 | `195b25c8` (#914) | Drop | Later coordinate refactor is not required for legacy authority and overlaps the retained document primitives. |
 | `99109405` (#897) | Drop | Dual-projection package requirements are tagged-publication behavior. |
 | `a1566dd0` (#928) | Drop | Bookmark-projection repair changes tagged-only construction and publication. |
+| `271a8cbf` (#930 / #917) | Drop from emergency line | Fail-closed corpus-oracle enforcement validates the current tagged-only publication harness, which the legacy restore intentionally replaces; its corrected false-shadow premise remains in the archived design. |
 
 ## Repository gates
 
