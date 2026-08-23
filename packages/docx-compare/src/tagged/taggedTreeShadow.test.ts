@@ -198,23 +198,31 @@ describe('tagged-tree offline evaluation', () => {
       const original = await buildDocxFromBodyXml('<w:p><w:r><w:t>old</w:t></w:r></w:p>');
       const revised = await buildDocxFromBodyXml('<w:p><w:r><w:t>new</w:t></w:r></w:p>');
 
-      await expect(compareDocumentsAtomizer(original, revised, {
-        author: 'Comparator',
-        date: new Date('2026-08-17T12:00:00Z'),
-        taggedTreeFormattingFidelityEvaluator: (originalXml, revisedXml, candidateXml) => {
-          const actual = compareSourceProjectedFormattingFidelity(
-            originalXml,
-            revisedXml,
-            candidateXml,
-          );
-          return { ...actual, score: 0.5 };
-        },
-      })).rejects.toMatchObject({
-        name: 'TaggedPublicationSafetyError',
-        failedChecks: ['formattingFidelity'],
-        checks: expect.objectContaining({ formattingFidelity: false }),
-        formattingFidelity: expect.objectContaining({ score: 0.5 }),
-      });
+      for (const detectFormatChanges of [true, false]) {
+        await expect(compareDocumentsAtomizer(original, revised, {
+          author: 'Comparator',
+          date: new Date('2026-08-17T12:00:00Z'),
+          formatDetection: { detectFormatChanges },
+          taggedTreeFormattingFidelityEvaluator: (originalXml, revisedXml, candidateXml) => {
+            const actual = compareSourceProjectedFormattingFidelity(
+              originalXml,
+              revisedXml,
+              candidateXml,
+            );
+            return {
+              ...actual,
+              score: 0,
+              accept: { ...actual.accept, score: 0 },
+              reject: { ...actual.reject, score: 0 },
+            };
+          },
+        })).rejects.toMatchObject({
+          name: 'TaggedPublicationSafetyError',
+          failedChecks: ['formattingFidelity'],
+          checks: expect.objectContaining({ formattingFidelity: false }),
+          formattingFidelity: expect.objectContaining({ score: 0 }),
+        });
+      }
     },
   );
 

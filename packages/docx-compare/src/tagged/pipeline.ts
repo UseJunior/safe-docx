@@ -511,11 +511,18 @@ export async function buildStandaloneTaggedPackage(
       report.unalignedActualParagraphs === 0 &&
       report.divergences.every((divergence) => divergence.scope === 'section'),
     );
+  // Disabling detection opts out of representing original-to-revised format
+  // differences; it does not opt out of validating the published package.
+  // In that narrower mode the revised/Accept projection remains authoritative.
+  // Reject may intentionally retain revised formatting because no property
+  // change revision was requested.
+  const formattingFidelityIsSafe = options.formatDetection.detectFormatChanges
+    ? formattingFidelity.score === 1
+    : formattingFidelity.accept.score === 1;
   const checks: TaggedPublicationSafetyChecks = {
     ...publicationSafety.checks,
     formattingFidelity:
-      !options.formatDetection.detectFormatChanges ||
-      formattingFidelity.score === 1 ||
+      formattingFidelityIsSafe ||
       sectionFormattingIsExplicitlyUnrepresented,
   };
   const failedChecks: TaggedPublicationSafetyCheckName[] = [

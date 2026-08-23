@@ -113,6 +113,8 @@ const REVISION_PROPERTY_TAGS = new Set([
 
 /** w:sectPr inside w:pPr is a section break — owned by the section dimension. */
 const PPR_EXCLUDED_TAGS = new Set([...REVISION_PROPERTY_TAGS, 'w:sectPr']);
+const OFFICE_RELATIONSHIP_NS =
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 
 /**
  * Canonical serialization: sorted attributes, children sorted by their own
@@ -127,6 +129,12 @@ function canonicalizeElement(el: Element): string {
   for (let i = 0; i < el.attributes.length; i++) {
     const attr = el.attributes[i]!;
     if (attr.name === 'xmlns' || attr.name.startsWith('xmlns:')) continue;
+    // Relationship identifiers are package-local lookup keys, not formatting.
+    // Source and assembled packages can bind the same header/footer role to
+    // different r:ids after collision-free relationship import. Package
+    // closure validation owns those bindings; treating the raw identifier as
+    // formatting would reject an otherwise faithful revised projection.
+    if (attr.namespaceURI === OFFICE_RELATIONSHIP_NS && attr.localName === 'id') continue;
     attrs.push(`${attr.name}="${attr.value}"`);
   }
   attrs.sort();

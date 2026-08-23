@@ -199,6 +199,27 @@ describe('Formatting-fidelity comparison check', () => {
     },
   );
 
+  humanReadableTest
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.5' })(
+      'package-local relationship IDs do not register as section-formatting divergence',
+      () => {
+        const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+        const view = (relationshipId: string): string =>
+          `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+          `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
+          ` xmlns:r="${R_NS}"><w:body>` +
+          '<w:p><w:r><w:t>content</w:t></w:r></w:p>' +
+          `<w:sectPr><w:headerReference r:id="${relationshipId}" w:type="default"/>` +
+          '<w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:body></w:document>';
+
+        const report = compareFormattingFidelity(view('rId8'), view('rId41'));
+
+        expect(report.sectionFormatting.divergent).toBe(0);
+        expect(report.divergences).toEqual([]);
+        expect(report.score).toBe(1);
+      },
+    );
+
   humanReadableTest.openspec('unaligned paragraph content lowers alignment coverage not formatting tallies')(
     'Scenario: unaligned paragraph content lowers alignment coverage not formatting tallies',
     (_: AllureBddContext) => {

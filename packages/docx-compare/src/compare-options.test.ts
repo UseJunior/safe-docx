@@ -42,12 +42,18 @@ describe('compareDocuments options', () => {
     async ({ given, when, then, and }: AllureBddContext) => {
       const original = await given('an italic run and a revised bold run with identical text', () =>
         buildDocxFromBodyXml(
-          '<w:p><w:r><w:rPr><w:i/></w:rPr><w:t>Same text</w:t></w:r></w:p>',
+          '<w:p>' +
+            '<w:r><w:rPr><w:i/></w:rPr><w:t>Same text</w:t></w:r>' +
+            '<w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t> unchanged</w:t></w:r>' +
+            '</w:p>',
         ),
       );
       const revised = await given('the revised document applies bold formatting', () =>
         buildDocxFromBodyXml(
-          '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Same text</w:t></w:r></w:p>',
+          '<w:p>' +
+            '<w:r><w:rPr><w:b/></w:rPr><w:t>Same text</w:t></w:r>' +
+            '<w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t> unchanged</w:t></w:r>' +
+            '</w:p>',
         ),
       );
 
@@ -68,7 +74,15 @@ describe('compareDocuments options', () => {
         expect(await documentXml(detected.document)).toContain('<w:rPrChange');
       });
       await and('ignored formatting emits no run-property revision', async () => {
-        expect(await documentXml(ignored.document)).not.toContain('<w:rPrChange');
+        const ignoredXml = await documentXml(ignored.document);
+        const acceptedXml = acceptAllChanges(ignoredXml);
+        const rejectedXml = rejectAllChanges(ignoredXml);
+        expect(ignoredXml).not.toContain('<w:rPrChange');
+        for (const projection of [acceptedXml, rejectedXml]) {
+          expect(projection).toContain('<w:b');
+          expect(projection).not.toContain('<w:i');
+          expect(projection).toContain('<w:u w:val="single"');
+        }
       });
     },
   );
