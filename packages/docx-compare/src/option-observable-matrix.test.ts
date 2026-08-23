@@ -148,6 +148,28 @@ describe('tagged option-to-observable matrix freshness', () => {
     expect(markdown).not.toMatch(/Phase \d|Scheduled removal|legacy (?:assembly|path|pass)/i);
   });
 
+  test('ties result metadata and disabled-formatting claims to current implementation', () => {
+    const markdown = readFileSync(matrixPath, 'utf8');
+    const compareTypes = readFileSync(resolve(sourceDirectory, 'compare-types.ts'), 'utf8');
+    const pipeline = readFileSync(resolve(sourceDirectory, 'tagged/pipeline.ts'), 'utf8');
+    const removalPolicy = JSON.parse(
+      readFileSync(resolve(packageDirectory, 'api-removal-policy.json'), 'utf8'),
+    ) as {
+      publicResultFields: Record<string, string[]>;
+    };
+    const activeResultFields = [
+      ...removalPolicy.publicResultFields['stable compatibility']!,
+      ...removalPolicy.publicResultFields['truthful tagged replacement']!,
+    ].sort();
+
+    expect(markdown).toContain("Successful stable results report `engine: 'tagged-tree'`");
+    expect(interfaceProperties(compareTypes, 'CompareResult')).toEqual(activeResultFields);
+    expect(compareTypes).toContain("engine: 'tagged-tree';");
+    expect(markdown).toContain('revised/Accept formatting projection');
+    expect(pipeline).toContain(': formattingFidelity.accept.score === 1;');
+    expect(pipeline).not.toContain('!options.formatDetection.detectFormatChanges ||');
+  });
+
   test('links only to durable repository records', () => {
     const markdown = readFileSync(matrixPath, 'utf8');
     const links = Array.from(markdown.matchAll(/\[[^\]]+\]\(([^)#]+)(?:#[^)]+)?\)/g))

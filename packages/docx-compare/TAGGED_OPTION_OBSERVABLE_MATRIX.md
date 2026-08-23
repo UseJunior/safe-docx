@@ -21,9 +21,9 @@ are declared in [`numberingIntegration.ts`](src/tagged/numberingIntegration.ts).
 | --- | --- | --- |
 | `author` | Public / low-level | Supplies `w:author` on generated revision and property-change markup; covered by `src/tagged/taggedTreeSerializer.test.ts`. |
 | `date` | Public / low-level | Supplies normalized `w:date` on generated revision and property-change markup; covered by `src/tagged/taggedTreeSerializer.test.ts`. |
-| `ignoreFormatting` | Public | Disables representation of authored property differences; covered by `src/compare-options.test.ts`. |
+| `ignoreFormatting` | Public | Disables representation of authored property differences while still requiring fidelity to the revised/Accept formatting projection; covered by `src/compare-options.test.ts` and `src/tagged/taggedTreeShadow.test.ts`. |
 | `detectMoves` | Public | Controls tagged move classification; move and ordinary insertion/deletion serialization are covered by `src/tagged/taggedTreeConstruction.test.ts`. |
-| `formatDetection.detectFormatChanges` | Low-level | Controls whether authored property differences are represented as tracked property changes; covered by `src/tagged/taggedTreeConstruction.test.ts` and `src/tagged/taggedTreeSerializer.test.ts`. |
+| `formatDetection.detectFormatChanges` | Low-level | Controls whether authored property differences are represented as tracked property changes. Disabling detection still requires fidelity to the revised/Accept formatting projection; covered by `src/tagged/taggedTreeConstruction.test.ts`, `src/tagged/taggedTreeSerializer.test.ts`, and `src/tagged/taggedTreeShadow.test.ts`. |
 | `moveDetection.detectMoves` | Low-level | Controls tagged move classification at the low-level entry point; covered by `src/tagged/taggedTreeConstruction.test.ts`. |
 | `moveDetection.moveSimilarityThreshold` | Low-level | Gates residual fuzzy candidate edges before global assignment; covered by `src/tagged/taggedTreeConstruction.test.ts`. |
 | `moveDetection.moveMinimumWordCount` | Low-level | Excludes short residual candidates; covered by `src/tagged/taggedTreeConstruction.test.ts`. |
@@ -32,6 +32,12 @@ are declared in [`numberingIntegration.ts`](src/tagged/numberingIntegration.ts).
 | `revisionAttributionRanges` | Internal low-level | Carries exact Markdoc operation provenance through tagged serialization and is stripped before publication; covered by `src/integration/tagged-rationale-attribution.test.ts` and `../docx-markdoc/src/rationale-comments.test.ts`. |
 | `taggedTreePublicationSafetyEvaluator` | Internal low-level test seam | Replaces only the final structural publication-safety evaluation so fail-closed diagnostics can be exercised; covered by `src/tagged/taggedTreeShadow.test.ts`. |
 | `taggedTreeFormattingFidelityEvaluator` | Internal low-level test seam | Replaces only the final source-projected formatting evaluation so fail-closed fidelity behavior can be exercised; covered by `src/tagged/taggedTreeShadow.test.ts`. |
+
+Successful stable results report `engine: 'tagged-tree'` and do not carry
+requested-strategy, reconstruction-mode, or fallback metadata. Unsafe
+publication throws a typed error instead of returning an alternate
+implementation's output. `src/public-result-metadata.test.ts` keeps the runtime
+shape, the exact `CompareResult` type, and `api-removal-policy.json` in sync.
 
 ## Identity audit
 
