@@ -2,24 +2,45 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, test } from 'vitest';
+import * as ts from 'typescript';
+import { describe, expect } from 'vitest';
+import { testAllure } from './testing/allure-test.js';
 
 const sourceDirectory = dirname(fileURLToPath(import.meta.url));
 const packageDirectory = resolve(sourceDirectory, '..');
 const matrixPath = resolve(packageDirectory, 'TAGGED_OPTION_OBSERVABLE_MATRIX.md');
+const test = testAllure
+  .epic('Document Comparison')
+  .withLabels({ feature: 'Tagged Option Matrix', story: 'Documentation Freshness' });
 
 function interfaceProperties(source: string, interfaceName: string): string[] {
-  const declaration = source.match(
-    new RegExp(`export interface ${interfaceName} \\{([\\s\\S]*?)\\n\\}`),
+  const sourceFile = ts.createSourceFile(
+    `${interfaceName}.ts`,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const declaration = sourceFile.statements.find(
+    (statement): statement is ts.InterfaceDeclaration =>
+      ts.isInterfaceDeclaration(statement) && statement.name.text === interfaceName,
   );
   if (!declaration) throw new Error(`Missing exported interface ${interfaceName}`);
-  return Array.from(declaration[1]!.matchAll(/^\s{2}([A-Za-z][A-Za-z0-9]*)\??:/gm))
-    .map((match) => match[1]!)
-    .sort();
+  return declaration.members.map((member) => {
+    if (!ts.isPropertySignature(member) && !ts.isMethodSignature(member)) {
+      throw new Error(`Unsupported ${interfaceName} member: ${member.getText(sourceFile)}`);
+    }
+    const { name } = member;
+    if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) {
+      return name.text;
+    }
+    throw new Error(`Unsupported computed ${interfaceName} member: ${name.getText(sourceFile)}`);
+  }).sort();
 }
 
 function matrixRows(markdown: string): Array<{ setting: string; surface: string }> {
-  return markdown
+  const optionTable = markdown.split('\n## Identity audit')[0]!;
+  return optionTable
     .split('\n')
     .filter((line) => line.startsWith('| `'))
     .map((line) => {
