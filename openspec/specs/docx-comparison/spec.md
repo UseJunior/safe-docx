@@ -543,19 +543,19 @@ representation is exercised on any other class of input.
 
 ### Requirement: Tagged migration evidence is capability-complete
 
-Before a legacy comparison capability is removed or changed, the system SHALL
-record that capability in a committed legacy-versus-tagged characterization
+Before a comparison capability is removed or changed, the system SHALL record
+that capability in a committed tagged-tree characterization
 manifest. Each fixture row SHALL identify and hash the fixture, list exercised
 capabilities and package parts, report original/revised projection results,
-summarize normalized package parts and public statistics, and record fallback,
-schema, formatting, relationship, auxiliary-definition, unrepresented-change,
-and unsupported-story diagnostics.
+summarize normalized package parts and public statistics, and record tagged-tree
+authority, schema, formatting, relationship, auxiliary-definition,
+unrepresented-change, and unsupported-story diagnostics.
 
-Legacy equality SHALL be characterization rather than a correctness oracle. A
-known difference SHALL carry a stable, explicitly adjudicated divergence ID.
+Historical equality SHALL be characterization rather than a correctness oracle.
+A known difference SHALL carry a stable, explicitly adjudicated divergence ID.
 The harness SHALL fail when its corpus is unavailable, a fixture or exercised
-package part disappears, either strategy falls back, or a divergence changes
-without review.
+package part disappears, tagged-tree does not retain sole comparison authority,
+or a divergence changes without review.
 
 #### Scenario: Missing corpus evidence fails loudly
 

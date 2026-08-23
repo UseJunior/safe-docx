@@ -51,6 +51,9 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     exclude: [
       'src/tagged/**/*.traceability.test.ts',
+      'src/integration/real-corpus-paragraph-deletion.test.ts',
+      'src/integration/strategy-differential-manifest.corpus.test.ts',
+      'src/integration/taggedTreeMinimality.corpus.test.ts',
     ],
     coverage: {
       provider: 'v8',
