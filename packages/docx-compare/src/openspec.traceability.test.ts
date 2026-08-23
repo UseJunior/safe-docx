@@ -398,6 +398,7 @@ describe('OpenSpec traceability: tagged docx comparison', () => {
       expect(rollbackShell).toContain(
         'refs/tags/legacy-comparison-final-20260817:refs/tags/legacy-comparison-final-20260817',
       );
+      expect(rollbackShell).not.toContain('+refs/tags/legacy-comparison-final-20260817');
       expect(rollbackShell).toContain(
         'refs/heads/838-legacy-comparison-maintenance-20260817:refs/remotes/origin/',
       );
@@ -417,6 +418,11 @@ describe('OpenSpec traceability: tagged docx comparison', () => {
       expect(reconciliationShell).toContain('src/primitives/document.ts');
       expect(reconciliationShell).toContain('src/primitives/footnotes.ts');
       expect(reconciliationShell).toContain('src/primitives/note_conversion.ts');
+      expect(reconciliationShell).toContain('perl -0pi -e \\');
+      expect(reconciliationShell).toContain(
+        's{../../docx-compare/dist/tagged/trackChangesAcceptorAst\\.js}' +
+        '{../../docx-compare/dist/baselines/atomizer/trackChangesAcceptorAst.js}g',
+      );
       expect(reconciliationShell).toContain("! git grep -q 'dist/tagged/trackChangesAcceptorAst.js'");
       expect(reconciliationShell).toContain('dist/baselines/atomizer/trackChangesAcceptorAst.js');
       expect(reconciliationShell).toContain('npm install');

@@ -136,7 +136,7 @@ real-DOCX legacy-path smoke:
 ```bash
 npm run build && npm run lint:workspaces && npm run test:run && \
   npm run check:spec-coverage && npm run check:conformance-citations && \
-  npm run check:conformance-doc
+  npm run check:conformance-doc && \
 node openspec/changes/archive/2026-08-19-refactor-tagged-tree-spine/\
 check-legacy-rollback-nvca.mjs
 ```

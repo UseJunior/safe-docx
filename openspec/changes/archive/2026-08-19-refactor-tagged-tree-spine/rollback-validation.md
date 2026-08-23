@@ -121,7 +121,9 @@ retained boundary and the deployed revision:
 
 ## Repository gates
 
-The complete required pre-submit sequence ran against the reconciled rollback:
+The complete required pre-submit sequence ran against the reconciled rollback.
+These are the complete workspace summaries rather than a verbatim npm
+transcript:
 
 ```text
 $ npm run build
@@ -130,13 +132,19 @@ EXIT=0
 $ npm run lint:workspaces
 EXIT=0
 
-$ npm run test:run
+test:run (exit 0)
+@usejunior/allure-test-factory: 9 passed
 @usejunior/docx-compare: 933 passed, 29 skipped
 @usejunior/docx-core: 1364 passed, 2 expected failures, 1 skipped
 @usejunior/docx-markdoc: 66 passed
 @usejunior/docx-mcp: 1004 passed
-All workspaces passed
-EXIT=0
+@usejunior/docx-release-verifier: 56 passed
+@usejunior/docx-render-verifier: 56 passed
+@usejunior/google-docs-core: 116 passed, 35 skipped
+@usejunior/odf-core: 140 passed
+@usejunior/safe-docx: CLI help smoke passed
+@usejunior/safedocx-mcpb: 3 passed
+@usejunior/test-narrative: 43 passed
 
 $ npm run check:spec-coverage
 docx-comparison: 74/74 scenarios covered
