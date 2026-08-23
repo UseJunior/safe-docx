@@ -550,10 +550,10 @@ cell, table row, or table scope. Sibling wrappers MAY share an identifier only
 when every component of that signature is equal; the split wrappers then
 represent fragments of the same logical revision.
 
-Property-change elements (`w:pPrChange`, `w:rPrChange`, `w:sectPrChange`, and
-the table property-change forms) SHALL share one normalized property-change
-family so linked facets of one formatting revision can retain one identifier.
-Other element kinds SHALL remain distinct revision families.
+Property-change elements (`w:pPrChange`, `w:rPrChange`, `w:sectPrChange`, the
+table property-change forms, and `w:numberingChange`) SHALL share one normalized
+property-change family so linked facets of one formatting revision can retain
+one identifier. Other element kinds SHALL remain distinct revision families.
 
 Reuse across scopes, normalized families, authors, or timestamps SHALL fail the
 evidence gate as an allocator collision. A comparison-authored identifier that

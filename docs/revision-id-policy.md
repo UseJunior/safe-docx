@@ -23,8 +23,8 @@ authors, timestamps, or normalized revision families fails the corpus safety
 gate as `revision-id-reused-across-identities`.
 
 Property-change elements are one deliberate normalization. Paragraph, run,
-section, and table property-change records can be linked facets of one
-formatting revision, so the gate maps those raw element kinds to one
+section, table, and numbering property-change records can be linked facets of
+one formatting revision, so the gate maps those raw element kinds to one
 `formatting-property-change` family when their remaining signature components
 match. An insertion and deletion, by contrast, are different normalized
 families and cannot share an identifier merely because they are adjacent.

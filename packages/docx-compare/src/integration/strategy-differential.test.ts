@@ -333,6 +333,11 @@ describe('strategy differential manifest evidence', () => {
           `<w:p>${revision('ins', 'first')}` +
           `${revision('ins', 'second', 'Strategy Differential', '2026-08-18T12:00:00Z')}</w:p>`,
         ),
+        compareSourceXml(
+          `<w:p>${revision('ins', 'first')}` +
+          '<w:pPrChange w:id="7" w:author="Strategy Differential" ' +
+          'w:date="2026-08-17T12:00:00Z"><w:pPr/></w:pPrChange></w:p>',
+        ),
       ]);
 
       for (const candidate of cases) {
