@@ -10,6 +10,8 @@ import {
   buildTaggedTreePublication,
   type TaggedTreePublication,
 } from './taggedTreeShadow.js';
+import { constructTaggedTree } from './taggedTreeConstruction.js';
+import type { TaggedNode } from './taggedTree.js';
 
 const TEST_FEATURE = 'refactor-tagged-tree-redline-construction';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
@@ -41,13 +43,14 @@ function publish(
     revisedXml: documentWithBody(revisedBody),
     author: AUTHOR,
     date: DATE,
+    retainStatisticsMarkers: true,
     ...options,
   });
 }
 
 function generatedElements(publication: TaggedTreePublication, localName: string): Element[] {
   return Array.from(parseXml(publication.xml).getElementsByTagNameNS(W_NS, localName))
-    .filter((element) => element.getAttributeNS(W_NS, 'author') === AUTHOR);
+    .filter((element) => element.getAttribute('data-safe-docx-comparison-revision') === '1');
 }
 
 function expectRangeStatsMatchSerializedMarkup(publication: TaggedTreePublication): void {
@@ -58,6 +61,7 @@ function expectRangeStatsMatchSerializedMarkup(publication: TaggedTreePublicatio
 
   expect(publication.stats.insertions).toBe(inserted.length);
   expect(publication.stats.deletions).toBe(deleted.length);
+  // Pin both historical aliases to the same final-wrapper source of truth.
   expect(publication.stats.insertedRanges).toBe(inserted.length);
   expect(publication.stats.deletedRanges).toBe(deleted.length);
   expect(publication.serializedRangeStats).toEqual({
@@ -66,7 +70,6 @@ function expectRangeStatsMatchSerializedMarkup(publication: TaggedTreePublicatio
     moveFromRanges: movedFrom.length,
     moveToRanges: movedTo.length,
   });
-  expect(publication.xml).not.toContain('data-safe-docx-comparison-revision');
 }
 
 describe('tagged publication range statistics', () => {
@@ -89,38 +92,56 @@ describe('tagged publication range statistics', () => {
   test.openspec('Serialized wrapper transformations determine range totals')(
     'counts wrappers split around bookmark boundaries',
     () => {
-      const bookmarked = (value: string) => '<w:p>'
+      const original = '<w:p><w:r><w:t>alpha </w:t></w:r>'
         + '<w:bookmarkStart w:id="7" w:name="Clause"/>'
-        + `<w:r><w:t>${value}</w:t></w:r>`
+        + '<w:r><w:t>beta gamma</w:t></w:r>'
         + '<w:bookmarkEnd w:id="7"/>'
-        + '</w:p>';
-      const publication = publish(bookmarked('old clause'), bookmarked('new clause'));
+        + '<w:r><w:t> omega</w:t></w:r></w:p>';
+      const publication = publish(original, paragraph('alpha new omega'));
+      const withoutBoundary = publish(
+        paragraph('alpha beta gamma omega'),
+        paragraph('alpha new omega'),
+      );
       const emitted = parseXml(publication.xml);
 
       expectRangeStatsMatchSerializedMarkup(publication);
-      expect(publication.stats.insertedRanges).toBeGreaterThan(0);
-      expect(publication.stats.deletedRanges).toBeGreaterThan(0);
+      expect(publication.stats.insertedRanges).toBe(1);
+      expect(publication.stats.deletedRanges).toBe(4);
+      expect(withoutBoundary.stats.deletedRanges).toBe(1);
       expect(emitted.getElementsByTagNameNS(W_NS, 'bookmarkStart')).toHaveLength(1);
       expect(emitted.getElementsByTagNameNS(W_NS, 'bookmarkEnd')).toHaveLength(1);
+      expect((emitted.getElementsByTagNameNS(W_NS, 'bookmarkStart')[0]!.parentNode as Element).localName)
+        .toBe('del');
+      expect((emitted.getElementsByTagNameNS(W_NS, 'bookmarkEnd')[0]!.parentNode as Element).localName)
+        .toBe('del');
     },
   );
 
   test.openspec('Serialized wrapper transformations determine range totals')(
     'counts wrappers split around non-bookmark range boundaries',
     () => {
-      const ranged = (value: string) => '<w:p>'
+      const original = '<w:p><w:r><w:t>alpha </w:t></w:r>'
         + '<w:commentRangeStart w:id="3"/>'
-        + `<w:r><w:t>${value}</w:t></w:r>`
+        + '<w:r><w:t>beta gamma</w:t></w:r>'
         + '<w:commentRangeEnd w:id="3"/>'
-        + '</w:p>';
-      const publication = publish(ranged('old comment span'), ranged('new comment span'));
+        + '<w:r><w:t> omega</w:t></w:r></w:p>';
+      const publication = publish(original, paragraph('alpha new omega'));
+      const withoutBoundary = publish(
+        paragraph('alpha beta gamma omega'),
+        paragraph('alpha new omega'),
+      );
       const emitted = parseXml(publication.xml);
 
       expectRangeStatsMatchSerializedMarkup(publication);
-      expect(publication.stats.insertedRanges).toBeGreaterThan(0);
-      expect(publication.stats.deletedRanges).toBeGreaterThan(0);
+      expect(publication.stats.insertedRanges).toBe(1);
+      expect(publication.stats.deletedRanges).toBe(4);
+      expect(withoutBoundary.stats.deletedRanges).toBe(1);
       expect(emitted.getElementsByTagNameNS(W_NS, 'commentRangeStart')).toHaveLength(1);
       expect(emitted.getElementsByTagNameNS(W_NS, 'commentRangeEnd')).toHaveLength(1);
+      expect((emitted.getElementsByTagNameNS(W_NS, 'commentRangeStart')[0]!.parentNode as Element).localName)
+        .toBe('del');
+      expect((emitted.getElementsByTagNameNS(W_NS, 'commentRangeEnd')[0]!.parentNode as Element).localName)
+        .toBe('del');
     },
   );
 
@@ -151,10 +172,19 @@ describe('tagged publication range statistics', () => {
         `<w:p><w:r><w:t>stable</w:t></w:r>${opaque}</w:p>`,
       );
       const emitted = parseXml(publication.xml);
+      const constructed = constructTaggedTree(
+        parseXml(documentWithBody('<w:p><w:r><w:t>stable</w:t></w:r></w:p>')).documentElement,
+        parseXml(documentWithBody(`<w:p><w:r><w:t>stable</w:t></w:r>${opaque}</w:p>`)).documentElement,
+      );
+      const descendants = (node: TaggedNode): TaggedNode[] =>
+        [node, ...node.children.flatMap(descendants)];
+      const opaqueControl = descendants(constructed.tree).find((node) =>
+        node.tag === 'revised' && node.node.localName === 'sdt');
 
       expectRangeStatsMatchSerializedMarkup(publication);
       expect(publication.stats.insertedRanges).toBeGreaterThan(0);
       expect(publication.stats.deletedRanges).toBe(0);
+      expect(opaqueControl?.opaque).toBe(true);
       const control = emitted.getElementsByTagNameNS(W_NS, 'sdt')[0]!;
       expect((control.parentNode as Element).localName).toBe('ins');
     },
@@ -167,14 +197,13 @@ describe('tagged publication range statistics', () => {
         paragraph('stable') + paragraph('deleted paragraph'),
         paragraph('stable'),
       );
-      const emitted = parseXml(publication.xml);
 
       expectRangeStatsMatchSerializedMarkup(publication);
       expect(publication.stats.deletedRanges).toBe(2);
-      expect(Array.from(emitted.getElementsByTagNameNS(W_NS, 'del')).some((element) =>
+      expect(generatedElements(publication, 'del').some((element) =>
         (element.parentNode as Element | null)?.localName === 'rPr',
       )).toBe(true);
-      expect(Array.from(emitted.getElementsByTagNameNS(W_NS, 'del')).some((element) =>
+      expect(generatedElements(publication, 'del').some((element) =>
         element.getElementsByTagNameNS(W_NS, 'delText').length > 0,
       )).toBe(true);
     },
@@ -197,7 +226,7 @@ describe('tagged publication range statistics', () => {
     'excludes preserved prior-author revisions while counting nested comparison ranges',
     () => {
       const priorRevision = (value: string) => '<w:p>'
-        + '<w:ins w:id="4" w:author="Prior Author" w:date="2026-08-01T00:00:00Z">'
+        + `<w:ins w:id="4" w:author="${AUTHOR}" w:date="2026-08-01T00:00:00Z">`
         + `<w:r><w:t>${value}</w:t></w:r></w:ins>`
         + '</w:p>';
       const publication = publish(priorRevision('old text'), priorRevision('new text'));
@@ -207,7 +236,8 @@ describe('tagged publication range statistics', () => {
       expect(publication.stats.insertedRanges).toBeGreaterThan(0);
       expect(publication.stats.deletedRanges).toBeGreaterThan(0);
       expect(Array.from(emitted.getElementsByTagNameNS(W_NS, 'ins')).filter((element) =>
-        element.getAttributeNS(W_NS, 'author') === 'Prior Author',
+        element.getAttributeNS(W_NS, 'author') === AUTHOR &&
+          !element.hasAttribute('data-safe-docx-comparison-revision'),
       )).not.toHaveLength(0);
       expect(emitted.getElementsByTagNameNS(W_NS, 'ins').length)
         .toBeGreaterThan(publication.stats.insertedRanges);
