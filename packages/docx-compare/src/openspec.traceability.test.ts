@@ -370,7 +370,8 @@ describe('OpenSpec traceability: tagged docx comparison', () => {
         'utf8',
       );
       const rollbackShellBlocks = [...rollback.matchAll(/```bash\n([\s\S]*?)\n```/g)]
-        .map((match) => match[1]);
+        .map((match) => match[1])
+        .filter((shell): shell is string => shell !== undefined);
       const rollbackShell = rollbackShellBlocks.find((shell) => shell.includes('LEGACY_ROLLBACK_COMMIT='));
       const reconciliationShell = rollbackShellBlocks.find((shell) => shell.includes('NOTE_PRESENTATION_COMMIT='));
       const validationShell = rollbackShellBlocks.find((shell) => shell.includes('npm run build &&'));
