@@ -424,7 +424,7 @@ literal `directProperties` placeholder.
 
 ### Requirement: Tagged-tree construction is the default with an explicit legacy rollback
 
-**Reason**: Public strategy selection and automatic legacy fallback end after the measured tagged-authority soak.
+**Reason**: Public strategy selection and automatic legacy fallback ended with legacy deletion; the required pre-deletion tagged-authority soak did not occur (see `../../soak-postmortem.md`).
 **Migration**: Use the sole revised-based tagged comparison path and handle `TaggedPublicationSafetyError` diagnostics.
 
 #### Scenario: Public legacy rollback is absent

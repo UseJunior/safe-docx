@@ -34,9 +34,10 @@ chore(release): prepare v0.20.0 publication (#906)
 ```
 
 The v0.20.0 and v0.20.1 Git tags now exist and both contain the deletion commit.
-As of this review, GitHub Releases still reports v0.19.1 as the latest published
-release. Neither fact supplies an observation window *between* authority and
-deletion:
+As of this review, GitHub Releases still reports v0.19.1 as the latest release,
+while the public npm registry reports `@usejunior/docx-compare` v0.20.1 as
+`latest`, published at `2026-08-20T04:59:44.602Z`. Neither publication surface
+supplies an observation window *between* authority and deletion:
 
 ```text
 $ git tag --contains fe941d4d | sort -V
@@ -47,6 +48,11 @@ $ gh release list --repo UseJunior/safe-docx --limit 3
 v0.19.1  Latest  v0.19.1  2026-07-24T23:44:13Z
 v0.18.0          v0.18.0  2026-07-24T03:08:56Z
 v0.17.0          v0.17.0  2026-07-23T01:59:43Z
+
+$ npm view @usejunior/docx-compare version dist-tags time --json
+"version": "0.20.1"
+"dist-tags": { "latest": "0.20.1" }
+"0.20.1": "2026-08-20T04:59:44.602Z"
 ```
 
 No preserved evidence identifies a deliberate decision to waive the gate before
@@ -188,20 +194,22 @@ evidence.
 ## Current rollback and remediation triggers
 
 The following outcomes require action; a green aggregate job must not override
-the underlying failure. The release owner owns the decision and records it on
-the failing PR or a linked issue. For this table, an **isolated** corpus failure
-means exactly one of the current 23 hash-pinned manifest rows fails while the
-other 22 pass and publication fails closed. A **systemic** failure means two or
-more independent rows fail the same invariant, any unsafe package escapes a
+the underlying failure. The **release owner** is the maintainer responsible for
+approving that comparison release; that maintainer owns the decision and records
+it on the failing PR or a linked issue. For this table, an **isolated** corpus
+failure means exactly one hash-pinned manifest row fails while every other row
+passes and publication fails closed. A **systemic** failure means two or more
+independent rows fail the same invariant, any unsafe package escapes a
 publication gate, or one source-projection failure reaches a published release.
 An isolated failure may use fix-forward only before the next comparison release;
 if the affected version is already published and a validated fix is not ready
-within 24 hours, the release owner invokes the #919 rollback procedure.
+within 24 hours, the release owner invokes the [tested rollback
+procedure](rollback.md) from #919.
 
 | Trigger | Required response |
 | --- | --- |
 | A required public-corpus run cannot materialize or verify every hash-pinned source, silently skips, or has an unconsumed active divergence | Stop release/merge progression, repair the evidence gate, and rerun it. Do not characterize the missing run as a pass. |
-| Accept All or Reject All stops matching its source projection on a previously passing public fixture | Treat as a release blocker. Fix forward only under the isolated-failure definition above; use the #919 rollback procedure for a systemic failure or when the 24-hour published-release limit expires. |
+| Accept All or Reject All stops matching its source projection on a previously passing public fixture | Treat as a release blocker. Fix forward only under the isolated-failure definition above; use the [tested rollback procedure](rollback.md) from #919 for a systemic failure or when the 24-hour published-release limit expires. |
 | A comparison introduces schema, relationship, field, bookmark, revision-ID, move-balance, unsupported-story, auxiliary-definition, or formatting-fidelity failures not present in either input | Stop publication for that result and open a focused remediation issue with the fixture hash and diagnostics. Apply the isolated/systemic and 24-hour rules above. |
 | The mandatory manual reader check before a comparison-affecting release tag reports Microsoft Word repair/recovery, inability to open a previously supported emitted DOCX, or a changed semantic projection on open/save | Quarantine the public fixture and compare the emitted package with the last known-good release. Run Word through the repository's local oracle workflow on at least one public pair; if Word is unavailable, record that limitation and run a LibreOffice open/export without representing it as Word evidence. Apply the isolated/systemic and 24-hour rules above. This is a manual release-owner check, not a CI monitor. |
 | The tagged result or reviewed manifest changes nondeterministically for identical hash-pinned inputs and fixed comparison metadata | Treat as a release blocker, preserve both outputs, and remediate before updating any baseline. |
