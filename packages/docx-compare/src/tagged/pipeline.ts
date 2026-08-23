@@ -297,10 +297,10 @@ function finalizeTaggedDocumentXml(documentXml: string): string {
 }
 
 /**
- * Assemble a revised-base tagged result without a legacy result buffer, atom
- * list, or reconstruction-mode decision. Source archives are reopened so the
- * standalone relationship/auxiliary collision plan cannot inherit mutations
- * selected for legacy assembly.
+ * Assemble a revised-base tagged result without a second result buffer,
+ * flattened atom list, or reconstruction-mode decision. Source archives are
+ * reopened so relationship and auxiliary-part collision planning starts from
+ * the caller's immutable inputs.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
@@ -948,13 +948,10 @@ const serializer = new XMLSerializer();
  * `<w:endnote>` entry independently rather than treating the whole
  * `footnotes.xml`/`endnotes.xml` as one stream.
  *
- * Accepts arrays of sidecar XMLs (one per source archive) so callers can
- * validate the union of entries from every archive that may contribute to the
- * final result. Step 12 of `compareDocumentsAtomizer` merges entries from a
- * mode-dependent source archive into the base archive; passing both archives'
- * sidecars guarantees that whichever path the merge takes, the entries it
- * could publish have already been screened. Duplicates (same `w:id` in both
- * archives) yield redundant but harmless validation work.
+ * Accepts arrays of sidecar XMLs so callers can validate one or more
+ * materialized story parts while keeping each entry's source index in its
+ * diagnostic label. Publication passes the final assembled note parts, so the
+ * gate screens exactly the definitions that the output can expose.
  *
  * Header/footer stories are not yet covered — they require relationship
  * walking to enumerate `headerN.xml`/`footerN.xml`.
@@ -1039,9 +1036,8 @@ function evaluateSafetyChecks(
       originalBookmarkDiagnostics,
     );
 
-  // Validate field structure for the main-story round-trip projection. Final
-  // note entries are validated after mode-specific assembly, where the gate
-  // knows which base and merge-source definitions actually contributed.
+  // Validate field structure for the main-story round-trip projection and the
+  // final note definitions captured after revised-base assembly.
   const acceptedStories = splitStories(
     acceptedXml,
     auxiliarySidecars.footnotesXmls,
