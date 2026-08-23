@@ -19,7 +19,7 @@ import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { generateDocx } from './compile.js';
 import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
-import type { CompareResult, ReconstructionMode } from '@usejunior/docx-compare';
+import type { CompareResult } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
@@ -72,7 +72,7 @@ function signatureLines(parties: Array<{ party: string; name: string; title: str
 const TEST_FEATURE = 'add-generation-compare-roundtrip';
 const test = testAllure.epic('Document Generation').withLabels({ feature: TEST_FEATURE });
 
-const MODES: ReconstructionMode[] = ['inplace'];
+const PUBLICATION_PATHS = ['tagged-tree'] as const;
 
 // --- Spec builders ----------------------------------------------------------
 
@@ -209,12 +209,11 @@ interface RoundTripArtifacts {
 /**
  * Mirror of the file-local helper in
  * integration/roundtrip-structural-invariants.test.ts, extended to also return
- * the CompareResult so callers can assert stats and reconstruction diagnostics.
+ * the CompareResult so callers can assert public statistics and metadata.
  */
 async function buildRoundTripArtifacts(
   originalBuffer: Buffer,
   revisedBuffer: Buffer,
-  _mode: ReconstructionMode,
 ): Promise<RoundTripArtifacts> {
   const result = await compareDocuments(originalBuffer, revisedBuffer, {
   });
@@ -292,7 +291,7 @@ describe('Author->compare round-trip guarantee', () => {
       let result!: CompareResult;
       let artifacts!: RoundTripArtifacts;
       await when('they are compared and round-tripped', async () => {
-        artifacts = await buildRoundTripArtifacts(original, revised, 'rebuild');
+        artifacts = await buildRoundTripArtifacts(original, revised);
         result = artifacts.result;
         await attachPrettyJson('known-edit-stats', result.stats);
       });
@@ -320,7 +319,7 @@ describe('Author->compare round-trip guarantee', () => {
     },
   );
 
-  for (const mode of MODES) {
+  for (const mode of PUBLICATION_PATHS) {
     test.openspec('[SDX-GEN-102] accept-all equals revised and reject-all equals original')(
       `Scenario: accept-all equals revised and reject-all equals original (${mode})`,
       async ({ given, when, then }: AllureBddContext) => {
@@ -333,7 +332,7 @@ describe('Author->compare round-trip guarantee', () => {
 
         let artifacts!: RoundTripArtifacts;
         await when('all changes are accepted, and separately all are rejected', async () => {
-          artifacts = await buildRoundTripArtifacts(original, revised, mode);
+          artifacts = await buildRoundTripArtifacts(original, revised);
         });
 
         await then('accepted text matches revised and rejected text matches original', async () => {
@@ -343,7 +342,7 @@ describe('Author->compare round-trip guarantee', () => {
     );
   }
 
-  for (const mode of MODES) {
+  for (const mode of PUBLICATION_PATHS) {
     test.openspec('[SDX-GEN-103] authored fields and tables survive the compare round-trip')(
       `Scenario: authored fields and tables survive the compare round-trip (${mode})`,
       async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
@@ -356,17 +355,15 @@ describe('Author->compare round-trip guarantee', () => {
 
         let artifacts!: RoundTripArtifacts;
         await when(`it is edited, compared, and round-tripped in '${mode}' mode`, async () => {
-          artifacts = await buildRoundTripArtifacts(original, revised, mode);
+          artifacts = await buildRoundTripArtifacts(original, revised);
           await attachPrettyJson('fields-tables-diagnostics', {
-            failedChecks: artifacts.result.rebuildSafetyDiagnostics?.failedChecks ?? null,
-            fallbackReason: artifacts.result.fallbackReason ?? null,
+            engine: artifacts.result.engine,
           });
         });
 
         await then('paragraph borders, field structure, and table-cell text round-trip', async () => {
           await assertAcceptRejectParity(artifacts, `SDX-GEN-103/${mode}`);
-          // A clean round-trip surfaces no safety failures (field structure included).
-          expect(artifacts.result.rebuildSafetyDiagnostics?.failedChecks ?? []).not.toContain('fieldStructure');
+          expect(artifacts.result.engine).toBe('tagged-tree');
           for (const archive of [artifacts.resultArchive, artifacts.acceptedArchive, artifacts.rejectedArchive]) {
             const headerXml = await archive.getFile('word/header1.xml');
             expect(headerXml).toContain(
@@ -378,7 +375,7 @@ describe('Author->compare round-trip guarantee', () => {
     );
   }
 
-  for (const mode of MODES) {
+  for (const mode of PUBLICATION_PATHS) {
     test.openspec('[SDX-GEN-104] a malformed authored field is caught by the round-trip guard')(
       `Scenario: a malformed authored field is caught by the round-trip guard (${mode})`,
       async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
@@ -407,10 +404,7 @@ describe('Author->compare round-trip guarantee', () => {
             'guard-diagnostics',
             result
               ? {
-                  used: result.reconstructionModeUsed,
-                  fallbackReason: result.fallbackReason ?? null,
-                  fallbackAttempts: result.fallbackDiagnostics?.attempts?.map((a) => a.failedChecks) ?? null,
-                  rebuild: result.rebuildSafetyDiagnostics?.failedChecks ?? null,
+                  engine: result.engine,
                 }
               : { rejectionMessage },
           );
@@ -426,7 +420,7 @@ describe('Author->compare round-trip guarantee', () => {
         await then('a well-formed revision in the same mode surfaces no safety failures (control)', async () => {
           const goodRevised = await generateDocx(bodyFieldSpec());
           const goodResult = await compareDocuments(original, goodRevised);
-          expect(goodResult.rebuildSafetyDiagnostics).toBeUndefined();
+          expect(goodResult.engine).toBe('tagged-tree');
         });
       },
     );

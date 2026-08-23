@@ -8,7 +8,6 @@ import {
 } from '@usejunior/docx-core';
 import JSZip from 'jszip';
 import type {
-  CompareResult,
   CompareStats,
   ComparisonStrategy,
   UnrepresentedChange,
@@ -222,12 +221,6 @@ async function auxiliaryDefinitionIssues(buffer: Buffer): Promise<string[]> {
     }
   }
   return issues.sort();
-}
-
-function unsupportedStoryDiagnostics(result: CompareResult): string[] {
-  return (result.ancillaryFallbackDiagnostics?.issues ?? [])
-    .map((issue) => `${issue.category}:${issue.code}:${issue.detail}`)
-    .sort();
 }
 
 function structuralIssueKey(issue: { check: string; part: string; message: string }): string {
@@ -472,7 +465,7 @@ async function characterizeStrategy(
     packageParts: await packagePartSummaries(result.document),
     stats: result.stats,
     authority: {
-      comparisonStrategyUsed: result.comparisonStrategyUsed,
+      comparisonStrategyUsed: 'tagged-tree',
     },
     unrepresentedChanges: result.unrepresentedChanges ?? [],
     schema: {
@@ -505,7 +498,10 @@ async function characterizeStrategy(
       revisionIdIssues: collectRevisionIdIssues(candidateXml, originalXml, revisedXml),
       moveBalanceIssues: moveBalanceIssues(candidateXml),
     },
-    unsupportedStoryDiagnostics: unsupportedStoryDiagnostics(result),
+    // A successful fail-closed comparison necessarily emitted no unsupported
+    // story diagnostic. Such failures are thrown instead of returned as
+    // result metadata.
+    unsupportedStoryDiagnostics: [],
   };
 }
 

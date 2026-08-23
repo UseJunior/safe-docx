@@ -45,10 +45,6 @@ describe('Inplace Auxiliary Part Merging', () => {
         });
       });
       await then('result contains merged comment definition and OPC metadata', async () => {
-        // If inplace fell back to rebuild, the test is still valid — the merge
-        // only runs on inplace output, so we skip assertions if rebuild was used
-        if (result.reconstructionModeUsed !== 'inplace') return;
-
         const parts = await getResultParts(result.document);
 
         // The document.xml should reference comments
@@ -104,8 +100,6 @@ describe('Inplace Auxiliary Part Merging', () => {
         });
       });
       await then('comments.xml does not contain duplicate entries', async () => {
-        if (result.reconstructionModeUsed !== 'inplace') return;
-
         const parts = await getResultParts(result.document);
 
         if (parts.commentsXml) {
@@ -139,8 +133,6 @@ describe('Inplace Auxiliary Part Merging', () => {
         });
       });
       await then('result contains merged footnote definition and OPC infrastructure', async () => {
-        if (result.reconstructionModeUsed !== 'inplace') return;
-
         const parts = await getResultParts(result.document);
 
         // The document.xml should reference footnotes via deleted content
@@ -182,8 +174,6 @@ describe('Inplace Auxiliary Part Merging', () => {
         });
       });
       await then('footnotes.xml contains exactly one user-defined footnote entry', async () => {
-        if (result.reconstructionModeUsed !== 'inplace') return;
-
         const parts = await getResultParts(result.document);
 
         if (parts.footnotesXml) {
@@ -218,8 +208,6 @@ describe('Inplace Auxiliary Part Merging', () => {
         });
       });
       await then('every footnoteReference ID in document.xml has a matching entry in footnotes.xml', async () => {
-        if (result.reconstructionModeUsed !== 'inplace') return;
-
         const parts = await getResultParts(result.document);
 
         // Collect all footnoteReference IDs from document.xml

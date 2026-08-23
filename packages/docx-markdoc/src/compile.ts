@@ -750,7 +750,7 @@ export async function compileMarkdoc(
   if (materializations.length > 0) {
     const identity = resolvedCompilation.commentIdentity!;
     try {
-      if (comparison?.comparisonStrategyUsed !== 'tagged-tree') {
+      if (comparison?.engine !== 'tagged-tree') {
         throw new Error('tagged attribution comparison did not publish the tagged strategy');
       }
       const attributedByOperation = new Map(

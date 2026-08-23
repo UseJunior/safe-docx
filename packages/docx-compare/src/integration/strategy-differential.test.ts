@@ -58,7 +58,7 @@ async function compareXml(
     author: 'Strategy Differential',
     date: DATE,
   });
-  expect(result.comparisonStrategyUsed).toBe('tagged-tree');
+  expect(result.engine).toBe('tagged-tree');
   const documentXml = await (await DocxArchive.load(result.document)).getDocumentXml();
   expect(documentXml.startsWith('<?xml')).toBe(true);
   return documentXml;

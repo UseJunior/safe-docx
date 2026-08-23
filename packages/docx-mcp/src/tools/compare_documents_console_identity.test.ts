@@ -70,7 +70,7 @@ function deferred<T>(): Deferred<T> {
 function mockCompareResult(): CompareResult {
   return {
     document: Buffer.from('mock comparison output'),
-    engine: 'atomizer',
+    engine: 'tagged-tree',
     stats: {
       atomMetricVersion: 'tagged-token-v1',
       insertions: 0,
@@ -84,8 +84,6 @@ function mockCompareResult(): CompareResult {
       formatChanges: 0,
       formatChangeAtoms: 0,
     },
-    reconstructionModeRequested: 'inplace',
-    reconstructionModeUsed: 'inplace',
   };
 }
 

@@ -197,7 +197,10 @@ export interface ReconstructionFallbackDiagnostics {
   attempts: ReconstructionAttemptDiagnostics[];
 }
 
-/** Safety evidence retained when tagged-tree publication falls back to legacy output. */
+/**
+ * Historical tagged-to-legacy fallback evidence.
+ * @deprecated The tagged publisher throws instead of falling back and never returns this shape.
+ */
 export interface TaggedTreeFallbackDiagnostics {
   checks: TaggedPublicationSafetyChecks;
   failedChecks: TaggedPublicationSafetyCheckName[];
@@ -216,14 +219,8 @@ export interface TaggedPublicationSafetyChecks extends ReconstructionSafetyCheck
 }
 
 /**
- * Diagnostics for a *successful* inplace reconstruction: which pass produced the
- * accepted output, and the passes that were tried and rejected before it. The
- * fallback diagnostics above only surface when every inplace pass fails and the
- * pipeline reroutes to rebuild; this surfaces the same per-pass detail on the
- * success path, so a caller can tell which pass produced the output — e.g. a
- * later pass rescuing what an earlier pass could not reconstruct safely —
- * without inferring it from the absence of a fallback. Present only for atomizer
- * inplace output (`reconstructionModeUsed === 'inplace'`).
+ * Historical diagnostics for the removed inplace reconstruction pipeline.
+ * @deprecated The tagged publisher never returns this shape.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/469
  */
@@ -238,10 +235,8 @@ export interface ReconstructionInplaceSuccessDiagnostics {
 }
 
 /**
- * Round-trip safety evaluation of rebuild output. Rebuild is the terminal
- * reconstruction strategy — there is no further fallback — so a failed check
- * cannot reroute the pipeline. The document is returned anyway and the
- * failures are surfaced here as a caller-visible warning.
+ * Historical safety evaluation for the removed rebuild pipeline.
+ * @deprecated The tagged publisher never returns rebuild output.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/226
  */
@@ -306,6 +301,10 @@ export interface AncillaryStorySafetyIssue {
   locator: AncillaryStoryLocator;
 }
 
+/**
+ * Historical wrapper for ancillary fallback issues.
+ * @deprecated Successful results carry `AncillaryFieldEvidence`; failures throw `AncillaryStorySafetyError`.
+ */
 export interface AncillaryFallbackDiagnostics {
   issues: AncillaryStorySafetyIssue[];
 }
@@ -350,55 +349,13 @@ export interface CompareResult {
   document: Buffer;
   /** Statistics about the comparison */
   stats: CompareStats;
-  /** Which engine was used */
-  engine: 'wmlcomparer' | 'atomizer';
-  /** Strategy requested by the caller, including the tagged-tree default. */
-  comparisonStrategyRequested?: ComparisonStrategy;
-  /** Strategy that constructed the published document. */
-  comparisonStrategyUsed?: ComparisonStrategy;
-  /** Why tagged-tree publication was rejected in favor of validated legacy output. */
-  comparisonStrategyFallbackReason?: ComparisonStrategyFallbackReason;
-  /** Failed tagged-tree publication checks retained for diagnosis and telemetry. */
-  taggedTreeFallbackDiagnostics?: TaggedTreeFallbackDiagnostics;
+  /** The sole comparison implementation that constructed this result. */
+  engine: 'tagged-tree';
   /**
    * Input differences that the emitted revision markup does not represent.
    * Absent when no supported package-level difference is detected.
    */
   unrepresentedChanges?: UnrepresentedChange[];
-  /**
-   * Requested reconstruction mode. Present for atomizer outputs.
-   */
-  reconstructionModeRequested?: ReconstructionMode;
-  /**
-   * Actual reconstruction mode used to produce the output. Present for atomizer outputs.
-   */
-  reconstructionModeUsed?: ReconstructionMode;
-  /**
-   * Why the requested reconstruction mode could not be used.
-   * Present only when atomizer falls back.
-   */
-  fallbackReason?: ReconstructionFallbackReason;
-  /**
-   * Detailed safety-check diagnostics for fallback decisions.
-   * Present only when atomizer falls back.
-   */
-  fallbackDiagnostics?: ReconstructionFallbackDiagnostics;
-  /**
-   * Ancillary issues from an inplace candidate rejected at package assembly.
-   * Present only when ancillary validation itself caused rebuild fallback.
-   */
-  ancillaryFallbackDiagnostics?: AncillaryFallbackDiagnostics;
-  /**
-   * Safety-check failures observed on rebuild output — whether rebuild was
-   * requested explicitly or reached via fallback from the inplace default.
-   * Present only when at least one check failed.
-   */
-  rebuildSafetyDiagnostics?: ReconstructionRebuildSafetyDiagnostics;
-  /**
-   * Which inplace pass produced the output and which passes it superseded.
-   * Present only when atomizer produced inplace output.
-   */
-  inplaceSuccessDiagnostics?: ReconstructionInplaceSuccessDiagnostics;
   /**
    * Successful structural and canonical evidence for the final assembled
    * ancillary stories. Absence means unavailable evidence, not a pass.

@@ -49,11 +49,8 @@ async function compareInplace(
   revised: Buffer,
 ): Promise<string> {
   const result = await compareDocuments(original, revised);
-  if (result.reconstructionModeUsed !== 'inplace') {
-    throw new Error(
-      `expected inplace mode but engine fell back to ${result.reconstructionModeUsed ?? 'unknown'}: ` +
-        `${result.fallbackReason ?? 'no reason'} ${JSON.stringify(result.fallbackDiagnostics)}`,
-    );
+  if (result.engine !== 'tagged-tree') {
+    throw new Error(`expected tagged-tree engine, received ${String(result.engine)}`);
   }
   const archive = await DocxArchive.load(result.document);
   return await archive.getDocumentXml();

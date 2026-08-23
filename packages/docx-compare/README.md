@@ -24,3 +24,12 @@ Publication fails closed with `TaggedPublicationSafetyError` when the tagged res
 The public `CompareOptions` surface no longer accepts `engine`, `comparisonStrategy`, `reconstructionMode`, `premergeRuns`, or `maxWordRefinementChangeRanges`. JavaScript callers that pass one of those retired keys receive a `TypeError`; TypeScript callers receive a type error.
 
 Callers that previously selected `reconstructionMode: 'rebuild'` received an original-based package. After upgrading, expect revised-side package provenance instead: revised rsids, `sectPr`, headers and footers, content types, relationships, and other package parts are authoritative. If downstream code compared package metadata or assumed original-side identities, update those assertions to the revised document. Accepting all revisions should reproduce the revised text projection; rejecting all revisions should reproduce the original text projection.
+
+`CompareResult` now reports `engine: 'tagged-tree'`. Remove caller branches and
+telemetry for `comparisonStrategyRequested`, `comparisonStrategyUsed`,
+`comparisonStrategyFallbackReason`, `taggedTreeFallbackDiagnostics`,
+`reconstructionModeRequested`, `reconstructionModeUsed`, `fallbackReason`,
+`fallbackDiagnostics`, `ancillaryFallbackDiagnostics`, `rebuildSafetyDiagnostics`,
+and `inplaceSuccessDiagnostics`; those fields described implementations and
+fallbacks that no longer exist. Publication failures are thrown as typed errors,
+including `TaggedPublicationSafetyError`, rather than returned as fallback metadata.

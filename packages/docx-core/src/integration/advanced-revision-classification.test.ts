@@ -266,7 +266,7 @@ describe('ECMA-376 advanced revision records', () => {
         );
         const doc = parseXml((await getResultParts(result.document)).documentXml);
         await then('tagged publication emits both content wrappers', () => {
-          expect(result.reconstructionModeUsed).toBe('inplace');
+          expect(result.engine).toBe('tagged-tree');
           expect(doc.getElementsByTagNameNS(W_NS, 'ins').length).toBeGreaterThan(0);
           expect(doc.getElementsByTagNameNS(W_NS, 'del').length).toBeGreaterThan(0);
         });
@@ -280,7 +280,7 @@ describe('ECMA-376 advanced revision records', () => {
             const left = await buildSyntheticDocx({ paragraphs: [fixture.original] });
             const right = await buildSyntheticDocx({ paragraphs: [fixture.revised] });
             const result = await compareDocuments(left, right);
-            if (result.reconstructionModeUsed !== 'inplace') return { documents };
+            if (result.engine !== 'tagged-tree') return { documents };
             documents.set('tagged', parseXml((await getResultParts(result.document)).documentXml));
             return { documents };
           },
@@ -671,7 +671,7 @@ describe('ECMA-376 advanced revision records', () => {
         );
         const xml = (await getResultParts(result.document)).documentXml;
         await then('tagged output carries complete move markup', () => {
-          expect(result.reconstructionModeUsed).toBe('inplace');
+          expect(result.engine).toBe('tagged-tree');
           for (const local of [
             'moveFrom', 'moveTo', 'moveFromRangeStart', 'moveFromRangeEnd',
             'moveToRangeStart', 'moveToRangeEnd',
@@ -695,7 +695,7 @@ describe('ECMA-376 advanced revision records', () => {
             const left = await buildSyntheticDocx({ paragraphs: fixture.original });
             const right = await buildSyntheticDocx({ paragraphs: fixture.revised });
             const result = await compareDocuments(left, right);
-            if (result.reconstructionModeUsed !== 'inplace') return { documents };
+            if (result.engine !== 'tagged-tree') return { documents };
             documents.set('tagged', parseXml((await getResultParts(result.document)).documentXml));
             return { documents };
           },
@@ -759,7 +759,7 @@ describe('ECMA-376 advanced revision records', () => {
         const result = await when('the identical pair is compared through the tagged spine', () =>
           compareDocuments(input, input),
         );
-        expect(result.reconstructionModeUsed).toBe('inplace');
+        expect(result.engine).toBe('tagged-tree');
         const tagged = parseXml((await getResultParts(result.document)).documentXml);
 
         await then('tagged publication preserves every sampled record and namespace aliases compare successfully', () => {
@@ -800,7 +800,7 @@ describe('ECMA-376 advanced revision records', () => {
             return {
               input: fixture,
               output: parseXml((await getResultParts(result.document)).documentXml),
-              modeUsed: result.reconstructionModeUsed,
+              engine: result.engine,
             };
           },
           observe: (run, element, expected) => {
@@ -809,7 +809,12 @@ describe('ECMA-376 advanced revision records', () => {
             const local = element.replace('w14:', '');
             const expectedTarget = sourceDocument.getElementsByTagNameNS(namespace, local).item(0);
             const inputTarget = run.input.getElementsByTagNameNS(namespace, local).item(0);
-            if (!expectedTarget || !inputTarget || inputTarget.toString() !== expectedTarget.toString() || run.modeUsed !== mode) return false;
+            if (
+              !expectedTarget ||
+              !inputTarget ||
+              inputTarget.toString() !== expectedTarget.toString() ||
+              run.engine !== 'tagged-tree'
+            ) return false;
             const present = run.output.getElementsByTagNameNS(namespace, local).length > 0;
             return mode === 'inplace' && present;
           },

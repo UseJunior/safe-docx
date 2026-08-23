@@ -121,7 +121,7 @@ describe('cached PAGEREF comparison (#716)', () => {
       expect(revisionTexts(outputXml)).toEqual([]);
     });
     await then('the sole tagged path succeeds', () => {
-      expect(result.comparisonStrategyUsed).toBe('tagged-tree');
+      expect(result.engine).toBe('tagged-tree');
     });
     await then('both cache-insensitive projections preserve their source TOC', async () => {
       expect(cacheInsensitiveText(acceptAllChanges(outputXml))).toBe(

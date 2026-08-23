@@ -795,7 +795,7 @@ describe('VML text-box story comparison (#713)', () => {
     );
 
     await then('the comparison completes rather than failing closed', () => {
-      expect(result.reconstructionModeUsed).toBe('inplace');
+      expect(result.engine).toBe('tagged-tree');
     });
   });
 
@@ -826,7 +826,7 @@ describe('VML text-box story comparison (#713)', () => {
     const outputXml = await documentXml(result.document);
 
     await then('the story is redlined rather than refused', () => {
-      expect(result.reconstructionModeUsed).toBe('inplace');
+      expect(result.engine).toBe('tagged-tree');
       expect(textBoxText(acceptAllChanges(outputXml))).toBe('Revised');
       expect(textBoxText(rejectAllChanges(outputXml))).toBe('Original');
     });
@@ -1157,7 +1157,7 @@ describe('VML text-box story comparison (#713)', () => {
     );
 
     await then('the inserted section lifecycle is publishable', () => {
-      expect(result.reconstructionModeUsed).toBe('inplace');
+      expect(result.engine).toBe('tagged-tree');
       expect(result.stats.insertions).toBeGreaterThan(0);
     });
   });
@@ -1615,7 +1615,7 @@ describe('Word-authored text-box corpus (#795)', () => {
 
         const result = await compareDocumentsAtomizer(source, revised, {
         });
-        if (result.reconstructionModeUsed === 'inplace') admitted.push(host);
+        if (result.engine === 'tagged-tree') admitted.push(host);
       }
     });
 

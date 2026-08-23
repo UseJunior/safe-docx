@@ -4,7 +4,6 @@
       "acceptAllChanges",
       "alignComparisonSequences",
       "AncillaryBindingLocator",
-      "AncillaryFallbackDiagnostics",
       "AncillaryFieldEvidence",
       "AncillaryFieldInstructionKind",
       "AncillaryFieldLocator",
@@ -67,6 +66,7 @@
       "wordContainmentSimilarity"
     ],
     "deprecate one release": [
+      "AncillaryFallbackDiagnostics",
       "compareDocumentsAtomizer",
       "ComparisonStrategy",
       "ComparisonStrategyFallbackReason",
@@ -159,5 +159,29 @@
     "maxWordRefinementChangeRanges": "breaking removal",
     "premergeRuns": "breaking removal",
     "reconstructionMode": "breaking removal"
+  },
+  "publicResultFields": {
+    "stable compatibility": [
+      "ancillaryFieldEvidence",
+      "document",
+      "stats",
+      "unrepresentedChanges"
+    ],
+    "truthful tagged replacement": [
+      "engine"
+    ],
+    "breaking removal": [
+      "ancillaryFallbackDiagnostics",
+      "comparisonStrategyFallbackReason",
+      "comparisonStrategyRequested",
+      "comparisonStrategyUsed",
+      "fallbackDiagnostics",
+      "fallbackReason",
+      "inplaceSuccessDiagnostics",
+      "rebuildSafetyDiagnostics",
+      "reconstructionModeRequested",
+      "reconstructionModeUsed",
+      "taggedTreeFallbackDiagnostics"
+    ]
   }
 }

@@ -55,7 +55,58 @@ function currentExports() {
   });
 }
 
-function render(rows, publicOptions) {
+function currentInterfaceFields(interfaceName) {
+  const program = ts.createProgram([entryPath], {
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    target: ts.ScriptTarget.ES2022,
+    skipLibCheck: true,
+  });
+  const checker = program.getTypeChecker();
+  const source = program.getSourceFile(entryPath);
+  const moduleSymbol = source && checker.getSymbolAtLocation(source);
+  if (!moduleSymbol) fail(`cannot resolve module exports for ${entryPath}`);
+  const exported = checker.getExportsOfModule(moduleSymbol)
+    .find((symbol) => symbol.name === interfaceName);
+  if (!exported) fail(`cannot resolve exported interface ${interfaceName}`);
+  const resolved = exported.flags & ts.SymbolFlags.Alias
+    ? checker.getAliasedSymbol(exported)
+    : exported;
+  return checker.getPropertiesOfType(checker.getDeclaredTypeOfSymbol(resolved))
+    .map((property) => property.name)
+    .sort();
+}
+
+function adjudicateFields(currentFields, policyFields) {
+  const dispositions = new Map();
+  for (const [disposition, fields] of Object.entries(policyFields)) {
+    for (const field of fields) {
+      if (dispositions.has(field)) fail(`duplicate CompareResult policy entry for ${field}`);
+      dispositions.set(field, disposition);
+    }
+  }
+  const current = new Set(currentFields);
+  const rows = [...dispositions].map(([field, disposition]) => ({
+    field,
+    present: current.has(field),
+    disposition,
+  }));
+  for (const row of rows) {
+    if (row.present && row.disposition === 'breaking removal') {
+      fail(`CompareResult.${row.field} is marked removed but remains present`);
+    }
+    if (!row.present && row.disposition !== 'breaking removal') {
+      fail(`CompareResult.${row.field} is marked ${row.disposition} but is absent`);
+    }
+  }
+  for (const field of current) {
+    if (!dispositions.has(field)) fail(`missing CompareResult field disposition for ${field}`);
+  }
+  rows.sort((left, right) => left.field.localeCompare(right.field));
+  return rows;
+}
+
+function render(rows, publicOptions, publicResultFields) {
   const counts = new Map();
   for (const row of rows) counts.set(row.disposition, (counts.get(row.disposition) ?? 0) + 1);
   const lines = [
@@ -82,6 +133,13 @@ function render(rows, publicOptions) {
     ...Object.entries(publicOptions)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([field, disposition]) => `| \`${field}\` | ${disposition} |`),
+    '',
+    '## Public result fields',
+    '',
+    '| `CompareResult` field | Present | Disposition |',
+    '| --- | --- | --- |',
+    ...publicResultFields.map((row) =>
+      `| \`${row.field}\` | ${row.present ? 'yes' : 'no'} | ${row.disposition} |`),
     '',
   ];
   return `${lines.join('\n')}\n`;
@@ -112,7 +170,11 @@ for (const row of rows) {
 if (dispositions.size > 0) fail(`policy names absent exports: ${[...dispositions.keys()].sort().join(', ')}`);
 rows.sort((left, right) => left.symbol.localeCompare(right.symbol));
 
-const output = render(rows, policy.publicOptions);
+const publicResultFields = adjudicateFields(
+  currentInterfaceFields('CompareResult'),
+  policy.publicResultFields,
+);
+const output = render(rows, policy.publicOptions, publicResultFields);
 if (mode === '--write') {
   await writeFile(inventoryPath, output, 'utf8');
   process.stdout.write(`Wrote ${relative(process.cwd(), inventoryPath)} (${rows.length} symbols)\n`);

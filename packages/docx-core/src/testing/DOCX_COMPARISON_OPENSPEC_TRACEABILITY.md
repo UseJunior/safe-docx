@@ -55,6 +55,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Properties are extracted from both representatives | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Property delta scope matches the property level | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |
 | Provenance survives a boundary split | covered | `packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts` |  |
+| Public comparison reports only tagged result metadata | covered | `packages/docx-compare/src/public-result-metadata.test.ts` |  |
 | Public comparison uses one deterministic tagged publication | covered | `packages/docx-compare/src/compare-options.test.ts`, `packages/docx-compare/src/tagged/taggedTreeShadow.test.ts` |  |
 | Removing bold is reported | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Reordering that satisfies coverage is rejected | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |

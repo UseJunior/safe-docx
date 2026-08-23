@@ -22,11 +22,7 @@ async function run() {
     author: 'Repro'
   });
 
-  console.log('Mode used:', res.reconstructionModeUsed);
-  if (res.fallbackReason) {
-    console.log('Fallback reason:', res.fallbackReason);
-    console.log('First diff summary:', JSON.stringify(res.fallbackDiagnostics?.attempts?.[0]?.firstDiffSummary, null, 2));
-  }
+  console.log('Engine:', res.engine);
 
   fs.writeFileSync(outputPath, res.document);
   console.log(`Saved FORCED INPLACE redline to ${outputPath}`);

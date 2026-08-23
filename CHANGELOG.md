@@ -16,6 +16,10 @@
   that assumed original-side package identities.
 - CLI and MCP comparison results now report `package_base: 'revised'` instead
   of engine, strategy, mode, or fallback metadata.
+- **Breaking:** library `CompareResult` now reports the sole implementation as
+  `engine: 'tagged-tree'` and removes requested/used strategy, reconstruction
+  mode, and fallback metadata for the deleted comparison spine. Callers should
+  handle typed publication errors instead of branching on fallback fields.
 - Migration note: DOCX comparison and redline generation moved from
   `@usejunior/docx-core` to `@usejunior/docx-compare`. Update comparison
   imports such as `compareDocuments` to use the new package name.

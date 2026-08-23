@@ -306,8 +306,8 @@ describe('mc:AlternateContent text-box ordinals', () => {
       ).getDocumentXml();
       const copies = storedCopies(comparedXml);
 
-      await then('the comparison stays on the in-place path', () => {
-        expect(compared.reconstructionModeUsed).toBe('inplace');
+      await then('the comparison stays on the sole tagged path', () => {
+        expect(compared.engine).toBe('tagged-tree');
       });
       await and('the unchanged box carries no revision in either copy', () => {
         expect(copies).toHaveLength(4);

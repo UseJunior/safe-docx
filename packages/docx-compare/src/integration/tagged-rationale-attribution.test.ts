@@ -91,7 +91,7 @@ describe('tagged revision rationale attribution', () => {
     'maps each operation to one unique balanced and non-overlapping emitted interval',
     async () => {
       const result = await attributedFixture();
-      expect(result.comparisonStrategyUsed).toBe('tagged-tree');
+      expect(result.engine).toBe('tagged-tree');
       expect(result.revisionAttributions?.map((entry) => entry.operationId)).toEqual([
         'alpha',
         'beta',

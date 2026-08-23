@@ -5,8 +5,8 @@
 This inventory adjudicates every package-root export before the tagged-spine breaking release.
 “Deprecated” means retained for one release; “breaking removal” means intentionally absent now.
 
-- Stable compatibility surface: 64
-- Deprecated for one release: 21
+- Stable compatibility surface: 63
+- Deprecated for one release: 22
 - Documented breaking removals: 57
 
 | Symbol | Kind | Source | Present | Disposition |
@@ -15,7 +15,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `alignComparisonSequences` | function | `src/textAlignment.ts` | yes | stable compatibility |
 | `allocateMoveIds` | function | `src/move-detection.ts` | no | breaking removal |
 | `AncillaryBindingLocator` | interface | `src/compare-types.ts` | yes | stable compatibility |
-| `AncillaryFallbackDiagnostics` | interface | `src/compare-types.ts` | yes | stable compatibility |
+| `AncillaryFallbackDiagnostics` | interface | `src/compare-types.ts` | yes | deprecate one release |
 | `AncillaryFieldEvidence` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `AncillaryFieldInstructionKind` | type | `src/compare-types.ts` | yes | stable compatibility |
 | `AncillaryFieldLocator` | interface | `src/compare-types.ts` | yes | stable compatibility |
@@ -167,4 +167,25 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `maxWordRefinementChangeRanges` | breaking removal |
 | `premergeRuns` | breaking removal |
 | `reconstructionMode` | breaking removal |
+
+## Public result fields
+
+| `CompareResult` field | Present | Disposition |
+| --- | --- | --- |
+| `ancillaryFallbackDiagnostics` | no | breaking removal |
+| `ancillaryFieldEvidence` | yes | stable compatibility |
+| `comparisonStrategyFallbackReason` | no | breaking removal |
+| `comparisonStrategyRequested` | no | breaking removal |
+| `comparisonStrategyUsed` | no | breaking removal |
+| `document` | yes | stable compatibility |
+| `engine` | yes | truthful tagged replacement |
+| `fallbackDiagnostics` | no | breaking removal |
+| `fallbackReason` | no | breaking removal |
+| `inplaceSuccessDiagnostics` | no | breaking removal |
+| `rebuildSafetyDiagnostics` | no | breaking removal |
+| `reconstructionModeRequested` | no | breaking removal |
+| `reconstructionModeUsed` | no | breaking removal |
+| `stats` | yes | stable compatibility |
+| `taggedTreeFallbackDiagnostics` | no | breaking removal |
+| `unrepresentedChanges` | yes | stable compatibility |
 
