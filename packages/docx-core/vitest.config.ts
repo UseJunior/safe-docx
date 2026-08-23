@@ -49,9 +49,6 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts', 'test-primitives/**/*.test.ts'],
-    exclude: [
-      'src/baselines/**/*.traceability.test.ts',
-    ],
     coverage: {
       provider: 'v8',
       all: true,
@@ -69,8 +66,6 @@ export default defineConfig({
         // would otherwise sink package coverage. The gated voter exercises it locally; see
         // local-only LibreOffice oracle integration tests.
         'src/integration/libreoffice-oracle.ts',
-        // Optional/legacy baselines that are not part of default runtime engine selection.
-        'src/baselines/wmlcomparer/**',
       ],
     },
     setupFiles: hasAllure ? [allureSetup!] : [],

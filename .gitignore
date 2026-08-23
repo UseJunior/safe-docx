@@ -13,8 +13,6 @@ allure-report/
 allure-report-repo/
 allure-report-brand-preview/
 allure-report-pilot/
-allure-report-baseline/
-allure-results-baseline/
 sdx-allure-fresh-local/
 .allure-results-merged/
 **/allure-results.bak.*/
