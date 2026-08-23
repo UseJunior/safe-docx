@@ -76,7 +76,7 @@ describe('NVCA COI ancillary field evidence', () => {
           range.locator.entryId !== undefined,
         ) ?? [];
 
-        expect(result.fallbackReason).toBeUndefined();
+        expect(result.engine).toBe('tagged-tree');
         expect(evidence).toMatchObject({
           status: 'passed',
         });

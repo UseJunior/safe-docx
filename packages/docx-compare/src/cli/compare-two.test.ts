@@ -130,7 +130,7 @@ describe('docx-comparison CLI fixed tagged publication', () => {
     return {
       document: Buffer.from('redline-bytes'),
       stats: zeroStats,
-      engine: 'atomizer',
+      engine: 'tagged-tree',
       ...overrides,
     };
   }

@@ -30,7 +30,7 @@
 
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocumentsAtomizer as compareDocuments, type ReconstructionMode } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import {
   acceptAllChanges,
   rejectAllChanges,
@@ -222,8 +222,7 @@ const CASES: ProvenanceCase[] = [
 ];
 
 interface ProjectionReport {
-  modeUsed: ReconstructionMode | undefined;
-  fallbackReason: string | undefined;
+  engine: 'tagged-tree';
   combinedXml: string;
   acceptCombined: string;
   acceptRevised: string;
@@ -234,8 +233,6 @@ interface ProjectionReport {
 async function runComparison(
   original: Buffer,
   revised: Buffer,
-  _reconstructionMode: ReconstructionMode,
-  _comparisonStrategy: 'tagged-tree' | 'legacy' = 'tagged-tree',
 ): Promise<ProjectionReport> {
   const result = await compareDocuments(original, revised);
   const [combinedXml, originalXml, revisedXml] = await Promise.all([
@@ -244,8 +241,7 @@ async function runComparison(
     getDocumentXml(revised),
   ]);
   return {
-    modeUsed: result.reconstructionModeUsed,
-    fallbackReason: result.fallbackReason,
+    engine: result.engine,
     combinedXml,
     acceptCombined: normalizeDocumentXmlText(acceptAllChanges(combinedXml)),
     acceptRevised: normalizeDocumentXmlText(acceptAllChanges(revisedXml)),
@@ -267,16 +263,15 @@ describe('Original-side pre-tracked insertion provenance (issue #358)', () => {
       await then('no pair falls back and accept/reject both project to their inputs', async () => {
         for (const provenanceCase of CASES) {
           const { original, revised } = await provenanceCase.build();
-          const report = await runComparison(original, revised, 'inplace');
+          const report = await runComparison(original, revised);
           reports.push({
             name: provenanceCase.name,
-            modeUsed: report.modeUsed,
-            fallbackReason: report.fallbackReason ?? null,
+            engine: report.engine,
           });
 
           expect
-            .soft(report.modeUsed, `${provenanceCase.name}: reconstruction mode`)
-            .toBe('inplace');
+            .soft(report.engine, `${provenanceCase.name}: comparison engine`)
+            .toBe('tagged-tree');
           expect(report.acceptCombined, `${provenanceCase.name}: accept projection`).toBe(
             report.acceptRevised,
           );

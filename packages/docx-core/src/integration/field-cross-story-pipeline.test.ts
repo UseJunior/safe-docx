@@ -258,19 +258,12 @@ describe('Cross-story field-closure check (issue #212) — pipeline-level', () =
         result = await compareDocuments(original, revised, {
         });
         await attachPrettyJson('comparison-metadata.json', {
-          reconstructionModeUsed: result.reconstructionModeUsed,
-          fallbackReason: result.fallbackReason,
+          engine: result.engine,
         });
       });
 
-      await then('no field-structure failure is recorded and inplace output is used', () => {
-        expect(result.reconstructionModeUsed).toBe('inplace');
-        expect(result.fallbackReason).toBeUndefined();
-        const attempts = result.fallbackDiagnostics?.attempts ?? [];
-        for (const attempt of attempts) {
-          const failed = attempt.failedChecks ?? [];
-          expect(failed.includes('fieldStructure')).toBe(false);
-        }
+      await then('the valid field structure publishes through the tagged engine', () => {
+        expect(result.engine).toBe('tagged-tree');
       });
     },
   );

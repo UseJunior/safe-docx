@@ -165,9 +165,7 @@ describe('Collapsed field inplace reconstruction', () => {
         const archive = await DocxArchive.load(result.document);
         resultXml = await archive.getDocumentXml();
         await attachPrettyJson('comparison-metadata.json', {
-          reconstructionModeUsed: result.reconstructionModeUsed,
-          fallbackReason: result.fallbackReason,
-          fallbackDiagnostics: result.fallbackDiagnostics,
+          engine: result.engine,
         });
       });
 
@@ -277,7 +275,7 @@ describe('Collapsed field inplace reconstruction', () => {
       });
     });
 
-    test('inplace mode succeeds without rebuild fallback', async ({ given, then, attachPrettyJson }: AllureBddContext) => {
+    test('tagged publication succeeds without fallback metadata', async ({ given, then, attachPrettyJson }: AllureBddContext) => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await given('original and revised dedicated-run PAGEREF fixture documents', async () => {
         const [original, revised] = await Promise.all([
@@ -287,13 +285,11 @@ describe('Collapsed field inplace reconstruction', () => {
         result = await compareDocuments(original, revised, {
         });
       });
-      await then('reconstructionModeUsed is inplace with no fallback', async () => {
+      await then('the result names the sole tagged engine', async () => {
         await attachPrettyJson('reconstruction-metadata.json', {
-          reconstructionModeUsed: result.reconstructionModeUsed,
-          fallbackReason: result.fallbackReason,
+          engine: result.engine,
         });
-        expect(result.reconstructionModeUsed).toBe('inplace');
-        expect(result.fallbackReason).toBeUndefined();
+        expect(result.engine).toBe('tagged-tree');
       });
     });
   });

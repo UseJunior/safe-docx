@@ -1,7 +1,5 @@
-
-import { compareDocumentsAtomizer } from '../dist/index.js';
+import { compareDocuments } from '../../docx-compare/dist/index.js';
 import fs from 'fs';
-import path from 'path';
 
 const sourcePath = process.argv[2];
 const revisedPath = process.argv[3];
@@ -16,23 +14,19 @@ async function run() {
   const sourceBuf = fs.readFileSync(sourcePath);
   const revisedBuf = fs.readFileSync(revisedPath);
 
-  console.log(`Comparing ${sourcePath} vs ${revisedPath} (FORCED INPLACE)`);
-  
-  const res = await compareDocumentsAtomizer(sourceBuf, revisedBuf, {
-    author: 'Repro'
+  console.log(`Comparing ${sourcePath} vs ${revisedPath} (TAGGED TREE)`);
+
+  const res = await compareDocuments(sourceBuf, revisedBuf, {
+    author: 'Repro',
   });
 
-  console.log('Mode used:', res.reconstructionModeUsed);
-  if (res.fallbackReason) {
-    console.log('Fallback reason:', res.fallbackReason);
-    console.log('First diff summary:', JSON.stringify(res.fallbackDiagnostics?.attempts?.[0]?.firstDiffSummary, null, 2));
-  }
+  console.log('Engine:', res.engine);
 
   fs.writeFileSync(outputPath, res.document);
-  console.log(`Saved FORCED INPLACE redline to ${outputPath}`);
+  console.log(`Saved tagged-tree redline to ${outputPath}`);
 }
 
-run().catch(err => {
+run().catch((err) => {
   console.error(err);
   process.exit(1);
 });

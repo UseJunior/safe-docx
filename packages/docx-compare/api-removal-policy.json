@@ -4,7 +4,6 @@
       "acceptAllChanges",
       "alignComparisonSequences",
       "AncillaryBindingLocator",
-      "AncillaryFallbackDiagnostics",
       "AncillaryFieldEvidence",
       "AncillaryFieldInstructionKind",
       "AncillaryFieldLocator",
@@ -14,7 +13,6 @@
       "AncillaryPackageLocator",
       "AncillarySelectedBindingSummary",
       "AncillaryStoryLocator",
-      "AncillaryStorySafetyAttempt",
       "AncillaryStorySafetyCategory",
       "AncillaryStorySafetyError",
       "AncillaryStorySafetyIssue",
@@ -67,6 +65,7 @@
       "wordContainmentSimilarity"
     ],
     "deprecate one release": [
+      "AncillaryFallbackDiagnostics",
       "compareDocumentsAtomizer",
       "ComparisonStrategy",
       "ComparisonStrategyFallbackReason",
@@ -147,7 +146,8 @@
     { "symbol": "MoveMarkup", "kind": "interface", "source": "src/move-detection.ts" },
     { "symbol": "MoveMarkupOptions", "kind": "interface", "source": "src/move-detection.ts" },
     { "symbol": "RevisionIdState", "kind": "interface", "source": "src/move-detection.ts" },
-    { "symbol": "DEFAULT_RECONSTRUCTION_MODE", "kind": "value", "source": "src/comparison-defaults.ts" }
+    { "symbol": "DEFAULT_RECONSTRUCTION_MODE", "kind": "value", "source": "src/comparison-defaults.ts" },
+    { "symbol": "AncillaryStorySafetyAttempt", "kind": "interface", "source": "src/tagged/ancillaryFieldSafety.ts" }
   ],
   "publicOptions": {
     "author": "stable compatibility",
@@ -159,5 +159,29 @@
     "maxWordRefinementChangeRanges": "breaking removal",
     "premergeRuns": "breaking removal",
     "reconstructionMode": "breaking removal"
+  },
+  "publicResultFields": {
+    "stable compatibility": [
+      "ancillaryFieldEvidence",
+      "document",
+      "stats",
+      "unrepresentedChanges"
+    ],
+    "truthful tagged replacement": [
+      "engine"
+    ],
+    "breaking removal": [
+      "ancillaryFallbackDiagnostics",
+      "comparisonStrategyFallbackReason",
+      "comparisonStrategyRequested",
+      "comparisonStrategyUsed",
+      "fallbackDiagnostics",
+      "fallbackReason",
+      "inplaceSuccessDiagnostics",
+      "rebuildSafetyDiagnostics",
+      "reconstructionModeRequested",
+      "reconstructionModeUsed",
+      "taggedTreeFallbackDiagnostics"
+    ]
   }
 }

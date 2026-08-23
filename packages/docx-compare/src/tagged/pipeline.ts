@@ -678,8 +678,8 @@ export interface AtomizerOptions {
   taggedTreeFormattingFidelityEvaluator?: typeof compareSourceProjectedFormattingFidelity;
 }
 
-/** Atomizer-only result metadata used by internal tagged attribution callers. */
-export interface AtomizerCompareResult extends CompareResult {
+/** Internal tagged result metadata used by attribution-aware callers. */
+export interface TaggedCompareResult extends CompareResult {
   /** Exact tagged revision ranges requested through private attribution input. @internal */
   revisionAttributions?: RevisionAttribution[];
 }
@@ -1109,7 +1109,7 @@ async function compareDocumentsTaggedCore(
   revised: Buffer,
   options: AtomizerOptions,
   bookmarkNameReservations?: Set<string>,
-): Promise<AtomizerCompareResult> {
+): Promise<TaggedCompareResult> {
   const standalone = await buildStandaloneTaggedPackage(original, revised, {
     author: options.author ?? 'Comparison',
     date: options.date ?? new Date(),
@@ -1133,12 +1133,8 @@ async function compareDocumentsTaggedCore(
   return {
     document: standalone.document,
     stats: standalone.stats,
-    engine: 'atomizer',
-    comparisonStrategyRequested: 'tagged-tree',
-    comparisonStrategyUsed: 'tagged-tree',
+    engine: 'tagged-tree',
     unrepresentedChanges: standalone.unrepresentedChanges,
-    reconstructionModeRequested: 'inplace',
-    reconstructionModeUsed: 'inplace',
     ancillaryFieldEvidence: standalone.ancillaryFieldEvidence,
     revisionAttributions: standalone.revisionAttributions,
   };
@@ -1155,7 +1151,7 @@ async function compareDocumentsTagged(
   original: Buffer,
   revised: Buffer,
   options: AtomizerOptions,
-): Promise<AtomizerCompareResult> {
+): Promise<TaggedCompareResult> {
   const textBoxPlan = await prepareTextBoxStoryComparison(original, revised);
   if (!textBoxPlan) {
     return compareDocumentsTaggedCore(original, revised, options);
@@ -1344,7 +1340,7 @@ export async function compareDocumentsAtomizer(
   original: Buffer,
   revised: Buffer,
   options: AtomizerOptions = {},
-): Promise<AtomizerCompareResult> {
+): Promise<TaggedCompareResult> {
   debugTaggedComparison('starting revised-base comparison', {
     originalBytes: original.length,
     revisedBytes: revised.length,

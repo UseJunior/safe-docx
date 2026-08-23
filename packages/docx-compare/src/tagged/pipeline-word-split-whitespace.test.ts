@@ -87,7 +87,7 @@ describe('adaptive word-split whitespace parity (#720)', () => {
     const xml = await documentXml(result.document);
 
     await then('the sole tagged path satisfies the safety gate', () => {
-      expect(result.comparisonStrategyUsed).toBe('tagged-tree');
+      expect(result.engine).toBe('tagged-tree');
     });
 
     await and('accept and reject preserve every character, including spaces', () => {

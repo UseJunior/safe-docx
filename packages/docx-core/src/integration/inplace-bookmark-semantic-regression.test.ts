@@ -32,9 +32,7 @@ interface InplaceRun {
   resultXml: string;
   acceptedXml: string;
   rejectedXml: string;
-  reconstructionModeUsed: 'rebuild' | 'inplace' | undefined;
-  fallbackReason: string | undefined;
-  fallbackDiagnostics: unknown;
+  engine: 'tagged-tree';
 }
 
 const integrationDir = dirname(import.meta.url.replace('file://', ''));
@@ -186,9 +184,7 @@ async function runInplaceComparison(originalPath: string, revisedPath: string): 
     resultXml,
     acceptedXml: acceptAllChanges(resultXml),
     rejectedXml: rejectAllChanges(resultXml),
-    reconstructionModeUsed: result.reconstructionModeUsed,
-    fallbackReason: result.fallbackReason,
-    fallbackDiagnostics: result.fallbackDiagnostics,
+    engine: result.engine,
   };
 }
 
@@ -213,8 +209,7 @@ describe('Inplace bookmark semantic regression coverage (Allure)', () => {
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       await given('synthetic output from inplace reconstruction', async () => {
         await attachPrettyJson('synthetic-reconstruction-metadata.json', {
-          reconstructionModeUsed: synthetic.reconstructionModeUsed,
-          fallbackReason: synthetic.fallbackReason,
+          engine: synthetic.engine,
         });
       });
 
@@ -223,10 +218,8 @@ describe('Inplace bookmark semantic regression coverage (Allure)', () => {
         assertReadTextParity(synthetic.originalXml, synthetic.rejectedXml, 'Synthetic/inplace/reject-all');
       });
 
-      await then('inplace is retained and no fallback reason is emitted', () => {
-        expect(synthetic.reconstructionModeUsed).toBe('inplace');
-        expect(synthetic.fallbackReason).toBeUndefined();
-        expect(synthetic.fallbackDiagnostics).toBeUndefined();
+      await then('tagged publication is retained', () => {
+        expect(synthetic.engine).toBe('tagged-tree');
       });
     },
     180000
@@ -280,14 +273,12 @@ describe('Inplace bookmark semantic regression coverage (Allure)', () => {
     async ({ given, then, and, attachPrettyJson }: AllureBddContext) => {
       await given('ILPA output from requested inplace reconstruction', async () => {
         await attachPrettyJson('ilpa-reconstruction-metadata.json', {
-          reconstructionModeUsed: ilpa.reconstructionModeUsed,
-          fallbackReason: ilpa.fallbackReason,
+          engine: ilpa.engine,
         });
       });
 
-      await then('reconstruction succeeds in inplace mode', () => {
-        expect(ilpa.reconstructionModeUsed).toBe('inplace');
-        expect(ilpa.fallbackReason).toBeUndefined();
+      await then('comparison succeeds through tagged publication', () => {
+        expect(ilpa.engine).toBe('tagged-tree');
       });
 
       await and('read_text parity holds after accept all', () => {

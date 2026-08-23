@@ -186,7 +186,7 @@ describe('tagged-tree offline evaluation', () => {
       );
       const published = await DocxArchive.load(result.document);
 
-      expect(result.comparisonStrategyUsed).toBe('tagged-tree');
+      expect(result.engine).toBe('tagged-tree');
       expect(await published.getFile('customXml/revised-only.xml')).toBe('<revised-only/>');
       expect(await published.getFile('customXml/original-only.xml')).toBeNull();
     },

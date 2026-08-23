@@ -11,7 +11,7 @@ import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
-import { compareDocumentsAtomizer as compareDocuments, type ReconstructionMode } from '@usejunior/docx-compare';
+import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
@@ -30,12 +30,10 @@ interface SemanticView {
 
 interface RunSnapshot {
   semantic: SemanticView;
-  reconstructionModeUsed: ReconstructionMode | undefined;
-  fallbackReason?: string;
-  failedChecks: string[];
+  engine: 'tagged-tree';
 }
 
-const MODES: ReconstructionMode[] = ['inplace'];
+const PUBLICATION_PATHS = ['tagged-tree'] as const;
 const FIXTURES = ['simple-word-change', 'split-run-boundary-change'] as const;
 
 const integrationDir = dirname(import.meta.url.replace('file://', ''));
@@ -95,21 +93,16 @@ async function runAndSnapshot(
 ): Promise<RunSnapshot> {
   const result = await compareDocuments(original, revised);
   const documentXml = await getDocXml(result.document);
-  const failedChecks = result.fallbackDiagnostics
-    ? result.fallbackDiagnostics.attempts.flatMap((attempt) => attempt.failedChecks).sort()
-    : [];
 
   return {
     semantic: semanticViewFromXml(documentXml),
-    reconstructionModeUsed: result.reconstructionModeUsed,
-    fallbackReason: result.fallbackReason,
-    failedChecks,
+    engine: result.engine,
   };
 }
 
 describe('Stability invariants', () => {
   for (const fixtureName of FIXTURES) {
-    for (const mode of MODES) {
+    for (const mode of PUBLICATION_PATHS) {
       test(`${fixtureName}/${mode}: accept/reject transforms are idempotent`, async ({ given, when, then }: AllureBddContext) => {
         let original: Buffer;
         let revised: Buffer;
@@ -178,9 +171,7 @@ describe('Stability invariants', () => {
           `determinism/small/rejected/run${index + 2}`
         );
 
-        expect(current.reconstructionModeUsed).toBe(first.reconstructionModeUsed);
-        expect(current.fallbackReason).toBe(first.fallbackReason);
-        expect(current.failedChecks).toEqual(first.failedChecks);
+        expect(current.engine).toBe(first.engine);
       }
     });
   });
@@ -213,12 +204,8 @@ describe('Stability invariants', () => {
         assertNormalizedEqual(first.semantic.accepted, second.semantic.accepted, 'determinism/synthetic/accepted');
         assertNormalizedEqual(first.semantic.rejected, second.semantic.rejected, 'determinism/synthetic/rejected');
 
-        expect(first.reconstructionModeUsed).toBe('inplace');
-        expect(second.reconstructionModeUsed).toBe('inplace');
-        expect(first.fallbackReason).toBeUndefined();
-        expect(second.fallbackReason).toBeUndefined();
-        expect(first.failedChecks).toEqual([]);
-        expect(second.failedChecks).toEqual([]);
+        expect(first.engine).toBe('tagged-tree');
+        expect(second.engine).toBe('tagged-tree');
       });
     },
     180000
@@ -252,13 +239,8 @@ describe('Stability invariants', () => {
         assertNormalizedEqual(first.semantic.accepted, second.semantic.accepted, 'determinism/ilpa/accepted');
         assertNormalizedEqual(first.semantic.rejected, second.semantic.rejected, 'determinism/ilpa/rejected');
 
-        expect(first.reconstructionModeUsed).toBe('inplace');
-        expect(second.reconstructionModeUsed).toBe('inplace');
-        expect(first.fallbackReason).toBeUndefined();
-        expect(second.fallbackReason).toBeUndefined();
-        expect(first.failedChecks).toEqual([]);
-        expect(second.failedChecks).toEqual([]);
-        expect(first.failedChecks).toEqual(second.failedChecks);
+        expect(first.engine).toBe('tagged-tree');
+        expect(second.engine).toBe('tagged-tree');
       });
     },
     // V8 coverage plus bookmark-collision repair compounds across these two
@@ -267,7 +249,7 @@ describe('Stability invariants', () => {
     600000
   );
 
-  for (const mode of MODES) {
+  for (const mode of PUBLICATION_PATHS) {
     test(`no-op/${mode}: compare(original, original) yields zero semantic change`, async ({ given, when, then }: AllureBddContext) => {
       let original: Buffer;
       let result: Awaited<ReturnType<typeof compareDocuments>>;
@@ -293,7 +275,7 @@ describe('Stability invariants', () => {
         expect(result.stats.insertions).toBe(0);
         expect(result.stats.deletions).toBe(0);
         expect(result.stats.modifications).toBe(0);
-        expect(result.fallbackReason).toBeUndefined();
+        expect(result.engine).toBe('tagged-tree');
 
         assertNormalizedEqual(originalReadText, resultSemantic.raw, `no-op/${mode}/raw`);
         assertNormalizedEqual(originalReadText, resultSemantic.accepted, `no-op/${mode}/accept`);

@@ -88,7 +88,7 @@ export async function compareDocuments(
     detectMoves,
   } = options;
 
-  return compareDocumentsAtomizer(original, revised, {
+  const tagged = await compareDocumentsAtomizer(original, revised, {
     author,
     date,
     formatDetection:
@@ -100,6 +100,18 @@ export async function compareDocuments(
         ? undefined
         : { detectMoves },
   });
+
+  return {
+    document: tagged.document,
+    stats: tagged.stats,
+    engine: tagged.engine,
+    ...(tagged.unrepresentedChanges === undefined
+      ? {}
+      : { unrepresentedChanges: tagged.unrepresentedChanges }),
+    ...(tagged.ancillaryFieldEvidence === undefined
+      ? {}
+      : { ancillaryFieldEvidence: tagged.ancillaryFieldEvidence }),
+  };
 }
 
 export * from './move-detection.js';
@@ -129,7 +141,6 @@ export { hasFldCharInsideDel } from '@usejunior/docx-core';
 export { parseDocumentXml } from './tagged/xmlToWmlElement.js';
 export {
   AncillaryStorySafetyError,
-  type AncillaryStorySafetyAttempt,
 } from './tagged/ancillaryFieldSafety.js';
 export {
   UnsupportedTextBoxRevisionError,

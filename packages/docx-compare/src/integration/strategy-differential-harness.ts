@@ -8,9 +8,7 @@ import {
 } from '@usejunior/docx-core';
 import JSZip from 'jszip';
 import type {
-  CompareResult,
   CompareStats,
-  ComparisonStrategy,
   UnrepresentedChange,
 } from '../compare-types.js';
 import { compareDocumentsAtomizer } from '../tagged/pipeline.js';
@@ -25,6 +23,7 @@ const AUTHOR = 'Strategy Differential';
 const DATE = new Date('2026-08-17T12:00:00Z');
 const XML_PART_PATTERN = /(?:\.xml|\.rels)$/u;
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+type TaggedStrategy = 'tagged-tree';
 
 export interface StrategyDifferentialFixture {
   id: string;
@@ -62,7 +61,7 @@ export interface ProjectionSummary {
 }
 
 export interface StrategyEvidence {
-  strategy: ComparisonStrategy;
+  strategy: TaggedStrategy;
   projections: {
     accept: ProjectionSummary;
     reject: ProjectionSummary;
@@ -70,7 +69,7 @@ export interface StrategyEvidence {
   packageParts: PackagePartSummary[];
   stats: CompareStats;
   authority: {
-    comparisonStrategyUsed?: ComparisonStrategy;
+    comparisonStrategyUsed?: TaggedStrategy;
   };
   unrepresentedChanges: UnrepresentedChange[];
   schema: {
@@ -222,12 +221,6 @@ async function auxiliaryDefinitionIssues(buffer: Buffer): Promise<string[]> {
     }
   }
   return issues.sort();
-}
-
-function unsupportedStoryDiagnostics(result: CompareResult): string[] {
-  return (result.ancillaryFallbackDiagnostics?.issues ?? [])
-    .map((issue) => `${issue.category}:${issue.code}:${issue.detail}`)
-    .sort();
 }
 
 function structuralIssueKey(issue: { check: string; part: string; message: string }): string {
@@ -472,7 +465,7 @@ async function characterizeStrategy(
     packageParts: await packagePartSummaries(result.document),
     stats: result.stats,
     authority: {
-      comparisonStrategyUsed: result.comparisonStrategyUsed,
+      comparisonStrategyUsed: result.engine,
     },
     unrepresentedChanges: result.unrepresentedChanges ?? [],
     schema: {
@@ -505,7 +498,10 @@ async function characterizeStrategy(
       revisionIdIssues: collectRevisionIdIssues(candidateXml, originalXml, revisedXml),
       moveBalanceIssues: moveBalanceIssues(candidateXml),
     },
-    unsupportedStoryDiagnostics: unsupportedStoryDiagnostics(result),
+    // A successful fail-closed comparison necessarily emitted no unsupported
+    // story diagnostic. Such failures are thrown instead of returned as
+    // result metadata.
+    unsupportedStoryDiagnostics: [],
   };
 }
 
