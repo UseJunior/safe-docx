@@ -10,12 +10,11 @@ import {
   buildTaggedTreePublication,
   type TaggedTreePublication,
 } from './taggedTreeShadow.js';
-import { constructTaggedTree } from './taggedTreeConstruction.js';
 import { COMPARISON_REVISION_ATTRIBUTE } from './taggedTreeSerializer.js';
-import type { TaggedNode } from './taggedTree.js';
 
 const TEST_FEATURE = 'refactor-tagged-tree-redline-construction';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
+const transformationTest = test.openspec('Serialized wrapper transformations determine range totals');
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const AUTHOR = 'Range Statistics';
 const DATE = new Date('2026-08-23T12:00:00Z');
@@ -77,7 +76,7 @@ describe('tagged publication range statistics', () => {
   // This matrix covers serialized insertion, deletion, and move wrappers. The
   // distinct contract for serializer-restorative property markup is tracked by
   // #937 instead of being treated as settled range-stat evidence here.
-  test('counts wrappers after word-level refinement splits replacement tokens', () => {
+  transformationTest('counts wrappers after word-level refinement splits replacement tokens', () => {
     const publication = publish(
       paragraph('Shared prefix old middle shared suffix.'),
       paragraph('Shared prefix new middle shared suffix.'),
@@ -96,7 +95,7 @@ describe('tagged publication range statistics', () => {
     expect(publicPublication.xml).not.toContain(COMPARISON_REVISION_ATTRIBUTE);
   });
 
-  test('coalesces a contiguous multi-token deletion into one wrapper', () => {
+  transformationTest('coalesces a contiguous multi-token deletion into one wrapper', () => {
     const publication = publish(
       paragraph('alpha beta gamma delta'),
       paragraph('alpha delta'),
@@ -107,7 +106,7 @@ describe('tagged publication range statistics', () => {
     expect(publication.stats.deletedRanges).toBe(1);
   });
 
-  test('counts wrappers split around bookmark and comment-range boundaries', () => {
+  transformationTest('counts wrappers split around bookmark and comment-range boundaries', () => {
     for (const boundary of [
       {
         name: 'bookmark',
@@ -162,7 +161,7 @@ describe('tagged publication range statistics', () => {
     }
   });
 
-  test('reports a property-node range from the emitted property revision', () => {
+  transformationTest('reports a property-node range from the emitted property revision', () => {
     const formatted = (property: string) => '<w:p><w:r>'
       + `<w:rPr>${property}</w:rPr><w:t>same words</w:t>`
       + '</w:r></w:p>';
@@ -170,33 +169,33 @@ describe('tagged publication range statistics', () => {
     const propertyChanges = generatedElements(publication, 'rPrChange');
 
     expectRangeStatsMatchSerializedMarkup(publication);
-    expect(publication.stats.formatChanges).toBe(propertyChanges.length);
+    expect(publication.stats.formatChanges).toBe(1);
     expect(propertyChanges).toHaveLength(1);
   });
 
-  test('counts an opaque inline subtree after whole-node wrapping', () => {
+  transformationTest('counts an opaque inline subtree after whole-node wrapping', () => {
+    const insertedRuns = '<w:r><w:t>opaque one</w:t></w:r>'
+      + '<w:r><w:t> opaque two</w:t></w:r>'
+      + '<w:r><w:t> opaque three</w:t></w:r>';
     const opaque = '<w:sdt>'
       + '<w:sdtPr><w:tag w:val="fixture"/></w:sdtPr>'
-      + '<w:sdtContent><w:r><w:t>opaque payload</w:t></w:r></w:sdtContent>'
+      + `<w:sdtContent>${insertedRuns}</w:sdtContent>`
       + '</w:sdt>';
     const publication = publish(
       '<w:p><w:r><w:t>stable</w:t></w:r></w:p>',
       `<w:p><w:r><w:t>stable</w:t></w:r>${opaque}</w:p>`,
     );
-    const emitted = parseXml(publication.xml);
-    const constructed = constructTaggedTree(
-      parseXml(documentWithBody('<w:p><w:r><w:t>stable</w:t></w:r></w:p>')).documentElement,
-      parseXml(documentWithBody(`<w:p><w:r><w:t>stable</w:t></w:r>${opaque}</w:p>`)).documentElement,
+    const plainRuns = publish(
+      '<w:p><w:r><w:t>stable</w:t></w:r></w:p>',
+      `<w:p><w:r><w:t>stable</w:t></w:r>${insertedRuns}</w:p>`,
     );
-    const descendants = (node: TaggedNode): TaggedNode[] =>
-      [node, ...node.children.flatMap(descendants)];
-    const opaqueControl = descendants(constructed.tree).find((node) =>
-      node.tag === 'revised' && node.node.localName === 'sdt');
+    const emitted = parseXml(publication.xml);
 
     expectRangeStatsMatchSerializedMarkup(publication);
-    expect(publication.stats.insertedRanges).toBeGreaterThan(0);
+    expectRangeStatsMatchSerializedMarkup(plainRuns);
+    expect(publication.stats.insertedRanges).toBe(1);
+    expect(plainRuns.stats.insertedRanges).toBe(3);
     expect(publication.stats.deletedRanges).toBe(0);
-    expect(opaqueControl?.opaque).toBe(true);
     const control = emitted.getElementsByTagNameNS(W_NS, 'sdt')[0]!;
     expect((control.parentNode as Element).localName).toBe('ins');
   });
@@ -209,6 +208,10 @@ describe('tagged publication range statistics', () => {
 
     expectRangeStatsMatchSerializedMarkup(publication);
     expect(publication.stats.deletedRanges).toBe(2);
+    // Characterize the serializer-restorative property wrapper separately:
+    // #937 tracks why it does not yet contribute to formatChanges.
+    expect(generatedElements(publication, 'pPrChange')).toHaveLength(1);
+    expect(publication.stats.formatChanges).toBe(0);
     expect(generatedElements(publication, 'del').some((element) =>
       (element.parentNode as Element | null)?.localName === 'rPr',
     )).toBe(true);
@@ -217,7 +220,7 @@ describe('tagged publication range statistics', () => {
     )).toBe(true);
   });
 
-  test('counts a whole-row deletion from its row-property marker', () => {
+  transformationTest('counts a whole-row deletion from its row-property marker', () => {
     const publication = publish(table(['deleted row', 'stable row']), table(['stable row']));
     const deletions = generatedElements(publication, 'del');
 
@@ -227,7 +230,7 @@ describe('tagged publication range statistics', () => {
     expect((deletions[0]!.parentNode?.parentNode as Element).localName).toBe('tr');
   });
 
-  test('excludes preserved prior-author revisions while counting nested comparison ranges', () => {
+  transformationTest('excludes preserved prior-author revisions while counting nested comparison ranges', () => {
     const priorRevision = (value: string) => '<w:p>'
       + `<w:ins w:id="4" w:author="${AUTHOR}" w:date="2026-08-01T00:00:00Z">`
       + `<w:r><w:t>${value}</w:t></w:r></w:ins>`
@@ -246,7 +249,7 @@ describe('tagged publication range statistics', () => {
       .toBeGreaterThan(publication.stats.insertedRanges);
   });
 
-  test('counts wrappers after complex-field controls force atomic replacement', () => {
+  transformationTest('counts wrappers after complex-field controls force atomic replacement', () => {
     const publication = publish(
       paragraphWithField('Pages: ', completeField(FIELD_INSTRUCTIONS.PAGE, '1'), '.'),
       paragraphWithField('Pages: ', completeField(FIELD_INSTRUCTIONS.NUMPAGES, '3'), '.'),
@@ -264,7 +267,7 @@ describe('tagged publication range statistics', () => {
     )).toHaveLength(2);
   });
 
-  test('reports balanced move ranges from the serialized move wrappers', () => {
+  transformationTest('reports balanced move ranges from the serialized move wrappers', () => {
     const publication = publish(
       paragraph('this complete paragraph moves away') + paragraph('stable paragraph'),
       paragraph('stable paragraph') + paragraph('this complete paragraph moves away'),
