@@ -21,11 +21,17 @@ function interfaceProperties(source: string, interfaceName: string): string[] {
     true,
     ts.ScriptKind.TS,
   );
-  const declaration = sourceFile.statements.find(
+  const declarations = sourceFile.statements.filter(
     (statement): statement is ts.InterfaceDeclaration =>
       ts.isInterfaceDeclaration(statement) && statement.name.text === interfaceName,
   );
-  if (!declaration) throw new Error(`Missing exported interface ${interfaceName}`);
+  if (declarations.length !== 1) {
+    throw new Error(`Expected one exported interface ${interfaceName}, found ${declarations.length}`);
+  }
+  const declaration = declarations[0]!;
+  if (declaration.heritageClauses?.length) {
+    throw new Error(`Unsupported inherited option interface ${interfaceName}`);
+  }
   return declaration.members.map((member) => {
     if (!ts.isPropertySignature(member) && !ts.isMethodSignature(member)) {
       throw new Error(`Unsupported ${interfaceName} member: ${member.getText(sourceFile)}`);
@@ -35,6 +41,40 @@ function interfaceProperties(source: string, interfaceName: string): string[] {
       return name.text;
     }
     throw new Error(`Unsupported computed ${interfaceName} member: ${name.getText(sourceFile)}`);
+  }).sort();
+}
+
+function stringArrayConstant(source: string, constantName: string): string[] {
+  const sourceFile = ts.createSourceFile(
+    `${constantName}.ts`,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const declarations = sourceFile.statements
+    .filter(ts.isVariableStatement)
+    .flatMap((statement) => Array.from(statement.declarationList.declarations))
+    .filter((declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === constantName);
+  if (declarations.length !== 1) {
+    throw new Error(`Expected one array constant ${constantName}, found ${declarations.length}`);
+  }
+  let initializer = declarations[0]!.initializer;
+  while (initializer && (
+    ts.isAsExpression(initializer) ||
+    ts.isSatisfiesExpression(initializer) ||
+    ts.isParenthesizedExpression(initializer)
+  )) {
+    initializer = initializer.expression;
+  }
+  if (!initializer || !ts.isArrayLiteralExpression(initializer)) {
+    throw new Error(`Expected ${constantName} to be an array literal`);
+  }
+  return initializer.elements.map((element) => {
+    if (!ts.isStringLiteral(element)) {
+      throw new Error(`Expected ${constantName} to contain only string literals`);
+    }
+    return element.text;
   }).sort();
 }
 
@@ -49,7 +89,7 @@ function matrixRows(markdown: string): Array<{ setting: string; surface: string 
     });
 }
 
-function documentedRoots(
+function documentedSettings(
   rows: Array<{ setting: string; surface: string }>,
   surface: 'Public' | 'low-level',
 ): string[] {
@@ -57,7 +97,7 @@ function documentedRoots(
     rows
       .filter((row) => row.surface.toLowerCase().includes(surface.toLowerCase()))
       .flatMap((row) => Array.from(row.setting.matchAll(/`([^`]+)`/g)))
-      .map((match) => match[1]!.split('.')[0]!),
+      .map((match) => match[1]!),
   )).sort();
 }
 
@@ -67,13 +107,30 @@ describe('tagged option-to-observable matrix freshness', () => {
     const rows = matrixRows(markdown);
     const compareTypes = readFileSync(resolve(sourceDirectory, 'compare-types.ts'), 'utf8');
     const pipeline = readFileSync(resolve(sourceDirectory, 'tagged/pipeline.ts'), 'utf8');
+    const coreTypes = readFileSync(
+      resolve(packageDirectory, '../docx-core/src/core-types.ts'),
+      'utf8',
+    );
+    const numberingIntegration = readFileSync(
+      resolve(sourceDirectory, 'tagged/numberingIntegration.ts'),
+      'utf8',
+    );
+    const nestedLowLevelOptions = new Map<string, string[]>([
+      ['moveDetection', interfaceProperties(coreTypes, 'MoveDetectionSettings')],
+      ['formatDetection', interfaceProperties(coreTypes, 'FormatDetectionSettings')],
+      ['numbering', interfaceProperties(numberingIntegration, 'NumberingIntegrationOptions')],
+    ]);
+    const lowLevelSettings = interfaceProperties(pipeline, 'AtomizerOptions')
+      .flatMap((property) => {
+        const nested = nestedLowLevelOptions.get(property);
+        return nested ? nested.map((name) => `${property}.${name}`) : [property];
+      })
+      .sort();
 
-    expect(documentedRoots(rows, 'Public')).toEqual(
+    expect(documentedSettings(rows, 'Public')).toEqual(
       interfaceProperties(compareTypes, 'CompareOptions'),
     );
-    expect(documentedRoots(rows, 'low-level')).toEqual(
-      interfaceProperties(pipeline, 'AtomizerOptions'),
-    );
+    expect(documentedSettings(rows, 'low-level')).toEqual(lowLevelSettings);
   });
 
   test('contains no retired selector or migration-phase promises', () => {
@@ -81,25 +138,24 @@ describe('tagged option-to-observable matrix freshness', () => {
     const documentedSettings = matrixRows(markdown)
       .map((row) => row.setting)
       .join('\n');
-    for (const retiredSelector of [
-      'comparisonStrategy',
-      'engine',
-      'reconstructionMode',
-      'premergeRuns',
-      'maxWordRefinementChangeRanges',
-    ]) {
+    const publicFacade = readFileSync(resolve(sourceDirectory, 'index.ts'), 'utf8');
+    for (const retiredSelector of stringArrayConstant(
+      publicFacade,
+      'REMOVED_COMPARISON_OPTIONS',
+    )) {
       expect(documentedSettings).not.toContain(`\`${retiredSelector}\``);
     }
     expect(markdown).not.toMatch(/Phase \d|Scheduled removal|legacy (?:assembly|path|pass)/i);
   });
 
-  test('links to the durable archived migration record', () => {
+  test('links only to durable repository records', () => {
     const markdown = readFileSync(matrixPath, 'utf8');
-    const link = markdown.match(
-      /\[archived tagged-tree change\]\(([^)]+)\)/,
-    )?.[1];
+    const links = Array.from(markdown.matchAll(/\[[^\]]+\]\(([^)#]+)(?:#[^)]+)?\)/g))
+      .map((match) => match[1]!);
 
-    expect(link).toBeDefined();
-    expect(existsSync(resolve(packageDirectory, link!))).toBe(true);
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      expect(existsSync(resolve(packageDirectory, link)), link).toBe(true);
+    }
   });
 });
