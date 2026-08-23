@@ -109,9 +109,9 @@ function comparisonAtomKeys(element: Element): string[] {
 }
 
 /**
- * Preserve the public word/control atom weighting without consulting the
- * legacy merged-atom result. Each maximal tagged change subtree is atomized
- * independently with the documented word-split settings.
+ * Derive the versioned `tagged-token-v1` word/control weighting without
+ * consulting the deleted flattened-atom engine. Each maximal tagged change
+ * subtree is tokenized independently under the tagged metric contract.
  */
 function taggedAtomWeight(node: TaggedNode, side: 'original' | 'revised'): number {
   const element = representative(node, side);
