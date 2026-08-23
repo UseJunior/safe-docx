@@ -6,9 +6,9 @@ procedure. It does not claim that the restored legacy line was released.
 ## Environment
 
 - Starting revision: `origin/main` at `a1566dd074971150e3fdc72ed34eb70ccb2a5db7`
-- Disposable worktree: `/private/tmp/safe-docx-rollback-execution-919`
-- Validation branch: `rollback-legacy-comparison-validation-20260821`
-- Restore source: annotated tag `legacy-comparison-final-20260817`
+- Disposable worktree: `/private/tmp/safe-docx-rollback-execution-919-v2`
+- Validation branch: `rollback-legacy-comparison-validation-v2-20260821`
+- Restore source: pinned audited commit `11315af1f135e9f5515053f48dc514a5b23303c3`
 
 ## Remote-anchor check
 
@@ -28,8 +28,13 @@ retained branch both resolve to the audited legacy commit.
 ## Restore and exact-tree check
 
 ```text
-$ git switch -c rollback-legacy-comparison-validation-20260821 origin/main
-Switched to a new branch 'rollback-legacy-comparison-validation-20260821'
+$ set -euo pipefail
+EXIT=0
+
+$ LEGACY_ROLLBACK_COMMIT=11315af1f135e9f5515053f48dc514a5b23303c3
+
+$ git switch -c rollback-legacy-comparison-validation-v2-20260821 origin/main
+Switched to a new branch 'rollback-legacy-comparison-validation-v2-20260821'
 
 $ git rev-parse HEAD
 a1566dd074971150e3fdc72ed34eb70ccb2a5db7
@@ -43,14 +48,14 @@ $ git rev-parse 'legacy-comparison-final-20260817^{commit}'
 11315af1f135e9f5515053f48dc514a5b23303c3
 
 $ test "$(git rev-parse 'legacy-comparison-final-20260817^{commit}')" = \
-    11315af1f135e9f5515053f48dc514a5b23303c3
+    "$LEGACY_ROLLBACK_COMMIT"
 EXIT=0
 
 $ test "$(git rev-parse 'origin/838-legacy-comparison-maintenance-20260817^{commit}')" = \
-    11315af1f135e9f5515053f48dc514a5b23303c3
+    "$LEGACY_ROLLBACK_COMMIT"
 EXIT=0
 
-$ git restore --source=legacy-comparison-final-20260817 --staged --worktree -- \
+$ git restore --source="$LEGACY_ROLLBACK_COMMIT" --staged --worktree -- \
     packages/docx-compare packages/docx-core packages/docx-markdoc \
     spec-compliance
 EXIT=0
@@ -58,12 +63,20 @@ EXIT=0
 $ git status --short | wc -l
 209
 
-$ git diff --exit-code legacy-comparison-final-20260817 -- \
+$ git commit -m "revert(docx-compare): restore retained legacy comparison tree"
+[rollback-legacy-comparison-validation-v2-20260821 244b3b5b] revert(docx-compare): restore retained legacy comparison tree
+ 209 files changed, 39619 insertions(+), 4973 deletions(-)
+EXIT=0
+
+$ git rev-parse HEAD
+244b3b5b38b2f3cf24bfd275a52859cf70498f42
+
+$ git diff --exit-code "$LEGACY_ROLLBACK_COMMIT" -- \
     packages/docx-compare packages/docx-core packages/docx-markdoc \
     spec-compliance
 EXIT=0
 ```
 
-The non-zero changed-path count confirms that the exercise performed a real
-restore. The final zero exit status proves that every audited tree matched the
-retained tag after the restore.
+The non-zero changed-path count and real rollback commit confirm that the
+exercise performed the documented restore. The final zero exit status proves
+that every audited tree matched the pinned legacy commit after the restore.

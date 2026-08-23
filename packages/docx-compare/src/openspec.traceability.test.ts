@@ -362,7 +362,20 @@ describe('OpenSpec traceability: tagged docx comparison', () => {
         new URL('./integration/strategy-differential-manifest.json', import.meta.url),
         'utf8',
       )) as { rows: unknown[] };
+      const rollback = readFileSync(
+        new URL(
+          '../../../openspec/changes/archive/2026-08-19-refactor-tagged-tree-spine/rollback.md',
+          import.meta.url,
+        ),
+        'utf8',
+      );
       expect(manifest.rows.length).toBeGreaterThan(0);
+      expect(rollback).toContain('set -euo pipefail');
+      expect(rollback).toContain('legacy-comparison-final-20260817');
+      expect(rollback).toContain('838-legacy-comparison-maintenance-20260817');
+      expect(rollback).toContain('11315af1f135e9f5515053f48dc514a5b23303c3');
+      expect(rollback).toContain('git restore --source="$LEGACY_ROLLBACK_COMMIT"');
+      expect(rollback).toContain('git diff --exit-code "$LEGACY_ROLLBACK_COMMIT"');
     },
   );
 

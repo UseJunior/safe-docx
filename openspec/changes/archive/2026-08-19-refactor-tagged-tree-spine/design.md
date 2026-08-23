@@ -168,8 +168,9 @@ is retained only if the option matrix establishes tagged observability.
 7. Rename surviving tagged modules after the rollback window.
 
 Rollback before deletion selects the private legacy switch. Rollback after
-deletion follows the documented multi-commit sequence from the maintenance tag;
-it is not represented as a one-commit revert.
+deletion follows the documented pinned-tree recovery from the maintenance tag
+and branch; it is not represented as a revert of unreachable squash-internal
+commits.
 
 ## Open Questions
 
