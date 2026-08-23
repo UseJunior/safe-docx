@@ -17,10 +17,10 @@
  * own evidence. An empty violation list says nothing about them, and the
  * runtime accept/reject checks in `pipeline.ts` are not made redundant by it.
  *
- * Correction (2026-08-16): this module began as additive Stage A evidence,
- * but the completed change now routes ordinary comparison through it by
- * default while retaining the legacy strategy as an explicit rollback. See
- * `openspec/changes/refactor-tagged-tree-redline-construction/`.
+ * Both stable and low-level comparison entry points now construct and publish
+ * through this tagged-tree representation and the revised-base package path.
+ * The migration record is archived at
+ * `openspec/changes/archive/2026-08-19-refactor-tagged-tree-spine/`.
  */
 
 import type { WmlElement } from '@usejunior/docx-core';
