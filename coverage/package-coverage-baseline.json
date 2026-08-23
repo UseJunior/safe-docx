@@ -1,11 +1,18 @@
 {
-  "generated_at": "2026-07-07T17:20:00.000Z",
+  "generated_at": "2026-08-23T10:50:24.297Z",
+  "policy": {
+    "ratchet_tolerance_percentage_points": 0.1,
+    "max_positive_drift_percentage_points": {
+      "lines": 1,
+      "branches": 2
+    }
+  },
   "packages": {
     "docx-core": {
-      "lines": 87.64,
-      "branches": 71.76,
-      "functions": 89.2,
-      "statements": 85.66,
+      "lines": 88.53,
+      "branches": 75.53,
+      "functions": 90.1,
+      "statements": 86.62,
       "deltas": {
         "lines": null,
         "branches": null,
@@ -14,10 +21,10 @@
       }
     },
     "docx-compare": {
-      "lines": 62.71,
-      "branches": 52.35,
-      "functions": 68.39,
-      "statements": 61.22,
+      "lines": 87.63,
+      "branches": 75.52,
+      "functions": 88.06,
+      "statements": 85.64,
       "deltas": {
         "lines": null,
         "branches": null,
@@ -26,10 +33,10 @@
       }
     },
     "docx-mcp": {
-      "lines": 83.66,
-      "branches": 74.3,
-      "functions": 89.52,
-      "statements": 81.25,
+      "lines": 86.5,
+      "branches": 76.72,
+      "functions": 92.87,
+      "statements": 84.38,
       "deltas": {
         "lines": null,
         "branches": null,
@@ -39,9 +46,9 @@
     }
   },
   "aggregate": {
-    "lines_mean": 78.65,
-    "branches_mean": 66.38,
-    "functions_mean": 82.7,
-    "statements_mean": 76.69
+    "lines_mean": 87.55,
+    "branches_mean": 75.92,
+    "functions_mean": 90.34,
+    "statements_mean": 85.55
   }
 }
