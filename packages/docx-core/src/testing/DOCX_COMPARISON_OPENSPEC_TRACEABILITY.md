@@ -38,6 +38,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Get format change revisions | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Identical text returns one | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Known property has a friendly name | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Linked property-change facets share a normalized logical signature | covered | `packages/docx-compare/src/integration/strategy-differential.test.ts` |  |
 | Matched formatting difference receives format status | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Matched-but-differing nodes retain both representatives | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |
 | Missing corpus evidence fails loudly | covered | `packages/docx-compare/src/integration/strategy-differential-manifest.corpus.test.ts`, `packages/docx-compare/src/integration/strategy-differential.test.ts` |  |
@@ -62,9 +63,11 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Reserved footnote IDs excluded from numbering | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Residual matching is globally deterministic | covered | `packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts` |  |
 | Revision and bookmark identifiers may overlap numerically | covered | `packages/docx-compare/src/integration/strategy-differential.test.ts` |  |
+| Revision identifier reuse across logical signatures fails | covered | `packages/docx-compare/src/integration/strategy-differential.test.ts` |  |
 | Sequential numbering ignores XML IDs | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Serialized multi-author stacks preserve both projections | covered | `packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts` |  |
 | Serialized wrapper transformations determine range totals | covered | `packages/docx-compare/src/openspec.traceability.test.ts`, `packages/docx-compare/src/tagged/taggedTreeStatistics.test.ts` |  |
+| Sibling fragments of one logical revision may share an identifier | covered | `packages/docx-compare/src/integration/strategy-differential.test.ts` |  |
 | Skipped soak remains explicit | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Standalone publication has no legacy assembly dependency | covered | `packages/docx-compare/src/tagged/taggedTreeShadow.test.ts` |  |
 | Tagged emission produces one range pair per logical move | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
