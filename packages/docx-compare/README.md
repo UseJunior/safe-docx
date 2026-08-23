@@ -34,6 +34,8 @@ and `inplaceSuccessDiagnostics`; those fields described implementations and
 fallbacks that no longer exist. Publication failures are thrown as typed errors,
 including `TaggedPublicationSafetyError`, rather than returned as fallback metadata.
 JavaScript reads of a retired result field now return `undefined`.
+When `unrepresentedChanges` has no value, the public result now omits that
+optional own property instead of returning it with the value `undefined`.
 
 `AncillaryStorySafetyError` exposes its current `issues` only. Remove callers of
 the deleted `attempts` property and `AncillaryStorySafetyAttempt` type; the sole

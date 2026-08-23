@@ -9,7 +9,6 @@ import {
 import JSZip from 'jszip';
 import type {
   CompareStats,
-  ComparisonStrategy,
   UnrepresentedChange,
 } from '../compare-types.js';
 import { compareDocumentsAtomizer } from '../tagged/pipeline.js';
@@ -24,6 +23,7 @@ const AUTHOR = 'Strategy Differential';
 const DATE = new Date('2026-08-17T12:00:00Z');
 const XML_PART_PATTERN = /(?:\.xml|\.rels)$/u;
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+type TaggedStrategy = 'tagged-tree';
 
 export interface StrategyDifferentialFixture {
   id: string;
@@ -61,7 +61,7 @@ export interface ProjectionSummary {
 }
 
 export interface StrategyEvidence {
-  strategy: ComparisonStrategy;
+  strategy: TaggedStrategy;
   projections: {
     accept: ProjectionSummary;
     reject: ProjectionSummary;
@@ -69,7 +69,7 @@ export interface StrategyEvidence {
   packageParts: PackagePartSummary[];
   stats: CompareStats;
   authority: {
-    comparisonStrategyUsed?: ComparisonStrategy;
+    comparisonStrategyUsed?: TaggedStrategy;
   };
   unrepresentedChanges: UnrepresentedChange[];
   schema: {
@@ -465,7 +465,7 @@ async function characterizeStrategy(
     packageParts: await packagePartSummaries(result.document),
     stats: result.stats,
     authority: {
-      comparisonStrategyUsed: 'tagged-tree',
+      comparisonStrategyUsed: result.engine,
     },
     unrepresentedChanges: result.unrepresentedChanges ?? [],
     schema: {

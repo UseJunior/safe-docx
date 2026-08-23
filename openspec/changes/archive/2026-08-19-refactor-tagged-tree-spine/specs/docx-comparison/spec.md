@@ -186,14 +186,6 @@ text-box, auxiliary-sidecar, and formatting-fidelity checks SHALL remain in forc
 - **AND** no public strategy, engine, or reconstruction-mode selector SHALL be accepted
 - **AND** no public package-base or provenance selector SHALL be accepted
 
-#### Scenario: Public comparison reports only tagged result metadata
-
-- **GIVEN** a comparison succeeds through the sole tagged publication path
-- **WHEN** the public `CompareResult` is inspected
-- **THEN** its engine SHALL be `tagged-tree`
-- **AND** it SHALL NOT expose requested/used strategy, reconstruction-mode, or legacy-fallback result fields
-- **AND** publication failures SHALL be surfaced through typed errors rather than fallback result metadata
-
 #### Scenario: Skipped soak remains explicit
 
 - **GIVEN** migration history in which the authority flip and legacy deletion shipped without the required intervening release/corpus cycle
