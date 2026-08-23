@@ -9,8 +9,8 @@ commits are not durable recovery anchors.
 
 - Starting revision: `origin/main` at
   `271a8cbf695998da990b99461569a2096f7ae6d2`
-- Disposable worktree: `/private/tmp/safe-docx-rollback-execution-919-v4`
-- Validation branch: `rollback-legacy-comparison-validation-v4-20260822`
+- Disposable worktree: `/private/tmp/safe-docx-rollback-execution-919-v5`
+- Validation branch: `rollback-legacy-comparison-validation-v5-20260822`
 - Restore source: pinned audited commit
   `11315af1f135e9f5515053f48dc514a5b23303c3`
 
