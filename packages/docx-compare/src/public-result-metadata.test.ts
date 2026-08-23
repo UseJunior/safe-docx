@@ -62,6 +62,12 @@ describe('public comparison result metadata', () => {
 
       expect(compareResultTypeIsExact).toBe(true);
       expect(result.engine).toBe('tagged-tree');
+      expect(Object.keys(result).sort()).toEqual([
+        'ancillaryFieldEvidence',
+        'document',
+        'engine',
+        'stats',
+      ]);
       for (const field of RETIRED_RESULT_FIELDS) {
         expect(Object.hasOwn(result, field), field).toBe(false);
       }

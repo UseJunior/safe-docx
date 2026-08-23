@@ -20,6 +20,10 @@
   `engine: 'tagged-tree'` and removes requested/used strategy, reconstruction
   mode, and fallback metadata for the deleted comparison spine. Callers should
   handle typed publication errors instead of branching on fallback fields.
+- **Breaking:** `AncillaryStorySafetyError.attempts` and the exported
+  `AncillaryStorySafetyAttempt` type are removed because tagged publication does
+  not make reconstruction-mode attempts. Deep imports of the internal result
+  type should migrate from `AtomizerCompareResult` to `TaggedCompareResult`.
 - Migration note: DOCX comparison and redline generation moved from
   `@usejunior/docx-core` to `@usejunior/docx-compare`. Update comparison
   imports such as `compareDocuments` to use the new package name.

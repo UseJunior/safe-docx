@@ -5,9 +5,9 @@
 This inventory adjudicates every package-root export before the tagged-spine breaking release.
 “Deprecated” means retained for one release; “breaking removal” means intentionally absent now.
 
-- Stable compatibility surface: 63
+- Stable compatibility surface: 62
 - Deprecated for one release: 22
-- Documented breaking removals: 57
+- Documented breaking removals: 58
 
 | Symbol | Kind | Source | Present | Disposition |
 | --- | --- | --- | --- | --- |
@@ -25,7 +25,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `AncillaryPackageLocator` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `AncillarySelectedBindingSummary` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `AncillaryStoryLocator` | type | `src/compare-types.ts` | yes | stable compatibility |
-| `AncillaryStorySafetyAttempt` | interface | `src/tagged/ancillaryFieldSafety.ts` | yes | stable compatibility |
+| `AncillaryStorySafetyAttempt` | interface | `src/tagged/ancillaryFieldSafety.ts` | no | breaking removal |
 | `AncillaryStorySafetyCategory` | type | `src/compare-types.ts` | yes | stable compatibility |
 | `AncillaryStorySafetyError` | class | `src/tagged/ancillaryFieldSafety.ts` | yes | stable compatibility |
 | `AncillaryStorySafetyIssue` | interface | `src/compare-types.ts` | yes | stable compatibility |

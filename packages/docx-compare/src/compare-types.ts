@@ -68,9 +68,12 @@ export interface CompareStats {
   formatChangeAtoms: number;
 }
 
+/** @deprecated Comparison no longer has reconstruction modes. */
 export type ReconstructionMode = 'rebuild' | 'inplace';
+/** @deprecated Comparison no longer accepts or reports strategy selection. */
 export type ComparisonStrategy = 'tagged-tree' | 'legacy';
 
+/** @deprecated Tagged publication throws instead of falling back to a legacy strategy. */
 export type ComparisonStrategyFallbackReason =
   | 'tagged_tree_publication_safety_check_failed';
 
@@ -90,10 +93,12 @@ export interface UnrepresentedChange {
   role?: 'default' | 'first' | 'even';
 }
 
+/** @deprecated Tagged publication throws instead of falling back to reconstruction. */
 export type ReconstructionFallbackReason =
   | 'round_trip_safety_check_failed'
   | 'ancillary_story_safety_check_failed';
 
+/** @deprecated Retained for one-release compatibility with historical diagnostic types. */
 export type ReconstructionSafetyCheckName =
   | 'acceptText'
   | 'rejectText'
@@ -101,6 +106,7 @@ export type ReconstructionSafetyCheckName =
   | 'rejectBookmarks'
   | 'fieldStructure';
 
+/** @deprecated Retained for one-release compatibility with historical diagnostic types. */
 export interface ReconstructionSafetyChecks {
   acceptText: boolean;
   rejectText: boolean;
@@ -109,6 +115,7 @@ export interface ReconstructionSafetyChecks {
   fieldStructure: boolean;
 }
 
+/** @deprecated Retained for one-release compatibility with historical diagnostic types. */
 export interface ReconstructionTextMismatchDetails {
   expectedLength: number;
   actualLength: number;
@@ -118,11 +125,13 @@ export interface ReconstructionTextMismatchDetails {
   differenceSample: string[];
 }
 
+/** @deprecated Retained for one-release compatibility with historical diagnostic types. */
 export interface ReconstructionIdDelta {
   missing: string[];
   unexpected: string[];
 }
 
+/** @deprecated Retained for one-release compatibility with historical diagnostic types. */
 export interface ReconstructionBookmarkMismatchDetails {
   startNames: ReconstructionIdDelta;
   referencedBookmarkNames: ReconstructionIdDelta;
@@ -141,6 +150,7 @@ export interface ReconstructionBookmarkMismatchDetails {
   actualUnmatchedEndIds: string[];
 }
 
+/** @deprecated Retained for one-release compatibility with historical diagnostic types. */
 export interface ReconstructionSafetyFailureDetails {
   acceptText?: ReconstructionTextMismatchDetails;
   rejectText?: ReconstructionTextMismatchDetails;
@@ -148,6 +158,7 @@ export interface ReconstructionSafetyFailureDetails {
   rejectBookmarks?: ReconstructionBookmarkMismatchDetails;
 }
 
+/** @deprecated Retained for one-release compatibility with historical diagnostic types. */
 export interface ReconstructionIdDeltaSummary {
   missingCount: number;
   unexpectedCount: number;
@@ -155,6 +166,7 @@ export interface ReconstructionIdDeltaSummary {
   firstUnexpected?: string;
 }
 
+/** @deprecated Retained for one-release compatibility with historical diagnostic types. */
 export interface ReconstructionTextMismatchSummary {
   firstDifferingParagraphIndex: number;
   expectedParagraph: string;
@@ -162,6 +174,7 @@ export interface ReconstructionTextMismatchSummary {
   firstDifference: string;
 }
 
+/** @deprecated Retained for one-release compatibility with historical diagnostic types. */
 export interface ReconstructionBookmarkMismatchSummary {
   startNames: ReconstructionIdDeltaSummary;
   referencedBookmarkNames: ReconstructionIdDeltaSummary;
@@ -174,6 +187,7 @@ export interface ReconstructionBookmarkMismatchSummary {
   firstUnmatchedEndId?: string;
 }
 
+/** @deprecated Retained for one-release compatibility with historical diagnostic types. */
 export interface ReconstructionSafetyFailureSummary {
   acceptText?: ReconstructionTextMismatchSummary;
   rejectText?: ReconstructionTextMismatchSummary;
@@ -181,6 +195,7 @@ export interface ReconstructionSafetyFailureSummary {
   rejectBookmarks?: ReconstructionBookmarkMismatchSummary;
 }
 
+/** @deprecated The tagged publisher does not make reconstruction attempts. */
 export interface ReconstructionAttemptDiagnostics {
   pass:
     | 'inplace_word_split'
@@ -193,6 +208,7 @@ export interface ReconstructionAttemptDiagnostics {
   firstDiffSummary?: ReconstructionSafetyFailureSummary;
 }
 
+/** @deprecated The tagged publisher throws instead of falling back to reconstruction. */
 export interface ReconstructionFallbackDiagnostics {
   attempts: ReconstructionAttemptDiagnostics[];
 }

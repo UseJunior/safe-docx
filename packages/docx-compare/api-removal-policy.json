@@ -13,7 +13,6 @@
       "AncillaryPackageLocator",
       "AncillarySelectedBindingSummary",
       "AncillaryStoryLocator",
-      "AncillaryStorySafetyAttempt",
       "AncillaryStorySafetyCategory",
       "AncillaryStorySafetyError",
       "AncillaryStorySafetyIssue",
@@ -147,7 +146,8 @@
     { "symbol": "MoveMarkup", "kind": "interface", "source": "src/move-detection.ts" },
     { "symbol": "MoveMarkupOptions", "kind": "interface", "source": "src/move-detection.ts" },
     { "symbol": "RevisionIdState", "kind": "interface", "source": "src/move-detection.ts" },
-    { "symbol": "DEFAULT_RECONSTRUCTION_MODE", "kind": "value", "source": "src/comparison-defaults.ts" }
+    { "symbol": "DEFAULT_RECONSTRUCTION_MODE", "kind": "value", "source": "src/comparison-defaults.ts" },
+    { "symbol": "AncillaryStorySafetyAttempt", "kind": "interface", "source": "src/tagged/ancillaryFieldSafety.ts" }
   ],
   "publicOptions": {
     "author": "stable compatibility",

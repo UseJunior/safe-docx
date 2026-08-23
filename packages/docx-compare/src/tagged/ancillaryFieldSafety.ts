@@ -18,7 +18,6 @@ import type {
   AncillarySelectedBindingSummary,
   AncillaryStorySafetyIssue,
   AncillaryStorySummary,
-  ReconstructionMode,
 } from '../compare-types.js';
 import {
   canonicalNode,
@@ -46,27 +45,13 @@ const IGNORED_STRICT_ISSUES = new Set([
   'DELETED_TEXT_OUTSIDE_DELETION',
 ]);
 
-export interface AncillaryStorySafetyAttempt {
-  reconstructionMode: ReconstructionMode;
-  issues: AncillaryStorySafetyIssue[];
-}
-
 export class AncillaryStorySafetyError extends Error {
   readonly issues: AncillaryStorySafetyIssue[];
-  readonly attempts?: AncillaryStorySafetyAttempt[];
 
-  constructor(
-    issues: AncillaryStorySafetyIssue[],
-    attempts?: AncillaryStorySafetyAttempt[],
-  ) {
-    super(
-      attempts
-        ? `Ancillary story safety check failed in ${attempts.length} reconstruction attempt(s)`
-        : `Ancillary story safety check failed with ${issues.length} issue(s)`,
-    );
+  constructor(issues: AncillaryStorySafetyIssue[]) {
+    super(`Ancillary story safety check failed with ${issues.length} issue(s)`);
     this.name = 'AncillaryStorySafetyError';
     this.issues = issues;
-    this.attempts = attempts;
   }
 }
 
