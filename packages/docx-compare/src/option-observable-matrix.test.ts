@@ -126,7 +126,11 @@ describe('tagged option-to-observable matrix freshness', () => {
         return nested ? nested.map((name) => `${property}.${name}`) : [property];
       })
       .sort();
+    const settingsByRow = rows.flatMap((row) =>
+      Array.from(row.setting.matchAll(/`([^`]+)`/g), (match) => match[1]!),
+    );
 
+    expect(settingsByRow).toHaveLength(new Set(settingsByRow).size);
     expect(documentedSettings(rows, 'Public')).toEqual(
       interfaceProperties(compareTypes, 'CompareOptions'),
     );
@@ -145,7 +149,7 @@ describe('tagged option-to-observable matrix freshness', () => {
     )) {
       expect(documentedSettings).not.toContain(`\`${retiredSelector}\``);
     }
-    expect(markdown).not.toMatch(/Phase \d|Scheduled removal|legacy (?:assembly|path|pass)/i);
+    expect(markdown).not.toMatch(/Phase \d|Scheduled removal|legacy/i);
   });
 
   test('ties result metadata and disabled-formatting claims to current implementation', () => {
@@ -178,6 +182,15 @@ describe('tagged option-to-observable matrix freshness', () => {
     expect(links.length).toBeGreaterThan(0);
     for (const link of links) {
       expect(existsSync(resolve(packageDirectory, link)), link).toBe(true);
+    }
+
+    const evidencePaths = Array.from(
+      markdown.matchAll(/`((?:src|\.\.\/)[^`\s]+?\.test\.ts)`/g),
+      (match) => match[1]!,
+    );
+    expect(evidencePaths.length).toBeGreaterThan(0);
+    for (const evidencePath of evidencePaths) {
+      expect(existsSync(resolve(packageDirectory, evidencePath)), evidencePath).toBe(true);
     }
   });
 });

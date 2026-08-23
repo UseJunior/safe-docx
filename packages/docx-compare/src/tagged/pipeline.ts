@@ -1106,7 +1106,7 @@ function evaluateSafetyChecks(
   };
 }
 
-/** Build the authoritative revised-base result without legacy construction. */
+/** Build the authoritative result through the sole revised-base tagged construction. */
 async function compareDocumentsTaggedCore(
   original: Buffer,
   revised: Buffer,
@@ -1354,11 +1354,10 @@ export async function compareDocumentsAtomizer(
 // =============================================================================
 // Auxiliary Part Merging (footnotes, endnotes, comments)
 //
-// Reconstruction may insert content whose auxiliary definitions are absent
-// from the base archive. The "source" archive is the one we pull definitions
-// from: in inplace mode that is `originalArchive` (deleted-but-referenced
-// definitions); in rebuild mode it is `revisedArchive` (added-but-referenced
-// definitions). Step 12 in the pipeline picks the correct source per mode.
+// Tagged construction may retain original-side deleted references and
+// revised-side added references whose auxiliary definitions are absent from
+// the result archive. Both source archives are merged in sequence; definitions
+// are copied only when the result still references them and they are absent.
 // =============================================================================
 
 export interface AuxiliaryMergeResult {
@@ -1548,10 +1547,8 @@ function collectReferenceIds(documentXml: string, referenceTag: string): Set<str
 
 /**
  * Merge auxiliary part definitions (footnotes, endnotes, comments) from the
- * source archive into the result archive. The source archive is whichever
- * side reconstruction may have introduced references to: original in inplace
- * mode (deleted-but-referenced definitions), revised in rebuild mode
- * (added-but-referenced definitions).
+ * source archive into the result archive. The caller invokes this once for
+ * original-side deleted references and once for revised-side added references.
  */
 async function mergeAuxiliaryPartDefinitions(
   sourceArchive: DocxArchive,
