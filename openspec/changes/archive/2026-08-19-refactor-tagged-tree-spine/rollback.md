@@ -59,6 +59,10 @@ path added after the retained commit. Preserve the deployed workspace versions,
 restore the three legacy-facing MCP contract files, and retarget the visual
 oracle to the retained module location before installing dependencies. The
 live comparison specification must return to the retained contract as well.
+The deployed package manifest and CI workflow also require the descendant
+real-corpus Vitest configuration. Restore that configuration so the retained
+legacy corpus suites remain executable through the deployed
+`test:real-corpus` command.
 At the deployed revision validated below, configurable note presentation was
 an independently compatible change inside the restored trees. Reapply its
 complete implementation, consumer, and coverage set from its reachable mainline
@@ -73,7 +77,8 @@ git merge-base --is-ancestor "$NOTE_PRESENTATION_COMMIT" \
   "$DEPLOYED_RELEASE_COMMIT"
 git restore --source="$DEPLOYED_RELEASE_COMMIT" --staged --worktree -- \
   packages/docx-compare/package.json packages/docx-core/package.json \
-  packages/docx-markdoc/package.json
+  packages/docx-markdoc/package.json \
+  packages/docx-compare/vitest.corpus.config.ts
 git restore --source="$LEGACY_ROLLBACK_COMMIT" --staged --worktree -- \
   openspec/specs/docx-comparison/spec.md \
   packages/docx-mcp/src/tool_catalog.ts \
@@ -113,6 +118,7 @@ reconciliation:
 set -euo pipefail
 git add -- package-lock.json packages/docx-compare/package.json \
   packages/docx-core/package.json packages/docx-markdoc/package.json \
+  packages/docx-compare/vitest.corpus.config.ts \
   openspec/specs/docx-comparison/spec.md \
   packages/docx-core/src/primitives/comments.test.ts \
   packages/docx-core/src/primitives/comments.ts \
@@ -135,6 +141,7 @@ real-DOCX legacy-path smoke:
 
 ```bash
 npm run build && npm run lint:workspaces && npm run test:run && \
+  npm run test:real-corpus -w @usejunior/docx-compare && \
   npm run check:spec-coverage && npm run check:conformance-citations && \
   npm run check:conformance-doc && \
 node openspec/changes/archive/2026-08-19-refactor-tagged-tree-spine/\

@@ -419,6 +419,7 @@ describe('OpenSpec traceability: tagged docx comparison', () => {
       expect(reconciliationShell).toContain('src/primitives/document.ts');
       expect(reconciliationShell).toContain('src/primitives/footnotes.ts');
       expect(reconciliationShell).toContain('src/primitives/note_conversion.ts');
+      expect(reconciliationShell).toContain('packages/docx-compare/vitest.corpus.config.ts');
       expect(reconciliationShell).toContain('perl -0pi -e \\');
       expect(reconciliationShell).toContain(
         's{../../docx-compare/dist/tagged/trackChangesAcceptorAst\\.js}' +
@@ -430,9 +431,15 @@ describe('OpenSpec traceability: tagged docx comparison', () => {
       expect(reconciliationShell).toContain('docs:generate:tools');
       expect(reconciliationShell).toContain('git diff --name-status');
       expect(validationShell).toContain('npm run build && npm run lint:workspaces');
+      expect(validationShell).toContain(
+        'npm run test:real-corpus -w @usejunior/docx-compare',
+      );
       expect(validationShell).toContain('check-legacy-rollback-nvca.mjs');
       expect(validationEvidence).toContain('## Remote-anchor and fail-closed checks');
       expect(validationEvidence).toContain('## Real-DOCX legacy-path smoke');
+      expect(validationEvidence).toContain('The inventory listed 14 commits');
+      expect(validationEvidence).toContain('`0f9855bd` (#929 / #918)');
+      expect(validationEvidence).toContain('MUST NOT be cited as proof of legacy independence');
       expect(legacySmoke).toContain("comparisonStrategy: 'legacy'");
       expect(legacySmoke).toContain("result.comparisonStrategyUsed !== 'legacy'");
       expect(legacySmoke).toContain('JSZip.loadAsync(result.document)');

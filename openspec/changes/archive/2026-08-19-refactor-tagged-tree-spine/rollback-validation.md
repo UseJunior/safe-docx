@@ -84,6 +84,8 @@ exposed three real incompatibilities with the descendant release:
 
 - restored package manifests combined with the descendant lockfile could
   resolve published packages instead of the restored workspaces;
+- the deployed docx-compare manifest and CI workflow referenced a real-corpus
+  Vitest configuration removed by the raw four-tree restore;
 - the descendant MCP contract referenced the removed `atomMetricVersion` and
   `dist/tagged/` module path; and
 - current spec coverage required the retained comparison specification plus
@@ -91,9 +93,10 @@ exposed three real incompatibilities with the descendant release:
 
 The documented reconciliation commands restored the deployed workspace
 manifests, retained the deployed lockfile, restored the retained MCP contract
-and comparison spec, retargeted the visual test generator, regenerated tool
-docs, and restored the complete note-presentation implementation, consumer, and
-test set from reachable mainline commit `688d1719`. Restoring only
+and comparison spec, restored the deployed real-corpus Vitest configuration,
+retargeted the visual test generator, regenerated tool docs, and restored the
+complete note-presentation implementation, consumer, and test set from
+reachable mainline commit `688d1719`. Restoring only
 `note_conversion.ts` and its test was explicitly rejected after it produced
 three TypeScript errors and six failing tests. The complete set built and its
 88 focused docx-core tests plus 22 markdoc tests passed. `npm install` installed
@@ -101,7 +104,7 @@ three TypeScript errors and six failing tests. The complete set built and its
 
 ## Descendant-change adjudication
 
-The inventory listed 13 commits touching the restored trees between the
+The inventory listed 14 commits touching the restored trees between the
 retained boundary and the deployed revision:
 
 | Commit | Decision | Reason |
@@ -118,7 +121,8 @@ retained boundary and the deployed revision:
 | `195b25c8` (#914) | Drop | Later coordinate refactor is not required for legacy authority and overlaps the retained document primitives. |
 | `99109405` (#897) | Drop | Dual-projection package requirements are tagged-publication behavior. |
 | `a1566dd0` (#928) | Drop | Bookmark-projection repair changes tagged-only construction and publication. |
-| `271a8cbf` (#930 / #917) | Drop from emergency line | Fail-closed corpus-oracle enforcement validates the current tagged-only publication harness, which the legacy restore intentionally replaces; its corrected false-shadow premise remains in the archived design. |
+| `0f9855bd` (#929 / #918) | Drop restored-tree delta; preserve evidence correction | The raw legacy restore reinstates the legacy-era standalone shadow test and its self-comparison assertions. Those assertions are not independent evidence and MUST NOT be cited as proof of legacy independence on the emergency line; the corrected premise remains in the archived design. |
+| `271a8cbf` (#930 / #917) | Keep corpus config only | Restore `vitest.corpus.config.ts` because the deployed manifest and CI job invoke it, then run that command in pre-submit. Drop the tagged-only fail-closed harness deltas inside the restored trees; preserve its corrected false-shadow premise in the archived design. |
 
 ## Repository gates
 
@@ -146,6 +150,10 @@ test:run (exit 0)
 @usejunior/safe-docx: CLI help smoke passed
 @usejunior/safedocx-mcpb: 3 passed
 @usejunior/test-narrative: 43 passed
+
+$ npm run test:real-corpus -w @usejunior/docx-compare
+3 files passed; 4 tests passed, 28 skipped
+EXIT=0
 
 $ npm run check:spec-coverage
 docx-comparison: 74/74 scenarios covered
