@@ -435,6 +435,10 @@ jobs:
           done
           echo "npm ci failed after 3 attempts"
           exit 1
+      - name: Run checked-in standalone tagged-package gate
+        run: >-
+          npm run test:run -w @usejunior/docx-compare --
+          src/integration/taggedTreeMinimality.corpus.test.ts
       - name: Materialize SHA-256-verified comparison corpus
         env:
           SAFE_DOCX_REAL_CORPUS_DIR: ${{ runner.temp }}/open-agreements-cache
@@ -448,7 +452,6 @@ jobs:
           npm run test:run -w @usejunior/docx-compare --
           src/integration/real-corpus-paragraph-deletion.test.ts
           src/integration/strategy-differential-manifest.corpus.test.ts
-          src/integration/taggedTreeMinimality.corpus.test.ts
 
   mcpb-bundle:
     runs-on: ubuntu-latest

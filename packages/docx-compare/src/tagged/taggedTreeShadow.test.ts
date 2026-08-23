@@ -15,6 +15,7 @@ import {
   DEFAULT_FORMAT_DETECTION_SETTINGS,
   DEFAULT_MOVE_DETECTION_SETTINGS,
   DocxArchive,
+  buildSyntheticDocx,
   parseXml,
 } from '@usejunior/docx-core';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
@@ -124,12 +125,20 @@ describe('tagged-tree offline evaluation', () => {
   test.openspec('Standalone publication has no legacy assembly dependency')(
     'builds a projection-safe revised-base package through the standalone API',
     async () => {
-      const original = await buildDocxFromBodyXml(
-        '<w:p><w:r><w:t>Original agreement language.</w:t></w:r></w:p>',
-      );
-      const revised = await buildDocxFromBodyXml(
-        '<w:p><w:r><w:t>Revised agreement language.</w:t></w:r></w:p>',
-      );
+      const original = await buildSyntheticDocx({
+        paragraphs: ['Original agreement language.'],
+        footnoteOnParagraph: 0,
+        footnoteText: 'Original footnote definition.',
+        endnoteOnParagraph: 0,
+        endnoteText: 'Original endnote definition.',
+      });
+      const revised = await buildSyntheticDocx({
+        paragraphs: ['Revised agreement language.'],
+        footnoteOnParagraph: 0,
+        footnoteText: 'Revised footnote definition.',
+        endnoteOnParagraph: 0,
+        endnoteText: 'Revised endnote definition.',
+      });
       const result = await buildStandaloneTaggedPackage(original, revised, {
         author: 'Comparator',
         date: new Date('2026-08-17T12:00:00Z'),
@@ -137,12 +146,23 @@ describe('tagged-tree offline evaluation', () => {
         formatDetection: DEFAULT_FORMAT_DETECTION_SETTINGS,
         numbering: DEFAULT_NUMBERING_OPTIONS,
       });
-      const outputXml = await (await DocxArchive.load(result.document)).getDocumentXml();
+      const outputArchive = await DocxArchive.load(result.document);
+      const outputXml = await outputArchive.getDocumentXml();
+      const footnotesXml = await outputArchive.getFile('word/footnotes.xml');
+      const endnotesXml = await outputArchive.getFile('word/endnotes.xml');
 
       expect(parseXml(acceptAllChanges(outputXml)).documentElement.textContent)
         .toContain('Revised agreement language.');
       expect(parseXml(rejectAllChanges(outputXml)).documentElement.textContent)
         .toContain('Original agreement language.');
+      expect(parseXml(acceptAllChanges(footnotesXml!)).documentElement.textContent)
+        .toContain('Revised footnote definition.');
+      expect(parseXml(rejectAllChanges(footnotesXml!)).documentElement.textContent)
+        .toContain('Original footnote definition.');
+      expect(parseXml(acceptAllChanges(endnotesXml!)).documentElement.textContent)
+        .toContain('Revised endnote definition.');
+      expect(parseXml(rejectAllChanges(endnotesXml!)).documentElement.textContent)
+        .toContain('Original endnote definition.');
       expect(result.documentXml).toBe(outputXml);
     },
   );

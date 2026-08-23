@@ -91,8 +91,10 @@ numbering, styles, media and custom XML; auxiliary-ID collisions; footnote
 reconciliation; text-box and ancillary stories; unrepresented changes; and final
 safety/fidelity gates. It deterministically reconciles collisions and rewrites
 references so Accept preserves revised semantics and Reject preserves original
-semantics, including referenced ancillary resources. Shadow comparison covers
-package manifests and normalized parts, not only main-story projections.
+semantics, including referenced ancillary resources. The intended shadow
+comparison would have covered package manifests and normalized parts, not only
+main-story projections; the correction below records that this independent
+comparison did not occur.
 
 Text-box re-homing replaces reconstruction-mode guards with per-story tagged
 publication checks while preserving `UnsupportedTextBoxRevisionError` and the
