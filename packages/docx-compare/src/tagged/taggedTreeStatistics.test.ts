@@ -56,7 +56,7 @@ function generatedElements(publication: TaggedTreePublication, localName: string
     .filter((element) => element.getAttribute(COMPARISON_REVISION_ATTRIBUTE) === '1');
 }
 
-function expectRangeStatsMatchSerializedMarkup(
+function expectRetainedMarkersAndStatsAliasesAgree(
   publication: TaggedTreePublication,
   options: { assertFormatting?: boolean } = {},
 ): void {
@@ -98,7 +98,7 @@ describe('tagged publication range statistics', () => {
       { retainStatisticsMarkers: false },
     );
 
-    expectRangeStatsMatchSerializedMarkup(publication);
+    expectRetainedMarkersAndStatsAliasesAgree(publication);
     expect(publication.stats.insertedRanges).toBe(1);
     expect(publication.stats.deletedRanges).toBe(1);
     expect(generatedElements(publication, 'del')[0]!.textContent).toBe('old');
@@ -112,9 +112,10 @@ describe('tagged publication range statistics', () => {
       paragraph('alpha delta'),
     );
 
-    expectRangeStatsMatchSerializedMarkup(publication);
+    expectRetainedMarkersAndStatsAliasesAgree(publication);
     expect(publication.stats.insertedRanges).toBe(0);
     expect(publication.stats.deletedRanges).toBe(1);
+    expect(publication.stats.deletedAtoms).toBe(4);
     expect(generatedElements(publication, 'del')[0]!.textContent).toBe('beta gamma ');
   });
 
@@ -149,7 +150,7 @@ describe('tagged publication range statistics', () => {
       const generatedDeletions = generatedElements(publication, 'del');
       const generatedInsertions = generatedElements(publication, 'ins');
 
-      expectRangeStatsMatchSerializedMarkup(publication);
+      expectRetainedMarkersAndStatsAliasesAgree(publication);
       expect(publication.stats.insertedRanges, boundary.name).toBe(1);
       expect(publication.stats.deletedRanges, boundary.name).toBe(4);
       expect(withoutBoundary.stats.deletedRanges, boundary.name).toBe(1);
@@ -178,9 +179,27 @@ describe('tagged publication range statistics', () => {
     const publication = publish(formatted('<w:i/>'), formatted('<w:b/>'));
     const propertyChanges = generatedElements(publication, 'rPrChange');
 
-    expectRangeStatsMatchSerializedMarkup(publication);
+    expectRetainedMarkersAndStatsAliasesAgree(publication);
     expect(publication.stats.formatChanges).toBe(1);
     expect(propertyChanges).toHaveLength(1);
+  });
+
+  test('characterizes split run-property revisions absent from formatting totals', () => {
+    const formatted = (property: string, text: string) => '<w:p><w:r>'
+      + `<w:rPr>${property}</w:rPr><w:t>${text}</w:t>`
+      + '</w:r></w:p>';
+    const publication = publish(
+      formatted('<w:i/>', 'alpha beta'),
+      formatted('<w:b/>', 'alpha gamma'),
+    );
+
+    expectRetainedMarkersAndStatsAliasesAgree(publication, { assertFormatting: false });
+    expect(publication.stats.insertedRanges).toBe(1);
+    expect(publication.stats.deletedRanges).toBe(1);
+    // #937 tracks the crossed text-and-formatting path separately from its
+    // restorative whole-paragraph property-revision case.
+    expect(generatedElements(publication, 'rPrChange')).toHaveLength(2);
+    expect(publication.stats.formatChanges).toBe(0);
   });
 
   transformationTest('counts an opaque inline subtree after whole-node wrapping', () => {
@@ -201,8 +220,8 @@ describe('tagged publication range statistics', () => {
     );
     const emitted = parseXml(publication.xml);
 
-    expectRangeStatsMatchSerializedMarkup(publication);
-    expectRangeStatsMatchSerializedMarkup(plainRuns);
+    expectRetainedMarkersAndStatsAliasesAgree(publication);
+    expectRetainedMarkersAndStatsAliasesAgree(plainRuns);
     expect(publication.stats.insertedRanges).toBe(1);
     expect(plainRuns.stats.insertedRanges).toBe(3);
     expect(publication.stats.deletedRanges).toBe(0);
@@ -216,7 +235,7 @@ describe('tagged publication range statistics', () => {
       paragraph('stable'),
     );
 
-    expectRangeStatsMatchSerializedMarkup(publication, { assertFormatting: false });
+    expectRetainedMarkersAndStatsAliasesAgree(publication, { assertFormatting: false });
     expect(publication.stats.deletedRanges).toBe(2);
     // Characterize the serializer-restorative property wrapper separately:
     // #937 tracks why it does not yet contribute to formatChanges.
@@ -234,7 +253,7 @@ describe('tagged publication range statistics', () => {
     const publication = publish(table(['deleted row', 'stable row']), table(['stable row']));
     const deletions = generatedElements(publication, 'del');
 
-    expectRangeStatsMatchSerializedMarkup(publication);
+    expectRetainedMarkersAndStatsAliasesAgree(publication);
     expect(deletions).toHaveLength(1);
     expect((deletions[0]!.parentNode as Element).localName).toBe('trPr');
     expect((deletions[0]!.parentNode?.parentNode as Element).localName).toBe('tr');
@@ -248,15 +267,15 @@ describe('tagged publication range statistics', () => {
     const publication = publish(priorRevision('old text'), priorRevision('new text'));
     const emitted = parseXml(publication.xml);
 
-    expectRangeStatsMatchSerializedMarkup(publication);
-    expect(publication.stats.insertedRanges).toBeGreaterThan(0);
-    expect(publication.stats.deletedRanges).toBeGreaterThan(0);
+    expectRetainedMarkersAndStatsAliasesAgree(publication);
+    expect(publication.stats.insertedRanges).toBe(1);
+    expect(publication.stats.deletedRanges).toBe(1);
     expect(Array.from(emitted.getElementsByTagNameNS(W_NS, 'ins')).filter((element) =>
       element.getAttributeNS(W_NS, 'author') === AUTHOR &&
           !element.hasAttribute(COMPARISON_REVISION_ATTRIBUTE),
-    )).not.toHaveLength(0);
+      )).toHaveLength(1);
     expect(emitted.getElementsByTagNameNS(W_NS, 'ins').length)
-      .toBeGreaterThan(publication.stats.insertedRanges);
+      .toBe(2);
   });
 
   transformationTest('counts wrappers after complex-field controls force atomic replacement', () => {
@@ -266,7 +285,7 @@ describe('tagged publication range statistics', () => {
     );
     const emitted = parseXml(publication.xml);
 
-    expectRangeStatsMatchSerializedMarkup(publication);
+    expectRetainedMarkersAndStatsAliasesAgree(publication);
     expect(publication.stats.insertedRanges).toBe(1);
     expect(publication.stats.deletedRanges).toBe(1);
     expect(generatedElements(publication, 'del')[0]!
@@ -283,7 +302,7 @@ describe('tagged publication range statistics', () => {
       paragraph('stable paragraph') + paragraph('this complete paragraph moves away'),
     );
 
-    expectRangeStatsMatchSerializedMarkup(publication);
+    expectRetainedMarkersAndStatsAliasesAgree(publication);
     expect(publication.serializedRangeStats.moveFromRanges).toBe(1);
     expect(publication.serializedRangeStats.moveToRanges).toBe(1);
     // CompareStats has no public move fields, so pure moves otherwise report
