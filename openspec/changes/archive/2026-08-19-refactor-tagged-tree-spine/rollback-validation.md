@@ -33,6 +33,15 @@ tag, a moved tag, a poisoned branch, and missing refs. Each case stopped before
 the restore, leaving zero dirty paths and zero new commits. The unmodified
 happy-path probe completed.
 
+```text
+probe                         result      dirty paths  new commits
+unmodified refs               completed   0            1
+poisoned local tag            non-zero    0            0
+moved fetched tag             non-zero    0            0
+poisoned retained branch      non-zero    0            0
+missing remote anchors        non-zero    0            0
+```
+
 ## Restore and exact-tree check
 
 ```text
@@ -81,10 +90,34 @@ exposed three real incompatibilities with the descendant release:
   the independently compatible configurable-note-presentation change.
 
 The documented reconciliation commands restored the deployed workspace
-manifests and lockfile, restored the retained MCP contract and comparison spec,
-retargeted the visual test generator, regenerated tool docs, and reapplied the
-two deployed note-presentation files. `npm install` then installed 617 packages
-with zero reported vulnerabilities.
+manifests, retained the deployed lockfile, restored the retained MCP contract
+and comparison spec, retargeted the visual test generator, regenerated tool
+docs, and restored the complete note-presentation implementation, consumer, and
+test set from reachable mainline commit `688d1719`. Restoring only
+`note_conversion.ts` and its test was explicitly rejected after it produced
+three TypeScript errors and six failing tests. The complete set built and its
+88 focused docx-core tests plus 22 markdoc tests passed. `npm install` installed
+617 packages with zero reported vulnerabilities.
+
+## Descendant-change adjudication
+
+The inventory listed 12 commits touching the restored trees between the
+retained boundary and the deployed revision:
+
+| Commit | Decision | Reason |
+| --- | --- | --- |
+| `dcf91216` (#896) | Drop | Tagged-serializer patch conflicts with the retained attribution serializer; an exact-file probe failed the legacy build. |
+| `688d1719` (#905) | Keep completely | Independent note-presentation capability; the full runtime, consumer, and test set builds and satisfies its active spec. |
+| `fe941d4d` (#898) | Drop | First Phase 10 legacy-spine deletion; this is the change being rolled back. |
+| `a807a689` (#906) | Keep manifests only | Release metadata is reconciled through deployed workspace manifests. |
+| `6515e70f` (#907) | Drop | Second Phase 10 tagged-only migration; this is the change being rolled back. |
+| `71bf9c6f` (#908) | Drop restored-tree delta | Tagged-migration traceability is not a legacy runtime capability. |
+| `274b3778` (#910) | Keep via manifest | Current docx-core test-worker serialization remains in the deployed package manifest. |
+| `59d48916` (#911) | Drop from emergency line | Tagged differential manifests and corpus harness are coupled to the removed tagged-only publication surface. |
+| `3340b16b` (#913) | Keep manifests only | Release metadata is reconciled through deployed workspace manifests. |
+| `195b25c8` (#914) | Drop | Later coordinate refactor is not required for legacy authority and overlaps the retained document primitives. |
+| `99109405` (#897) | Drop | Dual-projection package requirements are tagged-publication behavior. |
+| `a1566dd0` (#928) | Drop | Bookmark-projection repair changes tagged-only construction and publication. |
 
 ## Repository gates
 
@@ -99,7 +132,7 @@ EXIT=0
 
 $ npm run test:run
 @usejunior/docx-compare: 933 passed, 29 skipped
-@usejunior/docx-core: 1357 passed, 2 expected failures, 1 skipped
+@usejunior/docx-core: 1364 passed, 2 expected failures, 1 skipped
 @usejunior/docx-markdoc: 66 passed
 @usejunior/docx-mcp: 1004 passed
 All workspaces passed
@@ -126,8 +159,6 @@ output as a DOCX ZIP, and checked both revision projections:
 
 ```json
 {
-  "inputBytes": { "original": 140221, "revised": 110679 },
-  "outputBytes": 147116,
   "engine": "atomizer",
   "comparisonStrategyRequested": "legacy",
   "comparisonStrategyUsed": "legacy",

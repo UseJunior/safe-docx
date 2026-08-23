@@ -18,7 +18,6 @@ they resolve to the audited legacy boundary before restoring any files:
 set -euo pipefail
 LEGACY_ROLLBACK_COMMIT=11315af1f135e9f5515053f48dc514a5b23303c3
 DEPLOYED_RELEASE_COMMIT=$(git rev-parse '<deployed-release>^{commit}')
-git switch -c rollback-legacy-comparison-YYYYMMDD "$DEPLOYED_RELEASE_COMMIT"
 git fetch origin \
   refs/heads/838-legacy-comparison-maintenance-20260817:refs/remotes/origin/838-legacy-comparison-maintenance-20260817 \
   refs/tags/legacy-comparison-final-20260817:refs/tags/legacy-comparison-final-20260817
@@ -26,6 +25,7 @@ test "$(git rev-parse 'legacy-comparison-final-20260817^{commit}')" = \
   "$LEGACY_ROLLBACK_COMMIT"
 test "$(git rev-parse 'origin/838-legacy-comparison-maintenance-20260817^{commit}')" = \
   "$LEGACY_ROLLBACK_COMMIT"
+git switch -c rollback-legacy-comparison-YYYYMMDD "$DEPLOYED_RELEASE_COMMIT"
 git restore --source="$LEGACY_ROLLBACK_COMMIT" --staged --worktree -- \
   packages/docx-compare packages/docx-core packages/docx-markdoc \
   spec-compliance
@@ -60,21 +60,35 @@ restore the three legacy-facing MCP contract files, and retarget the visual
 oracle to the retained module location before installing dependencies. The
 live comparison specification must return to the retained contract as well.
 At the deployed revision validated below, configurable note presentation was
-the one later, independently compatible change inside the restored trees, so
-reapply its implementation and coverage from the deployed release:
+an independently compatible change inside the restored trees. Reapply its
+complete implementation, consumer, and coverage set from its reachable mainline
+commit; restoring only `note_conversion.ts` and its test does not compile.
 
 ```bash
+set -euo pipefail
+: "${LEGACY_ROLLBACK_COMMIT:?run the restore block first}"
+: "${DEPLOYED_RELEASE_COMMIT:?run the restore block first}"
+NOTE_PRESENTATION_COMMIT=688d1719c613a2a1e6fff61cefea8acec846897c
+git merge-base --is-ancestor "$NOTE_PRESENTATION_COMMIT" \
+  "$DEPLOYED_RELEASE_COMMIT"
 git restore --source="$DEPLOYED_RELEASE_COMMIT" --staged --worktree -- \
-  package-lock.json packages/docx-compare/package.json \
-  packages/docx-core/package.json packages/docx-markdoc/package.json
+  packages/docx-compare/package.json packages/docx-core/package.json \
+  packages/docx-markdoc/package.json
 git restore --source="$LEGACY_ROLLBACK_COMMIT" --staged --worktree -- \
   openspec/specs/docx-comparison/spec.md \
   packages/docx-mcp/src/tool_catalog.ts \
   packages/docx-mcp/src/tools/compare_documents_console_identity.test.ts \
   packages/docx-mcp/docs/tool-reference.generated.md
-git restore --source="$DEPLOYED_RELEASE_COMMIT" --staged --worktree -- \
+git restore --source="$NOTE_PRESENTATION_COMMIT" --staged --worktree -- \
+  packages/docx-core/src/primitives/comments.test.ts \
+  packages/docx-core/src/primitives/comments.ts \
+  packages/docx-core/src/primitives/document.ts \
+  packages/docx-core/src/primitives/footnotes.ts \
+  packages/docx-core/src/primitives/index.ts \
   packages/docx-core/src/primitives/note_conversion.ts \
-  packages/docx-core/src/primitives/note_conversion.test.ts
+  packages/docx-core/src/primitives/note_conversion.test.ts \
+  packages/docx-core/test-primitives/footnotes.test.ts \
+  packages/docx-markdoc/src/cli.ts
 perl -0pi -e \
   's{../../docx-compare/dist/tagged/trackChangesAcceptorAst\.js}{../../docx-compare/dist/baselines/atomizer/trackChangesAcceptorAst.js}g' \
   packages/docx-mcp/scripts/generate_visual_tests.mjs
@@ -87,11 +101,28 @@ npm run docs:generate:tools -w @usejunior/docx-mcp
 git diff --name-status "$LEGACY_ROLLBACK_COMMIT" "$DEPLOYED_RELEASE_COMMIT" -- \
   packages/docx-compare packages/docx-core packages/docx-markdoc \
   spec-compliance
+```
+
+The inventory command lists changes added to the four restored trees between
+the retained and deployed revisions. Reapply each independently compatible
+change and document each intentionally dropped tagged-only or incompatible
+change in the rollback PR. After that adjudication, stage and commit the
+reconciliation:
+
+```bash
+set -euo pipefail
 git add -- package-lock.json packages/docx-compare/package.json \
   packages/docx-core/package.json packages/docx-markdoc/package.json \
   openspec/specs/docx-comparison/spec.md \
+  packages/docx-core/src/primitives/comments.test.ts \
+  packages/docx-core/src/primitives/comments.ts \
+  packages/docx-core/src/primitives/document.ts \
+  packages/docx-core/src/primitives/footnotes.ts \
+  packages/docx-core/src/primitives/index.ts \
   packages/docx-core/src/primitives/note_conversion.ts \
   packages/docx-core/src/primitives/note_conversion.test.ts \
+  packages/docx-core/test-primitives/footnotes.test.ts \
+  packages/docx-markdoc/src/cli.ts \
   packages/docx-mcp/src/tool_catalog.ts \
   packages/docx-mcp/src/tools/compare_documents_console_identity.test.ts \
   packages/docx-mcp/docs/tool-reference.generated.md \
@@ -99,18 +130,15 @@ git add -- package-lock.json packages/docx-compare/package.json \
 git commit -m "fix(docx-compare): reconcile legacy rollback consumers"
 ```
 
-The inventory command lists changes added to the four restored trees between
-the retained and deployed revisions. Before committing, reapply each
-independently compatible change and document each intentionally dropped
-tagged-only change in the rollback PR. Then run the repository pre-submit
-command and the committed, public NVCA real-DOCX legacy-path smoke:
+Then run the repository pre-submit command and the committed, public NVCA
+real-DOCX legacy-path smoke:
 
 ```bash
 npm run build && npm run lint:workspaces && npm run test:run && \
   npm run check:spec-coverage && npm run check:conformance-citations && \
   npm run check:conformance-doc
-npm run test:run -w @usejunior/docx-core -- \
-  src/integration/nvca-structural-regression.test.ts
+node openspec/changes/archive/2026-08-19-refactor-tagged-tree-spine/\
+check-legacy-rollback-nvca.mjs
 ```
 
 Any later descendant-release reference to removed types, metrics, or
