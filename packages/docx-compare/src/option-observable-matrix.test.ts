@@ -185,7 +185,7 @@ describe('tagged option-to-observable matrix freshness', () => {
     }
 
     const evidencePaths = Array.from(
-      markdown.matchAll(/`((?:src|\.\.\/)[^`\s]+?\.test\.ts)`/g),
+      markdown.matchAll(/`([^`\s]*\/[^`\s]+?\.test\.ts)`/g),
       (match) => match[1]!,
     );
     expect(evidencePaths.length).toBeGreaterThan(0);
