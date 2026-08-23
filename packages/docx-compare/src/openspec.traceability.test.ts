@@ -369,13 +369,30 @@ describe('OpenSpec traceability: tagged docx comparison', () => {
         ),
         'utf8',
       );
+      const rollbackShellBlocks = [...rollback.matchAll(/```bash\n([\s\S]*?)\n```/g)]
+        .map((match) => match[1]);
+      const [rollbackShell, reconciliationShell, validationShell] = rollbackShellBlocks;
       expect(manifest.rows.length).toBeGreaterThan(0);
-      expect(rollback).toContain('set -euo pipefail');
-      expect(rollback).toContain('legacy-comparison-final-20260817');
-      expect(rollback).toContain('838-legacy-comparison-maintenance-20260817');
-      expect(rollback).toContain('11315af1f135e9f5515053f48dc514a5b23303c3');
-      expect(rollback).toContain('git restore --source="$LEGACY_ROLLBACK_COMMIT"');
-      expect(rollback).toContain('git diff --exit-code "$LEGACY_ROLLBACK_COMMIT"');
+      expect(rollbackShell).toBeDefined();
+      expect(rollbackShell).toContain('set -euo pipefail');
+      expect(rollbackShell).toContain('legacy-comparison-final-20260817');
+      expect(rollbackShell).toContain('838-legacy-comparison-maintenance-20260817');
+      expect(rollbackShell).toContain('11315af1f135e9f5515053f48dc514a5b23303c3');
+      expect(rollbackShell).toContain(
+        'test "$(git rev-parse \'legacy-comparison-final-20260817^{commit}\')" =',
+      );
+      expect(rollbackShell).toContain(
+        'test "$(git rev-parse \'origin/838-legacy-comparison-maintenance-20260817^{commit}\')" =',
+      );
+      expect(rollbackShell).toContain('git restore --source="$LEGACY_ROLLBACK_COMMIT"');
+      expect(rollbackShell).toContain('git diff --exit-code "$LEGACY_ROLLBACK_COMMIT"');
+      expect(reconciliationShell).toContain('package-lock.json');
+      expect(reconciliationShell).toContain('openspec/specs/docx-comparison/spec.md');
+      expect(reconciliationShell).toContain('src/primitives/note_conversion.ts');
+      expect(reconciliationShell).toContain('npm install');
+      expect(reconciliationShell).toContain('git diff --name-status');
+      expect(validationShell).toContain('npm run build && npm run lint:workspaces');
+      expect(validationShell).toContain('nvca-structural-regression.test.ts');
     },
   );
 

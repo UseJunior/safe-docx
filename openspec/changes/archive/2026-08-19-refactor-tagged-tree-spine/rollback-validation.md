@@ -1,16 +1,20 @@
-# Legacy rollback validation — 2026-08-21
+# Legacy rollback validation — 2026-08-22
 
 This evidence records an actual execution of the durable remote-ref recovery
-procedure. It does not claim that the restored legacy line was released.
+procedure. It does not claim that the restored legacy line was released. Local
+validation commit identifiers are deliberately omitted because disposable
+commits are not durable recovery anchors.
 
 ## Environment
 
-- Starting revision: `origin/main` at `a1566dd074971150e3fdc72ed34eb70ccb2a5db7`
-- Disposable worktree: `/private/tmp/safe-docx-rollback-execution-919-v2`
-- Validation branch: `rollback-legacy-comparison-validation-v2-20260821`
-- Restore source: pinned audited commit `11315af1f135e9f5515053f48dc514a5b23303c3`
+- Starting revision: `origin/main` at
+  `a1566dd074971150e3fdc72ed34eb70ccb2a5db7`
+- Disposable worktree: `/private/tmp/safe-docx-rollback-execution-919-v3`
+- Validation branch: `rollback-legacy-comparison-validation-v3-20260822`
+- Restore source: pinned audited commit
+  `11315af1f135e9f5515053f48dc514a5b23303c3`
 
-## Remote-anchor check
+## Remote-anchor and fail-closed checks
 
 ```text
 $ git ls-remote origin refs/heads/838-legacy-comparison-maintenance-20260817 \
@@ -23,29 +27,17 @@ EXIT=0
 ```
 
 The first tag hash is the annotated tag object. Its peeled `^{}` value and the
-retained branch both resolve to the audited legacy commit.
+retained branch both resolve to the audited legacy commit. The fenced recovery
+block was also exercised in separate disposable repositories with a poisoned
+tag, a moved tag, a poisoned branch, and missing refs. Each case stopped before
+the restore, leaving zero dirty paths and zero new commits. The unmodified
+happy-path probe completed.
 
 ## Restore and exact-tree check
 
 ```text
-$ set -euo pipefail
-EXIT=0
-
-$ LEGACY_ROLLBACK_COMMIT=11315af1f135e9f5515053f48dc514a5b23303c3
-
-$ git switch -c rollback-legacy-comparison-validation-v2-20260821 origin/main
-Switched to a new branch 'rollback-legacy-comparison-validation-v2-20260821'
-
 $ git rev-parse HEAD
 a1566dd074971150e3fdc72ed34eb70ccb2a5db7
-
-$ git fetch origin \
-    refs/heads/838-legacy-comparison-maintenance-20260817:refs/remotes/origin/838-legacy-comparison-maintenance-20260817 \
-    refs/tags/legacy-comparison-final-20260817:refs/tags/legacy-comparison-final-20260817
-EXIT=0
-
-$ git rev-parse 'legacy-comparison-final-20260817^{commit}'
-11315af1f135e9f5515053f48dc514a5b23303c3
 
 $ test "$(git rev-parse 'legacy-comparison-final-20260817^{commit}')" = \
     "$LEGACY_ROLLBACK_COMMIT"
@@ -63,13 +55,8 @@ EXIT=0
 $ git status --short | wc -l
 209
 
-$ git commit -m "revert(docx-compare): restore retained legacy comparison tree"
-[rollback-legacy-comparison-validation-v2-20260821 244b3b5b] revert(docx-compare): restore retained legacy comparison tree
- 209 files changed, 39619 insertions(+), 4973 deletions(-)
-EXIT=0
-
-$ git rev-parse HEAD
-244b3b5b38b2f3cf24bfd275a52859cf70498f42
+$ git diff --cached --stat
+209 files changed, 39619 insertions(+), 4973 deletions(-)
 
 $ git diff --exit-code "$LEGACY_ROLLBACK_COMMIT" -- \
     packages/docx-compare packages/docx-core packages/docx-markdoc \
@@ -77,6 +64,79 @@ $ git diff --exit-code "$LEGACY_ROLLBACK_COMMIT" -- \
 EXIT=0
 ```
 
-The non-zero changed-path count and real rollback commit confirm that the
-exercise performed the documented restore. The final zero exit status proves
-that every audited tree matched the pinned legacy commit after the restore.
+The non-zero changed-path count confirms that the exercise performed the
+documented restore. The zero exit status proves that every audited tree matched
+the pinned legacy commit before descendant reconciliation.
+
+## Descendant reconciliation
+
+The raw four-tree restore was intentionally tested before reconciliation. It
+exposed three real incompatibilities with the descendant release:
+
+- restored package manifests combined with the descendant lockfile could
+  resolve published packages instead of the restored workspaces;
+- the descendant MCP contract referenced the removed `atomMetricVersion` and
+  `dist/tagged/` module path; and
+- current spec coverage required the retained comparison specification plus
+  the independently compatible configurable-note-presentation change.
+
+The documented reconciliation commands restored the deployed workspace
+manifests and lockfile, restored the retained MCP contract and comparison spec,
+retargeted the visual test generator, regenerated tool docs, and reapplied the
+two deployed note-presentation files. `npm install` then installed 617 packages
+with zero reported vulnerabilities.
+
+## Repository gates
+
+The complete required pre-submit sequence ran against the reconciled rollback:
+
+```text
+$ npm run build
+EXIT=0
+
+$ npm run lint:workspaces
+EXIT=0
+
+$ npm run test:run
+@usejunior/docx-compare: 933 passed, 29 skipped
+@usejunior/docx-core: 1357 passed, 2 expected failures, 1 skipped
+@usejunior/docx-markdoc: 66 passed
+@usejunior/docx-mcp: 1004 passed
+All workspaces passed
+EXIT=0
+
+$ npm run check:spec-coverage
+docx-comparison: 74/74 scenarios covered
+add-configurable-note-presentation: 5/5 scenarios covered
+All spec coverage checks passed
+EXIT=0
+
+$ npm run check:conformance-citations
+EXIT=0
+
+$ npm run check:conformance-doc
+EXIT=0
+```
+
+## Real-DOCX legacy-path smoke
+
+The restored build compared the committed public NVCA regression pair through
+`compareDocumentsAtomizer(..., { comparisonStrategy: 'legacy' })`, loaded the
+output as a DOCX ZIP, and checked both revision projections:
+
+```json
+{
+  "inputBytes": { "original": 140221, "revised": 110679 },
+  "outputBytes": 147116,
+  "engine": "atomizer",
+  "comparisonStrategyRequested": "legacy",
+  "comparisonStrategyUsed": "legacy",
+  "acceptedMatchesRevised": true,
+  "rejectedMatchesOriginal": true,
+  "outputZipEntries": 31
+}
+```
+
+The smoke used only the repository's public
+`tests/test_documents/nvca-regression` fixtures. No private document was read or
+sent to an external reviewer.

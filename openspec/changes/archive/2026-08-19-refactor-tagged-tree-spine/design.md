@@ -164,7 +164,7 @@ is retained only if the option matrix establishes tagged observability.
 4. Flip authority behind an internal switch and soak for one release/corpus cycle.
 5. Remove public options in a dedicated breaking release.
 6. Tag the rollback point, extract keepers, delete legacy, regenerate evidence,
-   and document the exact rollback sequence.
+   and document the durable remote-ref recovery procedure.
 7. Rename surviving tagged modules after the rollback window.
 
 Rollback before deletion selects the private legacy switch. Rollback after

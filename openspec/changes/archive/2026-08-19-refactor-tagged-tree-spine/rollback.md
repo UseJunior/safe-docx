@@ -17,7 +17,8 @@ they resolve to the audited legacy boundary before restoring any files:
 ```bash
 set -euo pipefail
 LEGACY_ROLLBACK_COMMIT=11315af1f135e9f5515053f48dc514a5b23303c3
-git switch -c rollback-legacy-comparison-YYYYMMDD <deployed-release>
+DEPLOYED_RELEASE_COMMIT=$(git rev-parse '<deployed-release>^{commit}')
+git switch -c rollback-legacy-comparison-YYYYMMDD "$DEPLOYED_RELEASE_COMMIT"
 git fetch origin \
   refs/heads/838-legacy-comparison-maintenance-20260817:refs/remotes/origin/838-legacy-comparison-maintenance-20260817 \
   refs/tags/legacy-comparison-final-20260817:refs/tags/legacy-comparison-final-20260817
@@ -26,6 +27,9 @@ test "$(git rev-parse 'legacy-comparison-final-20260817^{commit}')" = \
 test "$(git rev-parse 'origin/838-legacy-comparison-maintenance-20260817^{commit}')" = \
   "$LEGACY_ROLLBACK_COMMIT"
 git restore --source="$LEGACY_ROLLBACK_COMMIT" --staged --worktree -- \
+  packages/docx-compare packages/docx-core packages/docx-markdoc \
+  spec-compliance
+git diff --exit-code "$LEGACY_ROLLBACK_COMMIT" -- \
   packages/docx-compare packages/docx-core packages/docx-markdoc \
   spec-compliance
 git commit -m "revert(docx-compare): restore retained legacy comparison tree"
@@ -42,23 +46,83 @@ The Phase 10-only `scripts/check_advanced_revision_classification.test.mjs`
 title change is deliberately outside this restore boundary because it has no
 runtime or legacy-module coupling. Review later changes in the restored trees
 before shipping, and reapply only changes independently compatible with the
-legacy line. Then confirm the restored tree against the pinned commit, not the
-tag name:
+legacy line. The exact-tree check runs against the pinned commit, not the tag
+name, before the recovery-baseline commit is created.
+
+## Reconcile the descendant release
+
+The exact legacy tree is a recovery baseline, not yet a mergeable rollback.
+Its package manifests predate the descendant release; leaving them in place can
+make `npm install` fetch the published descendant packages instead of testing the
+restored workspaces. The descendant MCP surface also names a metric and module
+path added after the retained commit. Preserve the deployed workspace versions,
+restore the three legacy-facing MCP contract files, and retarget the visual
+oracle to the retained module location before installing dependencies. The
+live comparison specification must return to the retained contract as well.
+At the deployed revision validated below, configurable note presentation was
+the one later, independently compatible change inside the restored trees, so
+reapply its implementation and coverage from the deployed release:
 
 ```bash
-git diff --exit-code "$LEGACY_ROLLBACK_COMMIT" -- \
+git restore --source="$DEPLOYED_RELEASE_COMMIT" --staged --worktree -- \
+  package-lock.json packages/docx-compare/package.json \
+  packages/docx-core/package.json packages/docx-markdoc/package.json
+git restore --source="$LEGACY_ROLLBACK_COMMIT" --staged --worktree -- \
+  openspec/specs/docx-comparison/spec.md \
+  packages/docx-mcp/src/tool_catalog.ts \
+  packages/docx-mcp/src/tools/compare_documents_console_identity.test.ts \
+  packages/docx-mcp/docs/tool-reference.generated.md
+git restore --source="$DEPLOYED_RELEASE_COMMIT" --staged --worktree -- \
+  packages/docx-core/src/primitives/note_conversion.ts \
+  packages/docx-core/src/primitives/note_conversion.test.ts
+perl -0pi -e \
+  's{../../docx-compare/dist/tagged/trackChangesAcceptorAst\.js}{../../docx-compare/dist/baselines/atomizer/trackChangesAcceptorAst.js}g' \
+  packages/docx-mcp/scripts/generate_visual_tests.mjs
+! git grep -q 'dist/tagged/trackChangesAcceptorAst.js' -- \
+  packages/docx-mcp/scripts/generate_visual_tests.mjs
+git grep -q 'dist/baselines/atomizer/trackChangesAcceptorAst.js' -- \
+  packages/docx-mcp/scripts/generate_visual_tests.mjs
+npm install
+npm run docs:generate:tools -w @usejunior/docx-mcp
+git diff --name-status "$LEGACY_ROLLBACK_COMMIT" "$DEPLOYED_RELEASE_COMMIT" -- \
   packages/docx-compare packages/docx-core packages/docx-markdoc \
   spec-compliance
+git add -- package-lock.json packages/docx-compare/package.json \
+  packages/docx-core/package.json packages/docx-markdoc/package.json \
+  openspec/specs/docx-comparison/spec.md \
+  packages/docx-core/src/primitives/note_conversion.ts \
+  packages/docx-core/src/primitives/note_conversion.test.ts \
+  packages/docx-mcp/src/tool_catalog.ts \
+  packages/docx-mcp/src/tools/compare_documents_console_identity.test.ts \
+  packages/docx-mcp/docs/tool-reference.generated.md \
+  packages/docx-mcp/scripts/generate_visual_tests.mjs
+git commit -m "fix(docx-compare): reconcile legacy rollback consumers"
 ```
 
-Run the repository pre-submit command and a real DOCX comparison smoke before
-merging the rollback. Do not attempt a partial Phase 10 tree restoration: the
-deleted legacy modules would then reference helpers that no longer exist.
+The inventory command lists changes added to the four restored trees between
+the retained and deployed revisions. Before committing, reapply each
+independently compatible change and document each intentionally dropped
+tagged-only change in the rollback PR. Then run the repository pre-submit
+command and the committed, public NVCA real-DOCX legacy-path smoke:
 
-This procedure was executed from `origin/main` at `a1566dd0` on 2026-08-21.
+```bash
+npm run build && npm run lint:workspaces && npm run test:run && \
+  npm run check:spec-coverage && npm run check:conformance-citations && \
+  npm run check:conformance-doc
+npm run test:run -w @usejunior/docx-core -- \
+  src/integration/nvca-structural-regression.test.ts
+```
+
+Any later descendant-release reference to removed types, metrics, or
+`dist/tagged/` paths must be adjudicated in the rollback PR; do not make the
+gate pass by installing published descendant packages. Do not attempt a partial
+Phase 10 tree restoration: the deleted legacy modules would then reference
+helpers that no longer exist.
+
+This procedure was executed from `origin/main` at `a1566dd0` on 2026-08-22.
 Both durable remote refs resolved to
 `11315af1f135e9f5515053f48dc514a5b23303c3`, the restore changed 209 indexed
-paths, and the documented `git diff --exit-code` command returned 0. See
+paths, and the documented pinned `git diff --exit-code` command returned 0. See
 [`rollback-validation.md`](rollback-validation.md) for the recorded output.
 
 ## Continue legacy maintenance directly
