@@ -91,8 +91,10 @@ numbering, styles, media and custom XML; auxiliary-ID collisions; footnote
 reconciliation; text-box and ancillary stories; unrepresented changes; and final
 safety/fidelity gates. It deterministically reconciles collisions and rewrites
 references so Accept preserves revised semantics and Reject preserves original
-semantics, including referenced ancillary resources. Shadow comparison covers
-package manifests and normalized parts, not only main-story projections.
+semantics, including referenced ancillary resources. The intended shadow
+comparison would have covered package manifests and normalized parts, not only
+main-story projections; the correction below records that this independent
+comparison did not occur.
 
 Text-box re-homing replaces reconstruction-mode guards with per-story tagged
 publication checks while preserving `UnsupportedTextBoxRevisionError` and the
@@ -118,12 +120,12 @@ detection is deleted.
 
 ### Authority, compatibility, and deletion are separate releases
 
-The standalone tagged assembler first runs in shadow, then becomes authoritative
-with a private emergency switch. At least one release/corpus cycle must show the
-characterization manifest stable before public options are removed. The public
-break ships separately. Legacy deletion occurs only after the soak gate; the last
-legacy-capable commit is tagged and a maintenance branch retained with a written
-multi-commit rollback procedure.
+The design required the standalone tagged assembler to run first in an
+independent shadow, then become authoritative with a private emergency switch.
+That independent comparison did not occur: the observer compared the published
+package with itself. Audit remediation removed that observer rather than retaining
+false evidence. Direct standalone publication tests and the registered public
+corpus suite remain, but do not retroactively satisfy the shadow gate.
 
 Before deletion, portable revision helpers move to `revisionMarkup.ts`:
 `formatDate`, `RevisionIdState`, allocator creation/seeding/allocation,
@@ -142,8 +144,9 @@ is retained only if the option matrix establishes tagged observability.
 
 ## Risks / Trade-offs
 
-- A differential can be falsely green while both paths share the legacy package
-  assembler; independent shadow assembly is mandatory before authority flips.
+- A differential can be falsely green when its comparands are not independent.
+  The historical package observer had this defect and was deleted rather than
+  represented as evidence.
 - Tagged safety failure becomes an exception after fallback deletion. A typed
   `TaggedPublicationSafetyError` retains all existing diagnostics.
 - Auxiliary sidecar checks are currently inert and formatting fidelity is outside

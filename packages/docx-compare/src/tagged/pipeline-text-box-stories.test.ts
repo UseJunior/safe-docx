@@ -24,7 +24,6 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { groupElementsByTagNameNS } from '../markupCompatibility.js';
 import {
   compareDocumentsAtomizer,
-  type TaggedPackageShadowReport,
 } from './pipeline.js';
 import {
   UnsupportedTextBoxRevisionError,
@@ -938,24 +937,15 @@ describe('VML text-box story comparison (#713)', () => {
       ),
     );
     let result!: Awaited<ReturnType<typeof compareDocumentsAtomizer>>;
-    const shadowReports: TaggedPackageShadowReport[] = [];
 
     await when('comparison runs', async () => {
-      result = await compareDocumentsAtomizer(original, revised, {
-        standaloneTaggedPackageShadowObserver: (report) => { shadowReports.push(report); },
-      });
+      result = await compareDocumentsAtomizer(original, revised);
     });
 
     await then('tagged publication round-trips independently', async () => {
       const xml = await (await DocxArchive.load(result.document)).getDocumentXml();
       expect(parseXml(acceptAllChanges(xml)).documentElement.textContent).toContain('Revised');
       expect(parseXml(rejectAllChanges(xml)).documentElement.textContent).toContain('Original');
-      expect(shadowReports).toEqual([{
-        missingParts: [],
-        unexpectedParts: [],
-        differentParts: [],
-        standaloneHasNoLegacyAssemblyInputs: true,
-      }]);
     });
   });
 
