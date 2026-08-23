@@ -79,8 +79,8 @@ describe('compareDocuments options', () => {
         const rejectedXml = rejectAllChanges(ignoredXml);
         expect(ignoredXml).not.toContain('<w:rPrChange');
         for (const projection of [acceptedXml, rejectedXml]) {
-          expect(projection).toContain('<w:b');
-          expect(projection).not.toContain('<w:i');
+          expect(projection).toContain('<w:b/>');
+          expect(projection).not.toContain('<w:i/>');
           expect(projection).toContain('<w:u w:val="single"');
         }
       });
