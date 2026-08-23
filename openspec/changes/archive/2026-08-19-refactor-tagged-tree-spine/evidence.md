@@ -13,16 +13,20 @@ records, for every fixture:
 - accept/reject projections, including text and XML hashes and the first
   divergence;
 - normalized XML/binary package-part sizes and hashes;
-- comparison statistics, selected strategy, fallback diagnostics, and
-  unrepresented changes;
+- comparison statistics, tagged authority metadata, and unrepresented changes;
 - package-schema results, introduced structural issues, formatting projection
   scores, relationship closure, and auxiliary-definition closure;
-- typed unsupported-story diagnostics and forbidden-payload leakage.
+- typed unsupported-story diagnostics plus field, bookmark, revision-ID, and
+  move-balance integrity diagnostics.
 
 `strategy-differential-manifest.corpus.test.ts` requires the committed rows to
-match the harness output, fails closed when the required real corpus is absent,
-and rejects unapproved drift. `strategy-differential-fixtures.ts` maps the
-required capability surface to checked-in, synthetic, and real fixtures:
+match the harness output and rejects unapproved drift. At the archived change's
+merge, corpus absence failed only when required-mode environment variables were
+armed; ordinary local invocation could skip. PR #930 corrected that record and
+registered `npm run test:real-corpus -w @usejunior/docx-compare`, whose manifest
+availability assertion fails when the public corpus is absent.
+`strategy-differential-fixtures.ts` maps the required capability surface to
+checked-in, synthetic, and real fixtures:
 
 | Capability | Executable evidence |
 | --- | --- |
@@ -30,7 +34,7 @@ required capability surface to checked-in, synthetic, and real fixtures:
 | Footnotes, endnotes, comments, bookmarks, auxiliary definitions | `synthetic/ancillary-definitions`; `tagged/pipeline-auxiliary-notes.test.ts`; `tagged/pipeline-comment-ancillary.test.ts`; `tagged/consumerCompatibility-bookmark-ranges.test.ts` |
 | Moves and revision range boundaries | `synthetic/exact-paragraph-move`; `strategy-differential.test.ts`; `openspec.traceability.test.ts` |
 | Relationship and identifier closure | harness closure gates; `tagged/relationshipIdCollision.test.ts`; `tagged/auxiliaryIdCollision.test.ts` |
-| Rationale attribution and payload privacy | `integration/tagged-rationale-attribution.test.ts`; `packages/docx-markdoc/src/rationale-comments.test.ts`; harness `forbiddenPayloadLeaks` |
+| Rationale attribution and payload privacy | `integration/tagged-rationale-attribution.test.ts`; `packages/docx-markdoc/src/rationale-comments.test.ts` |
 | Text boxes and unsupported stories | `synthetic/vml-text-box`; `tagged/pipeline-text-box-stories.test.ts`; `tagged/textBoxRevisionSafety-alternate-content.test.ts`; harness `unsupportedStoryDiagnostics` |
 
 ## MCP schema and documentation (Task 2.4)

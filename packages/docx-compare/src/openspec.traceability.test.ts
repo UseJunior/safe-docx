@@ -355,13 +355,27 @@ describe('OpenSpec traceability: tagged docx comparison', () => {
     },
   );
 
-  test.openspec('Soak evidence gates legacy deletion')(
-    'pins the soak manifest and executable durable-ref rollback blocks',
+  test.openspec('Skipped soak remains explicit')(
+    'keeps the missed gate incomplete and pins its executable compensating rollback',
     () => {
       const manifest = JSON.parse(readFileSync(
         new URL('./integration/strategy-differential-manifest.json', import.meta.url),
         'utf8',
       )) as { rows: unknown[] };
+      const tasks = readFileSync(
+        new URL(
+          '../../../openspec/changes/archive/2026-08-19-refactor-tagged-tree-spine/tasks.md',
+          import.meta.url,
+        ),
+        'utf8',
+      );
+      const postmortem = readFileSync(
+        new URL(
+          '../../../openspec/changes/archive/2026-08-19-refactor-tagged-tree-spine/soak-postmortem.md',
+          import.meta.url,
+        ),
+        'utf8',
+      );
       const rollback = readFileSync(
         new URL(
           '../../../openspec/changes/archive/2026-08-19-refactor-tagged-tree-spine/rollback.md',
@@ -445,6 +459,10 @@ describe('OpenSpec traceability: tagged docx comparison', () => {
       expect(legacySmoke).toContain('JSZip.loadAsync(result.document)');
       expect(legacySmoke).toContain('acceptAllChanges(resultXml)');
       expect(legacySmoke).toContain('rejectAllChanges(resultXml)');
+      expect(tasks).toMatch(/- \[ \] 8\.3 Ship and complete at least one release\/corpus soak cycle/u);
+      expect(postmortem).toContain('compensating, post-deletion evidence');
+      expect(postmortem).toMatch(/does not make\s+the missed sequencing gate complete/u);
+      expect(postmortem).toContain('Current rollback and remediation triggers');
     },
   );
 

@@ -130,6 +130,12 @@ The shipped descendant therefore cannot claim that the planned shadow gate was
 satisfied. Operational recovery still uses the retained legacy commit's durable
 remote tag and maintenance branch rather than unreachable squash-internal SHAs.
 
+The required release/corpus cycle between the authority flip and legacy deletion
+also did not occur. Task 8.3 is therefore incomplete. The exact history,
+post-deletion compensating evidence, and rollback/remediation triggers are
+recorded in [`soak-postmortem.md`](soak-postmortem.md); none of that later
+evidence is represented as the skipped pre-deletion soak.
+
 Before deletion, portable revision helpers move to `revisionMarkup.ts`:
 `formatDate`, `RevisionIdState`, allocator creation/seeding/allocation,
 `wrapRunWithTrackChange`, and `addParagraphMarkRevisionMarker`. This keeps

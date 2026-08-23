@@ -151,7 +151,7 @@ alignment. A future weighting change SHALL use a new version value.
 
 ### Requirement: Unsafe tagged publication raises a typed diagnostic error
 
-After the private legacy soak switch is retired, a tagged publication that fails a safety or formatting gate SHALL throw `TaggedPublicationSafetyError`. The error
+With the private legacy switch absent, a tagged publication that fails a safety or formatting gate SHALL throw `TaggedPublicationSafetyError`. The error
 SHALL carry the failed checks and the existing structured diagnostics; the system
 SHALL NOT silently return a degraded or partially assembled result.
 
@@ -167,10 +167,11 @@ SHALL NOT silently return a degraded or partially assembled result.
 The ordinary comparison pipeline SHALL construct and publish tracked results
 through the tagged tree. The result package SHALL reconcile both input archives
 under the fixed dual-projection package contract.
-Legacy construction MAY exist only behind a private emergency switch during a
-measured release/corpus soak and SHALL NOT be selectable through library, CLI, or
-MCP public inputs. After the soak gate, the legacy switch and automatic fallback
-SHALL be deleted.
+Legacy construction, its private switch, and automatic fallback are absent and
+SHALL NOT be selectable through library, CLI, or MCP public inputs. The migration
+archive SHALL keep its skipped pre-deletion soak visibly incomplete and SHALL
+label later corpus, rollback, and reader checks as post-deletion compensating
+evidence rather than retroactive completion.
 
 Public `reconstructionMode`, `comparisonStrategy`, `engine`, `premergeRuns`, and
 `maxWordRefinementChangeRanges` options SHALL be absent. Existing schema,
@@ -185,12 +186,12 @@ text-box, auxiliary-sidecar, and formatting-fidelity checks SHALL remain in forc
 - **AND** no public strategy, engine, or reconstruction-mode selector SHALL be accepted
 - **AND** no public package-base or provenance selector SHALL be accepted
 
-#### Scenario: Soak evidence gates legacy deletion
+#### Scenario: Skipped soak remains explicit
 
-- **GIVEN** the tagged assembler is authoritative
-- **WHEN** legacy deletion is proposed
-- **THEN** at least one release/corpus cycle SHALL have stable capability-manifest evidence
-- **AND** the last legacy-capable commit and durable remote-ref rollback procedure SHALL be recorded
+- **GIVEN** migration history in which the authority flip and legacy deletion shipped without the required intervening release/corpus cycle
+- **WHEN** the archived completion evidence is reported
+- **THEN** the skipped soak task SHALL remain incomplete
+- **AND** later corpus, rollback, and reader evidence SHALL be identified as post-deletion compensation rather than as the missing soak
 
 ## MODIFIED Requirements
 
@@ -423,7 +424,7 @@ literal `directProperties` placeholder.
 
 ### Requirement: Tagged-tree construction is the default with an explicit legacy rollback
 
-**Reason**: Public strategy selection and automatic legacy fallback end after the measured tagged-authority soak.
+**Reason**: Public strategy selection and automatic legacy fallback ended with legacy deletion; the required pre-deletion tagged-authority soak did not occur (see `../../soak-postmortem.md`).
 **Migration**: Use the sole revised-based tagged comparison path and handle `TaggedPublicationSafetyError` diagnostics.
 
 #### Scenario: Public legacy rollback is absent
