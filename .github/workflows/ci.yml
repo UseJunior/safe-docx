@@ -444,10 +444,7 @@ jobs:
           SAFE_DOCX_REAL_CORPUS_DIR: ${{ runner.temp }}/open-agreements-cache
           SAFE_DOCX_REAL_CORPUS_REQUIRED: "1"
           SAFE_DOCX_STRATEGY_DIFFERENTIAL_REQUIRED: "1"
-        run: >-
-          npm run test:run -w @usejunior/docx-compare --
-          src/integration/real-corpus-paragraph-deletion.test.ts
-          src/integration/strategy-differential-manifest.corpus.test.ts
+        run: npm run test:real-corpus -w @usejunior/docx-compare
 
   mcpb-bundle:
     runs-on: ubuntu-latest

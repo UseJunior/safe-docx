@@ -14,8 +14,6 @@ const FIXTURE_MANIFEST_PATH = resolve(
   REPO_ROOT,
   'packages/docx-compare/src/testing/fixtures/manifest.json',
 );
-const TAGGED_ATOM_STATISTICS_DIVERGENCE = 'TD-ATOM-STATS-SEMANTICS-001';
-
 interface FixtureManifest {
   base_dir: string;
   fixtures: Array<{
@@ -40,12 +38,9 @@ async function loadCheckedInFixtures(): Promise<StrategyDifferentialFixture[]> {
         : []),
     ],
     expectedPackageParts: ['word/document.xml', 'word/_rels/document.xml.rels'],
-    approvedDivergenceIds:
-      fixture.name === 'ILPA'
-        ? [
-            'TD-LEGACY-ILPA-REJECT-001',
-          ]
-        : [],
+    approvedDivergenceIds: fixture.name === 'ILPA'
+      ? ['TD-ILPA-SECTION-REL-001']
+      : [],
   })));
 }
 
@@ -127,7 +122,6 @@ async function loadMoveCapabilityFixture(): Promise<StrategyDifferentialFixture>
     revised,
     capabilityTags: ['moves', 'paragraph-reorder', 'range-boundaries'],
     expectedPackageParts: ['word/document.xml', 'word/_rels/document.xml.rels'],
-    approvedDivergenceIds: ['TD-LEGACY-MOVE-PROJECTION-001'],
   };
 }
 
@@ -171,12 +165,5 @@ export async function loadStrategyDifferentialFixtures(
     loadRealCorpusFixtures(corpusRoot),
   ]);
   return [...checkedIn, ancillary, textBox, move, ...real]
-    .map((fixture) => ({
-      ...fixture,
-      approvedDivergenceIds: [
-        ...(fixture.approvedDivergenceIds ?? []),
-        TAGGED_ATOM_STATISTICS_DIVERGENCE,
-      ],
-    }))
     .sort((left, right) => left.id.localeCompare(right.id));
 }

@@ -1,5 +1,5 @@
 /**
- * Committed legacy/tagged characterization over checked-in fixtures, the ILPA
+ * Committed tagged-tree characterization over checked-in fixtures, the ILPA
  * pair, and the SHA-256-pinned public NVCA corpus.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
@@ -19,11 +19,13 @@ import {
 } from './real-corpus-fixtures.js';
 import { loadStrategyDifferentialFixtures } from './strategy-differential-fixtures.js';
 import {
+  assertActiveDivergencesConsumed,
   assertCharacterizationSafety,
   assertExpectedPackageParts,
   characterizeStrategyDifferential,
   type ApprovedDivergenceDimension,
   type StrategyDifferentialRow,
+  type StrategyEvidence,
 } from './strategy-differential-harness.js';
 
 const TEST_FEATURE = 'Refactor Tagged Tree Spine';
@@ -44,7 +46,9 @@ interface DivergenceRecord {
 interface CharacterizationManifest {
   schemaVersion: 1;
   divergences: DivergenceRecord[];
-  rows: Array<StrategyDifferentialRow & { legacy?: unknown }>;
+  rows: Array<Omit<StrategyDifferentialRow, 'taggedTree'> & {
+    taggedTree: Omit<StrategyEvidence, 'integrity'>;
+  }>;
 }
 
 const manifest = JSON.parse(await readFile(MANIFEST_PATH, 'utf8')) as CharacterizationManifest;
@@ -83,13 +87,8 @@ describe('strategy differential manifest contract', () => {
       const ids = manifest.divergences.map((entry) => entry.id);
       expect(new Set(ids).size).toBe(ids.length);
       expect(manifest.divergences).toEqual(expect.arrayContaining([
-        expect.objectContaining({ id: 'TD-FUZZY-MOVE-001', status: 'resolved' }),
-        expect.objectContaining({ id: 'TD-LEGACY-ILPA-REJECT-001', status: 'active' }),
-        expect.objectContaining({ id: 'TD-LEGACY-MOVE-PROJECTION-001', status: 'active' }),
-        expect.objectContaining({ id: 'TD-NUMBERING-001', status: 'resolved' }),
         expect.objectContaining({ id: 'TD-CONSUMER-COMPAT-001', status: 'resolved' }),
         expect.objectContaining({ id: 'TD-PAGEREF-CACHE-001', status: 'resolved' }),
-        expect.objectContaining({ id: 'TD-ATOM-STATS-SEMANTICS-001', status: 'active' }),
       ]));
       for (const divergence of manifest.divergences) {
         expect(divergence.issue).toMatch(/^#\d+$/u);
@@ -101,10 +100,11 @@ describe('strategy differential manifest contract', () => {
 });
 
 describe('strategy differential committed rows', () => {
-  const corpusTest = availability.available ? test : test.skip;
-  corpusTest(
+  test(
     'matches the reviewed manifest for every required fixture',
     async () => {
+      expect(availability.skipWarning).toBeNull();
+      expect(availability.available).toBe(true);
       const fixtures = await loadStrategyDifferentialFixtures(corpusRoot);
       const rows: StrategyDifferentialRow[] = [];
       for (const fixture of fixtures) {
@@ -124,13 +124,20 @@ describe('strategy differential committed rows', () => {
           .filter((entry) => entry.status === 'active')
           .map((entry) => [entry.id, entry] as const),
       );
+      const consumedDivergenceIds = new Set<string>();
       for (const [index, row] of rows.entries()) {
         const approvedDimensions = new Set(
           row.approvedDivergenceIds.flatMap(
             (id) => activeDivergences.get(id)?.dimensions ?? [],
           ),
         );
-        assertCharacterizationSafety(row, approvedDimensions);
+        const consumedDimensions = assertCharacterizationSafety(row, approvedDimensions);
+        for (const divergenceId of row.approvedDivergenceIds) {
+          const divergence = activeDivergences.get(divergenceId);
+          if (divergence?.dimensions.some((dimension) => consumedDimensions.has(dimension))) {
+            consumedDivergenceIds.add(divergenceId);
+          }
+        }
         assertExpectedPackageParts(fixtures[index]!, row);
       }
 
@@ -139,13 +146,20 @@ describe('strategy differential committed rows', () => {
           expect(activeDivergences.has(divergenceId), divergenceId).toBe(true);
         }
       }
+      assertActiveDivergencesConsumed(
+        new Set(activeDivergences.keys()),
+        consumedDivergenceIds,
+      );
 
-      const expectedRows = manifest.rows.map((row) => ({
-        fixture: row.fixture,
-        approvedDivergenceIds: row.approvedDivergenceIds,
-        taggedTree: row.taggedTree,
-      }));
-      expect(rows).toEqual(expectedRows);
+      const reviewedEvidence = (row: StrategyDifferentialRow) => {
+        const { integrity: _runtimeIntegrity, ...taggedTree } = row.taggedTree;
+        return {
+          fixture: row.fixture,
+          approvedDivergenceIds: row.approvedDivergenceIds,
+          taggedTree,
+        };
+      };
+      expect(rows.map(reviewedEvidence)).toEqual(manifest.rows);
     },
     600_000,
   );

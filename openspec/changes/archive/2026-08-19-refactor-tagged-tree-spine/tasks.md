@@ -50,7 +50,7 @@
 - [x] 6.3 Move footnote reconciliation and text-box/ancillary publication onto tagged stories.
 - [x] 6.4 Replace reconstruction-mode text-box guards with per-story safety while preserving the typed error contract.
 - [x] 6.5 Wire auxiliary sidecar and formatting-fidelity checks into the final publication gate.
-- [x] 6.6 Run assembler in shadow and compare normalized manifests and parts for the full Phase 1 corpus.
+- [ ] 6.6 Run assembler in shadow against an independent package comparand for the full Phase 1 corpus. The recorded observer compared the standalone buffer with itself and its obsolete API/tests were later deleted; see #918.
 
 ## 7. Tagged statistics and portable property naming
 
