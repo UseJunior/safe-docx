@@ -82,6 +82,7 @@ function footnote(displayNumber: number, text: string): Footnote {
     text,
     anchoredParagraphId: null,
     refParagraphIds: [],
+    referencePoints: [],
     paragraphs: [{ text, tagged_text: text, style: 'FootnoteText' }],
   };
 }

@@ -440,14 +440,24 @@ describe('external-facing rationale comments', () => {
 
   itAllure('[SDX-MDOC-13][SDX-MDOC-44][SDX-MDOC-60] attributes paired rationale modes on a real public agreement', async () => {
     const fixture = fileURLToPath(new URL(
-      '../../../tests/test_documents/nvca-regression/source.docx',
+      '../../../tests/test_documents/open-agreements/letter-of-intent.docx',
       import.meta.url,
     ));
     const imported = await importDocxToMarkdoc(await readFile(fixture));
-    const paragraph = requireMarkdoc(imported.markdoc).scaffold.find((item) =>
+    const importedIr = requireMarkdoc(imported.markdoc);
+    const importedDocument = await DocxDocument.load(imported.anchoredSource);
+    const eligibleParagraphIds = new Set(importedDocument.buildDocumentView({ includeSemanticTags: false, showFormatting: false }).nodes
+      .filter((node) => !node.table_context && !node.footnote_refs?.length && !node.comments?.length)
+      .map((node) => node.id));
+    const annotationParagraphIds = new Set(importedIr.annotations.flatMap((annotation) => annotation.anchor.kind === 'point'
+      ? [annotation.anchor.point.paragraphId]
+      : [annotation.anchor.start.paragraphId, annotation.anchor.end.paragraphId]));
+    const paragraph = importedIr.scaffold.find((item) =>
       item.originalText.length >= 30 &&
       item.originalText.length <= 180 &&
-      !item.originalText.includes('\n'));
+      !item.originalText.includes('\n') &&
+      eligibleParagraphIds.has(item.id) &&
+      !annotationParagraphIds.has(item.id));
     if (!paragraph) throw new Error('real rationale smoke paragraph not found');
     const block = new RegExp(`\\{% para id="${paragraph.id}"[\\s\\S]*?\\{% /para %\\}`);
     const replacement = [
@@ -462,7 +472,8 @@ describe('external-facing rationale comments', () => {
       + rationale('real-rationale', 'internal', internalText)
       + rationale('real-rationale', 'external-facing', externalText);
 
-    const externalOnly = await compileMarkdoc(imported.anchoredSource, markdoc, compileOptions);
+    const annotationPresentation = { unspecified: { as: 'preserve' as const } };
+    const externalOnly = await compileMarkdoc(imported.anchoredSource, markdoc, { ...compileOptions, annotationPresentation });
     const externalParts = JSON.stringify(await parts(externalOnly.tracked));
     expect(externalOnly.certificate).toMatchObject({
       passed: true,
@@ -475,6 +486,7 @@ describe('external-facing rationale comments', () => {
 
     const paired = await compileMarkdoc(imported.anchoredSource, markdoc, {
       ...compileOptions,
+      annotationPresentation,
       dangerouslyIncludeInternalComments: true,
     });
     const pairedParts = JSON.stringify(await parts(paired.tracked));

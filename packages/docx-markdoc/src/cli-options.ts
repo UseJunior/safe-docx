@@ -1,10 +1,13 @@
 import path from 'node:path';
+import type { AnnotationAudience, AnnotationPresentation } from './types.js';
 
 export type RenderingFlags = {
   positional: string[];
   externalComments?: boolean;
   includeInternalComments: boolean;
   internalOutput?: string;
+  noteProfilePath?: string;
+  notePresentation: Partial<Record<AnnotationAudience, AnnotationPresentation>>;
 };
 
 export function parseRenderingFlags(args: string[]): RenderingFlags {
@@ -12,6 +15,8 @@ export function parseRenderingFlags(args: string[]): RenderingFlags {
   let externalComments: boolean | undefined;
   let includeInternalComments = false;
   let internalOutput: string | undefined;
+  let noteProfilePath: string | undefined;
+  const notePresentation: RenderingFlags['notePresentation'] = {};
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
     if (arg === '--external-comments' || arg === '--no-external-comments') {
@@ -26,6 +31,16 @@ export function parseRenderingFlags(args: string[]): RenderingFlags {
       internalOutput = args[index + 1];
       if (!internalOutput) throw new Error('--internal-output requires a .docx path.');
       index += 1;
+    } else if (arg === '--note-profile') {
+      noteProfilePath = args[index + 1];
+      if (!noteProfilePath) throw new Error('--note-profile requires a JSON path.');
+      index += 1;
+    } else if (arg === '--external-notes' || arg === '--internal-notes' || arg === '--unspecified-notes') {
+      const value = args[index + 1] as AnnotationPresentation | undefined;
+      if (!value || !['preserve', 'comment', 'footnote', 'omit'].includes(value)) throw new Error(`${arg} requires preserve, comment, footnote, or omit.`);
+      const audience: AnnotationAudience = arg === '--external-notes' ? 'external-facing' : arg === '--internal-notes' ? 'internal' : 'unspecified';
+      notePresentation[audience] = value;
+      index += 1;
     } else if (arg.startsWith('--')) {
       throw new Error(`Unknown option ${arg}.`);
     } else {
@@ -35,7 +50,8 @@ export function parseRenderingFlags(args: string[]): RenderingFlags {
   if (includeInternalComments !== (internalOutput !== undefined)) {
     throw new Error('--dangerously-include-internal-comments and --internal-output must be supplied together.');
   }
-  return { positional, externalComments, includeInternalComments, internalOutput };
+  if (noteProfilePath && Object.keys(notePresentation).length > 0) throw new Error('--note-profile cannot be combined with audience note overrides.');
+  return { positional, externalComments, includeInternalComments, internalOutput, noteProfilePath, notePresentation };
 }
 
 export const EXTERNAL_FILENAME = 'redline - EXTERNAL COMMENTS INCLUDED.docx';

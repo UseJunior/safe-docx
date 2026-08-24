@@ -1,6 +1,7 @@
-import { DocxDocument, computeContentFingerprint } from '@usejunior/docx-core';
+import { DocxDocument, OOXML, W, computeContentFingerprint } from '@usejunior/docx-core';
 import { sha256 } from './hash.js';
-import type { ImportResult } from './types.js';
+import { DocxMarkdocError } from './errors.js';
+import type { AnnotationAnchor, AnnotationParagraph, AnnotationRun, AnnotationRunStyle, CanonicalAnnotation, ImportResult } from './types.js';
 
 function escapeText(text: string): string {
   const escaped = text
@@ -25,6 +26,128 @@ function escapeAttribute(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function parseTaggedRuns(tagged: string, annotationId: string): AnnotationRun[] {
+  const runs: AnnotationRun[] = [];
+  const stack: AnnotationRunStyle[] = [{}];
+  const tokens = tagged.split(/(<\/?(?:b|i|u|highlight|font)(?:\s[^>]*)?>)/g).filter(Boolean);
+  const current = (): AnnotationRunStyle => stack.at(-1)!;
+  for (const token of tokens) {
+    if (!token.startsWith('<')) {
+      if (token) runs.push({ text: token, ...(Object.keys(current()).length ? { style: { ...current() } } : {}) });
+      continue;
+    }
+    if (token.startsWith('</')) {
+      if (stack.length === 1) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} has unbalanced formatting tags.`, { annotationId });
+      stack.pop();
+      continue;
+    }
+    const next = { ...current() };
+    if (token === '<b>') next.bold = true;
+    else if (token === '<i>') next.italic = true;
+    else if (token === '<u>') next.underline = true;
+    else if (token.startsWith('<highlight')) {
+      const color = /\bcolor="([^"]+)"/.exec(token)?.[1] ?? 'yellow';
+      next.highlight = color as AnnotationRunStyle['highlight'];
+    } else if (token.startsWith('<font')) {
+      if (/\b(?:name|size|face)=/.test(token)) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} uses unsupported font metadata.`, { annotationId, token });
+      const color = /\bcolor="([0-9A-Fa-f]{6})"/.exec(token)?.[1];
+      if (!color) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} has an unsupported color declaration.`, { annotationId, token });
+      next.color = color.toUpperCase();
+    }
+    stack.push(next);
+  }
+  if (stack.length !== 1) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} has unbalanced formatting tags.`, { annotationId });
+  return runs;
+}
+
+function bodyFromParagraphs(paragraphs: Array<{ tagged_text: string }>, annotationId: string): AnnotationParagraph[] {
+  if (paragraphs.length === 0) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} has no admitted paragraphs.`, { annotationId });
+  return paragraphs.map((paragraph) => ({ runs: parseTaggedRuns(paragraph.tagged_text, annotationId) }));
+}
+
+function assertAdmittedAnnotationElement(container: Element, annotationId: string, marker: 'annotationRef' | 'footnoteRef'): void {
+  const admitted = new Set(['p', 'pPr', 'pStyle', 'r', 'rPr', 't', marker, 'b', 'i', 'u', 'color', 'highlight', 'rStyle', 'vertAlign']);
+  for (const node of Array.from(container.getElementsByTagNameNS(OOXML.W_NS, '*'))) {
+    const element = node as Element;
+    let formattingOwner = element.parentNode as Element | null;
+    while (formattingOwner && formattingOwner !== container && formattingOwner.localName !== W.r && formattingOwner.localName !== W.p) {
+      formattingOwner = formattingOwner.parentNode as Element | null;
+    }
+    const harmlessComplexScriptFallback = element.localName === 'szCs'
+      && (formattingOwner?.localName === W.r || formattingOwner?.localName === W.p)
+      && !/[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/u.test(formattingOwner.textContent ?? '');
+    if (!admitted.has(element.localName) && !harmlessComplexScriptFallback) {
+      throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} contains unsupported w:${element.localName}.`, { annotationId, element: `w:${element.localName}` });
+    }
+    if (element.localName === W.rPr) {
+      const run = element.parentNode as Element | null;
+      const markerRun = Boolean(run?.getElementsByTagNameNS(OOXML.W_NS, marker).length);
+      for (const property of Array.from(element.childNodes).filter((child) => child.nodeType === 1) as Element[]) {
+        const allowed = ['b', 'i', 'u', 'color', 'highlight'];
+        const nonApplicableFallback = property.localName === 'szCs'
+          && !/[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/u.test(run?.textContent ?? '');
+        if (!allowed.includes(property.localName) && !nonApplicableFallback && !(markerRun && ['rStyle', 'vertAlign'].includes(property.localName))) {
+          throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} contains unsupported run property w:${property.localName}.`, { annotationId, element: `w:${property.localName}` });
+        }
+      }
+    }
+  }
+}
+
+function elementByWordId(document: Document | null, localName: string, id: number): Element | null {
+  if (!document) return null;
+  return Array.from(document.getElementsByTagNameNS(OOXML.W_NS, localName))
+    .find((element) => Number((element as Element).getAttributeNS(OOXML.W_NS, 'id') ?? (element as Element).getAttribute('w:id')) === id) as Element | undefined ?? null;
+}
+
+function anchorAttributes(prefix: 'source-' | '', anchor: AnnotationAnchor): string[] {
+  const kindName = prefix ? 'source-kind' : 'anchor-kind';
+  const paragraphName = prefix ? 'source-paragraph' : 'paragraph';
+  const offsetName = prefix ? 'source-offset' : 'offset';
+  const start = anchor.kind === 'point' ? anchor.point : anchor.start;
+  const attributes = [`${kindName}="${anchor.kind}"`, `${paragraphName}="${escapeAttribute(start.paragraphId)}"`, `${offsetName}=${start.offset}`];
+  if (anchor.kind === 'range') {
+    attributes.push(`${prefix ? 'source-end-paragraph' : 'end-paragraph'}="${escapeAttribute(anchor.end.paragraphId)}"`);
+    attributes.push(`${prefix ? 'source-end-offset' : 'end-offset'}=${anchor.end.offset}`);
+  }
+  return attributes;
+}
+
+function annotationMarkdoc(annotation: CanonicalAnnotation): string[] {
+  const attributes = [
+    `id="${escapeAttribute(annotation.id)}"`,
+    `audience="${annotation.audience}"`,
+    `role="${annotation.semanticRole}"`,
+    `source-presentation="${annotation.sourcePresentation}"`,
+    ...anchorAttributes('source-', annotation.sourceAnchor),
+    ...anchorAttributes('', annotation.anchor),
+    ...(annotation.operationId ? [`operation="${escapeAttribute(annotation.operationId)}"`] : []),
+    ...(annotation.author ? [`author="${escapeAttribute(annotation.author)}"`] : []),
+    ...(annotation.initials ? [`initials="${escapeAttribute(annotation.initials)}"`] : []),
+    ...(annotation.date ? [`date="${escapeAttribute(annotation.date)}"`] : []),
+    ...(annotation.replyParentId ? [`reply-parent="${escapeAttribute(annotation.replyParentId)}"`] : []),
+    ...(annotation.presentation ? [`presentation="${annotation.presentation}"`] : []),
+  ];
+  const lines = [`{% annotation ${attributes.join(' ')} %}`];
+  for (const paragraph of annotation.body) {
+    const content: string[] = [];
+    for (const run of paragraph.runs) {
+      const style = run.style;
+      if (!style || Object.keys(style).length === 0) content.push(escapeText(run.text));
+      else {
+        const styleAttributes = [
+          ...(style.bold ? ['bold=true'] : []), ...(style.italic ? ['italic=true'] : []), ...(style.underline ? ['underline=true'] : []),
+          ...(style.color ? [`color="${style.color}"`] : []), ...(style.highlight ? [`highlight="${style.highlight}"`] : []),
+        ];
+        content.push(`{% annotation-run ${styleAttributes.join(' ')} %}${escapeText(run.text)}{% /annotation-run %}`);
+      }
+    }
+    lines.push('{% annotation-p %}', content.join(''), '{% /annotation-p %}');
+  }
+  lines.push('{% /annotation %}', '');
+  return lines;
+}
+
 export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult> {
   const document = await DocxDocument.load(source);
   const attachmentId = sha256(source).slice(0, 16);
@@ -43,5 +166,70 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
       '',
     );
   }
-  return { anchoredSource, markdoc: `${lines.join('\n').trimEnd()}\n`, source: descriptor };
+  const annotations: CanonicalAnnotation[] = [];
+  const [commentsXml, footnotesXml] = await Promise.all([anchored.getCommentsXmlClone(), anchored.getFootnotesXmlClone()]);
+  const comments = await anchored.getComments();
+  const importedCommentIds = new Set<number>();
+  const addCommentTree = (comment: (typeof comments)[number], parent: CanonicalAnnotation | undefined): void => {
+    const id = `comment:${comment.id}`;
+    if (importedCommentIds.has(comment.id)) {
+      throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Comment ${comment.id} appears more than once in reply topology.`, { annotationId: id, topology: 'duplicate-or-cycle' });
+    }
+    importedCommentIds.add(comment.id);
+    const commentElement = elementByWordId(commentsXml, W.comment, comment.id);
+    if (!commentElement) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Comment ${comment.id} has no definition.`, { annotationId: id });
+    assertAdmittedAnnotationElement(commentElement, id, 'annotationRef');
+    let anchor: AnnotationAnchor;
+    if (parent) anchor = parent.anchor;
+    else {
+      if (!comment.anchoredParagraphId || comment.startTextOffset === undefined || !comment.endParagraphId || comment.endTextOffset === undefined) {
+        throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Comment ${comment.id} has unresolved anchor geometry.`, { annotationId: id });
+      }
+      anchor = comment.anchoredParagraphId === comment.endParagraphId && comment.startTextOffset === comment.endTextOffset
+        ? { kind: 'point', point: { paragraphId: comment.anchoredParagraphId, offset: comment.startTextOffset } }
+        : { kind: 'range', start: { paragraphId: comment.anchoredParagraphId, offset: comment.startTextOffset }, end: { paragraphId: comment.endParagraphId, offset: comment.endTextOffset } };
+    }
+    const annotation: CanonicalAnnotation = {
+      id,
+      body: bodyFromParagraphs(comment.paragraphs, id),
+      author: comment.author || undefined,
+      initials: comment.initials || undefined,
+      date: comment.date || undefined,
+      ...(parent ? { replyParentId: parent.id } : {}),
+      audience: 'unspecified', semanticRole: 'unspecified', sourcePresentation: 'comment', sourceAnchor: anchor, anchor,
+    };
+    annotations.push(annotation);
+    for (const reply of comment.replies) addCommentTree(reply, annotation);
+  };
+  for (const comment of comments) addCommentTree(comment, undefined);
+  const definedCommentIds = commentsXml
+    ? Array.from(commentsXml.getElementsByTagNameNS(OOXML.W_NS, W.comment))
+      .map((element) => Number((element as Element).getAttributeNS(OOXML.W_NS, 'id') ?? (element as Element).getAttribute('w:id')))
+      .filter(Number.isInteger)
+    : [];
+  if (importedCommentIds.size !== definedCommentIds.length) {
+    const missing = definedCommentIds.find((id) => !importedCommentIds.has(id));
+    throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Comment reply topology is orphaned or cyclic at comment ${missing ?? 'unknown'}.`, {
+      annotationId: missing === undefined ? 'comment:unknown' : `comment:${missing}`,
+      topology: 'orphan-or-cycle',
+    });
+  }
+  for (const footnote of await anchored.getFootnotes()) {
+    const id = `footnote:${footnote.id}`;
+    // Some Word templates retain an empty, unreferenced placeholder definition.
+    // It carries no negotiation content or body anchor and is not a user note.
+    if (footnote.referencePoints.length === 0 && footnote.text.length === 0) continue;
+    const footnoteElement = elementByWordId(footnotesXml, W.footnote, footnote.id);
+    if (!footnoteElement) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Footnote ${footnote.id} has no definition.`, { annotationId: id });
+    assertAdmittedAnnotationElement(footnoteElement, id, 'footnoteRef');
+    if (footnote.referencePoints.length !== 1) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Footnote ${footnote.id} must have exactly one reference.`, { annotationId: id, referenceCount: footnote.referencePoints.length });
+    const reference = footnote.referencePoints[0]!;
+    const anchor: AnnotationAnchor = { kind: 'point', point: { paragraphId: reference.paragraphId, offset: reference.textOffset } };
+    annotations.push({
+      id, body: bodyFromParagraphs(footnote.paragraphs, id), audience: 'unspecified', semanticRole: 'substantive-footnote',
+      sourcePresentation: 'footnote', sourceAnchor: anchor, anchor,
+    });
+  }
+  for (const annotation of annotations) lines.push(...annotationMarkdoc(annotation));
+  return { anchoredSource, markdoc: `${lines.join('\n').trimEnd()}\n`, source: descriptor, annotations };
 }

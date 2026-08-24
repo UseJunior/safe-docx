@@ -11,12 +11,58 @@ export type Rationale = {
   visibility: 'internal' | 'external-facing';
 };
 
+export type AnnotationAudience = 'internal' | 'external-facing' | 'unspecified';
+export type AnnotationSemanticRole = 'drafting-note' | 'substantive-footnote' | 'unspecified';
+export type AnnotationSourcePresentation = 'comment' | 'footnote' | 'authored';
+export type AnnotationPresentation = 'preserve' | 'comment' | 'footnote' | 'omit';
+
+export type AnnotationPosition = { paragraphId: string; offset: number };
+export type AnnotationPointAnchor = { kind: 'point'; point: AnnotationPosition };
+export type AnnotationRangeAnchor = { kind: 'range'; start: AnnotationPosition; end: AnnotationPosition };
+export type AnnotationAnchor = AnnotationPointAnchor | AnnotationRangeAnchor;
+
+export type AnnotationRunStyle = {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  color?: string;
+  highlight?: 'black' | 'blue' | 'cyan' | 'green' | 'magenta' | 'red' | 'yellow' | 'white' | 'darkBlue' | 'darkCyan' | 'darkGreen' | 'darkMagenta' | 'darkRed' | 'darkYellow' | 'darkGray' | 'lightGray' | 'none';
+};
+
+export type AnnotationRun = { text: string; style?: AnnotationRunStyle };
+export type AnnotationParagraph = { runs: AnnotationRun[] };
+export type CanonicalAnnotation = {
+  id: string;
+  body: AnnotationParagraph[];
+  operationId?: string;
+  author?: string;
+  initials?: string;
+  date?: string;
+  replyParentId?: string;
+  audience: AnnotationAudience;
+  semanticRole: AnnotationSemanticRole;
+  readonly sourcePresentation: AnnotationSourcePresentation;
+  readonly sourceAnchor: AnnotationAnchor;
+  anchor: AnnotationAnchor;
+  presentation?: AnnotationPresentation;
+};
+
+export type AnnotationPresentationRule = {
+  as: AnnotationPresentation;
+  prefix?: AnnotationRun[];
+  separator?: AnnotationRun[];
+  bodyStyle?: AnnotationRunStyle;
+};
+
+export type AnnotationPresentationProfile = Partial<Record<AnnotationAudience, AnnotationPresentationRule>>;
+
 export type CompilationProfile = {
   revisionAuthor?: string;
   commentAuthor?: string;
   commentInitials?: string;
   buildDate?: string;
   externalComments: 'include' | 'omit';
+  annotationPresentation?: AnnotationPresentationProfile;
 };
 
 export type DraftRequirement = {
@@ -119,6 +165,7 @@ export type MarkdocEditIR = {
   scaffold: SourceParagraph[];
   operations: EditOperation[];
   rationales: Rationale[];
+  annotations: CanonicalAnnotation[];
   compilation?: CompilationProfile;
   /** Additive v1 fields; omitted legacy IR is treated as having no completeness declarations. */
   requirements?: DraftRequirement[];
@@ -164,6 +211,12 @@ export type VerificationCertificate = {
     internalRationalesFound: number;
     externalCommentsIncluded: boolean;
     internalCommentsIncluded: boolean;
+    warnings: string[];
+  };
+  annotationRendering: {
+    profile: AnnotationPresentationProfile;
+    profileDigest: string;
+    dispositions: Array<{ id: string; audience: AnnotationAudience; as: AnnotationPresentation; lossy: boolean; warning?: string }>;
     warnings: string[];
   };
   /** Exact source/reject and clean/accept replay verdict. */
@@ -245,12 +298,14 @@ export type CompileOptions = {
   externalComments?: boolean;
   dangerouslyIncludeInternalComments?: boolean;
   configurationSource?: 'api' | 'cli';
+  annotationPresentation?: AnnotationPresentationProfile;
 };
 
 export type ImportResult = {
   anchoredSource: Buffer;
   markdoc: string;
   source: SourceDescriptor;
+  annotations: CanonicalAnnotation[];
 };
 
 export type EditPair = {

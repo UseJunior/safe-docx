@@ -1,6 +1,6 @@
 import Markdoc, { type Config, type Node } from '@markdoc/markdoc';
 import { DocxMarkdocError } from './errors.js';
-import { IR_VERSION, type AtomicChangeSet, type CompilationProfile, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type RequirementWaiver, type RunFormat, type RunFormatSpan, type SourceParagraph, type ValidationIssue, type ValidationResult } from './types.js';
+import { IR_VERSION, type AnnotationAnchor, type AnnotationParagraph, type AnnotationRunStyle, type AtomicChangeSet, type CanonicalAnnotation, type CompilationProfile, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type RequirementWaiver, type RunFormat, type RunFormatSpan, type SourceParagraph, type ValidationIssue, type ValidationResult } from './types.js';
 
 const stringRequired = { type: String, required: true } as const;
 const runFormatAttributes = {
@@ -25,6 +25,9 @@ export const markdocConfig: Config = {
         'comment-initials': { type: String },
         'build-date': { type: String },
         'external-comments': { type: String, matches: ['include', 'omit'] },
+        'external-notes': { type: String, matches: ['preserve', 'comment', 'footnote', 'omit'] },
+        'internal-notes': { type: String, matches: ['preserve', 'comment', 'footnote', 'omit'] },
+        'unspecified-notes': { type: String, matches: ['preserve', 'comment', 'footnote', 'omit'] },
       },
     },
     para: {
@@ -97,6 +100,31 @@ export const markdocConfig: Config = {
       attributes: {
         for: stringRequired,
         visibility: { type: String, required: true, matches: ['internal', 'external-facing'] },
+      },
+    },
+    annotation: {
+      attributes: {
+        id: stringRequired,
+        operation: { type: String },
+        audience: { type: String, required: true, matches: ['internal', 'external-facing', 'unspecified'] },
+        role: { type: String, required: true, matches: ['drafting-note', 'substantive-footnote', 'unspecified'] },
+        'source-presentation': { type: String, required: true, matches: ['comment', 'footnote', 'authored'] },
+        presentation: { type: String, matches: ['preserve', 'comment', 'footnote', 'omit'] },
+        author: { type: String }, initials: { type: String }, date: { type: String }, 'reply-parent': { type: String },
+        'source-kind': { type: String, required: true, matches: ['point', 'range'] },
+        'source-paragraph': stringRequired, 'source-offset': { type: Number, required: true },
+        'source-end-paragraph': { type: String }, 'source-end-offset': { type: Number },
+        'anchor-kind': { type: String, required: true, matches: ['point', 'range'] },
+        paragraph: stringRequired, offset: { type: Number, required: true },
+        'end-paragraph': { type: String }, 'end-offset': { type: Number },
+      },
+    },
+    'annotation-p': {},
+    'annotation-run': {
+      inline: true,
+      attributes: {
+        bold: { type: Boolean }, italic: { type: Boolean }, underline: { type: Boolean },
+        color: { type: String }, highlight: { type: String },
       },
     },
     requirement: {
@@ -183,6 +211,63 @@ function commaList(value: unknown): string[] {
   return String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean);
 }
 
+const HIGHLIGHTS = new Set(['black', 'blue', 'cyan', 'green', 'magenta', 'red', 'yellow', 'white', 'darkBlue', 'darkCyan', 'darkGreen', 'darkMagenta', 'darkRed', 'darkYellow', 'darkGray', 'lightGray', 'none']);
+
+function annotationAnchor(attributes: Record<string, unknown>, prefix: 'source-' | '', node: Node, issues: ValidationIssue[]): AnnotationAnchor {
+  const kind = String(attributes[`${prefix}${prefix ? 'kind' : 'anchor-kind'}`] ?? 'point');
+  const paragraphKey = prefix ? 'source-paragraph' : 'paragraph';
+  const offsetKey = prefix ? 'source-offset' : 'offset';
+  const paragraphId = String(attributes[paragraphKey] ?? '');
+  const offset = Number(attributes[offsetKey]);
+  if (!paragraphId || !Number.isInteger(offset) || offset < 0) issues.push(issue('INVALID_ANNOTATION_ANCHOR', 'Annotation coordinates require a paragraph ID and non-negative integer offset.', node));
+  const point = { paragraphId, offset };
+  if (kind !== 'range') return { kind: 'point', point };
+  const endParagraphId = String(attributes[prefix ? 'source-end-paragraph' : 'end-paragraph'] ?? '');
+  const endOffset = Number(attributes[prefix ? 'source-end-offset' : 'end-offset']);
+  if (!endParagraphId || !Number.isInteger(endOffset) || endOffset < 0) issues.push(issue('INVALID_ANNOTATION_ANCHOR', 'Range anchors require an end paragraph ID and non-negative integer offset.', node));
+  return { kind: 'range', start: point, end: { paragraphId: endParagraphId, offset: endOffset } };
+}
+
+function annotationBody(node: Node, issues: ValidationIssue[]): AnnotationParagraph[] {
+  const paragraphs: AnnotationParagraph[] = [];
+  for (const child of node.children) {
+    if (child.type !== 'tag' || child.tag !== 'annotation-p') {
+      if (child.type !== 'text' || String(child.attributes.content ?? '').trim()) issues.push(issue('UNSUPPORTED_ANNOTATION_BODY', 'Annotation bodies admit annotation-p blocks only.', child));
+      continue;
+    }
+    const runs = [] as AnnotationParagraph['runs'];
+    const visit = (inline: Node, inherited?: AnnotationRunStyle): void => {
+      if (inline.type === 'text') {
+        const text = String(inline.attributes.content ?? '');
+        if (text) runs.push({ text, ...(inherited && Object.keys(inherited).length ? { style: inherited } : {}) });
+        return;
+      }
+      if (inline.type === 'softbreak' || inline.type === 'hardbreak' || inline.type === 'paragraph' || inline.type === 'inline') {
+        for (const nested of inline.children) visit(nested, inherited);
+        return;
+      }
+      if (inline.type !== 'tag' || inline.tag !== 'annotation-run') {
+        issues.push(issue('UNSUPPORTED_ANNOTATION_BODY', 'Annotation paragraphs admit text and annotation-run tags only.', inline));
+        return;
+      }
+      const style: AnnotationRunStyle = {
+        ...(inline.attributes.bold === true ? { bold: true } : {}),
+        ...(inline.attributes.italic === true ? { italic: true } : {}),
+        ...(inline.attributes.underline === true ? { underline: true } : {}),
+        ...(inline.attributes.color === undefined ? {} : { color: String(inline.attributes.color).toUpperCase() }),
+        ...(inline.attributes.highlight === undefined ? {} : { highlight: String(inline.attributes.highlight) as AnnotationRunStyle['highlight'] }),
+      };
+      if (style.color && !/^[0-9A-F]{6}$/.test(style.color)) issues.push(issue('INVALID_ANNOTATION_COLOR', 'Annotation colors must be six-digit RGB values.', inline));
+      if (style.highlight && !HIGHLIGHTS.has(style.highlight)) issues.push(issue('INVALID_ANNOTATION_HIGHLIGHT', `Unsupported Word highlight ${style.highlight}.`, inline));
+      for (const nested of inline.children) visit(nested, style);
+    };
+    for (const inline of child.children) visit(inline);
+    paragraphs.push({ runs });
+  }
+  if (paragraphs.length === 0) issues.push(issue('EMPTY_ANNOTATION_BODY', 'Annotations require at least one body paragraph.', node));
+  return paragraphs;
+}
+
 function runFormatFromAttributes(attributes: Record<string, unknown>, node: Node, issues: ValidationIssue[]): RunFormat | undefined {
   const underline = attributes.underline === undefined ? undefined : String(attributes.underline);
   const highlight = attributes.highlight === undefined ? undefined : String(attributes.highlight);
@@ -245,6 +330,7 @@ export function parseMarkdoc(source: string): ValidationResult {
   const scaffold: SourceParagraph[] = [];
   const operations: MarkdocEditIR['operations'] = [];
   const rationales: Rationale[] = [];
+  const annotations: CanonicalAnnotation[] = [];
   const requirements: DraftRequirement[] = [];
   const waivers: RequirementWaiver[] = [];
   const changeSets: AtomicChangeSet[] = [];
@@ -288,6 +374,11 @@ export function parseMarkdoc(source: string): ValidationResult {
         ...(commentInitials === undefined ? {} : { commentInitials }),
         ...(buildDate === undefined ? {} : { buildDate }),
         externalComments: a['external-comments'] === 'omit' ? 'omit' : 'include',
+        annotationPresentation: {
+          ...(a['external-notes'] === undefined ? {} : { 'external-facing': { as: a['external-notes'] as 'preserve' | 'comment' | 'footnote' | 'omit' } }),
+          ...(a['internal-notes'] === undefined ? {} : { internal: { as: a['internal-notes'] as 'preserve' | 'comment' | 'footnote' | 'omit' } }),
+          ...(a['unspecified-notes'] === undefined ? {} : { unspecified: { as: a['unspecified-notes'] as 'preserve' | 'comment' | 'footnote' | 'omit' } }),
+        },
       };
       continue;
     }
@@ -296,6 +387,28 @@ export function parseMarkdoc(source: string): ValidationResult {
         operationId: String(a.for ?? ''),
         text: textProjection(node, 'revised').trim(),
         visibility: a.visibility === 'external-facing' ? 'external-facing' : 'internal',
+      });
+      continue;
+    }
+    if (node.tag === 'annotation') {
+      const id = String(a.id ?? '');
+      if (annotations.some((annotation) => annotation.id === id)) issues.push(issue('DUPLICATE_ANNOTATION_ID', `Duplicate annotation ID ${id}.`, node));
+      const date = a.date === undefined ? undefined : String(a.date);
+      if (date !== undefined && !Number.isFinite(Date.parse(date))) issues.push(issue('INVALID_ANNOTATION_DATE', 'Annotation dates must be valid ISO-8601 instants.', node));
+      annotations.push({
+        id,
+        body: annotationBody(node, issues),
+        ...(a.operation === undefined ? {} : { operationId: String(a.operation) }),
+        ...(a.author === undefined ? {} : { author: String(a.author) }),
+        ...(a.initials === undefined ? {} : { initials: String(a.initials) }),
+        ...(date === undefined ? {} : { date }),
+        ...(a['reply-parent'] === undefined ? {} : { replyParentId: String(a['reply-parent']) }),
+        audience: a.audience as CanonicalAnnotation['audience'],
+        semanticRole: a.role as CanonicalAnnotation['semanticRole'],
+        sourcePresentation: a['source-presentation'] as CanonicalAnnotation['sourcePresentation'],
+        sourceAnchor: annotationAnchor(a, 'source-', node, issues),
+        anchor: annotationAnchor(a, '', node, issues),
+        ...(a.presentation === undefined ? {} : { presentation: a.presentation as CanonicalAnnotation['presentation'] }),
       });
       continue;
     }
@@ -474,6 +587,10 @@ export function parseMarkdoc(source: string): ValidationResult {
       issues.push(issue('ORPHAN_RATIONALE', `Rationale targets unknown operation ${rationale.operationId}.`));
     }
   }
+  for (const annotation of annotations) {
+    if (annotation.operationId && !operationIds.has(annotation.operationId)) issues.push(issue('ORPHAN_ANNOTATION_OPERATION', `Annotation ${annotation.id} targets unknown operation ${annotation.operationId}.`));
+    if (annotation.replyParentId && !annotations.some((parent) => parent.id === annotation.replyParentId)) issues.push(issue('ORPHAN_ANNOTATION_REPLY', `Annotation ${annotation.id} targets unknown reply parent ${annotation.replyParentId}.`));
+  }
   const waiverTargets = new Set<string>();
   for (const waiver of waivers) {
     if (!requirementIds.has(waiver.requirementId)) issues.push(issue('ORPHAN_WAIVER', `Waiver targets unknown requirement ${waiver.requirementId}.`));
@@ -481,7 +598,7 @@ export function parseMarkdoc(source: string): ValidationResult {
     waiverTargets.add(waiver.requirementId);
   }
   const rationaleTargets = new Set<string>();
-  for (const rationale of rationales) {
+  for (const [rationaleIndex, rationale] of rationales.entries()) {
     const target = `${rationale.operationId}\u0000${rationale.visibility}`;
     if (rationaleTargets.has(target)) {
       issues.push(issue(
@@ -490,11 +607,31 @@ export function parseMarkdoc(source: string): ValidationResult {
       ));
     }
     rationaleTargets.add(target);
+    const operation = operations.find((candidate) => candidate.operationId === rationale.operationId);
+    if (operation) {
+      const paragraphId = 'anchorId' in operation ? operation.anchorId : operation.id;
+      const offset = operation.kind === 'insert-after'
+        ? (scaffold.find((paragraph) => paragraph.id === paragraphId)?.originalText.length ?? 0)
+        : 0;
+      const anchor: AnnotationAnchor = operation.kind === 'insert-before' || operation.kind === 'insert-after'
+        ? { kind: 'point', point: { paragraphId, offset } }
+        : { kind: 'range', start: { paragraphId, offset: 0 }, end: { paragraphId, offset: operation.revisedText.length } };
+      annotations.push({
+        id: `rationale:${rationale.operationId}:${rationale.visibility}:${rationaleIndex}`,
+        operationId: rationale.operationId,
+        body: [{ runs: [{ text: rationale.text }] }],
+        audience: rationale.visibility,
+        semanticRole: 'drafting-note',
+        sourcePresentation: 'authored',
+        sourceAnchor: anchor,
+        anchor,
+      });
+    }
   }
   if (issues.length > 0 || !descriptor) return { valid: false, issues };
   return {
     valid: true,
-    ir: { version: IR_VERSION, source: descriptor, scaffold, operations, rationales, compilation, requirements, waivers, changeSets, assertions },
+    ir: { version: IR_VERSION, source: descriptor, scaffold, operations, rationales, annotations, compilation, requirements, waivers, changeSets, assertions },
   };
 }
 

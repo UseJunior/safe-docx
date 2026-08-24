@@ -136,7 +136,7 @@ export function buildParagraphIndex(paragraph: Element): ParagraphIndex {
         const instructionFrame = [...fieldStack].reverse().find((frame) => frame.phase === 'instruction');
         if (instructionFrame && (element.localName === W.instrText || element.localName === 'delInstrText')) {
           instructionFrame.instruction += element.textContent ?? '';
-        } else if (!instructionFrame && (node.kind === 'text' || node.kind === 'tab' || node.kind === 'break')) {
+        } else if (activeRun && !instructionFrame && (node.kind === 'text' || node.kind === 'tab' || node.kind === 'break')) {
           const text = node.kind === 'text' ? (element.textContent ?? '') : node.kind === 'tab' ? '\t' : '\n';
           const resultId = currentResultId();
           node.visibleText = text;

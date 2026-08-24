@@ -14,6 +14,9 @@ import { getParagraphBookmarkId } from './bookmarks.js';
 import { isW } from './dom-helpers.js';
 import { buildParagraphIndex, type IndexedParagraphNode, type ParagraphIndex } from './paragraph-index.js';
 import { getAttributeSafe } from './xml-helpers.js';
+import { getFirstChild } from './xml-helpers.js';
+import { extractEffectiveRunFormatting, parseStylesXml, parseThemeXml, type StylesModel, type ThemeModel } from './styles.js';
+import { emitFormattingTags, mergeAdjacentTags, type AnnotatedRun } from './formatting_tags.js';
 import {
   createRevisionContainer,
   prepareElementForDeletion,
@@ -198,7 +201,11 @@ export type AddCommentParams = {
   author: string;
   text: string;
   initials?: string;
+  body?: CommentBodyParagraph[];
 };
+
+export type CommentBodyRun = { text: string; style?: { bold?: boolean; italic?: boolean; underline?: boolean; color?: string; highlight?: string } };
+export type CommentBodyParagraph = { runs: CommentBodyRun[] };
 
 export type AddCommentResult = {
   commentId: number;
@@ -309,6 +316,10 @@ export async function addTrackedRangeComments(
  * - Inserts commentReference run after range end
  * - Adds comment entry to comments.xml
  * - Adds author to people.xml if not present
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.4
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.3
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.5
  */
 export async function addComment(
   documentXml: Document,
@@ -348,6 +359,7 @@ export async function addComment(
     text,
     paraId,
     date: ctx?.date,
+    body: params.body,
   });
   zip.writeText('word/comments.xml', serializeXml(commentsDoc));
 
@@ -364,6 +376,7 @@ export type AddCommentReplyParams = {
   author: string;
   text: string;
   initials?: string;
+  body?: CommentBodyParagraph[];
 };
 
 export type AddCommentReplyResult = {
@@ -410,6 +423,7 @@ export async function addCommentReply(
     text,
     paraId: replyParaId,
     date: ctx?.date,
+    body: params.body,
   });
   zip.writeText('word/comments.xml', serializeXml(commentsDoc));
 
@@ -497,7 +511,7 @@ function ensureCommentPartNamespaceAliases(commentsDoc: Document): void {
  */
 function addCommentElement(
   commentsDoc: Document,
-  params: { id: number; author: string; initials: string; text: string; paraId: string; date?: string },
+  params: { id: number; author: string; initials: string; text: string; paraId: string; date?: string; body?: CommentBodyParagraph[] },
 ): void {
   ensureCommentPartNamespaceAliases(commentsDoc);
   const root = commentsDoc.documentElement;
@@ -520,18 +534,47 @@ function addCommentElement(
   refRun.appendChild(annotRef);
   p.appendChild(refRun);
 
-  // Text run
-  const textRun = commentsDoc.createElementNS(OOXML.W_NS, 'w:r');
-  const t = commentsDoc.createElementNS(OOXML.W_NS, 'w:t');
-  if (params.text.startsWith(' ') || params.text.endsWith(' ')) {
-    t.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
-  }
-  t.appendChild(commentsDoc.createTextNode(params.text));
-  textRun.appendChild(t);
-  p.appendChild(textRun);
+  const body = params.body ?? [{ runs: [{ text: params.text }] }];
+  for (const run of body[0]?.runs ?? []) p.appendChild(buildCommentBodyRun(commentsDoc, run));
 
   commentEl.appendChild(p);
+  for (const paragraph of body.slice(1)) {
+    const bodyParagraph = commentsDoc.createElementNS(OOXML.W_NS, 'w:p');
+    for (const run of paragraph.runs) bodyParagraph.appendChild(buildCommentBodyRun(commentsDoc, run));
+    commentEl.appendChild(bodyParagraph);
+  }
   root.appendChild(commentEl);
+}
+
+function buildCommentBodyRun(doc: Document, bodyRun: CommentBodyRun): Element {
+  const run = doc.createElementNS(OOXML.W_NS, 'w:r');
+  const style = bodyRun.style;
+  if (style && Object.values(style).some((value) => value !== undefined && value !== false)) {
+    const rPr = doc.createElementNS(OOXML.W_NS, 'w:rPr');
+    if (style.bold) rPr.appendChild(doc.createElementNS(OOXML.W_NS, 'w:b'));
+    if (style.italic) rPr.appendChild(doc.createElementNS(OOXML.W_NS, 'w:i'));
+    if (style.underline) {
+      const underline = doc.createElementNS(OOXML.W_NS, 'w:u');
+      underline.setAttributeNS(OOXML.W_NS, 'w:val', 'single');
+      rPr.appendChild(underline);
+    }
+    if (style.color) {
+      const color = doc.createElementNS(OOXML.W_NS, 'w:color');
+      color.setAttributeNS(OOXML.W_NS, 'w:val', style.color);
+      rPr.appendChild(color);
+    }
+    if (style.highlight && style.highlight !== 'none') {
+      const highlight = doc.createElementNS(OOXML.W_NS, 'w:highlight');
+      highlight.setAttributeNS(OOXML.W_NS, 'w:val', style.highlight);
+      rPr.appendChild(highlight);
+    }
+    run.appendChild(rPr);
+  }
+  const text = doc.createElementNS(OOXML.W_NS, 'w:t');
+  if (bodyRun.text.startsWith(' ') || bodyRun.text.endsWith(' ')) text.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+  text.appendChild(doc.createTextNode(bodyRun.text));
+  run.appendChild(text);
+  return run;
 }
 
 function insertCommentMarkers(
@@ -777,6 +820,7 @@ export type Comment = {
   date: string;
   initials: string;
   text: string;
+  paragraphs: CommentParagraph[];
   paragraphId: string | null;
   anchoredParagraphId: string | null;
   endParagraphId?: string | null;
@@ -787,6 +831,12 @@ export type Comment = {
   startTextOffset?: number;
   endTextOffset?: number;
   replies: Comment[];
+};
+
+export type CommentParagraph = {
+  text: string;
+  tagged_text: string;
+  style: string | null;
 };
 
 type CommentRangePoint = {
@@ -803,7 +853,12 @@ type CommentRangePoint = {
  * their parent's `replies` array. Thread linkage is resolved via
  * commentsExtended.xml paraIdParent relationships.
  */
-export async function getComments(zip: DocxZip, documentXml: Document): Promise<Comment[]> {
+export async function getComments(
+  zip: DocxZip,
+  documentXml: Document,
+  styles: StylesModel = parseStylesXml(null),
+  theme: ThemeModel = parseThemeXml(null),
+): Promise<Comment[]> {
   const commentsText = await zip.readTextOrNull('word/comments.xml');
   if (!commentsText) return [];
 
@@ -827,7 +882,8 @@ export async function getComments(zip: DocxZip, documentXml: Document): Promise<
     const initials = getAttributeSafe(el, OOXML.W_NS, 'initials', 'w', { bareFallback: false }) ?? '';
 
     // Extract text from <w:t> elements, skipping annotationRef runs
-    const text = extractCommentText(el);
+    const paragraphs = extractCommentParagraphs(el, styles, theme);
+    const text = paragraphs.map((paragraph) => paragraph.text).join('\n');
 
     // Get paraId from first <w:p> child (namespace-aware to handle non-`w` prefixes)
     const paras = el.getElementsByTagNameNS(OOXML.W_NS, W.p);
@@ -846,6 +902,7 @@ export async function getComments(zip: DocxZip, documentXml: Document): Promise<
       date,
       initials,
       text,
+      paragraphs,
       paragraphId,
       anchoredParagraphId: startPoint?.paragraphId ?? null,
       endParagraphId: endPoint?.paragraphId ?? startPoint?.paragraphId ?? null,
@@ -1205,20 +1262,39 @@ function hasElementChildren(element: Element): boolean {
   return Array.from(element.childNodes).some((child) => child.nodeType === 1);
 }
 
-function extractCommentText(commentEl: Element): string {
-  const parts: string[] = [];
-  const runs = commentEl.getElementsByTagNameNS(OOXML.W_NS, W.r);
-  for (let i = 0; i < runs.length; i++) {
-    const run = runs.item(i) as Element;
-    // Skip runs that contain annotationRef (they're metadata, not user text)
-    const annotRefs = run.getElementsByTagNameNS(OOXML.W_NS, W.annotationRef);
-    if (annotRefs.length > 0) continue;
-
-    const ts = run.getElementsByTagNameNS(OOXML.W_NS, W.t);
-    for (let j = 0; j < ts.length; j++) {
-      const t = ts.item(j) as Element;
-      parts.push(t.textContent ?? '');
+function extractCommentParagraphs(commentEl: Element, styles: StylesModel, theme: ThemeModel): CommentParagraph[] {
+  const paragraphs = commentEl.getElementsByTagNameNS(OOXML.W_NS, W.p);
+  const result: CommentParagraph[] = [];
+  for (let pi = 0; pi < paragraphs.length; pi++) {
+    const paragraph = paragraphs.item(pi) as Element;
+    const pPr = getFirstChild(paragraph, OOXML.W_NS, W.pPr);
+    const pStyle = pPr ? getFirstChild(pPr, OOXML.W_NS, W.pStyle) : null;
+    const style = pStyle ? getAttributeSafe(pStyle, OOXML.W_NS, 'val', 'w') : null;
+    const annotated: AnnotatedRun[] = [];
+    const runs = paragraph.getElementsByTagNameNS(OOXML.W_NS, W.r);
+    for (let ri = 0; ri < runs.length; ri++) {
+      const run = runs.item(ri) as Element;
+      if (run.getElementsByTagNameNS(OOXML.W_NS, W.annotationRef).length > 0) continue;
+      let text = '';
+      const ts = run.getElementsByTagNameNS(OOXML.W_NS, W.t);
+      for (let ti = 0; ti < ts.length; ti++) text += (ts.item(ti) as Element).textContent ?? '';
+      if (!text) continue;
+      const formatting = extractEffectiveRunFormatting({
+        run,
+        paragraphPPr: pPr,
+        paragraphStyleId: style,
+        styles,
+        theme,
+      });
+      annotated.push({ text, formatting, hyperlinkUrl: null, charCount: text.length, isHeaderRun: false });
     }
+    const tagged_text = mergeAdjacentTags(emitFormattingTags({
+      runs: annotated,
+      baseline: { bold: false, italic: false, underline: false, suppressed: false },
+      fontBaseline: { modalColor: null, colorSuppressed: false, modalFontSizePt: 0, fontSizeSuppressed: true, modalFontName: '', fontNameSuppressed: true },
+      formattingMode: 'full',
+    }));
+    result.push({ text: annotated.map((run) => run.text).join(''), tagged_text, style });
   }
-  return parts.join('');
+  return result;
 }

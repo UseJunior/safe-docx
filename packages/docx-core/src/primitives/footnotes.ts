@@ -85,11 +85,18 @@ export type Footnote = {
    * entry; empty when the note is orphaned (no reference in the body).
    */
   refParagraphIds: string[];
+  /** Exact canonical visible-coordinate locations of every body reference. */
+  referencePoints: FootnoteReferencePoint[];
   /**
    * Structured, run-formatting-preserving body paragraphs. Present at
    * node-level fidelity — see {@link FootnoteParagraph}.
    */
   paragraphs: FootnoteParagraph[];
+};
+
+export type FootnoteReferencePoint = {
+  paragraphId: string;
+  textOffset: number;
 };
 
 export type AddFootnoteParams = {
@@ -113,7 +120,13 @@ export type FootnoteNotePresentation = {
   prefixSeparator?: string;
   prefixStyle?: FootnoteRunStyle;
   bodyStyle?: FootnoteRunStyle;
+  prefixRuns?: FootnoteStyledRun[];
+  separatorRuns?: FootnoteStyledRun[];
+  body?: FootnoteBodyParagraph[];
 };
+
+export type FootnoteStyledRun = { text: string; style?: FootnoteRunStyle };
+export type FootnoteBodyParagraph = { runs: FootnoteStyledRun[] };
 
 export type AddFootnoteResult = {
   noteId: number;
@@ -294,6 +307,8 @@ function buildDisplayNumberMap(documentXml: Document, footnotesDoc: Document): M
  * When omitted, formatting is read from direct `w:rPr` only — the flattened
  * `text` and the plural anchor map are unaffected either way, so existing
  * callers that pass `(zip, documentXml)` keep their exact behavior.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
  */
 export async function getFootnotes(
   zip: DocxZip,
@@ -320,6 +335,7 @@ export async function getFootnotes(
   // malformed one has been observed reusing an id across several — so we keep
   // them all rather than silently dropping the extras.
   const anchorMap = new Map<number, string[]>();
+  const referencePointMap = new Map<number, FootnoteReferencePoint[]>();
   const refs = documentXml.getElementsByTagNameNS(OOXML.W_NS, W.footnoteReference);
   for (let i = 0; i < refs.length; i++) {
     const ref = refs.item(i) as Element;
@@ -337,6 +353,14 @@ export async function getFootnotes(
           const existing = anchorMap.get(id) ?? [];
           if (!existing.includes(bookmarkId)) existing.push(bookmarkId);
           anchorMap.set(id, existing);
+          const index = buildParagraphIndex(pel);
+          const indexedReference = index.nodes.find((node) => node.element === ref);
+          if (indexedReference) {
+            referencePointMap.set(id, [
+              ...(referencePointMap.get(id) ?? []),
+              { paragraphId: bookmarkId, textOffset: indexedReference.visibleStart },
+            ]);
+          }
         }
         break;
       }
@@ -358,9 +382,10 @@ export async function getFootnotes(
     const text = paragraphs.map((p) => p.text).join('\n');
     const displayNumber = displayMap.get(id) ?? 0;
     const refParagraphIds = anchorMap.get(id) ?? [];
+    const referencePoints = referencePointMap.get(id) ?? [];
     const anchoredParagraphId = refParagraphIds[0] ?? null;
 
-    footnotes.push({ id, displayNumber, text, anchoredParagraphId, refParagraphIds, paragraphs });
+    footnotes.push({ id, displayNumber, text, anchoredParagraphId, refParagraphIds, referencePoints, paragraphs });
   }
 
   // Sort by display number (document order)
@@ -440,7 +465,12 @@ function extractFootnoteParagraphs(
     // `full` mode: no baseline suppression, so every run's bold/italic/etc.
     // survives into tagged_text at node-level fidelity.
     const tagged = mergeAdjacentTags(
-      emitFormattingTags({ runs: annotated, baseline: FOOTNOTE_TAG_BASELINE, formattingMode: 'full' }),
+      emitFormattingTags({
+        runs: annotated,
+        baseline: FOOTNOTE_TAG_BASELINE,
+        fontBaseline: { modalColor: null, colorSuppressed: false, modalFontSizePt: 0, fontSizeSuppressed: true, modalFontName: '', fontNameSuppressed: true },
+        formattingMode: 'full',
+      }),
     );
 
     out.push({ text: textParts.join(''), tagged_text: tagged, style });
@@ -463,6 +493,11 @@ function getFootnoteParagraphStyle(p: Element): string | null {
 
 // ── Insertion ───────────────────────────────────────────────────────────
 
+/**
+ * Add one footnote definition and its exact point reference in the main story.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ */
 export async function addFootnote(
   documentXml: Document,
   zip: DocxZip,
@@ -727,15 +762,21 @@ function addFootnoteElement(
   spaceRun.appendChild(spaceT);
   p.appendChild(spaceRun);
 
-  if (presentation?.prefix) {
-    p.appendChild(buildStyledTextRun(footnotesDoc, presentation.prefix, presentation.prefixStyle));
-    if (presentation.prefixSeparator) {
-      p.appendChild(buildStyledTextRun(footnotesDoc, presentation.prefixSeparator));
-    }
-  }
-  p.appendChild(buildStyledTextRun(footnotesDoc, text, presentation?.bodyStyle));
+  const prefixRuns = presentation?.prefixRuns
+    ?? (presentation?.prefix ? [{ text: presentation.prefix, style: presentation.prefixStyle }] : []);
+  const separatorRuns = presentation?.separatorRuns
+    ?? (presentation?.prefixSeparator ? [{ text: presentation.prefixSeparator }] : []);
+  for (const run of prefixRuns) p.appendChild(buildStyledTextRun(footnotesDoc, run.text, run.style));
+  for (const run of separatorRuns) p.appendChild(buildStyledTextRun(footnotesDoc, run.text, run.style));
+  const body = presentation?.body ?? [{ runs: [{ text, style: presentation?.bodyStyle }] }];
+  for (const run of body[0]?.runs ?? []) p.appendChild(buildStyledTextRun(footnotesDoc, run.text, run.style));
 
   footnoteEl.appendChild(p);
+  for (const paragraph of body.slice(1)) {
+    const bodyParagraph = footnotesDoc.createElementNS(OOXML.W_NS, 'w:p');
+    for (const run of paragraph.runs) bodyParagraph.appendChild(buildStyledTextRun(footnotesDoc, run.text, run.style));
+    footnoteEl.appendChild(bodyParagraph);
+  }
   root.appendChild(footnoteEl);
   return footnoteEl;
 }
