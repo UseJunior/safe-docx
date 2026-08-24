@@ -1137,6 +1137,7 @@ export class DocxDocument {
     author: string;
     text: string;
     initials?: string;
+    body?: import('./comments.js').CommentBodyParagraph[];
   }, ctx?: RevisionContext): Promise<AddCommentResult> {
     const p = findParagraphByBookmarkId(this.documentXml, params.paragraphId);
     if (!p) throw new Error(`Paragraph not found: ${params.paragraphId}`);
@@ -1149,6 +1150,7 @@ export class DocxDocument {
       author: params.author,
       text: params.text,
       initials: params.initials,
+      body: params.body,
     }, ctx);
 
     this.dirty = true;
@@ -1167,6 +1169,7 @@ export class DocxDocument {
     author: string;
     text: string;
     initials?: string;
+    body?: import('./comments.js').CommentBodyParagraph[];
   }, ctx?: RevisionContext): Promise<AddCommentReplyResult> {
     await bootstrapCommentParts(this.zip);
     const result = await addCommentReplyImpl(this.documentXml, this.zip, {
@@ -1174,6 +1177,7 @@ export class DocxDocument {
       author: params.author,
       text: params.text,
       initials: params.initials,
+      body: params.body,
     }, ctx);
 
     this.dirty = true;
@@ -1182,7 +1186,7 @@ export class DocxDocument {
   }
 
   async getComments(): Promise<Comment[]> {
-    return getCommentsImpl(this.zip, this.documentXml);
+    return getCommentsImpl(this.zip, this.documentXml, this.getStylesModel(), parseThemeXml(this.themeXml));
   }
 
   async getComment(commentId: number): Promise<Comment | null> {
@@ -1361,6 +1365,7 @@ export class DocxDocument {
   async addFootnote(params: {
     paragraphId: string;
     afterText?: string;
+    visibleOffset?: number;
     text: string;
     presentation?: FootnoteNotePresentation;
   }, ctx?: RevisionContext): Promise<AddFootnoteResult> {
@@ -1371,6 +1376,7 @@ export class DocxDocument {
     const result = await addFootnoteImpl(this.documentXml, this.zip, {
       paragraphEl: p,
       afterText: params.afterText,
+      visibleOffset: params.visibleOffset,
       text: params.text,
       presentation: params.presentation,
     }, ctx);
@@ -1418,6 +1424,13 @@ export class DocxDocument {
     const commentsText = await this.zip.readTextOrNull('word/comments.xml');
     if (!commentsText) return null;
     return parseXml(commentsText);
+  }
+
+  /** Return a deep clone of footnotes.xml, or null when the part is absent. */
+  async getFootnotesXmlClone(): Promise<Document | null> {
+    const footnotesText = await this.zip.readTextOrNull('word/footnotes.xml');
+    if (!footnotesText) return null;
+    return parseXml(footnotesText);
   }
 
   /**

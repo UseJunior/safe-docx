@@ -125,4 +125,57 @@ describe(`OpenSpec traceability: ${TEST_FEATURE}`, () => {
       presentation: { prefixStyle: { highlight: 'fuchsia' as 'yellow' } },
     })).rejects.toThrow(/Invalid Word highlight/);
   });
+
+  test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.4' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.3' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.5' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })(
+      'round-trips structured comment and footnote bodies at exact visible points',
+      async () => {
+        const source = await buildSyntheticDocx({ paragraphs: ['Alpha beta gamma.'] });
+        const document = await DocxDocument.load(source);
+        document.insertParagraphBookmarks('structured-notes');
+        const paragraphId = document.buildDocumentView().nodes[0]!.id;
+        const root = await document.addComment({
+          paragraphId, start: 6, end: 10, author: 'Author', initials: 'AU', text: 'Styled note',
+          body: [
+            { runs: [{ text: 'Styled ', style: { bold: true, color: '884400' } }, { text: 'note', style: { italic: true, highlight: 'yellow' } }] },
+            { runs: [{ text: 'Second paragraph', style: { underline: true } }] },
+          ],
+        });
+        await document.addCommentReply({
+          parentCommentId: root.commentId, author: 'Reviewer', text: 'Reply',
+          body: [{ runs: [{ text: 'Reply', style: { bold: true } }] }],
+        });
+        await document.addFootnote({
+          paragraphId, visibleOffset: 5, text: 'Body',
+          presentation: {
+            prefixRuns: [{ text: 'NOTE', style: { bold: true } }],
+            separatorRuns: [{ text: ': ', style: { underline: true } }],
+            body: [
+              { runs: [{ text: 'Body', style: { color: '654321', highlight: 'cyan' } }] },
+              { runs: [{ text: 'More', style: { italic: true } }] },
+            ],
+          },
+        });
+
+        const saved = (await document.toBuffer({ cleanBookmarks: false })).buffer;
+        const reopened = await DocxDocument.load(saved);
+        const comments = await reopened.getComments();
+        expect(comments[0]).toMatchObject({ startTextOffset: 6, endTextOffset: 10 });
+        expect(comments[0]?.paragraphs.map((paragraph) => paragraph.tagged_text)).toEqual([
+          '<font color="884400"><b>Styled </b></font><i><highlight color="yellow">note</highlight></i>',
+          '<u>Second paragraph</u>',
+        ]);
+        expect(comments[0]?.replies[0]?.paragraphs[0]?.tagged_text).toBe('<b>Reply</b>');
+        const footnote = (await reopened.getFootnotes())[0]!;
+        expect(footnote.referencePoints).toEqual([{ paragraphId, textOffset: 5 }]);
+        expect(footnote.paragraphs.map((paragraph) => paragraph.text)).toEqual([' NOTE: Body', 'More']);
+        const zip = await JSZip.loadAsync(saved);
+        const footnotesXml = await zip.file('word/footnotes.xml')!.async('string');
+        expect(footnotesXml).toContain('<w:color w:val="654321"/>');
+        expect(footnotesXml).toContain('<w:highlight w:val="cyan"/>');
+      },
+    );
 });

@@ -12,6 +12,14 @@ function paragraph(xml: string): Element {
 }
 
 describe('buildParagraphIndex', () => {
+  test('does not count paragraph tab-stop declarations as visible text', () => {
+    const paragraph = parseXml(
+      `<w:p xmlns:w="${OOXML.W_NS}"><w:pPr><w:tabs><w:tab w:val="left" w:pos="720"/></w:tabs></w:pPr><w:r><w:t>Email:</w:t><w:tab/></w:r></w:p>`,
+    ).documentElement;
+    const index = buildParagraphIndex(paragraph);
+    expect(index.text).toBe('Email:\t');
+    expect(index.nodes.find((node) => (node.element.parentNode as Element | null)?.localName === 'tabs')?.visibleStart).toBe(0);
+  });
   test('uses one field-aware traversal for visible and structural coordinates', async ({ given, then }: AllureBddContext) => {
     let index: ReturnType<typeof buildParagraphIndex>;
     await given('fragmented text around a field and zero-width annotation nodes', () => {

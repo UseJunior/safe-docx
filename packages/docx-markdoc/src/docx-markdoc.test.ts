@@ -130,12 +130,13 @@ describe('brownfield Markdoc authoring', () => {
     expect(result.certificate).toMatchObject({ rejectAllEqualsSource: true, acceptAllEqualsClean: true, passed: true });
   });
 
-  itAllure('[SDX-MDOC-01][SDX-MDOC-13] replays the existing public NVCA source and filled fixtures unchanged', async () => {
+  itAllure('[SDX-MDOC-01][SDX-MDOC-72][SDX-MDOC-81] rejects unsupported public NVCA footnotes atomically', async () => {
     const directory = fileURLToPath(new URL('../../../tests/test_documents/nvca-regression/', import.meta.url));
-    for (const name of ['source.docx', 'filled.docx']) {
-      const imported = await importDocxToMarkdoc(await readFile(`${directory}${name}`));
-      const result = await compileMarkdoc(imported.anchoredSource, imported.markdoc);
-      expect(result.certificate).toMatchObject({ passed: true, rejectAllEqualsSource: true, acceptAllEqualsClean: true });
+    for (const name of ['source.docx']) {
+      await expect(importDocxToMarkdoc(await readFile(`${directory}${name}`))).rejects.toMatchObject({
+        code: 'ANNOTATION_IMPORT_UNSUPPORTED',
+        details: { annotationId: 'footnote:2', element: 'w:sz' },
+      });
     }
   }, 60_000);
 

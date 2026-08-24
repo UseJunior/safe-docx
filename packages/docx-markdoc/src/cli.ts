@@ -9,6 +9,8 @@ import { requireMarkdoc } from './markdoc.js';
 import { convertCommentsToFootnotes } from '@usejunior/docx-core';
 import { DocxMarkdocError } from './errors.js';
 import { assertDistinctInternalPath, EXTERNAL_FILENAME, parseRenderingFlags, warnedInternalPath } from './cli-options.js';
+import { normalizeAnnotationPresentationProfile } from './presentation.js';
+import type { AnnotationPresentationProfile } from './types.js';
 
 function usage(): string {
   return [
@@ -18,6 +20,7 @@ function usage(): string {
     '  docx-markdoc inspect <anchored.docx> [paragraph-id ...]',
     '  docx-markdoc compile <anchored.docx> <document.mdoc> <output-dir> [--external-comments|--no-external-comments]',
     '    [--dangerously-include-internal-comments --internal-output <path.docx>]',
+    '    [--note-profile profile.json | --external-notes MODE --internal-notes MODE --unspecified-notes MODE]',
     '  docx-markdoc verify <anchored.docx> <document.mdoc> [--external-comments|--no-external-comments]',
     '  docx-markdoc export-edits <document.mdoc> <output.json>',
     '  docx-markdoc comments-to-footnotes <input.docx> <output.docx> [--prefix TEXT] [--prefix-separator TEXT] [--bold-prefix] [--prefix-color RRGGBB] [--prefix-highlight COLOR] [--body-color RRGGBB] [--body-highlight COLOR] [--flatten-threads]',
@@ -59,10 +62,17 @@ async function main(): Promise<void> {
     if (command === 'verify' && flags.includeInternalComments) {
       throw new Error('Internal comments can be materialized only by compile with an explicit output path.');
     }
-    const hasCliOverride = flags.externalComments !== undefined || flags.includeInternalComments;
+    const fileProfile = flags.noteProfilePath
+      ? JSON.parse(await readFile(flags.noteProfilePath, 'utf8')) as AnnotationPresentationProfile
+      : undefined;
+    const overrideProfile = Object.fromEntries(Object.entries(flags.notePresentation).map(([audience, as]) => [audience, { as }])) as AnnotationPresentationProfile;
+    const annotationPresentation = normalizeAnnotationPresentationProfile(fileProfile ?? (Object.keys(overrideProfile).length ? overrideProfile : undefined));
+    const hasAnnotationProfile = flags.noteProfilePath !== undefined || Object.keys(overrideProfile).length > 0;
+    const hasCliOverride = flags.externalComments !== undefined || flags.includeInternalComments || hasAnnotationProfile;
     const result = await compileMarkdoc(await readFile(sourcePath), await readFile(markdocPath, 'utf8'), {
       ...(flags.externalComments === undefined ? {} : { externalComments: flags.externalComments }),
       ...(flags.includeInternalComments ? { dangerouslyIncludeInternalComments: true } : {}),
+      ...(hasAnnotationProfile ? { annotationPresentation } : {}),
       ...(hasCliOverride ? { configurationSource: 'cli' } : {}),
     });
     if (command === 'compile') {

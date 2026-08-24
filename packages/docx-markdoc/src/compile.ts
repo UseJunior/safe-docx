@@ -15,6 +15,7 @@ import { DocxMarkdocError } from './errors.js';
 import { sha256 } from './hash.js';
 import { requireMarkdoc } from './markdoc.js';
 import { assessDraftCompleteness } from './completeness.js';
+import { projectAnnotations, type AnnotationProjectionResult } from './presentation.js';
 import type {
   CompileResult,
   CompileOptions,
@@ -781,6 +782,17 @@ export async function compileMarkdoc(
       );
     }
   }
+  let annotationProjection: AnnotationProjectionResult = {
+    buffer: tracked,
+    profile: options.annotationPresentation ?? ir.compilation?.annotationPresentation ?? {},
+    profileDigest: sha256(Buffer.from(JSON.stringify(options.annotationPresentation ?? ir.compilation?.annotationPresentation ?? {}))),
+    dispositions: [],
+    warnings: [],
+  };
+  if (ir.annotations.some((annotation) => !annotation.id.startsWith('rationale:'))) {
+    annotationProjection = await projectAnnotations(tracked, ir, options.annotationPresentation ?? ir.compilation?.annotationPresentation);
+    tracked = annotationProjection.buffer;
+  }
   const acceptedDoc = await DocxDocument.load(tracked);
   const rejectedDoc = await DocxDocument.load(tracked);
   await acceptedDoc.acceptChanges();
@@ -822,6 +834,12 @@ export async function compileMarkdoc(
       externalCommentsIncluded: resolvedCompilation.externalCommentsIncluded,
       internalCommentsIncluded: resolvedCompilation.internalCommentsIncluded,
       warnings: resolvedCompilation.warnings,
+    },
+    annotationRendering: {
+      profile: annotationProjection.profile,
+      profileDigest: annotationProjection.profileDigest,
+      dispositions: annotationProjection.dispositions,
+      warnings: annotationProjection.warnings,
     },
     projectionPassed: false,
     draftCompletenessPassed: completeness.passed,

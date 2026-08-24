@@ -23,4 +23,13 @@ describe('Markdoc CLI rendering safety', () => {
     expect(Buffer.byteLength(path.basename(warned))).toBeLessThanOrEqual(255);
     expect(path.basename(warned).endsWith(INTERNAL_SUFFIX.trimStart())).toBe(true);
   });
+
+  itAllure('[SDX-MDOC-89] parses audience note profiles and rejects conflicting profile sources', () => {
+    expect(parseRenderingFlags(['source.docx', 'edit.mdoc', 'out', '--external-notes', 'footnote', '--internal-notes', 'comment', '--unspecified-notes', 'omit']).notePresentation)
+      .toEqual({ 'external-facing': 'footnote', internal: 'comment', unspecified: 'omit' });
+    expect(() => parseRenderingFlags(['--note-profile', 'profile.json', '--internal-notes', 'comment']))
+      .toThrow(/cannot be combined/u);
+    expect(() => parseRenderingFlags(['--external-notes', 'email']))
+      .toThrow(/requires preserve, comment, footnote, or omit/u);
+  });
 });
