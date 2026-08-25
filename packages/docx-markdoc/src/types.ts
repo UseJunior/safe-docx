@@ -199,6 +199,9 @@ export type VerificationCertificate = {
   /** Bounded, actionable details for each semantic formatting projection check. */
   formattingProjections: FormattingProjectionReport;
   unchangedPackagePartsPreserved: boolean;
+  /** Exact serialized source revision elements remain in their original story parts. */
+  existingRevisionsPreserved: boolean;
+  existingRevisionCount: number;
   unsupportedStructures: string[];
   appliedOperations: string[];
   commentRendering: {

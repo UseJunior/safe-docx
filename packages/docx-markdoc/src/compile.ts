@@ -77,12 +77,24 @@ export async function verifyFormattingProjections(
   source: Buffer,
   clean: Buffer,
   tracked: Buffer,
+  sourceContainsRevisions = false,
 ): Promise<{
   rejectAllFormattingEqualsSource: boolean;
   acceptAllFormattingEqualsClean: boolean;
   formattingProjections: FormattingProjectionReport;
 }> {
-  const [sourceXml, cleanXml] = await Promise.all([documentXml(source), documentXml(clean)]);
+  let projectedSource = source;
+  let projectedClean = clean;
+  if (sourceContainsRevisions) {
+    const rejectedSource = await DocxDocument.load(source);
+    const acceptedClean = await DocxDocument.load(clean);
+    await Promise.all([rejectedSource.rejectChanges(), acceptedClean.acceptChanges()]);
+    [projectedSource, projectedClean] = await Promise.all([
+      rejectedSource.toBuffer({ cleanBookmarks: false }).then((result) => result.buffer),
+      acceptedClean.toBuffer({ cleanBookmarks: false }).then((result) => result.buffer),
+    ]);
+  }
+  const [sourceXml, cleanXml] = await Promise.all([documentXml(projectedSource), documentXml(projectedClean)]);
   const accepted = await DocxDocument.load(tracked);
   const rejected = await DocxDocument.load(tracked);
   await Promise.all([accepted.acceptChanges(), rejected.rejectChanges()]);
@@ -113,6 +125,7 @@ export function projectionChecksPassed(checks: Pick<
   | 'rejectAllFormattingEqualsSource'
   | 'acceptAllFormattingEqualsClean'
   | 'unchangedPackagePartsPreserved'
+  | 'existingRevisionsPreserved'
 >): boolean {
   return checks.sourceSha256Matches
     && checks.scaffoldComplete
@@ -122,7 +135,49 @@ export function projectionChecksPassed(checks: Pick<
     && checks.acceptAllEqualsClean
     && checks.rejectAllFormattingEqualsSource
     && checks.acceptAllFormattingEqualsClean
-    && checks.unchangedPackagePartsPreserved;
+    && checks.unchangedPackagePartsPreserved
+    && checks.existingRevisionsPreserved;
+}
+
+const REVISION_ELEMENT_PATTERN = /<w:(ins|del|moveFrom|moveTo|moveFromRangeStart|moveFromRangeEnd|moveToRangeStart|moveToRangeEnd|rPrChange|pPrChange|tblPrChange|tblGridChange|trPrChange|tcPrChange|sectPrChange)\b(?:[^>]*\/>|[\s\S]*?<\/w:\1>)/gu;
+
+type RevisionSnapshot = Array<{ part: string; xml: string }>;
+
+/**
+ * Capture exact revision elements together with their WordprocessingML story.
+ * This intentionally retains serialized IDs, authors, dates, content, and
+ * wrapper structure rather than reducing revisions to visible text.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @see https://github.com/UseJunior/safe-docx/issues/949
+ */
+async function revisionSnapshot(buffer: Buffer): Promise<RevisionSnapshot> {
+  const zip = await JSZip.loadAsync(buffer);
+  const snapshot: RevisionSnapshot = [];
+  const parts = Object.keys(zip.files)
+    .filter((name) => /^word\/(?:document|footnotes|endnotes|comments|header\d+|footer\d+)\.xml$/u.test(name))
+    .sort();
+  for (const part of parts) {
+    const xml = await zip.file(part)?.async('string');
+    if (!xml) continue;
+    for (const match of xml.matchAll(REVISION_ELEMENT_PATTERN)) snapshot.push({ part, xml: match[0] });
+  }
+  return snapshot;
+}
+
+function sourceRevisionsPreserved(source: RevisionSnapshot, projected: RevisionSnapshot): boolean {
+  const projectedCounts = new Map<string, number>();
+  for (const item of projected) {
+    const key = JSON.stringify(item);
+    projectedCounts.set(key, (projectedCounts.get(key) ?? 0) + 1);
+  }
+  for (const item of source) {
+    const key = JSON.stringify(item);
+    const remaining = projectedCounts.get(key) ?? 0;
+    if (remaining === 0) return false;
+    projectedCounts.set(key, remaining - 1);
+  }
+  return true;
 }
 
 function verificationText(document: DocxDocument): string {
@@ -697,10 +752,14 @@ export async function compileMarkdoc(
   const materializations = rationaleMaterializations(resolvedCompilation, ir);
   const sourceHashMatches = sha256(sourceBuffer) === ir.source.sha256;
   if (!sourceHashMatches) throw new DocxMarkdocError('SOURCE_HASH_DRIFT', 'Source DOCX hash does not match canonical Markdoc.');
-  const sourceZip = await JSZip.loadAsync(sourceBuffer);
-  const sourceXml = await sourceZip.file('word/document.xml')?.async('string');
-  if (sourceXml && /<w:(?:ins|del|moveFrom|moveTo)\b/.test(sourceXml)) {
-    throw new DocxMarkdocError('EXISTING_REVISIONS_UNSUPPORTED', 'V1 cannot compile a source DOCX that already contains tracked changes.');
+  const sourceRevisions = await revisionSnapshot(sourceBuffer);
+  const sourceContainsRevisions = sourceRevisions.length > 0;
+  if (sourceContainsRevisions && ir.operations.length > 0) {
+    throw new DocxMarkdocError(
+      'EXISTING_REVISIONS_WITH_OPERATIVE_EDITS_UNSUPPORTED',
+      'A source with existing revisions can only compile annotation-only changes.',
+      { existingRevisionCount: sourceRevisions.length, operationIds: ir.operations.map((operation) => operation.operationId) },
+    );
   }
   const sourceDocument = await DocxDocument.load(sourceBuffer);
   const { unsupported } = validateAgainstSource(ir, sourceDocument);
@@ -793,19 +852,35 @@ export async function compileMarkdoc(
     annotationProjection = await projectAnnotations(tracked, ir, options.annotationPresentation ?? ir.compilation?.annotationPresentation);
     tracked = annotationProjection.buffer;
   }
+  const trackedRevisions = await revisionSnapshot(tracked);
+  const existingRevisionsPreserved = sourceRevisionsPreserved(sourceRevisions, trackedRevisions);
+  if (!existingRevisionsPreserved) {
+    throw new DocxMarkdocError(
+      'ANNOTATION_REVISION_TOPOLOGY_UNSUPPORTED',
+      'Annotation projection would change existing revision XML or story placement.',
+      { sourceRevisionCount: sourceRevisions.length, projectedRevisionCount: trackedRevisions.length },
+    );
+  }
   const acceptedDoc = await DocxDocument.load(tracked);
   const rejectedDoc = await DocxDocument.load(tracked);
   await acceptedDoc.acceptChanges();
   await rejectedDoc.rejectChanges();
   const cleanDoc = await DocxDocument.load(clean);
-  const sourceText = verificationText(sourceDocument);
+  let sourceProjectionDocument = sourceDocument;
+  let cleanProjectionDocument = cleanDoc;
+  if (sourceContainsRevisions) {
+    sourceProjectionDocument = await DocxDocument.load(sourceBuffer);
+    cleanProjectionDocument = await DocxDocument.load(clean);
+    await Promise.all([sourceProjectionDocument.rejectChanges(), cleanProjectionDocument.acceptChanges()]);
+  }
+  const sourceText = verificationText(sourceProjectionDocument);
   const rejectedText = verificationText(rejectedDoc);
-  const cleanText = verificationText(cleanDoc);
+  const cleanText = verificationText(cleanProjectionDocument);
   const acceptedText = verificationText(acceptedDoc);
   const completeness = assessDraftCompleteness(ir, declaredOperationIds, cleanText);
   const rejectAllEqualsSource = rejectedText === sourceText;
   const acceptAllEqualsClean = acceptedText === cleanText;
-  const formattingProjection = await verifyFormattingProjections(sourceBuffer, clean, tracked);
+  const formattingProjection = await verifyFormattingProjections(sourceBuffer, clean, tracked, sourceContainsRevisions);
   const unchangedPackagePartsPreserved = await unchangedPartsEqual(sourceBuffer, clean);
   const certificate: VerificationCertificate = {
     version: 1,
@@ -819,6 +894,8 @@ export async function compileMarkdoc(
     acceptAllFormattingEqualsClean: formattingProjection.acceptAllFormattingEqualsClean,
     formattingProjections: formattingProjection.formattingProjections,
     unchangedPackagePartsPreserved,
+    existingRevisionsPreserved,
+    existingRevisionCount: sourceRevisions.length,
     unsupportedStructures: unsupported,
     appliedOperations: declaredOperationIds,
     commentRendering: {
