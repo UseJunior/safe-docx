@@ -17,6 +17,8 @@ const REVISED = resolve(ROOT, 'tests/test_documents/redline/ILPA-Model-Limited-P
 describe('public ILPA tagged-tree redline minimality', () => {
   const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Tagged-tree corpus minimality' });
   test('publishes balanced, unique, resolved bookmarks in both ILPA directions', async () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' });
     const [deal, wof] = await Promise.all([readFile(ORIGINAL), readFile(REVISED)]);
     const projectionIssues = (xml: string): {
       duplicateNames: string[];
@@ -66,6 +68,24 @@ describe('public ILPA tagged-tree redline minimality', () => {
         date: new Date('2026-08-21T12:00:00Z'),
       });
       const combinedXml = await (await DocxArchive.load(result.document)).getDocumentXml();
+      const combinedDocument = parseXml(combinedXml);
+      const illegalRunInnerRevisions = ['del', 'ins', 'moveFrom', 'moveTo'].flatMap((kind) =>
+        Array.from(combinedDocument.getElementsByTagNameNS(
+          'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+          kind,
+        )).filter((revision) => {
+          const parent = revision.parentNode as Element | null;
+          return parent?.localName === 'r' || parent?.localName === 'drawing';
+        }).map((revision) => ({
+          kind,
+          parent: (revision.parentNode as Element).localName,
+          id: revision.getAttributeNS(
+            'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            'id',
+          ),
+        })),
+      );
+      expect(illegalRunInnerRevisions, `${label} revision boundary topology`).toEqual([]);
       expect(projectionIssues(combinedXml), `${label} combined`).toEqual(expected);
       expect(projectionIssues(acceptAllChanges(combinedXml)), `${label} Accept All`)
         .toEqual(expected);

@@ -15,6 +15,7 @@ import {
 import { constructTaggedTree } from './taggedTreeConstruction.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
+import { completeField } from '../testing/ooxml-fixtures.js';
 
 const TEST_FEATURE = 'refactor-tagged-tree-redline-construction';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
@@ -821,6 +822,81 @@ describe('tagged-tree shadow serializer', () => {
     expect(document.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(0);
     expect(extractRoundTripComparisonText(acceptAllChanges(output))).toBe(textValue);
     expect(extractRoundTripComparisonText(rejectAllChanges(output))).toBe(textValue);
+  });
+
+  test('lifts changed field instructions to legal run-level revisions', () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.13' });
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
+    const original = documentBody(`<w:p>${completeField('REF _Ref1 \\r \\h ', 'clause')}</w:p>`);
+    const revised = documentBody(`<w:p>${completeField(' REF _Ref1 \\r \\h ', 'clause')}</w:p>`);
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(
+      original, revised, constructed.tree,
+      { author: 'Comparator', date: '2026-08-25T12:00:00Z' },
+    ));
+    const document = parseXml(output);
+
+    expect(Array.from(document.getElementsByTagNameNS(W_NS, 'del')).every((wrapper) =>
+      (wrapper.parentNode as Element).localName !== 'r')).toBe(true);
+    expect(document.getElementsByTagNameNS(W_NS, 'delInstrText')).toHaveLength(1);
+    expect(document.getElementsByTagNameNS(W_NS, 'del')[0]?.getElementsByTagNameNS(W_NS, 'r')).toHaveLength(1);
+    expect(acceptAllChanges(output)).toContain(' REF _Ref1 \\r \\h ');
+    expect(rejectAllChanges(output)).toContain('REF _Ref1 \\r \\h ');
+  });
+
+  test('lifts aligned footnote references outside their containing runs', () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' });
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
+    const original = documentBody(
+      '<w:p><w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>' +
+      '<w:footnoteReference w:id="24"/></w:r></w:p>',
+    );
+    const revised = documentBody(
+      '<w:p><w:r><w:rPr><w:rStyle w:val="FootnoteReference"/><w:b/></w:rPr>' +
+      '<w:footnoteReference w:id="25"/></w:r></w:p>',
+    );
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(
+      original, revised, constructed.tree,
+      { author: 'Comparator', date: '2026-08-25T12:00:00Z' },
+    ));
+    const document = parseXml(output);
+
+    expect(Array.from(document.getElementsByTagNameNS(W_NS, 'del')).every((wrapper) =>
+      (wrapper.parentNode as Element).localName !== 'r')).toBe(true);
+    expect(Array.from(document.getElementsByTagNameNS(W_NS, 'ins')).every((wrapper) =>
+      (wrapper.parentNode as Element).localName !== 'r')).toBe(true);
+    const acceptedReference = parseXml(acceptAllChanges(output))
+      .getElementsByTagNameNS(W_NS, 'footnoteReference')[0]!;
+    const rejectedReference = parseXml(rejectAllChanges(output))
+      .getElementsByTagNameNS(W_NS, 'footnoteReference')[0]!;
+    expect(acceptedReference.getAttributeNS(W_NS, 'id')).toBe('25');
+    expect(rejectedReference.getAttributeNS(W_NS, 'id')).toBe('24');
+  });
+
+  test('lifts changed DrawingML anchors to revision-wrapped runs', () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
+    const drawing = (anchorId: string) =>
+      '<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" ' +
+      `xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" wp14:anchorId="${anchorId}"/>` +
+      '</w:drawing></w:r>';
+    const original = documentBody(`<w:p>${drawing('OLD')}</w:p>`);
+    const revised = documentBody(`<w:p>${drawing('NEW')}</w:p>`);
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(
+      original, revised, constructed.tree,
+      { author: 'Comparator', date: '2026-08-25T12:00:00Z' },
+    ));
+    const document = parseXml(output);
+
+    expect(Array.from(document.getElementsByTagNameNS(W_NS, 'del')).every((wrapper) =>
+      (wrapper.parentNode as Element).localName !== 'drawing')).toBe(true);
+    expect(Array.from(document.getElementsByTagNameNS(W_NS, 'ins')).every((wrapper) =>
+      (wrapper.parentNode as Element).localName !== 'drawing')).toBe(true);
+    expect(document.getElementsByTagNameNS(W_NS, 'del')[0]?.getElementsByTagNameNS(W_NS, 'drawing')).toHaveLength(1);
+    expect(document.getElementsByTagNameNS(W_NS, 'ins')[0]?.getElementsByTagNameNS(W_NS, 'drawing')).toHaveLength(1);
+    expect(acceptAllChanges(output)).toContain('anchorId="NEW"');
+    expect(rejectAllChanges(output)).toContain('anchorId="OLD"');
   });
 
   test('keeps deleted-paragraph bookmark boundaries around the tracked text', () => {
