@@ -123,6 +123,8 @@ export const markdocConfig: Config = {
     'annotation-run': {
       inline: true,
       attributes: {
+        style: { type: String },
+        size: { type: Number },
         bold: { type: Boolean }, italic: { type: Boolean }, underline: { type: Boolean },
         color: { type: String }, highlight: { type: String },
       },
@@ -251,12 +253,16 @@ function annotationBody(node: Node, issues: ValidationIssue[]): AnnotationParagr
         return;
       }
       const style: AnnotationRunStyle = {
+        ...(inline.attributes.style === undefined ? {} : { styleId: String(inline.attributes.style) }),
+        ...(inline.attributes.size === undefined ? {} : { fontSizeHalfPoints: Number(inline.attributes.size) }),
         ...(inline.attributes.bold === true ? { bold: true } : {}),
         ...(inline.attributes.italic === true ? { italic: true } : {}),
         ...(inline.attributes.underline === true ? { underline: true } : {}),
         ...(inline.attributes.color === undefined ? {} : { color: String(inline.attributes.color).toUpperCase() }),
         ...(inline.attributes.highlight === undefined ? {} : { highlight: String(inline.attributes.highlight) as AnnotationRunStyle['highlight'] }),
       };
+      if (style.styleId !== undefined && style.styleId.length === 0) issues.push(issue('INVALID_ANNOTATION_STYLE', 'Annotation run style IDs must be non-empty.', inline));
+      if (style.fontSizeHalfPoints !== undefined && (!Number.isInteger(style.fontSizeHalfPoints) || style.fontSizeHalfPoints <= 0)) issues.push(issue('INVALID_ANNOTATION_STYLE', 'Annotation run sizes must be positive integer half-points.', inline));
       if (style.color && !/^[0-9A-F]{6}$/.test(style.color)) issues.push(issue('INVALID_ANNOTATION_COLOR', 'Annotation colors must be six-digit RGB values.', inline));
       if (style.highlight && !HIGHLIGHTS.has(style.highlight)) issues.push(issue('INVALID_ANNOTATION_HIGHLIGHT', `Unsupported Word highlight ${style.highlight}.`, inline));
       for (const nested of inline.children) visit(nested, style);

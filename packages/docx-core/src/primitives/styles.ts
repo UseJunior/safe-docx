@@ -9,6 +9,7 @@ function getWAttr(el: Element, localName: string): string | null {
 
 export type StyleDef = {
   styleId: string;
+  styleType: string | null;
   name: string;
   basedOn: string | null;
   pPr: Element | null;
@@ -114,6 +115,7 @@ export function parseStylesXml(stylesDoc: Document | null): StylesModel {
 
     byId.set(id, {
       styleId: id,
+      styleType: getWAttr(st, 'type'),
       name,
       basedOn,
       pPr: pPr ?? null,

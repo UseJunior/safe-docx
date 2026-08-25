@@ -204,7 +204,14 @@ export type AddCommentParams = {
   body?: CommentBodyParagraph[];
 };
 
-export type CommentBodyRun = { text: string; style?: { bold?: boolean; italic?: boolean; underline?: boolean; color?: string; highlight?: string } };
+/**
+ * A structured comment-body run and its admitted character formatting.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.38
+ * @see #951
+ */
+export type CommentBodyRun = { text: string; style?: { styleId?: string; fontSizeHalfPoints?: number; bold?: boolean; italic?: boolean; underline?: boolean; color?: string; highlight?: string } };
 export type CommentBodyParagraph = { runs: CommentBodyRun[] };
 
 export type AddCommentResult = {
@@ -551,6 +558,16 @@ function buildCommentBodyRun(doc: Document, bodyRun: CommentBodyRun): Element {
   const style = bodyRun.style;
   if (style && Object.values(style).some((value) => value !== undefined && value !== false)) {
     const rPr = doc.createElementNS(OOXML.W_NS, 'w:rPr');
+    if (style.styleId) {
+      const rStyle = doc.createElementNS(OOXML.W_NS, 'w:rStyle');
+      rStyle.setAttributeNS(OOXML.W_NS, 'w:val', style.styleId);
+      rPr.appendChild(rStyle);
+    }
+    if (style.fontSizeHalfPoints !== undefined) {
+      const size = doc.createElementNS(OOXML.W_NS, 'w:sz');
+      size.setAttributeNS(OOXML.W_NS, 'w:val', String(style.fontSizeHalfPoints));
+      rPr.appendChild(size);
+    }
     if (style.bold) rPr.appendChild(doc.createElementNS(OOXML.W_NS, 'w:b'));
     if (style.italic) rPr.appendChild(doc.createElementNS(OOXML.W_NS, 'w:i'));
     if (style.underline) {

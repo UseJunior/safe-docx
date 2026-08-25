@@ -17,6 +17,8 @@ const HIGHLIGHTS = new Set(['black', 'blue', 'cyan', 'green', 'magenta', 'red', 
 
 function normalizeStyle(style: AnnotationRunStyle | undefined, path: string): AnnotationRunStyle | undefined {
   if (!style) return undefined;
+  if (style.styleId !== undefined && style.styleId.length === 0) throw new DocxMarkdocError('INVALID_ANNOTATION_STYLE', `${path}.styleId must be non-empty.`);
+  if (style.fontSizeHalfPoints !== undefined && (!Number.isInteger(style.fontSizeHalfPoints) || style.fontSizeHalfPoints <= 0)) throw new DocxMarkdocError('INVALID_ANNOTATION_STYLE', `${path}.fontSizeHalfPoints must be a positive integer.`);
   const color = style.color?.toUpperCase();
   if (color && !/^[0-9A-F]{6}$/.test(color)) throw new DocxMarkdocError('INVALID_ANNOTATION_COLOR', `${path}.color must be six-digit RGB.`);
   if (style.highlight && !HIGHLIGHTS.has(style.highlight)) throw new DocxMarkdocError('INVALID_ANNOTATION_HIGHLIGHT', `${path}.highlight is not a Word highlight value.`);

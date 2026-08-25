@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { describe, expect } from 'vitest';
 import JSZip from 'jszip';
 import { buildSyntheticDocx, DocxDocument } from '@usejunior/docx-core';
@@ -33,6 +34,22 @@ async function sourceWithFootnote(offset: number): Promise<Buffer> {
   const paragraphId = document.buildDocumentView().nodes[0]!.id;
   await document.addFootnote({ paragraphId, visibleOffset: offset, text: 'Substantive note' });
   return (await document.toBuffer({ cleanBookmarks: false })).buffer;
+}
+
+async function sourceWithNamedStyleComment(styles: string): Promise<Buffer> {
+  const base = await buildSyntheticDocx({ paragraphs: ['Alpha beta gamma.'] });
+  const document = await DocxDocument.load(base);
+  document.insertParagraphBookmarks('annotation-style-test');
+  const paragraphId = document.buildDocumentView().nodes[0]!.id;
+  await document.addComment({ paragraphId, start: 0, end: 5, author: 'Style Tester', initials: 'ST', text: 'Named style' });
+  const zip = await JSZip.loadAsync((await document.toBuffer({ cleanBookmarks: false })).buffer);
+  const commentsXml = await zip.file('word/comments.xml')!.async('string');
+  zip.file('word/comments.xml', commentsXml.replace(
+    '<w:t>Named style</w:t>',
+    '<w:rPr><w:rStyle w:val="AnnotationChild"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t>Named style</w:t>',
+  ));
+  zip.file('word/styles.xml', `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${styles}</w:styles>`);
+  return zip.generateAsync({ type: 'nodebuffer' });
 }
 
 describe('canonical annotation round trips', () => {
@@ -83,6 +100,65 @@ describe('canonical annotation round trips', () => {
     expect(comment.startTextOffset).toBe(7);
     expect(comment.endTextOffset).toBe(7);
     expect(result.certificate.annotationRendering.dispositions[0]).toMatchObject({ as: 'comment', lossy: false });
+  });
+
+  const runStyleConformance = test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.2.29' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.2.38' });
+
+  runStyleConformance('[SDX-MDOC-101] preserves inherited named run styles and direct sizes across annotation projections', async () => {
+    const source = await sourceWithNamedStyleComment([
+      '<w:style w:type="character" w:styleId="AnnotationParent"><w:name w:val="Annotation Parent"/><w:rPr><w:b/><w:color w:val="884400"/></w:rPr></w:style>',
+      '<w:style w:type="character" w:styleId="AnnotationChild"><w:name w:val="Annotation Child"/><w:basedOn w:val="AnnotationParent"/></w:style>',
+    ].join(''));
+    const imported = await importDocxToMarkdoc(source);
+    expect(imported.annotations[0]?.body[0]?.runs).toEqual([
+      { text: 'Named style', style: { bold: true, color: '884400', styleId: 'AnnotationChild', fontSizeHalfPoints: 18 } },
+    ]);
+    expect(imported.markdoc).toContain('style="AnnotationChild" size=18 bold=true color="884400"');
+
+    const asComment = await compileMarkdoc(imported.anchoredSource, imported.markdoc.replace(
+      'source-presentation="comment"', 'source-presentation="comment" presentation="comment"',
+    ));
+    const commentXml = await (await JSZip.loadAsync(asComment.tracked)).file('word/comments.xml')!.async('string');
+    expect(commentXml).toContain('<w:rStyle w:val="AnnotationChild"/>');
+    expect(commentXml).toContain('<w:sz w:val="18"/>');
+
+    const asFootnote = await compileMarkdoc(imported.anchoredSource, imported.markdoc.replace(
+      'source-presentation="comment"', 'source-presentation="comment" presentation="footnote"',
+    ));
+    const footnoteXml = await (await JSZip.loadAsync(asFootnote.tracked)).file('word/footnotes.xml')!.async('string');
+    expect(footnoteXml).toContain('<w:rStyle w:val="AnnotationChild"/>');
+    expect(footnoteXml).toContain('<w:sz w:val="18"/>');
+  });
+
+  runStyleConformance('[SDX-MDOC-102] rejects missing and cyclic named annotation styles', async () => {
+    await expect(importDocxToMarkdoc(await sourceWithNamedStyleComment(''))).rejects.toMatchObject({
+      code: 'ANNOTATION_IMPORT_UNSUPPORTED', details: { annotationId: 'comment:0', reason: 'missing-style' },
+    });
+    await expect(importDocxToMarkdoc(await sourceWithNamedStyleComment([
+      '<w:style w:type="character" w:styleId="AnnotationChild"><w:basedOn w:val="AnnotationParent"/></w:style>',
+      '<w:style w:type="character" w:styleId="AnnotationParent"><w:basedOn w:val="AnnotationChild"/></w:style>',
+    ].join('')))).rejects.toMatchObject({
+      code: 'ANNOTATION_IMPORT_UNSUPPORTED', details: { annotationId: 'comment:0', reason: 'cyclic-style' },
+    });
+    await expect(importDocxToMarkdoc(await sourceWithNamedStyleComment(
+      '<w:style w:type="paragraph" w:styleId="AnnotationChild"><w:name w:val="Wrong style type"/></w:style>',
+    ))).rejects.toMatchObject({
+      code: 'ANNOTATION_IMPORT_UNSUPPORTED', details: { annotationId: 'comment:0', reason: 'non-character-style', styleType: 'paragraph' },
+    });
+  });
+
+  runStyleConformance('[SDX-MDOC-103] admits real ILPA style runs before failing closed on hyperlinks', async () => {
+    const fixtures = [
+      '../../../tests/test_documents/redline/ILPA-Model-Limited-Partnership-Agreement-WOF_v2.docx',
+      '../../../tests/test_documents/redline/ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx',
+    ];
+    for (const fixture of fixtures) {
+      await expect(importDocxToMarkdoc(await readFile(new URL(fixture, import.meta.url)))).rejects.toMatchObject({
+        code: 'ANNOTATION_IMPORT_UNSUPPORTED', details: { annotationId: 'footnote:6', element: 'w:hyperlink' },
+      });
+    }
   });
 
   footnoteConformance('[SDX-MDOC-85] switches profiles and style-only recompiles from one immutable annotation', async () => {

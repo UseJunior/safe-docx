@@ -107,7 +107,16 @@ export type AddFootnoteParams = {
   presentation?: FootnoteNotePresentation;
 };
 
+/**
+ * Admitted character formatting for a generated footnote run.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.38
+ * @see #951
+ */
 export type FootnoteRunStyle = {
+  styleId?: string;
+  fontSizeHalfPoints?: number;
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
@@ -789,6 +798,16 @@ function buildStyledTextRun(doc: Document, text: string, style?: FootnoteRunStyl
       const el = doc.createElementNS(OOXML.W_NS, `w:${name}`);
       rPr.appendChild(el);
     };
+    if (style.styleId) {
+      const rStyle = doc.createElementNS(OOXML.W_NS, 'w:rStyle');
+      rStyle.setAttributeNS(OOXML.W_NS, 'w:val', style.styleId);
+      rPr.appendChild(rStyle);
+    }
+    if (style.fontSizeHalfPoints !== undefined) {
+      const size = doc.createElementNS(OOXML.W_NS, 'w:sz');
+      size.setAttributeNS(OOXML.W_NS, 'w:val', String(style.fontSizeHalfPoints));
+      rPr.appendChild(size);
+    }
     if (style.bold) onOff('b');
     if (style.italic) onOff('i');
     if (style.underline) {

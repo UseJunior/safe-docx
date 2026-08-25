@@ -135,7 +135,7 @@ describe('brownfield Markdoc authoring', () => {
     for (const name of ['source.docx']) {
       await expect(importDocxToMarkdoc(await readFile(`${directory}${name}`))).rejects.toMatchObject({
         code: 'ANNOTATION_IMPORT_UNSUPPORTED',
-        details: { annotationId: 'footnote:2', element: 'w:sz' },
+        details: { annotationId: 'footnote:2', element: 'w:tab' },
       });
     }
   }, 60_000);

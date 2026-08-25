@@ -13,6 +13,8 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 
 | ID | Title | Edition | Part | Section | Schema reference | Verified by |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ECMA-PART1-17-3-2-29` | Run style | 5 | 1 | 17.3.2.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rStyle` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
+| `ECMA-PART1-17-3-2-38` | Run font size | 5 | 1 | 17.3.2.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sz` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
 | `ECMA-PART4-14-9-1-1` | VML rich text-box content (w:txbxContent) | 5 | 4 | 14.9.1.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
 | `ECMA-PART4-19-1-2-22` | VML text-box host (v:textbox) | 5 | 4 | 19.1.2.22 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
 | `ECMA-PART1-17-13-5-14` | Deleted run content | 5 | 1 | 17.13.5.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
@@ -130,6 +132,33 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-5-36` | Table-cell-property revisions (w:tcPrChange) | 5 | 1 | 17.13.5.36 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-37` | Table-row-property revisions (w:trPrChange) | 5 | 1 | 17.13.5.37 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-3-3-30` | Symbol character run content (w:sym) | 5 | 1 | 17.3.3.30 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Sym` | packages/docx-core/src/primitives/symbol_run_content.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/symbol_run_content.test.ts; packages/docx-compare/src/symbolCharacterProjection.test.ts |
+
+### ECMA-PART1-17-3-2-29 — Run style
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.2.29
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rStyle`
+- **Verified by:** packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts
+
+Part 1 §17.3.2.29 defines `w:rStyle` as the character style applied to a run.
+safe-docx admits resolvable named styles in imported annotation bodies, retains
+their style identifiers in the canonical representation, and re-emits those
+identifiers when projecting the annotation as a comment or footnote. Missing
+non-character, and cyclic style chains remain outside the admitted subset and
+fail closed.
+
+### ECMA-PART1-17-3-2-38 — Run font size
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.2.38
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sz`
+- **Verified by:** packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts
+
+Part 1 §17.3.2.38 defines `w:sz` as a run font size expressed in half-points.
+safe-docx retains positive integral half-point sizes from imported annotation
+bodies and re-emits them across comment and footnote projections.
 
 ### ECMA-PART4-14-9-1-1 — VML rich text-box content (w:txbxContent)
 
