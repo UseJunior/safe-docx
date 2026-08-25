@@ -21,7 +21,18 @@ export type AnnotationPointAnchor = { kind: 'point'; point: AnnotationPosition }
 export type AnnotationRangeAnchor = { kind: 'range'; start: AnnotationPosition; end: AnnotationPosition };
 export type AnnotationAnchor = AnnotationPointAnchor | AnnotationRangeAnchor;
 
+/**
+ * Canonical formatting retained while projecting annotation body runs.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.38
+ * @see #951
+ */
 export type AnnotationRunStyle = {
+  /** Named Word character style retained through comment/footnote projection. */
+  styleId?: string;
+  /** Direct Word run size in half-points. */
+  fontSizeHalfPoints?: number;
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;

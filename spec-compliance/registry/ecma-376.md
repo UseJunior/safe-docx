@@ -12,6 +12,38 @@ outlive a future migration off OpenSpec. Entries are parsed by
 
 ## Targeted sections
 
+## [ECMA-PART1-17-3-2-29] Run style
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.2.29"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rStyle
+verifiedBy: packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts
+```
+
+Part 1 §17.3.2.29 defines `w:rStyle` as the character style applied to a run.
+safe-docx admits resolvable named styles in imported annotation bodies, retains
+their style identifiers in the canonical representation, and re-emits those
+identifiers when projecting the annotation as a comment or footnote. Missing
+and cyclic style chains remain outside the admitted subset and fail closed.
+
+## [ECMA-PART1-17-3-2-38] Run font size
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.2.38"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sz
+verifiedBy: packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts
+```
+
+Part 1 §17.3.2.38 defines `w:sz` as a run font size expressed in half-points.
+safe-docx retains positive integral half-point sizes from imported annotation
+bodies and re-emits them across comment and footnote projections.
+
 ## [ECMA-PART4-14-9-1-1] VML rich text-box content (w:txbxContent)
 
 ```yaml

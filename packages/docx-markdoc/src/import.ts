@@ -1,4 +1,4 @@
-import { DocxDocument, OOXML, W, computeContentFingerprint } from '@usejunior/docx-core';
+import { DocxDocument, OOXML, W, computeContentFingerprint, type StylesModel } from '@usejunior/docx-core';
 import { sha256 } from './hash.js';
 import { DocxMarkdocError } from './errors.js';
 import type { AnnotationAnchor, AnnotationParagraph, AnnotationRun, AnnotationRunStyle, CanonicalAnnotation, ImportResult } from './types.js';
@@ -49,10 +49,16 @@ function parseTaggedRuns(tagged: string, annotationId: string): AnnotationRun[] 
       const color = /\bcolor="([^"]+)"/.exec(token)?.[1] ?? 'yellow';
       next.highlight = color as AnnotationRunStyle['highlight'];
     } else if (token.startsWith('<font')) {
-      if (/\b(?:name|size|face)=/.test(token)) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} uses unsupported font metadata.`, { annotationId, token });
+      if (/\b(?:name|face)=/.test(token)) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} uses unsupported font metadata.`, { annotationId, token });
+      const size = /\bsize="([0-9]+(?:\.[0-9]+)?)"/.exec(token)?.[1];
+      if (size) {
+        const halfPoints = Number(size) * 2;
+        if (!Number.isInteger(halfPoints) || halfPoints <= 0) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} has an unsupported font size.`, { annotationId, token });
+        next.fontSizeHalfPoints = halfPoints;
+      }
       const color = /\bcolor="([0-9A-Fa-f]{6})"/.exec(token)?.[1];
-      if (!color) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} has an unsupported color declaration.`, { annotationId, token });
-      next.color = color.toUpperCase();
+      if (color) next.color = color.toUpperCase();
+      if (!color && !size) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} has an unsupported font declaration.`, { annotationId, token });
     }
     stack.push(next);
   }
@@ -60,13 +66,69 @@ function parseTaggedRuns(tagged: string, annotationId: string): AnnotationRun[] 
   return runs;
 }
 
-function bodyFromParagraphs(paragraphs: Array<{ tagged_text: string }>, annotationId: string): AnnotationParagraph[] {
+function bodyFromParagraphs(
+  paragraphs: Array<{ tagged_text: string }>,
+  container: Element,
+  annotationId: string,
+  marker: 'annotationRef' | 'footnoteRef',
+): AnnotationParagraph[] {
   if (paragraphs.length === 0) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} has no admitted paragraphs.`, { annotationId });
-  return paragraphs.map((paragraph) => ({ runs: parseTaggedRuns(paragraph.tagged_text, annotationId) }));
+  const sourceParagraphs = Array.from(container.getElementsByTagNameNS(OOXML.W_NS, W.p)) as Element[];
+  return paragraphs.map((paragraph, paragraphIndex) => {
+    const parsed = parseTaggedRuns(paragraph.tagged_text, annotationId);
+    const sourceParagraph = sourceParagraphs[paragraphIndex];
+    if (!sourceParagraph) return { runs: parsed };
+    const spans: Array<{ start: number; end: number; styleId?: string; fontSizeHalfPoints?: number }> = [];
+    let offset = 0;
+    for (const run of Array.from(sourceParagraph.getElementsByTagNameNS(OOXML.W_NS, W.r)) as Element[]) {
+      if (run.getElementsByTagNameNS(OOXML.W_NS, marker).length > 0) continue;
+      const text = Array.from(run.getElementsByTagNameNS(OOXML.W_NS, W.t)).map((node) => (node as Element).textContent ?? '').join('');
+      if (!text) continue;
+      const rStyle = Array.from(run.getElementsByTagNameNS(OOXML.W_NS, W.rStyle))[0] as Element | undefined;
+      const styleId = rStyle?.getAttributeNS(OOXML.W_NS, W.val) ?? rStyle?.getAttribute('w:val') ?? undefined;
+      const size = Array.from(run.getElementsByTagNameNS(OOXML.W_NS, 'sz'))[0] as Element | undefined;
+      const rawSize = size?.getAttributeNS(OOXML.W_NS, W.val) ?? size?.getAttribute('w:val') ?? undefined;
+      const fontSizeHalfPoints = rawSize && /^\d+$/u.test(rawSize) ? Number(rawSize) : undefined;
+      spans.push({ start: offset, end: offset + text.length, ...(styleId ? { styleId } : {}), ...(fontSizeHalfPoints ? { fontSizeHalfPoints } : {}) });
+      offset += text.length;
+    }
+    const runs: AnnotationRun[] = [];
+    let parsedOffset = 0;
+    for (const run of parsed) {
+      let consumed = 0;
+      while (consumed < run.text.length) {
+        const position = parsedOffset + consumed;
+        const span = spans.find((candidate) => candidate.start <= position && candidate.end > position);
+        const length = Math.min(run.text.length - consumed, span ? span.end - position : run.text.length - consumed);
+        const text = run.text.slice(consumed, consumed + length);
+        const style = {
+          ...(run.style ?? {}),
+          ...(span?.styleId ? { styleId: span.styleId } : {}),
+          ...(span?.fontSizeHalfPoints ? { fontSizeHalfPoints: span.fontSizeHalfPoints } : {}),
+        };
+        runs.push({ text, ...(Object.keys(style).length ? { style } : {}) });
+        consumed += length;
+      }
+      parsedOffset += run.text.length;
+    }
+    return { runs };
+  });
 }
 
-function assertAdmittedAnnotationElement(container: Element, annotationId: string, marker: 'annotationRef' | 'footnoteRef'): void {
-  const admitted = new Set(['p', 'pPr', 'pStyle', 'r', 'rPr', 't', marker, 'b', 'i', 'u', 'color', 'highlight', 'rStyle', 'vertAlign']);
+function assertNamedStyle(styles: StylesModel, styleId: string, annotationId: string): void {
+  const seen = new Set<string>();
+  let current: string | null = styleId;
+  while (current) {
+    if (seen.has(current)) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} uses cyclic run style ${styleId}.`, { annotationId, styleId, reason: 'cyclic-style' });
+    seen.add(current);
+    const style = styles.byId.get(current);
+    if (!style) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} references missing run style ${current}.`, { annotationId, styleId: current, reason: 'missing-style' });
+    current = style.basedOn;
+  }
+}
+
+function assertAdmittedAnnotationElement(container: Element, annotationId: string, marker: 'annotationRef' | 'footnoteRef', styles: StylesModel): void {
+  const admitted = new Set(['p', 'pPr', 'pStyle', 'r', 'rPr', 't', marker, 'b', 'i', 'u', 'color', 'highlight', 'rStyle', 'vertAlign', 'sz']);
   for (const node of Array.from(container.getElementsByTagNameNS(OOXML.W_NS, '*'))) {
     const element = node as Element;
     let formattingOwner = element.parentNode as Element | null;
@@ -83,10 +145,14 @@ function assertAdmittedAnnotationElement(container: Element, annotationId: strin
       const run = element.parentNode as Element | null;
       const markerRun = Boolean(run?.getElementsByTagNameNS(OOXML.W_NS, marker).length);
       for (const property of Array.from(element.childNodes).filter((child) => child.nodeType === 1) as Element[]) {
-        const allowed = ['b', 'i', 'u', 'color', 'highlight'];
+        const allowed = ['b', 'i', 'u', 'color', 'highlight', 'sz'];
         const nonApplicableFallback = property.localName === 'szCs'
           && !/[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/u.test(run?.textContent ?? '');
-        if (!allowed.includes(property.localName) && !nonApplicableFallback && !(markerRun && ['rStyle', 'vertAlign'].includes(property.localName))) {
+        if (property.localName === W.rStyle && !markerRun) {
+          const styleId = property.getAttributeNS(OOXML.W_NS, W.val) ?? property.getAttribute('w:val');
+          if (!styleId) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} has an empty run style reference.`, { annotationId, reason: 'missing-style-id' });
+          assertNamedStyle(styles, styleId, annotationId);
+        } else if (!allowed.includes(property.localName) && !nonApplicableFallback && !(markerRun && ['rStyle', 'vertAlign'].includes(property.localName))) {
           throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} contains unsupported run property w:${property.localName}.`, { annotationId, element: `w:${property.localName}` });
         }
       }
@@ -136,6 +202,8 @@ function annotationMarkdoc(annotation: CanonicalAnnotation): string[] {
       if (!style || Object.keys(style).length === 0) content.push(escapeText(run.text));
       else {
         const styleAttributes = [
+          ...(style.styleId ? [`style="${escapeAttribute(style.styleId)}"`] : []),
+          ...(style.fontSizeHalfPoints ? [`size=${style.fontSizeHalfPoints}`] : []),
           ...(style.bold ? ['bold=true'] : []), ...(style.italic ? ['italic=true'] : []), ...(style.underline ? ['underline=true'] : []),
           ...(style.color ? [`color="${style.color}"`] : []), ...(style.highlight ? [`highlight="${style.highlight}"`] : []),
         ];
@@ -167,6 +235,7 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
     );
   }
   const annotations: CanonicalAnnotation[] = [];
+  const styles = anchored.getStylesModel();
   const [commentsXml, footnotesXml] = await Promise.all([anchored.getCommentsXmlClone(), anchored.getFootnotesXmlClone()]);
   const comments = await anchored.getComments();
   const importedCommentIds = new Set<number>();
@@ -178,7 +247,7 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
     importedCommentIds.add(comment.id);
     const commentElement = elementByWordId(commentsXml, W.comment, comment.id);
     if (!commentElement) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Comment ${comment.id} has no definition.`, { annotationId: id });
-    assertAdmittedAnnotationElement(commentElement, id, 'annotationRef');
+    assertAdmittedAnnotationElement(commentElement, id, 'annotationRef', styles);
     let anchor: AnnotationAnchor;
     if (parent) anchor = parent.anchor;
     else {
@@ -191,7 +260,7 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
     }
     const annotation: CanonicalAnnotation = {
       id,
-      body: bodyFromParagraphs(comment.paragraphs, id),
+      body: bodyFromParagraphs(comment.paragraphs, commentElement, id, 'annotationRef'),
       author: comment.author || undefined,
       initials: comment.initials || undefined,
       date: comment.date || undefined,
@@ -221,12 +290,12 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
     if (footnote.referencePoints.length === 0 && footnote.text.length === 0) continue;
     const footnoteElement = elementByWordId(footnotesXml, W.footnote, footnote.id);
     if (!footnoteElement) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Footnote ${footnote.id} has no definition.`, { annotationId: id });
-    assertAdmittedAnnotationElement(footnoteElement, id, 'footnoteRef');
+    assertAdmittedAnnotationElement(footnoteElement, id, 'footnoteRef', styles);
     if (footnote.referencePoints.length !== 1) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Footnote ${footnote.id} must have exactly one reference.`, { annotationId: id, referenceCount: footnote.referencePoints.length });
     const reference = footnote.referencePoints[0]!;
     const anchor: AnnotationAnchor = { kind: 'point', point: { paragraphId: reference.paragraphId, offset: reference.textOffset } };
     annotations.push({
-      id, body: bodyFromParagraphs(footnote.paragraphs, id), audience: 'unspecified', semanticRole: 'substantive-footnote',
+      id, body: bodyFromParagraphs(footnote.paragraphs, footnoteElement, id, 'footnoteRef'), audience: 'unspecified', semanticRole: 'substantive-footnote',
       sourcePresentation: 'footnote', sourceAnchor: anchor, anchor,
     });
   }
