@@ -142,6 +142,11 @@ describe('canonical annotation round trips', () => {
     ].join('')))).rejects.toMatchObject({
       code: 'ANNOTATION_IMPORT_UNSUPPORTED', details: { annotationId: 'comment:0', reason: 'cyclic-style' },
     });
+    await expect(importDocxToMarkdoc(await sourceWithNamedStyleComment(
+      '<w:style w:type="paragraph" w:styleId="AnnotationChild"><w:name w:val="Wrong style type"/></w:style>',
+    ))).rejects.toMatchObject({
+      code: 'ANNOTATION_IMPORT_UNSUPPORTED', details: { annotationId: 'comment:0', reason: 'non-character-style', styleType: 'paragraph' },
+    });
   });
 
   runStyleConformance('[SDX-MDOC-103] admits real ILPA style runs before failing closed on hyperlinks', async () => {

@@ -27,7 +27,8 @@ Part 1 §17.3.2.29 defines `w:rStyle` as the character style applied to a run.
 safe-docx admits resolvable named styles in imported annotation bodies, retains
 their style identifiers in the canonical representation, and re-emits those
 identifiers when projecting the annotation as a comment or footnote. Missing
-and cyclic style chains remain outside the admitted subset and fail closed.
+non-character, and cyclic style chains remain outside the admitted subset and
+fail closed.
 
 ## [ECMA-PART1-17-3-2-38] Run font size
 

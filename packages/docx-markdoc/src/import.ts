@@ -123,6 +123,7 @@ function assertNamedStyle(styles: StylesModel, styleId: string, annotationId: st
     seen.add(current);
     const style = styles.byId.get(current);
     if (!style) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} references missing run style ${current}.`, { annotationId, styleId: current, reason: 'missing-style' });
+    if (style.styleType !== 'character') throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} references non-character run style ${current}.`, { annotationId, styleId: current, styleType: style.styleType, reason: 'non-character-style' });
     current = style.basedOn;
   }
 }
