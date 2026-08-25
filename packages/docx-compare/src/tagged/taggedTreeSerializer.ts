@@ -118,12 +118,16 @@ function replaceElementChildren(target: WmlElement, children: readonly WmlElemen
   for (const child of children) target.appendChild(child);
 }
 
-function convertDeletedText(root: WmlElement): WmlElement {
-  const texts = Array.from(root.getElementsByTagNameNS(W_NS, 't'));
-  if (root.namespaceURI === W_NS && root.localName === 't') texts.unshift(root);
+function replaceDescendantVocabulary(
+  root: WmlElement,
+  sourceLocalName: string,
+  replacementQualifiedName: string,
+): WmlElement {
+  const texts = Array.from(root.getElementsByTagNameNS(W_NS, sourceLocalName));
+  if (root.namespaceURI === W_NS && root.localName === sourceLocalName) texts.unshift(root);
   let convertedRoot = root;
   for (const text of texts) {
-    const replacement = text.ownerDocument!.createElementNS(W_NS, 'w:delText');
+    const replacement = text.ownerDocument!.createElementNS(W_NS, replacementQualifiedName);
     for (let i = 0; i < text.attributes.length; i++) {
       const attr = text.attributes.item(i);
       if (attr) replacement.setAttributeNS(attr.namespaceURI, attr.name, attr.value);
@@ -136,6 +140,21 @@ function convertDeletedText(root: WmlElement): WmlElement {
     else text.parentNode?.replaceChild(replacement, text);
   }
   return convertedRoot;
+}
+
+/**
+ * Translate ordinary run text and field instructions to deletion vocabulary.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
+ * @see https://github.com/UseJunior/safe-docx/issues/945
+ */
+function convertDeletedText(root: WmlElement): WmlElement {
+  const withDeletedText = replaceDescendantVocabulary(root, 't', 'w:delText');
+  return replaceDescendantVocabulary(withDeletedText, 'instrText', 'w:delInstrText');
+}
+
+function convertMovedFromText(root: WmlElement): WmlElement {
+  return replaceDescendantVocabulary(root, 't', 'w:delText');
 }
 
 function operationProvenance(node: TaggedNode): readonly string[] {
@@ -168,7 +187,8 @@ function wrapRevision(
   wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
   markComparisonRevision(wrapper);
   markOperationProvenance(wrapper, operationIds);
-  if (kind === 'del' || kind === 'moveFrom') node = convertDeletedText(node);
+  if (kind === 'del') node = convertDeletedText(node);
+  else if (kind === 'moveFrom') node = convertMovedFromText(node);
   wrapper.appendChild(node);
   return wrapper;
 }

@@ -152,6 +152,29 @@ function alignmentKey(
   ]);
 }
 
+function runNonTextContentSignature(run: WmlElement): string {
+  return childElements(run)
+    .filter((child) => !(
+      child.namespaceURI === run.namespaceURI &&
+      ['rPr', 't', 'delText', 'lastRenderedPageBreak'].includes(child.localName)
+    ))
+    .map((child) => subtreeSignature(child))
+    .join('|');
+}
+
+/**
+ * Keep side-only run content at the run boundary so revision wrappers remain
+ * legal children of the surrounding paragraph or other run container.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @see https://github.com/UseJunior/safe-docx/issues/945
+ */
+function canRecursivelyAlignContent(original: WmlElement, revised: WmlElement): boolean {
+  return original.localName !== 'r' ||
+    runNonTextContentSignature(original) === runNonTextContentSignature(revised);
+}
+
 function propertyDelta(original: WmlElement, revised: WmlElement): PropertyDelta | undefined {
   const descriptor = PROPERTY_SCOPE_BY_CONTAINER[original.localName ?? original.tagName.replace(/^w:/, '')];
   if (!descriptor) return undefined;
@@ -355,6 +378,20 @@ function constructBoth(
     revisedNumberingIdentities,
   );
   const children: TaggedNode[] = [];
+  const emitAlignedPair = (left: WmlElement, right: WmlElement): void => {
+    if (!canRecursivelyAlignContent(left, right)) {
+      children.push({ tag: 'original', node: left, children: [], opaque: true });
+      children.push({ tag: 'revised', node: right, children: [], opaque: true });
+      return;
+    }
+    children.push(constructBoth(
+      left,
+      right,
+      options,
+      originalNumberingIdentities,
+      revisedNumberingIdentities,
+    ));
+  };
   const emitGap = (originalEnd: number, revisedEnd: number): void => {
     while (originalEnd - oi === revisedEnd - ri && oi < originalEnd && ri < revisedEnd) {
       const left = originalChildren[oi]!;
@@ -363,6 +400,7 @@ function constructBoth(
         (left.localName ?? left.tagName) === (right.localName ?? right.tagName) &&
         semanticAttributeSignature(left) === semanticAttributeSignature(right) &&
         (childElements(left).length > 0 || childElements(right).length > 0) &&
+        canRecursivelyAlignContent(left, right) &&
         (left.localName !== 'r' || (
           left.textContent === right.textContent &&
           left.getElementsByTagNameNS(
@@ -379,13 +417,7 @@ function constructBoth(
           ).length === 0
         ));
       if (!sameIdentity) break;
-      children.push(constructBoth(
-        left,
-        right,
-        options,
-        originalNumberingIdentities,
-        revisedNumberingIdentities,
-      ));
+      emitAlignedPair(left, right);
       oi++;
       ri++;
     }
@@ -438,13 +470,7 @@ function constructBoth(
   let ri = 0;
   for (const [matchedOriginal, matchedRevised] of pairs) {
     emitGap(matchedOriginal, matchedRevised);
-    children.push(constructBoth(
-      originalChildren[oi++]!,
-      revisedChildren[ri++]!,
-      options,
-      originalNumberingIdentities,
-      revisedNumberingIdentities,
-    ));
+    emitAlignedPair(originalChildren[oi++]!, revisedChildren[ri++]!);
   }
   emitGap(originalChildren.length, revisedChildren.length);
   return {
