@@ -91,6 +91,7 @@ export interface StrategyEvidence {
   integrity: {
     fieldIssues: string[];
     bookmarkIssues: string[];
+    revisionTopologyIssues: string[];
     revisionIdIssues: string[];
     moveBalanceIssues: string[];
   };
@@ -422,6 +423,33 @@ function moveBalanceIssues(candidateXml: string): string[] {
   return issues.sort();
 }
 
+/**
+ * Reject revision wrappers nested where WordprocessingML permits run-inner
+ * content but not tracked run-content containers.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.22
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.25
+ */
+export function collectRevisionTopologyIssues(candidateXml: string): string[] {
+  const document = parseXml(candidateXml);
+  const issues: string[] = [];
+  for (const kind of ['del', 'ins', 'moveFrom', 'moveTo'] as const) {
+    for (const revision of Array.from(document.getElementsByTagNameNS(W_NS, kind))) {
+      const parent = revision.parentElement;
+      if (
+        parent?.namespaceURI === W_NS
+        && (parent.localName === 'r' || parent.localName === 'drawing')
+      ) {
+        const id = revision.getAttributeNS(W_NS, 'id') ?? revision.getAttribute('w:id') ?? '';
+        issues.push(`${kind}:parent-${parent.localName}:id-${id}`);
+      }
+    }
+  }
+  return issues.sort();
+}
+
 async function characterizeStrategy(
   fixture: StrategyDifferentialFixture,
   originalXml: string,
@@ -495,6 +523,7 @@ async function characterizeStrategy(
         originalXml,
         revisedXml,
       ),
+      revisionTopologyIssues: collectRevisionTopologyIssues(candidateXml),
       revisionIdIssues: collectRevisionIdIssues(candidateXml, originalXml, revisedXml),
       moveBalanceIssues: moveBalanceIssues(candidateXml),
     },

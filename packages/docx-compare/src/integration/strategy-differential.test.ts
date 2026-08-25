@@ -256,6 +256,13 @@ describe('strategy differential manifest evidence', () => {
       expect(() => assertCharacterizationSafety(invalidBookmark))
         .toThrow(/failed bookmarkIssues/u);
 
+      const invalidRevisionTopology = structuredClone(row);
+      invalidRevisionTopology.taggedTree.integrity.revisionTopologyIssues.push(
+        'del:parent-r:id-7',
+      );
+      expect(() => assertCharacterizationSafety(invalidRevisionTopology))
+        .toThrow(/failed revisionTopologyIssues/u);
+
       const reusedRevisionId = structuredClone(row);
       reusedRevisionId.taggedTree.integrity.revisionIdIssues.push(
         'revision-id-reused-across-identities:7',
