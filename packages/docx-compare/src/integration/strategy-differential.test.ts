@@ -31,6 +31,7 @@ import {
   assertExpectedPackageParts,
   characterizeStrategyDifferential,
   collectRevisionIdIssues,
+  collectRevisionTopologyIssues,
   type StrategyDifferentialFixture,
 } from './strategy-differential-harness.js';
 
@@ -155,6 +156,24 @@ describe('sole tagged-spine characterization', () => {
 });
 
 describe('strategy differential manifest evidence', () => {
+  test('detects every illegal run-inner revision-wrapper topology', () => {
+    const xml = '<?xml version="1.0" encoding="UTF-8"?>'
+      + '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+      + '<w:body><w:p>'
+      + '<w:r><w:del w:id="7"/></w:r>'
+      + '<w:r><w:drawing><w:ins w:id="8"/></w:drawing></w:r>'
+      + '<w:r><w:moveFrom w:id="9"/></w:r>'
+      + '<w:r><w:drawing><w:moveTo w:id="10"/></w:drawing></w:r>'
+      + '</w:p></w:body></w:document>';
+
+    expect(collectRevisionTopologyIssues(xml)).toEqual([
+      'del:parent-r:id-7',
+      'ins:parent-drawing:id-8',
+      'moveFrom:parent-r:id-9',
+      'moveTo:parent-drawing:id-10',
+    ]);
+  });
+
   test.openspec('Missing corpus evidence fails loudly')(
     'records complete deterministic evidence and rejects missing package coverage',
     async () => {
