@@ -476,8 +476,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 1202363,
-            "sha256": "419cf4705157175f566597b35477a86b44cc938c09775ba79a5826ab7165b013",
+            "bytes": 1203848,
+            "sha256": "49e1bbeb6d87be1480fd6a1a5d858565408aeb78524563bf204af0b55f19d688",
             "kind": "xml"
           },
           {
@@ -815,8 +815,8 @@
           "insertedAtoms": 3662,
           "deletedAtoms": 2101,
           "modifiedParagraphs": 496,
-          "formatChanges": 17,
-          "formatChangeAtoms": 17
+          "formatChanges": 16,
+          "formatChangeAtoms": 16
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -3042,8 +3042,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 335304,
-            "sha256": "8f02b89a2bed43f7bc21f2e5a91ba6bf6453d4addb7042fa9901e77f9d2e251b",
+            "bytes": 335316,
+            "sha256": "095ef8440dbc2d5fe6a00646bc0e8571e8ee9e992d5590550d2427df23518da8",
             "kind": "xml"
           },
           {
@@ -4287,8 +4287,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 387507,
-            "sha256": "518c30b6106219c49d4de85334319f0afdcf965c62693b22c0c44df1e8a81c01",
+            "bytes": 387513,
+            "sha256": "25dbd39a6531dfc847b7f58f3aeee8765f5e9236be70c9775862f51bcedbc76f",
             "kind": "xml"
           },
           {
@@ -4646,8 +4646,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 375116,
-            "sha256": "18de87d77fe0621c039d1d262e04ebfaad86b9c06a81906b06d7d5f1badaa357",
+            "bytes": 375128,
+            "sha256": "f2fa0402d65f971b6d657688b15dfc73480a358448f1d38b2855d56cff47f8d6",
             "kind": "xml"
           },
           {

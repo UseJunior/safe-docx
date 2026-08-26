@@ -9,6 +9,7 @@ import { collectBookmarkReferenceNamesInXml } from '../tagged/bookmarkProjection
 import { buildTaggedTreeShadowXml } from '../tagged/taggedTreeShadow.js';
 import { compareSourceProjectedFormattingFidelity } from '../tagged/formattingFidelity.js';
 import { acceptAllChanges, rejectAllChanges } from '../tagged/trackChangesAcceptorAst.js';
+import { collectRevisionTopologyIssues } from './strategy-differential-harness.js';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../../');
 const ORIGINAL = resolve(ROOT, 'tests/test_documents/redline/ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx');
@@ -68,24 +69,10 @@ describe('public ILPA tagged-tree redline minimality', () => {
         date: new Date('2026-08-21T12:00:00Z'),
       });
       const combinedXml = await (await DocxArchive.load(result.document)).getDocumentXml();
-      const combinedDocument = parseXml(combinedXml);
-      const illegalRunInnerRevisions = ['del', 'ins', 'moveFrom', 'moveTo'].flatMap((kind) =>
-        Array.from(combinedDocument.getElementsByTagNameNS(
-          'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
-          kind,
-        )).filter((revision) => {
-          const parent = revision.parentNode as Element | null;
-          return parent?.localName === 'r' || parent?.localName === 'drawing';
-        }).map((revision) => ({
-          kind,
-          parent: (revision.parentNode as Element).localName,
-          id: revision.getAttributeNS(
-            'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
-            'id',
-          ),
-        })),
-      );
-      expect(illegalRunInnerRevisions, `${label} revision boundary topology`).toEqual([]);
+      expect(
+        collectRevisionTopologyIssues(combinedXml),
+        `${label} revision boundary topology`,
+      ).toEqual([]);
       expect(projectionIssues(combinedXml), `${label} combined`).toEqual(expected);
       expect(projectionIssues(acceptAllChanges(combinedXml)), `${label} Accept All`)
         .toEqual(expected);
