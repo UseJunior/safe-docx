@@ -27,4 +27,5 @@ footnote. Missing or cyclic style chains SHALL fail closed.
 - **GIVEN** a real Word document containing FootnoteTextChar, FootnoteReference, and Hyperlink run styles
 - **WHEN** its annotations are imported
 - **THEN** named run styles and direct font sizes SHALL NOT cause rejection
-- **AND** a later unsupported hyperlink container SHALL still fail closed explicitly
+- **AND** admitted external hyperlink containers SHALL NOT cause rejection
+- **AND** a later unsupported bookmark marker SHALL still fail closed explicitly

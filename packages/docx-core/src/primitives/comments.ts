@@ -17,6 +17,7 @@ import { getAttributeSafe } from './xml-helpers.js';
 import { getFirstChild } from './xml-helpers.js';
 import { extractEffectiveRunFormatting, parseStylesXml, parseThemeXml, type StylesModel, type ThemeModel } from './styles.js';
 import { emitFormattingTags, mergeAdjacentTags, type AnnotatedRun } from './formatting_tags.js';
+import { ensureExternalHyperlinkRelationships } from './relationships.js';
 import {
   createRevisionContainer,
   prepareElementForDeletion,
@@ -211,8 +212,16 @@ export type AddCommentParams = {
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.38
  * @see #951
  */
-export type CommentBodyRun = { text: string; style?: { styleId?: string; fontSizeHalfPoints?: number; bold?: boolean; italic?: boolean; underline?: boolean; color?: string; highlight?: string } };
+export type CommentBodyRun = {
+  text: string;
+  style?: { styleId?: string; fontSizeHalfPoints?: number; bold?: boolean; italic?: boolean; underline?: boolean; color?: string; highlight?: string };
+  hyperlink?: { destination: string };
+};
 export type CommentBodyParagraph = { runs: CommentBodyRun[] };
+
+function commentBodyDestinations(body: CommentBodyParagraph[] | undefined): string[] {
+  return body?.flatMap((paragraph) => paragraph.runs.flatMap((run) => run.hyperlink ? [run.hyperlink.destination] : [])) ?? [];
+}
 
 export type AddCommentResult = {
   commentId: number;
@@ -359,6 +368,11 @@ export async function addComment(
 
   // Add comment element to comments.xml
   const paraId = generateParaId();
+  const hyperlinkRelationshipIds = await ensureExternalHyperlinkRelationships(
+    zip,
+    'word/comments.xml',
+    commentBodyDestinations(params.body),
+  );
   addCommentElement(commentsDoc, {
     id: commentId,
     author,
@@ -367,6 +381,7 @@ export async function addComment(
     paraId,
     date: ctx?.date,
     body: params.body,
+    hyperlinkRelationshipIds,
   });
   zip.writeText('word/comments.xml', serializeXml(commentsDoc));
 
@@ -423,6 +438,11 @@ export async function addCommentReply(
   // Allocate ID and add reply comment
   const commentId = allocateNextCommentId(commentsDoc);
   const replyParaId = generateParaId();
+  const hyperlinkRelationshipIds = await ensureExternalHyperlinkRelationships(
+    zip,
+    'word/comments.xml',
+    commentBodyDestinations(params.body),
+  );
   addCommentElement(commentsDoc, {
     id: commentId,
     author,
@@ -431,6 +451,7 @@ export async function addCommentReply(
     paraId: replyParaId,
     date: ctx?.date,
     body: params.body,
+    hyperlinkRelationshipIds,
   });
   zip.writeText('word/comments.xml', serializeXml(commentsDoc));
 
@@ -518,10 +539,22 @@ function ensureCommentPartNamespaceAliases(commentsDoc: Document): void {
  */
 function addCommentElement(
   commentsDoc: Document,
-  params: { id: number; author: string; initials: string; text: string; paraId: string; date?: string; body?: CommentBodyParagraph[] },
+  params: {
+    id: number;
+    author: string;
+    initials: string;
+    text: string;
+    paraId: string;
+    date?: string;
+    body?: CommentBodyParagraph[];
+    hyperlinkRelationshipIds?: ReadonlyMap<string, string>;
+  },
 ): void {
   ensureCommentPartNamespaceAliases(commentsDoc);
   const root = commentsDoc.documentElement;
+  if (params.hyperlinkRelationshipIds?.size && root.lookupNamespaceURI('r') !== OOXML.R_NS) {
+    root.setAttributeNS(XMLNS_NS, 'xmlns:r', OOXML.R_NS);
+  }
 
   const commentEl = commentsDoc.createElementNS(OOXML.W_NS, 'w:comment');
   commentEl.setAttribute('w:id', String(params.id));
@@ -542,15 +575,49 @@ function addCommentElement(
   p.appendChild(refRun);
 
   const body = params.body ?? [{ runs: [{ text: params.text }] }];
-  for (const run of body[0]?.runs ?? []) p.appendChild(buildCommentBodyRun(commentsDoc, run));
+  appendCommentBodyRuns(p, body[0]?.runs ?? [], commentsDoc, params.hyperlinkRelationshipIds);
 
   commentEl.appendChild(p);
   for (const paragraph of body.slice(1)) {
     const bodyParagraph = commentsDoc.createElementNS(OOXML.W_NS, 'w:p');
-    for (const run of paragraph.runs) bodyParagraph.appendChild(buildCommentBodyRun(commentsDoc, run));
+    appendCommentBodyRuns(bodyParagraph, paragraph.runs, commentsDoc, params.hyperlinkRelationshipIds);
     commentEl.appendChild(bodyParagraph);
   }
   root.appendChild(commentEl);
+}
+
+/**
+ * Emit annotation runs while retaining external hyperlink boundaries.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see #956
+ */
+function appendCommentBodyRuns(
+  paragraph: Element,
+  runs: CommentBodyRun[],
+  doc: Document,
+  relationshipIds: ReadonlyMap<string, string> | undefined,
+): void {
+  let activeDestination: string | undefined;
+  let activeHyperlink: Element | undefined;
+  for (const bodyRun of runs) {
+    const destination = bodyRun.hyperlink?.destination;
+    if (!destination) {
+      activeDestination = undefined;
+      activeHyperlink = undefined;
+      paragraph.appendChild(buildCommentBodyRun(doc, bodyRun));
+      continue;
+    }
+    const relationshipId = relationshipIds?.get(destination);
+    if (!relationshipId) throw new Error(`Missing comment hyperlink relationship for ${destination}`);
+    if (activeDestination !== destination || !activeHyperlink) {
+      activeDestination = destination;
+      activeHyperlink = doc.createElementNS(OOXML.W_NS, 'w:hyperlink');
+      activeHyperlink.setAttributeNS(OOXML.R_NS, 'r:id', relationshipId);
+      paragraph.appendChild(activeHyperlink);
+    }
+    activeHyperlink.appendChild(buildCommentBodyRun(doc, bodyRun));
+  }
 }
 
 function buildCommentBodyRun(doc: Document, bodyRun: CommentBodyRun): Element {

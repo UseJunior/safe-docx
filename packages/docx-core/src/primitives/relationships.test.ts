@@ -1,10 +1,13 @@
 import { describe, expect } from 'vitest';
 import { testAllure } from '../testing/allure-test.js';
 import { parseXml } from './xml.js';
+import { createZipBuffer, DocxZip } from './zip.js';
 import {
+  ensureExternalHyperlinkRelationships,
   parseDocumentRels,
   parseHyperlinkRelTargets,
   parseHyperlinkRelEntries,
+  parseRelationshipEntries,
   listRelationshipIds,
 } from './relationships.js';
 
@@ -54,6 +57,7 @@ describe('document.xml.rels parsing (issue #376 helpers)', () => {
     expect(parseDocumentRels(null).size).toBe(0);
     expect(parseHyperlinkRelTargets(null).size).toBe(0);
     expect(parseHyperlinkRelEntries(null).size).toBe(0);
+    expect(parseRelationshipEntries(null).size).toBe(0);
     expect(listRelationshipIds(null).size).toBe(0);
   });
 
@@ -74,4 +78,35 @@ describe('document.xml.rels parsing (issue #376 helpers)', () => {
     expect([...listRelationshipIds(prefixed)]).toEqual(['rId7']);
     expect(parseDocumentRels(prefixed).get('rId7')).toBe('https://alpha.example.com');
   });
+
+  test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 2, section: '6.5.2.3' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 2, section: '6.5.3.4' })(
+      '[SDX-CONF-16] allocates annotation-part hyperlink relationships against every existing ID',
+      async () => {
+        const zip = await DocxZip.load(await createZipBuffer({
+          'word/_rels/comments.xml.rels':
+            `<Relationships xmlns="${REL_NS}">` +
+            `<Relationship Id="rId1" Type="${IMAGE}" Target="https://example.com/image" TargetMode="External"/>` +
+            '</Relationships>',
+        }));
+        const mapping = await ensureExternalHyperlinkRelationships(
+          zip,
+          'word/comments.xml',
+          ['https://example.com/a', 'https://example.com/a', 'https://example.com/b'],
+        );
+        expect(mapping).toEqual(new Map([
+          ['https://example.com/a', 'rId2'],
+          ['https://example.com/b', 'rId3'],
+        ]));
+        const entries = parseRelationshipEntries(parseXml(await zip.readText('word/_rels/comments.xml.rels')));
+        expect(entries.get('rId1')).toMatchObject({ type: IMAGE });
+        expect(entries.get('rId2')).toEqual({
+          id: 'rId2', type: HYPERLINK, target: 'https://example.com/a', targetMode: 'External',
+        });
+        expect(entries.get('rId3')).toEqual({
+          id: 'rId3', type: HYPERLINK, target: 'https://example.com/b', targetMode: 'External',
+        });
+      },
+    );
 });

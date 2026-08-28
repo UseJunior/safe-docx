@@ -40,7 +40,17 @@ export type AnnotationRunStyle = {
   highlight?: 'black' | 'blue' | 'cyan' | 'green' | 'magenta' | 'red' | 'yellow' | 'white' | 'darkBlue' | 'darkCyan' | 'darkGreen' | 'darkMagenta' | 'darkRed' | 'darkYellow' | 'darkGray' | 'lightGray' | 'none';
 };
 
-export type AnnotationRun = { text: string; style?: AnnotationRunStyle };
+/**
+ * A resolved external hyperlink destination retained independently of visual
+ * run styling and source-part relationship identifiers.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @conformance ECMA-376 edition 5, Part 2 § 6.5.3.4
+ * @see #956
+ */
+export type AnnotationHyperlink = { destination: string };
+
+export type AnnotationRun = { text: string; style?: AnnotationRunStyle; hyperlink?: AnnotationHyperlink };
 export type AnnotationParagraph = { runs: AnnotationRun[] };
 export type CanonicalAnnotation = {
   id: string;

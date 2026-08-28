@@ -28,7 +28,14 @@ function normalizeStyle(style: AnnotationRunStyle | undefined, path: string): An
 function normalizeRuns(runs: AnnotationRun[] | undefined, path: string): AnnotationRun[] | undefined {
   return runs?.map((run, index) => {
     if (typeof run.text !== 'string') throw new DocxMarkdocError('INVALID_ANNOTATION_RUN', `${path}[${index}].text must be a string.`);
-    return { text: run.text, ...(run.style ? { style: normalizeStyle(run.style, `${path}[${index}].style`) } : {}) };
+    if (run.hyperlink !== undefined && (!run.hyperlink || typeof run.hyperlink.destination !== 'string' || run.hyperlink.destination.length === 0)) {
+      throw new DocxMarkdocError('INVALID_ANNOTATION_HYPERLINK', `${path}[${index}].hyperlink.destination must be a non-empty string.`);
+    }
+    return {
+      text: run.text,
+      ...(run.style ? { style: normalizeStyle(run.style, `${path}[${index}].style`) } : {}),
+      ...(run.hyperlink ? { hyperlink: { destination: run.hyperlink.destination } } : {}),
+    };
   });
 }
 
@@ -88,7 +95,11 @@ function remapAnchor(ir: MarkdocEditIR, annotation: CanonicalAnnotation): Annota
 
 function mergedBody(annotation: CanonicalAnnotation, overlay?: AnnotationRunStyle) {
   return annotation.body.map((paragraph) => ({
-    runs: paragraph.runs.map((run) => ({ text: run.text, style: { ...(run.style ?? {}), ...(overlay ?? {}) } })),
+    runs: paragraph.runs.map((run) => ({
+      text: run.text,
+      style: { ...(run.style ?? {}), ...(overlay ?? {}) },
+      ...(run.hyperlink ? { hyperlink: { destination: run.hyperlink.destination } } : {}),
+    })),
   }));
 }
 

@@ -21,6 +21,7 @@ import {
   type ThemeModel,
 } from './styles.js';
 import { emitFormattingTags, mergeAdjacentTags, type AnnotatedRun } from './formatting_tags.js';
+import { ensureExternalHyperlinkRelationships } from './relationships.js';
 import {
   createRevisionContainer,
   prepareElementForDeletion,
@@ -31,6 +32,7 @@ import {
 
 const REL_TYPE_FOOTNOTES = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes';
 const CT_FOOTNOTES = 'application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml';
+const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
 
 // ── Minimal XML template ────────────────────────────────────────────────
 
@@ -134,7 +136,7 @@ export type FootnoteNotePresentation = {
   body?: FootnoteBodyParagraph[];
 };
 
-export type FootnoteStyledRun = { text: string; style?: FootnoteRunStyle };
+export type FootnoteStyledRun = { text: string; style?: FootnoteRunStyle; hyperlink?: { destination: string } };
 export type FootnoteBodyParagraph = { runs: FootnoteStyledRun[] };
 
 export type AddFootnoteResult = {
@@ -529,7 +531,17 @@ export async function addFootnote(
   insertFootnoteReference(documentXml, paragraphEl, noteId, afterText, visibleOffset, ctx);
 
   // Add footnote body to footnotes.xml
-  const footnoteEl = addFootnoteElement(footnotesDoc, noteId, text, presentation);
+  const destinations = [
+    ...(presentation?.prefixRuns ?? []),
+    ...(presentation?.separatorRuns ?? []),
+    ...(presentation?.body?.flatMap((paragraph) => paragraph.runs) ?? []),
+  ].flatMap((run) => run.hyperlink ? [run.hyperlink.destination] : []);
+  const hyperlinkRelationshipIds = await ensureExternalHyperlinkRelationships(
+    zip,
+    'word/footnotes.xml',
+    destinations,
+  );
+  const footnoteEl = addFootnoteElement(footnotesDoc, noteId, text, presentation, hyperlinkRelationshipIds);
   if (ctx) {
     wrapFootnoteParagraphTextRuns(getFirstFootnoteParagraph(footnoteEl), 'ins', ctx);
   }
@@ -733,8 +745,12 @@ function addFootnoteElement(
   noteId: number,
   text: string,
   presentation?: FootnoteNotePresentation,
+  hyperlinkRelationshipIds?: ReadonlyMap<string, string>,
 ): Element {
   const root = footnotesDoc.documentElement;
+  if (hyperlinkRelationshipIds?.size && root.lookupNamespaceURI('r') !== OOXML.R_NS) {
+    root.setAttributeNS(XMLNS_NS, 'xmlns:r', OOXML.R_NS);
+  }
 
   const footnoteEl = footnotesDoc.createElementNS(OOXML.W_NS, 'w:footnote');
   footnoteEl.setAttributeNS(OOXML.W_NS, 'w:id', String(noteId));
@@ -775,19 +791,53 @@ function addFootnoteElement(
     ?? (presentation?.prefix ? [{ text: presentation.prefix, style: presentation.prefixStyle }] : []);
   const separatorRuns = presentation?.separatorRuns
     ?? (presentation?.prefixSeparator ? [{ text: presentation.prefixSeparator }] : []);
-  for (const run of prefixRuns) p.appendChild(buildStyledTextRun(footnotesDoc, run.text, run.style));
-  for (const run of separatorRuns) p.appendChild(buildStyledTextRun(footnotesDoc, run.text, run.style));
+  appendFootnoteRuns(p, prefixRuns, footnotesDoc, hyperlinkRelationshipIds);
+  appendFootnoteRuns(p, separatorRuns, footnotesDoc, hyperlinkRelationshipIds);
   const body = presentation?.body ?? [{ runs: [{ text, style: presentation?.bodyStyle }] }];
-  for (const run of body[0]?.runs ?? []) p.appendChild(buildStyledTextRun(footnotesDoc, run.text, run.style));
+  appendFootnoteRuns(p, body[0]?.runs ?? [], footnotesDoc, hyperlinkRelationshipIds);
 
   footnoteEl.appendChild(p);
   for (const paragraph of body.slice(1)) {
     const bodyParagraph = footnotesDoc.createElementNS(OOXML.W_NS, 'w:p');
-    for (const run of paragraph.runs) bodyParagraph.appendChild(buildStyledTextRun(footnotesDoc, run.text, run.style));
+    appendFootnoteRuns(bodyParagraph, paragraph.runs, footnotesDoc, hyperlinkRelationshipIds);
     footnoteEl.appendChild(bodyParagraph);
   }
   root.appendChild(footnoteEl);
   return footnoteEl;
+}
+
+/**
+ * Emit footnote runs under destination-grouped external hyperlink wrappers.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see #956
+ */
+function appendFootnoteRuns(
+  paragraph: Element,
+  runs: FootnoteStyledRun[],
+  doc: Document,
+  relationshipIds: ReadonlyMap<string, string> | undefined,
+): void {
+  let activeDestination: string | undefined;
+  let activeHyperlink: Element | undefined;
+  for (const styledRun of runs) {
+    const destination = styledRun.hyperlink?.destination;
+    if (!destination) {
+      activeDestination = undefined;
+      activeHyperlink = undefined;
+      paragraph.appendChild(buildStyledTextRun(doc, styledRun.text, styledRun.style));
+      continue;
+    }
+    const relationshipId = relationshipIds?.get(destination);
+    if (!relationshipId) throw new Error(`Missing footnote hyperlink relationship for ${destination}`);
+    if (activeDestination !== destination || !activeHyperlink) {
+      activeDestination = destination;
+      activeHyperlink = doc.createElementNS(OOXML.W_NS, 'w:hyperlink');
+      activeHyperlink.setAttributeNS(OOXML.R_NS, 'r:id', relationshipId);
+      paragraph.appendChild(activeHyperlink);
+    }
+    activeHyperlink.appendChild(buildStyledTextRun(doc, styledRun.text, styledRun.style));
+  }
 }
 
 function buildStyledTextRun(doc: Document, text: string, style?: FootnoteRunStyle): Element {

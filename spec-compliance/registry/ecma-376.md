@@ -294,7 +294,7 @@ part: 1
 section: "17.16.22"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink
-verifiedBy: packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/text.ts
+verifiedBy: packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-core/src/primitives/text.ts; packages/docx-markdoc/src/import.ts
 ```
 
 `w:hyperlink` (CT_Hyperlink) is a run container inside `<w:p>` whose
@@ -310,6 +310,45 @@ lives in `packages/docx-compare/src/tagged/taggedTreeConstruction.ts`
 (`nearestHyperlinkAncestor`) and
 `packages/docx-compare/src/tagged/taggedTreeSerializer.ts`
 (tagged hyperlink wrapper emission).
+
+## [ECMA-PART2-6-5-2-3] part Relationships part ownership and naming
+
+```yaml
+edition: 5
+part: 2
+section: "6.5.2.3"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#element:Relationships
+verifiedBy: packages/docx-core/src/primitives/relationships.ts; packages/docx-markdoc/src/import.ts
+```
+
+A part Relationships part contains relationships from one source part, and its
+name is derived by inserting `_rels` immediately before the source part's last
+path segment and appending `.rels` to that segment. Annotation hyperlinks in
+`word/comments.xml` and `word/footnotes.xml` therefore resolve through
+`word/_rels/comments.xml.rels` and `word/_rels/footnotes.xml.rels`
+respectively. safe-docx derives those paths from the owning part for both
+import and emission; relationship IDs from one annotation part are never
+reused as identities in another part.
+
+## [ECMA-PART2-6-5-3-4] relationship identity, type, target, and target mode
+
+```yaml
+edition: 5
+part: 2
+section: "6.5.3.4"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#type:CT_Relationship
+verifiedBy: packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/import.ts
+```
+
+Each `Relationship` has a required ID unique within its Relationships part, a
+required type, a required target, and an optional target mode whose default is
+Internal. For annotation hyperlinks, safe-docx accepts only the exact hyperlink
+relationship type with `TargetMode="External"` and a non-empty target. Emission
+allocates IDs against every existing relationship in the destination part,
+sets the external mode explicitly, and reuses an existing relationship only
+when both hyperlink type and external destination match.
 
 ## [ECMA-PART1-17-5-2-29] w:sdt block-level structured document tag
 

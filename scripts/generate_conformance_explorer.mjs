@@ -77,7 +77,11 @@ export function resolveSchemaDeclaration(schemaRef, root = REPO_ROOT) {
     `schemaRef path escapes repository: ${schemaPath}`
   );
   assert(fs.existsSync(absolute), `schemaRef path not found: ${schemaPath}`);
-  const document = new DOMParser().parseFromString(fs.readFileSync(absolute, 'utf8'), 'application/xml');
+  // The official OPC relationship schema is UTF-8 with a leading BOM. xmldom
+  // treats that decoded U+FEFF as content before the XML declaration, so
+  // normalize only the transport marker before parsing the vendored bytes.
+  const xmlSource = fs.readFileSync(absolute, 'utf8').replace(/^\uFEFF/u, '');
+  const document = new DOMParser().parseFromString(xmlSource, 'application/xml');
   const schema = document.documentElement;
   assert(schema?.namespaceURI === XSD_NS && schema.localName === 'schema', `not an XSD schema: ${schemaPath}`);
   const targetNamespace = schema.getAttribute('targetNamespace');

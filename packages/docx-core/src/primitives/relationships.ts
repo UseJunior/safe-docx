@@ -1,8 +1,17 @@
 // Parser for word/_rels/document.xml.rels — extracts external hyperlink relationships.
 
 import { OOXML } from './namespaces.js';
+import { parseXml, serializeXml } from './xml.js';
+import type { DocxZip } from './zip.js';
 
 export type RelsMap = Map<string, string>;
+
+export interface RelationshipEntry {
+  id: string;
+  type: string | null;
+  target: string | null;
+  targetMode: string | null;
+}
 
 /** OPC package-relationships namespace (parts almost always use it unprefixed). */
 const OPC_RELATIONSHIPS_NS =
@@ -16,6 +25,95 @@ const OPC_RELATIONSHIPS_NS =
  */
 function relationshipElements(relsDoc: Document): HTMLCollectionOf<Element> {
   return relsDoc.getElementsByTagNameNS(OPC_RELATIONSHIPS_NS, 'Relationship');
+}
+
+/** Parse every declared relationship keyed by its part-local identifier. */
+export function parseRelationshipEntries(
+  relsDoc: Document | null,
+): Map<string, RelationshipEntry> {
+  const entries = new Map<string, RelationshipEntry>();
+  if (!relsDoc) return entries;
+  const relationships = relationshipElements(relsDoc);
+  for (let i = 0; i < relationships.length; i++) {
+    const relationship = relationships.item(i)!;
+    const id = relationship.getAttribute('Id');
+    if (!id) continue;
+    entries.set(id, {
+      id,
+      type: relationship.getAttribute('Type'),
+      target: relationship.getAttribute('Target'),
+      targetMode: relationship.getAttribute('TargetMode'),
+    });
+  }
+  return entries;
+}
+
+/** Return the OPC Relationships-part path owned by one source part. */
+export function relationshipPartPath(sourcePartPath: string): string {
+  const separator = sourcePartPath.lastIndexOf('/');
+  const directory = separator < 0 ? '' : sourcePartPath.slice(0, separator + 1);
+  const fileName = separator < 0 ? sourcePartPath : sourcePartPath.slice(separator + 1);
+  return `${directory}_rels/${fileName}.rels`;
+}
+
+/**
+ * Ensure external hyperlink relationships owned by a source part and return
+ * the destination-to-rId mapping used to emit that part's `w:hyperlink`s.
+ * Existing relationships of every type reserve their identifiers; repeated
+ * destinations reuse one external hyperlink relationship deterministically.
+ *
+ * @conformance ECMA-376 edition 5, Part 2 § 6.5.2.3
+ * @conformance ECMA-376 edition 5, Part 2 § 6.5.3.4
+ * @see https://github.com/UseJunior/safe-docx/issues/956
+ */
+export async function ensureExternalHyperlinkRelationships(
+  zip: DocxZip,
+  sourcePartPath: string,
+  destinations: Iterable<string>,
+): Promise<Map<string, string>> {
+  const orderedDestinations = [...new Set(destinations)];
+  const result = new Map<string, string>();
+  if (orderedDestinations.length === 0) return result;
+  if (orderedDestinations.some((destination) => destination.length === 0)) {
+    throw new Error('External hyperlink destinations must be non-empty');
+  }
+
+  const relsPath = relationshipPartPath(sourcePartPath);
+  const existingXml = await zip.readTextOrNull(relsPath);
+  const relsDoc = parseXml(existingXml ??
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<Relationships xmlns="${OPC_RELATIONSHIPS_NS}"/>`);
+  const root = relsDoc.documentElement;
+  const relationships = Array.from(relationshipElements(relsDoc)) as Element[];
+  const usedIds = new Set<string>();
+  for (const relationship of relationships) {
+    const id = relationship.getAttribute('Id');
+    if (id) usedIds.add(id);
+    if (relationship.getAttribute('Type') !== OOXML.HYPERLINK_REL_TYPE
+      || relationship.getAttribute('TargetMode') !== 'External') continue;
+    const target = relationship.getAttribute('Target');
+    if (id && target && !result.has(target)) result.set(target, id);
+  }
+
+  let changed = false;
+  let candidate = 1;
+  for (const destination of orderedDestinations) {
+    if (result.has(destination)) continue;
+    while (usedIds.has(`rId${candidate}`)) candidate++;
+    const id = `rId${candidate++}`;
+    usedIds.add(id);
+    const relationship = relsDoc.createElementNS(OPC_RELATIONSHIPS_NS, 'Relationship');
+    relationship.setAttribute('Id', id);
+    relationship.setAttribute('Type', OOXML.HYPERLINK_REL_TYPE);
+    relationship.setAttribute('Target', destination);
+    relationship.setAttribute('TargetMode', 'External');
+    root.appendChild(relationship);
+    result.set(destination, id);
+    changed = true;
+  }
+
+  if (changed || existingXml === null) zip.writeText(relsPath, serializeXml(relsDoc));
+  return new Map(orderedDestinations.map((destination) => [destination, result.get(destination)!]));
 }
 
 /**

@@ -27,7 +27,9 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-7-2` | Permission range start | 5 | 1 | 17.13.7.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:permStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-8-1` | Proofing error anchors | 5 | 1 | 17.13.8.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:proofErr` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts |
 | `ECMA-PART1-17-11-14` | w:footnoteReference identifier vs display number | 5 | 1 | 17.11.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteReference` | packages/docx-core/src/footnotes.ts; packages/docx-core/src/footnotes.test.ts |
-| `ECMA-PART1-17-16-22` | w:hyperlink container preservation under tracked changes | 5 | 1 | 17.16.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/text.ts |
+| `ECMA-PART1-17-16-22` | w:hyperlink container preservation under tracked changes | 5 | 1 | 17.16.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-core/src/primitives/text.ts; packages/docx-markdoc/src/import.ts |
+| `ECMA-PART2-6-5-2-3` | part Relationships part ownership and naming | 5 | 2 | 6.5.2.3 | `spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#element:Relationships` | packages/docx-core/src/primitives/relationships.ts; packages/docx-markdoc/src/import.ts |
+| `ECMA-PART2-6-5-3-4` | relationship identity, type, target, and target mode | 5 | 2 | 6.5.3.4 | `spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#type:CT_Relationship` | packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/import.ts |
 | `ECMA-PART1-17-5-2-29` | w:sdt block-level structured document tag | 5 | 1 | 17.5.2.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtBlock` | packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts |
 | `ECMA-PART1-17-5-2-31` | w:sdt inline-level structured document tag | 5 | 1 | 17.5.2.31 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtRun` | packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts |
 | `ECMA-PART1-17-5-2-32` | w:sdt cell-level structured document tag | 5 | 1 | 17.5.2.32 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtCell` | packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts |
@@ -371,7 +373,7 @@ This claim is bounded to the runtime and test evidence listed above.
 - **Part / Section:** Part 1 § 17.16.22
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink`
-- **Verified by:** packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/text.ts
+- **Verified by:** packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-core/src/primitives/text.ts; packages/docx-markdoc/src/import.ts
 
 `w:hyperlink` (CT_Hyperlink) is a run container inside `<w:p>` whose
 `r:id` attribute carries the relationship reference to the link target.
@@ -386,6 +388,39 @@ lives in `packages/docx-compare/src/tagged/taggedTreeConstruction.ts`
 (`nearestHyperlinkAncestor`) and
 `packages/docx-compare/src/tagged/taggedTreeSerializer.ts`
 (tagged hyperlink wrapper emission).
+
+### ECMA-PART2-6-5-2-3 — part Relationships part ownership and naming
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 2 § 6.5.2.3
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#element:Relationships`
+- **Verified by:** packages/docx-core/src/primitives/relationships.ts; packages/docx-markdoc/src/import.ts
+
+A part Relationships part contains relationships from one source part, and its
+name is derived by inserting `_rels` immediately before the source part's last
+path segment and appending `.rels` to that segment. Annotation hyperlinks in
+`word/comments.xml` and `word/footnotes.xml` therefore resolve through
+`word/_rels/comments.xml.rels` and `word/_rels/footnotes.xml.rels`
+respectively. safe-docx derives those paths from the owning part for both
+import and emission; relationship IDs from one annotation part are never
+reused as identities in another part.
+
+### ECMA-PART2-6-5-3-4 — relationship identity, type, target, and target mode
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 2 § 6.5.3.4
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#type:CT_Relationship`
+- **Verified by:** packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/import.ts
+
+Each `Relationship` has a required ID unique within its Relationships part, a
+required type, a required target, and an optional target mode whose default is
+Internal. For annotation hyperlinks, safe-docx accepts only the exact hyperlink
+relationship type with `TargetMode="External"` and a non-empty target. Emission
+allocates IDs against every existing relationship in the destination part,
+sets the external mode explicitly, and reuses an existing relationship only
+when both hyperlink type and external destination match.
 
 ### ECMA-PART1-17-5-2-29 — w:sdt block-level structured document tag
 
