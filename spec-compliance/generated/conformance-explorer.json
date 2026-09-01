@@ -1483,7 +1483,19 @@
         },
         {
           "kind": "source",
+          "path": "packages/docx-core/src/primitives/comments.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/footnotes.ts"
+        },
+        {
+          "kind": "source",
           "path": "packages/docx-core/src/primitives/text.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/import.ts"
         }
       ]
     },
@@ -1864,6 +1876,70 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/generation/generation-styles-formatting.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-2-29",
+      "title": "Run style",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.2.29"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rStyle",
+      "claimRationale": "Part 1 §17.3.2.29 defines `w:rStyle` as the character style applied to a run.\nsafe-docx admits resolvable named styles in imported annotation bodies, retains\ntheir style identifiers in the canonical representation, and re-emits those\nidentifiers when projecting the annotation as a comment or footnote. Missing\nnon-character, and cyclic style chains remain outside the admitted subset and\nfail closed.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/import.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/comments.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/footnotes.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/annotation-roundtrip.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-2-38",
+      "title": "Run font size",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.2.38"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sz",
+      "claimRationale": "Part 1 §17.3.2.38 defines `w:sz` as a run font size expressed in half-points.\nsafe-docx retains positive integral half-point sizes from imported annotation\nbodies and re-emits them across comment and footnote projections.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/import.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/comments.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/footnotes.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/annotation-roundtrip.test.ts"
         }
       ]
     },
@@ -3100,6 +3176,62 @@
       ]
     },
     {
+      "id": "ECMA-PART2-6-5-2-3",
+      "title": "part Relationships part ownership and naming",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 2,
+        "section": "6.5.2.3"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#element:Relationships",
+      "claimRationale": "A part Relationships part contains relationships from one source part, and its\nname is derived by inserting `_rels` immediately before the source part's last\npath segment and appending `.rels` to that segment. Annotation hyperlinks in\n`word/comments.xml` and `word/footnotes.xml` therefore resolve through\n`word/_rels/comments.xml.rels` and `word/_rels/footnotes.xml.rels`\nrespectively. safe-docx derives those paths from the owning part for both\nimport and emission; relationship IDs from one annotation part are never\nreused as identities in another part.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/relationships.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/import.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART2-6-5-3-4",
+      "title": "relationship identity, type, target, and target mode",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 2,
+        "section": "6.5.3.4"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#type:CT_Relationship",
+      "claimRationale": "Each `Relationship` has a required ID unique within its Relationships part, a\nrequired type, a required target, and an optional target mode whose default is\nInternal. For annotation hyperlinks, safe-docx accepts only the exact hyperlink\nrelationship type with `TargetMode=\"External\"` and a non-empty target. Emission\nallocates IDs against every existing relationship in the destination part,\nsets the external mode explicitly, and reuses an existing relationship only\nwhen both hyperlink type and external destination match.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/relationships.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/comments.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/footnotes.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/import.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART4-14-9-1-1",
       "title": "VML rich text-box content (w:txbxContent)",
       "classification": "targeted",
@@ -3157,6 +3289,33 @@
     }
   ],
   "schemaDeclarations": [
+    {
+      "id": "spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#element:Relationships",
+      "schemaPath": "spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd",
+      "conformanceClass": "opc",
+      "targetNamespace": "http://schemas.openxmlformats.org/package/2006/relationships",
+      "kind": "element",
+      "name": "Relationships",
+      "occurrences": [
+        {
+          "contextPath": "schema/element:Relationships",
+          "declaredType": "CT_Relationships"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#type:CT_Relationship",
+      "schemaPath": "spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd",
+      "conformanceClass": "opc",
+      "targetNamespace": "http://schemas.openxmlformats.org/package/2006/relationships",
+      "kind": "type",
+      "name": "CT_Relationship",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Relationship"
+        }
+      ]
+    },
     {
       "id": "spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/vml-main.xsd",
@@ -4289,6 +4448,20 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rStyle",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "rStyle",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RPrBase/choice/element:rStyle",
+          "declaredType": "CT_String"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -4462,6 +4635,30 @@
         {
           "contextPath": "schema/type:CT_Lvl/sequence/element:suff",
           "declaredType": "CT_LevelSuffix",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sz",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "sz",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RPrBase/choice/element:sz",
+          "declaredType": "CT_HpsMeasure"
+        },
+        {
+          "contextPath": "schema/type:CT_Frame/sequence/element:sz",
+          "declaredType": "CT_String",
+          "minOccurs": "0"
+        },
+        {
+          "contextPath": "schema/type:CT_Frameset/sequence/element:sz",
+          "declaredType": "CT_String",
           "minOccurs": "0"
         }
       ]

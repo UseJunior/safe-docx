@@ -1,4 +1,11 @@
-import { DocxDocument, OOXML, W, computeContentFingerprint, type StylesModel } from '@usejunior/docx-core';
+import {
+  DocxDocument,
+  OOXML,
+  W,
+  computeContentFingerprint,
+  parseRelationshipEntries,
+  type StylesModel,
+} from '@usejunior/docx-core';
 import { sha256 } from './hash.js';
 import { DocxMarkdocError } from './errors.js';
 import type { AnnotationAnchor, AnnotationParagraph, AnnotationRun, AnnotationRunStyle, CanonicalAnnotation, ImportResult } from './types.js';
@@ -22,8 +29,15 @@ function escapeText(text: string): string {
     .replace(/ +$/, (spaces) => '&#32;'.repeat(spaces.length));
 }
 
+/**
+ * Escape a value for a double-quoted Markdoc string literal. Markdoc strings
+ * are not HTML: entity references pass through verbatim, so `&`, `<`, and `>`
+ * must stay raw and only the backslash and the delimiter are escaped.
+ *
+ * @see #956
+ */
 function escapeAttribute(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 function parseTaggedRuns(tagged: string, annotationId: string): AnnotationRun[] {
@@ -71,6 +85,7 @@ function bodyFromParagraphs(
   container: Element,
   annotationId: string,
   marker: 'annotationRef' | 'footnoteRef',
+  hyperlinks: ReadonlyMap<Element, string>,
 ): AnnotationParagraph[] {
   if (paragraphs.length === 0) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} has no admitted paragraphs.`, { annotationId });
   const sourceParagraphs = Array.from(container.getElementsByTagNameNS(OOXML.W_NS, W.p)) as Element[];
@@ -78,7 +93,7 @@ function bodyFromParagraphs(
     const parsed = parseTaggedRuns(paragraph.tagged_text, annotationId);
     const sourceParagraph = sourceParagraphs[paragraphIndex];
     if (!sourceParagraph) return { runs: parsed };
-    const spans: Array<{ start: number; end: number; styleId?: string; fontSizeHalfPoints?: number }> = [];
+    const spans: Array<{ start: number; end: number; styleId?: string; fontSizeHalfPoints?: number; hyperlinkDestination?: string }> = [];
     let offset = 0;
     for (const run of Array.from(sourceParagraph.getElementsByTagNameNS(OOXML.W_NS, W.r)) as Element[]) {
       if (run.getElementsByTagNameNS(OOXML.W_NS, marker).length > 0) continue;
@@ -89,7 +104,17 @@ function bodyFromParagraphs(
       const size = Array.from(run.getElementsByTagNameNS(OOXML.W_NS, 'sz'))[0] as Element | undefined;
       const rawSize = size?.getAttributeNS(OOXML.W_NS, W.val) ?? size?.getAttribute('w:val') ?? undefined;
       const fontSizeHalfPoints = rawSize && /^\d+$/u.test(rawSize) ? Number(rawSize) : undefined;
-      spans.push({ start: offset, end: offset + text.length, ...(styleId ? { styleId } : {}), ...(fontSizeHalfPoints ? { fontSizeHalfPoints } : {}) });
+      const parent = run.parentNode as Element | null;
+      const hyperlink = parent?.nodeType === 1 && parent.namespaceURI === OOXML.W_NS
+        && parent.localName === W.hyperlink ? parent : undefined;
+      const hyperlinkDestination = hyperlink ? hyperlinks.get(hyperlink) : undefined;
+      spans.push({
+        start: offset,
+        end: offset + text.length,
+        ...(styleId ? { styleId } : {}),
+        ...(fontSizeHalfPoints ? { fontSizeHalfPoints } : {}),
+        ...(hyperlinkDestination ? { hyperlinkDestination } : {}),
+      });
       offset += text.length;
     }
     const runs: AnnotationRun[] = [];
@@ -106,7 +131,11 @@ function bodyFromParagraphs(
           ...(span?.styleId ? { styleId: span.styleId } : {}),
           ...(span?.fontSizeHalfPoints ? { fontSizeHalfPoints: span.fontSizeHalfPoints } : {}),
         };
-        runs.push({ text, ...(Object.keys(style).length ? { style } : {}) });
+        runs.push({
+          text,
+          ...(Object.keys(style).length ? { style } : {}),
+          ...(span?.hyperlinkDestination ? { hyperlink: { destination: span.hyperlinkDestination } } : {}),
+        });
         consumed += length;
       }
       parsedOffset += run.text.length;
@@ -128,8 +157,25 @@ function assertNamedStyle(styles: StylesModel, styleId: string, annotationId: st
   }
 }
 
-function assertAdmittedAnnotationElement(container: Element, annotationId: string, marker: 'annotationRef' | 'footnoteRef', styles: StylesModel): void {
-  const admitted = new Set(['p', 'pPr', 'pStyle', 'r', 'rPr', 't', marker, 'b', 'i', 'u', 'color', 'highlight', 'rStyle', 'vertAlign', 'sz']);
+/**
+ * Validate the admitted annotation-body subset and resolve each external link
+ * against the relationship part owned by the annotation source part.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @conformance ECMA-376 edition 5, Part 2 § 6.5.2.3
+ * @conformance ECMA-376 edition 5, Part 2 § 6.5.3.4
+ * @see #956
+ */
+function assertAdmittedAnnotationElement(
+  container: Element,
+  annotationId: string,
+  marker: 'annotationRef' | 'footnoteRef',
+  styles: StylesModel,
+  relationshipsDocument: Document | null,
+): Map<Element, string> {
+  const admitted = new Set(['p', 'pPr', 'pStyle', 'r', 'rPr', 't', marker, 'b', 'i', 'u', 'color', 'highlight', 'rStyle', 'vertAlign', 'sz', 'hyperlink']);
+  const relationships = parseRelationshipEntries(relationshipsDocument);
+  const resolvedHyperlinks = new Map<Element, string>();
   for (const node of Array.from(container.getElementsByTagNameNS(OOXML.W_NS, '*'))) {
     const element = node as Element;
     let formattingOwner = element.parentNode as Element | null;
@@ -141,6 +187,28 @@ function assertAdmittedAnnotationElement(container: Element, annotationId: strin
       && !/[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/u.test(formattingOwner.textContent ?? '');
     if (!admitted.has(element.localName) && !harmlessComplexScriptFallback) {
       throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} contains unsupported w:${element.localName}.`, { annotationId, element: `w:${element.localName}` });
+    }
+    if (element.localName === W.hyperlink) {
+      const anchor = element.getAttributeNS(OOXML.W_NS, 'anchor') ?? element.getAttribute('w:anchor');
+      if (anchor) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} contains an unsupported internal hyperlink anchor.`, { annotationId, element: 'w:hyperlink', reason: 'internal-anchor', anchor });
+      const unsupportedAttribute = Array.from(element.attributes).find((attribute) =>
+        !(attribute.namespaceURI === OOXML.R_NS && attribute.localName === 'id')
+        && !(attribute.namespaceURI === OOXML.W_NS && attribute.localName === 'history')
+        && attribute.namespaceURI !== 'http://www.w3.org/2000/xmlns/',
+      );
+      if (unsupportedAttribute) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} hyperlink contains unsupported attribute ${unsupportedAttribute.name}.`, { annotationId, element: 'w:hyperlink', reason: 'unsupported-hyperlink-attribute', attribute: unsupportedAttribute.name });
+      const directChildren = Array.from(element.childNodes).filter((child) => child.nodeType === 1) as Element[];
+      const unsupportedChild = directChildren.find((child) => child.namespaceURI !== OOXML.W_NS || child.localName !== W.r);
+      if (unsupportedChild) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} hyperlink contains unsupported ${unsupportedChild.nodeName}.`, { annotationId, element: unsupportedChild.nodeName, reason: 'unsupported-hyperlink-content' });
+      if (directChildren.length === 0) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} contains an empty hyperlink wrapper.`, { annotationId, element: 'w:hyperlink', reason: 'empty-hyperlink' });
+      const relationshipId = element.getAttributeNS(OOXML.R_NS, 'id') ?? element.getAttribute('r:id');
+      if (!relationshipId) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} hyperlink has no relationship ID.`, { annotationId, element: 'w:hyperlink', reason: 'missing-hyperlink-id' });
+      const relationship = relationships.get(relationshipId);
+      if (!relationship) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} hyperlink relationship ${relationshipId} is dangling.`, { annotationId, element: 'w:hyperlink', reason: 'dangling-hyperlink-relationship', relationshipId });
+      if (relationship.type !== OOXML.HYPERLINK_REL_TYPE) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} relationship ${relationshipId} is not a hyperlink relationship.`, { annotationId, element: 'w:hyperlink', reason: 'wrong-hyperlink-relationship-type', relationshipId, relationshipType: relationship.type });
+      if (relationship.targetMode !== 'External') throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} hyperlink relationship ${relationshipId} is not external.`, { annotationId, element: 'w:hyperlink', reason: 'non-external-hyperlink', relationshipId, targetMode: relationship.targetMode ?? 'Internal' });
+      if (!relationship.target) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} hyperlink relationship ${relationshipId} has no target.`, { annotationId, element: 'w:hyperlink', reason: 'missing-hyperlink-target', relationshipId });
+      resolvedHyperlinks.set(element, relationship.target);
     }
     if (element.localName === W.rPr) {
       const run = element.parentNode as Element | null;
@@ -159,6 +227,7 @@ function assertAdmittedAnnotationElement(container: Element, annotationId: strin
       }
     }
   }
+  return resolvedHyperlinks;
 }
 
 function elementByWordId(document: Document | null, localName: string, id: number): Element | null {
@@ -199,10 +268,11 @@ function annotationMarkdoc(annotation: CanonicalAnnotation): string[] {
   for (const paragraph of annotation.body) {
     const content: string[] = [];
     for (const run of paragraph.runs) {
-      const style = run.style;
-      if (!style || Object.keys(style).length === 0) content.push(escapeText(run.text));
+      const style = run.style ?? {};
+      if (Object.keys(style).length === 0 && !run.hyperlink) content.push(escapeText(run.text));
       else {
         const styleAttributes = [
+          ...(run.hyperlink ? [`href="${escapeAttribute(run.hyperlink.destination)}"`] : []),
           ...(style.styleId ? [`style="${escapeAttribute(style.styleId)}"`] : []),
           ...(style.fontSizeHalfPoints ? [`size=${style.fontSizeHalfPoints}`] : []),
           ...(style.bold ? ['bold=true'] : []), ...(style.italic ? ['italic=true'] : []), ...(style.underline ? ['underline=true'] : []),
@@ -237,7 +307,12 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
   }
   const annotations: CanonicalAnnotation[] = [];
   const styles = anchored.getStylesModel();
-  const [commentsXml, footnotesXml] = await Promise.all([anchored.getCommentsXmlClone(), anchored.getFootnotesXmlClone()]);
+  const [commentsXml, footnotesXml, commentsRelationships, footnotesRelationships] = await Promise.all([
+    anchored.getCommentsXmlClone(),
+    anchored.getFootnotesXmlClone(),
+    anchored.getPartRelationshipsXmlClone('word/comments.xml'),
+    anchored.getPartRelationshipsXmlClone('word/footnotes.xml'),
+  ]);
   const comments = await anchored.getComments();
   const importedCommentIds = new Set<number>();
   const addCommentTree = (comment: (typeof comments)[number], parent: CanonicalAnnotation | undefined): void => {
@@ -248,7 +323,7 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
     importedCommentIds.add(comment.id);
     const commentElement = elementByWordId(commentsXml, W.comment, comment.id);
     if (!commentElement) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Comment ${comment.id} has no definition.`, { annotationId: id });
-    assertAdmittedAnnotationElement(commentElement, id, 'annotationRef', styles);
+    const hyperlinks = assertAdmittedAnnotationElement(commentElement, id, 'annotationRef', styles, commentsRelationships);
     let anchor: AnnotationAnchor;
     if (parent) anchor = parent.anchor;
     else {
@@ -261,7 +336,7 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
     }
     const annotation: CanonicalAnnotation = {
       id,
-      body: bodyFromParagraphs(comment.paragraphs, commentElement, id, 'annotationRef'),
+      body: bodyFromParagraphs(comment.paragraphs, commentElement, id, 'annotationRef', hyperlinks),
       author: comment.author || undefined,
       initials: comment.initials || undefined,
       date: comment.date || undefined,
@@ -291,12 +366,12 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
     if (footnote.referencePoints.length === 0 && footnote.text.length === 0) continue;
     const footnoteElement = elementByWordId(footnotesXml, W.footnote, footnote.id);
     if (!footnoteElement) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Footnote ${footnote.id} has no definition.`, { annotationId: id });
-    assertAdmittedAnnotationElement(footnoteElement, id, 'footnoteRef', styles);
+    const hyperlinks = assertAdmittedAnnotationElement(footnoteElement, id, 'footnoteRef', styles, footnotesRelationships);
     if (footnote.referencePoints.length !== 1) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Footnote ${footnote.id} must have exactly one reference.`, { annotationId: id, referenceCount: footnote.referencePoints.length });
     const reference = footnote.referencePoints[0]!;
     const anchor: AnnotationAnchor = { kind: 'point', point: { paragraphId: reference.paragraphId, offset: reference.textOffset } };
     annotations.push({
-      id, body: bodyFromParagraphs(footnote.paragraphs, footnoteElement, id, 'footnoteRef'), audience: 'unspecified', semanticRole: 'substantive-footnote',
+      id, body: bodyFromParagraphs(footnote.paragraphs, footnoteElement, id, 'footnoteRef', hyperlinks), audience: 'unspecified', semanticRole: 'substantive-footnote',
       sourcePresentation: 'footnote', sourceAnchor: anchor, anchor,
     });
   }

@@ -21,6 +21,7 @@ import {
   type ThemeModel,
 } from './styles.js';
 import { emitFormattingTags, mergeAdjacentTags, type AnnotatedRun } from './formatting_tags.js';
+import { ensureExternalHyperlinkRelationships } from './relationships.js';
 import {
   createRevisionContainer,
   prepareElementForDeletion,
@@ -31,6 +32,7 @@ import {
 
 const REL_TYPE_FOOTNOTES = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes';
 const CT_FOOTNOTES = 'application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml';
+const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
 
 // ── Minimal XML template ────────────────────────────────────────────────
 
@@ -134,7 +136,7 @@ export type FootnoteNotePresentation = {
   body?: FootnoteBodyParagraph[];
 };
 
-export type FootnoteStyledRun = { text: string; style?: FootnoteRunStyle };
+export type FootnoteStyledRun = { text: string; style?: FootnoteRunStyle; hyperlink?: { destination: string } };
 export type FootnoteBodyParagraph = { runs: FootnoteStyledRun[] };
 
 export type AddFootnoteResult = {
@@ -529,7 +531,17 @@ export async function addFootnote(
   insertFootnoteReference(documentXml, paragraphEl, noteId, afterText, visibleOffset, ctx);
 
   // Add footnote body to footnotes.xml
-  const footnoteEl = addFootnoteElement(footnotesDoc, noteId, text, presentation);
+  const destinations = [
+    ...(presentation?.prefixRuns ?? []),
+    ...(presentation?.separatorRuns ?? []),
+    ...(presentation?.body?.flatMap((paragraph) => paragraph.runs) ?? []),
+  ].flatMap((run) => run.hyperlink ? [run.hyperlink.destination] : []);
+  const hyperlinkRelationshipIds = await ensureExternalHyperlinkRelationships(
+    zip,
+    'word/footnotes.xml',
+    destinations,
+  );
+  const footnoteEl = addFootnoteElement(footnotesDoc, noteId, text, presentation, hyperlinkRelationshipIds);
   if (ctx) {
     wrapFootnoteParagraphTextRuns(getFirstFootnoteParagraph(footnoteEl), 'ins', ctx);
   }
@@ -733,8 +745,12 @@ function addFootnoteElement(
   noteId: number,
   text: string,
   presentation?: FootnoteNotePresentation,
+  hyperlinkRelationshipIds?: ReadonlyMap<string, string>,
 ): Element {
   const root = footnotesDoc.documentElement;
+  if (hyperlinkRelationshipIds?.size && root.lookupNamespaceURI('r') !== OOXML.R_NS) {
+    root.setAttributeNS(XMLNS_NS, 'xmlns:r', OOXML.R_NS);
+  }
 
   const footnoteEl = footnotesDoc.createElementNS(OOXML.W_NS, 'w:footnote');
   footnoteEl.setAttributeNS(OOXML.W_NS, 'w:id', String(noteId));
@@ -775,19 +791,53 @@ function addFootnoteElement(
     ?? (presentation?.prefix ? [{ text: presentation.prefix, style: presentation.prefixStyle }] : []);
   const separatorRuns = presentation?.separatorRuns
     ?? (presentation?.prefixSeparator ? [{ text: presentation.prefixSeparator }] : []);
-  for (const run of prefixRuns) p.appendChild(buildStyledTextRun(footnotesDoc, run.text, run.style));
-  for (const run of separatorRuns) p.appendChild(buildStyledTextRun(footnotesDoc, run.text, run.style));
+  appendFootnoteRuns(p, prefixRuns, footnotesDoc, hyperlinkRelationshipIds);
+  appendFootnoteRuns(p, separatorRuns, footnotesDoc, hyperlinkRelationshipIds);
   const body = presentation?.body ?? [{ runs: [{ text, style: presentation?.bodyStyle }] }];
-  for (const run of body[0]?.runs ?? []) p.appendChild(buildStyledTextRun(footnotesDoc, run.text, run.style));
+  appendFootnoteRuns(p, body[0]?.runs ?? [], footnotesDoc, hyperlinkRelationshipIds);
 
   footnoteEl.appendChild(p);
   for (const paragraph of body.slice(1)) {
     const bodyParagraph = footnotesDoc.createElementNS(OOXML.W_NS, 'w:p');
-    for (const run of paragraph.runs) bodyParagraph.appendChild(buildStyledTextRun(footnotesDoc, run.text, run.style));
+    appendFootnoteRuns(bodyParagraph, paragraph.runs, footnotesDoc, hyperlinkRelationshipIds);
     footnoteEl.appendChild(bodyParagraph);
   }
   root.appendChild(footnoteEl);
   return footnoteEl;
+}
+
+/**
+ * Emit footnote runs under destination-grouped external hyperlink wrappers.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see #956
+ */
+function appendFootnoteRuns(
+  paragraph: Element,
+  runs: FootnoteStyledRun[],
+  doc: Document,
+  relationshipIds: ReadonlyMap<string, string> | undefined,
+): void {
+  let activeDestination: string | undefined;
+  let activeHyperlink: Element | undefined;
+  for (const styledRun of runs) {
+    const destination = styledRun.hyperlink?.destination;
+    if (!destination) {
+      activeDestination = undefined;
+      activeHyperlink = undefined;
+      paragraph.appendChild(buildStyledTextRun(doc, styledRun.text, styledRun.style));
+      continue;
+    }
+    const relationshipId = relationshipIds?.get(destination);
+    if (!relationshipId) throw new Error(`Missing footnote hyperlink relationship for ${destination}`);
+    if (activeDestination !== destination || !activeHyperlink) {
+      activeDestination = destination;
+      activeHyperlink = doc.createElementNS(OOXML.W_NS, 'w:hyperlink');
+      activeHyperlink.setAttributeNS(OOXML.R_NS, 'r:id', relationshipId);
+      paragraph.appendChild(activeHyperlink);
+    }
+    activeHyperlink.appendChild(buildStyledTextRun(doc, styledRun.text, styledRun.style));
+  }
 }
 
 function buildStyledTextRun(doc: Document, text: string, style?: FootnoteRunStyle): Element {
@@ -987,79 +1037,79 @@ function buildFootnoteTextRuns(doc: Document, text: string): [Element, Element] 
 }
 
 function removeFootnoteParagraphTextRuns(paragraph: Element): void {
-  const collected = collectFootnoteTextRuns(paragraph);
-  if (!collected) return;
-
-  for (const run of collected.runs) {
-    run.parentNode?.removeChild(run);
+  for (const group of collectFootnoteTextRunGroups(paragraph)) {
+    for (const run of group.runs) group.parent.removeChild(run);
   }
-
-  cleanupEmptyRevisionWrappers(paragraph);
+  cleanupEmptyRunContainers(paragraph);
 }
 
+/**
+ * Wrap every text run of a footnote paragraph in a `w:ins` / `w:del`
+ * revision container. Runs are wrapped per parent container, so text that
+ * already sits inside a revision wrapper or inside a `w:hyperlink` stays
+ * where it is: the new container is created inside that parent, which keeps
+ * document order and link identity intact instead of hoisting linked runs
+ * out of their hyperlink.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see #956
+ */
 function wrapFootnoteParagraphTextRuns(
   paragraph: Element,
   kind: 'ins' | 'del',
   ctx: RevisionContext,
 ): Element | null {
-  const collected = collectFootnoteTextRuns(paragraph);
-  if (!collected) return null;
+  const groups = collectFootnoteTextRunGroups(paragraph);
+  if (groups.length === 0) return null;
 
   const doc = paragraph.ownerDocument;
   if (!doc) throw new Error('Paragraph has no ownerDocument');
 
-  const { parent: anchorParent, before: anchorBefore } = collected.insertionAnchor;
-  const wrapper = createRevisionContainer(doc, kind, ctx);
-  anchorParent.insertBefore(wrapper, anchorBefore);
-
-  for (const run of collected.runs) {
-    run.parentNode?.removeChild(run);
-    wrapper.appendChild(kind === 'del' ? prepareElementForDeletion(run) : run);
+  let first: Element | null = null;
+  for (const group of groups) {
+    const wrapper = createRevisionContainer(doc, kind, ctx);
+    group.parent.insertBefore(wrapper, group.runs[0]!);
+    for (const run of group.runs) {
+      group.parent.removeChild(run);
+      wrapper.appendChild(kind === 'del' ? prepareElementForDeletion(run) : run);
+    }
+    first ??= wrapper;
   }
 
-  cleanupEmptyRevisionWrappers(paragraph);
+  cleanupEmptyRunContainers(paragraph);
 
-  return wrapper;
+  return first;
 }
 
 /**
  * Collect every `<w:r>` descendant of the paragraph that does NOT contain a
- * `footnoteRef` marker. This intentionally crosses into `<w:ins>` / `<w:del>`
- * wrappers so that footnote text already carrying revision history (e.g.,
- * third-party documents or prior tracked edits in the same session) is still
- * captured by `updateFootnoteText` and `deleteFootnote`. The first-found
- * insertion-anchor (the parent of the first match) is returned so callers
- * can place a new wrapper at the same structural position.
+ * `footnoteRef` marker, grouped by immediate parent in document order. The
+ * traversal intentionally crosses `<w:ins>` / `<w:del>` wrappers so footnote
+ * text already carrying revision history (third-party documents or prior
+ * tracked edits in the same session) is still captured by
+ * `updateFootnoteText` and `deleteFootnote`, and crosses `<w:hyperlink>`
+ * containers so linked text is captured without being detached from its link.
  */
-function collectFootnoteTextRuns(paragraph: Element): {
-  insertionAnchor: { parent: Element; before: Node | null };
-  runs: Element[];
-} | null {
-  const collected: Array<{ parent: Element; run: Element }> = [];
+function collectFootnoteTextRunGroups(paragraph: Element): Array<{ parent: Element; runs: Element[] }> {
+  const groups: Array<{ parent: Element; runs: Element[] }> = [];
 
   function visit(parent: Element): void {
     for (const child of childElements(parent)) {
       if (isW(child, W.r)) {
-        if (!runContainsFootnoteRef(child)) {
-          collected.push({ parent, run: child });
-        }
+        if (runContainsFootnoteRef(child)) continue;
+        const last = groups[groups.length - 1];
+        if (last && last.parent === parent) last.runs.push(child);
+        else groups.push({ parent, runs: [child] });
         continue;
       }
-      if (isW(child, 'ins') || isW(child, 'del')) {
+      if (isW(child, 'ins') || isW(child, 'del') || isW(child, W.hyperlink)) {
         visit(child);
       }
     }
   }
 
   visit(paragraph);
-
-  if (collected.length === 0) return null;
-
-  const first = collected[0]!;
-  return {
-    insertionAnchor: { parent: first.parent, before: first.run },
-    runs: collected.map((entry) => entry.run),
-  };
+  return groups;
 }
 
 function runContainsFootnoteRef(run: Element): boolean {
@@ -1068,15 +1118,15 @@ function runContainsFootnoteRef(run: Element): boolean {
 
 /**
  * After detaching runs from their parents, sweep up any now-empty
- * `<w:ins>`/`<w:del>` siblings of the paragraph so we do not leave orphan
- * revision wrappers behind. This pairs with `collectFootnoteTextRuns`'s
- * cross-wrapper traversal.
+ * `<w:ins>` / `<w:del>` wrappers and `<w:hyperlink>` containers at any depth
+ * so we do not leave orphan containers behind. This pairs with
+ * `collectFootnoteTextRunGroups`'s cross-container traversal.
  */
-function cleanupEmptyRevisionWrappers(paragraph: Element): void {
-  for (const child of Array.from(childElements(paragraph))) {
-    if ((isW(child, 'ins') || isW(child, 'del')) && childElements(child).length === 0) {
-      paragraph.removeChild(child);
-    }
+function cleanupEmptyRunContainers(element: Element): void {
+  for (const child of Array.from(childElements(element))) {
+    if (!(isW(child, 'ins') || isW(child, 'del') || isW(child, W.hyperlink))) continue;
+    cleanupEmptyRunContainers(child);
+    if (childElements(child).length === 0) element.removeChild(child);
   }
 }
 

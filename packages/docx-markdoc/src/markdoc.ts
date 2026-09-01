@@ -123,6 +123,7 @@ export const markdocConfig: Config = {
     'annotation-run': {
       inline: true,
       attributes: {
+        href: { type: String },
         style: { type: String },
         size: { type: Number },
         bold: { type: Boolean }, italic: { type: Boolean }, underline: { type: Boolean },
@@ -238,14 +239,18 @@ function annotationBody(node: Node, issues: ValidationIssue[]): AnnotationParagr
       continue;
     }
     const runs = [] as AnnotationParagraph['runs'];
-    const visit = (inline: Node, inherited?: AnnotationRunStyle): void => {
+    const visit = (inline: Node, inherited?: AnnotationRunStyle, inheritedDestination?: string): void => {
       if (inline.type === 'text') {
         const text = String(inline.attributes.content ?? '');
-        if (text) runs.push({ text, ...(inherited && Object.keys(inherited).length ? { style: inherited } : {}) });
+        if (text) runs.push({
+          text,
+          ...(inherited && Object.keys(inherited).length ? { style: inherited } : {}),
+          ...(inheritedDestination ? { hyperlink: { destination: inheritedDestination } } : {}),
+        });
         return;
       }
       if (inline.type === 'softbreak' || inline.type === 'hardbreak' || inline.type === 'paragraph' || inline.type === 'inline') {
-        for (const nested of inline.children) visit(nested, inherited);
+        for (const nested of inline.children) visit(nested, inherited, inheritedDestination);
         return;
       }
       if (inline.type !== 'tag' || inline.tag !== 'annotation-run') {
@@ -265,7 +270,9 @@ function annotationBody(node: Node, issues: ValidationIssue[]): AnnotationParagr
       if (style.fontSizeHalfPoints !== undefined && (!Number.isInteger(style.fontSizeHalfPoints) || style.fontSizeHalfPoints <= 0)) issues.push(issue('INVALID_ANNOTATION_STYLE', 'Annotation run sizes must be positive integer half-points.', inline));
       if (style.color && !/^[0-9A-F]{6}$/.test(style.color)) issues.push(issue('INVALID_ANNOTATION_COLOR', 'Annotation colors must be six-digit RGB values.', inline));
       if (style.highlight && !HIGHLIGHTS.has(style.highlight)) issues.push(issue('INVALID_ANNOTATION_HIGHLIGHT', `Unsupported Word highlight ${style.highlight}.`, inline));
-      for (const nested of inline.children) visit(nested, style);
+      const destination = inline.attributes.href === undefined ? undefined : String(inline.attributes.href);
+      if (destination !== undefined && destination.length === 0) issues.push(issue('INVALID_ANNOTATION_HYPERLINK', 'Annotation hyperlink destinations must be non-empty.', inline));
+      for (const nested of inline.children) visit(nested, style, destination);
     };
     for (const inline of child.children) visit(inline);
     paragraphs.push({ runs });

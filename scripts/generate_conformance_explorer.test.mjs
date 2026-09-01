@@ -63,6 +63,20 @@ test('schema declaration resolution preserves reused local-name contexts', () =>
   assert.deepEqual(declaration.occurrences.map((item) => item.declaredType).sort(), ['xs:integer', 'xs:string']);
 });
 
+test('schema declaration resolution accepts an official-style UTF-8 BOM', () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'safe-docx-explorer-bom-'));
+  const relative = 'spec-compliance/ecma-376/schemas/opc/relationships.xsd';
+  const absolute = path.join(temp, relative);
+  fs.mkdirSync(path.dirname(absolute), { recursive: true });
+  fs.writeFileSync(absolute, `\uFEFF<?xml version="1.0"?>
+    <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:test">
+      <xs:element name="Relationships" type="xs:string"/>
+    </xs:schema>`);
+  const declaration = resolveSchemaDeclaration(`${relative}#element:Relationships`, temp);
+  assert.equal(declaration.occurrences.length, 1);
+  assert.equal(declaration.occurrences[0].declaredType, 'xs:string');
+});
+
 test('an unresolved schema declaration is rejected', () => {
   assert.throws(
     () => resolveSchemaDeclaration(

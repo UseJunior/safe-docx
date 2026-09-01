@@ -44,7 +44,7 @@ import {
   type SectionPropertiesMutationResult,
 } from './sections.js';
 import { findUniqueSubstringMatch } from './matching.js';
-import { parseDocumentRels, type RelsMap } from './relationships.js';
+import { parseDocumentRels, relationshipPartPath, type RelsMap } from './relationships.js';
 import {
   setParagraphSpacing,
   setTableCellPadding,
@@ -1431,6 +1431,13 @@ export class DocxDocument {
     const footnotesText = await this.zip.readTextOrNull('word/footnotes.xml');
     if (!footnotesText) return null;
     return parseXml(footnotesText);
+  }
+
+  /** Return a source part's Relationships DOM, or null when it has none. */
+  async getPartRelationshipsXmlClone(sourcePartPath: string): Promise<Document | null> {
+    const relationshipsText = await this.zip.readTextOrNull(relationshipPartPath(sourcePartPath));
+    if (!relationshipsText) return null;
+    return parseXml(relationshipsText);
   }
 
   /**
