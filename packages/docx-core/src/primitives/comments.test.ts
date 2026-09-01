@@ -104,7 +104,8 @@ describe('comments — edge cases and branch coverage', () => {
         `<w:comments xmlns:w="${W_NS}" xmlns:w14="${OOXML.W14_NS}" data-sentinel="root">` +
         `<w:comment w:id="7" w:author="Jane Doe" w:date="2026-08-03T12:00:00Z" w:initials="JD" data-sentinel="target">` +
         `<w:p w14:paraId="A1B2C3D4" data-sentinel="paragraph"><w:pPr><w:pStyle w:val="CommentText"/></w:pPr>` +
-        `<w:r data-sentinel="reference"><w:annotationRef/></w:r><w:r><w:t>Original</w:t></w:r></w:p></w:comment>` +
+        `<w:r data-sentinel="reference"><w:annotationRef/></w:r><w:r><w:t>Original</w:t></w:r></w:p>` +
+        `<w:p data-sentinel="second"><w:pPr><w:pStyle w:val="CommentText"/></w:pPr><w:r><w:t>Original second</w:t></w:r></w:p></w:comment>` +
         `<w:comment w:id="8" w:author="John Smith" w:date="2026-08-04T12:00:00Z" w:initials="JS"><w:p w14:paraId="B1B2C3D4"><w:r><w:annotationRef/></w:r><w:r><w:t>Untouched</w:t></w:r></w:p></w:comment>` +
         `</w:comments>`;
       const zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>', { 'word/comments.xml': commentsXml }));
@@ -126,6 +127,8 @@ describe('comments — edge cases and branch coverage', () => {
       expect(target.getAttribute('data-sentinel')).toBe('target');
       expect(target.getElementsByTagNameNS(W_NS, W.annotationRef)).toHaveLength(1);
       expect(target.getElementsByTagNameNS(W_NS, W.p).item(0)?.getAttribute('data-sentinel')).toBe('paragraph');
+      expect(target.getElementsByTagNameNS(W_NS, W.p).item(1)?.getAttribute('data-sentinel')).toBe('second');
+      expect(target.getElementsByTagNameNS(W_NS, W.p).item(1)?.getElementsByTagNameNS(W_NS, W.pPr)).toHaveLength(1);
       expect(target.textContent).toContain('EditedSecond paragraph');
       expect(serializeXml(untouched)).toContain('Untouched');
     });
@@ -136,6 +139,17 @@ describe('comments — edge cases and branch coverage', () => {
 
       await expect(updateCommentBody(zip, { commentId: 7, text: 'Edited' })).rejects.toMatchObject({ code: 'UNSUPPORTED_EDIT' });
       expect(await zip.readText('word/comments.xml')).toBe(commentsXml);
+    });
+
+    test('admits a comment body without the optional annotation-reference run', async () => {
+      const commentsXml = `<w:comments xmlns:w="${W_NS}" xmlns:w14="${OOXML.W14_NS}"><w:comment w:id="7" w:author="Jane Doe"><w:p w14:paraId="A1B2C3D4"><w:r><w:t>Original</w:t></w:r></w:p></w:comment></w:comments>`;
+      const zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>', { 'word/comments.xml': commentsXml }));
+
+      await updateCommentBody(zip, { commentId: 7, text: 'Edited' });
+
+      const result = await zip.readText('word/comments.xml');
+      expect(result).toContain('<w:t>Edited</w:t>');
+      expect(result).not.toContain('annotationRef');
     });
   });
   describe('bootstrapCommentParts', () => {

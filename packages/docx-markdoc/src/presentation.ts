@@ -119,6 +119,21 @@ function anchorsEqual(left: AnnotationAnchor, right: AnnotationAnchor): boolean 
   return false;
 }
 
+function sourceCommentId(annotation: CanonicalAnnotation): number | undefined {
+  const match = /^comment:(0|[1-9]\d*)$/u.exec(annotation.id);
+  return match ? Number(match[1]) : undefined;
+}
+
+function flattenComments(comments: Awaited<ReturnType<DocxDocument['getComments']>>) {
+  const flattened = new Map<number, (typeof comments)[number]>();
+  const visit = (comment: (typeof comments)[number]): void => {
+    flattened.set(comment.id, comment);
+    comment.replies.forEach(visit);
+  };
+  comments.forEach(visit);
+  return flattened;
+}
+
 export type AnnotationProjectionResult = {
   buffer: Buffer;
   profile: AnnotationPresentationProfile;
@@ -147,16 +162,46 @@ export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requ
   }
 
   const document = await DocxDocument.load(buffer);
+  const existingComments = flattenComments(await document.getComments());
+  const plannedById = new Map(planned.map((item) => [item.annotation.id, item]));
+  const rootOf = (annotation: CanonicalAnnotation): CanonicalAnnotation => {
+    let current = annotation;
+    const seen = new Set<string>();
+    while (current.replyParentId) {
+      if (seen.has(current.id)) return annotation;
+      seen.add(current.id);
+      const parent = plannedById.get(current.replyParentId)?.annotation;
+      if (!parent) return annotation;
+      current = parent;
+    }
+    return current;
+  };
+  const individuallyEligible = new Set(planned
+    .filter(({ annotation, as, anchor }) => {
+      const id = sourceCommentId(annotation);
+      const existing = id === undefined ? undefined : existingComments.get(id);
+      return annotation.sourcePresentation === 'comment'
+        && as === 'comment'
+        && anchorsEqual(anchor, annotation.sourceAnchor)
+        && existing !== undefined
+        && existing.author === (annotation.author ?? 'Markdoc')
+        && existing.initials === (annotation.initials ?? '')
+        && existing.date === (annotation.date ?? '');
+    })
+    .map(({ annotation }) => annotation.id));
   const inplaceCommentIds = new Set(planned
-    .filter(({ annotation, as, anchor }) => annotation.sourcePresentation === 'comment'
-      && as === 'comment'
-      && anchorsEqual(anchor, annotation.sourceAnchor)
-      && Number.isInteger(Number(annotation.id.replace(/^comment:/, ''))))
+    .filter(({ annotation }) => individuallyEligible.has(annotation.id) && individuallyEligible.has(rootOf(annotation).id))
     .map(({ annotation }) => annotation.id));
   const sourceCommentRoots = annotations.filter((annotation) => annotation.sourcePresentation === 'comment' && !annotation.replyParentId && !inplaceCommentIds.has(annotation.id));
   for (const annotation of sourceCommentRoots) {
-    const id = Number(annotation.id.replace(/^comment:/, ''));
-    if (Number.isInteger(id)) await document.deleteComment({ commentId: id });
+    const id = sourceCommentId(annotation);
+    if (id !== undefined) await document.deleteComment({ commentId: id });
+  }
+  for (const annotation of annotations.filter((item) => item.sourcePresentation === 'comment' && item.replyParentId && !inplaceCommentIds.has(item.id))) {
+    const parent = plannedById.get(annotation.replyParentId!)?.annotation;
+    if (!parent || !inplaceCommentIds.has(rootOf(parent).id) || !inplaceCommentIds.has(parent.id)) continue;
+    const id = sourceCommentId(annotation);
+    if (id !== undefined) await document.deleteComment({ commentId: id });
   }
   for (const annotation of annotations.filter((item) => item.sourcePresentation === 'footnote')) {
     const id = Number(annotation.id.replace(/^footnote:/, ''));
@@ -186,7 +231,7 @@ export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requ
     if (as === 'omit') continue;
     const rule = profile[annotation.audience];
     if (inplaceCommentIds.has(annotation.id)) {
-      const commentId = Number(annotation.id.replace(/^comment:/, ''));
+      const commentId = sourceCommentId(annotation)!;
       try {
         await document.updateCommentBody({
           commentId,
@@ -223,7 +268,7 @@ export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requ
       const result = await document.addCommentReply({
         parentCommentId,
         author: annotation.author ?? 'Markdoc', initials: annotation.initials,
-        text: flatText(annotation), body: mergedBody(annotation),
+        text: flatText(annotation), body: mergedBody(annotation, rule?.bodyStyle),
       }, annotation.date ? createRevisionContext({ author: annotation.author ?? 'Markdoc', date: annotation.date }) : undefined);
       commentIds.set(annotation.id, result.commentId);
       continue;
@@ -233,7 +278,7 @@ export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requ
     const result = await document.addComment({
       paragraphId: start.paragraphId, start: start.offset, end: end.offset,
       author: annotation.author ?? 'Markdoc', initials: annotation.initials,
-      text: flatText(annotation), body: mergedBody(annotation),
+      text: flatText(annotation), body: mergedBody(annotation, rule?.bodyStyle),
     }, annotation.date ? createRevisionContext({ author: annotation.author ?? 'Markdoc', date: annotation.date }) : undefined);
     commentIds.set(annotation.id, result.commentId);
   }

@@ -131,6 +131,50 @@ describe('annotation-only projection preserves existing revisions', () => {
     expect(result.certificate).toMatchObject({ existingRevisionsPreserved: true, existingRevisionCount: 1, projectedRevisionCount: 1 });
   });
 
+  for (const presentation of ['omit', 'footnote'] as const) {
+    test(`[SDX-MDOC-96] removes a reply comment when an in-place root keeps the reply as ${presentation}`, async () => {
+      const imported = await importDocxToMarkdoc(await revisedSource('ins', 'comment', true));
+      const markdoc = imported.markdoc
+        .replaceAll('source-presentation="comment"', 'source-presentation="comment" presentation="comment"')
+        .replace(/(id="comment:1"[^\n]*?) presentation="comment"/u, `$1 presentation="${presentation}"`);
+      const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+      const loaded = await DocxDocument.load(result.tracked);
+      const comments = await loaded.getComments();
+
+      expect(comments).toHaveLength(1);
+      expect(comments[0]?.replies).toHaveLength(0);
+      if (presentation === 'footnote') expect(await loaded.getFootnotes()).toHaveLength(1);
+      expect(result.certificate.existingRevisionsPreserved).toBe(true);
+    });
+  }
+
+  test('[SDX-MDOC-96] re-emits a moved root and its unchanged reply as one thread', async () => {
+    const imported = await importDocxToMarkdoc(await revisedSource('ins', 'comment', true));
+    const markdoc = imported.markdoc
+      .replaceAll('source-presentation="comment"', 'source-presentation="comment" presentation="comment"')
+      .replace(/(id="comment:0"[^\n]*? anchor-kind="range" paragraph="[^"]+" offset=)15( end-paragraph="[^"]+" end-offset=)19/u, '$116$220');
+
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+    const comments = await (await DocxDocument.load(result.tracked)).getComments();
+    expect(comments).toHaveLength(1);
+    expect(comments[0]).toMatchObject({ startTextOffset: 16, endTextOffset: 20 });
+    expect(comments[0]?.replies).toHaveLength(1);
+    expect(result.certificate.existingRevisionsPreserved).toBe(true);
+  });
+
+  test('[SDX-MDOC-96] re-emits changed comment metadata instead of silently retaining source authorship', async () => {
+    const imported = await importDocxToMarkdoc(await revisedSource('ins', 'comment'));
+    const markdoc = imported.markdoc
+      .replace('source-presentation="comment"', 'source-presentation="comment" presentation="comment"')
+      .replace('author="Reviewer"', 'author="Jane Doe"')
+      .replace('initials="RV"', 'initials="JD"');
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+    const comments = await (await DocxDocument.load(result.tracked)).getComments();
+
+    expect(comments[0]).toMatchObject({ author: 'Jane Doe', initials: 'JD' });
+    expect(result.certificate.existingRevisionsPreserved).toBe(true);
+  });
+
   test('[SDX-MDOC-95] fails atomically when existing revisions are combined with operative edits', async () => {
     const imported = await importDocxToMarkdoc(await revisedSource('ins', 'comment'));
     const edited = rewriteFirstParagraph(imported.markdoc)

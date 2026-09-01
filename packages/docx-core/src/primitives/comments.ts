@@ -505,14 +505,18 @@ export async function updateCommentBody(
   }
 
   const first = paragraphs[0]!;
-  const markerRuns = Array.from(first.childNodes)
+  const markerRuns = paragraphs.flatMap((paragraph) => Array.from(paragraph.childNodes)
     .filter((node) => node.nodeType === 1 && isW(node as Element, W.r))
-    .filter((run) => (run as Element).getElementsByTagNameNS(OOXML.W_NS, W.annotationRef).length > 0) as Element[];
-  if (markerRuns.length !== 1) {
+    .filter((run) => (run as Element).getElementsByTagNameNS(OOXML.W_NS, W.annotationRef).length > 0) as Element[]);
+  const annotationReferenceCount = paragraphs.reduce(
+    (count, paragraph) => count + paragraph.getElementsByTagNameNS(OOXML.W_NS, W.annotationRef).length,
+    0,
+  );
+  if (annotationReferenceCount > 1 || (markerRuns.length === 1 && markerRuns[0]?.parentNode !== first)) {
     throw new SafeDocxError(
       'UNSUPPORTED_EDIT',
       `Comment ID ${params.commentId} has unsupported annotation-reference topology`,
-      'Exactly one annotation-reference run is required in the first comment paragraph.',
+      'At most one annotation-reference run is admitted, and it must be in the first comment paragraph.',
     );
   }
 
@@ -538,19 +542,18 @@ export async function updateCommentBody(
     commentBodyDestinations(body),
   );
 
-  for (const child of Array.from(first.childNodes)) {
-    if (child.nodeType !== 1) continue;
-    const element = child as Element;
-    if (isW(element, W.pPr) || element === markerRuns[0]) continue;
-    first.removeChild(element);
+  for (let index = 0; index < body.length; index++) {
+    const paragraph = paragraphs[index] ?? commentsDoc.createElementNS(OOXML.W_NS, 'w:p');
+    if (!paragraph.parentNode) commentEl.appendChild(paragraph);
+    for (const child of Array.from(paragraph.childNodes)) {
+      if (child.nodeType !== 1) continue;
+      const element = child as Element;
+      if (isW(element, W.pPr) || (index === 0 && element === markerRuns[0])) continue;
+      paragraph.removeChild(element);
+    }
+    appendCommentBodyRuns(paragraph, body[index]!.runs, commentsDoc, hyperlinkRelationshipIds);
   }
-  appendCommentBodyRuns(first, body[0]?.runs ?? [], commentsDoc, hyperlinkRelationshipIds);
-  for (const paragraph of paragraphs.slice(1)) commentEl.removeChild(paragraph);
-  for (const bodyParagraph of body.slice(1)) {
-    const paragraph = commentsDoc.createElementNS(OOXML.W_NS, 'w:p');
-    appendCommentBodyRuns(paragraph, bodyParagraph.runs, commentsDoc, hyperlinkRelationshipIds);
-    commentEl.appendChild(paragraph);
-  }
+  for (const paragraph of paragraphs.slice(body.length)) commentEl.removeChild(paragraph);
   zip.writeText('word/comments.xml', serializeXml(commentsDoc));
 }
 

@@ -13,9 +13,11 @@ accept/reject resolves — `w:ins`, `w:del`, the move family, and the six
 property-change kinds — plus `w:tblGridChange`, in the document, header,
 footer, footnote, endnote, and comment stories. A source containing any
 supported existing revision SHALL reject operative text edits before mutation.
-An annotation whose range markers or reference run lie inside an existing
-revision container is unsupported and SHALL fail closed with revision
-diagnostics before publishing output.
+An existing comment whose canonical presentation and anchor are unchanged
+SHALL update its body in place without moving range markers or reference runs,
+including when those anchors lie inside, span, or are adjacent to a revision
+container. Annotation projection SHALL otherwise fail closed with structured
+revision diagnostics whenever it cannot preserve existing revision XML.
 
 #### Scenario: [SDX-MDOC-92] Existing insertion survives ranged-comment editing
 - **GIVEN** a source containing an existing insertion and an admitted ranged comment
@@ -47,11 +49,11 @@ diagnostics before publishing output.
 - **THEN** the edited reply SHALL reopen under its original root comment
 - **AND** the existing revision SHALL retain exact XML and accept/reject semantics
 
-#### Scenario: [SDX-MDOC-97] Annotation inside a revision container fails closed
-- **GIVEN** a source containing an existing insertion and an admitted comment whose range lies inside that insertion
+#### Scenario: [SDX-MDOC-97] Comment anchors inside revision containers remain in place
+- **GIVEN** a source containing existing insertion or deletion containers and an admitted comment inside, spanning, or adjacent to them
 - **WHEN** the canonical comment body is edited and projected
-- **THEN** compilation SHALL fail with revision diagnostics naming the affected revision
-- **AND** SHALL publish no partial output
+- **THEN** the compiler SHALL update only the comment body in `word/comments.xml`
+- **AND** SHALL preserve comment identity, metadata, threading, anchors, existing revision XML, and accept/reject semantics
 
 #### Scenario: [SDX-MDOC-98] Property-change revisions gate operative edits
 - **GIVEN** a source whose only existing revision is a paragraph property change
