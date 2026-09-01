@@ -268,6 +268,33 @@ describe('canonical annotation round trips', () => {
     }
   });
 
+  hyperlinkConformance('keeps reserved Markdoc characters in destinations and authors exact across the round trip', async () => {
+    const destination = 'https://example.com/search?a=1&b=2&q="quoted"\\path';
+    const base = await buildSyntheticDocx({ paragraphs: ['Alpha beta gamma.'] });
+    const document = await DocxDocument.load(base);
+    document.insertParagraphBookmarks('reserved-characters');
+    const paragraphId = document.buildDocumentView().nodes[0]!.id;
+    await document.addComment({
+      paragraphId, start: 0, end: 5, author: 'Smith & "Jones"', initials: 'SJ', text: 'link',
+      body: [{ runs: [{ text: 'link', hyperlink: { destination } }] }],
+    });
+    const imported = await importDocxToMarkdoc((await document.toBuffer({ cleanBookmarks: false })).buffer);
+    expect(imported.annotations[0]!.body[0]!.runs[0]).toEqual({ text: 'link', hyperlink: { destination } });
+    expect(imported.markdoc).toContain('href="https://example.com/search?a=1&b=2&q=\\"quoted\\"\\\\path"');
+    const parsed = requireMarkdoc(imported.markdoc);
+    expect(parsed.annotations[0]!.body[0]!.runs[0]).toEqual({ text: 'link', hyperlink: { destination } });
+    expect(parsed.annotations[0]!.author).toBe('Smith & "Jones"');
+
+    for (const target of ['comment', 'footnote'] as const) {
+      const projected = await compileMarkdoc(imported.anchoredSource, projectEveryAnnotationAs(imported.markdoc, target));
+      const zip = await JSZip.loadAsync(projected.tracked);
+      const relsPath = target === 'comment' ? 'word/_rels/comments.xml.rels' : 'word/_rels/footnotes.xml.rels';
+      const external = [...relationshipEntries(await zip.file(relsPath)!.async('string')).values()]
+        .filter((entry) => entry.type === HYPERLINK_REL_TYPE);
+      expect(external.map((entry) => entry.target)).toEqual([destination]);
+    }
+  });
+
   hyperlinkConformance('[SDX-MDOC-105] allocates repeated annotation destinations deterministically across relationship collisions', async () => {
     const source = await sourceWithLinkedAnnotation('footnote');
     const collided = await withDestinationRelationshipCollision(source, 'comment');

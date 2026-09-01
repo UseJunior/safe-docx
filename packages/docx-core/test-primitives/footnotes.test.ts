@@ -1413,10 +1413,10 @@ describe('footnotes', () => {
       });
     });
 
-    test('updateFootnoteText with ctx captures both direct and pre-existing-w:ins-wrapped text runs in the deletion', async ({ given, when, then }: AllureBddContext) => {
+    test('updateFootnoteText with ctx deletes direct and pre-existing-w:ins-wrapped text runs inside their own containers', async ({ given, when, then }: AllureBddContext) => {
       let zip: DocxZip;
       let noteParagraph: Element;
-      let deletion: Element;
+      let deletions: Element[];
 
       const ctx = createRevisionContext({
         author: 'SafeDocX AI',
@@ -1447,16 +1447,21 @@ describe('footnotes', () => {
         const footnotesDoc = await readFootnotesXml(zip);
         const footnoteEl = findFootnoteById(footnotesDoc, 5)!;
         noteParagraph = getFirstParagraph(footnoteEl);
-        deletion = noteParagraph.getElementsByTagNameNS(OOXML.W_NS, 'del').item(0) as Element;
+        deletions = Array.from(noteParagraph.getElementsByTagNameNS(OOXML.W_NS, 'del')) as Element[];
       });
 
-      await then('the deletion captures both wrapped and direct text content; the new replacement w:ins is hoisted to the paragraph level under SafeDocX AI authorship', async () => {
-        expect(deletion).toBeTruthy();
-        const delTexts = Array.from(deletion.getElementsByTagNameNS(OOXML.W_NS, 'delText')).map(
+      await then('each run is deleted inside its own container so prior authorship survives; the new replacement w:ins is hoisted to the paragraph level under SafeDocX AI authorship', async () => {
+        // Both "wrapped" and " direct" are deleted, but in separate <w:del>
+        // wrappers: the direct run stays a paragraph child (it was never part of
+        // OldAuthor's insertion, so rejecting that insertion must not drop it),
+        // while the wrapped run is deleted inside OldAuthor's <w:ins> (#956).
+        const delTextsOf = (deletion: Element): string[] => Array.from(deletion.getElementsByTagNameNS(OOXML.W_NS, 'delText')).map(
           (t) => t.textContent ?? '',
         );
-        // Both "wrapped" and " direct" text appear inside the new <w:del>.
-        expect(delTexts).toEqual(expect.arrayContaining(['wrapped', ' direct']));
+        expect(deletions.map(delTextsOf)).toEqual([['wrapped'], [' direct']]);
+        expect((deletions[0]!.parentNode as Element).localName).toBe('ins');
+        expect((deletions[0]!.parentNode as Element).getAttribute('w:author')).toBe('OldAuthor');
+        expect(deletions[1]!.parentNode).toBe(noteParagraph);
 
         // The new replacement <w:ins> is hoisted to the paragraph level so its
         // SafeDocX AI authorship is not nested inside the prior author's wrapper.

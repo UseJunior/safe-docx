@@ -36,6 +36,11 @@ resolved external destination. Markdoc uses an `href` attribute on
 `annotation-run`; linked unformatted text is therefore still wrapped in an
 explicit tag. Link identity never depends on named style or visual formatting.
 
+Markdoc attribute values are escaped as Markdoc string literals: only the
+backslash and the double-quote delimiter are escaped. Markdoc does not decode
+entity references, so HTML-style escaping would corrupt query-string
+destinations such as `?a=1&b=2` on the parse side.
+
 Alternatives considered:
 
 - Preserve raw `r:id`: rejected because IDs are local to a relationship part
@@ -64,6 +69,12 @@ the first free `rIdN` across every relationship type. Repeated destinations
 share one relationship deterministically. Adjacent runs with the same
 destination share one `w:hyperlink` wrapper, while formatting stays on each
 child run.
+
+Tracked footnote insertion, replacement, and deletion wrap runs per parent
+container. A linked run receives its `w:ins` / `w:del` inside the
+`w:hyperlink` wrapper (CT_Hyperlink admits run-level revision elements), so
+document order and link identity survive instead of the run being hoisted out
+of its hyperlink and left untracked.
 
 ### Fail-closed boundaries stay explicit
 

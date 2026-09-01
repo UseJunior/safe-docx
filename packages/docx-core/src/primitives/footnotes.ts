@@ -1037,79 +1037,79 @@ function buildFootnoteTextRuns(doc: Document, text: string): [Element, Element] 
 }
 
 function removeFootnoteParagraphTextRuns(paragraph: Element): void {
-  const collected = collectFootnoteTextRuns(paragraph);
-  if (!collected) return;
-
-  for (const run of collected.runs) {
-    run.parentNode?.removeChild(run);
+  for (const group of collectFootnoteTextRunGroups(paragraph)) {
+    for (const run of group.runs) group.parent.removeChild(run);
   }
-
-  cleanupEmptyRevisionWrappers(paragraph);
+  cleanupEmptyRunContainers(paragraph);
 }
 
+/**
+ * Wrap every text run of a footnote paragraph in a `w:ins` / `w:del`
+ * revision container. Runs are wrapped per parent container, so text that
+ * already sits inside a revision wrapper or inside a `w:hyperlink` stays
+ * where it is: the new container is created inside that parent, which keeps
+ * document order and link identity intact instead of hoisting linked runs
+ * out of their hyperlink.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see #956
+ */
 function wrapFootnoteParagraphTextRuns(
   paragraph: Element,
   kind: 'ins' | 'del',
   ctx: RevisionContext,
 ): Element | null {
-  const collected = collectFootnoteTextRuns(paragraph);
-  if (!collected) return null;
+  const groups = collectFootnoteTextRunGroups(paragraph);
+  if (groups.length === 0) return null;
 
   const doc = paragraph.ownerDocument;
   if (!doc) throw new Error('Paragraph has no ownerDocument');
 
-  const { parent: anchorParent, before: anchorBefore } = collected.insertionAnchor;
-  const wrapper = createRevisionContainer(doc, kind, ctx);
-  anchorParent.insertBefore(wrapper, anchorBefore);
-
-  for (const run of collected.runs) {
-    run.parentNode?.removeChild(run);
-    wrapper.appendChild(kind === 'del' ? prepareElementForDeletion(run) : run);
+  let first: Element | null = null;
+  for (const group of groups) {
+    const wrapper = createRevisionContainer(doc, kind, ctx);
+    group.parent.insertBefore(wrapper, group.runs[0]!);
+    for (const run of group.runs) {
+      group.parent.removeChild(run);
+      wrapper.appendChild(kind === 'del' ? prepareElementForDeletion(run) : run);
+    }
+    first ??= wrapper;
   }
 
-  cleanupEmptyRevisionWrappers(paragraph);
+  cleanupEmptyRunContainers(paragraph);
 
-  return wrapper;
+  return first;
 }
 
 /**
  * Collect every `<w:r>` descendant of the paragraph that does NOT contain a
- * `footnoteRef` marker. This intentionally crosses into `<w:ins>` / `<w:del>`
- * wrappers so that footnote text already carrying revision history (e.g.,
- * third-party documents or prior tracked edits in the same session) is still
- * captured by `updateFootnoteText` and `deleteFootnote`. The first-found
- * insertion-anchor (the parent of the first match) is returned so callers
- * can place a new wrapper at the same structural position.
+ * `footnoteRef` marker, grouped by immediate parent in document order. The
+ * traversal intentionally crosses `<w:ins>` / `<w:del>` wrappers so footnote
+ * text already carrying revision history (third-party documents or prior
+ * tracked edits in the same session) is still captured by
+ * `updateFootnoteText` and `deleteFootnote`, and crosses `<w:hyperlink>`
+ * containers so linked text is captured without being detached from its link.
  */
-function collectFootnoteTextRuns(paragraph: Element): {
-  insertionAnchor: { parent: Element; before: Node | null };
-  runs: Element[];
-} | null {
-  const collected: Array<{ parent: Element; run: Element }> = [];
+function collectFootnoteTextRunGroups(paragraph: Element): Array<{ parent: Element; runs: Element[] }> {
+  const groups: Array<{ parent: Element; runs: Element[] }> = [];
 
   function visit(parent: Element): void {
     for (const child of childElements(parent)) {
       if (isW(child, W.r)) {
-        if (!runContainsFootnoteRef(child)) {
-          collected.push({ parent, run: child });
-        }
+        if (runContainsFootnoteRef(child)) continue;
+        const last = groups[groups.length - 1];
+        if (last && last.parent === parent) last.runs.push(child);
+        else groups.push({ parent, runs: [child] });
         continue;
       }
-      if (isW(child, 'ins') || isW(child, 'del')) {
+      if (isW(child, 'ins') || isW(child, 'del') || isW(child, W.hyperlink)) {
         visit(child);
       }
     }
   }
 
   visit(paragraph);
-
-  if (collected.length === 0) return null;
-
-  const first = collected[0]!;
-  return {
-    insertionAnchor: { parent: first.parent, before: first.run },
-    runs: collected.map((entry) => entry.run),
-  };
+  return groups;
 }
 
 function runContainsFootnoteRef(run: Element): boolean {
@@ -1118,15 +1118,15 @@ function runContainsFootnoteRef(run: Element): boolean {
 
 /**
  * After detaching runs from their parents, sweep up any now-empty
- * `<w:ins>`/`<w:del>` siblings of the paragraph so we do not leave orphan
- * revision wrappers behind. This pairs with `collectFootnoteTextRuns`'s
- * cross-wrapper traversal.
+ * `<w:ins>` / `<w:del>` wrappers and `<w:hyperlink>` containers at any depth
+ * so we do not leave orphan containers behind. This pairs with
+ * `collectFootnoteTextRunGroups`'s cross-container traversal.
  */
-function cleanupEmptyRevisionWrappers(paragraph: Element): void {
-  for (const child of Array.from(childElements(paragraph))) {
-    if ((isW(child, 'ins') || isW(child, 'del')) && childElements(child).length === 0) {
-      paragraph.removeChild(child);
-    }
+function cleanupEmptyRunContainers(element: Element): void {
+  for (const child of Array.from(childElements(element))) {
+    if (!(isW(child, 'ins') || isW(child, 'del') || isW(child, W.hyperlink))) continue;
+    cleanupEmptyRunContainers(child);
+    if (childElements(child).length === 0) element.removeChild(child);
   }
 }
 

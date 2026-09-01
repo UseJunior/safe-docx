@@ -1,4 +1,4 @@
-import { DocxDocument, buildParagraphIndex, createRevisionContext, findParagraphByBookmarkId, type FootnoteRunStyle } from '@usejunior/docx-core';
+import { DocxDocument, buildParagraphIndex, createRevisionContext, findParagraphByBookmarkId } from '@usejunior/docx-core';
 import { DocxMarkdocError } from './errors.js';
 import { sha256 } from './hash.js';
 import type {
@@ -176,7 +176,7 @@ export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requ
         presentation: {
           prefixRuns: rule?.prefix,
           separatorRuns: rule?.separator,
-          body: mergedBody(annotation, rule?.bodyStyle) as Array<{ runs: Array<{ text: string; style?: FootnoteRunStyle }> }>,
+          body: mergedBody(annotation, rule?.bodyStyle),
         },
       });
       continue;

@@ -29,8 +29,15 @@ function escapeText(text: string): string {
     .replace(/ +$/, (spaces) => '&#32;'.repeat(spaces.length));
 }
 
+/**
+ * Escape a value for a double-quoted Markdoc string literal. Markdoc strings
+ * are not HTML: entity references pass through verbatim, so `&`, `<`, and `>`
+ * must stay raw and only the backslash and the delimiter are escaped.
+ *
+ * @see #956
+ */
 function escapeAttribute(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 function parseTaggedRuns(tagged: string, annotationId: string): AnnotationRun[] {
