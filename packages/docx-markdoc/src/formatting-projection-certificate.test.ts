@@ -88,6 +88,7 @@ describe('formatting-aware projection certificate', () => {
       rejectAllFormattingEqualsSource: certification.rejectAllFormattingEqualsSource,
       acceptAllFormattingEqualsClean: certification.acceptAllFormattingEqualsClean,
       unchangedPackagePartsPreserved: true,
+      existingRevisionsPreserved: true,
     })).toBe(false);
     expect(certification.formattingProjections.cleanAcceptAll).toMatchObject({
       divergenceCount: expect.any(Number),
