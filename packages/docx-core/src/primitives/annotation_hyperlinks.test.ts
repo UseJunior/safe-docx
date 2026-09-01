@@ -44,6 +44,16 @@ async function footnoteXml(document: DocxDocument, noteId: number): Promise<stri
   return new RegExp(`<w:footnote w:id="${noteId}".*?</w:footnote>`, 'su').exec(xml)![0];
 }
 
+async function footnoteElement(document: DocxDocument, noteId: number): Promise<Element> {
+  const footnotes = (await document.getFootnotesXmlClone())!;
+  const elements = Array.from(footnotes.getElementsByTagNameNS(OOXML.W_NS, W.footnote)) as Element[];
+  return elements.find((element) => (element.getAttributeNS(OOXML.W_NS, 'id') ?? element.getAttribute('w:id')) === String(noteId))!;
+}
+
+function childElements(element: Element): Element[] {
+  return Array.from(element.childNodes).filter((node) => node.nodeType === 1) as Element[];
+}
+
 async function externalTargets(document: DocxDocument, sourcePart: string): Promise<Map<string, string>> {
   const entries = parseRelationshipEntries(await document.getPartRelationshipsXmlClone(sourcePart));
   return new Map([...entries.values()]
@@ -58,12 +68,20 @@ describe('annotation hyperlink emission (#956)', () => {
       { paragraphId, visibleOffset: 5, text: 'see link end', presentation: { body: linkedBody } },
       reviewer(),
     );
-    const note = await footnoteXml(document, 1);
-    expect(note.replace(/<[^>]+>/gu, '').trim()).toBe('see link end');
-    expect(note).toMatch(
-      /<w:ins [^>]*>(?:<w:r>.*?<\/w:r>)+<\/w:ins><w:hyperlink r:id="rId1"><w:ins [^>]*><w:r><w:rPr>.*?<\/w:rPr><w:t>link<\/w:t><\/w:r><\/w:ins><\/w:hyperlink><w:ins [^>]*><w:r>.*?<\/w:r><\/w:ins><\/w:p>/su,
-    );
-    expect((await document.getFootnotesXmlClone())!.documentElement.lookupNamespaceURI('r')).toBe(OOXML.R_NS);
+    const note = await footnoteElement(document, 1);
+    expect(note.textContent?.trim()).toBe('see link end');
+    const paragraph = note.getElementsByTagNameNS(OOXML.W_NS, W.p).item(0) as Element;
+    const children = childElements(paragraph);
+    expect(children.map((child) => child.localName)).toEqual(['pPr', 'r', 'ins', 'hyperlink', 'ins']);
+    expect(children[2]!.textContent).toBe(' see ');
+    expect(children[4]!.textContent).toBe(' end');
+    const hyperlink = children[3]!;
+    expect(hyperlink.getAttributeNS(OOXML.R_NS, 'id')).toBe('rId1');
+    const linked = childElements(hyperlink);
+    expect(linked.map((child) => child.localName)).toEqual(['ins']);
+    expect(linked[0]!.textContent).toBe('link');
+    expect(linked[0]!.getElementsByTagNameNS(OOXML.W_NS, 'b')).toHaveLength(1);
+    expect(note.ownerDocument!.documentElement.lookupNamespaceURI('r')).toBe(OOXML.R_NS);
     expect(await externalTargets(document, 'word/footnotes.xml')).toEqual(new Map([['rId1', LINK]]));
   });
 
@@ -90,7 +108,7 @@ describe('annotation hyperlink emission (#956)', () => {
     await direct.document.updateFootnoteText({ noteId: 1, newText: 'replaced' });
     const directNote = await footnoteXml(direct.document, 1);
     expect(directNote).not.toContain('<w:hyperlink');
-    expect(directNote.replace(/<[^>]+>/gu, '').trim()).toBe('replaced');
+    expect((await footnoteElement(direct.document, 1)).textContent?.trim()).toBe('replaced');
   });
 
   hyperlinkConformance('tracked deletion of a real linked footnote keeps the link and marks every run deleted', async () => {
