@@ -43,6 +43,7 @@ function compare(beforeBody, afterBody, options, styles = {}, themes = {}) {
 }
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const U = 'unresolved';
 
 function theme(fonts = { major: 'Aptos Display', minor: 'Aptos' }, accent1 = 'C0504D') {
   return wrapThemeXml(
@@ -240,7 +241,7 @@ test('basedOn resolution is per property: a derived style adding color does not 
 
   const projection = projectParagraphs(wrapBodyXml(body), withBold);
   assert.deepEqual(projection.byParaId.get('AAAA0013').emphasisSpans, [
-    [4, true, false, false, false, false, false, false, false, false, false, false, 'none', '', 0, 'FF0000'],
+    [4, true, U, U, U, U, U, U, U, U, U, U, U, U, U, 'FF0000'],
   ]);
 
   // And a de-bolding of the ancestor is therefore a finding, color intact.
@@ -304,7 +305,7 @@ test('Word differential from PR #691: style-level off preserves paragraph-style 
     styles,
   );
   assert.deepEqual(projection.byParaId.get('AAAA0020').emphasisSpans, [
-    [4, true, false, false, false, false, false, false, false, false, false, false, 'none', '', 0, 'FF0000'],
+    [4, true, U, U, U, U, U, U, U, U, U, U, U, U, U, 'FF0000'],
   ]);
 });
 
@@ -357,7 +358,7 @@ test('documents without a theme part retain direct font and color fallbacks', ()
   );
   const projection = projectParagraphs(wrapBodyXml(body));
   assert.deepEqual(projection.byParaId.get('AAAA0024').emphasisSpans, [
-    [8, false, false, false, false, false, false, false, false, false, false, false, 'none', 'Georgia', 0, '123456'],
+    [8, U, U, U, U, U, U, U, U, U, U, U, U, 'Georgia', U, '123456'],
   ]);
 });
 
@@ -460,7 +461,7 @@ test('a paragraph nested in a text box is projected separately from the paragrap
   assert.equal(projection.totalParagraphs, 2);
   // Span tuple: length, ten toggles, underline, highlight, font, size, color.
   assert.deepEqual(projection.byParaId.get('CCCC0001').emphasisSpans, [
-    [5, true, false, false, false, false, false, false, false, false, false, false, 'none', '', 0, 'auto'],
+    [5, true, U, U, U, U, U, U, U, U, U, U, U, U, U, U],
   ]);
 
   const result = compare(before, after);
