@@ -22,6 +22,11 @@ async function revisionXml(buffer: Buffer): Promise<string[]> {
     .filter((revision) => revision.includes('w:author="Prior Author"'));
 }
 
+async function partXml(buffer: Buffer, path: string): Promise<string> {
+  const zip = await JSZip.loadAsync(buffer);
+  return zip.file(path)!.async('string');
+}
+
 function physicalText(document: DocxDocument): string {
   return document.getParagraphs().map((paragraph) => getParagraphRuns(paragraph).map((run) => run.text).join('')).join('\n');
 }
@@ -63,9 +68,7 @@ describe('annotation-only projection preserves existing revisions', () => {
     const result = await compileMarkdoc(imported.anchoredSource, markdoc);
 
     expect(await revisionXml(result.tracked)).toEqual(before);
-    // projectedRevisionCount is 2, not 1: projection re-emits the root comment
-    // reference inside a tracked w:ins carrying the comment date (issue #961).
-    expect(result.certificate).toMatchObject({ existingRevisionsPreserved: true, existingRevisionCount: 1, projectedRevisionCount: 2 });
+    expect(result.certificate).toMatchObject({ existingRevisionsPreserved: true, existingRevisionCount: 1, projectedRevisionCount: 1 });
     expect((await (await DocxDocument.load(result.tracked)).getComments())[0]?.text).toBe('Edited note');
 
     const accepted = await DocxDocument.load(result.tracked);
@@ -85,7 +88,7 @@ describe('annotation-only projection preserves existing revisions', () => {
     const result = await compileMarkdoc(imported.anchoredSource, markdoc);
 
     expect(await revisionXml(result.tracked)).toEqual(before);
-    expect(result.certificate).toMatchObject({ existingRevisionsPreserved: true, existingRevisionCount: 1, projectedRevisionCount: 2 });
+    expect(result.certificate).toMatchObject({ existingRevisionsPreserved: true, existingRevisionCount: 1, projectedRevisionCount: 1 });
     const comment = (await (await DocxDocument.load(result.tracked)).getComments())[0]!;
     expect(comment).toMatchObject({ text: 'Edited point note', startTextOffset: 5, endTextOffset: 5 });
     const accepted = await DocxDocument.load(result.tracked);
@@ -125,7 +128,7 @@ describe('annotation-only projection preserves existing revisions', () => {
     expect(await revisionXml(result.tracked)).toEqual(before);
     const comments = await (await DocxDocument.load(result.tracked)).getComments();
     expect(comments[0]?.replies[0]?.text).toBe('Edited reply');
-    expect(result.certificate).toMatchObject({ existingRevisionsPreserved: true, existingRevisionCount: 1, projectedRevisionCount: 2 });
+    expect(result.certificate).toMatchObject({ existingRevisionsPreserved: true, existingRevisionCount: 1, projectedRevisionCount: 1 });
   });
 
   test('[SDX-MDOC-95] fails atomically when existing revisions are combined with operative edits', async () => {
@@ -139,23 +142,43 @@ describe('annotation-only projection preserves existing revisions', () => {
     });
   });
 
-  test('[SDX-MDOC-97] fails closed when a comment range lies inside an existing insertion', async () => {
-    const base = await buildDocxFromBodyXml(
-      '<w:p><w:r><w:t>Alpha </w:t></w:r><w:ins w:id="44" w:author="Prior Author" w:date="2026-08-03T12:00:00Z"><w:r><w:t>Inserted text</w:t></w:r></w:ins><w:r><w:t> gamma.</w:t></w:r></w:p>',
-    );
-    const document = await DocxDocument.load(base);
-    document.insertParagraphBookmarks('revision-inline-comment');
-    const paragraphId = document.buildDocumentView().nodes[0]!.id;
-    await document.addComment({ paragraphId, start: 8, end: 12, author: 'Reviewer', initials: 'RV', text: 'Original note' });
-    const imported = await importDocxToMarkdoc((await document.toBuffer({ cleanBookmarks: false })).buffer);
-    const markdoc = imported.markdoc.replace('Original note', 'Edited note')
-      .replace('source-presentation="comment"', 'source-presentation="comment" presentation="comment"');
+  for (const scenario of [
+    { label: 'inside the insertion', start: 8, end: 12 },
+    { label: 'starting at the insertion end', start: 19, end: 26 },
+    { label: 'spanning the insertion', start: 6, end: 19 },
+    { label: 'ending at the insertion start', start: 0, end: 6 },
+    { label: 'as a point at the insertion start', start: 6, end: 6 },
+  ]) {
+    test(`[SDX-MDOC-97] edits a comment ${scenario.label} without moving revision-contained anchors`, async () => {
+      const base = await buildDocxFromBodyXml(
+        '<w:p><w:r><w:t>Alpha </w:t></w:r><w:del w:id="43" w:author="Prior Author" w:date="2026-08-02T12:00:00Z"><w:r><w:delText>Deleted text</w:delText></w:r></w:del><w:ins w:id="44" w:author="Prior Author" w:date="2026-08-03T12:00:00Z"><w:r><w:t>Inserted text</w:t></w:r></w:ins><w:r><w:t> gamma.</w:t></w:r></w:p>',
+      );
+      const document = await DocxDocument.load(base);
+      document.insertParagraphBookmarks('revision-inline-comment');
+      const paragraphId = document.buildDocumentView().nodes[0]!.id;
+      const added = await document.addComment({ paragraphId, start: scenario.start, end: scenario.end, author: 'Reviewer', initials: 'RV', text: 'Original note' });
+      const source = (await document.toBuffer({ cleanBookmarks: false })).buffer;
+      const sourceDocumentXml = await partXml(source, 'word/document.xml');
+      const imported = await importDocxToMarkdoc(source);
+      const markdoc = imported.markdoc.replace('Original note', `Edited note ${scenario.label}`)
+        .replace('source-presentation="comment"', 'source-presentation="comment" presentation="comment"');
+      const result = await compileMarkdoc(imported.anchoredSource, markdoc);
 
-    await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({
-      code: 'ANNOTATION_REVISION_TOPOLOGY_UNSUPPORTED',
-      details: { sourceRevisionCount: 1, missingRevisions: [{ part: 'word/document.xml', element: 'ins', id: '44' }] },
+      expect(await partXml(result.tracked, 'word/document.xml')).toBe(sourceDocumentXml);
+      expect(await revisionXml(result.tracked)).toEqual(await revisionXml(source));
+      expect(result.certificate).toMatchObject({ existingRevisionsPreserved: true, existingRevisionCount: 2, projectedRevisionCount: 2 });
+      const comments = await (await DocxDocument.load(result.tracked)).getComments();
+      expect(comments[0]).toMatchObject({ id: added.commentId, author: 'Reviewer', initials: 'RV', text: `Edited note ${scenario.label}` });
+      const accepted = await DocxDocument.load(result.tracked);
+      const rejected = await DocxDocument.load(result.tracked);
+      await accepted.acceptChanges();
+      await rejected.rejectChanges();
+      expect(physicalText(accepted)).toContain('Inserted text');
+      expect(physicalText(accepted)).not.toContain('Deleted text');
+      expect(physicalText(rejected)).not.toContain('Inserted text');
+      expect(physicalText(rejected)).toContain('Deleted text');
     });
-  });
+  }
 
   test('[SDX-MDOC-98] rejects operative edits when the only existing revision is a property change', async () => {
     const base = await buildDocxFromBodyXml(

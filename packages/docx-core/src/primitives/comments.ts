@@ -18,6 +18,7 @@ import { getFirstChild } from './xml-helpers.js';
 import { extractEffectiveRunFormatting, parseStylesXml, parseThemeXml, type StylesModel, type ThemeModel } from './styles.js';
 import { emitFormattingTags, mergeAdjacentTags, type AnnotatedRun } from './formatting_tags.js';
 import { ensureExternalHyperlinkRelationships } from './relationships.js';
+import { SafeDocxError } from './errors.js';
 import {
   createRevisionContainer,
   prepareElementForDeletion,
@@ -218,6 +219,12 @@ export type CommentBodyRun = {
   hyperlink?: { destination: string };
 };
 export type CommentBodyParagraph = { runs: CommentBodyRun[] };
+
+export type UpdateCommentBodyParams = {
+  commentId: number;
+  text: string;
+  body?: CommentBodyParagraph[];
+};
 
 function commentBodyDestinations(body: CommentBodyParagraph[] | undefined): string[] {
   return body?.flatMap((paragraph) => paragraph.runs.flatMap((run) => run.hyperlink ? [run.hyperlink.destination] : [])) ?? [];
@@ -465,6 +472,86 @@ export async function addCommentReply(
   await ensureAuthorInPeople(zip, author);
 
   return { commentId, parentCommentId };
+}
+
+/**
+ * Replace only the editable body payload of an existing comment definition.
+ * Comment identity, authorship metadata, threading metadata, and every anchor
+ * in document.xml remain untouched. The admitted topology intentionally
+ * matches the comment-body subset exposed by getComments(); unfamiliar direct
+ * children fail closed before comments.xml is mutated.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.2
+ * @see https://github.com/UseJunior/safe-docx/issues/960
+ */
+export async function updateCommentBody(
+  zip: DocxZip,
+  params: UpdateCommentBodyParams,
+): Promise<void> {
+  const commentsText = await zip.readTextOrNull('word/comments.xml');
+  if (!commentsText) throw new Error(`Comment ID ${params.commentId} not found`);
+  const commentsDoc = parseXml(commentsText);
+  const commentEl = findCommentElementById(commentsDoc, params.commentId);
+  if (!commentEl) throw new Error(`Comment ID ${params.commentId} not found`);
+
+  const paragraphs = Array.from(commentEl.childNodes)
+    .filter((node) => node.nodeType === 1) as Element[];
+  if (paragraphs.length === 0 || paragraphs.some((element) => !isW(element, W.p))) {
+    throw new SafeDocxError(
+      'UNSUPPORTED_EDIT',
+      `Comment ID ${params.commentId} has unsupported body topology`,
+      'Only direct w:p comment-body children can be updated in place.',
+    );
+  }
+
+  const first = paragraphs[0]!;
+  const markerRuns = Array.from(first.childNodes)
+    .filter((node) => node.nodeType === 1 && isW(node as Element, W.r))
+    .filter((run) => (run as Element).getElementsByTagNameNS(OOXML.W_NS, W.annotationRef).length > 0) as Element[];
+  if (markerRuns.length !== 1) {
+    throw new SafeDocxError(
+      'UNSUPPORTED_EDIT',
+      `Comment ID ${params.commentId} has unsupported annotation-reference topology`,
+      'Exactly one annotation-reference run is required in the first comment paragraph.',
+    );
+  }
+
+  for (const paragraph of paragraphs) {
+    const children = Array.from(paragraph.childNodes).filter((node) => node.nodeType === 1) as Element[];
+    const unsupported = children.find((child) =>
+      !isW(child, W.pPr)
+      && !isW(child, W.r)
+      && !isW(child, W.hyperlink));
+    if (unsupported) {
+      throw new SafeDocxError(
+        'UNSUPPORTED_EDIT',
+        `Comment ID ${params.commentId} contains unsupported ${unsupported.nodeName}`,
+        'The existing comment body was left unchanged.',
+      );
+    }
+  }
+
+  const body = params.body ?? [{ runs: [{ text: params.text }] }];
+  const hyperlinkRelationshipIds = await ensureExternalHyperlinkRelationships(
+    zip,
+    'word/comments.xml',
+    commentBodyDestinations(body),
+  );
+
+  for (const child of Array.from(first.childNodes)) {
+    if (child.nodeType !== 1) continue;
+    const element = child as Element;
+    if (isW(element, W.pPr) || element === markerRuns[0]) continue;
+    first.removeChild(element);
+  }
+  appendCommentBodyRuns(first, body[0]?.runs ?? [], commentsDoc, hyperlinkRelationshipIds);
+  for (const paragraph of paragraphs.slice(1)) commentEl.removeChild(paragraph);
+  for (const bodyParagraph of body.slice(1)) {
+    const paragraph = commentsDoc.createElementNS(OOXML.W_NS, 'w:p');
+    appendCommentBodyRuns(paragraph, bodyParagraph.runs, commentsDoc, hyperlinkRelationshipIds);
+    commentEl.appendChild(paragraph);
+  }
+  zip.writeText('word/comments.xml', serializeXml(commentsDoc));
 }
 
 // ── Internal helpers ────────────────────────────────────────────────────

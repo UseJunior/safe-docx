@@ -11,6 +11,7 @@ import {
   getComments,
   getComment,
   deleteComment,
+  updateCommentBody,
 } from './comments.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
 
@@ -90,7 +91,53 @@ function directChildElementNames(element: Element): string[] {
     .map((node) => (node as Element).localName);
 }
 
+function findElementByWordId(document: Document, localName: string, id: number): Element | null {
+  return Array.from(document.getElementsByTagNameNS(W_NS, localName))
+    .find((element) => (element as Element).getAttribute('w:id') === String(id)) as Element | undefined ?? null;
+}
+
 describe('comments — edge cases and branch coverage', () => {
+  describe('updateCommentBody', () => {
+    test('updates only the selected comment body while preserving metadata and unrelated XML', async () => {
+      const commentsXml =
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w:comments xmlns:w="${W_NS}" xmlns:w14="${OOXML.W14_NS}" data-sentinel="root">` +
+        `<w:comment w:id="7" w:author="Jane Doe" w:date="2026-08-03T12:00:00Z" w:initials="JD" data-sentinel="target">` +
+        `<w:p w14:paraId="A1B2C3D4" data-sentinel="paragraph"><w:pPr><w:pStyle w:val="CommentText"/></w:pPr>` +
+        `<w:r data-sentinel="reference"><w:annotationRef/></w:r><w:r><w:t>Original</w:t></w:r></w:p></w:comment>` +
+        `<w:comment w:id="8" w:author="John Smith" w:date="2026-08-04T12:00:00Z" w:initials="JS"><w:p w14:paraId="B1B2C3D4"><w:r><w:annotationRef/></w:r><w:r><w:t>Untouched</w:t></w:r></w:p></w:comment>` +
+        `</w:comments>`;
+      const zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>', { 'word/comments.xml': commentsXml }));
+      const documentBefore = await zip.readText('word/document.xml');
+
+      await updateCommentBody(zip, {
+        commentId: 7,
+        text: 'Edited',
+        body: [{ runs: [{ text: 'Edited', style: { bold: true } }] }, { runs: [{ text: 'Second paragraph' }] }],
+      });
+
+      expect(await zip.readText('word/document.xml')).toBe(documentBefore);
+      const result = parseXml(await zip.readText('word/comments.xml'));
+      const target = findElementByWordId(result, W.comment, 7)!;
+      const untouched = findElementByWordId(result, W.comment, 8)!;
+      expect(target.getAttribute('w:author')).toBe('Jane Doe');
+      expect(target.getAttribute('w:date')).toBe('2026-08-03T12:00:00Z');
+      expect(target.getAttribute('w:initials')).toBe('JD');
+      expect(target.getAttribute('data-sentinel')).toBe('target');
+      expect(target.getElementsByTagNameNS(W_NS, W.annotationRef)).toHaveLength(1);
+      expect(target.getElementsByTagNameNS(W_NS, W.p).item(0)?.getAttribute('data-sentinel')).toBe('paragraph');
+      expect(target.textContent).toContain('EditedSecond paragraph');
+      expect(serializeXml(untouched)).toContain('Untouched');
+    });
+
+    test('fails closed before mutation for an unsupported direct child', async () => {
+      const commentsXml = `<w:comments xmlns:w="${W_NS}" xmlns:w14="${OOXML.W14_NS}"><w:comment w:id="7" w:author="Jane Doe"><w:tbl/><w:p w14:paraId="A1B2C3D4"><w:r><w:annotationRef/></w:r><w:r><w:t>Original</w:t></w:r></w:p></w:comment></w:comments>`;
+      const zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>', { 'word/comments.xml': commentsXml }));
+
+      await expect(updateCommentBody(zip, { commentId: 7, text: 'Edited' })).rejects.toMatchObject({ code: 'UNSUPPORTED_EDIT' });
+      expect(await zip.readText('word/comments.xml')).toBe(commentsXml);
+    });
+  });
   describe('bootstrapCommentParts', () => {
     test('is idempotent when comment parts already exist', async ({ given, when, then }: AllureBddContext) => {
       let zip: DocxZip;

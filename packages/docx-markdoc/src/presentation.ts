@@ -107,6 +107,18 @@ function flatText(annotation: CanonicalAnnotation): string {
   return annotation.body.map((paragraph) => paragraph.runs.map((run) => run.text).join('')).join('\n');
 }
 
+function anchorsEqual(left: AnnotationAnchor, right: AnnotationAnchor): boolean {
+  if (left.kind !== right.kind) return false;
+  if (left.kind === 'point' && right.kind === 'point') {
+    return left.point.paragraphId === right.point.paragraphId && left.point.offset === right.point.offset;
+  }
+  if (left.kind === 'range' && right.kind === 'range') {
+    return left.start.paragraphId === right.start.paragraphId && left.start.offset === right.start.offset
+      && left.end.paragraphId === right.end.paragraphId && left.end.offset === right.end.offset;
+  }
+  return false;
+}
+
 export type AnnotationProjectionResult = {
   buffer: Buffer;
   profile: AnnotationPresentationProfile;
@@ -135,7 +147,13 @@ export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requ
   }
 
   const document = await DocxDocument.load(buffer);
-  const sourceCommentRoots = annotations.filter((annotation) => annotation.sourcePresentation === 'comment' && !annotation.replyParentId);
+  const inplaceCommentIds = new Set(planned
+    .filter(({ annotation, as, anchor }) => annotation.sourcePresentation === 'comment'
+      && as === 'comment'
+      && anchorsEqual(anchor, annotation.sourceAnchor)
+      && Number.isInteger(Number(annotation.id.replace(/^comment:/, ''))))
+    .map(({ annotation }) => annotation.id));
+  const sourceCommentRoots = annotations.filter((annotation) => annotation.sourcePresentation === 'comment' && !annotation.replyParentId && !inplaceCommentIds.has(annotation.id));
   for (const annotation of sourceCommentRoots) {
     const id = Number(annotation.id.replace(/^comment:/, ''));
     if (Number.isInteger(id)) await document.deleteComment({ commentId: id });
@@ -167,6 +185,24 @@ export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requ
     if (warning) warnings.push(`${annotation.id}: ${warning}`);
     if (as === 'omit') continue;
     const rule = profile[annotation.audience];
+    if (inplaceCommentIds.has(annotation.id)) {
+      const commentId = Number(annotation.id.replace(/^comment:/, ''));
+      try {
+        await document.updateCommentBody({
+          commentId,
+          text: flatText(annotation),
+          body: mergedBody(annotation, rule?.bodyStyle),
+        });
+      } catch (error) {
+        throw new DocxMarkdocError(
+          'ANNOTATION_REVISION_TOPOLOGY_UNSUPPORTED',
+          `Annotation ${annotation.id} cannot be updated in place without disturbing unsupported comment-body topology.`,
+          { annotationId: annotation.id, cause: (error as Error).message },
+        );
+      }
+      commentIds.set(annotation.id, commentId);
+      continue;
+    }
     if (as === 'footnote') {
       const point = anchor.kind === 'point' ? anchor.point : anchor.end;
       await document.addFootnote({
