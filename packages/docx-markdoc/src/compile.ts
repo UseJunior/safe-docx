@@ -139,9 +139,31 @@ export function projectionChecksPassed(checks: Pick<
     && checks.existingRevisionsPreserved;
 }
 
+/**
+ * Revision containers and range markers whose serialized XML must survive an
+ * annotation-only projection unchanged. The set is deliberately the one that
+ * docx-core accept/reject resolves — `w:ins`/`w:del`, the move family, and the
+ * six property-change kinds — plus `w:tblGridChange`. `w:numberingChange`,
+ * `w:cellIns`/`w:cellDel`/`w:cellMerge`, and the `w:customXml*Range*` markers
+ * are outside the set: they are neither preservation-checked nor treated as
+ * existing revisions when gating operative edits.
+ *
+ * Limitation: the non-greedy body match ends at the first closing tag of the
+ * same name, so a container nested inside another container of the same kind
+ * truncates the outer capture. That topology is schema-valid but rare in Word
+ * output, and the truncation is symmetric across source and projection.
+ */
 const REVISION_ELEMENT_PATTERN = /<w:(ins|del|moveFrom|moveTo|moveFromRangeStart|moveFromRangeEnd|moveToRangeStart|moveToRangeEnd|rPrChange|pPrChange|tblPrChange|tblGridChange|trPrChange|tcPrChange|sectPrChange)\b(?:[^>]*\/>|[\s\S]*?<\/w:\1>)/gu;
 
 type RevisionSnapshot = Array<{ part: string; xml: string }>;
+
+type RevisionDescriptor = { part: string; element: string; id?: string };
+
+type RevisionPreservationReport = {
+  preserved: boolean;
+  /** Source revisions, in source order, that the projection no longer contains verbatim at or after the previous match. */
+  missing: RevisionDescriptor[];
+};
 
 /**
  * Capture exact revision elements together with their WordprocessingML story.
@@ -165,19 +187,38 @@ async function revisionSnapshot(buffer: Buffer): Promise<RevisionSnapshot> {
   return snapshot;
 }
 
-function sourceRevisionsPreserved(source: RevisionSnapshot, projected: RevisionSnapshot): boolean {
-  const projectedCounts = new Map<string, number>();
+function describeRevision(item: RevisionSnapshot[number]): RevisionDescriptor {
+  const element = /^<w:(\w+)/u.exec(item.xml)?.[1] ?? 'unknown';
+  const id = /^<[^>]*?\sw:id="([^"]*)"/u.exec(item.xml)?.[1];
+  return { part: item.part, element, ...(id === undefined ? {} : { id }) };
+}
+
+/**
+ * Every source revision must reappear verbatim in the projected output, in
+ * the same story part and in the same relative order. Projection may add
+ * revision markup of its own (see issue #961), so this is an ordered
+ * subsequence check per part rather than equality.
+ */
+function verifyRevisionPreservation(source: RevisionSnapshot, projected: RevisionSnapshot): RevisionPreservationReport {
+  const projectedByPart = new Map<string, string[]>();
   for (const item of projected) {
-    const key = JSON.stringify(item);
-    projectedCounts.set(key, (projectedCounts.get(key) ?? 0) + 1);
+    const list = projectedByPart.get(item.part) ?? [];
+    list.push(item.xml);
+    projectedByPart.set(item.part, list);
   }
+  const cursors = new Map<string, number>();
+  const missing: RevisionDescriptor[] = [];
   for (const item of source) {
-    const key = JSON.stringify(item);
-    const remaining = projectedCounts.get(key) ?? 0;
-    if (remaining === 0) return false;
-    projectedCounts.set(key, remaining - 1);
+    const candidates = projectedByPart.get(item.part) ?? [];
+    let index = cursors.get(item.part) ?? 0;
+    while (index < candidates.length && candidates[index] !== item.xml) index += 1;
+    if (index >= candidates.length) {
+      missing.push(describeRevision(item));
+      continue;
+    }
+    cursors.set(item.part, index + 1);
   }
-  return true;
+  return { preserved: missing.length === 0, missing };
 }
 
 function verificationText(document: DocxDocument): string {
@@ -853,14 +894,19 @@ export async function compileMarkdoc(
     tracked = annotationProjection.buffer;
   }
   const trackedRevisions = await revisionSnapshot(tracked);
-  const existingRevisionsPreserved = sourceRevisionsPreserved(sourceRevisions, trackedRevisions);
-  if (!existingRevisionsPreserved) {
+  const revisionPreservation = verifyRevisionPreservation(sourceRevisions, trackedRevisions);
+  if (!revisionPreservation.preserved) {
     throw new DocxMarkdocError(
       'ANNOTATION_REVISION_TOPOLOGY_UNSUPPORTED',
-      'Annotation projection would change existing revision XML or story placement.',
-      { sourceRevisionCount: sourceRevisions.length, projectedRevisionCount: trackedRevisions.length },
+      'Annotation projection would change existing revision XML, order, or story placement.',
+      {
+        sourceRevisionCount: sourceRevisions.length,
+        projectedRevisionCount: trackedRevisions.length,
+        missingRevisions: revisionPreservation.missing.slice(0, 8),
+      },
     );
   }
+  const existingRevisionsPreserved = revisionPreservation.preserved;
   const acceptedDoc = await DocxDocument.load(tracked);
   const rejectedDoc = await DocxDocument.load(tracked);
   await acceptedDoc.acceptChanges();
@@ -896,6 +942,7 @@ export async function compileMarkdoc(
     unchangedPackagePartsPreserved,
     existingRevisionsPreserved,
     existingRevisionCount: sourceRevisions.length,
+    projectedRevisionCount: trackedRevisions.length,
     unsupportedStructures: unsupported,
     appliedOperations: declaredOperationIds,
     commentRendering: {
