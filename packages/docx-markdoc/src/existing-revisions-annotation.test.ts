@@ -31,7 +31,7 @@ function physicalText(document: DocxDocument): string {
   return document.getParagraphs().map((paragraph) => getParagraphRuns(paragraph).map((run) => run.text).join('')).join('\n');
 }
 
-async function revisedSource(kind: 'ins' | 'del', annotation: 'comment' | 'footnote', reply = false): Promise<Buffer> {
+async function revisedSource(kind: 'ins' | 'del', annotation: 'comment' | 'footnote', reply: boolean | 'nested' = false): Promise<Buffer> {
   const revision = kind === 'ins' ? INSERTION : DELETION;
   const base = await buildDocxFromBodyXml(`<w:p>${revision}<w:r><w:t>Alpha beta gamma.</w:t></w:r></w:p>`);
   const document = await DocxDocument.load(base);
@@ -43,7 +43,10 @@ async function revisedSource(kind: 'ins' | 'del', annotation: 'comment' | 'footn
   if (annotation === 'comment') {
     const point = kind === 'ins' ? { start: 15, end: 19 } : { start: 5, end: 5 };
     const root = await document.addComment({ paragraphId, ...point, author: 'Reviewer', initials: 'RV', text: 'Original note' });
-    if (reply) await document.addCommentReply({ parentCommentId: root.commentId, author: 'Responder', initials: 'RS', text: 'Original reply' });
+    if (reply) {
+      const firstReply = await document.addCommentReply({ parentCommentId: root.commentId, author: 'Responder', initials: 'RS', text: 'Original reply' });
+      if (reply === 'nested') await document.addCommentReply({ parentCommentId: firstReply.commentId, author: 'Leaf', initials: 'LF', text: 'Original leaf' });
+    }
   } else {
     await document.addFootnote({ paragraphId, visibleOffset: kind === 'ins' ? 14 : 7, text: 'Original footnote' });
   }
@@ -173,6 +176,30 @@ describe('annotation-only projection preserves existing revisions', () => {
 
     expect(comments[0]).toMatchObject({ author: 'Jane Doe', initials: 'JD' });
     expect(result.certificate.existingRevisionsPreserved).toBe(true);
+  });
+
+  test('[SDX-MDOC-96] re-emits an entire three-level thread when an intermediate reply changes metadata', async () => {
+    const imported = await importDocxToMarkdoc(await revisedSource('ins', 'comment', 'nested'));
+    const markdoc = imported.markdoc
+      .replaceAll('source-presentation="comment"', 'source-presentation="comment" presentation="comment"')
+      .replace('author="Responder"', 'author="Jane Doe"');
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+    const comments = await (await DocxDocument.load(result.tracked)).getComments();
+
+    expect(comments[0]?.replies[0]).toMatchObject({ author: 'Jane Doe' });
+    expect(comments[0]?.replies[0]?.replies[0]).toMatchObject({ author: 'Leaf', text: 'Original leaf' });
+  });
+
+  test('[SDX-MDOC-96] rejects reply re-parenting to a missing canonical comment instead of retaining the old parent', async () => {
+    const imported = await importDocxToMarkdoc(await revisedSource('ins', 'comment', true));
+    const markdoc = imported.markdoc
+      .replaceAll('source-presentation="comment"', 'source-presentation="comment" presentation="comment"')
+      .replace('reply-parent="comment:0"', 'reply-parent="comment:999"');
+
+    await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({
+      code: 'INVALID_MARKDOC',
+      details: [{ code: 'ORPHAN_ANNOTATION_REPLY' }],
+    });
   });
 
   test('[SDX-MDOC-95] fails atomically when existing revisions are combined with operative edits', async () => {

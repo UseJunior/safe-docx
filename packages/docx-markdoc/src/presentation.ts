@@ -126,12 +126,14 @@ function sourceCommentId(annotation: CanonicalAnnotation): number | undefined {
 
 function flattenComments(comments: Awaited<ReturnType<DocxDocument['getComments']>>) {
   const flattened = new Map<number, (typeof comments)[number]>();
-  const visit = (comment: (typeof comments)[number]): void => {
+  const parentIds = new Map<number, number>();
+  const visit = (comment: (typeof comments)[number], parentId?: number): void => {
     flattened.set(comment.id, comment);
-    comment.replies.forEach(visit);
+    if (parentId !== undefined) parentIds.set(comment.id, parentId);
+    comment.replies.forEach((reply) => visit(reply, comment.id));
   };
-  comments.forEach(visit);
-  return flattened;
+  comments.forEach((comment) => visit(comment));
+  return { comments: flattened, parentIds };
 }
 
 export type AnnotationProjectionResult = {
@@ -162,7 +164,7 @@ export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requ
   }
 
   const document = await DocxDocument.load(buffer);
-  const existingComments = flattenComments(await document.getComments());
+  const existingThread = flattenComments(await document.getComments());
   const plannedById = new Map(planned.map((item) => [item.annotation.id, item]));
   const rootOf = (annotation: CanonicalAnnotation): CanonicalAnnotation => {
     let current = annotation;
@@ -179,18 +181,34 @@ export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requ
   const individuallyEligible = new Set(planned
     .filter(({ annotation, as, anchor }) => {
       const id = sourceCommentId(annotation);
-      const existing = id === undefined ? undefined : existingComments.get(id);
+      const existing = id === undefined ? undefined : existingThread.comments.get(id);
+      const parentAnnotation = annotation.replyParentId ? plannedById.get(annotation.replyParentId)?.annotation : undefined;
+      const expectedParentId = parentAnnotation ? sourceCommentId(parentAnnotation) : undefined;
       return annotation.sourcePresentation === 'comment'
         && as === 'comment'
         && anchorsEqual(anchor, annotation.sourceAnchor)
         && existing !== undefined
         && existing.author === (annotation.author ?? 'Markdoc')
         && existing.initials === (annotation.initials ?? '')
-        && existing.date === (annotation.date ?? '');
+        && existing.date === (annotation.date ?? '')
+        && (!annotation.replyParentId || parentAnnotation !== undefined)
+        && existingThread.parentIds.get(id!) === expectedParentId;
     })
     .map(({ annotation }) => annotation.id));
+  const eligibleThroughRoot = (annotation: CanonicalAnnotation): boolean => {
+    let current = annotation;
+    const seen = new Set<string>();
+    while (true) {
+      if (!individuallyEligible.has(current.id) || seen.has(current.id)) return false;
+      seen.add(current.id);
+      if (!current.replyParentId) return true;
+      const parent = plannedById.get(current.replyParentId)?.annotation;
+      if (!parent) return false;
+      current = parent;
+    }
+  };
   const inplaceCommentIds = new Set(planned
-    .filter(({ annotation }) => individuallyEligible.has(annotation.id) && individuallyEligible.has(rootOf(annotation).id))
+    .filter(({ annotation }) => eligibleThroughRoot(annotation))
     .map(({ annotation }) => annotation.id));
   const sourceCommentRoots = annotations.filter((annotation) => annotation.sourcePresentation === 'comment' && !annotation.replyParentId && !inplaceCommentIds.has(annotation.id));
   for (const annotation of sourceCommentRoots) {

@@ -130,7 +130,7 @@ describe('comments — edge cases and branch coverage', () => {
       expect(target.getElementsByTagNameNS(W_NS, W.p).item(1)?.getAttribute('data-sentinel')).toBe('second');
       expect(target.getElementsByTagNameNS(W_NS, W.p).item(1)?.getElementsByTagNameNS(W_NS, W.pPr)).toHaveLength(1);
       expect(target.textContent).toContain('EditedSecond paragraph');
-      expect(serializeXml(untouched)).toContain('Untouched');
+      expect(untouched.textContent).toContain('Untouched');
     });
 
     test('fails closed before mutation for an unsupported direct child', async () => {
