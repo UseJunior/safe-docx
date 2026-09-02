@@ -12,6 +12,6 @@
 - [x] 2.3 Cover footnote body editing and footnote-to-comment projection.
 - [x] 2.4 Cover structured fail-closed behavior for mixed operative edits.
 - [x] 2.5 Cover reply topology beside an existing revision.
-- [x] 2.7 Cover fail-closed behavior for a comment range inside an existing insertion.
+- [x] 2.7 Cover in-place body edits for comments inside, spanning, and adjacent to existing insertion/deletion containers.
 - [x] 2.8 Cover property-change-only sources rejecting operative edits.
 - [x] 2.6 Run focused tests and the full repository pre-submit suite.

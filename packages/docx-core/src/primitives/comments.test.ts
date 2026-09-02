@@ -11,8 +11,10 @@ import {
   getComments,
   getComment,
   deleteComment,
+  updateCommentBody,
 } from './comments.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
+import { DocxDocument } from './document.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Comments' });
 
@@ -90,7 +92,133 @@ function directChildElementNames(element: Element): string[] {
     .map((node) => (node as Element).localName);
 }
 
+function findElementByWordId(document: Document, localName: string, id: number): Element | null {
+  return Array.from(document.getElementsByTagNameNS(W_NS, localName))
+    .find((element) => (element as Element).getAttribute('w:id') === String(id)) as Element | undefined ?? null;
+}
+
 describe('comments — edge cases and branch coverage', () => {
+  describe('updateCommentBody', () => {
+    test('updates only the selected comment body while preserving metadata and unrelated XML', async () => {
+      const commentsXml =
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w:comments xmlns:w="${W_NS}" xmlns:w14="${OOXML.W14_NS}" data-sentinel="root">` +
+        `<w:comment w:id="7" w:author="Jane Doe" w:date="2026-08-03T12:00:00Z" w:initials="JD" data-sentinel="target">` +
+        `<w:p w14:paraId="A1B2C3D4" data-sentinel="paragraph"><w:pPr><w:pStyle w:val="CommentText"/></w:pPr>` +
+        `<w:r data-sentinel="reference"><w:annotationRef/></w:r><w:r><w:t>Original</w:t></w:r></w:p>` +
+        `<w:p data-sentinel="second"><w:pPr><w:pStyle w:val="CommentText"/></w:pPr><w:r><w:t>Original second</w:t></w:r></w:p></w:comment>` +
+        `<w:comment w:id="8" w:author="John Smith" w:date="2026-08-04T12:00:00Z" w:initials="JS"><w:p w14:paraId="B1B2C3D4"><w:r><w:annotationRef/></w:r><w:r><w:t>Untouched</w:t></w:r></w:p></w:comment>` +
+        `</w:comments>`;
+      const zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>', { 'word/comments.xml': commentsXml }));
+      const documentBefore = await zip.readText('word/document.xml');
+
+      await updateCommentBody(zip, {
+        commentId: 7,
+        text: 'Edited',
+        body: [{ runs: [{ text: 'Edited', style: { bold: true } }] }, { runs: [{ text: 'Second paragraph' }] }],
+      });
+
+      expect(await zip.readText('word/document.xml')).toBe(documentBefore);
+      const result = parseXml(await zip.readText('word/comments.xml'));
+      const target = findElementByWordId(result, W.comment, 7)!;
+      const untouched = findElementByWordId(result, W.comment, 8)!;
+      expect(target.getAttribute('w:author')).toBe('Jane Doe');
+      expect(target.getAttribute('w:date')).toBe('2026-08-03T12:00:00Z');
+      expect(target.getAttribute('w:initials')).toBe('JD');
+      expect(target.getAttribute('data-sentinel')).toBe('target');
+      expect(target.getElementsByTagNameNS(W_NS, W.annotationRef)).toHaveLength(1);
+      expect(target.getElementsByTagNameNS(W_NS, W.p).item(0)?.getAttribute('data-sentinel')).toBe('paragraph');
+      expect(target.getElementsByTagNameNS(W_NS, W.p).item(1)?.getAttribute('data-sentinel')).toBe('second');
+      expect(target.getElementsByTagNameNS(W_NS, W.p).item(1)?.getElementsByTagNameNS(W_NS, W.pPr)).toHaveLength(1);
+      expect(target.textContent).toContain('EditedSecond paragraph');
+      expect(untouched.textContent).toContain('Untouched');
+    });
+
+    test('fails closed before mutation for an unsupported direct child', async () => {
+      const commentsXml = `<w:comments xmlns:w="${W_NS}" xmlns:w14="${OOXML.W14_NS}"><w:comment w:id="7" w:author="Jane Doe"><w:tbl/><w:p w14:paraId="A1B2C3D4"><w:r><w:annotationRef/></w:r><w:r><w:t>Original</w:t></w:r></w:p></w:comment></w:comments>`;
+      const zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>', { 'word/comments.xml': commentsXml }));
+
+      await expect(updateCommentBody(zip, { commentId: 7, text: 'Edited' })).rejects.toMatchObject({ code: 'UNSUPPORTED_EDIT' });
+      expect(await zip.readText('word/comments.xml')).toBe(commentsXml);
+    });
+
+    test('admits a comment body without the optional annotation-reference run', async () => {
+      const commentsXml = `<w:comments xmlns:w="${W_NS}" xmlns:w14="${OOXML.W14_NS}"><w:comment w:id="7" w:author="Jane Doe"><w:p w14:paraId="A1B2C3D4"><w:r><w:t>Original</w:t></w:r></w:p></w:comment></w:comments>`;
+      const zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>', { 'word/comments.xml': commentsXml }));
+
+      await updateCommentBody(zip, { commentId: 7, text: 'Edited' });
+
+      const result = await zip.readText('word/comments.xml');
+      expect(result).toContain('<w:t>Edited</w:t>');
+      expect(result).not.toContain('annotationRef');
+    });
+
+    test('fails closed for unsupported paragraph and annotation-reference topologies', async () => {
+      const cases = [
+        `<w:p><w:r><w:annotationRef/></w:r><w:bookmarkStart w:id="1" w:name="unsupported"/><w:r><w:t>Original</w:t></w:r></w:p>`,
+        `<w:p><w:r><w:annotationRef/></w:r><w:r><w:annotationRef/></w:r><w:r><w:t>Original</w:t></w:r></w:p>`,
+        `<w:p><w:r><w:t>First</w:t></w:r></w:p><w:p><w:r><w:annotationRef/></w:r><w:r><w:t>Original</w:t></w:r></w:p>`,
+      ];
+
+      for (const bodyXml of cases) {
+        const commentsXml = `<w:comments xmlns:w="${W_NS}"><w:comment w:id="7" w:author="Jane Doe">${bodyXml}</w:comment></w:comments>`;
+        const zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>', { 'word/comments.xml': commentsXml }));
+
+        await expect(updateCommentBody(zip, { commentId: 7, text: 'Edited' })).rejects.toMatchObject({ code: 'UNSUPPORTED_EDIT' });
+        expect(await zip.readText('word/comments.xml')).toBe(commentsXml);
+      }
+    });
+
+    test('reconciles paragraph count and the document facade persists the update', async () => {
+      const commentsXml = `<w:comments xmlns:w="${W_NS}"><w:comment w:id="7" w:author="Jane Doe"><w:p><w:r><w:annotationRef/></w:r><w:r><w:t>First</w:t></w:r></w:p><w:p><w:r><w:t>Remove me</w:t></w:r></w:p></w:comment></w:comments>`;
+      const source = await makeDocxBuffer('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>', { 'word/comments.xml': commentsXml });
+      const document = await DocxDocument.load(source);
+
+      await document.updateCommentBody({ commentId: 7, text: 'Edited' });
+      const output = (await document.toBuffer()).buffer;
+      const comments = await (await DocxDocument.load(output)).getComments();
+
+      expect(comments).toHaveLength(1);
+      expect(comments[0]?.text).toBe('Edited');
+      const outputZip = await loadZip(output);
+      expect(parseXml(await outputZip.readText('word/comments.xml')).getElementsByTagNameNS(W_NS, W.p)).toHaveLength(1);
+    });
+
+    test('creates additional body paragraphs in place', async () => {
+      const commentsXml = `<w:comments xmlns:w="${W_NS}"><w:comment w:id="7" w:author="Jane Doe"><w:p><w:r><w:annotationRef/></w:r><w:r><w:t>First</w:t></w:r></w:p></w:comment></w:comments>`;
+      const zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>', { 'word/comments.xml': commentsXml }));
+
+      await updateCommentBody(zip, {
+        commentId: 7,
+        text: 'First edited',
+        body: [{ runs: [{ text: 'First edited' }] }, { runs: [{ text: 'Second added' }] }],
+      });
+
+      const result = parseXml(await zip.readText('word/comments.xml'));
+      expect(result.getElementsByTagNameNS(W_NS, W.p)).toHaveLength(2);
+      expect(result.documentElement.textContent).toContain('First editedSecond added');
+    });
+
+    test('reports missing comment definitions without creating or mutating the part', async () => {
+      const withoutPart = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>'));
+      await expect(updateCommentBody(withoutPart, { commentId: 7, text: 'Edited' })).rejects.toThrow('Comment ID 7 not found');
+      expect(await withoutPart.readTextOrNull('word/comments.xml')).toBeNull();
+
+      const commentsXml = `<w:comments xmlns:w="${W_NS}"><w:comment w:id="8" w:author="Jane Doe"><w:p><w:r><w:t>Untouched</w:t></w:r></w:p></w:comment></w:comments>`;
+      const withoutId = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>', { 'word/comments.xml': commentsXml }));
+      await expect(updateCommentBody(withoutId, { commentId: 7, text: 'Edited' })).rejects.toThrow('Comment ID 7 not found');
+      expect(await withoutId.readText('word/comments.xml')).toBe(commentsXml);
+    });
+
+    test('ignores non-element paragraph children while replacing editable runs', async () => {
+      const commentsXml = `<w:comments xmlns:w="${W_NS}"><w:comment w:id="7" w:author="Jane Doe"><w:p>preserved-text<w:r><w:t>Original</w:t></w:r></w:p></w:comment></w:comments>`;
+      const zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>', { 'word/comments.xml': commentsXml }));
+
+      await updateCommentBody(zip, { commentId: 7, text: 'Edited' });
+
+      expect(await zip.readText('word/comments.xml')).toContain('preserved-text<w:r><w:t>Edited</w:t></w:r>');
+    });
+  });
   describe('bootstrapCommentParts', () => {
     test('is idempotent when comment parts already exist', async ({ given, when, then }: AllureBddContext) => {
       let zip: DocxZip;

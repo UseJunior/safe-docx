@@ -95,6 +95,7 @@ import {
   getComments as getCommentsImpl,
   getComment as getCommentImpl,
   deleteComment as deleteCommentImpl,
+  updateCommentBody as updateCommentBodyImpl,
   type AddCommentResult,
   type AddCommentReplyResult,
   type Comment,
@@ -1197,6 +1198,15 @@ export class DocxDocument {
     await deleteCommentImpl(this.documentXml, this.zip, params, ctx);
     this.dirty = true;
     this.documentViewCache = null;
+  }
+
+  async updateCommentBody(params: {
+    commentId: number;
+    text: string;
+    body?: import('./comments.js').CommentBodyParagraph[];
+  }): Promise<void> {
+    await updateCommentBodyImpl(this.zip, params);
+    this.dirty = true;
   }
 
   /**
