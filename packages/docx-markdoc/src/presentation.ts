@@ -166,18 +166,6 @@ export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requ
   const document = await DocxDocument.load(buffer);
   const existingThread = flattenComments(await document.getComments());
   const plannedById = new Map(planned.map((item) => [item.annotation.id, item]));
-  const rootOf = (annotation: CanonicalAnnotation): CanonicalAnnotation => {
-    let current = annotation;
-    const seen = new Set<string>();
-    while (current.replyParentId) {
-      if (seen.has(current.id)) return annotation;
-      seen.add(current.id);
-      const parent = plannedById.get(current.replyParentId)?.annotation;
-      if (!parent) return annotation;
-      current = parent;
-    }
-    return current;
-  };
   const individuallyEligible = new Set(planned
     .filter(({ annotation, as, anchor }) => {
       const id = sourceCommentId(annotation);
@@ -210,14 +198,32 @@ export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requ
   const inplaceCommentIds = new Set(planned
     .filter(({ annotation }) => eligibleThroughRoot(annotation))
     .map(({ annotation }) => annotation.id));
+  const sourceAnnotationById = new Map<number, CanonicalAnnotation>();
+  for (const annotation of annotations) {
+    const id = sourceCommentId(annotation);
+    if (id !== undefined) sourceAnnotationById.set(id, annotation);
+  }
+  const sourceAncestorsAreInplace = (annotation: CanonicalAnnotation): boolean => {
+    const id = sourceCommentId(annotation);
+    if (id === undefined) return false;
+    let parentId = existingThread.parentIds.get(id);
+    const seen = new Set<number>();
+    while (parentId !== undefined) {
+      if (seen.has(parentId)) return false;
+      seen.add(parentId);
+      const sourceParent = sourceAnnotationById.get(parentId);
+      if (!sourceParent || !inplaceCommentIds.has(sourceParent.id)) return false;
+      parentId = existingThread.parentIds.get(parentId);
+    }
+    return true;
+  };
   const sourceCommentRoots = annotations.filter((annotation) => annotation.sourcePresentation === 'comment' && !annotation.replyParentId && !inplaceCommentIds.has(annotation.id));
   for (const annotation of sourceCommentRoots) {
     const id = sourceCommentId(annotation);
     if (id !== undefined) await document.deleteComment({ commentId: id });
   }
   for (const annotation of annotations.filter((item) => item.sourcePresentation === 'comment' && item.replyParentId && !inplaceCommentIds.has(item.id))) {
-    const parent = plannedById.get(annotation.replyParentId!)?.annotation;
-    if (!parent || !inplaceCommentIds.has(rootOf(parent).id) || !inplaceCommentIds.has(parent.id)) continue;
+    if (!sourceAncestorsAreInplace(annotation)) continue;
     const id = sourceCommentId(annotation);
     if (id !== undefined) await document.deleteComment({ commentId: id });
   }
