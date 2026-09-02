@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@usejunior/docx-core": "^0.20.1",
-    "@xmldom/xmldom": "^0.9.10",
+    "@xmldom/xmldom": "^0.9.12",
     "jszip": "^3.10.1"
   },
   "devDependencies": {
