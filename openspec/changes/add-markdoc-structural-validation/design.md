@@ -28,6 +28,16 @@ different roles: a heading paragraph and a body follower. Repeated adjacent
 style transitions in the source establish that pairing. Validation requires
 both insertions, distinct structural peers, and an application order that
 produces heading then body. Text casing and punctuation are not authoritative.
+Pairing is one-to-one. `AFTER` operations name the body first because repeated
+insertion reverses around the anchor; `BEFORE` operations name the heading
+first. Multiple repeated followers for one heading style are resolved only when
+the submitted body peer makes the choice unique, otherwise validation emits an
+ambiguity error.
+
+`batch_edit` keeps same-slot collisions hard by default. The sole exception is
+an explicit two-step `bonded_pair_id` group that the source-derived validator
+recognizes as a correctly ordered heading/body pair with distinct style peers.
+Three-step groups and unrelated inserts at that slot remain conflicts.
 
 Junior Harness's current live hooks do not enforce this exact two-paragraph
 construction. Its same-paragraph regex is heuristic and its header consistency

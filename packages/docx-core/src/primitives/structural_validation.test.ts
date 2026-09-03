@@ -94,4 +94,35 @@ describe('structural insertion validation', () => {
       { operationId: 'body', position: 'AFTER', anchorId: 'anchor', styleSourceId: 'b1' },
     ])).toContainEqual(expect.objectContaining({ code: 'RUN_IN_PAIR_ORDER' }));
   });
+
+  test('uses each body operation for only one heading operation', () => {
+    const nodes = [node('h1', 2), { ...node('b1', null), style: 'HeadingPara2' }, node('h2', 2), { ...node('b2', null), style: 'HeadingPara2' }, node('anchor', 1)];
+    const diagnostics = validateStructuralInsertions(nodes, [
+      { operationId: 'body', position: 'AFTER', anchorId: 'anchor', styleSourceId: 'b1' },
+      { operationId: 'heading-one', position: 'AFTER', anchorId: 'anchor', styleSourceId: 'h1' },
+      { operationId: 'heading-two', position: 'AFTER', anchorId: 'anchor', styleSourceId: 'h2' },
+    ]);
+    expect(diagnostics).toContainEqual(expect.objectContaining({ code: 'BONDED_PARAGRAPH_PAIR_REQUIRED', operation_id: 'heading-two' }));
+  });
+
+  test('enforces the opposite source order for repeated BEFORE insertion', () => {
+    const nodes = [node('h1', 2), { ...node('b1', null), style: 'HeadingPara2' }, node('h2', 2), { ...node('b2', null), style: 'HeadingPara2' }, node('anchor', 1)];
+    expect(validateStructuralInsertions(nodes, [
+      { operationId: 'heading', position: 'BEFORE', anchorId: 'anchor', styleSourceId: 'h1' },
+      { operationId: 'body', position: 'BEFORE', anchorId: 'anchor', styleSourceId: 'b1' },
+    ]).some((item) => item.code === 'RUN_IN_PAIR_ORDER')).toBe(false);
+    expect(validateStructuralInsertions(nodes, [
+      { operationId: 'body', position: 'BEFORE', anchorId: 'anchor', styleSourceId: 'b1' },
+      { operationId: 'heading', position: 'BEFORE', anchorId: 'anchor', styleSourceId: 'h1' },
+    ])).toContainEqual(expect.objectContaining({ code: 'RUN_IN_PAIR_ORDER' }));
+  });
+
+  test('fails explicitly when one heading style has ambiguous repeated followers', () => {
+    const nodes = [
+      node('h1', 2), { ...node('a1', null), style: 'BodyA' }, node('h2', 2), { ...node('a2', null), style: 'BodyA' },
+      node('h3', 2), { ...node('b1', null), style: 'BodyB' }, node('h4', 2), { ...node('b2', null), style: 'BodyB' }, node('anchor', 1),
+    ];
+    expect(validateStructuralInsertions(nodes, [{ operationId: 'heading', position: 'AFTER', anchorId: 'anchor', styleSourceId: 'h1' }]))
+      .toContainEqual(expect.objectContaining({ code: 'BONDED_PARAGRAPH_PAIR_AMBIGUOUS' }));
+  });
 });
