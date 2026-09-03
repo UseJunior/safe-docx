@@ -202,7 +202,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'insert_paragraph',
     surface: 'revisionable',
-    description: 'Insert a paragraph before/after an anchor paragraph by paragraph id. Supports DOCX, ODT, and Google Docs. (ODT paragraph ids are positional and shift after insertion — re-read before further edits.) Surface: revisionable — DOCX insertions emit native OOXML tracked changes.',
+    description: 'Insert a paragraph before/after an anchor paragraph by paragraph id. DOCX responses include structural_warnings when the placement may slice a hierarchy, mismatch list levels, or renumber a list. Supports DOCX, ODT, and Google Docs. (ODT paragraph ids are positional and shift after insertion — re-read before further edits.) Surface: revisionable — DOCX insertions emit native OOXML tracked changes.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
