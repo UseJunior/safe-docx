@@ -46,42 +46,27 @@ describe('xmldom CharacterData nodeValue/data sync', () => {
     expect(new XMLSerializer().serializeToString(doc)).toContain('updated');
   });
 
-  // This test is marked .fails() to document the upstream bug, still present in
-  // @xmldom/xmldom 0.9.x. Direct nodeValue assignment only updates the instance
-  // property — `data` stays stale, so XMLSerializer silently outputs the old text.
-  //
-  // Once the library implements nodeValue as a getter/setter on CharacterData.prototype
-  // (or via Node.prototype dispatch), change this to a normal test() with the same assertions.
-  //
-  // Fix direction:
-  //   Object.defineProperty(CharacterData.prototype, 'nodeValue', {
-  //     get() { return this.data; },
-  //     set(v) { const s = v == null ? '' : String(v); this.data = s; this.length = s.length; }
-  //   });
-  test.fails('direct nodeValue assignment updates nodeValue but NOT data or XMLSerializer output', () => {
+  test('direct nodeValue assignment keeps data and XMLSerializer output in sync', () => {
     const doc = new DOMParser().parseFromString('<r/>', 'text/xml');
     const text = doc.createTextNode('original');
     doc.documentElement!.appendChild(text);
 
     text.nodeValue = 'updated';
 
-    // nodeValue appears correct — the instance property was shadowed
     expect(text.nodeValue).toBe('updated');
-    // data is stale — these fail in xmldom 0.9.x
     expect(text.data).toBe('updated');
     expect(new XMLSerializer().serializeToString(doc)).toContain('updated');
   });
 
-  // Real-world impact: simulates the setLeafText path in our DOCX comparison engine
-  // before the fix (Issue #35). The merged atom appeared correct in DOM traversal
-  // (nodeValue read back 'hello world') but XMLSerializer silently wrote stale text.
-  test.fails('merging atom text via nodeValue loses data on serialization', () => {
-    const doc = new DOMParser().parseFromString('<w:t>hello </w:t>', 'text/xml');
+  test('merging atom text via nodeValue preserves serialized data', () => {
+    const doc = new DOMParser().parseFromString(
+      '<w:t xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">hello </w:t>',
+      'text/xml',
+    );
     const textNode = doc.documentElement!.firstChild as unknown as CharacterData;
 
     textNode.nodeValue = 'hello world';
 
-    // These fail — data and serialized output remain 'hello '
     expect(textNode.data).toBe('hello world');
     expect(new XMLSerializer().serializeToString(doc)).toContain('hello world');
   });
