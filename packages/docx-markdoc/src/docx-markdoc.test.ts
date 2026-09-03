@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
 import { buildDocxFromParts, buildSyntheticDocx, DocxDocument, parseXml } from '@usejunior/docx-core';
-import { compileMarkdoc } from './compile.js';
+import { compileMarkdoc, validateMarkdocAgainstSource } from './compile.js';
 import { DocxMarkdocError } from './errors.js';
 import { exportAdjacentRevisionPairs, exportEditPairs } from './export.js';
 import { importDocxToMarkdoc } from './import.js';
@@ -83,6 +83,42 @@ describe('brownfield Markdoc authoring', () => {
     const imported = await importDocxToMarkdoc(original);
     const other = await buildSyntheticDocx({ paragraphs: ['Other.'] });
     await expect(compileMarkdoc(other, imported.markdoc)).rejects.toMatchObject({ code: 'SOURCE_HASH_DRIFT' });
+  });
+
+  it('rejects a parent-child slice before mutation and returns the last descendant', async () => {
+    const imported = await importDocxToMarkdoc(await structuralFixture());
+    const [parent] = requireMarkdoc(imported.markdoc).scaffold;
+    if (!parent) throw new Error('fixture parent missing');
+    const insertion = `${imported.markdoc}\n{% insert-after anchor="${parent.id}" operation="new-section" style-source="${parent.id}" %}\n{% after %}\nNew section.\n{% /after %}\n{% /insert-after %}\n`;
+    const validated = await validateMarkdocAgainstSource(imported.anchoredSource, insertion);
+    expect(validated.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'PARENT_CHILD_SLICE', suggested_anchor_id: validated.ir.scaffold[2]!.id,
+    }));
+    await expect(compileMarkdoc(imported.anchoredSource, insertion)).rejects.toMatchObject({
+      code: 'STRUCTURAL_VALIDATION_FAILED',
+    });
+  });
+
+  it('requires the NVCA-style Heading2 and HeadingPara2 pair and preserves their boundary', async () => {
+    const imported = await importDocxToMarkdoc(await bondedRunInFixture());
+    const [headingPeer, bodyPeer, , , parent] = requireMarkdoc(imported.markdoc).scaffold;
+    if (!headingPeer || !bodyPeer || !parent) throw new Error('run-in fixture missing');
+    const loneHeading = `${imported.markdoc}\n{% insert-after anchor="${parent.id}" operation="heading" style-source="${headingPeer.id}" %}\n{% after %}\n2.1 Additional Representation. The Company shall provide notice.\n{% /after %}\n{% /insert-after %}\n`;
+    await expect(compileMarkdoc(imported.anchoredSource, loneHeading)).rejects.toMatchObject({
+      code: 'STRUCTURAL_VALIDATION_FAILED',
+      details: expect.arrayContaining([expect.objectContaining({ code: 'BONDED_PARAGRAPH_PAIR_REQUIRED' })]),
+    });
+
+    // Repeated AFTER insertions reverse at the same anchor, so body is applied
+    // first and heading second to produce heading → body in the clean document.
+    const paired = `${imported.markdoc}\n{% insert-after anchor="${parent.id}" operation="body" style-source="${bodyPeer.id}" %}\n{% after %}\nThe Company shall provide notice.\n{% /after %}\n{% /insert-after %}\n{% insert-after anchor="${parent.id}" operation="heading" style-source="${headingPeer.id}" %}\n{% after %}\n2.1 Additional Representation.\n{% /after %}\n{% /insert-after %}\n`;
+    const result = await compileMarkdoc(imported.anchoredSource, paired);
+    const clean = await DocxDocument.load(result.clean);
+    expect(clean.buildDocumentView().nodes.slice(-3).map((node) => [node.raw_text, node.paragraph_style_id])).toEqual([
+      ['Parent section.', 'Heading1'],
+      ['2.1 Additional Representation.', 'Heading2'],
+      ['The Company shall provide notice.', 'HeadingPara2'],
+    ]);
   });
 
   it('[SDX-MDOC-01] preserves source-significant boundary spaces and literal entities', async () => {
@@ -483,6 +519,31 @@ async function numberedFixture(): Promise<Buffer> {
     bodyXml: [paragraph('First item.'), paragraph('Second item.'), paragraph('Third item.')].join(''),
     numberingXml: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum><w:num w:numId="7"><w:abstractNumId w:val="3"/></w:num></w:numbering>',
   });
+}
+
+async function structuralFixture(): Promise<Buffer> {
+  const paragraph = (style: string, text: string) => `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+  return buildDocxFromParts({
+    bodyXml: [paragraph('Heading1', 'Parent.'), paragraph('Heading2', 'Child.'), paragraph('Heading3', 'Grandchild.'), paragraph('Heading1', 'Sibling.')].join(''),
+    stylesXml: headingStylesXml(),
+  });
+}
+
+async function bondedRunInFixture(): Promise<Buffer> {
+  const paragraph = (style: string, text: string) => `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+  return buildDocxFromParts({
+    bodyXml: [
+      paragraph('Heading2', 'Existing heading one.'), paragraph('HeadingPara2', 'Existing body one.'),
+      paragraph('Heading2', 'Existing heading two.'), paragraph('HeadingPara2', 'Existing body two.'),
+      paragraph('Heading1', 'Parent section.'),
+    ].join(''),
+    stylesXml: headingStylesXml(true),
+  });
+}
+
+function headingStylesXml(includeRunIn = false): string {
+  const style = (id: string, name: string, level?: number) => `<w:style w:type="paragraph" w:styleId="${id}"><w:name w:val="${name}"/>${level == null ? '' : `<w:pPr><w:outlineLvl w:val="${level}"/></w:pPr>`}</w:style>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${style('Normal', 'Normal')}${style('Heading1', 'heading 1', 0)}${style('Heading2', 'heading 2', 1)}${style('Heading3', 'heading 3', 2)}${includeRunIn ? style('HeadingPara2', 'Heading Para 2') : ''}</w:styles>`;
 }
 
 async function numberingTopology(buffer: Buffer): Promise<Array<{ text: string; signature: string }>> {

@@ -6,6 +6,7 @@ import {
   stripHyperlinkTags,
   stripAllInlineTags,
   type ReplacementPart,
+  validateStructuralInsertions,
 } from '@usejunior/docx-core';
 import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
 import { errorMessage } from "../error_utils.js";
@@ -166,6 +167,16 @@ export async function insertParagraph(
       }
     }
 
+    const structuralWarnings = validateStructuralInsertions(
+      session.doc.buildDocumentView({ includeSemanticTags: false, showFormatting: true }).nodes,
+      [{
+        operationId: 'insert_paragraph',
+        position: positionUpper as 'BEFORE' | 'AFTER',
+        anchorId: params.positional_anchor_node_id,
+        styleSourceId,
+      }],
+    );
+
     let inputText = params.new_string;
     if (hasHyperlinkTags(inputText)) inputText = stripHyperlinkTags(inputText);
 
@@ -231,6 +242,7 @@ export async function insertParagraph(
       position: positionUpper,
       inserted_text: previewText(plainParagraphs.join('\n\n'), RESULT_PREVIEW_CHARS),
     };
+    if (structuralWarnings.length > 0) responseData.structural_warnings = structuralWarnings;
     if (res.styleSourceFallback) {
       responseData.style_source_warning = `style_source_id '${params.style_source_id}' not found; fell back to anchor paragraph formatting.`;
     }

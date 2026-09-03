@@ -4,6 +4,7 @@ import {
   SafeDocxError,
   findUniqueSubstringMatch,
   replaceParagraphTextRange,
+  isRecognizedBondedInsertionPair,
   type RevisionContext,
 } from '@usejunior/docx-core';
 import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
@@ -29,6 +30,7 @@ const INSERT_PARAGRAPH_FIELDS = new Set([
   'instruction',
   'position',
   'style_source_id',
+  'bonded_pair_id',
 ]);
 
 const SUPPORTED_OPERATIONS = new Set(['replace_text', 'insert_paragraph']);
@@ -77,6 +79,8 @@ type ConflictStep = {
   target_paragraph_id?: string;
   positional_anchor_node_id?: string;
   position?: 'BEFORE' | 'AFTER';
+  style_source_id?: string;
+  bonded_pair_id?: string;
   range?: { start: number; end: number };
 };
 
@@ -206,6 +210,10 @@ function validateSteps(
       if (pos !== undefined && pos !== 'BEFORE' && pos !== 'AFTER') {
         validation.errors.push(`Invalid position '${String(pos)}'. Must be 'BEFORE' or 'AFTER'.`);
       }
+      const bondedPairId = step.fields.bonded_pair_id;
+      if (bondedPairId !== undefined && (typeof bondedPairId !== 'string' || !bondedPairId.trim())) {
+        validation.errors.push('bonded_pair_id must be a non-empty string when provided.');
+      }
     }
 
     if (validation.errors.length > 0) validation.valid = false;
@@ -329,7 +337,7 @@ function detectReplaceConflicts(steps: ConflictStep[]): Conflict[] {
   return conflicts;
 }
 
-function detectInsertSlotCollisions(steps: ConflictStep[]): Conflict[] {
+function detectInsertSlotCollisions(steps: ConflictStep[], allowedBondedSlots = new Set<string>()): Conflict[] {
   const insertSteps = steps.filter(
     (s) => s.operation === 'insert_paragraph' && !!s.positional_anchor_node_id && !!s.position,
   );
@@ -344,6 +352,7 @@ function detectInsertSlotCollisions(steps: ConflictStep[]): Conflict[] {
   const conflicts: Conflict[] = [];
   for (const [slotKey, slotSteps] of bySlot.entries()) {
     if (slotSteps.length < 2) continue;
+    if (slotSteps.length === 2 && allowedBondedSlots.has(slotKey)) continue;
     const anchorId = slotSteps[0]!.positional_anchor_node_id!;
     const position = slotSteps[0]!.position!;
     conflicts.push({
@@ -383,8 +392,31 @@ function buildConflictView(steps: NormalizedStep[]): ConflictStep[] {
       source_step_index: index,
       positional_anchor_node_id: step.fields.positional_anchor_node_id as string | undefined,
       position: (step.fields.position as 'BEFORE' | 'AFTER' | undefined) ?? 'AFTER',
+      style_source_id: step.fields.style_source_id as string | undefined,
+      bonded_pair_id: step.fields.bonded_pair_id as string | undefined,
     };
   });
+}
+
+function recognizedBondedSlots(steps: ConflictStep[], doc: DocxDocument): Set<string> {
+  const result = new Set<string>();
+  const inserts = steps.filter((step) => step.operation === 'insert_paragraph' && step.bonded_pair_id);
+  const groups = new Map<string, ConflictStep[]>();
+  for (const step of inserts) groups.set(step.bonded_pair_id!, [...(groups.get(step.bonded_pair_id!) ?? []), step]);
+  const nodes = doc.buildDocumentView({ includeSemanticTags: false, showFormatting: true }).nodes;
+  for (const group of groups.values()) {
+    if (group.length !== 2 || group.some((step) => !step.style_source_id || !step.positional_anchor_node_id || !step.position)) continue;
+    const contexts = group.map((step) => ({
+      operationId: step.step_id,
+      position: step.position!,
+      anchorId: step.positional_anchor_node_id!,
+      styleSourceId: step.style_source_id,
+    }));
+    if (isRecognizedBondedInsertionPair(nodes, contexts)) {
+      result.add(`${group[0]!.positional_anchor_node_id}::${group[0]!.position}`);
+    }
+  }
+  return result;
 }
 
 async function executeSteps(
@@ -546,7 +578,7 @@ export async function batchEdit(
     const conflicts = [
       ...detectDuplicateStepIdConflicts(conflictSteps),
       ...detectReplaceConflicts(conflictSteps),
-      ...detectInsertSlotCollisions(conflictSteps),
+      ...detectInsertSlotCollisions(conflictSteps, recognizedBondedSlots(conflictSteps, session.doc)),
     ];
     if (conflicts.length > 0) {
       return {
