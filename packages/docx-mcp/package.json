@@ -30,7 +30,7 @@
     "@usejunior/docx-compare": "^0.20.1",
     "@usejunior/docx-core": "^0.20.1",
     "@usejunior/odf-core": "^0.20.1",
-    "@xmldom/xmldom": "^0.9.10",
+    "@xmldom/xmldom": "^0.9.12",
     "zod": "^4.3.6"
   },
   "devDependencies": {

@@ -1,4 +1,5 @@
 import { describe, expect } from 'vitest';
+import { DOMImplementation, XMLSerializer } from '@xmldom/xmldom';
 import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 import { parseXml, serializeXml, textContent } from '../src/primitives/xml.js';
 
@@ -75,6 +76,19 @@ describe('parseXml', () => {
 });
 
 describe('serializeXml', () => {
+  test('rejects an injected entity-reference name in well-formed mode', () => {
+    const doc = new DOMImplementation().createDocument(null, 'root', null);
+
+    expect(() => doc.createEntityReference('safe; <injected/> &x')).toThrow();
+
+    const reference = doc.createEntityReference('safe');
+    (reference as unknown as { nodeName: string }).nodeName = 'safe; <injected/> &x';
+
+    expect(() =>
+      new XMLSerializer().serializeToString(reference, { requireWellFormed: true }),
+    ).toThrowError(/not a valid XML Name/);
+  });
+
   test('round-trips simple XML back to string', async ({ given, when, then }: AllureBddContext) => {
     let doc!: Document;
     let serialized!: string;

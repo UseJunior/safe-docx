@@ -46,28 +46,14 @@ describe('xmldom CharacterData nodeValue/data sync', () => {
     expect(new XMLSerializer().serializeToString(doc)).toContain('updated');
   });
 
-  // This test is marked .fails() to document the upstream bug, still present in
-  // @xmldom/xmldom 0.9.x. Direct nodeValue assignment only updates the instance
-  // property — `data` stays stale, so XMLSerializer silently outputs the old text.
-  //
-  // Once the library implements nodeValue as a getter/setter on CharacterData.prototype
-  // (or via Node.prototype dispatch), change this to a normal test() with the same assertions.
-  //
-  // Fix direction:
-  //   Object.defineProperty(CharacterData.prototype, 'nodeValue', {
-  //     get() { return this.data; },
-  //     set(v) { const s = v == null ? '' : String(v); this.data = s; this.length = s.length; }
-  //   });
-  test.fails('direct nodeValue assignment updates nodeValue but NOT data or XMLSerializer output', () => {
+  test('direct nodeValue assignment keeps data and XMLSerializer output in sync', () => {
     const doc = new DOMParser().parseFromString('<r/>', 'text/xml');
     const text = doc.createTextNode('original');
     doc.documentElement!.appendChild(text);
 
     text.nodeValue = 'updated';
 
-    // nodeValue appears correct — the instance property was shadowed
     expect(text.nodeValue).toBe('updated');
-    // data is stale — these fail in xmldom 0.9.x
     expect(text.data).toBe('updated');
     expect(new XMLSerializer().serializeToString(doc)).toContain('updated');
   });
