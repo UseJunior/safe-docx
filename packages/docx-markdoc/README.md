@@ -132,8 +132,10 @@ The registry detects parent/child slicing, list-level mismatch, foreign
 numbering inserted into a continuous list, and incomplete bonded paragraph
 pairs. A repeated deterministic-heading-to-body-style transition (for example,
 `Heading2` followed by `HeadingPara2`) is treated as a two-paragraph structural
-unit: both halves need distinct style sources. No title-case or legal-content
-regex is used as structural authority.
+unit: both halves need distinct style sources, one body operation cannot satisfy
+multiple headings, and operation order is checked separately for `BEFORE` and
+`AFTER`. Ambiguous repeated follower styles fail with an explicit diagnostic.
+No title-case or legal-content regex is used as structural authority.
 
 Junior Harness retry state, warn-once policy, Aspose adapters, legal section
 classifiers, and content-specific remediation remain application concerns and

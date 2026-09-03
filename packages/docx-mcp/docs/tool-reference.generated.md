@@ -75,7 +75,7 @@ Search paragraphs with regex. Use file_path for session-based search, file_paths
 
 ## `batch_edit`
 
-Single-agent front door for applying multiple edit steps (replace_text, insert_paragraph) to a document in one call. Validates all steps first, rejects conflicts before applying anything, then executes valid steps sequentially. Accepts inline steps or a plan_file_path JSON array. Surface: revisionable — every applied step emits native OOXML tracked changes.
+Single-agent front door for applying multiple edit steps (replace_text, insert_paragraph) to a document in one call. Validates all steps first, rejects conflicts before applying anything, then executes valid steps sequentially. Two source-proven bonded heading/body insertions may share an anchor and position when both declare the same bonded_pair_id and distinct style_source_id values; unrelated same-slot inserts remain conflicts. Accepts inline steps or a plan_file_path JSON array. Surface: revisionable — every applied step emits native OOXML tracked changes.
 
 - readOnly: `false`
 - destructive: `true`

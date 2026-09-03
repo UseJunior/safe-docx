@@ -12,11 +12,13 @@ export type StructuralDiagnosticEvidence = {
   style_source_num_id?: string;
   bonded_heading_style?: string;
   bonded_body_style?: string;
+  bonded_body_style_candidates?: string[];
 };
 
 export type StructuralDiagnostic = {
   code: 'PARENT_CHILD_SLICE' | 'LIST_LEVEL_MISMATCH' | 'MID_LIST_RENUMBERING'
-    | 'BONDED_PARAGRAPH_PAIR_REQUIRED' | 'RUN_IN_PAIR_ORDER';
+    | 'BONDED_PARAGRAPH_PAIR_REQUIRED' | 'RUN_IN_PAIR_ORDER'
+    | 'BONDED_PARAGRAPH_PAIR_AMBIGUOUS';
   severity: StructuralDiagnosticSeverity;
   operation_id: string;
   anchor_id: string;
@@ -179,15 +181,41 @@ export function validateStructuralInsertions(
     transitions.set(key, { headingStyle, bodyStyle, count: (current?.count ?? 0) + 1 });
   }
   const bonded = [...transitions.values()].filter((transition) => transition.count >= 2);
+  const consumedBodyOperations = new Set<number>();
   contexts.forEach((context, headingOperationIndex) => {
     const source = nodes.find((node) => node.id === (context.styleSourceId ?? context.anchorId));
-    const pair = bonded.find((transition) => transition.headingStyle === structuralStyle(source));
-    if (!pair) return;
-    const bodyOperationIndex = contexts.findIndex((candidate) => {
-      if (candidate.anchorId !== context.anchorId || candidate.position !== context.position) return false;
+    const candidatePairs = bonded.filter((transition) => transition.headingStyle === structuralStyle(source));
+    if (candidatePairs.length === 0) return;
+    const availableBodies = contexts.map((candidate, index) => ({ candidate, index })).filter(({ candidate, index }) => {
+      if (consumedBodyOperations.has(index)) return false;
+      return candidate.anchorId === context.anchorId && candidate.position === context.position;
+    });
+    const suppliedBodyStyles = new Set(availableBodies.map(({ candidate }) => {
+      const candidateSource = nodes.find((node) => node.id === (candidate.styleSourceId ?? candidate.anchorId));
+      return structuralStyle(candidateSource);
+    }));
+    const matchingPairs = candidatePairs.filter((pair) => suppliedBodyStyles.has(pair.bodyStyle));
+    if (candidatePairs.length > 1 && matchingPairs.length !== 1) {
+      diagnostics.push({
+        code: 'BONDED_PARAGRAPH_PAIR_AMBIGUOUS', severity: 'error', operation_id: context.operationId,
+        anchor_id: context.anchorId,
+        message: `Style ${structuralStyle(source)} has multiple repeated body followers (${candidatePairs.map((pair) => pair.bodyStyle).sort().join(', ')}); supply exactly one matching body peer in this insertion slot.`,
+        evidence: {
+          anchor_level: hierarchyLevel(nodes.find((node) => node.id === context.anchorId)),
+          intended_level: hierarchyLevel(source),
+          style_source_id: context.styleSourceId,
+          bonded_heading_style: structuralStyle(source),
+          bonded_body_style_candidates: candidatePairs.map((pair) => pair.bodyStyle).sort(),
+        },
+      });
+      return;
+    }
+    const pair = matchingPairs[0] ?? candidatePairs[0]!;
+    const bodyOperation = availableBodies.find(({ candidate }) => {
       const candidateSource = nodes.find((node) => node.id === (candidate.styleSourceId ?? candidate.anchorId));
       return structuralStyle(candidateSource) === pair.bodyStyle;
     });
+    const bodyOperationIndex = bodyOperation?.index ?? -1;
     const evidence = {
       anchor_level: hierarchyLevel(nodes.find((node) => node.id === context.anchorId)),
       intended_level: hierarchyLevel(source),
@@ -202,14 +230,54 @@ export function validateStructuralInsertions(
         message: `Style ${pair.headingStyle} is repeatedly followed by ${pair.bodyStyle}; insert both paragraphs with distinct structural peers.`,
         evidence,
       });
-    } else if (context.position === 'AFTER' && bodyOperationIndex > headingOperationIndex) {
+    } else {
+      consumedBodyOperations.add(bodyOperationIndex);
+    }
+    const wrongOrder = bodyOperationIndex >= 0 && (
+      (context.position === 'AFTER' && bodyOperationIndex > headingOperationIndex)
+      || (context.position === 'BEFORE' && headingOperationIndex > bodyOperationIndex)
+    );
+    if (wrongOrder) {
+      const requiredOrder = context.position === 'AFTER'
+        ? `${pair.bodyStyle} before ${pair.headingStyle}`
+        : `${pair.headingStyle} before ${pair.bodyStyle}`;
       diagnostics.push({
         code: 'RUN_IN_PAIR_ORDER', severity: 'error', operation_id: context.operationId,
         anchor_id: context.anchorId,
-        message: `Insert the ${pair.bodyStyle} operation before the ${pair.headingStyle} operation so repeated AFTER insertion yields heading then body.`,
+        message: `For repeated ${context.position} insertion, order operations ${requiredOrder} so the document yields heading then body.`,
         evidence,
       });
     }
   });
   return diagnostics;
+}
+
+/** True only for the explicit two-operation form of a source-proven bonded pair. */
+export function isRecognizedBondedInsertionPair(
+  nodes: readonly DocumentViewNode[],
+  contexts: readonly ResolvedInsertionContext[],
+): boolean {
+  if (contexts.length !== 2) return false;
+  const [first, second] = contexts;
+  if (!first || !second || first.anchorId !== second.anchorId || first.position !== second.position) return false;
+  const sources = contexts.map((context) => nodes.find((node) => node.id === (context.styleSourceId ?? context.anchorId)));
+  if (!sources[0] || !sources[1] || structuralStyle(sources[0]) === structuralStyle(sources[1])) return false;
+  const headingIndex = sources.findIndex((source) => hierarchyLevel(source) != null);
+  const bodyIndex = sources.findIndex((source) => hierarchyLevel(source) == null);
+  if (headingIndex < 0 || bodyIndex < 0) return false;
+  const headingStyle = structuralStyle(sources[headingIndex]);
+  const bodyStyle = structuralStyle(sources[bodyIndex]);
+  let transitionCount = 0;
+  for (let index = 0; index < nodes.length - 1; index += 1) {
+    const heading = nodes[index]!;
+    const body = nodes[index + 1]!;
+    if (structuralStyle(heading) === headingStyle && structuralStyle(body) === bodyStyle
+      && hierarchyLevel(heading) != null && hierarchyLevel(body) == null
+      && Math.abs(heading.paragraph_indents_pt.left - body.paragraph_indents_pt.left) <= 0.5) transitionCount += 1;
+  }
+  if (transitionCount < 2) return false;
+  return !validateStructuralInsertions(nodes, contexts).some((diagnostic) =>
+    diagnostic.code === 'BONDED_PARAGRAPH_PAIR_REQUIRED'
+    || diagnostic.code === 'BONDED_PARAGRAPH_PAIR_AMBIGUOUS'
+    || diagnostic.code === 'RUN_IN_PAIR_ORDER');
 }

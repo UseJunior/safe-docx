@@ -185,6 +185,38 @@ describe('Traceability: replace plan tools with batch_edit', () => {
     expect(String(read.content)).not.toContain('Second');
   });
 
+  test('permits exactly one source-proven bonded heading/body pair in a shared insert slot', async () => {
+    const paragraph = (style: string, level: number | null, text: string) => `<w:p><w:pPr><w:pStyle w:val="${style}"/>${level == null ? '' : `<w:outlineLvl w:val="${level}"/>`}</w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+    const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraph('Heading2', 1, 'Heading one.')}${paragraph('HeadingPara2', null, 'Body one.')}${paragraph('Heading2', 1, 'Heading two.')}${paragraph('HeadingPara2', null, 'Body two.')}${paragraph('Heading1', 0, 'Anchor.')}</w:body></w:document>`;
+    const opened = await openSession([], { xml });
+    const result = await batchEdit(opened.mgr, {
+      file_path: opened.inputPath,
+      steps: [
+        { step_id: 'body', operation: 'insert_paragraph', positional_anchor_node_id: opened.paraIds[4], style_source_id: opened.paraIds[1], bonded_pair_id: 'new-subsection', new_string: 'New body.', instruction: 'body half', position: 'AFTER' },
+        { step_id: 'heading', operation: 'insert_paragraph', positional_anchor_node_id: opened.paraIds[4], style_source_id: opened.paraIds[0], bonded_pair_id: 'new-subsection', new_string: 'New heading.', instruction: 'heading half', position: 'AFTER' },
+      ],
+    });
+    assertSuccess(result, 'bonded batch');
+    expect(result.completed_step_ids).toEqual(['body', 'heading']);
+  });
+
+  test('keeps an unrelated third insertion in a bonded slot as a hard collision', async () => {
+    const paragraph = (style: string, level: number | null, text: string) => `<w:p><w:pPr><w:pStyle w:val="${style}"/>${level == null ? '' : `<w:outlineLvl w:val="${level}"/>`}</w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+    const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraph('Heading2', 1, 'Heading one.')}${paragraph('HeadingPara2', null, 'Body one.')}${paragraph('Heading2', 1, 'Heading two.')}${paragraph('HeadingPara2', null, 'Body two.')}${paragraph('Heading1', 0, 'Anchor.')}</w:body></w:document>`;
+    const opened = await openSession([], { xml });
+    const base = { operation: 'insert_paragraph', positional_anchor_node_id: opened.paraIds[4], position: 'AFTER', bonded_pair_id: 'new-subsection' };
+    const result = await batchEdit(opened.mgr, {
+      file_path: opened.inputPath,
+      steps: [
+        { ...base, step_id: 'body', style_source_id: opened.paraIds[1], new_string: 'New body.', instruction: 'body half' },
+        { ...base, step_id: 'heading', style_source_id: opened.paraIds[0], new_string: 'New heading.', instruction: 'heading half' },
+        { ...base, step_id: 'unrelated', style_source_id: opened.paraIds[1], new_string: 'Unrelated.', instruction: 'unrelated insert' },
+      ],
+    });
+    assertFailure(result, 'BATCH_CONFLICT');
+    expect((result.conflicts as Array<{ code: string }>)).toContainEqual(expect.objectContaining({ code: 'INSERT_SLOT_COLLISION' }));
+  });
+
   humanReadableTest.openspec('batch_edit preserves run formatting on replace')('Scenario: batch_edit preserves run formatting on replace', async () => {
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +

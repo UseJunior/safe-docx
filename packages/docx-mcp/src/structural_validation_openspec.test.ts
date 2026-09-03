@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { validateStructuralInsertion, validateStructuralInsertions, type DocumentViewNode } from '@usejunior/docx-core';
+import { isRecognizedBondedInsertionPair, validateStructuralInsertion, validateStructuralInsertions, type DocumentViewNode } from '@usejunior/docx-core';
 import { testAllure } from './testing/allure-test.js';
 
 const TEST_FEATURE = 'add-markdoc-structural-validation';
@@ -52,5 +52,13 @@ describe('OpenSpec traceability: add-markdoc-structural-validation', () => {
       operationId: 'insert_paragraph', position: 'AFTER', anchorId: 'p',
     });
     expect(diagnostic?.suggested_anchor_id).toBe('c');
+  });
+
+  scenario.openspec('Atomic bonded pair shares one insertion slot')('Scenario: Atomic bonded pair shares one insertion slot', () => {
+    const nodes = [node('h1', 2), node('b1', null, 'HeadingPara2'), node('h2', 2), node('b2', null, 'HeadingPara2'), node('p', 1)];
+    expect(isRecognizedBondedInsertionPair(nodes, [
+      { operationId: 'body', position: 'AFTER', anchorId: 'p', styleSourceId: 'b1' },
+      { operationId: 'heading', position: 'AFTER', anchorId: 'p', styleSourceId: 'h1' },
+    ])).toBe(true);
   });
 });
