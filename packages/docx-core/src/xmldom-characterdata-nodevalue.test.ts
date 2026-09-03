@@ -58,16 +58,15 @@ describe('xmldom CharacterData nodeValue/data sync', () => {
     expect(new XMLSerializer().serializeToString(doc)).toContain('updated');
   });
 
-  // Real-world impact: simulates the setLeafText path in our DOCX comparison engine
-  // before the fix (Issue #35). The merged atom appeared correct in DOM traversal
-  // (nodeValue read back 'hello world') but XMLSerializer silently wrote stale text.
-  test.fails('merging atom text via nodeValue loses data on serialization', () => {
-    const doc = new DOMParser().parseFromString('<w:t>hello </w:t>', 'text/xml');
+  test('merging atom text via nodeValue preserves serialized data', () => {
+    const doc = new DOMParser().parseFromString(
+      '<w:t xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">hello </w:t>',
+      'text/xml',
+    );
     const textNode = doc.documentElement!.firstChild as unknown as CharacterData;
 
     textNode.nodeValue = 'hello world';
 
-    // These fail — data and serialized output remain 'hello '
     expect(textNode.data).toBe('hello world');
     expect(new XMLSerializer().serializeToString(doc)).toContain('hello world');
   });
