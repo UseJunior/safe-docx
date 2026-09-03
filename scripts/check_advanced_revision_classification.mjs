@@ -153,7 +153,7 @@ async function validateEvidence(record, operationStatuses, executedClaimsByEvide
 
   for (const [operation, status] of operationStatuses) {
     if (!ALLOWED_STATUSES.has(status)) throw new Error(`${record.id}: invalid ${operation} status ${status}`);
-    if (status === 'non-goal' || operation.startsWith('lean.')) continue;
+    if (status === 'non-goal') continue;
     const covered = evidenceByOperation.get(operation) ?? new Set();
     const missing = record.elements.filter((element) => !covered.has(element));
     if (missing.length > 0) throw new Error(`${record.id}: ${operation} lacks element-specific evidence for ${missing.join(', ')}`);
