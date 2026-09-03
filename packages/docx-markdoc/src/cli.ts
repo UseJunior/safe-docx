@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { compileMarkdoc } from './compile.js';
+import { compileMarkdoc, validateMarkdocAgainstSource } from './compile.js';
 import { exportEditPairs } from './export.js';
 import { importDocxToMarkdoc } from './import.js';
 import { inspectMarkdocSource } from './inspect.js';
@@ -12,7 +12,7 @@ function usage(): never {
   throw new Error([
     'Usage:',
     '  docx-markdoc import <source.docx> <anchored.docx> <document.mdoc>',
-    '  docx-markdoc validate <document.mdoc>',
+    '  docx-markdoc validate <document.mdoc> [anchored.docx]',
     '  docx-markdoc inspect <anchored.docx> [paragraph-id ...]',
     '  docx-markdoc compile <anchored.docx> <document.mdoc> <output-dir>',
     '  docx-markdoc verify <anchored.docx> <document.mdoc>',
@@ -31,10 +31,13 @@ async function main(): Promise<void> {
     return;
   }
   if (command === 'validate') {
-    const [markdocPath] = args;
+    const [markdocPath, sourcePath] = args;
     if (!markdocPath) usage();
-    const ir = requireMarkdoc(await readFile(markdocPath, 'utf8'));
-    process.stdout.write(`${JSON.stringify(ir, null, 2)}\n`);
+    const markdoc = await readFile(markdocPath, 'utf8');
+    const result = sourcePath
+      ? await validateMarkdocAgainstSource(await readFile(sourcePath), markdoc)
+      : requireMarkdoc(markdoc);
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
   if (command === 'inspect') {

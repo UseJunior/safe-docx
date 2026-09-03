@@ -101,6 +101,14 @@ export type ValidationResult =
   | { valid: true; ir: MarkdocEditIR }
   | { valid: false; issues: ValidationIssue[] };
 
+export type {
+  ResolvedInsertionContext,
+  StructuralDiagnostic,
+  StructuralDiagnosticEvidence,
+  StructuralDiagnosticSeverity,
+  StructuralValidator,
+} from '@usejunior/docx-core';
+
 export type VerificationCertificate = {
   version: 1;
   sourceSha256Matches: boolean;
@@ -152,6 +160,7 @@ export type CompileResult = {
   tracked: Buffer;
   ir: MarkdocEditIR;
   certificate: VerificationCertificate;
+  structuralDiagnostics: import('@usejunior/docx-core').StructuralDiagnostic[];
 };
 
 export type ImportResult = {

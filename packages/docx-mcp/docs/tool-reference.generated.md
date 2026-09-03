@@ -105,7 +105,7 @@ Replace text in a paragraph by provider paragraph id, preserving formatting wher
 
 ## `insert_paragraph`
 
-Insert a paragraph before/after an anchor paragraph by paragraph id. Supports DOCX, ODT, and Google Docs. (ODT paragraph ids are positional and shift after insertion — re-read before further edits.) Surface: revisionable — DOCX insertions emit native OOXML tracked changes.
+Insert a paragraph before/after an anchor paragraph by paragraph id. DOCX responses include structural_warnings when the placement may slice a hierarchy, mismatch list levels, or renumber a list. Supports DOCX, ODT, and Google Docs. (ODT paragraph ids are positional and shift after insertion — re-read before further edits.) Surface: revisionable — DOCX insertions emit native OOXML tracked changes.
 
 - readOnly: `false`
 - destructive: `true`

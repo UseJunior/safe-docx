@@ -290,6 +290,25 @@ describe('TypeScript MCP server behavior', () => {
     expect(String(inserted.new_paragraph_id)).toMatch(/^_bk_[0-9a-f]{12}$/);
   });
 
+  humanReadableTest.openspec('Unsafe insertion returns corrective guidance')('Scenario: Unsafe insertion returns corrective guidance', async () => {
+    const paragraph = (level: number, text: string) => `<w:p><w:pPr><w:outlineLvl w:val="${level}"/></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+    const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraph(0, 'Parent.')}${paragraph(1, 'Child.')}${paragraph(2, 'Grandchild.')}${paragraph(0, 'Sibling.')}</w:body></w:document>`;
+    const session = await openSession([], { xml });
+    const inserted = await insertParagraph(session.mgr, {
+      file_path: session.inputPath,
+      positional_anchor_node_id: session.paraIds[0]!,
+      style_source_id: session.paraIds[0]!,
+      new_string: 'New parent.',
+      instruction: 'structural warning test',
+      position: 'AFTER',
+    });
+    assertSuccess(inserted, 'insert');
+    expect(inserted.structural_warnings).toContainEqual(expect.objectContaining({
+      code: 'PARENT_CHILD_SLICE',
+      suggested_anchor_id: session.paraIds[2],
+    }));
+  });
+
   humanReadableTest.openspec('download tool')('Scenario: download tool', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('safe-docx-download-tool-');

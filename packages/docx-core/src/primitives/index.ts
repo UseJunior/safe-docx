@@ -1,5 +1,6 @@
 export * from './document.js';
 export * from './document_view.js';
+export * from './structural_validation.js';
 export * from './errors.js';
 export * from './list_labels.js';
 export * from './layout.js';
