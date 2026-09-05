@@ -320,9 +320,24 @@ function hoistLiteralInsertionsFromDeletedFieldInstructions(root: WmlElement): v
   visit(root);
 }
 
+/**
+ * Mark both a whole paragraph's paragraph break and its run content.
+ *
+ * A complete paragraph cannot be a child of the run-level revision wrappers.
+ * WordprocessingML instead records the paragraph-mark revision in
+ * `w:p/w:pPr/w:rPr` and wraps only the paragraph's run content.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.22
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.25
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
+ * @see https://github.com/UseJunior/safe-docx/issues/941
+ */
 function markWholeParagraph(
   paragraph: WmlElement,
-  kind: 'ins' | 'del',
+  kind: 'ins' | 'del' | 'moveFrom' | 'moveTo',
   revision: ComparisonRevision,
   contentRevision: ComparisonRevision,
   operationIds: readonly string[] = [],
@@ -343,7 +358,11 @@ function markWholeParagraph(
   marker.setAttributeNS(W_NS, 'w:author', revision.author);
   marker.setAttributeNS(W_NS, 'w:date', revision.date);
   markComparisonRevision(marker);
-  placeParagraphMarkRevisionMarker(paraRPr, marker, `w:${kind}`);
+  if (kind === 'ins' || kind === 'del') {
+    placeParagraphMarkRevisionMarker(paraRPr, marker, `w:${kind}`);
+  } else {
+    paraRPr.insertBefore(marker, paraRPr.firstChild);
+  }
 
   const content = childElements(paragraph).filter((child) => child !== pPr);
   for (const child of content) paragraph.removeChild(child);
@@ -372,6 +391,8 @@ function markWholeParagraph(
       markOperationProvenance(wrapper, operationIds);
     }
     if (kind === 'del') convertDeletedText(child);
+    // Moved run content retains ordinary text vocabulary (unlike deletions).
+    // Word rejects a whole-paragraph move carrying delText here.
     wrapper.appendChild(child);
   }
   flush();
@@ -1081,16 +1102,32 @@ function refineSimpleRunGap(
   return emitted;
 }
 
+/**
+ * Emit a tracked-move range boundary with the attributes admitted by its type.
+ * Starts carry the shared pairing name and revision attribution; ends carry
+ * only the range identity inherited from `CT_MarkupRange`.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.23
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.24
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.27
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.28
+ * @see https://github.com/UseJunior/safe-docx/issues/941
+ */
 function moveMarker(
   owner: Document,
   relation: TaggedMoveRelation,
   direction: 'From' | 'To',
   boundary: 'Start' | 'End',
+  attribution: Omit<ComparisonRevision, 'id'>,
 ): WmlElement {
   const marker = owner.createElementNS(W_NS, `w:move${direction}Range${boundary}`) as WmlElement;
   const id = direction === 'From' ? relation.sourceRangeId : relation.destinationRangeId;
   marker.setAttributeNS(W_NS, 'w:id', String(id));
-  marker.setAttributeNS(W_NS, 'w:name', relation.name);
+  if (boundary === 'Start') {
+    marker.setAttributeNS(W_NS, 'w:name', relation.name);
+    marker.setAttributeNS(W_NS, 'w:author', attribution.author);
+    marker.setAttributeNS(W_NS, 'w:date', attribution.date);
+  }
   return marker;
 }
 
@@ -1423,9 +1460,9 @@ function emitNode(
       const relation = moveFor(child, moves);
       if (relation) {
         const direction = relation.source === child ? 'From' : 'To';
-        emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'Start'));
+        emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'Start', plan.comparison));
         emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds));
-        emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'End'));
+        emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'End', plan.comparison));
       } else emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds));
     }
     replaceElementChildren(base, emitted);
@@ -1452,11 +1489,11 @@ function emitNode(
     if (node.opaque || base.localName === 'bookmarkStart' || base.localName === 'bookmarkEnd') {
       renumberOriginalBookmarkRanges(base, originalBookmarkIds, allocateBookmarkId);
     }
-    const revision = relation ? { ...plan.comparison, id: relation.sourceRangeId } : nodeRevision;
-    if (!relation && base.namespaceURI === W_NS && base.localName === 'p') {
+    const revision = nodeRevision;
+    if (base.namespaceURI === W_NS && base.localName === 'p') {
       return wrapPreserved(markWholeParagraph(
         base,
-        'del',
+        relation ? 'moveFrom' : 'del',
         revision,
         allocateRevision(),
         operationProvenance(node),
@@ -1479,11 +1516,11 @@ function emitNode(
   }
   if (node.tag === 'revised') {
     const relation = moveFor(node, moves);
-    const revision = relation ? { ...plan.comparison, id: relation.destinationRangeId } : nodeRevision;
-    if (!relation && base.namespaceURI === W_NS && base.localName === 'p') {
+    const revision = nodeRevision;
+    if (base.namespaceURI === W_NS && base.localName === 'p') {
       return wrapPreserved(markWholeParagraph(
         base,
-        'ins',
+        relation ? 'moveTo' : 'ins',
         revision,
         allocateRevision(),
         operationProvenance(node),
@@ -1691,7 +1728,15 @@ export function composeTaggedStories(parent: TaggedNode, stories: readonly Tagge
   return { ...parent, children: [...parent.children, ...stories] } as TaggedNode;
 }
 
-/** Certify exactly one balanced range in each direction for every logical move. */
+/**
+ * Certify exactly one balanced range in each direction for every logical move.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.23
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.24
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.27
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.28
+ * @see https://github.com/UseJunior/safe-docx/issues/941
+ */
 export function verifySerializedMoveRanges(
   xml: string,
   relations: readonly TaggedMoveRelation[],
@@ -1705,9 +1750,9 @@ export function verifySerializedMoveRanges(
     if (!match) continue;
     const direction = match[1] as 'From' | 'To';
     const boundary = match[2] as 'Start' | 'End';
-    const name = element.getAttributeNS(W_NS, 'name') ?? '';
-    if (boundary === 'Start') stacks[direction].push(name);
-    else if (stacks[direction].pop() !== name) violations.push(`${direction.toLowerCase()} move ranges cross or close out of order`);
+    const id = element.getAttributeNS(W_NS, 'id') ?? '';
+    if (boundary === 'Start') stacks[direction].push(id);
+    else if (stacks[direction].pop() !== id) violations.push(`${direction.toLowerCase()} move ranges cross or close out of order`);
   }
   for (const direction of ['From', 'To'] as const) {
     if (stacks[direction].length > 0) violations.push(`${direction.toLowerCase()} move ranges are unbalanced`);
@@ -1720,14 +1765,44 @@ export function verifySerializedMoveRanges(
       for (const boundary of ['Start', 'End'] as const) {
         const matches = Array.from(document.getElementsByTagNameNS(W_NS, `move${direction}Range${boundary}`))
           .filter((element) => element.getAttributeNS(W_NS, 'id') === String(id) &&
-            element.getAttributeNS(W_NS, 'name') === relation.name);
+            (boundary === 'End' || element.getAttributeNS(W_NS, 'name') === relation.name));
         if (matches.length !== 1) {
           violations.push(`${relation.name} ${direction.toLowerCase()} range ${boundary.toLowerCase()} count is ${matches.length}`);
         }
+        if (boundary === 'Start' && matches.length === 1 &&
+            (!matches[0]!.getAttributeNS(W_NS, 'author') || !matches[0]!.getAttributeNS(W_NS, 'date'))) {
+          violations.push(`${relation.name} ${direction.toLowerCase()} range start lacks attribution`);
+        }
+        if (boundary === 'End' && matches.some((element) => element.hasAttributeNS(W_NS, 'name'))) {
+          violations.push(`${relation.name} ${direction.toLowerCase()} range end has an illegal name`);
+        }
       }
-      const wrappers = Array.from(document.getElementsByTagNameNS(W_NS, `move${direction}`))
-        .filter((element) => element.getAttributeNS(W_NS, 'id') === String(id));
-      if (wrappers.length !== 1) violations.push(`${relation.name} ${direction.toLowerCase()} wrapper count is ${wrappers.length}`);
+      const start = elements.find((element) =>
+        element.localName === `move${direction}RangeStart` &&
+        element.getAttributeNS(W_NS, 'id') === String(id));
+      const end = elements.find((element) =>
+        element.localName === `move${direction}RangeEnd` &&
+        element.getAttributeNS(W_NS, 'id') === String(id));
+      const startIndex = start ? elements.indexOf(start) : -1;
+      const endIndex = end ? elements.indexOf(end) : -1;
+      const wrappers = startIndex >= 0 && endIndex > startIndex
+        ? elements.slice(startIndex + 1, endIndex).filter((element) =>
+            element.namespaceURI === W_NS && element.localName === `move${direction}`)
+        : [];
+      if (wrappers.length === 0) {
+        violations.push(`${relation.name} ${direction.toLowerCase()} range has no enclosed revision wrapper`);
+      }
+    }
+  }
+  const rangeIds = new Set(relations.flatMap((relation) => [
+    String(relation.sourceRangeId),
+    String(relation.destinationRangeId),
+  ]));
+  for (const localName of ['moveFrom', 'moveTo']) {
+    for (const wrapper of Array.from(document.getElementsByTagNameNS(W_NS, localName))) {
+      if (rangeIds.has(wrapper.getAttributeNS(W_NS, 'id') ?? '')) {
+        violations.push(`${localName} revision wrapper reuses a move range id`);
+      }
     }
   }
   return violations;

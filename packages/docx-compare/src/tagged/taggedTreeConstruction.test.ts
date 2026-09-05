@@ -1,4 +1,5 @@
 import { describe, expect } from 'vitest';
+import { XMLSerializer } from '@xmldom/xmldom';
 import { parseXml, validateBookmarkIntegrity, validateFieldStructure } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { verifyMoveRelations, verifyTaggedTree } from './taggedTree.js';
@@ -9,9 +10,20 @@ import {
 } from './taggedTreeConstruction.js';
 import { createPreservePlan, serializeTaggedTree, verifySerializedMoveRanges } from './taggedTreeSerializer.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
+import { moveBalanceIssues } from '../integration/strategy-differential-harness.js';
 
 const TEST_FEATURE = 'refactor-tagged-tree-redline-construction';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
+const moveConformanceTest = test.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.21' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.22' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.23' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.24' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.25' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.26' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.27' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.28' },
+);
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 function body(paragraphs: readonly string[]): Element {
@@ -345,41 +357,68 @@ describe('complete tagged-tree construction', () => {
     expect(output).not.toContain('1:0:1.');
   });
 
-  test.openspec('Move source markup structure')(
+  moveConformanceTest('balances content wrappers independently from paragraph-mark revisions', () => {
+    const document = parseXml(serializedReorderedMove());
+    const revisions = Array.from(document.getElementsByTagNameNS(W_NS, 'moveFrom'));
+    const mark = revisions.find((element) => element.parentNode?.nodeName === 'w:rPr')!;
+    mark.parentNode!.removeChild(mark);
+    const serializer = new XMLSerializer();
+    expect(moveBalanceIssues(serializer.serializeToString(document))).toEqual([]);
+    const content = revisions.find((element) => element.parentNode?.nodeName === 'w:p')!;
+    content.parentNode!.removeChild(content);
+    expect(moveBalanceIssues(serializer.serializeToString(document)))
+      .toContain('move-wrapper-count-unbalanced');
+  });
+
+  moveConformanceTest.openspec('Move source markup structure')(
     'serializes the tagged source range around moved-from content',
     () => {
       const output = serializedReorderedMove();
       const document = parseXml(output);
       const start = document.getElementsByTagNameNS(W_NS, 'moveFromRangeStart')[0]!;
-      const wrapper = document.getElementsByTagNameNS(W_NS, 'moveFrom')[0]!;
+      const moves = Array.from(document.getElementsByTagNameNS(W_NS, 'moveFrom'));
+      const marker = moves.find((element) => element.parentNode?.parentNode?.nodeName === 'w:pPr');
+      const wrapper = moves.find((element) => element.parentNode?.nodeName === 'w:p');
       const end = document.getElementsByTagNameNS(W_NS, 'moveFromRangeEnd')[0]!;
       expect(output.indexOf('<w:moveFromRangeStart')).toBeLessThan(output.indexOf('<w:moveFrom '));
       expect(output.indexOf('<w:moveFrom ')).toBeLessThan(output.indexOf('<w:moveFromRangeEnd'));
       expect(start.getAttributeNS(W_NS, 'name')).not.toBe('');
-      expect(wrapper.textContent).toBe('A');
+      expect(start.getAttributeNS(W_NS, 'author')).toBe('Comparator');
+      expect(start.getAttributeNS(W_NS, 'date')).not.toBe('');
+      expect(end.hasAttributeNS(W_NS, 'name')).toBe(false);
+      expect(marker).toBeDefined();
+      expect(wrapper?.textContent).toBe('A');
+      expect(wrapper?.getElementsByTagNameNS(W_NS, 'p')).toHaveLength(0);
       expect(end.getAttributeNS(W_NS, 'id')).toBe(start.getAttributeNS(W_NS, 'id'));
     },
   );
 
-  test.openspec('Move destination markup structure')(
+  moveConformanceTest.openspec('Move destination markup structure')(
     'serializes the tagged destination range around moved-to content',
     () => {
       const output = serializedReorderedMove();
       const document = parseXml(output);
       const start = document.getElementsByTagNameNS(W_NS, 'moveToRangeStart')[0]!;
-      const wrapper = document.getElementsByTagNameNS(W_NS, 'moveTo')[0]!;
+      const moves = Array.from(document.getElementsByTagNameNS(W_NS, 'moveTo'));
+      const marker = moves.find((element) => element.parentNode?.parentNode?.nodeName === 'w:pPr');
+      const wrapper = moves.find((element) => element.parentNode?.nodeName === 'w:p');
       const end = document.getElementsByTagNameNS(W_NS, 'moveToRangeEnd')[0]!;
       const sourceName = document.getElementsByTagNameNS(W_NS, 'moveFromRangeStart')[0]!
         .getAttributeNS(W_NS, 'name');
       expect(output.indexOf('<w:moveToRangeStart')).toBeLessThan(output.indexOf('<w:moveTo '));
       expect(output.indexOf('<w:moveTo ')).toBeLessThan(output.indexOf('<w:moveToRangeEnd'));
       expect(start.getAttributeNS(W_NS, 'name')).toBe(sourceName);
-      expect(wrapper.textContent).toBe('A');
+      expect(start.getAttributeNS(W_NS, 'author')).toBe('Comparator');
+      expect(start.getAttributeNS(W_NS, 'date')).not.toBe('');
+      expect(end.hasAttributeNS(W_NS, 'name')).toBe(false);
+      expect(marker).toBeDefined();
+      expect(wrapper?.textContent).toBe('A');
+      expect(wrapper?.getElementsByTagNameNS(W_NS, 'p')).toHaveLength(0);
       expect(end.getAttributeNS(W_NS, 'id')).toBe(start.getAttributeNS(W_NS, 'id'));
     },
   );
 
-  test.openspec('Range IDs properly paired')(
+  moveConformanceTest.openspec('Range IDs properly paired')(
     'serializes one balanced, named range per move direction',
     () => {
     const original = body(['A', 'B']);
@@ -393,6 +432,16 @@ describe('complete tagged-tree construction', () => {
       { moves: result.moves },
     );
     expect(verifySerializedMoveRanges(output, result.moves)).toEqual([]);
+    const document = parseXml(output);
+    const rangeIds = new Set([
+      ...Array.from(document.getElementsByTagNameNS(W_NS, 'moveFromRangeStart')),
+      ...Array.from(document.getElementsByTagNameNS(W_NS, 'moveToRangeStart')),
+    ].map((element) => element.getAttributeNS(W_NS, 'id')));
+    for (const localName of ['moveFrom', 'moveTo']) {
+      for (const revision of Array.from(document.getElementsByTagNameNS(W_NS, localName))) {
+        expect(rangeIds.has(revision.getAttributeNS(W_NS, 'id'))).toBe(false);
+      }
+    }
     expect(resolvedText(rejectAllChanges(output))).toBe('AB');
     expect(resolvedText(acceptAllChanges(output))).toBe('BA');
     },
@@ -404,8 +453,8 @@ describe('complete tagged-tree construction', () => {
     }<w:r><w:t>${value}</w:t></w:r>${
       bookmarked ? '<w:bookmarkEnd w:id="7"/>' : ''
     }</w:p>`;
-    const original = documentWithBody(paragraph('A') + paragraph('B', true));
-    const revised = documentWithBody(paragraph('B', true) + paragraph('A'));
+    const original = documentWithBody(paragraph('A', true) + paragraph('B') + paragraph('C'));
+    const revised = documentWithBody(paragraph('B') + paragraph('C') + paragraph('A', true));
     const result = constructTaggedTree(original, revised);
     const output = serializeTaggedTree(
       result.tree,
@@ -422,8 +471,8 @@ describe('complete tagged-tree construction', () => {
       duplicateStartIds: [],
       duplicateEndIds: [],
     });
-    expect(resolvedText(acceptAllChanges(output))).toBe('BA');
-    expect(resolvedText(rejectAllChanges(output))).toBe('AB');
+    expect(resolvedText(acceptAllChanges(output))).toBe('BCA');
+    expect(resolvedText(rejectAllChanges(output))).toBe('ABC');
     for (const projection of [acceptAllChanges(output), rejectAllChanges(output)]) {
       const document = parseXml(projection);
       expect(document.getElementsByTagNameNS(W_NS, 'bookmarkStart')).toHaveLength(1);

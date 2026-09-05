@@ -54,7 +54,7 @@ export interface TaggedTreeShadowInput {
 const WORDPROCESSINGML_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 /**
- * Empty `w:ins`/`w:del` elements are semantic markers when they occur in the
+ * Empty revision elements are semantic markers when they occur in the
  * property containers for a paragraph mark or table row. They are not empty
  * content wrappers and must survive tagged-tree publication.
  *
@@ -62,13 +62,17 @@ const WORDPROCESSINGML_NAMESPACE = 'http://schemas.openxmlformats.org/wordproces
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.16
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.19
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
+ * @see https://github.com/UseJunior/safe-docx/issues/941
  */
 function isEmptyRevisionMarker(wrapper: Element): boolean {
   if (wrapper.namespaceURI !== WORDPROCESSINGML_NAMESPACE) return false;
-  if (!['ins', 'del'].includes(wrapper.localName)) return false;
+  if (!['ins', 'del', 'moveFrom', 'moveTo'].includes(wrapper.localName)) return false;
   const parent = wrapper.parentNode as Element | null;
   return parent?.namespaceURI === WORDPROCESSINGML_NAMESPACE
-    && ['rPr', 'trPr'].includes(parent.localName);
+    && (parent.localName === 'rPr' ||
+      (parent.localName === 'trPr' && ['ins', 'del'].includes(wrapper.localName)));
 }
 
 export interface TaggedTreePublication {
