@@ -30,7 +30,7 @@ safe-docx/
 ├── skills/                Agent instructions for document editing
 ├── docs/                  User and maintainer guides
 ├── spec-compliance/       ECMA-376 registry, schemas, and reports
-├── verification/          Invariants and optional formal verification
+├── verification/          Runtime and release-verification evidence
 ├── openspec/              Requirements and change proposals
 ├── tests/                 Cross-package fixtures and integration tests
 └── site/                  Public documentation site
@@ -190,7 +190,7 @@ npm run check:conformance-citations && \
 npm run check:conformance-doc
 ```
 
-Also run checks specific to the changed surface, including generated tool docs, site links, package manifests, or formal verification where applicable.
+Also run checks specific to the changed surface, including generated tool docs, site links, package manifests, or release-verification evidence where applicable.
 
 ## Pull Requests
 

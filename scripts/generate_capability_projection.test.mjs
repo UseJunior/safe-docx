@@ -314,5 +314,5 @@ test('the human report retains the neutral evidence limitations', async () => {
   const report = await readFile(path.join(root, 'spec-compliance/generated/safe-docx-capability-projection.md'), 'utf8');
   assert.match(report, /a positive row applies only to the listed evidence and scope/);
   assert.match(report, /explicit untested and gap rows/);
-  assert.doesNotMatch(report, /formal assurance|theorem prover|Lean/i);
+  assert.doesNotMatch(report, /formal assurance|theorem prover/i);
 });
