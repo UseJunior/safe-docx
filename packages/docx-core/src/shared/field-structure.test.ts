@@ -4,10 +4,12 @@ import {
   delInstrText,
   fldChar,
   instrText,
+  resultText,
 } from '../testing/ooxml-fixtures.js';
 import {
   validateFieldStructure,
   validateStrictFieldStructure,
+  collectFieldStructureIssues,
 } from './field-structure.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 
@@ -21,6 +23,18 @@ const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/mai
 function buildDoc(bodyXml: string): string {
   return `<w:document ${NS}><w:body>${bodyXml}<w:sectPr/></w:body></w:document>`;
 }
+
+test.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.22' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' },
+)('permits ordinary moved-source text while retaining deletion vocabulary checks', () => {
+  const moved = `<w:moveFrom>${resultText('Moved text')}</w:moveFrom>`;
+  expect(collectFieldStructureIssues(buildDoc(`<w:p>${moved}</w:p>`))).toEqual([]);
+  for (const content of [resultText('Deleted text'), moved]) {
+    expect(collectFieldStructureIssues(buildDoc(`<w:p><w:del>${content}</w:del></w:p>`))
+      .map(issue => issue.code)).toContain('TEXT_INSIDE_DELETION');
+  }
+});
 
 test(
   'Word nested-field instruction-result serialization is valid',

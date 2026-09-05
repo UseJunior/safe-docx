@@ -49,8 +49,11 @@ function getParagraphPPr(p: Element): Element | undefined {
   return childElements(p).find((c) => c.tagName === 'w:pPr');
 }
 
-function paragraphHasParaMarker(p: Element, tagName: 'w:ins' | 'w:del'): boolean {
-  // Strict paragraph-mark marker shape: w:p > w:pPr > w:rPr > (w:ins | w:del),
+function paragraphHasParaMarker(
+  p: Element,
+  tagName: 'w:ins' | 'w:del' | 'w:moveFrom' | 'w:moveTo',
+): boolean {
+  // Strict paragraph-mark marker shape: w:p > w:pPr > w:rPr > revision,
   // navigated by direct children only — NOT a descendant search. A descendant
   // search would mistake a marker nested inside a w:pPrChange snapshot (which
   // stores a prior w:pPr/w:rPr) for the live paragraph mark, and would diverge
@@ -74,7 +77,7 @@ function rowsWithRevisionMarker(root: Element, tagName: 'w:ins' | 'w:del'): Elem
 }
 
 function removeParaMarkers(root: Element): void {
-  // Remove paragraph-level revision markers (<w:ins/> / <w:del/>) that live under <w:pPr>.
+  // Remove paragraph-level revision markers that live under <w:pPr>.
   for (const p of findAllByTagName(root, 'w:p')) {
     const pPr = getParagraphPPr(p);
     if (!pPr) continue;
@@ -82,6 +85,8 @@ function removeParaMarkers(root: Element): void {
     const markers = [
       ...findAllByTagName(pPr, 'w:ins'),
       ...findAllByTagName(pPr, 'w:del'),
+      ...findAllByTagName(pPr, 'w:moveFrom'),
+      ...findAllByTagName(pPr, 'w:moveTo'),
     ];
     for (const m of markers) {
       if (m.parentNode) m.parentNode.removeChild(m);
@@ -554,7 +559,7 @@ export function acceptAllChanges(documentXml: string): string {
   // without the old content heuristic.
   const markDeletedParagraphs: Element[] = [];
   for (const p of findAllByTagName(root, 'w:p')) {
-    if (paragraphHasParaMarker(p, 'w:del')) {
+    if (paragraphHasParaMarker(p, 'w:del') || paragraphHasParaMarker(p, 'w:moveFrom')) {
       markDeletedParagraphs.push(p);
     }
   }
@@ -563,7 +568,10 @@ export function acceptAllChanges(documentXml: string): string {
   // wrapper so the combined redline visibly brackets deleted text. Remove that
   // original-side counterpart before accepting the deletion.
   const deletedBookmarkIds = new Set<string>();
-  for (const deletion of findAllByTagName(root, 'w:del')) {
+  for (const deletion of [
+    ...findAllByTagName(root, 'w:del'),
+    ...findAllByTagName(root, 'w:moveFrom'),
+  ]) {
     for (const tagName of ['w:bookmarkStart', 'w:bookmarkEnd']) {
       for (const boundary of findAllByTagName(deletion, tagName)) {
         const id = boundary.getAttribute('w:id') ?? boundary.getAttributeNS(
@@ -576,7 +584,8 @@ export function acceptAllChanges(documentXml: string): string {
     const direct = childElements(paragraph);
     const substantive = direct.filter((child) =>
       !['w:pPr', 'w:bookmarkStart', 'w:bookmarkEnd'].includes(child.tagName));
-    if (substantive.length === 0 || !substantive.every((child) => child.tagName === 'w:del')) continue;
+    if (substantive.length === 0 || !substantive.every((child) =>
+      child.tagName === 'w:del' || child.tagName === 'w:moveFrom')) continue;
     for (const boundary of direct.filter((child) =>
       child.tagName === 'w:bookmarkStart' || child.tagName === 'w:bookmarkEnd')) {
       const id = boundary.getAttribute('w:id') ?? boundary.getAttributeNS(W_NS, 'id');
@@ -677,13 +686,16 @@ export function rejectAllChanges(documentXml: string): string {
   // so the mark-based rule covers them without the old content heuristic.
   const markInsertedParagraphs = new Set<Element>();
   for (const p of findAllByTagName(root, 'w:p')) {
-    if (paragraphHasParaMarker(p, 'w:ins')) {
+    if (paragraphHasParaMarker(p, 'w:ins') || paragraphHasParaMarker(p, 'w:moveTo')) {
       markInsertedParagraphs.add(p);
     }
   }
 
   const insertedBookmarkIds = new Set<string>();
-  for (const insertion of findAllByTagName(root, 'w:ins')) {
+  for (const insertion of [
+    ...findAllByTagName(root, 'w:ins'),
+    ...findAllByTagName(root, 'w:moveTo'),
+  ]) {
     for (const tagName of ['w:bookmarkStart', 'w:bookmarkEnd']) {
       for (const boundary of findAllByTagName(insertion, tagName)) {
         const id = boundary.getAttribute('w:id') ?? boundary.getAttributeNS(W_NS, 'id');
@@ -696,6 +708,22 @@ export function rejectAllChanges(documentXml: string): string {
   // removal, so boundaries whose counterpart lives in a kept paragraph must
   // move out first. (Direct-child bookmarks would survive the Step-3 merge.)
   preserveCrossParagraphBookmarksForReject(root, markInsertedParagraphs);
+
+  // Whole moved-to paragraphs keep bookmark boundaries outside their content
+  // wrappers. Drop fully local pairs with that endpoint, while retaining any
+  // cross-paragraph boundaries rescued by the existing projection policy.
+  for (const paragraph of markInsertedParagraphs) {
+    if (!paragraphHasParaMarker(paragraph, 'w:moveTo')) continue;
+    const direct = childElements(paragraph);
+    const starts = direct.filter((child) => child.tagName === 'w:bookmarkStart');
+    const ends = direct.filter((child) => child.tagName === 'w:bookmarkEnd');
+    for (const start of starts) {
+      const id = start.getAttributeNS(W_NS, 'id');
+      if (id && ends.some((end) => end.getAttributeNS(W_NS, 'id') === id)) {
+        insertedBookmarkIds.add(id);
+      }
+    }
+  }
 
   const isInsideRevision = (marker: Element): boolean => {
     let current = parentElement(marker);
@@ -717,16 +745,18 @@ export function rejectAllChanges(documentXml: string): string {
   // Step 2: Remove w:ins elements entirely (inserted content disappears)
   removeAllByTagName(root, 'w:ins');
 
-  // Step 3: Resolve the PPR-INS-marked paragraphs (their paragraph mark was
-  // inserted): merge each into its following paragraph (document order, so
-  // consecutive mark-inserted paragraphs cascade forward into the first
+  // Rejecting moved-to content has the same projection effect as rejecting an
+  // insertion. Remove it before resolving a moved-to paragraph mark so a
+  // terminal moved paragraph is observably empty and can be removed.
+  removeAllByTagName(root, 'w:moveTo');
+
+  // Step 3: Resolve the PPR-INS/MOVE-TO-marked paragraphs (their paragraph
+  // mark was inserted): merge each into its following paragraph (document
+  // order, so consecutive marked paragraphs cascade forward into the first
   // surviving one).
   for (const p of markInsertedParagraphs) {
     resolveParagraphMarkRevision(p);
   }
-
-  // Remove w:moveTo elements entirely
-  removeAllByTagName(root, 'w:moveTo');
 
   // Remove move range markers
   removeAllByTagName(root, 'w:moveFromRangeStart');
