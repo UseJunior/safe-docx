@@ -191,10 +191,16 @@ export function addParagraphMarkRevisionMarker(
 export function placeParagraphMarkRevisionMarker(
   runProperties: Element,
   marker: Element,
-  markerTag: 'w:ins' | 'w:del',
+  markerTag: 'w:ins' | 'w:del' | 'w:moveFrom' | 'w:moveTo',
 ): void {
-  const insertionSibling =
-    markerTag === 'w:del' ? findChildByTagName(runProperties, 'w:ins') : null;
+  const markerOrder = ['w:ins', 'w:del', 'w:moveFrom', 'w:moveTo'] as const;
+  const markerIndex = markerOrder.indexOf(markerTag);
+  const insertionSibling = childElements(runProperties)
+    .filter((child) => {
+      const childIndex = markerOrder.indexOf(child.tagName as typeof markerOrder[number]);
+      return childIndex >= 0 && childIndex < markerIndex;
+    })
+    .at(-1) ?? null;
   if (insertionSibling) {
     if (insertionSibling.nextSibling !== marker) insertAfterElement(insertionSibling, marker);
   } else if (runProperties.firstChild !== marker) {

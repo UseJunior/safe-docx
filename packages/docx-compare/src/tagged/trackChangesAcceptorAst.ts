@@ -551,8 +551,9 @@ export function acceptAllChanges(documentXml: string): string {
   // w:del wrappers. This is the Word/LibreOffice-faithful, purely mark-based rule (the
   // accept-side mirror of rejectAllChanges).
   //
-  // We deliberately do NOT touch a paragraph based on content (e.g. "all runs are inside w:del"
-  // or "w:moveFrom"). A run-level deletion under an UNTRACKED paragraph mark means text was
+  // We deliberately do NOT touch a paragraph based only on content (for example, when all runs
+  // are inside w:del or w:moveFrom). A run-level deletion under an UNTRACKED paragraph mark
+  // means text was
   // deleted from a pre-existing paragraph; Word and LibreOffice both keep that paragraph (empty)
   // on accept, and a content-based drop over-deletes it. safe-docx's own deleted paragraphs
   // always carry the PPR-DEL mark (wrapParagraphAsDeleted), so the mark-based rule covers them

@@ -406,7 +406,7 @@
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "1852d0679a7a4e0a2781c2d9124a7178138ce857e4e9c6cf7314328b8d3ca7db",
+            "xmlSha256": "30a714db8bfe5f353ed16cc782ab678017ee94e7ee5ca132fa4c8cdd923bc5b6",
             "textSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "sourceTextSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "matchesSourceText": true,
@@ -476,8 +476,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 1226794,
-            "sha256": "d081fbafd6ef5d22700d2a599d79f80df95b8409d6848642573c8cf8fa3e004b",
+            "bytes": 1220164,
+            "sha256": "251bd1fbcef894e1c60d7633cfd83946c039db77414a74bd71d4e7cb50a78a58",
             "kind": "xml"
           },
           {
@@ -1527,8 +1527,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 433671,
-            "sha256": "2bb4587aba90fb7cc2187f0e3c12c6db380d8cf934a700230f6329a175139d64",
+            "bytes": 433659,
+            "sha256": "b0ecd3105e063d2f67ecdac829e66523640589a9e6e48465a68aa3f24edb52fa",
             "kind": "xml"
           },
           {

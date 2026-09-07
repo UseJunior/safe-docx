@@ -153,10 +153,6 @@ function convertDeletedText(root: WmlElement): WmlElement {
   return replaceDescendantVocabulary(withDeletedText, 'instrText', 'w:delInstrText');
 }
 
-function convertMovedFromText(root: WmlElement): WmlElement {
-  return replaceDescendantVocabulary(root, 't', 'w:delText');
-}
-
 function operationProvenance(node: TaggedNode): readonly string[] {
   return node.operationProvenance ?? [];
 }
@@ -188,7 +184,6 @@ function wrapRevision(
   markComparisonRevision(wrapper);
   markOperationProvenance(wrapper, operationIds);
   if (kind === 'del') node = convertDeletedText(node);
-  else if (kind === 'moveFrom') node = convertMovedFromText(node);
   wrapper.appendChild(node);
   return wrapper;
 }
@@ -358,11 +353,7 @@ function markWholeParagraph(
   marker.setAttributeNS(W_NS, 'w:author', revision.author);
   marker.setAttributeNS(W_NS, 'w:date', revision.date);
   markComparisonRevision(marker);
-  if (kind === 'ins' || kind === 'del') {
-    placeParagraphMarkRevisionMarker(paraRPr, marker, `w:${kind}`);
-  } else {
-    paraRPr.insertBefore(marker, paraRPr.firstChild);
-  }
+  placeParagraphMarkRevisionMarker(paraRPr, marker, `w:${kind}`);
 
   const content = childElements(paragraph).filter((child) => child !== pPr);
   for (const child of content) paragraph.removeChild(child);
@@ -415,8 +406,8 @@ function markWholeParagraph(
  * Relocation is deliberately conservative.  It never crosses a non-paragraph
  * block such as a table, because the paragraph before a table is not the
  * paragraph whose break precedes this content.  It never targets a predecessor
- * whose own paragraph mark already carries a tracked change, because
- * `CT_ParaRPr` admits at most one of `w:ins`/`w:del`/`w:moveFrom`/`w:moveTo`.
+ * whose own paragraph mark already carries a tracked change, because relocating
+ * an independent deletion there would change which paragraph break it describes.
  * It never touches a section-bearing paragraph, because moving the mark across
  * a `w:sectPr` boundary makes LibreOffice resolve Reject All incorrectly.
  * Deletions outside that envelope keep the pre-existing topology, which stays
@@ -1787,7 +1778,11 @@ export function verifySerializedMoveRanges(
       const endIndex = end ? elements.indexOf(end) : -1;
       const wrappers = startIndex >= 0 && endIndex > startIndex
         ? elements.slice(startIndex + 1, endIndex).filter((element) =>
-            element.namespaceURI === W_NS && element.localName === `move${direction}`)
+            element.namespaceURI === W_NS && element.localName === `move${direction}` &&
+            !((element.parentNode as Element | null)?.namespaceURI === W_NS &&
+              (element.parentNode as Element | null)?.localName === 'rPr' &&
+              (element.parentNode?.parentNode as Element | null)?.namespaceURI === W_NS &&
+              (element.parentNode?.parentNode as Element | null)?.localName === 'pPr'))
         : [];
       if (wrappers.length === 0) {
         violations.push(`${relation.name} ${direction.toLowerCase()} range has no enclosed revision wrapper`);
