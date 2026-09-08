@@ -2,7 +2,7 @@ import { describe, expect } from 'vitest';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { parseXml, validateBookmarkIntegrity, validateFieldStructure } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { verifyMoveRelations, verifyTaggedTree } from './taggedTree.js';
+import { verifyMoveRelations, verifyTaggedTree, type TaggedMoveRelation, type TaggedNode } from './taggedTree.js';
 import {
   constructTaggedTree,
   globallyPairCandidates,
@@ -53,6 +53,93 @@ function serializedReorderedMove(): string {
     { moves: result.moves },
   );
 }
+
+type SerializedMoveRelation = Parameters<typeof verifySerializedMoveRanges>[1][number];
+
+function verifierRelation(
+  name = 'move1',
+  sourceRangeId = 10,
+  destinationRangeId = 20,
+): SerializedMoveRelation {
+  return { name, sourceRangeId, destinationRangeId } as SerializedMoveRelation;
+}
+
+function verifierDocument(content: string): string {
+  return `<w:document xmlns:w="${W_NS}"><w:body><w:p>${content}</w:p></w:body></w:document>`;
+}
+
+const rangeStart = (direction: 'From' | 'To', id: number, name = 'move1', attribution = true): string =>
+  `<w:move${direction}RangeStart w:id="${id}" w:name="${name}"${
+    attribution ? ' w:author="Comparator" w:date="2026-08-14T12:00:00Z"' : ''}/>`;
+const rangeEnd = (direction: 'From' | 'To', id: number, extra = ''): string =>
+  `<w:move${direction}RangeEnd w:id="${id}"${extra}/>`;
+const moveWrapper = (direction: 'From' | 'To', id: number, text = 'moved'): string =>
+  `<w:move${direction} w:id="${id}" w:author="Comparator" w:date="2026-08-14T12:00:00Z">` +
+  `<w:r><w:t>${text}</w:t></w:r></w:move${direction}>`;
+
+describe('serialized move range verifier', () => {
+  const relation = verifierRelation();
+  const validOtherDirection = rangeStart('To', 20) + moveWrapper('To', 22) + rangeEnd('To', 20);
+
+  moveConformanceTest('reports missing start attribution', () => {
+    const xml = verifierDocument(
+      rangeStart('From', 10, 'move1', false) + moveWrapper('From', 11) + rangeEnd('From', 10) +
+      validOtherDirection,
+    );
+    expect(verifySerializedMoveRanges(xml, [relation]))
+      .toContain('move1 from range start lacks attribution');
+  });
+
+  moveConformanceTest('reports an illegal range-end name', () => {
+    const xml = verifierDocument(
+      rangeStart('From', 10) + moveWrapper('From', 11) + rangeEnd('From', 10, ' w:name="move1"') +
+      validOtherDirection,
+    );
+    expect(verifySerializedMoveRanges(xml, [relation]))
+      .toContain('move1 from range end has an illegal name');
+  });
+
+  moveConformanceTest('does not count a paragraph-mark move as enclosed content', () => {
+    const paragraphMark = '<w:pPr><w:rPr>' +
+      '<w:moveFrom w:id="11" w:author="Comparator" w:date="2026-08-14T12:00:00Z"/>' +
+      '</w:rPr></w:pPr>';
+    const xml = verifierDocument(
+      rangeStart('From', 10) + paragraphMark + rangeEnd('From', 10) + validOtherDirection,
+    );
+    expect(verifySerializedMoveRanges(xml, [relation]))
+      .toContain('moveFrom:10:range-without-content');
+  });
+
+  moveConformanceTest('reports a revision wrapper and range ID collision', () => {
+    const xml = verifierDocument(
+      rangeStart('From', 10) + moveWrapper('From', 10) + rangeEnd('From', 10) + validOtherDirection,
+    );
+    expect(verifySerializedMoveRanges(xml, [relation]))
+      .toContain('moveFrom revision wrapper reuses a move range id');
+  });
+
+  moveConformanceTest('reports overlapping same-direction move containers', () => {
+    const second = verifierRelation('move2', 30, 40);
+    const xml = verifierDocument(
+      rangeStart('From', 10) + rangeStart('From', 30, 'move2') +
+      moveWrapper('From', 11, 'first') + rangeEnd('From', 10) +
+      moveWrapper('From', 31, 'second') + rangeEnd('From', 30) +
+      validOtherDirection +
+      rangeStart('To', 40, 'move2') + moveWrapper('To', 41) + rangeEnd('To', 40),
+    );
+    expect(verifySerializedMoveRanges(xml, [relation, second]))
+      .toContain('from move ranges cross or close out of order');
+  });
+
+  moveConformanceTest('accepts independently paired source and destination ranges that interleave', () => {
+    const xml = verifierDocument(
+      rangeStart('From', 10) + moveWrapper('From', 11) +
+      rangeStart('To', 20) + rangeEnd('From', 10) +
+      moveWrapper('To', 22) + rangeEnd('To', 20),
+    );
+    expect(verifySerializedMoveRanges(xml, [relation])).toEqual([]);
+  });
+});
 
 describe('complete tagged-tree construction', () => {
   test('constructs projection-isomorphic trees for insertion, deletion, and replacement', () => {
@@ -368,6 +455,74 @@ describe('complete tagged-tree construction', () => {
     content.parentNode!.removeChild(content);
     expect(moveBalanceIssues(serializer.serializeToString(document)))
       .toContain('move-wrapper-count-unbalanced');
+  });
+
+  moveConformanceTest('orders moved paragraph marks after preserved insertion marks', () => {
+    const paragraph = (value: string) => '<w:p><w:pPr><w:rPr>' +
+      '<w:ins w:id="900" w:author="Prior" w:date="2020-01-01T00:00:00Z"/>' +
+      `</w:rPr></w:pPr><w:r><w:t>${value}</w:t></w:r></w:p>`;
+    const original = documentWithBody(paragraph('A') + paragraph('B'));
+    const revised = documentWithBody(paragraph('B') + paragraph('A'));
+    const result = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(
+      result.tree,
+      createPreservePlan(original, revised, result.tree, {
+        author: 'Comparator', date: '2026-08-14T12:00:00Z',
+      }),
+      { moves: result.moves },
+    );
+    const paragraphMarkProperties = Array.from(parseXml(output).getElementsByTagNameNS(W_NS, 'rPr'))
+      .filter((rPr) => rPr.parentNode?.nodeName === 'w:pPr')
+      .filter((rPr) => Array.from(rPr.childNodes).some((child) =>
+        child.nodeType === 1 && ['moveFrom', 'moveTo'].includes((child as Element).localName)));
+
+    expect(paragraphMarkProperties).toHaveLength(2);
+    expect(paragraphMarkProperties.map((rPr) => Array.from(rPr.childNodes)
+      .filter((child): child is Element => child.nodeType === 1)
+      .map((child) => child.localName))).toEqual([
+      ['ins', 'moveFrom'],
+      ['ins', 'moveTo'],
+    ]);
+  });
+
+  moveConformanceTest('retains ordinary text vocabulary in run-level move sources', () => {
+    const original = documentWithBody('<w:p><w:r><w:t>Moved words.</w:t></w:r><w:r><w:t>Stable words.</w:t></w:r></w:p>');
+    const revised = documentWithBody('<w:p><w:r><w:t>Stable words.</w:t></w:r><w:r><w:t>Moved words.</w:t></w:r></w:p>');
+    const originalParagraph = original.getElementsByTagNameNS(W_NS, 'p')[0]!;
+    const revisedParagraph = revised.getElementsByTagNameNS(W_NS, 'p')[0]!;
+    const originalRuns = Array.from(originalParagraph.getElementsByTagNameNS(W_NS, 'r'));
+    const revisedRuns = Array.from(revisedParagraph.getElementsByTagNameNS(W_NS, 'r'));
+    const source: TaggedNode & { tag: 'original' } = {
+      tag: 'original', node: originalRuns[0]!, children: [], opaque: true,
+    };
+    const destination: TaggedNode & { tag: 'revised' } = {
+      tag: 'revised', node: revisedRuns[1]!, children: [], opaque: true,
+    };
+    const tree: TaggedNode = {
+      tag: 'both', original, revised, children: [{
+        tag: 'both', original: originalParagraph, revised: revisedParagraph, children: [
+          source,
+          { tag: 'both', original: originalRuns[1]!, revised: revisedRuns[0]!, children: [], opaque: true },
+          destination,
+        ],
+      }],
+    };
+    const moves: TaggedMoveRelation[] = [{
+      source, destination, name: 'move1', sourceRangeId: 10, destinationRangeId: 20,
+    }];
+    const output = serializeTaggedTree(
+      tree,
+      createPreservePlan(original, revised, tree, {
+        author: 'Comparator', date: '2026-08-14T12:00:00Z',
+      }),
+      { moves },
+    );
+    const runLevelMoveFrom = Array.from(parseXml(output).getElementsByTagNameNS(W_NS, 'moveFrom'))
+      .find((element) => element.parentNode?.nodeName === 'w:p');
+
+    expect(runLevelMoveFrom).toBeDefined();
+    expect(runLevelMoveFrom!.getElementsByTagNameNS(W_NS, 't')).not.toHaveLength(0);
+    expect(runLevelMoveFrom!.getElementsByTagNameNS(W_NS, 'delText')).toHaveLength(0);
   });
 
   moveConformanceTest.openspec('Move source markup structure')(

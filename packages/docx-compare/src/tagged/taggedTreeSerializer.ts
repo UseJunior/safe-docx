@@ -412,8 +412,8 @@ function markWholeParagraph(
  * Relocation is deliberately conservative.  It never crosses a non-paragraph
  * block such as a table, because the paragraph before a table is not the
  * paragraph whose break precedes this content.  It never targets a predecessor
- * whose own paragraph mark already carries a tracked change, because
- * Adding another mark could conflict with an existing paragraph revision.
+ * whose own paragraph mark already carries a tracked change, because relocating
+ * an independent deletion there would change which paragraph break it describes.
  * It never touches a section-bearing paragraph, because moving the mark across
  * a `w:sectPr` boundary makes LibreOffice resolve Reject All incorrectly.
  * Deletions outside that envelope keep the pre-existing topology, which stays
