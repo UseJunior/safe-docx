@@ -15,7 +15,7 @@ import {
   serializeTaggedTree,
   verifySerializedMoveRanges,
 } from './taggedTreeSerializer.js';
-import { formatDate } from './revisionMarkup.js';
+import { formatDate, isParagraphMoveMarker } from './revisionMarkup.js';
 import type { CompareStats, RevisionAttributionRange } from '../compare-types.js';
 import { representative, type TaggedNode } from './taggedTree.js';
 
@@ -68,6 +68,7 @@ const WORDPROCESSINGML_NAMESPACE = 'http://schemas.openxmlformats.org/wordproces
  */
 function isEmptyRevisionMarker(wrapper: Element): boolean {
   if (wrapper.namespaceURI !== WORDPROCESSINGML_NAMESPACE) return false;
+  if (['moveFrom', 'moveTo'].includes(wrapper.localName)) return isParagraphMoveMarker(wrapper);
   if (!['ins', 'del', 'moveFrom', 'moveTo'].includes(wrapper.localName)) return false;
   const parent = wrapper.parentNode as Element | null;
   return parent?.namespaceURI === WORDPROCESSINGML_NAMESPACE

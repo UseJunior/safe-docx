@@ -9,7 +9,7 @@ import {
 import { alignComparisonSequences, tokenizeComparisonText } from '../textAlignment.js';
 import type { RevisionAttribution } from '../compare-types.js';
 import { getChangedPropertyNames } from '../propertyNaming.js';
-import { placeParagraphMarkRevisionMarker } from './revisionMarkup.js';
+import { collectMoveContentIssues, placeParagraphMarkRevisionMarker } from './revisionMarkup.js';
 import {
   nextRevisionId,
   PROPERTY_SCOPE_ELEMENT,
@@ -153,10 +153,6 @@ function convertDeletedText(root: WmlElement): WmlElement {
   return replaceDescendantVocabulary(withDeletedText, 'instrText', 'w:delInstrText');
 }
 
-function convertMovedFromText(root: WmlElement): WmlElement {
-  return replaceDescendantVocabulary(root, 't', 'w:delText');
-}
-
 function operationProvenance(node: TaggedNode): readonly string[] {
   return node.operationProvenance ?? [];
 }
@@ -188,7 +184,8 @@ function wrapRevision(
   markComparisonRevision(wrapper);
   markOperationProvenance(wrapper, operationIds);
   if (kind === 'del') node = convertDeletedText(node);
-  else if (kind === 'moveFrom') node = convertMovedFromText(node);
+  // Move sources retain ordinary text. Controlled Word 16.112.2 probes reject
+  // delText in both run-level and whole-paragraph sources (issue-941 evidence).
   wrapper.appendChild(node);
   return wrapper;
 }
@@ -326,6 +323,9 @@ function hoistLiteralInsertionsFromDeletedFieldInstructions(root: WmlElement): v
  * A complete paragraph cannot be a child of the run-level revision wrappers.
  * WordprocessingML instead records the paragraph-mark revision in
  * `w:p/w:pPr/w:rPr` and wraps only the paragraph's run content.
+ * LibreOffice retains an empty terminal container when accepting a terminal
+ * move source or rejecting a terminal move destination. Middle moves resolve
+ * exactly; relocating the mark like a deletion would cross the named range.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
@@ -358,11 +358,7 @@ function markWholeParagraph(
   marker.setAttributeNS(W_NS, 'w:author', revision.author);
   marker.setAttributeNS(W_NS, 'w:date', revision.date);
   markComparisonRevision(marker);
-  if (kind === 'ins' || kind === 'del') {
-    placeParagraphMarkRevisionMarker(paraRPr, marker, `w:${kind}`);
-  } else {
-    paraRPr.insertBefore(marker, paraRPr.firstChild);
-  }
+  placeParagraphMarkRevisionMarker(paraRPr, marker, `w:${kind}`);
 
   const content = childElements(paragraph).filter((child) => child !== pPr);
   for (const child of content) paragraph.removeChild(child);
@@ -392,7 +388,8 @@ function markWholeParagraph(
     }
     if (kind === 'del') convertDeletedText(child);
     // Moved run content retains ordinary text vocabulary (unlike deletions).
-    // Word rejects a whole-paragraph move carrying delText here.
+    // Controlled Word probes reject delText in both move-source paths; see
+    // scripts/oracle/word/evidence/issue-941-word-16.112.2.json.
     wrapper.appendChild(child);
   }
   flush();
@@ -416,7 +413,7 @@ function markWholeParagraph(
  * block such as a table, because the paragraph before a table is not the
  * paragraph whose break precedes this content.  It never targets a predecessor
  * whose own paragraph mark already carries a tracked change, because
- * `CT_ParaRPr` admits at most one of `w:ins`/`w:del`/`w:moveFrom`/`w:moveTo`.
+ * Adding another mark could conflict with an existing paragraph revision.
  * It never touches a section-bearing paragraph, because moving the mark across
  * a `w:sectPr` boundary makes LibreOffice resolve Reject All incorrectly.
  * Deletions outside that envelope keep the pre-existing topology, which stays
@@ -1742,10 +1739,11 @@ export function verifySerializedMoveRanges(
   relations: readonly TaggedMoveRelation[],
 ): string[] {
   const document = parseXml(xml);
-  const violations: string[] = [];
+  const violations: string[] = collectMoveContentIssues(document.documentElement);
   const stacks: Record<'From' | 'To', string[]> = { From: [], To: [] };
   const elements = Array.from(document.getElementsByTagName('*'));
   for (const element of elements) {
+    if (element.namespaceURI !== W_NS) continue;
     const match = /^move(From|To)Range(Start|End)$/.exec(element.localName ?? '');
     if (!match) continue;
     const direction = match[1] as 'From' | 'To';
@@ -1776,21 +1774,6 @@ export function verifySerializedMoveRanges(
         if (boundary === 'End' && matches.some((element) => element.hasAttributeNS(W_NS, 'name'))) {
           violations.push(`${relation.name} ${direction.toLowerCase()} range end has an illegal name`);
         }
-      }
-      const start = elements.find((element) =>
-        element.localName === `move${direction}RangeStart` &&
-        element.getAttributeNS(W_NS, 'id') === String(id));
-      const end = elements.find((element) =>
-        element.localName === `move${direction}RangeEnd` &&
-        element.getAttributeNS(W_NS, 'id') === String(id));
-      const startIndex = start ? elements.indexOf(start) : -1;
-      const endIndex = end ? elements.indexOf(end) : -1;
-      const wrappers = startIndex >= 0 && endIndex > startIndex
-        ? elements.slice(startIndex + 1, endIndex).filter((element) =>
-            element.namespaceURI === W_NS && element.localName === `move${direction}`)
-        : [];
-      if (wrappers.length === 0) {
-        violations.push(`${relation.name} ${direction.toLowerCase()} range has no enclosed revision wrapper`);
       }
     }
   }

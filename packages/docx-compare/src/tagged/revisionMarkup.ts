@@ -6,6 +6,7 @@ import {
   wrapElement,
 } from '@usejunior/docx-core';
 
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const SYNTHETIC_DOC = parseXml(
   '<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
 );
@@ -188,18 +189,88 @@ export function addParagraphMarkRevisionMarker(
   placeParagraphMarkRevisionMarker(runProperties, marker, markerTag);
 }
 
+/**
+ * Keep paragraph-mark revisions in the EG_ParaRPrTrackChanges sequence:
+ * ins, del, moveFrom, moveTo, followed by ordinary run properties.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
+ * @see https://github.com/UseJunior/safe-docx/issues/941
+ */
 export function placeParagraphMarkRevisionMarker(
   runProperties: Element,
   marker: Element,
-  markerTag: 'w:ins' | 'w:del',
+  markerTag: 'w:ins' | 'w:del' | 'w:moveFrom' | 'w:moveTo',
 ): void {
-  const insertionSibling =
-    markerTag === 'w:del' ? findChildByTagName(runProperties, 'w:ins') : null;
+  const order = ['ins', 'del', 'moveFrom', 'moveTo'];
+  const preceding = order.slice(0, order.indexOf(markerTag.slice(2)));
+  const insertionSibling = childElements(runProperties).filter(child =>
+    child.namespaceURI === W_NS &&
+    preceding.includes(child.localName)).pop();
   if (insertionSibling) {
     if (insertionSibling.nextSibling !== marker) insertAfterElement(insertionSibling, marker);
   } else if (runProperties.firstChild !== marker) {
     runProperties.insertBefore(marker, runProperties.firstChild);
   }
+}
+
+/**
+ * A move in paragraph-mark properties is not a moved-content container.
+ * CT_RPr (ordinary run properties) does not admit these paragraph markers.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
+ */
+export function isParagraphMoveMarker(element: Element): boolean {
+  const namespace = W_NS;
+  const parent = element.parentNode as Element | null;
+  const grandparent = parent?.parentNode as Element | null;
+  return element.namespaceURI === namespace && ['moveFrom', 'moveTo'].includes(element.localName) &&
+    parent?.namespaceURI === namespace && parent.localName === 'rPr' &&
+    grandparent?.namespaceURI === namespace && grandparent.localName === 'pPr';
+}
+
+/**
+ * Each named range must enclose moved content, not just a paragraph mark.
+ * Multiple independently identified wrappers can represent split content.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.22
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.25
+ * @see https://github.com/UseJunior/safe-docx/issues/941
+ */
+export function collectMoveContentIssues(root: Element): string[] {
+  const namespace = W_NS;
+  const elements = Array.from(root.getElementsByTagName('*'));
+  const positions = new Map(elements.map((element, index) => [element, index]));
+  const issues: string[] = [];
+  const revisionIds = new Set<string>();
+  for (const direction of ['moveFrom', 'moveTo']) {
+    const content = elements.filter(element => element.namespaceURI === namespace &&
+      element.localName === direction && !isParagraphMoveMarker(element));
+    const starts = elements.filter(element => element.namespaceURI === namespace &&
+      element.localName === `${direction}RangeStart`);
+    const covered = new Set<Element>();
+    for (const start of starts) {
+      const id = start.getAttributeNS(namespace, 'id');
+      const startIndex = positions.get(start)!;
+      const endIndex = elements.findIndex((element, index) => index > startIndex &&
+        element.namespaceURI === namespace && element.localName === `${direction}RangeEnd` &&
+        element.getAttributeNS(namespace, 'id') === id);
+      const enclosed = content.filter(element => {
+        const index = positions.get(element)!;
+        return index > startIndex && index < endIndex;
+      });
+      if (enclosed.length === 0) issues.push(`${direction}:${id}:range-without-content`);
+      for (const wrapper of enclosed) covered.add(wrapper);
+    }
+    for (const wrapper of content) {
+      const id = wrapper.getAttributeNS(namespace, 'id') ?? '';
+      if (revisionIds.has(id)) issues.push(`${direction}:${id}:duplicate-content-revision-id`);
+      revisionIds.add(id);
+      if (starts.length > 0 && !covered.has(wrapper)) issues.push(`${direction}:${id}:content-outside-range`);
+    }
+  }
+  return issues;
 }
 
 export function findParagraphMarkRevisionMarker(

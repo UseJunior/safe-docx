@@ -18,6 +18,7 @@ import {
   rejectAllChanges,
 } from '../tagged/trackChangesAcceptorAst.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
+import { collectMoveContentIssues, isParagraphMoveMarker } from '../tagged/revisionMarkup.js';
 
 const AUTHOR = 'Strategy Differential';
 const DATE = new Date('2026-08-17T12:00:00Z');
@@ -414,7 +415,7 @@ export function moveBalanceIssues(candidateXml: string): string[] {
   ).map((element) => element.getAttributeNS(W_NS, 'id') ?? element.getAttribute('w:id'))
     .filter((id): id is string => id !== null)
     .sort();
-  const issues: string[] = [];
+  const issues: string[] = collectMoveContentIssues(document.documentElement);
   for (const direction of ['moveFrom', 'moveTo'] as const) {
     const starts = ids(`${direction}RangeStart`);
     const ends = ids(`${direction}RangeEnd`);
@@ -428,12 +429,7 @@ export function moveBalanceIssues(candidateXml: string): string[] {
   // removing a source paragraph mark. Compare the content wrappers separately.
   const contentWrapperCount = (name: string): number => Array.from(
     document.getElementsByTagNameNS(W_NS, name),
-  ).filter((element) => {
-    const parent = element.parentNode as Element | null;
-    const grandparent = parent?.parentNode as Element | null;
-    return !(parent?.namespaceURI === W_NS && parent.localName === 'rPr' &&
-      grandparent?.namespaceURI === W_NS && grandparent.localName === 'pPr');
-  }).length;
+  ).filter((element) => !isParagraphMoveMarker(element)).length;
   if (contentWrapperCount('moveFrom') !== contentWrapperCount('moveTo')) {
     issues.push('move-wrapper-count-unbalanced');
   }
