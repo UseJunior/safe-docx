@@ -1808,7 +1808,7 @@ part: 1
 section: "17.13.5.21"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom
-verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts
+verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts; packages/docx-compare/src/tagged/paragraphMoveReview.test.ts
 ```
 
 This claim is bounded to the runtime and test evidence listed above.
@@ -1821,7 +1821,7 @@ part: 1
 section: "17.13.5.22"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/paragraphMoveReview.test.ts
 ```
 
 Run-level move-source content is emitted and resolved in the bounded comparison
@@ -1869,7 +1869,7 @@ part: 1
 section: "17.13.5.25"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveTo
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/paragraphMoveReview.test.ts
 ```
 
 Run-level move-destination content is emitted and resolved in the bounded
@@ -1883,7 +1883,7 @@ part: 1
 section: "17.13.5.26"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveTo
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts; packages/docx-compare/src/tagged/paragraphMoveReview.test.ts
 ```
 
 Paragraph-level move-destination content has the same bounded support and

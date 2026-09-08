@@ -18,6 +18,7 @@ const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Parag
   .conformance(
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.21' },
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.22' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.25' },
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.26' },
   );
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
