@@ -327,6 +327,17 @@ describe('tagged-tree offline evaluation', () => {
     },
   );
 
+  test('removes move markers from table-row properties', () => {
+    const source = `<w:document xmlns:w="${W_NS}"><w:body><w:tbl>`
+      + `<w:tr><w:trPr><w:moveTo ${revisionAttributes}/></w:trPr>`
+      + '<w:tc><w:p><w:r><w:t>ROW</w:t></w:r></w:p></w:tc></w:tr>'
+      + '</w:tbl></w:body></w:document>';
+    const published = publishPreExistingRevision(source);
+
+    expect(published).not.toContain('<w:moveTo');
+    expect(parseXml(published).documentElement.textContent).toBe('ROW');
+  });
+
   test('reports without mutating caller-owned legacy output',
     async ({ given, when, then, and }: AllureBddContext) => {
       const legacy = xml('legacy bytes remain caller-owned');

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-07",
+  "purpose": "Controlled source-text vocabulary comparison on public synthetic moves; Word opening behavior, not an Accept/Reject or schema conformance verdict.",
+  "word": { "platform": "Mac", "version": "16.112.2", "build": "16.112.26082125" },
+  "generator": "scripts/oracle/word/issue-941-move-fixtures.ts",
+  "procedure": "Generate both structures through compareDocuments, then clone each package and change only the source text element local name between t and delText. Run the repo MCE-aware schema checker on all four files, then the isolation-safe word-fidelity-check/probe.sh without --force-quit.",
+  "isolation": { "preexistingDocuments": 5, "preserved": true, "forcedQuit": false },
+  "schema": { "validated": 4, "total": 4, "exitCode": 0 },
+  "wordBatchExitCode": 1,
+  "wordBatchExitExplanation": "The original batch had two intentional repair-triggering negative controls. This artifact combines generator metadata with observed probe outcomes; it is not raw probe stdout.",
+  "regeneration20260908": {
+    "schemaExitCode": 0,
+    "schemaValidated": "4/4",
+    "wholeParagraphHashes": "unchanged from the original recorded cases",
+    "runLevelDifference": "Removing production deletion-text conversion also removes its synthetic xml:space=preserve attribute. The regenerated run controls differ from the original controls only by that attribute; source text has no leading or trailing whitespace.",
+    "runOrdinaryTextSha256": "80f0e20566deb449eb1d020a6ce7bd1b744d9f8a8e9b0e6233b3af65b782f7f6",
+    "runDeletionTextSha256": "1a17801e5f3a277ac2ade6f8328bb39a21de6fcdb8831bbdb645f8741bcd8061",
+    "wordOrdinaryText": "clean (loaded, no repair/recovery dialog)",
+    "wordDeletionText": "NO DOCUMENT LOADED (no dialog, but the document never registered after a retry — investigate)",
+    "wordBatchExitCode": 1,
+    "interpretation": "Positive production control opens cleanly. This new negative-control outcome is inconclusive, not a reproduced repair dialog or a pass. Original observed repair outcomes above remain historical evidence. Word Accept/Reject remains unverified."
+  },
+  "cases": [
+    { "name": "whole-paragraph-t.docx", "documentXmlSha256": "4548a1bee6a62354b8e21a84f6cfadd83f5ad9ccc1bb21c32da3afd5aaa45109", "sourceContentWrappers": 1, "sourceParagraphMarks": 1, "word": "clean (loaded, no repair/recovery dialog)" },
+    { "name": "whole-paragraph-delText.docx", "documentXmlSha256": "eda9856aa8cfea2f0049e78276fe4b2033d46e2179f24313c567ba8b358b4dce", "sourceContentWrappers": 1, "sourceParagraphMarks": 1, "word": "DIALOG: Word found unreadable content in whole-paragraph-delText.docx" },
+    { "name": "run-between-paragraphs-t.docx", "documentXmlSha256": "5c985717d944a5e0959ef430a5037a3a28c08fe77cefb5701a0cdef39fbcbd5f", "sourceContentWrappers": 1, "sourceParagraphMarks": 0, "word": "clean (loaded, no repair/recovery dialog)" },
+    { "name": "run-between-paragraphs-delText.docx", "documentXmlSha256": "555e40990bfb46294c46817234504a1d73d5a44ce1d60f2715a40cfc676c0757", "sourceContentWrappers": 1, "sourceParagraphMarks": 0, "word": "DIALOG: Word found unreadable content in run-between-paragraphs-delText.docx" }
+  ],
+  "finding": "Ordinary source text opens cleanly in both measured move structures. Changing only its element name to delText triggers Word repair while remaining XSD-valid. Production serialization now retains ordinary text in both paths.",
+  "libreOfficeBoundary": "Independent review reproduced exact middle-paragraph move projections. Terminal move sources leave an empty paragraph on Accept; terminal destinations leave one on Reject. This remains an explicitly recorded consumer limitation, not a complete independent-reader pass.",
+  "references": ["#941", "#972"]
+}

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DocxArchive, parseXml } from '@usejunior/docx-core';
+import { DocxArchive, parseXml, collectFieldStructureIssues } from '@usejunior/docx-core';
 import { describe, expect } from 'vitest';
 import { compareDocuments, type CompareOptions } from './index.js';
 import { acceptAllChanges, rejectAllChanges } from './tagged/trackChangesAcceptorAst.js';
@@ -22,8 +22,14 @@ const formatTest = test.conformance({
   section: '17.13.5.31',
 });
 const moveTest = test
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.21' })
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.22' })
-  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.25' });
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.23' })
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.24' })
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.25' })
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.26' })
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.27' })
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.28' });
 
 const FIXED_DATE = new Date('2026-07-24T12:00:00Z');
 const REAL_FIXTURES_DIR = join(
@@ -123,6 +129,83 @@ describe('compareDocuments options', () => {
       await then('enabled move comparison emits move revisions', () => {
         expect(comparedXml).toContain('<w:moveFrom');
         expect(comparedXml).toContain('<w:moveTo');
+        expect(comparedXml).not.toContain('<w:delText');
+        expect(collectFieldStructureIssues(comparedXml)).toEqual([]);
+        const document = parseXml(comparedXml);
+        const paragraphs = (xml: string): string[] => {
+          const projected = parseXml(xml);
+          const body = projected.getElementsByTagNameNS(
+            'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            'body',
+          )[0]!;
+          return Array.from(body.childNodes)
+            .filter((node): node is Element => node.nodeType === 1 && (node as Element).localName === 'p')
+            .map((paragraph) => paragraph.textContent ?? '');
+        };
+        const rangeIds = new Set([
+          ...Array.from(document.getElementsByTagNameNS(
+            'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            'moveFromRangeStart',
+          )),
+          ...Array.from(document.getElementsByTagNameNS(
+            'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            'moveToRangeStart',
+          )),
+        ].map((element) => element.getAttributeNS(
+          'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+          'id',
+        )));
+        for (const direction of ['From', 'To']) {
+          const start = document.getElementsByTagNameNS(
+            'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            `move${direction}RangeStart`,
+          )[0]!;
+          const end = document.getElementsByTagNameNS(
+            'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            `move${direction}RangeEnd`,
+          )[0]!;
+          expect(start.getAttributeNS(
+            'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            'author',
+          )).not.toBe('');
+          expect(start.getAttributeNS(
+            'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            'date',
+          )).not.toBe('');
+          expect(end.hasAttributeNS(
+            'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            'name',
+          )).toBe(false);
+          for (const revision of Array.from(document.getElementsByTagNameNS(
+            'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            `move${direction}`,
+          ))) {
+            expect(revision.getElementsByTagNameNS(
+              'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+              'p',
+            )).toHaveLength(0);
+            expect(rangeIds.has(revision.getAttributeNS(
+              'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+              'id',
+            ))).toBe(false);
+          }
+        }
+        expect(paragraphs(rejectAllChanges(comparedXml))).toEqual([
+          MOVED_PARAGRAPH,
+          'Middle paragraph stays put',
+          'Final paragraph also stays',
+        ]);
+        expect(paragraphs(acceptAllChanges(comparedXml))).toEqual([
+          'Middle paragraph stays put',
+          'Final paragraph also stays',
+          MOVED_PARAGRAPH,
+        ]);
+        expect(compared.stats).toMatchObject({
+          insertions: 0,
+          deletions: 0,
+          insertedRanges: 0,
+          deletedRanges: 0,
+        });
       });
       await and('disabled move comparison retains deletion and insertion revisions', () => {
         expect(disabledXml).not.toContain('<w:moveFrom');

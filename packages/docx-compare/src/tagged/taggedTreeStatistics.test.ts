@@ -303,11 +303,12 @@ describe('tagged publication range statistics', () => {
     );
 
     expectRetainedMarkersAndStatsAliasesAgree(publication);
-    expect(publication.serializedRangeStats.moveFromRanges).toBe(1);
-    expect(publication.serializedRangeStats.moveToRanges).toBe(1);
+    // Each whole-paragraph endpoint has a paragraph-mark revision and a
+    // content wrapper; both contribute to these internal serialized totals.
+    expect(publication.serializedRangeStats.moveFromRanges).toBe(2);
+    expect(publication.serializedRangeStats.moveToRanges).toBe(2);
     // CompareStats has no public move fields, so pure moves otherwise report
-    // all-zero public stats (#940). The serialized move shape itself also has
-    // a separately tracked ECMA schema defect (#941).
+    // all-zero public stats (#940).
     expect(publication.stats.insertedRanges).toBe(0);
     expect(publication.stats.deletedRanges).toBe(0);
   });

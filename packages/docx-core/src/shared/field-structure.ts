@@ -63,8 +63,11 @@ export function hasFldCharInsideDel(documentXml: string): boolean {
  * Reports structural complex-field violations without evaluating field codes.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.22
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  * @ooxmlSpec ooxml.ecma376.5ed.part1.fields.complex-field-characters
  * @see https://github.com/UseJunior/safe-docx/issues/645
+ * @see https://github.com/UseJunior/safe-docx/issues/941
  */
 export function collectFieldStructureIssues(input: string | FieldStory[]): FieldStructureIssue[] {
   if (typeof input === 'string') {
@@ -216,9 +219,8 @@ function collectFieldStructureIssuesForStory(documentXml: string, story: string)
   let depth = 0;
   const pastSeparatorAtDepth: number[] = [];
   let insideDelDepth = 0;
-  // Move-sources (w:moveFrom) carry deletion-flavored content (w:delText)
-  // per the OOXML revision model; the text-placement rules treat them as
-  // deletion contexts. The field rules above use only w:del.
+  // Move sources may retain ordinary w:t. Continue accepting legacy delText
+  // there, but only a true deletion requires deletion text vocabulary.
   let insideMoveFromDepth = 0;
 
   function push(code: string, message: string, element: string): void {
@@ -279,8 +281,8 @@ function collectFieldStructureIssuesForStory(documentXml: string, story: string)
         if (!isInsideOpenFieldCodeRegion()) {
           push('DELETED_INSTRUCTION_TEXT_OUTSIDE_FIELD_CODE', 'w:delInstrText must appear inside an open field code region', 'w:delInstrText');
         }
-      } else if (isW(el, 't') && (insideDelDepth > 0 || insideMoveFromDepth > 0)) {
-        push('TEXT_INSIDE_DELETION', 'w:t must not appear inside w:del or w:moveFrom; use w:delText', 'w:t');
+      } else if (isW(el, 't') && insideDelDepth > 0) {
+        push('TEXT_INSIDE_DELETION', 'w:t must not appear inside w:del; use w:delText', 'w:t');
       } else if (isW(el, 'delText') && insideDelDepth === 0 && insideMoveFromDepth === 0) {
         push('DELETED_TEXT_OUTSIDE_DELETION', 'w:delText must appear inside w:del or w:moveFrom', 'w:delText');
       }

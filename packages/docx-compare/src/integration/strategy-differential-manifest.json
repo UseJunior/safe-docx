@@ -406,7 +406,7 @@
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "1852d0679a7a4e0a2781c2d9124a7178138ce857e4e9c6cf7314328b8d3ca7db",
+            "xmlSha256": "30a714db8bfe5f353ed16cc782ab678017ee94e7ee5ca132fa4c8cdd923bc5b6",
             "textSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "sourceTextSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "matchesSourceText": true,
@@ -476,8 +476,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 1203848,
-            "sha256": "49e1bbeb6d87be1480fd6a1a5d858565408aeb78524563bf204af0b55f19d688",
+            "bytes": 1220164,
+            "sha256": "251bd1fbcef894e1c60d7633cfd83946c039db77414a74bd71d4e7cb50a78a58",
             "kind": "xml"
           },
           {
@@ -1527,8 +1527,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 433583,
-            "sha256": "bf01078ae7989aa04ce6211acc2dea70d13d0bfc202453e09cc53a14c5f1f61c",
+            "bytes": 433659,
+            "sha256": "b0ecd3105e063d2f67ecdac829e66523640589a9e6e48465a68aa3f24edb52fa",
             "kind": "xml"
           },
           {
@@ -4970,7 +4970,7 @@
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "bd2fc9c90bb0505e37dd8567dff417a3863d255c88352e76708977d65770006a",
+            "xmlSha256": "7c3e5196386a2b5089db49ea8bcd58782b39ddb6b3b45523c8942d92ed5089b5",
             "textSha256": "88cc50356f91e667973518ab0fe59f3f07b70f2b624792b4c627282e41d548b8",
             "sourceTextSha256": "88cc50356f91e667973518ab0fe59f3f07b70f2b624792b4c627282e41d548b8",
             "matchesSourceText": true,
@@ -4998,8 +4998,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 1056,
-            "sha256": "aff162ab698b965568fb74067b35b09f41b43965284d078abe721e635af1fe5b",
+            "bytes": 1337,
+            "sha256": "bda0433827efc30d35b8a2d839dde0affff3b9246b61af1a032c04a3a6e98d03",
             "kind": "xml"
           }
         ],

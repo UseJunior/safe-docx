@@ -18,6 +18,7 @@ import {
   rejectAllChanges,
 } from '../tagged/trackChangesAcceptorAst.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
+import { collectMoveContentIssues, isParagraphMoveMarker } from '../tagged/revisionMarkup.js';
 
 const AUTHOR = 'Strategy Differential';
 const DATE = new Date('2026-08-17T12:00:00Z');
@@ -398,14 +399,23 @@ export function collectRevisionIdIssues(
   return [...new Set(issues)].sort();
 }
 
-function moveBalanceIssues(candidateXml: string): string[] {
+/**
+ * Check move range pairing and run-content balance independently of paragraph marks.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.22
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.25
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
+ * @see https://github.com/UseJunior/safe-docx/issues/941
+ */
+export function moveBalanceIssues(candidateXml: string): string[] {
   const document = parseXml(candidateXml);
   const ids = (name: string): string[] => Array.from(
     document.getElementsByTagNameNS(W_NS, name),
   ).map((element) => element.getAttributeNS(W_NS, 'id') ?? element.getAttribute('w:id'))
     .filter((id): id is string => id !== null)
     .sort();
-  const issues: string[] = [];
+  const issues: string[] = collectMoveContentIssues(document.documentElement);
   for (const direction of ['moveFrom', 'moveTo'] as const) {
     const starts = ids(`${direction}RangeStart`);
     const ends = ids(`${direction}RangeEnd`);
@@ -414,7 +424,13 @@ function moveBalanceIssues(candidateXml: string): string[] {
     }
     if (duplicateValues(starts).length > 0) issues.push(`${direction}:duplicate-range-id`);
   }
-  if (ids('moveFrom').length !== ids('moveTo').length) {
+  // Paragraph-mark revisions are not run-content wrappers. A run moved into
+  // a new paragraph can legitimately add a destination paragraph mark without
+  // removing a source paragraph mark. Compare the content wrappers separately.
+  const contentWrapperCount = (name: string): number => Array.from(
+    document.getElementsByTagNameNS(W_NS, name),
+  ).filter((element) => !isParagraphMoveMarker(element)).length;
+  if (contentWrapperCount('moveFrom') !== contentWrapperCount('moveTo')) {
     issues.push('move-wrapper-count-unbalanced');
   }
   if (ids('moveFromRangeStart').length !== ids('moveToRangeStart').length) {
