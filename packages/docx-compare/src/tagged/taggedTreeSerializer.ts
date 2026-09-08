@@ -340,6 +340,7 @@ function markWholeParagraph(
   kind: 'ins' | 'del' | 'moveFrom' | 'moveTo',
   revision: ComparisonRevision,
   contentRevision: ComparisonRevision,
+  allocateRevision: () => ComparisonRevision,
   operationIds: readonly string[] = [],
 ): WmlElement {
   let pPr = childElements(paragraph).find((child) => child.localName === 'pPr');
@@ -363,6 +364,7 @@ function markWholeParagraph(
   const content = childElements(paragraph).filter((child) => child !== pPr);
   for (const child of content) paragraph.removeChild(child);
   let wrapper: WmlElement | undefined;
+  let emittedContentWrapper = false;
   const flush = (): void => {
     if (wrapper?.firstChild) paragraph.appendChild(wrapper);
     wrapper = undefined;
@@ -379,8 +381,13 @@ function markWholeParagraph(
       continue;
     }
     if (!wrapper) {
+      // Bookmark boundaries split a named move into independent annotations.
+      // Keep the reserved first ID, then allocate an ID for each new fragment.
+      const wrapperRevision = emittedContentWrapper && (kind === 'moveFrom' || kind === 'moveTo')
+        ? allocateRevision() : contentRevision;
+      emittedContentWrapper = true;
       wrapper = paragraph.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
-      wrapper.setAttributeNS(W_NS, 'w:id', String(contentRevision.id));
+      wrapper.setAttributeNS(W_NS, 'w:id', String(wrapperRevision.id));
       wrapper.setAttributeNS(W_NS, 'w:author', revision.author);
       wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
       markComparisonRevision(wrapper);
@@ -1493,6 +1500,7 @@ function emitNode(
         relation ? 'moveFrom' : 'del',
         revision,
         allocateRevision(),
+        allocateRevision,
         operationProvenance(node),
       ), entry.originalStack);
     }
@@ -1520,6 +1528,7 @@ function emitNode(
         relation ? 'moveTo' : 'ins',
         revision,
         allocateRevision(),
+        allocateRevision,
         operationProvenance(node),
       ), entry.revisedStack);
     }

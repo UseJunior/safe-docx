@@ -13,6 +13,7 @@ import { constructTaggedTree } from './taggedTreeConstruction.js';
 import { createPreservePlan, serializeTaggedTree, verifySerializedMoveRanges } from './taggedTreeSerializer.js';
 import { moveBalanceIssues } from '../integration/strategy-differential-harness.js';
 import { isParagraphMoveMarker } from './revisionMarkup.js';
+import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Paragraph move review regressions' })
   .conformance(
@@ -36,6 +37,53 @@ function moveFixture() {
 }
 
 describe('paragraph move review regressions', () => {
+  test('allocates distinct revisions when interior bookmarks split moved paragraph content', async () => {
+    const movedText = 'Moved opening bookmarked words trailing words';
+    const moved = `<w:p>${resultText('Moved opening ')}<w:bookmarkStart w:id="7" w:name="Clause"/>`
+      + '<w:r><w:rPr><w:b/></w:rPr><w:t>bookmarked words</w:t></w:r>'
+      + `<w:bookmarkEnd w:id="7"/>${resultText(' trailing words')}</w:p>`;
+    const stable = paragraphWithText('Stable paragraph');
+    const compared = await compareDocuments(
+      await buildDocxFromBodyXml(moved + stable), await buildDocxFromBodyXml(stable + moved),
+      { detectMoves: true },
+    );
+    const xml = await (await DocxArchive.load(compared.document)).getDocumentXml();
+    const document = parseXml(xml);
+    const ids: string[] = [];
+    for (const direction of ['moveFrom', 'moveTo']) {
+      const wrappers = Array.from(document.getElementsByTagNameNS(W_NS, direction))
+        .filter(element => !isParagraphMoveMarker(element));
+      expect(wrappers).toHaveLength(3);
+      ids.push(...wrappers.map(element => element.getAttributeNS(W_NS, 'id')!));
+    }
+    expect(new Set(ids).size).toBe(6);
+    expect(moveBalanceIssues(xml)).toEqual([]);
+    expect(verifySerializedMoveRanges(xml, [])).toEqual([]);
+    for (const [projection, expected, bookmarkName] of [
+      [acceptAllChanges(xml), ['Stable paragraph', movedText], 'Clause'],
+      [rejectAllChanges(xml), [movedText, 'Stable paragraph'], '_safe_docx_original_1'],
+    ] as const) {
+      const projected = parseXml(projection);
+      expect(Array.from(projected.getElementsByTagNameNS(W_NS, 'p')).map(p => p.textContent)).toEqual(expected);
+      const start = projected.getElementsByTagNameNS(W_NS, 'bookmarkStart');
+      const end = projected.getElementsByTagNameNS(W_NS, 'bookmarkEnd');
+      expect(start).toHaveLength(1);
+      expect(end).toHaveLength(1);
+      expect(start[0]!.getAttributeNS(W_NS, 'id')).toBe(end[0]!.getAttributeNS(W_NS, 'id'));
+      expect(start[0]!.getAttributeNS(W_NS, 'name')).toBe(bookmarkName);
+      expect(projected.getElementsByTagNameNS(W_NS, 'b')).toHaveLength(1);
+    }
+    const directory = await mkdtemp(join(tmpdir(), 'sdx-split-move-'));
+    try {
+      const path = join(directory, 'move.docx');
+      await writeFile(path, compared.document);
+      const check = spawnSync(process.execPath, [schemaScript, path], { encoding: 'utf8' });
+      expect(check.status, check.stdout + check.stderr).toBe(0);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test('retains ordinary source text when a run moves between existing paragraphs', async () => {
     const moved = 'this complete paragraph moves away';
     const stable = 'a second sufficiently long paragraph of stable prose here';
