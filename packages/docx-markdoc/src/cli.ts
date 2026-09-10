@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { writeNewFiles } from './output.js';
 import { compileMarkdoc } from './compile.js';
 import { exportEditPairs } from './export.js';
 import { importDocxToMarkdoc } from './import.js';
@@ -38,7 +39,7 @@ async function main(): Promise<void> {
     const [sourcePath, anchoredPath, markdocPath] = args;
     if (!sourcePath || !anchoredPath || !markdocPath) throw new Error(usage());
     const result = await importDocxToMarkdoc(await readFile(sourcePath));
-    await Promise.all([writeFile(anchoredPath, result.anchoredSource), writeFile(markdocPath, result.markdoc)]);
+    await writeNewFiles([[anchoredPath, result.anchoredSource], [markdocPath, result.markdoc]]);
     return;
   }
   if (command === 'validate') {
@@ -97,12 +98,10 @@ async function main(): Promise<void> {
         assertDistinctInternalPath(internalPath, [sourcePath, cleanPath, externalPath]);
         await mkdir(path.dirname(internalPath), { recursive: true });
       }
-      await Promise.all([
-        writeFile(cleanPath, result.clean),
-        internalPath
-          ? writeFile(internalPath, result.tracked, { flag: 'wx' })
-          : writeFile(externalPath, result.tracked),
-        writeFile(path.join(outputDir!, 'verification.json'), `${JSON.stringify(result.certificate, null, 2)}\n`),
+      await writeNewFiles([
+        [cleanPath, result.clean],
+        [internalPath ?? externalPath, result.tracked],
+        [path.join(outputDir!, 'verification.json'), `${JSON.stringify(result.certificate, null, 2)}\n`],
       ]);
       if (result.certificate.commentRendering.externalCommentsIncluded) {
         process.stderr.write('WARNING: EXTERNAL COMMENTS INCLUDED in generated redline.\n');
@@ -122,7 +121,7 @@ async function main(): Promise<void> {
     const [markdocPath, outputPath] = args;
     if (!markdocPath || !outputPath) throw new Error(usage());
     const ir = requireMarkdoc(await readFile(markdocPath, 'utf8'));
-    await writeFile(outputPath, `${JSON.stringify(exportEditPairs(ir), null, 2)}\n`);
+    await writeNewFiles([[outputPath, `${JSON.stringify(exportEditPairs(ir), null, 2)}\n`]]);
     return;
   }
   if (command === 'comments-to-footnotes') {
@@ -146,7 +145,7 @@ async function main(): Promise<void> {
         bodyStyle: { color: bodyColor, highlight: bodyHighlight },
       },
     });
-    await writeFile(outputPath, result.buffer);
+    await writeNewFiles([[outputPath, result.buffer]]);
     process.stdout.write(`${JSON.stringify(result.report, null, 2)}\n`);
     return;
   }

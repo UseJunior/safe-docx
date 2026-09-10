@@ -84,6 +84,27 @@ docx-markdoc compile anchored.docx revision.mdoc output/
 docx-markdoc compile anchored.docx revision.mdoc output/ --no-external-comments
 ```
 
+Every CLI output path must be new, including import, edit export, and comment
+conversion paths. Existing files and symlinks are refused. Compilation reserves
+all output files before writing and removes files created by that invocation if
+a handled error occurs. Separate paths are not a crash-atomic transaction: a
+process or machine crash can leave partial files. Use a new output directory for
+each build and check the command exit status before consuming its artifacts.
+
+An explicit `before` state must exactly match the pinned source paragraph;
+compilation rejects a false or empty state instead of silently correcting it.
+Legacy `replace-source` and `delete-source` syntax omits that state, so compile
+it against the pinned DOCX before calling `exportEditPairs(result.ir)`.
+Standalone `export-edits` refuses unresolved source-only edits.
+
+Operative text must use plain text or the declared `run-format` syntax.
+Markdown links, emphasis, and arbitrary nested tags are rejected instead of
+silently losing their meaning. Paragraph changes use one before/after text
+block. Insertions may contain multiple paragraphs separated by blank lines;
+those boundaries are preserved in the DOCX. Rationale, requirement, and waiver
+bodies likewise use one plain-text block; multiple Markdown blocks are rejected
+rather than concatenated.
+
 `anchored.docx` differs from `source.docx` only where Safe DOCX had to add stable
 `_bk_*` paragraph bookmarks. The Markdoc hash and paragraph IDs target that
 anchored copy, so later compilation is stateless and never needs an editing

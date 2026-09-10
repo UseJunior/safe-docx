@@ -546,16 +546,15 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
       throw new DocxMarkdocError('FINGERPRINT_DRIFT', `Paragraph ${node.id} fingerprint does not match source.`);
     }
     const replacement = replacements.get(node.id);
-    // Source-anchored operations deliberately omit original text in Markdoc.
-    // Hydrate both the scaffold and operation IR here so downstream archival /
-    // SFT exports still receive the real minimal contrast. The first v1 build
-    // (2026-08-12) resolved this text only during DOCX mutation, which produced
-    // a correct redline but an empty `before` training operand.
-    if (replacement) {
+    // Only legacy source-only syntax omits the before state. A change block's
+    // authored before text is evidence to verify, never a placeholder to replace.
+    if (projected.originalTextFromSource && replacement?.originalTextFromSource) {
       projected.originalText = sourceText;
       replacement.originalText = sourceText;
+      delete projected.originalTextFromSource;
+      delete replacement.originalTextFromSource;
     }
-    if (!replacement && projected.originalText !== sourceText) {
+    if (projected.originalText !== sourceText || (replacement && replacement.originalText !== sourceText)) {
       throw new DocxMarkdocError('SOURCE_TEXT_DRIFT', `Paragraph ${node.id} original projection does not match source.`);
     }
     if (node.table_context) unsupported.add('tables');

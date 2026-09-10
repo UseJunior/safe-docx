@@ -198,6 +198,38 @@ function assertOnlyInlineRevisions(node: Node, issues: ValidationIssue[]): void 
   }
 }
 
+/** These bodies are plain text, with only the declared run-format escape hatch.
+ * Flattening arbitrary Markdown would silently lose links, formatting or blocks.
+ */
+function validateTextBodies(ast: Node, issues: ValidationIssue[]): void {
+  const bodies = new Set(['para', 'before', 'after', 'replace-source', 'rationale', 'requirement', 'waiver']);
+  const plainNodes = new Set(['paragraph', 'inline', 'text', 'softbreak', 'hardbreak']);
+  const insertionBodies = new Set([...ast.walk()]
+    .filter((node) => node.tag === 'insert-before' || node.tag === 'insert-after')
+    .flatMap((node) => node.children.filter((child) => child.tag === 'after')));
+  for (const node of ast.walk()) {
+    if (node.type !== 'tag' || !node.tag) continue;
+    if (bodies.has(node.tag)) {
+      if (!insertionBodies.has(node) && node.children.filter((child) => child.type === 'paragraph').length > 1) {
+        issues.push(issue('MULTIPLE_TEXT_BLOCKS', 'Use one text block; separate Markdown paragraphs cannot be flattened.', node));
+      }
+      for (const child of node.walk()) {
+        if (child === node) continue;
+        const allowedFormat = child.type === 'tag' && child.tag === 'run-format'
+          && (node.tag === 'after' || node.tag === 'replace-source');
+        if (!plainNodes.has(child.type) && !allowedFormat) {
+          issues.push(issue('UNSUPPORTED_TEXT_SYNTAX', 'Text bodies admit plain text and declared after-state run formatting only.', child));
+        }
+      }
+    }
+    if (node.tag === 'change' || node.tag === 'insert-before' || node.tag === 'insert-after') {
+      if (node.children.some((child) => child.type !== 'tag')) {
+        issues.push(issue('TEXT_OUTSIDE_STATE', 'Put all operative text inside before/after state blocks.', node));
+      }
+    }
+  }
+}
+
 function directTagChildren(node: Node): Node[] {
   return node.children.filter((child) => child.type === 'tag');
 }
@@ -324,7 +356,10 @@ function revisedProjectionWithRunFormats(node: Node, issues: ValidationIssue[]):
     }
     for (const child of current.children) visit(child, insideRunFormat);
   };
-  visit(node, false);
+  for (const [index, child] of node.children.entries()) {
+    if (index > 0 && child.type === 'paragraph' && node.children[index - 1]?.type === 'paragraph') text += '\n\n';
+    visit(child, false);
+  }
   return { text, spans };
 }
 
@@ -337,6 +372,8 @@ export function parseMarkdoc(source: string): ValidationResult {
       message: entry.error.message,
       line: entry.lines?.[0] === undefined ? undefined : entry.lines[0] + 1,
     }));
+
+  validateTextBodies(ast, issues);
 
   let descriptor: MarkdocEditIR['source'] | undefined;
   let compilation: CompilationProfile | undefined;
@@ -566,6 +603,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       fingerprint: String(a.fingerprint ?? ''),
       style: String(a.style ?? ''),
       originalText,
+      ...((node.tag === 'replace-source' || node.tag === 'delete-source') ? { originalTextFromSource: true as const } : {}),
       revisedText,
     };
     scaffold.push(paragraph);
