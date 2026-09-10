@@ -115,6 +115,8 @@ export type SourceParagraph = {
   fingerprint: string;
   style: string;
   originalText: string;
+  /** Legacy source-only syntax has no authored before state; resolve it against the pinned source. */
+  originalTextFromSource?: true;
   revisedText: string;
 };
 

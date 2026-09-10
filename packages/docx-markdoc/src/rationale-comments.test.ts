@@ -396,6 +396,10 @@ describe('external-facing rationale comments', () => {
     const anchor = requireMarkdoc(imported.markdoc).scaffold[0]!;
     const insertion = `\n{% insert-after anchor="${anchor.id}" operation="add-many" %}\n{% after %}\nFirst inserted paragraph.\n\nSecond inserted paragraph.\n{% /after %}\n{% /insert-after %}`;
     const result = await compileMarkdoc(imported.anchoredSource, imported.markdoc + insertion + rationale('add-many', 'external-facing'), compileOptions);
+    const clean = await DocxDocument.load(result.clean);
+    expect(clean.buildDocumentView().nodes.map((node) => node.raw_text)).toEqual([
+      'Anchor text.', 'First inserted paragraph.', 'Second inserted paragraph.', 'Tail text.',
+    ]);
     expect(componentCounts((await parts(result.tracked)).document)).toEqual([1, 1, 1]);
   });
 

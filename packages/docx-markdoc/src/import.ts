@@ -14,8 +14,10 @@ function escapeText(text: string): string {
   const escaped = text
     .replace(/&/g, '&amp;')
     .replace(/\\/g, '\\\\')
-    .replace(/([`*_\[\]{}<>#!])/g, '\\$1')
-    .replace(/^(\d+)\./, '$1\\.')
+    .replace(/([`*_~\[\]{}<>#!])/g, '\\$1')
+    .replace(/^(\d+)([.)])/, '$1\\$2')
+    .replace(/^([-+])(?=\s|$)/, '\\$1')
+    .replace(/^(-{3,})$/, (line) => line.replace(/-/g, '\\-'))
     // Keep OOXML tabs and explicit line breaks inside one CommonMark line.
     // At Markdown line boundaries the parser discards adjacent horizontal
     // whitespace before character references are materialized.

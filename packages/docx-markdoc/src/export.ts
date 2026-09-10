@@ -1,3 +1,4 @@
+import { DocxMarkdocError } from './errors.js';
 import type { AdjacentRevisionPair, EditOperation, EditPair, InsertOperation, MarkdocEditIR } from './types.js';
 
 function isInsertOperation(operation: EditOperation): operation is InsertOperation {
@@ -8,6 +9,9 @@ export function exportEditPairs(
   ir: MarkdocEditIR,
   options: { contextParagraphs?: number; verified?: boolean; provenance?: Record<string, string> } = {},
 ): EditPair[] {
+  if (ir.scaffold.some((paragraph) => paragraph.originalTextFromSource)) {
+    throw new DocxMarkdocError('UNRESOLVED_SOURCE_TEXT', 'Compile source-only edits against the pinned DOCX before exporting edit pairs.');
+  }
   const context = Math.max(0, options.contextParagraphs ?? 1);
   const rationales = new Map<string, MarkdocEditIR['rationales']>();
   for (const item of ir.rationales) {
