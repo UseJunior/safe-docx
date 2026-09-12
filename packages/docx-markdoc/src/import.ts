@@ -17,7 +17,8 @@ function escapeText(text: string): string {
     .replace(/([`*_~\[\]{}<>#!])/g, '\\$1')
     .replace(/^(\d+)([.)])/, '$1\\$2')
     .replace(/^([-+])(?=\s|$)/, '\\$1')
-    .replace(/^(-{3,})$/, (line) => line.replace(/-/g, '\\-'))
+    // Escaping the first hyphen prevents a thematic break; no nested escaper.
+    .replace(/^(-{3,})$/, '\\$1')
     // Keep OOXML tabs and explicit line breaks inside one CommonMark line.
     // At Markdown line boundaries the parser discards adjacent horizontal
     // whitespace before character references are materialized.
