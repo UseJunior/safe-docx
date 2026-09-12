@@ -22,7 +22,7 @@ describe('lossless plain-text authoring syntax', () => {
   });
 
   it('imports Markdown-looking source paragraphs without losing their text', async () => {
-    const paragraphs = ['- item', '+ item', '1) item', '1. item', '---', '~~~', 'a ~~b~~ c', '**literal**', '[label](destination)'];
+    const paragraphs = ['- item', '+ item', '1) item', '1. item', '---', '----', '-----', String.raw`\---`, String.raw`\\---`, String.raw`C:\drafts\file.docx`, '~~~', 'a ~~b~~ c', '**literal**', '[label](destination)'];
     const imported = await importDocxToMarkdoc(await buildSyntheticDocx({ paragraphs }));
     expect(requireMarkdoc(imported.markdoc).scaffold.map((p) => p.originalText)).toEqual(paragraphs);
   });
