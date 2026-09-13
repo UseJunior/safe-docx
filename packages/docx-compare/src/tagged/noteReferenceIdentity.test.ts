@@ -4,7 +4,7 @@ import { XMLSerializer } from '@xmldom/xmldom';
 import { testAllure } from '../testing/allure-test.js';
 import { compareDocuments, acceptAllChanges, rejectAllChanges, extractTextWithParagraphs } from '../index.js';
 import { separateRepeatedNoteReferences } from './noteReferenceIdentity.js';
-import { runLibreOfficeOracle } from '@usejunior/docx-core/dist/integration/libreoffice-oracle.js';
+import { runLibreOfficeOracle } from '../../../docx-core/dist/integration/libreoffice-oracle.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Note reference identity' })
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' });
