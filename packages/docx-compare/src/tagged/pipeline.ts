@@ -82,6 +82,7 @@ import {
 } from './formattingFidelity.js';
 import { resolveTaggedRevisionAttributions } from './taggedTreeSerializer.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
+import { separateRepeatedNoteReferences } from './noteReferenceIdentity.js';
 import {
   collectBookmarkReferenceNamesInXml,
   collectWordPartBookmarkNames,
@@ -457,6 +458,9 @@ export async function buildStandaloneTaggedPackage(
       noteMergeResults.set(descriptor.label, mergeResult);
     }
   }
+  const noteReferenceSourceIds = new Map<'footnote' | 'endnote', Map<string, string>>();
+  taggedXml = await separateRepeatedNoteReferences(resultArchive, taggedXml, noteReferenceSourceIds);
+  resultArchive.setDocumentXml(taggedXml);
   const rootCommentIds = await collectStoryReferenceIds(
     resultArchive,
     taggedXml,
@@ -474,6 +478,7 @@ export async function buildStandaloneTaggedPackage(
     baseSide: 'revised',
     mergeSourceSide: 'original',
     noteMergeResults,
+    noteReferenceSourceIds,
   });
   const finalAuxiliarySidecars = {
     footnotesXmls: [await resultArchive.getFile('word/footnotes.xml')],

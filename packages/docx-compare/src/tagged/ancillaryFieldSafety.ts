@@ -67,6 +67,8 @@ export interface AncillaryFieldSafetyInput {
   baseSide: 'original' | 'revised';
   mergeSourceSide: 'original' | 'revised';
   noteMergeResults: ReadonlyMap<'footnote' | 'endnote', AncillaryNoteMergeResult>;
+  /** Final note ID to its pre-normalization assembly ID. */
+  noteReferenceSourceIds?: ReadonlyMap<'footnote' | 'endnote', ReadonlyMap<string, string>>;
 }
 
 interface InternalFieldRange {
@@ -572,11 +574,12 @@ async function evaluateAncillaryFieldSafetyUnsafe(
     const allowed = new Set<SupportedComplexField>(['REF', 'PAGEREF']);
 
     for (const entry of finalEntries) {
-      const provenance = baseEntries.has(entry.id) ? 'base' : 'imported';
+      const sourceId = input.noteReferenceSourceIds?.get(note.storyKind)?.get(entry.id) ?? entry.id;
+      const provenance = baseEntries.has(sourceId) ? 'base' : 'imported';
       const sourceSide = provenance === 'base' ? input.baseSide : input.mergeSourceSide;
       const sourceEntry = provenance === 'base'
-        ? baseEntries.get(entry.id)
-        : sourceEntries.get(entry.id);
+        ? baseEntries.get(sourceId)
+        : sourceEntries.get(sourceId);
       const locator = {
         locatorType: 'note_entry' as const,
         normalizedPartPath: note.path,
@@ -591,7 +594,7 @@ async function evaluateAncillaryFieldSafetyUnsafe(
       if (entryStrictIssues.length > 0) continue;
       if (
         !sourceEntry ||
-        (provenance === 'imported' && !canonicalMergedIds.has(entry.id) && !mergeResult?.createdPart)
+        (provenance === 'imported' && !canonicalMergedIds.has(sourceId) && !mergeResult?.createdPart)
       ) {
         issues.push({
           category: 'canonical_evidence',
