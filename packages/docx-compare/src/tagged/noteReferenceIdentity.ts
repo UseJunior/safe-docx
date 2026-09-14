@@ -1,9 +1,24 @@
 import { XMLSerializer } from '@xmldom/xmldom';
 import { type DocxArchive, parseXml } from '@usejunior/docx-core';
+import { AncillaryStorySafetyError, canonicalNoteId } from './ancillaryFieldSafety.js';
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const W14 = 'http://schemas.microsoft.com/office/word/2010/wordml';
 const serialize = (document: Document) => new XMLSerializer().serializeToString(document);
+
+/** IDs reconstructed in multiple paragraphs, rather than paired inline. */
+export function copiedParagraphNoteIds(document: Document, kind: 'footnote' | 'endnote'): Set<string> {
+  const groups = new Map<string, Set<Node | null>>();
+  for (const ref of Array.from(document.getElementsByTagNameNS(W, `${kind}Reference`))) {
+    const id = canonicalNoteId(ref.getAttributeNS(W, 'id') ?? '');
+    if (id === undefined) continue; // The publication guard diagnoses malformed IDs.
+    let parent = ref.parentNode;
+    while (parent && !(parent.nodeType === 1 && (parent as Element).namespaceURI === W && (parent as Element).localName === 'p')) parent = parent.parentNode;
+    if (!groups.has(id)) groups.set(id, new Set());
+    groups.get(id)!.add(parent);
+  }
+  return new Set([...groups].filter(([, paragraphs]) => paragraphs.size > 1).map(([id]) => id));
+}
 
 /**
  * A copied reference needs its own definition even when both definitions have
@@ -12,7 +27,6 @@ const serialize = (document: Document) => new XMLSerializer().serializeToString(
  * order for LibreOffice; this is a reader workaround, not the display-number
  * contract of the specification. Apply only to copied paragraph references.
  *
- * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
  * @see https://github.com/UseJunior/safe-docx/issues/941
  */
 export async function separateRepeatedNoteReferences(archive: DocxArchive, xml: string,
@@ -20,57 +34,80 @@ export async function separateRepeatedNoteReferences(archive: DocxArchive, xml: 
   const document = parseXml(xml);
   let changed = false;
   for (const kind of ['footnote', 'endnote'] as const) {
+    const part = `word/${kind}s.xml` as const;
+    const fail = (detail: string, entryId?: string): never => {
+      throw new AncillaryStorySafetyError([{
+        category: 'canonical_evidence', code: 'NOTE_REFERENCE_IDENTITY_UNSAFE',
+        detail: `Unsafe repeated ${kind} reference: ${detail}`,
+        locator: entryId === undefined
+          ? { locatorType: 'package_part', normalizedPartPath: part }
+          : { locatorType: 'note_entry', normalizedPartPath: part, entryId },
+      }]);
+    };
+    const parse = (source: string): Document => {
+      try { return parseXml(source); } catch { return fail('malformed note or referencing story XML'); }
+    };
     const referenceName = `${kind}Reference`;
     const refs = Array.from(document.getElementsByTagNameNS(W, referenceName));
-    const ids = refs.map(ref => ref.getAttributeNS(W, 'id')!);
+    const ids = refs.map(ref => canonicalNoteId(ref.getAttributeNS(W, 'id') ?? '') ?? fail('invalid reference ID'));
     if (new Set(ids).size === ids.length) continue;
-    const paragraph = (ref: Element): Node | null => {
-      let parent = ref.parentNode;
-      while (parent && !(parent.nodeType === 1 && (parent as Element).namespaceURI === W && (parent as Element).localName === 'p')) parent = parent.parentNode;
-      return parent;
-    };
     // Corresponding edited references inside one paragraph deliberately share
     // a tracked definition. This repair targets copied paragraph references.
-    if (!ids.some((id, i) => refs.some((ref, j) => j !== i && ids[j] === id && paragraph(ref) !== paragraph(refs[i]!)))) continue;
-    const fail = (detail: string): never => { throw new Error(`Unsafe repeated ${kind} reference: ${detail}`); };
-    const part = `word/${kind}s.xml`;
+    const copiedIds = copiedParagraphNoteIds(document, kind);
+    if (copiedIds.size === 0) continue;
     const source = await archive.getFile(part);
     if (!source) fail('missing definitions');
-    const notes = parseXml(source!);
+    const notes = parse(source!);
+    if (notes.documentElement.namespaceURI !== W || notes.documentElement.localName !== `${kind}s`) fail('invalid definitions root');
     const entries = Array.from(notes.getElementsByTagNameNS(W, kind));
-    const byId = new Map(entries.map(note => [note.getAttributeNS(W, 'id')!, note]));
+    if (entries.some(entry => entry.parentNode !== notes.documentElement)) fail('nested note definition');
+    const entryIds = new Map(entries.map(note => [note, canonicalNoteId(note.getAttributeNS(W, 'id') ?? '') ?? fail('invalid definition ID')]));
+    const byId = new Map(entries.map(note => [entryIds.get(note)!, note]));
     if (byId.size !== entries.length) fail('duplicate definition IDs');
     // Rewriting only the main story must not invalidate an anchor in another story.
     for (const path of archive.listFiles().filter(path => path.startsWith('word/') && path.endsWith('.xml') && path !== 'word/document.xml')) {
       const other = await archive.getFile(path);
-      if (other && parseXml(other).getElementsByTagNameNS(W, referenceName).length) fail('reference outside the main story');
+      if (other && parse(other).getElementsByTagNameNS(W, referenceName).length) fail('reference outside the main story');
     }
     const counts = new Map<string, number>();
     for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1);
-    for (const [id, count] of counts) {
+    for (const id of counts.keys()) {
       const note = byId.get(id);
-      if (!note || !Number.isSafeInteger(Number(id)) || Number(id) < 0 ||
-          ['separator', 'continuationSeparator', 'continuationNotice'].includes(note.getAttributeNS(W, 'type') ?? '')) fail('invalid referenced definition');
-      if (count < 2) continue;
+      if (!note || BigInt(id) < 0n ||
+          ['separator', 'continuationSeparator', 'continuationNotice'].includes(note.getAttributeNS(W, 'type') ?? '')) fail('invalid referenced definition', id);
+      if (!copiedIds.has(id)) continue;
       // Duplicating scoped annotations or fields needs its own identity policy.
       // Do not turn a reader repair into duplicated bookmarks/comments/revisions.
       const safe = new Set(['footnote', 'endnote', 'p', 'pPr', 'r', 'rPr', 't', 'footnoteRef', 'endnoteRef',
-        'pStyle', 'rStyle', 'b', 'bCs', 'i', 'iCs', 'u', 'color', 'sz', 'szCs', 'rFonts', 'lang',
-        'spacing', 'ind', 'jc', 'keepNext', 'keepLines', 'widowControl', 'tab', 'tabs', 'br',
-        'vertAlign', 'position', 'highlight', 'caps', 'smallCaps', 'strike', 'dstrike', 'noProof']);
+        'tab', 'ptab', 'br', 'cr', 'noBreakHyphen', 'softHyphen', 'sym', 'proofErr', 'lastRenderedPageBreak']);
+      const scoped = /^(?:bookmark|comment|perm|move|customXml|sdt|fld|instrText|delInstrText|ins$|del$|delText$|drawing$|pict$|object$|hyperlink$|footnoteReference$|endnoteReference$)|Change$/u;
       for (const element of [note!, ...Array.from(note!.getElementsByTagName('*'))]) {
-        if (element.namespaceURI !== W || !safe.has(element.localName)) fail('definition contains unsupported annotations or structure');
-        if (Array.from(element.attributes).some(attr => attr.namespaceURI === 'http://schemas.openxmlformats.org/officeDocument/2006/relationships')) fail('definition contains relationships');
+        let property = false;
+        for (let node: Node | null = element; node && node !== note; node = node.parentNode) {
+          if (node.nodeType === 1 && (node as Element).namespaceURI === W && ['pPr', 'rPr'].includes((node as Element).localName)) property = true;
+        }
+        if (element.namespaceURI !== W || scoped.test(element.localName) || (!safe.has(element.localName) && !property)) fail('definition contains unsupported annotations or structure', id);
+        if (Array.from(element.attributes).some(attr => attr.namespaceURI === 'http://schemas.openxmlformats.org/officeDocument/2006/relationships')) fail('definition contains relationships', id);
       }
     }
     const reserved = new Set(entries.filter(note => ['separator', 'continuationSeparator', 'continuationNotice'].includes(note.getAttributeNS(W, 'type') ?? ''))
-      .map(note => note.getAttributeNS(W, 'id')!));
-    let next = 1;
+      .map(note => entryIds.get(note)!));
+    let next = 1n;
     const mapping = new Map<string, string>();
     const allocate = () => { while (reserved.has(String(next))) next++; return String(next++); };
-    const copies = refs.map((ref, i) => {
+    const sharedIds = new Map<string, string>();
+    const seen = new Set<string>();
+    const copies: Element[] = [];
+    for (let i = 0; i < refs.length; i++) {
+      const ref = refs[i]!;
+      const sourceId = ids[i]!;
+      const shared = sharedIds.get(sourceId);
+      if (shared !== undefined) {
+        ref.setAttributeNS(W, 'w:id', shared);
+        continue;
+      }
       const copy = byId.get(ids[i]!)!.cloneNode(true) as Element;
-      if (ids.indexOf(ids[i]!) !== i) {
+      if (seen.has(sourceId)) {
         // Optional editing identities must not be shared by cloned paragraphs.
         // Scoped annotations that could refer to them were rejected above.
         for (const paragraph of Array.from(copy.getElementsByTagNameNS(W, 'p'))) {
@@ -78,15 +115,19 @@ export async function separateRepeatedNoteReferences(archive: DocxArchive, xml: 
           paragraph.removeAttributeNS(W14, 'textId');
         }
       }
+      seen.add(sourceId);
       const id = allocate();
+      // Normalize identifiers consistently for reader import, but never clone
+      // an inline-edited group's shared tracked definition or revision history.
+      if (!copiedIds.has(sourceId)) sharedIds.set(sourceId, id);
       mapping.set(id, ids[i]!);
       ref.setAttributeNS(W, 'w:id', id);
       copy.setAttributeNS(W, 'w:id', id);
-      return copy;
-    });
+      copies.push(copy);
+    }
     // Preserve unreferenced definitions, assigning IDs outside the new references.
     for (const entry of entries) {
-      const id = entry.getAttributeNS(W, 'id')!;
+      const id = entryIds.get(entry)!;
       if (reserved.has(id)) continue;
       notes.documentElement.removeChild(entry);
       if (!counts.has(id)) {

@@ -128,7 +128,7 @@ function publicBindingLocator(binding: SectPrBinding): AncillaryBindingLocator {
   };
 }
 
-function canonicalNoteId(value: string): string | undefined {
+export function canonicalNoteId(value: string): string | undefined {
   const collapsed = value
     .replace(/[ \t\r\n]+/gu, ' ')
     .replace(/^ | $/gu, '');

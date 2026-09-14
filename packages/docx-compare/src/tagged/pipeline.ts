@@ -3,7 +3,7 @@
 import { XMLSerializer } from '@xmldom/xmldom';
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
-import { normalizeOpcRelationshipTarget, parseXml } from '@usejunior/docx-core';
+import { normalizeOpcRelationshipTarget, parseXml, OOXML } from '@usejunior/docx-core';
 import { DocxArchive } from '@usejunior/docx-core';
 import type {
   CompareResult,
@@ -82,7 +82,7 @@ import {
 } from './formattingFidelity.js';
 import { resolveTaggedRevisionAttributions } from './taggedTreeSerializer.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
-import { separateRepeatedNoteReferences } from './noteReferenceIdentity.js';
+import { copiedParagraphNoteIds, separateRepeatedNoteReferences } from './noteReferenceIdentity.js';
 import {
   collectBookmarkReferenceNamesInXml,
   collectWordPartBookmarkNames,
@@ -215,6 +215,7 @@ async function reconcileTaggedFootnotes(options: {
   const revised = parseEntries(revisedXml, 'w:footnote');
   const result = parseEntries(resultXml, 'w:footnote');
   const document = parseXml(options.documentXml);
+  const repairingCopiedNotes = copiedParagraphNoteIds(document, 'footnote').size > 0;
   const originalDocument = parseXml(originalDocumentXml);
   const revisedDocument = parseXml(revisedDocumentXml);
   let changed = false;
@@ -225,6 +226,15 @@ async function reconcileTaggedFootnotes(options: {
     const discardedId = targetId === pair.originalId ? pair.revisedId : pair.originalId;
     const resultEntry = result.entries.get(targetId);
     if (!originalEntry || !revisedEntry || !resultEntry) continue;
+    // A copied paragraph requires per-reference note identities for reader
+    // import. Keep the existing collision-safe original/revised definitions
+    // for explicit inline edit pairs too: merging their anchors to one ID
+    // would reintroduce duplicate references and shift LibreOffice bindings.
+    // A lone stable reference still needs definition reconciliation on Reject.
+    const references = Array.from(document.getElementsByTagNameNS(OOXML.W_NS, 'footnoteReference'));
+    if (repairingCopiedNotes &&
+        references.some(ref => ref.getAttributeNS(OOXML.W_NS, 'id') === pair.originalId) &&
+        references.some(ref => ref.getAttributeNS(OOXML.W_NS, 'id') === pair.revisedId)) continue;
     if (
       footnoteDefinitionPairRequiresCollisionSafeFallback(originalEntry, revisedEntry) ||
       !isOnlyFootnoteAnchorInSourceParagraph(originalDocument, pair.originalId) ||
