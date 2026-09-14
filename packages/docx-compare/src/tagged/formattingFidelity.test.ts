@@ -264,6 +264,70 @@ describe('Formatting-fidelity comparison check', () => {
     expect(result.score).toBe(1);
   });
 
+  humanReadableTest
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' })
+    .openspec('accepting a tracked section-break removal does not leave a ghost section')(
+      'Scenario: accepting a tracked section-break removal does not leave a ghost section',
+      (_: AllureBddContext) => {
+        const original = docXml(
+          `<w:p><w:pPr><w:sectPr><w:pgSz w:w="12000" w:h="16000"/></w:sectPr></w:pPr>` +
+            `<w:r><w:t>Invented first section</w:t></w:r></w:p>` +
+            `<w:p><w:r><w:t>Invented continuation</w:t></w:r></w:p>` +
+            `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>`,
+        );
+        const revised = docXml(
+          `<w:p><w:r><w:t>Invented first section</w:t></w:r></w:p>` +
+            `<w:p><w:r><w:t>Invented continuation</w:t></w:r></w:p>` +
+            `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>`,
+        );
+        const candidate = docXml(
+          `<w:p><w:pPr><w:sectPr><w:sectPrChange w:id="1" w:author="Invented" ` +
+            `w:date="2026-09-14T00:00:00Z"><w:sectPr><w:pgSz w:w="12000" ` +
+            `w:h="16000"/></w:sectPr></w:sectPrChange></w:sectPr></w:pPr>` +
+            `<w:r><w:t>Invented first section</w:t></w:r></w:p>` +
+            `<w:p><w:r><w:t>Invented continuation</w:t></w:r></w:p>` +
+            `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>`,
+        );
+
+        const result = compareSourceProjectedFormattingFidelity(original, revised, candidate);
+
+        expect(result.accept.score).toBe(1);
+        expect(result.accept.sectionFormatting).toEqual({ compared: 1, divergent: 0, score: 1 });
+        expect(result.reject.score).toBe(1);
+        expect(result.reject.sectionFormatting).toEqual({ compared: 2, divergent: 0, score: 1 });
+        expect(result.score).toBe(1);
+      },
+    );
+
+  test('invented DOCX section-break removal clears the exact publication gate', async () => {
+    const originalBody =
+      `<w:p><w:pPr><w:sectPr><w:pgSz w:w="12000" w:h="16000"/></w:sectPr></w:pPr>` +
+      `<w:r><w:t>Invented removable boundary</w:t></w:r></w:p>` +
+      `<w:p><w:r><w:t>Invented following section</w:t></w:r></w:p>`;
+    const revisedBody =
+      `<w:p><w:r><w:t>Invented removable boundary</w:t></w:r></w:p>` +
+      `<w:p><w:r><w:t>Invented following section</w:t></w:r></w:p>`;
+    const [original, revised] = await Promise.all([
+      buildDocxFromBodyXml(originalBody),
+      buildDocxFromBodyXml(revisedBody),
+    ]);
+
+    const result = await compareDocumentsAtomizer(original, revised, {
+      author: 'Invented Fixture',
+      date: new Date('2026-09-14T00:00:00Z'),
+    });
+    const [originalXml, revisedXml, candidateXml] = await Promise.all([
+      DocxArchive.load(original).then((archive) => archive.getDocumentXml()),
+      DocxArchive.load(revised).then((archive) => archive.getDocumentXml()),
+      DocxArchive.load(result.document).then((archive) => archive.getDocumentXml()),
+    ]);
+
+    const fidelity = compareSourceProjectedFormattingFidelity(originalXml, revisedXml, candidateXml);
+    expect(result.engine).toBe('tagged-tree');
+    expect(fidelity.accept.score).toBe(1);
+    expect(fidelity.reject.score).toBe(1);
+  });
+
   humanReadableTest.openspec('pipeline inplace and rebuild candidates are measurable end-to-end')(
     'Scenario: pipeline inplace and rebuild candidates are measurable end-to-end',
     async (_: AllureBddContext) => {
