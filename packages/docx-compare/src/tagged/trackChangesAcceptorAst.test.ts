@@ -226,6 +226,32 @@ describe('trackChangesAcceptorAst', () => {
     });
   });
 
+    test
+      .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' })(
+        'preserves live paragraph and final section properties when accepting revisions',
+        () => {
+          const input = `<?xml version="1.0"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p><w:pPr><w:sectPr><w:pgMar w:top="900"/>
+                  <w:sectPrChange w:id="1"><w:sectPr><w:pgMar w:top="800"/></w:sectPr></w:sectPrChange>
+                </w:sectPr></w:pPr><w:r><w:t>Invented live section</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>
+              </w:body>
+            </w:document>`;
+
+          const result = acceptAllChanges(input);
+          const root = parseDocumentXml(result);
+          const sections = findAllByTagName(root, 'w:sectPr');
+
+          expect(sections).toHaveLength(2);
+          expect(result).toContain('w:pgMar w:top="900"');
+          expect(result).toContain('w:pgSz w:w="12240" w:h="15840"');
+          expect(result).not.toContain('w:sectPrChange');
+          expect(result).not.toContain('w:pgMar w:top="800"');
+        },
+      );
+
   describe('rejectAllChanges', () => {
     test('should remove w:ins elements entirely', async ({ given, when, then, and }: AllureBddContext) => {
       let input: string;
