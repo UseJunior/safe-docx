@@ -622,6 +622,10 @@ function moveCandidateIsSafe(node: OriginalNode | RevisedNode): boolean {
   }
   if (revisionProvenance(node.node).length > 0) return false;
   for (const localName of [
+    // Note-bearing moves need independent note definitions and the paragraph
+    // break behavior of the deletion/insertion path in desktop readers.
+    'footnoteReference',
+    'endnoteReference',
     'fldChar',
     'instrText',
     'moveFrom',
