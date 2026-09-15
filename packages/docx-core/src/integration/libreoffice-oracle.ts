@@ -20,7 +20,18 @@
  * CI does not install LibreOffice, so the oracle voter is a local developer check.
  */
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -66,6 +77,81 @@ async function settleProfile(profile: string, timeoutMs = 1_500): Promise<void> 
   }
 }
 
+/**
+ * Cross-process LibreOffice mutex.
+ *
+ * The in-process batching above already guarantees ONE headless launch per oracle batch, but
+ * nothing coordinated ACROSS processes: parallel vitest workers, sibling agent sessions, and a
+ * human running the oracle simultaneously each spawned their own soffice. LibreOffice's
+ * single-instance forwarding makes concurrent launches with distinct profiles merely expensive,
+ * but concurrent launches are also the amplification vector for the macOS headless startup
+ * crashes tracked in issue #627 — so all oracle launches in this repo serialize on one
+ * machine-wide lockfile.
+ *
+ * Protocol: exclusive-create (`wx`) a JSON lockfile in the OS temp dir. Holder records its PID;
+ * waiters poll, stealing the lock only when the recorded PID is dead or the file is older than
+ * `STALE_LOCK_MS` (a SIGKILLed holder cannot clean up). The steal itself loops back to the
+ * exclusive create, so exactly one contender wins the recreated file.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/627
+ */
+const GLOBAL_SOFFICE_LOCK = path.join(os.tmpdir(), 'safe-docx-soffice-global.lock');
+const STALE_LOCK_MS = 10 * 60_000;
+
+/**
+ * Acquire the cross-process LibreOffice mutex, returning an idempotent release function.
+ * `lockPath`/`pollMs` are parameterized for unit testing; production callers use the
+ * defaults (the machine-wide lockfile). Exported so a unit test can exercise the
+ * exclusive-acquire, wait-for-release, and stale-steal branches without launching soffice.
+ */
+export async function acquireGlobalSofficeLock(
+  timeoutMs = 300_000,
+  { lockPath = GLOBAL_SOFFICE_LOCK, pollMs = 200 }: { lockPath?: string; pollMs?: number } = {},
+): Promise<() => void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const fd = openSync(lockPath, 'wx');
+      writeSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
+      closeSync(fd);
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        try { rmSync(lockPath, { force: true }); } catch { /* best effort */ }
+      };
+    } catch {
+      let stale = false;
+      try {
+        const ageMs = Date.now() - statSync(lockPath).mtimeMs;
+        const holder = JSON.parse(readFileSync(lockPath, 'utf8')) as { pid?: number };
+        const holderAlive = typeof holder.pid === 'number' && (() => {
+          try { process.kill(holder.pid!, 0); return true; } catch { return false; }
+        })();
+        stale = !holderAlive || ageMs > STALE_LOCK_MS;
+      } catch (statErr) {
+        // Vanished between attempts (fine, retry) or unreadable content (steal after grace).
+        stale = existsSync(lockPath)
+          ? Date.now() - statSync(lockPath).mtimeMs > 10_000
+          : false;
+        void statErr;
+      }
+      if (stale) {
+        try { rmSync(lockPath, { force: true }); } catch { /* racer removed it */ }
+        continue;
+      }
+      if (Date.now() > deadline) {
+        throw new Error(
+          `Timed out after ${timeoutMs}ms waiting for the cross-process LibreOffice lock at ` +
+            `${lockPath}; another oracle run appears to be live. Delete the lockfile ` +
+            'only if you are sure no soffice-driving process is running.',
+        );
+      }
+      await sleep(pollMs + Math.floor(Math.random() * pollMs));
+    }
+  }
+}
+
 /** Resolve a LibreOffice binary, or null if none is available (callers skip the oracle). */
 export function resolveSoffice(): string | null {
   const candidates = [
@@ -97,6 +183,7 @@ export function probeSofficeUsable(soffice: string): Promise<boolean> {
   let result = probeResults.get(soffice);
   if (!result) {
     result = (async () => {
+      const releaseLock = await acquireGlobalSofficeLock();
       const work = mkdtempSync(path.join(os.tmpdir(), 'lo-probe-'));
       try {
         const inPath = path.join(work, 'probe-input.txt');
@@ -119,6 +206,7 @@ export function probeSofficeUsable(soffice: string): Promise<boolean> {
         );
         return existsSync(path.join(outDir, 'probe-input.txt'));
       } finally {
+        releaseLock();
         rmSync(work, { recursive: true, force: true });
       }
     })();
@@ -256,6 +344,7 @@ export async function runLibreOfficeOracle(jobs: OracleJob[], soffice = resolveS
   if (!soffice) throw new Error('runLibreOfficeOracle: no soffice binary (call resolveSoffice() and skip)');
   if (jobs.length === 0) return [];
 
+  const releaseLock = await acquireGlobalSofficeLock();
   const work = mkdtempSync(path.join(os.tmpdir(), 'lo-oracle-'));
   const profile = path.join(work, 'profile');
   const userDir = path.join(profile, 'user');
@@ -342,6 +431,7 @@ export async function runLibreOfficeOracle(jobs: OracleJob[], soffice = resolveS
       return extractDocumentXml(readFileSync(p));
     }));
   } finally {
+    releaseLock();
     if (!keepWork) rmSync(work, { recursive: true, force: true });
   }
 }
