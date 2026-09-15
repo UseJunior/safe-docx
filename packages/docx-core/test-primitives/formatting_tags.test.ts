@@ -26,10 +26,10 @@ function runFormatting(partial?: Partial<RunFormatting>): RunFormatting {
     shadow: false,
     vanish: false,
     underline: false,
-    highlightVal: null,
+    highlightVal: false,
     fontName: '',
     fontSizePt: 0,
-    colorHex: null,
+    colorHex: 'auto',
     ...(partial ?? {}),
   };
 }

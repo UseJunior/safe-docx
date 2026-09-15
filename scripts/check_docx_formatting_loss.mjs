@@ -194,28 +194,30 @@ function runHasRenderableContent(run, paragraph) {
  * effective run formatting, resolved through styles.xml. Two runs whose
  * declarations differ but resolve identically produce the same tuple, and a
  * style-definition edit changes the tuple with no change to the run at all.
- * Nullable fields are pinned to sentinel strings so tuple positions compare
- * by value. Color hex is compared case-insensitively — ff0000 and FF0000 are
+ * Unresolved fields are pinned to sentinel strings so tuple positions compare
+ * by value without pretending the resolver established a rendered default.
+ * Color hex is compared case-insensitively — ff0000 and FF0000 are
  * the same ink, and the raw casing is a property of the writer, not the page.
  */
 function runEmphasis(run, paragraphPPr, paragraphStyleId, styles, theme) {
   const formatting = extractEffectiveRunFormatting({ run, paragraphPPr, paragraphStyleId, styles, theme });
+  const resolved = (value) => value === null ? 'unresolved' : value;
   return [
-    formatting.bold,
-    formatting.italic,
-    formatting.caps,
-    formatting.smallCaps,
-    formatting.strike,
-    formatting.emboss,
-    formatting.imprint,
-    formatting.outline,
-    formatting.shadow,
-    formatting.vanish,
-    formatting.underline,
-    formatting.highlightVal ?? 'none',
-    formatting.fontName,
-    formatting.fontSizePt,
-    formatting.colorHex === null ? 'auto' : formatting.colorHex.toUpperCase(),
+    resolved(formatting.bold),
+    resolved(formatting.italic),
+    resolved(formatting.caps),
+    resolved(formatting.smallCaps),
+    resolved(formatting.strike),
+    resolved(formatting.emboss),
+    resolved(formatting.imprint),
+    resolved(formatting.outline),
+    resolved(formatting.shadow),
+    resolved(formatting.vanish),
+    resolved(formatting.underline),
+    formatting.highlightVal === null ? 'unresolved' : formatting.highlightVal || 'none',
+    resolved(formatting.fontName),
+    resolved(formatting.fontSizePt),
+    formatting.colorHex === null ? 'unresolved' : formatting.colorHex.toUpperCase(),
   ];
 }
 
