@@ -758,14 +758,6 @@ export function rejectAllChanges(documentXml: string): string {
   // terminal moved paragraph is observably empty and can be removed.
   removeAllByTagName(root, 'w:moveTo');
 
-  // Step 3: Resolve the PPR-INS/MOVE-TO-marked paragraphs (their paragraph
-  // mark was inserted): merge each into its following paragraph (document
-  // order, so consecutive marked paragraphs cascade forward into the first
-  // surviving one).
-  for (const p of markInsertedParagraphs) {
-    resolveParagraphMarkRevision(p, 'reject');
-  }
-
   // Remove move range markers
   removeAllByTagName(root, 'w:moveFromRangeStart');
   removeAllByTagName(root, 'w:moveFromRangeEnd');
@@ -804,6 +796,15 @@ export function rejectAllChanges(documentXml: string): string {
   removeAllByTagName(root, 'w:tcPrChange');
   removeAllByTagName(root, 'w:sectPrChange');
   removeEmptyTablePropertyContainers(root);
+
+  // Resolve property history on each original paragraph BEFORE choosing the
+  // merged paragraph's formatting, matching the core rejectChanges phases.
+  // Otherwise a following paragraph's old snapshot can overwrite the chosen
+  // leading format after the merge. Process in document order so consecutive
+  // inserted paragraph breaks still cascade into the first surviving one.
+  for (const p of markInsertedParagraphs) {
+    resolveParagraphMarkRevision(p, 'reject');
+  }
 
   // Strip paragraph-level markers now that changes are rejected.
   removeParaMarkers(root);

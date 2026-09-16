@@ -17,6 +17,13 @@ Accept and Reject paragraph-mark resolution SHALL treat paragraph-break removal 
 - **WHEN** Accept or Reject resolves the revisions
 - **THEN** the paragraph SHALL remain, including its applicable formatting
 
+#### Scenario: Selective merge retains following pending property history
+
+- **GIVEN** the leading formatting owner has no property history and the following paragraph carries another author's pending property revisions
+- **WHEN** only the paragraph break author's revisions are accepted or rejected
+- **THEN** the following author's pending property history SHALL remain unresolved on the merged paragraph
+- **AND** selected property revisions SHALL resolve before merged formatting is chosen in unfiltered Reject projections
+
 #### Scenario: Reader evidence does not establish Word behavior
 
 - **GIVEN** a projection has been checked only in LibreOffice

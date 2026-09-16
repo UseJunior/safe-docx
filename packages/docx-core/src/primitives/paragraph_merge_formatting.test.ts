@@ -12,7 +12,7 @@ const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const wrap = (body: string) => `<w:document xmlns:w="${W}"><w:body>${body}</w:body></w:document>`;
 
 describe('paragraph merge formatting', () => {
-  test('preserves following property history during selective-author accept and reject', () => {
+  test.openspec('Selective merge retains following pending property history')('preserves following property history during selective-author accept and reject', () => {
     for (const [tag, resolve] of [['del', acceptChanges], ['ins', rejectChanges]] as const) {
       const doc = parseXml(wrap(`<w:p><w:pPr><w:jc w:val="right"/><w:rPr><w:${tag} w:id="1" w:author="T"/></w:rPr></w:pPr><w:r><w:t>A</w:t></w:r></w:p><w:p><w:pPr><w:jc w:val="center"/><w:rPr><w:b/><w:rPrChange w:id="7" w:author="Other"><w:rPr><w:i/></w:rPr></w:rPrChange></w:rPr><w:pPrChange w:id="8" w:author="Other"><w:pPr><w:jc w:val="left"/></w:pPr></w:pPrChange></w:pPr><w:r><w:t>B</w:t></w:r></w:p>`));
       resolve(doc, { filter: element => element.getAttributeNS(W, 'author') === 'T' });

@@ -20,6 +20,26 @@ const cases = ['accept', 'reject'].flatMap(op => [false, true].flatMap(first => 
 })));
 
 describe('paragraph merge formatting decision table', () => {
+  for (const op of ['accept', 'reject'] as const) {
+    for (const history of ['paragraph', 'mark'] as const) test(`${op}: resolve following ${history} history before selecting merge formatting`, () => {
+      const tag = op === 'accept' ? 'del' : 'ins';
+      const pending = history === 'paragraph'
+        ? '<w:pPrChange w:id="8" w:author="Other"><w:pPr><w:jc w:val="left"/></w:pPr></w:pPrChange>'
+        : '<w:rPr><w:color w:val="0000FF"/><w:rPrChange w:id="7" w:author="Other"><w:rPr><w:color w:val="00FF00"/></w:rPr></w:rPrChange></w:rPr>';
+      const input = wrap(`<w:p><w:pPr><w:jc w:val="right"/><w:rPr><w:${tag} w:id="1" w:author="T"/><w:color w:val="FF0000"/></w:rPr></w:pPr><w:r><w:t>A</w:t></w:r></w:p><w:p><w:pPr><w:jc w:val="center"/>${pending}</w:pPr><w:r><w:t>B</w:t></w:r></w:p>`);
+      const native = parseXml(input);
+      if (op === 'accept') acceptChanges(native); else rejectChanges(native);
+      for (const xml of [serializeXml(native), op === 'accept' ? acceptAllChanges(input) : rejectAllChanges(input)]) {
+        const doc = parseXml(xml);
+        expect(doc.getElementsByTagNameNS(W, 'p')).toHaveLength(1);
+        expect(doc.getElementsByTagNameNS(W, 'p')[0]!.textContent).toBe('AB');
+        expect(doc.getElementsByTagNameNS(W, 'jc')[0]!.getAttributeNS(W, 'val')).toBe('right');
+        expect(doc.getElementsByTagNameNS(W, 'color')[0]!.getAttributeNS(W, 'val')).toBe('FF0000');
+        expect(doc.getElementsByTagNameNS(W, 'pPrChange')).toHaveLength(0);
+        expect(doc.getElementsByTagNameNS(W, 'rPrChange')).toHaveLength(0);
+      }
+    });
+  }
   for (const op of ['accept', 'reject'] as const) test(`${op}: an empty run does not own merge formatting`, () => {
     const tag = op === 'accept' ? 'del' : 'ins';
     const input = wrap(`<w:p><w:pPr><w:jc w:val="right"/><w:rPr><w:${tag} w:id="1" w:author="T"/></w:rPr></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t/></w:r></w:p><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>SECOND</w:t></w:r></w:p>`);

@@ -44,7 +44,7 @@ The release verifier's independent projection returns paragraph text, not paragr
 
 In particular, the measured second-owner rows are Accept/no/no, Accept/no/yes and Reject/no/yes (first/second surviving text). A reader that always retains leading formatting would diverge on those three rows, affecting paragraph style, outline and numbering, not merely alignment. No row in this table has been measured in Word; the leading-owner rows are not exempt from that limitation.
 
-Selective-author native projections retain the following paragraph's pending pPrChange/rPrChange when the chosen leading owner has no corresponding record. When both have a record, the leading owner's record has precedence; combining two independent property histories into one schema slot is not characterized here. This fallback preserves unresolved ownership rather than silently treating a different author's pending revision as accepted.
+The shared merge helper retains the following paragraph's pending pPrChange/rPrChange when the chosen leading owner has no corresponding record. This is a helper-wide fallback, not a selective-only branch. Both native and comparison Reject resolve selected property history on the original paragraphs before merging; unresolved records remain in selective-author native projections and are preserved by the fallback. When both have a record, the leading owner's record has precedence; combining two independent property histories into one schema slot is not characterized here. This ordering is an implementation policy matching core projection semantics, not a claim that a normative source dictates phase order.
 
 ## Shipping hold: field-bearing paragraph conflict
 
