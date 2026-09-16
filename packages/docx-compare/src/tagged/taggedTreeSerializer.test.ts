@@ -15,7 +15,7 @@ import {
 import { constructTaggedTree } from './taggedTreeConstruction.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
-import { completeField } from '../testing/ooxml-fixtures.js';
+import { completeField, fldChar, instrText, resultText } from '../testing/ooxml-fixtures.js';
 
 const TEST_FEATURE = 'refactor-tagged-tree-redline-construction';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
@@ -35,6 +35,35 @@ function text(xml: string): string {
 }
 
 describe('tagged-tree shadow serializer', () => {
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' }).openspec('Partial field controls retain their existing boundary treatment')('retains the partial-field control path across a paragraph boundary', () => {
+    const first = `<w:p>${fldChar('begin')}${instrText(' REF Target ')}</w:p>`;
+    const last = `<w:p>${fldChar('separate')}${resultText('RESULT')}${fldChar('end')}</w:p>`;
+    const original = documentBody(first + last);
+    const revised = documentBody(last);
+    const tree: BothNode = { tag: 'both', original, revised, children: [
+      { tag: 'original', node: elementChildren(original)[0]!, children: [], opaque: true },
+      { tag: 'both', original: elementChildren(original)[1]!, revised: elementChildren(revised)[0]!, children: [], opaque: true },
+    ] };
+    const output = serializeTaggedTree(tree, createPreservePlan(original, revised, tree, { author: 'T', date: '2026-09-15T00:00:00Z' }));
+    const fields = Array.from(parseXml(output).getElementsByTagNameNS(W_NS, 'fldChar'));
+    expect(fields.map(field => (field.parentNode?.parentNode as Element).localName)).toEqual(['p', 'p', 'p']);
+  });
+  for (const [label, fields] of [
+    ['multiple', completeField(' REF Removed \\h ', '1') + completeField(' REF Removed \\h ', '1')],
+    ['nested', fldChar('begin') + instrText(' IF ') + completeField(' PAGE ', '1') + instrText(' > 0 "YES" "NO" ') + fldChar('separate') + resultText('YES') + fldChar('end')],
+  ]) test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' }).openspec('Complete field deletion does not leave live controls')(`keeps ${label} complete fields inside a deleted paragraph revision`, () => {
+    const survivor = '<w:p><w:pPr><w:pStyle w:val="Comment"/><w:jc w:val="center"/></w:pPr><w:r><w:t>SURVIVOR</w:t></w:r></w:p>';
+    const removed = `<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:bookmarkStart w:id="1" w:name="Removed"/>${fields}<w:bookmarkEnd w:id="1"/></w:p>`;
+    const original = documentBody(removed + survivor);
+    expect(original.getElementsByTagNameNS(W_NS, 'fldChar')).toHaveLength(6);
+    const revised = documentBody(survivor);
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, { author: 'Comparator', date: '2026-09-15T00:00:00Z' }));
+    const accepted = parseXml(acceptAllChanges(output));
+    expect(accepted.getElementsByTagNameNS(W_NS, 'fldChar')).toHaveLength(0);
+    expect(accepted.getElementsByTagNameNS(W_NS, 'pStyle')[0]?.getAttributeNS(W_NS, 'val')).toBe('Comment');
+    expect(parseXml(rejectAllChanges(output)).getElementsByTagNameNS(W_NS, 'fldChar')).toHaveLength(original.getElementsByTagNameNS(W_NS, 'fldChar').length);
+  });
   test.openspec('Allocated revision identifiers avoid input collisions')(
     'builds a PreservePlan from both ordered provenance stacks',
     async ({ given, when, then, and }: AllureBddContext) => {
@@ -339,7 +368,8 @@ describe('tagged-tree shadow serializer', () => {
 
     expect(paragraphs).toHaveLength(3);
     expect(paragraphs[1]!.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(1);
-    expect(paragraphs[2]!.getElementsByTagNameNS(W_NS, 'pPrChange')).toHaveLength(1);
+    expect(paragraphs[2]!.getElementsByTagNameNS(W_NS, 'pPrChange')).toHaveLength(0);
+    expect(paragraphs[2]!.getElementsByTagNameNS(W_NS, 'jc')[0]!.getAttributeNS(W_NS, 'val')).toBe('right');
     const originalXml = `<w:document xmlns:w="${W_NS}">${new XMLSerializer().serializeToString(original)}</w:document>`;
     const revisedXml = `<w:document xmlns:w="${W_NS}">${new XMLSerializer().serializeToString(revised)}</w:document>`;
     const candidateXml = `<w:document xmlns:w="${W_NS}">${output}</w:document>`;

@@ -15,6 +15,8 @@ import {
   childElements,
   getLeafText,
   projectSymbolRun,
+  retainLeadingParagraphFormatting,
+  isEmptyParagraphFormattingRun,
   NODE_TYPE,
 } from '@usejunior/docx-core';
 
@@ -195,9 +197,10 @@ function findFollowingSiblingParagraph(p: Element): Element | undefined {
 }
 
 /** True iff the paragraph still holds content beyond w:pPr and bare annotation markers. */
-function paragraphHasContent(p: Element): boolean {
+function paragraphHasContent(p: Element, forFormatting = false): boolean {
   return childElements(p).some(
-    (c) => c.tagName !== 'w:pPr' && !RANGE_MARKUP_BLOCK_SIBLING_TAGS.has(c.tagName)
+    (c) => c.tagName !== 'w:pPr' && !RANGE_MARKUP_BLOCK_SIBLING_TAGS.has(c.tagName) &&
+      !(forFormatting && isEmptyParagraphFormattingRun(c))
   );
 }
 
@@ -229,8 +232,9 @@ function canSafelyRemoveEmptyParagraph(p: Element): boolean {
  * Resolve a paragraph whose paragraph MARK revision was applied (deleted mark
  * accepted, or inserted mark rejected): the paragraph break disappears, so the
  * paragraph's remaining content merges into the FOLLOWING paragraph. The
- * surviving (following) paragraph keeps its own w:pPr — formatting follows the
- * surviving paragraph mark — and the merged-away paragraph's w:pPr is dropped.
+ * base formatting follows the surviving leading content when present. An
+ * all-empty rejected split retains leading formatting; otherwise following
+ * formatting stays. This is reader-characterized separately from break removal.
  *
  * The revision targets only the mark, never the paragraph's contents, so the
  * contents must not be dropped wholesale (they are removed only via their own
@@ -244,7 +248,7 @@ function canSafelyRemoveEmptyParagraph(p: Element): boolean {
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
  * @see https://github.com/UseJunior/safe-docx/issues/431
  */
-function resolveParagraphMarkRevision(p: Element): void {
+function resolveParagraphMarkRevision(p: Element, projection: 'accept' | 'reject'): void {
   const parent = p.parentNode;
   if (!parent) return;
 
@@ -256,6 +260,9 @@ function resolveParagraphMarkRevision(p: Element): void {
     return;
   }
 
+  if (paragraphHasContent(p, true) || (projection === 'reject' && !paragraphHasContent(target, true))) {
+    retainLeadingParagraphFormatting(p, target);
+  }
   // The merged content precedes the target's own content in document order.
   let insertIndex = paragraphContentStartIndex(target);
   for (const child of childElements(p)) {
@@ -645,7 +652,7 @@ export function acceptAllChanges(documentXml: string): string {
   // merge each into its following paragraph (document order, so consecutive
   // mark-deleted paragraphs cascade forward into the first surviving one).
   for (const p of markDeletedParagraphs) {
-    resolveParagraphMarkRevision(p);
+    resolveParagraphMarkRevision(p, 'accept');
   }
 
   // Drop hyperlink wrappers emptied by the accepted deletions above.
@@ -751,14 +758,6 @@ export function rejectAllChanges(documentXml: string): string {
   // terminal moved paragraph is observably empty and can be removed.
   removeAllByTagName(root, 'w:moveTo');
 
-  // Step 3: Resolve the PPR-INS/MOVE-TO-marked paragraphs (their paragraph
-  // mark was inserted): merge each into its following paragraph (document
-  // order, so consecutive marked paragraphs cascade forward into the first
-  // surviving one).
-  for (const p of markInsertedParagraphs) {
-    resolveParagraphMarkRevision(p);
-  }
-
   // Remove move range markers
   removeAllByTagName(root, 'w:moveFromRangeStart');
   removeAllByTagName(root, 'w:moveFromRangeEnd');
@@ -797,6 +796,15 @@ export function rejectAllChanges(documentXml: string): string {
   removeAllByTagName(root, 'w:tcPrChange');
   removeAllByTagName(root, 'w:sectPrChange');
   removeEmptyTablePropertyContainers(root);
+
+  // Resolve property history on each original paragraph BEFORE choosing the
+  // merged paragraph's formatting, matching the core rejectChanges phases.
+  // Otherwise a following paragraph's old snapshot can overwrite the chosen
+  // leading format after the merge. Process in document order so consecutive
+  // inserted paragraph breaks still cascade into the first surviving one.
+  for (const p of markInsertedParagraphs) {
+    resolveParagraphMarkRevision(p, 'reject');
+  }
 
   // Strip paragraph-level markers now that changes are rejected.
   removeParaMarkers(root);

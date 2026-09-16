@@ -191,8 +191,10 @@ function wrapRevision(
 }
 
 /**
- * Keep field-character controls live and split deletion content around them,
- * matching the established hardened deletion path.
+ * Keep partial field-character controls live and split deletion content around
+ * them. Complete field sequences (including multiple or nested fields) belong
+ * inside the deletion: hoisting their controls leaves live field objects after
+ * Accept and can transfer deleted paragraph formatting onto surviving content.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
@@ -206,21 +208,20 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
     const deletedFields = Array.from(deletion.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName));
     const deletedFieldTypes = deletedFields.map((field) =>
       field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '');
-    if (deletedFieldTypes.join('|') === 'begin|separate|end') continue;
+    const separators: boolean[] = [];
+    const complete = deletedFieldTypes.length > 0 && deletedFieldTypes.every(type => {
+      if (type === 'begin') { separators.push(false); return true; }
+      if (!separators.length) return false;
+      if (type === 'end') { separators.pop(); return true; }
+      if (type === 'separate' && !separators[separators.length - 1]) {
+        separators[separators.length - 1] = true;
+        return true;
+      }
+      return false;
+    }) && separators.length === 0;
+    if (complete) continue;
     let nextElement = deletion.nextSibling;
     while (nextElement && nextElement.nodeType !== 1) nextElement = nextElement.nextSibling;
-    if (nextElement && (nextElement as WmlElement).localName === 'ins') {
-      const types = (element: WmlElement): string[] => Array.from(
-        element.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName),
-        (field) => field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '',
-      );
-      const deletedTypes = types(deletion);
-      const insertedTypes = types(nextElement as WmlElement);
-      if (
-        deletedTypes.join('|') === 'begin|separate|end' &&
-        insertedTypes.join('|') === deletedTypes.join('|')
-      ) continue;
-    }
     if (deletedFields.length === 1 && nextElement && (nextElement as WmlElement).localName === 'ins') {
       const insertedFields = Array.from(
         (nextElement as WmlElement).getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName),
@@ -404,7 +405,7 @@ function markWholeParagraph(
 }
 
 /**
- * Encode a deleted paragraph break on the preceding paragraph when one exists.
+ * Encode a whole-paragraph revision's break on the preceding paragraph when safe.
  *
  * A whole-paragraph deletion has two independent edits: delete the paragraph's
  * contents and delete the break immediately before those contents.  Keeping the
@@ -412,9 +413,10 @@ function markWholeParagraph(
  * but LibreOffice cannot remove a terminal paragraph container that way and leaves
  * an empty final paragraph.  Moving the marker to the preceding paragraph lets
  * Accept All merge that survivor into the deleted container.  The deleted
- * container temporarily carries the survivor's properties so the merged paragraph
- * keeps its revised formatting; a conforming pPrChange snapshot restores the
- * deleted paragraph's original properties on Reject All.
+ * container keeps its original properties: the native merge rule retains the
+ * surviving predecessor's formatting without a synthetic pPrChange. Such a
+ * synthetic format revision loses numbering on LibreOffice Reject. Note-bearing
+ * insertions use the symmetric boundary placement for the same reason.
  *
  * Relocation is deliberately conservative.  It never crosses a non-paragraph
  * block such as a table, because the paragraph before a table is not the
@@ -423,18 +425,16 @@ function markWholeParagraph(
  * an independent deletion there would change which paragraph break it describes.
  * It never touches a section-bearing paragraph, because moving the mark across
  * a `w:sectPr` boundary makes LibreOffice resolve Reject All incorrectly.
- * Deletions outside that envelope keep the pre-existing topology, which stays
- * schema-valid and Word-correct even where LibreOffice still leaves an empty
- * terminal container.
+ * Revisions outside that envelope keep the pre-existing topology. Word
+ * projections remain unverified; schema validity is a separate gate.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
  * @see https://github.com/UseJunior/safe-docx/issues/891
  */
-function normalizeWholeParagraphDeletions(
+function normalizeWholeParagraphRevisionBoundaries(
   root: WmlElement,
   generatedRevisionIds: ReadonlySet<number>,
-  allocateRevision: () => ComparisonRevision,
 ): void {
   const revisionElements = (scope: WmlElement): WmlElement[] => {
     const revisions: WmlElement[] = [];
@@ -466,7 +466,7 @@ function normalizeWholeParagraphDeletions(
 
   const relocate = (paragraph: WmlElement, predecessor: WmlElement | undefined): void => {
     if (!predecessor) return;
-    // CT_ParaRPr admits at most one tracked-change marker; never add a second.
+    // Never combine independent edits on one paragraph mark.
     if (carriesParagraphMarkRevision(predecessor)) return;
     // A w:sectPr boundary changes how the merged paragraph resolves on Reject All.
     if (carriesSection(paragraph) || carriesSection(predecessor)) return;
@@ -481,7 +481,7 @@ function normalizeWholeParagraphDeletions(
     const pPr = childElements(paragraph).find((child) => child.localName === 'pPr');
     const markProperties = pPr && childElements(pPr).find((child) => child.localName === 'rPr');
     const marker = markProperties && childElements(markProperties).find((child) => {
-      if (child.localName !== 'del') return false;
+      if (child.localName !== 'del' && child.localName !== 'ins') return false;
       const id = Number(child.getAttributeNS(W_NS, 'id'));
       return Number.isSafeInteger(id) && generatedRevisionIds.has(id);
     });
@@ -493,25 +493,17 @@ function normalizeWholeParagraphDeletions(
       RANGE_BOUNDARY_LOCALS.has(child.localName));
     if (!pPr || !markProperties || !marker || content.length === 0 ||
         carriesRangeBoundary ||
-        content.some((child) => child.namespaceURI !== W_NS || child.localName !== 'del')) return;
+        content.some((child) => child.namespaceURI !== W_NS || child.localName !== marker.localName || !revisionWasGenerated(child))) return;
     if (revisionElements(pPr).some((element) => element !== marker)) return;
-
-    const originalProperties = cloneElement(pPr);
-    const originalMarkProperties = childElements(originalProperties).find((child) => child.localName === 'rPr');
-    const originalMarker = originalMarkProperties && childElements(originalMarkProperties).find((child) =>
-      child.localName === 'del' && child.getAttributeNS(W_NS, 'id') === marker.getAttributeNS(W_NS, 'id'));
-    originalMarker?.parentNode?.removeChild(originalMarker);
-    if (originalMarkProperties && childElements(originalMarkProperties).length === 0) {
-      originalProperties.removeChild(originalMarkProperties);
-    }
+    // Scope the insertion-side interop change to the note-bearing cases this
+    // repair characterizes. Do not move a mark onto a revision-bearing or empty
+    // predecessor whose content may disappear in the same projection.
+    if (marker.localName === 'ins' && !paragraph.getElementsByTagNameNS(W_NS, 'footnoteReference').length &&
+        !paragraph.getElementsByTagNameNS(W_NS, 'endnoteReference').length) return;
+    const predecessorContent = childElements(predecessor).filter(child => child !== predecessorPropertiesBefore && !RANGE_BOUNDARY_LOCALS.has(child.localName));
+    if (!predecessorContent.length || predecessorContent.some(child => revisionElements(child).length)) return;
 
     let predecessorProperties = childElements(predecessor).find((child) => child.localName === 'pPr');
-    const revisedProperties = predecessorProperties
-      ? cloneElement(predecessorProperties)
-      : predecessor.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
-    for (const stale of revisionElements(revisedProperties)) {
-      stale.parentNode?.removeChild(stale);
-    }
     if (!predecessorProperties) {
       predecessorProperties = predecessor.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
       predecessor.insertBefore(predecessorProperties, predecessor.firstChild);
@@ -524,15 +516,8 @@ function normalizeWholeParagraphDeletions(
       predecessorProperties.insertBefore(predecessorMarkProperties, boundary ?? null);
     }
     marker.parentNode!.removeChild(marker);
-    placeParagraphMarkRevisionMarker(predecessorMarkProperties, marker, 'w:del');
+    placeParagraphMarkRevisionMarker(predecessorMarkProperties, marker, marker.localName === 'del' ? 'w:del' : 'w:ins');
     if (childElements(markProperties).length === 0) pPr.removeChild(markProperties);
-
-    applyParagraphPropertyDelta(
-      paragraph,
-      originalProperties,
-      revisedProperties,
-      allocateRevision(),
-    );
   };
 
   const visit = (container: WmlElement): void => {
@@ -552,6 +537,7 @@ function normalizeWholeParagraphDeletions(
   };
   visit(root);
 }
+
 
 function markWholeTableRow(
   row: WmlElement,
@@ -1630,7 +1616,7 @@ export function serializeTaggedTree(
     splitBookmarkIds,
   );
   splitCrossParagraphBookmarkCounterparts(emitted, originalBookmarkIds, allocateRevision);
-  normalizeWholeParagraphDeletions(emitted, generatedRevisionIds, allocateRevision);
+  normalizeWholeParagraphRevisionBoundaries(emitted, generatedRevisionIds);
   hoistFieldCharactersFromDeletions(emitted);
   hoistLiteralInsertionsFromDeletedFieldInstructions(emitted);
   if (!options.retainComparisonRevisionMarkers) {

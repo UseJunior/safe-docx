@@ -1022,8 +1022,8 @@ describe('Accept-All paragraph removal is mark-based (G5, both accept paths agre
 // Inserted Paragraph) make the paragraph MARK the revision target; the paragraph's
 // contents are not implicitly part of the revision. Accepting a deleted mark (or
 // rejecting an inserted one) therefore removes only the paragraph BREAK: the
-// paragraph's surviving content merges into the following paragraph, which keeps
-// its own w:pPr (formatting follows the surviving mark). Both engine paths — the
+// paragraph's surviving content merges into the following paragraph. Formatting
+// ownership is separately measured by paragraphMergeFormatting.test.ts. Both engine paths — the
 // baseline-atomizer string functions and the in-place primitives — must agree.
 describe('Paragraph-mark revisions merge into the following paragraph (#431)', () => {
   const acceptTest = testAllure
@@ -1110,7 +1110,7 @@ describe('Paragraph-mark revisions merge into the following paragraph (#431)', (
     });
   });
 
-  acceptTest('the merged paragraph keeps the FOLLOWING paragraph\'s w:pPr (formatting follows the surviving mark)', async ({ when, then }: AllureBddContext) => {
+  acceptTest('the merged paragraph keeps the surviving leading content\'s formatting', async ({ when, then }: AllureBddContext) => {
     let out: { ast: string; primitive: string };
     await when('accept runs on a centered mark-deleted paragraph followed by a styled paragraph', () => {
       out = acceptBoth(
@@ -1118,12 +1118,12 @@ describe('Paragraph-mark revisions merge into the following paragraph (#431)', (
           `<w:p><w:pPr><w:pStyle w:val="Quote"/></w:pPr><w:r><w:t>tail</w:t></w:r></w:p>`,
       );
     });
-    await then('the survivor keeps its pStyle and the merged-away paragraph\'s jc is gone, on both paths', () => {
+    await then('the leading center alignment survives on both paths, as measured in the reader matrix', () => {
       for (const xml of [out.ast, out.primitive]) {
         expect(countParagraphs(xml)).toBe(1);
         expect(extractText(xml)).toBe('headtail');
-        expect(xml).toContain('Quote');
-        expect(xml).not.toContain('center');
+        expect(xml).not.toContain('Quote');
+        expect(xml).toContain('center');
       }
     });
   });
@@ -1215,7 +1215,7 @@ describe('Paragraph-mark revisions merge into the following paragraph (#431)', (
     });
   });
 
-  rejectTest('on reject the merged paragraph keeps the FOLLOWING paragraph\'s w:pPr', async ({ when, then }: AllureBddContext) => {
+  rejectTest('on reject the merged paragraph keeps the surviving leading content\'s formatting', async ({ when, then }: AllureBddContext) => {
     let out: { ast: string; primitive: string };
     await when('reject runs on a centered mark-inserted paragraph followed by a styled paragraph', () => {
       out = rejectBoth(
@@ -1223,12 +1223,12 @@ describe('Paragraph-mark revisions merge into the following paragraph (#431)', (
           `<w:p><w:pPr><w:pStyle w:val="Quote"/></w:pPr><w:r><w:t>tail</w:t></w:r></w:p>`,
       );
     });
-    await then('the survivor keeps its pStyle and the merged-away paragraph\'s jc is gone, on both paths', () => {
+    await then('the leading center alignment survives on both paths, as measured in the reader matrix', () => {
       for (const xml of [out.ast, out.primitive]) {
         expect(countParagraphs(xml)).toBe(1);
         expect(extractText(xml)).toBe('headtail');
-        expect(xml).toContain('Quote');
-        expect(xml).not.toContain('center');
+        expect(xml).not.toContain('Quote');
+        expect(xml).toContain('center');
       }
     });
   });
