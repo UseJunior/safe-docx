@@ -21,3 +21,7 @@
 - [x] 3.3 Validate emitted document and notes through the repository schema gate and check text, bindings, topology and package relationships. Built-code public smoke and selective-mark/field schema controls pass September 15; rerun on reviewed/shipped head.
 - [ ] 3.4 Obtain a fresh dynamic Claude Opus 5 review of the exact repair head and address all blocking findings.
 - [ ] 3.5 Push without force only after local gates; repeat CI/advisory checks and automerge-smoke, honoring all owner gates and Word-evidence limitations.
+
+## Archive follow-up
+
+- [ ] Before canonical promotion, add this docx-comparison delta to the coverage validator and map all five scenarios. The two field cases have tags; numbered Accept/Reject currently share an opt-in actual-reader assertion, and the reader/native disagreement rule is a release-process gate. These three are not currently enforced by scenario-name coverage. The archive owner must supply accurate executable mappings rather than attach decorative tags. Core primitives scenarios are already coverage-enforced.

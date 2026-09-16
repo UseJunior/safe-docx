@@ -46,14 +46,16 @@ export function retainLeadingParagraphFormatting(leading: Element, following: El
   for (const child of sourceMark ? children(sourceMark) : []) {
     if (child.namespaceURI !== W || (!revisions.has(child.localName) && child.localName !== 'rPrChange')) mark.appendChild(child.cloneNode(true));
   }
-  const markHistory = sourceMark && children(sourceMark).find(child => child.namespaceURI === W && child.localName === 'rPrChange');
+  // A formatting transfer must not silently resolve another author's pending
+  // history. Prefer the chosen owner's record; otherwise retain the survivor's.
+  const markHistory = [sourceMark, targetMark].flatMap(node => node ? children(node) : [])
+    .find(child => child.namespaceURI === W && child.localName === 'rPrChange');
   if (markHistory) mark.appendChild(markHistory.cloneNode(true));
   if (mark.childNodes.length) result.appendChild(mark);
-  for (const local of ['sectPr']) {
-    const boundary = target && children(target).find(child => child.namespaceURI === W && child.localName === local);
-    if (boundary) result.appendChild(boundary.cloneNode(true));
-  }
-  const history = source && children(source).find(child => child.namespaceURI === W && child.localName === 'pPrChange');
+  const boundary = target && children(target).find(child => child.namespaceURI === W && child.localName === 'sectPr');
+  if (boundary) result.appendChild(boundary.cloneNode(true));
+  const history = [source, target].flatMap(node => node ? children(node) : [])
+    .find(child => child.namespaceURI === W && child.localName === 'pPrChange');
   if (history) result.appendChild(history.cloneNode(true));
   if (target) following.removeChild(target);
   if (result.childNodes.length) following.insertBefore(result, following.firstChild);
