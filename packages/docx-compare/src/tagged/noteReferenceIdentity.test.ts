@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { DocxArchive, parseXml, buildSyntheticDocx } from '@usejunior/docx-core';
+import { DocxArchive, parseXml, buildSyntheticDocx, buildDocxFromParts } from '@usejunior/docx-core';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { testAllure } from '../testing/allure-test.js';
 import { compareDocuments, acceptAllChanges, rejectAllChanges, extractTextWithParagraphs } from '../index.js';
@@ -245,6 +245,70 @@ describe('note-bearing paragraph reorders', () => {
 // unusable installed LibreOffice. Full packages preserve the note sidecars.
 const reader = process.env.SAFE_DOCX_NOTE_READER_REQUIRED === '1' ? describe : describe.skip;
 reader('LibreOffice note-bearing paragraph projections', () => {
+  test('restores outline numbering and paragraph formatting on both reader projections', async () => {
+    const { runLibreOfficeOracle } = await import('../../../docx-core/dist/integration/libreoffice-oracle.js');
+    const numbered = async (revised: boolean) => {
+      const tail = 'unchanged final paragraph after every numbered item';
+      const archive = await DocxArchive.load(await buildSyntheticDocx({
+        paragraphs: revised ? [stable, final, moving, tail] : [stable, moving, final, tail],
+        footnoteOnParagraph: revised ? 2 : 1, footnoteText: 'numbered paragraph note',
+      }));
+      const document = parseXml(await archive.getDocumentXml());
+      const paragraphs = Array.from(document.getElementsByTagNameNS(W, 'p'));
+      for (let i = 0; i < paragraphs.length; i++) {
+        const props = document.createElementNS(W, 'w:pPr');
+        const style = document.createElementNS(W, 'w:pStyle');
+        style.setAttributeNS(W, 'w:val', i === 1 || i === 2 ? 'Heading1' : 'Body');
+        props.appendChild(style);
+        paragraphs[i]!.insertBefore(props, paragraphs[i]!.firstChild);
+      }
+      archive.setDocumentXml(serialize(document));
+      // Reuse the shared parts builder for styles, numbering and their OPC scaffolding.
+      const parts = await DocxArchive.load(await buildDocxFromParts({
+        bodyXml: '',
+        stylesXml: `<w:styles xmlns:w="${W}"><w:style w:type="paragraph" w:styleId="Body"><w:name w:val="Body"/><w:pPr><w:jc w:val="left"/></w:pPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Body"/><w:pPr><w:numPr><w:numId w:val="1"/></w:numPr><w:jc w:val="right"/><w:outlineLvl w:val="0"/></w:pPr></w:style></w:styles>`,
+        numberingXml: `<w:numbering xmlns:w="${W}"><w:abstractNum w:abstractNumId="0"><w:multiLevelType w:val="multilevel"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:pStyle w:val="Heading1"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>`,
+        documentRelEntries: ['styles', 'numbering'].map(name => `<Relationship Id="${name}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${name}" Target="${name}.xml"/>`),
+      }));
+      for (const name of ['styles', 'numbering']) archive.setFile(`word/${name}.xml`, (await parts.getFile(`word/${name}.xml`))!);
+      for (const name of ['[Content_Types].xml', 'word/_rels/document.xml.rels']) {
+        const target = parseXml((await archive.getFile(name))!);
+        const extra = parseXml((await parts.getFile(name))!);
+        for (const node of Array.from(extra.documentElement.childNodes).filter(n => n.nodeType === 1) as Element[]) {
+          if (node.getAttribute('PartName')?.match(/\/(styles|numbering)\.xml$/) || ['styles', 'numbering'].includes(node.getAttribute('Id') ?? '')) {
+            target.documentElement.appendChild(target.importNode(node, true));
+          }
+        }
+        archive.setFile(name, serialize(target));
+      }
+      return archive.save();
+    };
+    const original = await numbered(false);
+    const revised = await numbered(true);
+    const comparison = await compareDocuments(original, revised, { detectMoves: true });
+    const results = await runLibreOfficeOracle([
+      { op: 'identity', docx: original, saveAs: 'odt' },
+      { op: 'identity', docx: revised, saveAs: 'odt' },
+      { op: 'accept', docx: comparison.document, saveAs: 'odt' },
+      { op: 'reject', docx: comparison.document, saveAs: 'odt' },
+    ]);
+    const T = 'urn:oasis:names:tc:opendocument:xmlns:text:1.0';
+    const S = 'urn:oasis:names:tc:opendocument:xmlns:style:1.0';
+    const project = (xml: string) => {
+      const document = parseXml(xml);
+      const styles = Array.from(document.getElementsByTagNameNS(S, 'style'));
+      return Array.from(document.getElementsByTagName('*')).filter(n => n.namespaceURI === T && ['p', 'h'].includes(n.localName)).map(p => {
+        const styleId = p.getAttributeNS(T, 'style-name');
+        const auto = styles.find(s => s.getAttributeNS(S, 'name') === styleId);
+        // Outline-numbered headings need not have text:list-item ancestors.
+        // An explicit empty list-style-name is the reader's numbering suppression.
+        const suppressesNumbering = auto?.hasAttributeNS(S, 'list-style-name') && auto.getAttributeNS(S, 'list-style-name') === '';
+        return { text: p.textContent, heading: p.localName === 'h', outline: p.getAttributeNS(T, 'outline-level'), style: auto?.getAttributeNS(S, 'parent-style-name') || styleId, suppressesNumbering: !!suppressesNumbering, listHeader: p.getAttributeNS(T, 'is-list-header') === 'true' };
+      });
+    };
+    expect(project(results[2]!)).toEqual(project(results[1]!));
+    expect(project(results[3]!)).toEqual(project(results[0]!));
+  }, 180_000);
   test('preserves mixed edited and moved footnote bindings in LibreOffice', async () => {
     const { runLibreOfficeOracle } = await import('../../../docx-core/dist/integration/libreoffice-oracle.js');
     const original = await mixedNotes('footnote', false);

@@ -235,11 +235,11 @@ describe('tagged publication range statistics', () => {
       paragraph('stable'),
     );
 
-    expectRetainedMarkersAndStatsAliasesAgree(publication, { assertFormatting: false });
+    expectRetainedMarkersAndStatsAliasesAgree(publication);
     expect(publication.stats.deletedRanges).toBe(2);
-    // Characterize the serializer-restorative property wrapper separately:
-    // #937 tracks why it does not yet contribute to formatChanges.
-    expect(generatedElements(publication, 'pPrChange')).toHaveLength(1);
+    // Boundary placement no longer invents a formatting revision to
+    // compensate for the projector's old following-paragraph style rule.
+    expect(generatedElements(publication, 'pPrChange')).toHaveLength(0);
     expect(publication.stats.formatChanges).toBe(0);
     expect(generatedElements(publication, 'del').some((element) =>
       (element.parentNode as Element | null)?.localName === 'rPr',

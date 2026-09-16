@@ -19,6 +19,7 @@
  */
 
 import { OOXML } from './namespaces.js';
+import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun } from './paragraph_merge_formatting.js';
 import type { RevisionFilter } from './accept_changes.js';
 
 const W_NS = OOXML.W_NS;
@@ -216,12 +217,13 @@ function findFollowingSiblingParagraph(p: Element): Element | null {
 }
 
 /** True iff the paragraph still holds content beyond w:pPr and bare annotation markers. */
-function paragraphHasContent(p: Element): boolean {
+function paragraphHasContent(p: Element, forFormatting = false): boolean {
   for (let i = 0; i < p.childNodes.length; i++) {
     const child = p.childNodes[i]!;
     if (child.nodeType !== 1) continue;
     if (isW(child, 'pPr')) continue;
     const el = child as Element;
+    if (forFormatting && isEmptyParagraphFormattingRun(el)) continue;
     if (el.namespaceURI === W_NS && RANGE_MARKUP_BLOCK_SIBLING_LOCALS.has(el.localName ?? '')) continue;
     return true;
   }
@@ -267,9 +269,10 @@ function canSafelyRemoveEmptyParagraph(p: Element): boolean {
 /**
  * Resolve a paragraph whose paragraph MARK revision was applied (inserted mark
  * rejected): the inserted paragraph break disappears, so the paragraph's
- * surviving content merges into the FOLLOWING paragraph. The surviving
- * (following) paragraph keeps its own w:pPr — formatting follows the surviving
- * paragraph mark — and the merged-away paragraph's w:pPr is dropped.
+ * surviving content merges into the FOLLOWING paragraph. Leading surviving
+ * content retains its base formatting. If only following content survives,
+ * following formatting wins; an all-empty rejected split retains the leading
+ * formatting. These choices are independently reader-characterized.
  *
  * The revision targets only the mark, never the paragraph's contents, so the
  * contents must not be dropped wholesale (they disappear only via their own
@@ -292,6 +295,8 @@ function resolveParagraphMarkRevision(p: Element): void {
     }
     return;
   }
+
+  if (paragraphHasContent(p, true) || !paragraphHasContent(target, true)) retainLeadingParagraphFormatting(p, target);
 
   // Insertion point: before the target's first non-pPr child (the merged
   // content precedes the target's own content in document order).
