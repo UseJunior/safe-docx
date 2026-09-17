@@ -19,7 +19,7 @@
  */
 
 import { OOXML } from './namespaces.js';
-import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun } from './paragraph_merge_formatting.js';
+import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun, removeEmptyParagraphMarkProperties } from './paragraph_merge_formatting.js';
 import type { RevisionFilter } from './accept_changes.js';
 
 const W_NS = OOXML.W_NS;
@@ -290,6 +290,7 @@ function resolveParagraphMarkRevision(p: Element): void {
 
   const target = findFollowingSiblingParagraph(p);
   if (!target) {
+    removeEmptyParagraphMarkProperties(p);
     if (!paragraphHasContent(p) && canSafelyRemoveEmptyParagraph(p)) {
       parent.removeChild(p);
     }
@@ -460,6 +461,8 @@ export function rejectChanges(
   // Phase A — Identify paragraphs whose MARK is a tracked insertion
   const markInsertedParagraphs = new Set<Element>();
   const allParagraphs = collectByLocalName(root, 'p');
+  const resolvedMarkProperties = allParagraphs.filter(p =>
+    ['ins', 'del', 'moveFrom', 'moveTo', 'rPrChange'].some(kind => paragraphHasParaMarker(p, kind, filter)));
 
   for (const p of allParagraphs) {
     // A paragraph-mark insertion (w:p > w:pPr > w:rPr > w:ins) means the
@@ -687,6 +690,7 @@ export function rejectChanges(
   for (const p of markInsertedParagraphs) {
     resolveParagraphMarkRevision(p);
   }
+  for (const p of resolvedMarkProperties) removeEmptyParagraphMarkProperties(p);
 
   // Strip w:rsidDel attributes on remaining elements. Skipped in selective mode
   // so a targeted reject leaves foreign elements byte-untouched (#125).

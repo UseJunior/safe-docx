@@ -97,14 +97,16 @@ function removeParaMarkers(root: Element): void {
 }
 
 function removeEmptyParagraphMarkerContainers(root: Element): void {
+  const vacated = (element: Element): boolean => element.attributes.length === 0 &&
+    Array.from(element.childNodes).every(node => node.nodeType === 3 && !node.nodeValue?.trim());
   for (const p of findAllByTagName(root, 'w:p')) {
     const pPr = getParagraphPPr(p);
     if (!pPr) continue;
     const rPr = childElements(pPr).find((child) => child.tagName === 'w:rPr');
-    if (rPr && childElements(rPr).length === 0 && !(rPr.textContent ?? '').trim()) {
+    if (rPr && vacated(rPr)) {
       pPr.removeChild(rPr);
     }
-    if (childElements(pPr).length === 0 && !(pPr.textContent ?? '').trim()) p.removeChild(pPr);
+    if (vacated(pPr)) p.removeChild(pPr);
   }
 }
 
