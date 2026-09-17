@@ -362,7 +362,7 @@ export function acceptChanges(
     };
   }
 
-  // Phase A — Identify paragraphs whose MARK is a tracked deletion
+  // Phase A — Identify deleted or moved-from paragraph marks.
   const markDeletedParagraphs: Element[] = [];
   const allParagraphs = collectByLocalName(root, 'p');
 
@@ -377,7 +377,7 @@ export function acceptChanges(
     // accept. safe-docx's deleted paragraphs always carry the mark now, so the
     // mark-based rule suffices and is Word-faithful. (Mirrors acceptAllChanges and the
     // reject-side rule.)
-    if (paragraphHasParaMarker(p, 'del', filter)) {
+    if (paragraphHasParaMarker(p, 'del', filter) || paragraphHasParaMarker(p, 'moveFrom', filter)) {
       markDeletedParagraphs.push(p);
     }
   }
@@ -387,7 +387,7 @@ export function acceptChanges(
   // text. Accepting the deletion must remove that live original-side endpoint
   // as well; otherwise a cross-paragraph range becomes orphaned.
   const deletedBookmarkIds = new Set<string>();
-  for (const deletion of collectByLocalName(root, 'del').filter(filter)) {
+  for (const deletion of [...collectByLocalName(root, 'del'), ...collectByLocalName(root, 'moveFrom')].filter(filter)) {
     for (const localName of ['bookmarkStart', 'bookmarkEnd']) {
       for (const boundary of collectByLocalName(deletion, localName)) {
         const id = boundary.getAttributeNS(W_NS, 'id') ?? boundary.getAttribute('w:id');
@@ -400,7 +400,8 @@ export function acceptChanges(
       .filter((child): child is Element => child.nodeType === 1);
     const substantive = direct.filter((child) =>
       !isW(child, 'pPr') && !isW(child, 'bookmarkStart') && !isW(child, 'bookmarkEnd'));
-    if (substantive.length === 0 || !substantive.every((child) => isW(child, 'del') && filter(child))) {
+    if (substantive.length === 0 || !substantive.every((child) =>
+      (isW(child, 'del') || isW(child, 'moveFrom')) && filter(child))) {
       continue;
     }
     for (const boundary of direct.filter((child) =>
