@@ -65,15 +65,29 @@ async function inlineFootnoteAndMovedEndnote(revised: boolean, mixed: boolean, l
 }
 
 describe('inline footnote definitions remain bound to their source sides', () => {
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })('keeps an aligned anchor stable while redlining its definition without superseded projection text', async () => {
+    const result = await compareDocuments(await inlineFootnoteAndMovedEndnote(false, false, false), await inlineFootnoteAndMovedEndnote(true, false, false));
+    const archive = await DocxArchive.load(result.document);
+    const document = parseXml(await archive.getDocumentXml());
+    expect(document.getElementsByTagNameNS(W, 'footnoteReference').length).toBe(1);
+    const notes = (await archive.getFile('word/footnotes.xml'))!;
+    expect(parseXml(notes).getElementsByTagNameNS(W, 'footnote').length).toBe(3);
+    expect(notes).toContain('<w:del');
+    expect(notes).toContain('<w:ins');
+    expect(acceptAllChanges(notes)).not.toContain('Before');
+    expect(rejectAllChanges(notes)).not.toContain('After');
+  });
   test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })('normalizes only note identities without touching other story IDs', async () => {
     const archive = await DocxArchive.load(await inlineFootnoteAndMovedEndnote(false, false, true));
     archive.setFile('word/header-control.xml', `<w:hdr xmlns:w="${W}"><w:p><w:bookmarkStart w:id="01" w:name="keep"/><w:r><w:t>Unchanged story</w:t></w:r></w:p></w:hdr>`);
     const header = await archive.getFile('word/header-control.xml');
+    archive.setFile('word/settings.xml', `<w:settings xmlns:w="${W}"><w:footnotePr><w:footnote w:id="-01"/></w:footnotePr></w:settings>`);
     await canonicalizeNoteArchiveIds(archive);
     expect(parseXml(await archive.getDocumentXml()).getElementsByTagNameNS(W, 'footnoteReference')[0]!.getAttributeNS(W, 'id')).toBe('1');
     const definitions = parseXml((await archive.getFile('word/footnotes.xml'))!);
     expect(Array.from(definitions.getElementsByTagNameNS(W, 'footnote')).map(n => n.getAttributeNS(W, 'id'))).toContain('1');
     expect(await archive.getFile('word/header-control.xml')).toBe(header);
+    expect(parseXml((await archive.getFile('word/settings.xml'))!).getElementsByTagNameNS(W, 'footnote')[0]!.getAttributeNS(W, 'id')).toBe('-1');
   });
   test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })('still rejects contributing numeric-equivalent duplicate definitions', async () => {
     const original = await inlineFootnoteAndMovedEndnote(false, false, false);

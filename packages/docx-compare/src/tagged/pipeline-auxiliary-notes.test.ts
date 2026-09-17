@@ -245,7 +245,9 @@ describe('pipeline auxiliary note publication', () => {
       expect(parts.footnotesXml).not.toMatch(/<w:footnote w:id="1"/);
       expect(parts.footnotesXml).toContain('<w:delText>Before</w:delText>');
       expect(parts.footnotesXml).toContain('<w:t>After</w:t>');
-      expect(parts.documentXml?.match(/<w:footnoteReference w:id="2"/g)).toHaveLength(2);
+      // The aligned position is stable; only its definition is redlined.
+      // Duplicate tracked anchors can make readers discard that shared body.
+      expect(parts.documentXml?.match(/<w:footnoteReference w:id="2"/g)).toHaveLength(1);
       const acceptedDocument = acceptAllChanges(parts.documentXml!);
       const rejectedDocument = rejectAllChanges(parts.documentXml!);
       expect(acceptedDocument.match(/<w:footnoteReference w:id="2"/g)).toHaveLength(1);

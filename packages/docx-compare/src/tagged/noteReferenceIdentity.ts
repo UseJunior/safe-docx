@@ -13,7 +13,7 @@ const serialize = (document: Document) => new XMLSerializer().serializeToString(
 export async function canonicalizeNoteArchiveIds(archive: DocxArchive): Promise<void> {
   for (const path of archive.listFiles().filter(p => p.startsWith('word/') && p.endsWith('.xml'))) {
     const xml = await archive.getFile(path);
-    if (!xml || (!['word/footnotes.xml', 'word/endnotes.xml'].includes(path) && !/footnoteReference|endnoteReference/.test(xml))) continue;
+    if (!xml || !/footnote|endnote/.test(xml)) continue;
     let document: Document;
     try { document = parseXml(xml); } catch { continue; } // Publication diagnoses contributing malformed parts.
     let changed = false;
