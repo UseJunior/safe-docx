@@ -196,6 +196,7 @@ async function reconcileTaggedFootnotes(options: {
   auxiliaryIdRenumberings: readonly { label: string; fromId: string; toId: string }[];
   baseSide?: 'original' | 'revised';
   baseFootnotesArchive?: DocxArchive;
+  stabilizedNoteKinds: Set<'footnote' | 'endnote'>;
 }): Promise<string> {
   const pairs = findCorrespondingFootnotePairs(
     options.documentXml,
@@ -272,6 +273,7 @@ async function reconcileTaggedFootnotes(options: {
     changed = true;
   }
   if (changed) {
+    options.stabilizedNoteKinds.add('footnote');
     options.resultArchive.setFile('word/footnotes.xml', serializer.serializeToString(result.doc));
     return serializer.serializeToString(document);
   }
@@ -471,6 +473,7 @@ export async function buildStandaloneTaggedPackage(
   }
 
   const resultArchive = await revisedArchive.clone();
+  const stabilizedNoteKinds = new Set<'footnote' | 'endnote'>();
   taggedXml = await reconcileTaggedFootnotes({
     originalArchive,
     revisedArchive,
@@ -480,6 +483,7 @@ export async function buildStandaloneTaggedPackage(
     date: options.date,
     formatDetection: options.formatDetection,
     auxiliaryIdRenumberings,
+    stabilizedNoteKinds,
   });
   resultArchive.setDocumentXml(taggedXml);
   await importReferencedRelationships(originalArchive, resultArchive, taggedXml);
@@ -511,7 +515,7 @@ export async function buildStandaloneTaggedPackage(
     }
   }
   const noteReferenceSourceIds = new Map<'footnote' | 'endnote', Map<string, string>>();
-  taggedXml = await separateRepeatedNoteReferences(resultArchive, taggedXml, noteReferenceSourceIds);
+  taggedXml = await separateRepeatedNoteReferences(resultArchive, taggedXml, noteReferenceSourceIds, stabilizedNoteKinds);
   resultArchive.setDocumentXml(taggedXml);
   const rootCommentIds = await collectStoryReferenceIds(
     resultArchive,

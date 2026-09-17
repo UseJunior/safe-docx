@@ -50,12 +50,15 @@ export function copiedParagraphNoteIds(document: Document, kind: 'footnote' | 'e
  * identical text. Readers may otherwise discard one reference on import.
  * Sequential IDs also keep unresolved reference order aligned with definition
  * order for LibreOffice; this is a reader workaround, not the display-number
- * contract of the specification. Apply only to copied paragraph references.
+ * contract of the specification. Apply to copied paragraph references or
+ * explicitly reconciled stable inline anchors: a collision-renumbered first
+ * anchor followed by unchanged lower IDs also misbinds bodies on reader import.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/941
  */
 export async function separateRepeatedNoteReferences(archive: DocxArchive, xml: string,
-  sourceIds: Map<'footnote' | 'endnote', Map<string, string>> = new Map()): Promise<string> {
+  sourceIds: Map<'footnote' | 'endnote', Map<string, string>> = new Map(),
+  stabilizedKinds: ReadonlySet<'footnote' | 'endnote'> = new Set()): Promise<string> {
   const document = parseXml(xml);
   let changed = false;
   for (const kind of ['footnote', 'endnote'] as const) {
@@ -75,11 +78,15 @@ export async function separateRepeatedNoteReferences(archive: DocxArchive, xml: 
     const referenceName = `${kind}Reference`;
     const refs = Array.from(document.getElementsByTagNameNS(W, referenceName));
     const ids = refs.map(ref => canonicalNoteId(ref.getAttributeNS(W, 'id') ?? '') ?? fail('invalid reference ID'));
-    if (new Set(ids).size === ids.length) continue;
+    const uniqueReferences = new Set(ids).size === ids.length;
+    // A lone collision-safe anchor already imports correctly. Preserve its
+    // established ID; the failure requires a changed anchor beside other IDs.
+    const normalizeStableAnchors = uniqueReferences && ids.length > 1 && stabilizedKinds.has(kind);
+    if (uniqueReferences && !normalizeStableAnchors) continue;
     // This pass handles copied paragraph references. Inline side-paired edited
     // anchors already received distinct definitions during reconciliation.
     const copiedIds = copiedParagraphNoteIds(document, kind);
-    if (copiedIds.size === 0) continue;
+    if (copiedIds.size === 0 && !normalizeStableAnchors) continue;
     const source = await archive.getFile(part);
     if (!source) fail('missing definitions');
     const notes = parse(source!);

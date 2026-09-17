@@ -12,6 +12,27 @@ const moving = 'the complete paragraph with an attached explanatory note moves h
 const stable = 'a long stable paragraph that remains in the same relative position';
 const final = 'the final stable anchor paragraph is unchanged throughout';
 const serialize = (node: Node) => new XMLSerializer().serializeToString(node);
+async function fiveAlignedFootnotes(revised: boolean) {
+  const archive = await DocxArchive.load(await buildSyntheticDocx({
+    paragraphs: ['First anchor', 'Second anchor', 'Third anchor', 'Fourth anchor', 'Fifth anchor'],
+    footnoteOnParagraph: 0, footnoteText: revised ? 'First revised body' : 'First original body',
+  }));
+  const document = parseXml(await archive.getDocumentXml());
+  const notes = parseXml((await archive.getFile('word/footnotes.xml'))!);
+  const firstReference = document.getElementsByTagNameNS(W, 'footnoteReference')[0]!.parentNode!;
+  const firstNote = Array.from(notes.getElementsByTagNameNS(W, 'footnote')).find(n => n.getAttributeNS(W, 'id') === '1')!;
+  for (let id = 2; id <= 5; id++) {
+    const run = firstReference.cloneNode(true) as Element;
+    run.getElementsByTagNameNS(W, 'footnoteReference')[0]!.setAttributeNS(W, 'w:id', String(id));
+    document.getElementsByTagNameNS(W, 'p')[id - 1]!.appendChild(run);
+    const note = firstNote.cloneNode(true) as Element;
+    note.setAttributeNS(W, 'w:id', String(id));
+    note.getElementsByTagNameNS(W, 't')[0]!.textContent = `Stable note ${id}`;
+    notes.documentElement.appendChild(note);
+  }
+  archive.setDocumentXml(serialize(document)); archive.setFile('word/footnotes.xml', serialize(notes));
+  return archive.save();
+}
 async function expectUnsafe(promise: Promise<unknown>, detail: string) {
   await expect(promise).rejects.toMatchObject({
     name: 'AncillaryStorySafetyError',
@@ -65,6 +86,22 @@ async function inlineFootnoteAndMovedEndnote(revised: boolean, mixed: boolean, l
 }
 
 describe('inline footnote definitions remain bound to their source sides', () => {
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })('keeps aligned edited and unchanged footnote IDs sequential with matched definitions', async () => {
+    const original = await fiveAlignedFootnotes(false), revised = await fiveAlignedFootnotes(true);
+    const result = await compareDocuments(original, revised);
+    const archive = await DocxArchive.load(result.document);
+    const main = parseXml(await archive.getDocumentXml()), notes = parseXml((await archive.getFile('word/footnotes.xml'))!);
+    const ids = Array.from(main.getElementsByTagNameNS(W, 'footnoteReference')).map(n => n.getAttributeNS(W, 'id'));
+    expect(ids).toEqual(['1', '2', '3', '4', '5']);
+    expect(Array.from(notes.getElementsByTagNameNS(W, 'footnote')).map(n => n.getAttributeNS(W, 'id'))).toEqual(['-1', '0', ...ids]);
+    expect(notes.getElementsByTagNameNS(W, 'ins').length).toBeGreaterThan(0);
+    for (const [operation, expected] of [['acceptChanges', 'First revised body'], ['rejectChanges', 'First original body']] as const) {
+      const complete = await DocxDocument.load(result.document); await complete[operation]();
+      const resolved = await DocxArchive.load((await complete.toBuffer()).buffer);
+      const projected = parseXml((await resolved.getFile('word/footnotes.xml'))!);
+      expect(Array.from(projected.getElementsByTagNameNS(W, 'footnote')).filter(n => Number(n.getAttributeNS(W, 'id')) > 0).map(n => n.textContent)).toEqual([expected, 'Stable note 2', 'Stable note 3', 'Stable note 4', 'Stable note 5']);
+    }
+  });
   for (const difference of ['format', 'reference'] as const) {
     test(`characterizes separate side definitions when aligned anchor ${difference} changes`, async () => {
       const original = await inlineFootnoteAndMovedEndnote(false, false, false);
@@ -373,6 +410,20 @@ describe('note-bearing paragraph reorders', () => {
 // unusable installed LibreOffice. Full packages preserve the note sidecars.
 const reader = process.env.SAFE_DOCX_NOTE_READER_REQUIRED === '1' ? describe : describe.skip;
 reader('LibreOffice note-bearing paragraph projections', () => {
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })('keeps five edited and unchanged inline footnote bodies attached to their own anchors', async () => {
+    const { runLibreOfficeOracle } = await import('../../../docx-core/dist/integration/libreoffice-oracle.js');
+    const original = await fiveAlignedFootnotes(false), revised = await fiveAlignedFootnotes(true);
+    const result = await compareDocuments(original, revised);
+    const states = await runLibreOfficeOracle([
+      { op: 'identity', docx: original, saveAs: 'odt' }, { op: 'identity', docx: revised, saveAs: 'odt' },
+      { op: 'accept', docx: result.document, saveAs: 'odt' }, { op: 'reject', docx: result.document, saveAs: 'odt' },
+    ]);
+    const T = 'urn:oasis:names:tc:opendocument:xmlns:text:1.0';
+    const project = (xml: string) => Array.from(parseXml(xml).getElementsByTagName('*'))
+      .filter(n => n.namespaceURI === T && ['p', 'h'].includes(n.localName)).map(n => n.textContent);
+    expect(project(states[2]!)).toEqual(project(states[1]!));
+    expect(project(states[3]!)).toEqual(project(states[0]!));
+  }, 120000);
   test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })('keeps a lone stable footnote beside a moved endnote on both reader projections', async () => {
     const { runLibreOfficeOracle } = await import('../../../docx-core/dist/integration/libreoffice-oracle.js');
     const original = await inlineFootnoteAndMovedEndnote(false, true, false, false);
