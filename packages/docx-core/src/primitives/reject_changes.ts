@@ -613,6 +613,20 @@ export function rejectChanges(
       if (originalProps) {
         // Replace the current property element with the original
         const restored = originalProps.cloneNode(true) as Element;
+        // CT_PPrChange snapshots carry only CT_PPrBase. Paragraph-mark
+        // formatting/history and section topology are separate live children;
+        // restoring base properties must not discard either of them.
+        if (localName === 'pPrChange') {
+          for (const child of Array.from(parentProp.childNodes)) {
+            if (isW(child, 'rPr') || isW(child, 'sectPr')) {
+              // Avoid duplicating extensions from legacy, non-base snapshots.
+              if (!Array.from(restored.childNodes).some(node =>
+                isW(node, (child as Element).localName))) {
+                restored.appendChild(child.cloneNode(true));
+              }
+            }
+          }
+        }
         // CT_SectPrChange carries CT_SectPrBase, which intentionally excludes
         // header/footer references. Those live bindings are not part of the
         // page-setup property revision and must survive rejection.

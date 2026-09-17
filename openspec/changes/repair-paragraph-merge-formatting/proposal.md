@@ -15,6 +15,7 @@ A public-document control retaining the exact original paragraph properties, wit
 - Add reader regressions that distinguish normal renumbering after a move from missing numbering, and verify both original and revised formatting, including neighboring paragraphs.
 - Preserve independent release verification; do not import the production projector into its verifier to make checks agree.
 - Owner-approved extension (September 15, 2026, "yes, extend it"): repair field-aware tracked-paragraph emission where deletion leaves field controls alive and transfers deleted formatting onto a surviving paragraph. Characterize complete, multiple, nested and partial field boundaries; preserve field and bookmark semantics and do not weaken native or reader gates.
+- Owner-approved blocker extension (September 17, 2026, "fix the blocker and then ship the fixes"): repair the interaction between retained live section properties and paragraph-mark merging in #984. Characterize alignment, page setup, bindings and mixed histories independently. Base-format restoration must not be silently suppressed by an existing section boundary; do not represent reader evidence about alignment as full section-layout or Word verification.
 
 ## Impact
 
