@@ -19,7 +19,7 @@
  */
 
 import { OOXML } from './namespaces.js';
-import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun } from './paragraph_merge_formatting.js';
+import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun, removeEmptyParagraphMarkProperties } from './paragraph_merge_formatting.js';
 import type { RevisionFilter } from './accept_changes.js';
 
 const W_NS = OOXML.W_NS;
@@ -290,6 +290,7 @@ function resolveParagraphMarkRevision(p: Element): void {
 
   const target = findFollowingSiblingParagraph(p);
   if (!target) {
+    removeEmptyParagraphMarkProperties(p);
     if (!paragraphHasContent(p) && canSafelyRemoveEmptyParagraph(p)) {
       parent.removeChild(p);
     }
