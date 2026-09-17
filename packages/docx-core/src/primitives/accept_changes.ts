@@ -20,7 +20,7 @@
  */
 
 import { OOXML } from './namespaces.js';
-import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun } from './paragraph_merge_formatting.js';
+import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun, removeEmptyParagraphMarkProperties } from './paragraph_merge_formatting.js';
 
 const W_NS = OOXML.W_NS;
 
@@ -289,6 +289,7 @@ function resolveParagraphMarkRevision(p: Element): void {
 
   const target = findFollowingSiblingParagraph(p);
   if (!target) {
+    removeEmptyParagraphMarkProperties(p);
     if (!paragraphHasContent(p) && canSafelyRemoveEmptyParagraph(p)) {
       parent.removeChild(p);
     }
@@ -365,6 +366,10 @@ export function acceptChanges(
   // Phase A — Identify deleted or moved-from paragraph marks.
   const markDeletedParagraphs: Element[] = [];
   const allParagraphs = collectByLocalName(root, 'p');
+  // Capture selected direct mark/property histories before other phases remove
+  // them, including accepted insertions which do not remove a paragraph break.
+  const resolvedMarkProperties = allParagraphs.filter(p =>
+    ['ins', 'del', 'moveFrom', 'moveTo', 'rPrChange'].some(kind => paragraphHasParaMarker(p, kind, filter)));
 
   for (const p of allParagraphs) {
     // A paragraph-mark deletion (w:p > w:pPr > w:rPr > w:del) means the
@@ -491,6 +496,7 @@ export function acceptChanges(
   for (const p of markDeletedParagraphs) {
     resolveParagraphMarkRevision(p);
   }
+  for (const p of resolvedMarkProperties) removeEmptyParagraphMarkProperties(p);
 
   // Strip w:rsidDel attributes on remaining elements. Skipped in selective
   // mode: rsidDel is a document-wide save-id, and a selective accept must not
