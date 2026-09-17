@@ -14,7 +14,7 @@ const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Nativ
   );
 // Complete range/mark/content shapes are the subjects of these consumer tests.
 const endpoint = (kind: 'moveFrom' | 'moveTo', base: number, body: string, bookmark = true) =>
-  '<w:' + kind + 'RangeStart w:id="' + base + '" w:name="move1" w:author="AI"/>' +
+  '<w:' + kind + 'RangeStart w:id="' + base + '" w:name="move1" w:author="AI" w:date="2026-09-17T00:00:00Z"/>' +
   '<w:p><w:pPr><w:rPr><w:' + kind + ' w:id="' + (base + 1) + '" w:author="AI"/></w:rPr></w:pPr>' +
   (bookmark ? '<w:bookmarkStart w:id="' + (base + 2) + '" w:name="anchor' + base + '"/>' : '') +
   body +
