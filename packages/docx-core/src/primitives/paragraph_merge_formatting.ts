@@ -6,17 +6,19 @@ const children = (node: Element): Element[] => Array.from(node.childNodes)
 const properties = (paragraph: Element): Element | undefined => children(paragraph)
   .find(child => child.namespaceURI === W && child.localName === 'pPr');
 
-/** Remove vacated mark-property containers after resolving a terminal mark.
+/** Remove vacated mark-property containers after selected revision resolution.
+ * This is an implementation cleanup policy, not a normative requirement.
  * @internal
- * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.26
  * @see https://github.com/UseJunior/safe-docx/issues/982
  */
 export function removeEmptyParagraphMarkProperties(paragraph: Element): void {
   const pPr = properties(paragraph);
   if (!pPr) return;
   const rPr = children(pPr).find(child => child.namespaceURI === W && child.localName === 'rPr');
-  if (rPr && children(rPr).length === 0 && !rPr.textContent?.trim() && rPr.attributes.length === 0) pPr.removeChild(rPr);
-  if (children(pPr).length === 0 && !pPr.textContent?.trim() && pPr.attributes.length === 0) paragraph.removeChild(pPr);
+  const vacated = (element: Element): boolean => element.attributes.length === 0 &&
+    Array.from(element.childNodes).every(node => node.nodeType === 3 && !node.nodeValue?.trim());
+  if (rPr && vacated(rPr)) pPr.removeChild(rPr);
+  if (vacated(pPr)) paragraph.removeChild(pPr);
 }
 
 /** Formatting-only test; never use this to decide whether to remove a paragraph. */
