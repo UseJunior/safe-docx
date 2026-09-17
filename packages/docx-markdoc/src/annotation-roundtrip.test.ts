@@ -356,27 +356,28 @@ describe('canonical annotation round trips', () => {
     });
   });
 
-  hyperlinkConformance('projects bookmark-stripped real ILPA hyperlinks both ways with valid destination-part relationships', async () => {
-    const fixtures = [
-      '../../../tests/test_documents/redline/ILPA-Model-Limited-Partnership-Agreement-WOF_v2.docx',
-      '../../../tests/test_documents/redline/ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx',
-    ];
-    const expectedDestination = 'https://ilpa.org/wp-content/uploads/2017/06/ILPA-Subscription-Lines-of-Credit-and-Alignment-of-Interests-June-2017.pdf';
-    const expectedText = expectedDestination;
-    for (const fixture of fixtures) {
-      const source = await withoutFootnoteBookmarks(await readFile(new URL(fixture, import.meta.url)));
-      const imported = await importDocxToMarkdoc(source);
-      const hyperlinkRun = imported.annotations
-        .find((annotation) => annotation.id === 'footnote:6')!
-        .body.flatMap((paragraph) => paragraph.runs)
-        .find((run) => run.hyperlink);
-      expect(hyperlinkRun).toMatchObject({
-        text: expectedText,
-        hyperlink: { destination: expectedDestination },
-        style: { styleId: 'Hyperlink', fontSizeHalfPoints: 18 },
-      });
+  // Each full-document projection has its own unchanged 30-second bound.
+  // Aggregating all four made CI time out before their assertions completed.
+  for (const [label, fixture] of [
+    ['whole-of-fund', '../../../tests/test_documents/redline/ILPA-Model-Limited-Partnership-Agreement-WOF_v2.docx'],
+    ['deal-by-deal', '../../../tests/test_documents/redline/ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx'],
+  ] as const) {
+    for (const destination of ['comment', 'footnote'] as const) {
+      hyperlinkConformance('projects bookmark-stripped ' + label + ' ILPA hyperlinks as ' + destination + ' with valid destination-part relationships', async () => {
+        const expectedDestination = 'https://ilpa.org/wp-content/uploads/2017/06/ILPA-Subscription-Lines-of-Credit-and-Alignment-of-Interests-June-2017.pdf';
+        const expectedText = expectedDestination;
+        const source = await withoutFootnoteBookmarks(await readFile(new URL(fixture, import.meta.url)));
+        const imported = await importDocxToMarkdoc(source);
+        const hyperlinkRun = imported.annotations
+          .find((annotation) => annotation.id === 'footnote:6')!
+          .body.flatMap((paragraph) => paragraph.runs)
+          .find((run) => run.hyperlink);
+        expect(hyperlinkRun).toMatchObject({
+          text: expectedText,
+          hyperlink: { destination: expectedDestination },
+          style: { styleId: 'Hyperlink', fontSizeHalfPoints: 18 },
+        });
 
-      for (const destination of ['comment', 'footnote'] as const) {
         const projected = await compileMarkdoc(imported.anchoredSource, projectEveryAnnotationAs(imported.markdoc, destination));
         const zip = await JSZip.loadAsync(projected.tracked);
         const partPath = destination === 'comment' ? 'word/comments.xml' : 'word/footnotes.xml';
@@ -389,9 +390,9 @@ describe('canonical annotation round trips', () => {
         expect(partXml).toContain('<w:rStyle w:val="Hyperlink"/>');
         expect(partXml).toContain('<w:sz w:val="18"/>');
         expect(partXml).toContain(expectedText);
-      }
+      }, 30_000);
     }
-  }, 30_000);
+  }
 
   footnoteConformance('[SDX-MDOC-85] switches profiles and style-only recompiles from one immutable annotation', async () => {
     const imported = await importDocxToMarkdoc(await sourceWithComment(0, 5));
