@@ -477,6 +477,11 @@ export function rejectChanges(
     }
     if (paragraphHasParaMarker(p, 'moveTo', filter)) {
       const direct = Array.from(p.childNodes).filter((n): n is Element => n.nodeType === 1);
+      const substantive = direct.filter(n => !isW(n, 'pPr') && !isW(n, 'bookmarkStart') && !isW(n, 'bookmarkEnd'));
+      // A moved break does not imply that untracked or foreign content (and
+      // the bookmarks around it) disappears when the move is rejected.
+      if (substantive.length === 0 || !substantive.every(n =>
+        (isW(n, 'ins') || isW(n, 'moveTo')) && filter(n))) continue;
       const endIds = new Set(direct.filter(n => isW(n, 'bookmarkEnd')).map(n => n.getAttributeNS(W_NS, 'id')));
       for (const start of direct.filter(n => isW(n, 'bookmarkStart'))) {
         const id = start.getAttributeNS(W_NS, 'id');

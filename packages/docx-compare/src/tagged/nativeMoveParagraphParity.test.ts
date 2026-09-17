@@ -64,6 +64,36 @@ describe('complete move ranges through native paragraph-mark resolution', () => 
     }
   });
 
+  for (const movedContent of [false, true]) {
+    test(`Reject preserves local bookmarks around ${movedContent ? 'mixed moved and' : 'only'} untracked surviving content`, () => {
+      const surviving = '<w:bookmarkStart w:id="90" w:name="keepme"/><w:r><w:t>Untracked survivor</w:t></w:r><w:bookmarkEnd w:id="90"/>';
+      const to = (movedContent ? destination : destination.replace(/<w:moveTo w:id="6"[\s\S]*?<\/w:moveTo>/, ''))
+        .replace('</w:p>', `${surviving}</w:p>`);
+      const input = wrap(source + to + stable);
+      for (const project of [(xml: string) => { const doc = parseXml(xml); rejectChanges(doc); return serializeXml(doc); }, rejectAllChanges]) {
+        const output = parseXml(project(input));
+        expect(Array.from(output.getElementsByTagNameNS(W, 'bookmarkStart')).map(b => b.getAttributeNS(W, 'name'))).toEqual(['keepme']);
+        expect(Array.from(output.getElementsByTagNameNS(W, 'bookmarkEnd')).map(b => b.getAttributeNS(W, 'id'))).toEqual(['90']);
+        expect(texts(serializeXml(output))).toEqual(['Moved paragraph', 'Untracked survivorStable paragraph']);
+      }
+    });
+  }
+
+  test('selective resolution resolves one author while preserving another complete move', () => {
+    const foreign = (source + stable + destination).replaceAll('Comparator', 'Human')
+      .replaceAll('move1', 'move2').replace(/w:id="(\d+)"/g, (_, id: string) => `w:id="${Number(id) + 10}"`);
+    for (const project of [acceptChanges, rejectChanges]) {
+      const doc = parseXml(wrap(source + stable + destination + foreign));
+      const before = Array.from(doc.getElementsByTagNameNS(W, 'p')).slice(3).map(p => p.toString());
+      project(doc, { filter: e => e.getAttributeNS(W, 'author') === 'Comparator' });
+      const remaining = Array.from(doc.getElementsByTagNameNS(W, 'p'));
+      expect(remaining.slice(-3).map(p => p.toString())).toEqual(before);
+      expect(remaining.length).toBe(5);
+      expect(Array.from(doc.getElementsByTagNameNS(W, 'moveTo')).map(e => e.getAttributeNS(W, 'author'))).toEqual(['Human', 'Human']);
+      expect(Array.from(doc.getElementsByTagNameNS(W, 'moveFrom')).map(e => e.getAttributeNS(W, 'author'))).toEqual(['Human', 'Human']);
+    }
+  });
+
   for (const terminal of [false, true]) {
     test(`resolves local endpoint bookmarks without relocating removed ${terminal ? 'terminal' : 'middle'} pairs`, () => {
       const bookmarked = (xml: string, id: number) => xml.replace('</w:pPr>', `</w:pPr><w:bookmarkStart w:id="${id}" w:name="anchor${id}"/>`)
