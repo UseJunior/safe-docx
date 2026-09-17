@@ -1,6 +1,6 @@
 import { describe, expect } from 'vitest';
 import { DocxArchive, parseXml, buildSyntheticDocx, buildDocxFromParts } from '@usejunior/docx-core';
-import { readZipText } from '../../../docx-core/src/primitives/zip.js';
+import JSZip from 'jszip';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { testAllure } from '../testing/allure-test.js';
 import { compareDocuments, acceptAllChanges, rejectAllChanges, extractTextWithParagraphs } from '../index.js';
@@ -296,9 +296,10 @@ reader('LibreOffice note-bearing paragraph projections', () => {
       { op: 'accept', docx: comparison.document, saveAs: 'odt' },
       { op: 'reject', docx: comparison.document, saveAs: 'odt' },
     ], undefined, async (index, bytes) => {
-      numberingStyles[index] = (await readZipText(bytes, 'styles.xml'))!;
+      const readerPackage = await JSZip.loadAsync(bytes);
+      numberingStyles[index] = await readerPackage.file('styles.xml')!.async('string');
       expect(numberingStyles[index]).toBeTruthy();
-      capturedContent[index] = (await readZipText(bytes, 'content.xml'))!;
+      capturedContent[index] = await readerPackage.file('content.xml')!.async('string');
       // Evidence collection gets an isolated copy, never the reader's vote.
       bytes.fill(0);
     });

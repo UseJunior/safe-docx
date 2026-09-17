@@ -4,7 +4,7 @@
 
 Moving a numbered paragraph may legitimately change its ordinal in the revised sequence. Accept must match the revised sequence; Reject must restore the original. An unnumbered restored heading is not ordinary renumbering.
 
-Current native projection always retains the following paragraph's `w:pPr` when a tracked break disappears. The emitter compensates by cloning predecessor properties onto a wholly deleted paragraph and storing its original properties under `w:pPrChange`. This keeps native projection checks green but triggers the reader's paragraph-format rejection path.
+Before the repair, native projection always retained the following paragraph's `w:pPr` when a tracked break disappeared. The emitter compensated by cloning predecessor properties onto a wholly deleted paragraph and storing its original properties under `w:pPrChange`. This kept native projection checks green but triggered the reader's paragraph-format rejection path.
 
 Installed reader: LibreOffice 26.2.5.2, revision `cd7284b4cbbfeb507e630c1aac019f4157393acb`. Its `sw/source/core/doc/DocumentRedlineManager.cxx:986` removes numbering for paragraph-format rejection. The causal control removes only the source paragraph's synthetic property change and restores its original properties; both reader projections then pass the measured checks. This does not establish universal font/layout fidelity or Word behavior.
 
