@@ -36,3 +36,9 @@ The corpus conflict is caused by emission, not by treating field delimiters as v
 Empty runs and empty text are a separate measured case: they do not own merged formatting. The formatting-only predicate may ignore them, but the paragraph-removal predicate is unchanged. Tables, sections, annotation ranges and unresolved revisions retain the existing conservative boundaries.
 
 Keep the current PR blocked until scope is approved and evidence passes. Avoid forcing a broad shared-model change into the note repair merely to clear shipping. If the decision table requires a materially wider rule change than this proposal, return for approval with exact affected cases. No hosted API work is authorized.
+
+### Approved section-mark blocker extension (September 17)
+
+Opus 5 control D3 combines a schema-valid `pPrChange`, a live section and an inserted paragraph mark. Retaining the live section triggered the shared formatter's early return, after which mark resolution deleted the leading paragraph and its restored alignment. The original native path retained alignment only because it incorrectly discarded the section earlier. Owner approved repairing this blocker before shipping.
+
+The bounded repair separates base-format selection from section-break selection: a section child cannot suppress the leading content's restored base formatting. The helper continues retaining the following surviving mark's section rather than copying section properties as base formatting. Explicit native expectations cover the merge; parity alone cannot validate shared code. Actual LibreOffice Reject retains restored `jc=both` on `FirstSecond`; its final page dimensions also follow the leading section. That latter observation is a separate section-layout characterization, not proof that the existing native section-selection policy matches LibreOffice or Word. Do not silently transplant section bindings or claim universal section fidelity to clear the alignment blocker.

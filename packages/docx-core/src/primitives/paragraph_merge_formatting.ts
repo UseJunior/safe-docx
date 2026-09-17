@@ -29,8 +29,10 @@ export function isEmptyParagraphFormattingRun(element: Element): boolean {
 export function retainLeadingParagraphFormatting(leading: Element, following: Element): void {
   const source = properties(leading);
   const target = properties(following);
-  // Do not extend the formatting rule across a leading section boundary.
-  if (source && children(source).some(child => child.namespaceURI === W && child.localName === 'sectPr')) return;
+  // A section boundary is not a CT_PPrBase formatting child. The mark
+  // resolver already decides which break survives; do not let a retained
+  // section suppress restoration of alignment/style onto surviving content.
+  // Section bindings remain on the surviving mark below, not in `base`.
   const result = following.ownerDocument!.createElementNS(W, 'w:pPr');
   const base = source ? children(source).filter(child =>
     child.namespaceURI !== W || !['rPr', 'sectPr', 'pPrChange'].includes(child.localName)) : [];
