@@ -399,14 +399,14 @@
         "strategy": "tagged-tree",
         "projections": {
           "accept": {
-            "xmlSha256": "1ba005159e081be5bedd09ac8df7a541b0399c1285d99b5803202ae467e2cd42",
+            "xmlSha256": "b3a7b635b67515c4a699088657e36a843cb575d6e2c3197e57694523b45694e9",
             "textSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "sourceTextSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "matchesSourceText": true,
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "30a714db8bfe5f353ed16cc782ab678017ee94e7ee5ca132fa4c8cdd923bc5b6",
+            "xmlSha256": "a2cdc9dbe59496491d8a469f7f350699544828c18936f73502c00b33e65efaa8",
             "textSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "sourceTextSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "matchesSourceText": true,
@@ -476,8 +476,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 1218253,
-            "sha256": "fa470d88c0f115f594c6cf9083480070fe5c6d969be26adaa55fa6d2b28849fe",
+            "bytes": 1213274,
+            "sha256": "30ba2f1caa93388e48742a84436112c9626ea43a422eb2e0577dc95416cd36c3",
             "kind": "xml"
           },
           {
@@ -626,8 +626,8 @@
           },
           {
             "path": "word/footnotes.xml",
-            "bytes": 24500,
-            "sha256": "ad7e472e6a0e540f17586e6ddf4207db3c1eafb20573d249d90a5a1381104586",
+            "bytes": 25451,
+            "sha256": "b4c1556d3a8c43398bb0b619ca22fbdd92fe056cf0d99728939b5801fd1a6ff1",
             "kind": "xml"
           },
           {
