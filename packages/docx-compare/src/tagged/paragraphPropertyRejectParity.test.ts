@@ -8,6 +8,9 @@ const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Track
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 describe('native and AST paragraph property Reject parity', () => {
+  // These parity controls use the w: prefix. Both projectors consume the
+  // shared merge-formatting helper, so standalone native expectations and
+  // actual-reader controls remain necessary for its downstream behavior.
   for (const snapshot of ['', '<w:jc w:val="both"/>']) {
     for (const separateHistory of [false, true]) {
       test(`retains live mark/section with ${snapshot ? 'populated' : 'empty'} snapshot and ${separateHistory ? 'separate' : 'no'} histories`, () => {

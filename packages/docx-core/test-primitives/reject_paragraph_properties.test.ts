@@ -55,4 +55,25 @@ describe('reject paragraph base-property snapshots without losing live extension
     expect(rejectChanges(doc, { filter: el => el.getAttributeNS(W, 'author') === 'Human' }).propertyChangesReverted).toBe(0);
     expect(serializeXml(doc)).toBe(before);
   });
+
+  for (const populated of [false, true]) {
+    test(`section-ending inserted mark retains restored ${populated ? 'explicit' : 'default'} alignment through merge`, () => {
+      const doc = parseXml(`<w:document xmlns:w="${W}"><w:body><w:p><w:pPr><w:jc w:val="right"/>` +
+        `<w:rPr><w:ins w:id="7" w:author="AI"/><w:color w:val="FF0000"/></w:rPr>` +
+        '<w:sectPr><w:pgSz w:w="10000" w:h="14000"/></w:sectPr>' +
+        `<w:pPrChange ${revision}><w:pPr>${populated ? '<w:jc w:val="both"/>' : ''}</w:pPr></w:pPrChange>` +
+        '</w:pPr><w:r><w:t>First</w:t></w:r></w:p><w:p><w:pPr><w:jc w:val="center"/>' +
+        '<w:sectPr><w:pgSz w:w="15840" w:h="12240"/></w:sectPr></w:pPr><w:r><w:t>Second</w:t></w:r></w:p>' +
+        '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>');
+      const survivingSections = Array.from(doc.getElementsByTagNameNS(W, 'sectPr')).slice(1).map(serializeXml);
+      rejectChanges(doc);
+      expect(doc.getElementsByTagNameNS(W, 'p').length).toBe(1);
+      expect(Array.from(doc.getElementsByTagNameNS(W, 't')).map(t => t.textContent).join('')).toBe('FirstSecond');
+      expect(Array.from(doc.getElementsByTagNameNS(W, 'jc')).map(j => j.getAttributeNS(W, 'val'))).toEqual(populated ? ['both'] : []);
+      expect(doc.getElementsByTagNameNS(W, 'color')[0]!.getAttributeNS(W, 'val')).toBe('FF0000');
+      // Mark resolution removes the leading break; snapshot restoration must
+      // not prevent base formatting selection or alter the surviving boundaries.
+      expect(Array.from(doc.getElementsByTagNameNS(W, 'sectPr')).map(serializeXml)).toEqual(survivingSections);
+    });
+  }
 });
