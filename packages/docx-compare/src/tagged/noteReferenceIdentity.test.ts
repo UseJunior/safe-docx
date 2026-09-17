@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { DocxArchive, parseXml, buildSyntheticDocx, buildDocxFromParts } from '@usejunior/docx-core';
+import { DocxArchive, DocxDocument, parseXml, buildSyntheticDocx, buildDocxFromParts } from '@usejunior/docx-core';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { testAllure } from '../testing/allure-test.js';
 import { compareDocuments, acceptAllChanges, rejectAllChanges, extractTextWithParagraphs } from '../index.js';
@@ -65,6 +65,40 @@ async function inlineFootnoteAndMovedEndnote(revised: boolean, mixed: boolean, l
 }
 
 describe('inline footnote definitions remain bound to their source sides', () => {
+  for (const difference of ['format', 'reference'] as const) {
+    test(`characterizes separate side definitions when aligned anchor ${difference} changes`, async () => {
+      const original = await inlineFootnoteAndMovedEndnote(false, false, false);
+      const revised = await DocxArchive.load(await inlineFootnoteAndMovedEndnote(true, false, false));
+      const document = parseXml(await revised.getDocumentXml());
+      const ref = document.getElementsByTagNameNS(W, 'footnoteReference')[0]!;
+      if (difference === 'reference') ref.setAttributeNS(W, 'w:customMarkFollows', '1');
+      else (ref.parentNode as Element).getElementsByTagNameNS(W, 'rPr')[0]!.appendChild(document.createElementNS(W, 'w:b'));
+      revised.setDocumentXml(serialize(document));
+      const result = await compareDocuments(original, await revised.save());
+      const archive = await DocxArchive.load(result.document);
+      expect(parseXml(await archive.getDocumentXml()).getElementsByTagNameNS(W, 'footnoteReference').length).toBe(2);
+      const notes = (await archive.getFile('word/footnotes.xml'))!;
+      expect(parseXml(notes).getElementsByTagNameNS(W, 'footnote').length).toBe(4);
+      expect(notes).not.toMatch(/<w:(ins|del)\b/);
+      // Characterization of coarse history, not a claim of orphan-free
+      // single-part projection: package resolution has the anchor inventory.
+      for (const [project, expected] of [[acceptAllChanges, 'After note text'], [rejectAllChanges, 'Before note text']] as const) {
+        const refs = parseXml(project(await archive.getDocumentXml())).getElementsByTagNameNS(W, 'footnoteReference');
+        expect(refs.length).toBe(1);
+        const projected = parseXml(project(notes));
+        const entry = Array.from(projected.getElementsByTagNameNS(W, 'footnote')).find(e => e.getAttributeNS(W, 'id') === refs[0]!.getAttributeNS(W, 'id'));
+        expect(entry!.textContent).toBe(expected);
+      }
+      for (const op of ['acceptChanges', 'rejectChanges'] as const) {
+        const complete = await DocxDocument.load(result.document);
+        await complete[op]();
+        const resolved = await DocxArchive.load((await complete.toBuffer()).buffer);
+        const resolvedNotes = (await resolved.getFile('word/footnotes.xml'))!;
+        expect(parseXml(resolvedNotes).getElementsByTagNameNS(W, 'footnote').length).toBe(3);
+        expect(resolvedNotes).not.toContain(op === 'acceptChanges' ? 'Before' : 'After');
+      }
+    });
+  }
   test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })('keeps an aligned anchor stable while redlining its definition without superseded projection text', async () => {
     const result = await compareDocuments(await inlineFootnoteAndMovedEndnote(false, false, false), await inlineFootnoteAndMovedEndnote(true, false, false));
     const archive = await DocxArchive.load(result.document);

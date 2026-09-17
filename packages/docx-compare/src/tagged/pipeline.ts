@@ -249,6 +249,9 @@ async function reconcileTaggedFootnotes(options: {
       )
     ) continue;
     const stablePair = alignedInlineFootnoteAnchorPair(document, pair.originalId, pair.revisedId, options.author);
+    // Declining retains separate side definitions and coarse anchor history.
+    // Superseded bodies remain until complete-package orphan-note pruning;
+    // flattening changed anchor properties would lose their Reject semantics.
     if (!stablePair) continue;
     const comparedChildren = compareFootnoteDefinitions(originalEntry, revisedEntry, {
       author: options.author,
