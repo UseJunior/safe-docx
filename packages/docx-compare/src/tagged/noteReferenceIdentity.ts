@@ -6,6 +6,31 @@ const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const W14 = 'http://schemas.microsoft.com/office/word/2010/wordml';
 const serialize = (document: Document) => new XMLSerializer().serializeToString(document);
 
+/** Normalize decimal-equivalent note definitions and anchors before collision rewriting.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ * @see https://github.com/UseJunior/safe-docx/issues/979
+ */
+export async function canonicalizeNoteArchiveIds(archive: DocxArchive): Promise<void> {
+  for (const path of archive.listFiles().filter(p => p.startsWith('word/') && p.endsWith('.xml'))) {
+    const xml = await archive.getFile(path);
+    if (!xml || (!['word/footnotes.xml', 'word/endnotes.xml'].includes(path) && !/footnoteReference|endnoteReference/.test(xml))) continue;
+    let document: Document;
+    try { document = parseXml(xml); } catch { continue; } // Publication diagnoses contributing malformed parts.
+    let changed = false;
+    for (const local of ['footnote', 'endnote', 'footnoteReference', 'endnoteReference']) {
+      for (const element of Array.from(document.getElementsByTagNameNS(W, local))) {
+        const id = element.getAttributeNS(W, 'id') ?? '';
+        const canonical = canonicalNoteId(id);
+        if (canonical !== undefined && canonical !== id) {
+          element.setAttributeNS(W, 'w:id', canonical);
+          changed = true;
+        }
+      }
+    }
+    if (changed) archive.setFile(path, serialize(document));
+  }
+}
+
 /** IDs reconstructed in multiple paragraphs, rather than paired inline. */
 export function copiedParagraphNoteIds(document: Document, kind: 'footnote' | 'endnote'): Set<string> {
   const groups = new Map<string, Set<Node | null>>();
@@ -51,8 +76,8 @@ export async function separateRepeatedNoteReferences(archive: DocxArchive, xml: 
     const refs = Array.from(document.getElementsByTagNameNS(W, referenceName));
     const ids = refs.map(ref => canonicalNoteId(ref.getAttributeNS(W, 'id') ?? '') ?? fail('invalid reference ID'));
     if (new Set(ids).size === ids.length) continue;
-    // Corresponding edited references inside one paragraph deliberately share
-    // a tracked definition. This repair targets copied paragraph references.
+    // This pass handles copied paragraph references. Inline side-paired edited
+    // anchors already received distinct definitions during reconciliation.
     const copiedIds = copiedParagraphNoteIds(document, kind);
     if (copiedIds.size === 0) continue;
     const source = await archive.getFile(part);
@@ -80,7 +105,7 @@ export async function separateRepeatedNoteReferences(archive: DocxArchive, xml: 
       // Do not turn a reader repair into duplicated bookmarks/comments/revisions.
       const safe = new Set(['footnote', 'endnote', 'p', 'pPr', 'r', 'rPr', 't', 'footnoteRef', 'endnoteRef',
         'tab', 'ptab', 'br', 'cr', 'noBreakHyphen', 'softHyphen', 'sym', 'proofErr', 'lastRenderedPageBreak']);
-      const scoped = /^(?:bookmark|comment|perm|move|customXml|sdt|fld|instrText|delInstrText|ins$|del$|delText$|drawing$|pict$|object$|hyperlink$|footnoteReference$|endnoteReference$)|Change$/u;
+      const scoped = /^(?:bookmark|comment|perm|move|customXml|sdt|fld|instrText|delInstrText|ins$|del$|delText$|drawing$|pict$|object$|hyperlink$|footnoteReference$|endnoteReference$|sectPr$|annotationRef$)|Change$/u;
       for (const element of [note!, ...Array.from(note!.getElementsByTagName('*'))]) {
         let property = false;
         for (let node: Node | null = element; node && node !== note; node = node.parentNode) {
