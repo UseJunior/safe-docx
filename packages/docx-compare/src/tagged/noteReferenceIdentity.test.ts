@@ -1,10 +1,12 @@
 import { describe, expect } from 'vitest';
 import { DocxArchive, parseXml, buildSyntheticDocx, buildDocxFromParts } from '@usejunior/docx-core';
+import { readZipText } from '../../../docx-core/src/primitives/zip.js';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { testAllure } from '../testing/allure-test.js';
 import { compareDocuments, acceptAllChanges, rejectAllChanges, extractTextWithParagraphs } from '../index.js';
 import { separateRepeatedNoteReferences } from './noteReferenceIdentity.js';
 import { AncillaryStorySafetyError } from './ancillaryFieldSafety.js';
+import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Note reference identity' });
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -245,7 +247,7 @@ describe('note-bearing paragraph reorders', () => {
 // unusable installed LibreOffice. Full packages preserve the note sidecars.
 const reader = process.env.SAFE_DOCX_NOTE_READER_REQUIRED === '1' ? describe : describe.skip;
 reader('LibreOffice note-bearing paragraph projections', () => {
-  test('restores outline numbering and paragraph formatting on both reader projections', async () => {
+  test.openspec('Reject restores the original numbered paragraph').openspec('Accept permits correct renumbering')('restores outline numbering and paragraph formatting on both reader projections', async () => {
     const { runLibreOfficeOracle } = await import('../../../docx-core/dist/integration/libreoffice-oracle.js');
     const numbered = async (revised: boolean) => {
       const tail = 'unchanged final paragraph after every numbered item';
@@ -286,12 +288,21 @@ reader('LibreOffice note-bearing paragraph projections', () => {
     const original = await numbered(false);
     const revised = await numbered(true);
     const comparison = await compareDocuments(original, revised, { detectMoves: true });
+    const numberingStyles: string[] = [];
+    const capturedContent: string[] = [];
     const results = await runLibreOfficeOracle([
       { op: 'identity', docx: original, saveAs: 'odt' },
       { op: 'identity', docx: revised, saveAs: 'odt' },
       { op: 'accept', docx: comparison.document, saveAs: 'odt' },
       { op: 'reject', docx: comparison.document, saveAs: 'odt' },
-    ]);
+    ], undefined, async (index, bytes) => {
+      numberingStyles[index] = (await readZipText(bytes, 'styles.xml'))!;
+      expect(numberingStyles[index]).toBeTruthy();
+      capturedContent[index] = (await readZipText(bytes, 'content.xml'))!;
+      // Evidence collection gets an isolated copy, never the reader's vote.
+      bytes.fill(0);
+    });
+    expect(results).toEqual(capturedContent);
     const T = 'urn:oasis:names:tc:opendocument:xmlns:text:1.0';
     const S = 'urn:oasis:names:tc:opendocument:xmlns:style:1.0';
     const project = (xml: string) => {
@@ -308,6 +319,41 @@ reader('LibreOffice note-bearing paragraph projections', () => {
     };
     expect(project(results[2]!)).toEqual(project(results[1]!));
     expect(project(results[3]!)).toEqual(project(results[0]!));
+    // This single-level outline starts at one. Preserve its rule and restart
+    // metadata before deriving ordinals from the measured reader heading order;
+    // paragraph text alone does not contain automatic outline numbers.
+    const outline = (xml: string, index: number) => {
+      const document = parseXml(xml);
+      const definitions = parseXml(numberingStyles[index]!);
+      // text:h uses the document outline, not an unrelated list style whose
+      // decimal level could accidentally make this numbering assertion pass.
+      const outlines = Array.from(definitions.getElementsByTagNameNS(T, 'outline-style'));
+      expect(outlines).toHaveLength(1);
+      const rule = Array.from(outlines[0]!.getElementsByTagNameNS(T, 'outline-level-style'))
+        .find(n => n.getAttributeNS(T, 'level') === '1')!;
+      expect(rule, numberingStyles[index]).toBeDefined();
+      expect(rule.getAttributeNS(S, 'num-format')).toBe('1');
+      expect(rule.getAttributeNS(T, 'start-value') || '1').toBe('1');
+      const headings = Array.from(document.getElementsByTagNameNS(T, 'h'));
+      expect(headings).toHaveLength(2);
+      for (const heading of headings) {
+        expect(heading.textContent).toBeTruthy();
+        expect(heading.getAttributeNS(T, 'outline-level')).toBe('1');
+        expect(heading.getAttributeNS(T, 'restart-numbering')).not.toBe('true');
+        expect(heading.getAttributeNS(T, 'start-value')).toBeFalsy();
+        for (let ancestor = heading.parentNode; ancestor; ancestor = ancestor.parentNode) {
+          expect(ancestor.nodeType === 1 && (ancestor as Element).namespaceURI === T &&
+            (ancestor as Element).localName === 'list-header').toBe(false);
+        }
+      }
+      return headings.findIndex(heading => heading.textContent?.startsWith(moving)) + 1;
+    };
+    expect(results.map(outline)).toEqual([1, 2, 2, 1]);
+    expect(compareSourceProjectedFormattingFidelity(
+      await (await DocxArchive.load(original)).getDocumentXml(),
+      await (await DocxArchive.load(revised)).getDocumentXml(),
+      await (await DocxArchive.load(comparison.document)).getDocumentXml(),
+    ).score).toBe(1);
   }, 180_000);
   test('preserves mixed edited and moved footnote bindings in LibreOffice', async () => {
     const { runLibreOfficeOracle } = await import('../../../docx-core/dist/integration/libreoffice-oracle.js');

@@ -10,6 +10,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Scenario | Status | Test Files | Notes |
 |---|---|---|---|
 | A behavior fix closes an explicit divergence | covered | `packages/docx-compare/src/integration/strategy-differential-manifest.corpus.test.ts` |  |
+| Accept permits correct renumbering | covered | `packages/docx-compare/src/tagged/noteReferenceIdentity.test.ts` |  |
 | Allocated revision identifiers avoid input collisions | covered | `packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts` |  |
 | An unmodeled subtree must declare itself opaque | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |
 | Atom metrics do not silently change units | covered | `packages/docx-compare/src/tagged/taggedTreeShadow.test.ts` |  |
@@ -17,6 +18,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Bold added markup | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Bold removed markup | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Building footnote mapping | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Complete field deletion does not leave live controls | covered | `packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts` |  |
 | Contained phrase scores complete containment | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Continuation pattern inherits formatting | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Contract violations name the offending node | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |
@@ -50,6 +52,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Orphan list item renders with parent format | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Paired paragraph representatives are not moves | covered | `packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts` |  |
 | Part from main document | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Partial field controls retain their existing boundary treatment | covered | `packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts` |  |
 | Private attribution data does not leak | covered | `packages/docx-compare/src/integration/tagged-rationale-attribution.test.ts` |  |
 | Projections reproduce their input sides | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |
 | Proper nested list renders hierarchically | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
@@ -58,6 +61,8 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Provenance survives a boundary split | covered | `packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts` |  |
 | Public comparison reports only tagged result metadata | covered | `packages/docx-compare/src/public-result-metadata.test.ts` |  |
 | Public comparison uses one deterministic tagged publication | covered | `packages/docx-compare/src/compare-options.test.ts`, `packages/docx-compare/src/tagged/taggedTreeShadow.test.ts` |  |
+| Reader agreement does not bypass native formatting failure | covered | `packages/docx-compare/src/tagged/readerNativeReleaseGate.test.ts` |  |
+| Reject restores the original numbered paragraph | covered | `packages/docx-compare/src/tagged/noteReferenceIdentity.test.ts` |  |
 | Removing bold is reported | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Reordering that satisfies coverage is rejected | covered | `packages/docx-compare/src/tagged/taggedTree.test.ts` |  |
 | Reserved footnote IDs excluded from numbering | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |

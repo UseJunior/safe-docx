@@ -35,7 +35,7 @@ The corpus conflict is caused by emission, not by treating field delimiters as v
 
 Empty runs and empty text are a separate measured case: they do not own merged formatting. The formatting-only predicate may ignore them, but the paragraph-removal predicate is unchanged. Tables, sections, annotation ranges and unresolved revisions retain the existing conservative boundaries.
 
-Keep the current PR blocked until scope is approved and evidence passes. Avoid forcing a broad shared-model change into the note repair merely to clear shipping. If the decision table requires a materially wider rule change than this proposal, return for approval with exact affected cases. No hosted API work is authorized.
+The original scope/evidence hold was resolved before PR #980 shipped September 16. The decision table, approved field-aware repair and final-head gates passed. A materially wider rule change still returns for approval with exact affected cases; no hosted API work is authorized. Later note, terminal-move, property-history and field-cache follow-ups are separately tracked, not implicitly certified by this archive.
 
 ### Approved section-mark blocker extension (September 17)
 

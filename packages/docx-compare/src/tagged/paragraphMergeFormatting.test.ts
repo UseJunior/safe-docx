@@ -21,7 +21,7 @@ const cases = ['accept', 'reject'].flatMap(op => [false, true].flatMap(first => 
 
 describe('paragraph merge formatting decision table', () => {
   for (const op of ['accept', 'reject'] as const) {
-    for (const history of ['paragraph', 'mark'] as const) test(`${op}: resolve following ${history} history before selecting merge formatting`, () => {
+    for (const history of ['paragraph', 'mark'] as const) test.openspec('Selective merge retains following pending property history')(`${op}: resolve following ${history} history before selecting merge formatting`, () => {
       const tag = op === 'accept' ? 'del' : 'ins';
       const pending = history === 'paragraph'
         ? '<w:pPrChange w:id="8" w:author="Other"><w:pPr><w:jc w:val="left"/></w:pPr></w:pPrChange>'

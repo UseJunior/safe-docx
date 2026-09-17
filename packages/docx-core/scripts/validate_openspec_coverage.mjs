@@ -31,6 +31,8 @@ const SPEC_CONFIGS = [
         'docx-comparison',
         'spec.md',
       ),
+      // repair-paragraph-merge-formatting passed active-delta coverage before
+      // its September 17 archive; its five scenarios are now canonical above.
     ],
   },
   {
