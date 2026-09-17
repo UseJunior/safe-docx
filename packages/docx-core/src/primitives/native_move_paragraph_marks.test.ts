@@ -9,6 +9,8 @@ const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Nativ
   .conformance(
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.21' },
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.22' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.25' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.26' },
   );
 // Complete range/mark/content shapes are the subjects of these consumer tests.
 const endpoint = (kind: 'moveFrom' | 'moveTo', base: number, body: string, bookmark = true) =>
@@ -54,6 +56,7 @@ describe('native move-mark resolution without comparison coverage indirection', 
   ]) {
     test('reject preserves local bookmarks around ' + name + ' content', () => {
       const doc = document(endpoint('moveTo', 10, body!) + stable);
+      // Select id-only ends explicitly; author-only orphan ends remain in #941.
       rejectChanges(doc, { filter: e => e.getAttributeNS(W, 'author') === 'AI' || e.localName.endsWith('RangeEnd') });
       expect(Array.from(doc.getElementsByTagNameNS(W, 'bookmarkStart')).map(n => n.getAttributeNS(W, 'id'))).toEqual(['12']);
       expect(Array.from(doc.getElementsByTagNameNS(W, 'bookmarkEnd')).map(n => n.getAttributeNS(W, 'id'))).toEqual(['12']);
@@ -67,5 +70,44 @@ describe('native move-mark resolution without comparison coverage indirection', 
     expect(texts(doc)).toEqual(['STABLE']);
     expect(doc.getElementsByTagNameNS(W, 'bookmarkStart')).toHaveLength(0);
     expect(doc.getElementsByTagNameNS(W, 'bookmarkEnd')).toHaveLength(0);
+  });
+  for (const [name, body] of [
+    ['empty', ''],
+    ['untracked', '<w:r><w:t>KEPT</w:t></w:r>'],
+    ['foreign move', content('moveFrom', 4, 'Human')],
+    ['mixed surviving content', content('moveFrom', 4) + '<w:r><w:t>KEPT</w:t></w:r>'],
+  ]) {
+    test('accept preserves local bookmarks around ' + name + ' content', () => {
+      const doc = document(endpoint('moveFrom', 1, body!) + stable);
+      // Select id-only ends explicitly; author-only orphan ends remain in #941.
+      acceptChanges(doc, { filter: e => e.getAttributeNS(W, 'author') === 'AI' || e.localName.endsWith('RangeEnd') });
+      for (const kind of ['bookmarkStart', 'bookmarkEnd']) {
+        expect(Array.from(doc.getElementsByTagNameNS(W, kind)).map(n => n.getAttributeNS(W, 'id'))).toEqual(['3']);
+      }
+      expect(texts(doc)).toEqual([name === 'foreign move' ? 'MOVEDSTABLE' : name === 'empty' ? 'STABLE' : 'KEPTSTABLE']);
+      expect(doc.getElementsByTagNameNS(W, 'moveFrom')).toHaveLength(name === 'foreign move' ? 1 : 0);
+    });
+  }
+  for (const [kind, resolve] of [['moveFrom', acceptChanges], ['moveTo', rejectChanges]] as const) {
+    test('consumes a wrapper-nested ' + kind + ' bookmark and its live counterpart', () => {
+      const nested = '<w:' + kind + ' w:id="4" w:author="AI"><w:bookmarkStart w:id="77" w:name="span"/>' +
+        '<w:r><w:t>MOVED</w:t></w:r></w:' + kind + '>';
+      const following = '<w:p><w:bookmarkEnd w:id="77"/><w:r><w:t>STABLE</w:t></w:r></w:p>';
+      const doc = document(endpoint(kind, 1, nested, false) + following);
+      resolve(doc);
+      expect(texts(doc)).toEqual(['STABLE']);
+      expect(doc.getElementsByTagNameNS(W, 'bookmarkStart')).toHaveLength(0);
+      expect(doc.getElementsByTagNameNS(W, 'bookmarkEnd')).toHaveLength(0);
+    });
+  }
+  test('reject does not harvest an untracked spanning start as a local moveTo pair', () => {
+    const body = '<w:bookmarkStart w:id="77" w:name="span"/>' + content('moveTo', 13);
+    const following = '<w:p><w:bookmarkEnd w:id="77"/><w:r><w:t>STABLE</w:t></w:r></w:p>';
+    const doc = document(endpoint('moveTo', 10, body) + following);
+    rejectChanges(doc);
+    expect(texts(doc)).toEqual(['STABLE']);
+    for (const kind of ['bookmarkStart', 'bookmarkEnd']) {
+      expect(Array.from(doc.getElementsByTagNameNS(W, kind)).map(n => n.getAttributeNS(W, 'id'))).toEqual(['77']);
+    }
   });
 });
