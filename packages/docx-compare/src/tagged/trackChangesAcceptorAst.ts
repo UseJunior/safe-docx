@@ -725,6 +725,8 @@ export function rejectAllChanges(documentXml: string): string {
   for (const paragraph of markInsertedParagraphs) {
     if (!paragraphHasParaMarker(paragraph, 'w:moveTo')) continue;
     const direct = childElements(paragraph);
+    const substantive = direct.filter(child => !['w:pPr', 'w:bookmarkStart', 'w:bookmarkEnd'].includes(child.tagName));
+    if (substantive.length === 0 || !substantive.every(child => ['w:ins', 'w:moveTo'].includes(child.tagName))) continue;
     const starts = direct.filter((child) => child.tagName === 'w:bookmarkStart');
     const ends = direct.filter((child) => child.tagName === 'w:bookmarkEnd');
     for (const start of starts) {
