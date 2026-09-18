@@ -458,8 +458,9 @@ export function rejectChanges(
     };
   }
 
-  // Phase A — Identify paragraphs whose MARK is a tracked insertion
+  // Phase A — Identify inserted or moved-to paragraph marks.
   const markInsertedParagraphs = new Set<Element>();
+  const removedMoveToBookmarkIds = new Set<string>();
   const allParagraphs = collectByLocalName(root, 'p');
   const resolvedMarkProperties = allParagraphs.filter(p =>
     ['ins', 'del', 'moveFrom', 'moveTo', 'rPrChange'].some(kind => paragraphHasParaMarker(p, kind, filter)));
@@ -474,8 +475,21 @@ export function rejectChanges(
     // inserted into a pre-existing paragraph, which Word/LibreOffice keep (empty) on
     // reject. safe-docx's inserted paragraphs always carry the mark now, so the
     // mark-based rule suffices and is Word-faithful. (Mirrors rejectAllChanges.)
-    if (paragraphHasParaMarker(p, 'ins', filter)) {
+    if (paragraphHasParaMarker(p, 'ins', filter) || paragraphHasParaMarker(p, 'moveTo', filter)) {
       markInsertedParagraphs.add(p);
+    }
+    if (paragraphHasParaMarker(p, 'moveTo', filter)) {
+      const direct = Array.from(p.childNodes).filter((n): n is Element => n.nodeType === 1);
+      const substantive = direct.filter(n => !isW(n, 'pPr') && !isW(n, 'bookmarkStart') && !isW(n, 'bookmarkEnd'));
+      // A moved break does not imply that untracked or foreign content (and
+      // the bookmarks around it) disappears when the move is rejected.
+      if (substantive.length === 0 || !substantive.every(n =>
+        (isW(n, 'ins') || isW(n, 'moveTo')) && filter(n))) continue;
+      const endIds = new Set(direct.filter(n => isW(n, 'bookmarkEnd')).map(n => n.getAttributeNS(W_NS, 'id')));
+      for (const start of direct.filter(n => isW(n, 'bookmarkStart'))) {
+        const id = start.getAttributeNS(W_NS, 'id');
+        if (id && endIds.has(id)) removedMoveToBookmarkIds.add(id);
+      }
     }
   }
 
@@ -492,8 +506,8 @@ export function rejectChanges(
   // a selected insertion can have a live counterpart outside the wrapper so
   // the combined redline visibly brackets inserted text. Rejecting the
   // insertion must remove that revised-side counterpart as well.
-  const insertedBookmarkIds = new Set<string>();
-  for (const insertion of collectByLocalName(root, 'ins').filter(filter)) {
+  const insertedBookmarkIds = new Set<string>(removedMoveToBookmarkIds);
+  for (const insertion of [...collectByLocalName(root, 'ins'), ...collectByLocalName(root, 'moveTo')].filter(filter)) {
     for (const localName of ['bookmarkStart', 'bookmarkEnd']) {
       for (const boundary of collectByLocalName(insertion, localName)) {
         const id = boundary.getAttributeNS(W_NS, 'id') ?? boundary.getAttribute('w:id');
