@@ -39,12 +39,16 @@ export interface CompareStats {
   atomMetricVersion: 'tagged-token-v1';
   /**
    * Human-facing inserted change ranges. This counts contiguous inserted atom
-   * runs, matching the coalesced w:ins regions emitted in OOXML.
+   * runs in the tagged main-story alignment, before ancillary reconciliation.
+   * A note edit may subsequently move into its definition without a second
+   * count; this is not a final-package w:ins element inventory.
    */
   insertions: number;
   /**
    * Human-facing deleted change ranges. This counts contiguous deleted atom
-   * runs, matching the coalesced w:del regions emitted in OOXML.
+   * runs in the tagged main-story alignment, before ancillary reconciliation.
+   * A note edit may subsequently move into its definition without a second
+   * count; this is not a final-package w:del element inventory.
    */
   deletions: number;
   /**
