@@ -10,7 +10,8 @@ import { testAllure } from '../testing/allure-test.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
 
-const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Paragraph merge release gate' });
+const TEST_FEATURE = 'Paragraph merge release gate';
+const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
 const reader = process.env.SAFE_DOCX_NOTE_READER_REQUIRED === '1' ? describe : describe.skip;
 reader('independent paragraph merge release readiness', () => {
   test.openspec('Reader agreement does not bypass native formatting failure')(

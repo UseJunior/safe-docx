@@ -7,7 +7,8 @@ import { constructTaggedTree } from './taggedTreeConstruction.js';
 import { createPreservePlan, serializeTaggedTree } from './taggedTreeSerializer.js';
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Paragraph merge formatting' })
+const TEST_FEATURE = 'Paragraph merge formatting';
+const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE })
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.15' });
 const wrap = (body: string) => `<w:document xmlns:w="${W}"><w:body>${body}</w:body></w:document>`;
 const cases = ['accept', 'reject'].flatMap(op => [false, true].flatMap(first => [false, true].map(second => {

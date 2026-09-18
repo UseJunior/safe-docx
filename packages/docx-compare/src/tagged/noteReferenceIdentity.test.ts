@@ -8,7 +8,8 @@ import { separateRepeatedNoteReferences } from './noteReferenceIdentity.js';
 import { AncillaryStorySafetyError } from './ancillaryFieldSafety.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
 
-const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Note reference identity' });
+const TEST_FEATURE = 'Note reference identity';
+const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const moving = 'the complete paragraph with an attached explanatory note moves here';
 const stable = 'a long stable paragraph that remains in the same relative position';
