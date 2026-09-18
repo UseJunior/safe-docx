@@ -4,7 +4,7 @@
 
 Moving a numbered paragraph may legitimately change its ordinal in the revised sequence. Accept must match the revised sequence; Reject must restore the original. An unnumbered restored heading is not ordinary renumbering.
 
-Current native projection always retains the following paragraph's `w:pPr` when a tracked break disappears. The emitter compensates by cloning predecessor properties onto a wholly deleted paragraph and storing its original properties under `w:pPrChange`. This keeps native projection checks green but triggers the reader's paragraph-format rejection path.
+Before the repair, native projection always retained the following paragraph's `w:pPr` when a tracked break disappeared. The emitter compensated by cloning predecessor properties onto a wholly deleted paragraph and storing its original properties under `w:pPrChange`. This kept native projection checks green but triggered the reader's paragraph-format rejection path.
 
 Installed reader: LibreOffice 26.2.5.2, revision `cd7284b4cbbfeb507e630c1aac019f4157393acb`. Its `sw/source/core/doc/DocumentRedlineManager.cxx:986` removes numbering for paragraph-format rejection. The causal control removes only the source paragraph's synthetic property change and restores its original properties; both reader projections then pass the measured checks. This does not establish universal font/layout fidelity or Word behavior.
 
@@ -35,7 +35,7 @@ The corpus conflict is caused by emission, not by treating field delimiters as v
 
 Empty runs and empty text are a separate measured case: they do not own merged formatting. The formatting-only predicate may ignore them, but the paragraph-removal predicate is unchanged. Tables, sections, annotation ranges and unresolved revisions retain the existing conservative boundaries.
 
-Keep the current PR blocked until scope is approved and evidence passes. Avoid forcing a broad shared-model change into the note repair merely to clear shipping. If the decision table requires a materially wider rule change than this proposal, return for approval with exact affected cases. No hosted API work is authorized.
+The original scope/evidence hold was resolved before PR #980 shipped September 16. The decision table, approved field-aware repair and final-head gates passed. A materially wider rule change still returns for approval with exact affected cases; no hosted API work is authorized. Later note, terminal-move, property-history and field-cache follow-ups are separately tracked, not implicitly certified by this archive.
 
 ### Approved section-mark blocker extension (September 17)
 

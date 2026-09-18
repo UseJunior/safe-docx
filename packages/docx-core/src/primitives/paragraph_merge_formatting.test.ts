@@ -44,8 +44,11 @@ describe('paragraph merge formatting', () => {
     }
   });
   test.openspec('Reader evidence does not establish Word behavior')('keeps the documented Word evidence limitation explicit', () => {
-    const evidence = readFileSync(new URL('../../../../openspec/changes/repair-paragraph-merge-formatting/evidence.md', import.meta.url), 'utf8');
+    const evidence = readFileSync(new URL('../../../../openspec/changes/archive/2026-09-17-repair-paragraph-merge-formatting/evidence.md', import.meta.url), 'utf8');
     expect(evidence).toContain('Word is UNVERIFIED');
     expect(evidence).toContain('LibreOffice 26.2.5.2');
+    const matrixRows = evidence.split('\n').filter(line => /^\| (Accept|Reject) \|/.test(line));
+    expect(matrixRows).toHaveLength(8);
+    expect(matrixRows.every(line => line.endsWith('| UNVERIFIED |'))).toBe(true);
   });
 });

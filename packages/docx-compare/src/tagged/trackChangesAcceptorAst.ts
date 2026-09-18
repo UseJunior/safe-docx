@@ -450,7 +450,7 @@ function preserveCrossParagraphBookmarksForReject(
       }
 
       if (parentElement(start) === paragraph && findFollowingSiblingParagraph(paragraph)) {
-        // A direct child of a merging paragraph rides the Step-3 merge in
+        // A direct child of a merging paragraph rides break resolution in
         // document order; pre-moving it here would reorder the boundary
         // relative to the surviving untracked content.
         continue;
@@ -494,7 +494,7 @@ function preserveCrossParagraphBookmarksForReject(
       }
 
       if (parentElement(end) === paragraph && findFollowingSiblingParagraph(paragraph)) {
-        // A direct child of a merging paragraph rides the Step-3 merge in
+        // A direct child of a merging paragraph rides break resolution in
         // document order; pre-moving it here would reorder the boundary
         // relative to the surviving untracked content.
         continue;
@@ -716,7 +716,7 @@ export function rejectAllChanges(documentXml: string): string {
 
   // Bookmarks nested inside w:ins content are dropped with Step 2's wrapper
   // removal, so boundaries whose counterpart lives in a kept paragraph must
-  // move out first. (Direct-child bookmarks would survive the Step-3 merge.)
+  // move out first. (Direct-child bookmarks survive break resolution.)
   preserveCrossParagraphBookmarksForReject(root, markInsertedParagraphs);
 
   // Whole moved-to paragraphs keep bookmark boundaries outside their content

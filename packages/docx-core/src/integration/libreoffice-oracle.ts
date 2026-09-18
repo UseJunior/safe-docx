@@ -251,8 +251,14 @@ function isConvertJob(job: OracleJob): job is { op: OracleOp; docx: Buffer; save
  * Run LibreOffice over a batch of jobs in ONE headless launch and return each job's resulting
  * main XML part — `word/document.xml` for DOCX jobs, `content.xml` for ODT jobs. Throws if the
  * binary is missing or the macro did not run.
+ * Optional evidence capture receives an isolated copy of that same saved
+ * package, allowing tests to inspect styles without changing the returned XML.
  */
-export async function runLibreOfficeOracle(jobs: OracleJob[], soffice = resolveSoffice()): Promise<string[]> {
+export async function runLibreOfficeOracle(
+  jobs: OracleJob[],
+  soffice = resolveSoffice(),
+  captureOutput?: (index: number, packageBytes: Buffer) => void | Promise<void>,
+): Promise<string[]> {
   if (!soffice) throw new Error('runLibreOfficeOracle: no soffice binary (call resolveSoffice() and skip)');
   if (jobs.length === 0) return [];
 
@@ -334,12 +340,16 @@ export async function runLibreOfficeOracle(jobs: OracleJob[], soffice = resolveS
     }
     return Promise.all(outPaths.map(async (p, i) => {
       if (!existsSync(p)) throw new Error(`LibreOffice oracle produced no output for ${path.basename(p)}`);
+      const packageBytes = readFileSync(p);
+      // Optional test evidence from the very same saved package. Give callers
+      // a copy so collecting styles or renders cannot alter the default vote.
+      await captureOutput?.(i, Buffer.from(packageBytes));
       if (isOdtJob(jobs[i]!) || isConvertJob(jobs[i]!)) {
-        const contentXml = await readZipText(readFileSync(p), 'content.xml');
+        const contentXml = await readZipText(packageBytes, 'content.xml');
         if (contentXml == null) throw new Error(`content.xml not found in oracle output ${path.basename(p)}`);
         return contentXml;
       }
-      return extractDocumentXml(readFileSync(p));
+      return extractDocumentXml(packageBytes);
     }));
   } finally {
     if (!keepWork) rmSync(work, { recursive: true, force: true });

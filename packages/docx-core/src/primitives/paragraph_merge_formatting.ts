@@ -39,7 +39,7 @@ export function isEmptyParagraphFormattingRun(element: Element): boolean {
  *
  * @internal
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.26
- * @see openspec/changes/repair-paragraph-merge-formatting/design.md
+ * @see openspec/changes/archive/2026-09-17-repair-paragraph-merge-formatting/design.md
  */
 export function retainLeadingParagraphFormatting(leading: Element, following: Element): void {
   const source = properties(leading);
