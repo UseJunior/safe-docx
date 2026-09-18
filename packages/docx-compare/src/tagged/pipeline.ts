@@ -68,6 +68,7 @@ import {
 } from './relationshipIdCollision.js';
 import {
   AncillaryStorySafetyError,
+  canonicalNoteId,
   evaluateAncillaryFieldSafety,
 } from './ancillaryFieldSafety.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
@@ -82,7 +83,8 @@ import {
 } from './formattingFidelity.js';
 import { resolveTaggedRevisionAttributions } from './taggedTreeSerializer.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
-import { copiedParagraphNoteIds, separateRepeatedNoteReferences } from './noteReferenceIdentity.js';
+import { canonicalizeNoteArchiveIds, copiedParagraphNoteIds, separateRepeatedNoteReferences } from './noteReferenceIdentity.js';
+import { alignedInlineFootnoteAnchorPair } from './inlineFootnoteAnchorPair.js';
 import {
   collectBookmarkReferenceNamesInXml,
   collectWordPartBookmarkNames,
@@ -195,6 +197,7 @@ async function reconcileTaggedFootnotes(options: {
   auxiliaryIdRenumberings: readonly { label: string; fromId: string; toId: string }[];
   baseSide?: 'original' | 'revised';
   baseFootnotesArchive?: DocxArchive;
+  stabilizedNoteKinds: Set<'footnote' | 'endnote'>;
 }): Promise<string> {
   const pairs = findCorrespondingFootnotePairs(
     options.documentXml,
@@ -215,9 +218,9 @@ async function reconcileTaggedFootnotes(options: {
   const revised = parseEntries(revisedXml, 'w:footnote');
   const result = parseEntries(resultXml, 'w:footnote');
   const document = parseXml(options.documentXml);
-  const repairingCopiedNotes = copiedParagraphNoteIds(document, 'footnote').size > 0;
   const originalDocument = parseXml(originalDocumentXml);
   const revisedDocument = parseXml(revisedDocumentXml);
+  const repairingCopiedNotes = copiedParagraphNoteIds(document, 'footnote').size > 0;
   let changed = false;
   for (const pair of pairs) {
     const originalEntry = original.entries.get(pair.originalId);
@@ -226,15 +229,13 @@ async function reconcileTaggedFootnotes(options: {
     const discardedId = targetId === pair.originalId ? pair.revisedId : pair.originalId;
     const resultEntry = result.entries.get(targetId);
     if (!originalEntry || !revisedEntry || !resultEntry) continue;
-    // A copied paragraph requires per-reference note identities for reader
-    // import. Keep the existing collision-safe original/revised definitions
-    // for explicit inline edit pairs too: merging their anchors to one ID
-    // would reintroduce duplicate references and shift LibreOffice bindings.
-    // A lone stable reference still needs definition reconciliation on Reject.
+    // Copied paragraph references retain their established collision-safe
+    // definitions. Aligned inline edits instead keep one stable anchor and
+    // track the definition: deleting an old duplicate anchor can make readers
+    // discard the shared revised note body on Accept.
     const references = Array.from(document.getElementsByTagNameNS(OOXML.W_NS, 'footnoteReference'));
-    if (repairingCopiedNotes &&
-        references.some(ref => ref.getAttributeNS(OOXML.W_NS, 'id') === pair.originalId) &&
-        references.some(ref => ref.getAttributeNS(OOXML.W_NS, 'id') === pair.revisedId)) continue;
+    if (repairingCopiedNotes && references.some(ref => canonicalNoteId(ref.getAttributeNS(OOXML.W_NS, 'id') ?? '') === pair.originalId) &&
+        references.some(ref => canonicalNoteId(ref.getAttributeNS(OOXML.W_NS, 'id') ?? '') === pair.revisedId)) continue;
     if (
       footnoteDefinitionPairRequiresCollisionSafeFallback(originalEntry, revisedEntry) ||
       !isOnlyFootnoteAnchorInSourceParagraph(originalDocument, pair.originalId) ||
@@ -249,6 +250,11 @@ async function reconcileTaggedFootnotes(options: {
         }),
       )
     ) continue;
+    const stablePair = alignedInlineFootnoteAnchorPair(document, pair.originalId, pair.revisedId, options.author);
+    // Declining retains separate side definitions and coarse anchor history.
+    // Superseded bodies remain until complete-package orphan-note pruning;
+    // flattening changed anchor properties would lose their Reject semantics.
+    if (!stablePair) continue;
     const comparedChildren = compareFootnoteDefinitions(originalEntry, revisedEntry, {
       author: options.author,
       date: options.date,
@@ -258,14 +264,17 @@ async function reconcileTaggedFootnotes(options: {
     for (const child of comparedChildren) {
       resultEntry.appendChild(result.doc.importNode(child, true));
     }
-    for (const reference of Array.from(document.getElementsByTagName('w:footnoteReference'))) {
-      if (reference.getAttribute('w:id') === discardedId) {
-        reference.setAttribute('w:id', targetId);
-      }
-    }
+    const [oldWrapper, newWrapper, newRun, newReference] = stablePair;
+    newReference.setAttributeNS(OOXML.W_NS, 'w:id', targetId);
+    oldWrapper.parentNode!.removeChild(oldWrapper);
+    newWrapper.parentNode!.insertBefore(newRun, newWrapper);
+    newWrapper.parentNode!.removeChild(newWrapper);
+    const discarded = result.entries.get(discardedId);
+    if (discarded) discarded.parentNode!.removeChild(discarded);
     changed = true;
   }
   if (changed) {
+    options.stabilizedNoteKinds.add('footnote');
     options.resultArchive.setFile('word/footnotes.xml', serializer.serializeToString(result.doc));
     return serializer.serializeToString(document);
   }
@@ -323,6 +332,8 @@ export async function buildStandaloneTaggedPackage(
 ): Promise<StandaloneTaggedPackageResult> {
   const originalArchive = await DocxArchive.load(original);
   const revisedArchive = await DocxArchive.load(revised);
+  await canonicalizeNoteArchiveIds(originalArchive);
+  await canonicalizeNoteArchiveIds(revisedArchive);
   const unrepresentedChanges = await detectUnrepresentedChanges(
     originalArchive,
     revisedArchive,
@@ -429,6 +440,7 @@ export async function buildStandaloneTaggedPackage(
   }
 
   const resultArchive = await revisedArchive.clone();
+  const stabilizedNoteKinds = new Set<'footnote' | 'endnote'>();
   taggedXml = await reconcileTaggedFootnotes({
     originalArchive,
     revisedArchive,
@@ -438,6 +450,7 @@ export async function buildStandaloneTaggedPackage(
     date: options.date,
     formatDetection: options.formatDetection,
     auxiliaryIdRenumberings,
+    stabilizedNoteKinds,
   });
   resultArchive.setDocumentXml(taggedXml);
   await importReferencedRelationships(originalArchive, resultArchive, taggedXml);
@@ -469,7 +482,7 @@ export async function buildStandaloneTaggedPackage(
     }
   }
   const noteReferenceSourceIds = new Map<'footnote' | 'endnote', Map<string, string>>();
-  taggedXml = await separateRepeatedNoteReferences(resultArchive, taggedXml, noteReferenceSourceIds);
+  taggedXml = await separateRepeatedNoteReferences(resultArchive, taggedXml, noteReferenceSourceIds, stabilizedNoteKinds);
   resultArchive.setDocumentXml(taggedXml);
   const rootCommentIds = await collectStoryReferenceIds(
     resultArchive,
