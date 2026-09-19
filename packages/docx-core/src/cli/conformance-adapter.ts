@@ -15,9 +15,6 @@ import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { generateDocx } from '../generation/compile.js';
 import { DocxDocument } from '../primitives/document.js';
-import { OOXML, W } from '../primitives/namespaces.js';
-import { parseXml } from '../primitives/xml.js';
-import { readZipText } from '../primitives/zip.js';
 
 const SUPPORTED_PROTOCOL_VERSION = '1';
 export const SUPPORTED_CONFORMANCE_OPERATIONS: ReadonlySet<string> = new Set([
@@ -45,23 +42,6 @@ function argValue(argv: string[], flag: string): string | undefined {
   return idx !== -1 ? argv[idx + 1] : undefined;
 }
 
-async function hasTableRowRevision(buffer: Buffer, markerName: 'del' | 'ins'): Promise<boolean> {
-  const documentXml = await readZipText(buffer, 'word/document.xml');
-  if (!documentXml) return false;
-  const document = parseXml(documentXml);
-  const rows = Array.from(document.getElementsByTagNameNS(OOXML.W_NS, W.tr));
-  return rows.some((row) =>
-    Array.from(row.children).some(
-      (child) =>
-        child.namespaceURI === OOXML.W_NS &&
-        child.localName === W.trPr &&
-        Array.from(child.children).some(
-          (property) => property.namespaceURI === OOXML.W_NS && property.localName === markerName,
-        ),
-    ),
-  );
-}
-
 /** Classifies adapter support from the requested operation and input package shape. */
 export async function classifyConformanceSupport(
   operation: OperationDescriptor,
@@ -83,24 +63,6 @@ export async function classifyConformanceSupport(
   }
   if (!input) {
     throw new Error(`operation '${operation.operationName}' requires an input package for support classification`);
-  }
-  if (
-    operation.operationName === 'acceptAllTrackedChanges' &&
-    await hasTableRowRevision(input, 'del')
-  ) {
-    return {
-      supported: false,
-      reason: 'safe-docx adapter does not implement accepting deleted table-row revisions',
-    };
-  }
-  if (
-    operation.operationName === 'rejectAllTrackedChanges' &&
-    await hasTableRowRevision(input, 'ins')
-  ) {
-    return {
-      supported: false,
-      reason: 'safe-docx adapter does not implement rejecting inserted table-row revisions',
-    };
   }
   return { supported: true };
 }

@@ -34,3 +34,7 @@ await writeFile('hello.docx', document);
 For two-document comparison, use [`@usejunior/docx-compare`](../docx-compare). For agent-driven editing, use [`@usejunior/safe-docx`](../safe-docx).
 
 See the repository [architecture](../../docs/architecture.md), [support contract](SUPPORT.md), and [package source and examples](https://github.com/UseJunior/safe-docx/tree/main/packages/docx-core).
+
+## Bounded table-row editing
+
+`DocxDocument.insertTableRow(...)` and `deleteTableRow(...)` edit existing body-level tables in clean or tracked mode. The phase-one API intentionally accepts only rectangular, unmerged tables with direct rows and cells. It rejects spans, vertical merges, row offsets, nested tables, wrapped topology, table-property exceptions, and topology revisions with a typed `SafeDocxError.detail`; callers needing those shapes should use a lower-level OOXML workflow. Insertions return fresh paragraph anchors for chaining, and accept/reject resolve the emitted row revisions in body and supported side-story parts. For tracked edits, callers must seed `RevisionContext.idState` above existing package revision IDs; the MCP session layer performs that scan automatically.

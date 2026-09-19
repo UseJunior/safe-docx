@@ -59,8 +59,8 @@ const WORDPROCESSINGML_NAMESPACE = 'http://schemas.openxmlformats.org/wordproces
  * content wrappers and must survive tagged-tree publication.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.16
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.19
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26

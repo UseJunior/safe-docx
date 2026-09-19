@@ -110,6 +110,58 @@ function parseRequirementForScenario(content) {
   return requirementMap;
 }
 
+export function parseChangedRequirementNames(content) {
+  const changed = new Set();
+  let relevant = false;
+  for (const line of content.split('\n')) {
+    const section = line.match(/^##\s+(ADDED|MODIFIED|REMOVED) Requirements\s*$/);
+    if (section) {
+      relevant = section[1] === 'MODIFIED' || section[1] === 'REMOVED';
+      continue;
+    }
+    if (/^##\s+/.test(line)) relevant = false;
+    const requirement = relevant ? line.match(/^###\s+Requirement:\s*(.+?)\s*$/) : null;
+    if (requirement) changed.add(requirement[1].trim());
+  }
+  return changed;
+}
+
+function parseRequirementChanges(content) {
+  const changes = new Map();
+  let kind = null;
+  for (const line of content.split('\n')) {
+    const section = line.match(/^##\s+(ADDED|MODIFIED|REMOVED) Requirements\s*$/);
+    if (section) {
+      kind = section[1];
+      continue;
+    }
+    if (/^##\s+/.test(line)) kind = null;
+    const requirement = kind ? line.match(/^###\s+Requirement:\s*(.+?)\s*$/) : null;
+    if (requirement) changes.set(requirement[1].trim(), kind);
+  }
+  return changes;
+}
+
+function parseModifiedScenarioNames(content) {
+  const scenarios = new Set();
+  let inModified = false;
+  for (const line of content.split('\n')) {
+    const section = line.match(/^##\s+(ADDED|MODIFIED|REMOVED) Requirements\s*$/);
+    if (section) {
+      inModified = section[1] === 'MODIFIED';
+      continue;
+    }
+    if (/^##\s+/.test(line)) inModified = false;
+    const scenario = inModified ? line.match(/^####\s+Scenario:\s*(.+?)\s*$/) : null;
+    if (scenario) scenarios.add(normalizeScenarioName(scenario[1]));
+  }
+  return scenarios;
+}
+
+export function isCanonicalScenarioSuperseded(requirement, scenario, removedRequirements, modifiedScenarioNames) {
+  return removedRequirements.has(requirement) || modifiedScenarioNames.has(scenario);
+}
+
 function parseFeatureIdFromTest(content, testFile) {
   const direct = content.match(/const\s+TEST_FEATURE\s*=\s*['"]([^'"]+)['"]/);
   if (direct) return direct[1];
@@ -338,6 +390,9 @@ function buildMatrixMarkdown({ canonicalScenarios, deltaFeatureScenarios, storyS
           `| ${mdEscapeTableCell(scenario)} | ${status} | ${mdEscapeTableCell(fileCell)} | ${mdEscapeTableCell(notes)} |`,
         );
       }
+      for (const scenario of report.superseded ?? []) {
+        lines.push(`| ${mdEscapeTableCell(scenario)} | superseded | n/a | Later active delta modifies or removes the requirement |`);
+      }
 
       if (report.extra.length > 0) {
         lines.push('');
@@ -433,12 +488,28 @@ async function main() {
   // Parse scenarios per feature delta (and extend serialIdMap)
   const deltaFeatureScenarios = new Map();
   const deltaFeatureScenarioEntries = new Map();
+  const deltaFeatureRequirementMaps = new Map();
+  const activeChangedRequirements = new Set();
+  const activeRemovedRequirements = new Set();
+  const activeModifiedScenarioNames = new Set();
+  const activeFeatureIds = new Set();
   for (const [feature, specFiles] of deltaFeatureSpecFiles) {
     const scenarios = new Set();
     const scenarioEntriesByName = new Map();
+    const featureRequirementMap = new Map();
     for (const sf of specFiles) {
       const content = await fs.readFile(sf, 'utf-8');
+      const isArchived = sf.split(path.sep).includes('archive');
+      if (!isArchived) {
+        activeFeatureIds.add(feature);
+        for (const requirement of parseChangedRequirementNames(content)) activeChangedRequirements.add(requirement);
+        for (const [requirement, kind] of parseRequirementChanges(content)) {
+          if (kind === 'REMOVED') activeRemovedRequirements.add(requirement);
+        }
+        for (const scenario of parseModifiedScenarioNames(content)) activeModifiedScenarioNames.add(scenario);
+      }
       for (const scenario of parseScenariosFromSpec(content)) scenarios.add(scenario);
+      for (const [scenario, requirement] of parseRequirementForScenario(content)) featureRequirementMap.set(scenario, requirement);
       for (const entry of parseScenarioEntriesFromSpec(content)) {
         const existing = scenarioEntriesByName.get(entry.name);
         if (!existing || (!existing.id && entry.id)) {
@@ -449,6 +520,31 @@ async function main() {
     }
     deltaFeatureScenarios.set(feature, scenarios);
     deltaFeatureScenarioEntries.set(feature, [...scenarioEntriesByName.values()]);
+    deltaFeatureRequirementMaps.set(feature, featureRequirementMap);
+  }
+
+  // Archived scenarios cease to be strict obligations once a currently-active
+  // delta modifies or removes their requirement. The matrix retains them as
+  // superseded history instead of demanding misleading legacy test labels.
+  const supersededByFeature = new Map();
+  for (const [feature, scenarios] of deltaFeatureScenarios) {
+    if (activeFeatureIds.has(feature)) continue;
+    const requirementMapForFeature = deltaFeatureRequirementMaps.get(feature) ?? new Map();
+    const superseded = new Set([...scenarios].filter((scenario) =>
+      activeChangedRequirements.has(requirementMapForFeature.get(scenario))));
+    if (superseded.size === 0) continue;
+    supersededByFeature.set(feature, superseded);
+    for (const scenario of superseded) scenarios.delete(scenario);
+    deltaFeatureScenarioEntries.set(feature,
+      (deltaFeatureScenarioEntries.get(feature) ?? []).filter((entry) => !superseded.has(entry.name)));
+  }
+
+  for (const scenario of [...canonicalScenarios]) {
+    if (isCanonicalScenarioSuperseded(
+      requirementMap.get(scenario), scenario, activeRemovedRequirements, activeModifiedScenarioNames,
+    )) {
+      canonicalScenarios.delete(scenario);
+    }
   }
 
   // 3. Read all traceability test files (feature-aware) — search both test/ and src/
@@ -598,7 +694,7 @@ async function main() {
   const trulyExtra = [...allStorySet].filter((s) => !allKnownScenarios.has(s)).sort();
   const canonicalScenarioIdIssues = [];
   for (const scenario of canonicalScenarioEntries) {
-    if (!scenario.id || excludedScenarios.has(scenario.name)) {
+    if (!scenario.id || excludedScenarios.has(scenario.name) || !canonicalScenarios.has(scenario.name)) {
       continue;
     }
     if (!allStorySet.has(scenario.name)) {
@@ -699,6 +795,7 @@ async function main() {
       featureReports.push({
         feature,
         scenarios: sortedScenarios,
+        superseded: [...(supersededByFeature.get(feature) ?? [])].sort(),
         missing,
         extra,
         scenarioIdIssues,
@@ -755,4 +852,6 @@ async function main() {
   }
 }
 
-await main();
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  await main();
+}

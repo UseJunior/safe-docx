@@ -440,6 +440,30 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-13-5-12",
+      "title": "Deleted table row (w:del under w:trPr)",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.13.5.12"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del",
+      "claimRationale": "ECMA-376 Part 1 §17.13.5.12 defines an empty `w:del` inside `w:trPr` as a\ntracked deletion of the enclosing table row. It is a semantic marker rather\nthan an empty deleted-content wrapper. It does not imply a revision state for\nthe row's cells or contents, which must be revision-marked independently.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/taggedTreeShadow.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/taggedTreeShadow.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-13-5-14",
       "title": "Deleted run content",
       "classification": "targeted",
@@ -496,18 +520,18 @@
       ]
     },
     {
-      "id": "ECMA-PART1-17-13-5-16",
-      "title": "Deleted table row (w:del under w:trPr)",
+      "id": "ECMA-PART1-17-13-5-17",
+      "title": "Inserted table row (w:ins under w:trPr)",
       "classification": "targeted",
       "citation": {
         "standard": "ECMA-376",
         "edition": 5,
         "part": 1,
-        "section": "17.13.5.16"
+        "section": "17.13.5.17"
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
-      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del",
-      "claimRationale": "ECMA-376 Part 1 §17.13.5.16 defines an empty `w:del` inside `w:trPr` as a\ntracked deletion of the enclosing table row. It is a semantic marker rather\nthan an empty deleted-content wrapper, so tagged-tree publication preserves it.",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins",
+      "claimRationale": "ECMA-376 Part 1 §17.13.5.17 defines an empty `w:ins` inside `w:trPr` as a\ntracked insertion of the enclosing table row. It must remain attached to that\nrow so accepting keeps it and rejecting removes it. The row's cells and contents\nrequire their own revision markup.",
       "evidence": [
         {
           "kind": "source",
@@ -536,30 +560,6 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts"
-        }
-      ]
-    },
-    {
-      "id": "ECMA-PART1-17-13-5-19",
-      "title": "Inserted table row (w:ins under w:trPr)",
-      "classification": "targeted",
-      "citation": {
-        "standard": "ECMA-376",
-        "edition": 5,
-        "part": 1,
-        "section": "17.13.5.19"
-      },
-      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
-      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins",
-      "claimRationale": "ECMA-376 Part 1 §17.13.5.19 defines an empty `w:ins` inside `w:trPr` as a\ntracked insertion of the enclosing table row. It must remain attached to that\nrow so accepting keeps it and rejecting removes it.",
-      "evidence": [
-        {
-          "kind": "source",
-          "path": "packages/docx-compare/src/tagged/taggedTreeShadow.ts"
-        },
-        {
-          "kind": "test",
-          "path": "packages/docx-compare/src/tagged/taggedTreeShadow.test.ts"
         }
       ]
     },
@@ -659,6 +659,10 @@
         {
           "kind": "test",
           "path": "packages/docx-release-verifier/src/paragraph-mark-projection.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/paragraphMoveReview.test.ts"
         }
       ]
     },
@@ -679,6 +683,10 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/paragraphMoveReview.test.ts"
         }
       ]
     },
@@ -747,6 +755,10 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/paragraphMoveReview.test.ts"
         }
       ]
     },
@@ -775,6 +787,10 @@
         {
           "kind": "test",
           "path": "packages/docx-release-verifier/src/paragraph-mark-projection.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/paragraphMoveReview.test.ts"
         }
       ]
     },

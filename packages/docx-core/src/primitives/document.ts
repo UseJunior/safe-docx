@@ -89,6 +89,14 @@ import {
 import { revisionElementId } from './accept_changes.js';
 import { TRACKED_CHANGE_ELEMENT_NAME_SET } from './revision-vocabulary.js';
 import {
+  insertTableRow as insertTableRowImpl,
+  deleteTableRow as deleteTableRowImpl,
+  type InsertTableRowParams,
+  type InsertTableRowResult,
+  type DeleteTableRowParams,
+  type DeleteTableRowResult,
+} from './table_rows.js';
+import {
   bootstrapCommentParts,
   addComment as addCommentImpl,
   addCommentReply as addCommentReplyImpl,
@@ -357,6 +365,20 @@ export class DocxDocument {
     const p = this.getParagraphElementById(bookmarkId);
     if (!p) return null;
     return getParagraphText(p);
+  }
+
+  insertTableRow(params: InsertTableRowParams, ctx?: RevisionContext): InsertTableRowResult {
+    const result = insertTableRowImpl(this.documentXml, params, ctx);
+    this.dirty = true;
+    this.documentViewCache = null;
+    return result;
+  }
+
+  deleteTableRow(params: DeleteTableRowParams, ctx?: RevisionContext): DeleteTableRowResult {
+    const result = deleteTableRowImpl(this.documentXml, params, ctx);
+    this.dirty = true;
+    this.documentViewCache = null;
+    return result;
   }
 
   insertParagraphBookmarks(attachmentId: string): { paragraphCount: number } {

@@ -19,6 +19,7 @@
  */
 
 import { OOXML } from './namespaces.js';
+import { removeTableRowAndEmptyTable } from './table_rows.js';
 import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun, removeEmptyParagraphMarkProperties } from './paragraph_merge_formatting.js';
 import type { RevisionFilter } from './accept_changes.js';
 
@@ -48,10 +49,7 @@ export type RejectChangesResult = {
   movesReverted: number;
   propertyChangesReverted: number;
   /**
-   * Row-level revision markers left in place because this engine cannot resolve
-   * them. A non-zero count means the output still holds tracked-change markup
-   * and does not match what a word processor would project. Reported separately
-   * from the resolved counters: a preserved marker is not a reverted change.
+   * Compatibility field. Supported row-level markers are resolved and report 0.
    */
   unresolvedRowRevisions: number;
 };
@@ -98,14 +96,21 @@ function isRowPropertyRevisionMarker(el: Element): boolean {
   return parent !== null && isW(parent, 'trPr');
 }
 
-/** Row-level markers the filter selects, which this engine cannot resolve. */
-function countUnresolvedRowRevisions(
-  container: Document | Element,
-  localName: string,
-  filter: RevisionFilter,
-): number {
-  return collectByLocalName(container, localName).filter(filter).filter(isRowPropertyRevisionMarker)
-    .length;
+function rejectSelectedRowRevisions(root: Element, filter: RevisionFilter): { insertions: number; deletions: number } {
+  let insertions = 0;
+  let deletions = 0;
+  for (const marker of collectByLocalName(root, 'ins').filter(filter).filter(isRowPropertyRevisionMarker)) {
+    const row = marker.parentNode?.parentNode;
+    if (row?.parentNode && isW(row as Element, 'tr')) {
+      removeTableRowAndEmptyTable(root, row as Element);
+      insertions++;
+    }
+  }
+  for (const marker of collectByLocalName(root, 'del').filter(filter).filter(isRowPropertyRevisionMarker)) {
+    marker.parentNode?.removeChild(marker);
+    deletions++;
+  }
+  return { insertions, deletions };
 }
 
 function removeAllByLocalName(
@@ -430,6 +435,8 @@ function relocateBookmarks(p: Element, paragraphsToRemove: Set<Element>): void {
  * Mutates the Document in place (same convention as acceptChanges).
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.22
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.25
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
@@ -457,6 +464,10 @@ export function rejectChanges(
       unresolvedRowRevisions: 0,
     };
   }
+
+  // Resolve row topology before paragraph-mark analysis, mirroring Word's
+  // accept/reject semantics for direct w:trPr row revision markers.
+  const rowRevisions = rejectSelectedRowRevisions(root, filter);
 
   // Phase A — Identify inserted or moved-to paragraph marks.
   const markInsertedParagraphs = new Set<Element>();
@@ -537,16 +548,7 @@ export function rejectChanges(
   }
 
   // Phase C — Remove insertions and move destinations
-  // A `w:trPr > w:ins` marks the ROW as inserted; rejecting it should remove the
-  // whole `w:tr`, which this engine does not implement (conformance-adapter.ts
-  // already classifies the combination as unsupported). Sweeping it as a content
-  // insertion would strip the marker and keep the row — silent divergence with no
-  // residual record. Preserve it and report it instead (#845).
-  //
-  // The mirror direction needs no guard: rejecting a `w:trPr > w:del` correctly
-  // keeps the row and drops the marker, which Phase D's unwrap already does.
-  const unresolvedRowRevisions = countUnresolvedRowRevisions(root, 'ins', filter);
-  const insertionsRemoved = removeAllByLocalName(root, 'ins', filter, isRowPropertyRevisionMarker);
+  const insertionsRemoved = rowRevisions.insertions + removeAllByLocalName(root, 'ins', filter, isRowPropertyRevisionMarker);
   const moveToRemoved = removeAllByLocalName(root, 'moveTo', filter);
   removeAllByLocalName(root, 'moveToRangeStart', filter);
   removeAllByLocalName(root, 'moveToRangeEnd', filter);
@@ -554,7 +556,7 @@ export function rejectChanges(
   removeAllByLocalName(root, 'moveFromRangeEnd', filter);
 
   // Phase D — Unwrap deletions and convert w:delText → w:t
-  const deletionsRestored = unwrapAllByLocalName(root, 'del', filter);
+  const deletionsRestored = rowRevisions.deletions + unwrapAllByLocalName(root, 'del', filter);
 
   // Rename w:delText → w:t so getParagraphText() sees the restored text — but
   // only for delTexts whose w:del wrapper was just unwrapped (no surviving w:del
@@ -635,10 +637,8 @@ export function rejectChanges(
         // page-setup property revision and must survive rejection.
         // A `w:trPr` may carry BOTH a row-level revision marker and a
         // `w:trPrChange`. Restoring the snapshot replaces the whole `w:trPr`,
-        // which would silently destroy any surviving marker — including the
-        // unresolved `w:ins` Phase C deliberately preserved (making the reported
-        // `unresolvedRowRevisions` disagree with the document) and any FOREIGN
-        // marker a selective reject promised to leave byte-untouched.
+        // which would silently destroy any surviving FOREIGN marker that a
+        // selective reject promised to leave byte-untouched.
         //
         // `w:trPrChange` carries CT_TrPrBase, which has no row-revision
         // children of its own, so transplanting the survivors cannot collide
@@ -726,6 +726,6 @@ export function rejectChanges(
     deletionsRestored,
     movesReverted: moveFromUnwrapped + moveToRemoved,
     propertyChangesReverted,
-    unresolvedRowRevisions,
+    unresolvedRowRevisions: 0,
   };
 }
