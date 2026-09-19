@@ -445,16 +445,14 @@ async function analyzeRenderedPackage(bytes: Buffer, pageCount: number): Promise
         }
       }
       if (!isPaginationStory) continue;
-      for (const localName of ['t', 'delText'] as const) {
-        for (const text of Array.from(document.getElementsByTagNameNS(W_NS, localName))) {
-          // A cached field result (e.g. the stored "1" of a PAGE fldSimple) is
-          // not literal story text: at render time the field value replaces
-          // it. Counting it would double-reserve alongside the numeric
-          // page-field budget and could eat a legitimate body token.
-          if (hasFieldResultAncestor(text)) continue;
-          for (const token of tokenizeRenderedText(text.textContent ?? '')) {
-            headerFooterTokenCounts.set(token, (headerFooterTokenCounts.get(token) ?? 0) + 1);
-          }
+      const complexFieldResults = complexFieldResultNodes(document);
+      // Renderers concatenate adjacent runs and revision spans before text
+      // extraction. Build that same paragraph character stream before
+      // tokenizing so punctuation next to revised text remains one token.
+      for (const paragraph of Array.from(document.getElementsByTagNameNS(W_NS, 'p'))) {
+        const literal = renderedParagraphLiteral(paragraph, complexFieldResults);
+        for (const token of tokenizeRenderedText(literal)) {
+          headerFooterTokenCounts.set(token, (headerFooterTokenCounts.get(token) ?? 0) + 1);
         }
       }
     }
@@ -481,6 +479,55 @@ function parseStoryXml(xml: string): ReturnType<DOMParser['parseFromString']> | 
   } catch {
     return null;
   }
+}
+
+/**
+ * Complex-field results occupy sibling runs between `separate` and `end`, so
+ * they cannot be identified through an ancestor check like `w:fldSimple`.
+ * Nested fields retain the result state of every open field.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @see https://github.com/UseJunior/safe-docx/issues/998#issuecomment-5739439177
+ */
+function complexFieldResultNodes(document: NonNullable<ReturnType<typeof parseStoryXml>>): Set<XmlElement> {
+  const results = new Set<XmlElement>();
+  const fieldStack: boolean[] = [];
+  for (const element of Array.from(document.getElementsByTagName('*'))) {
+    if (element.namespaceURI !== W_NS) continue;
+    if (element.localName === 'fldChar') {
+      const kind = element.getAttributeNS(W_NS, 'fldCharType');
+      if (kind === 'begin') fieldStack.push(false);
+      else if (kind === 'separate' && fieldStack.length > 0) fieldStack[fieldStack.length - 1] = true;
+      else if (kind === 'end') fieldStack.pop();
+    } else if ((element.localName === 't' || element.localName === 'delText') && fieldStack.some(Boolean)) {
+      results.add(element);
+    }
+  }
+  return results;
+}
+
+function renderedParagraphLiteral(paragraph: XmlElement, complexFieldResults: ReadonlySet<XmlElement>): string {
+  let literal = '';
+  for (const element of Array.from(paragraph.getElementsByTagName('*'))) {
+    if (element.namespaceURI !== W_NS) continue;
+    const containingParagraph = nearestAncestor(element, 'p');
+    if (containingParagraph !== paragraph) continue;
+    if (element.localName === 't' || element.localName === 'delText') {
+      // Cached simple- and complex-field results are replaced by the renderer
+      // and are accounted for separately by the PAGE-family field budget.
+      if (!hasFieldResultAncestor(element) && !complexFieldResults.has(element)) literal += element.textContent ?? '';
+    } else if (element.localName === 'tab' || element.localName === 'br' || element.localName === 'cr' || element.localName === 'ptab') {
+      literal += ' ';
+    }
+  }
+  return literal;
+}
+
+function nearestAncestor(node: XmlElement, localName: string): XmlElement | undefined {
+  for (let ancestor = node.parentNode; ancestor !== null; ancestor = ancestor.parentNode) {
+    if (ancestor.nodeType === 1 && (ancestor as XmlElement).namespaceURI === W_NS && (ancestor as XmlElement).localName === localName) return ancestor as XmlElement;
+  }
+  return undefined;
 }
 
 function hasFieldResultAncestor(node: XmlElement): boolean {
