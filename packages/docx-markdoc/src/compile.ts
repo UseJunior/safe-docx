@@ -557,7 +557,7 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     if (projected.originalText !== sourceText || (replacement && replacement.originalText !== sourceText)) {
       throw new DocxMarkdocError('SOURCE_TEXT_DRIFT', `Paragraph ${node.id} original projection does not match source.`);
     }
-    if (node.table_context) unsupported.add('tables');
+    if (node.table_context) unsupported.add('table-structural-operations');
     if (node.footnote_refs?.length) unsupported.add('footnotes');
     if (node.comments?.length) unsupported.add('comments');
   });
@@ -566,7 +566,8 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     if (!id) continue;
     const node = nodes.find((candidate) => candidate.id === id);
     if (!node) throw new DocxMarkdocError('MISSING_ANCHOR', `Operation ${operation.operationId} targets missing paragraph ${id}.`);
-    if (node.table_context || node.footnote_refs?.length || node.comments?.length) {
+    if ((node.table_context && operation.kind === 'delete-source' && node.table_context.cell_para_count <= 1)
+      || node.footnote_refs?.length || node.comments?.length) {
       throw new DocxMarkdocError('UNSUPPORTED_EDIT_STRUCTURE', `Operation ${operation.operationId} intersects unsupported structure at ${id}.`);
     }
   }
@@ -575,7 +576,7 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     if (!anchor) {
       throw new DocxMarkdocError('MISSING_ANCHOR', `Operation ${operation.operationId} targets missing paragraph ${operation.anchorId}.`);
     }
-    if (anchor.table_context || anchor.footnote_refs?.length || anchor.comments?.length) {
+    if (anchor.footnote_refs?.length || anchor.comments?.length) {
       throw new DocxMarkdocError('UNSUPPORTED_EDIT_STRUCTURE', `Operation ${operation.operationId} intersects unsupported structure at ${operation.anchorId}.`);
     }
     const styleSource = operation.styleSourceId
@@ -587,7 +588,15 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
         `Operation ${operation.operationId} names missing style source ${operation.styleSourceId}.`,
       );
     }
-    if (styleSource.table_context || styleSource.footnote_refs?.length || styleSource.comments?.length) {
+    const anchorCell = anchor.table_context;
+    const styleCell = styleSource.table_context;
+    const crossesTableCell = anchorCell
+      ? !styleCell
+        || styleCell.table_id !== anchorCell.table_id
+        || styleCell.row_index !== anchorCell.row_index
+        || styleCell.col_index !== anchorCell.col_index
+      : styleCell !== undefined;
+    if (crossesTableCell || styleSource.footnote_refs?.length || styleSource.comments?.length) {
       throw new DocxMarkdocError(
         'UNSUPPORTED_EDIT_STRUCTURE',
         `Operation ${operation.operationId} style source ${styleSource.id} intersects unsupported structure.`,

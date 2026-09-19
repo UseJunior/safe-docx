@@ -2,6 +2,7 @@ import { describe, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { itAllure } from '../../docx-core/src/testing/allure-test.js';
+import { buildDocxFromBodyXml } from '../../docx-core/src/testing/ooxml-fixtures.js';
 import JSZip from 'jszip';
 import { buildDocxFromParts, buildSyntheticDocx, DocxDocument, parseXml } from '@usejunior/docx-core';
 import { compileMarkdoc } from './compile.js';
@@ -10,6 +11,8 @@ import { exportAdjacentRevisionPairs, exportEditPairs } from './export.js';
 import { importDocxToMarkdoc } from './import.js';
 import { inspectMarkdocSource } from './inspect.js';
 import { parseMarkdoc, requireMarkdoc } from './markdoc.js';
+
+const tableEditTest = itAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.38' });
 
 function withBeforeAfterEdit(markdoc: string): string {
   const opening = /\{% para ([^\n]+) %\}\nThe Old Name\./;
@@ -66,6 +69,86 @@ describe('brownfield Markdoc authoring', () => {
     const pairs = exportEditPairs(result.ir, { verified: result.certificate.passed });
     expect(pairs[0]).toMatchObject({ before: 'Original provision.', after: 'Revised provision.', verified: true });
     expect(pairs[0]?.rationales).toEqual([]);
+  });
+
+  tableEditTest('[SDX-MDOC-108] edits table-cell text and paragraphs without changing table topology', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:tbl>'
+      + '<w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="3600"/></w:tblGrid>'
+      + '<w:tr><w:tc><w:tcPr><w:tcW w:w="2400" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Label</w:t></w:r></w:p></w:tc>'
+      + '<w:tc><w:tcPr><w:tcW w:w="3600" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Old value</w:t></w:r></w:p>'
+      + '<w:p><w:r><w:t>Remove this line.</w:t></w:r></w:p></w:tc></w:tr>'
+      + '</w:tbl>',
+    );
+    const imported = await importDocxToMarkdoc(original);
+    const value = requireMarkdoc(imported.markdoc).scaffold.find((paragraph) => paragraph.originalText === 'Old value');
+    if (!value) throw new Error('table value paragraph missing');
+    let markdoc = withCanonicalChange(imported.markdoc, 'Old value', 'New value', 'update-cell');
+    markdoc = withCanonicalChange(markdoc, 'Remove this line.', '', 'delete-cell-line');
+    markdoc += [
+      `{% insert-after anchor="${value.id}" operation="insert-cell-line" style-source="${value.id}" %}`,
+      '{% after %}', 'Inserted line.', '{% /after %}', '{% /insert-after %}', '',
+    ].join('\n');
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc, {
+      author: 'Test Author',
+      date: new Date('2026-09-18T00:00:00.000Z'),
+    });
+
+    expect(result.certificate).toMatchObject({
+      passed: true,
+      rejectAllEqualsSource: true,
+      acceptAllEqualsClean: true,
+      unsupportedStructures: ['table-structural-operations'],
+    });
+    const [source, clean, accepted, rejected] = await Promise.all([
+      DocxDocument.load(imported.anchoredSource),
+      DocxDocument.load(result.clean),
+      DocxDocument.load(result.tracked),
+      DocxDocument.load(result.tracked),
+    ]);
+    await Promise.all([accepted.acceptChanges(), rejected.rejectChanges()]);
+    expect(clean.buildDocumentView().nodes.map((node) => node.raw_text)).toEqual(['Label', 'New value', 'Inserted line.']);
+    expect(accepted.buildDocumentView().nodes.map((node) => node.raw_text)).toEqual(['Label', 'New value', 'Inserted line.']);
+    expect(rejected.buildDocumentView().nodes.map((node) => node.raw_text)).toEqual(['Label', 'Old value', 'Remove this line.']);
+
+    const topology = async (buffer: Buffer) => {
+      const zip = await JSZip.loadAsync(buffer);
+      const xml = parseXml(await zip.file('word/document.xml')!.async('string'));
+      return {
+        tables: xml.getElementsByTagNameNS('*', 'tbl').length,
+        rows: xml.getElementsByTagNameNS('*', 'tr').length,
+        cells: xml.getElementsByTagNameNS('*', 'tc').length,
+        gridColumns: xml.getElementsByTagNameNS('*', 'gridCol').length,
+      };
+    };
+    const [sourceBuffer, acceptedBuffer, rejectedBuffer] = await Promise.all([
+      source.toBuffer({ cleanBookmarks: false }).then((output) => output.buffer),
+      accepted.toBuffer({ cleanBookmarks: false }).then((output) => output.buffer),
+      rejected.toBuffer({ cleanBookmarks: false }).then((output) => output.buffer),
+    ]);
+    const sourceTopology = await topology(sourceBuffer);
+    expect(await topology(result.clean)).toEqual(sourceTopology);
+    expect(await topology(acceptedBuffer)).toEqual(sourceTopology);
+    expect(await topology(rejectedBuffer)).toEqual(sourceTopology);
+  });
+
+  itAllure('[SDX-MDOC-109] rejects sole-paragraph deletion and cross-cell formatting sources', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:tbl><w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="2400"/></w:tblGrid>'
+      + '<w:tr><w:tc><w:p><w:r><w:t>Required cell paragraph.</w:t></w:r></w:p></w:tc>'
+      + '<w:tc><w:p><w:r><w:t>Other cell.</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
+    );
+    const imported = await importDocxToMarkdoc(original);
+    const [required, other] = requireMarkdoc(imported.markdoc).scaffold;
+    if (!required || !other) throw new Error('table cell paragraphs missing');
+    const deletion = withCanonicalChange(imported.markdoc, 'Required cell paragraph.', '', 'delete-cell-paragraph');
+    await expect(compileMarkdoc(imported.anchoredSource, deletion)).rejects.toMatchObject({
+      code: 'UNSUPPORTED_EDIT_STRUCTURE',
+    });
+    const crossCellInsertion = `${imported.markdoc}\n{% insert-after anchor="${required.id}" operation="cross-cell" style-source="${other.id}" %}\n{% after %}\nInserted.\n{% /after %}\n{% /insert-after %}\n`;
+    await expect(compileMarkdoc(imported.anchoredSource, crossCellInsertion)).rejects.toMatchObject({
+      code: 'UNSUPPORTED_EDIT_STRUCTURE',
+    });
   });
 
   itAllure('[SDX-MDOC-63] exports paired rationale records without collapsing visibility', async () => {

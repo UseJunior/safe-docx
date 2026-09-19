@@ -201,6 +201,12 @@ list identity. Inserting a numbered item requires an explicit existing
 paragraph as the formatting source so the compiler never guesses between an
 adjacent list level and a list terminator:
 
+Anchored text replacement, insertion, and deletion are supported inside an
+existing table cell. Inserted paragraphs must inherit formatting from that same
+cell, and the compiler refuses to delete a cell's sole required paragraph.
+These operations preserve row, cell, grid, and merge topology; changing that
+topology remains out of scope until authored through a dedicated table contract.
+
 ```markdoc
 {% insert-after anchor="_bk_current_item" operation="add-item" style-source="_bk_current_item" %}
 {% after %}The new numbered item.{% /after %}
