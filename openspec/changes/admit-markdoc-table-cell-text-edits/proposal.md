@@ -13,7 +13,7 @@ editing and comparison layers already preserve the surrounding table.
   table cells.
 - Preserve the table's row, cell, grid, merge, and property topology unchanged.
 - Require inserted paragraphs to use a formatting source in the same physical
-  cell, reject any operation set that deletes every direct cell paragraph, and
+  cell, reject any operation set that leaves no trailing direct cell paragraph, and
   keep vertical-merge continuation cells fail-closed because their content is
   not independently visible.
 - Keep structural row, column, cell, and merged-grid operations owned by issue

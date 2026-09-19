@@ -524,6 +524,8 @@ function directChildren(parent: Element, localName: string): Element[] {
     .filter((child): child is Element => child.nodeType === 1 && (child as Element).localName === localName);
 }
 
+const TABLE_CELL_BLOCK_ELEMENTS = new Set(['p', 'tbl', 'sdt', 'customXml', 'altChunk']);
+
 /**
  * A vertical-merge continuation cell does not own independently visible
  * content; Word renders the restart cell's content for the merged region.
@@ -590,7 +592,7 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     if (node.footnote_refs?.length) unsupported.add('footnotes');
     if (node.comments?.length) unsupported.add('comments');
   });
-  const deletionsByCell = new Map<Element, { count: number; total: number; operationId: string }>();
+  const deletionsByCell = new Map<Element, { paragraphs: Set<Element>; operationId: string }>();
   for (const operation of ir.operations) {
     const id = sourceOperationId(operation);
     if (!id) continue;
@@ -601,20 +603,24 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
       throw new DocxMarkdocError('UNSUPPORTED_EDIT_STRUCTURE', `Operation ${operation.operationId} intersects unsupported structure at ${id}.`);
     }
     if (cell && operation.kind === 'delete-source') {
+      const paragraph = source.getParagraphElementById(id);
+      if (!paragraph) throw new DocxMarkdocError('MISSING_ANCHOR', `Paragraph ${id} was not found.`);
       const entry = deletionsByCell.get(cell) ?? {
-        count: 0,
-        total: directChildren(cell, 'p').length,
+        paragraphs: new Set<Element>(),
         operationId: operation.operationId,
       };
-      entry.count += 1;
+      entry.paragraphs.add(paragraph);
       deletionsByCell.set(cell, entry);
     }
   }
-  for (const entry of deletionsByCell.values()) {
-    if (entry.count >= entry.total) {
+  for (const [cell, entry] of deletionsByCell) {
+    const remainingBlocks = Array.from(cell.childNodes)
+      .filter((child): child is Element => child.nodeType === 1)
+      .filter((child) => TABLE_CELL_BLOCK_ELEMENTS.has(child.localName) && !entry.paragraphs.has(child));
+    if (remainingBlocks.at(-1)?.localName !== 'p') {
       throw new DocxMarkdocError(
         'UNSUPPORTED_EDIT_STRUCTURE',
-        `Operation ${entry.operationId} would delete every direct paragraph in a table cell; a cell must retain a trailing paragraph.`,
+        `Operation ${entry.operationId} would leave a table cell without a trailing paragraph.`,
       );
     }
   }

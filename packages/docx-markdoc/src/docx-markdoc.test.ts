@@ -163,7 +163,7 @@ describe('brownfield Markdoc authoring', () => {
     markdoc = withCanonicalChange(markdoc, 'Second direct paragraph.', '', 'delete-second');
     await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({
       code: 'UNSUPPORTED_EDIT_STRUCTURE',
-      message: expect.stringContaining('delete every direct paragraph'),
+      message: expect.stringContaining('without a trailing paragraph'),
     });
   });
 
@@ -179,7 +179,24 @@ describe('brownfield Markdoc authoring', () => {
     const markdoc = withCanonicalChange(imported.markdoc, 'Outer trailing paragraph.', '', 'delete-trailing');
     await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({
       code: 'UNSUPPORTED_EDIT_STRUCTURE',
-      message: expect.stringContaining('delete every direct paragraph'),
+      message: expect.stringContaining('without a trailing paragraph'),
+    });
+  });
+
+  itAllure('[SDX-MDOC-109] rejects deletion that would expose a nested table as the final cell block', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc>'
+      + '<w:p><w:r><w:t>Leading paragraph.</w:t></w:r></w:p>'
+      + '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1200"/></w:tblGrid><w:tr><w:tc>'
+      + '<w:p><w:r><w:t>Nested paragraph.</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+      + '<w:p><w:r><w:t>Required trailing paragraph.</w:t></w:r></w:p>'
+      + '</w:tc></w:tr></w:tbl>',
+    );
+    const imported = await importDocxToMarkdoc(original);
+    const markdoc = withCanonicalChange(imported.markdoc, 'Required trailing paragraph.', '', 'delete-trailing');
+    await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({
+      code: 'UNSUPPORTED_EDIT_STRUCTURE',
+      message: expect.stringContaining('without a trailing paragraph'),
     });
   });
 

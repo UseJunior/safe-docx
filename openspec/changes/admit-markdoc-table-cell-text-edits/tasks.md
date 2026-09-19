@@ -8,8 +8,8 @@
 
 - [x] 2.1 Admit replacement, insertion, and safe deletion operations targeting
       table-cell paragraphs.
-- [x] 2.2 Reject cross-cell formatting sources, deletion sets that empty a
-      cell, and edits in vertical-merge continuation cells.
+- [x] 2.2 Reject cross-cell formatting sources, deletion sets that leave no
+      trailing cell paragraph, and edits in vertical-merge continuation cells.
 - [x] 2.3 Narrow the certificate exclusion to structural table operations.
 
 ## 3. Evidence
