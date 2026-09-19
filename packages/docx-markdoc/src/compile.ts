@@ -512,6 +512,35 @@ function sourceOperationId(operation: EditOperation): string | null {
   return isInsertOperation(operation) ? null : operation.id;
 }
 
+function nearestTableCell(paragraph: Element | null): Element | undefined {
+  for (let current = paragraph?.parentNode; current; current = current.parentNode) {
+    if (current.nodeType === 1 && (current as Element).localName === 'tc') return current as Element;
+  }
+  return undefined;
+}
+
+function directChildren(parent: Element, localName: string): Element[] {
+  return Array.from(parent.childNodes)
+    .filter((child): child is Element => child.nodeType === 1 && (child as Element).localName === localName);
+}
+
+const TABLE_CELL_BLOCK_ELEMENTS = new Set(['p', 'tbl', 'sdt', 'customXml', 'altChunk']);
+
+/**
+ * A vertical-merge continuation cell does not own independently visible
+ * content; Word renders the restart cell's content for the merged region.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.84
+ * @see https://github.com/UseJunior/safe-docx/issues/998
+ */
+function isVerticalMergeContinuation(cell: Element): boolean {
+  const tcPr = directChildren(cell, 'tcPr')[0];
+  const merge = tcPr ? directChildren(tcPr, 'vMerge')[0] : undefined;
+  if (!merge) return false;
+  const value = merge.getAttribute('w:val') || merge.getAttribute('val');
+  return !value || value === 'continue';
+}
+
 async function unchangedPartsEqual(source: Buffer, clean: Buffer): Promise<boolean> {
   const [a, b] = await Promise.all([JSZip.loadAsync(source), JSZip.loadAsync(clean)]);
   const names = new Set([...Object.keys(a.files), ...Object.keys(b.files)]);
@@ -536,6 +565,8 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     .filter((operation) => operation.kind === 'replace-source' || operation.kind === 'delete-source')
     .map((operation) => [sourceOperationId(operation), operation]));
   const unsupported = new Set<string>();
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const cellForId = (id: string): Element | undefined => nearestTableCell(source.getParagraphElementById(id));
   nodes.forEach((node, index) => {
     const projected = ir.scaffold[index];
     if (!projected || projected.id !== node.id) {
@@ -557,29 +588,52 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     if (projected.originalText !== sourceText || (replacement && replacement.originalText !== sourceText)) {
       throw new DocxMarkdocError('SOURCE_TEXT_DRIFT', `Paragraph ${node.id} original projection does not match source.`);
     }
-    if (node.table_context) unsupported.add('tables');
+    if (node.table_context) unsupported.add('table-structural-operations');
     if (node.footnote_refs?.length) unsupported.add('footnotes');
     if (node.comments?.length) unsupported.add('comments');
   });
+  const deletionsByCell = new Map<Element, { paragraphs: Set<Element>; operationId: string }>();
   for (const operation of ir.operations) {
     const id = sourceOperationId(operation);
     if (!id) continue;
-    const node = nodes.find((candidate) => candidate.id === id);
+    const node = nodeById.get(id);
     if (!node) throw new DocxMarkdocError('MISSING_ANCHOR', `Operation ${operation.operationId} targets missing paragraph ${id}.`);
-    if (node.table_context || node.footnote_refs?.length || node.comments?.length) {
+    const cell = cellForId(id);
+    if ((cell && isVerticalMergeContinuation(cell)) || node.footnote_refs?.length || node.comments?.length) {
       throw new DocxMarkdocError('UNSUPPORTED_EDIT_STRUCTURE', `Operation ${operation.operationId} intersects unsupported structure at ${id}.`);
+    }
+    if (cell && operation.kind === 'delete-source') {
+      const paragraph = source.getParagraphElementById(id);
+      if (!paragraph) throw new DocxMarkdocError('MISSING_ANCHOR', `Paragraph ${id} was not found.`);
+      const entry = deletionsByCell.get(cell) ?? {
+        paragraphs: new Set<Element>(),
+        operationId: operation.operationId,
+      };
+      entry.paragraphs.add(paragraph);
+      deletionsByCell.set(cell, entry);
+    }
+  }
+  for (const [cell, entry] of deletionsByCell) {
+    const remainingBlocks = Array.from(cell.childNodes)
+      .filter((child): child is Element => child.nodeType === 1)
+      .filter((child) => TABLE_CELL_BLOCK_ELEMENTS.has(child.localName) && !entry.paragraphs.has(child));
+    if (remainingBlocks.at(-1)?.localName !== 'p') {
+      throw new DocxMarkdocError(
+        'UNSUPPORTED_EDIT_STRUCTURE',
+        `Operation ${entry.operationId} would leave a table cell without a trailing paragraph.`,
+      );
     }
   }
   for (const operation of ir.operations.filter(isInsertOperation)) {
-    const anchor = nodes.find((candidate) => candidate.id === operation.anchorId);
+    const anchor = nodeById.get(operation.anchorId);
     if (!anchor) {
       throw new DocxMarkdocError('MISSING_ANCHOR', `Operation ${operation.operationId} targets missing paragraph ${operation.anchorId}.`);
     }
-    if (anchor.table_context || anchor.footnote_refs?.length || anchor.comments?.length) {
+    if (anchor.footnote_refs?.length || anchor.comments?.length) {
       throw new DocxMarkdocError('UNSUPPORTED_EDIT_STRUCTURE', `Operation ${operation.operationId} intersects unsupported structure at ${operation.anchorId}.`);
     }
     const styleSource = operation.styleSourceId
-      ? nodes.find((candidate) => candidate.id === operation.styleSourceId)
+      ? nodeById.get(operation.styleSourceId)
       : anchor;
     if (!styleSource) {
       throw new DocxMarkdocError(
@@ -587,7 +641,11 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
         `Operation ${operation.operationId} names missing style source ${operation.styleSourceId}.`,
       );
     }
-    if (styleSource.table_context || styleSource.footnote_refs?.length || styleSource.comments?.length) {
+    const anchorCell = cellForId(anchor.id);
+    const styleCell = cellForId(styleSource.id);
+    const crossesTableCell = anchorCell ? styleCell !== anchorCell : styleCell !== undefined;
+    if ((anchorCell && isVerticalMergeContinuation(anchorCell))
+      || crossesTableCell || styleSource.footnote_refs?.length || styleSource.comments?.length) {
       throw new DocxMarkdocError(
         'UNSUPPORTED_EDIT_STRUCTURE',
         `Operation ${operation.operationId} style source ${styleSource.id} intersects unsupported structure.`,

@@ -210,6 +210,17 @@ adjacent list level and a list terminator:
 This supports editing text within existing list topology; changing numbering
 definitions, restarting a list, or changing list levels remains out of scope.
 
+Anchored text replacement, insertion, and deletion are supported inside an
+existing table cell. Inserted paragraphs must inherit formatting from that same
+physical cell—a nested table's cells are distinct from the enclosing cell—and
+the compiler refuses any deletion set that would leave the cell without a
+trailing direct paragraph. Replace the retained paragraph instead of
+combining deletion and insertion when a cell contains only one paragraph.
+Vertical-merge continuation cells remain non-editable because their content is
+not independently visible. These operations preserve row, cell, grid, and merge
+topology; changing that topology remains out of scope until authored through a
+dedicated table contract.
+
 Mixed-format paragraphs are edited surgically: unchanged spans retain their
 source runs, and a replacement inherits the one formatting class occupied by
 the deleted source span. If an insertion lands exactly between incompatible
