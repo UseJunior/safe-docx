@@ -107,9 +107,9 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-4-3` | w:commentRangeEnd comment anchor closing | 5 | 1 | 17.13.4.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeEnd` | packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
 | `ECMA-PART1-17-13-4-5` | w:commentReference comment reference mark | 5 | 1 | 17.13.4.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentReference` | packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
 | `ECMA-PART1-17-13-5-15` | Deleted paragraph mark (w:del under w:pPr/w:rPr) | 5 | 1 | 17.13.5.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts |
-| `ECMA-PART1-17-13-5-16` | Deleted table row (w:del under w:trPr) | 5 | 1 | 17.13.5.16 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | packages/docx-compare/src/tagged/taggedTreeShadow.ts; packages/docx-compare/src/tagged/taggedTreeShadow.test.ts |
+| `ECMA-PART1-17-13-5-12` | Deleted table row (w:del under w:trPr) | 5 | 1 | 17.13.5.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | packages/docx-compare/src/tagged/taggedTreeShadow.ts; packages/docx-compare/src/tagged/taggedTreeShadow.test.ts |
 | `ECMA-PART1-17-13-5-20` | Inserted paragraph mark (w:ins under w:pPr/w:rPr) | 5 | 1 | 17.13.5.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts |
-| `ECMA-PART1-17-13-5-19` | Inserted table row (w:ins under w:trPr) | 5 | 1 | 17.13.5.19 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | packages/docx-compare/src/tagged/taggedTreeShadow.ts; packages/docx-compare/src/tagged/taggedTreeShadow.test.ts |
+| `ECMA-PART1-17-13-5-17` | Inserted table row (w:ins under w:trPr) | 5 | 1 | 17.13.5.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | packages/docx-compare/src/tagged/taggedTreeShadow.ts; packages/docx-compare/src/tagged/taggedTreeShadow.test.ts |
 | `ECMA-PART1-17-13-5-4` | Custom XML deletion range end | 5 | 1 | 17.13.5.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-5` | Custom XML deletion range start | 5 | 1 | 17.13.5.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-6` | Custom XML insertion range end | 5 | 1 | 17.13.5.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
@@ -1462,17 +1462,18 @@ contents themselves are deleted only where they carry their own run-level
 `packages/docx-core/src/primitives/accept_changes.ts` and
 `packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts`.
 
-### ECMA-PART1-17-13-5-16 — Deleted table row (w:del under w:trPr)
+### ECMA-PART1-17-13-5-12 — Deleted table row (w:del under w:trPr)
 
 - **Edition:** ECMA-376 5
-- **Part / Section:** Part 1 § 17.13.5.16
+- **Part / Section:** Part 1 § 17.13.5.12
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del`
 - **Verified by:** packages/docx-compare/src/tagged/taggedTreeShadow.ts; packages/docx-compare/src/tagged/taggedTreeShadow.test.ts
 
-ECMA-376 Part 1 §17.13.5.16 defines an empty `w:del` inside `w:trPr` as a
+ECMA-376 Part 1 §17.13.5.12 defines an empty `w:del` inside `w:trPr` as a
 tracked deletion of the enclosing table row. It is a semantic marker rather
-than an empty deleted-content wrapper, so tagged-tree publication preserves it.
+than an empty deleted-content wrapper. It does not imply a revision state for
+the row's cells or contents, which must be revision-marked independently.
 
 ### ECMA-PART1-17-13-5-20 — Inserted paragraph mark (w:ins under w:pPr/w:rPr)
 
@@ -1494,17 +1495,18 @@ Section-break insertion uses the same paragraph-mark form on a dedicated empty
 boundary paragraph so rejecting removes the new topology and accepting retains
 the boundary.
 
-### ECMA-PART1-17-13-5-19 — Inserted table row (w:ins under w:trPr)
+### ECMA-PART1-17-13-5-17 — Inserted table row (w:ins under w:trPr)
 
 - **Edition:** ECMA-376 5
-- **Part / Section:** Part 1 § 17.13.5.19
+- **Part / Section:** Part 1 § 17.13.5.17
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins`
 - **Verified by:** packages/docx-compare/src/tagged/taggedTreeShadow.ts; packages/docx-compare/src/tagged/taggedTreeShadow.test.ts
 
-ECMA-376 Part 1 §17.13.5.19 defines an empty `w:ins` inside `w:trPr` as a
+ECMA-376 Part 1 §17.13.5.17 defines an empty `w:ins` inside `w:trPr` as a
 tracked insertion of the enclosing table row. It must remain attached to that
-row so accepting keeps it and rejecting removes it.
+row so accepting keeps it and rejecting removes it. The row's cells and contents
+require their own revision markup.
 
 ### ECMA-PART1-17-13-5-4 — Custom XML deletion range end
 
