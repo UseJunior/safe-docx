@@ -512,6 +512,33 @@ function sourceOperationId(operation: EditOperation): string | null {
   return isInsertOperation(operation) ? null : operation.id;
 }
 
+function nearestTableCell(paragraph: Element | null): Element | undefined {
+  for (let current = paragraph?.parentNode; current; current = current.parentNode) {
+    if (current.nodeType === 1 && (current as Element).localName === 'tc') return current as Element;
+  }
+  return undefined;
+}
+
+function directChildren(parent: Element, localName: string): Element[] {
+  return Array.from(parent.childNodes)
+    .filter((child): child is Element => child.nodeType === 1 && (child as Element).localName === localName);
+}
+
+/**
+ * A vertical-merge continuation cell does not own independently visible
+ * content; Word renders the restart cell's content for the merged region.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.84
+ * @see https://github.com/UseJunior/safe-docx/issues/998
+ */
+function isVerticalMergeContinuation(cell: Element): boolean {
+  const tcPr = directChildren(cell, 'tcPr')[0];
+  const merge = tcPr ? directChildren(tcPr, 'vMerge')[0] : undefined;
+  if (!merge) return false;
+  const value = merge.getAttribute('w:val') || merge.getAttribute('val');
+  return !value || value === 'continue';
+}
+
 async function unchangedPartsEqual(source: Buffer, clean: Buffer): Promise<boolean> {
   const [a, b] = await Promise.all([JSZip.loadAsync(source), JSZip.loadAsync(clean)]);
   const names = new Set([...Object.keys(a.files), ...Object.keys(b.files)]);
@@ -536,6 +563,8 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     .filter((operation) => operation.kind === 'replace-source' || operation.kind === 'delete-source')
     .map((operation) => [sourceOperationId(operation), operation]));
   const unsupported = new Set<string>();
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const cellForId = (id: string): Element | undefined => nearestTableCell(source.getParagraphElementById(id));
   nodes.forEach((node, index) => {
     const projected = ir.scaffold[index];
     if (!projected || projected.id !== node.id) {
@@ -561,18 +590,36 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     if (node.footnote_refs?.length) unsupported.add('footnotes');
     if (node.comments?.length) unsupported.add('comments');
   });
+  const deletionsByCell = new Map<Element, { count: number; total: number; operationId: string }>();
   for (const operation of ir.operations) {
     const id = sourceOperationId(operation);
     if (!id) continue;
-    const node = nodes.find((candidate) => candidate.id === id);
+    const node = nodeById.get(id);
     if (!node) throw new DocxMarkdocError('MISSING_ANCHOR', `Operation ${operation.operationId} targets missing paragraph ${id}.`);
-    if ((node.table_context && operation.kind === 'delete-source' && node.table_context.cell_para_count <= 1)
-      || node.footnote_refs?.length || node.comments?.length) {
+    const cell = cellForId(id);
+    if ((cell && isVerticalMergeContinuation(cell)) || node.footnote_refs?.length || node.comments?.length) {
       throw new DocxMarkdocError('UNSUPPORTED_EDIT_STRUCTURE', `Operation ${operation.operationId} intersects unsupported structure at ${id}.`);
+    }
+    if (cell && operation.kind === 'delete-source') {
+      const entry = deletionsByCell.get(cell) ?? {
+        count: 0,
+        total: directChildren(cell, 'p').length,
+        operationId: operation.operationId,
+      };
+      entry.count += 1;
+      deletionsByCell.set(cell, entry);
+    }
+  }
+  for (const entry of deletionsByCell.values()) {
+    if (entry.count >= entry.total) {
+      throw new DocxMarkdocError(
+        'UNSUPPORTED_EDIT_STRUCTURE',
+        `Operation ${entry.operationId} would delete every direct paragraph in a table cell; a cell must retain a trailing paragraph.`,
+      );
     }
   }
   for (const operation of ir.operations.filter(isInsertOperation)) {
-    const anchor = nodes.find((candidate) => candidate.id === operation.anchorId);
+    const anchor = nodeById.get(operation.anchorId);
     if (!anchor) {
       throw new DocxMarkdocError('MISSING_ANCHOR', `Operation ${operation.operationId} targets missing paragraph ${operation.anchorId}.`);
     }
@@ -580,7 +627,7 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
       throw new DocxMarkdocError('UNSUPPORTED_EDIT_STRUCTURE', `Operation ${operation.operationId} intersects unsupported structure at ${operation.anchorId}.`);
     }
     const styleSource = operation.styleSourceId
-      ? nodes.find((candidate) => candidate.id === operation.styleSourceId)
+      ? nodeById.get(operation.styleSourceId)
       : anchor;
     if (!styleSource) {
       throw new DocxMarkdocError(
@@ -588,15 +635,11 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
         `Operation ${operation.operationId} names missing style source ${operation.styleSourceId}.`,
       );
     }
-    const anchorCell = anchor.table_context;
-    const styleCell = styleSource.table_context;
-    const crossesTableCell = anchorCell
-      ? !styleCell
-        || styleCell.table_id !== anchorCell.table_id
-        || styleCell.row_index !== anchorCell.row_index
-        || styleCell.col_index !== anchorCell.col_index
-      : styleCell !== undefined;
-    if (crossesTableCell || styleSource.footnote_refs?.length || styleSource.comments?.length) {
+    const anchorCell = cellForId(anchor.id);
+    const styleCell = cellForId(styleSource.id);
+    const crossesTableCell = anchorCell ? styleCell !== anchorCell : styleCell !== undefined;
+    if ((anchorCell && isVerticalMergeContinuation(anchorCell))
+      || crossesTableCell || styleSource.footnote_refs?.length || styleSource.comments?.length) {
       throw new DocxMarkdocError(
         'UNSUPPORTED_EDIT_STRUCTURE',
         `Operation ${operation.operationId} style source ${styleSource.id} intersects unsupported structure.`,

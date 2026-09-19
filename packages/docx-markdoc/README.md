@@ -201,12 +201,6 @@ list identity. Inserting a numbered item requires an explicit existing
 paragraph as the formatting source so the compiler never guesses between an
 adjacent list level and a list terminator:
 
-Anchored text replacement, insertion, and deletion are supported inside an
-existing table cell. Inserted paragraphs must inherit formatting from that same
-cell, and the compiler refuses to delete a cell's sole required paragraph.
-These operations preserve row, cell, grid, and merge topology; changing that
-topology remains out of scope until authored through a dedicated table contract.
-
 ```markdoc
 {% insert-after anchor="_bk_current_item" operation="add-item" style-source="_bk_current_item" %}
 {% after %}The new numbered item.{% /after %}
@@ -215,6 +209,16 @@ topology remains out of scope until authored through a dedicated table contract.
 
 This supports editing text within existing list topology; changing numbering
 definitions, restarting a list, or changing list levels remains out of scope.
+
+Anchored text replacement, insertion, and deletion are supported inside an
+existing table cell. Inserted paragraphs must inherit formatting from that same
+physical cell, and the compiler refuses any deletion set that would remove all
+of a cell's direct paragraphs. Replace the retained paragraph instead of
+combining deletion and insertion when a cell contains only one paragraph.
+Vertical-merge continuation cells remain non-editable because their content is
+not independently visible. These operations preserve row, cell, grid, and merge
+topology; changing that topology remains out of scope until authored through a
+dedicated table contract.
 
 Mixed-format paragraphs are edited surgically: unchanged spans retain their
 source runs, and a replacement inherits the one formatting class occupied by

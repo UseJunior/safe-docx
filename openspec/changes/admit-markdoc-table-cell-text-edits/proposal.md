@@ -12,8 +12,10 @@ editing and comparison layers already preserve the surrounding table.
 - Admit anchored text replacement, insertion, and deletion inside existing
   table cells.
 - Preserve the table's row, cell, grid, merge, and property topology unchanged.
-- Require inserted paragraphs to use a formatting source in the same cell and
-  reject deletion of a cell's sole required paragraph.
+- Require inserted paragraphs to use a formatting source in the same physical
+  cell, reject any operation set that deletes every direct cell paragraph, and
+  keep vertical-merge continuation cells fail-closed because their content is
+  not independently visible.
 - Keep structural row, column, cell, and merged-grid operations owned by issue
   #764.
 - Report structural table editing, rather than all table content, as the

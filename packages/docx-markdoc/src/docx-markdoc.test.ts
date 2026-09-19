@@ -73,7 +73,7 @@ describe('brownfield Markdoc authoring', () => {
 
   tableEditTest('[SDX-MDOC-108] edits table-cell text and paragraphs without changing table topology', async () => {
     const original = await buildDocxFromBodyXml(
-      '<w:tbl>'
+      '<w:tbl><w:tblPr/>'
       + '<w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="3600"/></w:tblGrid>'
       + '<w:tr><w:tc><w:tcPr><w:tcW w:w="2400" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Label</w:t></w:r></w:p></w:tc>'
       + '<w:tc><w:tcPr><w:tcW w:w="3600" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Old value</w:t></w:r></w:p>'
@@ -134,7 +134,7 @@ describe('brownfield Markdoc authoring', () => {
 
   itAllure('[SDX-MDOC-109] rejects sole-paragraph deletion and cross-cell formatting sources', async () => {
     const original = await buildDocxFromBodyXml(
-      '<w:tbl><w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="2400"/></w:tblGrid>'
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="2400"/></w:tblGrid>'
       + '<w:tr><w:tc><w:p><w:r><w:t>Required cell paragraph.</w:t></w:r></w:p></w:tc>'
       + '<w:tc><w:p><w:r><w:t>Other cell.</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
     );
@@ -147,6 +147,52 @@ describe('brownfield Markdoc authoring', () => {
     });
     const crossCellInsertion = `${imported.markdoc}\n{% insert-after anchor="${required.id}" operation="cross-cell" style-source="${other.id}" %}\n{% after %}\nInserted.\n{% /after %}\n{% /insert-after %}\n`;
     await expect(compileMarkdoc(imported.anchoredSource, crossCellInsertion)).rejects.toMatchObject({
+      code: 'UNSUPPORTED_EDIT_STRUCTURE',
+    });
+  });
+
+  itAllure('[SDX-MDOC-109] rejects composed deletions that would empty one table cell', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc>'
+      + '<w:p><w:r><w:t>First direct paragraph.</w:t></w:r></w:p>'
+      + '<w:p><w:r><w:t>Second direct paragraph.</w:t></w:r></w:p>'
+      + '</w:tc></w:tr></w:tbl>',
+    );
+    const imported = await importDocxToMarkdoc(original);
+    let markdoc = withCanonicalChange(imported.markdoc, 'First direct paragraph.', '', 'delete-first');
+    markdoc = withCanonicalChange(markdoc, 'Second direct paragraph.', '', 'delete-second');
+    await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({
+      code: 'UNSUPPORTED_EDIT_STRUCTURE',
+      message: expect.stringContaining('delete every direct paragraph'),
+    });
+  });
+
+  itAllure('[SDX-MDOC-109] rejects deletion of the trailing paragraph beside a nested table', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc>'
+      + '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1200"/></w:tblGrid><w:tr><w:tc>'
+      + '<w:p><w:r><w:t>Nested paragraph.</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+      + '<w:p><w:r><w:t>Outer trailing paragraph.</w:t></w:r></w:p>'
+      + '</w:tc></w:tr></w:tbl>',
+    );
+    const imported = await importDocxToMarkdoc(original);
+    const markdoc = withCanonicalChange(imported.markdoc, 'Outer trailing paragraph.', '', 'delete-trailing');
+    await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({
+      code: 'UNSUPPORTED_EDIT_STRUCTURE',
+      message: expect.stringContaining('delete every direct paragraph'),
+    });
+  });
+
+  itAllure('[SDX-MDOC-109] rejects edits in vertical-merge continuation cells', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid>'
+      + '<w:tr><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>Visible merged text.</w:t></w:r></w:p></w:tc></w:tr>'
+      + '<w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p><w:r><w:t>Hidden continuation text.</w:t></w:r></w:p></w:tc></w:tr>'
+      + '</w:tbl>',
+    );
+    const imported = await importDocxToMarkdoc(original);
+    const markdoc = withCanonicalChange(imported.markdoc, 'Hidden continuation text.', 'Still hidden.', 'edit-continuation');
+    await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({
       code: 'UNSUPPORTED_EDIT_STRUCTURE',
     });
   });
