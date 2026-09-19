@@ -27,13 +27,13 @@
 - [x] 4.1 Add shared raw-OOXML fixture helpers rather than local package builders.
 - [x] 4.2 Cover clean insertion/deletion, chained tracked insertions, accept/reject topology, content metadata, formatting-shell exclusions, bookmark stripping, range repair, and transactional failures.
 - [x] 4.3 Cover vMerge, gridSpan, offsets, `w:tblPrEx`, row/cell wrappers, nested tables, trailing paragraphs, topology revisions, heterogeneous rows, duplicate row markers, and final-row deletion.
-- [x] 4.4 Add Word/LibreOffice compatibility evidence proportional to the documented oracle boundary.
+- [x] 4.4 Add Word/LibreOffice compatibility evidence proportional to the documented oracle boundary (six generated DOCX fixtures opened and rendered through LibreOffice; the pinned cross-implementation row suite passed 9/9; Microsoft Word remains outside the automated oracle boundary).
 - [x] 4.5 Document the API and the bounded phase-one non-goals.
 
 ## 5. Gates
 
 - [x] 5.1 Run the full repository pre-submit command.
 - [x] 5.2 Run `openspec validate add-structural-table-row-operations --strict`.
-- [ ] 5.3 Obtain Claude Fable peer review and resolve all actionable findings.
+- [x] 5.3 Obtain Claude Fable peer review and resolve all actionable findings (approved without blockers in round 5 after resolving the round-4 schema-order and story-wide range-repair findings).
 - [x] 5.4 Correct the existing ECMA registry's table-row clauses from §17.13.5.16/19 to §17.13.5.12/17, update generated conformance artifacts, and pass citation/document checks.
 - [x] 5.5 Archive the change on a scratch OpenSpec copy and verify totals `+3, ~1, -1`, all eight `SDX-TABLEROW` scenarios in the resulting canonical spec, and zero superseded `Unresolvable Row-Level Revision Preservation` requirements.
