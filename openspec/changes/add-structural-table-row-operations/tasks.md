@@ -36,3 +36,4 @@
 - [ ] 5.2 Run `openspec validate add-structural-table-row-operations --strict`.
 - [ ] 5.3 Obtain Claude Fable peer review and resolve all actionable findings.
 - [ ] 5.4 Correct the existing ECMA registry's table-row clauses from §17.13.5.16/19 to §17.13.5.12/17, update generated conformance artifacts, and pass citation/document checks.
+- [ ] 5.5 Archive the change on a scratch OpenSpec copy and verify totals `+3, ~1, -1`, all eight `SDX-TABLEROW` scenarios in the resulting canonical spec, and zero superseded `Unresolvable Row-Level Revision Preservation` requirements.
