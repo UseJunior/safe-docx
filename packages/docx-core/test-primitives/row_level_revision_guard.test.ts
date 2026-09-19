@@ -43,6 +43,24 @@ describe('row-level revision resolution', () => {
   );
 
   test.openspec('[SDX-TABLEROW-06] selective row resolution is explicit and honest')(
+    'preserves a foreign row marker while restoring a selected trPrChange',
+    () => {
+      const doc = new DOMParser().parseFromString(
+        `<w:document xmlns:w="${W_NS}"><w:body><w:tbl><w:tr><w:trPr>`
+          + `<w:ins w:id="9" w:author="Foreign" w:date="2025-01-01T00:00:00Z"/>`
+          + `<w:trPrChange w:id="7" w:author="Target"><w:trPr><w:trHeight w:val="240"/></w:trPr></w:trPrChange>`
+          + `</w:trPr><w:tc><w:p><w:r><w:t>row</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>`,
+        'text/xml',
+      ) as unknown as Document;
+      const result = rejectChanges(doc, { filter: (el) => el.getAttribute('w:id') === '7' });
+      expect(result).toMatchObject({ propertyChangesReverted: 1, unresolvedRowRevisions: 0 });
+      expect(xml(doc)).toContain('w:id="9"');
+      expect(xml(doc)).toContain('<w:trHeight w:val="240"/>');
+      expect(rows(doc)).toBe(1);
+    },
+  );
+
+  test.openspec('[SDX-TABLEROW-06] selective row resolution is explicit and honest')(
     'keeps a selected inserted row on accept and a selected deleted row on reject',
     () => {
       const inserted = docWithRows([{ kind: 'ins', id: '7', text: 'keep' }]);
@@ -64,6 +82,24 @@ describe('row-level revision resolution', () => {
       const filter: RevisionFilter = (el) => el.getAttribute('w:id') === '7';
       expect(acceptChanges(doc, { filter })).toMatchObject({ deletionsAccepted: 1, insertionsAccepted: 0, unresolvedRowRevisions: 0 });
       expect(rows(doc)).toBe(0);
+      expect(doc.getElementsByTagNameNS(W_NS, 'tbl').length).toBe(0);
+    },
+  );
+
+  test.openspec('[SDX-TABLEROW-06] selective row resolution is explicit and honest')(
+    'repairs a cross-table bookmark when rejecting its inserted row',
+    () => {
+      const doc = new DOMParser().parseFromString(
+        `<w:document xmlns:w="${W_NS}"><w:body><w:tbl><w:tr><w:trPr>`
+          + `<w:ins w:id="7" w:author="Target"/></w:trPr><w:tc><w:p>`
+          + `<w:bookmarkStart w:id="77" w:name="cross"/><w:r><w:t>row</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`
+          + `<w:p><w:bookmarkEnd w:id="77"/><w:r><w:t>after</w:t></w:r></w:p></w:body></w:document>`,
+        'text/xml',
+      ) as unknown as Document;
+      rejectChanges(doc);
+      expect(xml(doc)).not.toContain('w:id="77"');
+      expect(xml(doc)).toContain('after');
+      expect(doc.getElementsByTagNameNS(W_NS, 'tbl').length).toBe(0);
     },
   );
 });

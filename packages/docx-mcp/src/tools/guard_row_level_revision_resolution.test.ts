@@ -201,6 +201,7 @@ describe('Traceability: row-level revision resolution (MCP surface)', () => {
         const dels = dom.getElementsByTagNameNS(W_NS, 'del');
         expect(dels.length).toBe(0);
         expect(dom.getElementsByTagNameNS(W_NS, 'tr').length).toBe(0);
+        expect(dom.getElementsByTagNameNS(W_NS, 'tbl').length).toBe(0);
         expect(result.unresolvedRowRevisions).toBe(0);
       });
     },

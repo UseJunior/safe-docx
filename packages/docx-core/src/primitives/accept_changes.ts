@@ -21,7 +21,7 @@
 
 import { OOXML } from './namespaces.js';
 import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun, removeEmptyParagraphMarkProperties } from './paragraph_merge_formatting.js';
-import { removeOrphanedRangeEndpointsForSubtree } from './table_rows.js';
+import { removeTableRowAndEmptyTable } from './table_rows.js';
 
 const W_NS = OOXML.W_NS;
 
@@ -100,8 +100,7 @@ function acceptSelectedRowRevisions(root: Element, filter: RevisionFilter): { in
   for (const marker of collectByLocalName(root, 'del').filter(filter).filter(isRowPropertyRevisionMarker)) {
     const row = marker.parentNode?.parentNode;
     if (row?.parentNode && isW(row as Element, 'tr')) {
-      removeOrphanedRangeEndpointsForSubtree(root, row as Element);
-      row.parentNode.removeChild(row);
+      removeTableRowAndEmptyTable(root, row as Element);
       deletions++;
     }
   }

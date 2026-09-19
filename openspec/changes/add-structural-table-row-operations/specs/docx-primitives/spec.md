@@ -67,7 +67,8 @@ ECMA-376 5th edition Part 1 §§17.13.5.17 and 17.13.5.12, rather than being
 treated as an empty content wrapper. Content inside a removed row disappears
 with that row even when it carries an unselected revision; those inner records
 SHALL not be reported as separately resolved. Foreign row markers SHALL remain
-untouched, including through sibling `w:trPrChange` restoration.
+untouched, including through sibling `w:trPrChange` restoration. Removing the
+final physical row SHALL remove its now-empty `w:tbl` container.
 
 Tracked row mutation SHALL also mark paragraph marks and run contents under
 §§17.13.5.20/17.13.5.18 and §§17.13.5.15/17.13.5.14 respectively. Projection

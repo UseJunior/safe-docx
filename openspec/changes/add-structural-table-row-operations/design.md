@@ -110,6 +110,9 @@ stories and nested tables:
 | `w:trPr > w:ins` | keep row; remove marker | remove row |
 | `w:trPr > w:del` | remove row | keep row; remove marker |
 
+When whole-row resolution removes the final physical row, it removes the now-
+empty `w:tbl` as Word does rather than leaving a rowless table shell.
+
 Row removal occurs before paragraph-mark collection (Phase A) and therefore
 before generic content-wrapper sweeps. A selected row marker
 removes the whole row, including unselected inner content revisions; those inner

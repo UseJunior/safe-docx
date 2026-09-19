@@ -2,6 +2,7 @@ import { describe, expect } from 'vitest';
 import { DocxDocument } from '../src/primitives/document.js';
 import { DocxZip } from '../src/primitives/zip.js';
 import { getParagraphBookmarkId } from '../src/primitives/bookmarks.js';
+import { getParagraphText } from '../src/primitives/text.js';
 import { createRevisionContext } from '../src/primitives/track-changes-emitter.js';
 import { SafeDocxError } from '../src/primitives/errors.js';
 import { buildDocxFromBodyXml } from '../src/testing/ooxml-fixtures.js';
@@ -34,6 +35,8 @@ async function xmlFromBuffer(buffer: Buffer): Promise<string> {
   return zip.readText('word/document.xml');
 }
 
+const visibleParagraphs = (doc: DocxDocument): string[] => doc.getParagraphs().map((p) => getParagraphText(p));
+
 describe('structural table row operations', () => {
   test.openspec('[SDX-TABLEROW-01] clean insertion uses an anchored formatting shell')(
     'inserts at the requested row and returns targetable cell anchors', async () => {
@@ -56,7 +59,7 @@ describe('structural table row operations', () => {
       const inserted = xml.slice(xml.indexOf('<w:tr>'), xml.indexOf('</w:tr>') + 7);
       expect(inserted).toContain('<w:trHeight');
       expect(inserted).toContain('<w:tcW');
-      expect(inserted).toContain('<w:b');
+      expect(inserted).toContain('<w:b/>');
       expect(inserted).not.toMatch(/tblHeader|hideMark|numPr|A1|bookmarkStart[^>]+table-row-test/);
     },
   );
@@ -64,12 +67,13 @@ describe('structural table row operations', () => {
   test.openspec('[SDX-TABLEROW-03] clean deletion preserves table and range validity')(
     'removes exactly one row, its anchors, and a surviving cross-row endpoint', async () => {
       const body = baseRows().replace('<w:r><w:t>A1', '<w:bookmarkStart w:id="88" w:name="cross"/><w:r><w:t>A1')
-        .replace('<w:r><w:t>B1', '<w:bookmarkEnd w:id="88"/><w:r><w:t>B1');
+        + '<w:p><w:bookmarkEnd w:id="88"/><w:r><w:t>AFTER TABLE</w:t></w:r></w:p>';
       const { doc, anchors } = await indexedDoc(body);
       doc.deleteTableRow({ targetParagraphId: anchors[0]! });
       const xml = await documentXml(doc);
       expect(xml).not.toContain('A1');
       expect(xml).toContain('B1');
+      expect(xml).toContain('AFTER TABLE');
       expect(xml).not.toContain('w:id="88"');
       expect(doc.getParagraphElementById(anchors[0]!)).toBeNull();
     },
@@ -78,6 +82,7 @@ describe('structural table row operations', () => {
   test.openspec('[SDX-TABLEROW-04] tracked insertion has inverse projections')(
     'emits row, paragraph-mark, and content insertion records with inverse projections', async () => {
       const { doc, anchors } = await indexedDoc();
+      const source = await doc.toBuffer({ cleanBookmarks: false });
       const ctx = createRevisionContext({ author: 'AI', date: '2026-01-01T00:00:00Z' });
       doc.insertTableRow({ positionalAnchorNodeId: anchors[0]!, relativePosition: 'AFTER', cellTexts: ['N1', 'N2'] }, ctx);
       const tracked = await doc.toBuffer({ cleanBookmarks: false });
@@ -85,15 +90,33 @@ describe('structural table row operations', () => {
       const accepted = await DocxDocument.load(tracked.buffer);
       expect((await accepted.acceptChanges()).unresolvedRowRevisions).toBe(0);
       expect(await documentXml(accepted)).toContain('N1');
+      const clean = await DocxDocument.load(source.buffer);
+      clean.insertTableRow({ positionalAnchorNodeId: anchors[0]!, relativePosition: 'AFTER', cellTexts: ['N1', 'N2'] });
+      await clean.acceptChanges();
+      expect(visibleParagraphs(accepted)).toEqual(visibleParagraphs(clean));
       const rejected = await DocxDocument.load(tracked.buffer);
       expect((await rejected.rejectChanges()).unresolvedRowRevisions).toBe(0);
       expect(await documentXml(rejected)).not.toContain('N1');
+      const rejectedSource = await DocxDocument.load(source.buffer);
+      await rejectedSource.rejectChanges();
+      expect(visibleParagraphs(rejected)).toEqual(visibleParagraphs(rejectedSource));
+
+      const noMarkRPr = await indexedDoc(baseRows().replace(
+        '<w:pPr><w:numPr/><w:rPr><w:b/></w:rPr></w:pPr>',
+        '<w:pPr><w:jc w:val="center"/></w:pPr>',
+      ));
+      noMarkRPr.doc.insertTableRow(
+        { positionalAnchorNodeId: noMarkRPr.anchors[0]!, relativePosition: 'AFTER', cellTexts: ['S1', 'S2'] },
+        createRevisionContext({ author: 'AI', date: '2026-01-01T00:00:00Z' }),
+      );
+      expect(await documentXml(noMarkRPr.doc)).toMatch(/<w:pPr><w:jc w:val="center"\/><w:rPr><w:ins/);
     },
   );
 
   test.openspec('[SDX-TABLEROW-05] tracked deletion has inverse projections and valid ranges')(
     'emits complete deletion metadata and resolves both projections', async () => {
       const { doc, anchors } = await indexedDoc();
+      const source = await doc.toBuffer({ cleanBookmarks: false });
       doc.deleteTableRow({ targetParagraphId: anchors[0]! }, createRevisionContext({ author: 'AI', date: '2026-01-01T00:00:00Z' }));
       const tracked = await doc.toBuffer({ cleanBookmarks: false });
       const trackedXml = await xmlFromBuffer(tracked.buffer);
@@ -102,21 +125,39 @@ describe('structural table row operations', () => {
       const accepted = await DocxDocument.load(tracked.buffer);
       await accepted.acceptChanges();
       expect(await documentXml(accepted)).not.toContain('A1');
+      const clean = await DocxDocument.load(source.buffer);
+      clean.deleteTableRow({ targetParagraphId: anchors[0]! });
+      await clean.acceptChanges();
+      expect(visibleParagraphs(accepted)).toEqual(visibleParagraphs(clean));
       const rejected = await DocxDocument.load(tracked.buffer);
       await rejected.rejectChanges();
       expect(await documentXml(rejected)).toContain('A1');
+      const rejectedSource = await DocxDocument.load(source.buffer);
+      await rejectedSource.rejectChanges();
+      expect(visibleParagraphs(rejected)).toEqual(visibleParagraphs(rejectedSource));
+
+      const multiParagraphBody = baseRows().replace(
+        '<w:p><w:pPr><w:numPr/><w:rPr><w:b/></w:rPr></w:pPr><w:r><w:t>A1</w:t></w:r></w:p>',
+        '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>A1a</w:t></w:r></w:p><w:p><w:r><w:t>A1b</w:t></w:r></w:p>',
+      );
+      const multi = await indexedDoc(multiParagraphBody);
+      multi.doc.deleteTableRow(
+        { targetParagraphId: multi.anchors[0]! },
+        createRevisionContext({ author: 'AI', date: '2026-01-01T00:00:00Z' }),
+      );
+      expect(await documentXml(multi.doc)).toMatch(/<w:pPr><w:jc w:val="center"\/><w:rPr><w:del/);
     },
   );
 
   test.openspec('[SDX-TABLEROW-07] merge, wrapper, and nested-table guards are table-wide')(
     'rejects unsupported topology anywhere in the table before mutation', async () => {
-      const nested = '<w:tbl><w:tblGrid><w:gridCol/></w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>';
+      const nested = '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/></w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>';
       const cases: Array<[string, string]> = [
         ['gridBefore', baseRows('<w:trPr><w:gridBefore w:val="1"/></w:trPr>')],
         ['gridAfter', baseRows('<w:trPr><w:gridAfter w:val="1"/></w:trPr>')],
         ['tblPrEx', baseRows('<w:tblPrEx/>')],
-        ['gridSpan', baseRows().replace('<w:tcPr><w:tcW', '<w:tcPr><w:gridSpan w:val="2"/><w:tcW')],
-        ['vMerge', baseRows().replace('<w:tcPr><w:tcW', '<w:tcPr><w:vMerge w:val="restart"/><w:tcW')],
+        ['gridSpan', baseRows().replace('<w:tcPr><w:tcW w:w="100"/>', '<w:tcPr><w:tcW w:w="100"/><w:gridSpan w:val="2"/>')],
+        ['vMerge', baseRows().replace('<w:tcPr><w:tcW w:w="100"/>', '<w:tcPr><w:tcW w:w="100"/><w:vMerge w:val="restart"/>')],
         ['nestedTable', baseRows().replace('<w:p><w:r><w:t>B1', `${nested}<w:p><w:r><w:t>B1`)],
         ['rowContainer', baseRows().replace(/(<w:tr><w:tc><w:p><w:r><w:t>B1[\s\S]*?<\/w:tr>)/, '<w:sdt><w:sdtContent>$1</w:sdtContent></w:sdt>')],
         ['cellContainer', baseRows().replace('<w:tc><w:p><w:r><w:t>B1', '<w:sdt><w:sdtContent><w:tc><w:p><w:r><w:t>B1').replace('</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B2', '</w:t></w:r></w:p></w:tc></w:sdtContent></w:sdt><w:tc><w:p><w:r><w:t>B2')],
@@ -143,8 +184,8 @@ describe('structural table row operations', () => {
       expect(ctx.idState.nextId).toBe(nextId);
 
       const invalidBodies = [
-        baseRows().replace('<w:gridCol/><w:gridCol/>', '<w:gridCol/><w:gridCol/><w:tblGridChange/>'),
-        baseRows().replace('<w:tcPr><w:tcW', '<w:tcPr><w:tcPrChange><w:tcPr><w:gridSpan w:val="2"/></w:tcPr></w:tcPrChange><w:tcW'),
+        baseRows().replace('<w:gridCol/><w:gridCol/>', '<w:gridCol/><w:gridCol/><w:tblGridChange w:id="9"><w:tblGrid><w:gridCol/><w:gridCol/></w:tblGrid></w:tblGridChange>'),
+        baseRows().replace('<w:hideMark/></w:tcPr>', '<w:hideMark/><w:tcPrChange w:id="9" w:author="Other"><w:tcPr><w:gridSpan w:val="2"/></w:tcPr></w:tcPrChange></w:tcPr>'),
         baseRows().replace('<w:tc><w:p><w:r><w:t>B2</w:t></w:r></w:p></w:tc>', ''),
         baseRows().replace('<w:p><w:r><w:t>B2</w:t></w:r></w:p>', '<w:sdt><w:sdtContent><w:p/></w:sdtContent></w:sdt>'),
       ];

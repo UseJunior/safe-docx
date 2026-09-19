@@ -126,6 +126,42 @@ export function parseChangedRequirementNames(content) {
   return changed;
 }
 
+function parseRequirementChanges(content) {
+  const changes = new Map();
+  let kind = null;
+  for (const line of content.split('\n')) {
+    const section = line.match(/^##\s+(ADDED|MODIFIED|REMOVED) Requirements\s*$/);
+    if (section) {
+      kind = section[1];
+      continue;
+    }
+    if (/^##\s+/.test(line)) kind = null;
+    const requirement = kind ? line.match(/^###\s+Requirement:\s*(.+?)\s*$/) : null;
+    if (requirement) changes.set(requirement[1].trim(), kind);
+  }
+  return changes;
+}
+
+function parseModifiedScenarioNames(content) {
+  const scenarios = new Set();
+  let inModified = false;
+  for (const line of content.split('\n')) {
+    const section = line.match(/^##\s+(ADDED|MODIFIED|REMOVED) Requirements\s*$/);
+    if (section) {
+      inModified = section[1] === 'MODIFIED';
+      continue;
+    }
+    if (/^##\s+/.test(line)) inModified = false;
+    const scenario = inModified ? line.match(/^####\s+Scenario:\s*(.+?)\s*$/) : null;
+    if (scenario) scenarios.add(normalizeScenarioName(scenario[1]));
+  }
+  return scenarios;
+}
+
+export function isCanonicalScenarioSuperseded(requirement, scenario, removedRequirements, modifiedScenarioNames) {
+  return removedRequirements.has(requirement) || modifiedScenarioNames.has(scenario);
+}
+
 function parseFeatureIdFromTest(content, testFile) {
   const direct = content.match(/const\s+TEST_FEATURE\s*=\s*['"]([^'"]+)['"]/);
   if (direct) return direct[1];
@@ -454,6 +490,8 @@ async function main() {
   const deltaFeatureScenarioEntries = new Map();
   const deltaFeatureRequirementMaps = new Map();
   const activeChangedRequirements = new Set();
+  const activeRemovedRequirements = new Set();
+  const activeModifiedScenarioNames = new Set();
   const activeFeatureIds = new Set();
   for (const [feature, specFiles] of deltaFeatureSpecFiles) {
     const scenarios = new Set();
@@ -465,6 +503,10 @@ async function main() {
       if (!isArchived) {
         activeFeatureIds.add(feature);
         for (const requirement of parseChangedRequirementNames(content)) activeChangedRequirements.add(requirement);
+        for (const [requirement, kind] of parseRequirementChanges(content)) {
+          if (kind === 'REMOVED') activeRemovedRequirements.add(requirement);
+        }
+        for (const scenario of parseModifiedScenarioNames(content)) activeModifiedScenarioNames.add(scenario);
       }
       for (const scenario of parseScenariosFromSpec(content)) scenarios.add(scenario);
       for (const [scenario, requirement] of parseRequirementForScenario(content)) featureRequirementMap.set(scenario, requirement);
@@ -498,7 +540,11 @@ async function main() {
   }
 
   for (const scenario of [...canonicalScenarios]) {
-    if (activeChangedRequirements.has(requirementMap.get(scenario))) canonicalScenarios.delete(scenario);
+    if (isCanonicalScenarioSuperseded(
+      requirementMap.get(scenario), scenario, activeRemovedRequirements, activeModifiedScenarioNames,
+    )) {
+      canonicalScenarios.delete(scenario);
+    }
   }
 
   // 3. Read all traceability test files (feature-aware) — search both test/ and src/

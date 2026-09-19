@@ -84,6 +84,17 @@ export function removeOrphanedRangeEndpointsForSubtree(root: Element, subtree: E
   }
 }
 
+/** Remove a row and, when it was the table's final physical row, its empty table. */
+export function removeTableRowAndEmptyTable(root: Element, row: Element): void {
+  removeOrphanedRangeEndpointsForSubtree(root, row);
+  const table = row.parentNode;
+  if (!table || table.nodeType !== 1 || !isW(table as Element, 'tbl')) return;
+  table.removeChild(row);
+  if (getDirectChildrenByName(table as Element, 'tr').length === 0) {
+    table.parentNode?.removeChild(table);
+  }
+}
+
 function nearestWAncestor(node: Node | null, localName: string): Element | null {
   let current = node?.parentNode ?? null;
   while (current) {
@@ -233,7 +244,13 @@ function ensureParagraphMarker(paragraph: Element, kind: 'ins' | 'del', ctx: Rev
   let pPr = getDirectChildrenByName(paragraph, 'pPr')[0];
   if (!pPr) { pPr = createWmlElement(paragraph.ownerDocument!, 'pPr'); paragraph.insertBefore(pPr, paragraph.firstChild); }
   let rPr = getDirectChildrenByName(pPr, 'rPr')[0];
-  if (!rPr) { rPr = createWmlElement(paragraph.ownerDocument!, 'rPr'); pPr.insertBefore(rPr, pPr.firstChild); }
+  if (!rPr) {
+    rPr = createWmlElement(paragraph.ownerDocument!, 'rPr');
+    const before = getDirectChildrenByName(pPr, 'sectPr')[0]
+      ?? getDirectChildrenByName(pPr, 'pPrChange')[0]
+      ?? null;
+    pPr.insertBefore(rPr, before);
+  }
   const marker = createWmlElement(paragraph.ownerDocument!, kind, {
     'w:id': String(allocateRevisionId(ctx.idState)), 'w:author': ctx.author, 'w:date': ctx.date,
   });
@@ -300,7 +317,7 @@ export function deleteTableRow(doc: Document, params: DeleteTableRowParams, ctx?
   const shape = resolveTableShape(doc, params.targetParagraphId);
   if (shape.rows.length === 1) fail('INVALID_ARGUMENT', 'Cannot delete the final table row', detail(params.targetParagraphId, shape.tableIndex, shape.rowIndex, 'lastRow'));
   if (!ctx) {
-    removeOrphanedRangeEndpointsForSubtree(shape.table, shape.anchorRow);
+    removeOrphanedRangeEndpointsForSubtree(doc.documentElement, shape.anchorRow);
     shape.table.removeChild(shape.anchorRow);
     return { rowIndex: shape.rowIndex, deleted: true };
   }
