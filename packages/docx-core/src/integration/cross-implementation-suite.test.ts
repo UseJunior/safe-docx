@@ -28,9 +28,6 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect } from 'vitest';
 import { classifyConformanceSupport } from '../cli/conformance-adapter.js';
-import { OOXML, W } from '../primitives/namespaces.js';
-import { parseXml } from '../primitives/xml.js';
-import { readZipText } from '../primitives/zip.js';
 import { buildDocxFromBodyXml, paragraphWithText } from '../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 
@@ -153,22 +150,6 @@ function loadScenarioDefinitions(suiteDir: string): Map<string, ScenarioDefiniti
   );
 }
 
-async function inputHasTableRowRevision(inputPath: string, markerName: 'del' | 'ins'): Promise<boolean> {
-  const documentXml = await readZipText(readFileSync(inputPath), 'word/document.xml');
-  expect(documentXml, `${inputPath} has no word/document.xml`).not.toBeNull();
-  const document = parseXml(documentXml!);
-  return Array.from(document.getElementsByTagNameNS(OOXML.W_NS, W.tr)).some((row) =>
-    Array.from(row.children).some(
-      (child) =>
-        child.namespaceURI === OOXML.W_NS &&
-        child.localName === W.trPr &&
-        Array.from(child.children).some(
-          (property) => property.namespaceURI === OOXML.W_NS && property.localName === markerName,
-        ),
-    ),
-  );
-}
-
 async function expectedScenarioSupport(
   definition: ScenarioDefinition,
 ): Promise<ExpectedSupportDecision> {
@@ -185,18 +166,6 @@ async function expectedScenarioSupport(
     return validDescriptor
       ? { supported: true }
       : { supported: false, reason: 'compatibility descriptor is not supported mode-15 input' };
-  }
-  if (
-    operation.operationName === 'acceptAllTrackedChanges' &&
-    await inputHasTableRowRevision(definition.inputPath, 'del')
-  ) {
-    return { supported: false, reason: 'deleted table-row acceptance is outside the test contract' };
-  }
-  if (
-    operation.operationName === 'rejectAllTrackedChanges' &&
-    await inputHasTableRowRevision(definition.inputPath, 'ins')
-  ) {
-    return { supported: false, reason: 'inserted table-row rejection is outside the test contract' };
   }
   return { supported: true };
 }
@@ -372,7 +341,7 @@ describeMaybe('Cross-implementation conformance suite self-check', () => {
 
 describe('Conformance adapter support classification', () => {
   test.openspec('[XIMPL-08] Supported and unsupported suite outcomes remain honest')(
-    'renamed-equivalent table-row shapes stay unsupported while ordinary revisions stay supported',
+    'renamed-equivalent table-row shapes and ordinary revisions are supported',
     async ({ given, then }: AllureBddContext) => {
       let deletedRow!: Buffer;
       let insertedRow!: Buffer;
@@ -388,13 +357,13 @@ describe('Conformance adapter support classification', () => {
         ordinary = await buildDocxFromBodyXml(paragraphWithText('Ordinary revision input'));
       });
 
-      await then('support follows operation plus row-property markers, never a scenario ID', async () => {
+      await then('supported operations remain supported regardless of row-marker direction', async () => {
         await expect(
           classifyConformanceSupport({ operationName: 'acceptAllTrackedChanges' }, deletedRow),
-        ).resolves.toMatchObject({ supported: false });
+        ).resolves.toEqual({ supported: true });
         await expect(
           classifyConformanceSupport({ operationName: 'rejectAllTrackedChanges' }, insertedRow),
-        ).resolves.toMatchObject({ supported: false });
+        ).resolves.toEqual({ supported: true });
         await expect(
           classifyConformanceSupport({ operationName: 'acceptAllTrackedChanges' }, ordinary),
         ).resolves.toEqual({ supported: true });

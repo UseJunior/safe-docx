@@ -486,7 +486,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'accept_changes',
     surface: 'internal',
-    description: 'Accept every tracked change in the document body that the engine can resolve. Revision records it cannot resolve (currently row-level table revisions) are preserved and reported as unresolvedRowRevisions rather than silently stripped. Returns acceptance stats.',
+    description: 'Accept every supported tracked change in the document body, including inserted and deleted table-row revisions. Returns acceptance stats; unresolvedRowRevisions remains 0 for supported row markers.',
     input: z.object({
       ...FILE_FIELD,
     }),

@@ -15,10 +15,12 @@ export type SafeDocxErrorCode =
 export class SafeDocxError extends Error {
   readonly code: SafeDocxErrorCode;
   readonly hint?: string;
+  readonly detail?: unknown;
 
-  constructor(code: SafeDocxErrorCode, message: string, hint?: string) {
+  constructor(code: SafeDocxErrorCode, message: string, hint?: string, detail?: unknown) {
     super(message);
     this.code = code;
     this.hint = hint;
+    this.detail = detail;
   }
 }
