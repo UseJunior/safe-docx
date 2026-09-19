@@ -58,7 +58,18 @@ and `ctx.idState.nextId` unchanged.
 - **AND** the error SHALL distinguish `UNSUPPORTED_EDIT` topology from `INVALID_ARGUMENT` input
 - **AND** `ctx.idState.nextId` SHALL be unchanged
 
-## MODIFIED Requirements
+## REMOVED Requirements
+
+### Requirement: Unresolvable Row-Level Revision Preservation
+
+**Reason**: Row-level markers are now resolved semantically in every processed
+story; this requirement is superseded by `Row-Level Revision Resolution`.
+
+**Migration**: `unresolvedRowRevisions` stays on `AcceptChangesResult` and
+`RejectChangesResult` and reports `0` for supported markers. Callers that
+previously branched on a non-zero value now receive a resolved row topology.
+
+## ADDED Requirements
 
 ### Requirement: Row-Level Revision Resolution
 
@@ -76,7 +87,8 @@ Tracked row mutation SHALL also mark paragraph marks and run contents under
 checks SHALL compare reject-all output with reject-all source and accept-all
 output with accept-all clean output, so pre-existing content revisions remain
 composable. `unresolvedRowRevisions` remains required for result-shape
-compatibility and SHALL be zero for supported row markers.
+compatibility and SHALL be `0`; the field no longer represents any admitted
+row-marker class.
 
 #### Scenario: [SDX-TABLEROW-04] tracked insertion has inverse projections
 - **GIVEN** an admitted source table and a requested row insertion

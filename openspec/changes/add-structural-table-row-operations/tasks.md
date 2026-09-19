@@ -2,7 +2,7 @@
 
 - [ ] 1.1 Add a body-level table/row resolver from an anchored paragraph.
 - [ ] 1.2 Validate rectangular direct-row occupancy against `w:tblGrid` before mutation, including non-row/non-cell wrapper children.
-- [ ] 1.3 Reject spans, vertical merges, row offsets, nested tables, `w:tblPrEx`, topology revisions, malformed cells, and nested anchors with typed coordinate diagnostics.
+- [ ] 1.3 Extend `SafeDocxError` additively with `detail?: unknown`, then reject spans, vertical merges, row offsets, nested tables, `w:tblPrEx`, topology revisions, malformed cells, and nested anchors with typed coordinate diagnostics.
 - [ ] 1.4 Admit pre-existing content revisions and non-anchor row markers so multiple tracked insertions can compose.
 
 ## 2. Row mutation primitives
@@ -17,9 +17,10 @@
 
 - [ ] 3.1 Emit schema-ordered `w:trPr > w:ins|w:del` after base properties and before `w:trPrChange`, plus paragraph-mark and run-content revisions with shared author/date and distinct IDs.
 - [ ] 3.2 Resolve inserted/deleted row markers in all four accept/reject directions in every story, including explicit whole-row selective-filter semantics.
-- [ ] 3.3 Rewrite the completed row-level guard tests/spec expectations for supported resolution, selective foreign-marker preservation, and zero unresolved counts.
+- [ ] 3.3 Rewrite `packages/docx-core/test-primitives/row_level_revision_guard.test.ts` (`SDX-ROWREV-01/02/06`), `packages/docx-mcp/src/tools/guard_row_level_revision_resolution.test.ts` (`SDX-ROWREV-MCP-01/02`), and `cross-implementation-suite.test.ts` (`XIMPL-08`) for supported resolution, selective foreign-marker preservation, and zero unresolved counts.
 - [ ] 3.4 Update the conformance adapter to advertise the newly supported body-level cases.
 - [ ] 3.5 Enable and pass the pinned cross-implementation deleted-row and inserted-row scenarios.
+- [ ] 3.6 Teach the primitives coverage validator to mark an archived scenario `superseded` when a later delta removes or modifies its requirement, exclude it from that archived feature's strict missing check, and cover the behavior with a validator unit test.
 
 ## 4. Tests and documentation
 

@@ -9,9 +9,10 @@ that is itself a direct child of `w:body`. A nested-table paragraph, a row insid
 control fail explicitly rather than selecting an outer row.
 
 Validation describes the complete target table before allocating revision IDs
-or mutating the DOM. Failures throw `SafeDocxError`: `UNSUPPORTED_EDIT` for
-unsupported topology and `INVALID_ARGUMENT` for a bad anchor, wrong cell count,
-duplicate deletion, or final-row deletion. `detail` has shape:
+or mutating the DOM. Failures throw `SafeDocxError`, extended additively with
+`readonly detail?: unknown`: `UNSUPPORTED_EDIT` covers unsupported topology and
+`INVALID_ARGUMENT` covers a bad anchor, wrong cell count, final-row deletion,
+`alreadyInserted`, or `alreadyDeleted`. `detail` has shape:
 
 ```ts
 type TableRowEditDetail = {
@@ -19,6 +20,7 @@ type TableRowEditDetail = {
   tableIndex: number;
   rowIndex: number;
   cellIndex?: number;
+  childIndex?: number;
   feature:
     | 'gridSpan' | 'vMerge' | 'gridBefore' | 'gridAfter'
     | 'nestedTable' | 'rowContainer' | 'cellContainer' | 'tblPrEx'
@@ -27,6 +29,8 @@ type TableRowEditDetail = {
 };
 ```
 
+`rowContainer` and `cellContainer` report `childIndex` (the element-child
+position under `w:tbl` or `w:tr`); other features report row/cell coordinates.
 For a failed tracked operation, `ctx.idState.nextId` is unchanged.
 
 ## Admitted table shape
@@ -45,16 +49,20 @@ Phase one admits only a rectangular table:
   `gridSpan`, `vMerge`, `gridBefore`, or `gridAfter`) occurs; and
 - every direct cell ends with a direct `w:p`.
 
-Schema-permitted range markers may appear between direct rows and do not count
-as rows. Other non-row element children fail with their table child index. These
-restrictions are table-wide: inserting within a vertical-merge chain changes
-cells above and below even when the anchor row has no marker.
+Schema-permitted `w:bookmarkStart/End`, `w:commentRangeStart/End`,
+`w:permStart/End`, `w:proofErr`, `w:moveFrom/ToRangeStart/End`, and
+`w:customXml*RangeStart/End` markers may appear between direct rows and do not
+count as rows. Other non-row element children fail with their table child index.
+These restrictions are table-wide: inserting within a vertical-merge chain
+changes cells above and below even when the anchor row has no marker.
 
 Ordinary content revisions and row markers remain admissible. Insertion may be
 anchored before/after an inserted or deleted row. Tracked deletion of a row that
 already carries `w:trPr > w:ins` or `w:trPr > w:del` fails with
 `alreadyInserted` or `alreadyDeleted` in phase one. This permits repeated
 insertions around returned anchors without requiring intermediate accept/reject.
+In clean mode, a marked row is ordinary content: deletion removes it, insertion
+may anchor on it, and its row marker is never copied into the new shell.
 
 ## Inserted-row construction
 
@@ -85,9 +93,11 @@ document-view row indexes and derived column headers intentionally shift.
 Tracked insertion attaches `w:ins` to the new row's `w:trPr`, marks each new
 paragraph mark with `w:pPr > w:rPr > w:ins`, and wraps populated runs in
 `w:ins`. Tracked deletion attaches `w:del` to the existing row's `w:trPr`, marks
-its paragraph marks with `w:del`, and wraps existing run content in `w:del`
-while converting `w:t` to `w:delText`. Row and content markers share author and
-date; each receives its own ID from the caller's `RevisionIdState`.
+each non-final direct paragraph mark in a cell with `w:del`, and wraps existing
+run content in `w:del` while converting `w:t` to `w:delText`. The required final
+paragraph mark in each cell is not deletion-marked, matching the cross-
+implementation fixture. Row and content markers share author and date; each
+receives its own ID from the caller's `RevisionIdState`.
 
 `CT_TrPr` ordering places `w:ins`, then `w:del`, after the final base property
 and before `w:trPrChange`. A row carries at most one marker from this primitive.
@@ -100,12 +110,13 @@ stories and nested tables:
 | `w:trPr > w:ins` | keep row; remove marker | remove row |
 | `w:trPr > w:del` | remove row | keep row; remove marker |
 
-Row removal occurs before generic content-wrapper sweeps. A selected row marker
+Row removal occurs before paragraph-mark collection (Phase A) and therefore
+before generic content-wrapper sweeps. A selected row marker
 removes the whole row, including unselected inner content revisions; those inner
 markers are not separately counted. Selective filters leave foreign row markers
 and rows untouched, including through `w:trPrChange` restoration.
-`unresolvedRowRevisions` remains for compatibility and is zero for supported row
-markers.
+`unresolvedRowRevisions` SHALL be `0`; the field remains only for result-shape
+compatibility.
 
 Projection assertions account for pre-existing revisions: reject-all of tracked
 output equals reject-all of the source, and accept-all of tracked output equals

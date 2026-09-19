@@ -277,7 +277,7 @@ describe('tagged-tree offline evaluation', () => {
     },
   );
 
-  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.16' })(
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.12' })(
     'preserves the empty deleted-row marker that makes Accept remove and Reject keep the row',
     () => {
       const published = publishPreExistingRevision(tableRowRevision('del'));
@@ -293,7 +293,7 @@ describe('tagged-tree offline evaluation', () => {
     },
   );
 
-  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.19' })(
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.17' })(
     'preserves the empty inserted-row marker that makes Accept keep and Reject remove the row',
     () => {
       const published = publishPreExistingRevision(tableRowRevision('ins'));

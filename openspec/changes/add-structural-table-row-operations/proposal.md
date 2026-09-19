@@ -35,9 +35,10 @@ rectangular, unmerged rows in existing body-level tables.
 
 ## Impact
 
-- Affected specs: `docx-primitives`.
+- Affected specs: `docx-primitives`, `mcp-server`.
 - Affected code: table-addressing and row-mutation primitives, accept/reject,
-  document facade exports, shared OOXML test fixtures, and conformance adapter.
+  document facade exports, shared OOXML test fixtures, conformance adapter, and
+  the MCP `accept_changes` catalog/tests.
 - Compatibility: the mutation API is additive, but accept/reject now resolves
   row-level markers that it previously preserved and reported as unresolved.
   The counter remains for source compatibility and future unsupported classes.
