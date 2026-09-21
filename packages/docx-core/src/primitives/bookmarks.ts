@@ -7,6 +7,11 @@ export type ParagraphBookmark = {
   numericId: number; // w:id
 };
 
+export type BookmarkReservation = {
+  usedNames: Set<string>;
+  nextNumericId: number;
+};
+
 const W14_NS = 'http://schemas.microsoft.com/office/word/2010/wordml';
 
 function sha12(input: string): string {
@@ -89,6 +94,20 @@ function collectUsedJrParaNames(doc: Document): Set<string> {
     if (name && name.startsWith('_bk_')) used.add(name);
   }
   return used;
+}
+
+export function collectBookmarkReservation(docs: Iterable<Document>): BookmarkReservation {
+  const usedNames = new Set<string>();
+  let maxNumericId = 0;
+  for (const doc of docs) {
+    for (const start of Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkStart))) {
+      const name = getAttr(start, 'name');
+      if (name) usedNames.add(name);
+      const numericId = Number.parseInt(getAttr(start, 'id') ?? '', 10);
+      if (Number.isSafeInteger(numericId)) maxNumericId = Math.max(maxNumericId, numericId);
+    }
+  }
+  return { usedNames, nextNumericId: maxNumericId + 1 };
 }
 
 function getAttr(el: Element, localName: string): string | null {
@@ -307,13 +326,17 @@ export function cleanupInternalBookmarks(
   return idsToRemove.size;
 }
 
-export function insertParagraphBookmarks(doc: Document, _attachmentId: string): { indexedParagraphs: number } {
+export function insertParagraphBookmarks(
+  doc: Document,
+  _attachmentId: string,
+  reservation?: BookmarkReservation,
+): { indexedParagraphs: number } {
   // Insert _bk_* bookmarks around ALL paragraphs (including empty), using sibling style.
   // This avoids moving paragraphs out of tables by inserting into the paragraph's parent.
 
   const paragraphs = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.p));
   if (paragraphs.length === 0) return { indexedParagraphs: 0 };
-  const usedNames = collectUsedJrParaNames(doc);
+  const usedNames = reservation?.usedNames ?? collectUsedJrParaNames(doc);
 
   let maxNumeric = 0;
   const existingStarts = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkStart));
@@ -335,7 +358,11 @@ export function insertParagraphBookmarks(doc: Document, _attachmentId: string): 
     const parent = p.parentNode;
     if (!parent) continue;
 
-    const numericId = ++maxNumeric;
+    const numericId = reservation
+      ? Math.max(reservation.nextNumericId, maxNumeric + 1)
+      : maxNumeric + 1;
+    maxNumeric = numericId;
+    if (reservation) reservation.nextNumericId = numericId + 1;
     const prevText = i > 0 ? getParagraphText(paragraphs[i - 1]!) : '';
     const nextText = i + 1 < paragraphs.length ? getParagraphText(paragraphs[i + 1]!) : '';
     const name = deriveDeterministicJrParaName({
@@ -359,14 +386,18 @@ export function insertParagraphBookmarks(doc: Document, _attachmentId: string): 
   return { indexedParagraphs: paragraphs.length };
 }
 
-export function insertSingleParagraphBookmark(doc: Document, p: Element): string {
+export function insertSingleParagraphBookmark(
+  doc: Document,
+  p: Element,
+  reservation?: BookmarkReservation,
+): string {
   const parent = p.parentNode;
   if (!parent) throw new Error('Paragraph has no parent');
   const paragraphs = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.p));
   const idx = paragraphs.indexOf(p);
   const prevText = idx > 0 ? getParagraphText(paragraphs[idx - 1]!) : '';
   const nextText = idx >= 0 && idx + 1 < paragraphs.length ? getParagraphText(paragraphs[idx + 1]!) : '';
-  const usedNames = collectUsedJrParaNames(doc);
+  const usedNames = reservation?.usedNames ?? collectUsedJrParaNames(doc);
 
   let maxNumeric = 0;
   const existingStarts = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkStart));
@@ -376,7 +407,10 @@ export function insertSingleParagraphBookmark(doc: Document, p: Element): string
     if (!Number.isNaN(val)) maxNumeric = Math.max(maxNumeric, val);
   }
 
-  const numericId = maxNumeric + 1;
+  const numericId = reservation
+    ? Math.max(reservation.nextNumericId, maxNumeric + 1)
+    : maxNumeric + 1;
+  if (reservation) reservation.nextNumericId = numericId + 1;
   const name = deriveDeterministicJrParaName({
     paragraph: p,
     prevText,
