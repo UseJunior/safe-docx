@@ -220,7 +220,7 @@ export async function getSidePartRevisionSeedDocs(buffer: Buffer): Promise<Docum
     return docs;
   }
 
-  for (const partPath of enumerateRevisionStoryPartPaths(zip)) {
+  for (const partPath of await enumerateRevisionStoryPartPaths(zip)) {
     if (!zip.hasFile(partPath)) continue;
     let xml: string | null;
     try {

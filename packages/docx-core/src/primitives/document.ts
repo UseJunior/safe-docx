@@ -73,7 +73,6 @@ import {
 } from './validate_ai_revisions.js';
 import {
   enumerateRevisionStoryPartPaths,
-  REVISION_STORY_PART_PATHS,
 } from './revision-parts.js';
 import { acceptChanges as acceptChangesImpl, type AcceptChangesResult } from './accept_changes.js';
 import { rejectChanges as rejectChangesImpl, type RejectChangesResult } from './reject_changes.js';
@@ -430,7 +429,7 @@ export class DocxDocument {
     touched?: AiRevisionValidationTouchedContext,
   ): Promise<ValidateAiRevisionsResult> {
     const stories = [{ part: 'word/document.xml', doc: this.documentXml }];
-    for (const partPath of enumerateRevisionStoryPartPaths(this.zip)) {
+    for (const partPath of await enumerateRevisionStoryPartPaths(this.zip)) {
       const xml = await this.zip.readTextOrNull(partPath);
       if (!xml) continue;
       stories.push({ part: partPath, doc: parseXml(xml) });
@@ -461,7 +460,7 @@ export class DocxDocument {
       ? collectLiveFootnoteRefIds(this.documentXml)
       : null;
 
-    for (const partPath of REVISION_STORY_PART_PATHS) {
+    for (const partPath of await enumerateRevisionStoryPartPaths(this.zip)) {
       const xml = await this.zip.readTextOrNull(partPath);
       if (!xml) continue;
 
@@ -505,7 +504,7 @@ export class DocxDocument {
       ? collectLiveFootnoteRefIds(this.documentXml)
       : null;
 
-    for (const partPath of REVISION_STORY_PART_PATHS) {
+    for (const partPath of await enumerateRevisionStoryPartPaths(this.zip)) {
       const xml = await this.zip.readTextOrNull(partPath);
       if (!xml) continue;
 
@@ -545,7 +544,7 @@ export class DocxDocument {
     const stories: Array<{ path: string | null; doc: Document }> = [
       { path: null, doc: this.documentXml },
     ];
-    for (const partPath of REVISION_STORY_PART_PATHS) {
+    for (const partPath of await enumerateRevisionStoryPartPaths(this.zip)) {
       const xml = await this.zip.readTextOrNull(partPath);
       if (xml) stories.push({ path: partPath, doc: parseXml(xml) });
     }
