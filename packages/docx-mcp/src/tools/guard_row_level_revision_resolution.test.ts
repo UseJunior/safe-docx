@@ -14,7 +14,7 @@ import {
   createTrackedTempDir,
 } from '../testing/session-test-utils.js';
 
-const TEST_FEATURE = 'guard-row-level-revision-resolution';
+const TEST_FEATURE = 'add-structural-table-row-operations';
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 function serializeDoc(session: DocxSession): string {
@@ -32,12 +32,12 @@ async function writeTestDocx(dir: string, name: string, bodyXml: string): Promis
   return filePath;
 }
 
-describe('Traceability: row-level revision guard (MCP surface)', () => {
+describe('Traceability: row-level revision resolution (MCP surface)', () => {
   const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
   registerCleanup();
 
-  test.openspec('[SDX-ROWREV-MCP-01] accept_changes reports unresolved row revisions instead of claiming a clean document')(
-    'a row marked deleted survives the tool call, and the response says so',
+  test.openspec('[SDX-ROWREV-MCP-01] accept_changes resolves a deleted table row')(
+    'a row marked deleted is removed and counted once',
     async ({ when, then, attachPrettyJson }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
@@ -48,7 +48,7 @@ describe('Traceability: row-level revision guard (MCP surface)', () => {
       const bodyXml =
         `<w:tbl><w:tr><w:trPr>`
         + `<w:del w:id="7" w:author="Reviewer" w:date="2026-01-01T00:00:00Z"/>`
-        + `</w:trPr><w:tc><w:p><w:r><w:t>ROWTEXT</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`
+        + `</w:trPr><w:tc><w:p><w:del w:id="8" w:author="Other"><w:r><w:delText>ROWTEXT</w:delText></w:r></w:del></w:p></w:tc></w:tr></w:tbl>`
         + `<w:p><w:ins w:id="1" w:author="Reviewer" w:date="2026-01-01T00:00:00Z">`
         + `<w:r><w:t>new text</w:t></w:r></w:ins></w:p>`;
       const filePath = await writeTestDocx(dir, 'row-revision.docx', bodyXml);
@@ -60,16 +60,17 @@ describe('Traceability: row-level revision guard (MCP surface)', () => {
       assertSuccess(result, 'accept_changes');
       await attachPrettyJson('result', result);
 
-      await then('The response reports the unresolved row revision', () => {
-        expect(result.unresolvedRowRevisions).toBe(1);
+      await then('The response reports supported resolution once', () => {
+        expect(result.unresolvedRowRevisions).toBe(0);
+        expect(result.deletionsAccepted).toBe(1);
       });
 
-      await then('The row marker and its row survive in the document', async () => {
+      await then('The row marker and its row are absent', async () => {
         const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const dom = parseXml(serializeDoc(session));
 
         const rows = dom.getElementsByTagNameNS(W_NS, 'tr');
-        expect(rows.length).toBe(1);
+        expect(rows.length).toBe(0);
 
         const dels = dom.getElementsByTagNameNS(W_NS, 'del');
         let rowMarker: Element | null = null;
@@ -79,8 +80,7 @@ describe('Traceability: row-level revision guard (MCP surface)', () => {
             rowMarker = dels.item(i)!;
           }
         }
-        expect(rowMarker).not.toBeNull();
-        expect(rowMarker!.getAttributeNS(W_NS, 'id') ?? rowMarker!.getAttribute('w:id')).toBe('7');
+        expect(rowMarker).toBeNull();
       });
 
       await then('Ordinary content revisions were still accepted', async () => {
@@ -175,8 +175,8 @@ describe('Traceability: row-level revision guard (MCP surface)', () => {
     },
   );
 
-  test.openspec('[SDX-ROWREV-MCP-02] a document holding unresolved row revisions stays structurally valid')(
-    'the preserved marker stays in the only position the schema admits',
+  test.openspec('[SDX-ROWREV-MCP-02] accepted output has no row marker and remains structurally valid')(
+    'the resolved marker and deleted row are absent from well-formed output',
     async ({ when, then }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
@@ -193,16 +193,16 @@ describe('Traceability: row-level revision guard (MCP surface)', () => {
       );
       assertSuccess(result, 'accept_changes');
 
-      await then('The marker survives as a w:trPr child and the output is well-formed', async () => {
+      await then('The row marker is gone and the output is well-formed', async () => {
         const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const dom = parseXml(serializeDoc(session));
         expect(dom).toBeTruthy();
 
-        // A stray w:del anywhere else in the row would be schema-invalid.
         const dels = dom.getElementsByTagNameNS(W_NS, 'del');
-        expect(dels.length).toBe(1);
-        expect((dels.item(0)!.parentNode as Element).localName).toBe('trPr');
-        expect(result.unresolvedRowRevisions).toBe(1);
+        expect(dels.length).toBe(0);
+        expect(dom.getElementsByTagNameNS(W_NS, 'tr').length).toBe(0);
+        expect(dom.getElementsByTagNameNS(W_NS, 'tbl').length).toBe(0);
+        expect(result.unresolvedRowRevisions).toBe(0);
       });
     },
   );

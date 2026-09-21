@@ -249,14 +249,16 @@ describe('tagged publication range statistics', () => {
     )).toBe(true);
   });
 
-  transformationTest('counts a whole-row deletion from its row-property marker', () => {
+  transformationTest('counts independent row-property and run-content deletion ranges for a whole row', () => {
     const publication = publish(table(['deleted row', 'stable row']), table(['stable row']));
     const deletions = generatedElements(publication, 'del');
 
     expectRetainedMarkersAndStatsAliasesAgree(publication);
-    expect(deletions).toHaveLength(1);
-    expect((deletions[0]!.parentNode as Element).localName).toBe('trPr');
-    expect((deletions[0]!.parentNode?.parentNode as Element).localName).toBe('tr');
+    expect(deletions).toHaveLength(2);
+    const rowMarker = deletions.find((element) => (element.parentNode as Element).localName === 'trPr');
+    const contentMarker = deletions.find((element) => (element.parentNode as Element).localName === 'p');
+    expect((rowMarker?.parentNode?.parentNode as Element).localName).toBe('tr');
+    expect(contentMarker?.getElementsByTagNameNS(W_NS, 'delText')[0]?.textContent).toBe('deleted row');
   });
 
   transformationTest('excludes preserved same-author prior revisions from comparison counts', () => {

@@ -2,6 +2,7 @@ import { describe, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { itAllure } from '../../docx-core/src/testing/allure-test.js';
+import { buildDocxFromBodyXml } from '../../docx-core/src/testing/ooxml-fixtures.js';
 import JSZip from 'jszip';
 import { buildDocxFromParts, buildSyntheticDocx, DocxDocument, parseXml } from '@usejunior/docx-core';
 import { compileMarkdoc } from './compile.js';
@@ -10,6 +11,8 @@ import { exportAdjacentRevisionPairs, exportEditPairs } from './export.js';
 import { importDocxToMarkdoc } from './import.js';
 import { inspectMarkdocSource } from './inspect.js';
 import { parseMarkdoc, requireMarkdoc } from './markdoc.js';
+
+const tableEditTest = itAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.38' });
 
 function withBeforeAfterEdit(markdoc: string): string {
   const opening = /\{% para ([^\n]+) %\}\nThe Old Name\./;
@@ -32,7 +35,7 @@ describe('brownfield Markdoc authoring', () => {
     expect(ir.scaffold.every((paragraph) => paragraph.id.startsWith('_bk_'))).toBe(true);
   });
 
-  itAllure('[SDX-MDOC-03][SDX-MDOC-07][SDX-MDOC-13] compiles canonical clean states to verified clean and tracked DOCX', async () => {
+  itAllure('[SDX-MDOC-03][SDX-MDOC-07][SDX-MDOC-13][SDX-MDOC-115] compiles canonical clean states to verified clean and tracked DOCX', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.', 'Second paragraph.'] });
     const imported = await importDocxToMarkdoc(original);
     const markdoc = withBeforeAfterEdit(imported.markdoc);
@@ -41,6 +44,7 @@ describe('brownfield Markdoc authoring', () => {
       date: new Date('2026-08-12T00:00:00.000Z'),
     });
     expect(result.certificate.passed).toBe(true);
+    expect(result.certificate).not.toHaveProperty('tableTopology');
     expect(result.certificate).toMatchObject({ projectionPassed: true, draftCompletenessPassed: true, deliveryReady: true });
     expect(result.certificate.rejectAllEqualsSource).toBe(true);
     expect(result.certificate.acceptAllEqualsClean).toBe(true);
@@ -66,6 +70,285 @@ describe('brownfield Markdoc authoring', () => {
     const pairs = exportEditPairs(result.ir, { verified: result.certificate.passed });
     expect(pairs[0]).toMatchObject({ before: 'Original provision.', after: 'Revised provision.', verified: true });
     expect(pairs[0]?.rationales).toEqual([]);
+  });
+
+  tableEditTest('[SDX-MDOC-108] edits table-cell text and paragraphs without changing table topology', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:tbl><w:tblPr/>'
+      + '<w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="3600"/></w:tblGrid>'
+      + '<w:tr><w:tc><w:tcPr><w:tcW w:w="2400" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Label</w:t></w:r></w:p></w:tc>'
+      + '<w:tc><w:tcPr><w:tcW w:w="3600" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Old value</w:t></w:r></w:p>'
+      + '<w:p><w:r><w:t>Remove this line.</w:t></w:r></w:p></w:tc></w:tr>'
+      + '</w:tbl>',
+    );
+    const imported = await importDocxToMarkdoc(original);
+    const value = requireMarkdoc(imported.markdoc).scaffold.find((paragraph) => paragraph.originalText === 'Old value');
+    if (!value) throw new Error('table value paragraph missing');
+    let markdoc = withCanonicalChange(imported.markdoc, 'Old value', 'New value', 'update-cell');
+    markdoc = withCanonicalChange(markdoc, 'Remove this line.', '', 'delete-cell-line');
+    markdoc += [
+      `{% insert-after anchor="${value.id}" operation="insert-cell-line" style-source="${value.id}" %}`,
+      '{% after %}', 'Inserted line.', '{% /after %}', '{% /insert-after %}', '',
+    ].join('\n');
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc, {
+      author: 'Test Author',
+      date: new Date('2026-09-18T00:00:00.000Z'),
+    });
+
+    expect(result.certificate).toMatchObject({
+      passed: true,
+      rejectAllEqualsSource: true,
+      acceptAllEqualsClean: true,
+      unsupportedStructures: ['table-grid-operations'],
+    });
+    const [source, clean, accepted, rejected] = await Promise.all([
+      DocxDocument.load(imported.anchoredSource),
+      DocxDocument.load(result.clean),
+      DocxDocument.load(result.tracked),
+      DocxDocument.load(result.tracked),
+    ]);
+    await Promise.all([accepted.acceptChanges(), rejected.rejectChanges()]);
+    expect(clean.buildDocumentView().nodes.map((node) => node.raw_text)).toEqual(['Label', 'New value', 'Inserted line.']);
+    expect(accepted.buildDocumentView().nodes.map((node) => node.raw_text)).toEqual(['Label', 'New value', 'Inserted line.']);
+    expect(rejected.buildDocumentView().nodes.map((node) => node.raw_text)).toEqual(['Label', 'Old value', 'Remove this line.']);
+
+    const topology = async (buffer: Buffer) => {
+      const zip = await JSZip.loadAsync(buffer);
+      const xml = parseXml(await zip.file('word/document.xml')!.async('string'));
+      return {
+        tables: xml.getElementsByTagNameNS('*', 'tbl').length,
+        rows: xml.getElementsByTagNameNS('*', 'tr').length,
+        cells: xml.getElementsByTagNameNS('*', 'tc').length,
+        gridColumns: xml.getElementsByTagNameNS('*', 'gridCol').length,
+      };
+    };
+    const [sourceBuffer, acceptedBuffer, rejectedBuffer] = await Promise.all([
+      source.toBuffer({ cleanBookmarks: false }).then((output) => output.buffer),
+      accepted.toBuffer({ cleanBookmarks: false }).then((output) => output.buffer),
+      rejected.toBuffer({ cleanBookmarks: false }).then((output) => output.buffer),
+    ]);
+    const sourceTopology = await topology(sourceBuffer);
+    expect(await topology(result.clean)).toEqual(sourceTopology);
+    expect(await topology(acceptedBuffer)).toEqual(sourceTopology);
+    expect(await topology(rejectedBuffer)).toEqual(sourceTopology);
+  });
+
+  tableEditTest('[SDX-MDOC-110][SDX-MDOC-112] inserts and deletes complete table rows through canonical Markdoc', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="2400"/></w:tblGrid>'
+      + '<w:tr><w:tc><w:p><w:r><w:t>Keep A</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Keep B</w:t></w:r></w:p></w:tc></w:tr>'
+      + '<w:tr><w:tc><w:p><w:r><w:t>Delete A</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Delete B</w:t></w:r></w:p></w:tc></w:tr>'
+      + '</w:tbl>',
+    );
+    const imported = await importDocxToMarkdoc(original);
+    const scaffold = requireMarkdoc(imported.markdoc).scaffold;
+    const keep = scaffold.find((paragraph) => paragraph.originalText === 'Keep A');
+    const remove = scaffold.find((paragraph) => paragraph.originalText === 'Delete A');
+    if (!keep || !remove) throw new Error('table row anchors missing');
+    const paragraphEditedMarkdoc = withCanonicalChange(imported.markdoc, 'Keep B', 'Kept B', 'edit-existing-cell');
+    const markdoc = `${paragraphEditedMarkdoc}\n`
+      + `{% insert-table-rows anchor="${keep.id}" position="after" operation="add-rows" %}\n`
+      + '{% row %}\n{% cell text="New 1A" /%}\n{% cell text="" /%}\n{% /row %}\n'
+      + '{% row %}\n{% cell text="New 2A" /%}\n{% cell text="New 2B" /%}\n{% /row %}\n'
+      + '{% /insert-table-rows %}\n'
+      + `{% delete-table-row anchor="${remove.id}" operation="remove-row" /%}\n`
+      + '{% rationale for="add-rows" visibility="external-facing" %}\nAdd the approved inventory rows.\n{% /rationale %}\n';
+
+    const parsed = requireMarkdoc(markdoc);
+    expect(parsed.operations.filter((operation) => operation.kind.includes('table-row'))).toHaveLength(2);
+    expect(() => exportEditPairs(parsed)).toThrowError(expect.objectContaining({ code: 'STRUCTURAL_EDIT_PAIR_EXPORT_UNSUPPORTED' }));
+
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc, {
+      author: 'Test Author',
+      date: new Date('2026-09-20T00:00:00.000Z'),
+      rationaleComments: { author: 'Reviewer', initials: 'R' },
+      externalComments: true,
+    });
+    const [accepted, rejected] = await Promise.all([DocxDocument.load(result.tracked), DocxDocument.load(result.tracked)]);
+    await Promise.all([accepted.acceptChanges(), rejected.rejectChanges()]);
+    expect(result.certificate).toMatchObject({
+      passed: true,
+      rejectAllEqualsSource: true,
+      acceptAllEqualsClean: true,
+      tableTopology: {
+        sourceRejectAllEqual: true,
+        cleanAcceptAllEqual: true,
+        unresolvedRowRevisions: { accept: 0, reject: 0 },
+        diagnostics: [],
+        passed: true,
+      },
+    });
+    const [acceptedOutput, rejectedOutput] = await Promise.all([
+      accepted.toBuffer({ cleanBookmarks: false }).then((output) => output.buffer),
+      rejected.toBuffer({ cleanBookmarks: false }).then((output) => output.buffer),
+    ]);
+    const projectedText = async (buffer: Buffer) => {
+      const zip = await JSZip.loadAsync(buffer);
+      return parseXml(await zip.file('word/document.xml')!.async('string')).documentElement.textContent;
+    };
+    expect(await projectedText(acceptedOutput)).toContain('Keep AKept BNew 1ANew 2ANew 2B');
+    expect(await projectedText(rejectedOutput)).toContain('Keep AKeep BDelete ADelete B');
+    const rejectedZip = await JSZip.loadAsync(rejectedOutput);
+    const rejectedXml = await rejectedZip.file('word/document.xml')!.async('string');
+    expect(rejectedXml).toMatch(/w:name="(?:_bk_|_safe_docx_original_)/u);
+    const trackedZip = await JSZip.loadAsync(result.tracked);
+    const trackedXml = await trackedZip.file('word/document.xml')!.async('string');
+    expect(trackedXml).toContain('commentRangeStart');
+    const trackedDocument = parseXml(trackedXml);
+    for (const properties of [
+      ...Array.from(trackedDocument.getElementsByTagNameNS('*', 'trPr')),
+      ...Array.from(trackedDocument.getElementsByTagNameNS('*', 'rPr')),
+    ]) {
+      const children = Array.from(properties.childNodes)
+        .filter((node): node is Element => node.nodeType === 1)
+        .map((node) => node.localName);
+      expect(children, properties.toString()).not.toContain('commentRangeStart');
+      expect(children).not.toContain('commentRangeEnd');
+    }
+  });
+
+  tableEditTest('[SDX-MDOC-111] deletes one complete row with inverse tracked projections', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid>'
+      + '<w:tr><w:tc><w:p><w:r><w:t>Delete first.</w:t></w:r></w:p><w:p><w:r><w:t>Delete second.</w:t></w:r></w:p></w:tc></w:tr>'
+      + '<w:tr><w:tc><w:p><w:r><w:t>Keep row.</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
+    );
+    const imported = await importDocxToMarkdoc(original);
+    const anchor = requireMarkdoc(imported.markdoc).scaffold.find((paragraph) => paragraph.originalText === 'Delete first.');
+    if (!anchor) throw new Error('deletion anchor missing');
+    const markdoc = `${imported.markdoc}\n{% delete-table-row anchor="${anchor.id}" operation="delete-row" /%}\n`;
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc, {
+      author: 'Test Author', date: new Date('2026-09-20T00:00:00.000Z'),
+    });
+    const trackedZip = await JSZip.loadAsync(result.tracked);
+    const tracked = parseXml(await trackedZip.file('word/document.xml')!.async('string'));
+    expect(Array.from(tracked.getElementsByTagNameNS('*', 'trPr')).some((properties) =>
+      properties.getElementsByTagNameNS('*', 'del').length > 0)).toBe(true);
+    expect(Array.from(tracked.getElementsByTagNameNS('*', 'rPr')).some((properties) =>
+      properties.getElementsByTagNameNS('*', 'del').length > 0)).toBe(true);
+    expect(Array.from(tracked.getElementsByTagNameNS('*', 'p')).some((paragraph) =>
+      Array.from(paragraph.childNodes).some((child) => child.nodeType === 1 && (child as Element).localName === 'del'))).toBe(true);
+    expect(tracked.getElementsByTagNameNS('*', 'delText').length).toBeGreaterThan(0);
+    expect(result.certificate.tableTopology).toMatchObject({ passed: true, unresolvedRowRevisions: { accept: 0, reject: 0 } });
+  });
+
+  tableEditTest('[SDX-MDOC-113] rejects malformed row batches before artifact construction', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="2400"/></w:tblGrid>'
+      + '<w:tr><w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
+    );
+    const imported = await importDocxToMarkdoc(original);
+    const anchor = requireMarkdoc(imported.markdoc).scaffold[0]!;
+    const emptyCells = `${imported.markdoc}\n{% insert-table-rows anchor="${anchor.id}" position="after" operation="empty-cells" %}\n`
+      + '{% row %}\n{% cell text="" /%}\n{% cell text="" /%}\n{% /row %}\n{% /insert-table-rows %}\n';
+    expect(parseMarkdoc(emptyCells)).toMatchObject({ valid: true });
+    const inconsistent = `${imported.markdoc}\n{% insert-table-rows anchor="${anchor.id}" position="after" operation="bad" %}\n`
+      + '{% row %}\n{% cell text="one" /%}\n{% cell text="two" /%}\n{% /row %}\n'
+      + '{% row %}\n{% cell text="only one" /%}\n{% /row %}\n{% /insert-table-rows %}\n';
+    expect(parseMarkdoc(inconsistent)).toMatchObject({ valid: false });
+    const strayText = `${imported.markdoc}\n{% insert-table-rows anchor="${anchor.id}" position="after" operation="stray" %}\n`
+      + '{% row %}\nnot a cell\n{% cell text="one" /%}\n{% cell text="two" /%}\n{% /row %}\n{% /insert-table-rows %}\n';
+    expect(parseMarkdoc(strayText)).toMatchObject({ valid: false });
+    const emptyOperation = `${imported.markdoc}\n{% delete-table-row anchor="${anchor.id}" operation="" /%}\n`;
+    expect(parseMarkdoc(emptyOperation)).toMatchObject({ valid: false });
+
+    const wrongWidth = `${imported.markdoc}\n{% insert-table-rows anchor="${anchor.id}" position="after" operation="bad-width" %}\n`
+      + '{% row %}\n{% cell text="only one" /%}\n{% /row %}\n{% /insert-table-rows %}\n';
+    await expect(compileMarkdoc(imported.anchoredSource, wrongWidth)).rejects.toMatchObject({
+      code: 'TABLE_ROW_PREFLIGHT_FAILED',
+      details: {
+        operationId: 'bad-width',
+        causeCode: 'INVALID_ARGUMENT',
+        causeDetail: { feature: 'occupancy' },
+      },
+    });
+
+    const allEmptyWithRationale = `${emptyCells}\n{% rationale for="empty-cells" visibility="external-facing" %}\nExplain empty placeholders.\n{% /rationale %}\n`;
+    await expect(compileMarkdoc(imported.anchoredSource, allEmptyWithRationale, {
+      rationaleComments: { author: 'Reviewer', initials: 'R' },
+    })).rejects.toMatchObject({ code: 'RATIONALE_ANCHOR_UNAVAILABLE' });
+  });
+
+  itAllure('[SDX-MDOC-109] rejects sole-paragraph deletion and cross-cell formatting sources', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/><w:gridCol w:w="2400"/></w:tblGrid>'
+      + '<w:tr><w:tc><w:p><w:r><w:t>Required cell paragraph.</w:t></w:r></w:p></w:tc>'
+      + '<w:tc><w:p><w:r><w:t>Other cell.</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
+    );
+    const imported = await importDocxToMarkdoc(original);
+    const [required, other] = requireMarkdoc(imported.markdoc).scaffold;
+    if (!required || !other) throw new Error('table cell paragraphs missing');
+    const deletion = withCanonicalChange(imported.markdoc, 'Required cell paragraph.', '', 'delete-cell-paragraph');
+    await expect(compileMarkdoc(imported.anchoredSource, deletion)).rejects.toMatchObject({
+      code: 'UNSUPPORTED_EDIT_STRUCTURE',
+    });
+    const crossCellInsertion = `${imported.markdoc}\n{% insert-after anchor="${required.id}" operation="cross-cell" style-source="${other.id}" %}\n{% after %}\nInserted.\n{% /after %}\n{% /insert-after %}\n`;
+    await expect(compileMarkdoc(imported.anchoredSource, crossCellInsertion)).rejects.toMatchObject({
+      code: 'UNSUPPORTED_EDIT_STRUCTURE',
+    });
+  });
+
+  itAllure('[SDX-MDOC-109] rejects composed deletions that would empty one table cell', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc>'
+      + '<w:p><w:r><w:t>First direct paragraph.</w:t></w:r></w:p>'
+      + '<w:p><w:r><w:t>Second direct paragraph.</w:t></w:r></w:p>'
+      + '</w:tc></w:tr></w:tbl>',
+    );
+    const imported = await importDocxToMarkdoc(original);
+    let markdoc = withCanonicalChange(imported.markdoc, 'First direct paragraph.', '', 'delete-first');
+    markdoc = withCanonicalChange(markdoc, 'Second direct paragraph.', '', 'delete-second');
+    await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({
+      code: 'UNSUPPORTED_EDIT_STRUCTURE',
+      message: expect.stringContaining('without a trailing paragraph'),
+    });
+  });
+
+  itAllure('[SDX-MDOC-109] rejects deletion of the trailing paragraph beside a nested table', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc>'
+      + '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1200"/></w:tblGrid><w:tr><w:tc>'
+      + '<w:p><w:r><w:t>Nested paragraph.</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+      + '<w:p><w:r><w:t>Outer trailing paragraph.</w:t></w:r></w:p>'
+      + '</w:tc></w:tr></w:tbl>',
+    );
+    const imported = await importDocxToMarkdoc(original);
+    const markdoc = withCanonicalChange(imported.markdoc, 'Outer trailing paragraph.', '', 'delete-trailing');
+    await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({
+      code: 'UNSUPPORTED_EDIT_STRUCTURE',
+      message: expect.stringContaining('without a trailing paragraph'),
+    });
+  });
+
+  itAllure('[SDX-MDOC-109] rejects deletion that would expose a nested table as the final cell block', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc>'
+      + '<w:p><w:r><w:t>Leading paragraph.</w:t></w:r></w:p>'
+      + '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1200"/></w:tblGrid><w:tr><w:tc>'
+      + '<w:p><w:r><w:t>Nested paragraph.</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+      + '<w:p><w:r><w:t>Required trailing paragraph.</w:t></w:r></w:p>'
+      + '</w:tc></w:tr></w:tbl>',
+    );
+    const imported = await importDocxToMarkdoc(original);
+    const markdoc = withCanonicalChange(imported.markdoc, 'Required trailing paragraph.', '', 'delete-trailing');
+    await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({
+      code: 'UNSUPPORTED_EDIT_STRUCTURE',
+      message: expect.stringContaining('without a trailing paragraph'),
+    });
+  });
+
+  itAllure('[SDX-MDOC-109] rejects edits in vertical-merge continuation cells', async () => {
+    const original = await buildDocxFromBodyXml(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid>'
+      + '<w:tr><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>Visible merged text.</w:t></w:r></w:p></w:tc></w:tr>'
+      + '<w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p><w:r><w:t>Hidden continuation text.</w:t></w:r></w:p></w:tc></w:tr>'
+      + '</w:tbl>',
+    );
+    const imported = await importDocxToMarkdoc(original);
+    const markdoc = withCanonicalChange(imported.markdoc, 'Hidden continuation text.', 'Still hidden.', 'edit-continuation');
+    await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({
+      code: 'UNSUPPORTED_EDIT_STRUCTURE',
+    });
   });
 
   itAllure('[SDX-MDOC-63] exports paired rationale records without collapsing visibility', async () => {

@@ -210,6 +210,47 @@ adjacent list level and a list terminator:
 This supports editing text within existing list topology; changing numbering
 definitions, restarting a list, or changing list levels remains out of scope.
 
+Anchored text replacement, insertion, and deletion are supported inside an
+existing table cell. Inserted paragraphs must inherit formatting from that same
+physical cell—a nested table's cells are distinct from the enclosing cell—and
+the compiler refuses any deletion set that would leave the cell without a
+trailing direct paragraph. Replace the retained paragraph instead of
+combining deletion and insertion when a cell contains only one paragraph.
+Vertical-merge continuation cells remain non-editable because their content is
+not independently visible. These paragraph operations preserve row, cell, grid,
+and merge topology.
+
+Simple rectangular body tables also admit whole-row insertion and deletion:
+
+```markdoc
+{% insert-table-rows anchor="_bk_inventory" position="after" operation="add-inventory" %}
+{% row %}
+{% cell text="Acme Manufacturing, Inc." /%}
+{% cell text="Pending" /%}
+{% /row %}
+{% row %}
+{% cell text="Bravo Holdings" /%}
+{% cell text="Approved" /%}
+{% /row %}
+{% /insert-table-rows %}
+
+{% delete-table-row anchor="_bk_obsolete" operation="remove-obsolete" /%}
+```
+
+Rows are inserted in authored order. `position="after"` chains each new row
+after the preceding inserted row; `position="before"` keeps the source row as
+the anchor. Cell text is an exact single-line string (including leading or
+trailing spaces); tabs and line breaks are rejected. The compiler preflights
+the entire structural batch and only admits the bounded docx-core rectangular
+topology—no merged, nested, offset, wrapped, or final-row deletion cases. Its
+certificate additionally proves source/reject and clean/accept table topology
+and zero unresolved row revisions. This is a Markdoc/compiler adapter over the
+public docx-core primitives; it does not add an MCP row-editing tool.
+If inserted rows duplicate adjacent source rows exactly, the structural build
+can still compile, but an attached rationale may be refused as ambiguous rather
+than being placed on a potentially wrong physical duplicate. Omit that
+rationale or make the authored row text distinguishable.
+
 Mixed-format paragraphs are edited surgically: unchanged spans retain their
 source runs, and a replacement inherits the one formatting class occupied by
 the deleted source span. If an insertion lands exactly between incompatible
