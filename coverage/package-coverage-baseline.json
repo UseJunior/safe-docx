@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-23T10:50:24.297Z",
+  "generated_at": "2026-09-21T01:56:00.482Z",
   "policy": {
     "ratchet_tolerance_percentage_points": 0.1,
     "max_positive_drift_percentage_points": {
@@ -9,10 +9,10 @@
   },
   "packages": {
     "docx-core": {
-      "lines": 88.53,
-      "branches": 75.53,
-      "functions": 90.1,
-      "statements": 86.62,
+      "lines": 89.67,
+      "branches": 77.4,
+      "functions": 91.36,
+      "statements": 87.75,
       "deltas": {
         "lines": null,
         "branches": null,
@@ -21,10 +21,10 @@
       }
     },
     "docx-compare": {
-      "lines": 87.63,
-      "branches": 75.52,
-      "functions": 88.06,
-      "statements": 85.64,
+      "lines": 88.56,
+      "branches": 77.16,
+      "functions": 89.12,
+      "statements": 86.7,
       "deltas": {
         "lines": null,
         "branches": null,
@@ -46,9 +46,9 @@
     }
   },
   "aggregate": {
-    "lines_mean": 87.55,
-    "branches_mean": 75.92,
-    "functions_mean": 90.34,
-    "statements_mean": 85.55
+    "lines_mean": 88.24,
+    "branches_mean": 77.09,
+    "functions_mean": 91.12,
+    "statements_mean": 86.28
   }
 }
