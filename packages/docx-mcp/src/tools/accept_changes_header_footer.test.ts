@@ -162,7 +162,9 @@ describe('accept_changes selected header projection', () => {
     'retains the inherited row-output structural contract',
     async () => {
       const source = await makeDocxWithDocumentXml(
-        `<w:document xmlns:w="${W_NS}"><w:body><w:tbl><w:tr><w:trPr>` +
+        `<w:document xmlns:w="${W_NS}"><w:body><w:tbl>` +
+        `<w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid>` +
+        `<w:tr><w:trPr>` +
         `<w:ins w:id="7" w:author="AI"/></w:trPr><w:tc><w:p/></w:tc>` +
         `</w:tr></w:tbl></w:body></w:document>`,
       );
