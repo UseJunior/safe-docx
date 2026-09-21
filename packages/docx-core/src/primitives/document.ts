@@ -302,12 +302,6 @@ function nearestWordAncestor(element: Element, localName: string): Element | nul
   return null;
 }
 
-function directWordChildren(parent: Element, localName: string): Element[] {
-  return Array.from(parent.childNodes).filter(
-    (child): child is Element => child.nodeType === 1 && isW(child as Element, localName),
-  );
-}
-
 /**
  * Classify the physical table-cell constraints around a story paragraph.
  *
@@ -325,9 +319,11 @@ function storyParagraphTableContext(paragraph: Element): StoryParagraphTableCont
       isTrailingDirectCellParagraph: false,
     };
   }
-  const directParagraphs = directWordChildren(cell, W.p);
-  const cellProperties = directWordChildren(cell, W.tcPr)[0];
-  const verticalMerge = cellProperties ? directWordChildren(cellProperties, 'vMerge')[0] : undefined;
+  const directParagraphs = getDirectChildrenByName(cell, W.p);
+  const cellProperties = getDirectChildrenByName(cell, W.tcPr)[0];
+  const verticalMerge = cellProperties
+    ? getDirectChildrenByName(cellProperties, 'vMerge')[0]
+    : undefined;
   const mergeValue = verticalMerge?.getAttributeNS(OOXML.W_NS, 'val')
     ?? verticalMerge?.getAttribute('w:val')
     ?? verticalMerge?.getAttribute('val');
