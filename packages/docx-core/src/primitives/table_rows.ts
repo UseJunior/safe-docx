@@ -1,4 +1,8 @@
-import { insertSingleParagraphBookmark, findParagraphByBookmarkId } from './bookmarks.js';
+import {
+  insertSingleParagraphBookmark,
+  findParagraphByBookmarkId,
+  type BookmarkReservation,
+} from './bookmarks.js';
 import { childElements, createWmlElement, getDirectChildrenByName, isW } from './dom-helpers.js';
 import { SafeDocxError } from './errors.js';
 import { OOXML } from './namespaces.js';
@@ -265,7 +269,12 @@ function appendText(run: Element, text: string): void {
 }
 
 /** Insert a rectangular unmerged row using an anchored row's safe formatting shell. */
-export function insertTableRow(doc: Document, params: InsertTableRowParams, ctx?: RevisionContext): InsertTableRowResult {
+export function insertTableRow(
+  doc: Document,
+  params: InsertTableRowParams,
+  ctx?: RevisionContext,
+  bookmarkReservation?: BookmarkReservation,
+): InsertTableRowResult {
   const shape = resolveTableShape(doc, params.positionalAnchorNodeId);
   const anchorCells = shape.cells[shape.rowIndex]!;
   if (params.cellTexts.length !== anchorCells.length) {
@@ -308,7 +317,8 @@ export function insertTableRow(doc: Document, params: InsertTableRowParams, ctx?
 
   const ref = params.relativePosition === 'BEFORE' ? shape.anchorRow : shape.anchorRow.nextSibling;
   shape.table.insertBefore(newRow, ref);
-  const cellParagraphIds = newParagraphs.map((paragraph) => insertSingleParagraphBookmark(doc, paragraph));
+  const cellParagraphIds = newParagraphs.map((paragraph) =>
+    insertSingleParagraphBookmark(doc, paragraph, bookmarkReservation));
   return { rowIndex: shape.rowIndex + (params.relativePosition === 'AFTER' ? 1 : 0), cellParagraphIds };
 }
 

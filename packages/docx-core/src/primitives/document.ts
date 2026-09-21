@@ -93,6 +93,7 @@ import { TRACKED_CHANGE_ELEMENT_NAME_SET } from './revision-vocabulary.js';
 import {
   insertTableRow as insertTableRowImpl,
   deleteTableRow as deleteTableRowImpl,
+  removeOrphanedRangeEndpointsForSubtree,
   type InsertTableRowParams,
   type InsertTableRowResult,
   type DeleteTableRowParams,
@@ -353,6 +354,10 @@ function assertStoryParagraphMutationSafe(
   if (context.verticalMergeContinuation) {
     throw new Error('Story paragraph mutation in a vertical-merge continuation cell is unsupported');
   }
+  const table = cell ? nearestWordAncestor(cell, W.tbl) : null;
+  if (table && nearestWordAncestor(table, W.tc)) {
+    throw new Error('Story paragraph mutation inside a nested table is unsupported');
+  }
   if (operation === 'insert' && styleSource) {
     const styleCell = nearestWordAncestor(styleSource, W.tc);
     if (styleCell !== cell) throw new Error('Story paragraph style source must be in the anchor table cell');
@@ -433,7 +438,14 @@ export class DocxDocument {
     const relsText = await zip.readTextOrNull('word/_rels/document.xml.rels');
     const relsMap = relsText ? parseDocumentRels(parseXml(relsText)) : new Map<string, string>();
 
-    return new DocxDocument(zip, doc, stylesXml, themeXml, numberingXml, footnotesXml, relsMap, xml);
+    const document = new DocxDocument(zip, doc, stylesXml, themeXml, numberingXml, footnotesXml, relsMap, xml);
+    const storyDocuments: Document[] = [];
+    for (const partPath of await enumerateSelectedHeaderFooterPartPaths(zip)) {
+      const storyXml = await zip.readTextOrNull(partPath);
+      if (storyXml) storyDocuments.push(parseXml(storyXml));
+    }
+    document.paragraphBookmarkReservation = collectBookmarkReservation([doc, ...storyDocuments]);
+    return document;
   }
 
   getParagraphs(): Element[] {
@@ -483,16 +495,6 @@ export class DocxDocument {
     }
   }
 
-  private async packageBookmarkReservation(storyDocuments: Map<string, Document>): Promise<BookmarkReservation> {
-    const selectedPaths = await enumerateSelectedHeaderFooterPartPaths(this.zip);
-    for (const selectedPath of selectedPaths) {
-      if (storyDocuments.has(selectedPath)) continue;
-      const xml = await this.zip.readTextOrNull(selectedPath);
-      if (xml) storyDocuments.set(selectedPath, parseXml(xml));
-    }
-    return collectBookmarkReservation([this.documentXml, ...storyDocuments.values()]);
-  }
-
   async getStoryParagraphTextById(partPath: string, bookmarkId: string): Promise<string | null> {
     const story = await this.selectedStoryDocument(partPath);
     const paragraph = findParagraphByBookmarkId(story, bookmarkId);
@@ -509,8 +511,7 @@ export class DocxDocument {
     attachmentId: string,
   ): Promise<{ paragraphCount: number }> {
     const story = await this.selectedStoryDocument(partPath);
-    const stories = new Map([[partPath, story]]);
-    const reservation = await this.packageBookmarkReservation(stories);
+    const reservation = this.paragraphBookmarkReservation;
     const result = insertParagraphBookmarks(story, attachmentId, reservation);
     if (result.indexedParagraphs > 0) this.zip.writeText(partPath, serializeXml(story));
     return { paragraphCount: result.indexedParagraphs };
@@ -526,6 +527,7 @@ export class DocxDocument {
     return storyParagraphTableContext(paragraph);
   }
 
+  /** Mutate intended-clean story text; comparison is responsible for tracked output. */
   async replaceStoryTextAtRange(params: {
     partPath: string;
     targetParagraphId: string;
@@ -541,6 +543,7 @@ export class DocxDocument {
     this.zip.writeText(params.partPath, serializeXml(story));
   }
 
+  /** Mutate intended-clean story text; comparison is responsible for tracked output. */
   async replaceStoryText(params: {
     partPath: string;
     targetParagraphId: string;
@@ -582,8 +585,7 @@ export class DocxDocument {
       throw new Error(`Style source paragraph not found in ${params.partPath}: ${params.styleSourceId}`);
     }
     assertStoryParagraphMutationSafe(anchor, 'insert', styleSource ?? undefined);
-    const stories = new Map([[params.partPath, story]]);
-    const bookmarkReservation = await this.packageBookmarkReservation(stories);
+    const bookmarkReservation = this.paragraphBookmarkReservation;
     const result = this.withTemporaryDocumentXml(story, () => this.insertParagraph({
       positionalAnchorNodeId: params.positionalAnchorNodeId,
       relativePosition: params.relativePosition,
@@ -595,6 +597,7 @@ export class DocxDocument {
     return result;
   }
 
+  /** Remove an intended-clean story paragraph; comparison is responsible for tracked output. */
   async deleteStoryParagraph(partPath: string, paragraphId: string): Promise<void> {
     const story = await this.selectedStoryDocument(partPath);
     const paragraph = findParagraphByBookmarkId(story, paragraphId);
@@ -611,6 +614,7 @@ export class DocxDocument {
         end.getAttributeNS(OOXML.W_NS, 'id') ?? end.getAttribute('w:id')
       ) === bookmarkNumericId)
       : undefined;
+    removeOrphanedRangeEndpointsForSubtree(story.documentElement, paragraph);
     paragraph.parentNode?.removeChild(paragraph);
     bookmarkStart?.parentNode?.removeChild(bookmarkStart);
     bookmarkEnd?.parentNode?.removeChild(bookmarkEnd);
@@ -618,7 +622,12 @@ export class DocxDocument {
   }
 
   insertTableRow(params: InsertTableRowParams, ctx?: RevisionContext): InsertTableRowResult {
-    const result = insertTableRowImpl(this.documentXml, params, ctx);
+    const result = insertTableRowImpl(
+      this.documentXml,
+      params,
+      ctx,
+      this.paragraphBookmarkReservation,
+    );
     this.dirty = true;
     this.documentViewCache = null;
     return result;
@@ -632,7 +641,11 @@ export class DocxDocument {
   }
 
   insertParagraphBookmarks(attachmentId: string): { paragraphCount: number } {
-    const res = insertParagraphBookmarks(this.documentXml, attachmentId);
+    const res = insertParagraphBookmarks(
+      this.documentXml,
+      attachmentId,
+      this.paragraphBookmarkReservation,
+    );
     if (res.indexedParagraphs > 0) this.dirty = true;
     return { paragraphCount: res.indexedParagraphs };
   }

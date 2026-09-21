@@ -52,6 +52,19 @@ async function fixture(): Promise<Buffer> {
   });
 }
 
+async function singleHeaderFixture(headerXml: string): Promise<Buffer> {
+  return buildDocxWithAncillaryParts({
+    bodyXml: paragraphWithText('Body'),
+    sectPrXml: '<w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr>',
+    relationships: [{ id: 'rIdHeader', type: `${REL_BASE}/header`, target: 'header1.xml' }],
+    parts: [{
+      path: 'word/header1.xml',
+      contentType: HEADER_CONTENT_TYPE,
+      xml: `<w:hdr xmlns:w="${W_NS}">${headerXml}</w:hdr>`,
+    }],
+  });
+}
+
 function requiredXml(xml: string | null): string {
   if (xml === null) throw new Error('Expected OOXML package part');
   return xml;
@@ -77,20 +90,20 @@ function bookmarkKeys(xml: string | null): { names: string[]; numericIds: string
 
 describe('relationship-selected story paragraph primitives', () => {
   const test = testAllure.epic('Document Comparison')
-    .withLabels({ feature: TEST_FEATURE });
+    .withLabels({ feature: TEST_FEATURE })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.6.2' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.66' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.84' });
 
   test.openspec('[SDX-PRIM-STORY-02] Story paragraph mutations stay local and table-safe')(
     'allocates package-wide anchors and applies local table-safe mutations',
     async () => {
-      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.6.2' });
-      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.66' });
-      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.84' });
       const source = await fixture();
       const originalOrphan = await readZipText(source, 'word/header-orphan.xml');
       const document = await DocxDocument.load(source);
-      document.insertParagraphBookmarks('body');
       await document.insertStoryParagraphBookmarks('word/header1.xml', 'header');
       await document.insertStoryParagraphBookmarks('word/footer1.xml', 'footer');
+      document.insertParagraphBookmarks('body');
       const anchored = (await document.toBuffer({ cleanBookmarks: false })).buffer;
 
       const parts = await Promise.all([
@@ -108,6 +121,7 @@ describe('relationship-selected story paragraph primitives', () => {
 
       const headerIds = paragraphIds(parts[1]!);
       const footerIds = paragraphIds(parts[2]!);
+      const bodyIds = paragraphIds(parts[0]!);
       expect(headerIds).toHaveLength(3);
       expect(footerIds).toHaveLength(1);
       expect(await document.getStoryParagraphTextById('word/header1.xml', footerIds[0]!)).toBeNull();
@@ -132,6 +146,11 @@ describe('relationship-selected story paragraph primitives', () => {
         relativePosition: 'AFTER',
         newText: 'Inserted cell paragraph',
       });
+      document.insertParagraph({
+        positionalAnchorNodeId: bodyIds[0]!,
+        relativePosition: 'AFTER',
+        newText: 'Body insertion after story allocation',
+      });
       await document.replaceStoryTextAtRange({
         partPath: 'word/header1.xml',
         targetParagraphId: inserted.newParagraphId,
@@ -154,6 +173,13 @@ describe('relationship-selected story paragraph primitives', () => {
       expect(await readZipText(output, 'word/footer1.xml')).toBe(parts[2]);
       expect(await readZipText(output, 'word/header-orphan.xml')).toBe(originalOrphan);
       expect(await readZipText(source, 'word/header1.xml')).toContain('Repeated text');
+      const finalParts = await Promise.all([
+        readZipText(output, 'word/document.xml'),
+        readZipText(output, 'word/header1.xml'),
+        readZipText(output, 'word/footer1.xml'),
+      ]);
+      const finalNumericIds = finalParts.flatMap((xml) => bookmarkKeys(xml).numericIds);
+      expect(new Set(finalNumericIds).size).toBe(finalNumericIds.length);
     },
   );
 
@@ -169,6 +195,42 @@ describe('relationship-selected story paragraph primitives', () => {
         .rejects.toThrow(/without a trailing paragraph/);
       const header = await readZipText((await document.toBuffer({ cleanBookmarks: false })).buffer, 'word/header1.xml');
       expect(header).toContain('Cell tail');
+    },
+  );
+
+  test.openspec('[SDX-PRIM-STORY-02] Story paragraph mutations stay local and table-safe')(
+    'rejects nested-table edits and repairs foreign ranges cut by deletion',
+    async () => {
+      const nested =
+        '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid>'
+        + '<w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1200"/></w:tblGrid>'
+        + '<w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>Nested</w:t></w:r></w:p></w:tc></w:tr>'
+        + '</w:tbl><w:p/></w:tc></w:tr></w:tbl>';
+      const nestedDocument = await DocxDocument.load(await singleHeaderFixture(nested));
+      await nestedDocument.insertStoryParagraphBookmarks('word/header1.xml', 'header');
+      const nestedBuffer = (await nestedDocument.toBuffer({ cleanBookmarks: false })).buffer;
+      const nestedIds = paragraphIds(await readZipText(nestedBuffer, 'word/header1.xml'));
+      await expect(nestedDocument.replaceStoryText({
+        partPath: 'word/header1.xml',
+        targetParagraphId: nestedIds[0]!,
+        findText: 'Nested',
+        replaceText: 'Changed',
+      })).rejects.toThrow(/nested table/);
+
+      const ranged =
+        '<w:p><w:bookmarkStart w:id="77" w:name="foreign-range"/><w:r><w:t>Delete me</w:t></w:r></w:p>'
+        + '<w:p><w:bookmarkEnd w:id="77"/><w:r><w:t>Keep me</w:t></w:r></w:p>';
+      const rangedDocument = await DocxDocument.load(await singleHeaderFixture(ranged));
+      await rangedDocument.insertStoryParagraphBookmarks('word/header1.xml', 'header');
+      const rangedBuffer = (await rangedDocument.toBuffer({ cleanBookmarks: false })).buffer;
+      const rangedIds = paragraphIds(await readZipText(rangedBuffer, 'word/header1.xml'));
+      await rangedDocument.deleteStoryParagraph('word/header1.xml', rangedIds[0]!);
+      const output = await readZipText(
+        (await rangedDocument.toBuffer({ cleanBookmarks: false })).buffer,
+        'word/header1.xml',
+      );
+      expect(output).not.toContain('w:id="77"');
+      expect(output).toContain('Keep me');
     },
   );
 });
