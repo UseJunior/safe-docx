@@ -398,6 +398,41 @@ describe('renderer verifier', () => {
       }
     });
 
+  itAllure('budgets one rendered value for a fragmented complex PAGE instruction', async () => {
+    const root = path.join(os.tmpdir(), `render-header-fragmented-page-field-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = 'Synthetic single page opening clause. inserted-alpha removed-beta';
+    const field = '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PA</w:instrText></w:r><w:r><w:instrText>GE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>';
+    await paginatedFixture(source, { body: await fixtureFragment('single-page-body.xml'), header: `<w:hdr><w:p>${field}</w:p></w:hdr>` });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source,
+      expectedMarkupText: body,
+      outputDir: path.join(root, 'out'),
+      tools: fakeTools(`1\n${body}`),
+      configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+  });
+
+  itAllure('does not multiply the numeric budget for repeated instruction fragments in one field', async () => {
+    const root = path.join(os.tmpdir(), `render-header-single-page-field-budget-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = 'Synthetic single page opening clause. inserted-alpha removed-beta';
+    const field = '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE </w:instrText></w:r><w:r><w:instrText> \\* MERGEFORMAT PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>';
+    await paginatedFixture(source, { body: await fixtureFragment('single-page-body.xml'), header: `<w:hdr><w:p>${field}</w:p></w:hdr>` });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source,
+      expectedMarkupText: body,
+      outputDir: path.join(root, 'out'),
+      tools: fakeTools(`1 1\n${body}`),
+      configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding?.unexplainedTokenSample).toContain('1');
+  });
+
   itAllure('reserves cached results from non-pagination header fields', async () => {
     const root = path.join(os.tmpdir(), `render-header-ordinary-field-results-${Date.now()}`);
     await mkdir(root, { recursive: true });
@@ -455,6 +490,25 @@ describe('renderer verifier', () => {
       configuredPixelFloor: 2,
     });
     expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+  });
+
+  itAllure('does not grant a numeric budget for a PAGE field in an unselected fallback', async () => {
+    const root = path.join(os.tmpdir(), `render-header-fallback-page-budget-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = 'Synthetic single page opening clause. inserted-alpha removed-beta';
+    const fallbackField = '<w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple>';
+    const header = `<w:hdr><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="w"><w:p><w:r><w:t>SelectedHeader</w:t></w:r></w:p></mc:Choice><mc:Fallback><w:p>${fallbackField}</w:p></mc:Fallback></mc:AlternateContent></w:hdr>`;
+    await paginatedFixture(source, { body: await fixtureFragment('single-page-body.xml'), header });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source,
+      expectedMarkupText: body,
+      outputDir: path.join(root, 'out'),
+      tools: fakeTools(`SelectedHeader\n${body} 1`),
+      configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding?.unexplainedTokenSample).toContain('1');
   });
 
   itAllure('fails text binding when logical content is missing while keeping colour visibility truthful', async () => {
