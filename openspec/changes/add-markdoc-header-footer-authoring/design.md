@@ -99,8 +99,11 @@ and avoids body/header collisions even when text and neighbors are identical.
 
 The primitive layer first gains story-scoped equivalents of paragraph bookmark
 insertion, lookup, replacement, insertion, deletion, and table-cell validation,
-all addressed by selected part plus anchor. Existing localized formatting rules
-are re-hosted on that story root. Cell topology, cross-cell style sources,
+all keyed by the OPC package part path (`word/headerN.xml` or
+`word/footerN.xml`) plus anchor. Markdoc maps its opaque story ID to that pinned
+path only after validating the binding closure and fingerprint. Existing
+localized formatting rules are re-hosted on that story root. Cell topology,
+cross-cell style sources,
 vertical-merge continuations, and the required final direct `w:p` block
 (ignoring range markers) are evaluated against the physical cell in the story
 DOM, never the body view.
@@ -168,9 +171,12 @@ byte-compared. Unedited selected side parts remain covered by unchanged-package
 preservation.
 
 Package accept/reject is extended to every relationship-selected header/footer
-part rather than filename patterns. Its per-part counters aggregate with the
-existing body/side-story results, and no unresolved revision may remain in an
-edited story.
+part rather than filename patterns. Orphan header/footer parts that no section
+relationship selects are deliberately ignored, and AI-revision validation
+converges on the same relationship-walked inventory. Accept counters and reject
+`insertionsRemoved`/`deletionsRestored` counters aggregate with the existing
+body/side-story results, and no unresolved revision may remain in an edited
+story.
 
 ### 6. Keep rationale metadata but reject side-story comment rendering
 
@@ -198,6 +204,10 @@ moved to body text or dropped.
 - **Public primitive expansion.** Story-scoped mutation and package projection
   are prerequisites, not assumed behavior; their delta and tests land in the
   same implementation PR before Markdoc uses them.
+- **Coverage-enforced deltas.** This repository requires every active
+  `docx-primitives` and `mcp-server` scenario to have a mapped implementation
+  test. Their formal deltas therefore land with those tests after this proposal
+  is approved, rather than making the proposal-only gate unmergeable.
 
 ## Migration Plan
 

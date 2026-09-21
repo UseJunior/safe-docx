@@ -5,7 +5,8 @@
 The comparison engine SHALL independently compare ordinary paragraph content in
 each paired header/footer story when original and revised packages retain the
 same section count, selector set, exact physical-story binding closures, and
-admitted scaffold. It SHALL pair stories by complete sorted binding closure,
+admitted scaffold, with unchanged `w:sectPrChange`, `w:titlePg`, and even/odd
+header settings. It SHALL pair stories by complete sorted binding closure,
 not canonical content or a content-sensitive scaffold fingerprint. It SHALL use
 the shared tagged-tree semantics and splice tracked paragraph/run revisions into
 the preserved revised story root. Physical package filenames SHALL NOT

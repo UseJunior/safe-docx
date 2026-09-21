@@ -63,7 +63,7 @@ content controls, text boxes, objects, comments, or note references as
 read-only and MUST reject an operation targeting one.
 
 #### Scenario: [SDX-MDOC-125] Relationship-backed paragraph stays read-only
-- **GIVEN** a selected header paragraph containing a drawing, picture, content control, nested text box, object, comment, or note reference
+- **GIVEN** a selected header paragraph containing a drawing, picture, `mc:AlternateContent`, content control, nested text box, object, comment, or note reference
 - **WHEN** Markdoc imports and an operation attempts to target that paragraph
 - **THEN** import SHALL NOT expose an operative anchor for that paragraph
 - **AND** the operation SHALL fail with a typed unsupported-content diagnostic before mutation

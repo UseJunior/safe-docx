@@ -38,3 +38,7 @@ as unrepresented instead of emitting native tracked revisions.
   `compare-vml-text-box-stories`, but adds binding-closure pairing and an
   ordinary-text-blanked scaffold fingerprint rather than reusing its
   content-sensitive pairing keys
+- This approval PR carries the `docx-markdoc` and `docx-comparison` deltas.
+  The coverage-enforced `docx-primitives` and `mcp-server` deltas SHALL be
+  added with their mapped tests in the implementation PR after approval; their
+  required behavior is pinned in this design and task list.
