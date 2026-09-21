@@ -2,6 +2,7 @@ import {
   findParagraphByBookmarkId,
   getParagraphBookmarkId,
   insertSingleParagraphBookmark,
+  type BookmarkReservation,
 } from './bookmarks.js';
 import { childElements, createWmlElement, getDirectChildrenByName, isW } from './dom-helpers.js';
 import { OOXML, W } from './namespaces.js';
@@ -763,6 +764,7 @@ export function insertSectionBreak(
   doc: Document,
   mutation: InsertSectionBreakMutation,
   ctx?: RevisionContext,
+  bookmarkReservation?: BookmarkReservation,
 ): InsertSectionBreakResult {
   if (
     typeof mutation.anchorParagraphId !== 'string'
@@ -903,6 +905,7 @@ export function insertSectionBreak(
     const insertedBoundaryParagraphId = insertSingleParagraphBookmark(
       doc,
       boundaryParagraph,
+      bookmarkReservation,
     );
     const sectionsAfter = getDocumentSections(doc);
     if (sectionsAfter.length !== sectionCountBefore + 1) {

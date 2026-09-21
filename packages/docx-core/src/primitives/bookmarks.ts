@@ -358,7 +358,11 @@ export function insertParagraphBookmarks(
     const parent = p.parentNode;
     if (!parent) continue;
 
-    const numericId = reservation ? reservation.nextNumericId++ : ++maxNumeric;
+    const numericId = reservation
+      ? Math.max(reservation.nextNumericId, maxNumeric + 1)
+      : maxNumeric + 1;
+    maxNumeric = numericId;
+    if (reservation) reservation.nextNumericId = numericId + 1;
     const prevText = i > 0 ? getParagraphText(paragraphs[i - 1]!) : '';
     const nextText = i + 1 < paragraphs.length ? getParagraphText(paragraphs[i + 1]!) : '';
     const name = deriveDeterministicJrParaName({
@@ -403,7 +407,10 @@ export function insertSingleParagraphBookmark(
     if (!Number.isNaN(val)) maxNumeric = Math.max(maxNumeric, val);
   }
 
-  const numericId = reservation ? reservation.nextNumericId++ : maxNumeric + 1;
+  const numericId = reservation
+    ? Math.max(reservation.nextNumericId, maxNumeric + 1)
+    : maxNumeric + 1;
+  if (reservation) reservation.nextNumericId = numericId + 1;
   const name = deriveDeterministicJrParaName({
     paragraph: p,
     prevText,

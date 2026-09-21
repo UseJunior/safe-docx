@@ -134,6 +134,11 @@ describe('relationship-selected story paragraph primitives', () => {
       await expect(document.getStoryParagraphTextById('word/header-orphan.xml', 'anything'))
         .rejects.toThrow(/not selected/);
 
+      document.insertSectionBreak({
+        anchorParagraphId: bodyIds[0]!,
+        breakType: 'nextPage',
+      });
+
       await document.replaceStoryText({
         partPath: 'word/header1.xml',
         targetParagraphId: headerIds[0]!,

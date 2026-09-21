@@ -1333,7 +1333,12 @@ export class DocxDocument {
     mutation: InsertSectionBreakMutation,
     ctx?: RevisionContext,
   ): InsertSectionBreakResult {
-    const result = insertSectionBreak(this.documentXml, mutation, ctx);
+    const result = insertSectionBreak(
+      this.documentXml,
+      mutation,
+      ctx,
+      this.paragraphBookmarkReservation,
+    );
     this.dirty = true;
     this.documentViewCache = null;
     return result;
