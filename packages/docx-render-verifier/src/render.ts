@@ -432,9 +432,12 @@ async function analyzeRenderedPackage(bytes: Buffer, pageCount: number): Promise
       deletions ||= hasVisibleRevisionInStory(xml, ['del', 'moveFrom']);
       const document = parseStoryXml(xml);
       if (document === null) continue;
+      // Keep this package's field walk independent from docx-core: the
+      // verifier is an external oracle and must not share generator facts.
+      const pageFields = analyzePageFields(document);
       const isPaginationStory = story.kind === 'header' || story.kind === 'footer';
-      if (isPaginationStory) headerFooterPageFieldCount += pageFieldInstructionCount(document);
-      else bodyPageFieldCount += pageFieldInstructionCount(document);
+      if (isPaginationStory) headerFooterPageFieldCount += pageFields.instructionCount;
+      else bodyPageFieldCount += pageFields.instructionCount;
       // Header/footer story text is pagination-owned and reserved wholesale,
       // so only body-layer stories can declare whitespace-optional junctions.
       if (!isPaginationStory) revisionBoundaries.push(...collectAdjacentRevisionBoundaries(document));
@@ -445,16 +448,13 @@ async function analyzeRenderedPackage(bytes: Buffer, pageCount: number): Promise
         }
       }
       if (!isPaginationStory) continue;
-      for (const localName of ['t', 'delText'] as const) {
-        for (const text of Array.from(document.getElementsByTagNameNS(W_NS, localName))) {
-          // A cached field result (e.g. the stored "1" of a PAGE fldSimple) is
-          // not literal story text: at render time the field value replaces
-          // it. Counting it would double-reserve alongside the numeric
-          // page-field budget and could eat a legitimate body token.
-          if (hasFieldResultAncestor(text)) continue;
-          for (const token of tokenizeRenderedText(text.textContent ?? '')) {
-            headerFooterTokenCounts.set(token, (headerFooterTokenCounts.get(token) ?? 0) + 1);
-          }
+      // Renderers concatenate adjacent runs and revision spans before text
+      // extraction. Build that same paragraph character stream before
+      // tokenizing so punctuation next to revised text remains one token.
+      for (const paragraph of Array.from(document.getElementsByTagNameNS(W_NS, 'p'))) {
+        const literal = renderedParagraphLiteral(paragraph, pageFields.complexResultNodes);
+        for (const token of tokenizeRenderedText(literal)) {
+          headerFooterTokenCounts.set(token, (headerFooterTokenCounts.get(token) ?? 0) + 1);
         }
       }
     }
@@ -483,22 +483,94 @@ function parseStoryXml(xml: string): ReturnType<DOMParser['parseFromString']> | 
   }
 }
 
-function hasFieldResultAncestor(node: XmlElement): boolean {
+/**
+ * Complex-field results occupy sibling runs between `separate` and `end`, so
+ * they cannot be identified through an ancestor check like `w:fldSimple`.
+ * Nested fields retain the result state of every open field.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @see https://github.com/UseJunior/safe-docx/issues/998#issuecomment-5739439177
+ */
+function analyzePageFields(document: NonNullable<ReturnType<typeof parseStoryXml>>): { complexResultNodes: Set<XmlElement>; instructionCount: number } {
+  const complexResultNodes = new Set<XmlElement>();
+  const fieldStack: Array<{ instruction: string; inResult: boolean; rendered: boolean }> = [];
+  let instructionCount = 0;
+  for (const element of Array.from(document.getElementsByTagName('*'))) {
+    if (element.namespaceURI !== W_NS) continue;
+    if (hasAncestor(element, MC_NS, 'Fallback')) continue;
+    if (element.localName === 'fldChar') {
+      const kind = element.getAttributeNS(W_NS, 'fldCharType');
+      if (kind === 'begin') {
+        fieldStack.push({ instruction: '', inResult: false, rendered: !fieldStack.some((field) => !field.inResult) });
+      } else if (kind === 'separate' && fieldStack.length > 0) {
+        const field = fieldStack[fieldStack.length - 1]!;
+        if (!field.inResult && field.rendered && PAGE_FIELD_INSTRUCTION.test(field.instruction)) instructionCount++;
+        field.inResult = true;
+      } else if (kind === 'end') fieldStack.pop();
+    } else if ((element.localName === 'instrText' || element.localName === 'delInstrText') && fieldStack.length > 0) {
+      const field = fieldStack[fieldStack.length - 1]!;
+      if (!field.inResult) field.instruction += element.textContent ?? '';
+    } else if (
+      (element.localName === 't' || element.localName === 'delText')
+      && fieldStack.some((field) => field.inResult && PAGE_FIELD_INSTRUCTION.test(field.instruction))
+    ) {
+      complexResultNodes.add(element);
+    }
+  }
+  for (const field of Array.from(document.getElementsByTagNameNS(W_NS, 'fldSimple'))) {
+    if (hasAncestor(field, MC_NS, 'Fallback')) continue;
+    if (PAGE_FIELD_INSTRUCTION.test(field.getAttributeNS(W_NS, 'instr') ?? '')) instructionCount++;
+  }
+  return { complexResultNodes, instructionCount };
+}
+
+function renderedParagraphLiteral(paragraph: XmlElement, complexFieldResults: ReadonlySet<XmlElement>): string {
+  // AlternateContent exposes both branches in the package DOM even though a
+  // conforming consumer renders Choice or Fallback, never both. LibreOffice
+  // selects Choice for the namespaces safe-docx emits; Fallback-only output
+  // remains unexplained and therefore fails conservatively.
+  // @see ECMA-376 edition 5, Part 3 § 10.2
+  if (hasAncestor(paragraph, MC_NS, 'Fallback')) return '';
+  let literal = '';
+  for (const element of Array.from(paragraph.getElementsByTagName('*'))) {
+    if (element.namespaceURI !== W_NS) continue;
+    const containingParagraph = nearestAncestor(element, 'p');
+    if (containingParagraph !== paragraph) continue;
+    if (element.localName === 't' || element.localName === 'delText') {
+      // Cached PAGE-family results are replaced by the renderer and accounted
+      // for separately by the numeric pagination budget. Other field results
+      // are literal rendered story text and remain reserved here.
+      if (!hasPageFieldResultAncestor(element) && !complexFieldResults.has(element)) literal += element.textContent ?? '';
+    } else if (element.localName === 'tab' || element.localName === 'br' || element.localName === 'cr' || element.localName === 'ptab') {
+      literal += ' ';
+    }
+  }
+  return literal;
+}
+
+function nearestAncestor(node: XmlElement, localName: string): XmlElement | undefined {
   for (let ancestor = node.parentNode; ancestor !== null; ancestor = ancestor.parentNode) {
-    if (ancestor.nodeType === 1 && (ancestor as XmlElement).namespaceURI === W_NS && (ancestor as XmlElement).localName === 'fldSimple') return true;
+    if (ancestor.nodeType === 1 && (ancestor as XmlElement).namespaceURI === W_NS && (ancestor as XmlElement).localName === localName) return ancestor as XmlElement;
+  }
+  return undefined;
+}
+
+function hasAncestor(node: XmlElement, namespace: string, localName: string): boolean {
+  for (let ancestor = node.parentNode; ancestor !== null; ancestor = ancestor.parentNode) {
+    if (ancestor.nodeType === 1 && (ancestor as XmlElement).namespaceURI === namespace && (ancestor as XmlElement).localName === localName) return true;
   }
   return false;
 }
 
-function pageFieldInstructionCount(document: NonNullable<ReturnType<typeof parseStoryXml>>): number {
-  let count = 0;
-  for (const instruction of Array.from(document.getElementsByTagNameNS(W_NS, 'instrText'))) {
-    if (PAGE_FIELD_INSTRUCTION.test(instruction.textContent ?? '')) count++;
+function hasPageFieldResultAncestor(node: XmlElement): boolean {
+  for (let ancestor = node.parentNode; ancestor !== null; ancestor = ancestor.parentNode) {
+    if (ancestor.nodeType !== 1) continue;
+    const element = ancestor as XmlElement;
+    if (element.namespaceURI === W_NS && element.localName === 'fldSimple') {
+      return PAGE_FIELD_INSTRUCTION.test(element.getAttributeNS(W_NS, 'instr') ?? '');
+    }
   }
-  for (const field of Array.from(document.getElementsByTagNameNS(W_NS, 'fldSimple'))) {
-    if (PAGE_FIELD_INSTRUCTION.test(field.getAttributeNS(W_NS, 'instr') ?? '')) count++;
-  }
-  return count;
+  return false;
 }
 
 async function referencedRenderedStories(zip: JSZip, documentXml: string): Promise<RenderedStory[]> {

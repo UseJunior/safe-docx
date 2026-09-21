@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect } from 'vitest';
-import { itAllure } from '../../docx-core/src/testing/allure-test.js';
-import { buildDocxFromBodyXml } from '../../docx-core/src/testing/ooxml-fixtures.js';
+import { itAllure, testAllure } from '../../docx-core/src/testing/allure-test.js';
+import { buildDocxFromBodyXml, COMPLETE_PAGE_FIELD } from '../../docx-core/src/testing/ooxml-fixtures.js';
 import JSZip from 'jszip';
 import { defaultRendererTools, measurePixelBands, verifyRenderedMarkup } from './render.js';
 import type { RendererTools } from './types.js';
@@ -336,6 +336,179 @@ describe('renderer verifier', () => {
     });
     expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true, revisionVisibility: 'visible' });
     expect(result.textBinding).toMatchObject({ matched: true, pageCount: 2 });
+  });
+
+  itAllure('reserves punctuation-adjacent header revisions using the rendered paragraph token stream', async () => {
+    const root = path.join(os.tmpdir(), `render-header-revision-token-stream-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const header = '<w:hdr><w:p><w:r><w:t>(</w:t></w:r><w:del w:id="1"><w:r><w:delText xml:space="preserve">17 </w:delText></w:r></w:del><w:ins w:id="2"><w:r><w:t xml:space="preserve">18 </w:t></w:r></w:ins><w:r><w:t>September 2026 Draft)</w:t></w:r></w:p></w:hdr>';
+    await paginatedFixture(source, { body: await fixtureFragment('single-page-body.xml'), header });
+    const body = 'Synthetic single page opening clause. inserted-alpha removed-beta';
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source,
+      expectedMarkupText: body,
+      outputDir: path.join(root, 'out'),
+      tools: fakeTools(`(17 18 September 2026 Draft)\n${body}`),
+      configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+  });
+
+  itAllure('does not let paragraph-stream header reservation hide a duplicate punctuation-adjacent token', async () => {
+    const root = path.join(os.tmpdir(), `render-header-revision-token-stream-duplicate-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const header = '<w:hdr><w:p><w:r><w:t>(</w:t></w:r><w:del w:id="1"><w:r><w:delText xml:space="preserve">17 </w:delText></w:r></w:del><w:ins w:id="2"><w:r><w:t xml:space="preserve">18 </w:t></w:r></w:ins><w:r><w:t>September 2026 Draft)</w:t></w:r></w:p></w:hdr>';
+    await paginatedFixture(source, { body: await fixtureFragment('single-page-body.xml'), header });
+    const body = 'Synthetic single page opening clause. inserted-alpha removed-beta';
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source,
+      expectedMarkupText: body,
+      outputDir: path.join(root, 'out'),
+      tools: fakeTools(`(17 18 September 2026 Draft) (17\n${body}`),
+      configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding?.unexplainedTokenSample).toContain('(17');
+  });
+
+  testAllure
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' })
+    ('excludes cached results from simple and complex header PAGE fields', async () => {
+      const root = path.join(os.tmpdir(), `render-header-page-caches-${Date.now()}`);
+      await mkdir(root, { recursive: true });
+      const body = 'Synthetic single page opening clause. inserted-alpha removed-beta 1';
+      for (const [shape, field] of [
+        ['simple', '<w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple>'],
+        ['complex', COMPLETE_PAGE_FIELD],
+        ['complex-deleted-instruction', COMPLETE_PAGE_FIELD.replace(/instrText/gu, 'delInstrText')],
+      ] as const) {
+        const source = path.join(root, `${shape}.docx`);
+        const header = `<w:hdr><w:p><w:r><w:t>Page </w:t></w:r>${field}</w:p></w:hdr>`;
+        await paginatedFixture(source, { body: await fixtureFragment('single-page-body.xml'), header });
+        const result = await verifyRenderedMarkup({
+          trackedDocxPath: source,
+          expectedMarkupText: body,
+          outputDir: path.join(root, shape),
+          tools: fakeTools(`Page 1\n${body}`),
+          configuredPixelFloor: 2,
+        });
+        expect(result, shape).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+      }
+    });
+
+  itAllure('budgets one rendered value for a fragmented complex PAGE instruction', async () => {
+    const root = path.join(os.tmpdir(), `render-header-fragmented-page-field-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = 'Synthetic single page opening clause. inserted-alpha removed-beta';
+    const field = '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PA</w:instrText></w:r><w:r><w:instrText>GE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>';
+    await paginatedFixture(source, { body: await fixtureFragment('single-page-body.xml'), header: `<w:hdr><w:p>${field}</w:p></w:hdr>` });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source,
+      expectedMarkupText: body,
+      outputDir: path.join(root, 'out'),
+      tools: fakeTools(`1\n${body}`),
+      configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+  });
+
+  itAllure('does not multiply the numeric budget for repeated instruction fragments in one field', async () => {
+    const root = path.join(os.tmpdir(), `render-header-single-page-field-budget-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = 'Synthetic single page opening clause. inserted-alpha removed-beta';
+    const field = '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE </w:instrText></w:r><w:r><w:instrText> \\* MERGEFORMAT PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>';
+    await paginatedFixture(source, { body: await fixtureFragment('single-page-body.xml'), header: `<w:hdr><w:p>${field}</w:p></w:hdr>` });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source,
+      expectedMarkupText: body,
+      outputDir: path.join(root, 'out'),
+      tools: fakeTools(`1 1\n${body}`),
+      configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding?.unexplainedTokenSample).toContain('1');
+  });
+
+  itAllure('reserves cached results from non-pagination header fields', async () => {
+    const root = path.join(os.tmpdir(), `render-header-ordinary-field-results-${Date.now()}`);
+    await mkdir(root, { recursive: true });
+    const body = 'Synthetic single page opening clause. inserted-alpha removed-beta';
+    for (const [shape, field, resultText] of [
+      [
+        'complex-styleref',
+        '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> STYLEREF 1 </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Definitions</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>',
+        'Definitions',
+      ],
+      ['simple-docproperty', '<w:fldSimple w:instr=" DOCPROPERTY Title "><w:r><w:t>Agreement</w:t></w:r></w:fldSimple>', 'Agreement'],
+    ] as const) {
+      const source = path.join(root, `${shape}.docx`);
+      await paginatedFixture(source, { body: await fixtureFragment('single-page-body.xml'), header: `<w:hdr><w:p>${field}</w:p></w:hdr>` });
+      const result = await verifyRenderedMarkup({
+        trackedDocxPath: source,
+        expectedMarkupText: body,
+        outputDir: path.join(root, shape),
+        tools: fakeTools(`${resultText}\n${body}`),
+        configuredPixelFloor: 2,
+      });
+      expect(result, shape).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+    }
+  });
+
+  itAllure('reserves an outer ordinary result while budgeting a nested PAGE result', async () => {
+    const root = path.join(os.tmpdir(), `render-header-nested-page-field-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = 'Synthetic single page opening clause. inserted-alpha removed-beta';
+    const nested = '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> IF 1 = 1 </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>First </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>';
+    await paginatedFixture(source, { body: await fixtureFragment('single-page-body.xml'), header: `<w:hdr><w:p>${nested}</w:p></w:hdr>` });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source,
+      expectedMarkupText: body,
+      outputDir: path.join(root, 'out'),
+      tools: fakeTools(`First 1\n${body}`),
+      configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+  });
+
+  itAllure('reserves only the selected AlternateContent branch', async () => {
+    const root = path.join(os.tmpdir(), `render-header-alternate-content-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = 'Synthetic single page opening clause. inserted-alpha removed-beta fallback-only';
+    const header = '<w:hdr><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="w"><w:p><w:r><w:t>SelectedHeader</w:t></w:r></w:p></mc:Choice><mc:Fallback><w:p><w:r><w:t>fallback-only</w:t></w:r></w:p></mc:Fallback></mc:AlternateContent></w:hdr>';
+    await paginatedFixture(source, { body: await fixtureFragment('single-page-body.xml'), header });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source,
+      expectedMarkupText: body,
+      outputDir: path.join(root, 'out'),
+      tools: fakeTools(`SelectedHeader\n${body}`),
+      configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'pass', markupTextMatchesPdf: true });
+  });
+
+  itAllure('does not grant a numeric budget for a PAGE field in an unselected fallback', async () => {
+    const root = path.join(os.tmpdir(), `render-header-fallback-page-budget-${Date.now()}`);
+    const source = path.join(root, 'tracked.docx');
+    await mkdir(root, { recursive: true });
+    const body = 'Synthetic single page opening clause. inserted-alpha removed-beta';
+    const fallbackField = '<w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple>';
+    const header = `<w:hdr><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="w"><w:p><w:r><w:t>SelectedHeader</w:t></w:r></w:p></mc:Choice><mc:Fallback><w:p>${fallbackField}</w:p></mc:Fallback></mc:AlternateContent></w:hdr>`;
+    await paginatedFixture(source, { body: await fixtureFragment('single-page-body.xml'), header });
+    const result = await verifyRenderedMarkup({
+      trackedDocxPath: source,
+      expectedMarkupText: body,
+      outputDir: path.join(root, 'out'),
+      tools: fakeTools(`SelectedHeader\n${body} 1`),
+      configuredPixelFloor: 2,
+    });
+    expect(result).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
+    expect(result.textBinding?.unexplainedTokenSample).toContain('1');
   });
 
   itAllure('fails text binding when logical content is missing while keeping colour visibility truthful', async () => {
