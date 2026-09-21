@@ -445,7 +445,7 @@ async function analyzeRenderedPackage(bytes: Buffer, pageCount: number): Promise
         }
       }
       if (!isPaginationStory) continue;
-      const complexFieldResults = complexFieldResultNodes(document);
+      const complexFieldResults = complexPageFieldResultNodes(document);
       // Renderers concatenate adjacent runs and revision spans before text
       // extraction. Build that same paragraph character stream before
       // tokenizing so punctuation next to revised text remains one token.
@@ -489,17 +489,23 @@ function parseStoryXml(xml: string): ReturnType<DOMParser['parseFromString']> | 
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  * @see https://github.com/UseJunior/safe-docx/issues/998#issuecomment-5739439177
  */
-function complexFieldResultNodes(document: NonNullable<ReturnType<typeof parseStoryXml>>): Set<XmlElement> {
+function complexPageFieldResultNodes(document: NonNullable<ReturnType<typeof parseStoryXml>>): Set<XmlElement> {
   const results = new Set<XmlElement>();
-  const fieldStack: boolean[] = [];
+  const fieldStack: Array<{ instruction: string; inResult: boolean }> = [];
   for (const element of Array.from(document.getElementsByTagName('*'))) {
     if (element.namespaceURI !== W_NS) continue;
     if (element.localName === 'fldChar') {
       const kind = element.getAttributeNS(W_NS, 'fldCharType');
-      if (kind === 'begin') fieldStack.push(false);
-      else if (kind === 'separate' && fieldStack.length > 0) fieldStack[fieldStack.length - 1] = true;
+      if (kind === 'begin') fieldStack.push({ instruction: '', inResult: false });
+      else if (kind === 'separate' && fieldStack.length > 0) fieldStack[fieldStack.length - 1]!.inResult = true;
       else if (kind === 'end') fieldStack.pop();
-    } else if ((element.localName === 't' || element.localName === 'delText') && fieldStack.some(Boolean)) {
+    } else if ((element.localName === 'instrText' || element.localName === 'delInstrText') && fieldStack.length > 0) {
+      const field = fieldStack[fieldStack.length - 1]!;
+      if (!field.inResult) field.instruction += element.textContent ?? '';
+    } else if (
+      (element.localName === 't' || element.localName === 'delText')
+      && fieldStack.some((field) => field.inResult && PAGE_FIELD_INSTRUCTION.test(field.instruction))
+    ) {
       results.add(element);
     }
   }
@@ -507,15 +513,19 @@ function complexFieldResultNodes(document: NonNullable<ReturnType<typeof parseSt
 }
 
 function renderedParagraphLiteral(paragraph: XmlElement, complexFieldResults: ReadonlySet<XmlElement>): string {
+  // AlternateContent exposes both branches in the package DOM even though a
+  // conforming consumer renders Choice or Fallback, never both.
+  if (hasAncestor(paragraph, MC_NS, 'Fallback')) return '';
   let literal = '';
   for (const element of Array.from(paragraph.getElementsByTagName('*'))) {
     if (element.namespaceURI !== W_NS) continue;
     const containingParagraph = nearestAncestor(element, 'p');
     if (containingParagraph !== paragraph) continue;
     if (element.localName === 't' || element.localName === 'delText') {
-      // Cached simple- and complex-field results are replaced by the renderer
-      // and are accounted for separately by the PAGE-family field budget.
-      if (!hasFieldResultAncestor(element) && !complexFieldResults.has(element)) literal += element.textContent ?? '';
+      // Cached PAGE-family results are replaced by the renderer and accounted
+      // for separately by the numeric pagination budget. Other field results
+      // are literal rendered story text and remain reserved here.
+      if (!hasPageFieldResultAncestor(element) && !complexFieldResults.has(element)) literal += element.textContent ?? '';
     } else if (element.localName === 'tab' || element.localName === 'br' || element.localName === 'cr' || element.localName === 'ptab') {
       literal += ' ';
     }
@@ -530,9 +540,20 @@ function nearestAncestor(node: XmlElement, localName: string): XmlElement | unde
   return undefined;
 }
 
-function hasFieldResultAncestor(node: XmlElement): boolean {
+function hasAncestor(node: XmlElement, namespace: string, localName: string): boolean {
   for (let ancestor = node.parentNode; ancestor !== null; ancestor = ancestor.parentNode) {
-    if (ancestor.nodeType === 1 && (ancestor as XmlElement).namespaceURI === W_NS && (ancestor as XmlElement).localName === 'fldSimple') return true;
+    if (ancestor.nodeType === 1 && (ancestor as XmlElement).namespaceURI === namespace && (ancestor as XmlElement).localName === localName) return true;
+  }
+  return false;
+}
+
+function hasPageFieldResultAncestor(node: XmlElement): boolean {
+  for (let ancestor = node.parentNode; ancestor !== null; ancestor = ancestor.parentNode) {
+    if (ancestor.nodeType !== 1) continue;
+    const element = ancestor as XmlElement;
+    if (element.namespaceURI === W_NS && element.localName === 'fldSimple') {
+      return PAGE_FIELD_INSTRUCTION.test(element.getAttributeNS(W_NS, 'instr') ?? '');
+    }
   }
   return false;
 }
@@ -540,6 +561,9 @@ function hasFieldResultAncestor(node: XmlElement): boolean {
 function pageFieldInstructionCount(document: NonNullable<ReturnType<typeof parseStoryXml>>): number {
   let count = 0;
   for (const instruction of Array.from(document.getElementsByTagNameNS(W_NS, 'instrText'))) {
+    if (PAGE_FIELD_INSTRUCTION.test(instruction.textContent ?? '')) count++;
+  }
+  for (const instruction of Array.from(document.getElementsByTagNameNS(W_NS, 'delInstrText'))) {
     if (PAGE_FIELD_INSTRUCTION.test(instruction.textContent ?? '')) count++;
   }
   for (const field of Array.from(document.getElementsByTagNameNS(W_NS, 'fldSimple'))) {
