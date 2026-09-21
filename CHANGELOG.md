@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Accept/reject, selective revision processing, validation, and revision-ID
+  seeding now include relationship-selected header/footer stories while
+  leaving orphan header/footer package parts untouched.
 - **Breaking:** DOCX comparison now has one public behavior: tagged revisions
   are assembled into the revised archive and publication fails closed if its
   safety gates do not pass. `CompareOptions` no longer accepts `engine`,

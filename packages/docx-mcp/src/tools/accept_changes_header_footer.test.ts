@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect } from 'vitest';
-import { parseXml, readZipText, serializeXml } from '@usejunior/docx-core';
+import { DocxDocument, parseXml, readZipText, serializeXml } from '@usejunior/docx-core';
 import { type DocxSession } from '../session/manager.js';
 import { makeDocxWithDocumentXml } from '../testing/docx_test_utils.js';
 import { testAllure } from '../testing/allure-test.js';
@@ -101,6 +101,79 @@ describe('accept_changes selected header projection', () => {
       expect(projected.getElementsByTagNameNS(W_NS, 'tr')).toHaveLength(0);
       expect(result.deletionsAccepted).toBe(1);
       expect(result.unresolvedRowRevisions).toBe(0);
+    },
+  );
+
+  test.openspec('accept_changes produces clean document body with no revision markup')(
+    'retains the inherited clean-body acceptance contract',
+    async () => {
+      const documentXml =
+        `<w:document xmlns:w="${W_NS}"><w:body><w:p>` +
+        `<w:del w:id="1" w:author="AI"><w:r><w:delText>Old</w:delText></w:r></w:del>` +
+        `<w:ins w:id="2" w:author="AI"><w:r><w:t>New</w:t></w:r></w:ins>` +
+        `</w:p></w:body></w:document>`;
+      const manager = createTestSessionManager();
+      const filePath = path.join(await createTrackedTempDir(), 'clean-body.docx');
+      await fs.writeFile(filePath, await makeDocxWithDocumentXml(documentXml));
+      const result = await acceptChanges(manager, { file_path: filePath });
+      assertSuccess(result, 'accept_changes');
+      const session = (await manager.getSessionByFilePath(filePath)) as DocxSession;
+      const projected = serializeXml(
+        (session.doc as unknown as { documentXml: Document }).documentXml,
+      );
+      expect(projected).toContain('New');
+      expect(projected).not.toContain('Old');
+      expect(projected).not.toMatch(/<w:(?:ins|del)\b/);
+      expect(result.unresolvedRowRevisions).toBe(0);
+    },
+  );
+
+  test.openspec('accepted document opens cleanly in Microsoft Word')(
+    'produces a package that reloads without structural repair',
+    async () => {
+      const source = await makeDocxWithDocumentXml(
+        `<w:document xmlns:w="${W_NS}"><w:body><w:p><w:ins w:id="1" w:author="AI">` +
+        `<w:r><w:t>Accepted</w:t></w:r></w:ins></w:p></w:body></w:document>`,
+      );
+      const document = await DocxDocument.load(source);
+      await document.acceptChanges();
+      const output = (await document.toBuffer()).buffer;
+      const reloaded = await DocxDocument.load(output);
+      expect(reloaded.validate().isValid).toBe(true);
+    },
+  );
+
+  test.openspec('original document is not mutated')(
+    'keeps the source bytes unchanged while projecting the working copy',
+    async () => {
+      const source = await makeDocxWithDocumentXml(
+        `<w:document xmlns:w="${W_NS}"><w:body><w:p><w:ins w:id="1" w:author="AI">` +
+        `<w:r><w:t>Accepted</w:t></w:r></w:ins></w:p></w:body></w:document>`,
+      );
+      const snapshot = Buffer.from(source);
+      const document = await DocxDocument.load(source);
+      await document.acceptChanges();
+      expect(source.equals(snapshot)).toBe(true);
+      expect((await document.toBuffer()).buffer.equals(source)).toBe(false);
+    },
+  );
+
+  test.openspec('[SDX-ROWREV-MCP-02] accepted output has no row marker and remains structurally valid')(
+    'retains the inherited row-output structural contract',
+    async () => {
+      const source = await makeDocxWithDocumentXml(
+        `<w:document xmlns:w="${W_NS}"><w:body><w:tbl><w:tr><w:trPr>` +
+        `<w:ins w:id="7" w:author="AI"/></w:trPr><w:tc><w:p/></w:tc>` +
+        `</w:tr></w:tbl></w:body></w:document>`,
+      );
+      const document = await DocxDocument.load(source);
+      const result = await document.acceptChanges();
+      const output = (await document.toBuffer()).buffer;
+      const xml = await readZipText(output, 'word/document.xml');
+      expect(xml).not.toMatch(/<w:trPr>\s*<w:(?:ins|del)\b/);
+      expect(xml).toContain('<w:tc><w:p');
+      expect(result.unresolvedRowRevisions).toBe(0);
+      expect((await DocxDocument.load(output)).validate().isValid).toBe(true);
     },
   );
 });

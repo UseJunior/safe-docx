@@ -12,6 +12,26 @@ removes it. Records the engine cannot resolve SHALL remain preserved and
 reported rather than stripped. Unselected orphan header/footer parts SHALL not
 be swept by filename.
 
+#### Scenario: accept_changes produces clean document body with no revision markup
+- **GIVEN** a document whose tracked changes (insertions, deletions, formatting changes, moves) are all of resolvable kinds
+- **WHEN** `accept_changes` is called
+- **THEN** the server SHALL return a document with those tracked changes accepted and no revision markup remaining
+- **AND** the response SHALL include acceptance stats (insertions accepted, deletions accepted, moves resolved, property changes resolved)
+- **AND** `unresolvedRowRevisions` SHALL be `0`
+- **AND** supported tracked changes in relationship-selected headers and footers SHALL be accepted
+
+#### Scenario: accepted document opens cleanly in Microsoft Word
+- **GIVEN** a document whose tracked changes are all of resolvable kinds, processed by `accept_changes`
+- **WHEN** the resulting document is opened in Microsoft Word
+- **THEN** the document SHALL open without errors or repair prompts
+- **AND** no tracked changes SHALL appear in the review pane
+
+#### Scenario: original document is not mutated
+- **GIVEN** a source document with tracked changes
+- **WHEN** `accept_changes` is called
+- **THEN** the original source document SHALL remain unchanged
+- **AND** the accepted output SHALL be written to a separate file or session working copy
+
 #### Scenario: [SDX-MCP-STORY-01] accept_changes resolves a selected header revision
 - **GIVEN** a document with a supported tracked replacement in a relationship-selected header
 - **WHEN** `accept_changes` is called
@@ -26,3 +46,10 @@ be swept by filename.
 - **THEN** the row SHALL be absent from the saved document
 - **AND** the response SHALL report `unresolvedRowRevisions` as `0`
 - **AND** `deletionsAccepted` SHALL count the row marker once and SHALL NOT separately count removed inner records
+
+#### Scenario: [SDX-ROWREV-MCP-02] accepted output has no row marker and remains structurally valid
+- **GIVEN** a document processed by `accept_changes` whose input carried row-level markers
+- **WHEN** the output is inspected
+- **THEN** no `w:trPr > w:ins|w:del` marker SHALL remain
+- **AND** every remaining table cell SHALL end in a direct `w:p`
+- **AND** the output SHALL remain well-formed
