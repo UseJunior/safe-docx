@@ -27,11 +27,14 @@ as unrepresented instead of emitting native tracked revisions.
 
 ## Impact
 
-- Affected specs: `docx-markdoc`, `docx-comparison`
+- Affected specs: `docx-markdoc`, `docx-comparison`, `docx-primitives`,
+  `mcp-server`
 - Affected code: Markdoc import/IR/validation/replay/certification, selected
   ancillary-story comparison orchestration, accept/reject projection checks,
-  documentation, and public synthetic plus real-DOCX evidence
+  story-scoped primitive mutation APIs, MCP acceptance wording, documentation,
+  and public synthetic plus real-DOCX evidence
 - Fixes one remaining capability slice under #998
 - Builds on the selected-story inventory introduced by
-  `compare-vml-text-box-stories`; it does not duplicate raw-path pairing logic
-
+  `compare-vml-text-box-stories`, but adds binding-closure pairing and an
+  ordinary-text-blanked scaffold fingerprint rather than reusing its
+  content-sensitive pairing keys

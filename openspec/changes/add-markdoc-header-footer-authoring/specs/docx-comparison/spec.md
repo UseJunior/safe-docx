@@ -4,7 +4,9 @@
 
 The comparison engine SHALL independently compare ordinary paragraph content in
 each paired header/footer story when original and revised packages retain the
-same semantically selected story topology and admitted scaffold. It SHALL use
+same section count, selector set, exact physical-story binding closures, and
+admitted scaffold. It SHALL pair stories by complete sorted binding closure,
+not canonical content or a content-sensitive scaffold fingerprint. It SHALL use
 the shared tagged-tree semantics and splice tracked paragraph/run revisions into
 the preserved revised story root. Physical package filenames SHALL NOT
 establish story identity.
@@ -28,11 +30,15 @@ establish story identity.
 - **WHEN** that story's admitted paragraph text changes
 - **THEN** the engine SHALL compare and splice the physical story exactly once
 - **AND** accept/reject validation SHALL preserve the complete selector binding closure
+- **AND** the output package SHALL retain one physical part targeted by every alias relationship rather than copying it per selector
 
 ### Requirement: Selected-story scaffold changes remain explicit and fail closed
 
 Ordinary selected-story comparison SHALL preserve the story root, relationship
 closure, fields, tables, drawings, content controls, and nested story scaffold.
+Its structural fingerprint SHALL blank admitted ordinary paragraph text and
+nested text-box content before equality checks, and field-state validation
+SHALL relationship-walk every selected header/footer part.
 Creation, deletion, rebinding, ambiguous pairing, or unsupported scaffold
 mutation SHALL produce a typed diagnostic or `unrepresentedChanges` entry and
 MUST NOT be silently represented as an ordinary text edit.
