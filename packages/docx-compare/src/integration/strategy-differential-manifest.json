@@ -477,7 +477,7 @@
           {
             "path": "word/document.xml",
             "bytes": 1213274,
-            "sha256": "30ba2f1caa93388e48742a84436112c9626ea43a422eb2e0577dc95416cd36c3",
+            "sha256": "cc3536ed7980b7e941d57e52ad69d56a4b4ceab77ad031f3fcfb5dcc0fba4b89",
             "kind": "xml"
           },
           {
@@ -1528,7 +1528,7 @@
           {
             "path": "word/document.xml",
             "bytes": 433521,
-            "sha256": "516a2b9ec0df30c87cf91093dcec5a62bd6765a2b8fcadc682bc4dd5001805a3",
+            "sha256": "de1af33ee2ec17ba834e9489b2eebba27a7a7c120f61c4e60d8674908c2b6403",
             "kind": "xml"
           },
           {
@@ -2696,7 +2696,7 @@
           {
             "path": "word/document.xml",
             "bytes": 568987,
-            "sha256": "408c4b45e17d04fbb64df0f8b7db1f819cd037484c914595091fb5aeaa45add4",
+            "sha256": "a6e556142e118e9cf9a95e79c90ef29ed4e32d3ffb3b5571c218299f4b3552c1",
             "kind": "xml"
           },
           {
@@ -3994,7 +3994,7 @@
           {
             "path": "word/document.xml",
             "bytes": 293933,
-            "sha256": "a6c09e6fccc7a018231afb85f6e806716f2177a317a9c77a9b1c72ba80218ef2",
+            "sha256": "9acf7e186a2cc062bbc48b20922d3b896b21390e85caeb2a789c2c59c81ad55e",
             "kind": "xml"
           },
           {
@@ -4288,7 +4288,7 @@
           {
             "path": "word/document.xml",
             "bytes": 387513,
-            "sha256": "25dbd39a6531dfc847b7f58f3aeee8765f5e9236be70c9775862f51bcedbc76f",
+            "sha256": "44362c56d68248e6b7881cd3aefa4700cbb99153a4be1cb6b5360ba84ad92c68",
             "kind": "xml"
           },
           {
@@ -4647,7 +4647,7 @@
           {
             "path": "word/document.xml",
             "bytes": 375128,
-            "sha256": "f2fa0402d65f971b6d657688b15dfc73480a358448f1d38b2855d56cff47f8d6",
+            "sha256": "61cc00d192a48b117fde8db54869f3fd77b6d2fb31f9f13bd7212a032cae8f4c",
             "kind": "xml"
           },
           {
