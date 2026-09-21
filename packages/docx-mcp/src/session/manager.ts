@@ -6,7 +6,7 @@ import {
   DocxDocument,
   DocxZip,
   REVISION_ID_ELEMENT_NAME_SET,
-  enumerateRevisionStoryPartPaths,
+  enumerateSelectedRevisionStoryPartPaths,
   createRevisionContext,
   createRevisionIdState,
   parseXml,
@@ -220,7 +220,7 @@ export async function getSidePartRevisionSeedDocs(buffer: Buffer): Promise<Docum
     return docs;
   }
 
-  for (const partPath of enumerateRevisionStoryPartPaths(zip)) {
+  for (const partPath of await enumerateSelectedRevisionStoryPartPaths(zip)) {
     if (!zip.hasFile(partPath)) continue;
     let xml: string | null;
     try {

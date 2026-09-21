@@ -185,14 +185,17 @@ describe('revision context helpers', () => {
     const filePath = path.join(dir, 'tracked-header.docx');
     const documentXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
-      `<w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>`;
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+      `<w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr></w:body></w:document>`;
     const headerXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
       `<w:p><w:ins w:id="900" w:author="Reviewer" w:date="2026-01-01T00:00:00Z"><w:r><w:t>Header</w:t></w:r></w:ins></w:p>` +
       `</w:hdr>`;
-    const buf = await makeDocxWithDocumentXml(documentXml, { 'word/header1.xml': headerXml });
+    const buf = await makeDocxWithDocumentXml(documentXml, {
+      'word/header1.xml': headerXml,
+      'word/_rels/document.xml.rels': `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>`,
+    });
     await fs.writeFile(filePath, new Uint8Array(buf));
 
     const session = await mgr.createSession(buf, 'tracked-header.docx', filePath);
@@ -209,14 +212,17 @@ describe('revision context helpers', () => {
     const filePath = path.join(dir, 'tracked-footer.docx');
     const documentXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
-      `<w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>`;
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+      `<w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p><w:sectPr><w:footerReference w:type="default" r:id="rIdFooter"/></w:sectPr></w:body></w:document>`;
     const footerXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
       `<w:p><w:ins w:id="1234" w:author="Reviewer" w:date="2026-01-01T00:00:00Z"><w:r><w:t>Footer</w:t></w:r></w:ins></w:p>` +
       `</w:ftr>`;
-    const buf = await makeDocxWithDocumentXml(documentXml, { 'word/footer2.xml': footerXml });
+    const buf = await makeDocxWithDocumentXml(documentXml, {
+      'word/footer2.xml': footerXml,
+      'word/_rels/document.xml.rels': `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer2.xml"/></Relationships>`,
+    });
     await fs.writeFile(filePath, new Uint8Array(buf));
 
     const session = await mgr.createSession(buf, 'tracked-footer.docx', filePath);

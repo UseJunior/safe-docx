@@ -190,10 +190,7 @@ describe('mixed-author preservation corpus (#125)', () => {
     expect(afterXml).toContain('<w:tbl>'); // table structure preserved
   });
 
-  it('leaves headers and footers entirely untouched (unswept-part guard, incl. AI revisions)', async () => {
-    // Headers/footers are NOT in the swept story set, so accept/reject never opens
-    // them. Even an AI-authored revision in a header is left untouched — the corpus
-    // pins that accept/reject never reaches into these parts for any actor.
+  it('resolves the selected author in headers while preserving foreign revisions', async () => {
     const headerXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:hdr xmlns:w="${W}"><w:p><w:r><w:t>H </w:t></w:r>${ins(201, AI, 'hdr-ai')}${ins(202, HUMAN, 'hdr-rev')}</w:p></w:hdr>`;
@@ -219,10 +216,11 @@ describe('mixed-author preservation corpus (#125)', () => {
 
     await doc.acceptAIEdits({ author: AI });
 
-    // Whole parts byte-identical — including the AI revision in the header.
-    expect(await readPart(doc, 'word/header1.xml')).toBe(headerXml);
+    const acceptedHeader = parseXml(await readPart(doc, 'word/header1.xml'));
+    expect(revisionContextsByAuthor(acceptedHeader, AI)).toEqual([]);
+    expect(revisionContextsByAuthor(acceptedHeader, HUMAN))
+      .toEqual(revisionContextsByAuthor(parseXml(headerXml), HUMAN));
     expect(await readPart(doc, 'word/footer1.xml')).toBe(footerXml);
-    // The AI revision in the BODY was resolved (only the unswept parts are exempt).
     expect(revisionContextsByAuthor(parseXml(await readPart(doc, 'word/document.xml')), AI)).toEqual([]);
   });
 
