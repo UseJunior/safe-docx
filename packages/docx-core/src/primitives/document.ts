@@ -7,8 +7,10 @@ import {
   findParagraphByBookmarkId,
   insertParagraphBookmarks,
   cleanupInternalBookmarks,
+  collectBookmarkReservation,
   getParagraphBookmarkId,
   insertSingleParagraphBookmark,
+  type BookmarkReservation,
 } from './bookmarks.js';
 import { getParagraphRuns, getParagraphText, replaceParagraphTextRange, type ReplacementPart } from './text.js';
 import {
@@ -72,6 +74,7 @@ import {
   type ValidateAiRevisionsResult,
 } from './validate_ai_revisions.js';
 import {
+  enumerateSelectedHeaderFooterPartPaths,
   enumerateSelectedRevisionStoryPartPaths,
 } from './revision-parts.js';
 import { acceptChanges as acceptChangesImpl, type AcceptChangesResult } from './accept_changes.js';
@@ -266,6 +269,13 @@ export type ParagraphRef = {
   text: string;
 };
 
+export type StoryParagraphTableContext = {
+  inTableCell: boolean;
+  verticalMergeContinuation: boolean;
+  directCellParagraphs: number;
+  isTrailingDirectCellParagraph: boolean;
+};
+
 function prevElementSibling(node: Node | null): Element | null {
   let cur: Node | null = node?.previousSibling ?? null;
   while (cur) {
@@ -282,6 +292,80 @@ function nextElementSibling(node: Node | null): Element | null {
     cur = cur.nextSibling;
   }
   return null;
+}
+
+function nearestWordAncestor(element: Element, localName: string): Element | null {
+  for (let current = element.parentElement; current; current = current.parentElement) {
+    if (isW(current, localName)) return current;
+  }
+  return null;
+}
+
+function directWordChildren(parent: Element, localName: string): Element[] {
+  return Array.from(parent.childNodes).filter(
+    (child): child is Element => child.nodeType === 1 && isW(child as Element, localName),
+  );
+}
+
+/**
+ * Classify the physical table-cell constraints around a story paragraph.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.66
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.84
+ * @see https://github.com/UseJunior/safe-docx/issues/998
+ */
+function storyParagraphTableContext(paragraph: Element): StoryParagraphTableContext {
+  const cell = nearestWordAncestor(paragraph, W.tc);
+  if (!cell) {
+    return {
+      inTableCell: false,
+      verticalMergeContinuation: false,
+      directCellParagraphs: 0,
+      isTrailingDirectCellParagraph: false,
+    };
+  }
+  const directParagraphs = directWordChildren(cell, W.p);
+  const cellProperties = directWordChildren(cell, W.tcPr)[0];
+  const verticalMerge = cellProperties ? directWordChildren(cellProperties, 'vMerge')[0] : undefined;
+  const mergeValue = verticalMerge?.getAttributeNS(OOXML.W_NS, 'val')
+    ?? verticalMerge?.getAttribute('w:val')
+    ?? verticalMerge?.getAttribute('val');
+  return {
+    inTableCell: true,
+    verticalMergeContinuation: Boolean(verticalMerge && (!mergeValue || mergeValue === 'continue')),
+    directCellParagraphs: directParagraphs.length,
+    isTrailingDirectCellParagraph: directParagraphs.at(-1) === paragraph,
+  };
+}
+
+function assertStoryParagraphMutationSafe(
+  paragraph: Element,
+  operation: 'replace' | 'insert' | 'delete',
+  styleSource?: Element,
+): void {
+  const parent = paragraph.parentElement;
+  const root = paragraph.ownerDocument.documentElement;
+  const cell = nearestWordAncestor(paragraph, W.tc);
+  if (parent !== root && parent !== cell) {
+    throw new Error('Story paragraph must be a direct child of the story root or table cell');
+  }
+  const context = storyParagraphTableContext(paragraph);
+  if (context.verticalMergeContinuation) {
+    throw new Error('Story paragraph mutation in a vertical-merge continuation cell is unsupported');
+  }
+  if (operation === 'insert' && styleSource) {
+    const styleCell = nearestWordAncestor(styleSource, W.tc);
+    if (styleCell !== cell) throw new Error('Story paragraph style source must be in the anchor table cell');
+  }
+  if (operation !== 'delete' || !cell) return;
+
+  const remainingBlocks = Array.from(cell.childNodes).filter((child): child is Element =>
+    child.nodeType === 1
+    && child !== paragraph
+    && ['p', 'tbl', 'sdt', 'customXml', 'altChunk'].includes((child as Element).localName));
+  if (remainingBlocks.at(-1)?.localName !== W.p) {
+    throw new Error('Story paragraph deletion would leave a table cell without a trailing paragraph');
+  }
 }
 
 function collectNamedBookmarkIds(doc: Document): Set<string> {
@@ -306,6 +390,7 @@ export class DocxDocument {
   private relsMap: RelsMap;
   private dirty: boolean;
   private documentViewCache: { includeSemanticTags: boolean; showFormatting: boolean; formattingMode: FormattingMode; nodes: DocumentViewNode[]; styles: DocumentStyles } | null;
+  private paragraphBookmarkReservation: BookmarkReservation | undefined;
   /**
    * Raw document.xml text as loaded, before normalize()/edits mutate the DOM.
    * Reference for minimal re-serialization in toBuffer(); null for instances
@@ -323,6 +408,7 @@ export class DocxDocument {
     this.relsMap = relsMap;
     this.dirty = false;
     this.documentViewCache = null;
+    this.paragraphBookmarkReservation = undefined;
     this.originalDocumentXmlText = originalDocumentXmlText;
   }
 
@@ -364,6 +450,171 @@ export class DocxDocument {
     const p = this.getParagraphElementById(bookmarkId);
     if (!p) return null;
     return getParagraphText(p);
+  }
+
+  private async selectedStoryDocument(partPath: string): Promise<Document> {
+    const selected = await enumerateSelectedHeaderFooterPartPaths(this.zip);
+    if (!selected.includes(partPath)) {
+      throw new Error(`Header/footer story is not selected by a section relationship: ${partPath}`);
+    }
+    const xml = await this.zip.readTextOrNull(partPath);
+    if (!xml) throw new Error(`Selected header/footer story part is missing: ${partPath}`);
+    return parseXml(xml);
+  }
+
+  private withTemporaryDocumentXml<T>(
+    story: Document,
+    mutation: () => T,
+    bookmarkReservation?: BookmarkReservation,
+  ): T {
+    const bodyDocument = this.documentXml;
+    const dirty = this.dirty;
+    const viewCache = this.documentViewCache;
+    const previousReservation = this.paragraphBookmarkReservation;
+    this.documentXml = story;
+    this.paragraphBookmarkReservation = bookmarkReservation;
+    try {
+      return mutation();
+    } finally {
+      this.documentXml = bodyDocument;
+      this.dirty = dirty;
+      this.documentViewCache = viewCache;
+      this.paragraphBookmarkReservation = previousReservation;
+    }
+  }
+
+  private async packageBookmarkReservation(storyDocuments: Map<string, Document>): Promise<BookmarkReservation> {
+    const selectedPaths = await enumerateSelectedHeaderFooterPartPaths(this.zip);
+    for (const selectedPath of selectedPaths) {
+      if (storyDocuments.has(selectedPath)) continue;
+      const xml = await this.zip.readTextOrNull(selectedPath);
+      if (xml) storyDocuments.set(selectedPath, parseXml(xml));
+    }
+    return collectBookmarkReservation([this.documentXml, ...storyDocuments.values()]);
+  }
+
+  async getStoryParagraphTextById(partPath: string, bookmarkId: string): Promise<string | null> {
+    const story = await this.selectedStoryDocument(partPath);
+    const paragraph = findParagraphByBookmarkId(story, bookmarkId);
+    return paragraph ? getParagraphText(paragraph) : null;
+  }
+
+  async getStoryParagraphById(partPath: string, bookmarkId: string): Promise<ParagraphRef | null> {
+    const text = await this.getStoryParagraphTextById(partPath, bookmarkId);
+    return text === null ? null : { id: bookmarkId, text };
+  }
+
+  async insertStoryParagraphBookmarks(
+    partPath: string,
+    attachmentId: string,
+  ): Promise<{ paragraphCount: number }> {
+    const story = await this.selectedStoryDocument(partPath);
+    const stories = new Map([[partPath, story]]);
+    const reservation = await this.packageBookmarkReservation(stories);
+    const result = insertParagraphBookmarks(story, attachmentId, reservation);
+    if (result.indexedParagraphs > 0) this.zip.writeText(partPath, serializeXml(story));
+    return { paragraphCount: result.indexedParagraphs };
+  }
+
+  async validateStoryParagraphTableCell(
+    partPath: string,
+    bookmarkId: string,
+  ): Promise<StoryParagraphTableContext> {
+    const story = await this.selectedStoryDocument(partPath);
+    const paragraph = findParagraphByBookmarkId(story, bookmarkId);
+    if (!paragraph) throw new Error(`Paragraph not found in ${partPath}: ${bookmarkId}`);
+    return storyParagraphTableContext(paragraph);
+  }
+
+  async replaceStoryTextAtRange(params: {
+    partPath: string;
+    targetParagraphId: string;
+    start: number;
+    end: number;
+    replaceText: string | ReplacementPart[];
+  }): Promise<void> {
+    const story = await this.selectedStoryDocument(params.partPath);
+    const paragraph = findParagraphByBookmarkId(story, params.targetParagraphId);
+    if (!paragraph) throw new Error(`Paragraph not found in ${params.partPath}: ${params.targetParagraphId}`);
+    assertStoryParagraphMutationSafe(paragraph, 'replace');
+    replaceParagraphTextRange(paragraph, params.start, params.end, params.replaceText);
+    this.zip.writeText(params.partPath, serializeXml(story));
+  }
+
+  async replaceStoryText(params: {
+    partPath: string;
+    targetParagraphId: string;
+    findText: string;
+    replaceText: string | ReplacementPart[];
+  }): Promise<void> {
+    const story = await this.selectedStoryDocument(params.partPath);
+    const paragraph = findParagraphByBookmarkId(story, params.targetParagraphId);
+    if (!paragraph) throw new Error(`Paragraph not found in ${params.partPath}: ${params.targetParagraphId}`);
+    assertStoryParagraphMutationSafe(paragraph, 'replace');
+    const match = findUniqueSubstringMatch(getParagraphText(paragraph), params.findText);
+    if (match.status === 'not_found') {
+      throw new Error(`Text not found in paragraph ${params.targetParagraphId}`);
+    }
+    if (match.status === 'multiple') {
+      throw new Error(
+        `Multiple matches (${match.matchCount}) found in paragraph ${params.targetParagraphId} using ${match.mode} matching`,
+      );
+    }
+    replaceParagraphTextRange(paragraph, match.start, match.end, params.replaceText);
+    this.zip.writeText(params.partPath, serializeXml(story));
+  }
+
+  async insertStoryParagraph(params: {
+    partPath: string;
+    positionalAnchorNodeId: string;
+    relativePosition: 'BEFORE' | 'AFTER';
+    newText: string;
+    styleSourceId?: string;
+    runStyleSourceText?: string;
+  }, ctx?: RevisionContext): Promise<{ newParagraphId: string; newParagraphIds: string[]; styleSourceFallback?: boolean }> {
+    const story = await this.selectedStoryDocument(params.partPath);
+    const anchor = findParagraphByBookmarkId(story, params.positionalAnchorNodeId);
+    if (!anchor) throw new Error(`Anchor paragraph not found in ${params.partPath}: ${params.positionalAnchorNodeId}`);
+    const styleSource = params.styleSourceId
+      ? findParagraphByBookmarkId(story, params.styleSourceId)
+      : anchor;
+    if (params.styleSourceId && !styleSource) {
+      throw new Error(`Style source paragraph not found in ${params.partPath}: ${params.styleSourceId}`);
+    }
+    assertStoryParagraphMutationSafe(anchor, 'insert', styleSource ?? undefined);
+    const stories = new Map([[params.partPath, story]]);
+    const bookmarkReservation = await this.packageBookmarkReservation(stories);
+    const result = this.withTemporaryDocumentXml(story, () => this.insertParagraph({
+      positionalAnchorNodeId: params.positionalAnchorNodeId,
+      relativePosition: params.relativePosition,
+      newText: params.newText,
+      styleSourceId: params.styleSourceId,
+      runStyleSourceText: params.runStyleSourceText,
+    }, ctx), bookmarkReservation);
+    this.zip.writeText(params.partPath, serializeXml(story));
+    return result;
+  }
+
+  async deleteStoryParagraph(partPath: string, paragraphId: string): Promise<void> {
+    const story = await this.selectedStoryDocument(partPath);
+    const paragraph = findParagraphByBookmarkId(story, paragraphId);
+    if (!paragraph) throw new Error(`Paragraph not found in ${partPath}: ${paragraphId}`);
+    assertStoryParagraphMutationSafe(paragraph, 'delete');
+    const bookmarkStart = Array.from(story.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkStart))
+      .find((start) => (
+        start.getAttributeNS(OOXML.W_NS, 'name') ?? start.getAttribute('w:name')
+      ) === paragraphId);
+    const bookmarkNumericId = bookmarkStart?.getAttributeNS(OOXML.W_NS, 'id')
+      ?? bookmarkStart?.getAttribute('w:id');
+    const bookmarkEnd = bookmarkNumericId
+      ? Array.from(story.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkEnd)).find((end) => (
+        end.getAttributeNS(OOXML.W_NS, 'id') ?? end.getAttribute('w:id')
+      ) === bookmarkNumericId)
+      : undefined;
+    paragraph.parentNode?.removeChild(paragraph);
+    bookmarkStart?.parentNode?.removeChild(bookmarkStart);
+    bookmarkEnd?.parentNode?.removeChild(bookmarkEnd);
+    this.zip.writeText(partPath, serializeXml(story));
   }
 
   insertTableRow(params: InsertTableRowParams, ctx?: RevisionContext): InsertTableRowResult {
@@ -1009,7 +1260,7 @@ export class DocxDocument {
 
       parent.insertBefore(newP, cursor);
 
-      const id = insertSingleParagraphBookmark(doc, newP);
+      const id = insertSingleParagraphBookmark(doc, newP, this.paragraphBookmarkReservation);
       insertedIds.push(id);
 
       if (relativePosition === 'AFTER') {

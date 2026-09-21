@@ -1,8 +1,8 @@
 ## 1. Proposal and review
 
 - [ ] 1.1 Validate this OpenSpec change in strict mode, confirm scenario IDs are unique across all active `docx-markdoc` deltas, and pin `add-structural-table-row-operations` plus `add-markdoc-table-row-operations` to archive before this change.
-- [ ] 1.2 Obtain Claude Fable review and resolve every actionable finding.
-- [ ] 1.3 Merge this approval-only proposal with green required checks before implementation begins; add the coverage-enforced `docx-primitives` and `mcp-server` deltas together with their mapped tests in the implementation PR.
+- [x] 1.2 Obtain Claude Fable review and resolve every actionable finding.
+- [x] 1.3 Merge this approval-only proposal with green required checks before implementation begins; add the coverage-enforced `docx-primitives` and `mcp-server` deltas together with their mapped tests in the implementation PR.
 
 ## 2. Selected-story comparison
 
@@ -16,11 +16,11 @@
 
 ## 3. Story-scoped primitives and package projection
 
-- [ ] 3.1 Extend accept/reject to relationship-selected header/footer parts and aggregate per-part counters without applying note-specific pruning rules.
-- [ ] 3.2 Add story-scoped paragraph bookmark, lookup, text replacement, insertion, deletion, and table-cell validation APIs keyed by OPC part path plus anchor and sharing one package-wide bookmark reservation set.
-- [ ] 3.3 Add the `docx-primitives` OpenSpec delta and mapped tests for relationship-selected accept/reject, package-wide bookmarks, story-local lookup, story-DOM table safety, both accept/reject counter families, and deliberate orphan-part exclusion.
-- [ ] 3.4 Update the MCP `accept_changes` contract, implementation text, and tests so supported header/footer revisions are no longer described as deferred; base the MODIFIED requirement on `add-structural-table-row-operations` so deleted rows remain resolved and absent with `unresolvedRowRevisions=0`.
-- [ ] 3.5 Dry-run OpenSpec archive on a scratch copy after the two row changes archive and verify the canonical MCP requirement retains their resolved-row semantics plus selected header/footer support.
+- [x] 3.1 Extend accept/reject to relationship-selected header/footer parts and aggregate per-part counters without applying note-specific pruning rules.
+- [x] 3.2 Add story-scoped paragraph bookmark, lookup, text replacement, insertion, deletion, and table-cell validation APIs keyed by OPC part path plus anchor and sharing one package-wide bookmark reservation set.
+- [x] 3.3 Add the `docx-primitives` OpenSpec delta and mapped tests for relationship-selected accept/reject, package-wide bookmarks, story-local lookup, story-DOM table safety, both accept/reject counter families, and deliberate orphan-part exclusion.
+- [x] 3.4 Update the MCP `accept_changes` contract, implementation text, and tests so supported header/footer revisions are no longer described as deferred; base the MODIFIED requirement on `add-structural-table-row-operations` so deleted rows remain resolved and absent with `unresolvedRowRevisions=0`.
+- [x] 3.5 Dry-run OpenSpec archive on a scratch copy after the two row changes archive and verify the canonical MCP requirement retains their resolved-row semantics plus selected header/footer support.
 
 ## 4. Markdoc import and syntax
 

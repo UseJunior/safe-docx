@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Paragraph primitives can now bookmark, look up, replace, insert, and delete
+  content in relationship-selected header/footer stories while reserving
+  bookmark identities package-wide and enforcing story-local table-cell safety.
 - Accept/reject, selective revision processing, validation, and revision-ID
   seeding now include relationship-selected header/footer stories while
   leaving orphan header/footer package parts untouched.

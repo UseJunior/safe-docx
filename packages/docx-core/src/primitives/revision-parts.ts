@@ -44,6 +44,13 @@ export function enumerateRevisionStoryPartPaths(zip: DocxZip): string[] {
  */
 export async function enumerateSelectedRevisionStoryPartPaths(zip: DocxZip): Promise<string[]> {
   const paths = new Set<string>(REVISION_STORY_PART_PATHS);
+  for (const partPath of await enumerateSelectedHeaderFooterPartPaths(zip)) paths.add(partPath);
+  return [...paths].sort();
+}
+
+/** Enumerate only relationship-selected physical header/footer parts. */
+export async function enumerateSelectedHeaderFooterPartPaths(zip: DocxZip): Promise<string[]> {
+  const paths = new Set<string>();
   const documentXml = await zip.readTextOrNull('word/document.xml');
   const relationshipsXml = await zip.readTextOrNull('word/_rels/document.xml.rels');
   if (documentXml) {
