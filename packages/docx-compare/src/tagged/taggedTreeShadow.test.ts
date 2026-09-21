@@ -15,6 +15,7 @@ import {
   DEFAULT_FORMAT_DETECTION_SETTINGS,
   DEFAULT_MOVE_DETECTION_SETTINGS,
   DocxArchive,
+  DocxDocument,
   buildSyntheticDocx,
   parseXml,
 } from '@usejunior/docx-core';
@@ -88,6 +89,67 @@ describe('tagged-tree offline evaluation', () => {
       expect(publication.serializedRangeStats.moveToRanges)
         .toBe(document.getElementsByTagName('w:moveTo').length);
       expect(publication.xml).not.toContain('data-safe-docx-comparison-revision');
+    },
+  );
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.20' })(
+    '[SDX-CMP-ROW-01] marks a pure inserted row at row, paragraph-mark, and run-content levels',
+    async () => {
+      const table = (rows: string[]) => buildDocxFromBodyXml(
+        '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid>'
+        + rows.map((value) => `<w:tr><w:tc><w:p><w:r><w:t>${value}</w:t></w:r></w:p></w:tc></w:tr>`).join('')
+        + '</w:tbl>',
+      );
+      const original = await table(['Stable A', 'Stable B']);
+      const revised = await table(['Stable A', 'Inserted', 'Stable B']);
+      const result = await compareDocumentsAtomizer(original, revised, {
+        author: 'Comparator',
+        date: new Date('2026-09-20T00:00:00.000Z'),
+      });
+      const archive = await DocxArchive.load(result.document);
+      const output = parseXml(await archive.getDocumentXml());
+      const insertedRow = Array.from(output.getElementsByTagNameNS(W_NS, 'tr'))
+        .find((row) => row.textContent?.includes('Inserted'))!;
+      const trPr = Array.from(insertedRow.childNodes).find((node) => node.nodeType === 1 && (node as Element).localName === 'trPr') as Element;
+      expect(trPr.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(1);
+      expect(insertedRow.getElementsByTagNameNS(W_NS, 'rPr')[0]?.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(1);
+      const contentInsertions = Array.from(insertedRow.getElementsByTagNameNS(W_NS, 'ins'))
+        .filter((element) => element.parentNode?.nodeName === 'w:p');
+      expect(contentInsertions).toHaveLength(1);
+      expect(contentInsertions[0]?.textContent).toBe('Inserted');
+
+      const accepted = await DocxDocument.load(result.document);
+      const rejected = await DocxDocument.load(result.document);
+      await Promise.all([accepted.acceptChanges(), rejected.rejectChanges()]);
+      const [acceptedPackage, rejectedPackage] = await Promise.all([
+        accepted.toBuffer({ cleanBookmarks: false }).then((value) => DocxArchive.load(value.buffer)),
+        rejected.toBuffer({ cleanBookmarks: false }).then((value) => DocxArchive.load(value.buffer)),
+      ]);
+      expect(parseXml(await acceptedPackage.getDocumentXml()).documentElement.textContent).toContain('Stable AInsertedStable B');
+      expect(parseXml(await rejectedPackage.getDocumentXml()).documentElement.textContent).toContain('Stable AStable B');
+    },
+  );
+
+  test.openspec('[SDX-MDOC-116] equal-count row replacement may use in-row revisions')(
+    'keeps equal-count table projections correct without requiring row markers',
+    () => {
+      const tableXml = (middle: string) => `<w:document xmlns:w="${W_NS}"><w:body><w:tbl><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid>`
+        + `<w:tr><w:tc><w:p><w:r><w:t>Duplicate</w:t></w:r></w:p></w:tc></w:tr>`
+        + `<w:tr><w:tc><w:p><w:r><w:t>${middle}</w:t></w:r></w:p></w:tc></w:tr>`
+        + `<w:tr><w:tc><w:p><w:r><w:t>Duplicate</w:t></w:r></w:p></w:tc></w:tr>`
+        + '</w:tbl></w:body></w:document>';
+      const publication = buildTaggedTreePublication({
+        originalXml: tableXml('Old'),
+        revisedXml: tableXml('New'),
+        author: 'Comparator',
+        date: new Date('2026-09-20T00:00:00.000Z'),
+      });
+      const output = parseXml(publication.xml);
+      expect(output.getElementsByTagNameNS(W_NS, 'tr')).toHaveLength(3);
+      expect(output.getElementsByTagNameNS(W_NS, 'ins').length).toBeGreaterThan(0);
+      expect(output.getElementsByTagNameNS(W_NS, 'del').length).toBeGreaterThan(0);
+      expect(parseXml(acceptAllChanges(publication.xml)).documentElement.textContent).toContain('DuplicateNewDuplicate');
+      expect(parseXml(rejectAllChanges(publication.xml)).documentElement.textContent).toContain('DuplicateOldDuplicate');
     },
   );
 

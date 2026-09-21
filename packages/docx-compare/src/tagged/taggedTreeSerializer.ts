@@ -343,24 +343,27 @@ function markWholeParagraph(
   contentRevision: ComparisonRevision,
   allocateRevision: () => ComparisonRevision,
   operationIds: readonly string[] = [],
+  markParagraphMark = true,
 ): WmlElement {
   let pPr = childElements(paragraph).find((child) => child.localName === 'pPr');
-  if (!pPr) {
-    pPr = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
-    paragraph.insertBefore(pPr, paragraph.firstChild);
+  if (markParagraphMark) {
+    if (!pPr) {
+      pPr = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
+      paragraph.insertBefore(pPr, paragraph.firstChild);
+    }
+    let paraRPr = childElements(pPr).find((child) => child.localName === 'rPr');
+    if (!paraRPr) {
+      paraRPr = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
+      const boundary = childElements(pPr).find((child) => ['sectPr', 'pPrChange'].includes(child.localName));
+      pPr.insertBefore(paraRPr, boundary ?? null);
+    }
+    const marker = paragraph.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
+    marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
+    marker.setAttributeNS(W_NS, 'w:author', revision.author);
+    marker.setAttributeNS(W_NS, 'w:date', revision.date);
+    markComparisonRevision(marker);
+    placeParagraphMarkRevisionMarker(paraRPr, marker, `w:${kind}`);
   }
-  let paraRPr = childElements(pPr).find((child) => child.localName === 'rPr');
-  if (!paraRPr) {
-    paraRPr = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
-    const boundary = childElements(pPr).find((child) => ['sectPr', 'pPrChange'].includes(child.localName));
-    pPr.insertBefore(paraRPr, boundary ?? null);
-  }
-  const marker = paragraph.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
-  marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
-  marker.setAttributeNS(W_NS, 'w:author', revision.author);
-  marker.setAttributeNS(W_NS, 'w:date', revision.date);
-  markComparisonRevision(marker);
-  placeParagraphMarkRevisionMarker(paraRPr, marker, `w:${kind}`);
 
   const content = childElements(paragraph).filter((child) => child !== pPr);
   for (const child of content) paragraph.removeChild(child);
@@ -369,6 +372,17 @@ function markWholeParagraph(
   const flush = (): void => {
     if (wrapper?.firstChild) paragraph.appendChild(wrapper);
     wrapper = undefined;
+  };
+  const newContentWrapper = (): WmlElement => {
+    const wrapperRevision = emittedContentWrapper ? allocateRevision() : contentRevision;
+    emittedContentWrapper = true;
+    const created = paragraph.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
+    created.setAttributeNS(W_NS, 'w:id', String(wrapperRevision.id));
+    created.setAttributeNS(W_NS, 'w:author', revision.author);
+    created.setAttributeNS(W_NS, 'w:date', revision.date);
+    markComparisonRevision(created);
+    markOperationProvenance(created, operationIds);
+    return created;
   };
   for (const child of content) {
     // Boundaries follow the paragraph's source projection so original-only
@@ -381,18 +395,29 @@ function markWholeParagraph(
       paragraph.appendChild(child);
       continue;
     }
+    // A tracked run wrapper cannot contain w:hyperlink. Keep the relationship-
+    // bearing container in the paragraph and track its run children instead.
+    //
+    // @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+    // @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+    // @see https://github.com/UseJunior/safe-docx/issues/998
+    if (child.namespaceURI === W_NS && child.localName === 'hyperlink') {
+      flush();
+      const hyperlinkContent = childElements(child);
+      for (const item of hyperlinkContent) child.removeChild(item);
+      const hyperlinkWrapper = newContentWrapper();
+      for (const item of hyperlinkContent) {
+        if (kind === 'del') convertDeletedText(item);
+        hyperlinkWrapper.appendChild(item);
+      }
+      if (hyperlinkWrapper.firstChild) child.appendChild(hyperlinkWrapper);
+      paragraph.appendChild(child);
+      continue;
+    }
     if (!wrapper) {
       // Bookmark boundaries split a named move into independent annotations.
       // Keep the reserved first ID, then allocate an ID for each new fragment.
-      const wrapperRevision = emittedContentWrapper && (kind === 'moveFrom' || kind === 'moveTo')
-        ? allocateRevision() : contentRevision;
-      emittedContentWrapper = true;
-      wrapper = paragraph.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
-      wrapper.setAttributeNS(W_NS, 'w:id', String(wrapperRevision.id));
-      wrapper.setAttributeNS(W_NS, 'w:author', revision.author);
-      wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
-      markComparisonRevision(wrapper);
-      markOperationProvenance(wrapper, operationIds);
+      wrapper = newContentWrapper();
     }
     if (kind === 'del') convertDeletedText(child);
     // Moved run content retains ordinary text vocabulary (unlike deletions).
@@ -543,6 +568,7 @@ function markWholeTableRow(
   row: WmlElement,
   kind: 'ins' | 'del',
   revision: ComparisonRevision,
+  allocateRevision: () => ComparisonRevision,
   operationIds: readonly string[] = [],
 ): WmlElement {
   let trPr = childElements(row).find((child) => child.localName === 'trPr');
@@ -555,12 +581,29 @@ function markWholeTableRow(
   marker.setAttributeNS(W_NS, 'w:author', revision.author);
   marker.setAttributeNS(W_NS, 'w:date', revision.date);
   markComparisonRevision(marker);
-  markOperationProvenance(marker, operationIds);
   const boundary = childElements(trPr).find((child) =>
     kind === 'ins'
       ? ['del', 'trPrChange'].includes(child.localName)
       : child.localName === 'trPrChange');
   trPr.insertBefore(marker, boundary ?? null);
+
+  const finalDirectParagraphs = new Set<WmlElement>();
+  for (const cell of Array.from(row.getElementsByTagNameNS(W_NS, 'tc')) as WmlElement[]) {
+    const directParagraphs = childElements(cell).filter((child) => child.localName === 'p');
+    const finalParagraph = directParagraphs.at(-1);
+    if (finalParagraph) finalDirectParagraphs.add(finalParagraph);
+  }
+  for (const paragraph of Array.from(row.getElementsByTagNameNS(W_NS, 'p')) as WmlElement[]) {
+    markWholeParagraph(
+      paragraph,
+      kind,
+      allocateRevision(),
+      allocateRevision(),
+      allocateRevision,
+      operationIds,
+      kind === 'ins' || !finalDirectParagraphs.has(paragraph),
+    );
+  }
   return row;
 }
 
@@ -1495,6 +1538,7 @@ function emitNode(
         base,
         'del',
         revision,
+        allocateRevision,
         operationProvenance(node),
       ), entry.originalStack);
     }
@@ -1523,6 +1567,7 @@ function emitNode(
         base,
         'ins',
         revision,
+        allocateRevision,
         operationProvenance(node),
       ), entry.revisedStack);
     }

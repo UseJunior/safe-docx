@@ -176,11 +176,28 @@ export type InsertOperation = {
   runFormatSpans?: RunFormatSpan[];
 };
 
+export type InsertTableRowsOperation = {
+  kind: 'insert-table-rows';
+  operationId: string;
+  anchorId: string;
+  relativePosition: 'BEFORE' | 'AFTER';
+  rows: string[][];
+};
+
+export type DeleteTableRowOperation = {
+  kind: 'delete-table-row';
+  operationId: string;
+  anchorId: string;
+};
+
+export type TableRowOperation = InsertTableRowsOperation | DeleteTableRowOperation;
+
 export type EditOperation =
   | InlineEditOperation
   | ReplaceSourceOperation
   | DeleteSourceOperation
-  | InsertOperation;
+  | InsertOperation
+  | TableRowOperation;
 
 export type MarkdocEditIR = {
   version: typeof IR_VERSION;
@@ -229,6 +246,8 @@ export type VerificationCertificate = {
   projectedRevisionCount: number;
   unsupportedStructures: string[];
   appliedOperations: string[];
+  /** Present only for builds that author table-row topology changes. */
+  tableTopology?: TableTopologyReport;
   commentRendering: {
     configurationSource: 'markdoc' | 'api' | 'cli' | 'default';
     buildDate: string;
@@ -253,6 +272,21 @@ export type VerificationCertificate = {
   deliveryReady: boolean;
   completeness: DraftCompletenessReport;
   /** Conservative aggregate verdict: true only when the artifact is delivery-ready. */
+  passed: boolean;
+};
+
+export type TableTopologyReport = {
+  sourceRejectAllEqual: boolean;
+  cleanAcceptAllEqual: boolean;
+  unresolvedRowRevisions: { accept: number; reject: number };
+  diagnostics: Array<{
+    projection: 'source-reject' | 'clean-accept';
+    tableIndex: number;
+    rowIndex?: number;
+    cellIndex?: number;
+    expected?: string;
+    actual?: string;
+  }>;
   passed: boolean;
 };
 

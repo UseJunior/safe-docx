@@ -12,6 +12,7 @@ import {
   getComment,
   deleteComment,
   updateCommentBody,
+  addTrackedRangeComments,
 } from './comments.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
 import { DocxDocument } from './document.js';
@@ -98,6 +99,28 @@ function findElementByWordId(document: Document, localName: string, id: number):
 }
 
 describe('comments — edge cases and branch coverage', () => {
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.2' })(
+    '[SDX-CMP-ROW-02] rejects tracked comment endpoints inside property containers',
+    async () => {
+      const params = [{
+        startRevision: { type: 'ins' as const, id: '7' },
+        endRevision: { type: 'ins' as const, id: '7' },
+        author: 'Reviewer',
+        initials: 'R',
+        date: '2026-09-20T00:00:00.000Z',
+        text: 'Structural rationale',
+      }];
+      const rowPropertyRevision = await makeDocxBuffer(
+        '<w:tbl><w:tr><w:trPr><w:ins w:id="7" w:author="A" w:date="2026-09-20T00:00:00Z"/></w:trPr>'
+        + '<w:tc><w:p/></w:tc></w:tr></w:tbl>',
+      );
+      await expect(addTrackedRangeComments(rowPropertyRevision, params)).rejects.toThrow('property container');
+      const paragraphPropertyRevision = await makeDocxBuffer(
+        '<w:p><w:pPr><w:rPr><w:ins w:id="7" w:author="A" w:date="2026-09-20T00:00:00Z"/></w:rPr></w:pPr></w:p>',
+      );
+      await expect(addTrackedRangeComments(paragraphPropertyRevision, params)).rejects.toThrow('property container');
+    },
+  );
   describe('updateCommentBody', () => {
     test('updates only the selected comment body while preserving metadata and unrelated XML', async () => {
       const commentsXml =

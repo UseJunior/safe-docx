@@ -71,6 +71,10 @@ end offset. Duplicate operation IDs remain invalid. With duplicate-content
 rows, comparison may attribute the operation to a physically different but
 textually identical row; projection and topology equality, not physical-row
 identity, is authoritative.
+If a rationale cannot be mapped to one generated revision because an inserted
+row is textually identical to adjacent source content, compilation fails with
+`RATIONALE_ANCHOR_AMBIGUOUS` rather than attaching the comment heuristically.
+The structural edit remains valid without that ambiguous rationale.
 
 ## Validation and operation conflicts
 
