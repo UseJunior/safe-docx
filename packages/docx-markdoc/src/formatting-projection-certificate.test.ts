@@ -38,6 +38,28 @@ function removeInsertedProperty(xml: string, pattern: RegExp, property: string):
 }
 
 describe('formatting-aware projection certificate', () => {
+  itAllure('[SDX-MDOC-114] blocks projection success when table topology certification fails', () => {
+    expect(projectionChecksPassed({
+      sourceSha256Matches: true,
+      scaffoldComplete: true,
+      paragraphFingerprintsMatch: true,
+      operationsAppliedExactlyOnce: true,
+      rejectAllEqualsSource: true,
+      acceptAllEqualsClean: true,
+      rejectAllFormattingEqualsSource: true,
+      acceptAllFormattingEqualsClean: true,
+      unchangedPackagePartsPreserved: true,
+      existingRevisionsPreserved: true,
+      tableTopology: {
+        sourceRejectAllEqual: true,
+        cleanAcceptAllEqual: false,
+        unresolvedRowRevisions: { accept: 0, reject: 0 },
+        diagnostics: [{ projection: 'clean-accept', tableIndex: 0, rowIndex: 1, cellIndex: 0 }],
+        passed: false,
+      },
+    })).toBe(false);
+  });
+
   itAllure('[SDX-MDOC-27] reports semantic formatting fidelity for both replay projections', async () => {
     const source = await buildSyntheticDocx({ paragraphs: ['Pinned text.'] });
     const imported = await importDocxToMarkdoc(source);

@@ -305,6 +305,11 @@ export async function addTrackedRangeComments(
     const startParent = startRevision.parentNode;
     const endParent = endRevision.parentNode;
     if (!startParent || !endParent) throw new Error('Attributed revision container has no parent.');
+    for (const parent of [startParent, endParent]) {
+      if (parent.nodeType === 1 && ['trPr', 'rPr'].includes((parent as Element).localName)) {
+        throw new Error('Tracked range comments cannot be anchored inside a property container.');
+      }
+    }
 
     const commentId = allocateNextCommentId(commentsDoc);
     const rangeStart = documentXml.createElementNS(OOXML.W_NS, 'w:commentRangeStart');

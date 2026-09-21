@@ -514,8 +514,14 @@ function runsOverlappingRange(
     const paragraphLength = runs.reduce((length, run) => length + run.text.length, 0);
     const segmentStart = paragraphIndex === startIndex ? range.start : 0;
     const segmentEnd = paragraphIndex === endIndex ? range.end : paragraphLength;
-    if (segmentStart < 0 || segmentEnd > paragraphLength || segmentStart >= segmentEnd) {
+    if (segmentStart < 0 || segmentEnd > paragraphLength || segmentStart > segmentEnd) {
       throw new Error(`operation ${range.operationId} has an empty or invalid attribution range`);
+    }
+    if (segmentStart === segmentEnd) {
+      if (paragraphIndex === startIndex || paragraphIndex === endIndex) {
+        throw new Error(`operation ${range.operationId} has an empty or invalid attribution range`);
+      }
+      continue;
     }
     let offset = 0;
     for (const run of runs) {

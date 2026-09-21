@@ -1,8 +1,19 @@
 import { DocxMarkdocError } from './errors.js';
-import type { AdjacentRevisionPair, EditOperation, EditPair, InsertOperation, MarkdocEditIR } from './types.js';
+import type {
+  AdjacentRevisionPair,
+  EditOperation,
+  EditPair,
+  InsertOperation,
+  MarkdocEditIR,
+  TableRowOperation,
+} from './types.js';
 
 function isInsertOperation(operation: EditOperation): operation is InsertOperation {
   return operation.kind === 'insert-before' || operation.kind === 'insert-after';
+}
+
+function isTableRowOperation(operation: EditOperation): operation is TableRowOperation {
+  return operation.kind === 'insert-table-rows' || operation.kind === 'delete-table-row';
 }
 
 export function exportEditPairs(
@@ -12,6 +23,12 @@ export function exportEditPairs(
   if (ir.scaffold.some((paragraph) => paragraph.originalTextFromSource)) {
     throw new DocxMarkdocError('UNRESOLVED_SOURCE_TEXT', 'Compile source-only edits against the pinned DOCX before exporting edit pairs.');
   }
+  if (ir.operations.some(isTableRowOperation)) {
+    throw new DocxMarkdocError(
+      'STRUCTURAL_EDIT_PAIR_EXPORT_UNSUPPORTED',
+      'Table-row operations cannot be represented losslessly as paragraph edit pairs; compile the canonical Markdoc directly.',
+    );
+  }
   const context = Math.max(0, options.contextParagraphs ?? 1);
   const rationales = new Map<string, MarkdocEditIR['rationales']>();
   for (const item of ir.rationales) {
@@ -19,7 +36,8 @@ export function exportEditPairs(
     rationales.set(item.operationId, [...existing, item]);
   }
   const indexById = new Map(ir.scaffold.map((paragraph, index) => [paragraph.id, index]));
-  return ir.operations.map((operation) => {
+  const paragraphOperations = ir.operations.filter((operation): operation is Exclude<EditOperation, TableRowOperation> => !isTableRowOperation(operation));
+  return paragraphOperations.map((operation) => {
     const anchorId = isInsertOperation(operation) ? operation.anchorId : operation.id;
     const index = indexById.get(anchorId) ?? -1;
     const before = isInsertOperation(operation) ? '' : operation.originalText;

@@ -3,7 +3,10 @@ import {
   DocxDocument,
   addTrackedRangeComments,
   computeContentFingerprint,
+  getParagraphBookmarkId,
   getParagraphRuns,
+  parseXml,
+  serializeXml,
   type ReplacementPart,
 } from '@usejunior/docx-core';
 import {
@@ -26,6 +29,8 @@ import type {
   MarkdocEditIR,
   RunFormat,
   RunFormatSpan,
+  TableRowOperation,
+  TableTopologyReport,
   VerificationCertificate,
 } from './types.js';
 
@@ -39,7 +44,17 @@ async function documentXml(buffer: Buffer): Promise<string> {
   // paragraph property block. It carries no formatting semantics but the
   // public comparator correctly treats a non-empty rPr as material; erase
   // only the syntactically empty form before handing XML to that comparator.
-  return xml.replace(/<w:rPr\s*\/>|<w:rPr\s*>\s*<\/w:rPr>/gu, '');
+  const document = parseXml(xml);
+  for (const localName of ['commentRangeStart', 'commentRangeEnd']) {
+    for (const marker of Array.from(document.getElementsByTagNameNS('*', localName))) {
+      marker.parentNode?.removeChild(marker);
+    }
+  }
+  for (const reference of Array.from(document.getElementsByTagNameNS('*', 'commentReference'))) {
+    const run = reference.parentNode;
+    if (run?.nodeType === 1 && (run as Element).localName === 'r') run.parentNode?.removeChild(run);
+  }
+  return serializeXml(document).replace(/<w:rPr\s*\/>|<w:rPr\s*>\s*<\/w:rPr>/gu, '');
 }
 
 function formattingDiagnostic(report: FormattingFidelityReport): FormattingProjectionDiagnostic {
@@ -126,6 +141,7 @@ export function projectionChecksPassed(checks: Pick<
   | 'acceptAllFormattingEqualsClean'
   | 'unchangedPackagePartsPreserved'
   | 'existingRevisionsPreserved'
+  | 'tableTopology'
 >): boolean {
   return checks.sourceSha256Matches
     && checks.scaffoldComplete
@@ -136,7 +152,96 @@ export function projectionChecksPassed(checks: Pick<
     && checks.rejectAllFormattingEqualsSource
     && checks.acceptAllFormattingEqualsClean
     && checks.unchangedPackagePartsPreserved
-    && checks.existingRevisionsPreserved;
+    && checks.existingRevisionsPreserved
+    && (checks.tableTopology?.passed ?? true);
+}
+
+function directElementChildren(parent: Element, localName?: string): Element[] {
+  return Array.from(parent.childNodes).filter((child): child is Element =>
+    child.nodeType === 1 && (localName === undefined || (child as Element).localName === localName));
+}
+
+type NormalizedTable = {
+  gridWidths: string[];
+  rows: Array<{
+    height?: [string, string];
+    header?: string;
+    cells: Array<{
+      width?: [string, string];
+      gridSpan?: string;
+      vMerge?: string;
+      paragraphs: string[];
+    }>;
+  }>;
+};
+
+async function normalizedTableTopology(buffer: Buffer): Promise<NormalizedTable[]> {
+  const xml = parseXml(await documentXml(buffer));
+  const body = Array.from(xml.getElementsByTagNameNS('*', 'body'))[0];
+  if (!body) return [];
+  const attr = (element: Element | undefined, name: string): string | undefined =>
+    element?.getAttribute(`w:${name}`) || element?.getAttribute(name) || undefined;
+  return directElementChildren(body, 'tbl').map((table) => {
+    const grid = directElementChildren(table, 'tblGrid')[0];
+    const gridWidths = grid ? directElementChildren(grid, 'gridCol').map((column) => attr(column, 'w') ?? '') : [];
+    const rows = directElementChildren(table, 'tr').map((row) => {
+      const trPr = directElementChildren(row, 'trPr')[0];
+      const height = trPr && directElementChildren(trPr, 'trHeight')[0];
+      const header = trPr && directElementChildren(trPr, 'tblHeader')[0];
+      return {
+        height: height ? [attr(height, 'val') ?? '', attr(height, 'hRule') ?? ''] as [string, string] : undefined,
+        header: header ? (attr(header, 'val') ?? 'true') : undefined,
+        cells: directElementChildren(row, 'tc').map((cell) => {
+        const tcPr = directElementChildren(cell, 'tcPr')[0];
+        const width = tcPr && directElementChildren(tcPr, 'tcW')[0];
+        const span = tcPr && directElementChildren(tcPr, 'gridSpan')[0];
+        const merge = tcPr && directElementChildren(tcPr, 'vMerge')[0];
+        return {
+          width: width ? [attr(width, 'w') ?? '', attr(width, 'type') ?? ''] as [string, string] : undefined,
+          gridSpan: attr(span, 'val'),
+          vMerge: merge ? (attr(merge, 'val') ?? 'continue') : undefined,
+          paragraphs: directElementChildren(cell, 'p').map((paragraph) =>
+            Array.from(paragraph.getElementsByTagNameNS('*', 't')).map((text) => text.textContent ?? '').join('')),
+        };
+        }),
+      };
+    });
+    return { gridWidths, rows };
+  });
+}
+
+function topologyDiagnostics(
+  projection: 'source-reject' | 'clean-accept',
+  expected: NormalizedTable[],
+  actual: NormalizedTable[],
+): TableTopologyReport['diagnostics'] {
+  const length = Math.max(expected.length, actual.length);
+  for (let tableIndex = 0; tableIndex < length; tableIndex += 1) {
+    const expectedTable = expected[tableIndex];
+    const actualTable = actual[tableIndex];
+    if (!expectedTable || !actualTable) return [{ projection, tableIndex, expected: JSON.stringify(expectedTable), actual: JSON.stringify(actualTable) }];
+    if (JSON.stringify(expectedTable.gridWidths) !== JSON.stringify(actualTable.gridWidths)) {
+      return [{ projection, tableIndex, expected: JSON.stringify(expectedTable.gridWidths), actual: JSON.stringify(actualTable.gridWidths) }];
+    }
+    const rowLength = Math.max(expectedTable.rows.length, actualTable.rows.length);
+    for (let rowIndex = 0; rowIndex < rowLength; rowIndex += 1) {
+      const expectedRow = expectedTable.rows[rowIndex];
+      const actualRow = actualTable.rows[rowIndex];
+      if (!expectedRow || !actualRow) return [{ projection, tableIndex, rowIndex, expected: JSON.stringify(expectedRow), actual: JSON.stringify(actualRow) }];
+      if (JSON.stringify([expectedRow.height, expectedRow.header]) !== JSON.stringify([actualRow.height, actualRow.header])) {
+        return [{ projection, tableIndex, rowIndex, expected: JSON.stringify([expectedRow.height, expectedRow.header]), actual: JSON.stringify([actualRow.height, actualRow.header]) }];
+      }
+      const cellLength = Math.max(expectedRow.cells.length, actualRow.cells.length);
+      for (let cellIndex = 0; cellIndex < cellLength; cellIndex += 1) {
+        const expectedCell = expectedRow.cells[cellIndex];
+        const actualCell = actualRow.cells[cellIndex];
+        if (JSON.stringify(expectedCell) !== JSON.stringify(actualCell)) {
+          return [{ projection, tableIndex, rowIndex, cellIndex, expected: JSON.stringify(expectedCell), actual: JSON.stringify(actualCell) }];
+        }
+      }
+    }
+  }
+  return [];
 }
 
 /**
@@ -483,6 +588,7 @@ function replacePreservingMixedFormatting(
 
 function validateRunFormatScopes(ir: MarkdocEditIR, source: DocxDocument): void {
   for (const operation of ir.operations) {
+    if (isTableRowOperation(operation)) continue;
     if (!operation.runFormat && !(operation.runFormatSpans?.length)) continue;
     if (isInsertOperation(operation)) {
       if (operation.revisedText.length === 0 || operation.revisedText.replace(/\r\n/gu, '\n').split(/\n{2,}/u).length !== 1) {
@@ -508,13 +614,24 @@ function isInsertOperation(operation: EditOperation): operation is InsertOperati
   return operation.kind === 'insert-before' || operation.kind === 'insert-after';
 }
 
+function isTableRowOperation(operation: EditOperation): operation is TableRowOperation {
+  return operation.kind === 'insert-table-rows' || operation.kind === 'delete-table-row';
+}
+
 function sourceOperationId(operation: EditOperation): string | null {
-  return isInsertOperation(operation) ? null : operation.id;
+  return isInsertOperation(operation) || isTableRowOperation(operation) ? null : operation.id;
 }
 
 function nearestTableCell(paragraph: Element | null): Element | undefined {
   for (let current = paragraph?.parentNode; current; current = current.parentNode) {
     if (current.nodeType === 1 && (current as Element).localName === 'tc') return current as Element;
+  }
+  return undefined;
+}
+
+function nearestTableRow(paragraph: Element | null): Element | undefined {
+  for (let current = paragraph?.parentNode; current; current = current.parentNode) {
+    if (current.nodeType === 1 && (current as Element).localName === 'tr') return current as Element;
   }
   return undefined;
 }
@@ -588,7 +705,7 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     if (projected.originalText !== sourceText || (replacement && replacement.originalText !== sourceText)) {
       throw new DocxMarkdocError('SOURCE_TEXT_DRIFT', `Paragraph ${node.id} original projection does not match source.`);
     }
-    if (node.table_context) unsupported.add('table-structural-operations');
+    if (node.table_context) unsupported.add('table-grid-operations');
     if (node.footnote_refs?.length) unsupported.add('footnotes');
     if (node.comments?.length) unsupported.add('comments');
   });
@@ -662,6 +779,55 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
       );
     }
   }
+
+  const structuralRows = new Map<Element, TableRowOperation>();
+  const deletedRows = new Map<Element, TableRowOperation>();
+  for (const operation of ir.operations.filter(isTableRowOperation)) {
+    const anchor = nodeById.get(operation.anchorId);
+    if (!anchor) throw new DocxMarkdocError('MISSING_ANCHOR', `Operation ${operation.operationId} targets missing paragraph ${operation.anchorId}.`);
+    const row = nearestTableRow(source.getParagraphElementById(operation.anchorId));
+    if (!row) throw new DocxMarkdocError('UNSUPPORTED_EDIT_STRUCTURE', `Operation ${operation.operationId} does not target a table row.`);
+    const prior = structuralRows.get(row);
+    if (prior) {
+      throw new DocxMarkdocError('CONFLICTING_TABLE_ROW_OPERATIONS', `Operations ${prior.operationId} and ${operation.operationId} target the same source row.`);
+    }
+    structuralRows.set(row, operation);
+    if (operation.kind === 'delete-table-row') deletedRows.set(row, operation);
+  }
+  for (const operation of ir.operations) {
+    if (isTableRowOperation(operation)) {
+      if (operation.kind === 'insert-table-rows') {
+        const row = nearestTableRow(source.getParagraphElementById(operation.anchorId));
+        if (row && deletedRows.has(row)) {
+          throw new DocxMarkdocError('STRUCTURAL_ANCHOR_DELETED', `Operation ${operation.operationId} is anchored on a row deleted by the same build.`);
+        }
+      }
+      continue;
+    }
+    const targetId = isInsertOperation(operation) ? operation.anchorId : operation.id;
+    const targetRow = nearestTableRow(source.getParagraphElementById(targetId));
+    if (targetRow && deletedRows.has(targetRow)) {
+      throw new DocxMarkdocError('STRUCTURAL_TARGET_DELETED', `Operation ${operation.operationId} targets a row deleted by the same build.`);
+    }
+    if (isInsertOperation(operation) && operation.styleSourceId) {
+      const styleRow = nearestTableRow(source.getParagraphElementById(operation.styleSourceId));
+      if (styleRow && deletedRows.has(styleRow)) {
+        throw new DocxMarkdocError('STRUCTURAL_FORMAT_SOURCE_DELETED', `Operation ${operation.operationId} uses a formatting source in a deleted row.`);
+      }
+    }
+  }
+  for (const annotation of ir.annotations) {
+    if (annotation.id.startsWith('rationale:')) continue;
+    const positions = annotation.anchor.kind === 'point'
+      ? [annotation.anchor.point]
+      : [annotation.anchor.start, annotation.anchor.end];
+    if (positions.some((position) => {
+      const row = nearestTableRow(source.getParagraphElementById(position.paragraphId));
+      return row !== undefined && deletedRows.has(row);
+    })) {
+      throw new DocxMarkdocError('STRUCTURAL_ANNOTATION_TARGET_DELETED', `Annotation ${annotation.id} targets a row deleted by the same build.`);
+    }
+  }
   return { unsupported: [...unsupported].sort() };
 }
 
@@ -678,6 +844,53 @@ async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise
   const document = await DocxDocument.load(sourceBuffer);
   const ranges: AttributedRange[] = [];
   for (const operation of ir.operations) {
+    if (operation.kind === 'insert-table-rows') {
+      const insertedCells: Array<{ id: string; text: string }> = [];
+      let anchorId = operation.anchorId;
+      for (const row of operation.rows) {
+        const inserted = document.insertTableRow({
+          positionalAnchorNodeId: anchorId,
+          relativePosition: operation.relativePosition,
+          cellTexts: row,
+        });
+        insertedCells.push(...inserted.cellParagraphIds.map((id, index) => ({ id, text: row[index] ?? '' })));
+        if (operation.relativePosition === 'AFTER') anchorId = inserted.cellParagraphIds[0]!;
+      }
+      const nonEmptyCells = insertedCells.filter((cell) => cell.text.length > 0);
+      if (nonEmptyCells.length > 0) {
+        ranges.push({
+          operationId: operation.operationId,
+          projection: 'clean',
+          startParagraphId: nonEmptyCells[0]!.id,
+          start: 0,
+          endParagraphId: nonEmptyCells.at(-1)!.id,
+          end: nonEmptyCells.at(-1)!.text.length,
+        });
+      }
+      continue;
+    }
+    if (operation.kind === 'delete-table-row') {
+      const anchorParagraph = document.getParagraphElementById(operation.anchorId);
+      const row = nearestTableRow(anchorParagraph);
+      if (!row) throw new DocxMarkdocError('UNSUPPORTED_EDIT_STRUCTURE', `Operation ${operation.operationId} does not target a table row.`);
+      const rowParagraphs = Array.from(row.getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'p'));
+      const ids = rowParagraphs.map((paragraph) => getParagraphBookmarkId(paragraph)).filter((id): id is string => Boolean(id));
+      if (ids.length === 0) throw new DocxMarkdocError('MISSING_ANCHOR', `Operation ${operation.operationId} row has no anchored paragraphs.`);
+      const nonEmptyParagraphs = ids.map((id) => ({ id, text: document.getParagraphTextById(id) ?? '' }))
+        .filter((paragraph) => paragraph.text.length > 0);
+      if (nonEmptyParagraphs.length > 0) {
+        ranges.push({
+          operationId: operation.operationId,
+          projection: 'source',
+          startParagraphId: nonEmptyParagraphs[0]!.id,
+          start: 0,
+          endParagraphId: nonEmptyParagraphs.at(-1)!.id,
+          end: nonEmptyParagraphs.at(-1)!.text.length,
+        });
+      }
+      document.deleteTableRow({ targetParagraphId: operation.anchorId });
+      continue;
+    }
     if (isInsertOperation(operation)) {
       const runStyleSourceText = insertionFormatSource(document, operation);
       const templateRun = operation.runFormat || operation.runFormatSpans?.length ? insertionTemplate(document, operation) : undefined;
@@ -760,6 +973,39 @@ async function applyOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise
     );
   }
   return { buffer: (await document.toBuffer({ cleanBookmarks: false })).buffer, ranges };
+}
+
+async function preflightTableRowOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise<void> {
+  const operations = ir.operations.filter(isTableRowOperation);
+  if (operations.length === 0) return;
+  const document = await DocxDocument.load(sourceBuffer);
+  let activeOperation: TableRowOperation | undefined;
+  try {
+    for (const operation of operations) {
+      activeOperation = operation;
+      if (operation.kind === 'delete-table-row') {
+        document.deleteTableRow({ targetParagraphId: operation.anchorId });
+        continue;
+      }
+      let anchorId = operation.anchorId;
+      for (const row of operation.rows) {
+        const inserted = document.insertTableRow({
+          positionalAnchorNodeId: anchorId,
+          relativePosition: operation.relativePosition,
+          cellTexts: row,
+        });
+        if (operation.relativePosition === 'AFTER') anchorId = inserted.cellParagraphIds[0]!;
+      }
+    }
+  } catch (error) {
+    if (error instanceof DocxMarkdocError) throw error;
+    const cause = error as Error & { code?: string; detail?: unknown };
+    throw new DocxMarkdocError(
+      'TABLE_ROW_PREFLIGHT_FAILED',
+      `Table-row operation ${activeOperation?.operationId ?? '<unknown>'} failed structural preflight: ${cause.message}`,
+      { operationId: activeOperation?.operationId, causeCode: cause.code, causeDetail: cause.detail },
+    );
+  }
 }
 
 type RationaleMaterialization = {
@@ -872,6 +1118,7 @@ export async function compileMarkdoc(
       { changeSets: incompleteAtomicSets },
     );
   }
+  await preflightTableRowOperations(sourceBuffer, ir);
   const applied = await applyOperations(sourceBuffer, ir);
   const clean = applied.buffer;
   const rangesByOperation = new Map(applied.ranges.map((range) => [range.operationId, range]));
@@ -891,16 +1138,25 @@ export async function compileMarkdoc(
       endParagraphId: range.endParagraphId,
       end: range.end,
     })),
-    // No maxWordRefinementChangeRanges budget: a finite budget made dense
-    // rewrites fall back to coarse whole-span replacement on the run-level
-    // reconstruction paths, so ordinary source tokens the independent release
-    // verifier proves preservable were deleted and reinserted. Token-level
-    // minimality outranks "confetti" readability for authored redlines.
-    // See https://github.com/UseJunior/safe-docx/issues/846.
+    // No finite refinement budget: dense rewrites must retain preservable
+    // lexical and punctuation tokens. Readability-oriented whitespace bridging
+    // remains valid where it coalesces an otherwise fragmented replacement
+    // without changing either accept/reject character projection.
+    // See https://github.com/UseJunior/safe-docx/issues/846 and pull/43.
   };
-  const comparison = ir.operations.length === 0
-    ? undefined
-    : await compareDocumentsAtomizer(sourceBuffer, clean, comparisonOptions);
+  let comparison: Awaited<ReturnType<typeof compareDocumentsAtomizer>> | undefined;
+  try {
+    comparison = ir.operations.length === 0
+      ? undefined
+      : await compareDocumentsAtomizer(sourceBuffer, clean, comparisonOptions);
+  } catch (error) {
+    if (materializations.length === 0) throw error;
+    throw new DocxMarkdocError(
+      'RATIONALE_ANCHOR_AMBIGUOUS',
+      'Selected rationale could not be mapped to one exact tracked edit range.',
+      { cause: (error as Error).message },
+    );
+  }
   // A no-operation replay has no comparison to represent. Preserve the exact
   // source package instead of needlessly reassembling relationship IDs and
   // turning package-normalization noise into a false formatting failure.
@@ -966,8 +1222,7 @@ export async function compileMarkdoc(
   const existingRevisionsPreserved = revisionPreservation.preserved;
   const acceptedDoc = await DocxDocument.load(tracked);
   const rejectedDoc = await DocxDocument.load(tracked);
-  await acceptedDoc.acceptChanges();
-  await rejectedDoc.rejectChanges();
+  const [acceptResult, rejectResult] = await Promise.all([acceptedDoc.acceptChanges(), rejectedDoc.rejectChanges()]);
   const cleanDoc = await DocxDocument.load(clean);
   let sourceProjectionDocument = sourceDocument;
   let cleanProjectionDocument = cleanDoc;
@@ -985,6 +1240,35 @@ export async function compileMarkdoc(
   const acceptAllEqualsClean = acceptedText === cleanText;
   const formattingProjection = await verifyFormattingProjections(sourceBuffer, clean, tracked, sourceContainsRevisions);
   const unchangedPackagePartsPreserved = await unchangedPartsEqual(sourceBuffer, clean);
+  let tableTopology: TableTopologyReport | undefined;
+  if (ir.operations.some(isTableRowOperation)) {
+    const [acceptedBuffer, rejectedBuffer] = await Promise.all([
+      acceptedDoc.toBuffer({ cleanBookmarks: false }).then((result) => result.buffer),
+      rejectedDoc.toBuffer({ cleanBookmarks: false }).then((result) => result.buffer),
+    ]);
+    const [sourceTables, rejectedTables, cleanTables, acceptedTables] = await Promise.all([
+      normalizedTableTopology(sourceBuffer),
+      normalizedTableTopology(rejectedBuffer),
+      normalizedTableTopology(clean),
+      normalizedTableTopology(acceptedBuffer),
+    ]);
+    const sourceRejectDiagnostics = topologyDiagnostics('source-reject', sourceTables, rejectedTables);
+    const cleanAcceptDiagnostics = topologyDiagnostics('clean-accept', cleanTables, acceptedTables);
+    const sourceRejectAllEqual = sourceRejectDiagnostics.length === 0;
+    const cleanAcceptAllEqual = cleanAcceptDiagnostics.length === 0;
+    const unresolvedRowRevisions = {
+      accept: acceptResult.unresolvedRowRevisions,
+      reject: rejectResult.unresolvedRowRevisions,
+    };
+    tableTopology = {
+      sourceRejectAllEqual,
+      cleanAcceptAllEqual,
+      unresolvedRowRevisions,
+      diagnostics: [...sourceRejectDiagnostics, ...cleanAcceptDiagnostics],
+      passed: sourceRejectAllEqual && cleanAcceptAllEqual
+        && unresolvedRowRevisions.accept === 0 && unresolvedRowRevisions.reject === 0,
+    };
+  }
   const certificate: VerificationCertificate = {
     version: 1,
     sourceSha256Matches: sourceHashMatches,
@@ -1002,6 +1286,7 @@ export async function compileMarkdoc(
     projectedRevisionCount: trackedRevisions.length,
     unsupportedStructures: unsupported,
     appliedOperations: declaredOperationIds,
+    ...(tableTopology ? { tableTopology } : {}),
     commentRendering: {
       configurationSource: resolvedCompilation.source,
       buildDate: resolvedCompilation.date.toISOString(),

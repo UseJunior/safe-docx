@@ -96,6 +96,22 @@ export const markdocConfig: Config = {
         ...runFormatAttributes,
       },
     },
+    'insert-table-rows': {
+      attributes: {
+        anchor: stringRequired,
+        operation: stringRequired,
+        position: { type: String, required: true, matches: ['before', 'after'] },
+      },
+    },
+    row: {},
+    cell: {
+      selfClosing: true,
+      attributes: { text: stringRequired },
+    },
+    'delete-table-row': {
+      selfClosing: true,
+      attributes: { anchor: stringRequired, operation: stringRequired },
+    },
     rationale: {
       attributes: {
         for: stringRequired,
@@ -232,6 +248,10 @@ function validateTextBodies(ast: Node, issues: ValidationIssue[]): void {
 
 function directTagChildren(node: Node): Node[] {
   return node.children.filter((child) => child.type === 'tag');
+}
+
+function hasMeaningfulNonTagContent(node: Node): boolean {
+  return node.children.some((child) => child.type !== 'tag' && textProjection(child, 'revised').trim().length > 0);
 }
 
 function assertNoNestedTags(node: Node, issues: ValidationIssue[]): void {
@@ -504,6 +524,59 @@ export function parseMarkdoc(source: string): ValidationResult {
       assertions.push({ id, kind: a.kind === 'present' ? 'present' : 'absent', text: assertedText });
       continue;
     }
+    if (node.tag === 'insert-table-rows') {
+      const operationId = String(a.operation ?? '');
+      if (!operationId) issues.push(issue('EMPTY_OPERATION_ID', 'insert-table-rows requires a non-empty operation ID.', node));
+      if (hasMeaningfulNonTagContent(node)) {
+        issues.push(issue('INVALID_TABLE_ROW_BATCH', 'insert-table-rows admits direct row tags only.', node));
+      }
+      const rowNodes = directTagChildren(node);
+      if (rowNodes.length === 0 || rowNodes.some((child) => child.tag !== 'row')) {
+        issues.push(issue('INVALID_TABLE_ROW_BATCH', 'insert-table-rows requires one or more direct row tags.', node));
+      }
+      const rows = rowNodes.filter((child) => child.tag === 'row').map((rowNode, rowIndex) => {
+        if (hasMeaningfulNonTagContent(rowNode)) {
+          issues.push(issue('INVALID_TABLE_ROW', `Table row ${rowIndex} admits direct cell tags only.`, rowNode));
+        }
+        const cellNodes = directTagChildren(rowNode);
+        if (cellNodes.length === 0 || cellNodes.some((child) => child.tag !== 'cell')) {
+          issues.push(issue('INVALID_TABLE_ROW', `Table row ${rowIndex} requires one or more direct cell tags.`, rowNode));
+        }
+        return cellNodes.filter((child) => child.tag === 'cell').map((cellNode, cellIndex) => {
+          const value = cellNode.attributes.text;
+          if (typeof value !== 'string') {
+            issues.push(issue('INVALID_TABLE_CELL_TEXT', `Table row ${rowIndex} cell ${cellIndex} text must be a string.`, cellNode));
+            return '';
+          }
+          if (/[\r\n\t]/u.test(value)) {
+            issues.push(issue('INVALID_TABLE_CELL_TEXT', `Table row ${rowIndex} cell ${cellIndex} text cannot contain CR, LF, or tab.`, cellNode));
+          }
+          return value;
+        });
+      });
+      const widths = new Set(rows.map((row) => row.length));
+      if (widths.size > 1) issues.push(issue('INCONSISTENT_TABLE_ROW_WIDTH', 'Every inserted row must contain the same number of cells.', node));
+      operations.push({
+        kind: 'insert-table-rows',
+        operationId,
+        anchorId: String(a.anchor ?? ''),
+        relativePosition: a.position === 'before' ? 'BEFORE' : 'AFTER',
+        rows,
+      });
+      if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
+      operationIds.add(operationId);
+      continue;
+    }
+    if (node.tag === 'delete-table-row') {
+      const operationId = String(a.operation ?? '');
+      if (!operationId) issues.push(issue('EMPTY_OPERATION_ID', 'delete-table-row requires a non-empty operation ID.', node));
+      operations.push({
+        kind: 'delete-table-row', operationId, anchorId: String(a.anchor ?? ''),
+      });
+      if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
+      operationIds.add(operationId);
+      continue;
+    }
     if (node.tag === 'insert-before' || node.tag === 'insert-after') {
       const children = directTagChildren(node);
       const afterNodes = children.filter((child) => child.tag === 'after');
@@ -666,7 +739,9 @@ export function parseMarkdoc(source: string): ValidationResult {
         : 0;
       const anchor: AnnotationAnchor = operation.kind === 'insert-before' || operation.kind === 'insert-after'
         ? { kind: 'point', point: { paragraphId, offset } }
-        : { kind: 'range', start: { paragraphId, offset: 0 }, end: { paragraphId, offset: operation.revisedText.length } };
+        : operation.kind === 'insert-table-rows' || operation.kind === 'delete-table-row'
+          ? { kind: 'point', point: { paragraphId, offset: 0 } }
+          : { kind: 'range', start: { paragraphId, offset: 0 }, end: { paragraphId, offset: operation.revisedText.length } };
       annotations.push({
         id: `rationale:${rationale.operationId}:${rationale.visibility}:${rationaleIndex}`,
         operationId: rationale.operationId,
