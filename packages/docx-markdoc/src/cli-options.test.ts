@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect } from 'vitest';
 import { itAllure } from '../../docx-core/src/testing/allure-test.js';
-import { INTERNAL_SUFFIX, parseRenderingFlags, warnedInternalPath } from './cli-options.js';
+import { INTERNAL_SUFFIX, parseGreenfieldCliArgs, parseRenderingFlags, warnedInternalPath } from './cli-options.js';
 
 describe('Markdoc CLI rendering safety', () => {
   itAllure('[SDX-MDOC-55] requires the dangerous flag and internal output path together', () => {
@@ -31,5 +31,14 @@ describe('Markdoc CLI rendering safety', () => {
       .toThrow(/cannot be combined/u);
     expect(() => parseRenderingFlags(['--external-notes', 'email']))
       .toThrow(/requires preserve, comment, footnote, or omit/u);
+  });
+
+  itAllure('[SDX-MDOC-GREEN-CLI-01] keeps all three greenfield positionals with or without a style profile', () => {
+    expect(parseGreenfieldCliArgs(['template.docx', 'form.mdoc', 'output']))
+      .toEqual({ templatePath: 'template.docx', markdocPath: 'form.mdoc', outputDir: 'output' });
+    expect(parseGreenfieldCliArgs(['template.docx', '--style-profile', 'style.json', 'form.mdoc', 'output']))
+      .toEqual({ templatePath: 'template.docx', markdocPath: 'form.mdoc', outputDir: 'output', profilePath: 'style.json' });
+    expect(() => parseGreenfieldCliArgs(['template.docx', 'form.mdoc'])).toThrow(/requires a template/u);
+    expect(() => parseGreenfieldCliArgs(['template.docx', 'form.mdoc', 'output', '--style-profile'])).toThrow(/requires a JSON path/u);
   });
 });

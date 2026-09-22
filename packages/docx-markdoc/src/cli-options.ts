@@ -10,6 +10,36 @@ export type RenderingFlags = {
   notePresentation: Partial<Record<AnnotationAudience, AnnotationPresentation>>;
 };
 
+export type GreenfieldCliArgs = {
+  templatePath: string;
+  markdocPath: string;
+  outputDir: string;
+  profilePath?: string;
+};
+
+export function parseGreenfieldCliArgs(args: string[]): GreenfieldCliArgs {
+  const positional: string[] = [];
+  let profilePath: string | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (arg === '--style-profile') {
+      if (profilePath !== undefined) throw new Error('--style-profile may be supplied only once.');
+      profilePath = args[index + 1];
+      if (!profilePath) throw new Error('--style-profile requires a JSON path.');
+      index += 1;
+    } else if (arg.startsWith('--')) {
+      throw new Error(`Unknown option ${arg}.`);
+    } else {
+      positional.push(arg);
+    }
+  }
+  const [templatePath, markdocPath, outputDir] = positional;
+  if (!templatePath || !markdocPath || !outputDir || positional.length !== 3) {
+    throw new Error('compile-greenfield requires a template, Markdoc file, and output directory.');
+  }
+  return { templatePath, markdocPath, outputDir, ...(profilePath ? { profilePath } : {}) };
+}
+
 export function parseRenderingFlags(args: string[]): RenderingFlags {
   const positional: string[] = [];
   let externalComments: boolean | undefined;

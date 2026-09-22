@@ -9,7 +9,7 @@ import { inspectMarkdocSource } from './inspect.js';
 import { requireMarkdoc } from './markdoc.js';
 import { convertCommentsToFootnotes } from '@usejunior/docx-core';
 import { DocxMarkdocError } from './errors.js';
-import { assertDistinctInternalPath, EXTERNAL_FILENAME, parseRenderingFlags, warnedInternalPath } from './cli-options.js';
+import { assertDistinctInternalPath, EXTERNAL_FILENAME, parseGreenfieldCliArgs, parseRenderingFlags, warnedInternalPath } from './cli-options.js';
 import { normalizeAnnotationPresentationProfile } from './presentation.js';
 import type { AnnotationPresentationProfile } from './types.js';
 import { compileGreenfieldMarkdoc, type GreenfieldStyleProfile } from './greenfield.js';
@@ -59,12 +59,7 @@ async function main(): Promise<void> {
     return;
   }
   if (command === 'compile-greenfield') {
-    const profileFlag = args.indexOf('--style-profile');
-    const profilePath = profileFlag < 0 ? undefined : args[profileFlag + 1];
-    if (profileFlag >= 0 && !profilePath) throw new Error(usage());
-    const positional = args.filter((_, index) => index !== profileFlag && index !== profileFlag + 1);
-    const [templatePath, markdocPath, outputDir] = positional;
-    if (!templatePath || !markdocPath || !outputDir || positional.length !== 3) throw new Error(usage());
+    const { templatePath, markdocPath, outputDir, profilePath } = parseGreenfieldCliArgs(args);
     const inputPaths = [templatePath, markdocPath, ...(profilePath ? [profilePath] : [])].map((value) => path.resolve(value));
     const resolvedOutputDir = path.resolve(outputDir);
     const outputPaths = ['clean.docx', 'verification.json'].map((name) => path.resolve(outputDir, name));
