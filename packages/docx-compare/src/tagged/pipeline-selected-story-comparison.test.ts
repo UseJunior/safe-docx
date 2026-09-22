@@ -251,6 +251,56 @@ describe('ordinary relationship-selected story comparison', () => {
   );
 
   test.openspec('[SDX-CMP-STORY-01] Ordinary selected header text receives native revisions')(
+    'ignores pretty-print indentation around an admitted table-cell paragraph',
+    async () => {
+      const indentedTable = (text: string): string => `
+  <w:tbl>
+    <w:tr>
+      <w:tc>
+        <w:tcPr/>
+        <w:p><w:r><w:t>${text}</w:t></w:r></w:p>
+      </w:tc>
+    </w:tr>
+  </w:tbl>
+`;
+      const compactTable = (text: string): string => '<w:tbl><w:tr><w:tc><w:tcPr/>'
+        + `<w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+      const original = await selectedHeaderFixture({ storyContent: indentedTable('Cell original') });
+      const revised = await selectedHeaderFixture({ storyContent: compactTable('Cell revised') });
+      const result = await compareDocumentsAtomizer(original, revised);
+      const output = await selectedHeaderXml(result.document);
+
+      expect(revisionCounts(output).insertions).toBeGreaterThan(0);
+      expect(revisionCounts(output).deletions).toBeGreaterThan(0);
+      expect(extractRoundTripComparisonText(acceptAllChanges(output))).toContain('Cell revised');
+      expect(extractRoundTripComparisonText(rejectAllChanges(output))).toContain('Cell original');
+      expect(result.unrepresentedChanges).toBeUndefined();
+    },
+  );
+
+  test.openspec('[SDX-CMP-STORY-05] Unsupported topology remains unrepresented')(
+    'keeps whitespace-only DrawingML leaf text semantically significant',
+    async () => {
+      const drawing = (text: string): string => '<w:p><w:r><w:drawing>'
+        + `<a:t xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">${text}</a:t>`
+        + '</w:drawing></w:r></w:p>';
+      const original = await selectedHeaderFixture({
+        storyContent: drawing(' ') + paragraph('Tail original'),
+      });
+      const revised = await selectedHeaderFixture({
+        storyContent: drawing('') + paragraph('Tail revised'),
+      });
+      const result = await compareDocumentsAtomizer(original, revised);
+      const output = await selectedHeaderXml(result.document);
+
+      expect(revisionCounts(output)).toEqual({ insertions: 0, deletions: 0 });
+      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+        expect.objectContaining({ scope: 'header', kind: 'changed', sectionIndex: 0, role: 'default' }),
+      ]));
+    },
+  );
+
+  test.openspec('[SDX-CMP-STORY-01] Ordinary selected header text receives native revisions')(
     'tracks insertion and deletion in the admitted root paragraph sequence',
     async () => {
       const original = await selectedHeaderFixture({

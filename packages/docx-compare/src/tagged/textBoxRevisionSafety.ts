@@ -700,6 +700,7 @@ function admittedPlainParagraphForScaffold(paragraph: Element): boolean {
 function ordinaryStoryScaffoldFingerprint(xml: string): string {
   const document = parseXml(xml);
   const root = document.documentElement.cloneNode(true) as Element;
+  removeFormattingWhitespace(root);
   for (const textBox of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'))) {
     while (textBox.firstChild) textBox.removeChild(textBox.firstChild);
   }
@@ -707,7 +708,6 @@ function ordinaryStoryScaffoldFingerprint(xml: string): string {
     if (admittedPlainParagraphForScaffold(paragraph)) paragraph.parentNode?.removeChild(paragraph);
   }
   blankOrdinaryParagraphText(root);
-  removeFormattingWhitespace(root);
   return canonicalNode(root);
 }
 
