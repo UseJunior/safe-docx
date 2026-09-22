@@ -81,8 +81,10 @@ parser leaves as literal text (including `_____` form blanks) remain literal;
 `&`, `<`, and `>` in plain text are accepted and XML-escaped; CommonMark
 backslash escapes resolve to their literal character. A `#` without a
 following space remains ordinary paragraph text. Any parsed emphasis, strong,
-code, link, image, HTML, or other non-text inline node fails with its source
-position. A line consisting only of `_`, `*`, or `-` characters is a
+code, link, image, or other non-text inline node fails with its source
+position. The selected parser treats HTML-looking angle-bracket input as
+literal text; the compiler never interprets it and XML-escapes it like other
+`<` or `>` content. A line consisting only of `_`, `*`, or `-` characters is a
 CommonMark thematic break and is rejected; authors place form blanks inside a
 text line such as `Signature: ________`. An empty document, Markdoc tags, indented/fenced code, thematic
 breaks, block quotes, lists, and tables likewise fail. A heading level without

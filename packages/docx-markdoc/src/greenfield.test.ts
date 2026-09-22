@@ -7,7 +7,7 @@ import {
   OOXML,
 } from '@usejunior/docx-core';
 import { testAllure } from '../../docx-core/src/testing/allure-test.js';
-import { compileGreenfieldMarkdoc, parseGreenfieldMarkdoc } from './greenfield.js';
+import { appendPlainTextRun, compileGreenfieldMarkdoc, parseGreenfieldMarkdoc } from './greenfield.js';
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -71,8 +71,18 @@ describe('template-backed greenfield Markdoc generation', () => {
       }
       await expect(compileGreenfieldMarkdoc(await houseTemplate(), 'Body', { styleProfile: { bodyStyleId: 'Missing' } }))
         .rejects.toMatchObject({ code: 'MISSING_TEMPLATE_STYLE' });
+      await expect(compileGreenfieldMarkdoc(await houseTemplate(), 'Body', { styleProfile: { bodyStyleId: 42 } as never }))
+        .rejects.toMatchObject({ code: 'INVALID_STYLE_PROFILE' });
     },
   );
+
+  conforming('[SDX-MDOC-GREEN-RUN-01] shared plain-text emission escapes XML and preserves significant spacing', () => {
+    const document = parseXml(`<w:p xmlns:w="${W}"/>`);
+    appendPlainTextRun(document, document.documentElement, 'A & B  ');
+    const xml = document.toString();
+    expect(xml).toContain('xml:space="preserve"');
+    expect(xml).toContain('A &amp; B  ');
+  });
 
   conforming.openspec('house-style and running-story scaffolding survive body replacement')(
     '[SDX-MDOC-GREEN-03] retains section, footer binding, and every non-document part byte-for-byte', async () => {

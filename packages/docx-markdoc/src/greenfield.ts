@@ -79,7 +79,7 @@ function resolvedProfile(input?: GreenfieldStyleProfile): GreenfieldStyleProfile
   const defaults = defaultProfile();
   if (!input) return defaults;
   if (typeof input !== 'object' || Array.isArray(input)) fail('INVALID_STYLE_PROFILE', 'Style profile must be a JSON object.');
-  if (!input.bodyStyleId?.trim()) fail('INVALID_STYLE_PROFILE', 'bodyStyleId must be a non-empty string.');
+  if (typeof input.bodyStyleId !== 'string' || !input.bodyStyleId.trim()) fail('INVALID_STYLE_PROFILE', 'bodyStyleId must be a non-empty string.');
   if (input.headingStyleIds !== undefined && (typeof input.headingStyleIds !== 'object' || input.headingStyleIds === null || Array.isArray(input.headingStyleIds))) {
     fail('INVALID_STYLE_PROFILE', 'headingStyleIds must be a JSON object.');
   }
@@ -119,6 +119,17 @@ export function parseGreenfieldMarkdoc(source: string, profile?: GreenfieldStyle
   return blocks;
 }
 
+/** Emit one escaped plain-text OOXML run under an existing container. */
+export function appendPlainTextRun(doc: Document, parent: Element, value: string): Element {
+  const run = doc.createElementNS(OOXML.W_NS, 'w:r');
+  const text = doc.createElementNS(OOXML.W_NS, 'w:t');
+  if (/^\s|\s$|\s{2}/u.test(value)) text.setAttribute('xml:space', 'preserve');
+  text.appendChild(doc.createTextNode(value));
+  run.appendChild(text);
+  parent.appendChild(run);
+  return run;
+}
+
 function appendTextParagraph(doc: Document, body: Element, block: GreenfieldBodyBlock): void {
   const p = doc.createElementNS(OOXML.W_NS, 'w:p');
   const pPr = doc.createElementNS(OOXML.W_NS, 'w:pPr');
@@ -126,12 +137,7 @@ function appendTextParagraph(doc: Document, body: Element, block: GreenfieldBody
   pStyle.setAttributeNS(OOXML.W_NS, 'w:val', block.styleId);
   pPr.appendChild(pStyle);
   p.appendChild(pPr);
-  const run = doc.createElementNS(OOXML.W_NS, 'w:r');
-  const text = doc.createElementNS(OOXML.W_NS, 'w:t');
-  if (/^\s|\s$|\s{2}/u.test(block.text)) text.setAttribute('xml:space', 'preserve');
-  text.appendChild(doc.createTextNode(block.text));
-  run.appendChild(text);
-  p.appendChild(run);
+  appendPlainTextRun(doc, p, block.text);
   body.appendChild(p);
 }
 

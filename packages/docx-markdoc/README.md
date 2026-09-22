@@ -126,8 +126,9 @@ docx-markdoc compile-greenfield house-template.docx form.mdoc new-output/ \
 ```
 
 The body grammar admits ATX headings and plain paragraphs only. Inline emphasis,
-links, code, HTML, lists, tables, block quotes, thematic breaks, Markdoc tags,
-and YAML frontmatter fail with an actionable diagnostic. Literal form content
+links, code, lists, tables, block quotes, thematic breaks, Markdoc tags, and
+YAML frontmatter fail with an actionable diagnostic. HTML is never interpreted:
+angle-bracket text remains literal and is XML-escaped. Literal form content
 such as `Name: _____`, `A & B`, and `#not-a-heading` remains plain text. A line
 containing only `_____` is parsed as a thematic break and is therefore refused;
 put the blank beside a label instead.

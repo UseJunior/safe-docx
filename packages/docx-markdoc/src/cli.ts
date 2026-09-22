@@ -67,13 +67,26 @@ async function main(): Promise<void> {
       throw new DocxMarkdocError('GREENFIELD_PATH_COLLISION', 'Every greenfield input and output path must be distinct.');
     }
     const profileSource = profilePath ? await readFile(profilePath) : undefined;
-    const styleProfile = profileSource ? JSON.parse(profileSource.toString('utf8')) as GreenfieldStyleProfile : undefined;
+    let styleProfile: GreenfieldStyleProfile | undefined;
+    if (profileSource) {
+      try {
+        styleProfile = JSON.parse(profileSource.toString('utf8')) as GreenfieldStyleProfile;
+      } catch (error) {
+        throw new DocxMarkdocError('INVALID_STYLE_PROFILE_JSON', `Style profile is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     const result = await compileGreenfieldMarkdoc(
       await readFile(templatePath),
       await readFile(markdocPath, 'utf8'),
       { styleProfile, styleProfileSource: profileSource },
     );
-    await mkdir(outputDir);
+    try {
+      await mkdir(outputDir);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'EEXIST') throw new DocxMarkdocError('GREENFIELD_OUTPUT_EXISTS', `Greenfield output directory already exists: ${outputDir}`);
+      throw new DocxMarkdocError('GREENFIELD_OUTPUT_DIRECTORY', `Cannot create greenfield output directory '${outputDir}': ${error instanceof Error ? error.message : String(error)}`);
+    }
     try {
       await writeNewFiles([
         [path.join(outputDir, 'clean.docx'), result.clean],
