@@ -120,13 +120,17 @@ function cloneRPrWithoutChangeRecords(doc: Document, rPr: Element): Element {
   return clone;
 }
 
-function appendTextToRun(doc: Document, run: Element, text: string): void {
+function appendTextToRun(doc: Document, run: Element, text: string, preserveXmlSpace = false): void {
   // Convert \t and \n to OOXML equivalents where possible.
   let buf = '';
   const flush = () => {
     if (!buf) return;
     const t = doc.createElementNS(OOXML.W_NS, 'w:t');
-    setXmlSpacePreserveIfNeeded(t, buf);
+    if (preserveXmlSpace) {
+      t.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+    } else {
+      setXmlSpacePreserveIfNeeded(t, buf);
+    }
     t.appendChild(doc.createTextNode(buf));
     run.appendChild(t);
     buf = '';
@@ -273,6 +277,20 @@ const EMBEDDED_CONTENT_LOCALS: ReadonlySet<string> = new Set([
   W.contentPart,
 ]);
 
+const FORMAT_RANGE_CONTENT_LOCALS: ReadonlySet<string> = new Set([
+  W.t,
+  W.tab,
+  W.br,
+  'lastRenderedPageBreak',
+]);
+
+function belongsToParagraph(run: Element, paragraph: Element): boolean {
+  for (let parent = run.parentNode; parent; parent = parent.parentNode) {
+    if (parent.nodeType === 1 && isW(parent as Element, W.p)) return parent === paragraph;
+  }
+  return false;
+}
+
 function isEmbeddedContentElement(node: Node): boolean {
   return (
     node.nodeType === 1 &&
@@ -302,7 +320,89 @@ export type ReplacementPart = {
   templateRun?: Element | null;
   addRunProps?: AddRunProps;
   clearHighlight?: boolean;
+  /** Preserve an intentional xml:space marker during text-identical rebuilds. */
+  preserveXmlSpace?: boolean;
 };
+
+export type TextRangeRunFormat = {
+  underline?: 'single' | 'none';
+  highlight?: 'yellow' | 'none';
+};
+
+/**
+ * Change direct run properties over an exact visible-text range while keeping
+ * every character and each touched run's undeclared direct properties.
+ *
+ * The existing bounded replacement engine owns boundary splitting and rejects
+ * unsafe container crossings. This wrapper supplies one text-identical part
+ * per touched run, so harmless physical fragmentation is retained rather than
+ * flattened.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.28
+ * @see #998
+ */
+export function formatParagraphTextRange(
+  paragraph: Element,
+  start: number,
+  end: number,
+  format: TextRangeRunFormat,
+): void {
+  const text = getParagraphText(paragraph);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start || end > text.length) {
+    throw new SafeDocxError('INVALID_ARGUMENT', 'Formatting range must be a non-empty bounded visible-text interval.');
+  }
+  let physicalOffset = 0;
+  const physicalRuns = Array.from(paragraph.getElementsByTagNameNS(OOXML.W_NS, W.r))
+    .filter((run) => belongsToParagraph(run, paragraph));
+  for (const run of physicalRuns) {
+    const runLength = getRunVisibleLength(run);
+    const intersects = runLength > 0
+      ? physicalOffset < end && physicalOffset + runLength > start
+      : physicalOffset > start && physicalOffset < end;
+    if (intersects) {
+      const content = Array.from(run.childNodes).filter((child): child is Element =>
+        child.nodeType === 1 && !isW(child as Element, W.rPr));
+      const unsupported = content
+        .filter((element) => element.namespaceURI !== OOXML.W_NS
+          || !FORMAT_RANGE_CONTENT_LOCALS.has(element.localName ?? ''));
+      const isDisposablePaginationCache = content.length > 0
+        && content.every((element) => element.localName === 'lastRenderedPageBreak');
+      if (unsupported.length > 0 || (runLength === 0 && !isDisposablePaginationCache)) {
+        const names = unsupported.length > 0
+          ? [...new Set(unsupported.map((element) => element.localName))].sort().join(', ')
+          : 'empty run';
+        throw new SafeDocxError(
+          'UNSUPPORTED_EDIT',
+          `Formatting range intersects unsupported run content: ${names}.`,
+        );
+      }
+    }
+    physicalOffset += runLength;
+  }
+  const runs = getParagraphRuns(paragraph);
+  const parts: ReplacementPart[] = [];
+  let offset = 0;
+  for (const run of runs) {
+    const runStart = offset;
+    const runEnd = offset + run.text.length;
+    offset = runEnd;
+    const overlapStart = Math.max(start, runStart);
+    const overlapEnd = Math.min(end, runEnd);
+    if (overlapEnd <= overlapStart) continue;
+    parts.push({
+      text: text.slice(overlapStart, overlapEnd),
+      templateRun: run.r,
+      preserveXmlSpace: Array.from(run.r.getElementsByTagNameNS(OOXML.W_NS, W.t))
+        .some((node) => node.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'space') === 'preserve'),
+      addRunProps: {
+        ...(format.underline === undefined ? {} : { underline: format.underline === 'none' ? false : format.underline }),
+        ...(format.highlight === undefined ? {} : { highlight: format.highlight === 'none' ? false : format.highlight }),
+      },
+    });
+  }
+  if (parts.length === 0) throw new SafeDocxError('INVALID_ARGUMENT', 'Formatting range does not intersect visible run text.');
+  replaceParagraphTextRange(paragraph, start, end, parts);
+}
 
 function getDirectChild(parent: Element, localName: string): Element | null {
   for (const child of Array.from(parent.childNodes)) {
@@ -434,11 +534,14 @@ function ensureBoolProp(doc: Document, rPr: Element, localName: string, val: boo
 }
 
 function ensureUnderline(doc: Document, rPr: Element, val: boolean | string): void {
-  let el = getFirstChild(rPr, OOXML.W_NS, W.u);
+  const underlines = Array.from(rPr.childNodes).filter((child): child is Element =>
+    child.nodeType === 1 && isW(child as Element, W.u));
   if (val === false) {
-    if (el) el.parentNode?.removeChild(el);
+    for (const underline of underlines) underline.parentNode?.removeChild(underline);
     return;
   }
+  let el = underlines[0];
+  for (const duplicate of underlines.slice(1)) duplicate.parentNode?.removeChild(duplicate);
   if (!el) {
     el = doc.createElementNS(OOXML.W_NS, `w:${W.u}`);
     rPr.insertBefore(el, rPr.firstChild);
@@ -861,7 +964,7 @@ export function replaceParagraphTextRange(
     if (ctx && hasExplicitFormattingMutation && rPrComparableSignature(newRPr) !== sourceRPrSignature) {
       ensureRPr(doc, newRun).appendChild(buildRPrChangeElement(getSnapshotRPr(doc, sourceRPr), ctx));
     }
-    appendTextToRun(doc, newRun, part.text);
+    appendTextToRun(doc, newRun, part.text, part.preserveXmlSpace);
     if (getRunVisibleLength(newRun) > 0) {
       replacementRuns.push(newRun);
     }

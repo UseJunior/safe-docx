@@ -137,11 +137,25 @@ export type RunFormatSpan = {
   format: RunFormat;
 };
 
+/** Deliberate set/remove formatting for text retained from the source. */
+export type RetainedFormat = {
+  underline?: 'single' | 'none';
+  highlight?: 'yellow' | 'none';
+};
+
+/** Exact half-open revised-text interval carrying a retained-text mutation. */
+export type RetainedFormatSpan = {
+  start: number;
+  end: number;
+  format: RetainedFormat;
+};
+
 export type InlineEditOperation = SourceParagraph & {
   kind: 'inline-edit';
   operationId: string;
   runFormat?: RunFormat;
   runFormatSpans?: RunFormatSpan[];
+  retainedFormatSpans?: RetainedFormatSpan[];
 };
 
 export type ReplaceSourceOperation = SourceParagraph & {
@@ -153,6 +167,7 @@ export type ReplaceSourceOperation = SourceParagraph & {
   /** Optional direct formatting overlaid only on generated replacement text. */
   runFormat?: RunFormat;
   runFormatSpans?: RunFormatSpan[];
+  retainedFormatSpans?: RetainedFormatSpan[];
 };
 
 export type DeleteSourceOperation = SourceParagraph & {
@@ -161,6 +176,7 @@ export type DeleteSourceOperation = SourceParagraph & {
   format: 'inherit-source-paragraph';
   runFormat?: RunFormat;
   runFormatSpans?: RunFormatSpan[];
+  retainedFormatSpans?: RetainedFormatSpan[];
 };
 
 export type InsertOperation = {
@@ -174,6 +190,7 @@ export type InsertOperation = {
   /** Optional direct formatting overlaid only on the generated insertion text. */
   runFormat?: RunFormat;
   runFormatSpans?: RunFormatSpan[];
+  retainedFormatSpans?: RetainedFormatSpan[];
 };
 
 export type InsertTableRowsOperation = {
@@ -246,6 +263,7 @@ export type VerificationCertificate = {
   projectedRevisionCount: number;
   unsupportedStructures: string[];
   appliedOperations: string[];
+  retainedFormatting: RetainedFormattingReport;
   /** Present only for builds that author table-row topology changes. */
   tableTopology?: TableTopologyReport;
   commentRendering: {
@@ -272,6 +290,28 @@ export type VerificationCertificate = {
   deliveryReady: boolean;
   completeness: DraftCompletenessReport;
   /** Conservative aggregate verdict: true only when the artifact is delivery-ready. */
+  passed: boolean;
+};
+
+export type RetainedFormattingReport = {
+  declaredSpans: number;
+  changedProperties: number;
+  emittedPropertyRanges: number;
+  textRevisionOverlaps: number;
+  diagnostics: Array<{
+    operationId: string;
+    paragraphId: string;
+    revisedStart: number;
+    revisedEnd: number;
+    sourceStart: number;
+    sourceEnd: number;
+    properties: Array<'highlight' | 'underline'>;
+    emittedPropertyRanges: number;
+    textRevisionOverlaps: number;
+    propertyCoverageComplete: boolean;
+    textMatches: boolean;
+    propertyStateMatches: boolean;
+  }>;
   passed: boolean;
 };
 
