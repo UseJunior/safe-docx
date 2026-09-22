@@ -12,12 +12,13 @@ import { compileGreenfieldMarkdoc, parseGreenfieldMarkdoc } from './greenfield.j
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const REL = 'http://schemas.openxmlformats.org/package/2006/relationships';
+const TEST_FEATURE = 'Template-backed greenfield Markdoc generation';
 const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="${W}">` +
   ['Normal', 'Heading1', 'HouseBody', 'HouseTitle'].map((id) => `<w:style w:type="paragraph" w:styleId="${id}"/>`).join('') +
   '</w:styles>';
 
 const test = testAllure.epic('DOCX Markdoc').withLabels({
-  feature: 'Template-backed greenfield Markdoc generation',
+  feature: TEST_FEATURE,
   story: 'Issue 998 greenfield generation',
   severity: 'critical',
 });
