@@ -360,9 +360,11 @@ export function formatParagraphTextRange(
       ? physicalOffset < end && physicalOffset + runLength > start
       : physicalOffset > start && physicalOffset < end;
     if (intersects) {
-      const content = getDirectContentElements(run);
+      const content = Array.from(run.childNodes).filter((child): child is Element =>
+        child.nodeType === 1 && !isW(child as Element, W.rPr));
       const unsupported = content
-        .filter((element) => !FORMAT_RANGE_CONTENT_LOCALS.has(element.localName ?? ''));
+        .filter((element) => element.namespaceURI !== OOXML.W_NS
+          || !FORMAT_RANGE_CONTENT_LOCALS.has(element.localName ?? ''));
       const isDisposablePaginationCache = content.length > 0
         && content.every((element) => element.localName === 'lastRenderedPageBreak');
       if (unsupported.length > 0 || (runLength === 0 && !isDisposablePaginationCache)) {

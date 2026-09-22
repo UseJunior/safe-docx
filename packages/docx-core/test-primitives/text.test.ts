@@ -141,6 +141,20 @@ describe('text primitives', () => {
         .toThrowError(SafeDocxError);
       expect(withTextBox.toString()).toBe(before);
     });
+    await then('foreign-namespace children co-resident with text are rejected transactionally', () => {
+      for (const extension of [
+        '<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Fallback><w:drawing/></mc:Fallback></mc:AlternateContent>',
+        '<w14:conflictIns xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"/>',
+      ]) {
+        const paragraph = firstParagraph(makeDoc(
+          `<w:p><w:r><w:t>Alphabeta</w:t>${extension}</w:r></w:p>`,
+        ));
+        const before = paragraph.toString();
+        expect(() => formatParagraphTextRange(paragraph, 0, 9, { underline: 'single' }))
+          .toThrowError(SafeDocxError);
+        expect(paragraph.toString()).toBe(before);
+      }
+    });
     await then('pagination cache is admitted but an enclosed empty run is rejected', () => {
       const cache = firstParagraph(makeDoc(
         '<w:p><w:r><w:lastRenderedPageBreak/><w:t>Alphabeta</w:t></w:r></w:p>',
