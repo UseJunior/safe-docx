@@ -144,6 +144,20 @@ describe('DocxArchive', () => {
         expect(await archive.getFileBuffer('word/media/missing.bin')).toBeNull();
       });
     });
+
+    test('can pin arbitrary replacement metadata for deterministic projection', async () => {
+      const archive = await DocxArchive.create();
+      const epoch = new Date('2006-01-01T00:00:00.000Z');
+      const path = 'word/media/image.bin';
+      const payload = Buffer.from([0x00, 0xff, 0x89, 0x50, 0x4e, 0x47]);
+
+      archive.setFile(path, payload, { date: epoch });
+
+      const JSZip = (await import('jszip')).default;
+      const zip = await JSZip.loadAsync(await archive.save());
+      expect(zip.file(path)?.date.toISOString()).toBe(epoch.toISOString());
+      await expect(zip.file(path)?.async('nodebuffer')).resolves.toEqual(payload);
+    });
   });
 
   describe('clone', () => {
