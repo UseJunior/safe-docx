@@ -281,7 +281,15 @@ const FORMAT_RANGE_CONTENT_LOCALS: ReadonlySet<string> = new Set([
   W.t,
   W.tab,
   W.br,
+  'lastRenderedPageBreak',
 ]);
+
+function belongsToParagraph(run: Element, paragraph: Element): boolean {
+  for (let parent = run.parentNode; parent; parent = parent.parentNode) {
+    if (parent.nodeType === 1 && isW(parent as Element, W.p)) return parent === paragraph;
+  }
+  return false;
+}
 
 function isEmbeddedContentElement(node: Node): boolean {
   return (
@@ -344,18 +352,26 @@ export function formatParagraphTextRange(
     throw new SafeDocxError('INVALID_ARGUMENT', 'Formatting range must be a non-empty bounded visible-text interval.');
   }
   let physicalOffset = 0;
-  for (const run of Array.from(paragraph.getElementsByTagNameNS(OOXML.W_NS, W.r))) {
+  const physicalRuns = Array.from(paragraph.getElementsByTagNameNS(OOXML.W_NS, W.r))
+    .filter((run) => belongsToParagraph(run, paragraph));
+  for (const run of physicalRuns) {
     const runLength = getRunVisibleLength(run);
     const intersects = runLength > 0
       ? physicalOffset < end && physicalOffset + runLength > start
       : physicalOffset > start && physicalOffset < end;
     if (intersects) {
-      const unsupported = getDirectContentElements(run)
+      const content = getDirectContentElements(run);
+      const unsupported = content
         .filter((element) => !FORMAT_RANGE_CONTENT_LOCALS.has(element.localName ?? ''));
-      if (unsupported.length > 0) {
+      const isDisposablePaginationCache = content.length > 0
+        && content.every((element) => element.localName === 'lastRenderedPageBreak');
+      if (unsupported.length > 0 || (runLength === 0 && !isDisposablePaginationCache)) {
+        const names = unsupported.length > 0
+          ? [...new Set(unsupported.map((element) => element.localName))].sort().join(', ')
+          : 'empty run';
         throw new SafeDocxError(
           'UNSUPPORTED_EDIT',
-          `Formatting range intersects unsupported run content: ${[...new Set(unsupported.map((element) => element.localName))].sort().join(', ')}.`,
+          `Formatting range intersects unsupported run content: ${names}.`,
         );
       }
     }

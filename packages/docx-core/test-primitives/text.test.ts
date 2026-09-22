@@ -126,6 +126,46 @@ describe('text primitives', () => {
     });
   });
 
+  test('uses paragraph-owned run offsets, admits pagination cache, and rejects enclosed empty runs', async ({ given, when, then }: AllureBddContext) => {
+    let withTextBox!: Element;
+    await given('nested text-box runs precede a flat span containing a symbol', () => {
+      withTextBox = firstParagraph(makeDoc(
+        '<w:p><w:r><w:drawing><w:txbxContent><w:p><w:r><w:t>Box text</w:t></w:r></w:p></w:txbxContent></w:drawing></w:r>'
+        + '<w:r><w:t>Alpha</w:t></w:r><w:r><w:sym w:font="Wingdings" w:char="F0FC"/></w:r><w:r><w:t>beta</w:t></w:r></w:p>',
+      ));
+    });
+    await when('the flat visible span is formatted', () => {});
+    await then('nested runs do not desynchronise the transactional special-content guard', () => {
+      const before = withTextBox.toString();
+      expect(() => formatParagraphTextRange(withTextBox, 0, 9, { underline: 'single' }))
+        .toThrowError(SafeDocxError);
+      expect(withTextBox.toString()).toBe(before);
+    });
+    await then('pagination cache is admitted but an enclosed empty run is rejected', () => {
+      const cache = firstParagraph(makeDoc(
+        '<w:p><w:r><w:lastRenderedPageBreak/><w:t>Alphabeta</w:t></w:r></w:p>',
+      ));
+      expect(() => formatParagraphTextRange(cache, 0, 9, { underline: 'single' })).not.toThrow();
+      expect(getParagraphText(cache)).toBe('Alphabeta');
+
+      const empty = firstParagraph(makeDoc(
+        '<w:p><w:r><w:t>Alpha</w:t></w:r><w:r><w:rPr><w:b/></w:rPr></w:r><w:r><w:t>beta</w:t></w:r></w:p>',
+      ));
+      const before = empty.toString();
+      expect(() => formatParagraphTextRange(empty, 0, 9, { underline: 'single' }))
+        .toThrowError(SafeDocxError);
+      expect(empty.toString()).toBe(before);
+
+      const emptyText = firstParagraph(makeDoc(
+        '<w:p><w:r><w:t>Alpha</w:t></w:r><w:r><w:t/></w:r><w:r><w:t>beta</w:t></w:r></w:p>',
+      ));
+      const emptyTextBefore = emptyText.toString();
+      expect(() => formatParagraphTextRange(emptyText, 0, 9, { underline: 'single' }))
+        .toThrowError(SafeDocxError);
+      expect(emptyText.toString()).toBe(emptyTextBefore);
+    });
+  });
+
   test('extracts paragraph runs and tracks field-result visibility', async ({ given, when, then, and }: AllureBddContext) => {
     let doc!: Document;
     let runs!: ReturnType<typeof getParagraphRuns>;
