@@ -13,6 +13,8 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 
 | ID | Title | Edition | Part | Section | Schema reference | Verified by |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ECMA-PART1-17-2-2` | Main document body | 5 | 1 | 17.2.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:body` | packages/docx-markdoc/src/greenfield.ts; packages/docx-markdoc/src/greenfield.test.ts |
+| `ECMA-PART1-17-3-1-27` | Paragraph style reference | 5 | 1 | 17.3.1.27 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle` | packages/docx-markdoc/src/greenfield.ts; packages/docx-markdoc/src/greenfield.test.ts |
 | `ECMA-PART1-17-3-2-29` | Run style | 5 | 1 | 17.3.2.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rStyle` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
 | `ECMA-PART1-17-3-2-38` | Run font size | 5 | 1 | 17.3.2.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sz` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
 | `ECMA-PART4-14-9-1-1` | VML rich text-box content (w:txbxContent) | 5 | 4 | 14.9.1.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
@@ -134,6 +136,33 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-5-36` | Table-cell-property revisions (w:tcPrChange) | 5 | 1 | 17.13.5.36 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-37` | Table-row-property revisions (w:trPrChange) | 5 | 1 | 17.13.5.37 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-3-3-30` | Symbol character run content (w:sym) | 5 | 1 | 17.3.3.30 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Sym` | packages/docx-core/src/primitives/symbol_run_content.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/symbol_run_content.test.ts; packages/docx-compare/src/symbolCharacterProjection.test.ts |
+
+### ECMA-PART1-17-2-2 — Main document body
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.2.2
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:body`
+- **Verified by:** packages/docx-markdoc/src/greenfield.ts; packages/docx-markdoc/src/greenfield.test.ts
+
+Part 1 §17.2.2 defines `w:body` as the main document story container. The
+greenfield compiler admits one body with one final direct `w:sectPr`, replaces
+the other direct body children with canonical paragraphs, and reloads the
+result to verify their authored order. Multiple or misplaced section-property
+topologies remain outside this bounded projection and fail closed.
+
+### ECMA-PART1-17-3-1-27 — Paragraph style reference
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.1.27
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle`
+- **Verified by:** packages/docx-markdoc/src/greenfield.ts; packages/docx-markdoc/src/greenfield.test.ts
+
+Part 1 §17.3.1.27 defines `w:pStyle` as a paragraph's referenced style. The
+greenfield compiler resolves each canonical body role to an explicit style ID,
+requires that ID in the template style table, emits it under `w:pPr`, and
+reloads the package to verify the resolved body/style projection.
 
 ### ECMA-PART1-17-3-2-29 — Run style
 

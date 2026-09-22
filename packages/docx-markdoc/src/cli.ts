@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, rmdir } from 'node:fs/promises';
 import path from 'node:path';
 import { writeNewFiles } from './output.js';
 import { compileMarkdoc } from './compile.js';
@@ -9,9 +9,10 @@ import { inspectMarkdocSource } from './inspect.js';
 import { requireMarkdoc } from './markdoc.js';
 import { convertCommentsToFootnotes } from '@usejunior/docx-core';
 import { DocxMarkdocError } from './errors.js';
-import { assertDistinctInternalPath, EXTERNAL_FILENAME, parseRenderingFlags, warnedInternalPath } from './cli-options.js';
+import { assertDistinctInternalPath, EXTERNAL_FILENAME, parseGreenfieldCliArgs, parseRenderingFlags, warnedInternalPath } from './cli-options.js';
 import { normalizeAnnotationPresentationProfile } from './presentation.js';
 import type { AnnotationPresentationProfile } from './types.js';
+import { compileGreenfieldMarkdoc, type GreenfieldStyleProfile } from './greenfield.js';
 
 function usage(): string {
   return [
@@ -23,6 +24,7 @@ function usage(): string {
     '    [--dangerously-include-internal-comments --internal-output <path.docx>]',
     '    [--note-profile profile.json | --external-notes MODE --internal-notes MODE --unspecified-notes MODE]',
     '  docx-markdoc verify <anchored.docx> <document.mdoc> [--external-comments|--no-external-comments]',
+    '  docx-markdoc compile-greenfield <template.docx> <document.mdoc> <output-dir> [--style-profile profile.json]',
     '  docx-markdoc export-edits <document.mdoc> <output.json>',
     '  docx-markdoc comments-to-footnotes <input.docx> <output.docx> [--prefix TEXT] [--prefix-separator TEXT] [--bold-prefix] [--prefix-color RRGGBB] [--prefix-highlight COLOR] [--body-color RRGGBB] [--body-highlight COLOR] [--flatten-threads]',
   ].join('\n');
@@ -54,6 +56,47 @@ async function main(): Promise<void> {
     if (!sourcePath) throw new Error(usage());
     const records = await inspectMarkdocSource(await readFile(sourcePath), { paragraphIds: ids.length ? ids : undefined });
     process.stdout.write(`${JSON.stringify(records, null, 2)}\n`);
+    return;
+  }
+  if (command === 'compile-greenfield') {
+    const { templatePath, markdocPath, outputDir, profilePath } = parseGreenfieldCliArgs(args);
+    const inputPaths = [templatePath, markdocPath, ...(profilePath ? [profilePath] : [])].map((value) => path.resolve(value));
+    const resolvedOutputDir = path.resolve(outputDir);
+    const outputPaths = ['clean.docx', 'verification.json'].map((name) => path.resolve(outputDir, name));
+    if (inputPaths.includes(resolvedOutputDir) || outputPaths.some((output) => inputPaths.includes(output)) || new Set(inputPaths).size !== inputPaths.length) {
+      throw new DocxMarkdocError('GREENFIELD_PATH_COLLISION', 'Every greenfield input and output path must be distinct.');
+    }
+    const profileSource = profilePath ? await readFile(profilePath) : undefined;
+    let styleProfile: GreenfieldStyleProfile | undefined;
+    if (profileSource) {
+      try {
+        styleProfile = JSON.parse(profileSource.toString('utf8')) as GreenfieldStyleProfile;
+      } catch (error) {
+        throw new DocxMarkdocError('INVALID_STYLE_PROFILE_JSON', `Style profile is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    const result = await compileGreenfieldMarkdoc(
+      await readFile(templatePath),
+      await readFile(markdocPath, 'utf8'),
+      { styleProfile, styleProfileSource: profileSource },
+    );
+    try {
+      await mkdir(outputDir);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'EEXIST') throw new DocxMarkdocError('GREENFIELD_OUTPUT_EXISTS', `Greenfield output directory already exists: ${outputDir}`);
+      throw new DocxMarkdocError('GREENFIELD_OUTPUT_DIRECTORY', `Cannot create greenfield output directory '${outputDir}': ${error instanceof Error ? error.message : String(error)}`);
+    }
+    try {
+      await writeNewFiles([
+        [path.join(outputDir, 'clean.docx'), result.clean],
+        [path.join(outputDir, 'verification.json'), `${JSON.stringify(result.certificate, null, 2)}\n`],
+      ]);
+    } catch (error) {
+      await rmdir(outputDir).catch(() => undefined);
+      throw error;
+    }
+    process.stdout.write(`${JSON.stringify(result.certificate, null, 2)}\n`);
     return;
   }
   if (command === 'compile' || command === 'verify') {

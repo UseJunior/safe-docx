@@ -107,8 +107,11 @@ export class DocxArchive {
   /**
    * Set the main document.xml content.
    */
-  setDocumentXml(xml: string): void {
-    this.zip.file(DOCX_PATHS.DOCUMENT, xml);
+  setDocumentXml(xml: string, options?: { date?: Date }): void {
+    this.zip.file(DOCX_PATHS.DOCUMENT, xml, {
+      createFolders: false,
+      ...(options?.date ? { date: options.date } : {}),
+    });
     this.modified.add(DOCX_PATHS.DOCUMENT);
   }
 
@@ -139,8 +142,11 @@ export class DocxArchive {
    * @param path - Path within the archive
    * @param content - File contents
    */
-  setFile(path: string, content: string | Buffer): void {
-    this.zip.file(path, content);
+  setFile(path: string, content: string | Buffer, options?: { date?: Date }): void {
+    this.zip.file(path, content, {
+      createFolders: false,
+      ...(options?.date ? { date: options.date } : {}),
+    });
     this.modified.add(path);
   }
 

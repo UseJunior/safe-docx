@@ -110,6 +110,49 @@ rather than concatenated.
 anchored copy, so later compilation is stateless and never needs an editing
 session. The caller's original bytes remain untouched.
 
+## Template-backed greenfield forms
+
+`compile-greenfield` creates a new clean form in an existing one-section house
+style. The template supplies styles, page setup, package metadata, and any
+already-wired headers or footers; the tag-free Markdoc supplies every body
+paragraph. Template placeholder body content is discarded and is never treated
+as a legal-text reject state, so this command emits `clean.docx` and
+`verification.json` but no redline.
+
+```bash
+docx-markdoc compile-greenfield house-template.docx form.mdoc new-output/
+docx-markdoc compile-greenfield house-template.docx form.mdoc new-output/ \
+  --style-profile house-styles.json
+```
+
+The body grammar admits ATX headings and plain paragraphs only. Inline emphasis,
+links, code, lists, tables, block quotes, thematic breaks, Markdoc tags, and
+YAML frontmatter fail with an actionable diagnostic. HTML is never interpreted:
+angle-bracket text remains literal and is XML-escaped. Literal form content
+such as `Name: _____`, `A & B`, and `#not-a-heading` remains plain text. A line
+containing only `_____` is parsed as a thematic break and is therefore refused;
+put the blank beside a label instead.
+
+Without a profile, body paragraphs resolve to `Normal` and headings to
+`Heading1` through `Heading6`. A profile names existing style IDs explicitly:
+
+```json
+{
+  "bodyStyleId": "HouseBody",
+  "headingStyleIds": { "1": "HouseTitle", "2": "HouseSubhead" }
+}
+```
+
+The compiler admits exactly one final direct body-level section-properties
+element and no pre-existing revisions in the main document or selected revision
+stories. It does not create missing header/footer relationships. Every package
+part outside `word/document.xml` retains identical uncompressed bytes. The
+certificate binds the exact template, Markdoc, optional profile, and output
+hashes; records the resolved styles and body inventory; and inventories the
+preserved section/story bindings and unchanged parts. Template document
+properties and statistics are deliberately preserved and can therefore remain
+stale in this first bounded version.
+
 Internal rationale never becomes a comment merely because it is present in
 Markdoc. Each internal-review export requires both the alarming capability and
 an explicit separate path:

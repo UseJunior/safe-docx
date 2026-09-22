@@ -118,6 +118,15 @@ describe('DocxArchive', () => {
         expect(archive.getModifiedPaths()).toContain(DOCX_PATHS.DOCUMENT);
       });
     });
+
+    test('can pin replacement metadata for deterministic projection', async () => {
+      const archive = await DocxArchive.create();
+      const epoch = new Date('2006-01-01T00:00:00.000Z');
+      archive.setDocumentXml(await archive.getDocumentXml(), { date: epoch });
+      const JSZip = (await import('jszip')).default;
+      const zip = await JSZip.loadAsync(await archive.save());
+      expect(zip.file(DOCX_PATHS.DOCUMENT)?.date.toISOString()).toBe(epoch.toISOString());
+    });
   });
 
   describe('binary package entries', () => {
