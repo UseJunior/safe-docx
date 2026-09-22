@@ -16,7 +16,8 @@ validation, and end-to-end certification.
 ### Goals
 
 - Author an exact format-only change over retained visible text.
-- Preserve visible text and every undeclared property byte-semantically.
+- Preserve visible text and every undeclared property semantically; run splits
+  at declared boundaries are permitted.
 - Emit reviewable native property-change markup with exact accept/reject
   projections.
 - Keep generated-text formatting and retained-text formatting visibly distinct.
@@ -50,8 +51,8 @@ half-open revised-text interval. Repeated strings require no occurrence
 selector because the authored wrapper identifies one occurrence structurally.
 Empty, nested, or overlapping declarations are invalid.
 
-The initial closed vocabulary is symmetric with the existing generated-text
-surface:
+The initial closed vocabulary is a set/remove superset of the existing
+generated-text surface:
 
 - `highlight="yellow" | "none"`
 - `underline="single" | "none"`
@@ -62,11 +63,22 @@ instead of creating misleading canonical intent.
 
 ### 2. Retained scope is proven against alignment
 
-Each interval must map wholly to one common source/revised alignment interval.
-It may not overlap generated or deleted text or cross an alignment boundary.
+Each interval must map wholly to common source/revised alignment. Existing
+`textHunks` returns changed source and revised intervals, so a revised interval
+`[s, e)` is common only when it overlaps no hunk's
+`[revisedStart, revisedEnd)`. Its source interval is `[s - delta, e - delta)`,
+where `delta` is the sum over preceding hunks of
+`replacement.length - (end - start)`. Any overlap with a hunk, or an alignment
+failure such as `FORMATTING_ALIGNMENT_TOO_COMPLEX`, fails with
+`NON_COMMON_RETAINED_SCOPE`. Character-exact boundaries inside a common token
+are admitted.
+
 The mapped source interval must occupy one coalesced direct-run formatting
-class after harmless physical fragmentation is normalized. Authors split a
-mixed-format target into multiple declarations.
+class as defined by `directRunPropertySignature(run)` over the compiler's
+existing `runSpans`. Harmless physical fragmentation with the same signature
+is one class; authors split a mixed-format target into multiple declarations.
+Mixed scope uses a stable `MIXED_FORMAT_RETAINED_SCOPE` diagnostic in the same
+family as existing `AMBIGUOUS_FORMAT_SOURCE` failures.
 
 This is stricter than substring search and avoids selecting the wrong repeated
 token. Validation occurs before any package mutation and reports stable codes
@@ -86,10 +98,13 @@ then compares source with clean and emits `w:rPrChange` containing the prior
 `w:rPr` snapshot. This keeps revision identity, author/date attribution,
 accept/reject handling, and comparison safety gates on the canonical path.
 
-If comparison emits text insertion/deletion markup for a property-only span,
-compilation fails certification. One physical `w:rPrChange` per affected run is
-permitted when a semantically single span crosses harmless run fragmentation;
-the certificate reports both declared spans and emitted property-change ranges.
+If comparison wraps any character of a property-only interval in a text
+revision, compilation fails certification. One physical `w:rPrChange` per
+affected run is permitted when a semantically single span crosses harmless run
+fragmentation; the certificate reports both declared spans and emitted
+property-change ranges. Those counts are computed from `w:rPrChange` elements
+overlapping the mapped tracked interval, never from comparator
+`stats.formatChanges`, which can undercount split-run format changes.
 
 ### 4. Projection and minimal-mutation checks are explicit
 
@@ -98,7 +113,10 @@ For every retained-format declaration, certification requires:
 1. source and clean visible text are identical over the declared interval;
 2. clean has exactly the declared property state and preserves undeclared
    properties;
-3. tracked output has no `w:ins`/`w:del` attributable solely to that span;
+3. every character of the declared interval appears in tracked output outside
+   `w:ins`, `w:del`, `w:moveFrom`, and `w:moveTo`; this is checked by mapping
+   the interval into the tracked character stream and rejecting any overlapping
+   text-revision element;
 4. accept-all is semantically equal to clean;
 5. reject-all is semantically equal to the pinned source; and
 6. clean contains no revision markup.

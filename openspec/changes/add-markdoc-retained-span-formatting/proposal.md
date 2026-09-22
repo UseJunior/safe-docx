@@ -28,9 +28,10 @@ breaking the canonical single-source workflow tracked by #998.
 
 ## Impact
 
-- Affected specs: pending `docx-markdoc` capability from
-  `add-brownfield-markdoc-authoring`; `docx-primitives` for bounded run-range
-  formatting mutation.
+- Affected spec: pending `docx-markdoc` capability from
+  `add-brownfield-markdoc-authoring`. The bounded run-range helper is an
+  implementation dependency of this capability, not a separately promised
+  public `docx-primitives` capability.
 - Affected code: `packages/docx-markdoc` parser, IR, compiler, certificates,
   documentation, and tests; `packages/docx-core` run-range primitive and
   conformance evidence.

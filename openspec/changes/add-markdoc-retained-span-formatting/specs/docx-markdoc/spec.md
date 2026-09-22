@@ -63,7 +63,8 @@ insertion.
 - **WHEN** clean and tracked artifacts compile
 - **THEN** clean SHALL contain the unchanged text without highlight or revision markup
 - **AND** tracked SHALL contain current unhighlighted properties plus `w:rPrChange` with the prior highlighted `w:rPr`
-- **AND** tracked SHALL contain no `w:ins` or `w:del` attributable solely to that span
+- **AND** every character of the declared interval SHALL appear in tracked output outside any `w:ins`, `w:del`, `w:moveFrom`, or `w:moveTo` element
+- **AND** the declared interval's text in reject-all and accept-all SHALL equal the source and clean text at the mapped offsets
 
 #### Scenario: [SDX-MDOC-137] Accept and reject restore both text and formatting
 - **GIVEN** tracked output containing an admitted retained-format change
@@ -71,8 +72,8 @@ insertion.
 - **THEN** accept-all SHALL be textually and semantically formatting-equivalent to clean
 - **AND** reject-all SHALL be textually and semantically formatting-equivalent to the hash-pinned source
 
-#### Scenario: [SDX-MDOC-138] Format-only text replacement blocks delivery
-- **GIVEN** tracked output that reproduces the right accept/reject text but emits text revisions for a declared property-only span
+#### Scenario: [SDX-MDOC-138] Format-only text revision overlap blocks delivery
+- **GIVEN** tracked output that reproduces the right accept/reject text but emits `w:ins`, `w:del`, `w:moveFrom`, or `w:moveTo` covering any character of a declared property-only interval
 - **WHEN** certification runs
 - **THEN** the certificate SHALL report the format-only text-revision violation
 - **AND** projection success and delivery readiness SHALL be false
