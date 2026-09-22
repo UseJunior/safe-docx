@@ -49,6 +49,8 @@ export interface TaggedTreeShadowInput {
   revisionAttributionRanges?: readonly RevisionAttributionRange[];
   /** @internal Keep private markers through downstream publication transforms. */
   retainStatisticsMarkers?: boolean;
+  /** @internal First package-wide ID available to generated comparison revisions. */
+  minimumRevisionId?: number;
 }
 
 const WORDPROCESSINGML_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -266,13 +268,14 @@ export function buildTaggedTreePublication(
     originalNumberingXml: input.originalNumberingXml,
     revisedNumberingXml: input.revisedNumberingXml,
     revisionAttributionRanges: input.revisionAttributionRanges,
+    minimumRevisionId: input.minimumRevisionId,
   });
   const serialized = serializeTaggedTree(
     constructed.tree,
     createPreservePlan(original, revised, constructed.tree, {
       author: input.author,
       date: formatDate(input.date),
-    }),
+    }, input.minimumRevisionId),
     { moves: constructed.moves, retainComparisonRevisionMarkers: true },
   );
   const document = parseXml(serialized);

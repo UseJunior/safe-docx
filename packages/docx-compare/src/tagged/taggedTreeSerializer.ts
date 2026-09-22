@@ -68,6 +68,7 @@ export function createPreservePlan(
   revisedRoot: WmlElement,
   tree: TaggedNode,
   attribution: Omit<ComparisonRevision, 'id'>,
+  minimumRevisionId = 0,
 ): PreservePlan {
   const entries = new Map<TaggedNode, PreservePlanEntry>();
   const represented = new Set<Element>();
@@ -104,7 +105,10 @@ export function createPreservePlan(
   };
   visit(tree);
   return {
-    comparison: { id: nextRevisionId(originalRoot, revisedRoot), ...attribution },
+    comparison: {
+      id: Math.max(nextRevisionId(originalRoot, revisedRoot), minimumRevisionId),
+      ...attribution,
+    },
     entries,
   };
 }

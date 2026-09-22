@@ -3,7 +3,7 @@
 import { XMLSerializer } from '@xmldom/xmldom';
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
-import { normalizeOpcRelationshipTarget, parseXml, OOXML } from '@usejunior/docx-core';
+import { auditSectPr, normalizeOpcRelationshipTarget, parseXml, OOXML } from '@usejunior/docx-core';
 import { DocxArchive } from '@usejunior/docx-core';
 import type {
   CompareResult,
@@ -139,6 +139,8 @@ export interface StandaloneTaggedPackageOptions {
   formattingFidelityEvaluator?: typeof compareSourceProjectedFormattingFidelity;
   /** @internal Comparison-wide generated bookmark-name reservations. */
   bookmarkNameReservations?: Set<string>;
+  /** @internal First package-wide ID available to generated comparison revisions. */
+  minimumRevisionId?: number;
 }
 
 export interface StandaloneTaggedPackageResult {
@@ -391,6 +393,7 @@ export async function buildStandaloneTaggedPackage(
       revisedNumberingXml: revisedNumberingXml ?? undefined,
       revisionAttributionRanges: options.revisionAttributionRanges,
       retainStatisticsMarkers: true,
+      minimumRevisionId: options.minimumRevisionId,
     });
     return {
       taggedOriginalXml,
@@ -506,6 +509,16 @@ export async function buildStandaloneTaggedPackage(
   const finalAuxiliarySidecars = {
     footnotesXmls: [await resultArchive.getFile('word/footnotes.xml')],
     endnotesXmls: [await resultArchive.getFile('word/endnotes.xml')],
+    selectedStoryXmls: await (async (): Promise<Array<{ path: string; xml: string }>> => {
+      const relationshipsXml = await resultArchive.getFile('word/_rels/document.xml.rels');
+      const audit = auditSectPr(taggedXml, relationshipsXml);
+      const stories: Array<{ path: string; xml: string }> = [];
+      for (const path of [...new Set(audit.bindings.map((binding) => binding.targetPath))].sort()) {
+        const xml = await resultArchive.getFile(path);
+        if (xml !== null) stories.push({ path, xml });
+      }
+      return stories;
+    })(),
   };
   // Project pre-existing revisions exactly as the candidate gate does. A raw
   // revised source can still contain a deletion that accept-all intentionally
@@ -981,17 +994,17 @@ const serializer = new XMLSerializer();
  * diagnostic label. Publication passes the final assembled note parts, so the
  * gate screens exactly the definitions that the output can expose.
  *
- * Header/footer stories are not yet covered — they require relationship
- * walking to enumerate `headerN.xml`/`footerN.xml`.
- *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
  * @see https://github.com/UseJunior/safe-docx/issues/212
  */
 export function splitStories(
   documentXml: string,
   footnotesXmls: ReadonlyArray<string | null>,
   endnotesXmls: ReadonlyArray<string | null>,
+  selectedStoryXmls: ReadonlyArray<{ path: string; xml: string }> = [],
 ): FieldStory[] {
   const stories: FieldStory[] = [{ label: 'document', xml: documentXml }];
 
@@ -1018,6 +1031,9 @@ export function splitStories(
 
   collectEntries(footnotesXmls, 'w:footnote', 'footnote');
   collectEntries(endnotesXmls, 'w:endnote', 'endnote');
+  for (const story of selectedStoryXmls) {
+    stories.push({ label: story.path, xml: story.xml });
+  }
 
   return stories;
 }
@@ -1031,6 +1047,7 @@ function evaluateSafetyChecks(
   auxiliarySidecars: {
     footnotesXmls: ReadonlyArray<string | null>;
     endnotesXmls: ReadonlyArray<string | null>;
+    selectedStoryXmls: ReadonlyArray<{ path: string; xml: string }>;
   },
 ): {
   safe: boolean;
@@ -1065,16 +1082,24 @@ function evaluateSafetyChecks(
     );
 
   // Validate field structure for the main-story round-trip projection and the
-  // final note definitions captured after revised-base assembly.
+  // final relationship-selected and note stories captured after assembly.
   const acceptedStories = splitStories(
     acceptedXml,
     auxiliarySidecars.footnotesXmls,
     auxiliarySidecars.endnotesXmls,
+    auxiliarySidecars.selectedStoryXmls.map(({ path, xml }) => ({
+      path,
+      xml: acceptAllChanges(xml),
+    })),
   );
   const rejectedStories = splitStories(
     rejectedXml,
     auxiliarySidecars.footnotesXmls,
     auxiliarySidecars.endnotesXmls,
+    auxiliarySidecars.selectedStoryXmls.map(({ path, xml }) => ({
+      path,
+      xml: rejectAllChanges(xml),
+    })),
   );
   // The full validateFieldStructure check runs on the accept/reject projections
   // (per-story). There is deliberately no additional gate on the combined view:
@@ -1135,11 +1160,27 @@ function evaluateSafetyChecks(
 }
 
 /** Build the authoritative result through the sole revised-base tagged construction. */
+async function firstAvailablePackageRevisionId(document: Buffer): Promise<number> {
+  const archive = await DocxArchive.load(document);
+  let maximum = -1;
+  for (const path of archive.listFiles()) {
+    if (!/^word\/.*\.xml$/u.test(path)) continue;
+    const xml = await archive.getFile(path);
+    if (!xml) continue;
+    for (const match of xml.matchAll(/\bw:id\s*=\s*["'](\d+)["']/gu)) {
+      const value = Number(match[1]);
+      if (Number.isSafeInteger(value)) maximum = Math.max(maximum, value);
+    }
+  }
+  return maximum + 1;
+}
+
 async function compareDocumentsTaggedCore(
   original: Buffer,
   revised: Buffer,
   options: AtomizerOptions,
   bookmarkNameReservations?: Set<string>,
+  minimumRevisionId?: number,
 ): Promise<TaggedCompareResult> {
   const standalone = await buildStandaloneTaggedPackage(original, revised, {
     author: options.author ?? 'Comparison',
@@ -1160,6 +1201,7 @@ async function compareDocumentsTaggedCore(
     publicationSafetyEvaluator: options.taggedTreePublicationSafetyEvaluator,
     formattingFidelityEvaluator: options.taggedTreeFormattingFidelityEvaluator,
     bookmarkNameReservations,
+    minimumRevisionId,
   });
   return {
     document: standalone.document,
@@ -1208,6 +1250,7 @@ async function compareDocumentsTagged(
     visualIndex: number;
     partPath: string;
     container: 'textBox' | 'ancillaryPart';
+    ancillaryMode?: 'ordinary' | 'inserted';
     result: CompareResult;
   }> = [];
   const rejectedSelectedStoryPaths =
@@ -1215,25 +1258,28 @@ async function compareDocumentsTagged(
       textBoxPlan.outerOriginal,
     );
   const representedPartPaths = new Set<string>();
+  let nextPackageRevisionId = await firstAvailablePackageRevisionId(outerResult.document);
   for (const story of textBoxPlan.stories) {
     if (
-      story.container === 'ancillaryPart' &&
+      story.ancillaryMode === 'inserted' &&
       rejectedSelectedStoryPaths.has(story.partPath)
     ) {
       continue;
     }
     let result = await compareDocumentsTaggedCore(
       story.original,
-      story.container === 'ancillaryPart' ? story.original : story.revised,
+      story.ancillaryMode === 'inserted' ? story.original : story.revised,
       options,
       bookmarkNameReservations,
+      nextPackageRevisionId,
     );
-    if (story.container === 'ancillaryPart') {
+    if (story.ancillaryMode === 'inserted') {
       const marked = await markInsertedAncillaryStoryParagraphs(
         story.revised,
         outerResult.document,
         options.author ?? 'Comparison',
         options.date ?? new Date(),
+        nextPackageRevisionId,
       );
       const insertionRanges = marked.directParagraphs;
       result = {
@@ -1249,13 +1295,18 @@ async function compareDocumentsTagged(
           ),
         },
       };
-      representedPartPaths.add(story.partPath);
     }
+    nextPackageRevisionId = Math.max(
+      nextPackageRevisionId,
+      await firstAvailablePackageRevisionId(result.document),
+    );
+    if (story.container === 'ancillaryPart') representedPartPaths.add(story.partPath);
     storyResults.push({
       index: story.index,
       visualIndex: story.visualIndex,
       partPath: story.partPath,
       container: story.container,
+      ancillaryMode: story.ancillaryMode,
       result,
     });
   }

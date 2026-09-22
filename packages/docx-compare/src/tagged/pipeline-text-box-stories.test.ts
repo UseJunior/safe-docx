@@ -1197,7 +1197,7 @@ describe('VML text-box story comparison (#713)', () => {
       expect((failure as UnsupportedTextBoxRevisionError).changes).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            reason: expect.stringContaining('exclusively'),
+            reason: expect.stringContaining('scaffold'),
           }),
         ]),
       );
