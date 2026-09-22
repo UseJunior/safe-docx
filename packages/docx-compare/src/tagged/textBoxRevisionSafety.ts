@@ -1666,6 +1666,7 @@ export async function markInsertedAncillaryStoryParagraphs(
   preservedPackage: Buffer,
   author: string,
   date: Date,
+  minimumRevisionId = 0,
 ): Promise<{ document: Buffer; directParagraphs: number }> {
   const archive = await DocxArchive.load(storyDocument);
   const document = parseXml(await archive.getDocumentXml());
@@ -1684,6 +1685,7 @@ export async function markInsertedAncillaryStoryParagraphs(
     }
   }
   const state = createRevisionIdState(preservedRoots);
+  state.nextId = Math.max(state.nextId, minimumRevisionId);
   const dateString = formatDate(date);
   const directParagraphs = directChildElements(body).filter(
     (element) =>

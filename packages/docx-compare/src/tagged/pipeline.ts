@@ -139,6 +139,8 @@ export interface StandaloneTaggedPackageOptions {
   formattingFidelityEvaluator?: typeof compareSourceProjectedFormattingFidelity;
   /** @internal Comparison-wide generated bookmark-name reservations. */
   bookmarkNameReservations?: Set<string>;
+  /** @internal First package-wide ID available to generated comparison revisions. */
+  minimumRevisionId?: number;
 }
 
 export interface StandaloneTaggedPackageResult {
@@ -391,6 +393,7 @@ export async function buildStandaloneTaggedPackage(
       revisedNumberingXml: revisedNumberingXml ?? undefined,
       revisionAttributionRanges: options.revisionAttributionRanges,
       retainStatisticsMarkers: true,
+      minimumRevisionId: options.minimumRevisionId,
     });
     return {
       taggedOriginalXml,
@@ -1157,11 +1160,27 @@ function evaluateSafetyChecks(
 }
 
 /** Build the authoritative result through the sole revised-base tagged construction. */
+async function firstAvailablePackageRevisionId(document: Buffer): Promise<number> {
+  const archive = await DocxArchive.load(document);
+  let maximum = -1;
+  for (const path of archive.listFiles()) {
+    if (!/^word\/.*\.xml$/u.test(path)) continue;
+    const xml = await archive.getFile(path);
+    if (!xml) continue;
+    for (const match of xml.matchAll(/\bw:id\s*=\s*["'](\d+)["']/gu)) {
+      const value = Number(match[1]);
+      if (Number.isSafeInteger(value)) maximum = Math.max(maximum, value);
+    }
+  }
+  return maximum + 1;
+}
+
 async function compareDocumentsTaggedCore(
   original: Buffer,
   revised: Buffer,
   options: AtomizerOptions,
   bookmarkNameReservations?: Set<string>,
+  minimumRevisionId?: number,
 ): Promise<TaggedCompareResult> {
   const standalone = await buildStandaloneTaggedPackage(original, revised, {
     author: options.author ?? 'Comparison',
@@ -1182,6 +1201,7 @@ async function compareDocumentsTaggedCore(
     publicationSafetyEvaluator: options.taggedTreePublicationSafetyEvaluator,
     formattingFidelityEvaluator: options.taggedTreeFormattingFidelityEvaluator,
     bookmarkNameReservations,
+    minimumRevisionId,
   });
   return {
     document: standalone.document,
@@ -1238,6 +1258,7 @@ async function compareDocumentsTagged(
       textBoxPlan.outerOriginal,
     );
   const representedPartPaths = new Set<string>();
+  let nextPackageRevisionId = await firstAvailablePackageRevisionId(outerResult.document);
   for (const story of textBoxPlan.stories) {
     if (
       story.ancillaryMode === 'inserted' &&
@@ -1250,6 +1271,7 @@ async function compareDocumentsTagged(
       story.ancillaryMode === 'inserted' ? story.original : story.revised,
       options,
       bookmarkNameReservations,
+      nextPackageRevisionId,
     );
     if (story.ancillaryMode === 'inserted') {
       const marked = await markInsertedAncillaryStoryParagraphs(
@@ -1257,6 +1279,7 @@ async function compareDocumentsTagged(
         outerResult.document,
         options.author ?? 'Comparison',
         options.date ?? new Date(),
+        nextPackageRevisionId,
       );
       const insertionRanges = marked.directParagraphs;
       result = {
@@ -1273,6 +1296,10 @@ async function compareDocumentsTagged(
         },
       };
     }
+    nextPackageRevisionId = Math.max(
+      nextPackageRevisionId,
+      await firstAvailablePackageRevisionId(result.document),
+    );
     if (story.container === 'ancillaryPart') representedPartPaths.add(story.partPath);
     storyResults.push({
       index: story.index,

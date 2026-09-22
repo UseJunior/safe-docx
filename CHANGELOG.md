@@ -5,8 +5,8 @@
 - DOCX comparison now pairs relationship-selected header/footer stories by
   complete semantic binding closure, emits native revisions for admitted
   ordinary paragraph text (including existing table cells), preserves fields
-  and structural scaffold, and removes only represented selector aliases from
-  `unrepresentedChanges`.
+  and structural scaffold, reserves generated revision IDs package-wide, and
+  removes only represented selector aliases from `unrepresentedChanges`.
 - Paragraph primitives can now bookmark, look up, replace, insert, and delete
   content in relationship-selected header/footer stories while reserving
   bookmark identities package-wide and enforcing story-local table-cell safety.

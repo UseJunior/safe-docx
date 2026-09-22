@@ -3,7 +3,7 @@ import { DocxArchive, OOXML, parseXml } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure } from '../testing/allure-test.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
-import { compareDocumentsAtomizer } from './pipeline.js';
+import { compareDocumentsAtomizer, TaggedPublicationSafetyError } from './pipeline.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 
 const HEADER_RELATIONSHIP =
@@ -20,7 +20,18 @@ function paragraph(text: string): string {
 
 function runningStory(kind: 'header' | 'footer', content: string): string {
   const root = kind === 'header' ? 'hdr' : 'ftr';
-  return `<?xml version="1.0"?><w:${root} xmlns:w="${OOXML.W_NS}" xmlns:r="${R_NS}">${content}</w:${root}>`;
+  return `<?xml version="1.0"?><w:${root} xmlns:w="${OOXML.W_NS}" xmlns:r="${R_NS}"`
+    + ' xmlns:v="urn:schemas-microsoft-com:vml"'
+    + ' xmlns:o="urn:schemas-microsoft-com:office:office"'
+    + ' xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"'
+    + `>${content}</w:${root}>`;
+}
+
+function textBoxParagraph(text: string): string {
+  return '<w:p><w:r><w:pict><v:shape id="shape1" o:spid="_x0000_s1026">'
+    + '<v:textbox><w:txbxContent><w:p w14:paraId="20000001" w14:textId="20000001">'
+    + `<w:r><w:t>${text}</w:t></w:r></w:p></w:txbxContent></v:textbox>`
+    + '</v:shape></w:pict></w:r></w:p>';
 }
 
 async function selectedHeaderFixture(options: {
@@ -84,6 +95,37 @@ describe('ordinary relationship-selected story comparison', () => {
       expect(revisionCounts(output).deletions).toBeGreaterThan(0);
       expect(extractRoundTripComparisonText(acceptAllChanges(output))).toContain('Draft 18 September');
       expect(extractRoundTripComparisonText(rejectAllChanges(output))).toContain('Draft 17 September');
+      expect(result.unrepresentedChanges).toBeUndefined();
+    },
+  );
+
+  test.openspec('[SDX-CMP-STORY-01] Ordinary selected header text receives native revisions')(
+    'reserves revision IDs package-wide across body, ordinary header, and nested text-box edits',
+    async () => {
+      const original = await selectedHeaderFixture({
+        bodyXml: paragraph('Body original'),
+        storyContent: paragraph('Header original') + textBoxParagraph('Box original'),
+      });
+      const revised = await selectedHeaderFixture({
+        bodyXml: paragraph('Body revised'),
+        storyContent: paragraph('Header revised') + textBoxParagraph('Box revised'),
+      });
+      const result = await compareDocumentsAtomizer(original, revised);
+      const archive = await DocxArchive.load(result.document);
+      const revisionIds: string[] = [];
+      for (const path of ['word/document.xml', 'word/header1.xml']) {
+        const xml = await archive.getFile(path);
+        if (!xml) throw new Error(`Missing compared part ${path}`);
+        const document = parseXml(xml);
+        for (const localName of ['ins', 'del']) {
+          revisionIds.push(...Array.from(
+            document.getElementsByTagNameNS(OOXML.W_NS, localName),
+          ).map((element) => element.getAttributeNS(OOXML.W_NS, 'id') ?? ''));
+        }
+      }
+
+      expect(revisionIds).not.toContain('');
+      expect(new Set(revisionIds).size).toBe(revisionIds.length);
       expect(result.unrepresentedChanges).toBeUndefined();
     },
   );
@@ -221,7 +263,7 @@ describe('ordinary relationship-selected story comparison', () => {
   );
 
   test.openspec('[SDX-CMP-STORY-04] Field-bearing running text preserves field structure')(
-    'relationship-walks unchanged selected stories into field-state validation',
+    'keeps the pre-publication raw ancillary field audit fail-closed',
     async () => {
       const malformedField = '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>'
         + '<w:r><w:instrText> PAGE </w:instrText></w:r></w:p>';
@@ -229,6 +271,23 @@ describe('ordinary relationship-selected story comparison', () => {
       const revised = await selectedHeaderFixture({ storyContent: malformedField });
 
       await expect(compareDocumentsAtomizer(original, revised)).rejects.toThrow(/ancillary story safety/i);
+    },
+  );
+
+  test.openspec('[SDX-CMP-STORY-04] Field-bearing running text preserves field structure')(
+    'validates accept and reject projections of relationship-selected stories',
+    async () => {
+      const projectionUnsafeField = '<w:p>'
+        + '<w:del w:id="41" w:author="Prior"><w:r><w:fldChar w:fldCharType="begin"/></w:r></w:del>'
+        + '<w:r><w:instrText> PAGE </w:instrText></w:r>'
+        + '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>';
+      const original = await selectedHeaderFixture({ storyContent: projectionUnsafeField });
+      const revised = await selectedHeaderFixture({ storyContent: projectionUnsafeField });
+
+      await expect(compareDocumentsAtomizer(original, revised)).rejects.toSatisfy(
+        (error: unknown) => error instanceof TaggedPublicationSafetyError
+          && error.checks.fieldStructure === false,
+      );
     },
   );
 

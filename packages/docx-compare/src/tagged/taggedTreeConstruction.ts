@@ -350,6 +350,8 @@ export interface TaggedTreeConstructionOptions {
   revisedNumberingXml?: string;
   /** @internal Markdoc operation ranges to retain as tagged-node provenance. */
   revisionAttributionRanges?: readonly RevisionAttributionRange[];
+  /** @internal First package-wide ID available to generated comparison revisions. */
+  minimumRevisionId?: number;
 }
 
 type ResolvedTaggedTreeConstructionOptions = Required<Pick<
@@ -864,7 +866,11 @@ export function constructTaggedTree(
   if (violations.length > 0) throw new Error(`constructed tagged tree violates P1-P5: ${violations[0]!.detail}`);
   carryOperationProvenance(tree, original, revised, settings.revisionAttributionRanges);
   const moves = settings.detectMoves
-    ? classifyMoves(tree, nextRevisionId(original, revised), settings)
+    ? classifyMoves(
+      tree,
+      Math.max(nextRevisionId(original, revised), options.minimumRevisionId ?? 0),
+      settings,
+    )
     : [];
   const moveViolations = verifyMoveRelations(moves, tree);
   if (moveViolations.length > 0) throw new Error(`constructed move relation is invalid: ${moveViolations[0]!.detail}`);
