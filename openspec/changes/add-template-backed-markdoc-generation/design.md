@@ -30,8 +30,9 @@ projection path rather than a second general-purpose generator.
 - Import template body tables, fields, drawings, content controls, or notes.
 - Support multiple sections, lists, tables, inline Markdown, or arbitrary raw
   OOXML in the first greenfield grammar.
-- Create or edit header/footer content; this path preserves the template graph,
-  while the separate side-story authoring surface owns edits.
+- Create a missing header/footer relationship or physical story. Any desired
+  running story must already exist in the template; the shipped side-story
+  authoring surface can edit paragraphs in an existing selected story.
 
 ## CLI and library contract
 
@@ -71,19 +72,26 @@ The `.mdoc` input contains only:
 - ATX headings (`#` through `######`, one required space); and
 - plain paragraph blocks separated by one or more blank lines.
 
-Consecutive nonblank lines in a paragraph join with one U+0020, following the
-ordinary Markdown soft-break reading. Leading/trailing block whitespace is
-removed, while internal repeated spaces remain exact. An empty document,
-Markdoc tags, Markdown inline formatting, HTML, indented/fenced code, thematic
-breaks, block quotes, lists, tables, images, and links fail validation with a
-source location. A heading level without a resolved mapping also fails. This
-keeps the first version reviewable and prevents syntax from disappearing
-silently during Word emission.
+The compiler parses the body with the repository's Markdoc/CommonMark parser.
+Only plain-text inline nodes and soft breaks are admitted. Consecutive
+nonblank lines in a paragraph join with one U+0020, following the ordinary
+Markdown soft-break reading. Leading/trailing block whitespace is removed,
+while internal repeated spaces remain exact. Runs of `_` or `*` that the
+parser leaves as literal text (including `_____` form blanks) remain literal;
+`&`, `<`, and `>` in plain text are accepted and XML-escaped; CommonMark
+backslash escapes resolve to their literal character. A `#` without a
+following space remains ordinary paragraph text. Any parsed emphasis, strong,
+code, link, image, HTML, or other non-text inline node fails with its source
+position. An empty document, Markdoc tags, indented/fenced code, thematic
+breaks, block quotes, lists, and tables likewise fail. A heading level without
+a resolved mapping also fails. This keeps the first version reviewable and
+prevents syntax from disappearing silently during Word emission.
 
 Every emitted paragraph contains an explicit `w:pStyle` and plain `w:t` run.
-XML escaping and `xml:space="preserve"` follow the shared OOXML text emitter
-rules. Canonical text, not template placeholder content, supplies every
-emitted `w:t` in the body.
+The implementation SHALL add or expose one small shared plain-text run emitter
+that XML-escapes content and applies `xml:space="preserve"` when required,
+rather than citing an unexported editing helper. Canonical text, not template
+placeholder content, supplies every emitted `w:t` in the body.
 
 ## Template admission and projection
 
@@ -92,7 +100,10 @@ The admitted template is a valid DOCX with:
 - one `word/document.xml` body;
 - exactly one final direct body-level `w:sectPr`;
 - no earlier paragraph-level or body-level section break;
-- no existing tracked revisions in any contributing story; and
+- no existing tracked revisions in any relationship-selected revision story;
+  the audit uses `enumerateSelectedRevisionStoryPartPaths` and rejects every
+  element in `TRACKED_CHANGE_ELEMENT_NAME_SET`, including property and
+  `sectPrChange` wrappers; and
 - resolvable selected header/footer relationships and referenced package parts.
 
 The template body may contain placeholder blocks, but none survive. The
@@ -100,11 +111,20 @@ compiler clones the package, removes every direct body child except the final
 `w:sectPr`, emits canonical paragraphs before it, and updates only
 `word/document.xml`. The final `w:sectPr`, its relationship IDs, and all
 referenced header/footer parts remain byte-for-byte equal as XML part content.
+Direct body bookmarks, content controls, drawings, tables, and placeholder
+paragraphs are deliberately dropped with the rest of the template body.
 
 This bounded path deliberately leaves unused document relationships and media
 in place. Removing them would broaden the changed-part set and risk deleting a
 resource still used by a preserved header/footer, style, numbering, or custom
 part. A later package-compaction feature may prune proven-unreachable parts.
+
+The same preservation rule retains `docProps/core.xml`, `docProps/app.xml`,
+`word/settings.xml`, and `customXml/*` verbatim. Template modified dates and
+page/word statistics can therefore be stale in v1. The certificate exposes
+their unchanged hashes rather than implying that they describe the new body.
+Deterministically refreshing document properties is a later, separately
+specified changed-part expansion.
 
 ## Certificate and verification
 
@@ -128,6 +148,9 @@ Compilation reloads the produced DOCX and proves:
   bytes; and
 - the clean output contains no tracked revision markup.
 
+The clean-output revision check enumerates the same relationship-selected
+revision story parts and element set used at admission, not filename guesses.
+
 Any mismatch makes the certificate fail and prevents CLI output. Hashes are
 over exact input/output bytes; semantic inventories are additional evidence,
 not substitutes for the cryptographic bindings.
@@ -135,11 +158,14 @@ not substitutes for the cryptographic bindings.
 ## Determinism and output safety
 
 Identical template, Markdoc, and style-profile bytes produce byte-identical
-DOCX and certificate content. The compiler uses the package's deterministic
-save path and never reads the clock or randomness. Output reservation follows
-the existing Markdoc new-file policy: existing files, symlinks, and collisions
-with any input are rejected before writing, and handled failures clean up files
-created by that invocation.
+DOCX and certificate content. The implementation SHALL extend the archive
+replacement/save path so `word/document.xml` is written with the fixed
+generation epoch (`2006-01-01T00:00:00Z`) rather than JSZip's current-time
+default; all untouched entries retain their template metadata. The compiler
+never reads the clock or randomness. Output reservation reuses
+`writeNewFiles` for exclusive creation and cleanup and adds explicit preflight
+that every output path differs from every input path; existing files,
+symlinks, and input/output collisions fail before writing.
 
 ## Risks / Trade-offs
 
@@ -150,10 +176,17 @@ created by that invocation.
 - **Unused relationships remain.** Preserving them is safer than pruning them
   without a package-wide reachability proof; the certificate makes the choice
   visible.
+- **Template document properties remain stale.** Preserving every non-document
+  part keeps the trust boundary narrow but means page/word counts and modified
+  dates may describe the template; the certificate discloses this.
 - **Plain text only limits forms.** It eliminates ambiguous Markdown loss. New
   block/inline constructs can be added as independently specified syntax.
 - **Style IDs are template-specific.** Explicit validation makes that coupling
   reviewable and prevents visual heuristics from silently changing output.
+- **A missing running story is not created.** The phase-one fixture must use a
+  template whose desired header/footer already exists. The negative control
+  proves the custom clone/clear/style/footer-preservation compiler is no longer
+  required; it does not claim structural header creation.
 
 ## Implementation sequencing
 

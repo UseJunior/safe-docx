@@ -20,6 +20,8 @@ certificate boundary that Markdoc is intended to provide.
   IDs without copying substantive template body text into the new document.
 - Emit a clean DOCX plus a certificate binding the canonical, template,
   optional profile, and output hashes and proving unchanged package parts.
+- Add a fixed ZIP-entry date for the replaced document part so identical
+  inputs produce byte-identical archives instead of inheriting JSZip's clock.
 - Fail before output for unsupported Markdown, missing styles, multi-section
   body topology, revisions, fields, or body relationships that would make
   replacement ambiguous.
@@ -32,3 +34,6 @@ certificate boundary that Markdoc is intended to provide.
   template-backed tests
 - Resolves the template-backed greenfield slice of #998 without changing the
   brownfield compiler, comparison alignment, or tracked-change semantics
+- Requires any desired running header/footer to exist in the template. Existing
+  selected-story paragraph authoring can edit an existing story, but creating a
+  new header/footer relationship remains a separate structural capability.

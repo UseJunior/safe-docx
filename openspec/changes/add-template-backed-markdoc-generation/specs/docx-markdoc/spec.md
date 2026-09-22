@@ -14,9 +14,10 @@ unresolvable style IDs SHALL fail before any output is written.
 - **AND** each block SHALL use its resolved declared template paragraph style
 
 #### Scenario: [SDX-MDOC-GREEN-02] unsupported syntax or style mapping fails transactionally
-- **GIVEN** canonical input containing an unsupported Markdown construct or a used heading/body style absent from the template
+- **GIVEN** canonical input containing an unsupported parsed Markdown construct or a used heading/body style absent from the template
 - **WHEN** greenfield compilation begins
 - **THEN** it SHALL fail with a stable actionable diagnostic before writing any output
+- **AND** literal legal-form text such as `_____`, `A & B`, and `#not-a-heading` SHALL remain admissible while parsed `*emphasis*` SHALL be rejected
 
 ### Requirement: Greenfield compilation preserves the admitted template package graph
 
@@ -50,6 +51,7 @@ that the clean output contains no tracked revisions.
 - **THEN** the DOCX outputs and certificate content SHALL be byte-identical
 - **AND** the certificate SHALL identify `word/document.xml` as the only changed package part
 - **AND** all input and output hashes and projection checks SHALL pass
+- **AND** no selected revision story SHALL contain an element from the tracked-change element set
 
 #### Scenario: [SDX-MDOC-GREEN-06] greenfield output never invents a reject-state redline
 - **GIVEN** a presentation template whose placeholder body is not substantive source text
