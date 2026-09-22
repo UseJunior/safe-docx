@@ -3,7 +3,9 @@ import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 import { parseXml } from '../src/primitives/xml.js';
 import { OOXML, W } from '../src/primitives/namespaces.js';
 import { SafeDocxError } from '../src/primitives/errors.js';
+import { DocxDocument } from '../src/primitives/document.js';
 import { formatParagraphTextRange, getParagraphRuns, getParagraphText, replaceParagraphTextRange } from '../src/primitives/text.js';
+import { buildDocxFromBodyXml } from '../src/testing/ooxml-fixtures.js';
 
 const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Text Primitives' });
 
@@ -23,6 +25,50 @@ function firstParagraph(doc: Document): Element {
 }
 
 describe('text primitives', () => {
+  test('DocxDocument formats a bookmarked range and invalidates its cached view', async ({ given, when, then }: AllureBddContext) => {
+    let document!: DocxDocument;
+    let paragraphId!: string;
+    let cachedNodes!: ReturnType<DocxDocument['buildDocumentView']>['nodes'];
+    await given('a loaded document whose highlighted paragraph has a stable bookmark', async () => {
+      document = await DocxDocument.load(await buildDocxFromBodyXml(
+        '<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>Complete</w:t></w:r></w:p>',
+      ));
+      document.insertParagraphBookmarks('coverage-follow-up');
+      paragraphId = document.readParagraphs().paragraphs[0]!.id;
+      cachedNodes = document.buildDocumentView().nodes;
+    });
+    await when('the public range facade removes highlight', () => {
+      document.formatTextAtRange({ targetParagraphId: paragraphId, start: 0, end: 8, format: { highlight: 'none' } });
+    });
+    await then('the mutation is visible through a fresh document view and serialized run XML', () => {
+      expect(document.buildDocumentView().nodes).not.toBe(cachedNodes);
+      expect(document.getParagraphs()[0]!.toString()).not.toContain('<w:highlight');
+    });
+  });
+
+  test('rejects invalid retained-format bounds and missing facade anchors', async ({ given, then }: AllureBddContext) => {
+    let document!: DocxDocument;
+    let paragraph!: Element;
+    await given('one visible paragraph', async () => {
+      document = await DocxDocument.load(await buildDocxFromBodyXml('<w:p><w:r><w:t>Complete</w:t></w:r></w:p>'));
+      paragraph = document.getParagraphs()[0]!;
+    });
+    await then('the primitive rejects empty, fractional, negative, and overflowing intervals', () => {
+      for (const [start, end] of [[0, 0], [0.5, 2], [-1, 2], [0, 9]]) {
+        expect(() => formatParagraphTextRange(paragraph, start, end, { underline: 'single' }))
+          .toThrowError(SafeDocxError);
+      }
+    });
+    await then('the facade rejects an unknown paragraph before mutation', () => {
+      expect(() => document.formatTextAtRange({
+        targetParagraphId: '_bk_missing',
+        start: 0,
+        end: 8,
+        format: { underline: 'single' },
+      })).toThrow('Paragraph not found: _bk_missing');
+    });
+  });
+
   test
     .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.2.28' })
     .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.31' })(
