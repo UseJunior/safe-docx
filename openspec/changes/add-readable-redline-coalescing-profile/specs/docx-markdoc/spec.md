@@ -5,7 +5,8 @@
 The system SHALL support exactly `token-minimal` and `readable-whitespace` as
 revision-grouping policies through canonical Markdoc, the TypeScript compile
 API, and the CLI. `token-minimal` SHALL remain the default. An explicit runtime
-value SHALL supersede the Markdoc declaration, and the compilation certificate
+value (`revisionGrouping?: { policy, source? }`, whose omitted source defaults
+to API and whose CLI source is explicit) SHALL supersede the Markdoc declaration, and the compilation certificate
 SHALL report `revisionGrouping: { policy, source, coalescedSpaceTokens,
 groupedChains }`, where source distinguishes API, CLI, Markdoc, and default.
 Invalid or duplicate declarations SHALL fail before document mutation.
@@ -41,17 +42,21 @@ resolve to the same single run-property signature as every constituent hunk, or
 the same explicit `format-source`; otherwise it SHALL remain ungrouped without
 introducing a new error.
 
+The merged hunk SHALL use the chain's outer source and revised bounds and the
+exact revised slice between those bounds. A bridge intersecting a resolved
+retained-format interval SHALL terminate the chain.
+
 The transform SHALL preserve exact accept-all/reject-all text and semantic
 formatting projections and consistent operation-attribution evidence. It SHALL
-NOT bridge lexical tokens, punctuation, repeated lexical matches, tabs, line
-breaks, pure insertions or deletions, protected structure, incompatible
-formatting, existing revisions, operation boundaries, or paragraph/story
-boundaries.
+NOT bridge any common lexical token (including repeated tokens a different
+alignment could have replaced), punctuation, tabs, line breaks, pure insertions
+or deletions, retained-format intervals, protected structure, incompatible
+formatting, existing revisions, operation boundaries, or paragraph/story boundaries.
 
 #### Scenario: [SDX-MDOC-142] Multi-word replacement becomes one readable pair
 - **GIVEN** a replacement chain whose fragments are separated only by eligible ordinary spaces and resolve to one compatible source format
 - **WHEN** it compiles under `readable-whitespace`
-- **THEN** the tracked output SHALL contain one grouped deletion followed by one grouped insertion for the chain
+- **THEN** the chain's deleted content and inserted content SHALL each be contiguous, with no ordinary text between the last deletion wrapper and first insertion wrapper
 - **AND** accepting and rejecting revisions SHALL reproduce the exact revised and source text and semantic formatting respectively
 - **AND** operation-attribution evidence SHALL remain consistent
 - **AND** the compilation certificate SHALL disclose the grouped chain and coalesced-space count
@@ -63,7 +68,7 @@ boundaries.
 - **AND** grouped-chain and coalesced-space counts SHALL both equal zero
 
 #### Scenario: [SDX-MDOC-144] Ineligible boundaries stop grouping without changing validity
-- **GIVEN** fragments separated by punctuation, a repeated lexical match, a tab or line break, a pure insertion or deletion, protected structure, incompatible formatting, an existing revision, or an operation or paragraph boundary
+- **GIVEN** fragments separated by punctuation, a common lexical token including a repeated-token ambiguity, a tab or line break, a pure insertion or deletion, a retained-format interval, protected structure, incompatible formatting, an existing revision, or an operation or paragraph boundary
 - **WHEN** readable grouping is requested
 - **THEN** the compiler SHALL NOT coalesce across that boundary
 - **AND** an operation valid under `token-minimal` SHALL remain valid and use its ungrouped hunks
@@ -74,4 +79,3 @@ boundaries.
 - **WHEN** readable grouping is requested
 - **THEN** the compiler SHALL retain the spaces as ordinary text
 - **AND** SHALL NOT enlarge the revision solely to consume whitespace
-

@@ -42,9 +42,10 @@ Canonical Markdoc may declare `revision-grouping="readable-whitespace"` on its
 singleton `compilation` tag. The TypeScript compile options and CLI
 `--revision-grouping` flag expose the same closed value set. An explicit runtime
 value wins over the Markdoc value; absent either, `token-minimal` applies.
-Unknown or duplicate values fail before mutation. The CLI passes explicit
-`cli` provenance through the compile API; direct callers use `api`. The
-compilation certificate records
+Unknown or duplicate values fail before mutation. The compile option is
+`revisionGrouping?: { policy: 'token-minimal' | 'readable-whitespace'; source?:
+'api' | 'cli' }`; omitted source defaults to `api`, while the CLI passes `cli`.
+The compilation certificate records
 `revisionGrouping: { policy, source, coalescedSpaceTokens, groupedChains }`.
 
 An explicit opt-in avoids silently changing byte shape for existing callers and
@@ -62,20 +63,27 @@ U+0020 spaces. Grouping cannot turn an otherwise invalid operation valid: run
 format, retained-format, and inline-format scopes are always validated against
 the token-minimal hunk set.
 
+The merged hunk uses the chain's outer `start`, `end`, `revisedStart`, and
+`revisedEnd`, and its `replacement` is the exact revised slice from the first
+`revisedStart` through the last `revisedEnd`. A candidate bridge whose revised
+offsets intersect a resolved retained-format interval terminates the chain.
+
 A chain is eligible only when the merged source range and each constituent
 fragment resolve through `templateForHunk` to the same single run-property
 signature (or to the same explicit `format-source`). If not, the compiler emits
 the original hunks rather than throwing a new readability-mode error. Grouping
-is intra-operation and intra-paragraph, including selected header/footer story
-paragraphs; it never combines operations. Existing-revision admission remains
-the defensive provenance guard.
+is intra-operation and intra-paragraph; it never combines operations. Selected
+header/footer story paragraphs use the same transform once the active story-
+authoring change lands, while this body implementation does not depend on it.
+Existing-revision admission remains the defensive provenance guard.
 
 Each bridged space is copied to both revision sides. Reject therefore restores
 the source phrase and Accept yields the revised phrase. This is intentionally
 non-minimal in emitted revision text, but it is projection-neutral and makes
 the phrase read as a unit. The transform must not bridge lexical tokens,
-punctuation, non-space whitespace, or any protected OOXML boundary. It must not
-turn a lone replacement into a larger range merely to consume adjacent spaces.
+punctuation, non-space whitespace, a retained-format interval, or any protected
+OOXML boundary. It must not turn a lone replacement into a larger range merely
+to consume adjacent spaces.
 
 ### Verification discloses the trade-off without inventing a second gate
 
@@ -83,14 +91,20 @@ The existing `authored-zero-loss` gate remains authoritative. Its anchored
 common-token model already excludes a bridge space when neither adjacent word
 is matched, while still charging anchored edge spaces and common lexical,
 punctuation, and structural tokens. The verifier independently inspects finished
-tracked markup and reports U+0020-only tokens present inside both sides of one
-adjacent content-bearing deletion/insertion group. This
-`coalescedWhitespace` evidence is disclosure only: it does not alter
-`lostTokensByClass` or the gate verdict.
+tracked markup. A group is a maximal sequence of content-bearing `w:del`
+wrappers immediately followed by content-bearing `w:ins` wrappers, separated
+only by non-content markers; insertion-before-deletion does not qualify. Each
+side is tokenized with `tokenizeExact`, its first and last token are excluded,
+and `coalescedSpaceTokens` is the sum, for each distinct U+0020-only token value,
+of the lesser occurrence count across the two sides. A nonzero count makes one
+grouped chain. This disclosure does not alter `lostTokensByClass` or the gate
+verdict.
 
-Token-minimal output reports zero grouped chains and zero coalesced spaces.
-Correct readable output still reports zero required loss but a nonzero
-disclosure count. Grouping that swallows an anchored edge space, lexical token,
+Token-minimal output reports zero grouped chains and zero coalesced spaces: one
+exact-LCS gap cannot contain the same token on both sides, because matching it
+would lengthen the LCS. Tokens compare exactly, so `" "` and `"  "` do not
+match for disclosure. Correct readable output reports zero required loss but a
+nonzero disclosure count. Grouping that swallows an anchored edge space, lexical token,
 punctuation, or structural whitespace continues to fail the existing gate.
 Evidence remains derived solely from finished markup and the independent
 operands, never compiler IR.
@@ -137,4 +151,3 @@ No migration is required. Existing Markdoc and API calls resolve to
   rewrites carry no such grouping, and compile currently re-minimizes their
   projections. Automatic bounded space bridging covers both authoring forms
   with one deterministic rule; explicit-span authority can be proposed later.
-

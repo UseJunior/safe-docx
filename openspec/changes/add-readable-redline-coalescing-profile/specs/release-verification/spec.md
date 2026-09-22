@@ -4,10 +4,15 @@
 
 The independent release verifier SHALL keep `authored-zero-loss` as the only
 authored-redline gate. From finished tracked markup alone it SHALL additionally
-report, per paragraph and in total, U+0020-only whitespace tokens that occur
-inside both the deleted text and inserted text of one adjacent content-bearing
-deletion/insertion group. This coalesced-whitespace count is disclosure, not
-loss: it SHALL NOT change the gate verdict or `lostTokensByClass`.
+report, per paragraph and in total, the coalesced-space count of every adjacent
+content-bearing deletion-to-insertion group. A group is a maximal sequence of
+content-bearing `w:del` wrappers immediately followed by content-bearing
+`w:ins` wrappers, separated only by non-content markers; insertion-before-
+deletion does not qualify. The count SHALL tokenize each side with the existing
+exact tokenizer, exclude each side's first and last token, and sum, for each
+distinct U+0020-only token value, the lesser occurrence count on the two sides.
+A group with a nonzero count is one grouped chain. This disclosure SHALL NOT
+change the gate verdict or `lostTokensByClass`.
 
 Artifacts whose replacement fragments remain separated by ordinary whitespace
 SHALL report zero grouped chains and zero coalesced spaces. Grouping that also
@@ -21,7 +26,7 @@ the lost token classified independently.
 - **THEN** lost preservable tokens SHALL equal zero
 - **AND** coalesced-whitespace evidence SHALL report the grouped chain, bridged-space count, and paragraph
 
-#### Scenario: [REL-VERIFY-14] Token-minimal grouping has no readability disclosure
+#### Scenario: [REL-VERIFY-14] Ungrouped token-minimal shape has no readability disclosure
 - **GIVEN** finished tracked markup whose replacement fragments remain separated by ordinary whitespace
 - **WHEN** verification runs under `authored-zero-loss`
 - **THEN** lost preservable tokens SHALL equal zero
@@ -32,4 +37,3 @@ the lost token classified independently.
 - **WHEN** verification runs under `authored-zero-loss`
 - **THEN** the gate SHALL fail
 - **AND** evidence SHALL identify the lost token by class separately from readability disclosure
-
