@@ -140,6 +140,18 @@ describe('retained common-text formatting', () => {
     const structured = await importDocxToMarkdoc(structuredSource);
     await expect(compileMarkdoc(structured.anchoredSource, change(structured.markdoc, 'Complete', '{% retain-format highlight="none" %}Complete{% /retain-format %}')))
       .rejects.toMatchObject({ code: 'UNSUPPORTED_EDIT_STRUCTURE' });
+
+    const specialSource = await buildDocxFromBodyXml(
+      '<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>Alpha</w:t></w:r>'
+      + '<w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:sym w:font="Wingdings" w:char="F0FC"/></w:r>'
+      + '<w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>beta</w:t></w:r></w:p>',
+    );
+    const special = await importDocxToMarkdoc(specialSource);
+    await expect(compileMarkdoc(special.anchoredSource, change(
+      special.markdoc,
+      'Alphabeta',
+      '{% retain-format highlight="none" %}Alphabeta{% /retain-format %}',
+    ))).rejects.toMatchObject({ code: 'UNSUPPORTED_EDIT_STRUCTURE' });
   });
 
   retainedTest('[SDX-MDOC-136][SDX-MDOC-138] admits neighboring text edits while certifying no text revision overlaps the retained interval', async () => {

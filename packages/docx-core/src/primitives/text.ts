@@ -277,6 +277,12 @@ const EMBEDDED_CONTENT_LOCALS: ReadonlySet<string> = new Set([
   W.contentPart,
 ]);
 
+const FORMAT_RANGE_CONTENT_LOCALS: ReadonlySet<string> = new Set([
+  W.t,
+  W.tab,
+  W.br,
+]);
+
 function isEmbeddedContentElement(node: Node): boolean {
   return (
     node.nodeType === 1 &&
@@ -337,6 +343,24 @@ export function formatParagraphTextRange(
   if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start || end > text.length) {
     throw new SafeDocxError('INVALID_ARGUMENT', 'Formatting range must be a non-empty bounded visible-text interval.');
   }
+  let physicalOffset = 0;
+  for (const run of Array.from(paragraph.getElementsByTagNameNS(OOXML.W_NS, W.r))) {
+    const runLength = getRunVisibleLength(run);
+    const intersects = runLength > 0
+      ? physicalOffset < end && physicalOffset + runLength > start
+      : physicalOffset > start && physicalOffset < end;
+    if (intersects) {
+      const unsupported = getDirectContentElements(run)
+        .filter((element) => !FORMAT_RANGE_CONTENT_LOCALS.has(element.localName ?? ''));
+      if (unsupported.length > 0) {
+        throw new SafeDocxError(
+          'UNSUPPORTED_EDIT',
+          `Formatting range intersects unsupported run content: ${[...new Set(unsupported.map((element) => element.localName))].sort().join(', ')}.`,
+        );
+      }
+    }
+    physicalOffset += runLength;
+  }
   const runs = getParagraphRuns(paragraph);
   const parts: ReplacementPart[] = [];
   let offset = 0;
@@ -347,9 +371,6 @@ export function formatParagraphTextRange(
     const overlapStart = Math.max(start, runStart);
     const overlapEnd = Math.min(end, runEnd);
     if (overlapEnd <= overlapStart) continue;
-    if (getEmbeddedContentElements(run.r).length > 0) {
-      throw new SafeDocxError('UNSUPPORTED_EDIT', 'Formatting range intersects embedded run content.');
-    }
     parts.push({
       text: text.slice(overlapStart, overlapEnd),
       templateRun: run.r,

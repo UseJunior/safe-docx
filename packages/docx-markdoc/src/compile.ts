@@ -566,7 +566,7 @@ export type ResolvedRetainedSpan = RetainedFormatSpan & {
   paragraphId: string;
   sourceStart: number;
   sourceEnd: number;
-  expectedText?: string;
+  expectedText: string;
   changedProperties?: Array<'highlight' | 'underline'>;
 };
 
@@ -1204,12 +1204,24 @@ async function applyOperations(
     );
     const operationRetained = retainedSpans.filter((span) => span.operationId === operation.operationId);
     for (const span of [...operationRetained].reverse()) {
-      document.formatTextAtRange({
-        targetParagraphId: operation.id,
-        start: span.start,
-        end: span.end,
-        format: span.format,
-      });
+      try {
+        document.formatTextAtRange({
+          targetParagraphId: operation.id,
+          start: span.start,
+          end: span.end,
+          format: span.format,
+        });
+      } catch (error) {
+        const cause = error as Error & { code?: string };
+        if (cause.code === 'UNSUPPORTED_EDIT') {
+          throw new DocxMarkdocError(
+            'UNSUPPORTED_EDIT_STRUCTURE',
+            `Operation ${operation.operationId} retain-format span intersects unsupported run content.`,
+            { cause: cause.message },
+          );
+        }
+        throw error;
+      }
     }
     if (operationHunks.length === 0 && operationRetained.length > 0) {
       ranges.push({

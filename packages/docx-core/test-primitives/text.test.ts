@@ -100,6 +100,32 @@ describe('text primitives', () => {
     });
   });
 
+  test('rejects special run content inside a formatting interval without mutation', async ({ given, when, then }: AllureBddContext) => {
+    const specialElements = [
+      '<w:sym w:font="Wingdings" w:char="F0FC"/>',
+      '<w:noBreakHyphen/>',
+      '<w:softHyphen/>',
+      '<w:cr/>',
+      '<w:ptab/>',
+    ];
+    await given('special character elements appear in their own run or beside visible text', () => {});
+    await when('a retained formatting range encloses that content', () => {});
+    await then('every shape is rejected transactionally', () => {
+      for (const special of specialElements) {
+        for (const body of [
+          `<w:p><w:r><w:t>Alpha</w:t></w:r><w:r>${special}</w:r><w:r><w:t>beta</w:t></w:r></w:p>`,
+          `<w:p><w:r><w:t>Alpha</w:t>${special}<w:t>beta</w:t></w:r></w:p>`,
+        ]) {
+          const paragraph = firstParagraph(makeDoc(body));
+          const before = paragraph.toString();
+          expect(() => formatParagraphTextRange(paragraph, 0, 9, { underline: 'single' }))
+            .toThrowError(SafeDocxError);
+          expect(paragraph.toString()).toBe(before);
+        }
+      }
+    });
+  });
+
   test('extracts paragraph runs and tracks field-result visibility', async ({ given, when, then, and }: AllureBddContext) => {
     let doc!: Document;
     let runs!: ReturnType<typeof getParagraphRuns>;
