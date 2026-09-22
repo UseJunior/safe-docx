@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, rmdir } from 'node:fs/promises';
 import path from 'node:path';
 import { writeNewFiles } from './output.js';
 import { compileMarkdoc } from './compile.js';
@@ -12,6 +12,7 @@ import { DocxMarkdocError } from './errors.js';
 import { assertDistinctInternalPath, EXTERNAL_FILENAME, parseRenderingFlags, warnedInternalPath } from './cli-options.js';
 import { normalizeAnnotationPresentationProfile } from './presentation.js';
 import type { AnnotationPresentationProfile } from './types.js';
+import { compileGreenfieldMarkdoc, type GreenfieldStyleProfile } from './greenfield.js';
 
 function usage(): string {
   return [
@@ -23,6 +24,7 @@ function usage(): string {
     '    [--dangerously-include-internal-comments --internal-output <path.docx>]',
     '    [--note-profile profile.json | --external-notes MODE --internal-notes MODE --unspecified-notes MODE]',
     '  docx-markdoc verify <anchored.docx> <document.mdoc> [--external-comments|--no-external-comments]',
+    '  docx-markdoc compile-greenfield <template.docx> <document.mdoc> <output-dir> [--style-profile profile.json]',
     '  docx-markdoc export-edits <document.mdoc> <output.json>',
     '  docx-markdoc comments-to-footnotes <input.docx> <output.docx> [--prefix TEXT] [--prefix-separator TEXT] [--bold-prefix] [--prefix-color RRGGBB] [--prefix-highlight COLOR] [--body-color RRGGBB] [--body-highlight COLOR] [--flatten-threads]',
   ].join('\n');
@@ -54,6 +56,39 @@ async function main(): Promise<void> {
     if (!sourcePath) throw new Error(usage());
     const records = await inspectMarkdocSource(await readFile(sourcePath), { paragraphIds: ids.length ? ids : undefined });
     process.stdout.write(`${JSON.stringify(records, null, 2)}\n`);
+    return;
+  }
+  if (command === 'compile-greenfield') {
+    const profileFlag = args.indexOf('--style-profile');
+    const profilePath = profileFlag < 0 ? undefined : args[profileFlag + 1];
+    if (profileFlag >= 0 && !profilePath) throw new Error(usage());
+    const positional = args.filter((_, index) => index !== profileFlag && index !== profileFlag + 1);
+    const [templatePath, markdocPath, outputDir] = positional;
+    if (!templatePath || !markdocPath || !outputDir || positional.length !== 3) throw new Error(usage());
+    const inputPaths = [templatePath, markdocPath, ...(profilePath ? [profilePath] : [])].map((value) => path.resolve(value));
+    const resolvedOutputDir = path.resolve(outputDir);
+    const outputPaths = ['clean.docx', 'verification.json'].map((name) => path.resolve(outputDir, name));
+    if (inputPaths.includes(resolvedOutputDir) || outputPaths.some((output) => inputPaths.includes(output)) || new Set(inputPaths).size !== inputPaths.length) {
+      throw new DocxMarkdocError('GREENFIELD_PATH_COLLISION', 'Every greenfield input and output path must be distinct.');
+    }
+    const profileSource = profilePath ? await readFile(profilePath) : undefined;
+    const styleProfile = profileSource ? JSON.parse(profileSource.toString('utf8')) as GreenfieldStyleProfile : undefined;
+    const result = await compileGreenfieldMarkdoc(
+      await readFile(templatePath),
+      await readFile(markdocPath, 'utf8'),
+      { styleProfile, styleProfileSource: profileSource },
+    );
+    await mkdir(outputDir);
+    try {
+      await writeNewFiles([
+        [path.join(outputDir, 'clean.docx'), result.clean],
+        [path.join(outputDir, 'verification.json'), `${JSON.stringify(result.certificate, null, 2)}\n`],
+      ]);
+    } catch (error) {
+      await rmdir(outputDir).catch(() => undefined);
+      throw error;
+    }
+    process.stdout.write(`${JSON.stringify(result.certificate, null, 2)}\n`);
     return;
   }
   if (command === 'compile' || command === 'verify') {

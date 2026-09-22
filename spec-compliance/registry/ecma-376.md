@@ -12,6 +12,39 @@ outlive a future migration off OpenSpec. Entries are parsed by
 
 ## Targeted sections
 
+## [ECMA-PART1-17-2-2] Main document body
+
+```yaml
+edition: 5
+part: 1
+section: "17.2.2"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:body
+verifiedBy: packages/docx-markdoc/src/greenfield.ts; packages/docx-markdoc/src/greenfield.test.ts
+```
+
+Part 1 §17.2.2 defines `w:body` as the main document story container. The
+greenfield compiler admits one body with one final direct `w:sectPr`, replaces
+the other direct body children with canonical paragraphs, and reloads the
+result to verify their authored order. Multiple or misplaced section-property
+topologies remain outside this bounded projection and fail closed.
+
+## [ECMA-PART1-17-3-1-27] Paragraph style reference
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.1.27"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle
+verifiedBy: packages/docx-markdoc/src/greenfield.ts; packages/docx-markdoc/src/greenfield.test.ts
+```
+
+Part 1 §17.3.1.27 defines `w:pStyle` as a paragraph's referenced style. The
+greenfield compiler resolves each canonical body role to an explicit style ID,
+requires that ID in the template style table, emits it under `w:pPr`, and
+reloads the package to verify the resolved body/style projection.
+
 ## [ECMA-PART1-17-3-2-29] Run style
 
 ```yaml
