@@ -84,6 +84,7 @@ export interface TextBoxStoryInput {
   visualIndex: number;
   partPath: string;
   container: 'textBox' | 'ancillaryPart';
+  ancillaryMode?: 'ordinary' | 'inserted';
   original: Buffer;
   revised: Buffer;
 }
@@ -98,7 +99,7 @@ export interface TextBoxStoryComparisonPlan {
   hasAncillaryTextBoxStories: boolean;
   representedAncillaryChanges: Array<{
     scope: 'header' | 'footer';
-    kind: 'added';
+    kind: 'added' | 'changed';
     sectionIndex: number;
     role: 'default' | 'first' | 'even';
     partPath: string;
@@ -367,16 +368,15 @@ function relationshipClosureFingerprint(
   targets: ReadonlyMap<string, string>,
 ): string | undefined {
   const references: string[] = [];
-  for (const element of Array.from(textBox.getElementsByTagName('*'))) {
-    const relationshipId =
-      element.getAttributeNS(RELATIONSHIPS_NS, 'id') ||
-      element.getAttribute('r:id');
-    if (!relationshipId) continue;
-    const target = targets.get(relationshipId);
-    if (!target) return undefined;
-    references.push(
-      `{${element.namespaceURI ?? ''}}${element.localName}|${target}`,
-    );
+  for (const element of [textBox, ...Array.from(textBox.getElementsByTagName('*'))]) {
+    for (const attribute of Array.from(element.attributes)) {
+      if (attribute.namespaceURI !== RELATIONSHIPS_NS) continue;
+      const target = targets.get(attribute.value);
+      if (!target) return undefined;
+      references.push(
+        `{${element.namespaceURI ?? ''}}${element.localName}|${attribute.localName}|${target}`,
+      );
+    }
   }
   return references.join('\n');
 }
@@ -488,6 +488,25 @@ function storyDocumentXmlFromPartRoot(
   return serializer.serializeToString(document);
 }
 
+function partXmlWithRevisedTextBoxes(
+  originalPartXml: string,
+  revisedPartXml: string,
+): string {
+  const original = parseXml(originalPartXml);
+  const revised = parseXml(revisedPartXml);
+  const originalBoxes = Array.from(
+    original.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
+  );
+  const revisedBoxes = Array.from(
+    revised.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
+  );
+  if (originalBoxes.length !== revisedBoxes.length) return originalPartXml;
+  for (let index = 0; index < originalBoxes.length; index += 1) {
+    replaceChildren(originalBoxes[index]!, revisedBoxes[index]!);
+  }
+  return serializer.serializeToString(original);
+}
+
 function owningRelationshipsPath(partPath: string): string {
   const slash = partPath.lastIndexOf('/');
   const directory = slash >= 0 ? partPath.slice(0, slash) : '';
@@ -504,12 +523,15 @@ interface SelectedAncillaryStory {
   textBoxes: Element[];
   canonical: string;
   scaffold: string;
+  ordinaryContent: string;
+  bindingClosure: string;
 }
 
 interface SelectedAncillaryState {
   documentXml: string;
   bindingAuditValid: boolean;
   sectionCount: number;
+  settingsSignature: string;
   auditBindings: SectPrBinding[];
   stories: SelectedAncillaryStory[];
 }
@@ -518,6 +540,7 @@ interface PairedAncillaryStory {
   id: string;
   original: SelectedAncillaryStory;
   revised: SelectedAncillaryStory;
+  bindingClosureMatched: boolean;
 }
 
 function partTextBoxes(xml: string): Element[] {
@@ -584,6 +607,134 @@ function partScaffoldFingerprint(xml: string): string {
   return canonicalNode(root);
 }
 
+function hasAncestor(element: Element, localName: string): boolean {
+  for (let current = element.parentElement; current; current = current.parentElement) {
+    if (current.namespaceURI === OOXML.W_NS && current.localName === localName) return true;
+  }
+  return false;
+}
+
+function blankOrdinaryParagraphText(root: Element): void {
+  for (const paragraph of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'p'))) {
+    if (hasAncestor(paragraph, 'txbxContent')) continue;
+    let complexFieldDepth = 0;
+    for (const element of Array.from(paragraph.getElementsByTagName('*'))) {
+      if (element.namespaceURI !== OOXML.W_NS) continue;
+      if (element.localName === 'fldChar') {
+        const type = element.getAttributeNS(OOXML.W_NS, 'fldCharType')
+          ?? element.getAttribute('w:fldCharType')
+          ?? element.getAttribute('fldCharType');
+        if (type === 'begin') complexFieldDepth += 1;
+        else if (type === 'end') complexFieldDepth = Math.max(0, complexFieldDepth - 1);
+        continue;
+      }
+      if (
+        (element.localName === 't' || element.localName === 'delText')
+        && complexFieldDepth === 0
+        && !hasAncestor(element, 'fldSimple')
+      ) {
+        element.parentNode?.removeChild(element);
+      }
+    }
+    for (const parent of [paragraph, ...Array.from(paragraph.getElementsByTagNameNS(OOXML.W_NS, 'hyperlink'))]) {
+      let previousRun: Element | null = null;
+      let previousSignature: string | null = null;
+      for (const child of directChildElements(parent)) {
+        if (child.namespaceURI !== OOXML.W_NS || child.localName !== 'r') {
+          previousRun = null;
+          previousSignature = null;
+          continue;
+        }
+        const signature = canonicalNode(child);
+        if (previousRun && signature === previousSignature) {
+          child.parentNode?.removeChild(child);
+          continue;
+        }
+        previousRun = child;
+        previousSignature = signature;
+      }
+    }
+  }
+}
+
+function admittedPlainParagraphForScaffold(paragraph: Element): boolean {
+  const parent = paragraph.parentElement;
+  if (
+    !parent
+    || parent.namespaceURI !== OOXML.W_NS
+    || !['hdr', 'ftr', 'tc'].includes(parent.localName)
+  ) return false;
+  if (parent.localName === 'tc' && hasAncestor(parent, 'tc')) return false;
+  const unsupported = new Set([
+    'drawing',
+    'pict',
+    'sdt',
+    'txbxContent',
+    'object',
+    'commentReference',
+    'footnoteReference',
+    'endnoteReference',
+    'fldChar',
+    'fldSimple',
+    'instrText',
+  ]);
+  for (const element of Array.from(paragraph.getElementsByTagName('*'))) {
+    if (
+      (element.namespaceURI === OOXML.W_NS && unsupported.has(element.localName))
+      || (element.namespaceURI === MC_NS && element.localName === 'AlternateContent')
+    ) return false;
+  }
+  return true;
+}
+
+/**
+ * Fingerprint the selected-story structure while excluding only ordinary
+ * paragraph text and nested text-box stories, which are compared separately.
+ * Field instructions and cached field results remain part of the scaffold.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @see https://github.com/UseJunior/safe-docx/issues/998
+ */
+function ordinaryStoryScaffoldFingerprint(xml: string): string {
+  const document = parseXml(xml);
+  const root = document.documentElement.cloneNode(true) as Element;
+  for (const textBox of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'))) {
+    while (textBox.firstChild) textBox.removeChild(textBox.firstChild);
+  }
+  for (const paragraph of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'p')).reverse()) {
+    if (admittedPlainParagraphForScaffold(paragraph)) paragraph.parentNode?.removeChild(paragraph);
+  }
+  blankOrdinaryParagraphText(root);
+  return canonicalNode(root);
+}
+
+function ordinaryStoryContentFingerprint(xml: string): string {
+  const document = parseXml(xml);
+  const root = document.documentElement.cloneNode(true) as Element;
+  for (const textBox of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'))) {
+    while (textBox.firstChild) textBox.removeChild(textBox.firstChild);
+  }
+  return canonicalNode(root);
+}
+
+function bindingClosureKey(kind: 'header' | 'footer', bindings: readonly SectPrBinding[]): string {
+  return [
+    kind,
+    ...bindings
+      .map((binding) => `${binding.sectionOrdinal}:${binding.kind}:${binding.role}`)
+      .sort(),
+  ].join('|');
+}
+
+function selectedHeaderSettingsSignature(settingsXml: string | null): string {
+  if (!settingsXml) return '';
+  const document = parseXml(settingsXml);
+  const setting = document.getElementsByTagNameNS(OOXML.W_NS, 'evenAndOddHeaders').item(0);
+  return setting ? canonicalNode(setting) : '';
+}
+
 function unsupportedBindingChanges(
   issues: ReturnType<typeof auditSectPr>['issues'],
 ): TextBoxRevisionChange[] {
@@ -609,6 +760,8 @@ async function selectedAncillaryState(
   archive: DocxArchive,
 ): Promise<SelectedAncillaryState> {
   const documentXml = await archive.getDocumentXml();
+  const settingsXml = await archive.getFile('word/settings.xml');
+  const settingsSignature = selectedHeaderSettingsSignature(settingsXml);
   const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
   const preliminary = auditSectPr(documentXml, relationshipsXml);
   if (!preliminary.ok) {
@@ -619,6 +772,7 @@ async function selectedAncillaryState(
       documentXml,
       bindingAuditValid: false,
       sectionCount: 0,
+      settingsSignature,
       auditBindings: [],
       stories: [],
     };
@@ -637,6 +791,7 @@ async function selectedAncillaryState(
       documentXml,
       bindingAuditValid: false,
       sectionCount: 0,
+      settingsSignature,
       auditBindings: [],
       stories: [],
     };
@@ -664,6 +819,8 @@ async function selectedAncillaryState(
       textBoxes: partTextBoxes(xml),
       canonical: canonicalNode(root),
       scaffold: partScaffoldFingerprint(xml),
+      ordinaryContent: ordinaryStoryContentFingerprint(xml),
+      bindingClosure: bindingClosureKey(bindings[0]!.kind, bindings),
     });
   }
 
@@ -671,6 +828,7 @@ async function selectedAncillaryState(
     documentXml,
     bindingAuditValid: true,
     sectionCount: audit.stats.totalSectPrCount,
+    settingsSignature,
     auditBindings: audit.bindings,
     stories,
   };
@@ -696,6 +854,7 @@ function bucketStories(
 function pairSelectedAncillaryStories(
   original: SelectedAncillaryStory[],
   revised: SelectedAncillaryStory[],
+  pairByBindingClosure: boolean,
 ): {
   pairs: PairedAncillaryStory[];
   unpairedOriginal: SelectedAncillaryStory[];
@@ -710,6 +869,7 @@ function pairSelectedAncillaryStories(
   const pair = (
     left: SelectedAncillaryStory,
     right: SelectedAncillaryStory,
+    bindingClosureMatched: boolean,
   ): void => {
     matchedOriginal.add(left);
     matchedRevised.add(right);
@@ -717,15 +877,32 @@ function pairSelectedAncillaryStories(
       id: `ancillary-story-${pairs.length}`,
       original: left,
       revised: right,
+      bindingClosureMatched,
     });
   };
 
+  if (pairByBindingClosure) {
+    const closureOriginal = bucketStories(
+      originalCandidates,
+      (story) => story.bindingClosure,
+    );
+    const closureRevised = bucketStories(
+      revisedCandidates,
+      (story) => story.bindingClosure,
+    );
+    for (const key of [...closureOriginal.keys()].sort()) {
+      const left = closureOriginal.get(key)!;
+      const right = closureRevised.get(key) ?? [];
+      if (left.length === 1 && right.length === 1) pair(left[0]!, right[0]!, true);
+    }
+  }
+
   const exactOriginal = bucketStories(
-    originalCandidates,
+    originalCandidates.filter((story) => !matchedOriginal.has(story)),
     (story) => `${story.kind}|${story.canonical}`,
   );
   const exactRevised = bucketStories(
-    revisedCandidates,
+    revisedCandidates.filter((story) => !matchedRevised.has(story)),
     (story) => `${story.kind}|${story.canonical}`,
   );
   for (const key of [...exactOriginal.keys()].sort()) {
@@ -733,7 +910,7 @@ function pairSelectedAncillaryStories(
     const right = exactRevised.get(key) ?? [];
     const count = Math.min(left.length, right.length);
     for (let index = 0; index < count; index += 1) {
-      pair(left[index]!, right[index]!);
+      pair(left[index]!, right[index]!, false);
     }
   }
 
@@ -755,7 +932,7 @@ function pairSelectedAncillaryStories(
     const left = scaffoldOriginal.get(key)!;
     const right = scaffoldRevised.get(key) ?? [];
     if (left.length === 1 && right.length === 1) {
-      pair(left[0]!, right[0]!);
+      pair(left[0]!, right[0]!, false);
     }
   }
 
@@ -801,6 +978,39 @@ function sectionPropertyFingerprints(documentXml: string): string[] {
       }
       return canonicalNode(clone);
     });
+}
+
+function ordinarySectionTopologyFingerprints(documentXml: string): string[] {
+  const document = parseXml(documentXml);
+  return Array.from(document.getElementsByTagNameNS(OOXML.W_NS, 'sectPr'))
+    .filter((section) => !hasAncestorLocalName(section, 'sectPrChange'))
+    .map((section) => {
+      const clone = section.cloneNode(true) as Element;
+      for (const reference of [
+        ...Array.from(clone.getElementsByTagNameNS(OOXML.W_NS, 'headerReference')),
+        ...Array.from(clone.getElementsByTagNameNS(OOXML.W_NS, 'footerReference')),
+      ]) {
+        reference.setAttributeNS(RELATIONSHIPS_NS, 'r:id', '__selected_story__');
+      }
+      return canonicalNode(clone);
+    });
+}
+
+function bindingSlotSet(state: SelectedAncillaryState): string[] {
+  return state.auditBindings
+    .map((binding) => `${binding.sectionOrdinal}:${binding.kind}:${binding.role}`)
+    .sort();
+}
+
+function ordinaryStoryTopologyMatches(
+  original: SelectedAncillaryState,
+  revised: SelectedAncillaryState,
+): boolean {
+  return original.sectionCount === revised.sectionCount
+    && original.settingsSignature === revised.settingsSignature
+    && JSON.stringify(bindingSlotSet(original)) === JSON.stringify(bindingSlotSet(revised))
+    && JSON.stringify(ordinarySectionTopologyFingerprints(original.documentXml))
+      === JSON.stringify(ordinarySectionTopologyFingerprints(revised.documentXml));
 }
 
 function sectionSignatures(
@@ -956,9 +1166,11 @@ async function ancillaryStoryInputs(
       representedChanges: [],
     };
   }
+  const topologyMatches = ordinaryStoryTopologyMatches(originalState, revisedState);
   const paired = pairSelectedAncillaryStories(
     originalState.stories,
     revisedState.stories,
+    topologyMatches,
   );
   const insertedPartStories = assertLifecycleStoriesAreSectionBound(
     originalState,
@@ -969,7 +1181,64 @@ async function ancillaryStoryInputs(
   );
 
   const stories: TextBoxStoryInput[] = [];
+  const representedChanges: TextBoxStoryComparisonPlan['representedAncillaryChanges'] = [];
   for (const pair of paired.pairs) {
+    if (
+      topologyMatches
+      && pair.bindingClosureMatched
+      && pair.original.ordinaryContent !== pair.revised.ordinaryContent
+      && ordinaryStoryScaffoldFingerprint(pair.original.xml)
+        === ordinaryStoryScaffoldFingerprint(pair.revised.xml)
+    ) {
+      const originalTargets = relationshipTargets(pair.original.relationshipsXml);
+      const revisedTargets = relationshipTargets(pair.revised.relationshipsXml);
+      const originalRoot = parseXml(pair.original.xml).documentElement;
+      const revisedRoot = parseXml(pair.revised.xml).documentElement;
+      const originalClosure = relationshipClosureFingerprint(originalRoot, originalTargets);
+      const revisedClosure = relationshipClosureFingerprint(revisedRoot, revisedTargets);
+      if (
+        originalClosure !== undefined
+        && revisedClosure !== undefined
+        && originalClosure === revisedClosure
+      ) {
+        const storyOriginalArchive = await originalArchive.clone();
+        const storyRevisedArchive = await revisedArchive.clone();
+        storyOriginalArchive.setDocumentXml(storyDocumentXmlFromPartRoot(
+          originalDocumentXml,
+          partXmlWithRevisedTextBoxes(pair.original.xml, pair.revised.xml),
+        ));
+        storyRevisedArchive.setDocumentXml(storyDocumentXmlFromPartRoot(
+          revisedDocumentXml,
+          pair.revised.xml,
+        ));
+        storyOriginalArchive.setFile(
+          'word/_rels/document.xml.rels',
+          pair.original.relationshipsXml
+            ?? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+        );
+        storyRevisedArchive.setFile(
+          'word/_rels/document.xml.rels',
+          pair.revised.relationshipsXml
+            ?? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+        );
+        stories.push({
+          index: 0,
+          visualIndex: 0,
+          partPath: pair.revised.targetPath,
+          container: 'ancillaryPart',
+          ancillaryMode: 'ordinary',
+          original: await storyOriginalArchive.save(),
+          revised: await storyRevisedArchive.save(),
+        });
+        representedChanges.push(...pair.revised.bindings.map((binding) => ({
+          scope: binding.kind,
+          kind: 'changed' as const,
+          sectionIndex: binding.sectionOrdinal,
+          role: binding.role,
+          partPath: pair.revised.targetPath,
+        })));
+      }
+    }
     const originalVisualOrdinals = partVisualTextBoxOrdinals(pair.original.xml);
     const visualOrdinals = partVisualTextBoxOrdinals(pair.revised.xml);
     if (pair.original.textBoxes.length !== pair.revised.textBoxes.length) {
@@ -1095,6 +1364,7 @@ async function ancillaryStoryInputs(
       visualIndex: 0,
       partPath: story.targetPath,
       container: 'ancillaryPart',
+      ancillaryMode: 'inserted',
       original: await storyOriginalArchive.save(),
       revised: await storyRevisedArchive.save(),
     });
@@ -1112,15 +1382,18 @@ async function ancillaryStoryInputs(
       paired.unpairedRevised.some((story) => story.textBoxes.length > 0) ||
       stories.length > 0,
     hasTextBoxStories: stories.some((story) => story.container === 'textBox'),
-    representedChanges: insertedPartStories.flatMap((story) =>
-      story.bindings.map((binding) => ({
+    representedChanges: [
+      ...representedChanges,
+      ...insertedPartStories.flatMap((story) =>
+        story.bindings.map((binding) => ({
         scope: binding.kind,
         kind: 'added' as const,
         sectionIndex: binding.sectionOrdinal,
         role: binding.role,
         partPath: story.targetPath,
-      })),
-    ),
+        })),
+      ),
+    ],
   };
 }
 
@@ -1493,7 +1766,7 @@ async function selectedStoryProjectionInventory(
       binding.sectionOrdinal,
       binding.kind,
       binding.role,
-      partScaffoldFingerprint(projectedXml),
+      ordinaryStoryScaffoldFingerprint(projectedXml),
       extractRoundTripComparisonText(projectedXml),
     ].join('|');
   });

@@ -102,16 +102,19 @@ describe('unrepresented section and header/footer reporting', () => {
     },
   );
 
-  test('reports changed selected footer content', async () => {
+  test('represents changed selected footer content with native revisions', async () => {
     const original = await packageWithFooter('rIdOriginal', 'Original footer');
     const revised = await packageWithFooter('rIdRevised', 'Revised footer');
     const result = await compareDocuments(original, revised);
-      expect(result.unrepresentedChanges).toEqual([{
-        scope: 'footer',
-        kind: 'changed',
-        sectionIndex: 0,
-        role: 'default',
-      }]);
+    const archive = await DocxArchive.load(result.document);
+    const footerXml = await archive.getFile('word/footer-rIdRevised.xml');
+
+    expect(footerXml).toContain('<w:ins');
+    expect(footerXml).toContain('<w:del');
+    expect(footerXml).toContain('Original');
+    expect(footerXml).toContain('Revised');
+    expect(footerXml).toContain(' footer');
+    expect(result.unrepresentedChanges).toBeUndefined();
   });
 
   test('does not mistake relationship identifier changes for story changes', async () => {

@@ -6,13 +6,13 @@
 
 ## 2. Selected-story comparison
 
-- [ ] 2.1 Generalize the existing selected header/footer inventory to compare admitted ordinary paragraph stories without raw-path identity.
-- [ ] 2.2 Pair physical stories by exact binding closure and compare a scaffold fingerprint that blanks admitted ordinary text; do not reuse content-sensitive text-box pairing keys.
-- [ ] 2.3 Extend relationship-walked field state-machine validation to every selected header/footer part.
-- [ ] 2.4 Preserve story roots, relationships, fields, tables, drawings, content controls, and other scaffold while splicing compared paragraph content.
-- [ ] 2.5 Emit typed unsupported diagnostics for topology, binding, scaffold, nested-story, or pairing changes outside the admitted subset.
-- [ ] 2.6 Prove accept/reject parity for ordinary header/footer text, field-bearing text, table-cell paragraphs, shared stories, and unchanged-story controls.
-- [ ] 2.7 Remove represented slots across the edited story's complete binding closure from `unrepresentedChanges` while unsupported ones remain visible.
+- [x] 2.1 Generalize the existing selected header/footer inventory to compare admitted ordinary paragraph stories without raw-path identity.
+- [x] 2.2 Pair physical stories by exact binding closure and compare a scaffold fingerprint that blanks admitted ordinary text; do not reuse content-sensitive text-box pairing keys.
+- [x] 2.3 Extend relationship-walked field state-machine validation to every selected header/footer part.
+- [x] 2.4 Preserve story roots, relationships, fields, tables, drawings, content controls, and other scaffold while splicing compared paragraph content.
+- [x] 2.5 Emit typed unsupported diagnostics for topology, binding, scaffold, nested-story, or pairing changes outside the admitted subset.
+- [x] 2.6 Prove accept/reject parity for ordinary header/footer text, field-bearing text, table-cell paragraphs, shared stories, and unchanged-story controls.
+- [x] 2.7 Remove represented slots across the edited story's complete binding closure from `unrepresentedChanges` while unsupported ones remain visible.
 
 ## 3. Story-scoped primitives and package projection
 
