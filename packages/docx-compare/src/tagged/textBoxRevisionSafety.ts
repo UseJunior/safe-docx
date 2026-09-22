@@ -718,9 +718,10 @@ function removeFormattingWhitespace(root: Element): void {
       if (
         child.nodeType === 3
         && !(child.nodeValue ?? '').trim()
+        && node.nodeType === 1
+        && (node === root || directChildElements(node as Element).length > 0)
         && !(
-          node.nodeType === 1
-          && (node as Element).namespaceURI === OOXML.W_NS
+          (node as Element).namespaceURI === OOXML.W_NS
           && textBearingParents.has((node as Element).localName)
         )
       ) {
