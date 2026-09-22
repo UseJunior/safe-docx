@@ -632,7 +632,7 @@ part: 1
 section: "17.3.2.28"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPr
-verifiedBy: packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts
+verifiedBy: packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/primitives/text.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts; packages/docx-core/test-primitives/text.test.ts; packages/docx-markdoc/src/retained-format.test.ts
 ```
 
 `w:rPr` (CT_RPr) uses a repeatable property choice, not an ordered child
@@ -1994,7 +1994,7 @@ part: 1
 section: "17.13.5.31"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange
-verifiedBy: packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/text.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/test-primitives/text.test.ts; packages/docx-markdoc/src/retained-format.test.ts
 ```
 
 safe-docx emits bounded run-formatting snapshots and consumes existing

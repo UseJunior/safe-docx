@@ -238,6 +238,28 @@ resolved by search or occurrence counting. Each span must lie wholly within one
 generated replacement hunk; unchanged, empty, nested, overlapping, and
 cross-hunk scopes fail before document mutation.
 
+`run-format` is intentionally limited to generated replacement text. To change
+direct formatting on text retained from the source, wrap the exact common
+occurrence with `retain-format`:
+
+```markdoc
+{% after %}Status: {% retain-format highlight="none" underline="single" %}Complete{% /retain-format %}{% /after %}
+```
+
+The retained-text vocabulary is closed: `highlight="yellow" | "none"` and
+`underline="single" | "none"`; omission preserves the source property. Each
+non-empty declaration must map wholly to common aligned text and one coalesced
+source formatting class. Generated, deleted, mixed-format, nested, overlapping,
+unknown, and deterministic no-op scopes fail before mutation. Authored offsets,
+not substring search, distinguish repeated visible strings.
+
+Retained formatting is supported by ordinary admitted paragraph edits,
+including paragraphs in existing physical table cells. It does not broaden
+table topology or cross fields, hyperlinks, content controls, embedded objects,
+or other unsupported run containers. Tracked output uses native `w:rPrChange`;
+the certificate reports declared spans, changed properties, physical property
+ranges, and any forbidden text-revision overlap. Any overlap blocks delivery.
+
 Text replacement and deletion of an existing numbered paragraph preserve its
 source `w:pPr`, including paragraph style, `w:numPr`, level, indentation, and
 list identity. Inserting a numbered item requires an explicit existing

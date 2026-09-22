@@ -3,7 +3,7 @@ import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 import { parseXml } from '../src/primitives/xml.js';
 import { OOXML, W } from '../src/primitives/namespaces.js';
 import { SafeDocxError } from '../src/primitives/errors.js';
-import { getParagraphRuns, getParagraphText, replaceParagraphTextRange } from '../src/primitives/text.js';
+import { formatParagraphTextRange, getParagraphRuns, getParagraphText, replaceParagraphTextRange } from '../src/primitives/text.js';
 
 const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Text Primitives' });
 
@@ -23,6 +23,63 @@ function firstParagraph(doc: Document): Element {
 }
 
 describe('text primitives', () => {
+  test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.2.28' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.31' })(
+      'formats an exact text-preserving range while retaining undeclared properties and fragmentation',
+      async ({ given, when, then, and }: AllureBddContext) => {
+        let paragraph!: Element;
+        await given('two same-format physical runs whose second half is highlighted', async () => {
+          paragraph = firstParagraph(makeDoc(
+            '<w:p>'
+            + '<w:r><w:rPr><w:b/><w:highlight w:val="yellow"/></w:rPr><w:t>Com</w:t></w:r>'
+            + '<w:r><w:rPr><w:b/><w:highlight w:val="yellow"/></w:rPr><w:t>plete</w:t></w:r>'
+            + '<w:r><w:rPr><w:i/></w:rPr><w:t> tail</w:t></w:r>'
+            + '</w:p>',
+          ));
+        });
+        await when('the Complete range removes highlight and sets underline', async () => {
+          formatParagraphTextRange(paragraph, 0, 8, { highlight: 'none', underline: 'single' });
+        });
+        await then('the visible text is unchanged', () => {
+          expect(getParagraphText(paragraph)).toBe('Complete tail');
+        });
+        await and('both retained fragments keep bold, gain underline, and lose highlight', () => {
+          const runs = getParagraphRuns(paragraph);
+          expect(runs.slice(0, 2).map((run) => run.r.toString())).toEqual([
+            expect.stringContaining('<w:b/>'),
+            expect.stringContaining('<w:b/>'),
+          ]);
+          for (const run of runs.slice(0, 2)) {
+            expect(run.r.toString()).toContain('<w:u w:val="single"/>');
+            expect(run.r.toString()).not.toContain('<w:highlight');
+          }
+          expect(runs.at(-1)!.r.toString()).toContain('<w:i/>');
+        });
+      },
+    );
+
+  test('rejects an embedded-object range without mutating the paragraph', async ({ given, when, then }: AllureBddContext) => {
+    let paragraph!: Element;
+    let before!: string;
+    let failure!: unknown;
+    await given('visible text shares a run with an embedded drawing', async () => {
+      paragraph = firstParagraph(makeDoc('<w:p><w:r><w:drawing/><w:t>Complete</w:t></w:r><w:r><w:t> tail</w:t></w:r></w:p>'));
+      before = paragraph.toString();
+    });
+    await when('the visible range is formatted', async () => {
+      try {
+        formatParagraphTextRange(paragraph, 0, 8, { highlight: 'none' });
+      } catch (error) {
+        failure = error;
+      }
+    });
+    await then('the operation fails transactionally', () => {
+      expect(failure).toMatchObject({ code: 'UNSUPPORTED_EDIT' });
+      expect(paragraph.toString()).toBe(before);
+    });
+  });
+
   test('extracts paragraph runs and tracks field-result visibility', async ({ given, when, then, and }: AllureBddContext) => {
     let doc!: Document;
     let runs!: ReturnType<typeof getParagraphRuns>;

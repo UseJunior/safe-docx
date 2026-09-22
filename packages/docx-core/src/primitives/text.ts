@@ -304,6 +304,59 @@ export type ReplacementPart = {
   clearHighlight?: boolean;
 };
 
+export type TextRangeRunFormat = {
+  underline?: 'single' | 'none';
+  highlight?: 'yellow' | 'none';
+};
+
+/**
+ * Change direct run properties over an exact visible-text range while keeping
+ * every character and each touched run's undeclared direct properties.
+ *
+ * The existing bounded replacement engine owns boundary splitting and rejects
+ * unsafe container crossings. This wrapper supplies one text-identical part
+ * per touched run, so harmless physical fragmentation is retained rather than
+ * flattened.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.28
+ * @see #998
+ */
+export function formatParagraphTextRange(
+  paragraph: Element,
+  start: number,
+  end: number,
+  format: TextRangeRunFormat,
+): void {
+  const text = getParagraphText(paragraph);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start || end > text.length) {
+    throw new SafeDocxError('INVALID_ARGUMENT', 'Formatting range must be a non-empty bounded visible-text interval.');
+  }
+  const runs = getParagraphRuns(paragraph);
+  const parts: ReplacementPart[] = [];
+  let offset = 0;
+  for (const run of runs) {
+    const runStart = offset;
+    const runEnd = offset + run.text.length;
+    offset = runEnd;
+    const overlapStart = Math.max(start, runStart);
+    const overlapEnd = Math.min(end, runEnd);
+    if (overlapEnd <= overlapStart) continue;
+    if (getEmbeddedContentElements(run.r).length > 0) {
+      throw new SafeDocxError('UNSUPPORTED_EDIT', 'Formatting range intersects embedded run content.');
+    }
+    parts.push({
+      text: text.slice(overlapStart, overlapEnd),
+      templateRun: run.r,
+      addRunProps: {
+        ...(format.underline === undefined ? {} : { underline: format.underline === 'none' ? false : format.underline }),
+        ...(format.highlight === undefined ? {} : { highlight: format.highlight === 'none' ? false : format.highlight }),
+      },
+    });
+  }
+  if (parts.length === 0) throw new SafeDocxError('INVALID_ARGUMENT', 'Formatting range does not intersect visible run text.');
+  replaceParagraphTextRange(paragraph, start, end, parts);
+}
+
 function getDirectChild(parent: Element, localName: string): Element | null {
   for (const child of Array.from(parent.childNodes)) {
     if (child.nodeType !== 1) continue;

@@ -12,7 +12,7 @@ import {
   insertSingleParagraphBookmark,
   type BookmarkReservation,
 } from './bookmarks.js';
-import { getParagraphRuns, getParagraphText, replaceParagraphTextRange, type ReplacementPart } from './text.js';
+import { formatParagraphTextRange, getParagraphRuns, getParagraphText, replaceParagraphTextRange, type ReplacementPart, type TextRangeRunFormat } from './text.js';
 import {
   allocateRevisionId,
   createRevisionContainer,
@@ -1014,6 +1014,14 @@ export class DocxDocument {
     const p = findParagraphByBookmarkId(this.documentXml, targetParagraphId);
     if (!p) throw new Error(`Paragraph not found: ${targetParagraphId}`);
     replaceParagraphTextRange(p, start, end, replaceText);
+    this.dirty = true;
+    this.documentViewCache = null;
+  }
+
+  formatTextAtRange(params: { targetParagraphId: string; start: number; end: number; format: TextRangeRunFormat }): void {
+    const paragraph = findParagraphByBookmarkId(this.documentXml, params.targetParagraphId);
+    if (!paragraph) throw new Error(`Paragraph not found: ${params.targetParagraphId}`);
+    formatParagraphTextRange(paragraph, params.start, params.end, params.format);
     this.dirty = true;
     this.documentViewCache = null;
   }

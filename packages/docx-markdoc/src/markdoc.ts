@@ -1,6 +1,6 @@
 import Markdoc, { type Config, type Node } from '@markdoc/markdoc';
 import { DocxMarkdocError } from './errors.js';
-import { IR_VERSION, type AnnotationAnchor, type AnnotationParagraph, type AnnotationRunStyle, type AtomicChangeSet, type CanonicalAnnotation, type CompilationProfile, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type RequirementWaiver, type RunFormat, type RunFormatSpan, type SourceParagraph, type ValidationIssue, type ValidationResult } from './types.js';
+import { IR_VERSION, type AnnotationAnchor, type AnnotationParagraph, type AnnotationRunStyle, type AtomicChangeSet, type CanonicalAnnotation, type CompilationProfile, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type RequirementWaiver, type RetainedFormat, type RetainedFormatSpan, type RunFormat, type RunFormatSpan, type SourceParagraph, type ValidationIssue, type ValidationResult } from './types.js';
 
 const stringRequired = { type: String, required: true } as const;
 const runFormatAttributes = {
@@ -42,6 +42,13 @@ export const markdocConfig: Config = {
     'run-format': {
       inline: true,
       attributes: runFormatAttributes,
+    },
+    'retain-format': {
+      inline: true,
+      attributes: {
+        underline: { type: String, matches: ['single', 'none'] },
+        highlight: { type: String, matches: ['yellow', 'none'] },
+      },
     },
     change: {
       attributes: {
@@ -205,10 +212,14 @@ function hasRunFormat(node: Node): boolean {
   return [...node.walk()].some((child) => child.type === 'tag' && child.tag === 'run-format');
 }
 
+function hasRetainedFormat(node: Node): boolean {
+  return [...node.walk()].some((child) => child.type === 'tag' && child.tag === 'retain-format');
+}
+
 function assertOnlyInlineRevisions(node: Node, issues: ValidationIssue[]): void {
   for (const child of node.walk()) {
     if (child === node || child.type !== 'tag') continue;
-    if (child.tag !== 'ins' && child.tag !== 'del' && child.tag !== 'run-format') {
+    if (child.tag !== 'ins' && child.tag !== 'del' && child.tag !== 'run-format' && child.tag !== 'retain-format') {
       issues.push(issue('UNSUPPORTED_NESTED_TAG', `Unsupported nested tag ${child.tag ?? '<unknown>'}.`, child));
     }
   }
@@ -231,7 +242,7 @@ function validateTextBodies(ast: Node, issues: ValidationIssue[]): void {
       }
       for (const child of node.walk()) {
         if (child === node) continue;
-        const allowedFormat = child.type === 'tag' && child.tag === 'run-format'
+        const allowedFormat = child.type === 'tag' && (child.tag === 'run-format' || child.tag === 'retain-format')
           && (node.tag === 'after' || node.tag === 'replace-source');
         if (!plainNodes.has(child.type) && !allowedFormat) {
           issues.push(issue('UNSUPPORTED_TEXT_SYNTAX', 'Text bodies admit plain text and declared after-state run formatting only.', child));
@@ -349,10 +360,27 @@ function runFormatFromAttributes(attributes: Record<string, unknown>, node: Node
   };
 }
 
-function revisedProjectionWithRunFormats(node: Node, issues: ValidationIssue[]): { text: string; spans: RunFormatSpan[] } {
+function retainedFormatFromAttributes(attributes: Record<string, unknown>, node: Node, issues: ValidationIssue[]): RetainedFormat | undefined {
+  const underline = attributes.underline === undefined ? undefined : String(attributes.underline);
+  const highlight = attributes.highlight === undefined ? undefined : String(attributes.highlight);
+  if (underline !== undefined && underline !== 'single' && underline !== 'none') {
+    issues.push(issue('INVALID_RETAINED_FORMAT', 'underline must be "single" or "none".', node));
+  }
+  if (highlight !== undefined && highlight !== 'yellow' && highlight !== 'none') {
+    issues.push(issue('INVALID_RETAINED_FORMAT', 'highlight must be "yellow" or "none".', node));
+  }
+  if (underline === undefined && highlight === undefined) return undefined;
+  return {
+    ...(underline === 'single' || underline === 'none' ? { underline } : {}),
+    ...(highlight === 'yellow' || highlight === 'none' ? { highlight } : {}),
+  };
+}
+
+function revisedProjectionWithRunFormats(node: Node, issues: ValidationIssue[]): { text: string; spans: RunFormatSpan[]; retainedSpans: RetainedFormatSpan[] } {
   let text = '';
   const spans: RunFormatSpan[] = [];
-  const visit = (current: Node, insideRunFormat: boolean): void => {
+  const retainedSpans: RetainedFormatSpan[] = [];
+  const visit = (current: Node, activeFormat?: 'run-format' | 'retain-format'): void => {
     if (current.type === 'text') {
       text += String(current.attributes.content ?? '');
       return;
@@ -362,25 +390,36 @@ function revisedProjectionWithRunFormats(node: Node, issues: ValidationIssue[]):
       return;
     }
     if (current.type === 'tag' && current.tag === 'run-format') {
-      if (insideRunFormat) {
+      if (activeFormat) {
         issues.push(issue('NESTED_RUN_FORMAT', 'Inline run-format declarations may not be nested.', current));
       }
       const start = text.length;
       const format = runFormatFromAttributes(current.attributes, current, issues);
-      for (const child of current.children) visit(child, true);
+      for (const child of current.children) visit(child, 'run-format');
       const end = text.length;
       if (end === start) issues.push(issue('EMPTY_RUN_FORMAT_SPAN', 'Inline run-format declarations require non-empty text.', current));
       if (!format) issues.push(issue('EMPTY_RUN_FORMAT', 'Inline run-format declarations require at least one admitted property.', current));
-      if (!insideRunFormat && end > start && format) spans.push({ start, end, format });
+      if (!activeFormat && end > start && format) spans.push({ start, end, format });
       return;
     }
-    for (const child of current.children) visit(child, insideRunFormat);
+    if (current.type === 'tag' && current.tag === 'retain-format') {
+      if (activeFormat) issues.push(issue('NESTED_RETAINED_FORMAT', 'Inline formatting declarations may not be nested.', current));
+      const start = text.length;
+      const format = retainedFormatFromAttributes(current.attributes, current, issues);
+      for (const child of current.children) visit(child, 'retain-format');
+      const end = text.length;
+      if (end === start) issues.push(issue('EMPTY_RETAINED_FORMAT_SPAN', 'Inline retain-format declarations require non-empty text.', current));
+      if (!format) issues.push(issue('EMPTY_RETAINED_FORMAT', 'Inline retain-format declarations require at least one admitted property.', current));
+      if (!activeFormat && end > start && format) retainedSpans.push({ start, end, format });
+      return;
+    }
+    for (const child of current.children) visit(child, activeFormat);
   };
   for (const [index, child] of node.children.entries()) {
     if (index > 0 && child.type === 'paragraph' && node.children[index - 1]?.type === 'paragraph') text += '\n\n';
-    visit(child, false);
+    visit(child);
   }
-  return { text, spans };
+  return { text, spans, retainedSpans };
 }
 
 export function parseMarkdoc(source: string): ValidationResult {
@@ -588,7 +627,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       const runFormat = runFormatFromAttributes(a, node, issues);
       const afterProjection = afterNodes[0]
         ? revisedProjectionWithRunFormats(afterNodes[0], issues)
-        : { text: '', spans: [] };
+        : { text: '', spans: [], retainedSpans: [] };
       if (runFormat && afterProjection.spans.length > 0) issues.push(issue('CONFLICTING_RUN_FORMAT_SCOPE', 'Use either operation-level or inline run formatting, not both.', node));
       if (runFormat && afterNodes[0]?.children.filter((child) => child.type === 'paragraph').length !== 1) {
         issues.push(issue(
@@ -606,6 +645,7 @@ export function parseMarkdoc(source: string): ValidationResult {
         formatSource: a['format-source'] === undefined ? undefined : String(a['format-source']),
         runFormat,
         runFormatSpans: afterProjection.spans,
+        ...(afterProjection.retainedSpans.length ? { retainedFormatSpans: afterProjection.retainedSpans } : {}),
       });
       if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
       operationIds.add(operationId);
@@ -625,9 +665,10 @@ export function parseMarkdoc(source: string): ValidationResult {
       const beforeText = beforeNodes[0] ? textProjection(beforeNodes[0], 'original') : '';
       const afterProjection = afterNodes[0]
         ? revisedProjectionWithRunFormats(afterNodes[0], issues)
-        : { text: '', spans: [] };
+        : { text: '', spans: [], retainedSpans: [] };
       const afterText = afterProjection.text;
       if (beforeNodes.some(hasRunFormat)) issues.push(issue('RUN_FORMAT_OUTSIDE_AFTER', 'Inline run-format declarations are permitted only in the clean after state.', node));
+      if (beforeNodes.some(hasRetainedFormat)) issues.push(issue('RETAINED_FORMAT_OUTSIDE_AFTER', 'Inline retain-format declarations are permitted only in the clean after state.', node));
       if (children.some(hasRevision)) issues.push(issue('REVISION_TAGS_NONCANONICAL', 'Before/after states contain clean text; inline ins/del belongs only in generated views.', node));
       const operationId = String(a.operation ?? '');
       const runFormat = runFormatFromAttributes(a, node, issues);
@@ -643,7 +684,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       };
       scaffold.push(paragraph);
       operations.push(afterText === ''
-        ? { kind: 'delete-source', operationId, format: 'inherit-source-paragraph', runFormat, runFormatSpans: afterProjection.spans, ...paragraph }
+        ? { kind: 'delete-source', operationId, format: 'inherit-source-paragraph', runFormat, runFormatSpans: afterProjection.spans, ...(afterProjection.retainedSpans.length ? { retainedFormatSpans: afterProjection.retainedSpans } : {}), ...paragraph }
         : {
           kind: 'replace-source',
           operationId,
@@ -651,6 +692,7 @@ export function parseMarkdoc(source: string): ValidationResult {
           formatSource: a['format-source'] === undefined ? undefined : String(a['format-source']),
           runFormat,
           runFormatSpans: afterProjection.spans,
+          ...(afterProjection.retainedSpans.length ? { retainedFormatSpans: afterProjection.retainedSpans } : {}),
           ...paragraph,
         });
       continue;
@@ -668,7 +710,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       ? ''
       : textProjection(node, 'original');
     const revisedProjection = node.tag === 'delete-source'
-      ? { text: '', spans: [] as RunFormatSpan[] }
+      ? { text: '', spans: [] as RunFormatSpan[], retainedSpans: [] as RetainedFormatSpan[] }
       : revisedProjectionWithRunFormats(node, issues);
     const revisedText = revisedProjection.text;
     const paragraph: SourceParagraph = {
@@ -685,11 +727,12 @@ export function parseMarkdoc(source: string): ValidationResult {
     if (runFormat && revisedProjection.spans.length > 0) issues.push(issue('CONFLICTING_RUN_FORMAT_SCOPE', 'Use either operation-level or inline run formatting, not both.', node));
     if (node.tag === 'para' && hasRevision(node)) issues.push(issue('INLINE_REVISIONS_NONCANONICAL', `Paragraph ${id} must be represented as clean before/after states.`, node));
     if (!operationId && revisedProjection.spans.length > 0) issues.push(issue('RUN_FORMAT_REQUIRES_OPERATION', `Paragraph ${id} cannot declare run formatting without an edit operation.`, node));
+    if (!operationId && revisedProjection.retainedSpans.length > 0) issues.push(issue('RETAINED_FORMAT_REQUIRES_OPERATION', `Paragraph ${id} cannot declare retained formatting without an edit operation.`, node));
     if (!operationId) continue;
     if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
     operationIds.add(operationId);
     if (node.tag === 'para') {
-      operations.push({ kind: 'inline-edit', operationId, runFormat, runFormatSpans: revisedProjection.spans, ...paragraph });
+      operations.push({ kind: 'inline-edit', operationId, runFormat, runFormatSpans: revisedProjection.spans, ...(revisedProjection.retainedSpans.length ? { retainedFormatSpans: revisedProjection.retainedSpans } : {}), ...paragraph });
     } else if (node.tag === 'replace-source') {
       operations.push({
         kind: 'replace-source',
@@ -698,10 +741,11 @@ export function parseMarkdoc(source: string): ValidationResult {
         formatSource: a['format-source'] === undefined ? undefined : String(a['format-source']),
         runFormat,
         runFormatSpans: revisedProjection.spans,
+        ...(revisedProjection.retainedSpans.length ? { retainedFormatSpans: revisedProjection.retainedSpans } : {}),
         ...paragraph,
       });
     } else {
-      operations.push({ kind: 'delete-source', operationId, format: 'inherit-source-paragraph', runFormat, runFormatSpans: revisedProjection.spans, ...paragraph });
+      operations.push({ kind: 'delete-source', operationId, format: 'inherit-source-paragraph', runFormat, runFormatSpans: revisedProjection.spans, ...(revisedProjection.retainedSpans.length ? { retainedFormatSpans: revisedProjection.retainedSpans } : {}), ...paragraph });
     }
   }
 
