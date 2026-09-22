@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Selected header/footer projection checks now ignore serialization-only XML
+  indentation after admitted paragraphs are removed, so real Word-authored
+  running stories do not fail closed solely because their whitespace layout
+  differs from the assembled comparison part.
 - DOCX comparison now pairs relationship-selected header/footer stories by
   complete semantic binding closure, emits native revisions for admitted
   ordinary paragraph text (including existing table cells), preserves fields

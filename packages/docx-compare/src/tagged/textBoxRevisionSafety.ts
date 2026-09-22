@@ -707,7 +707,30 @@ function ordinaryStoryScaffoldFingerprint(xml: string): string {
     if (admittedPlainParagraphForScaffold(paragraph)) paragraph.parentNode?.removeChild(paragraph);
   }
   blankOrdinaryParagraphText(root);
+  removeFormattingWhitespace(root);
   return canonicalNode(root);
+}
+
+function removeFormattingWhitespace(root: Element): void {
+  const textBearingParents = new Set(['t', 'delText', 'instrText', 'delInstrText']);
+  const visit = (node: Node): void => {
+    for (const child of Array.from(node.childNodes)) {
+      if (
+        child.nodeType === 3
+        && !(child.nodeValue ?? '').trim()
+        && !(
+          node.nodeType === 1
+          && (node as Element).namespaceURI === OOXML.W_NS
+          && textBearingParents.has((node as Element).localName)
+        )
+      ) {
+        node.removeChild(child);
+        continue;
+      }
+      visit(child);
+    }
+  };
+  visit(root);
 }
 
 function ordinaryStoryContentFingerprint(xml: string): string {
