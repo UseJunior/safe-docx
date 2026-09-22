@@ -339,7 +339,7 @@ function verificationText(document: DocxDocument): string {
   return document.getParagraphs().map((paragraph) => getParagraphRuns(paragraph).map((run) => run.text).join('')).join('\n');
 }
 
-type TrackedCharacter = { revisionWrapped: boolean; run?: Element };
+type TrackedCharacter = { text: string; revisionWrapped: boolean; run?: Element };
 
 function trackedCharacters(paragraph: Element, projection: 'accept' | 'reject'): TrackedCharacter[] {
   const characters: TrackedCharacter[] = [];
@@ -355,14 +355,14 @@ function trackedCharacters(paragraph: Element, projection: 'accept' | 'reject'):
       : nextWrappers.has('ins') || nextWrappers.has('moveTo');
     if (element.localName === 't' || element.localName === 'delText') {
       if (!excluded) {
-        for (const _character of element.textContent ?? '') {
-          characters.push({ revisionWrapped: nextWrappers.size > 0, run: nextRun });
+        for (const character of element.textContent ?? '') {
+          characters.push({ text: character, revisionWrapped: nextWrappers.size > 0, run: nextRun });
         }
       }
       return;
     }
     if ((element.localName === 'tab' || element.localName === 'br') && !excluded) {
-      characters.push({ revisionWrapped: nextWrappers.size > 0, run: nextRun });
+      characters.push({ text: element.localName === 'tab' ? '\t' : '\n', revisionWrapped: nextWrappers.size > 0, run: nextRun });
       return;
     }
     for (const child of Array.from(element.childNodes)) visit(child, nextWrappers, nextRun);
@@ -374,6 +374,26 @@ function trackedCharacters(paragraph: Element, projection: 'accept' | 'reject'):
 function runHasPropertyChange(run: Element | undefined): boolean {
   if (!run) return false;
   return Array.from(run.getElementsByTagNameNS('*', 'rPrChange')).length > 0;
+}
+
+function directRunProperties(run: Element | undefined, localName: string): Element[] {
+  if (!run) return [];
+  const rPr = Array.from(run.childNodes).find((child): child is Element =>
+    child.nodeType === 1 && (child as Element).localName === 'rPr');
+  return rPr ? Array.from(rPr.childNodes).filter((child): child is Element =>
+    child.nodeType === 1 && (child as Element).localName === localName) : [];
+}
+
+function runMatchesRetainedFormat(run: Element | undefined, format: RetainedFormat): boolean {
+  const underline = directRunProperties(run, 'u');
+  const highlight = directRunProperties(run, 'highlight');
+  const underlineMatches = format.underline === undefined || (format.underline === 'none'
+    ? underline.length === 0
+    : underline.length === 1 && ['', 'single'].includes(underline[0]!.getAttribute('w:val') ?? ''));
+  const highlightMatches = format.highlight === undefined || (format.highlight === 'none'
+    ? highlight.length === 0
+    : highlight.length === 1 && highlight[0]!.getAttribute('w:val') === format.highlight);
+  return underlineMatches && highlightMatches;
 }
 
 /**
@@ -397,6 +417,9 @@ export function certifyRetainedFormatting(document: DocxDocument, spans: Resolve
         properties: span.changedProperties ?? Object.keys(span.format).sort() as Array<'highlight' | 'underline'>,
         emittedPropertyRanges: 0,
         textRevisionOverlaps: span.end - span.start,
+        propertyCoverageComplete: false,
+        textMatches: false,
+        propertyStateMatches: false,
       };
     }
     const accept = trackedCharacters(paragraph, 'accept').slice(span.start, span.end);
@@ -406,6 +429,14 @@ export function certifyRetainedFormatting(document: DocxDocument, spans: Resolve
       + Math.max(0, span.end - span.start - accept.length)
       + Math.max(0, span.sourceEnd - span.sourceStart - reject.length);
     const emittedPropertyRanges = new Set(accept.map((character) => character.run).filter(runHasPropertyChange)).size;
+    const propertyCoverageComplete = accept.length === span.end - span.start
+      && accept.every((character) => runHasPropertyChange(character.run));
+    const expectedText = span.expectedText ?? '';
+    const textMatches = expectedText.length > 0
+      && accept.map((character) => character.text).join('') === expectedText
+      && reject.map((character) => character.text).join('') === expectedText;
+    const propertyStateMatches = accept.length === span.end - span.start
+      && accept.every((character) => runMatchesRetainedFormat(character.run, span.format));
     return {
       operationId: span.operationId,
       paragraphId: span.paragraphId,
@@ -416,6 +447,9 @@ export function certifyRetainedFormatting(document: DocxDocument, spans: Resolve
       properties: span.changedProperties ?? Object.keys(span.format).sort() as Array<'highlight' | 'underline'>,
       emittedPropertyRanges,
       textRevisionOverlaps,
+      propertyCoverageComplete,
+      textMatches,
+      propertyStateMatches,
     };
   });
   const report = {
@@ -427,7 +461,10 @@ export function certifyRetainedFormatting(document: DocxDocument, spans: Resolve
     passed: true,
   };
   report.passed = report.textRevisionOverlaps === 0
-    && diagnostics.every((diagnostic) => diagnostic.emittedPropertyRanges > 0);
+    && diagnostics.every((diagnostic) => diagnostic.emittedPropertyRanges > 0
+      && diagnostic.propertyCoverageComplete
+      && diagnostic.textMatches
+      && diagnostic.propertyStateMatches);
   return report;
 }
 
@@ -529,6 +566,7 @@ export type ResolvedRetainedSpan = RetainedFormatSpan & {
   paragraphId: string;
   sourceStart: number;
   sourceEnd: number;
+  expectedText?: string;
   changedProperties?: Array<'highlight' | 'underline'>;
 };
 
@@ -541,23 +579,27 @@ function runSpans(paragraph: Element): RunSpan[] {
   });
 }
 
-function directRunProperty(run: Element, localName: string): Element | undefined {
+function directRunPropertiesForSource(run: Element, localName: string): Element[] {
   const rPr = Array.from(run.childNodes).find((child): child is Element =>
     child.nodeType === 1 && (child as Element).localName === 'rPr');
-  return rPr === undefined ? undefined : Array.from(rPr.childNodes).find((child): child is Element =>
+  return rPr === undefined ? [] : Array.from(rPr.childNodes).filter((child): child is Element =>
     child.nodeType === 1 && (child as Element).localName === localName);
 }
 
+function propertyValue(property: Element): string {
+  return (property.getAttribute('w:val') ?? '').toLowerCase();
+}
+
 function changedRetainedProperties(run: Element, format: RetainedFormat): Array<'highlight' | 'underline'> {
-  const underline = directRunProperty(run, 'u');
-  const highlight = directRunProperty(run, 'highlight');
+  const underline = directRunPropertiesForSource(run, 'u');
+  const highlight = directRunPropertiesForSource(run, 'highlight');
   const changed: Array<'highlight' | 'underline'> = [];
   if (format.underline !== undefined && (format.underline === 'none'
-    ? underline !== undefined
-    : underline === undefined || !['', 'single', '1', 'true', 'on'].includes(underline.getAttribute('w:val') ?? ''))) changed.push('underline');
+    ? underline.some((property) => propertyValue(property) !== 'none')
+    : underline.length !== 1 || !['', 'single', '1', 'true', 'on'].includes(propertyValue(underline[0]!)))) changed.push('underline');
   if (format.highlight !== undefined && (format.highlight === 'none'
-      ? highlight !== undefined
-      : highlight?.getAttribute('w:val') !== format.highlight)) changed.push('highlight');
+      ? highlight.some((property) => propertyValue(property) !== 'none')
+      : highlight.length !== 1 || propertyValue(highlight[0]!) !== format.highlight)) changed.push('highlight');
   return changed.sort();
 }
 
@@ -567,6 +609,7 @@ function mapRetainedSpan(
   span: RetainedFormatSpan,
   hunks: TextHunk[],
   sourceSpans: RunSpan[],
+  sourceText: string,
 ): ResolvedRetainedSpan {
   const overlapsChange = hunks.some((hunk) => {
     if (hunk.revisedStart === hunk.revisedEnd) {
@@ -593,7 +636,7 @@ function mapRetainedSpan(
   if (changedProperties.length === 0) {
     throw new DocxMarkdocError('NOOP_RETAINED_FORMAT', `Operation ${operationId} retain-format declaration changes no admitted direct property.`);
   }
-  return { ...span, operationId, paragraphId, sourceStart, sourceEnd, changedProperties };
+  return { ...span, operationId, paragraphId, sourceStart, sourceEnd, expectedText: sourceText.slice(sourceStart, sourceEnd), changedProperties };
 }
 
 function uniqueSourceTemplate(spans: RunSpan[], sourceText: string, needle: string, id: string): Element {
@@ -768,7 +811,16 @@ function validateRunFormatScopes(ir: MarkdocEditIR, source: DocxDocument): Resol
     }
     const original = source.getParagraphTextById(operation.id);
     if (original === null) throw new DocxMarkdocError('MISSING_ANCHOR', `Paragraph ${operation.id} was not found.`);
-    const hunks = textHunks(original, operation.revisedText);
+    let hunks: TextHunk[];
+    try {
+      hunks = textHunks(original, operation.revisedText);
+    } catch (error) {
+      if (operation.retainedFormatSpans?.length && error instanceof DocxMarkdocError
+        && error.code === 'FORMATTING_ALIGNMENT_TOO_COMPLEX') {
+        throw new DocxMarkdocError('NON_COMMON_RETAINED_SCOPE', `Operation ${operation.operationId} retain-format span exceeds the bounded common-text alignment.`, { cause: error.message });
+      }
+      throw error;
+    }
     if (operation.runFormat) requireSingleGeneratedHunk(operation.operationId, hunks);
     validateInlineRunFormatSpans(operation.operationId, hunks, operation.runFormatSpans ?? []);
     const paragraph = assertAdmittedStructure(source, operation.id);
@@ -779,7 +831,7 @@ function validateRunFormatScopes(ir: MarkdocEditIR, source: DocxDocument): Resol
         throw new DocxMarkdocError('AMBIGUOUS_RETAINED_FORMAT_SCOPE', `Operation ${operation.operationId} has empty, overlapping, or out-of-range retain-format spans.`);
       }
       previousEnd = span.end;
-      retained.push(mapRetainedSpan(operation.operationId, operation.id, span, hunks, sourceSpans));
+      retained.push(mapRetainedSpan(operation.operationId, operation.id, span, hunks, sourceSpans, original));
     }
   }
   return retained;
@@ -1516,7 +1568,11 @@ export async function compileMarkdoc(
   certificate.projectionPassed = projectionChecksPassed(certificate);
   certificate.deliveryReady = certificate.projectionPassed && certificate.draftCompletenessPassed;
   certificate.passed = certificate.deliveryReady;
-  if (!certificate.projectionPassed) throw new DocxMarkdocError('VERIFICATION_FAILED', 'Strict replay verification failed.', {
+  if (!certificate.projectionPassed) throw new DocxMarkdocError(
+    retainedSpans.length > 0 && !retainedFormatting.passed ? 'NON_COMMON_RETAINED_SCOPE' : 'VERIFICATION_FAILED',
+    retainedSpans.length > 0 && !retainedFormatting.passed
+      ? 'Retained formatting could not be certified over comparator-common text.'
+      : 'Strict replay verification failed.', {
     certificate,
     sourceText,
     rejectedText,

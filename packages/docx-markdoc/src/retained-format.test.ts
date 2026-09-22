@@ -1,4 +1,8 @@
 import JSZip from 'jszip';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect } from 'vitest';
 import { buildSyntheticDocx, DocxDocument, getParagraphRuns } from '@usejunior/docx-core';
 import { itAllure } from '../../docx-core/src/testing/allure-test.js';
@@ -108,6 +112,17 @@ describe('retained common-text formatting', () => {
     await expect(compileMarkdoc(imported.anchoredSource, change(imported.markdoc, 'Complete', '{% retain-format highlight="yellow" %}Complete{% /retain-format %}')))
       .rejects.toMatchObject({ code: 'NOOP_RETAINED_FORMAT' });
     expect(() => requireMarkdoc(change(imported.markdoc, 'Complete', '{% retain-format color="red" %}Complete{% /retain-format %}'))).toThrow(/Markdoc validation failed/);
+
+    for (const property of ['<w:u w:val="none"/>', '<w:highlight w:val="none"/>']) {
+      const noneSource = await buildDocxFromBodyXml(`<w:p><w:r><w:rPr>${property}</w:rPr><w:t>Complete</w:t></w:r></w:p>`);
+      const noneImported = await importDocxToMarkdoc(noneSource);
+      const declaration = property.includes('<w:u') ? 'underline="none"' : 'highlight="none"';
+      await expect(compileMarkdoc(noneImported.anchoredSource, change(
+        noneImported.markdoc,
+        'Complete',
+        `{% retain-format ${declaration} %}Complete{% /retain-format %}`,
+      ))).rejects.toMatchObject({ code: 'NOOP_RETAINED_FORMAT' });
+    }
   });
 
   retainedTest('[SDX-MDOC-133][SDX-MDOC-134][SDX-MDOC-135] rejects non-common, mixed, empty, and nested scopes transactionally', async () => {
@@ -137,6 +152,75 @@ describe('retained common-text formatting', () => {
     expect(xml).toContain('<w:rPrChange');
   });
 
+  retainedTest('[SDX-MDOC-132][SDX-MDOC-138] preserves compact xml:space, removes duplicate properties, and emits schema-valid revisions', async () => {
+    const source = await buildDocxFromBodyXml(
+      '<w:p><w:r><w:rPr><w:u w:val="single"/><w:u w:val="single"/><w:highlight w:val="yellow"/></w:rPr>'
+      + '<w:t xml:space="preserve">Complete</w:t></w:r></w:p>',
+    );
+    const imported = await importDocxToMarkdoc(source);
+    const result = await compileMarkdoc(imported.anchoredSource, change(
+      imported.markdoc,
+      'Complete',
+      '{% retain-format highlight="none" underline="none" %}Complete{% /retain-format %}',
+    ));
+    const cleanXml = await trackedXml(result.clean);
+    expect(cleanXml).toContain('xml:space="preserve"');
+    expect(cleanXml).not.toContain('<w:u');
+    expect(result.certificate.retainedFormatting).toMatchObject({ passed: true, textRevisionOverlaps: 0 });
+
+    const directory = mkdtempSync(join(tmpdir(), 'retained-format-schema-'));
+    const output = join(directory, 'tracked.docx');
+    try {
+      writeFileSync(output, result.tracked);
+      const schema = spawnSync(process.execPath, ['scripts/check_emitted_document_schema.mjs', output], {
+        cwd: join(import.meta.dirname, '../../..'),
+        encoding: 'utf8',
+      });
+      expect(schema.status, schema.stderr || schema.stdout).toBe(0);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  retainedTest('[SDX-MDOC-138] requires complete property-revision coverage and exact interval text', async () => {
+    const source = await buildDocxFromBodyXml(
+      '<w:p><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>Com</w:t></w:r>'
+      + '<w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>plete</w:t></w:r></w:p>',
+    );
+    const imported = await importDocxToMarkdoc(source);
+    const document = await DocxDocument.load(imported.anchoredSource);
+    const paragraph = document.getParagraphs()[0]!;
+    const firstRPr = directChild(getParagraphRuns(paragraph)[0]!.r, 'rPr')!;
+    firstRPr.appendChild(paragraph.ownerDocument!.createElementNS(firstRPr.namespaceURI, 'w:rPrChange'));
+    const baseSpan = {
+      operationId: 'coverage-probe',
+      paragraphId: requireMarkdoc(imported.markdoc).scaffold[0]!.id,
+      start: 0,
+      end: 8,
+      sourceStart: 0,
+      sourceEnd: 8,
+      expectedText: 'Complete',
+      format: { underline: 'single' as const },
+    };
+    expect(certifyRetainedFormatting(document, [baseSpan])).toMatchObject({
+      passed: false,
+      diagnostics: [{ propertyCoverageComplete: false, textMatches: true, propertyStateMatches: true }],
+    });
+    expect(certifyRetainedFormatting(document, [{ ...baseSpan, end: 3, sourceEnd: 3, expectedText: 'Bad' }])).toMatchObject({
+      passed: false,
+      diagnostics: [{ textMatches: false }],
+    });
+  });
+
+  retainedTest('[SDX-MDOC-133][SDX-MDOC-138] maps comparator-wide punctuation replacement to a retained-scope diagnostic', async () => {
+    const imported = await importedStyled([{ text: 'Draft-Complete', highlight: true }]);
+    await expect(compileMarkdoc(imported.anchoredSource, change(
+      imported.markdoc,
+      'Draft-Complete',
+      'Final-{% retain-format highlight="none" %}Complete{% /retain-format %}',
+    ))).rejects.toMatchObject({ code: 'NON_COMMON_RETAINED_SCOPE' });
+  });
+
   retainedTest('[SDX-MDOC-138] rejects a tracked character wrapper over a declared property-only interval', async () => {
     const source = await buildSyntheticDocx({ paragraphs: ['Complete'] });
     const imported = await importDocxToMarkdoc(source);
@@ -154,6 +238,7 @@ describe('retained common-text formatting', () => {
       end: 8,
       sourceStart: 0,
       sourceEnd: 8,
+      expectedText: 'Complete',
       format: { highlight: 'none' },
     }]);
     expect(report.passed).toBe(false);

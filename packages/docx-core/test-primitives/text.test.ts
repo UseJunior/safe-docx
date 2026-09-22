@@ -80,6 +80,26 @@ describe('text primitives', () => {
     });
   });
 
+  test('preserves intentional xml:space and removes duplicate underline properties', async ({ given, when, then }: AllureBddContext) => {
+    let paragraph!: Element;
+    await given('a compact whole-run source with xml:space and duplicate underline properties', async () => {
+      paragraph = firstParagraph(makeDoc(
+        '<w:p><w:r><w:rPr><w:u w:val="single"/><w:u w:val="single"/><w:highlight w:val="yellow"/></w:rPr>'
+        + '<w:t xml:space="preserve">Complete</w:t></w:r></w:p>',
+      ));
+    });
+    await when('the whole run removes underline and highlight without changing text', async () => {
+      formatParagraphTextRange(paragraph, 0, 8, { underline: 'none', highlight: 'none' });
+    });
+    await then('the text marker survives and every duplicate declared property is gone', () => {
+      const xml = paragraph.toString();
+      expect(xml).toContain('xml:space="preserve"');
+      expect(xml).not.toContain('<w:u');
+      expect(xml).not.toContain('<w:highlight');
+      expect(getParagraphText(paragraph)).toBe('Complete');
+    });
+  });
+
   test('extracts paragraph runs and tracks field-result visibility', async ({ given, when, then, and }: AllureBddContext) => {
     let doc!: Document;
     let runs!: ReturnType<typeof getParagraphRuns>;

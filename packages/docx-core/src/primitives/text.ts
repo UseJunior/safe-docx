@@ -120,13 +120,17 @@ function cloneRPrWithoutChangeRecords(doc: Document, rPr: Element): Element {
   return clone;
 }
 
-function appendTextToRun(doc: Document, run: Element, text: string): void {
+function appendTextToRun(doc: Document, run: Element, text: string, preserveXmlSpace = false): void {
   // Convert \t and \n to OOXML equivalents where possible.
   let buf = '';
   const flush = () => {
     if (!buf) return;
     const t = doc.createElementNS(OOXML.W_NS, 'w:t');
-    setXmlSpacePreserveIfNeeded(t, buf);
+    if (preserveXmlSpace) {
+      t.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+    } else {
+      setXmlSpacePreserveIfNeeded(t, buf);
+    }
     t.appendChild(doc.createTextNode(buf));
     run.appendChild(t);
     buf = '';
@@ -302,6 +306,8 @@ export type ReplacementPart = {
   templateRun?: Element | null;
   addRunProps?: AddRunProps;
   clearHighlight?: boolean;
+  /** Preserve an intentional xml:space marker during text-identical rebuilds. */
+  preserveXmlSpace?: boolean;
 };
 
 export type TextRangeRunFormat = {
@@ -347,6 +353,8 @@ export function formatParagraphTextRange(
     parts.push({
       text: text.slice(overlapStart, overlapEnd),
       templateRun: run.r,
+      preserveXmlSpace: Array.from(run.r.getElementsByTagNameNS(OOXML.W_NS, W.t))
+        .some((node) => node.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'space') === 'preserve'),
       addRunProps: {
         ...(format.underline === undefined ? {} : { underline: format.underline === 'none' ? false : format.underline }),
         ...(format.highlight === undefined ? {} : { highlight: format.highlight === 'none' ? false : format.highlight }),
@@ -487,11 +495,14 @@ function ensureBoolProp(doc: Document, rPr: Element, localName: string, val: boo
 }
 
 function ensureUnderline(doc: Document, rPr: Element, val: boolean | string): void {
-  let el = getFirstChild(rPr, OOXML.W_NS, W.u);
+  const underlines = Array.from(rPr.childNodes).filter((child): child is Element =>
+    child.nodeType === 1 && isW(child as Element, W.u));
   if (val === false) {
-    if (el) el.parentNode?.removeChild(el);
+    for (const underline of underlines) underline.parentNode?.removeChild(underline);
     return;
   }
+  let el = underlines[0];
+  for (const duplicate of underlines.slice(1)) duplicate.parentNode?.removeChild(duplicate);
   if (!el) {
     el = doc.createElementNS(OOXML.W_NS, `w:${W.u}`);
     rPr.insertBefore(el, rPr.firstChild);
@@ -914,7 +925,7 @@ export function replaceParagraphTextRange(
     if (ctx && hasExplicitFormattingMutation && rPrComparableSignature(newRPr) !== sourceRPrSignature) {
       ensureRPr(doc, newRun).appendChild(buildRPrChangeElement(getSnapshotRPr(doc, sourceRPr), ctx));
     }
-    appendTextToRun(doc, newRun, part.text);
+    appendTextToRun(doc, newRun, part.text, part.preserveXmlSpace);
     if (getRunVisibleLength(newRun) > 0) {
       replacementRuns.push(newRun);
     }

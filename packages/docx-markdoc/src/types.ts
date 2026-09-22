@@ -308,6 +308,9 @@ export type RetainedFormattingReport = {
     properties: Array<'highlight' | 'underline'>;
     emittedPropertyRanges: number;
     textRevisionOverlaps: number;
+    propertyCoverageComplete: boolean;
+    textMatches: boolean;
+    propertyStateMatches: boolean;
   }>;
   passed: boolean;
 };
