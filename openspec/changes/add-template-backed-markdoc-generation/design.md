@@ -82,7 +82,9 @@ parser leaves as literal text (including `_____` form blanks) remain literal;
 backslash escapes resolve to their literal character. A `#` without a
 following space remains ordinary paragraph text. Any parsed emphasis, strong,
 code, link, image, HTML, or other non-text inline node fails with its source
-position. An empty document, Markdoc tags, indented/fenced code, thematic
+position. A line consisting only of `_`, `*`, or `-` characters is a
+CommonMark thematic break and is rejected; authors place form blanks inside a
+text line such as `Signature: ________`. An empty document, Markdoc tags, indented/fenced code, thematic
 breaks, block quotes, lists, and tables likewise fail. A heading level without
 a resolved mapping also fails. This keeps the first version reviewable and
 prevents syntax from disappearing silently during Word emission.

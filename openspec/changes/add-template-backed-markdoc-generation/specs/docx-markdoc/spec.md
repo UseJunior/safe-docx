@@ -17,7 +17,7 @@ unresolvable style IDs SHALL fail before any output is written.
 - **GIVEN** canonical input containing an unsupported parsed Markdown construct or a used heading/body style absent from the template
 - **WHEN** greenfield compilation begins
 - **THEN** it SHALL fail with a stable actionable diagnostic before writing any output
-- **AND** literal legal-form text such as `_____`, `A & B`, and `#not-a-heading` SHALL remain admissible while parsed `*emphasis*` SHALL be rejected
+- **AND** literal legal-form text such as `Name: _____`, `A & B`, and `#not-a-heading` SHALL remain admissible while parsed `*emphasis*` and a standalone `_____` thematic break SHALL be rejected
 
 ### Requirement: Greenfield compilation preserves the admitted template package graph
 
