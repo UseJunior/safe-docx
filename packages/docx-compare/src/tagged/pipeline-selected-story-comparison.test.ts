@@ -1,4 +1,6 @@
 import { describe, expect } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { XMLSerializer } from '@xmldom/xmldom';
 import { DocxArchive, OOXML, parseXml } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure } from '../testing/allure-test.js';
@@ -150,6 +152,35 @@ describe('ordinary relationship-selected story comparison', () => {
     },
   );
 
+  test.openspec('[SDX-CMP-STORY-01] Ordinary selected header text receives native revisions')(
+    'round-trips a selected footer edit in the real OpenAgreements Letter of Intent',
+    async () => {
+      const original = await readFile(new URL(
+        '../../../../tests/test_documents/open-agreements/letter-of-intent.docx',
+        import.meta.url,
+      ));
+      const revisedArchive = await DocxArchive.load(original);
+      const footerXml = await revisedArchive.getFile('word/footer1.xml');
+      if (!footerXml) throw new Error('Real fixture has no word/footer1.xml');
+      const footer = parseXml(footerXml);
+      const text = Array.from(footer.getElementsByTagNameNS(OOXML.W_NS, 't'))
+        .find((element) => element.textContent === 'Letter of Intent');
+      if (!text) throw new Error('Real fixture footer text changed unexpectedly');
+      text.textContent = 'Letter of Interest';
+      revisedArchive.setFile('word/footer1.xml', new XMLSerializer().serializeToString(footer));
+
+      const result = await compareDocumentsAtomizer(original, await revisedArchive.save());
+      const comparedFooter = await selectedHeaderXml(result.document, 'word/footer1.xml');
+
+      expect(extractRoundTripComparisonText(acceptAllChanges(comparedFooter)))
+        .toContain('Letter of Interest');
+      expect(extractRoundTripComparisonText(rejectAllChanges(comparedFooter)))
+        .toContain('Letter of Intent');
+      expect(result.unrepresentedChanges).toBeUndefined();
+    },
+    30_000,
+  );
+
   test.openspec('[SDX-CMP-STORY-02] Semantic identity survives physical part renumbering')(
     'pairs the same binding closure across different physical filenames',
     async () => {
@@ -216,6 +247,56 @@ describe('ordinary relationship-selected story comparison', () => {
       expect(outputDoc.getElementsByTagNameNS(OOXML.W_NS, 'tc')).toHaveLength(1);
       expect(extractRoundTripComparisonText(acceptAllChanges(output))).toContain('Cell revised');
       expect(extractRoundTripComparisonText(rejectAllChanges(output))).toContain('Cell original');
+    },
+  );
+
+  test.openspec('[SDX-CMP-STORY-01] Ordinary selected header text receives native revisions')(
+    'ignores pretty-print indentation around an admitted table-cell paragraph',
+    async () => {
+      const indentedTable = (text: string): string => `
+  <w:tbl>
+    <w:tr>
+      <w:tc>
+        <w:tcPr/>
+        <w:p><w:r><w:t>${text}</w:t></w:r></w:p>
+      </w:tc>
+    </w:tr>
+  </w:tbl>
+`;
+      const compactTable = (text: string): string => '<w:tbl><w:tr><w:tc><w:tcPr/>'
+        + `<w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+      const original = await selectedHeaderFixture({ storyContent: indentedTable('Cell original') });
+      const revised = await selectedHeaderFixture({ storyContent: compactTable('Cell revised') });
+      const result = await compareDocumentsAtomizer(original, revised);
+      const output = await selectedHeaderXml(result.document);
+
+      expect(revisionCounts(output).insertions).toBeGreaterThan(0);
+      expect(revisionCounts(output).deletions).toBeGreaterThan(0);
+      expect(extractRoundTripComparisonText(acceptAllChanges(output))).toContain('Cell revised');
+      expect(extractRoundTripComparisonText(rejectAllChanges(output))).toContain('Cell original');
+      expect(result.unrepresentedChanges).toBeUndefined();
+    },
+  );
+
+  test.openspec('[SDX-CMP-STORY-05] Unsupported topology remains unrepresented')(
+    'keeps whitespace-only DrawingML leaf text semantically significant',
+    async () => {
+      const drawing = (text: string): string => '<w:p><w:r><w:drawing>'
+        + `<a:t xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">${text}</a:t>`
+        + '</w:drawing></w:r></w:p>';
+      const original = await selectedHeaderFixture({
+        storyContent: drawing(' ') + paragraph('Tail original'),
+      });
+      const revised = await selectedHeaderFixture({
+        storyContent: drawing('') + paragraph('Tail revised'),
+      });
+      const result = await compareDocumentsAtomizer(original, revised);
+      const output = await selectedHeaderXml(result.document);
+
+      expect(revisionCounts(output)).toEqual({ insertions: 0, deletions: 0 });
+      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+        expect.objectContaining({ scope: 'header', kind: 'changed', sectionIndex: 0, role: 'default' }),
+      ]));
     },
   );
 
