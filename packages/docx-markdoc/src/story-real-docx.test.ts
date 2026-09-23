@@ -7,7 +7,12 @@ import { DocxMarkdocError } from './errors.js';
 import { importDocxToMarkdoc } from './import.js';
 import { selectedStories } from './story-inventory.js';
 
-const storyTest = testAllure.epic('Document Markdoc').withLabels({ feature: 'add-markdoc-header-footer-authoring' });
+const TEST_FEATURE = 'Selected header and footer Markdoc authoring';
+const storyTest = testAllure.epic('DOCX Markdoc').withLabels({
+  feature: TEST_FEATURE,
+  story: 'Issue 1034 real-document running-story smoke',
+  severity: 'critical',
+});
 
 describe('real selected-story Markdoc authoring', () => {
   storyTest.openspec('[SDX-MDOC-128] Accept and reject recover authentic header states')(

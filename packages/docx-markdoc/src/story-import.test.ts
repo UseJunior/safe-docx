@@ -14,7 +14,12 @@ import { selectedStories } from './story-inventory.js';
 const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/header';
 const HEADER_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml';
 const W_NS = OOXML.W_NS;
-const storyTest = testAllure.openspec('add-markdoc-header-footer-authoring');
+const TEST_FEATURE = 'Selected header and footer Markdoc authoring';
+const storyTest = testAllure.epic('DOCX Markdoc').withLabels({
+  feature: TEST_FEATURE,
+  story: 'Issue 1034 selected running-story authoring',
+  severity: 'critical',
+}).openspec('add-markdoc-header-footer-authoring');
 
 async function sharedHeader(): Promise<Buffer> {
   return buildDocxWithAncillaryParts({
