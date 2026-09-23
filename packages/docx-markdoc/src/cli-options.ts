@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { AnnotationAudience, AnnotationPresentation, RevisionGroupingPolicy } from './types.js';
+import type { AnnotationAudience, AnnotationPresentation } from './types.js';
 
 export type RenderingFlags = {
   positional: string[];
@@ -8,7 +8,6 @@ export type RenderingFlags = {
   internalOutput?: string;
   noteProfilePath?: string;
   notePresentation: Partial<Record<AnnotationAudience, AnnotationPresentation>>;
-  revisionGrouping?: RevisionGroupingPolicy;
 };
 
 export type GreenfieldCliArgs = {
@@ -48,7 +47,6 @@ export function parseRenderingFlags(args: string[]): RenderingFlags {
   let internalOutput: string | undefined;
   let noteProfilePath: string | undefined;
   const notePresentation: RenderingFlags['notePresentation'] = {};
-  let revisionGrouping: RevisionGroupingPolicy | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
     if (arg === '--external-comments' || arg === '--no-external-comments') {
@@ -73,14 +71,6 @@ export function parseRenderingFlags(args: string[]): RenderingFlags {
       const audience: AnnotationAudience = arg === '--external-notes' ? 'external-facing' : arg === '--internal-notes' ? 'internal' : 'unspecified';
       notePresentation[audience] = value;
       index += 1;
-    } else if (arg === '--revision-grouping') {
-      if (revisionGrouping !== undefined) throw new Error('--revision-grouping may be supplied only once.');
-      const value = args[index + 1] as RevisionGroupingPolicy | undefined;
-      if (!value || !['token-minimal', 'readable-whitespace'].includes(value)) {
-        throw new Error('--revision-grouping requires token-minimal or readable-whitespace.');
-      }
-      revisionGrouping = value;
-      index += 1;
     } else if (arg.startsWith('--')) {
       throw new Error(`Unknown option ${arg}.`);
     } else {
@@ -91,7 +81,7 @@ export function parseRenderingFlags(args: string[]): RenderingFlags {
     throw new Error('--dangerously-include-internal-comments and --internal-output must be supplied together.');
   }
   if (noteProfilePath && Object.keys(notePresentation).length > 0) throw new Error('--note-profile cannot be combined with audience note overrides.');
-  return { positional, externalComments, includeInternalComments, internalOutput, noteProfilePath, notePresentation, revisionGrouping };
+  return { positional, externalComments, includeInternalComments, internalOutput, noteProfilePath, notePresentation };
 }
 
 export const EXTERNAL_FILENAME = 'redline - EXTERNAL COMMENTS INCLUDED.docx';
