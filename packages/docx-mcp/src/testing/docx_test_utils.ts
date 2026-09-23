@@ -15,6 +15,48 @@ export async function makeMinimalDocx(paragraphTexts: string[]): Promise<Buffer>
   return makeDocxWithDocumentXml(xml);
 }
 
+const FOOTER_RELATIONSHIP_TYPE =
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer';
+
+/**
+ * Minimal DOCX whose single section selects a default footer (`word/footer1.xml`),
+ * or — when `footerText` is `null` — the same body with no footer at all.
+ *
+ * The pair (with footer, without footer) is the smallest input on which
+ * `compareDocuments` reports a non-empty `unrepresentedChanges` (#754, #1029):
+ * the revised-based output simply has no footer part, and no revision markup
+ * can describe the loss.
+ */
+export async function makeMinimalDocxWithFooter(
+  paragraphTexts: string[],
+  footerText: string | null,
+): Promise<Buffer> {
+  const body = paragraphTexts.map((t) => `<w:p><w:r><w:t>${xmlEscape(t)}</w:t></w:r></w:p>`).join('');
+  const sectPr = footerText === null
+    ? '<w:sectPr/>'
+    : '<w:sectPr><w:footerReference w:type="default" r:id="rIdFooter1"/></w:sectPr>';
+  const documentXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
+    ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+    `<w:body>${body}${sectPr}</w:body></w:document>`;
+  if (footerText === null) return makeDocxWithDocumentXml(documentXml);
+
+  const footerXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+    `<w:p><w:r><w:t>${xmlEscape(footerText)}</w:t></w:r></w:p></w:ftr>`;
+  const documentRelsXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+    `<Relationship Id="rIdFooter1" Type="${FOOTER_RELATIONSHIP_TYPE}" Target="footer1.xml"/>` +
+    `</Relationships>`;
+  return makeDocxWithDocumentXml(documentXml, {
+    'word/_rels/document.xml.rels': documentRelsXml,
+    'word/footer1.xml': footerXml,
+  });
+}
+
 const MINIMAL_CONTENT_TYPES_XML = [
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
   '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
