@@ -8,7 +8,7 @@ import {
   type RevisionContext,
 } from './track-changes-emitter.js';
 import { buildParagraphIndex } from './paragraph-index.js';
-import { canSafelyRemoveEmptyParagraph } from './accept_changes.js';
+import { canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
 
 export type TextRun = {
   r: Element; // w:r
