@@ -105,6 +105,25 @@ describe('readable redline grouping', () => {
     });
   });
 
+  revisionTest('[SDX-MDOC-143] does not attribute preserved pre-existing grouping to this build', async () => {
+    const source = await buildDocxFromBodyXml(
+      '<w:p><w:r><w:t xml:space="preserve">Keep </w:t></w:r>'
+      + '<w:del w:id="1" w:author="Prior" w:date="2026-01-01T00:00:00Z"><w:r><w:delText>aa bb</w:delText></w:r></w:del>'
+      + '<w:ins w:id="2" w:author="Prior" w:date="2026-01-01T00:00:00Z"><w:r><w:t>cc dd</w:t></w:r></w:ins></w:p>',
+    );
+    const imported = await importDocxToMarkdoc(source);
+
+    for (const policy of ['token-minimal', 'readable-whitespace'] as const) {
+      const result = await compileMarkdoc(imported.anchoredSource, imported.markdoc, {
+        revisionGrouping: { policy },
+      });
+      expect(result.certificate.revisionGrouping).toEqual({
+        policy, source: 'api', coalescedSpaceTokens: 0, groupedChains: 0,
+      });
+      expect(result.certificate.existingRevisionsPreserved).toBe(true);
+    }
+  });
+
   revisionTest('[SDX-MDOC-141] rejects an invalid runtime policy before comparison', async () => {
     await expect(fixture('coarse' as 'token-minimal')).rejects.toThrow(/token-minimal or readable-whitespace/u);
   });

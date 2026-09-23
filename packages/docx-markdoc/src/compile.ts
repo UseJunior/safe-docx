@@ -1588,7 +1588,14 @@ export async function compileMarkdoc(
         && unresolvedRowRevisions.accept === 0 && unresolvedRowRevisions.reject === 0,
     };
   }
-  const revisionGroupingEvidence = emittedRevisionGrouping(await documentXml(tracked));
+  // Sources with revisions are restricted above to annotation-only builds, so
+  // every replacement wrapper in their output predates this compilation. The
+  // certificate records grouping introduced by this build, not the physical
+  // grouping of preserved third-party revisions (the release verifier reports
+  // that independent finished-OOXML evidence separately).
+  const revisionGroupingEvidence = sourceContainsRevisions
+    ? { coalescedSpaceTokens: 0, groupedChains: 0 }
+    : emittedRevisionGrouping(await documentXml(tracked));
   const certificate: VerificationCertificate = {
     version: 1,
     sourceSha256Matches: sourceHashMatches,
