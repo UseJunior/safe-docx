@@ -99,6 +99,34 @@ describe('replace_text — blanking a numbered paragraph removes it on clean sav
         instruction: 'delete the second obligation',
       });
       assertSuccess(replaced, 'replace_text');
+      expect(replaced.after_text).toBe('');
+    });
+
+    await then('in the same session the following paragraph id still resolves to its own paragraph and the removed id does not resolve', async () => {
+      // Paragraph ids are sibling _bk_* bookmarks; removing the paragraph must
+      // not re-point its id at the paragraph that follows.
+      const third = await replaceText(mgr, {
+        file_path: session.inputPath,
+        target_paragraph_id: session.paraIds[3]!,
+        old_string: 'third obligation',
+        new_string: 'third obligation (amended)',
+        instruction: 'amend the third obligation',
+      });
+      assertSuccess(third, 'replace_text on the following paragraph');
+      expect(third.after_text).toBe('third obligation (amended)');
+
+      const removed = await replaceText(mgr, {
+        file_path: session.inputPath,
+        target_paragraph_id: middleParaId,
+        old_string: 'anything',
+        new_string: 'x',
+        instruction: 'edit the removed paragraph',
+      });
+      expect(removed.success).toBe(false);
+      expect((removed as { error?: { code?: string } }).error?.code).toBe('ANCHOR_NOT_FOUND');
+    });
+
+    await when('the session is saved clean', async () => {
       const saved = await save(mgr, {
         file_path: session.inputPath,
         save_to_local_path: outPath,
@@ -109,7 +137,7 @@ describe('replace_text — blanking a numbered paragraph removes it on clean sav
 
     await then('two numbered paragraphs remain, none of them empty, and the package reopens', async () => {
       const doc = await loadDocumentXml(outPath);
-      expect(numberedParagraphs(doc).map(textOf)).toEqual(['first obligation', 'third obligation']);
+      expect(numberedParagraphs(doc).map(textOf)).toEqual(['first obligation', 'third obligation (amended)']);
       expect(orphanNumberedParagraphs(doc)).toHaveLength(0);
       expect(doc.getElementsByTagNameNS(W_NS, 'p')).toHaveLength(4);
 
