@@ -3,7 +3,7 @@
 import { XMLSerializer } from '@xmldom/xmldom';
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
-import { auditSectPr, normalizeOpcRelationshipTarget, parseXml, OOXML } from '@usejunior/docx-core';
+import { assertTransitionalWordprocessingML, auditSectPr, normalizeOpcRelationshipTarget, parseXml, OOXML } from '@usejunior/docx-core';
 import { DocxArchive } from '@usejunior/docx-core';
 import type {
   CompareResult,
@@ -1220,6 +1220,23 @@ async function compareDocumentsTaggedCore(
 }
 
 /**
+ * Refuse a WML Strict input before any Transitional-only stage reads it as an
+ * empty document (#1025). The error names the side so a two-file caller knows
+ * which input to re-save; `DocxDocument.load` applies the same gate for the
+ * session path.
+ */
+async function assertTransitionalComparisonInputs(original: Buffer, revised: Buffer): Promise<void> {
+  const inputs: Array<['original' | 'revised', Buffer]> = [
+    ['original', original],
+    ['revised', revised],
+  ];
+  for (const [side, buffer] of inputs) {
+    const archive = await DocxArchive.load(buffer);
+    assertTransitionalWordprocessingML(parseXml(await archive.getDocumentXml()), { side });
+  }
+}
+
+/**
  * Compare supported VML text-box content as independent nested stories.
  *
  * @conformance ECMA-376 edition 5, Part 4 § 14.9.1.1
@@ -1231,6 +1248,7 @@ async function compareDocumentsTagged(
   revised: Buffer,
   options: AtomizerOptions,
 ): Promise<TaggedCompareResult> {
+  await assertTransitionalComparisonInputs(original, revised);
   const textBoxPlan = await prepareTextBoxStoryComparison(original, revised);
   if (!textBoxPlan) {
     return compareDocumentsTaggedCore(original, revised, options);

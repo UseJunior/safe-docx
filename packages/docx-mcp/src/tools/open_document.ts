@@ -7,6 +7,7 @@ import { enforceReadPathPolicy } from './path_policy.js';
 import { validateDocxArchiveSafety } from './docx_archive_guard.js';
 import { SAFE_DOCX_MCP_TOOLS } from '../tool_catalog.js';
 import { loadOdfCore } from '../odf_loader.js';
+import { conformanceRefusalResponse } from './conformance_refusal.js';
 
 function getAvailableToolsSchema(): Array<{
   name: string;
@@ -148,6 +149,8 @@ export async function openDocument(
       tools: getAvailableToolsSchema(),
     });
   } catch (e: unknown) {
+    const refusal = conformanceRefusalResponse(e);
+    if (refusal) return refusal;
     return err('FILE_READ_ERROR', `Failed to read file: ${errorMessage(e)}`, 'Ensure the file exists and is readable.');
   }
 }

@@ -1,6 +1,7 @@
 export * from './document.js';
 export * from './document_view.js';
 export * from './errors.js';
+export * from './conformance.js';
 export * from './list_labels.js';
 export * from './layout.js';
 export * from './matching.js';

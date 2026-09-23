@@ -3,6 +3,7 @@ import { SessionManager } from '../session/manager.js';
 import { errorCode, errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool, validateAndLoadDocxFromPath } from './session_resolution.js';
+import { conformanceRefusalResponse } from './conformance_refusal.js';
 import {
   searchParagraphsCore,
   searchRawXmlCore,
@@ -212,7 +213,21 @@ async function grepMultiFile(
       continue;
     }
 
-    const doc = await DocxDocument.load(loaded.content);
+    let doc: DocxDocument;
+    try {
+      doc = await DocxDocument.load(loaded.content);
+    } catch (e: unknown) {
+      const refusal = conformanceRefusalResponse(e);
+      if (!refusal || refusal.success) throw e;
+      files.push({
+        file_path: loaded.normalizedPath,
+        error: refusal.error.message,
+        error_code: refusal.error.code,
+        matches: [],
+        total_matches: 0,
+      });
+      continue;
+    }
     doc.normalize();
     doc.insertParagraphBookmarks('_grep');
 

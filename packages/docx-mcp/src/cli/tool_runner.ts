@@ -10,6 +10,18 @@ export interface ToolRunnerIO {
 }
 
 /**
+ * A command failure whose structured error has already been written to
+ * stderr. The CLI entry points print only its message, never a stack trace,
+ * so a refused document surfaces as one JSON error object (#1025).
+ */
+export class CliCommandFailure extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CliCommandFailure';
+  }
+}
+
+/**
  * Resolve the AI author for tracked-change emission from SAFE_DOCX_AI_AUTHOR.
  * Empty string disables tracked emission (legacy behavior); unset defaults to 'SafeDocX'.
  * Symmetric with the resolution in server.ts.
@@ -32,7 +44,7 @@ export async function runToolCommand(
 
   if (success === false) {
     opts.writeError(json);
-    throw new Error(`Tool "${toolName}" failed`);
+    throw new CliCommandFailure(`Tool "${toolName}" failed`);
   }
 
   opts.write(json);

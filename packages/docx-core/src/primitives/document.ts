@@ -2,6 +2,7 @@ import { DocxZip } from './zip.js';
 import { parseXml, serializeXml } from './xml.js';
 import { maybeCaptureEmittedDocumentXml } from './schema-corpus-capture.js';
 import { OOXML, W } from './namespaces.js';
+import { assertTransitionalWordprocessingML } from './conformance.js';
 import { createWmlElement, isW, getDirectChildrenByName } from './dom-helpers.js';
 import {
   findParagraphByBookmarkId,
@@ -417,6 +418,9 @@ export class DocxDocument {
     const zip = await DocxZip.load(buffer);
     const xml = await zip.readText('word/document.xml');
     const doc = parseXml(xml);
+    // Refuse WML Strict packages here, before any Transitional-only lookup
+    // could read them as empty (#1025).
+    assertTransitionalWordprocessingML(doc);
 
     // Optional parts used for fidelity: list labels + style fingerprints.
     const stylesText = await zip.readTextOrNull('word/styles.xml');

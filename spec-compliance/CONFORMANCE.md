@@ -136,6 +136,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-5-36` | Table-cell-property revisions (w:tcPrChange) | 5 | 1 | 17.13.5.36 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-37` | Table-row-property revisions (w:trPrChange) | 5 | 1 | 17.13.5.37 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-3-3-30` | Symbol character run content (w:sym) | 5 | 1 | 17.3.3.30 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Sym` | packages/docx-core/src/primitives/symbol_run_content.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/symbol_run_content.test.ts; packages/docx-compare/src/symbolCharacterProjection.test.ts |
+| `ECMA-PART1-2-1` | Document conformance class (WML Strict) refused at load | 5 | 1 | 2.1 | `spec-compliance/ecma-376/schemas/strict/wml.xsd#element:document` | packages/docx-core/src/primitives/conformance.ts; packages/docx-core/test-primitives/conformance_gate.test.ts; packages/docx-compare/src/tagged/conformanceGate.test.ts |
 
 ### ECMA-PART1-17-2-2 — Main document body
 
@@ -1817,6 +1818,25 @@ two legal spellings of one glyph unequal by construction. A change confined to
 `@w:font` is therefore outside this claim, as are rendering, font substitution,
 and any mapping between a symbol font's private-use codepoints and Unicode
 characters with the same appearance.
+
+### ECMA-PART1-2-1 — Document conformance class (WML Strict) refused at load
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 2.1
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/strict/wml.xsd#element:document`
+- **Verified by:** packages/docx-core/src/primitives/conformance.ts; packages/docx-core/test-primitives/conformance_gate.test.ts; packages/docx-compare/src/tagged/conformanceGate.test.ts
+
+Part 1 §2.1 defines the document conformance class Office Open XML Strict
+("WML Strict" for the Wordprocessing category): every part is valid against the
+Strict schemas, whose WordprocessingML namespace is
+`http://purl.oclc.org/ooxml/wordprocessingml/main`. safe-docx consumes WML
+Transitional packages only. A package whose main document root element is in
+the Strict namespace is refused at load, and at either comparison input, with
+`UnsupportedConformanceClassError` (code `UNSUPPORTED_CONFORMANCE_CLASS`) that
+names the conformance class, instead of being read as an empty document. This
+entry claims detection and refusal of the Strict class; it does not claim Strict
+consumption or conversion.
 
 ## Non-Goals
 
