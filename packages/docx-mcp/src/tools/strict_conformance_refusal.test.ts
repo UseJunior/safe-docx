@@ -1,7 +1,8 @@
 import { describe, expect } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { DocxArchive, OOXML, WML_STRICT_NS, buildSyntheticDocx } from '@usejunior/docx-core';
+import { WML_STRICT_NS, buildSyntheticDocx } from '@usejunior/docx-core';
+import { makeStrictDocx } from '../testing/docx_test_utils.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   assertFailure,
@@ -28,10 +29,7 @@ const BODY_TEXT = 'Alpha bravo charlie.';
 async function writeFixtures(): Promise<{ dir: string; transitionalPath: string; strictPath: string }> {
   const dir = await createTrackedTempDir('safe-docx-strict-');
   const transitional = await buildSyntheticDocx({ paragraphs: [BODY_TEXT] });
-  const archive = await DocxArchive.load(transitional);
-  const xml = await archive.getDocumentXml();
-  archive.setDocumentXml(xml.split(OOXML.W_NS).join(WML_STRICT_NS));
-  const strict = await archive.save();
+  const strict = await makeStrictDocx(transitional);
 
   const transitionalPath = path.join(dir, 'transitional.docx');
   const strictPath = path.join(dir, 'strict.docx');

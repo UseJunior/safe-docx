@@ -7,5 +7,8 @@ runCli(process.argv).catch((err) => {
   const summaryOnly = err instanceof Error && err.name === 'CliCommandFailure';
   // eslint-disable-next-line no-console
   console.error(summaryOnly ? err.message : err);
-  process.exit(1);
+  // Set the exit code instead of calling process.exit(): on macOS, pipe-backed
+  // stdio is asynchronous and an immediate exit can truncate the structured
+  // error a caller is parsing from stderr.
+  process.exitCode = 1;
 });
