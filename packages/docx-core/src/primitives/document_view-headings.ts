@@ -182,7 +182,7 @@ export function detectRunInHeader(params: {
 
   for (const r of orderedUniqueRuns) {
     const fmt = extractEffectiveRunFormatting({ run: r, paragraphPPr, paragraphStyleId, styles, theme });
-    const isHeaderStyle = fmt.bold || fmt.underline;
+    const isHeaderStyle = fmt.bold === true || fmt.underline === true;
     const ts = Array.from(r.getElementsByTagNameNS(OOXML.W_NS, W.t));
     let runText = '';
     for (const t of ts) runText += t.textContent ?? '';
@@ -190,7 +190,13 @@ export function detectRunInHeader(params: {
     if (inHeader && isHeaderStyle) {
       headerText += runText;
       headerCharCount += runText.length;
-      if (!formatting) formatting = { bold: fmt.bold, italic: fmt.italic, underline: fmt.underline };
+      if (!formatting) {
+        formatting = {
+          bold: fmt.bold === true,
+          italic: fmt.italic === true,
+          underline: fmt.underline === true,
+        };
+      }
     } else {
       inHeader = false;
       bodyText += runText;
@@ -272,9 +278,15 @@ export function detectTitleCapsCentered(params: {
     }
     if (!runHasText) continue;
     const fmt = extractEffectiveRunFormatting({ run: r, paragraphPPr, paragraphStyleId, styles, theme });
-    if (!fmt.bold) return null;
+    if (fmt.bold !== true) return null;
     sawAnyText = true;
-    if (!formatting) formatting = { bold: fmt.bold, italic: fmt.italic, underline: fmt.underline };
+    if (!formatting) {
+      formatting = {
+        bold: true,
+        italic: fmt.italic === true,
+        underline: fmt.underline === true,
+      };
+    }
   }
   if (!sawAnyText || !formatting) return null;
 
