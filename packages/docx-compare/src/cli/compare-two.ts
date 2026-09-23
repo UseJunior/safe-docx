@@ -1,6 +1,8 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { compareDocuments } from '../index.js';
+import type { UnrepresentedChange } from '../compare-types.js';
+import { formatUnrepresentedChangeWarnings } from '../unrepresented-change-warnings.js';
 
 const USAGE =
   'Usage: docx-comparison <original.docx> <revised.docx> [output.docx] ' +
@@ -30,6 +32,13 @@ export interface CompareCliRunResult {
   package_base: 'revised';
   bytes: number;
   stats: unknown;
+  /**
+   * Input differences the redline carries without revision markup (#1029).
+   * Present only when the comparison reported at least one.
+   */
+  unrepresented_changes?: UnrepresentedChange[];
+  /** One human-readable warning per unrepresented change; also printed to stderr. */
+  warnings?: string[];
 }
 
 export type CompareCliResult = CompareCliHelpResult | CompareCliRunResult;
@@ -122,10 +131,17 @@ export async function runCompareCli(
   await mkdir(dirname(outputAbs), { recursive: true });
   await writeFile(outputAbs, result.document);
 
+  const unrepresented = result.unrepresentedChanges ?? [];
   return {
     output: outputAbs,
     package_base: 'revised',
     bytes: result.document.length,
     stats: result.stats,
+    ...(unrepresented.length > 0
+      ? {
+          unrepresented_changes: unrepresented,
+          warnings: formatUnrepresentedChangeWarnings(unrepresented),
+        }
+      : {}),
   };
 }

@@ -123,6 +123,10 @@ export {
   normalizeRunProperties,
 } from './propertyNaming.js';
 export { extractRoundTripComparisonText } from './fieldComparisonSemantics.js';
+export {
+  formatUnrepresentedChangeWarnings,
+  summarizeUnrepresentedChanges,
+} from './unrepresented-change-warnings.js';
 export * from './tagged/formattingFidelity.js';
 export {
   acceptAllChanges,
