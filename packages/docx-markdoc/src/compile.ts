@@ -35,6 +35,8 @@ import type {
   TableRowOperation,
   TableTopologyReport,
   VerificationCertificate,
+  RevisionGroupingPolicy,
+  RevisionGroupingSource,
 } from './types.js';
 
 const FORMATTING_DIAGNOSTIC_LIMIT = 8;
@@ -58,6 +60,48 @@ async function documentXml(buffer: Buffer): Promise<string> {
     if (run?.nodeType === 1 && (run as Element).localName === 'r') run.parentNode?.removeChild(run);
   }
   return serializeXml(document).replace(/<w:rPr\s*\/>|<w:rPr\s*>\s*<\/w:rPr>/gu, '');
+}
+
+function emittedRevisionGrouping(xml: string): { coalescedSpaceTokens: number; groupedChains: number } {
+  const document = parseXml(xml);
+  const tokens = (text: string): string[] => text.match(/\s+|[\p{L}\p{N}\p{M}_]+|[^\s\p{L}\p{N}\p{M}_]/gu) ?? [];
+  const wrapperText = (wrapper: Element, deletion: boolean): string => {
+    const names = deletion ? ['delText', 't'] : ['t'];
+    return names.flatMap((name) => Array.from(wrapper.getElementsByTagNameNS('*', name)))
+      .map((node) => node.textContent ?? '').join('');
+  };
+  let coalescedSpaceTokens = 0;
+  let groupedChains = 0;
+  for (const paragraph of Array.from(document.getElementsByTagNameNS('*', 'p'))) {
+    const children = Array.from(paragraph.childNodes).filter((node): node is Element => node.nodeType === 1);
+    for (let index = 0; index < children.length;) {
+      if (children[index]!.localName !== 'del' || wrapperText(children[index]!, true) === '') { index += 1; continue; }
+      const deleted: string[] = [];
+      while (index < children.length && children[index]!.localName === 'del') {
+        const text = wrapperText(children[index]!, true);
+        if (text) deleted.push(text);
+        index += 1;
+      }
+      while (index < children.length && (children[index]!.textContent ?? '') === '') index += 1;
+      const inserted: string[] = [];
+      while (index < children.length && children[index]!.localName === 'ins') {
+        const text = wrapperText(children[index]!, false);
+        if (text) inserted.push(text);
+        index += 1;
+      }
+      if (deleted.length === 0 || inserted.length === 0) continue;
+      const left = tokens(deleted.join('')).slice(1, -1).filter((token) => /^ +$/u.test(token));
+      const right = tokens(inserted.join('')).slice(1, -1).filter((token) => /^ +$/u.test(token));
+      const rightCounts = new Map<string, number>();
+      right.forEach((token) => rightCounts.set(token, (rightCounts.get(token) ?? 0) + 1));
+      let count = 0;
+      for (const token of new Set(left)) {
+        count += Math.min(left.filter((candidate) => candidate === token).length, rightCounts.get(token) ?? 0);
+      }
+      if (count > 0) { groupedChains += 1; coalescedSpaceTokens += count; }
+    }
+  }
+  return { coalescedSpaceTokens, groupedChains };
 }
 
 function formattingDiagnostic(report: FormattingFidelityReport): FormattingProjectionDiagnostic {
@@ -1285,10 +1329,15 @@ type ResolvedCompilation = {
   externalCommentsIncluded: boolean;
   internalCommentsIncluded: boolean;
   warnings: string[];
+  revisionGrouping: { policy: RevisionGroupingPolicy; source: RevisionGroupingSource };
 };
 
 function resolveCompilation(options: CompileOptions, ir: MarkdocEditIR): ResolvedCompilation {
   const profile = ir.compilation;
+  if (options.revisionGrouping
+      && !['token-minimal', 'readable-whitespace'].includes(options.revisionGrouping.policy)) {
+    throw new DocxMarkdocError('INVALID_REVISION_GROUPING', 'revisionGrouping.policy must be token-minimal or readable-whitespace.');
+  }
   const date = options.date ?? (profile?.buildDate ? new Date(profile.buildDate) : new Date());
   if (!(date instanceof Date) || !Number.isFinite(date.getTime())) {
     throw new DocxMarkdocError('INVALID_BUILD_DATE', 'Compilation date must be a valid instant.');
@@ -1313,6 +1362,11 @@ function resolveCompilation(options: CompileOptions, ir: MarkdocEditIR): Resolve
     || options.rationaleComments !== undefined
     || options.externalComments !== undefined
     || options.dangerouslyIncludeInternalComments !== undefined;
+  const revisionGrouping = options.revisionGrouping
+    ? { policy: options.revisionGrouping.policy, source: options.revisionGrouping.source ?? 'api' as const }
+    : profile?.revisionGrouping
+      ? { policy: profile.revisionGrouping, source: 'markdoc' as const }
+      : { policy: 'token-minimal' as const, source: 'default' as const };
   return {
     author: options.author ?? profile?.revisionAuthor ?? 'Markdoc',
     date,
@@ -1325,6 +1379,7 @@ function resolveCompilation(options: CompileOptions, ir: MarkdocEditIR): Resolve
     warnings: !includeExternal && externalRationalesFound > 0
       ? [`${externalRationalesFound} external-facing rationale(s) were present but not included.`]
       : [],
+    revisionGrouping,
   };
 }
 
@@ -1400,6 +1455,7 @@ export async function compileMarkdoc(
       endParagraphId: range.endParagraphId,
       end: range.end,
     })),
+    revisionGrouping: resolvedCompilation.revisionGrouping.policy,
     // No finite refinement budget: dense rewrites must retain preservable
     // lexical and punctuation tokens. Readability-oriented whitespace bridging
     // remains valid where it coalesces an otherwise fragmented replacement
@@ -1532,6 +1588,7 @@ export async function compileMarkdoc(
         && unresolvedRowRevisions.accept === 0 && unresolvedRowRevisions.reject === 0,
     };
   }
+  const revisionGroupingEvidence = emittedRevisionGrouping(await documentXml(tracked));
   const certificate: VerificationCertificate = {
     version: 1,
     sourceSha256Matches: sourceHashMatches,
@@ -1550,6 +1607,10 @@ export async function compileMarkdoc(
     unsupportedStructures: unsupported,
     appliedOperations: declaredOperationIds,
     retainedFormatting,
+    revisionGrouping: {
+      ...resolvedCompilation.revisionGrouping,
+      ...revisionGroupingEvidence,
+    },
     ...(tableTopology ? { tableTopology } : {}),
     commentRendering: {
       configurationSource: resolvedCompilation.source,

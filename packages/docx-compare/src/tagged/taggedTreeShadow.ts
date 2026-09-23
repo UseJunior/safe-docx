@@ -16,7 +16,7 @@ import {
   verifySerializedMoveRanges,
 } from './taggedTreeSerializer.js';
 import { formatDate, isParagraphMoveMarker } from './revisionMarkup.js';
-import type { CompareStats, RevisionAttributionRange } from '../compare-types.js';
+import type { CompareStats, RevisionAttributionRange, RevisionGroupingPolicy } from '../compare-types.js';
 import { representative, type TaggedNode } from './taggedTree.js';
 
 export type TaggedTreeDivergenceClass = 'projection-inequivalent' | 'projection-equivalent';
@@ -47,6 +47,8 @@ export interface TaggedTreeShadowInput {
   revisedNumberingXml?: string;
   /** @internal Operation ranges whose emitted revisions require exact attribution. */
   revisionAttributionRanges?: readonly RevisionAttributionRange[];
+  /** @internal Markdoc readability policy for simple replacement gaps. */
+  revisionGrouping?: RevisionGroupingPolicy;
   /** @internal Keep private markers through downstream publication transforms. */
   retainStatisticsMarkers?: boolean;
   /** @internal First package-wide ID available to generated comparison revisions. */
@@ -276,7 +278,7 @@ export function buildTaggedTreePublication(
       author: input.author,
       date: formatDate(input.date),
     }, input.minimumRevisionId),
-    { moves: constructed.moves, retainComparisonRevisionMarkers: true },
+    { moves: constructed.moves, retainComparisonRevisionMarkers: true, revisionGrouping: input.revisionGrouping },
   );
   const document = parseXml(serialized);
   for (const wrapper of Array.from(document.getElementsByTagName('*'))) {

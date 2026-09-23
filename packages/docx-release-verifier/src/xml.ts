@@ -196,6 +196,30 @@ export interface TrackedParagraphView {
   rejectText: string;
   /** Text-node boundaries are retained so revision wrappers cannot coalesce whitespace. */
   ordinaryTextNodes: string[];
+  revisionGroups: Array<{ deletedText: string; insertedText: string }>;
+}
+
+function revisionGroups(paragraph: XmlElement): Array<{ deletedText: string; insertedText: string }> {
+  const children = Array.from(paragraph.childNodes).filter((node): node is XmlElement => node.nodeType === 1);
+  const groups: Array<{ deletedText: string; insertedText: string }> = [];
+  for (let index = 0; index < children.length;) {
+    if (!isWord(children[index]!, 'del') || textFrom(children[index]!, 'reject', true) === '') { index += 1; continue; }
+    let deletedText = '';
+    while (index < children.length && isWord(children[index]!, 'del')) {
+      deletedText += textFrom(children[index]!, 'reject', true);
+      index += 1;
+    }
+    while (index < children.length
+      && textFrom(children[index]!, 'accept', true) === ''
+      && textFrom(children[index]!, 'reject', true) === '') index += 1;
+    let insertedText = '';
+    while (index < children.length && isWord(children[index]!, 'ins')) {
+      insertedText += textFrom(children[index]!, 'accept', true);
+      index += 1;
+    }
+    if (deletedText !== '' && insertedText !== '') groups.push({ deletedText, insertedText });
+  }
+  return groups;
 }
 
 function ordinaryTextNodes(element: XmlElement): string[] {
@@ -234,6 +258,7 @@ export function trackedParagraphViews(xml: string): TrackedParagraphView[] {
     acceptText: textFrom(paragraph, 'accept', true),
     rejectText: textFrom(paragraph, 'reject', true),
     ordinaryTextNodes: ordinaryTextNodes(paragraph),
+    revisionGroups: revisionGroups(paragraph),
   }));
 }
 

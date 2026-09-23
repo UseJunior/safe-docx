@@ -84,6 +84,16 @@ export type CompilationProfile = {
   buildDate?: string;
   externalComments: 'include' | 'omit';
   annotationPresentation?: AnnotationPresentationProfile;
+  revisionGrouping?: RevisionGroupingPolicy;
+};
+
+export type RevisionGroupingPolicy = 'token-minimal' | 'readable-whitespace';
+export type RevisionGroupingSource = 'markdoc' | 'api' | 'cli' | 'default';
+export type RevisionGroupingReport = {
+  policy: RevisionGroupingPolicy;
+  source: RevisionGroupingSource;
+  coalescedSpaceTokens: number;
+  groupedChains: number;
 };
 
 export type DraftRequirement = {
@@ -264,6 +274,7 @@ export type VerificationCertificate = {
   unsupportedStructures: string[];
   appliedOperations: string[];
   retainedFormatting: RetainedFormattingReport;
+  revisionGrouping: RevisionGroupingReport;
   /** Present only for builds that author table-row topology changes. */
   tableTopology?: TableTopologyReport;
   commentRendering: {
@@ -401,6 +412,7 @@ export type CompileOptions = {
   dangerouslyIncludeInternalComments?: boolean;
   configurationSource?: 'api' | 'cli';
   annotationPresentation?: AnnotationPresentationProfile;
+  revisionGrouping?: { policy: RevisionGroupingPolicy; source?: 'api' | 'cli' };
 };
 
 export type ImportResult = {
