@@ -24,23 +24,23 @@
 
 ## 4. Markdoc import and syntax
 
-- [ ] 4.1 Anchor mechanically admitted paragraphs in selected header/footer parts without mutating the caller's original DOCX.
-- [ ] 4.2 Emit deterministic story declarations, complete sorted binding closures, fingerprints, and story-scoped `para` blocks with per-story scaffold counts.
-- [ ] 4.3 Extend IR and validation so side-story operations require a declared story and cannot resolve a body or different-story anchor.
-- [ ] 4.4 Keep existing body-only Markdoc syntax and import output backward-compatible.
+- [x] 4.1 Anchor mechanically admitted paragraphs in selected header/footer parts without mutating the caller's original DOCX.
+- [x] 4.2 Emit deterministic story declarations, complete sorted binding closures, fingerprints, and story-scoped `para` blocks with per-story scaffold counts.
+- [x] 4.3 Extend IR and validation so side-story operations require a declared story and cannot resolve a body or different-story anchor.
+- [x] 4.4 Keep existing body-only Markdoc syntax and import output backward-compatible.
 
 ## 5. Replay and certification
 
-- [ ] 5.1 Apply admitted paragraph replacement/insertion/deletion inside the declared story with story-root formatting and table-cell safety rules.
-- [ ] 5.2 Fail before mutation for story creation/deletion/rebinding, structural table/drawing/field/content-control edits, nested text boxes, stale identity, and partial shared-story aliases.
-- [ ] 5.3 Reject external comment/annotation materialization for side-story operations while preserving and exporting internal rationale metadata.
-- [ ] 5.4 Add per-story source/reject and clean/accept text, formatting, scaffold, relationship, binding, and unresolved-revision checks to the certificate.
-- [ ] 5.5 Exclude only edited story parts from byte-level unchanged-parts comparison and make aggregate delivery depend on every semantic story report.
+- [x] 5.1 Apply admitted paragraph replacement/insertion/deletion inside the declared story with story-root formatting and table-cell safety rules.
+- [x] 5.2 Fail before mutation for story creation/deletion/rebinding, structural table/drawing/field/content-control edits, nested text boxes, stale identity, and partial shared-story aliases.
+- [x] 5.3 Reject external comment/annotation materialization for side-story operations while preserving and exporting internal rationale metadata.
+- [x] 5.4 Add per-story source/reject and clean/accept text, formatting, scaffold, relationship, binding, and unresolved-revision checks to the certificate.
+- [x] 5.5 Exclude only edited story parts from byte-level unchanged-parts comparison and make aggregate delivery depend on every semantic story report.
 
 ## 6. Evidence and documentation
 
-- [ ] 6.1 Add OpenSpec-tagged public tests for default/first/even bindings, shared parts, punctuation-adjacent date edits, table-cell edits, fields, section-count or selector-set changes, `w:sectPrChange`/`w:titlePg`/even-odd changes, orphan header parts, and all fail-closed boundaries.
-- [ ] 6.2 Add a de-identified real-DOCX end-to-end import/compile/accept/reject/render fixture, run `check_emitted_document_schema.mjs`, and open clean/accepted/rejected projections in LibreOffice.
-- [ ] 6.3 Update the Markdoc README and capability boundary documentation with syntax, shared-story behavior, and non-goals.
+- [x] 6.1 Add OpenSpec-tagged public tests for default/first/even bindings, shared parts, punctuation-adjacent date edits, table-cell edits, fields, section-count or selector-set changes, `w:sectPrChange`/`w:titlePg`/even-odd changes, orphan header parts, and all fail-closed boundaries.
+- [x] 6.2 Add a de-identified real-DOCX end-to-end import/compile/accept/reject/render fixture, run `check_emitted_document_schema.mjs`, and open clean/accepted/rejected projections in LibreOffice.
+- [x] 6.3 Update the Markdoc README and capability boundary documentation with syntax, shared-story behavior, and non-goals.
 - [ ] 6.4 Run the mandatory build, lint, test, spec-coverage, and conformance gates.
 - [ ] 6.5 Obtain Claude Fable implementation review, resolve all findings, merge, and run post-merge smoke verification.

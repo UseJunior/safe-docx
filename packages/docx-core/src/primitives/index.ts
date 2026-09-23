@@ -50,6 +50,7 @@ export {
   getParagraphBookmarkId,
   getParagraphBookmarkNames,
   findParagraphByBookmarkId,
+  collectBookmarkReservation,
   cleanupInternalBookmarks,
   insertParagraphBookmarks,
   insertSingleParagraphBookmark,

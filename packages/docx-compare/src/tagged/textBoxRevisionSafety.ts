@@ -701,6 +701,21 @@ function ordinaryStoryScaffoldFingerprint(xml: string): string {
   const document = parseXml(xml);
   const root = document.documentElement.cloneNode(true) as Element;
   removeFormattingWhitespace(root);
+  // Markdoc's package-wide _bk_ reservation marks admitted side paragraphs.
+  // Exclude matched internal pairs wherever they occur in this selected part;
+  // foreign-named bookmarks and all non-bookmark scaffold remain significant.
+  const internalBookmarkIds = new Set<string>();
+  for (const start of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'bookmarkStart'))) {
+    const name = start.getAttributeNS(OOXML.W_NS, 'name') ?? start.getAttribute('w:name') ?? '';
+    if (!name.startsWith('_bk_')) continue;
+    const id = start.getAttributeNS(OOXML.W_NS, 'id') ?? start.getAttribute('w:id');
+    if (id) internalBookmarkIds.add(id);
+    start.parentNode?.removeChild(start);
+  }
+  for (const end of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'bookmarkEnd'))) {
+    const id = end.getAttributeNS(OOXML.W_NS, 'id') ?? end.getAttribute('w:id');
+    if (id && internalBookmarkIds.has(id)) end.parentNode?.removeChild(end);
+  }
   for (const textBox of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'))) {
     while (textBox.firstChild) textBox.removeChild(textBox.firstChild);
   }

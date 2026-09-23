@@ -563,6 +563,27 @@ export class DocxDocument {
     this.zip.writeText(params.partPath, serializeXml(story));
   }
 
+  /**
+   * Apply a bounded run-format edit in one selected physical story paragraph.
+   *
+   * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.28
+   * @see #1034
+   */
+  async formatStoryTextAtRange(params: {
+    partPath: string;
+    targetParagraphId: string;
+    start: number;
+    end: number;
+    format: TextRangeRunFormat;
+  }): Promise<void> {
+    const story = await this.selectedStoryDocument(params.partPath);
+    const paragraph = findParagraphByBookmarkId(story, params.targetParagraphId);
+    if (!paragraph) throw new Error(`Paragraph not found in ${params.partPath}: ${params.targetParagraphId}`);
+    assertStoryParagraphMutationSafe(paragraph, 'replace');
+    formatParagraphTextRange(paragraph, params.start, params.end, params.format);
+    this.zip.writeText(params.partPath, serializeXml(story));
+  }
+
   async insertStoryParagraph(params: {
     partPath: string;
     positionalAnchorNodeId: string;
