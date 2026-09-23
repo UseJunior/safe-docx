@@ -696,7 +696,7 @@ describe('extract_revisions tool', () => {
       });
 
       await and('each change has a valid structure', () => {
-        const validTypes = new Set(['INSERTION', 'DELETION', 'MOVE_FROM', 'MOVE_TO', 'FORMAT_CHANGE']);
+        const validTypes = new Set(['INSERTION', 'DELETION', 'MOVE_FROM', 'MOVE_TO', 'FORMAT_CHANGE', 'ROW_INSERTION', 'ROW_DELETION']);
         for (const c of changes) {
           expect(c.para_id).toBeTruthy();
           const revisions = c.revisions ?? [];

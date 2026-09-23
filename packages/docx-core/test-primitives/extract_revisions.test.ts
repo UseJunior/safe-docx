@@ -612,3 +612,75 @@ describe('extractRevisions — table-row revisions', () => {
     });
   });
 });
+
+describe('extractRevisions — table-row revisions in wrapped and nested shapes', () => {
+  rowPropertyChangeTest('should read the text of a cell wrapped in w:sdt when reporting a row property change', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+    let result: ReturnType<typeof extractRevisions>;
+
+    await given('a row whose only cell sits inside w:sdt > w:sdtContent and whose w:trPr carries a w:trPrChange', async () => {
+      doc = makeDoc(
+        '<w:tbl><w:tr>' +
+          `<w:trPr><w:trHeight w:val="480"/><w:trPrChange w:id="7" w:author="G" w:date="${ROW_DATE}"><w:trPr><w:trHeight w:val="240"/></w:trPr></w:trPrChange></w:trPr>` +
+          '<w:sdt><w:sdtPr/><w:sdtContent>' +
+            '<w:tc><w:p><w:r><w:t>WRAPPED-FORMAT</w:t></w:r></w:p></w:tc>' +
+          '</w:sdtContent></w:sdt>' +
+        '</w:tr></w:tbl>',
+      );
+    });
+
+    await when('extractRevisions is called', async () => {
+      result = extractRevisions(doc, []);
+    });
+
+    await then('the row record carries the wrapped cell text on both sides', async () => {
+      expect(result.total_changes).toBe(1);
+      expect(result.changes[0]!.scope).toBe('row');
+      expect(result.changes[0]!.before_text).toBe('WRAPPED-FORMAT');
+      expect(result.changes[0]!.after_text).toBe('WRAPPED-FORMAT');
+      expect(result.changes[0]!.revisions).toEqual([
+        { type: 'FORMAT_CHANGE', text: '', author: 'G', id: '7', date: ROW_DATE },
+      ]);
+    });
+  });
+
+  rowDeletionTest('should report the outer row, not the nested row, when the outer row has only a nested table', async ({ given, when, then, and }: AllureBddContext) => {
+    let doc: Document;
+    let result: ReturnType<typeof extractRevisions>;
+
+    await given('a deleted outer row whose only cell content is a nested table with its own text', async () => {
+      doc = makeDoc(
+        '<w:tbl><w:tr>' +
+          `<w:trPr><w:del w:id="6" w:author="F" w:date="${ROW_DATE}"/></w:trPr>` +
+          '<w:tc><w:tbl><w:tr><w:tc><w:p><w:r><w:t>INNER-ONLY</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc>' +
+        '</w:tr></w:tbl>' +
+        '<w:tbl><w:tr>' +
+          `<w:trPr><w:trHeight w:val="480"/><w:trPrChange w:id="8" w:author="H" w:date="${ROW_DATE}"><w:trPr><w:trHeight w:val="240"/></w:trPr></w:trPrChange></w:trPr>` +
+          '<w:tc><w:tbl><w:tr><w:tc><w:p><w:r><w:t>INNER-TWO</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc>' +
+        '</w:tr></w:tbl>',
+      );
+    });
+
+    await when('extractRevisions is called', async () => {
+      result = extractRevisions(doc, []);
+    });
+
+    await then('the deleted outer row is reported, with the nested text excluded from the row text', async () => {
+      expect(result.total_changes).toBe(2);
+      expect(result.changes[0]!.scope).toBe('row');
+      expect(result.changes[0]!.revisions[0]!.type).toBe('ROW_DELETION');
+      expect(result.changes[0]!.revisions[0]!.text).toBe('');
+      expect(result.changes[0]!.before_text).toBe('');
+      expect(result.changes[0]!.after_text).toBe('');
+    });
+
+    await and('a row property change on such a row resolves the outer row in both clones, not the inner row', async () => {
+      expect(result.changes[1]!.scope).toBe('row');
+      expect(result.changes[1]!.revisions).toEqual([
+        { type: 'FORMAT_CHANGE', text: '', author: 'H', id: '8', date: ROW_DATE },
+      ]);
+      expect(result.changes[1]!.before_text).toBe('');
+      expect(result.changes[1]!.after_text).toBe('');
+    });
+  });
+});

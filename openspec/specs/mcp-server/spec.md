@@ -385,7 +385,7 @@ The `extract_revisions` tool SHALL walk tracked-change markup in a session docum
 - **WHEN** `extract_revisions` is called
 - **THEN** `total_changes` is greater than zero
 - **AND** each change has a non-empty `para_id`, at least one revision entry, and at least one of `before_text` or `after_text` non-empty
-- **AND** revision types are all valid (`INSERTION`, `DELETION`, `MOVE_FROM`, `MOVE_TO`, or `FORMAT_CHANGE`)
+- **AND** revision types are all valid (`INSERTION`, `DELETION`, `MOVE_FROM`, `MOVE_TO`, `FORMAT_CHANGE`, `ROW_INSERTION`, or `ROW_DELETION`)
 
 ### Requirement: Revision Extraction Supports Pagination
 

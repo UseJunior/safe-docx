@@ -296,36 +296,84 @@ function rowRevisionMarkers(tr: Element): Element[] {
 }
 
 /**
- * The first paragraph directly inside the row's own cells (not one inside a
- * nested table), falling back to the first descendant paragraph.
+ * Children of `el` with the given local name, looking through the structured
+ * document tag and custom XML wrappers the schema allows at that level
+ * (`w:sdt > w:sdtContent > …`, `w:customXml > …`), but never into a nested
+ * table: `w:tbl` is not a wrapper, and its cells belong to another row.
  */
-function firstRowParagraph(tr: Element): Element | null {
-  for (const tc of directChildren(tr, 'tc')) {
-    const p = directChildren(tc, 'p')[0];
-    if (p) return p;
+function ownChildrenThroughWrappers(el: Element, localName: string): Element[] {
+  const out: Element[] = [];
+  for (let i = 0; i < el.childNodes.length; i++) {
+    const child = el.childNodes[i]!;
+    if (isW(child, localName)) {
+      out.push(child);
+    } else if (isW(child, 'sdt')) {
+      for (const content of directChildren(child, 'sdtContent')) {
+        out.push(...ownChildrenThroughWrappers(content, localName));
+      }
+    } else if (isW(child, 'customXml')) {
+      out.push(...ownChildrenThroughWrappers(child, localName));
+    }
   }
-  return tr.getElementsByTagNameNS(W_NS, 'p').item(0);
+  return out;
+}
+
+/** The row's own cells, including cells wrapped in `w:sdt` / `w:customXml`. */
+function rowCells(tr: Element): Element[] {
+  return ownChildrenThroughWrappers(tr, 'tc');
+}
+
+/** The cell's own paragraphs, including ones wrapped in `w:sdt` / `w:customXml`; paragraphs of a nested table are excluded. */
+function cellParagraphs(tc: Element): Element[] {
+  return ownChildrenThroughWrappers(tc, 'p');
 }
 
 /**
- * Whole-row text: each cell's direct paragraphs joined by newlines, cells
- * joined by tabs. Uses the same visible-text rule as paragraph records.
+ * The first paragraph in the row's own cells (not one inside a nested table),
+ * falling back to the first descendant paragraph when the row has none of its
+ * own. `trDepth` is how many `w:tr` ancestors (counting `tr` itself) sit
+ * between that paragraph and the row, so the row can be recovered from the
+ * paragraph in a clone even when the fallback landed inside a nested table.
+ */
+function firstRowParagraph(tr: Element): { p: Element; trDepth: number } | null {
+  for (const tc of rowCells(tr)) {
+    const p = cellParagraphs(tc)[0];
+    if (p) return { p, trDepth: 1 };
+  }
+  const p = tr.getElementsByTagNameNS(W_NS, 'p').item(0);
+  if (!p) return null;
+  let trDepth = 0;
+  for (let cur: Node | null = p; cur; cur = cur.parentNode) {
+    if (isW(cur, 'tr')) trDepth++;
+    if (cur === tr) break;
+  }
+  return { p, trDepth };
+}
+
+/**
+ * Whole-row text: each of the row's own cells' own paragraphs joined by
+ * newlines, cells joined by tabs. Uses the same visible-text rule as
+ * paragraph records. Content of a nested table is not part of the row text.
  */
 function getRowText(tr: Element): string {
-  return directChildren(tr, 'tc')
-    .map((tc) => directChildren(tc, 'p').map(getParagraphText).join('\n'))
+  return rowCells(tr)
+    .map((tc) => cellParagraphs(tc).map(getParagraphText).join('\n'))
     .join('\t');
 }
 
 /**
- * Locate the row in a clone (accepted or rejected) by the bookmark of its
- * first paragraph, then read the whole-row text. Empty when the row no longer
- * exists in that clone.
+ * Locate the row in a clone (accepted or rejected) by the bookmark of the
+ * paragraph `firstRowParagraph` chose, climbing `trDepth` row ancestors so a
+ * fallback paragraph inside a nested table still resolves to the outer row.
+ * Empty when the row no longer exists in that clone.
  */
-function getRowTextByBookmarkId(doc: Document, paraId: string): string {
-  const p = findParagraphByBookmarkId(doc, paraId);
-  let cur: Node | null = p;
-  while (cur && !isW(cur, 'tr')) cur = cur.parentNode;
+function getRowTextByBookmarkId(doc: Document, paraId: string, trDepth: number): string {
+  let cur: Node | null = findParagraphByBookmarkId(doc, paraId);
+  let remaining = trDepth;
+  while (cur) {
+    if (isW(cur, 'tr') && --remaining === 0) break;
+    cur = cur.parentNode;
+  }
   return cur ? getRowText(cur as Element) : '';
 }
 
@@ -413,9 +461,9 @@ export function extractRevisions(
     const markers = rowRevisionMarkers(tr);
     if (markers.length === 0) return;
 
-    const firstP = firstRowParagraph(tr);
-    const paraId = firstP ? getParagraphBookmarkId(firstP) : null;
-    if (!paraId) return;
+    const first = firstRowParagraph(tr);
+    const paraId = first ? getParagraphBookmarkId(first.p) : null;
+    if (!first || !paraId) return;
 
     const isInserted = markers.some((m) => m.localName === 'ins');
     const isDeleted = markers.some((m) => m.localName === 'del');
@@ -424,8 +472,8 @@ export function extractRevisions(
     // An inserted row does not exist once rejected; a deleted row does not
     // exist once accepted. Do not look those up: the row's bookmarks leave
     // with it, so a lookup could only hit some other paragraph.
-    const beforeText = isInserted ? '' : getRowTextByBookmarkId(rejectedDoc, paraId);
-    const afterText = isDeleted ? '' : getRowTextByBookmarkId(acceptedDoc, paraId);
+    const beforeText = isInserted ? '' : getRowTextByBookmarkId(rejectedDoc, paraId, first.trDepth);
+    const afterText = isDeleted ? '' : getRowTextByBookmarkId(acceptedDoc, paraId, first.trDepth);
 
     const revisions = markers.map((marker) => {
       if (marker.localName === 'ins') return makeEntry(marker, 'ROW_INSERTION', rowText);
