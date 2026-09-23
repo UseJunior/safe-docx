@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { compareDocuments } from '@usejunior/docx-compare';
+import {
+  compareDocuments,
+  formatUnrepresentedChangeWarnings,
+  type UnrepresentedChange,
+} from '@usejunior/docx-compare';
 
 export interface CompareCommandArgs {
   originalPath: string;
@@ -15,6 +19,13 @@ export interface CompareCommandResult {
   package_base: 'revised';
   bytes: number;
   stats: unknown;
+  /**
+   * Input differences the redline carries without revision markup (#1029).
+   * Present only when the comparison reported at least one.
+   */
+  unrepresented_changes?: UnrepresentedChange[];
+  /** One human-readable warning per unrepresented change; also printed to stderr. */
+  warnings?: string[];
 }
 
 export interface CompareCommandDependencies {
@@ -60,10 +71,17 @@ export async function runCompareCommand(
   });
   await writeFileAtomically(outputAbs, result.document);
 
+  const unrepresented = result.unrepresentedChanges ?? [];
   return {
     output: outputAbs,
     package_base: 'revised',
     bytes: result.document.length,
     stats: result.stats,
+    ...(unrepresented.length > 0
+      ? {
+          unrepresented_changes: unrepresented,
+          warnings: formatUnrepresentedChangeWarnings(unrepresented),
+        }
+      : {}),
   };
 }

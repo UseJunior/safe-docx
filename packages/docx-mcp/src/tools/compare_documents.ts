@@ -3,7 +3,11 @@ import { errorCode, errorMessage } from "../error_utils.js";
 import fs from 'node:fs/promises';
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+import {
+  compareDocuments,
+  formatUnrepresentedChangeWarnings,
+  summarizeUnrepresentedChanges,
+} from '@usejunior/docx-compare';
 import {
   mergeSessionResolutionMetadata,
   resolveSessionForTool,
@@ -112,6 +116,16 @@ export async function compareDocuments_tool(
     await fs.mkdir(path.dirname(savePath), { recursive: true });
     await fs.writeFile(savePath, new Uint8Array(result.document));
 
+    // Pass through input differences the redline carries without revision
+    // markup (a removed section's footer, an unsupported header topology).
+    // Dropping them made an incomplete redline indistinguishable from a
+    // complete one (#1029).
+    const unrepresented = result.unrepresentedChanges ?? [];
+    const unrepresentedSummary = summarizeUnrepresentedChanges(unrepresented);
+    const baseMessage = twoFileMode
+      ? `Redline comparing '${path.basename(originalFilePath!)}' vs '${path.basename(revisedFilePath!)}' saved to ${savePath}`
+      : `Redline of session edits saved to ${savePath}`;
+
     const response: Record<string, unknown> = {
       mode: twoFileMode ? 'two_file' : 'session',
       original_file_path: originalFilePath,
@@ -121,9 +135,13 @@ export async function compareDocuments_tool(
       package_base: 'revised',
       author,
       stats: result.stats,
-      message: twoFileMode
-        ? `Redline comparing '${path.basename(originalFilePath!)}' vs '${path.basename(revisedFilePath!)}' saved to ${savePath}`
-        : `Redline of session edits saved to ${savePath}`,
+      ...(unrepresented.length > 0
+        ? {
+            unrepresented_changes: unrepresented,
+            warnings: formatUnrepresentedChangeWarnings(unrepresented),
+          }
+        : {}),
+      message: unrepresentedSummary ? `${baseMessage}. ${unrepresentedSummary}` : baseMessage,
     };
 
     if (sessionMode) {
