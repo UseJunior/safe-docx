@@ -241,8 +241,11 @@ function paragraphHasContent(p: Element, forFormatting = false): boolean {
  * paragraph), and two tables must not become adjacent (Word merges
  * back-to-back tables). w:sectPr is ignored — a trailing body sectPr is not a
  * block element.
+ *
+ * Shared with the untracked full-paragraph blanking path in text.ts so both
+ * modes apply one structural rule (issue #740).
  */
-function canSafelyRemoveEmptyParagraph(p: Element): boolean {
+export function canSafelyRemoveEmptyParagraph(p: Element): boolean {
   const blockSibling = (start: Node | null, dir: 'previousSibling' | 'nextSibling'): Element | null => {
     let sibling = start;
     while (sibling) {

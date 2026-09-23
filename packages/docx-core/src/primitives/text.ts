@@ -8,6 +8,7 @@ import {
   type RevisionContext,
 } from './track-changes-emitter.js';
 import { buildParagraphIndex } from './paragraph-index.js';
+import { canSafelyRemoveEmptyParagraph } from './accept_changes.js';
 
 export type TextRun = {
   r: Element; // w:r
@@ -449,6 +450,48 @@ function addParagraphMarkDeletion(p: Element, ctx: RevisionContext): void {
   } else {
     rPr.insertBefore(marker, rPr.firstChild);
   }
+}
+
+/**
+ * True when a blanking edit left nothing in the paragraph that renders or
+ * anchors: only w:pPr, proofing marks, and runs or hyperlinks whose content
+ * was removed. Range markers (bookmarks, comment anchors), embedded content,
+ * and every other child count as content.
+ */
+function isParagraphInertAfterBlanking(p: Element): boolean {
+  const isInert = (el: Element): boolean => {
+    if (isW(el, W.pPr) || isW(el, 'proofErr')) return true;
+    if (isW(el, W.r)) {
+      return Array.from(el.childNodes).every((c) => c.nodeType !== 1 || isW(c as Element, W.rPr));
+    }
+    if (isW(el, W.hyperlink)) {
+      return Array.from(el.childNodes).every((c) => c.nodeType !== 1 || isInert(c as Element));
+    }
+    return false;
+  };
+  return Array.from(p.childNodes).every((c) => c.nodeType !== 1 || isInert(c as Element));
+}
+
+/**
+ * Remove a paragraph that an untracked edit has blanked. Untracked mode has no
+ * paragraph-mark revision for a clean save to resolve, so the emptied `w:p`
+ * used to survive with its `w:numPr` and render as a bare list label
+ * (issue #740). Mirrors the outcome of accepting a paragraph-mark deletion,
+ * keeping the tool reference's exclusions: the paragraph stays when it
+ * carries section properties, when its parent needs it to remain structurally
+ * valid (a table cell's only paragraph, a trailing table), or when it still
+ * owns range markers or other non-text content.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/740
+ */
+function removeBlankedParagraph(p: Element): void {
+  const parent = p.parentNode;
+  if (!parent) return;
+  const pPr = getDirectChild(p, W.pPr);
+  if (pPr && getDirectChild(pPr, W.sectPr)) return;
+  if (!isParagraphInertAfterBlanking(p)) return;
+  if (!canSafelyRemoveEmptyParagraph(p)) return;
+  parent.removeChild(p);
 }
 
 // OOXML on/off toggle properties (ECMA-376 ST_OnOff). Absence of w:val means
@@ -1001,4 +1044,11 @@ export function replaceParagraphTextRange(
   }
 
   cleanupEmptyRuns(parent);
+
+  // Untracked counterpart of the paragraph-mark deletion above: with no
+  // revision for a clean save to resolve, the emptied paragraph is removed
+  // here so it cannot survive as a bare list label (issue #740).
+  if (!ctx && start === 0 && end === fullText.length && replacementRuns.length === 0 && !preservedEmbeddedContent) {
+    removeBlankedParagraph(p);
+  }
 }
