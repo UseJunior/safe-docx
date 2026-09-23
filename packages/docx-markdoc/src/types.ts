@@ -84,14 +84,11 @@ export type CompilationProfile = {
   buildDate?: string;
   externalComments: 'include' | 'omit';
   annotationPresentation?: AnnotationPresentationProfile;
-  revisionGrouping?: RevisionGroupingPolicy;
 };
 
-export type RevisionGroupingPolicy = 'token-minimal' | 'readable-whitespace';
-export type RevisionGroupingSource = 'markdoc' | 'api' | 'cli' | 'default';
 export type RevisionGroupingReport = {
-  policy: RevisionGroupingPolicy;
-  source: RevisionGroupingSource;
+  policy: 'readable-whitespace';
+  source: 'default';
   coalescedSpaceTokens: number;
   groupedChains: number;
 };
@@ -412,7 +409,6 @@ export type CompileOptions = {
   dangerouslyIncludeInternalComments?: boolean;
   configurationSource?: 'api' | 'cli';
   annotationPresentation?: AnnotationPresentationProfile;
-  revisionGrouping?: { policy: RevisionGroupingPolicy; source?: 'api' | 'cli' };
 };
 
 export type ImportResult = {
