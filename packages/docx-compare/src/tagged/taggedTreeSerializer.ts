@@ -798,6 +798,7 @@ function refineRunReplacement(
   originalNode: TaggedNode,
   revisedNode: TaggedNode,
   allocateRevision: () => ComparisonRevision,
+  revisionGrouping: RevisionGroupingPolicy,
 ): WmlElement[] | undefined {
   const original = representative(originalNode, 'original');
   const revised = representative(revisedNode, 'revised');
@@ -821,6 +822,10 @@ function refineRunReplacement(
     originalContent.every((child, index) => child.localName === revisedContent[index]!.localName)
   ) {
     const emitted: WmlElement[] = [];
+    const tabTextOnly = originalContent.some((child) => child.localName === 'tab')
+      && originalContent.every((child, index) => (child.localName === 't' || child.localName === 'tab')
+        && (child.localName !== 'tab' || new XMLSerializer().serializeToString(child)
+          === new XMLSerializer().serializeToString(revisedContent[index]!)));
     const fragmentRun = (source: WmlElement, content: WmlElement): WmlElement => {
       const run = cloneElement(source);
       for (const child of childElements(run)) {
@@ -835,6 +840,25 @@ function refineRunReplacement(
       if (new XMLSerializer().serializeToString(beforeChild) === new XMLSerializer().serializeToString(afterChild)) {
         emitted.push(fragmentRun(revised, afterChild));
       } else {
+        const beforeText = beforeChild.textContent ?? '';
+        const afterText = afterChild.textContent ?? '';
+        if (tabTextOnly && beforeChild.localName === 't' && afterChild.localName === 't'
+            && beforeText.length > 0 && afterText.length > 0 && beforeText !== afterText) {
+          const beforeRun = fragmentRun(original, beforeChild);
+          const afterRun = fragmentRun(revised, afterChild);
+          const refined = refineSimpleRunGap(
+            [beforeRun], [afterRun], allocateRevision,
+            new Map([
+              [beforeRun, operationProvenance(originalNode)],
+              [afterRun, operationProvenance(revisedNode)],
+            ]),
+            revisionGrouping,
+          );
+          if (refined) {
+            emitted.push(...refined);
+            continue;
+          }
+        }
         emitted.push(wrapRevision(
           fragmentRun(original, beforeChild),
           'del',
@@ -1539,7 +1563,7 @@ function emitNode(
       const next = node.children[index + 1];
       if (child.tag === 'original' && next?.tag === 'revised' &&
           !moveFor(child, moves) && !moveFor(next, moves)) {
-        const refined = refineRunReplacement(child, next, allocateRevision);
+        const refined = refineRunReplacement(child, next, allocateRevision, revisionGrouping);
         if (refined) {
           emitted.push(...refined);
           index++;
