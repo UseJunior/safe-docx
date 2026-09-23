@@ -3,7 +3,8 @@ import JSZip from 'jszip';
 import { DocxDocument, getParagraphRuns } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../../docx-core/src/testing/ooxml-fixtures.js';
 import { testAllure } from '../../docx-core/src/testing/allure-test.js';
-import { compileMarkdoc, verifyRevisionPreservation } from './compile.js';
+import { compileMarkdoc } from './compile.js';
+import { verifyRevisionPreservation } from './revision-preservation.js';
 import { importDocxToMarkdoc } from './import.js';
 import { requireMarkdoc } from './markdoc.js';
 
