@@ -2,10 +2,9 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect } from 'vitest';
-import { DocxArchive } from '@usejunior/docx-core';
 import type { CompareResult } from '../compare-types.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
+import { buildDocxWithDefaultFooter } from '../testing/footer-story-fixture.js';
 import { parseCompareCliArgs, runCompareCli } from './compare-two.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'CLI Compare Two' });
@@ -171,32 +170,6 @@ describe('docx-comparison CLI fixed tagged publication', () => {
 });
 
 describe('docx-comparison CLI unrepresented changes (#1029)', () => {
-  const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
-  const FOOTER_RELATIONSHIP = `${R_NS}/footer`;
-  const PACKAGE_REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
-  const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-
-  /** A one-section document whose sectPr selects a default footer; `null` builds the same body with no footer. */
-  async function documentWithFooter(bodyText: string, footerText: string | null): Promise<Buffer> {
-    const body = `<w:p><w:r><w:t>${bodyText}</w:t></w:r></w:p>`;
-    const base = await buildDocxFromBodyXml(body, [], { namespaces: { r: R_NS } });
-    if (footerText === null) return base;
-    const archive = await DocxArchive.load(base);
-    archive.setDocumentXml((await archive.getDocumentXml()).replace(
-      '<w:sectPr/>',
-      '<w:sectPr><w:footerReference w:type="default" r:id="rIdFooter"/></w:sectPr>',
-    ));
-    archive.setFile(
-      'word/_rels/document.xml.rels',
-      `<Relationships xmlns="${PACKAGE_REL_NS}"><Relationship Id="rIdFooter" Type="${FOOTER_RELATIONSHIP}" Target="footer1.xml"/></Relationships>`,
-    );
-    archive.setFile(
-      'word/footer1.xml',
-      `<?xml version="1.0"?><w:ftr xmlns:w="${W_NS}"><w:p><w:r><w:t>${footerText}</w:t></w:r></w:p></w:ftr>`,
-    );
-    return archive.save();
-  }
-
   test('reports a removed footer as unrepresented_changes plus a warning', async ({
     given,
     when,
@@ -210,8 +183,8 @@ describe('docx-comparison CLI unrepresented changes (#1029)', () => {
 
     await given('an original with a default footer and a revision that removes it', async () => {
       await Promise.all([
-        writeFile(originalPath, await documentWithFooter('Body text', 'Confidential')),
-        writeFile(revisedPath, await documentWithFooter('Body text, revised', null)),
+        writeFile(originalPath, await buildDocxWithDefaultFooter('Body text', 'Confidential')),
+        writeFile(revisedPath, await buildDocxWithDefaultFooter('Body text, revised', null)),
       ]);
     });
 
