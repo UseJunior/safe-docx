@@ -1311,7 +1311,7 @@ async function compareDocumentsTagged(
         options.date ?? new Date(),
         nextPackageRevisionId,
       );
-      const insertionRanges = marked.directParagraphs;
+      const insertionRanges = marked.markedParagraphs;
       result = {
         ...result,
         document: marked.document,
@@ -1321,7 +1321,7 @@ async function compareDocumentsTagged(
           insertedRanges: insertionRanges,
           insertedAtoms: Math.max(
             result.stats.insertedAtoms,
-            marked.directParagraphs,
+            marked.markedParagraphs,
           ),
         },
       };
@@ -1333,7 +1333,7 @@ async function compareDocumentsTagged(
         options.date ?? new Date(),
         nextPackageRevisionId,
       );
-      const deletionRanges = marked.directParagraphs;
+      const deletionRanges = marked.markedParagraphs;
       result = {
         ...result,
         document: marked.document,
@@ -1343,7 +1343,7 @@ async function compareDocumentsTagged(
           deletedRanges: deletionRanges,
           deletedAtoms: Math.max(
             result.stats.deletedAtoms,
-            marked.directParagraphs,
+            marked.markedParagraphs,
           ),
         },
       };

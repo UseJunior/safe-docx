@@ -1064,7 +1064,11 @@ function sectionSignatures(
       const selected = state.stories.find(
         (story) => story.targetPath === binding.targetPath,
       );
-      const identity = selected?.textBoxes.length
+      // A paired story carries its pair id on both sides; an unpaired one
+      // never matches across sides. This holds for plain stories too, so a
+      // removed middle section whose footer is unpaired is not matched to the
+      // surviving section that shifted into its position (#754).
+      const identity = selected
         ? pairIdByPath.get(binding.targetPath) ??
           `${side}:unpaired:${binding.targetPath}`
         : `plain:${binding.kind}:${binding.role}`;
@@ -1156,33 +1160,35 @@ function assertLifecycleStoriesAreSectionBound(
     sectionSignatures(revisedState, 'revised', revisedPairIds),
   );
   const changes: TextBoxRevisionChange[] = [];
+  // One admissibility rule per side, shared by the text-box guard and the
+  // lifecycle classification below, so a story cannot pass one and fail the
+  // other.
+  const isInsertedLifecycle = (story: SelectedAncillaryStory): boolean =>
+    revisedState.sectionCount > originalState.sectionCount &&
+    story.bindings.every((binding) =>
+      unmatched.revised.has(binding.sectionOrdinal),
+    );
+  const isDeletedLifecycle = (story: SelectedAncillaryStory): boolean =>
+    story.bindings.every((binding) =>
+      unmatched.original.has(binding.sectionOrdinal),
+    );
 
   for (const story of unpairedOriginal.filter(
     (candidate) => candidate.textBoxes.length > 0,
   )) {
-    const lifecycle =
-      originalState.sectionCount > revisedState.sectionCount &&
-      story.bindings.every((binding) =>
-        unmatched.original.has(binding.sectionOrdinal),
-      );
-    if (!lifecycle) {
+    if (!isDeletedLifecycle(story)) {
       changes.push({
         index: 0,
         partPath: story.targetPath,
         reason:
-          'unpaired ancillary text-box story is not owned exclusively by a deleted section',
+          'unpaired ancillary text-box story is not owned exclusively by a removed section slot',
       });
     }
   }
   for (const story of unpairedRevised.filter(
     (candidate) => candidate.textBoxes.length > 0,
   )) {
-    const lifecycle =
-      revisedState.sectionCount > originalState.sectionCount &&
-      story.bindings.every((binding) =>
-        unmatched.revised.has(binding.sectionOrdinal),
-      );
-    if (!lifecycle) {
+    if (!isInsertedLifecycle(story)) {
       changes.push({
         index: 0,
         partPath: story.targetPath,
@@ -1193,17 +1199,8 @@ function assertLifecycleStoriesAreSectionBound(
   }
   if (changes.length > 0) throw new UnsupportedTextBoxRevisionError(changes);
   return {
-    inserted: unpairedRevised.filter((story) =>
-      revisedState.sectionCount > originalState.sectionCount &&
-      story.bindings.every((binding) =>
-        unmatched.revised.has(binding.sectionOrdinal),
-      ),
-    ),
-    deleted: unpairedOriginal.filter((story) =>
-      story.bindings.every((binding) =>
-        unmatched.original.has(binding.sectionOrdinal),
-      ),
-    ),
+    inserted: unpairedRevised.filter(isInsertedLifecycle),
+    deleted: unpairedOriginal.filter(isDeletedLifecycle),
   };
 }
 
@@ -1853,7 +1850,7 @@ export async function markInsertedAncillaryStoryParagraphs(
   author: string,
   date: Date,
   minimumRevisionId = 0,
-): Promise<{ document: Buffer; directParagraphs: number }> {
+): Promise<{ document: Buffer; markedParagraphs: number }> {
   return markLifecycleAncillaryStoryParagraphs(
     storyDocument,
     preservedPackage,
@@ -1881,7 +1878,7 @@ export async function markDeletedAncillaryStoryParagraphs(
   author: string,
   date: Date,
   minimumRevisionId = 0,
-): Promise<{ document: Buffer; directParagraphs: number }> {
+): Promise<{ document: Buffer; markedParagraphs: number }> {
   return markLifecycleAncillaryStoryParagraphs(
     storyDocument,
     preservedPackage,
@@ -1910,7 +1907,7 @@ async function markLifecycleAncillaryStoryParagraphs(
   date: Date,
   minimumRevisionId: number,
   markerTag: 'w:ins' | 'w:del',
-): Promise<{ document: Buffer; directParagraphs: number }> {
+): Promise<{ document: Buffer; markedParagraphs: number }> {
   const archive = await DocxArchive.load(storyDocument);
   const document = parseXml(await archive.getDocumentXml());
   const body = document.getElementsByTagNameNS(OOXML.W_NS, 'body').item(0);
@@ -1930,10 +1927,6 @@ async function markLifecycleAncillaryStoryParagraphs(
   const state = createRevisionIdState(preservedRoots);
   state.nextId = Math.max(state.nextId, minimumRevisionId);
   const dateString = formatDate(date);
-  const directParagraphs = directChildElements(body).filter(
-    (element) =>
-      element.namespaceURI === OOXML.W_NS && element.localName === 'p',
-  );
   const markParagraph = (paragraph: Element): void => {
     addParagraphMarkRevisionMarker(
       paragraph,
@@ -1964,11 +1957,14 @@ async function markLifecycleAncillaryStoryParagraphs(
     }
   };
   // Nested text-box paragraphs are marked on their own; every other paragraph
-  // in the story (direct, table cell, block-level sdt) is marked here.
+  // in the story (direct, table cell, block-level sdt) is marked here and
+  // counted as one represented range.
+  let markedParagraphs = 0;
   for (const paragraph of Array.from(
     body.getElementsByTagNameNS(OOXML.W_NS, 'p'),
   )) {
     if (hasAncestorBelow(paragraph, body, 'txbxContent')) continue;
+    markedParagraphs += 1;
     markParagraph(paragraph);
     for (const textBox of Array.from(
       paragraph.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
@@ -1983,7 +1979,7 @@ async function markLifecycleAncillaryStoryParagraphs(
   archive.setDocumentXml(serializer.serializeToString(document));
   return {
     document: await archive.save(),
-    directParagraphs: directParagraphs.length,
+    markedParagraphs,
   };
 }
 

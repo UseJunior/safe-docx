@@ -250,6 +250,132 @@ describe('relationship-selected story removed with its section (#754)', () => {
   );
 
   test.openspec('[SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion')(
+    'tracks a VML text-box footer dropped from a surviving section',
+    async () => {
+      // The text-box lifecycle guard and the deleted classifier share one
+      // admissibility rule; before that, this input threw
+      // UnsupportedTextBoxRevisionError instead of being represented.
+      const original = await packageWithSelectedStory({
+        bodyXml: paragraph('Body'),
+        sectPrXml: `<w:sectPr><w:footerReference w:type="default" r:id="rIdStory"/></w:sectPr>`,
+        kind: 'footer',
+        target: 'footer1.xml',
+        storyXml: footerWithTextBoxXml(),
+      });
+      const revised = await buildDocxFromBodyXml(paragraph('Body, revised'), [], { namespaces: { r: R_NS } });
+
+      const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+      const archive = await DocxArchive.load(result.document);
+      const footer = await archive.getFile('word/footer1.xml');
+      if (footer === null) throw new Error('compared package lost word/footer1.xml');
+
+      const parsed = parseXml(footer);
+      expect(parsed.getElementsByTagNameNS(OOXML.W_NS, 't')).toHaveLength(0);
+      expect(parsed.getElementsByTagNameNS(OOXML.W_NS, 'delText')).toHaveLength(4);
+      for (const deletion of Array.from(parsed.getElementsByTagNameNS(OOXML.W_NS, 'del'))) {
+        expect(deletion.getElementsByTagNameNS(OOXML.W_NS, 'pict')).toHaveLength(0);
+      }
+      expect(extractRoundTripComparisonText(acceptAllChanges(footer)).trim()).toBe('');
+      const rejected = extractRoundTripComparisonText(rejectAllChanges(footer));
+      for (const text of FOOTER_TEXTS) expect(rejected).toContain(text);
+      const documentXml = await archive.getDocumentXml();
+      expect(await selectedTargets(archive, acceptAllChanges(documentXml))).toEqual([]);
+      expect(await selectedTargets(archive, rejectAllChanges(documentXml))).toEqual(['word/footer1.xml']);
+      expect(result.stats.deletions).toBeGreaterThanOrEqual(5);
+      expect(result.unrepresentedChanges).toBeUndefined();
+    },
+  );
+
+  test.openspec('[SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion')(
+    'counts table-cell paragraphs of a removed footer as deletions',
+    async () => {
+      const tableFooter =
+        `<?xml version="1.0"?><w:ftr xmlns:w="${OOXML.W_NS}"><w:tbl><w:tr>` +
+        `<w:tc>${paragraph('Left cell')}</w:tc><w:tc>${paragraph('Right cell')}</w:tc>` +
+        `</w:tr></w:tbl></w:ftr>`;
+      const original = await packageWithSelectedStory({
+        bodyXml: paragraph('Body'),
+        sectPrXml: `<w:sectPr><w:footerReference w:type="default" r:id="rIdStory"/></w:sectPr>`,
+        kind: 'footer',
+        target: 'footer1.xml',
+        storyXml: tableFooter,
+      });
+      const revised = await buildDocxFromBodyXml(paragraph('Body'), [], { namespaces: { r: R_NS } });
+
+      const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+      const archive = await DocxArchive.load(result.document);
+      const footer = await archive.getFile('word/footer1.xml');
+      if (footer === null) throw new Error('compared package lost word/footer1.xml');
+
+      expect(footer).toContain('<w:delText>Left cell</w:delText>');
+      expect(footer).toContain('<w:delText>Right cell</w:delText>');
+      expect(extractRoundTripComparisonText(acceptAllChanges(footer)).trim()).toBe('');
+      // Both cell paragraphs are represented ranges, so the caller's stats
+      // must not read as an empty comparison.
+      expect(result.stats.deletions).toBe(2);
+      expect(result.stats.deletedRanges).toBe(2);
+      expect(result.unrepresentedChanges).toBeUndefined();
+    },
+  );
+
+  test.openspec('[SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion')(
+    'tracks the footer of a deleted middle section while the positional detector still reports later slots',
+    async () => {
+      // Sections A/B/C each select their own footer; the revision removes B.
+      // The planner identifies B's footer by pairing, not position, so the
+      // redline deletes it and leaves A and C untouched.
+      // detectUnrepresentedChanges is positional over section index
+      // (pre-existing, shared with the insertion side), so it also reports
+      // the shift of C into B's position; those entries stay listed rather
+      // than being claimed as represented by B's deletion.
+      const sectionParagraph = (id: string, text: string): string =>
+        `<w:p><w:pPr><w:sectPr><w:footerReference w:type="default" r:id="${id}"/></w:sectPr></w:pPr>` +
+        `<w:r><w:t>${text}</w:t></w:r></w:p>`;
+      const footerXml = (text: string): string =>
+        `<?xml version="1.0"?><w:ftr xmlns:w="${OOXML.W_NS}">${paragraph(text)}</w:ftr>`;
+      const build = async (ids: string[]): Promise<Buffer> => {
+        const archive = await DocxArchive.load(await buildDocxFromBodyXml(
+          ids.map((id) => sectionParagraph(id, `Section ${id}`)).join(''),
+          [],
+          { namespaces: { r: R_NS } },
+        ));
+        archive.setFile(
+          'word/_rels/document.xml.rels',
+          `<Relationships xmlns="${PACKAGE_REL_NS}">` +
+            ids.map((id) => `<Relationship Id="${id}" Type="${FOOTER_RELATIONSHIP}" Target="footer-${id}.xml"/>`).join('') +
+            `</Relationships>`,
+        );
+        for (const id of ids) archive.setFile(`word/footer-${id}.xml`, footerXml(`Footer ${id}`));
+        return archive.save();
+      };
+      const original = await build(['A', 'B', 'C']);
+      const revised = await build(['A', 'C']);
+
+      const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+      const archive = await DocxArchive.load(result.document);
+      const footerB = await archive.getFile('word/footer-B.xml');
+      if (footerB === null) throw new Error('compared package lost word/footer-B.xml');
+      expect(footerB).toContain('<w:delText>Footer B</w:delText>');
+      expect(extractRoundTripComparisonText(acceptAllChanges(footerB)).trim()).toBe('');
+      for (const kept of ['A', 'C']) {
+        const footer = await archive.getFile(`word/footer-${kept}.xml`);
+        expect(footer).toContain(`<w:t>Footer ${kept}</w:t>`);
+        expect(footer).not.toContain('<w:del');
+      }
+      const documentXml = await archive.getDocumentXml();
+      expect(await selectedTargets(archive, acceptAllChanges(documentXml)))
+        .toEqual(['word/footer-A.xml', 'word/footer-C.xml']);
+      expect(await selectedTargets(archive, rejectAllChanges(documentXml)))
+        .toEqual(['word/footer-A.xml', 'word/footer-B.xml', 'word/footer-C.xml']);
+      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+        { scope: 'footer', kind: 'changed', sectionIndex: 1, role: 'default' },
+        { scope: 'footer', kind: 'removed', sectionIndex: 2, role: 'default' },
+        { scope: 'section', kind: 'removed', sectionIndex: 3 },
+      ]));
+    },
+  );
+
+  test.openspec('[SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion')(
     'leaves a story unrepresented when accept-all would still select it',
     async () => {
       // A package with no revisions selects the footer on both projections, so
