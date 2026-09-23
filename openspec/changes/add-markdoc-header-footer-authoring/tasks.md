@@ -42,5 +42,5 @@
 - [x] 6.1 Add OpenSpec-tagged public tests for default/first/even bindings, shared parts, punctuation-adjacent date edits, table-cell edits, fields, section-count or selector-set changes, `w:sectPrChange`/`w:titlePg`/even-odd changes, orphan header parts, and all fail-closed boundaries.
 - [x] 6.2 Add a de-identified real-DOCX end-to-end import/compile/accept/reject/render fixture, run `check_emitted_document_schema.mjs`, and open clean/accepted/rejected projections in LibreOffice.
 - [x] 6.3 Update the Markdoc README and capability boundary documentation with syntax, shared-story behavior, and non-goals.
-- [ ] 6.4 Run the mandatory build, lint, test, spec-coverage, and conformance gates.
+- [x] 6.4 Run the mandatory build, lint, test, spec-coverage, and conformance gates.
 - [ ] 6.5 Obtain Claude Fable implementation review, resolve all findings, merge, and run post-merge smoke verification.
