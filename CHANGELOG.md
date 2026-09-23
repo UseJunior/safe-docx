@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- DOCX comparison now marks a header or footer as a tracked deletion when the
+  revised document removes the section, or the section slot, that selected it:
+  every paragraph of the removed story carries a `w:del` paragraph mark and its
+  runs become `w:delText`, VML/DrawingML carriers stay unwrapped, accept-all
+  drops the story while reject-all restores it, and the story no longer appears
+  in `unrepresentedChanges`. Lifecycle story markers (inserted and removed) now
+  also cover runs inside hyperlinks, fields and table cells.
+
 - **Breaking:** Markdoc now always emits bounded readable-whitespace revision
   grouping after token-minimal validation. Remove the short-lived
   `revision-grouping` Markdoc declaration, `--revision-grouping` CLI flag, and

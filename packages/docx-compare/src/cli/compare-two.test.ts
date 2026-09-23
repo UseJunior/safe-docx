@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { afterAll, describe, expect } from 'vitest';
 import type { CompareResult } from '../compare-types.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { buildDocxWithDefaultFooter } from '../testing/footer-story-fixture.js';
+import {
+  buildDocxWithDefaultFooter,
+  buildDocxWithPageWidth,
+} from '../testing/footer-story-fixture.js';
 import { parseCompareCliArgs, runCompareCli } from './compare-two.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'CLI Compare Two' });
@@ -170,13 +173,51 @@ describe('docx-comparison CLI fixed tagged publication', () => {
 });
 
 describe('docx-comparison CLI unrepresented changes (#1029)', () => {
-  test('reports a removed footer as unrepresented_changes plus a warning', async ({
+  test('reports a section property change as unrepresented_changes plus a warning', async ({
     given,
     when,
     then,
     and,
   }: AllureBddContext) => {
     const dir = await mkdtemp(join(tmpdir(), 'docx-comparison-unrepresented-'));
+    trackedTempDirs.push(dir);
+    const originalPath = join(dir, 'original.docx');
+    const revisedPath = join(dir, 'revised.docx');
+
+    await given('an original on US Letter and a revision on A4', async () => {
+      await Promise.all([
+        writeFile(originalPath, await buildDocxWithPageWidth('Body text', 12240)),
+        writeFile(revisedPath, await buildDocxWithPageWidth('Body text, revised', 11906)),
+      ]);
+    });
+
+    const result = await when('the real comparison runs through the CLI', () =>
+      runCompareCli([originalPath, revisedPath]),
+    );
+    if ('help' in result && result.help) throw new Error('expected a run result');
+
+    await then('the structured unrepresented change reaches the caller', () => {
+      expect(result.unrepresented_changes).toEqual([
+        { scope: 'section', kind: 'changed', sectionIndex: 0 },
+      ]);
+    });
+    await and('a human-readable warning names the unrepresented change', () => {
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings![0]).toContain('changed section properties in section 1');
+      expect(result.warnings![0]).toContain('no tracked-change markup');
+    });
+    await and('the redline still carries the represented body change', () => {
+      const stats = result.stats as { insertions: number; deletions: number };
+      expect(stats.insertions + stats.deletions).toBeGreaterThan(0);
+    });
+  });
+
+  test('reports nothing for a removed footer, which is now a tracked deletion (#754)', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const dir = await mkdtemp(join(tmpdir(), 'docx-comparison-removed-footer-'));
     trackedTempDirs.push(dir);
     const originalPath = join(dir, 'original.docx');
     const revisedPath = join(dir, 'revised.docx');
@@ -193,19 +234,11 @@ describe('docx-comparison CLI unrepresented changes (#1029)', () => {
     );
     if ('help' in result && result.help) throw new Error('expected a run result');
 
-    await then('the structured unrepresented change reaches the caller', () => {
-      expect(result.unrepresented_changes).toEqual([
-        { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
-      ]);
-    });
-    await and('a human-readable warning names the unrepresented part', () => {
-      expect(result.warnings).toHaveLength(1);
-      expect(result.warnings![0]).toContain('removed default footer in section 1');
-      expect(result.warnings![0]).toContain('no tracked-change markup');
-    });
-    await and('the redline still carries the represented body change', () => {
-      const stats = result.stats as { insertions: number; deletions: number };
-      expect(stats.insertions + stats.deletions).toBeGreaterThan(0);
+    await then('the result carries neither unrepresented changes nor warnings', () => {
+      expect(result).not.toHaveProperty('unrepresented_changes');
+      expect(result).not.toHaveProperty('warnings');
+      const stats = result.stats as { deletions: number };
+      expect(stats.deletions).toBeGreaterThan(0);
     });
   });
 });

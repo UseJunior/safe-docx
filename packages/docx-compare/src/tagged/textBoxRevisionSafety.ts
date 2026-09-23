@@ -84,7 +84,18 @@ export interface TextBoxStoryInput {
   visualIndex: number;
   partPath: string;
   container: 'textBox' | 'ancillaryPart';
-  ancillaryMode?: 'ordinary' | 'inserted';
+  /**
+   * `inserted` and `deleted` are lifecycle stories: the part exists on one
+   * side only because the section slot selecting it was added or removed.
+   */
+  ancillaryMode?: 'ordinary' | 'inserted' | 'deleted';
+  /**
+   * Original-side section slots a `deleted` story was selected by. The outer
+   * comparison decides where the removed part lands in the output, so these
+   * slots, not `partPath`, identify the story there
+   * (see `deletedAncillaryStoryOutputPaths`).
+   */
+  selectedSlots?: ReadonlyArray<Pick<SectPrBinding, 'sectionOrdinal' | 'kind' | 'role'>>;
   original: Buffer;
   revised: Buffer;
 }
@@ -99,7 +110,7 @@ export interface TextBoxStoryComparisonPlan {
   hasAncillaryTextBoxStories: boolean;
   representedAncillaryChanges: Array<{
     scope: 'header' | 'footer';
-    kind: 'added' | 'changed';
+    kind: 'added' | 'changed' | 'removed';
     sectionIndex: number;
     role: 'default' | 'first' | 'even';
     partPath: string;
@@ -1104,14 +1115,36 @@ function unmatchedSequenceOrdinals(
   };
 }
 
+/**
+ * Classify unpaired selected stories by section lifecycle.
+ *
+ * `inserted` stories exist only on the revised side and are selected
+ * exclusively by inserted sections. `deleted` stories exist only on the
+ * original side and are selected exclusively by section slots with no
+ * revised-side counterpart: the section was removed, or it survived but no
+ * longer selects that header/footer role. Both are represented by tracking
+ * every paragraph of the story. The pipeline still confirms, against the
+ * outer comparison, that reject-all reselects a deleted story and accept-all
+ * does not (`deletedAncillaryStoryOutputPaths`); a story that fails that
+ * check stays unrepresented.
+ *
+ * Unpaired text-box stories outside those lifecycles are unsupported.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @see https://github.com/UseJunior/safe-docx/issues/648
+ * @see https://github.com/UseJunior/safe-docx/issues/754
+ */
 function assertLifecycleStoriesAreSectionBound(
   originalState: SelectedAncillaryState,
   revisedState: SelectedAncillaryState,
   pairs: PairedAncillaryStory[],
   unpairedOriginal: SelectedAncillaryStory[],
   unpairedRevised: SelectedAncillaryStory[],
-): SelectedAncillaryStory[] {
-  if (unpairedOriginal.length === 0 && unpairedRevised.length === 0) return [];
+): { inserted: SelectedAncillaryStory[]; deleted: SelectedAncillaryStory[] } {
+  if (unpairedOriginal.length === 0 && unpairedRevised.length === 0) {
+    return { inserted: [], deleted: [] };
+  }
   const originalPairIds = new Map(
     pairs.map((pair) => [pair.original.targetPath, pair.id]),
   );
@@ -1159,12 +1192,19 @@ function assertLifecycleStoriesAreSectionBound(
     }
   }
   if (changes.length > 0) throw new UnsupportedTextBoxRevisionError(changes);
-  return unpairedRevised.filter((story) =>
-    revisedState.sectionCount > originalState.sectionCount &&
-    story.bindings.every((binding) =>
-      unmatched.revised.has(binding.sectionOrdinal),
+  return {
+    inserted: unpairedRevised.filter((story) =>
+      revisedState.sectionCount > originalState.sectionCount &&
+      story.bindings.every((binding) =>
+        unmatched.revised.has(binding.sectionOrdinal),
+      ),
     ),
-  );
+    deleted: unpairedOriginal.filter((story) =>
+      story.bindings.every((binding) =>
+        unmatched.original.has(binding.sectionOrdinal),
+      ),
+    ),
+  };
 }
 
 async function ancillaryStoryInputs(
@@ -1196,7 +1236,10 @@ async function ancillaryStoryInputs(
     revisedState.stories,
     topologyMatches,
   );
-  const insertedPartStories = assertLifecycleStoriesAreSectionBound(
+  const {
+    inserted: insertedPartStories,
+    deleted: deletedPartStories,
+  } = assertLifecycleStoriesAreSectionBound(
     originalState,
     revisedState,
     paired.pairs,
@@ -1394,6 +1437,40 @@ async function ancillaryStoryInputs(
     });
   }
 
+  for (const story of deletedPartStories) {
+    const storyOriginalArchive = await originalArchive.clone();
+    const storyRevisedArchive = await revisedArchive.clone();
+    storyOriginalArchive.setDocumentXml(
+      storyDocumentXmlFromPartRoot(originalDocumentXml, story.xml),
+    );
+    storyRevisedArchive.setDocumentXml(
+      storyDocumentXmlFromPartRoot(revisedDocumentXml, null),
+    );
+    storyOriginalArchive.setFile(
+      'word/_rels/document.xml.rels',
+      story.relationshipsXml ??
+        `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+    );
+    storyRevisedArchive.setFile(
+      'word/_rels/document.xml.rels',
+      `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+    );
+    stories.push({
+      index: 0,
+      visualIndex: 0,
+      partPath: story.targetPath,
+      container: 'ancillaryPart',
+      ancillaryMode: 'deleted',
+      selectedSlots: story.bindings.map(({ sectionOrdinal, kind, role }) => ({
+        sectionOrdinal,
+        kind,
+        role,
+      })),
+      original: await storyOriginalArchive.save(),
+      revised: await storyRevisedArchive.save(),
+    });
+  }
+
   return {
     stories,
     validateProjection:
@@ -1417,6 +1494,15 @@ async function ancillaryStoryInputs(
         partPath: story.targetPath,
         })),
       ),
+      ...deletedPartStories.flatMap((story) =>
+        story.bindings.map((binding) => ({
+          scope: binding.kind,
+          kind: 'removed' as const,
+          sectionIndex: binding.sectionOrdinal,
+          role: binding.role,
+          partPath: story.targetPath,
+        })),
+      ),
     ],
   };
 }
@@ -1432,6 +1518,64 @@ export async function rejectedSelectedAncillaryStoryPaths(
       (binding) => binding.targetPath,
     ),
   );
+}
+
+function slotKey(binding: Pick<SectPrBinding, 'sectionOrdinal' | 'kind' | 'role'>): string {
+  return `${binding.sectionOrdinal}:${binding.kind}:${binding.role}`;
+}
+
+/**
+ * Locate each `deleted` lifecycle story in the outer compared package.
+ *
+ * The outer comparison keeps the removed section's selection reachable from
+ * revision markup (a deleted paragraph mark's `w:sectPr`, or a
+ * `w:sectPrChange`), and imports the selected part wherever the package
+ * allocator placed it. A story is representable only when reject-all of the
+ * outer document reselects one part for every one of its original slots and
+ * accept-all selects that part through no slot at all; otherwise a tracked
+ * deletion would not project to the original/revised states and the story
+ * is left unrepresented. Returns the output part path per representable story.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @see https://github.com/UseJunior/safe-docx/issues/754
+ */
+export async function deletedAncillaryStoryOutputPaths(
+  compared: Buffer,
+  stories: readonly TextBoxStoryInput[],
+): Promise<Map<TextBoxStoryInput, string>> {
+  const resolved = new Map<TextBoxStoryInput, string>();
+  const candidates = stories.filter((story) => story.ancillaryMode === 'deleted');
+  if (candidates.length === 0) return resolved;
+  const archive = await DocxArchive.load(compared);
+  const documentXml = await archive.getDocumentXml();
+  const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
+  const rejectedPathBySlot = new Map(
+    auditSectPr(rejectAllChanges(documentXml), relationshipsXml).bindings.map(
+      (binding) => [slotKey(binding), binding.targetPath],
+    ),
+  );
+  const acceptedPaths = new Set(
+    auditSectPr(acceptAllChanges(documentXml), relationshipsXml).bindings.map(
+      (binding) => binding.targetPath,
+    ),
+  );
+  for (const story of candidates) {
+    const paths = new Set(
+      (story.selectedSlots ?? []).map((slot) => rejectedPathBySlot.get(slotKey(slot))),
+    );
+    const [outputPath] = paths;
+    if (
+      paths.size !== 1 ||
+      outputPath === undefined ||
+      acceptedPaths.has(outputPath) ||
+      !archive.hasFile(outputPath)
+    ) {
+      continue;
+    }
+    resolved.set(story, outputPath);
+  }
+  return resolved;
 }
 
 /**
@@ -1676,6 +1820,24 @@ export async function assembleTextBoxStoryComparison(
   return outerArchive.save();
 }
 
+const REVISION_WRAPPER_NAMES = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
+
+function hasAncestorBelow(element: Element, stopAt: Element, localName: string): boolean {
+  for (let current = element.parentElement; current && current !== stopAt; current = current.parentElement) {
+    if (current.namespaceURI === OOXML.W_NS && current.localName === localName) return true;
+  }
+  return false;
+}
+
+function hasRevisionWrapperAncestor(element: Element, stopAt: Element): boolean {
+  for (let current = element.parentElement; current && current !== stopAt; current = current.parentElement) {
+    if (current.namespaceURI === OOXML.W_NS && REVISION_WRAPPER_NAMES.has(current.localName)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Mark every paragraph boundary in a relationship-selected story owned by an
  * inserted section. Paragraph-mark revisions make empty paragraphs and
@@ -1691,6 +1853,63 @@ export async function markInsertedAncillaryStoryParagraphs(
   author: string,
   date: Date,
   minimumRevisionId = 0,
+): Promise<{ document: Buffer; directParagraphs: number }> {
+  return markLifecycleAncillaryStoryParagraphs(
+    storyDocument,
+    preservedPackage,
+    author,
+    date,
+    minimumRevisionId,
+    'w:ins',
+  );
+}
+
+/**
+ * Mark every paragraph boundary in a relationship-selected story whose
+ * selecting section slot was removed, so the story's text is a tracked
+ * deletion (`w:del` paragraph marks, `w:delText` runs) rather than plain
+ * content that survives accept-all. VML/DrawingML carrier runs are left
+ * unwrapped, as on the insertion side.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @see https://github.com/UseJunior/safe-docx/issues/754
+ */
+export async function markDeletedAncillaryStoryParagraphs(
+  storyDocument: Buffer,
+  preservedPackage: Buffer,
+  author: string,
+  date: Date,
+  minimumRevisionId = 0,
+): Promise<{ document: Buffer; directParagraphs: number }> {
+  return markLifecycleAncillaryStoryParagraphs(
+    storyDocument,
+    preservedPackage,
+    author,
+    date,
+    minimumRevisionId,
+    'w:del',
+  );
+}
+
+/**
+ * Shared marker for lifecycle stories. Every paragraph in the story, including
+ * paragraphs inside tables and nested text boxes, receives a paragraph-mark
+ * revision; every run that is not a drawing/VML carrier and is not already
+ * inside a revision wrapper is wrapped. Runs inside `w:hyperlink`,
+ * `w:fldSimple` and run-level `w:sdt` are included, since those containers
+ * admit run-level revision elements.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ */
+async function markLifecycleAncillaryStoryParagraphs(
+  storyDocument: Buffer,
+  preservedPackage: Buffer,
+  author: string,
+  date: Date,
+  minimumRevisionId: number,
+  markerTag: 'w:ins' | 'w:del',
 ): Promise<{ document: Buffer; directParagraphs: number }> {
   const archive = await DocxArchive.load(storyDocument);
   const document = parseXml(await archive.getDocumentXml());
@@ -1718,29 +1937,38 @@ export async function markInsertedAncillaryStoryParagraphs(
   const markParagraph = (paragraph: Element): void => {
     addParagraphMarkRevisionMarker(
       paragraph,
-      'w:ins',
+      markerTag,
       author,
       dateString,
       state,
     );
-    for (const run of directChildElements(paragraph).filter(
+    for (const run of Array.from(
+      paragraph.getElementsByTagNameNS(OOXML.W_NS, 'r'),
+    ).filter(
       (element) =>
-        element.namespaceURI === OOXML.W_NS &&
-        element.localName === 'r' &&
+        // Runs of nested text-box paragraphs belong to those paragraphs.
+        !hasAncestorBelow(element, paragraph, 'txbxContent') &&
+        !hasRevisionWrapperAncestor(element, paragraph) &&
         element.getElementsByTagNameNS(OOXML.W_NS, 'drawing').length === 0 &&
         element.getElementsByTagNameNS(OOXML.W_NS, 'pict').length === 0 &&
         element.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length === 0,
     )) {
       wrapRunWithTrackChange({
         run,
-        tagName: 'w:ins',
+        tagName: markerTag,
         author,
         dateStr: dateString,
         state,
+        convertTextToDelText: markerTag === 'w:del',
       });
     }
   };
-  for (const paragraph of directParagraphs) {
+  // Nested text-box paragraphs are marked on their own; every other paragraph
+  // in the story (direct, table cell, block-level sdt) is marked here.
+  for (const paragraph of Array.from(
+    body.getElementsByTagNameNS(OOXML.W_NS, 'p'),
+  )) {
+    if (hasAncestorBelow(paragraph, body, 'txbxContent')) continue;
     markParagraph(paragraph);
     for (const textBox of Array.from(
       paragraph.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),

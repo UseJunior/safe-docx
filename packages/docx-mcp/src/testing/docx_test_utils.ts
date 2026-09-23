@@ -22,10 +22,10 @@ const FOOTER_RELATIONSHIP_TYPE =
  * Minimal DOCX whose single section selects a default footer (`word/footer1.xml`),
  * or — when `footerText` is `null` — the same body with no footer at all.
  *
- * The pair (with footer, without footer) is the smallest input on which
- * `compareDocuments` reports a non-empty `unrepresentedChanges` (#754, #1029):
- * the revised-based output simply has no footer part, and no revision markup
- * can describe the loss.
+ * The pair (with footer, without footer) is the smallest removed-story input:
+ * since #754 the redline keeps the footer part and marks its content as a
+ * tracked deletion, so nothing is reported in `unrepresentedChanges` for it.
+ * Use `makeMinimalDocxWithPageWidth` for an input that stays unrepresented.
  */
 export async function makeMinimalDocxWithFooter(
   paragraphTexts: string[],
@@ -55,6 +55,26 @@ export async function makeMinimalDocxWithFooter(
     'word/_rels/document.xml.rels': documentRelsXml,
     'word/footer1.xml': footerXml,
   });
+}
+
+/**
+ * Minimal DOCX whose single section declares a page width in twips.
+ *
+ * Two of these with different widths are the smallest input on which
+ * `compareDocuments` reports a non-empty `unrepresentedChanges` (#1029): the
+ * comparison emits no revision for section properties, so the difference is
+ * reported as `{ scope: 'section', kind: 'changed' }`.
+ */
+export async function makeMinimalDocxWithPageWidth(
+  paragraphTexts: string[],
+  pageWidthTwips: number,
+): Promise<Buffer> {
+  const body = paragraphTexts.map((t) => `<w:p><w:r><w:t>${xmlEscape(t)}</w:t></w:r></w:p>`).join('');
+  const documentXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+    `<w:body>${body}<w:sectPr><w:pgSz w:w="${pageWidthTwips}" w:h="15840"/></w:sectPr></w:body></w:document>`;
+  return makeDocxWithDocumentXml(documentXml);
 }
 
 const MINIMAL_CONTENT_TYPES_XML = [
