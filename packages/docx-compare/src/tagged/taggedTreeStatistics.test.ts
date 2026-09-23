@@ -52,8 +52,12 @@ function publish(
 }
 
 function generatedElements(publication: TaggedTreePublication, localName: string): Element[] {
-  return Array.from(parseXml(publication.xml).getElementsByTagNameNS(W_NS, localName))
-    .filter((element) => element.getAttribute(COMPARISON_REVISION_ATTRIBUTE) === '1');
+  return Array.from(parseXml(publication.xml).getElementsByTagName('*'))
+    .filter((element) => {
+      const classification = element.getAttribute(COMPARISON_REVISION_ATTRIBUTE);
+      return (element.namespaceURI === W_NS && element.localName === localName && classification === '1') ||
+        classification === localName;
+    });
 }
 
 function expectRetainedMarkersAndStatsAliasesAgree(
@@ -305,8 +309,8 @@ describe('tagged publication range statistics', () => {
     );
 
     expectRetainedMarkersAndStatsAliasesAgree(publication);
-    // Each whole-paragraph endpoint has a paragraph-mark revision and a
-    // content wrapper; both contribute to these internal serialized totals.
+    // Each endpoint contributes its content wrapper plus either a move
+    // paragraph marker or a terminal break revision classified to that move.
     expect(publication.serializedRangeStats.moveFromRanges).toBe(2);
     expect(publication.serializedRangeStats.moveToRanges).toBe(2);
     // CompareStats has no public move fields, so pure moves otherwise report

@@ -15,7 +15,8 @@ import { moveBalanceIssues } from '../integration/strategy-differential-harness.
 import { isParagraphMoveMarker } from './revisionMarkup.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 
-const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Paragraph move review regressions' })
+const TEST_FEATURE = 'refactor-tracked-paragraph-move-ownership';
+const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE })
   .conformance(
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.21' },
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.22' },
@@ -37,7 +38,103 @@ function moveFixture() {
 }
 
 describe('paragraph move review regressions', () => {
-  test('allocates distinct revisions when interior bookmarks split moved paragraph content', async () => {
+  test.openspec('Adjacent detected moves retain conservative ownership')
+    ('preserves exact projections and valid ranges across all three-to-five-paragraph reorderings', () => {
+    const labels = ['alpha paragraph one', 'bravo paragraph two', 'charlie paragraph three',
+      'delta paragraph four', 'echo paragraph five'];
+    const permutations = (items: string[]): string[][] => items.length === 0 ? [[]] :
+      items.flatMap((item, index) => permutations(items.filter((_, position) => position !== index))
+        .map((rest) => [item, ...rest]));
+    for (const count of [3, 4, 5]) {
+      const originalTexts = labels.slice(0, count);
+      for (const revisedTexts of permutations(originalTexts)) {
+        const makeBody = (texts: string[]) => parseXml(`<w:document xmlns:w="${W_NS}"><w:body>${texts.map(paragraphWithText).join('')}</w:body></w:document>`).documentElement;
+        const original = makeBody(originalTexts);
+        const revised = makeBody(revisedTexts);
+        const { tree, moves } = constructTaggedTree(original, revised);
+        const xml = serializeTaggedTree(tree, createPreservePlan(original, revised, tree, {
+          author: 'Comparator', date: '2026-09-23T00:00:00Z',
+        }), { moves });
+        const texts = (projection: string) => Array.from(parseXml(projection).getElementsByTagNameNS(W_NS, 'p'))
+          .map((paragraph) => paragraph.textContent);
+        expect(texts(acceptAllChanges(xml)), revisedTexts.join('|')).toEqual(revisedTexts);
+        expect(texts(rejectAllChanges(xml)), revisedTexts.join('|')).toEqual(originalTexts);
+        expect(verifySerializedMoveRanges(xml, moves), revisedTexts.join('|')).toEqual([]);
+      }
+    }
+  });
+  // coverage-rationale: One placement matrix compares all three paragraph-break ownership topologies with identical structural and projection assertions.
+  test.openspec('Terminal destination uses created-break ownership')
+    .openspec('Terminal source uses removed-break ownership')
+    .openspec('Middle move retains paragraph-mark move ownership')
+    ('uses Word-native paragraph-break ownership when a move crosses the body terminus', async () => {
+    const moved = 'the complete movable clause paragraph changes its position here';
+    const first = 'first stable anchor paragraph remains unchanged in its position';
+    const second = 'second stable anchor paragraph remains unchanged throughout';
+    for (const scenario of [
+      {
+        name: 'terminal destination',
+        original: [moved, first, second],
+        revised: [first, second, moved],
+        marks: [['del'], [], ['ins'], []],
+        terminalCrossing: true,
+      },
+      {
+        name: 'terminal source',
+        original: [first, second, moved],
+        revised: [moved, first, second],
+        marks: [['ins'], [], ['del'], []],
+        terminalCrossing: true,
+      },
+      {
+        name: 'middle',
+        original: [moved, first, second],
+        revised: [first, moved, second],
+        marks: [['moveFrom'], [], ['moveTo'], []],
+        terminalCrossing: false,
+      },
+    ]) {
+      const compared = await compareDocuments(
+        await buildDocxFromBodyXml(scenario.original.map((text) => paragraphWithText(text)).join('')),
+        await buildDocxFromBodyXml(scenario.revised.map((text) => paragraphWithText(text)).join('')),
+        { detectMoves: true, author: 'Comparator', date: new Date('2026-09-23T00:00:00Z') },
+      );
+      const xml = await (await DocxArchive.load(compared.document)).getDocumentXml();
+      const document = parseXml(xml);
+      const body = document.getElementsByTagNameNS(W_NS, 'body')[0]!;
+      const paragraphs = Array.from(body.childNodes).filter((node): node is Element =>
+        node.nodeType === 1 && (node as Element).namespaceURI === W_NS && (node as Element).localName === 'p');
+      const markNames = paragraphs.map((paragraph) => {
+        const pPr = Array.from(paragraph.childNodes).find((node) =>
+          node.nodeType === 1 && (node as Element).localName === 'pPr') as Element | undefined;
+        const rPr = pPr && Array.from(pPr.childNodes).find((node) =>
+          node.nodeType === 1 && (node as Element).localName === 'rPr') as Element | undefined;
+        return rPr ? Array.from(rPr.childNodes).filter((node): node is Element => node.nodeType === 1)
+          .map((node) => node.localName) : [];
+      });
+      expect(markNames, scenario.name).toEqual(scenario.marks);
+      if (scenario.terminalCrossing) {
+        expect(paragraphs.every((paragraph) =>
+          paragraph.hasAttributeNS(W_NS, 'rsidR') &&
+          paragraph.hasAttributeNS(W_NS, 'rsidRDefault')), `${scenario.name} revision sessions`).toBe(true);
+      }
+      for (const direction of ['From', 'To']) {
+        const start = document.getElementsByTagNameNS(W_NS, `move${direction}RangeStart`)[0]!;
+        const end = document.getElementsByTagNameNS(W_NS, `move${direction}RangeEnd`)[0]!;
+        expect((start.parentNode as Element).localName, `${scenario.name} ${direction} start`).toBe('p');
+        expect((end.parentNode as Element).localName, `${scenario.name} ${direction} end`)
+          .toBe(scenario.terminalCrossing ? 'p' : 'body');
+      }
+      expect(Array.from(parseXml(acceptAllChanges(xml)).getElementsByTagNameNS(W_NS, 'p'))
+        .map((paragraph) => paragraph.textContent), `${scenario.name} accept`).toEqual(scenario.revised);
+      expect(Array.from(parseXml(rejectAllChanges(xml)).getElementsByTagNameNS(W_NS, 'p'))
+        .map((paragraph) => paragraph.textContent), `${scenario.name} reject`).toEqual(scenario.original);
+    }
+  });
+
+  test.openspec('Accept removes source-range bookmarks')
+    .openspec('Reject removes destination-range bookmarks')
+    ('allocates distinct revisions when interior bookmarks split moved paragraph content', async () => {
     const movedText = 'Moved opening bookmarked words trailing words';
     const moved = `<w:p>${resultText('Moved opening ')}<w:bookmarkStart w:id="7" w:name="Clause"/>`
       + '<w:r><w:rPr><w:b/></w:rPr><w:t>bookmarked words</w:t></w:r>'
@@ -172,12 +269,24 @@ describe('paragraph move review regressions', () => {
     expect(moveBalanceIssues(xml).length).toBeGreaterThan(0);
   });
 
+  test('rejects the legacy terminal paragraph-marker ownership topology', () => {
+    const { document, moves } = moveFixture();
+    const deletedBreak = Array.from(document.getElementsByTagNameNS(W_NS, 'del'))
+      .find((element) => element.parentNode?.nodeName === 'w:rPr')!;
+    deletedBreak.parentNode!.removeChild(deletedBreak);
+    const xml = new XMLSerializer().serializeToString(document);
+    expect(verifySerializedMoveRanges(xml, moves))
+      .toContain(`${moves[0]!.name} terminal paragraph move lacks Word-native break ownership`);
+  });
+
   test('rejects duplicated move revision IDs but permits independently identified split content', () => {
     const { document, moves } = moveFixture();
     for (const direction of ['moveFrom', 'moveTo']) {
       const content = Array.from(document.getElementsByTagNameNS(W_NS, direction))
         .find(element => element.parentNode?.nodeName === 'w:p')!;
-      content.parentNode!.appendChild(content.cloneNode(true));
+      const rangeEnd = Array.from(document.getElementsByTagNameNS(W_NS, `${direction}RangeEnd`))
+        .find((element) => element.parentNode === content.parentNode)!;
+      content.parentNode!.insertBefore(content.cloneNode(true), rangeEnd);
     }
     const serialize = () => new XMLSerializer().serializeToString(document);
     expect(verifySerializedMoveRanges(serialize(), moves).length).toBeGreaterThan(0);

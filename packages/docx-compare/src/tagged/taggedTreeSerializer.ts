@@ -433,6 +433,261 @@ function markWholeParagraph(
   return paragraph;
 }
 
+interface WholeParagraphMoveEndpoint {
+  paragraph: WmlElement;
+  predecessor?: WmlElement;
+  terminal: boolean;
+  wholeParagraph: boolean;
+}
+
+function wholeParagraphMoveEndpoint(
+  root: WmlElement,
+  direction: 'From' | 'To',
+  rangeId: number,
+): WholeParagraphMoveEndpoint | undefined {
+  const matches = (localName: string): WmlElement | undefined =>
+    Array.from(root.getElementsByTagNameNS(W_NS, localName))
+      .find((element) => element.getAttributeNS(W_NS, 'id') === String(rangeId)) as WmlElement | undefined;
+  const start = matches(`move${direction}RangeStart`);
+  const end = matches(`move${direction}RangeEnd`);
+  if (!start || !end || start.parentNode?.nodeType !== 1 || end.parentNode?.nodeType !== 1) return undefined;
+  let paragraph: WmlElement | undefined;
+  const startParent = start.parentNode as WmlElement;
+  const endParent = end.parentNode as WmlElement;
+  let wholeParagraph = true;
+  if (startParent.namespaceURI === W_NS && startParent.localName === 'p') {
+    paragraph = startParent;
+    if (endParent !== paragraph && endParent !== paragraph.parentNode) return undefined;
+    const children = childElements(paragraph);
+    const startIndex = children.indexOf(start);
+    const endIndex = endParent === paragraph ? children.indexOf(end) : children.length;
+    wholeParagraph = startIndex >= 0 && endIndex > startIndex &&
+      children.slice(0, startIndex).every((child) =>
+        child.localName === 'pPr' || RANGE_BOUNDARY_LOCALS.has(child.localName)) &&
+      children.slice(endIndex + (endParent === paragraph ? 1 : 0)).every((child) =>
+        RANGE_BOUNDARY_LOCALS.has(child.localName));
+  } else {
+    if (startParent !== endParent) return undefined;
+    const siblings = childElements(startParent);
+    const startIndex = siblings.indexOf(start);
+    const endIndex = siblings.indexOf(end);
+    if (startIndex < 0 || endIndex <= startIndex) return undefined;
+    const enclosed = siblings.slice(startIndex + 1, endIndex);
+    const paragraphs = enclosed.filter((child) => child.namespaceURI === W_NS && child.localName === 'p');
+    if (paragraphs.length !== 1 || enclosed.some((child) =>
+      child !== paragraphs[0] && !RANGE_BOUNDARY_LOCALS.has(child.localName))) return undefined;
+    paragraph = paragraphs[0]!;
+  }
+  const parent = paragraph.parentNode as WmlElement | null;
+  // Final paragraphs inside table cells carry a structural cell terminator, not
+  // the body-story terminal mark characterized by Word's native comparison.
+  if (!parent || parent.namespaceURI !== W_NS || parent.localName !== 'body') return undefined;
+  const siblings = childElements(parent);
+  const paragraphIndex = siblings.indexOf(paragraph);
+  if (paragraphIndex < 0) return undefined;
+
+  let predecessor: WmlElement | undefined;
+  for (let index = paragraphIndex - 1; index >= 0; index--) {
+    const candidate = siblings[index]!;
+    if (candidate.namespaceURI === W_NS && candidate.localName === 'p') {
+      predecessor = candidate;
+      break;
+    }
+    if (!RANGE_BOUNDARY_LOCALS.has(candidate.localName)) break;
+  }
+  const terminal = siblings.slice(paragraphIndex + 1).every((candidate) =>
+    RANGE_BOUNDARY_LOCALS.has(candidate.localName) ||
+    (candidate.namespaceURI === W_NS && candidate.localName === 'sectPr'));
+  return { paragraph, predecessor, terminal, wholeParagraph };
+}
+
+function containWholeParagraphMoveRange(
+  root: WmlElement,
+  endpoint: WholeParagraphMoveEndpoint,
+  direction: 'From' | 'To',
+  rangeId: number,
+  containEnd: boolean,
+): void {
+  const element = (localName: string): WmlElement | undefined =>
+    Array.from(root.getElementsByTagNameNS(W_NS, localName))
+      .find((candidate) => candidate.getAttributeNS(W_NS, 'id') === String(rangeId)) as WmlElement | undefined;
+  const start = element(`move${direction}RangeStart`);
+  const end = element(`move${direction}RangeEnd`);
+  if (!start || !end) return;
+  if (start.parentNode !== endpoint.paragraph) {
+    start.parentNode!.removeChild(start);
+    const { paragraphProperties } = paragraphMarkProperties(endpoint.paragraph);
+    endpoint.paragraph.insertBefore(start, paragraphProperties?.nextSibling ?? endpoint.paragraph.firstChild);
+  }
+  if (containEnd && end.parentNode !== endpoint.paragraph) {
+    end.parentNode!.removeChild(end);
+    endpoint.paragraph.appendChild(end);
+  }
+}
+
+function normalizeWholeParagraphMoveRangeStarts(
+  root: WmlElement,
+  relations: readonly TaggedMoveRelation[],
+): void {
+  for (const relation of relations) {
+    const source = wholeParagraphMoveEndpoint(root, 'From', relation.sourceRangeId);
+    const destination = wholeParagraphMoveEndpoint(root, 'To', relation.destinationRangeId);
+    if (source?.wholeParagraph) containWholeParagraphMoveRange(root, source, 'From', relation.sourceRangeId, false);
+    if (destination?.wholeParagraph) containWholeParagraphMoveRange(root, destination, 'To', relation.destinationRangeId, false);
+  }
+}
+
+function paragraphMarkProperties(paragraph: WmlElement): {
+  paragraphProperties?: WmlElement;
+  runProperties?: WmlElement;
+} {
+  const paragraphProperties = childElements(paragraph).find((child) => child.localName === 'pPr');
+  return {
+    paragraphProperties,
+    runProperties: paragraphProperties && childElements(paragraphProperties)
+      .find((child) => child.localName === 'rPr'),
+  };
+}
+
+function paragraphMarkRevision(
+  paragraph: WmlElement,
+  localName: 'ins' | 'del' | 'moveFrom' | 'moveTo',
+): WmlElement | undefined {
+  const { runProperties } = paragraphMarkProperties(paragraph);
+  return runProperties && childElements(runProperties).find((child) =>
+    child.namespaceURI === W_NS && child.localName === localName);
+}
+
+function ensureMoveParagraphRevisionSessionIds(body: WmlElement, seed: number): void {
+  // Word for Mac 16.112 inserts a literal space while accepting an otherwise
+  // native-shaped terminal move when every participating paragraph lacks both
+  // revision-session attributes. Word's own Compare always supplies them.
+  // Preserve existing values and synthesize one deterministic session for
+  // missing attributes on every direct body paragraph (not table paragraphs)
+  // in a story where terminal ownership was normalized.
+  const paragraphs = childElements(body).filter((child) =>
+    child.namespaceURI === W_NS && child.localName === 'p');
+  const used = new Set(paragraphs.flatMap((paragraph) => [
+    paragraph.getAttributeNS(W_NS, 'rsidR'),
+    paragraph.getAttributeNS(W_NS, 'rsidRDefault'),
+  ].filter((value): value is string => !!value)));
+  let value = (0x97300000 + (seed & 0xffff)).toString(16).toUpperCase().padStart(8, '0');
+  while (used.has(value)) {
+    value = ((Number.parseInt(value, 16) + 1) >>> 0).toString(16).toUpperCase().padStart(8, '0');
+  }
+  for (const paragraph of paragraphs) {
+    const existing = paragraph.getAttributeNS(W_NS, 'rsidR') ||
+      paragraph.getAttributeNS(W_NS, 'rsidRDefault') || value;
+    if (!paragraph.hasAttributeNS(W_NS, 'rsidR')) paragraph.setAttributeNS(W_NS, 'w:rsidR', existing);
+    if (!paragraph.hasAttributeNS(W_NS, 'rsidRDefault')) {
+      paragraph.setAttributeNS(W_NS, 'w:rsidRDefault', existing);
+    }
+  }
+}
+
+/**
+ * Give a terminal-crossing whole-paragraph move the break ownership emitted by Word.
+ *
+ * A middle-to-middle relocation can move the paragraph mark with its content.
+ * When exactly one endpoint is the body-story terminal paragraph, however, that
+ * endpoint has no following break to move. Word therefore emits ordinary `del`
+ * and `ins` paragraph-mark revisions for the removed and created breaks: the
+ * marker stays on the moved paragraph at a non-terminal endpoint and moves to
+ * the stable predecessor at a terminal endpoint. The moved run content remains
+ * inside `moveFrom`/`moveTo` ranges.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.22
+ * @see https://github.com/UseJunior/safe-docx/issues/973
+ */
+function normalizeTerminalWholeParagraphMoveOwnership(
+  root: WmlElement,
+  relations: readonly TaggedMoveRelation[],
+  generatedRevisionIds: ReadonlySet<number>,
+): void {
+  const carriesSection = (paragraph: WmlElement): boolean => {
+    const { paragraphProperties } = paragraphMarkProperties(paragraph);
+    return !!paragraphProperties && childElements(paragraphProperties)
+      .some((child) => child.namespaceURI === W_NS && child.localName === 'sectPr');
+  };
+  const isGenerated = (marker: WmlElement): boolean => {
+    const id = Number(marker.getAttributeNS(W_NS, 'id'));
+    return Number.isSafeInteger(id) && generatedRevisionIds.has(id);
+  };
+  const canOwn = (
+    paragraph: WmlElement,
+    replaced?: WmlElement,
+  ): boolean => {
+    if (carriesSection(paragraph)) return false;
+    const { runProperties } = paragraphMarkProperties(paragraph);
+    return !runProperties || childElements(runProperties).every((child) =>
+      child === replaced || child.namespaceURI !== W_NS || !PARAGRAPH_MARK_REVISION_LOCALS.has(child.localName));
+  };
+  const replaceMarker = (
+    endpoint: WholeParagraphMoveEndpoint,
+    oldMarker: WmlElement,
+    target: WmlElement,
+    kind: 'ins' | 'del',
+  ): void => {
+    const replacement = oldMarker.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
+    for (let index = 0; index < oldMarker.attributes.length; index++) {
+      const attribute = oldMarker.attributes.item(index);
+      if (attribute) replacement.setAttributeNS(attribute.namespaceURI, attribute.name, attribute.value);
+    }
+    // Statistics still classify this ordinary break revision as part of the
+    // move whose paragraph marker it replaced. The private marker is removed
+    // before publication, together with all other comparison-stat markers.
+    replacement.setAttribute(COMPARISON_REVISION_ATTRIBUTE, oldMarker.localName);
+    const origin = paragraphMarkProperties(endpoint.paragraph);
+    oldMarker.parentNode!.removeChild(oldMarker);
+    if (origin.runProperties && childElements(origin.runProperties).length === 0) {
+      origin.paragraphProperties!.removeChild(origin.runProperties);
+    }
+    if (origin.paragraphProperties && childElements(origin.paragraphProperties).length === 0) {
+      endpoint.paragraph.removeChild(origin.paragraphProperties);
+    }
+
+    let { paragraphProperties, runProperties } = paragraphMarkProperties(target);
+    if (!paragraphProperties) {
+      paragraphProperties = target.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
+      target.insertBefore(paragraphProperties, target.firstChild);
+    }
+    if (!runProperties) {
+      runProperties = target.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
+      const boundary = childElements(paragraphProperties).find((child) =>
+        ['sectPr', 'pPrChange'].includes(child.localName));
+      paragraphProperties.insertBefore(runProperties, boundary ?? null);
+    }
+    placeParagraphMarkRevisionMarker(runProperties, replacement, `w:${kind}`);
+  };
+
+  for (const relation of relations) {
+    const source = wholeParagraphMoveEndpoint(root, 'From', relation.sourceRangeId);
+    const destination = wholeParagraphMoveEndpoint(root, 'To', relation.destinationRangeId);
+    if (!source?.wholeParagraph || !destination?.wholeParagraph || source.terminal === destination.terminal) continue;
+    const sourceMarker = paragraphMarkRevision(source.paragraph, 'moveFrom');
+    const destinationMarker = paragraphMarkRevision(destination.paragraph, 'moveTo');
+    const sourceTarget = source.terminal ? source.predecessor : source.paragraph;
+    const destinationTarget = destination.terminal ? destination.predecessor : destination.paragraph;
+    if (!sourceMarker || !destinationMarker || !isGenerated(sourceMarker) || !isGenerated(destinationMarker) ||
+        !sourceTarget || !destinationTarget || sourceTarget === destinationTarget ||
+        !canOwn(sourceTarget, sourceTarget === source.paragraph ? sourceMarker : undefined) ||
+        !canOwn(destinationTarget, destinationTarget === destination.paragraph ? destinationMarker : undefined)) {
+      continue;
+    }
+    replaceMarker(source, sourceMarker, sourceTarget, 'del');
+    replaceMarker(destination, destinationMarker, destinationTarget, 'ins');
+    containWholeParagraphMoveRange(root, source, 'From', relation.sourceRangeId, true);
+    containWholeParagraphMoveRange(root, destination, 'To', relation.destinationRangeId, true);
+    ensureMoveParagraphRevisionSessionIds(
+      source.paragraph.parentNode as WmlElement,
+      relation.sourceRangeId,
+    );
+  }
+}
+
 /**
  * Encode a whole-paragraph revision's break on the preceding paragraph when safe.
  *
@@ -1720,6 +1975,8 @@ export function serializeTaggedTree(
     options.revisionGrouping ?? 'token-minimal',
   );
   splitCrossParagraphBookmarkCounterparts(emitted, originalBookmarkIds, allocateRevision);
+  normalizeTerminalWholeParagraphMoveOwnership(emitted, options.moves ?? [], generatedRevisionIds);
+  normalizeWholeParagraphMoveRangeStarts(emitted, options.moves ?? []);
   normalizeWholeParagraphRevisionBoundaries(emitted, generatedRevisionIds);
   hoistFieldCharactersFromDeletions(emitted);
   hoistLiteralInsertionsFromDeletedFieldInstructions(emitted);
@@ -1873,6 +2130,26 @@ export function verifySerializedMoveRanges(
         if (boundary === 'End' && matches.some((element) => element.hasAttributeNS(W_NS, 'name'))) {
           violations.push(`${relation.name} ${direction.toLowerCase()} range end has an illegal name`);
         }
+      }
+    }
+    const source = wholeParagraphMoveEndpoint(
+      document.documentElement as WmlElement,
+      'From',
+      relation.sourceRangeId,
+    );
+    const destination = wholeParagraphMoveEndpoint(
+      document.documentElement as WmlElement,
+      'To',
+      relation.destinationRangeId,
+    );
+    if (source?.wholeParagraph && destination?.wholeParagraph && source.terminal !== destination.terminal &&
+        !paragraphMarkRevision(source.paragraph, 'moveFrom') &&
+        !paragraphMarkRevision(destination.paragraph, 'moveTo')) {
+      const sourceTarget = source.terminal ? source.predecessor : source.paragraph;
+      const destinationTarget = destination.terminal ? destination.predecessor : destination.paragraph;
+      if (!sourceTarget || !paragraphMarkRevision(sourceTarget, 'del') ||
+          !destinationTarget || !paragraphMarkRevision(destinationTarget, 'ins')) {
+        violations.push(`${relation.name} terminal paragraph move lacks Word-native break ownership`);
       }
     }
   }
