@@ -1433,6 +1433,8 @@ export class DocxDocument {
     text: string;
     initials?: string;
     body?: import('./comments.js').CommentBodyParagraph[];
+    /** Definition `w:date`, settable without a `RevisionContext` (#961). */
+    date?: string;
   }, ctx?: RevisionContext): Promise<AddCommentResult> {
     const p = findParagraphByBookmarkId(this.documentXml, params.paragraphId);
     if (!p) throw new Error(`Paragraph not found: ${params.paragraphId}`);
@@ -1446,6 +1448,7 @@ export class DocxDocument {
       text: params.text,
       initials: params.initials,
       body: params.body,
+      date: params.date,
     }, ctx);
 
     this.dirty = true;
@@ -1465,6 +1468,8 @@ export class DocxDocument {
     text: string;
     initials?: string;
     body?: import('./comments.js').CommentBodyParagraph[];
+    /** Definition `w:date`, settable without a `RevisionContext` (#961). */
+    date?: string;
   }, ctx?: RevisionContext): Promise<AddCommentReplyResult> {
     await bootstrapCommentParts(this.zip);
     const result = await addCommentReplyImpl(this.documentXml, this.zip, {
@@ -1473,6 +1478,7 @@ export class DocxDocument {
       text: params.text,
       initials: params.initials,
       body: params.body,
+      date: params.date,
     }, ctx);
 
     this.dirty = true;

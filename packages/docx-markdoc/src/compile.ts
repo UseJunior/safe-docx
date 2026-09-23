@@ -307,14 +307,16 @@ function topologyDiagnostics(
  */
 const REVISION_ELEMENT_PATTERN = /<w:(ins|del|moveFrom|moveTo|moveFromRangeStart|moveFromRangeEnd|moveToRangeStart|moveToRangeEnd|rPrChange|pPrChange|tblPrChange|tblGridChange|trPrChange|tcPrChange|sectPrChange)\b(?:[^>]*\/>|[\s\S]*?<\/w:\1>)/gu;
 
-type RevisionSnapshot = Array<{ part: string; xml: string }>;
+export type RevisionSnapshot = Array<{ part: string; xml: string }>;
 
-type RevisionDescriptor = { part: string; element: string; id?: string };
+export type RevisionDescriptor = { part: string; element: string; id?: string };
 
-type RevisionPreservationReport = {
+export type RevisionPreservationReport = {
   preserved: boolean;
-  /** Source revisions, in source order, that the projection no longer contains verbatim at or after the previous match. */
+  /** Source revisions, in source order, that the projection does not reproduce verbatim in the same part at the same relative position. */
   missing: RevisionDescriptor[];
+  /** Projected revisions that repeat a source revision's XML in the same part more often than the source does. */
+  duplicated: RevisionDescriptor[];
 };
 
 /**
@@ -346,31 +348,45 @@ function describeRevision(item: RevisionSnapshot[number]): RevisionDescriptor {
 }
 
 /**
- * Every source revision must reappear verbatim in the projected output, in
- * the same story part and in the same relative order. Projection may add
- * revision markup of its own (see issue #961), so this is an ordered
- * subsequence check per part rather than equality.
+ * The pre-existing revisions of every story part must survive projection as
+ * exactly the source sequence: each source revision reappears verbatim, in
+ * the same part, in the same order, and exactly once. Projection may still
+ * add revision markup of its own for genuinely new annotations (see #961),
+ * so the comparison is between the source sequence and the projected
+ * revisions that reproduce a source revision's XML — a per-part equality of
+ * the pre-existing set, not an ordered-containment check that would accept a
+ * source revision being duplicated.
+ *
+ * Exported for tests; not part of the public package contract.
  */
-function verifyRevisionPreservation(source: RevisionSnapshot, projected: RevisionSnapshot): RevisionPreservationReport {
-  const projectedByPart = new Map<string, string[]>();
-  for (const item of projected) {
-    const list = projectedByPart.get(item.part) ?? [];
-    list.push(item.xml);
-    projectedByPart.set(item.part, list);
-  }
-  const cursors = new Map<string, number>();
-  const missing: RevisionDescriptor[] = [];
+export function verifyRevisionPreservation(source: RevisionSnapshot, projected: RevisionSnapshot): RevisionPreservationReport {
+  const sourceByPart = new Map<string, RevisionSnapshot>();
   for (const item of source) {
-    const candidates = projectedByPart.get(item.part) ?? [];
-    let index = cursors.get(item.part) ?? 0;
-    while (index < candidates.length && candidates[index] !== item.xml) index += 1;
-    if (index >= candidates.length) {
-      missing.push(describeRevision(item));
-      continue;
-    }
-    cursors.set(item.part, index + 1);
+    const list = sourceByPart.get(item.part) ?? [];
+    list.push(item);
+    sourceByPart.set(item.part, list);
   }
-  return { preserved: missing.length === 0, missing };
+  const preexistingByPart = new Map<string, RevisionSnapshot>();
+  for (const item of projected) {
+    if (!sourceByPart.get(item.part)?.some((candidate) => candidate.xml === item.xml)) continue;
+    const list = preexistingByPart.get(item.part) ?? [];
+    list.push(item);
+    preexistingByPart.set(item.part, list);
+  }
+  const missing: RevisionDescriptor[] = [];
+  const duplicated: RevisionDescriptor[] = [];
+  for (const [part, expected] of sourceByPart) {
+    const actual = preexistingByPart.get(part) ?? [];
+    const length = Math.max(expected.length, actual.length);
+    for (let index = 0; index < length; index += 1) {
+      const want = expected[index];
+      const got = actual[index];
+      if (want && got && want.xml === got.xml) continue;
+      if (want) missing.push(describeRevision(want));
+      if (got) duplicated.push(describeRevision(got));
+    }
+  }
+  return { preserved: missing.length === 0 && duplicated.length === 0, missing, duplicated };
 }
 
 function verificationText(document: DocxDocument): string {
@@ -1525,6 +1541,7 @@ export async function compileMarkdoc(
         sourceRevisionCount: sourceRevisions.length,
         projectedRevisionCount: trackedRevisions.length,
         missingRevisions: revisionPreservation.missing.slice(0, 8),
+        duplicatedRevisions: revisionPreservation.duplicated.slice(0, 8),
       },
     );
   }

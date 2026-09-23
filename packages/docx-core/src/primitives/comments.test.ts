@@ -1890,6 +1890,60 @@ describe('comments — edge cases and branch coverage', () => {
       });
     });
 
+    test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.2' })(
+      'stamps comment definitions with an explicit params.date and emits no revision markup when ctx is omitted', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+      let paragraph: Element;
+      let commentEls: Element[];
+      let bodyXml: string;
+
+      // A comment that already existed in the source is re-emitted with its
+      // own date but must not become a tracked insertion (#961).
+      const definitionDate = '2026-01-15T23:30:00-05:00';
+      const frozenClock = '2026-05-03T14:15:16Z';
+
+      await given('a bootstrapped document and no revision context', async () => {
+        ({ zip, doc, p: paragraph } = await setupWithComment());
+      });
+
+      await when('a root comment and a threaded reply are added with params.date under a frozen process clock', async () => {
+        await withDeterministicMetadata([0.135791113], async () => {
+          const { commentId } = await addComment(doc, zip, {
+            paragraphEl: paragraph,
+            start: 0,
+            end: 5,
+            author: 'Comment Author',
+            text: 'Root comment',
+            initials: 'CA',
+            date: definitionDate,
+          });
+          await addCommentReply(doc, zip, {
+            parentCommentId: commentId,
+            author: 'Reply Author',
+            text: 'Reply body',
+            initials: 'RA',
+            date: definitionDate,
+          });
+        });
+
+        const commentsDoc = parseXml(await zip.readText('word/comments.xml'));
+        commentEls = Array.from(commentsDoc.getElementsByTagNameNS(W_NS, W.comment)) as Element[];
+        bodyXml = serializeXml(doc);
+      });
+
+      await then('both definitions carry the explicit date and the body holds an untracked reference run', () => {
+        expect(commentEls).toHaveLength(2);
+        for (const el of commentEls) {
+          expect(el.getAttribute('w:date')).toBe(definitionDate);
+          expect(el.getAttribute('w:date')).not.toBe(frozenClock);
+        }
+        expect(bodyXml).toContain('<w:commentReference');
+        expect(doc.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(0);
+        expect(doc.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(0);
+      });
+    });
+
     test('preserves the legacy untracked body behavior when ctx is omitted for addComment, addCommentReply, and deleteComment', async ({ given, when, then }: AllureBddContext) => {
       let zip: DocxZip;
       let doc: Document;

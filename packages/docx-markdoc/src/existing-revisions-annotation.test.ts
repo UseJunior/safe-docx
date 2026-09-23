@@ -3,7 +3,7 @@ import JSZip from 'jszip';
 import { DocxDocument, getParagraphRuns } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../../docx-core/src/testing/ooxml-fixtures.js';
 import { testAllure } from '../../docx-core/src/testing/allure-test.js';
-import { compileMarkdoc } from './compile.js';
+import { compileMarkdoc, verifyRevisionPreservation } from './compile.js';
 import { importDocxToMarkdoc } from './import.js';
 import { requireMarkdoc } from './markdoc.js';
 
@@ -20,6 +20,45 @@ async function revisionXml(buffer: Buffer): Promise<string[]> {
   return [...xml.matchAll(/<w:(?:ins|del)\b(?:[^>]*\/>|[\s\S]*?<\/w:(?:ins|del)>)/gu)]
     .map((match) => match[0])
     .filter((revision) => revision.includes('w:author="Prior Author"'));
+}
+
+async function insertionsWrappingCommentReferences(buffer: Buffer): Promise<string[]> {
+  const xml = await partXml(buffer, 'word/document.xml');
+  return [...xml.matchAll(/<w:ins\b[^>]*>[\s\S]*?<\/w:ins>/gu)]
+    .map((match) => match[0])
+    .filter((insertion) => insertion.includes('<w:commentReference'));
+}
+
+/**
+ * Reject-all as Word would see it. Rejecting a tracked comment reference
+ * removes the `w:commentReference` run, which is what detaches the comment in
+ * Word; docx-core still lists the orphaned definition, so the reference count
+ * in document.xml is the evidence, alongside the comments it reports.
+ */
+async function rejectAll(buffer: Buffer) {
+  const document = await DocxDocument.load(buffer);
+  await document.rejectChanges();
+  const rejected = (await document.toBuffer({ cleanBookmarks: false })).buffer;
+  const documentXml = await partXml(rejected, 'word/document.xml');
+  return {
+    comments: await document.getComments(),
+    text: physicalText(document),
+    referenceIds: [...documentXml.matchAll(/<w:commentReference w:id="(\d+)"/gu)].map((match) => match[1]),
+  };
+}
+
+function authoredAnnotation(paragraphId: string, date?: string): string {
+  return [
+    `{% annotation id="authored:new" audience="internal" role="drafting-note" source-presentation="authored"`
+      + ` source-kind="range" source-paragraph="${paragraphId}" source-offset=20 source-end-paragraph="${paragraphId}" source-end-offset=26`
+      + ` anchor-kind="range" paragraph="${paragraphId}" offset=20 end-paragraph="${paragraphId}" end-offset=26`
+      + ` author="New Reviewer" initials="NR"${date ? ` date="${date}"` : ''} presentation="comment" %}`,
+    '{% annotation-p %}',
+    'Fresh note',
+    '{% /annotation-p %}',
+    '{% /annotation %}',
+    '',
+  ].join('\n');
 }
 
 async function partXml(buffer: Buffer, path: string): Promise<string> {
@@ -199,6 +238,133 @@ describe('annotation-only projection preserves existing revisions', () => {
     await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({
       code: 'INVALID_MARKDOC',
       details: [{ code: 'ORPHAN_ANNOTATION_REPLY' }],
+    });
+  });
+
+  test('[SDX-MDOC-99] re-emits a source comment with changed initials untracked so reject-all keeps it', async () => {
+    // Issue #961 reproduction: body text and initials change together, which
+    // takes the delete-and-re-add path rather than the in-place body update.
+    const source = await revisedSource('ins', 'comment');
+    const imported = await importDocxToMarkdoc(source);
+    const before = await revisionXml(imported.anchoredSource);
+    const sourceDate = (await (await DocxDocument.load(source)).getComments())[0]!.date;
+    const markdoc = imported.markdoc
+      .replace('source-presentation="comment"', 'source-presentation="comment" presentation="comment"')
+      .replace('Original note', 'Edited note')
+      .replace('initials="RV"', 'initials="RX"');
+
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+
+    expect(result.certificate).toMatchObject({ existingRevisionsPreserved: true, existingRevisionCount: 1, projectedRevisionCount: 1 });
+    expect(await revisionXml(result.tracked)).toEqual(before);
+    expect(await insertionsWrappingCommentReferences(result.tracked)).toEqual([]);
+    const projected = await (await DocxDocument.load(result.tracked)).getComments();
+    expect(projected).toHaveLength(1);
+    expect(projected[0]).toMatchObject({ author: 'Reviewer', initials: 'RX', text: 'Edited note', date: sourceDate, startTextOffset: 15, endTextOffset: 19 });
+    const rejected = await rejectAll(result.tracked);
+    expect(rejected.text).toBe('Alpha beta gamma.');
+    expect(rejected.referenceIds).toEqual([String(projected[0]!.id)]);
+    expect(rejected.comments).toHaveLength(1);
+    expect(rejected.comments[0]).toMatchObject({ initials: 'RX', text: 'Edited note', startTextOffset: 6, endTextOffset: 10 });
+  });
+
+  test('[SDX-MDOC-99] re-emits a moved source comment with a new date untracked and stamps the date on the definition', async () => {
+    const imported = await importDocxToMarkdoc(await revisedSource('ins', 'comment'));
+    const markdoc = imported.markdoc
+      .replace('source-presentation="comment"', 'source-presentation="comment" presentation="comment"')
+      .replace(/(id="comment:0"[^\n]*? anchor-kind="range" paragraph="[^"]+" offset=)15( end-paragraph="[^"]+" end-offset=)19/u, '$116$220')
+      .replace(/ date="[^"]*"/u, ' date="2026-08-05T09:00:00Z"');
+
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+
+    expect(result.certificate).toMatchObject({ existingRevisionsPreserved: true, existingRevisionCount: 1, projectedRevisionCount: 1 });
+    expect(await insertionsWrappingCommentReferences(result.tracked)).toEqual([]);
+    expect(await partXml(result.tracked, 'word/comments.xml')).toContain('w:date="2026-08-05T09:00:00Z"');
+    const rejected = await rejectAll(result.tracked);
+    expect(rejected.referenceIds).toHaveLength(1);
+    expect(rejected.comments).toHaveLength(1);
+    expect(rejected.comments[0]).toMatchObject({ date: '2026-08-05T09:00:00Z', startTextOffset: 7, endTextOffset: 11 });
+  });
+
+  test('[SDX-MDOC-99] re-emits a whole thread whose root changed metadata untracked so reject-all keeps every source comment', async () => {
+    // A root that is no longer eligible for in-place update takes its replies
+    // with it through the delete-and-re-add path; none of them may be tracked.
+    const imported = await importDocxToMarkdoc(await revisedSource('ins', 'comment', 'nested'));
+    const markdoc = imported.markdoc
+      .replaceAll('source-presentation="comment"', 'source-presentation="comment" presentation="comment"')
+      .replace('initials="RV"', 'initials="RX"');
+
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+
+    expect(result.certificate).toMatchObject({ existingRevisionsPreserved: true, existingRevisionCount: 1, projectedRevisionCount: 1 });
+    expect(await insertionsWrappingCommentReferences(result.tracked)).toEqual([]);
+    const rejected = await rejectAll(result.tracked);
+    expect(rejected.referenceIds).toHaveLength(1);
+    expect(rejected.comments).toHaveLength(1);
+    expect(rejected.comments[0]).toMatchObject({ author: 'Reviewer', initials: 'RX', text: 'Original note' });
+    expect(rejected.comments[0]?.replies[0]).toMatchObject({ author: 'Responder', text: 'Original reply' });
+    expect(rejected.comments[0]?.replies[0]?.replies[0]).toMatchObject({ author: 'Leaf', text: 'Original leaf' });
+  });
+
+  test('[SDX-MDOC-99] still emits a genuinely new dated comment as a tracked insertion that reject-all removes', async () => {
+    const imported = await importDocxToMarkdoc(await revisedSource('ins', 'comment'));
+    const paragraphId = requireMarkdoc(imported.markdoc).scaffold[0]!.id;
+    const markdoc = imported.markdoc
+      .replace('source-presentation="comment"', 'source-presentation="comment" presentation="comment"')
+      + authoredAnnotation(paragraphId, '2026-08-05T09:00:00Z');
+
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+
+    expect(result.certificate).toMatchObject({ existingRevisionsPreserved: true, existingRevisionCount: 1, projectedRevisionCount: 2 });
+    const wrapped = await insertionsWrappingCommentReferences(result.tracked);
+    expect(wrapped).toHaveLength(1);
+    expect(wrapped[0]).toContain('w:author="New Reviewer"');
+    expect(wrapped[0]).toContain('w:date="2026-08-05T09:00:00Z"');
+    const projected = await (await DocxDocument.load(result.tracked)).getComments();
+    expect(projected.map((comment) => comment.text)).toEqual(['Original note', 'Fresh note']);
+    const rejected = await rejectAll(result.tracked);
+    // The source comment keeps its reference; the new comment's reference is gone.
+    expect(rejected.referenceIds).toEqual([String(projected[0]!.id)]);
+  });
+
+  test('[SDX-MDOC-99] emits a genuinely new undated comment untracked', async () => {
+    const imported = await importDocxToMarkdoc(await revisedSource('ins', 'comment'));
+    const paragraphId = requireMarkdoc(imported.markdoc).scaffold[0]!.id;
+    const markdoc = imported.markdoc
+      .replace('source-presentation="comment"', 'source-presentation="comment" presentation="comment"')
+      + authoredAnnotation(paragraphId);
+
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+
+    expect(result.certificate).toMatchObject({ existingRevisionsPreserved: true, existingRevisionCount: 1, projectedRevisionCount: 1 });
+    expect(await insertionsWrappingCommentReferences(result.tracked)).toEqual([]);
+    const rejected = await rejectAll(result.tracked);
+    expect(rejected.referenceIds).toHaveLength(2);
+    expect(rejected.comments.map((comment) => comment.text)).toEqual(['Original note', 'Fresh note']);
+  });
+
+  test('[SDX-MDOC-99] revision preservation requires per-part equality of pre-existing revisions', () => {
+    const first = { part: 'word/document.xml', xml: INSERTION };
+    const second = { part: 'word/document.xml', xml: DELETION };
+    const fresh = { part: 'word/document.xml', xml: '<w:ins w:id="90" w:author="Markdoc" w:date="2026-08-05T09:00:00Z"><w:r><w:commentReference w:id="1"/></w:r></w:ins>' };
+
+    expect(verifyRevisionPreservation([first, second], [first, second])).toMatchObject({ preserved: true, missing: [], duplicated: [] });
+    // Projection may add revisions of its own for genuinely new annotations.
+    expect(verifyRevisionPreservation([first, second], [first, fresh, second])).toMatchObject({ preserved: true });
+    // A pre-existing revision that reappears twice is not preserved, although ordered containment would accept it.
+    expect(verifyRevisionPreservation([first, second], [first, second, first])).toMatchObject({
+      preserved: false,
+      missing: [],
+      duplicated: [{ part: 'word/document.xml', element: 'ins', id: '41' }],
+    });
+    expect(verifyRevisionPreservation([first, second], [second, first])).toMatchObject({ preserved: false });
+    expect(verifyRevisionPreservation([first, second], [first])).toMatchObject({
+      preserved: false,
+      missing: [{ part: 'word/document.xml', element: 'del', id: '42' }],
+    });
+    expect(verifyRevisionPreservation([first], [{ ...first, part: 'word/footnotes.xml' }])).toMatchObject({
+      preserved: false,
+      missing: [{ part: 'word/document.xml', element: 'ins', id: '41' }],
     });
   });
 
