@@ -28,6 +28,7 @@ export const markdocConfig: Config = {
         'external-notes': { type: String, matches: ['preserve', 'comment', 'footnote', 'omit'] },
         'internal-notes': { type: String, matches: ['preserve', 'comment', 'footnote', 'omit'] },
         'unspecified-notes': { type: String, matches: ['preserve', 'comment', 'footnote', 'omit'] },
+        'revision-grouping': { type: String, matches: ['token-minimal', 'readable-whitespace'] },
       },
     },
     para: {
@@ -488,6 +489,9 @@ export function parseMarkdoc(source: string): ValidationResult {
           ...(a['internal-notes'] === undefined ? {} : { internal: { as: a['internal-notes'] as 'preserve' | 'comment' | 'footnote' | 'omit' } }),
           ...(a['unspecified-notes'] === undefined ? {} : { unspecified: { as: a['unspecified-notes'] as 'preserve' | 'comment' | 'footnote' | 'omit' } }),
         },
+        ...(a['revision-grouping'] === undefined ? {} : {
+          revisionGrouping: a['revision-grouping'] as 'token-minimal' | 'readable-whitespace',
+        }),
       };
       continue;
     }

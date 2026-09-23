@@ -7,7 +7,7 @@ import {
   WML,
 } from '@usejunior/docx-core';
 import { alignComparisonSequences, tokenizeComparisonText } from '../textAlignment.js';
-import type { RevisionAttribution } from '../compare-types.js';
+import type { RevisionAttribution, RevisionGroupingPolicy } from '../compare-types.js';
 import { getChangedPropertyNames } from '../propertyNaming.js';
 import { collectMoveContentIssues, placeParagraphMarkRevisionMarker } from './revisionMarkup.js';
 import {
@@ -996,6 +996,17 @@ function appendCoalescedTextEmission(emitted: WmlElement[], next: WmlElement): v
   }
 }
 
+function appendReadableRevisionEmission(emitted: WmlElement[], next: WmlElement): void {
+  const previous = emitted[emitted.length - 1];
+  if (!previous || !['del', 'ins'].includes(next.localName)
+      || previous.localName !== next.localName
+      || previous.getAttribute(OPERATION_PROVENANCE_ATTRIBUTE) !== next.getAttribute(OPERATION_PROVENANCE_ATTRIBUTE)) {
+    emitted.push(next);
+    return;
+  }
+  for (const child of Array.from(next.childNodes)) previous.appendChild(child);
+}
+
 function tokenizedRuns(runs: readonly WmlElement[], concatenate: boolean): TextToken[] {
   if (!concatenate) {
     let start = 0;
@@ -1060,11 +1071,21 @@ function emitCommonToken(
   ));
 }
 
+/**
+ * Refine plain-text run gaps into conforming deletion/insertion wrappers. The
+ * readable policy may deliberately place an identical U+0020 bridge in both
+ * wrapper sides while retaining exact reject/accept projections.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @see https://github.com/UseJunior/safe-docx/issues/998
+ */
 function refineSimpleRunGap(
   originals: readonly WmlElement[],
   revised: readonly WmlElement[],
   allocateRevision: () => ComparisonRevision,
   provenanceByRun: ReadonlyMap<WmlElement, readonly string[]>,
+  revisionGrouping: RevisionGroupingPolicy,
 ): WmlElement[] | undefined {
   if (originals.length === 0 || revised.length === 0) return undefined;
   const before = originals.map(runText).join('');
@@ -1108,10 +1129,39 @@ function refineSimpleRunGap(
   const concatenate = directPropertySignatures.size === 1;
   const left = tokenizedRuns(originals, concatenate);
   const right = tokenizedRuns(revised, concatenate);
-  const alignment = alignComparisonSequences(left, right, (a, b) => a.value === b.value);
+  const minimalAlignment = alignComparisonSequences(left, right, (a, b) => a.value === b.value);
+  const bridgeMatches = revisionGrouping === 'readable-whitespace' && concatenate
+    ? new Set(minimalAlignment.matches.flatMap((match, index, matches) => {
+      const previous = matches[index - 1];
+      const next = matches[index + 1];
+      const token = left[match.originalIndex]!.value;
+      const replacementBefore = previous === undefined
+        ? match.originalIndex > 0 && match.revisedIndex > 0
+        : match.originalIndex > previous.originalIndex + 1
+          && match.revisedIndex > previous.revisedIndex + 1;
+      const replacementAfter = next === undefined
+        ? match.originalIndex < left.length - 1 && match.revisedIndex < right.length - 1
+        : next.originalIndex > match.originalIndex + 1
+          && next.revisedIndex > match.revisedIndex + 1;
+      return /^ +$/u.test(token) && token === right[match.revisedIndex]!.value
+        && replacementBefore && replacementAfter ? [index] : [];
+    }))
+    : new Set<number>();
+  const alignment = bridgeMatches.size === 0 ? minimalAlignment : {
+    matches: minimalAlignment.matches.filter((_, index) => !bridgeMatches.has(index)),
+    deletedIndices: [...new Set([
+      ...minimalAlignment.deletedIndices,
+      ...[...bridgeMatches].map((index) => minimalAlignment.matches[index]!.originalIndex),
+    ])].sort((a, b) => a - b),
+    insertedIndices: [...new Set([
+      ...minimalAlignment.insertedIndices,
+      ...[...bridgeMatches].map((index) => minimalAlignment.matches[index]!.revisedIndex),
+    ])].sort((a, b) => a - b),
+  };
   const matches = new Map(alignment.matches.map((match) => [match.originalIndex, match.revisedIndex]));
   const deleted = new Set(alignment.deletedIndices);
   const emitted: WmlElement[] = [];
+  const appendRevision = bridgeMatches.size > 0 ? appendReadableRevisionEmission : appendCoalescedTextEmission;
   let i = 0;
   let j = 0;
   while (i < left.length || j < right.length) {
@@ -1121,14 +1171,14 @@ function refineSimpleRunGap(
       }
       i++; j++;
     } else if (i < left.length && deleted.has(i)) {
-      appendCoalescedTextEmission(emitted, wrapRevision(
+      appendRevision(emitted, wrapRevision(
         runFragment(left[i]!.run, left[i]!.value),
         'del',
         allocateRevision(),
         provenanceByRun.get(left[i]!.run) ?? [],
       )); i++;
     } else {
-      appendCoalescedTextEmission(emitted, wrapRevision(
+      appendRevision(emitted, wrapRevision(
         runFragment(right[j]!.run, right[j]!.value),
         'ins',
         allocateRevision(),
@@ -1385,6 +1435,7 @@ function emitNode(
   allocateBookmarkId: () => number,
   originalBookmarkIds: Map<string, string>,
   splitBookmarkIds: ReadonlySet<string>,
+  revisionGrouping: RevisionGroupingPolicy,
 ): WmlElement {
   const nodeRevision = allocateRevision();
   const base = cloneElement(representative(node, node.tag === 'original' ? 'original' : node.tag === 'revised' ? 'revised' : bothSide)!);
@@ -1476,6 +1527,7 @@ function emitNode(
             revisions,
             allocateRevision,
             provenanceByRun,
+            revisionGrouping,
           );
           if (refined) {
             emitted.push(...refined);
@@ -1498,9 +1550,9 @@ function emitNode(
       if (relation) {
         const direction = relation.source === child ? 'From' : 'To';
         emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'Start', plan.comparison));
-        emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds));
+        emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds, revisionGrouping));
         emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'End', plan.comparison));
-      } else emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds));
+      } else emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds, revisionGrouping));
     }
     replaceElementChildren(base, emitted);
   }
@@ -1593,6 +1645,8 @@ export interface TaggedTreeSerializerOptions {
   moves?: readonly TaggedMoveRelation[];
   /** @internal Retain private markers until publication statistics are read. */
   retainComparisonRevisionMarkers?: boolean;
+  /** Deliberately clone eligible inter-word spaces into both revision sides. */
+  revisionGrouping?: RevisionGroupingPolicy;
 }
 
 /**
@@ -1663,6 +1717,7 @@ export function serializeTaggedTree(
     () => nextBookmarkId++,
     originalBookmarkIds,
     splitBookmarkIds,
+    options.revisionGrouping ?? 'token-minimal',
   );
   splitCrossParagraphBookmarkCounterparts(emitted, originalBookmarkIds, allocateRevision);
   normalizeWholeParagraphRevisionBoundaries(emitted, generatedRevisionIds);

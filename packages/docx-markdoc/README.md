@@ -84,6 +84,25 @@ docx-markdoc compile anchored.docx revision.mdoc output/
 docx-markdoc compile anchored.docx revision.mdoc output/ --no-external-comments
 ```
 
+Tracked replacements are token-minimal by default. For phrase-level review,
+opt into bounded whitespace grouping either declaratively or on the CLI:
+
+```markdoc
+{% compilation revision-grouping="readable-whitespace" /%}
+```
+
+```bash
+docx-markdoc compile anchored.docx revision.mdoc output/ \
+  --revision-grouping readable-whitespace
+```
+
+`readable-whitespace` may copy only identical ordinary U+0020 bridge runs into
+both sides of adjacent replacement fragments. It never absorbs common words,
+punctuation, tabs, line breaks, protected structure, or incompatible formatting.
+An API or CLI value overrides Markdoc; omission resolves to `token-minimal`.
+The verification certificate records the policy, provenance, grouped-chain
+count, and copied-space-token count.
+
 Every CLI output path must be new, including import, edit export, and comment
 conversion paths. Existing files and symlinks are refused. Compilation reserves
 all output files before writing and removes files created by that invocation if

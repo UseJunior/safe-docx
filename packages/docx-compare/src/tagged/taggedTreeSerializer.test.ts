@@ -956,6 +956,40 @@ describe('tagged-tree shadow serializer', () => {
     expect(parseXml(rejected).getElementsByTagNameNS(W_NS, 'bookmarkEnd')).toHaveLength(1);
   });
 
+  test('coalesces only eligible U+0020 replacement chains in readable mode', () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' });
+    const serializeReplacement = (
+      before: string,
+      after: string,
+      revisionGrouping: 'token-minimal' | 'readable-whitespace',
+    ): string => {
+      const original = documentBody(`<w:p><w:r><w:t>${before}</w:t></w:r></w:p>`);
+      const revised = documentBody(`<w:p><w:r><w:t>${after}</w:t></w:r></w:p>`);
+      const constructed = constructTaggedTree(original, revised);
+      return serializeTaggedTree(constructed.tree, createPreservePlan(
+        original, revised, constructed.tree,
+        { author: 'Comparator', date: '2026-09-23T12:00:00Z' },
+      ), { revisionGrouping });
+    };
+
+    const minimal = serializeReplacement('The old red term.', 'The new blue term.', 'token-minimal');
+    const readable = serializeReplacement('The old red term.', 'The new blue term.', 'readable-whitespace');
+    expect(parseXml(minimal).getElementsByTagNameNS(W_NS, 'del')).toHaveLength(2);
+    expect(parseXml(minimal).getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(2);
+    const readableDocument = parseXml(readable);
+    expect(readableDocument.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(1);
+    expect(readableDocument.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(1);
+    expect(readableDocument.getElementsByTagNameNS(W_NS, 'del')[0]!.textContent).toBe('old red');
+    expect(readableDocument.getElementsByTagNameNS(W_NS, 'ins')[0]!.textContent).toBe('new blue');
+    expect(extractRoundTripComparisonText(rejectAllChanges(readable))).toBe('The old red term.');
+    expect(extractRoundTripComparisonText(acceptAllChanges(readable))).toBe('The new blue term.');
+
+    const punctuation = serializeReplacement('The old, red term.', 'The new, blue term.', 'readable-whitespace');
+    expect(parseXml(punctuation).getElementsByTagNameNS(W_NS, 'del')).toHaveLength(2);
+    expect(parseXml(punctuation).getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(2);
+  });
+
   test('serializes whole-row changes as row-property markers', () => {
     const row = '<w:tr><w:tc><w:p><w:r><w:t>Row</w:t></w:r></w:p></w:tc></w:tr>';
     for (const [originalXml, revisedXml, kind] of [

@@ -14,6 +14,22 @@ function check(original: string[], revised: string[], body: string) {
 }
 
 describe('independent emitted-redline minimality', () => {
+  itAllure('[REL-VERIFY-13][REL-VERIFY-14] discloses grouped spaces without changing zero-loss', () => {
+    const minimal = check(
+      ['The old red term.'], ['The new blue term.'],
+      paragraph(`${plain('The ')}${del('old')}${ins('new')}${plain(' ')}${del('red')}${ins('blue')}${plain(' term.')}`),
+    );
+    const readable = check(
+      ['The old red term.'], ['The new blue term.'],
+      paragraph(`${plain('The ')}${del('old red')}${ins('new blue')}${plain(' term.')}`),
+    );
+    expect(minimal).toMatchObject({ passed: true, coalescedWhitespace: { groupedChains: 0, coalescedSpaceTokens: 0 } });
+    expect(readable).toMatchObject({ passed: true, coalescedWhitespace: { groupedChains: 1, coalescedSpaceTokens: 1 } });
+    expect(readable.coalescedWhitespace.paragraphDiagnostics).toEqual([
+      { comparedParagraphIndex: 0, groupedChains: 1, coalescedSpaceTokens: 1 },
+    ]);
+  });
+
   itAllure('passes a surgical replacement and fails a coarse exact replacement', () => {
     const surgical = check(['keep old tail'], ['keep new tail'], paragraph(`${plain('keep ')}${del('old')}${ins('new')}${plain(' tail')}`));
     expect(surgical).toMatchObject({ passed: true, lostTokens: 0, efficiencyPercent: 100 });
@@ -75,7 +91,7 @@ describe('independent emitted-redline minimality', () => {
     expect(result).toMatchObject({ passed: true, availableTokens: 0, preservedTokens: 0, lostTokens: 0 });
   });
 
-  itAllure('still charges whitespace anchored to a genuinely matched neighbor', () => {
+  itAllure('[REL-VERIFY-15] still charges whitespace anchored to a genuinely matched neighbor', () => {
     const surgical = check(['alpha beta gamma'], ['alpha epsilon zeta'], paragraph(`${plain('alpha ')}${del('beta gamma')}${ins('epsilon zeta')}`));
     expect(surgical).toMatchObject({ passed: true, lostTokens: 0 });
 

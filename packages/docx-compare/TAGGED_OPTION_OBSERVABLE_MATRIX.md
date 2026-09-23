@@ -30,6 +30,7 @@ are declared in [`numberingIntegration.ts`](src/tagged/numberingIntegration.ts).
 | `moveDetection.caseInsensitiveMove` | Low-level | Controls case folding in both portable similarity measures; covered by `src/tagged/taggedTreeConstruction.test.ts`. |
 | `numbering.enabled` | Low-level | Controls virtual rendered list identities used by tagged alignment; identities are not serialized. Covered by `src/tagged/taggedTreeConstruction.test.ts`. |
 | `revisionAttributionRanges` | Internal low-level | Carries exact Markdoc operation provenance through tagged serialization and is stripped before publication; covered by `src/integration/tagged-rationale-attribution.test.ts` and `../docx-markdoc/src/rationale-comments.test.ts`. |
+| `revisionGrouping` | Internal low-level | Lets Markdoc request bounded U+0020 bridge coalescing in simple replacement gaps; the public comparator remains token-minimal. Covered by `../docx-markdoc/src/readable-redline-grouping.test.ts`. |
 | `taggedTreePublicationSafetyEvaluator` | Internal low-level test seam | Replaces only the final structural publication-safety evaluation so fail-closed diagnostics can be exercised; covered by `src/tagged/taggedTreeShadow.test.ts`. |
 | `taggedTreeFormattingFidelityEvaluator` | Internal low-level test seam | Replaces only the final source-projected formatting evaluation so fail-closed fidelity behavior can be exercised; covered by `src/tagged/taggedTreeShadow.test.ts`. |
 

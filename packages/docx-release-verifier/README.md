@@ -10,6 +10,13 @@ computes exact emitted-redline token-LCS minimality from the finished OOXML.
 A certificate records each gate as `pass`, `fail`, or `not_run`; the CLI exits
 0, 1, or 3 respectively.
 
+The sole authored-redline gate remains `authored-zero-loss`. Common lexical,
+punctuation, anchored whitespace, and structural tokens are mandatory. Its
+evidence separately reports `coalescedWhitespace`: maximal content-bearing
+deletion-to-insertion groups whose interior exact-token multisets share U+0020-
+only runs. Those counts disclose deliberate readability grouping from finished
+OOXML; they do not weaken `lostTokensByClass` or alter the verdict.
+
 ```sh
 docx-release-verify --manifest release-manifest.json --report certificate.json
 ```

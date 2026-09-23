@@ -133,6 +133,8 @@ export interface StandaloneTaggedPackageOptions {
   formatDetection: FormatDetectionSettings;
   numbering: NumberingIntegrationOptions;
   revisionAttributionRanges?: readonly import('../compare-types.js').RevisionAttributionRange[];
+  /** @internal Markdoc-only tracked-revision presentation policy. */
+  revisionGrouping?: import('../compare-types.js').RevisionGroupingPolicy;
   /** @internal Test seam for the final structural publication gate. */
   publicationSafetyEvaluator?: typeof evaluateSafetyChecks;
   /** @internal Test seam for the final source-formatting publication gate. */
@@ -392,6 +394,7 @@ export async function buildStandaloneTaggedPackage(
       originalNumberingXml: originalNumberingXml ?? undefined,
       revisedNumberingXml: revisedNumberingXml ?? undefined,
       revisionAttributionRanges: options.revisionAttributionRanges,
+      revisionGrouping: options.revisionGrouping,
       retainStatisticsMarkers: true,
       minimumRevisionId: options.minimumRevisionId,
     });
@@ -720,6 +723,8 @@ export interface AtomizerOptions {
   numbering?: Partial<NumberingIntegrationOptions>;
   /** @internal Exact source ranges to carry through tagged serialization. */
   revisionAttributionRanges?: import('../compare-types.js').RevisionAttributionRange[];
+  /** @internal Markdoc-only tracked-revision presentation policy. */
+  revisionGrouping?: import('../compare-types.js').RevisionGroupingPolicy;
   /** @internal Test seam for exercising fail-safe publication without malformed fixtures. */
   taggedTreePublicationSafetyEvaluator?: typeof evaluateSafetyChecks;
   /** @internal Test seam for exercising the final formatting-fidelity gate. */
@@ -1198,6 +1203,7 @@ async function compareDocumentsTaggedCore(
       ...options.numbering,
     },
     revisionAttributionRanges: options.revisionAttributionRanges,
+    revisionGrouping: options.revisionGrouping,
     publicationSafetyEvaluator: options.taggedTreePublicationSafetyEvaluator,
     formattingFidelityEvaluator: options.taggedTreeFormattingFidelityEvaluator,
     bookmarkNameReservations,

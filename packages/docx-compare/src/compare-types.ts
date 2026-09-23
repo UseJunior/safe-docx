@@ -22,6 +22,9 @@ export interface RevisionAttributionRange {
   end: number;
 }
 
+/** @internal Bounded presentation policy used by the Markdoc compiler. */
+export type RevisionGroupingPolicy = 'token-minimal' | 'readable-whitespace';
+
 /** @internal The exact generated revision interval for one attributed operation. */
 export interface RevisionAttribution {
   operationId: string;

@@ -38,6 +38,11 @@ export interface MinimalityEvidence {
   comparedParagraphs: number;
   unresolvedTopologyParagraphs: number;
   paragraphDiagnostics: MinimalityDiagnostic[];
+  coalescedWhitespace: {
+    groupedChains: number;
+    coalescedSpaceTokens: number;
+    paragraphDiagnostics: Array<{ comparedParagraphIndex: number; groupedChains: number; coalescedSpaceTokens: number }>;
+  };
 }
 
 type Pair = { left: number; right: number };
@@ -299,6 +304,23 @@ export function emittedRedlineMinimality(
     for (const key of Object.keys(totals) as TokenClass[]) totals[key] += item.lostTokensByClass[key];
     return totals;
   }, emptyTokenClassCounts());
+  const coalescedParagraphs = physical.flatMap((paragraph) => {
+    let groupedChains = 0;
+    let coalescedSpaceTokens = 0;
+    for (const group of paragraph.revisionGroups) {
+      const left = tokenizeExact(group.deletedText).slice(1, -1).filter((token) => /^ +$/u.test(token));
+      const right = tokenizeExact(group.insertedText).slice(1, -1).filter((token) => /^ +$/u.test(token));
+      let count = 0;
+      for (const token of new Set(left)) {
+        count += Math.min(
+          left.filter((candidate) => candidate === token).length,
+          right.filter((candidate) => candidate === token).length,
+        );
+      }
+      if (count > 0) { groupedChains += 1; coalescedSpaceTokens += count; }
+    }
+    return groupedChains > 0 ? [{ comparedParagraphIndex: paragraph.index, groupedChains, coalescedSpaceTokens }] : [];
+  });
   return {
     policy: 'authored-zero-loss', passed: lostTokens === 0,
     availableTokens, preservedTokens, lostTokens, lostTokensByClass,
@@ -306,6 +328,11 @@ export function emittedRedlineMinimality(
     comparedParagraphs: physical.length,
     unresolvedTopologyParagraphs: diagnostics.filter((item) => item.topology === 'unresolved_ambiguous_paragraph_topology').length,
     paragraphDiagnostics: diagnostics.filter((item) => item.lostTokens > 0).slice(0, MAX_DIAGNOSTICS),
+    coalescedWhitespace: {
+      groupedChains: coalescedParagraphs.reduce((sum, item) => sum + item.groupedChains, 0),
+      coalescedSpaceTokens: coalescedParagraphs.reduce((sum, item) => sum + item.coalescedSpaceTokens, 0),
+      paragraphDiagnostics: coalescedParagraphs.slice(0, MAX_DIAGNOSTICS),
+    },
   };
 }
 
