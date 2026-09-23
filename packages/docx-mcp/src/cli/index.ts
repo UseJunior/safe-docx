@@ -140,6 +140,9 @@ export function createProgram(overrides: Partial<CliHandlers> = {}): CliProgram 
       if (command === 'compare') {
         const parsed = parseCompareArgs(rest);
         const result = await handlers.compare(parsed);
+        // Warnings go to stderr so stdout stays a single JSON line for callers
+        // that parse it, while a human running the CLI still sees them (#1029).
+        for (const warning of result.warnings ?? []) handlers.writeError(warning);
         handlers.write(JSON.stringify(result));
         return;
       }

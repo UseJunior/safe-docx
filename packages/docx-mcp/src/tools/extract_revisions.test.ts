@@ -696,7 +696,7 @@ describe('extract_revisions tool', () => {
       });
 
       await and('each change has a valid structure', () => {
-        const validTypes = new Set(['INSERTION', 'DELETION', 'MOVE_FROM', 'MOVE_TO', 'FORMAT_CHANGE']);
+        const validTypes = new Set(['INSERTION', 'DELETION', 'MOVE_FROM', 'MOVE_TO', 'FORMAT_CHANGE', 'ROW_INSERTION', 'ROW_DELETION']);
         for (const c of changes) {
           expect(c.para_id).toBeTruthy();
           const revisions = c.revisions ?? [];
@@ -1072,6 +1072,81 @@ describe('extract_revisions tool', () => {
         expect(result.total_changes).toBeGreaterThan(0);
         expect(result.changes).toBeDefined();
         expect(Array.isArray(result.changes)).toBe(true);
+      });
+    },
+  );
+
+  // ── Table-row revisions (#868) ──────────────────────────────────
+
+  humanReadableTest
+    .allure({
+      title: 'Extract whole-row table revisions with their identity',
+      description: 'A table row that was deleted or inserted as a whole, or whose row properties changed, is reported as a row-scoped record with the revision id, author and date, so an agent can see the row revision before deciding to accept it.',
+    })
+    .openspec('[SDX-ER-003] row-level revisions are reported with their identity')(
+    'Scenario: row-level revisions are reported with their identity',
+    async ({ given, when, then, and, attachPrettyJson }: AllureBddContext) => {
+      const date = '2026-01-01T00:00:00Z';
+      const docXml =
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w:document xmlns:w="${W_NS}">` +
+        `<w:body>` +
+          `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/><w:gridCol/></w:tblGrid>` +
+            `<w:tr><w:trPr><w:del w:id="7" w:author="Reviewer" w:date="${date}"/></w:trPr>` +
+              `<w:tc><w:p><w:r><w:t>Gone</w:t></w:r></w:p></w:tc>` +
+              `<w:tc><w:p><w:r><w:t>Row</w:t></w:r></w:p></w:tc></w:tr>` +
+            `<w:tr><w:tc><w:p><w:r><w:t>Kept</w:t></w:r></w:p></w:tc>` +
+              `<w:tc><w:p><w:r><w:t>Row</w:t></w:r></w:p></w:tc></w:tr>` +
+            `<w:tr><w:trPr><w:ins w:id="8" w:author="Author" w:date="${date}"/></w:trPr>` +
+              `<w:tc><w:p><w:r><w:t>New</w:t></w:r></w:p></w:tc>` +
+              `<w:tc><w:p><w:r><w:t>Row</w:t></w:r></w:p></w:tc></w:tr>` +
+            `<w:tr><w:trPr><w:trHeight w:val="480"/>` +
+              `<w:trPrChange w:id="9" w:author="Formatter" w:date="${date}"><w:trPr><w:trHeight w:val="240"/></w:trPr></w:trPrChange>` +
+              `</w:trPr>` +
+              `<w:tc><w:p><w:r><w:t>Taller</w:t></w:r></w:p></w:tc>` +
+              `<w:tc><w:p><w:r><w:t>Row</w:t></w:r></w:p></w:tc></w:tr>` +
+          `</w:tbl>` +
+        `</w:body></w:document>`;
+
+      const { mgr, filePath } = await given(
+        'a table with a deleted row, an unchanged row, an inserted row, and a row property change is open in a session',
+        () => openSession([], { xml: docXml }),
+      );
+      const result = await when('extract_revisions is called', () =>
+        extractRevisions_tool(mgr, { file_path: filePath }),
+      );
+      assertSuccess(result, 'extract_revisions');
+      await attachPrettyJson('result', result);
+      const changes = asChanges(result.changes) as Array<ExtractedChange & { scope?: string; revisions?: Array<RevisionSummary & { id?: string; date?: string }> }>;
+
+      await then('three row-scoped records are returned in document order', () => {
+        expect(result.total_changes).toBe(3);
+        expect(changes.map((c) => c.scope)).toEqual(['row', 'row', 'row']);
+        for (const change of changes) expect(change.para_id).toMatch(/^_bk_/);
+      });
+
+      await and('the deleted row is a ROW_DELETION with id, author and date', () => {
+        expect(changes[0].revisions).toEqual([
+          { type: 'ROW_DELETION', text: 'Gone\tRow', author: 'Reviewer', id: '7', date },
+        ]);
+        expect(changes[0].before_text).toBe('Gone\tRow');
+        expect(changes[0].after_text).toBe('');
+      });
+
+      await and('the inserted row is a ROW_INSERTION with id, author and date', () => {
+        expect(changes[1].revisions).toEqual([
+          { type: 'ROW_INSERTION', text: 'New\tRow', author: 'Author', id: '8', date },
+        ]);
+        expect(changes[1].before_text).toBe('');
+        expect(changes[1].after_text).toBe('New\tRow');
+      });
+
+      await and('the row property change is a FORMAT_CHANGE with id, author and date', () => {
+        expect(changes[2].revisions).toEqual([
+          { type: 'FORMAT_CHANGE', text: '', author: 'Formatter', id: '9', date },
+        ]);
+        expect(changes[2].before_text).toBe('Taller\tRow');
+        expect(changes[2].after_text).toBe('Taller\tRow');
       });
     },
   );

@@ -35,8 +35,6 @@ import type {
   TableRowOperation,
   TableTopologyReport,
   VerificationCertificate,
-  RevisionGroupingPolicy,
-  RevisionGroupingSource,
 } from './types.js';
 
 const FORMATTING_DIAGNOSTIC_LIMIT = 8;
@@ -1329,14 +1327,13 @@ type ResolvedCompilation = {
   externalCommentsIncluded: boolean;
   internalCommentsIncluded: boolean;
   warnings: string[];
-  revisionGrouping: { policy: RevisionGroupingPolicy; source: RevisionGroupingSource };
 };
 
 function resolveCompilation(options: CompileOptions, ir: MarkdocEditIR): ResolvedCompilation {
   const profile = ir.compilation;
-  if (options.revisionGrouping
-      && !['token-minimal', 'readable-whitespace'].includes(options.revisionGrouping.policy)) {
-    throw new DocxMarkdocError('INVALID_REVISION_GROUPING', 'revisionGrouping.policy must be token-minimal or readable-whitespace.');
+  const removedSelector: Exclude<'revisionGrouping', keyof CompileOptions> = 'revisionGrouping';
+  if (Object.prototype.hasOwnProperty.call(options, removedSelector)) {
+    throw new DocxMarkdocError('REVISION_GROUPING_REMOVED', 'revisionGrouping is no longer configurable; readable grouping is always applied.');
   }
   const date = options.date ?? (profile?.buildDate ? new Date(profile.buildDate) : new Date());
   if (!(date instanceof Date) || !Number.isFinite(date.getTime())) {
@@ -1362,11 +1359,6 @@ function resolveCompilation(options: CompileOptions, ir: MarkdocEditIR): Resolve
     || options.rationaleComments !== undefined
     || options.externalComments !== undefined
     || options.dangerouslyIncludeInternalComments !== undefined;
-  const revisionGrouping = options.revisionGrouping
-    ? { policy: options.revisionGrouping.policy, source: options.revisionGrouping.source ?? 'api' as const }
-    : profile?.revisionGrouping
-      ? { policy: profile.revisionGrouping, source: 'markdoc' as const }
-      : { policy: 'token-minimal' as const, source: 'default' as const };
   return {
     author: options.author ?? profile?.revisionAuthor ?? 'Markdoc',
     date,
@@ -1379,7 +1371,6 @@ function resolveCompilation(options: CompileOptions, ir: MarkdocEditIR): Resolve
     warnings: !includeExternal && externalRationalesFound > 0
       ? [`${externalRationalesFound} external-facing rationale(s) were present but not included.`]
       : [],
-    revisionGrouping,
   };
 }
 
@@ -1455,7 +1446,7 @@ export async function compileMarkdoc(
       endParagraphId: range.endParagraphId,
       end: range.end,
     })),
-    revisionGrouping: resolvedCompilation.revisionGrouping.policy,
+    revisionGrouping: 'readable-whitespace',
     // No finite refinement budget: dense rewrites must retain preservable
     // lexical and punctuation tokens. Readability-oriented whitespace bridging
     // remains valid where it coalesces an otherwise fragmented replacement
@@ -1615,7 +1606,8 @@ export async function compileMarkdoc(
     appliedOperations: declaredOperationIds,
     retainedFormatting,
     revisionGrouping: {
-      ...resolvedCompilation.revisionGrouping,
+      policy: 'readable-whitespace',
+      source: 'default',
       ...revisionGroupingEvidence,
     },
     ...(tableTopology ? { tableTopology } : {}),

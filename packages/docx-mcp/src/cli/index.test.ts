@@ -87,6 +87,38 @@ describe('safe-docx CLI routing', () => {
     });
   });
 
+  test('prints compare warnings to stderr and keeps them in the JSON line (#1029)', async ({ when, then }: AllureBddContext) => {
+    const warning = 'Unrepresented change: removed default footer in section 1 (sectionIndex 0) has no tracked-change markup in the redline';
+    const compare = vi.fn(async (args: CompareCommandArgs) => ({
+      output: args.outputPath ?? '/tmp/default.docx',
+      package_base: 'revised' as const,
+      bytes: 99,
+      stats: {},
+      unrepresented_changes: [{ scope: 'footer' as const, kind: 'removed' as const, sectionIndex: 0, role: 'default' as const }],
+      warnings: [warning],
+    }));
+    const output: string[] = [];
+    const errors: string[] = [];
+    const program = createProgram({
+      serve: vi.fn(async () => undefined),
+      compare,
+      write: (line) => output.push(line),
+      writeError: (line) => errors.push(line),
+    });
+
+    await when('compare returns an unrepresented change', () =>
+      program.parseAsync(['node', 'safe-docx', 'compare', 'original.docx', 'revised.docx']),
+    );
+
+    await then('the warning is visible on stderr and stdout stays one JSON line carrying both fields', () => {
+      expect(errors).toEqual([warning]);
+      expect(output).toHaveLength(1);
+      const parsed = JSON.parse(output[0]!) as Record<string, unknown>;
+      expect(parsed.unrepresented_changes).toEqual([{ scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' }]);
+      expect(parsed.warnings).toEqual([warning]);
+    });
+  });
+
   test.openspec('[CLI-OUTPUT-01] Compare accepts the short output option')(
     'routes compare -o to the output path',
     async ({ when, then }: AllureBddContext) => {

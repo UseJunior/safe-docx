@@ -23,7 +23,6 @@ function usage(): string {
     '  docx-markdoc compile <anchored.docx> <document.mdoc> <output-dir> [--external-comments|--no-external-comments]',
     '    [--dangerously-include-internal-comments --internal-output <path.docx>]',
     '    [--note-profile profile.json | --external-notes MODE --internal-notes MODE --unspecified-notes MODE]',
-    '    [--revision-grouping token-minimal|readable-whitespace]',
     '  docx-markdoc verify <anchored.docx> <document.mdoc> [--external-comments|--no-external-comments]',
     '  docx-markdoc compile-greenfield <template.docx> <document.mdoc> <output-dir> [--style-profile profile.json]',
     '  docx-markdoc export-edits <document.mdoc> <output.json>',
@@ -118,7 +117,6 @@ async function main(): Promise<void> {
       ...(flags.externalComments === undefined ? {} : { externalComments: flags.externalComments }),
       ...(flags.includeInternalComments ? { dangerouslyIncludeInternalComments: true } : {}),
       ...(hasAnnotationProfile ? { annotationPresentation } : {}),
-      ...(flags.revisionGrouping ? { revisionGrouping: { policy: flags.revisionGrouping, source: 'cli' as const } } : {}),
       ...(hasCliOverride ? { configurationSource: 'cli' } : {}),
     });
     if (command === 'compile') {

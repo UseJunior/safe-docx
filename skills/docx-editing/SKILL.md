@@ -305,7 +305,7 @@ Two modes:
 - **Two files:** `compare_documents(original_file_path, revised_file_path, save_to_local_path)` — produces a redline
 - **Session edits:** `compare_documents(session_id)` — compares current session state against the original
 
-Use `extract_revisions` on any document with tracked changes to get structured JSON diffs.
+Use `extract_revisions` on any document with tracked changes to get structured JSON diffs. Whole-row table revisions come back as records with `scope: "row"` (`ROW_INSERTION`, `ROW_DELETION`, or `FORMAT_CHANGE` for a row property change), each carrying the revision `id`, `author` and `date`; `accept_changes` removes a row marked `ROW_DELETION`.
 
 ## Accepting Tracked Changes
 

@@ -37,7 +37,9 @@ import {
 // Replace the comparison engine with a controllable stand-in so the test can
 // hold both tool calls inside the comparison at once. The tool under test is
 // real; only the (expensive, timing-dependent) comparison is injected.
-vi.mock('@usejunior/docx-compare', () => ({
+vi.mock('@usejunior/docx-compare', async (importOriginal) => ({
+  // Keep the real warning formatters (#1029); only the comparison itself is gated.
+  ...(await importOriginal<typeof import('@usejunior/docx-compare')>()),
   compareDocuments: vi.fn(),
 }));
 import { compareDocuments } from '@usejunior/docx-compare';

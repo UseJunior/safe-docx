@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Breaking:** Markdoc now always emits bounded readable-whitespace revision
+  grouping after token-minimal validation. Remove the short-lived
+  `revision-grouping` Markdoc declaration, `--revision-grouping` CLI flag, and
+  `revisionGrouping` API option; legacy values fail before comparison or
+  mutation. The exported `RevisionGroupingPolicy` and
+  `RevisionGroupingSource` types are removed, while certificate grouping
+  evidence retains literal `policy: 'readable-whitespace'` and
+  `source: 'default'` fields. The lower-level comparator keeps its internal
+  token-minimal default for non-Markdoc callers.
 - Selected header/footer projection checks now ignore serialization-only XML
   indentation after admitted paragraphs are removed, so real Word-authored
   running stories do not fail closed solely because their whitespace layout

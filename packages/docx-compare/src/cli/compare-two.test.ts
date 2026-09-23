@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterAll, describe, expect } from 'vitest';
 import type { CompareResult } from '../compare-types.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
+import { buildDocxWithDefaultFooter } from '../testing/footer-story-fixture.js';
 import { parseCompareCliArgs, runCompareCli } from './compare-two.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'CLI Compare Two' });
@@ -160,6 +161,51 @@ describe('docx-comparison CLI fixed tagged publication', () => {
       expect(result.package_base).toBe('revised');
       expect(result.output).toBe(join(dir, 'revised.REDLINE.docx'));
       expect(await readFile(result.output, 'utf8')).toBe('redline-bytes');
+    });
+    await and('a fully represented comparison carries no unrepresented-change fields', () => {
+      expect(result).not.toHaveProperty('unrepresented_changes');
+      expect(result).not.toHaveProperty('warnings');
+    });
+  });
+});
+
+describe('docx-comparison CLI unrepresented changes (#1029)', () => {
+  test('reports a removed footer as unrepresented_changes plus a warning', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    const dir = await mkdtemp(join(tmpdir(), 'docx-comparison-unrepresented-'));
+    trackedTempDirs.push(dir);
+    const originalPath = join(dir, 'original.docx');
+    const revisedPath = join(dir, 'revised.docx');
+
+    await given('an original with a default footer and a revision that removes it', async () => {
+      await Promise.all([
+        writeFile(originalPath, await buildDocxWithDefaultFooter('Body text', 'Confidential')),
+        writeFile(revisedPath, await buildDocxWithDefaultFooter('Body text, revised', null)),
+      ]);
+    });
+
+    const result = await when('the real comparison runs through the CLI', () =>
+      runCompareCli([originalPath, revisedPath]),
+    );
+    if ('help' in result && result.help) throw new Error('expected a run result');
+
+    await then('the structured unrepresented change reaches the caller', () => {
+      expect(result.unrepresented_changes).toEqual([
+        { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
+      ]);
+    });
+    await and('a human-readable warning names the unrepresented part', () => {
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings![0]).toContain('removed default footer in section 1');
+      expect(result.warnings![0]).toContain('no tracked-change markup');
+    });
+    await and('the redline still carries the represented body change', () => {
+      const stats = result.stats as { insertions: number; deletions: number };
+      expect(stats.insertions + stats.deletions).toBeGreaterThan(0);
     });
   });
 });

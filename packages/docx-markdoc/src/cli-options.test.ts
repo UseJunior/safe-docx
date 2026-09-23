@@ -4,12 +4,11 @@ import { itAllure } from '../../docx-core/src/testing/allure-test.js';
 import { INTERNAL_SUFFIX, parseGreenfieldCliArgs, parseRenderingFlags, warnedInternalPath } from './cli-options.js';
 
 describe('Markdoc CLI rendering safety', () => {
-  itAllure('[SDX-MDOC-141] parses the closed revision-grouping policy', () => {
-    expect(parseRenderingFlags(['source.docx', 'edit.mdoc', 'out', '--revision-grouping', 'readable-whitespace']).revisionGrouping)
-      .toBe('readable-whitespace');
-    expect(() => parseRenderingFlags(['--revision-grouping', 'coarse'])).toThrow(/token-minimal or readable-whitespace/u);
-    expect(() => parseRenderingFlags(['--revision-grouping', 'token-minimal', '--revision-grouping', 'token-minimal']))
-      .toThrow(/only once/u);
+  itAllure('[SDX-MDOC-141] rejects the removed revision-grouping flag', () => {
+    for (const policy of ['token-minimal', 'readable-whitespace']) {
+      expect(() => parseRenderingFlags(['source.docx', 'edit.mdoc', 'out', '--revision-grouping', policy]))
+        .toThrow(/Unknown option --revision-grouping/u);
+    }
   });
 
   itAllure('[SDX-MDOC-55] requires the dangerous flag and internal output path together', () => {
