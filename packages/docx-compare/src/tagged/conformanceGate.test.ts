@@ -13,7 +13,7 @@ const TEST_FEATURE = 'refuse-wml-strict-documents';
 
 const test = testAllure
   .epic('Document Comparison')
-  .withLabels({ feature: 'Conformance Gate' })
+  .withLabels({ feature: TEST_FEATURE })
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '2.1' });
 
 async function asStrict(buffer: Buffer): Promise<Buffer> {
