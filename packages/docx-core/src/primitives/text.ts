@@ -993,9 +993,11 @@ export function replaceParagraphTextRange(
         const embeddedContent = getEmbeddedContentElements(runEl);
         if (embeddedContent.length === 0) {
           removeRunInPlace(runEl);
-        } else if (getRunVisibleLength(runEl) === 0) {
+        } else if (!runCarriesDeletableContent(runEl)) {
           // Embedded-only run: the replaced text lives entirely in sibling
-          // runs. Leave it in the paragraph as-is.
+          // runs. Leave it in the paragraph as-is. A run that also holds a
+          // w:sym is mixed, not embedded-only: the split below keeps the
+          // embedded content live and deletes the symbol with the range.
           preservedEmbeddedContent = true;
           currentDeletion = null;
         } else {

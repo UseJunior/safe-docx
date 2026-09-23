@@ -2441,6 +2441,41 @@ describe('replaceParagraphTextRange — symbol runs inside a replaced range (#10
     });
   });
 
+  symbolTest('tracked: a run holding both a symbol and a drawing keeps the drawing live and deletes the symbol', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+    let p: Element;
+
+    await given('text, one run holding a checkbox and a drawing, and text', () => {
+      doc = makeDoc(
+        '<w:p>' +
+          '<w:r><w:t>aaa</w:t></w:r>' +
+          `<w:r><w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings"/></w:rPr>${CHECKBOX}${MINIMAL_DRAWING}</w:r>` +
+          '<w:r><w:t>bbb</w:t></w:r>' +
+        '</w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the whole visible text is replaced under tracked changes', () => {
+      replaceParagraphTextRange(p, 0, 'aaabbb'.length, 'ccc', trackedCtx());
+    });
+
+    await then('the symbol is inside w:del in its own run, the drawing is a live run, and reject-all restores both in order', () => {
+      expect(symbolsIn(p)).toHaveLength(1);
+      expect(isInsideRevisionWrapper(symbolsIn(p)[0]!, p)).toBe(true);
+      expect(embeddedObjectsIn(p, W.drawing)).toHaveLength(1);
+      expect(isInsideRevisionWrapper(embeddedObjectsIn(p, W.drawing)[0]!, p)).toBe(false);
+      expect(paragraphContentSequence(p)).toEqual(['del:aaa', '[drawing]', 'del:bbb', 'ins:ccc']);
+      const symRun = symbolsIn(p)[0]!.parentNode as Element;
+      expect(getDirectChildrenByName(getDirectChildrenByName(symRun, W.rPr)[0]!, W.rFonts)[0]?.getAttribute('w:ascii')).toBe('Wingdings');
+      rejectChanges(doc);
+      expect(symbolsIn(p)).toHaveLength(1);
+      expect(isInsideRevisionWrapper(symbolsIn(p)[0]!, p)).toBe(false);
+      expect(embeddedObjectsIn(p, W.drawing)).toHaveLength(1);
+      expect(contentSequence(p).join('')).toBe('aaa[sym]bbb');
+    });
+  });
+
   symbolTest('tracked: full blanking that spans a symbol deletes the paragraph mark, since nothing live remains', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
 
