@@ -436,7 +436,7 @@ Clear specific run-level formatting (bold, italic, underline, highlight, color, 
 
 ## `extract_revisions`
 
-Extract tracked changes as structured JSON with before/after text per paragraph, revision details, and comments. Supports pagination via offset and limit. Read-only - does not modify the document.
+Extract tracked changes as structured JSON with before/after text per paragraph, revision details, and comments. Table rows inserted or deleted as a whole, and row property changes (w:trPr > w:ins / w:del / w:trPrChange), are reported as records with scope "row", keyed by the row's first paragraph, whose revisions are ROW_INSERTION / ROW_DELETION / FORMAT_CHANGE entries carrying the revision id, author and date. Supports pagination via offset and limit. Read-only - does not modify the document.
 
 - readOnly: `true`
 - destructive: `false`

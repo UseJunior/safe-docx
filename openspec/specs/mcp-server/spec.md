@@ -321,7 +321,16 @@ The Safe-Docx MCP server SHALL automatically normalize documents on open by runn
 
 ### Requirement: Revision Extraction Returns Structured Per-Paragraph Diffs
 
-The `extract_revisions` tool SHALL walk tracked-change markup in a session document and return a JSON array of per-paragraph revision records, each containing before text, after text, individual revision details, and associated comments. Paragraph matching uses `_bk_*` bookmark IDs as primary keys across accepted/rejected clones, not positional traversal.
+The `extract_revisions` tool SHALL walk tracked-change markup in a session document and return a JSON array of per-paragraph revision records, each containing before text, after text, individual revision details, and associated comments. Paragraph matching uses `_bk_*` bookmark IDs as primary keys across accepted/rejected clones, not positional traversal. Table-row revisions carried by `w:tr/w:trPr` (`w:ins`, `w:del`, `w:trPrChange`) SHALL be reported as records with `scope: "row"`, keyed by the row's first paragraph, in document order with the paragraph records.
+
+#### Scenario: [SDX-ER-003] row-level revisions are reported with their identity
+- **GIVEN** a session containing a table whose rows carry `w:trPr > w:del`, `w:trPr > w:ins`, or `w:trPr > w:trPrChange`
+- **WHEN** `extract_revisions` is called
+- **THEN** each such row yields one entry with `scope: "row"` and a `para_id` of the row's first paragraph
+- **AND** a deleted row yields a `ROW_DELETION` revision, an inserted row a `ROW_INSERTION` revision, and a row property change a `FORMAT_CHANGE` revision
+- **AND** each such revision carries the marker's `id`, `author`, and `date`
+- **AND** `before_text` / `after_text` are the row's cell texts (tab-joined), empty on the side where the row does not exist
+- **AND** `total_changes` counts the row entries
 
 #### Scenario: [SDX-ER-001] extracting revisions from a document with insertions and deletions
 - **GIVEN** a session containing a document with `w:ins` and `w:del` tracked changes
@@ -376,7 +385,7 @@ The `extract_revisions` tool SHALL walk tracked-change markup in a session docum
 - **WHEN** `extract_revisions` is called
 - **THEN** `total_changes` is greater than zero
 - **AND** each change has a non-empty `para_id`, at least one revision entry, and at least one of `before_text` or `after_text` non-empty
-- **AND** revision types are all valid (`INSERTION`, `DELETION`, `MOVE_FROM`, `MOVE_TO`, or `FORMAT_CHANGE`)
+- **AND** revision types are all valid (`INSERTION`, `DELETION`, `MOVE_FROM`, `MOVE_TO`, `FORMAT_CHANGE`, `ROW_INSERTION`, or `ROW_DELETION`)
 
 ### Requirement: Revision Extraction Supports Pagination
 

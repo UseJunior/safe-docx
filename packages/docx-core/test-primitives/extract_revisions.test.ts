@@ -449,3 +449,238 @@ describe('extractRevisions', () => {
     });
   });
 });
+
+// ── Table-row revisions (#868) ──────────────────────────────────────
+
+const rowDeletionTest = test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.12' });
+const rowInsertionTest = test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.17' });
+const rowPropertyChangeTest = test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.37' });
+
+const ROW_DATE = '2026-01-01T00:00:00Z';
+
+function rowXml(trPrInner: string, cells: string[]): string {
+  const trPr = trPrInner ? `<w:trPr>${trPrInner}</w:trPr>` : '';
+  const tcs = cells.map((text) => `<w:tc><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc>`).join('');
+  return `<w:tr>${trPr}${tcs}</w:tr>`;
+}
+
+describe('extractRevisions — table-row revisions', () => {
+  rowDeletionTest('should report a row marked deleted in w:trPr with id, author and date', async ({ given, when, then, and }: AllureBddContext) => {
+    let doc: Document;
+    let result: ReturnType<typeof extractRevisions>;
+
+    await given('a two-row table whose first row carries w:trPr > w:del', async () => {
+      doc = makeDoc(
+        '<w:tbl>' +
+          rowXml(`<w:del w:id="7" w:author="R" w:date="${ROW_DATE}"/>`, ['ROWTEXT', 'SECOND']) +
+          rowXml('', ['KEEP']) +
+        '</w:tbl>',
+      );
+    });
+
+    await when('extractRevisions is called', async () => {
+      result = extractRevisions(doc, []);
+    });
+
+    await then('exactly one change is returned, for the deleted row', async () => {
+      expect(result.total_changes).toBe(1);
+      expect(result.changes[0]!.scope).toBe('row');
+      expect(result.changes[0]!.para_id).toMatch(/^_bk_/);
+    });
+
+    await and('the revision is a ROW_DELETION carrying the marker identity', async () => {
+      expect(result.changes[0]!.revisions).toEqual([
+        { type: 'ROW_DELETION', text: 'ROWTEXT\tSECOND', author: 'R', id: '7', date: ROW_DATE },
+      ]);
+    });
+
+    await and('before_text is the row text and after_text is empty', async () => {
+      expect(result.changes[0]!.before_text).toBe('ROWTEXT\tSECOND');
+      expect(result.changes[0]!.after_text).toBe('');
+    });
+  });
+
+  rowInsertionTest('should report a row marked inserted in w:trPr with id, author and date', async ({ given, when, then, and }: AllureBddContext) => {
+    let doc: Document;
+    let result: ReturnType<typeof extractRevisions>;
+
+    await given('a two-row table whose second row carries w:trPr > w:ins', async () => {
+      doc = makeDoc(
+        '<w:tbl>' +
+          rowXml('', ['KEEP']) +
+          rowXml(`<w:ins w:id="8" w:author="Alice" w:date="${ROW_DATE}"/>`, ['NEWROW']) +
+        '</w:tbl>',
+      );
+    });
+
+    await when('extractRevisions is called', async () => {
+      result = extractRevisions(doc, []);
+    });
+
+    await then('exactly one change is returned, for the inserted row', async () => {
+      expect(result.total_changes).toBe(1);
+      expect(result.changes[0]!.scope).toBe('row');
+    });
+
+    await and('the revision is a ROW_INSERTION carrying the marker identity', async () => {
+      expect(result.changes[0]!.revisions).toEqual([
+        { type: 'ROW_INSERTION', text: 'NEWROW', author: 'Alice', id: '8', date: ROW_DATE },
+      ]);
+    });
+
+    await and('before_text is empty and after_text is the row text', async () => {
+      expect(result.changes[0]!.before_text).toBe('');
+      expect(result.changes[0]!.after_text).toBe('NEWROW');
+    });
+  });
+
+  rowPropertyChangeTest('should report w:trPrChange as a FORMAT_CHANGE on a row record', async ({ given, when, then, and }: AllureBddContext) => {
+    let doc: Document;
+    let result: ReturnType<typeof extractRevisions>;
+
+    await given('a row whose w:trPr carries a w:trPrChange', async () => {
+      doc = makeDoc(
+        '<w:tbl>' +
+          rowXml(
+            `<w:trHeight w:val="480"/>` +
+            `<w:trPrChange w:id="9" w:author="Carol" w:date="${ROW_DATE}"><w:trPr><w:trHeight w:val="240"/></w:trPr></w:trPrChange>`,
+            ['ROW'],
+          ) +
+        '</w:tbl>',
+      );
+    });
+
+    await when('extractRevisions is called', async () => {
+      result = extractRevisions(doc, []);
+    });
+
+    await then('one row-scoped change is returned', async () => {
+      expect(result.total_changes).toBe(1);
+      expect(result.changes[0]!.scope).toBe('row');
+    });
+
+    await and('the revision is a FORMAT_CHANGE carrying the marker identity', async () => {
+      expect(result.changes[0]!.revisions).toEqual([
+        { type: 'FORMAT_CHANGE', text: '', author: 'Carol', id: '9', date: ROW_DATE },
+      ]);
+    });
+
+    await and('the row exists on both sides', async () => {
+      expect(result.changes[0]!.before_text).toBe('ROW');
+      expect(result.changes[0]!.after_text).toBe('ROW');
+    });
+  });
+
+  rowDeletionTest('should keep the row record ahead of content revisions inside the row, in document order', async ({ given, when, then, and }: AllureBddContext) => {
+    let doc: Document;
+    let result: ReturnType<typeof extractRevisions>;
+
+    await given('a paragraph with an insertion, then a deleted row whose cell also has an insertion', async () => {
+      doc = makeDoc(
+        '<w:p><w:r><w:t>Intro</w:t></w:r><w:ins w:author="X"><w:r><w:t> one</w:t></w:r></w:ins></w:p>' +
+        '<w:tbl><w:tr>' +
+          `<w:trPr><w:del w:id="7" w:author="R" w:date="${ROW_DATE}"/></w:trPr>` +
+          '<w:tc><w:p><w:r><w:t>Cell</w:t></w:r><w:ins w:id="8" w:author="X"><w:r><w:t> two</w:t></w:r></w:ins></w:p></w:tc>' +
+        '</w:tr></w:tbl>',
+      );
+    });
+
+    await when('extractRevisions is called', async () => {
+      result = extractRevisions(doc, []);
+    });
+
+    await then('three changes come back in document order: paragraph, row, cell paragraph', async () => {
+      expect(result.total_changes).toBe(3);
+      expect(result.changes.map((c) => c.scope ?? 'paragraph')).toEqual(['paragraph', 'row', 'paragraph']);
+      expect(result.changes[0]!.revisions[0]!.type).toBe('INSERTION');
+      expect(result.changes[1]!.revisions[0]!.type).toBe('ROW_DELETION');
+      expect(result.changes[2]!.revisions[0]!.type).toBe('INSERTION');
+    });
+
+    await and('the row record and its first paragraph share the para_id', async () => {
+      expect(result.changes[1]!.para_id).toBe(result.changes[2]!.para_id);
+    });
+
+    await and('the cell paragraph has no after_text because its row is gone once accepted', async () => {
+      expect(result.changes[2]!.before_text).toBe('Cell');
+      expect(result.changes[2]!.after_text).toBe('');
+    });
+
+    await and('a paragraph-level entry also carries id and date when the markup has them', async () => {
+      expect(result.changes[2]!.revisions[0]).toEqual({ type: 'INSERTION', text: ' two', author: 'X', id: '8' });
+      expect(result.changes[0]!.revisions[0]).toEqual({ type: 'INSERTION', text: ' one', author: 'X' });
+    });
+  });
+});
+
+describe('extractRevisions — table-row revisions in wrapped and nested shapes', () => {
+  rowPropertyChangeTest('should read the text of a cell wrapped in w:sdt when reporting a row property change', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+    let result: ReturnType<typeof extractRevisions>;
+
+    await given('a row whose only cell sits inside w:sdt > w:sdtContent and whose w:trPr carries a w:trPrChange', async () => {
+      doc = makeDoc(
+        '<w:tbl><w:tr>' +
+          `<w:trPr><w:trHeight w:val="480"/><w:trPrChange w:id="7" w:author="G" w:date="${ROW_DATE}"><w:trPr><w:trHeight w:val="240"/></w:trPr></w:trPrChange></w:trPr>` +
+          '<w:sdt><w:sdtPr/><w:sdtContent>' +
+            '<w:tc><w:p><w:r><w:t>WRAPPED-FORMAT</w:t></w:r></w:p></w:tc>' +
+          '</w:sdtContent></w:sdt>' +
+        '</w:tr></w:tbl>',
+      );
+    });
+
+    await when('extractRevisions is called', async () => {
+      result = extractRevisions(doc, []);
+    });
+
+    await then('the row record carries the wrapped cell text on both sides', async () => {
+      expect(result.total_changes).toBe(1);
+      expect(result.changes[0]!.scope).toBe('row');
+      expect(result.changes[0]!.before_text).toBe('WRAPPED-FORMAT');
+      expect(result.changes[0]!.after_text).toBe('WRAPPED-FORMAT');
+      expect(result.changes[0]!.revisions).toEqual([
+        { type: 'FORMAT_CHANGE', text: '', author: 'G', id: '7', date: ROW_DATE },
+      ]);
+    });
+  });
+
+  rowDeletionTest('should report the outer row, not the nested row, when the outer row has only a nested table', async ({ given, when, then, and }: AllureBddContext) => {
+    let doc: Document;
+    let result: ReturnType<typeof extractRevisions>;
+
+    await given('a deleted outer row whose only cell content is a nested table with its own text', async () => {
+      doc = makeDoc(
+        '<w:tbl><w:tr>' +
+          `<w:trPr><w:del w:id="6" w:author="F" w:date="${ROW_DATE}"/></w:trPr>` +
+          '<w:tc><w:tbl><w:tr><w:tc><w:p><w:r><w:t>INNER-ONLY</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc>' +
+        '</w:tr></w:tbl>' +
+        '<w:tbl><w:tr>' +
+          `<w:trPr><w:trHeight w:val="480"/><w:trPrChange w:id="8" w:author="H" w:date="${ROW_DATE}"><w:trPr><w:trHeight w:val="240"/></w:trPr></w:trPrChange></w:trPr>` +
+          '<w:tc><w:tbl><w:tr><w:tc><w:p><w:r><w:t>INNER-TWO</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc>' +
+        '</w:tr></w:tbl>',
+      );
+    });
+
+    await when('extractRevisions is called', async () => {
+      result = extractRevisions(doc, []);
+    });
+
+    await then('the deleted outer row is reported, with the nested text excluded from the row text', async () => {
+      expect(result.total_changes).toBe(2);
+      expect(result.changes[0]!.scope).toBe('row');
+      expect(result.changes[0]!.revisions[0]!.type).toBe('ROW_DELETION');
+      expect(result.changes[0]!.revisions[0]!.text).toBe('');
+      expect(result.changes[0]!.before_text).toBe('');
+      expect(result.changes[0]!.after_text).toBe('');
+    });
+
+    await and('a row property change on such a row resolves the outer row in both clones, not the inner row', async () => {
+      expect(result.changes[1]!.scope).toBe('row');
+      expect(result.changes[1]!.revisions).toEqual([
+        { type: 'FORMAT_CHANGE', text: '', author: 'H', id: '8', date: ROW_DATE },
+      ]);
+      expect(result.changes[1]!.before_text).toBe('');
+      expect(result.changes[1]!.after_text).toBe('');
+    });
+  });
+});
