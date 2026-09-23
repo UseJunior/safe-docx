@@ -220,8 +220,11 @@ function consumeSerializedRangeStats(document: Document): TaggedTreePublication[
   const stats = { insertedRanges: 0, deletedRanges: 0, moveFromRanges: 0, moveToRanges: 0 };
   for (const element of [document.documentElement, ...Array.from(document.getElementsByTagName('*'))]) {
     if (!element.hasAttribute(COMPARISON_REVISION_ATTRIBUTE)) continue;
+    const classification = element.getAttribute(COMPARISON_REVISION_ATTRIBUTE);
     element.removeAttribute(COMPARISON_REVISION_ATTRIBUTE);
-    if (element.localName === 'ins') stats.insertedRanges++;
+    if (classification === 'moveFrom') stats.moveFromRanges++;
+    else if (classification === 'moveTo') stats.moveToRanges++;
+    else if (element.localName === 'ins') stats.insertedRanges++;
     else if (element.localName === 'del') stats.deletedRanges++;
     else if (element.localName === 'moveFrom') stats.moveFromRanges++;
     else if (element.localName === 'moveTo') stats.moveToRanges++;

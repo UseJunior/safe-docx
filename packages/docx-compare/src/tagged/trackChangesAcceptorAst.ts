@@ -78,6 +78,26 @@ function rowsWithRevisionMarker(root: Element, tagName: 'w:ins' | 'w:del'): Elem
   return [...rows];
 }
 
+function bookmarkIdsAroundMoveWrappers(root: Element, direction: 'From' | 'To'): Set<string> {
+  const ids = new Set<string>();
+  for (const start of findAllByTagName(root, 'w:bookmarkStart')) {
+    const id = start.getAttribute('w:id') ?? start.getAttributeNS(W_NS, 'id');
+    const parent = start.parentNode as Element | null;
+    if (!id || !parent) continue;
+    const siblings = childElements(parent);
+    const startIndex = siblings.indexOf(start);
+    const endIndex = siblings.findIndex((element, index) => index > startIndex &&
+      element.tagName === 'w:bookmarkEnd' &&
+      (element.getAttribute('w:id') ?? element.getAttributeNS(W_NS, 'id')) === id);
+    if (endIndex <= startIndex + 1) continue;
+    const enclosed = siblings.slice(startIndex + 1, endIndex);
+    if (enclosed.every((element) => element.tagName === `w:move${direction}`)) {
+      ids.add(id);
+    }
+  }
+  return ids;
+}
+
 function removeParaMarkers(root: Element): void {
   // Remove paragraph-level revision markers that live under <w:pPr>.
   for (const p of findAllByTagName(root, 'w:p')) {
@@ -578,6 +598,7 @@ export function acceptAllChanges(documentXml: string): string {
   // wrapper so the combined redline visibly brackets deleted text. Remove that
   // original-side counterpart before accepting the deletion.
   const deletedBookmarkIds = new Set<string>();
+  for (const id of bookmarkIdsAroundMoveWrappers(root, 'From')) deletedBookmarkIds.add(id);
   for (const deletion of [
     ...findAllByTagName(root, 'w:del'),
     ...findAllByTagName(root, 'w:moveFrom'),
@@ -702,6 +723,7 @@ export function rejectAllChanges(documentXml: string): string {
   }
 
   const insertedBookmarkIds = new Set<string>();
+  for (const id of bookmarkIdsAroundMoveWrappers(root, 'To')) insertedBookmarkIds.add(id);
   for (const insertion of [
     ...findAllByTagName(root, 'w:ins'),
     ...findAllByTagName(root, 'w:moveTo'),

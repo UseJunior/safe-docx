@@ -1,4 +1,4 @@
-/** Public synthetic characterization for #973, not a complete consumer-fidelity pass. */
+/** Public synthetic LibreOffice projection gate for whole-paragraph moves (#973). */
 import { describe, expect } from 'vitest';
 import { compareDocuments } from '@usejunior/docx-compare';
 import { readZipText } from '../primitives/zip.js';
@@ -7,7 +7,8 @@ import { buildDocxFromBodyXml, paragraphWithText } from '../testing/ooxml-fixtur
 import { testAllure } from '../testing/allure-test.js';
 import { paragraphShape, probeSofficeUsable, resolveSoffice, runLibreOfficeOracle } from './libreoffice-oracle.js';
 
-const test = testAllure.epic('Document Comparison').withLabels({ feature: 'LibreOffice move characterization' });
+const TEST_FEATURE = 'refactor-tracked-paragraph-move-ownership';
+const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
 const soffice = resolveSoffice();
 const usable = soffice ? await probeSofficeUsable(soffice) : false;
 const oracle = usable ? describe : describe.skip;
@@ -20,13 +21,13 @@ const text = (xml: string) => Array.from(parseXml(xml).getElementsByTagNameNS(
   'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 't',
 )).map(element => element.textContent).join('');
 
-oracle('issue #941 — known LibreOffice move boundary behavior', () => {
-  for (const [name, originalOrder, revisedOrder, acceptEmpty, rejectEmpty] of [
-    ['middle destination', [0, 1, 2], [1, 0, 2], false, false],
-    ['terminal destination', [0, 1, 2], [1, 2, 0], false, true],
-    ['terminal source', [1, 2, 0], [0, 1, 2], true, false],
+oracle('issue #973 — LibreOffice whole-paragraph move projection', () => {
+  for (const [name, originalOrder, revisedOrder] of [
+    ['middle destination', [0, 1, 2], [1, 0, 2]],
+    ['terminal destination', [0, 1, 2], [1, 2, 0]],
+    ['terminal source', [1, 2, 0], [0, 1, 2]],
   ] as const) {
-    test(`characterizes ${name} without claiming complete fidelity`, async () => {
+    test.openspec('Supported readers project exact states')(`${name} accepts and rejects to the exact paragraph state`, async () => {
       const build = (order: readonly number[]) => buildDocxFromBodyXml(
         order.map(index => paragraphWithText(paragraphs[index]!)).join(''),
       );
@@ -44,8 +45,8 @@ oracle('issue #941 — known LibreOffice move boundary behavior', () => {
       ], soffice);
       expect(text(accepted!)).toBe(text(expectedAccept!));
       expect(text(rejected!)).toBe(text(expectedReject!));
-      expect(paragraphShape(accepted!)).toEqual([...paragraphShape(expectedAccept!), ...(acceptEmpty ? [false] : [])]);
-      expect(paragraphShape(rejected!)).toEqual([...paragraphShape(expectedReject!), ...(rejectEmpty ? [false] : [])]);
+      expect(paragraphShape(accepted!)).toEqual(paragraphShape(expectedAccept!));
+      expect(paragraphShape(rejected!)).toEqual(paragraphShape(expectedReject!));
     }, 180_000);
   }
 });
