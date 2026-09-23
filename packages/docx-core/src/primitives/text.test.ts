@@ -4,7 +4,7 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { parseXml } from './xml.js';
 import { OOXML, W } from './namespaces.js';
 import { SafeDocxError } from './errors.js';
-import { getDirectChildrenByName } from './dom-helpers.js';
+import { getDirectChildrenByName, isW as isWElement } from './dom-helpers.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
 import { rejectChanges } from './reject_changes.js';
 import { acceptChanges } from './accept_changes.js';
@@ -2001,6 +2001,220 @@ describe('replaceParagraphTextRange — embedded object preservation', () => {
     await then('every text stretch returns to its original position', () => {
       expect(paragraphContentSequence(p)).toEqual(['aa', '[drawing]', 'bb', '[pict]', 'cc']);
       expect(getParagraphText(p)).toBe('aabbcc');
+    });
+  });
+});
+
+// ── replaceParagraphTextRange — untracked full blanking removes the paragraph (#740) ──
+
+describe('replaceParagraphTextRange — untracked full blanking (#740)', () => {
+  const numbered = (text: string, numId = '1'): string =>
+    '<w:p>' +
+      `<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numId}"/></w:numPr></w:pPr>` +
+      `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>` +
+    '</w:p>';
+  const THREE_ITEM_LIST = numbered('first item') + numbered('second item') + numbered('third item');
+
+  /** The issue's detection predicate: w:numPr with numId != "0", and no w:t/w:delText text, no embedded content. */
+  function orphanNumberedParagraphs(doc: Document): Element[] {
+    return Array.from(doc.getElementsByTagNameNS(W_NS, W.p)).filter((p) => {
+      const numId = p.getElementsByTagNameNS(W_NS, 'numId').item(0)?.getAttribute('w:val');
+      if (!numId || numId === '0') return false;
+      const text = ['t', 'delText']
+        .flatMap((name) => Array.from(p.getElementsByTagNameNS(W_NS, name)))
+        .map((el) => el.textContent ?? '')
+        .join('');
+      if (text.trim().length > 0) return false;
+      const embedded = ['drawing', 'pict', 'object']
+        .some((name) => p.getElementsByTagNameNS(W_NS, name).length > 0);
+      return !embedded;
+    });
+  }
+
+  const trackedCtx = () => createRevisionContext({
+    author: 'SafeDocX AI',
+    date: '2026-09-23T12:00:00Z',
+    idState: createRevisionIdState(),
+  });
+
+  paragraphDeletionTest('untracked: blanking the middle item of a three-item list leaves two numbered paragraphs', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+
+    await given('a three-item numbered list', () => {
+      doc = makeDoc(THREE_ITEM_LIST);
+      expect(doc.getElementsByTagNameNS(W_NS, W.p)).toHaveLength(3);
+    });
+
+    await when('the middle item\'s complete visible text is replaced with nothing, untracked', () => {
+      replaceParagraphTextRange(paragraphAt(doc, 1), 0, 'second item'.length, '');
+    });
+
+    await then('the emptied paragraph is gone and no numbered paragraph is left without text', () => {
+      const paragraphs = Array.from(doc.getElementsByTagNameNS(W_NS, W.p));
+      expect(paragraphs).toHaveLength(2);
+      expect(paragraphs.map((p) => getParagraphText(p))).toEqual(['first item', 'third item']);
+      expect(orphanNumberedParagraphs(doc)).toHaveLength(0);
+      expect(serialize(doc)).not.toContain('<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr></w:p>');
+    });
+  });
+
+  paragraphDeletionTest('tracked: the same blanking keeps the deletion for review and clean-accepts to two numbered paragraphs', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+
+    await given('a three-item numbered list', () => {
+      doc = makeDoc(THREE_ITEM_LIST);
+    });
+
+    await when('the middle item\'s complete visible text is deleted under tracked changes', () => {
+      replaceParagraphTextRange(paragraphAt(doc, 1), 0, 'second item'.length, '', trackedCtx());
+    });
+
+    await then('the tracked form keeps the paragraph with its text in w:delText and a deleted paragraph mark', () => {
+      expect(doc.getElementsByTagNameNS(W_NS, W.p)).toHaveLength(3);
+      const middle = paragraphAt(doc, 1);
+      expect(Array.from(middle.getElementsByTagNameNS(W_NS, 'delText')).map((t) => t.textContent).join('')).toBe('second item');
+      const pPr = getDirectChildrenByName(middle, W.pPr)[0]!;
+      expect(getDirectChildrenByName(getDirectChildrenByName(pPr, W.rPr)[0]!, 'del')).toHaveLength(1);
+      // The predicate counts w:delText as text, so a correctly tracked deletion is not an orphan.
+      expect(orphanNumberedParagraphs(doc)).toHaveLength(0);
+    });
+
+    await then('accepting the changes (the clean save) leaves two numbered paragraphs', () => {
+      acceptChanges(doc);
+      const paragraphs = Array.from(doc.getElementsByTagNameNS(W_NS, W.p));
+      expect(paragraphs).toHaveLength(2);
+      expect(paragraphs.map((p) => getParagraphText(p))).toEqual(['first item', 'third item']);
+      expect(orphanNumberedParagraphs(doc)).toHaveLength(0);
+    });
+  });
+
+  test('untracked: an image-only paragraph whose text is blanked is not removed', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+
+    await given('a numbered paragraph holding a caption and an inline drawing', () => {
+      doc = makeDoc(
+        numbered('lead') +
+        '<w:p>' +
+          '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
+          '<w:r><w:t>Figure caption</w:t></w:r>' +
+          `<w:r>${MINIMAL_DRAWING}</w:r>` +
+        '</w:p>' +
+        numbered('tail'),
+      );
+    });
+
+    await when('the caption is blanked untracked', () => {
+      replaceParagraphTextRange(paragraphAt(doc, 1), 0, 'Figure caption'.length, '');
+    });
+
+    await then('the paragraph and its drawing survive', () => {
+      expect(doc.getElementsByTagNameNS(W_NS, W.p)).toHaveLength(3);
+      const middle = paragraphAt(doc, 1);
+      expect(getParagraphText(middle)).toBe('');
+      expect(embeddedObjectsIn(middle, 'drawing')).toHaveLength(1);
+      expect(getDirectChildrenByName(getDirectChildrenByName(middle, W.pPr)[0]!, W.numPr)).toHaveLength(1);
+    });
+  });
+
+  test('untracked: a paragraph carrying section properties is kept', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+
+    await given('a paragraph whose pPr holds a sectPr, followed by another paragraph', () => {
+      doc = makeDoc(
+        '<w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr><w:r><w:t>section end</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>next section</w:t></w:r></w:p>',
+      );
+    });
+
+    await when('its complete visible text is blanked untracked', () => {
+      replaceParagraphTextRange(paragraphAt(doc, 0), 0, 'section end'.length, '');
+    });
+
+    await then('the paragraph and its section break survive with no text', () => {
+      expect(doc.getElementsByTagNameNS(W_NS, W.p)).toHaveLength(2);
+      const first = paragraphAt(doc, 0);
+      expect(getParagraphText(first)).toBe('');
+      expect(first.getElementsByTagNameNS(W_NS, W.sectPr)).toHaveLength(1);
+    });
+  });
+
+  test('untracked: a table cell\'s only paragraph is kept', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+
+    await given('a one-cell table whose cell holds a single numbered paragraph', () => {
+      doc = makeDoc(
+        '<w:p><w:r><w:t>before</w:t></w:r></w:p>' +
+        '<w:tbl><w:tr><w:tc>' + numbered('cell text') + '</w:tc></w:tr></w:tbl>' +
+        '<w:p><w:r><w:t>after</w:t></w:r></w:p>',
+      );
+    });
+
+    await when('the cell paragraph\'s complete visible text is blanked untracked', () => {
+      replaceParagraphTextRange(paragraphAt(doc, 1), 0, 'cell text'.length, '');
+    });
+
+    await then('the cell still holds its required paragraph', () => {
+      const cell = doc.getElementsByTagNameNS(W_NS, 'tc').item(0)!;
+      const cellParagraphs = Array.from(cell.childNodes).filter((c) => c.nodeType === 1 && isWElement(c as Element, W.p));
+      expect(cellParagraphs).toHaveLength(1);
+      expect(getParagraphText(cellParagraphs[0] as Element)).toBe('');
+    });
+  });
+
+  test('untracked: a paragraph that owns bookmark or comment anchors is kept', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+
+    await given('two numbered paragraphs owning a bookmark and a comment range respectively, between plain items', () => {
+      doc = makeDoc(
+        numbered('first') +
+        '<w:p>' +
+          '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
+          '<w:bookmarkStart w:id="5" w:name="ClauseRef"/>' +
+          '<w:r><w:t>bookmarked</w:t></w:r>' +
+          '<w:bookmarkEnd w:id="5"/>' +
+        '</w:p>' +
+        '<w:p>' +
+          '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
+          '<w:commentRangeStart w:id="3"/>' +
+          '<w:r><w:t>commented</w:t></w:r>' +
+          '<w:commentRangeEnd w:id="3"/>' +
+          '<w:r><w:commentReference w:id="3"/></w:r>' +
+        '</w:p>' +
+        numbered('last'),
+      );
+    });
+
+    await when('both anchored paragraphs have their complete visible text blanked untracked', () => {
+      replaceParagraphTextRange(paragraphAt(doc, 1), 0, 'bookmarked'.length, '');
+      replaceParagraphTextRange(paragraphAt(doc, 2), 0, 'commented'.length, '');
+    });
+
+    await then('both paragraphs survive with their anchors intact', () => {
+      expect(doc.getElementsByTagNameNS(W_NS, W.p)).toHaveLength(4);
+      expect(doc.getElementsByTagNameNS(W_NS, 'bookmarkStart')).toHaveLength(1);
+      expect(doc.getElementsByTagNameNS(W_NS, 'bookmarkEnd')).toHaveLength(1);
+      expect(doc.getElementsByTagNameNS(W_NS, 'commentRangeStart')).toHaveLength(1);
+      expect(doc.getElementsByTagNameNS(W_NS, 'commentRangeEnd')).toHaveLength(1);
+      expect(doc.getElementsByTagNameNS(W_NS, 'commentReference')).toHaveLength(1);
+    });
+  });
+
+  test('untracked: a partial replacement or a non-empty replacement never removes the paragraph', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+
+    await given('a three-item numbered list', () => {
+      doc = makeDoc(THREE_ITEM_LIST);
+    });
+
+    await when('the middle item is partially blanked and then fully replaced with new text', () => {
+      replaceParagraphTextRange(paragraphAt(doc, 1), 0, 'second'.length, '');
+      replaceParagraphTextRange(paragraphAt(doc, 1), 0, ' item'.length, 'replaced');
+    });
+
+    await then('three numbered paragraphs remain', () => {
+      const paragraphs = Array.from(doc.getElementsByTagNameNS(W_NS, W.p));
+      expect(paragraphs).toHaveLength(3);
+      expect(getParagraphText(paragraphs[1]!)).toBe('replaced');
     });
   });
 });

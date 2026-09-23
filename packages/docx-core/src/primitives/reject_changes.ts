@@ -20,6 +20,7 @@
 
 import { OOXML } from './namespaces.js';
 import { removeTableRowAndEmptyTable } from './table_rows.js';
+import { RANGE_MARKUP_BLOCK_SIBLING_LOCALS, canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
 import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun, removeEmptyParagraphMarkProperties } from './paragraph_merge_formatting.js';
 import type { RevisionFilter } from './accept_changes.js';
 
@@ -238,23 +239,6 @@ function restoreParagraphMarkRunProperties(
   return restored;
 }
 
-// Marker-ish elements that may sit between two paragraphs at block level
-// without ending the search for a merge target: the full EG_RangeMarkupElements
-// schema group (wml.xsd), plus permStart/permEnd range markers and proofErr
-// proofing anchors.
-const RANGE_MARKUP_BLOCK_SIBLING_LOCALS = new Set([
-  'bookmarkStart', 'bookmarkEnd',
-  'commentRangeStart', 'commentRangeEnd',
-  'moveFromRangeStart', 'moveFromRangeEnd',
-  'moveToRangeStart', 'moveToRangeEnd',
-  'customXmlInsRangeStart', 'customXmlInsRangeEnd',
-  'customXmlDelRangeStart', 'customXmlDelRangeEnd',
-  'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd',
-  'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd',
-  'permStart', 'permEnd',
-  'proofErr',
-]);
-
 /**
  * Find the next sibling paragraph a paragraph-mark revision can merge into,
  * skipping block-level range/annotation markers. Returns null when the next
@@ -289,42 +273,6 @@ function paragraphHasContent(p: Element, forFormatting = false): boolean {
     return true;
   }
   return false;
-}
-
-/**
- * True iff removing an emptied mark-revised paragraph keeps its parent
- * structurally valid for Word: the parent must retain at least one block
- * element, must not end on a w:tbl (a trailing table needs a following
- * paragraph), and two tables must not become adjacent (Word merges
- * back-to-back tables). w:sectPr is ignored — a trailing body sectPr is not a
- * block element.
- */
-function canSafelyRemoveEmptyParagraph(p: Element): boolean {
-  const blockSibling = (start: Node | null, dir: 'previousSibling' | 'nextSibling'): Element | null => {
-    let sibling = start;
-    while (sibling) {
-      if (sibling.nodeType === 1) {
-        const el = sibling as Element;
-        if (
-          (el.namespaceURI === W_NS && RANGE_MARKUP_BLOCK_SIBLING_LOCALS.has(el.localName ?? '')) ||
-          isW(el, 'sectPr')
-        ) {
-          sibling = sibling[dir];
-          continue;
-        }
-        return el;
-      }
-      sibling = sibling[dir];
-    }
-    return null;
-  };
-
-  const prev = blockSibling(p.previousSibling, 'previousSibling');
-  const next = blockSibling(p.nextSibling, 'nextSibling');
-  if (!prev && !next) return false;
-  if (prev && isW(prev, 'tbl') && !next) return false;
-  if (prev && next && isW(prev, 'tbl') && isW(next, 'tbl')) return false;
-  return true;
 }
 
 /**
