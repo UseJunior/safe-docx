@@ -17,8 +17,8 @@ chosen emitted shape, not a second pass/fail policy.
 ## Goals / Non-Goals
 
 - Goals:
-  - add bounded whitespace-bridged replacement grouping as a supported,
-    deterministic Markdoc compile option;
+  - use bounded whitespace-bridged replacement grouping deterministically for
+    every Markdoc compilation, without a public mode selector;
   - preserve exact accept/reject semantics and common lexical/punctuation
     content;
   - disclose readability-aware coalescing separately from required token loss;
@@ -35,28 +35,38 @@ chosen emitted shape, not a second pass/fail policy.
 
 ## Decisions
 
-### One resolved compile policy on every path
+### One fixed public behavior on every path
 
-The compile policy values are `token-minimal` and `readable-whitespace`.
-Canonical Markdoc may declare `revision-grouping="readable-whitespace"` on its
-singleton `compilation` tag. The TypeScript compile options and CLI
-`--revision-grouping` flag expose the same closed value set. An explicit runtime
-value wins over the Markdoc value; absent either, `token-minimal` applies.
-Unknown or duplicate values fail before mutation. The compile option is
-`revisionGrouping?: { policy: 'token-minimal' | 'readable-whitespace'; source?:
-'api' | 'cli' }`; omitted source defaults to `api`, while the CLI passes `cli`.
-The compilation certificate records
-`revisionGrouping: { policy, source, coalescedSpaceTokens, groupedChains }`.
+Every Markdoc compile uses bounded readable-whitespace grouping. The exact-token
+LCS and token-minimal hunk set remain internal prerequisites and test oracles,
+but callers cannot choose their emitted shape. Remove `revision-grouping` from
+the canonical compilation tag, `revisionGrouping` from compile options, and
+`--revision-grouping` from the CLI. Former Markdoc declarations, CLI flags, and
+runtime options (including JavaScript own properties) fail before comparison or
+mutation; TypeScript source passing the former option also fails type checking.
+The compilation certificate retains its audit shape with literal
+`policy: 'readable-whitespace'` and `source: 'default'`, plus actual
+grouped-chain/coalesced-space totals. Here `default` means fixed, not
+caller-selectable. The separate comment-rendering configuration source remains
+unchanged.
 
-An explicit opt-in avoids silently changing byte shape for existing callers and
-makes a non-minimal emitted-revision choice reviewable in source control.
+The internal `@usejunior/docx-compare` `revisionGrouping` option remains the
+only switch. Markdoc always passes `'readable-whitespace'`; non-Markdoc compare
+callers retain the comparator's token-minimal default. Comparator-level tests
+may call `compareDocumentsAtomizer(..., { revisionGrouping: 'token-minimal' })`
+to obtain a minimal oracle. Markdoc public tests assert only the fixed readable
+behavior.
+
+This changes byte shape for eligible multi-word edits, intentionally making
+the review-friendly result the normal result. It does not change accept/reject
+projections or validation eligibility.
 
 ### Readable grouping is a bounded post-validation transform
 
 The compiler first computes and validates the same exact-token LCS and minimal
 `TextHunk[]` it does today. A replacement fragment is a hunk with
 `start < end` and a nonempty `replacement`; pure insertions and pure deletions
-terminate a chain. In `readable-whitespace` mode only, a post-validation
+terminate a chain. In every compilation, a post-validation
 transform may combine a chain of at least two replacement fragments when every
 intervening source and revised slice is the same nonempty run of ordinary
 U+0020 spaces. Grouping cannot turn an otherwise invalid operation valid: run
@@ -71,7 +81,7 @@ offsets intersect a resolved retained-format interval terminates the chain.
 A chain is eligible only when the merged source range and each constituent
 fragment resolve through `templateForHunk` to the same single run-property
 signature (or to the same explicit `format-source`). If not, the compiler emits
-the original hunks rather than throwing a new readability-mode error. Grouping
+the original hunks rather than throwing a new grouping error. Grouping
 is intra-operation and intra-paragraph; it never combines operations. Selected
 header/footer story paragraphs use the same transform once the active story-
 authoring change lands, while this body implementation does not depend on it.
@@ -100,7 +110,7 @@ of the lesser occurrence count across the two sides. A nonzero count makes one
 grouped chain. This disclosure does not alter `lostTokensByClass` or the gate
 verdict.
 
-Token-minimal output reports zero grouped chains and zero coalesced spaces: one
+The internal token-minimal oracle reports zero grouped chains and zero coalesced spaces: one
 exact-LCS gap cannot contain the same token on both sides, because matching it
 would lengthen the LCS. Tokens compare exactly, so `" "` and `"  "` do not
 match for disclosure. Correct readable output reports zero required loss but a
@@ -112,14 +122,14 @@ operands, never compiler IR.
 ### Tests judge both usefulness and bounds
 
 Positive tests use synthetic multi-word replacements that are fragmented in
-`token-minimal` mode and become one readable deletion/insertion pair in
-`readable-whitespace` mode. Negative controls cover punctuation, tabs/newlines,
+the internal token-minimal oracle and become one readable deletion/insertion
+pair in normal compilation. Negative controls cover punctuation, tabs/newlines,
 pure insertions/deletions, single fragments, mismatched formatting, repeated
 tokens, existing revisions, and structural boundaries. Every positive fixture
 checks exact accept/reject text and semantic formatting, physical revision
 shape, attribution-range consistency, and independent-verifier disclosure
 evidence. The existing #846 dense-rewrite fixtures continue to require zero
-lexical and punctuation loss in both modes.
+lexical and punctuation loss under the single public behavior.
 
 ## Risks / Trade-offs
 
@@ -133,9 +143,10 @@ lexical and punctuation loss in both modes.
 
 ## Migration Plan
 
-No migration is required. Existing Markdoc and API calls resolve to
-`token-minimal`. Callers that prefer phrase-level review opt into
-`readable-whitespace` declaratively or through an explicit runtime value.
+Existing callers remove `revision-grouping`, `revisionGrouping`, or
+`--revision-grouping`. Compilations without those selectors receive readable
+grouping automatically. This is a deliberate breaking removal of a short-lived
+selector introduced by PR #1016.
 
 ## Open Questions
 

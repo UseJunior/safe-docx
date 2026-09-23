@@ -1,4 +1,15 @@
-## 1. Contracts and policy resolution
+## 0. Default-only contract correction (user direction after PR #1016)
+
+- [ ] 0.1 Remove the public grouping selector from canonical Markdoc, TypeScript compile options, and CLI; reject legacy Markdoc/CLI declarations and JavaScript own-property API options before comparison or mutation.
+- [ ] 0.2 Always apply bounded readable grouping after token-minimal validation in Markdoc; keep docx-compare's internal token-minimal default and explicit minimal option as the test oracle and unsupported-boundary fallback.
+- [ ] 0.3 Narrow compilation-certificate types to literal `policy: 'readable-whitespace'` and `source: 'default'`, retaining actual grouping counts without suggesting a caller-selected mode.
+- [ ] 0.4 Update README and retag/rewrite all SDX-MDOC-139/140/141/143/146 tests for default grouping, legacy-selector rejection (including an own API option set to `undefined`), unchanged accept/reject projections, pre-existing revision evidence, and zero-loss bounds; remove assertions of the old opt-in contract.
+- [ ] 0.5 Run pre-submit checks, real-template smoke, Fable peer review, and a separate implementation PR/automerge smoke.
+
+## 1. Original PR #1016 implementation history
+
+The completed tasks below describe PR #1016's original opt-in implementation;
+section 0 supersedes its public-default and selector wording.
 
 - [x] 1.1 Add the closed `token-minimal | readable-whitespace` policy to the Markdoc `compilation` tag, edit IR, TypeScript compile options, CLI parsing, and validation.
 - [x] 1.2 Implement `revisionGrouping?: { policy, source?: 'api' | 'cli' }`, default omitted source to API, have the CLI pass explicit provenance, and record `{ policy, source, coalescedSpaceTokens, groupedChains }` in compilation certificates.

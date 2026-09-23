@@ -12,25 +12,27 @@ ranges.
 
 ## What Changes
 
-- Add an explicit `revision-grouping` compile policy with `token-minimal` and
-  `readable-whitespace` values to canonical Markdoc, the TypeScript API, and the
-  CLI.
-- Keep exact accept-all and reject-all projections invariant under both modes.
-- Under `readable-whitespace`, permit only bounded plain-space bridges between
+- Use bounded readable-whitespace grouping for every Markdoc compilation. Do
+  not expose a grouping selector through Markdoc, the TypeScript API, or CLI.
+- Keep exact accept-all and reject-all projections invariant under grouping.
+- Permit only bounded plain-space bridges between
   compatible adjacent replacement fragments; do not absorb lexical tokens,
   punctuation, tabs, line breaks, or protected structural boundaries.
 - Keep the independent verifier's single `authored-zero-loss` gate: common
   lexical, punctuation, anchored whitespace, and structural tokens remain
   mandatory, while eligible unanchored coalesced spaces are separately
   disclosed from finished tracked markup.
-- Record the resolved compile policy, its provenance, grouped-chain totals, and
-  coalesced-space evidence in compilation/release certificates.
+- Record the fixed grouping behavior, grouped-chain totals, and coalesced-space
+  evidence in compilation/release certificates.
 
 ## Impact
 
 - Affected specs: `docx-markdoc`, `release-verification`
-- Affected code: Markdoc schema/IR/compiler/CLI, tracked replacement emission,
-  independent minimality evidence, certificates, README, and tests
+- Affected code: Markdoc schema/IR/compiler/CLI, docx-compare's internal
+  grouping interface, tracked replacement emission, independent minimality
+  evidence, certificates, README, and tests
 - Related issues and precedent: #998, #846, #42, and merged PR #43
-- Compatibility: `token-minimal` remains the default; readable grouping is an
-  explicit deterministic opt-in
+- Compatibility: **BREAKING** existing `revision-grouping` declarations,
+  `revisionGrouping` compile options (including JavaScript callers), and
+  `--revision-grouping` CLI flags are rejected before mutation; callers remove
+  them and receive readable grouping by default.
