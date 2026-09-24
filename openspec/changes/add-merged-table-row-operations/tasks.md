@@ -1,9 +1,10 @@
 ## 1. Contract and evidence
 
-- [ ] 1.1 Review and approve the opt-in API, occupancy model, restart-promotion semantics, and tracked revision representation before implementation.
+- [x] 1.1 Review and approve the opt-in API and occupancy model; restart-promotion representation remains gated by 1.2.
 - [ ] 1.2 Confirm the relevant ECMA-376 5th-edition sections and vendored schemas; run a Word Track Changes oracle for restart-row deletion before freezing `w:tcPrChange` versus `w:cellMerge` representation.
-- [ ] 1.3 Archive `add-structural-table-row-operations` before adding this change's MODIFIED requirement; dry-run this change's archive on a scratch copy.
-- [ ] 1.4 Merge this approval-only proposal with green required checks and one mapped, currently true default-guard scenario; add the merge-aware operation delta together with its mapped tests in the implementation PR.
+- [x] 1.3 Archive `add-structural-table-row-operations` before adding this change's MODIFIED requirement.
+- [ ] 1.3a Dry-run this change's archive on a scratch copy before implementation PR delivery.
+- [x] 1.4 Merge the approval-only proposal with green required checks and one mapped, currently true default-guard scenario; add each merge-aware operation delta with its mapped tests in staged implementation PRs.
 
 ## 2. Read-only occupancy inventory
 
@@ -13,7 +14,7 @@
 
 ## 3. Merge-aware clean row operations
 
-- [ ] 3.1 Extend the existing row API with an explicit opt-in mode; leave default rectangular behavior unchanged.
+- [x] 3.1 Extend the existing row API with an explicit opt-in mode; leave default rectangular behavior unchanged.
 - [ ] 3.2 Insert a row from the adjacent physical-cell layout, preserve horizontal spans and offsets, and apply the enumerated before-restart/interior/after-terminal vertical-merge boundary rules with empty continuation text.
 - [ ] 3.3 Delete interior/final merge continuations and promote a following continuation to restart when deleting a restart; reject cases whose surviving rectangle cannot be represented uniquely.
 - [ ] 3.4 Validate clean output occupancy, trailing cell paragraphs, preserved unaffected XML, bookmark/range integrity, and transactional failure before publication.
@@ -28,5 +29,5 @@
 
 ## 5. Delivery
 
-- [ ] 5.1 Extend the `docx-primitives` delta with mapped `SDX-MERGEDROW-01..06` and updated `SDX-TABLEROW-07/08` tests; reconcile or retire the overlapping default-guard wording so the canonical spec has one consistent contract; run full repository pre-submit and strict OpenSpec validation.
+- [ ] 5.1 Extend the `docx-primitives` delta in stages: `SDX-MERGEDROW-01/02` cover horizontal edits, `03/04` are reserved for vertical continuations/restart promotion, and `05/06` cover the fail-closed hMerge guard and explicit empty-`trPr` normalization. Keep updated `SDX-TABLEROW-07/08` tests and the default guard consistent; run full repository pre-submit and strict OpenSpec validation for each delivery PR.
 - [ ] 5.2 Obtain dynamic peer review, resolve findings, and ship via a focused PR with post-merge smoke.
