@@ -270,7 +270,14 @@ The server SHALL run a hook pipeline around tool execution to normalize inputs a
 - **AND** the resulting document SHALL open cleanly in Microsoft Word
 
 ### Requirement: Accept Tracked Changes Tool
-The Safe-Docx MCP server SHALL provide an `accept_changes` tool that accepts every tracked change the acceptance engine can resolve, across the document body and the revisionable side stories it supports (`footnotes.xml`, `endnotes.xml`, `comments.xml`, `glossary/document.xml`); headers and footers remain deferred. Revision records the engine cannot resolve SHALL be preserved rather than stripped, and SHALL be reported to the caller, so the tool never claims a clean document while leaving unresolved markup behind.
+
+The Safe-Docx MCP server SHALL provide an `accept_changes` tool that accepts
+every tracked change the acceptance engine can resolve across the document body
+and supported revisionable side stories (`footnotes.xml`, `endnotes.xml`,
+`comments.xml`, `glossary/document.xml`); headers and footers remain deferred.
+Row-level markers (`w:trPr > w:ins|w:del`) SHALL resolve semantically: accepting
+an inserted row keeps it, and accepting a deleted row removes it. Records the
+engine cannot resolve SHALL remain preserved and reported rather than stripped.
 
 #### Scenario: accept_changes produces clean document body with no revision markup
 - **GIVEN** a document whose tracked changes (insertions, deletions, formatting changes, moves) are all of resolvable kinds
@@ -292,19 +299,19 @@ The Safe-Docx MCP server SHALL provide an `accept_changes` tool that accepts eve
 - **THEN** the original source document SHALL remain unchanged
 - **AND** the accepted output SHALL be written to a separate file or session working copy
 
-#### Scenario: [SDX-ROWREV-MCP-01] accept_changes reports unresolved row revisions instead of claiming a clean document
-- **GIVEN** a document whose table row carries a `w:trPr > w:del` row-level revision marker
+#### Scenario: [SDX-ROWREV-MCP-01] accept_changes resolves a deleted table row
+- **GIVEN** a document whose table row carries a `w:trPr > w:del` marker and deleted cell content
 - **WHEN** `accept_changes` is called
-- **THEN** the response SHALL report `unresolvedRowRevisions` as a non-zero count
-- **AND** the marker SHALL remain in the saved document rather than being stripped
-- **AND** the row SHALL remain in the saved document
+- **THEN** the row SHALL be absent from the saved document
+- **AND** the response SHALL report `unresolvedRowRevisions` as `0`
+- **AND** `deletionsAccepted` SHALL count the row marker once and SHALL NOT separately count removed inner records
 
-#### Scenario: [SDX-ROWREV-MCP-02] a document holding unresolved row revisions stays structurally valid
-- **GIVEN** a document processed by `accept_changes` that still holds a preserved row-level revision marker
+#### Scenario: [SDX-ROWREV-MCP-02] accepted output has no row marker and remains structurally valid
+- **GIVEN** a document processed by `accept_changes` whose input carried row-level markers
 - **WHEN** the output is inspected
-- **THEN** the preserved marker SHALL remain a child of `w:trPr`, the only position the schema admits
+- **THEN** no `w:trPr > w:ins|w:del` marker SHALL remain
+- **AND** every remaining table cell SHALL end in a direct `w:p`
 - **AND** the output SHALL remain well-formed
-- **AND** this scenario SHALL NOT be read as evidence about Microsoft Word's review pane, which is covered separately and only by resolvable input
 
 ### Requirement: Automatic Document Normalization
 The Safe-Docx MCP server SHALL automatically normalize documents on open by running merge_runs and simplify_redlines preprocessing, improving text matching accuracy and read_file context efficiency.
