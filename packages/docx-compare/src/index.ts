@@ -7,6 +7,7 @@
 
 import { compareDocumentsAtomizer } from './tagged/pipeline.js';
 import type { CompareOptions, CompareResult } from './compare-types.js';
+export { UnsupportedTableTopologyComparisonError } from './tagged/tableTopologyGuard.js';
 
 const REMOVED_COMPARISON_OPTIONS = [
   'reconstructionMode',
