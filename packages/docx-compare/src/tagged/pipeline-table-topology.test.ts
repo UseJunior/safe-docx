@@ -11,8 +11,9 @@ import { compareDocuments, UnsupportedTableTopologyComparisonError } from '../in
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { bodyTableFootprint } from './tableTopologyGuard.js';
 
+const TEST_FEATURE = 'Table Topology Comparison';
 const test = testAllure.epic('Document Comparison')
-  .withLabels({ feature: 'add-table-topology-comparison-gate' })
+  .withLabels({ feature: TEST_FEATURE })
   .conformance(
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.17' },
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.12' },
