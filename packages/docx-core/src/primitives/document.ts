@@ -101,6 +101,14 @@ import {
   type DeleteTableRowResult,
 } from './table_rows.js';
 import {
+  insertTableColumn as insertTableColumnImpl,
+  deleteTableColumn as deleteTableColumnImpl,
+  type InsertTableColumnParams,
+  type InsertTableColumnResult,
+  type DeleteTableColumnParams,
+  type DeleteTableColumnResult,
+} from './table_columns.js';
+import {
   bootstrapCommentParts,
   addComment as addCommentImpl,
   addCommentReply as addCommentReplyImpl,
@@ -635,6 +643,22 @@ export class DocxDocument {
 
   deleteTableRow(params: DeleteTableRowParams, ctx?: RevisionContext): DeleteTableRowResult {
     const result = deleteTableRowImpl(this.documentXml, params, ctx);
+    this.dirty = true;
+    this.documentViewCache = null;
+    return result;
+  }
+
+  /** Apply a planned clean column edit to the existing DOM, preserving held element references. */
+  insertTableColumn(params: InsertTableColumnParams, ctx?: RevisionContext): InsertTableColumnResult {
+    const result = insertTableColumnImpl(this.documentXml, params, ctx, this.paragraphBookmarkReservation);
+    this.dirty = true;
+    this.documentViewCache = null;
+    return result;
+  }
+
+  /** Apply a planned clean column deletion to the existing DOM. */
+  deleteTableColumn(params: DeleteTableColumnParams, ctx?: RevisionContext): DeleteTableColumnResult {
+    const result = deleteTableColumnImpl(this.documentXml, params, ctx);
     this.dirty = true;
     this.documentViewCache = null;
     return result;
