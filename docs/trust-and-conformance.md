@@ -44,6 +44,8 @@ OOXML implementation claims use `@conformance ECMA-376 edition 5, Part N § SECT
 
 This is subset conformance, not full Microsoft Word compatibility. Safe Docx does not claim visual equivalence, complete layout behavior, or implementation of every ECMA-376 feature.
 
+Safe Docx reads WordprocessingML **Transitional** packages only. A document saved as ISO/IEC 29500 **Strict** (root element in `http://purl.oclc.org/ooxml/wordprocessingml/main`) is refused at load, and at either comparison input, with `UnsupportedConformanceClassError` (error code `UNSUPPORTED_CONFORMANCE_CLASS`) rather than being read as empty text. Re-save the file as a Transitional `.docx` to work on it.
+
 ## Independent Release Verification
 
 Comparison no longer invokes an external formal checker. Delivery workflows

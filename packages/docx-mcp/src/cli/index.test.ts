@@ -6,6 +6,8 @@ import { createProgram } from './index.js';
 import type { CompareCommandArgs } from './commands/compare.js';
 import { makeMinimalDocx } from '../testing/docx_test_utils.js';
 import { createTrackedTempDir, registerCleanup } from '../testing/session-test-utils.js';
+import { UnsupportedConformanceClassError } from '@usejunior/docx-core';
+import { CliCommandFailure } from './tool_runner.js';
 
 registerCleanup();
 
@@ -377,6 +379,46 @@ describe('safe-docx CLI — generic tool routing', () => {
 
     await then('serve handler is called', () => {
       expect(serve).toHaveBeenCalledTimes(1);
+    });
+  });
+  test('compare surfaces a WML Strict refusal as structured JSON without a stack (#1025)', async ({ given, when, then, and }: AllureBddContext) => {
+    const errors: string[] = [];
+    const output: string[] = [];
+    let program: ReturnType<typeof createProgram>;
+    let failure: unknown;
+
+    await given('a compare handler that refuses the revised input as WML Strict', () => {
+      const compare = vi.fn(async () => {
+        throw new UnsupportedConformanceClassError({ side: 'revised' });
+      });
+      program = createProgram({
+        serve: vi.fn(async () => undefined),
+        compare,
+        write: (line) => output.push(line),
+        writeError: (line) => errors.push(line),
+      });
+    });
+
+    await when('the compare command runs', async () => {
+      failure = await program
+        .parseAsync(['node', 'safe-docx', 'compare', 'original.docx', 'strict.docx'])
+        .then(() => undefined, (error: unknown) => error);
+    });
+
+    await then('stderr carries one structured error object with the typed code', () => {
+      expect(output).toEqual([]);
+      expect(errors).toHaveLength(1);
+      const parsed = JSON.parse(errors[0]!) as { success: boolean; error: { code: string; message: string; hint?: string } };
+      expect(parsed.success).toBe(false);
+      expect(parsed.error.code).toBe('UNSUPPORTED_CONFORMANCE_CLASS');
+      expect(parsed.error.message).toContain('WML Strict');
+      expect(parsed.error.message).toContain("the revised document's word/document.xml");
+      expect(parsed.error.hint).toMatch(/Transitional/);
+    });
+
+    await and('the command fails with a summary-only CliCommandFailure', () => {
+      expect(failure).toBeInstanceOf(CliCommandFailure);
+      expect((failure as Error).message).toBe('compare failed');
     });
   });
 });

@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { createZipBuffer, readZipText } from '@usejunior/docx-core';
+import { DocxArchive, OOXML, WML_STRICT_NS, createZipBuffer, readZipText } from '@usejunior/docx-core';
 
 function xmlEscape(text: string): string {
   return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -103,4 +103,20 @@ export function firstParaIdFromToon(content: string): string {
   const ids = extractParaIdsFromToon(content);
   if (ids.length === 0) throw new Error('No paragraph IDs found in TOON content');
   return ids[0]!;
+}
+
+/**
+ * Rewrite a Transitional package's `word/document.xml` into the ISO/IEC 29500
+ * Strict WordprocessingML namespace. This is the #1025 reproduction: the same
+ * package, every `w:` element moved to the Strict namespace, which safe-docx
+ * refuses at load with UNSUPPORTED_CONFORMANCE_CLASS.
+ */
+export async function makeStrictDocx(transitional: Buffer): Promise<Buffer> {
+  const archive = await DocxArchive.load(transitional);
+  const xml = await archive.getDocumentXml();
+  if (!xml.includes(OOXML.W_NS)) {
+    throw new Error('makeStrictDocx expects a Transitional package');
+  }
+  archive.setDocumentXml(xml.split(OOXML.W_NS).join(WML_STRICT_NS));
+  return archive.save();
 }

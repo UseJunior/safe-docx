@@ -7,6 +7,7 @@ import { enforceReadPathPolicy } from './path_policy.js';
 import { validateDocxArchiveSafety } from './docx_archive_guard.js';
 import { loadGDocsCore } from '../gdocs_loader.js';
 import { loadOdfCore } from '../odf_loader.js';
+import { conformanceRefusalResponse } from './conformance_refusal.js';
 
 const MAX_DOCX_BYTES = 50 * 1024 * 1024;
 
@@ -343,11 +344,20 @@ export async function resolveSessionForTool(
         return { ok: false as const, response: loaded.response };
       }
 
-      const session = await manager.createSession(
-        loaded.content,
-        loaded.filename,
-        loaded.normalizedPath,
-      );
+      let session: DocxSession;
+      try {
+        session = await manager.createSession(
+          loaded.content,
+          loaded.filename,
+          loaded.normalizedPath,
+        );
+      } catch (e: unknown) {
+        // A WML Strict package is refused by DocxDocument.load; return the typed
+        // refusal as a structured response (waiters receive the same one).
+        const refusal = conformanceRefusalResponse(e);
+        if (refusal) return { ok: false as const, response: refusal };
+        throw e;
+      }
       await manager.finalizeNewSession(session);
 
       return {

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `DocxDocument.load` and `compareDocuments` now refuse an ISO/IEC 29500 Strict
+  document (root element in `http://purl.oclc.org/ooxml/wordprocessingml/main`)
+  with `UnsupportedConformanceClassError` (code `UNSUPPORTED_CONFORMANCE_CLASS`)
+  instead of reading it as empty text. The MCP tools and the CLI return the same
+  structured error, with a hint on re-saving as Transitional; a Transitional
+  document is unaffected. Strict support remains out of scope. (#1025)
 - **Breaking:** Markdoc now always emits bounded readable-whitespace revision
   grouping after token-minimal validation. Remove the short-lived
   `revision-grouping` Markdoc declaration, `--revision-grouping` CLI flag, and

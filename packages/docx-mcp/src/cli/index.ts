@@ -7,7 +7,8 @@ import { parseGrepArgs, runGrepCommand } from './commands/grep.js';
 import { toSnakeCase } from './parse_utils.js';
 import { parseToolFlags, generateToolHelp } from './flag_parser.js';
 import { renderTopLevelHelp } from './help.js';
-import { runToolCommand } from './tool_runner.js';
+import { CliCommandFailure, runToolCommand } from './tool_runner.js';
+import { conformanceRefusalResponse } from '../tools/conformance_refusal.js';
 import { SAFE_DOCX_TOOL_CATALOG } from '../tool_catalog.js';
 
 export interface CliHandlers {
@@ -139,7 +140,17 @@ export function createProgram(overrides: Partial<CliHandlers> = {}): CliProgram 
 
       if (command === 'compare') {
         const parsed = parseCompareArgs(rest);
-        const result = await handlers.compare(parsed);
+        let result: CompareCommandResult;
+        try {
+          result = await handlers.compare(parsed);
+        } catch (e: unknown) {
+          // A WML Strict input is refused by the comparison library with a typed
+          // error; emit it as the same structured JSON the tool commands use.
+          const refusal = conformanceRefusalResponse(e);
+          if (!refusal) throw e;
+          handlers.writeError(JSON.stringify(refusal, null, 2));
+          throw new CliCommandFailure('compare failed');
+        }
         // Warnings go to stderr so stdout stays a single JSON line for callers
         // that parse it, while a human running the CLI still sees them (#1029).
         for (const warning of result.warnings ?? []) handlers.writeError(warning);

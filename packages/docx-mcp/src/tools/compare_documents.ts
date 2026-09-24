@@ -14,6 +14,7 @@ import {
   validateAndLoadDocxFromPath,
 } from './session_resolution.js';
 import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
+import { conformanceRefusalResponse } from './conformance_refusal.js';
 
 function expandPath(inputPath: string): string {
   return inputPath.startsWith('~') ? path.join(process.env.HOME || '', inputPath.slice(1)) : inputPath;
@@ -149,6 +150,8 @@ export async function compareDocuments_tool(
     }
     return ok(response);
   } catch (e: unknown) {
+    const refusal = conformanceRefusalResponse(e);
+    if (refusal) return refusal;
     const msg = errorMessage(e);
     if (String(errorCode(e) ?? '').toUpperCase() === 'EACCES') {
       return err('PERMISSION_DENIED', `Cannot write to: ${params.save_to_local_path}`, 'Try saving to ~/Downloads/ or ~/Documents/ instead.');
