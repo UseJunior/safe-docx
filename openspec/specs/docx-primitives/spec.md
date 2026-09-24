@@ -453,6 +453,9 @@ with that row even when it carries an unselected revision; those inner records
 SHALL not be reported as separately resolved. Foreign row markers SHALL remain
 untouched, including through sibling `w:trPrChange` restoration. Removing the
 final physical row SHALL remove its now-empty `w:tbl` container.
+Row resolution SHALL count direct `w:tr` and `w:sdt`/`w:customXml` row
+containers before removing a table. It SHALL resolve marked rows inside those
+containers and preserve other wrapped rows and their content.
 
 Tracked row mutation SHALL also mark paragraph marks and run contents under
 §§17.13.5.20/17.13.5.18 and §§17.13.5.15/17.13.5.14 respectively. Projection
@@ -486,3 +489,9 @@ row-marker class.
 - **AND** surviving row markers SHALL remain intact through `w:trPrChange` restoration
 - **AND** `unresolvedRowRevisions` SHALL be `0` for the supported selected marker
 
+#### Scenario: [SDX-TABLEROW-09] wrapped row resolution preserves surviving content
+- **GIVEN** a table with a direct marked row and a surviving `w:sdt`- or `w:customXml`-wrapped row, or a marked row inside either wrapper
+- **WHEN** accept-all or reject-all resolves the selected row marker
+- **THEN** the selected row SHALL be removed or retained according to its marker, and no resolved marker SHALL remain
+- **AND** a surviving wrapped row and its content SHALL remain, including inside a nested table
+- **AND** a table SHALL be removed only when resolution actually leaves it without direct or wrapped row containers; unrelated empty or adjacent tables SHALL remain unchanged

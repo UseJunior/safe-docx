@@ -210,3 +210,98 @@ describe('structural table row operations', () => {
     },
   );
 });
+
+const rowResolutionTest = testAllure.epic('DOCX Primitives')
+  .withLabels({ feature: 'add-structural-table-row-operations' })
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.12' });
+
+describe('row revision resolution with wrapped survivors', () => {
+  const survivorRow = '<w:tr><w:tc><w:p><w:r><w:t>SURVIVOR</w:t></w:r></w:p></w:tc></w:tr>';
+  const deletedRow = '<w:tr><w:trPr><w:del w:id="21" w:author="AI" w:date="2026-01-01T00:00:00Z"/></w:trPr>'
+    + '<w:tc><w:p><w:r><w:t>DELETED</w:t></w:r></w:p></w:tc></w:tr>';
+  const table = (rows: string) => `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/></w:tblGrid>${rows}</w:tbl>`;
+
+  for (const [kind, wrapper] of [
+    ['sdt', `<w:sdt><w:sdtPr/><w:sdtContent>${survivorRow}</w:sdtContent></w:sdt>`],
+    ['customXml', `<w:customXml w:element="row" w:uri="urn:example">${survivorRow}</w:customXml>`],
+  ] as const) {
+    rowResolutionTest.openspec('[SDX-TABLEROW-09] wrapped row resolution preserves surviving content')(
+      `accepting the last direct deleted row preserves a ${kind}-wrapped row`, async () => {
+        const doc = await DocxDocument.load(await buildDocxFromBodyXml(
+          `<w:p><w:r><w:t>BEFORE</w:t></w:r></w:p>${table(wrapper + deletedRow)}<w:p><w:r><w:t>AFTER</w:t></w:r></w:p>`,
+        ));
+        await doc.acceptChanges();
+        const xml = await documentXml(doc);
+        expect(xml).toContain(`<w:${kind}`);
+        expect(xml).toContain('SURVIVOR');
+        expect(xml).not.toContain('DELETED');
+        expect(xml.match(/<w:tbl>/g)).toHaveLength(1);
+      },
+    );
+  }
+
+  rowResolutionTest.openspec('[SDX-TABLEROW-09] wrapped row resolution preserves surviving content')(
+    'keeps an unrelated empty table and a nested table with a surviving wrapped row', async () => {
+      const nested = table(`<w:sdt><w:sdtPr/><w:sdtContent>${survivorRow}</w:sdtContent></w:sdt>` + deletedRow);
+      const outer = table(`<w:tr><w:tc><w:p><w:r><w:t>OUTER</w:t></w:r></w:p>${nested}<w:p/></w:tc></w:tr>`);
+      const doc = await DocxDocument.load(await buildDocxFromBodyXml(table('') + outer));
+      await doc.acceptChanges();
+      const xml = await documentXml(doc);
+      expect(xml.match(/<w:tbl>/g)).toHaveLength(3);
+      expect(xml).toContain('OUTER');
+      expect(xml).toContain('SURVIVOR');
+      expect(xml).not.toContain('DELETED');
+    },
+  );
+
+  for (const [kind, wrap] of [
+    ['sdt', (row: string) => `<w:sdt><w:sdtPr/><w:sdtContent>${row}</w:sdtContent></w:sdt>`],
+    ['customXml', (row: string) => `<w:customXml w:element="row" w:uri="urn:example">${row}</w:customXml>`],
+  ] as const) {
+    rowResolutionTest.openspec('[SDX-TABLEROW-09] wrapped row resolution preserves surviving content')(
+      `accepts deletion of a ${kind}-wrapped row while keeping a direct row`, async () => {
+        const doc = await DocxDocument.load(await buildDocxFromBodyXml(table(
+          wrap(deletedRow) + survivorRow,
+        )));
+        const result = await doc.acceptChanges();
+        const xml = await documentXml(doc);
+        expect(result.unresolvedRowRevisions).toBe(0);
+        expect(xml).toContain('SURVIVOR');
+        expect(xml).not.toContain('DELETED');
+        expect(xml).not.toContain('<w:del w:id="21"');
+        expect(xml.match(/<w:tbl>/g)).toHaveLength(1);
+      },
+    );
+
+    rowResolutionTest.openspec('[SDX-TABLEROW-09] wrapped row resolution preserves surviving content')(
+      `removes a table whose only row was ${kind}-wrapped and deleted`, async () => {
+        const doc = await DocxDocument.load(await buildDocxFromBodyXml(
+          `<w:p><w:r><w:t>BEFORE</w:t></w:r></w:p>${table(wrap(deletedRow))}<w:p><w:r><w:t>AFTER</w:t></w:r></w:p>`,
+        ));
+        await doc.acceptChanges();
+        const xml = await documentXml(doc);
+        expect(xml).not.toContain('<w:tbl>');
+        expect(xml).not.toContain('DELETED');
+        expect(xml).toContain('BEFORE');
+        expect(xml).toContain('AFTER');
+      },
+    );
+
+    rowResolutionTest.openspec('[SDX-TABLEROW-09] wrapped row resolution preserves surviving content')(
+      `rejects insertion of a ${kind}-wrapped row while keeping a direct row`, async () => {
+        const inserted = deletedRow.replace('<w:del w:id="21"', '<w:ins w:id="21"')
+          .replace('DELETED', 'INSERTED');
+        const doc = await DocxDocument.load(await buildDocxFromBodyXml(table(
+          wrap(inserted) + survivorRow,
+        )));
+        const result = await doc.rejectChanges();
+        const xml = await documentXml(doc);
+        expect(result.unresolvedRowRevisions).toBe(0);
+        expect(xml).toContain('SURVIVOR');
+        expect(xml).not.toContain('INSERTED');
+        expect(xml).not.toContain('<w:ins w:id="21"');
+        expect(xml.match(/<w:tbl>/g)).toHaveLength(1);
+      },
+    );
+  }
+});
