@@ -95,13 +95,41 @@ export function removeOrphanedRangeEndpointsForSubtree(root: Element, subtree: E
   }
 }
 
-/** Remove a row and, when it was the table's final physical row, its empty table. */
+/**
+ * Resolve a deleted or rejected row without discarding surviving row containers.
+ * A table-level sdt/customXml child can hold rows even when no direct tr remains.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @see #1073
+ */
 export function removeTableRowAndEmptyTable(root: Element, row: Element): void {
+  const wrappers: Element[] = [];
+  let parent = row.parentNode;
+  while (parent?.nodeType === 1 && !isW(parent as Element, 'tbl')) {
+    if (isW(parent as Element, 'sdtContent') && parent.parentNode?.nodeType === 1
+      && isW(parent.parentNode as Element, 'sdt')) {
+      wrappers.push(parent.parentNode as Element);
+      parent = parent.parentNode.parentNode;
+    } else if (isW(parent as Element, 'customXml')) {
+      wrappers.push(parent as Element);
+      parent = parent.parentNode;
+    } else {
+      return;
+    }
+  }
+  if (!parent || parent.nodeType !== 1 || !isW(parent as Element, 'tbl')) return;
+  const table = parent as Element;
   removeOrphanedRangeEndpointsForSubtree(root, row);
-  const table = row.parentNode;
-  if (!table || table.nodeType !== 1 || !isW(table as Element, 'tbl')) return;
-  table.removeChild(row);
-  if (getDirectChildrenByName(table as Element, 'tr').length === 0) {
+  row.parentNode?.removeChild(row);
+  for (const wrapper of wrappers) {
+    if (wrapper.getElementsByTagNameNS(OOXML.W_NS, 'tr').length === 0) {
+      removeOrphanedRangeEndpointsForSubtree(root, wrapper);
+      wrapper.parentNode?.removeChild(wrapper);
+    }
+  }
+  if (!childElements(table).some((child) =>
+    isW(child, 'tr') || isW(child, 'sdt') || isW(child, 'customXml'))) {
     table.parentNode?.removeChild(table);
   }
 }
