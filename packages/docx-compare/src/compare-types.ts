@@ -73,6 +73,10 @@ export interface CompareStats {
   formatChanges: number;
   /** Format-only `tagged-token-v1` units for granular/benchmark consumers. */
   formatChangeAtoms: number;
+  /** Comparison-generated native whole-table-row insertion markers, including nested rows. */
+  insertedTableRows: number;
+  /** Comparison-generated native whole-table-row deletion markers, including nested rows. */
+  deletedTableRows: number;
 }
 
 /** @deprecated Comparison no longer has reconstruction modes. */

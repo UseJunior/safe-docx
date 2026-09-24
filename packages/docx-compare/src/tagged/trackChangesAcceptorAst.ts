@@ -78,6 +78,41 @@ function rowsWithRevisionMarker(root: Element, tagName: 'w:ins' | 'w:del'): Elem
   return [...rows];
 }
 
+/**
+ * Remove a resolved row and only the row containers it actually empties.
+ * A pre-existing empty table or one with a surviving wrapped row stays intact.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @see #1043
+ */
+function removeResolvedTableRow(row: Element): void {
+  const wrappers: Element[] = [];
+  let parent = parentElement(row);
+  while (parent && parent.tagName !== 'w:tbl') {
+    if (parent.tagName === 'w:sdtContent' && parentElement(parent)?.tagName === 'w:sdt') {
+      const sdt = parentElement(parent)!;
+      wrappers.push(sdt);
+      parent = parentElement(sdt);
+    } else if (parent.tagName === 'w:customXml') {
+      wrappers.push(parent);
+      parent = parentElement(parent);
+    } else {
+      return;
+    }
+  }
+  if (!parent) return;
+  const table = parent;
+  row.parentNode?.removeChild(row);
+  for (const wrapper of wrappers) {
+    if (wrapper.getElementsByTagNameNS(W_NS, 'tr').length === 0) wrapper.parentNode?.removeChild(wrapper);
+  }
+  if (!childElements(table).some((child) =>
+    ['w:tr', 'w:sdt', 'w:customXml'].includes(child.tagName))) {
+    table.parentNode?.removeChild(table);
+  }
+}
+
 function removeParaMarkers(root: Element): void {
   // Remove paragraph-level revision markers that live under <w:pPr>.
   for (const p of findAllByTagName(root, 'w:p')) {
@@ -551,7 +586,7 @@ export function acceptAllChanges(documentXml: string): string {
   // Row revisions are empty markers under w:trPr, not content wrappers.
   // Accepting a deleted row removes the row itself before the generic w:del
   // sweep removes ordinary deleted content.
-  for (const row of rowsWithRevisionMarker(root, 'w:del')) row.parentNode?.removeChild(row);
+  for (const row of rowsWithRevisionMarker(root, 'w:del')) removeResolvedTableRow(row);
 
   // Merge a paragraph on Accept All iff its paragraph MARK is a tracked deletion
   // (<w:pPr><w:rPr><w:del .../></w:rPr>) — the paragraph BREAK itself was deleted, so accepting
@@ -679,7 +714,7 @@ export function rejectAllChanges(documentXml: string): string {
 
   // Rejecting an inserted row removes the row itself before the generic w:ins
   // sweep removes ordinary inserted content.
-  for (const row of rowsWithRevisionMarker(root, 'w:ins')) row.parentNode?.removeChild(row);
+  for (const row of rowsWithRevisionMarker(root, 'w:ins')) removeResolvedTableRow(row);
 
   // Step 1: Merge a paragraph on Reject All iff its paragraph MARK is a tracked
   // insertion (<w:pPr><w:rPr><w:ins .../></w:rPr>) — i.e. the paragraph break itself

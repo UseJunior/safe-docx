@@ -146,7 +146,9 @@
           "deletedAtoms": 18,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -287,7 +289,9 @@
           "deletedAtoms": 0,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -816,7 +820,9 @@
           "deletedAtoms": 2101,
           "modifiedParagraphs": 496,
           "formatChanges": 16,
-          "formatChangeAtoms": 16
+          "formatChangeAtoms": 16,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -1101,7 +1107,9 @@
           "deletedAtoms": 3,
           "modifiedParagraphs": 1,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -1242,7 +1250,9 @@
           "deletedAtoms": 0,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -1393,7 +1403,9 @@
           "deletedAtoms": 0,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -1579,7 +1591,9 @@
           "deletedAtoms": 105,
           "modifiedParagraphs": 13,
           "formatChanges": 1,
-          "formatChangeAtoms": 1
+          "formatChangeAtoms": 1,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -1720,7 +1734,9 @@
           "deletedAtoms": 10,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -1861,7 +1877,9 @@
           "deletedAtoms": 0,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -2002,7 +2020,9 @@
           "deletedAtoms": 2,
           "modifiedParagraphs": 1,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -2194,7 +2214,9 @@
           "deletedAtoms": 1,
           "modifiedParagraphs": 1,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -2335,7 +2357,9 @@
           "deletedAtoms": 1,
           "modifiedParagraphs": 1,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -2476,7 +2500,9 @@
           "deletedAtoms": 10,
           "modifiedParagraphs": 1,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -2867,7 +2893,9 @@
           "deletedAtoms": 185,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -3178,7 +3206,9 @@
           "deletedAtoms": 362,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -3555,7 +3585,9 @@
           "deletedAtoms": 4,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -3779,7 +3811,9 @@
           "deletedAtoms": 249,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -4135,7 +4169,9 @@
           "deletedAtoms": 21,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -4435,7 +4471,9 @@
           "deletedAtoms": 294,
           "modifiedParagraphs": 1,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -4770,7 +4808,9 @@
           "deletedAtoms": 181,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -4914,7 +4954,9 @@
           "deletedAtoms": 1,
           "modifiedParagraphs": 1,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -5014,7 +5056,9 @@
           "deletedAtoms": 0,
           "modifiedParagraphs": 0,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -5114,7 +5158,9 @@
           "deletedAtoms": 1,
           "modifiedParagraphs": 1,
           "formatChanges": 0,
-          "formatChangeAtoms": 0
+          "formatChangeAtoms": 0,
+          "insertedTableRows": 0,
+          "deletedTableRows": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"

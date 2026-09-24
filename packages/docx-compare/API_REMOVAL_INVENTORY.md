@@ -5,7 +5,7 @@
 This inventory adjudicates every package-root export before the tagged-spine breaking release.
 “Deprecated” means retained for one release; “breaking removal” means intentionally absent now.
 
-- Stable compatibility surface: 64
+- Stable compatibility surface: 65
 - Deprecated for one release: 22
 - Documented breaking removals: 58
 
@@ -152,6 +152,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `UnrepresentedChange` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `UnrepresentedChangeKind` | type | `src/compare-types.ts` | yes | stable compatibility |
 | `UnrepresentedChangeScope` | type | `src/compare-types.ts` | yes | stable compatibility |
+| `UnsupportedTableTopologyComparisonError` | class | `src/tagged/tableTopologyGuard.ts` | yes | stable compatibility |
 | `UnsupportedTextBoxRevisionError` | class | `src/tagged/textBoxRevisionSafety.ts` | yes | stable compatibility |
 | `validateFieldStructure` | function | `@usejunior/docx-core` | yes | stable compatibility |
 | `wordContainmentSimilarity` | function | `src/textSimilarity.ts` | yes | stable compatibility |

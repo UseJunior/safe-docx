@@ -85,6 +85,8 @@ function mockCompareResult(): CompareResult {
       modifiedParagraphs: 0,
       formatChanges: 0,
       formatChangeAtoms: 0,
+      insertedTableRows: 0,
+      deletedTableRows: 0,
     },
   };
 }

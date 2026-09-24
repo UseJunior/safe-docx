@@ -18,6 +18,7 @@ import {
 import { formatDate, isParagraphMoveMarker } from './revisionMarkup.js';
 import type { CompareStats, RevisionAttributionRange, RevisionGroupingPolicy } from '../compare-types.js';
 import { representative, type TaggedNode } from './taggedTree.js';
+import { guardBodyTableTopology } from './tableTopologyGuard.js';
 
 export type TaggedTreeDivergenceClass = 'projection-inequivalent' | 'projection-equivalent';
 
@@ -53,6 +54,8 @@ export interface TaggedTreeShadowInput {
   retainStatisticsMarkers?: boolean;
   /** @internal First package-wide ID available to generated comparison revisions. */
   minimumRevisionId?: number;
+  /** @internal Main-body only; selected side stories keep their unrepresented contract. */
+  guardTableTopology?: boolean;
 }
 
 const WORDPROCESSINGML_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -237,6 +240,19 @@ export function consumeTaggedPublicationStatistics(
   >,
 ): { xml: string; stats: CompareStats; serializedRangeStats: TaggedTreePublication['serializedRangeStats'] } {
   const document = parseXml(xml);
+  let insertedTableRows = 0;
+  let deletedTableRows = 0;
+  for (const row of Array.from(document.getElementsByTagNameNS(WORDPROCESSINGML_NAMESPACE, 'tr'))) {
+    const properties = childElements(row).find((child) =>
+      child.namespaceURI === WORDPROCESSINGML_NAMESPACE && child.localName === 'trPr');
+    if (!properties) continue;
+    for (const marker of childElements(properties)) {
+      if (!marker.hasAttribute(COMPARISON_REVISION_ATTRIBUTE)) continue;
+      if (marker.namespaceURI !== WORDPROCESSINGML_NAMESPACE) continue;
+      if (marker.localName === 'ins') insertedTableRows++;
+      else if (marker.localName === 'del') deletedTableRows++;
+    }
+  }
   const serializedRangeStats = consumeSerializedRangeStats(document);
   const stats: CompareStats = {
     atomMetricVersion: 'tagged-token-v1',
@@ -250,6 +266,8 @@ export function consumeTaggedPublicationStatistics(
     modifiedParagraphs: treeStats.modifiedParagraphs,
     formatChanges: treeStats.formatChanges,
     formatChangeAtoms: treeStats.formatChangeAtoms,
+    insertedTableRows,
+    deletedTableRows,
   };
   return { xml: new XMLSerializer().serializeToString(document), stats, serializedRangeStats };
 }
@@ -272,6 +290,7 @@ export function buildTaggedTreePublication(
     revisionAttributionRanges: input.revisionAttributionRanges,
     minimumRevisionId: input.minimumRevisionId,
   });
+  if (input.guardTableTopology) guardBodyTableTopology(constructed.tree);
   const serialized = serializeTaggedTree(
     constructed.tree,
     createPreservePlan(original, revised, constructed.tree, {

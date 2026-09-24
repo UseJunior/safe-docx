@@ -98,7 +98,7 @@ describe('direct paragraph style comparison', () => {
     const original = await buildDocxFromBodyXml(table('', ''));
     const revised = await buildDocxFromBodyXml(table(
       '<w:trPr><w:tblHeader/></w:trPr>',
-      '<w:tcPr><w:gridSpan w:val="2"/></w:tcPr>',
+      '<w:tcPr><w:shd w:fill="FFFF00"/></w:tcPr>',
     ));
 
     const result = await compareDocuments(original, revised, {

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- DOCX comparison now reports generated table-row insertion/deletion counts,
+  emits native row revisions for supported whole-table changes (including
+  nested tables), and rejects unsupported body-table grid, cell, and
+  container-topology changes with a typed diagnostic before publication.
+  The comparison uses the docx-core table-occupancy reader, now exported from
+  the core package root. (#1043, #998)
 - Experimental `mergeAware: true` row insertion/deletion now admits validated
   horizontal `w:gridSpan` tables while vertical merges and row offsets still
   fail closed. Row-marker accept/reject removes a now-empty `w:trPr`; an
