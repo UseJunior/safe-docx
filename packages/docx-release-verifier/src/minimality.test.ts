@@ -1,5 +1,8 @@
 import { describe, expect } from 'vitest';
+import { DocxArchive } from '@usejunior/docx-core';
 import { itAllure } from '../../docx-core/src/testing/allure-test.js';
+import { buildDocxFromBodyXml } from '../../docx-core/src/testing/ooxml-fixtures.js';
+import { compareDocumentsAtomizer } from '../../docx-compare/src/tagged/pipeline.js';
 import { emittedRedlineMinimality } from './minimality.js';
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -14,6 +17,21 @@ function check(original: string[], revised: string[], body: string) {
 }
 
 describe('independent emitted-redline minimality', () => {
+  itAllure('keeps tab-adjacent common words and punctuation outside the redline (#1017)', async () => {
+    const before = 'Section 1. Purchase price is one hundred dollars\tpayable at closing.';
+    const after = 'Section 1. Purchase price is two hundred dollars\tpayable at closing.';
+    const body = (word: string) => '<w:p><w:r>'
+      + `<w:t xml:space="preserve">Section 1. Purchase price is ${word} hundred dollars</w:t>`
+      + '<w:tab/><w:t>payable at closing.</w:t></w:r></w:p>';
+    const original = await buildDocxFromBodyXml(body('one'));
+    const revised = await buildDocxFromBodyXml(body('two'));
+    const compared = await compareDocumentsAtomizer(original, revised);
+    const xml = await (await DocxArchive.load(compared.document)).getDocumentXml();
+    const evidence = emittedRedlineMinimality([before], [after], xml);
+    expect(evidence).toMatchObject({ passed: true, lostTokens: 0 });
+    expect(evidence.lostTokensByClass).toMatchObject({ lexical: 0, punctuation: 0, structural: 0 });
+  });
+
   itAllure('[REL-VERIFY-13][REL-VERIFY-14] discloses grouped spaces without changing zero-loss', () => {
     const minimal = check(
       ['The old red term.'], ['The new blue term.'],
