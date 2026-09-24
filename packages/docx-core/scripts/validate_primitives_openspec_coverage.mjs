@@ -162,6 +162,13 @@ export function isCanonicalScenarioSuperseded(requirement, scenario, removedRequ
   return removedRequirements.has(requirement) || modifiedScenarioNames.has(scenario);
 }
 
+// A canonical re-add of the same requirement name deliberately revives its old
+// scenarios; use a new name when restoring a materially different contract.
+export function isArchivedScenarioSuperseded(requirement, activeChangedRequirements, archivedRemovedRequirements, canonicalRequirements) {
+  return activeChangedRequirements.has(requirement)
+    || (archivedRemovedRequirements.has(requirement) && !canonicalRequirements.has(requirement));
+}
+
 function parseFeatureIdFromTest(content, testFile) {
   const direct = content.match(/const\s+TEST_FEATURE\s*=\s*['"]([^'"]+)['"]/);
   if (direct) return direct[1];
@@ -493,6 +500,7 @@ async function main() {
   const activeRemovedRequirements = new Set();
   const activeModifiedScenarioNames = new Set();
   const activeFeatureIds = new Set();
+  const archivedRemovedRequirements = new Set();
   for (const [feature, specFiles] of deltaFeatureSpecFiles) {
     const scenarios = new Set();
     const scenarioEntriesByName = new Map();
@@ -507,6 +515,10 @@ async function main() {
           if (kind === 'REMOVED') activeRemovedRequirements.add(requirement);
         }
         for (const scenario of parseModifiedScenarioNames(content)) activeModifiedScenarioNames.add(scenario);
+      } else {
+        for (const [requirement, kind] of parseRequirementChanges(content)) {
+          if (kind === 'REMOVED') archivedRemovedRequirements.add(requirement);
+        }
       }
       for (const scenario of parseScenariosFromSpec(content)) scenarios.add(scenario);
       for (const [scenario, requirement] of parseRequirementForScenario(content)) featureRequirementMap.set(scenario, requirement);
@@ -527,11 +539,15 @@ async function main() {
   // delta modifies or removes their requirement. The matrix retains them as
   // superseded history instead of demanding misleading legacy test labels.
   const supersededByFeature = new Map();
+  const canonicalRequirements = new Set(requirementMap.values());
   for (const [feature, scenarios] of deltaFeatureScenarios) {
     if (activeFeatureIds.has(feature)) continue;
     const requirementMapForFeature = deltaFeatureRequirementMaps.get(feature) ?? new Map();
     const superseded = new Set([...scenarios].filter((scenario) =>
-      activeChangedRequirements.has(requirementMapForFeature.get(scenario))));
+      isArchivedScenarioSuperseded(
+        requirementMapForFeature.get(scenario), activeChangedRequirements,
+        archivedRemovedRequirements, canonicalRequirements,
+      )));
     if (superseded.size === 0) continue;
     supersededByFeature.set(feature, superseded);
     for (const scenario of superseded) scenarios.delete(scenario);
