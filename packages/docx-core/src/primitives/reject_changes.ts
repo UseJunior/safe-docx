@@ -19,7 +19,7 @@
  */
 
 import { OOXML } from './namespaces.js';
-import { removeTableRowAndEmptyTable } from './table_rows.js';
+import { removeResolvedRowMarker, removeTableRowAndEmptyTable } from './table_rows.js';
 import { RANGE_MARKUP_BLOCK_SIBLING_LOCALS, canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
 import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun, removeEmptyParagraphMarkProperties } from './paragraph_merge_formatting.js';
 import type { RevisionFilter } from './accept_changes.js';
@@ -108,7 +108,7 @@ function rejectSelectedRowRevisions(root: Element, filter: RevisionFilter): { in
     }
   }
   for (const marker of collectByLocalName(root, 'del').filter(filter).filter(isRowPropertyRevisionMarker)) {
-    marker.parentNode?.removeChild(marker);
+    removeResolvedRowMarker(marker);
     deletions++;
   }
   return { insertions, deletions };

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Experimental `mergeAware: true` row insertion/deletion now admits validated
+  horizontal `w:gridSpan` tables while vertical merges and row offsets still
+  fail closed. Row-marker accept/reject removes a now-empty `w:trPr`; an
+  authored-empty one is normalized to absence. Default row edits now also
+  reject legacy `w:hMerge` tables that were previously misread as separate
+  cells; other default behavior is unchanged. (#1040)
 - `DocxDocument.load` and `compareDocuments` now refuse an ISO/IEC 29500 Strict
   document (root element in `http://purl.oclc.org/ooxml/wordprocessingml/main`)
   with `UnsupportedConformanceClassError` (code `UNSUPPORTED_CONFORMANCE_CLASS`)

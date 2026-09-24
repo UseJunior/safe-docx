@@ -1264,6 +1264,21 @@ Cells spanning multiple grid columns emit `w:gridSpan`; validation
 rejects rows whose summed spans diverge from the declared grid with a
 typed `grid_mismatch` error before any XML is produced.
 
+## [ECMA-PART1-17-4-23] w:hMerge legacy horizontal cell merge
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.23"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hMerge
+verifiedBy: packages/docx-core/src/primitives/table_rows.ts
+```
+
+The structural row editor rejects legacy `w:hMerge` tables before mutation
+because treating their physical continuation cells as independent grid cells
+would misrepresent the authored horizontal merge.
+
 ## [ECMA-PART1-17-4-84] w:vMerge vertical cell merge
 
 ```yaml

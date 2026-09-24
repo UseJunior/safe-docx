@@ -6,10 +6,11 @@ import {
 import { childElements, createWmlElement, getDirectChildrenByName, isW } from './dom-helpers.js';
 import { SafeDocxError } from './errors.js';
 import { OOXML } from './namespaces.js';
+import { inventoryTableOccupancy, TableOccupancyError } from './table_occupancy.js';
 import { allocateRevisionId, createRevisionContainer, type RevisionContext } from './track-changes-emitter.js';
 
 export type TableRowEditFeature =
-  | 'gridSpan' | 'vMerge' | 'gridBefore' | 'gridAfter'
+  | 'gridSpan' | 'hMerge' | 'vMerge' | 'gridBefore' | 'gridAfter'
   | 'nestedTable' | 'rowContainer' | 'cellContainer' | 'tblPrEx'
   | 'occupancy' | 'trailingParagraph' | 'topologyRevision'
   | 'lastRow' | 'nestedAnchor' | 'alreadyInserted' | 'alreadyDeleted';
@@ -27,10 +28,16 @@ export type InsertTableRowParams = {
   positionalAnchorNodeId: string;
   relativePosition: 'BEFORE' | 'AFTER';
   cellTexts: string[];
+  /** @experimental Opt into validated horizontal spans; vertical merges still fail closed. */
+  mergeAware?: boolean;
 };
 
 export type InsertTableRowResult = { rowIndex: number; cellParagraphIds: string[] };
-export type DeleteTableRowParams = { targetParagraphId: string };
+export type DeleteTableRowParams = {
+  targetParagraphId: string;
+  /** @experimental Opt into validated horizontal spans; vertical merges still fail closed. */
+  mergeAware?: boolean;
+};
 export type DeleteTableRowResult = { rowIndex: number; deleted: true };
 
 type TableShape = {
@@ -99,6 +106,23 @@ export function removeTableRowAndEmptyTable(root: Element, row: Element): void {
   }
 }
 
+/**
+ * Remove a resolved row marker and its now-empty property container.
+ * An authored empty trPr is normalized to absence after row resolution.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @see #1040
+ */
+export function removeResolvedRowMarker(marker: Element): void {
+  const trPr = marker.parentNode;
+  trPr?.removeChild(marker);
+  if (trPr?.nodeType === 1 && isW(trPr as Element, 'trPr')
+    && childElements(trPr as Element).length === 0 && (trPr as Element).attributes.length === 0) {
+    trPr.parentNode?.removeChild(trPr);
+  }
+}
+
 function nearestWAncestor(node: Node | null, localName: string): Element | null {
   let current = node?.parentNode ?? null;
   while (current) {
@@ -125,10 +149,11 @@ function directBodyTables(body: Element): Element[] {
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.48
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.65
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.23
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.84
  * @see #764
  */
-function resolveTableShape(doc: Document, anchorId: string): TableShape {
+function resolveTableShape(doc: Document, anchorId: string, mergeAware = false): TableShape {
   const paragraph = findParagraphByBookmarkId(doc, anchorId);
   if (!paragraph) {
     fail('INVALID_ARGUMENT', `Paragraph anchor not found: ${anchorId}`, detail(anchorId, -1, -1, 'nestedAnchor'));
@@ -188,12 +213,12 @@ function resolveTableShape(doc: Document, anchorId: string): TableShape {
       }
       rowCells.push(child);
     }
-    if (rowCells.length !== gridColumns) {
+    if (!mergeAware && rowCells.length !== gridColumns) {
       fail('UNSUPPORTED_EDIT', 'Row occupancy does not match tblGrid', detail(anchorId, tableIndex, currentRowIndex, 'occupancy'));
     }
     for (const [cellIndex, currentCell] of rowCells.entries()) {
       const tcPr = getDirectChildrenByName(currentCell, 'tcPr')[0];
-      for (const feature of ['gridSpan', 'vMerge'] as const) {
+      for (const feature of (mergeAware ? ['hMerge', 'vMerge'] : ['gridSpan', 'hMerge', 'vMerge']) as Array<'gridSpan' | 'hMerge' | 'vMerge'>) {
         if (tcPr && getDirectChildrenByName(tcPr, feature).length > 0) {
           fail('UNSUPPORTED_EDIT', `Cell uses ${feature}`, detail(anchorId, tableIndex, currentRowIndex, feature, { cellIndex }));
         }
@@ -218,6 +243,14 @@ function resolveTableShape(doc: Document, anchorId: string): TableShape {
       }
     }
     cells.push(rowCells);
+  }
+  if (mergeAware) {
+    try {
+      inventoryTableOccupancy(table);
+    } catch (error) {
+      if (!(error instanceof TableOccupancyError)) throw error;
+      fail('UNSUPPORTED_EDIT', error.message, detail(anchorId, tableIndex, error.rowIndex, error.feature, { cellIndex: error.cellIndex }));
+    }
   }
   return { table, rows, anchorRow: row, rowIndex, tableIndex, cells };
 }
@@ -275,7 +308,7 @@ export function insertTableRow(
   ctx?: RevisionContext,
   bookmarkReservation?: BookmarkReservation,
 ): InsertTableRowResult {
-  const shape = resolveTableShape(doc, params.positionalAnchorNodeId);
+  const shape = resolveTableShape(doc, params.positionalAnchorNodeId, params.mergeAware);
   const anchorCells = shape.cells[shape.rowIndex]!;
   if (params.cellTexts.length !== anchorCells.length) {
     fail('INVALID_ARGUMENT', 'cellTexts must match the table grid column count', detail(params.positionalAnchorNodeId, shape.tableIndex, shape.rowIndex, 'occupancy'));
@@ -324,7 +357,7 @@ export function insertTableRow(
 
 /** Delete or deletion-mark a rectangular unmerged row. */
 export function deleteTableRow(doc: Document, params: DeleteTableRowParams, ctx?: RevisionContext): DeleteTableRowResult {
-  const shape = resolveTableShape(doc, params.targetParagraphId);
+  const shape = resolveTableShape(doc, params.targetParagraphId, params.mergeAware);
   if (shape.rows.length === 1) fail('INVALID_ARGUMENT', 'Cannot delete the final table row', detail(params.targetParagraphId, shape.tableIndex, shape.rowIndex, 'lastRow'));
   if (!ctx) {
     removeOrphanedRangeEndpointsForSubtree(doc.documentElement, shape.anchorRow);

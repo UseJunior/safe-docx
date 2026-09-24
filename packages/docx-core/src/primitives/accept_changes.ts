@@ -21,7 +21,7 @@
 
 import { OOXML } from './namespaces.js';
 import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun, removeEmptyParagraphMarkProperties } from './paragraph_merge_formatting.js';
-import { removeTableRowAndEmptyTable } from './table_rows.js';
+import { removeResolvedRowMarker, removeTableRowAndEmptyTable } from './table_rows.js';
 import { RANGE_MARKUP_BLOCK_SIBLING_LOCALS, canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
 
 const W_NS = OOXML.W_NS;
@@ -106,7 +106,7 @@ function acceptSelectedRowRevisions(root: Element, filter: RevisionFilter): { in
     }
   }
   for (const marker of collectByLocalName(root, 'ins').filter(filter).filter(isRowPropertyRevisionMarker)) {
-    marker.parentNode?.removeChild(marker);
+    removeResolvedRowMarker(marker);
     insertions++;
   }
   return { insertions, deletions };

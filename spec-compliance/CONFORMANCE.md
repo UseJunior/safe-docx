@@ -83,6 +83,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-4-69` | w:tcPr cell-properties ordering | 5 | 1 | 17.4.69 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcPr` | packages/docx-core/src/generation/emit/table.ts |
 | `ECMA-PART1-17-4-71` | w:tcW preferred cell width | 5 | 1 | 17.4.71 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcW` | packages/docx-core/src/generation/emit/table.ts |
 | `ECMA-PART1-17-4-17` | w:gridSpan horizontal cell span | 5 | 1 | 17.4.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:gridSpan` | packages/docx-core/src/generation/emit/table.ts |
+| `ECMA-PART1-17-4-23` | w:hMerge legacy horizontal cell merge | 5 | 1 | 17.4.23 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hMerge` | packages/docx-core/src/primitives/table_rows.ts |
 | `ECMA-PART1-17-4-84` | w:vMerge vertical cell merge | 5 | 1 | 17.4.84 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:vMerge` | packages/docx-core/src/generation/emit/table.ts |
 | `ECMA-PART1-17-4-32` | w:shd table-cell shading | 5 | 1 | 17.4.32 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:shd` | packages/docx-core/src/generation/emit/table.ts |
 | `ECMA-PART1-17-4-83` | w:vAlign cell vertical alignment | 5 | 1 | 17.4.83 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:vAlign` | packages/docx-core/src/generation/emit/table.ts |
@@ -1165,6 +1166,18 @@ cell widths are deterministic, never left to reader inference.
 Cells spanning multiple grid columns emit `w:gridSpan`; validation
 rejects rows whose summed spans diverge from the declared grid with a
 typed `grid_mismatch` error before any XML is produced.
+
+### ECMA-PART1-17-4-23 — w:hMerge legacy horizontal cell merge
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.4.23
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hMerge`
+- **Verified by:** packages/docx-core/src/primitives/table_rows.ts
+
+The structural row editor rejects legacy `w:hMerge` tables before mutation
+because treating their physical continuation cells as independent grid cells
+would misrepresent the authored horizontal merge.
 
 ### ECMA-PART1-17-4-84 — w:vMerge vertical cell merge
 
