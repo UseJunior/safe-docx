@@ -6,8 +6,10 @@ import { parseEditArgs, runEditCommand } from './commands/edit.js';
 import { parseGrepArgs, runGrepCommand } from './commands/grep.js';
 import { toSnakeCase } from './parse_utils.js';
 import { parseToolFlags, generateToolHelp } from './flag_parser.js';
-import { renderTopLevelHelp } from './help.js';
-import { runToolCommand } from './tool_runner.js';
+import { renderEditHelp, renderTopLevelHelp } from './help.js';
+import { CliCommandFailure, runToolCommand } from './tool_runner.js';
+import { acceptsCliOutputOption, extractCliOutputOption } from './output_option.js';
+import { conformanceRefusalResponse } from '../tools/conformance_refusal.js';
 import { SAFE_DOCX_TOOL_CATALOG } from '../tool_catalog.js';
 
 export interface CliHandlers {
@@ -139,7 +141,20 @@ export function createProgram(overrides: Partial<CliHandlers> = {}): CliProgram 
 
       if (command === 'compare') {
         const parsed = parseCompareArgs(rest);
-        const result = await handlers.compare(parsed);
+        let result: CompareCommandResult;
+        try {
+          result = await handlers.compare(parsed);
+        } catch (e: unknown) {
+          // A WML Strict input is refused by the comparison library with a typed
+          // error; emit it as the same structured JSON the tool commands use.
+          const refusal = conformanceRefusalResponse(e);
+          if (!refusal) throw e;
+          handlers.writeError(JSON.stringify(refusal, null, 2));
+          throw new CliCommandFailure('compare failed');
+        }
+        // Warnings go to stderr so stdout stays a single JSON line for callers
+        // that parse it, while a human running the CLI still sees them (#1029).
+        for (const warning of result.warnings ?? []) handlers.writeError(warning);
         handlers.write(JSON.stringify(result));
         return;
       }
@@ -153,6 +168,10 @@ export function createProgram(overrides: Partial<CliHandlers> = {}): CliProgram 
 
       // Edit command — batched batch_edit wrapper
       if (command === 'edit') {
+        if (rest.includes('--help') || rest.includes('-h')) {
+          handlers.write(renderEditHelp());
+          return;
+        }
         const editArgs = parseEditArgs(rest);
         await runEditCommand(editArgs, { write: handlers.write, writeError: handlers.writeError });
         return;
@@ -162,12 +181,22 @@ export function createProgram(overrides: Partial<CliHandlers> = {}): CliProgram 
       const toolName = toSnakeCase(command);
       const catalogEntry = SAFE_DOCX_TOOL_CATALOG.find((t) => t.name === toolName);
       if (catalogEntry) {
-        const { args: toolArgs, help } = parseToolFlags(rest, toolName);
+        // Mutating tools take -o/--output: without it their edit would be
+        // discarded when this one-shot process exits (#1048).
+        const { argv: toolArgv, ...output } = acceptsCliOutputOption(toolName)
+          ? extractCliOutputOption(rest)
+          : { argv: rest };
+        const { args: toolArgs, help } = parseToolFlags(toolArgv, toolName);
         if (help) {
           handlers.write(generateToolHelp(toolName));
           return;
         }
-        await runToolCommand(toolName, toolArgs, { write: handlers.write, writeError: handlers.writeError });
+        await runToolCommand(
+          toolName,
+          toolArgs,
+          { write: handlers.write, writeError: handlers.writeError },
+          output,
+        );
         return;
       }
 

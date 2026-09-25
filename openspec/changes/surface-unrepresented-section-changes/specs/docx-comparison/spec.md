@@ -28,3 +28,13 @@ statistics SHALL retain their existing meaning.
 - **THEN** every paragraph in the inserted footer story SHALL carry tracked insertion evidence
 - **AND** text insertions SHALL NOT wrap VML or DrawingML carrier objects
 - **AND** the represented footer SHALL NOT also appear in `unrepresentedChanges`
+
+#### Scenario: [SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion
+
+- **GIVEN** an original DOCX whose header or footer is selected only by section slots that the revised DOCX no longer has, because the section was removed or it no longer selects that role
+- **WHEN** the pair is successfully compared in place
+- **THEN** every paragraph in the removed story SHALL carry a tracked paragraph-mark deletion and its text SHALL be `w:delText` inside `w:del`
+- **AND** deletions SHALL NOT wrap VML or DrawingML carrier objects
+- **AND** reject-all SHALL reselect the story with its original text while accept-all SHALL select it through no section
+- **AND** revision identifiers SHALL remain unique across the package
+- **AND** the represented story SHALL NOT appear in `unrepresentedChanges`

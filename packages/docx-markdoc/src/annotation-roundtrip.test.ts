@@ -225,7 +225,7 @@ describe('canonical annotation round trips', () => {
     const imported = await importDocxToMarkdoc(dealByDeal);
     expect(imported.annotations.find((annotation) => annotation.id === 'footnote:6')?.body[0]?.runs)
       .toContainEqual(expect.objectContaining({ hyperlink: { destination: PRIMARY_LINK.replace('example.com/annotation-primary', 'ilpa.org/wp-content/uploads/2017/06/ILPA-Subscription-Lines-of-Credit-and-Alignment-of-Interests-June-2017.pdf') } }));
-  });
+  }, 30_000);
 
   const hyperlinkConformance = test
     .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.22' })

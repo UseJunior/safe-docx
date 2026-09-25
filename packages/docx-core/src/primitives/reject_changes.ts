@@ -19,7 +19,8 @@
  */
 
 import { OOXML } from './namespaces.js';
-import { removeTableRowAndEmptyTable } from './table_rows.js';
+import { removeResolvedRowMarker, removeTableRowAndEmptyTable } from './table_rows.js';
+import { RANGE_MARKUP_BLOCK_SIBLING_LOCALS, canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
 import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun, removeEmptyParagraphMarkProperties } from './paragraph_merge_formatting.js';
 import type { RevisionFilter } from './accept_changes.js';
 
@@ -107,7 +108,7 @@ function rejectSelectedRowRevisions(root: Element, filter: RevisionFilter): { in
     }
   }
   for (const marker of collectByLocalName(root, 'del').filter(filter).filter(isRowPropertyRevisionMarker)) {
-    marker.parentNode?.removeChild(marker);
+    removeResolvedRowMarker(marker);
     deletions++;
   }
   return { insertions, deletions };
@@ -182,22 +183,61 @@ const PR_CHANGE_LOCALS = [
   'tblPrChange', 'trPrChange', 'tcPrChange',
 ];
 
-// Marker-ish elements that may sit between two paragraphs at block level
-// without ending the search for a merge target: the full EG_RangeMarkupElements
-// schema group (wml.xsd), plus permStart/permEnd range markers and proofErr
-// proofing anchors.
-const RANGE_MARKUP_BLOCK_SIBLING_LOCALS = new Set([
-  'bookmarkStart', 'bookmarkEnd',
-  'commentRangeStart', 'commentRangeEnd',
-  'moveFromRangeStart', 'moveFromRangeEnd',
-  'moveToRangeStart', 'moveToRangeEnd',
-  'customXmlInsRangeStart', 'customXmlInsRangeEnd',
-  'customXmlDelRangeStart', 'customXmlDelRangeEnd',
-  'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd',
-  'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd',
-  'permStart', 'permEnd',
-  'proofErr',
-]);
+// EG_ParaRPrTrackChanges (wml.xsd): the paragraph-mark revision markers that
+// lead a CT_ParaRPr, in schema order.
+const PARA_MARK_REVISION_LOCALS = ['ins', 'del', 'moveFrom', 'moveTo'] as const;
+
+/** True iff `rPr` is a paragraph mark's run properties (w:pPr > w:rPr). */
+function isParagraphMarkRunProperties(rPr: Element): boolean {
+  return rPr.parentNode !== null && isW(rPr.parentNode, 'pPr');
+}
+
+/**
+ * Restore a paragraph mark's run properties from a rejected `w:rPrChange`
+ * snapshot without discarding the mark's own revision markers.
+ *
+ * CT_ParaRPr leads with the EG_ParaRPrTrackChanges markers (`w:ins`, `w:del`,
+ * `w:moveFrom`, `w:moveTo`) before the run-property base group. A marker
+ * records a revision to the paragraph BREAK and is independent of the mark's
+ * formatting history, so a selective reject of the formatting change alone
+ * must leave an unselected marker byte-untouched. Selected markers were
+ * already resolved by the earlier phases, so every marker still on the live
+ * element is a survivor to carry across. The CT_ParaRPrOriginal snapshot may
+ * itself carry a marker; the live element is the current record and wins that
+ * slot, and the result keeps the schema order. A snapshot-less change (the
+ * schema requires one) restores an empty base group but still keeps the
+ * survivors.
+ *
+ * Returns null when nothing remains to restore, so the caller removes the
+ * live element as before.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ * @see https://github.com/UseJunior/safe-docx/issues/991
+ */
+function restoreParagraphMarkRunProperties(
+  doc: Document,
+  live: Element,
+  snapshot: Element | null,
+): Element | null {
+  const restored = snapshot
+    ? snapshot.cloneNode(true) as Element
+    : doc.createElementNS(W_NS, 'w:rPr');
+  const markerOf = (el: Element, name: string): Element | undefined =>
+    Array.from(el.childNodes).find((node): node is Element => isW(node, name));
+  const markers: Element[] = [];
+  for (const name of PARA_MARK_REVISION_LOCALS) {
+    const survivor = markerOf(live, name);
+    const fromSnapshot = markerOf(restored, name);
+    if (fromSnapshot) restored.removeChild(fromSnapshot);
+    const kept = survivor ? survivor.cloneNode(true) as Element : fromSnapshot;
+    if (kept) markers.push(kept);
+  }
+  if (!snapshot && markers.length === 0) return null;
+  for (const marker of markers.reverse()) {
+    restored.insertBefore(marker, restored.firstChild);
+  }
+  return restored;
+}
 
 /**
  * Find the next sibling paragraph a paragraph-mark revision can merge into,
@@ -233,42 +273,6 @@ function paragraphHasContent(p: Element, forFormatting = false): boolean {
     return true;
   }
   return false;
-}
-
-/**
- * True iff removing an emptied mark-revised paragraph keeps its parent
- * structurally valid for Word: the parent must retain at least one block
- * element, must not end on a w:tbl (a trailing table needs a following
- * paragraph), and two tables must not become adjacent (Word merges
- * back-to-back tables). w:sectPr is ignored — a trailing body sectPr is not a
- * block element.
- */
-function canSafelyRemoveEmptyParagraph(p: Element): boolean {
-  const blockSibling = (start: Node | null, dir: 'previousSibling' | 'nextSibling'): Element | null => {
-    let sibling = start;
-    while (sibling) {
-      if (sibling.nodeType === 1) {
-        const el = sibling as Element;
-        if (
-          (el.namespaceURI === W_NS && RANGE_MARKUP_BLOCK_SIBLING_LOCALS.has(el.localName ?? '')) ||
-          isW(el, 'sectPr')
-        ) {
-          sibling = sibling[dir];
-          continue;
-        }
-        return el;
-      }
-      sibling = sibling[dir];
-    }
-    return null;
-  };
-
-  const prev = blockSibling(p.previousSibling, 'previousSibling');
-  const next = blockSibling(p.nextSibling, 'nextSibling');
-  if (!prev && !next) return false;
-  if (prev && isW(prev, 'tbl') && !next) return false;
-  if (prev && next && isW(prev, 'tbl') && isW(next, 'tbl')) return false;
-  return true;
 }
 
 /**
@@ -613,6 +617,19 @@ export function rejectChanges(
           originalProps = child as Element;
           break;
         }
+      }
+
+      // A paragraph mark's w:rPr may carry BOTH a break revision marker and a
+      // w:rPrChange. Restoring the snapshot wholesale would destroy any
+      // surviving FOREIGN marker that a selective reject promised to leave
+      // byte-untouched (the paragraph-mark counterpart of the trPrChange and
+      // sectPrChange cases below).
+      if (localName === 'rPrChange' && isParagraphMarkRunProperties(parentProp)) {
+        const restored = restoreParagraphMarkRunProperties(doc, parentProp, originalProps);
+        if (restored) grandParent.replaceChild(restored, parentProp);
+        else grandParent.removeChild(parentProp);
+        propertyChangesReverted++;
+        continue;
       }
 
       if (originalProps) {

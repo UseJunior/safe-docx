@@ -4,12 +4,17 @@
  *
  * Algorithm:
  * 1. Clone DOM twice → acceptChanges() on one, rejectChanges() on the other
- * 2. Walk all w:p in the *original* tracked DOM (including inside w:tc table cells)
- * 3. For each paragraph with revision wrappers, look up before_text (rejected clone)
+ * 2. Walk the *original* tracked DOM in document order, visiting every w:tr
+ *    and every w:p (including inside w:tc table cells)
+ * 3. For each table row whose w:trPr carries a row-level marker (w:ins, w:del,
+ *    w:trPrChange), emit one `scope: 'row'` record keyed by the row's first
+ *    paragraph, with the whole-row text before/after
+ * 4. For each paragraph with revision wrappers, look up before_text (rejected clone)
  *    and after_text (accepted clone) by _bk_* bookmark ID
- * 4. Collect individual revision entries with type, text, author
- * 5. Join comments by anchoredParagraphId
- * 6. Apply offset/limit pagination
+ * 5. Collect individual revision entries with type, text, author, and the
+ *    markup's w:id / w:date when present
+ * 6. Join comments by anchoredParagraphId
+ * 7. Apply offset/limit pagination
  */
 
 import { OOXML } from './namespaces.js';
@@ -23,12 +28,23 @@ const W_NS = OOXML.W_NS;
 
 // ── Types ───────────────────────────────────────────────────────────
 
-export type RevisionType = 'INSERTION' | 'DELETION' | 'MOVE_FROM' | 'MOVE_TO' | 'FORMAT_CHANGE';
+export type RevisionType =
+  | 'INSERTION'
+  | 'DELETION'
+  | 'MOVE_FROM'
+  | 'MOVE_TO'
+  | 'FORMAT_CHANGE'
+  | 'ROW_INSERTION'
+  | 'ROW_DELETION';
 
 export type RevisionEntry = {
   type: RevisionType;
   text: string;
   author: string;
+  /** `w:id` of the revision element, when the markup carries one. */
+  id?: string;
+  /** `w:date` of the revision element (ISO 8601), when the markup carries one. */
+  date?: string;
 };
 
 export type RevisionComment = {
@@ -40,6 +56,14 @@ export type RevisionComment = {
 
 export type ParagraphRevision = {
   para_id: string;
+  /**
+   * Present only on table-row records: the record describes the whole `w:tr`
+   * (a row inserted or deleted as a unit, or a row property change) rather
+   * than one paragraph. `para_id` is then the row's first paragraph, and
+   * `before_text` / `after_text` are the row's cell texts joined by tabs
+   * (paragraphs within a cell joined by newlines). Paragraph records omit it.
+   */
+  scope?: 'row';
   before_text: string;
   after_text: string;
   revisions: RevisionEntry[];
@@ -171,6 +195,20 @@ function getAttr(el: Element, localName: string): string {
 }
 
 /**
+ * Build one revision entry from a revision element, carrying its `w:id` and
+ * `w:date` when the markup has them (both are optional in the schema, and
+ * comparison output from some engines omits them).
+ */
+function makeEntry(el: Element, type: RevisionType, text: string): RevisionEntry {
+  const entry: RevisionEntry = { type, text, author: getAttr(el, 'author') };
+  const id = getAttr(el, 'id');
+  if (id) entry.id = id;
+  const date = getAttr(el, 'date');
+  if (date) entry.date = date;
+  return entry;
+}
+
+/**
  * Collect individual revision entries from a paragraph's revision wrappers.
  */
 function collectRevisionEntries(p: Element): RevisionEntry[] {
@@ -182,11 +220,7 @@ function collectRevisionEntries(p: Element): RevisionEntry[] {
     const ins = insEls[i]!;
     // Skip paragraph-level markers (inside pPr/rPr)
     if (isInsidePPrOrRPr(ins, p)) continue;
-    entries.push({
-      type: 'INSERTION',
-      text: getRevisionText(ins),
-      author: getAttr(ins, 'author'),
-    });
+    entries.push(makeEntry(ins, 'INSERTION', getRevisionText(ins)));
   }
 
   // Collect from w:del wrappers
@@ -194,49 +228,153 @@ function collectRevisionEntries(p: Element): RevisionEntry[] {
   for (let i = 0; i < delEls.length; i++) {
     const del = delEls[i]!;
     if (isInsidePPrOrRPr(del, p)) continue;
-    entries.push({
-      type: 'DELETION',
-      text: getRevisionText(del),
-      author: getAttr(del, 'author'),
-    });
+    entries.push(makeEntry(del, 'DELETION', getRevisionText(del)));
   }
 
   // Collect from w:moveFrom wrappers
   const moveFromEls = p.getElementsByTagNameNS(W_NS, 'moveFrom');
   for (let i = 0; i < moveFromEls.length; i++) {
     const mf = moveFromEls[i]!;
-    entries.push({
-      type: 'MOVE_FROM',
-      text: getRevisionText(mf),
-      author: getAttr(mf, 'author'),
-    });
+    entries.push(makeEntry(mf, 'MOVE_FROM', getRevisionText(mf)));
   }
 
   // Collect from w:moveTo wrappers
   const moveToEls = p.getElementsByTagNameNS(W_NS, 'moveTo');
   for (let i = 0; i < moveToEls.length; i++) {
     const mt = moveToEls[i]!;
-    entries.push({
-      type: 'MOVE_TO',
-      text: getRevisionText(mt),
-      author: getAttr(mt, 'author'),
-    });
+    entries.push(makeEntry(mt, 'MOVE_TO', getRevisionText(mt)));
   }
 
   // Collect FORMAT_CHANGE from *PrChange records
   for (const localName of PR_CHANGE_LOCALS) {
     const changes = p.getElementsByTagNameNS(W_NS, localName);
     for (let i = 0; i < changes.length; i++) {
-      const change = changes[i]!;
-      entries.push({
-        type: 'FORMAT_CHANGE',
-        text: '',
-        author: getAttr(change, 'author'),
-      });
+      entries.push(makeEntry(changes[i]!, 'FORMAT_CHANGE', ''));
     }
   }
 
   return entries;
+}
+
+// ── Table-row revisions ─────────────────────────────────────────────
+
+function directChildren(el: Element, localName: string): Element[] {
+  const out: Element[] = [];
+  for (let i = 0; i < el.childNodes.length; i++) {
+    const child = el.childNodes[i]!;
+    if (isW(child, localName)) out.push(child);
+  }
+  return out;
+}
+
+/**
+ * The row-level revision markers of a `w:tr`: direct children of its `w:trPr`
+ * that revise the row itself rather than wrapping a span of content.
+ *
+ * An empty `w:del` under `w:trPr` marks the enclosing row as a tracked
+ * deletion, an empty `w:ins` marks it as a tracked insertion, and
+ * `w:trPrChange` records a revision to the row's properties. None of them
+ * imply a revision state for the row's cell content, which is revision-marked
+ * independently and reported by the per-paragraph walk.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
+ * @see https://github.com/UseJunior/safe-docx/issues/868
+ */
+function rowRevisionMarkers(tr: Element): Element[] {
+  const markers: Element[] = [];
+  for (const trPr of directChildren(tr, 'trPr')) {
+    for (let i = 0; i < trPr.childNodes.length; i++) {
+      const child = trPr.childNodes[i]!;
+      if (isW(child, 'ins') || isW(child, 'del') || isW(child, 'trPrChange')) {
+        markers.push(child);
+      }
+    }
+  }
+  return markers;
+}
+
+/**
+ * Children of `el` with the given local name, looking through the structured
+ * document tag and custom XML wrappers the schema allows at that level
+ * (`w:sdt > w:sdtContent > …`, `w:customXml > …`), but never into a nested
+ * table: `w:tbl` is not a wrapper, and its cells belong to another row.
+ */
+function ownChildrenThroughWrappers(el: Element, localName: string): Element[] {
+  const out: Element[] = [];
+  for (let i = 0; i < el.childNodes.length; i++) {
+    const child = el.childNodes[i]!;
+    if (isW(child, localName)) {
+      out.push(child);
+    } else if (isW(child, 'sdt')) {
+      for (const content of directChildren(child, 'sdtContent')) {
+        out.push(...ownChildrenThroughWrappers(content, localName));
+      }
+    } else if (isW(child, 'customXml')) {
+      out.push(...ownChildrenThroughWrappers(child, localName));
+    }
+  }
+  return out;
+}
+
+/** The row's own cells, including cells wrapped in `w:sdt` / `w:customXml`. */
+function rowCells(tr: Element): Element[] {
+  return ownChildrenThroughWrappers(tr, 'tc');
+}
+
+/** The cell's own paragraphs, including ones wrapped in `w:sdt` / `w:customXml`; paragraphs of a nested table are excluded. */
+function cellParagraphs(tc: Element): Element[] {
+  return ownChildrenThroughWrappers(tc, 'p');
+}
+
+/**
+ * The first paragraph in the row's own cells (not one inside a nested table),
+ * falling back to the first descendant paragraph when the row has none of its
+ * own. `trDepth` is how many `w:tr` ancestors (counting `tr` itself) sit
+ * between that paragraph and the row, so the row can be recovered from the
+ * paragraph in a clone even when the fallback landed inside a nested table.
+ */
+function firstRowParagraph(tr: Element): { p: Element; trDepth: number } | null {
+  for (const tc of rowCells(tr)) {
+    const p = cellParagraphs(tc)[0];
+    if (p) return { p, trDepth: 1 };
+  }
+  const p = tr.getElementsByTagNameNS(W_NS, 'p').item(0);
+  if (!p) return null;
+  let trDepth = 0;
+  for (let cur: Node | null = p; cur; cur = cur.parentNode) {
+    if (isW(cur, 'tr')) trDepth++;
+    if (cur === tr) break;
+  }
+  return { p, trDepth };
+}
+
+/**
+ * Whole-row text: each of the row's own cells' own paragraphs joined by
+ * newlines, cells joined by tabs. Uses the same visible-text rule as
+ * paragraph records. Content of a nested table is not part of the row text.
+ */
+function getRowText(tr: Element): string {
+  return rowCells(tr)
+    .map((tc) => cellParagraphs(tc).map(getParagraphText).join('\n'))
+    .join('\t');
+}
+
+/**
+ * Locate the row in a clone (accepted or rejected) by the bookmark of the
+ * paragraph `firstRowParagraph` chose, climbing `trDepth` row ancestors so a
+ * fallback paragraph inside a nested table still resolves to the outer row.
+ * Empty when the row no longer exists in that clone.
+ */
+function getRowTextByBookmarkId(doc: Document, paraId: string, trDepth: number): string {
+  let cur: Node | null = findParagraphByBookmarkId(doc, paraId);
+  let remaining = trDepth;
+  while (cur) {
+    if (isW(cur, 'tr') && --remaining === 0) break;
+    cur = cur.parentNode;
+  }
+  return cur ? getRowText(cur as Element) : '';
 }
 
 /**
@@ -313,15 +451,53 @@ export function extractRevisions(
     }
   }
 
-  // Walk all paragraphs in the original tracked DOM
-  const allParagraphs = Array.from(body.getElementsByTagNameNS(W_NS, 'p'));
   const changedParagraphs: ParagraphRevision[] = [];
 
-  for (const p of allParagraphs) {
-    if (!paragraphHasRevisions(p)) continue;
+  // A row inserted or deleted as a whole, or a row property change, lives in
+  // w:tr > w:trPr and is invisible to a per-paragraph walk. Report it as one
+  // record for the row, keyed by the row's first paragraph, in document order
+  // (the w:tr precedes its paragraphs, so the row record precedes theirs).
+  const visitRow = (tr: Element): void => {
+    const markers = rowRevisionMarkers(tr);
+    if (markers.length === 0) return;
+
+    const first = firstRowParagraph(tr);
+    const paraId = first ? getParagraphBookmarkId(first.p) : null;
+    if (!first || !paraId) return;
+
+    const isInserted = markers.some((m) => m.localName === 'ins');
+    const isDeleted = markers.some((m) => m.localName === 'del');
+    const rowText = getRowText(tr);
+
+    // An inserted row does not exist once rejected; a deleted row does not
+    // exist once accepted. Do not look those up: the row's bookmarks leave
+    // with it, so a lookup could only hit some other paragraph.
+    const beforeText = isInserted ? '' : getRowTextByBookmarkId(rejectedDoc, paraId, first.trDepth);
+    const afterText = isDeleted ? '' : getRowTextByBookmarkId(acceptedDoc, paraId, first.trDepth);
+
+    const revisions = markers.map((marker) => {
+      if (marker.localName === 'ins') return makeEntry(marker, 'ROW_INSERTION', rowText);
+      if (marker.localName === 'del') return makeEntry(marker, 'ROW_DELETION', rowText);
+      return makeEntry(marker, 'FORMAT_CHANGE', '');
+    });
+
+    // Comments are anchored to paragraphs, not rows; they stay on the
+    // paragraph record so they are never reported twice.
+    changedParagraphs.push({
+      para_id: paraId,
+      scope: 'row',
+      before_text: beforeText,
+      after_text: afterText,
+      revisions,
+      comments: [],
+    });
+  };
+
+  const visitParagraph = (p: Element): void => {
+    if (!paragraphHasRevisions(p)) return;
 
     const paraId = getParagraphBookmarkId(p);
-    if (!paraId) continue; // All paragraphs should have bookmarks from session resolution
+    if (!paraId) return; // All paragraphs should have bookmarks from session resolution
 
     // Detect entirely-inserted/deleted paragraphs to avoid stale bookmark lookups.
     // When rejectChanges() removes an inserted paragraph, it relocates bookmarks
@@ -352,7 +528,7 @@ export function extractRevisions(
 
     // Skip structurally-empty paragraphs with only paragraph-level markers
     // (e.g. empty inserted paragraphs from comparison engines with pPr/rPr/ins only)
-    if (revisions.length === 0 && beforeText === '' && afterText === '') continue;
+    if (revisions.length === 0 && beforeText === '' && afterText === '') return;
 
     // Associate comments
     const paraComments = commentsByParaId.get(paraId) ?? [];
@@ -365,7 +541,20 @@ export function extractRevisions(
       revisions,
       comments: revisionComments,
     });
-  }
+  };
+
+  // Pre-order walk of the original tracked DOM. This visits the same w:p
+  // elements in the same order as getElementsByTagNameNS('p') did (including
+  // paragraphs nested in text boxes), and additionally sees every w:tr.
+  const walk = (el: Element): void => {
+    if (isW(el, 'tr')) visitRow(el);
+    else if (isW(el, 'p')) visitParagraph(el);
+    for (let i = 0; i < el.childNodes.length; i++) {
+      const child = el.childNodes[i]!;
+      if (child.nodeType === 1) walk(child as Element);
+    }
+  };
+  walk(body);
 
   // Apply pagination
   const totalChanges = changedParagraphs.length;

@@ -22,6 +22,39 @@ import {
 } from './taggedTree.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+/** A whole block-level container cannot be nested in a run revision. */
+export class UnsupportedBlockContainerRevisionError extends Error {
+  readonly partPath = 'word/document.xml';
+  constructor(readonly change: 'insert' | 'delete', readonly container: 'sdt' | 'customXml') {
+    super(`Unsupported ${change} of a block-level ${container} container`);
+    this.name = 'UnsupportedBlockContainerRevisionError';
+  }
+}
+
+/**
+ * Distinguish block-level containers from run-level controls before revision wrapping.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.31
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @see #1075
+ */
+function isBlockContainer(element: WmlElement): element is WmlElement {
+  if (element.namespaceURI !== W_NS || !['sdt', 'customXml'].includes(element.localName)) return false;
+  const hasBlockContent = (container: WmlElement): boolean => {
+    const children = container.localName === 'sdt'
+      ? childElements(container)
+        .filter((child) => child.namespaceURI === W_NS && child.localName === 'sdtContent')
+        .flatMap((content) => childElements(content))
+      : childElements(container);
+    return children.some((child) => child.namespaceURI === W_NS
+      && (['p', 'tbl'].includes(child.localName)
+        || (['sdt', 'customXml'].includes(child.localName) && hasBlockContent(child))));
+  };
+  return hasBlockContent(element);
+}
 const OPERATION_PROVENANCE_ATTRIBUTE = 'data-safe-docx-operation';
 export const COMPARISON_REVISION_ATTRIBUTE = 'data-safe-docx-comparison-revision';
 const DIRECT_PROPERTY_BY_CONTAINER: Readonly<Record<string, string>> = {
@@ -829,6 +862,7 @@ function markWholeTableRow(
   revision: ComparisonRevision,
   allocateRevision: () => ComparisonRevision,
   operationIds: readonly string[] = [],
+  ownedParagraphsOnly = false,
 ): WmlElement {
   let trPr = childElements(row).find((child) => child.localName === 'trPr');
   if (!trPr) {
@@ -846,13 +880,25 @@ function markWholeTableRow(
       : child.localName === 'trPrChange');
   trPr.insertBefore(marker, boundary ?? null);
 
+  const ownsParagraph = (paragraph: WmlElement): boolean => {
+    if (!ownedParagraphsOnly) return true;
+    for (let parent = paragraph.parentNode; parent; parent = parent.parentNode) {
+      if (parent.nodeType === 1 && (parent as Element).namespaceURI === W_NS
+        && (parent as Element).localName === 'tr') return parent === row;
+    }
+    return false;
+  };
   const finalDirectParagraphs = new Set<WmlElement>();
-  for (const cell of Array.from(row.getElementsByTagNameNS(W_NS, 'tc')) as WmlElement[]) {
+  const cells = ownedParagraphsOnly
+    ? childElements(row).filter((child) => child.namespaceURI === W_NS && child.localName === 'tc')
+    : Array.from(row.getElementsByTagNameNS(W_NS, 'tc')) as WmlElement[];
+  for (const cell of cells) {
     const directParagraphs = childElements(cell).filter((child) => child.localName === 'p');
     const finalParagraph = directParagraphs.at(-1);
     if (finalParagraph) finalDirectParagraphs.add(finalParagraph);
   }
   for (const paragraph of Array.from(row.getElementsByTagNameNS(W_NS, 'p')) as WmlElement[]) {
+    if (!ownsParagraph(paragraph)) continue;
     markWholeParagraph(
       paragraph,
       kind,
@@ -864,6 +910,33 @@ function markWholeTableRow(
     );
   }
   return row;
+}
+
+/**
+ * Mark every physical row of an unmatched table without wrapping the table container.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @see #1043
+ */
+function markWholeTable(
+  table: WmlElement,
+  kind: 'ins' | 'del',
+  revision: ComparisonRevision,
+  allocateRevision: () => ComparisonRevision,
+  operationIds: readonly string[],
+): WmlElement {
+  const rows = Array.from(table.getElementsByTagNameNS(W_NS, 'tr')) as WmlElement[];
+  if (rows.length === 0) throw new Error('Cannot redline an unmatched table with no rows');
+  rows.forEach((row, index) => markWholeTableRow(
+    row,
+    kind,
+    index === 0 ? revision : allocateRevision(),
+    allocateRevision,
+    operationIds,
+    true,
+  ));
+  return table;
 }
 
 const CHANGE_ELEMENT_BY_SCOPE = {
@@ -1053,6 +1126,7 @@ function refineRunReplacement(
   originalNode: TaggedNode,
   revisedNode: TaggedNode,
   allocateRevision: () => ComparisonRevision,
+  revisionGrouping: RevisionGroupingPolicy,
 ): WmlElement[] | undefined {
   const original = representative(originalNode, 'original');
   const revised = representative(revisedNode, 'revised');
@@ -1076,6 +1150,10 @@ function refineRunReplacement(
     originalContent.every((child, index) => child.localName === revisedContent[index]!.localName)
   ) {
     const emitted: WmlElement[] = [];
+    const tabTextOnly = originalContent.some((child) => child.localName === 'tab')
+      && originalContent.every((child, index) => (child.localName === 't' || child.localName === 'tab')
+        && (child.localName !== 'tab' || new XMLSerializer().serializeToString(child)
+          === new XMLSerializer().serializeToString(revisedContent[index]!)));
     const fragmentRun = (source: WmlElement, content: WmlElement): WmlElement => {
       const run = cloneElement(source);
       for (const child of childElements(run)) {
@@ -1090,6 +1168,25 @@ function refineRunReplacement(
       if (new XMLSerializer().serializeToString(beforeChild) === new XMLSerializer().serializeToString(afterChild)) {
         emitted.push(fragmentRun(revised, afterChild));
       } else {
+        const beforeText = beforeChild.textContent ?? '';
+        const afterText = afterChild.textContent ?? '';
+        if (tabTextOnly && beforeChild.localName === 't' && afterChild.localName === 't'
+            && beforeText.length > 0 && afterText.length > 0 && beforeText !== afterText) {
+          const beforeRun = fragmentRun(original, beforeChild);
+          const afterRun = fragmentRun(revised, afterChild);
+          const refined = refineSimpleRunGap(
+            [beforeRun], [afterRun], allocateRevision,
+            new Map([
+              [beforeRun, operationProvenance(originalNode)],
+              [afterRun, operationProvenance(revisedNode)],
+            ]),
+            revisionGrouping,
+          );
+          if (refined) {
+            emitted.push(...refined);
+            continue;
+          }
+        }
         emitted.push(wrapRevision(
           fragmentRun(original, beforeChild),
           'del',
@@ -1694,6 +1791,11 @@ function emitNode(
 ): WmlElement {
   const nodeRevision = allocateRevision();
   const base = cloneElement(representative(node, node.tag === 'original' ? 'original' : node.tag === 'revised' ? 'revised' : bothSide)!);
+  if ((node.tag === 'original' || node.tag === 'revised') && isBlockContainer(base)) {
+    throw new UnsupportedBlockContainerRevisionError(
+      node.tag === 'revised' ? 'insert' : 'delete', base.localName as 'sdt' | 'customXml',
+    );
+  }
   if (!node.opaque && node.children.length > 0) {
     const directPropertyTag = DIRECT_PROPERTY_BY_CONTAINER[base.localName];
     const retainedProperty = directPropertyTag
@@ -1794,7 +1896,7 @@ function emitNode(
       const next = node.children[index + 1];
       if (child.tag === 'original' && next?.tag === 'revised' &&
           !moveFor(child, moves) && !moveFor(next, moves)) {
-        const refined = refineRunReplacement(child, next, allocateRevision);
+        const refined = refineRunReplacement(child, next, allocateRevision, revisionGrouping);
         if (refined) {
           emitted.push(...refined);
           index++;
@@ -1853,6 +1955,11 @@ function emitNode(
         operationProvenance(node),
       ), entry.originalStack);
     }
+    if (!relation && base.namespaceURI === W_NS && base.localName === 'tbl') {
+      return wrapPreserved(markWholeTable(
+        base, 'del', revision, allocateRevision, operationProvenance(node),
+      ), entry.originalStack);
+    }
     return wrapPreserved(wrapRevision(
       base,
       relation ? 'moveFrom' : 'del',
@@ -1880,6 +1987,11 @@ function emitNode(
         revision,
         allocateRevision,
         operationProvenance(node),
+      ), entry.revisedStack);
+    }
+    if (!relation && base.namespaceURI === W_NS && base.localName === 'tbl') {
+      return wrapPreserved(markWholeTable(
+        base, 'ins', revision, allocateRevision, operationProvenance(node),
       ), entry.revisedStack);
     }
     return wrapPreserved(wrapRevision(

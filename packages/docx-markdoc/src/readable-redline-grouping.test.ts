@@ -6,6 +6,7 @@ import { buildDocxFromBodyXml } from '../../docx-core/src/testing/ooxml-fixtures
 import { compileMarkdoc } from './compile.js';
 import { importDocxToMarkdoc } from './import.js';
 import { requireMarkdoc } from './markdoc.js';
+import type { CompileOptions } from './types.js';
 
 const TEST_FEATURE = 'Readable redline coalescing';
 const revisionTest = testAllure.epic('DOCX Markdoc').withLabels({
@@ -17,16 +18,17 @@ const revisionTest = testAllure.epic('DOCX Markdoc').withLabels({
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' });
 
 async function fixture(
-  policy?: 'token-minimal' | 'readable-whitespace',
-  markdocPolicy?: 'token-minimal' | 'readable-whitespace',
   before = 'The old red term applies.',
   after = 'The new blue term applies.',
+  markdocPolicy?: 'token-minimal' | 'readable-whitespace',
+  options: CompileOptions = {},
+  changeAttributes = '',
 ) {
   const source = await buildSyntheticDocx({ paragraphs: [before] });
   const imported = await importDocxToMarkdoc(source);
   const paragraph = requireMarkdoc(imported.markdoc).scaffold[0]!;
   const change = [
-    `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="rewrite" format="inherit-source-paragraph" %}`,
+    `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="rewrite" format="inherit-source-paragraph"${changeAttributes} %}`,
     '{% before %}', before, '{% /before %}',
     '{% after %}', after, '{% /after %}',
     '{% /change %}',
@@ -38,8 +40,7 @@ async function fixture(
   if (markdocPolicy) {
     markdoc = markdoc.replace(/(\{% source[^\n]+\/%\})/u, `$1\n\n{% compilation revision-grouping="${markdocPolicy}" /%}`);
   }
-  const result = await compileMarkdoc(imported.anchoredSource, markdoc,
-    policy ? { revisionGrouping: { policy } } : {});
+  const result = await compileMarkdoc(imported.anchoredSource, markdoc, options);
   const archive = await JSZip.loadAsync(result.tracked);
   const xml = await archive.file('word/document.xml')!.async('string');
   return { result, xml };
@@ -57,26 +58,19 @@ async function customRunFixture(bodyXml: string, before: string, afterMarkup: st
   const markdoc = imported.markdoc.replace(
     new RegExp(`\\{% para id="${paragraph.id}"[\\s\\S]*?\\{% /para %\\}`), change,
   );
-  return compileMarkdoc(imported.anchoredSource, markdoc, {
-    revisionGrouping: { policy: 'readable-whitespace' },
-  });
+  return compileMarkdoc(imported.anchoredSource, markdoc);
 }
 
 describe('readable redline grouping', () => {
-  revisionTest('[SDX-MDOC-139][SDX-MDOC-143] token-minimal remains the default', async () => {
+  revisionTest('[SDX-MDOC-139][SDX-MDOC-142] readable grouping is the sole default', async () => {
     const { result, xml } = await fixture();
-    expect(result.certificate.revisionGrouping).toEqual({
-      policy: 'token-minimal', source: 'default', coalescedSpaceTokens: 0, groupedChains: 0,
-    });
-    expect(xml.match(/<w:del\b/gu)?.length).toBe(2);
-    expect(xml.match(/<w:ins\b/gu)?.length).toBe(2);
-  });
-
-  revisionTest('[SDX-MDOC-141][SDX-MDOC-142] readable mode emits one phrase-level replacement pair', async () => {
-    const { result, xml } = await fixture('readable-whitespace');
     expect(result.certificate.passed).toBe(true);
+    expect(result.certificate.rejectAllEqualsSource).toBe(true);
+    expect(result.certificate.acceptAllEqualsClean).toBe(true);
+    expect(result.certificate.rejectAllFormattingEqualsSource).toBe(true);
+    expect(result.certificate.acceptAllFormattingEqualsClean).toBe(true);
     expect(result.certificate.revisionGrouping).toEqual({
-      policy: 'readable-whitespace', source: 'api', coalescedSpaceTokens: 1, groupedChains: 1,
+      policy: 'readable-whitespace', source: 'default', coalescedSpaceTokens: 1, groupedChains: 1,
     });
     const document = parseXml(xml);
     const contentDeletions = Array.from(document.getElementsByTagNameNS('*', 'del'))
@@ -91,18 +85,30 @@ describe('readable redline grouping', () => {
   });
 
   revisionTest('[SDX-MDOC-142] groups an eligible chain spanning the whole paragraph', async () => {
-    const { result } = await fixture('readable-whitespace', undefined, 'old red', 'new blue');
+    const { result } = await fixture('old red', 'new blue');
     expect(result.certificate.revisionGrouping).toMatchObject({ groupedChains: 1, coalescedSpaceTokens: 1 });
   });
 
-  revisionTest('[SDX-MDOC-140][SDX-MDOC-141] runtime policy overrides declarative policy with provenance', async () => {
-    const declarative = await fixture(undefined, 'readable-whitespace');
-    expect(declarative.result.certificate.revisionGrouping.source).toBe('markdoc');
-    expect(declarative.result.certificate.revisionGrouping.groupedChains).toBe(1);
-    const overridden = await fixture('token-minimal', 'readable-whitespace');
-    expect(overridden.result.certificate.revisionGrouping).toEqual({
-      policy: 'token-minimal', source: 'api', coalescedSpaceTokens: 0, groupedChains: 0,
-    });
+  revisionTest('[SDX-MDOC-140] rejects former declarative selectors before mutation', async () => {
+    for (const policy of ['token-minimal', 'readable-whitespace'] as const) {
+      await expect(fixture(undefined, undefined, policy)).rejects.toMatchObject({
+        code: 'INVALID_MARKDOC',
+        issues: expect.arrayContaining([expect.objectContaining({ message: expect.stringContaining('revision-grouping') })]),
+      });
+    }
+  });
+
+  revisionTest('[SDX-MDOC-141] rejects own runtime selectors even when undefined', async () => {
+    for (const value of [{ policy: 'token-minimal' }, undefined]) {
+      const options = { revisionGrouping: value } as unknown as CompileOptions;
+      await expect(fixture(undefined, undefined, undefined, options))
+        .rejects.toMatchObject({ code: 'REVISION_GROUPING_REMOVED' });
+    }
+  });
+
+  revisionTest('[SDX-MDOC-143] minimal-hunk validation still rejects ambiguous formatting', async () => {
+    await expect(fixture(undefined, undefined, undefined, {}, ' underline="single"'))
+      .rejects.toMatchObject({ code: 'AMBIGUOUS_RUN_FORMAT_SCOPE' });
   });
 
   revisionTest('[SDX-MDOC-146] does not attribute preserved pre-existing grouping to this build', async () => {
@@ -113,19 +119,11 @@ describe('readable redline grouping', () => {
     );
     const imported = await importDocxToMarkdoc(source);
 
-    for (const policy of ['token-minimal', 'readable-whitespace'] as const) {
-      const result = await compileMarkdoc(imported.anchoredSource, imported.markdoc, {
-        revisionGrouping: { policy },
-      });
-      expect(result.certificate.revisionGrouping).toEqual({
-        policy, source: 'api', coalescedSpaceTokens: 0, groupedChains: 0,
-      });
-      expect(result.certificate.existingRevisionsPreserved).toBe(true);
-    }
-  });
-
-  revisionTest('[SDX-MDOC-141] rejects an invalid runtime policy before comparison', async () => {
-    await expect(fixture('coarse' as 'token-minimal')).rejects.toThrow(/token-minimal or readable-whitespace/u);
+    const result = await compileMarkdoc(imported.anchoredSource, imported.markdoc);
+    expect(result.certificate.revisionGrouping).toEqual({
+      policy: 'readable-whitespace', source: 'default', coalescedSpaceTokens: 0, groupedChains: 0,
+    });
+    expect(result.certificate.existingRevisionsPreserved).toBe(true);
   });
 
   revisionTest('[SDX-MDOC-144][SDX-MDOC-145] punctuation, structural whitespace, and lone fragments remain ungrouped', async () => {
@@ -137,7 +135,7 @@ describe('readable redline grouping', () => {
       ['The old old red term.', 'The new old blue term.'],
     ];
     for (const [before, after] of cases) {
-      const { result } = await fixture('readable-whitespace', undefined, before, after);
+      const { result } = await fixture(before, after);
       expect(result.certificate.revisionGrouping.groupedChains).toBe(0);
       expect(result.certificate.revisionGrouping.coalescedSpaceTokens).toBe(0);
     }

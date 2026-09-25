@@ -84,24 +84,18 @@ docx-markdoc compile anchored.docx revision.mdoc output/
 docx-markdoc compile anchored.docx revision.mdoc output/ --no-external-comments
 ```
 
-Tracked replacements are token-minimal by default. For phrase-level review,
-opt into bounded whitespace grouping either declaratively or on the CLI:
-
-```markdoc
-{% compilation revision-grouping="readable-whitespace" /%}
-```
-
-```bash
-docx-markdoc compile anchored.docx revision.mdoc output/ \
-  --revision-grouping readable-whitespace
-```
-
-`readable-whitespace` may copy only identical ordinary U+0020 bridge runs into
+Tracked replacements use bounded readable-whitespace grouping by default and
+there is no grouping selector. It may copy only identical ordinary U+0020 bridge runs into
 both sides of adjacent replacement fragments. It never absorbs common words,
 punctuation, tabs, line breaks, protected structure, or incompatible formatting.
-An API or CLI value overrides Markdoc; omission resolves to `token-minimal`.
-The verification certificate records the policy, provenance, grouped-chain
-count, and copied-space-token count.
+The verification certificate records the fixed policy and default provenance,
+grouped-chain count, and copied-space-token count. The exact-token minimal hunk
+set is still validated before grouping; callers using the short-lived old
+`revision-grouping` declaration, `revisionGrouping` API option, or
+`--revision-grouping` flag must remove it. The exported
+`RevisionGroupingPolicy` and `RevisionGroupingSource` types were also removed;
+certificate consumers can use the fixed literal fields in
+`RevisionGroupingReport`.
 
 Every CLI output path must be new, including import, edit export, and comment
 conversion paths. Existing files and symlinks are refused. Compilation reserves
@@ -128,6 +122,51 @@ rather than concatenated.
 `_bk_*` paragraph bookmarks. The Markdoc hash and paragraph IDs target that
 anchored copy, so later compilation is stateless and never needs an editing
 session. The caller's original bytes remain untouched.
+
+## Existing headers and footers
+
+Import also inventories each relationship-selected physical header or footer
+once. Its opaque `story` ID represents the complete sorted set of section
+selectors that share that part; it is not a package filename. Admitted ordinary
+paragraphs receive anchors in the separate `anchored.docx` copy. For example:
+
+```markdoc
+{% story id="story-header-…" kind="header" bindings="0:default,1:default" fingerprint="sha256:…" paragraphs=1 readonly=0 /%}
+
+{% change story="story-header-…" id="_bk_…" fingerprint="sha256:…" style="Header" operation="update-date" format="inherit-source-paragraph" %}
+{% before %}Draft of September 17, 2026{% /before %}
+{% after %}Draft of September 18, 2026{% /after %}
+{% /change %}
+```
+
+Unsupported paragraphs remain visible, in physical story order, as non-operative
+`readonly` blocks. Their text, ordinal, reason, and whole-paragraph fingerprint
+are pinned to the source, but they have no Markdoc anchor:
+
+```markdoc
+{% readonly story="story-header-…" ordinal=0 fingerprint="sha256:…" reason="drawing" %}
+Company logo
+{% /readonly %}
+```
+
+The `story` attribute also works on `insert-before`, `insert-after`, and
+`delete-source`; without it, those tags still target the main body. An edit to
+a shared story affects every listed selector. The compiler requires the exact
+imported binding closure and source fingerprint, rejects body/other-story
+anchors, and certifies accept-all and reject-all text, formatting, scaffold,
+relationships, bindings, and unresolved revisions for each edited story.
+Existing physical table-cell paragraphs follow the same cell-boundary and
+trailing-paragraph rules as body edits. Field results and instructions remain
+preserved; ordinary text beside them can be edited.
+
+This is bounded paragraph authoring, not header/footer creation or structural
+editing. Markdoc cannot add, remove, rebind, or partly alias a story; change
+section selectors, tables, drawings, fields, content controls, or nested text
+boxes; or materialize Word comments on side-story edits. Paragraphs containing
+relationship-backed or unsupported content are read-only and have no operative
+Markdoc anchor; an attempted operation on an existing anchor there reports
+`UNSUPPORTED_STORY_CONTENT`. Unselected orphan parts remain untouched. Internal rationale
+may still accompany an operation without becoming a Word comment.
 
 ## Template-backed greenfield forms
 

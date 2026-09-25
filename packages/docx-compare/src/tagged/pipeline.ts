@@ -3,7 +3,7 @@
 import { XMLSerializer } from '@xmldom/xmldom';
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
-import { auditSectPr, normalizeOpcRelationshipTarget, parseXml, OOXML } from '@usejunior/docx-core';
+import { assertTransitionalWordprocessingML, auditSectPr, normalizeOpcRelationshipTarget, parseXml, OOXML } from '@usejunior/docx-core';
 import { DocxArchive } from '@usejunior/docx-core';
 import type {
   CompareResult,
@@ -77,6 +77,7 @@ import {
   buildTaggedTreePublication,
   consumeTaggedPublicationStatistics,
 } from './taggedTreeShadow.js';
+import { bodyTableFootprint, UnsupportedTableTopologyComparisonError } from './tableTopologyGuard.js';
 import {
   compareSourceProjectedFormattingFidelity,
   type ProjectedFormattingFidelity,
@@ -99,6 +100,8 @@ import {
 import {
   assembleTextBoxStoryComparison,
   assertAncillaryTextBoxStoryProjection,
+  deletedAncillaryStoryOutputPaths,
+  markDeletedAncillaryStoryParagraphs,
   markInsertedAncillaryStoryParagraphs,
   prepareTextBoxStoryComparison,
   rejectedSelectedAncillaryStoryPaths,
@@ -143,6 +146,8 @@ export interface StandaloneTaggedPackageOptions {
   bookmarkNameReservations?: Set<string>;
   /** @internal First package-wide ID available to generated comparison revisions. */
   minimumRevisionId?: number;
+  /** @internal Selected story calls disable the main-body topology gate. */
+  guardTableTopology?: boolean;
 }
 
 export interface StandaloneTaggedPackageResult {
@@ -397,6 +402,7 @@ export async function buildStandaloneTaggedPackage(
       revisionGrouping: options.revisionGrouping,
       retainStatisticsMarkers: true,
       minimumRevisionId: options.minimumRevisionId,
+      guardTableTopology: options.guardTableTopology ?? true,
     });
     return {
       taggedOriginalXml,
@@ -530,6 +536,12 @@ export async function buildStandaloneTaggedPackage(
   // trees would reject a faithful publication.
   const originalProjectionXml = rejectAllChanges(originalXml);
   const revisedProjectionXml = acceptAllChanges(revisedXml);
+  if (options.guardTableTopology ?? true) {
+    if (bodyTableFootprint(rejectAllChanges(taggedXml)) !== bodyTableFootprint(originalProjectionXml)
+      || bodyTableFootprint(acceptAllChanges(taggedXml)) !== bodyTableFootprint(revisedProjectionXml)) {
+      throw new UnsupportedTableTopologyComparisonError('projection', -1);
+    }
+  }
   const publicationSafety = (options.publicationSafetyEvaluator ?? evaluateSafetyChecks)(
     extractRoundTripComparisonText(originalProjectionXml),
     extractRoundTripComparisonText(revisedProjectionXml),
@@ -1186,6 +1198,7 @@ async function compareDocumentsTaggedCore(
   options: AtomizerOptions,
   bookmarkNameReservations?: Set<string>,
   minimumRevisionId?: number,
+  guardTableTopology = true,
 ): Promise<TaggedCompareResult> {
   const standalone = await buildStandaloneTaggedPackage(original, revised, {
     author: options.author ?? 'Comparison',
@@ -1208,6 +1221,7 @@ async function compareDocumentsTaggedCore(
     formattingFidelityEvaluator: options.taggedTreeFormattingFidelityEvaluator,
     bookmarkNameReservations,
     minimumRevisionId,
+    guardTableTopology,
   });
   return {
     document: standalone.document,
@@ -1217,6 +1231,23 @@ async function compareDocumentsTaggedCore(
     ancillaryFieldEvidence: standalone.ancillaryFieldEvidence,
     revisionAttributions: standalone.revisionAttributions,
   };
+}
+
+/**
+ * Refuse a WML Strict input before any Transitional-only stage reads it as an
+ * empty document (#1025). The error names the side so a two-file caller knows
+ * which input to re-save; `DocxDocument.load` applies the same gate for the
+ * session path.
+ */
+async function assertTransitionalComparisonInputs(original: Buffer, revised: Buffer): Promise<void> {
+  const inputs: Array<['original' | 'revised', Buffer]> = [
+    ['original', original],
+    ['revised', revised],
+  ];
+  for (const [side, buffer] of inputs) {
+    const archive = await DocxArchive.load(buffer);
+    assertTransitionalWordprocessingML(parseXml(await archive.getDocumentXml()), { side });
+  }
 }
 
 /**
@@ -1231,6 +1262,7 @@ async function compareDocumentsTagged(
   revised: Buffer,
   options: AtomizerOptions,
 ): Promise<TaggedCompareResult> {
+  await assertTransitionalComparisonInputs(original, revised);
   const textBoxPlan = await prepareTextBoxStoryComparison(original, revised);
   if (!textBoxPlan) {
     return compareDocumentsTaggedCore(original, revised, options);
@@ -1256,13 +1288,20 @@ async function compareDocumentsTagged(
     visualIndex: number;
     partPath: string;
     container: 'textBox' | 'ancillaryPart';
-    ancillaryMode?: 'ordinary' | 'inserted';
+    ancillaryMode?: 'ordinary' | 'inserted' | 'deleted';
     result: CompareResult;
   }> = [];
   const rejectedSelectedStoryPaths =
     await rejectedSelectedAncillaryStoryPaths(
       textBoxPlan.outerOriginal,
     );
+  // A removed section's story is representable only where the outer
+  // comparison left it reachable from revision markup (#754). Stories that
+  // fail that check are skipped here and stay in unrepresentedChanges.
+  const deletedStoryOutputPaths = await deletedAncillaryStoryOutputPaths(
+    outerResult.document,
+    textBoxPlan.stories,
+  );
   const representedPartPaths = new Set<string>();
   let nextPackageRevisionId = await firstAvailablePackageRevisionId(outerResult.document);
   for (const story of textBoxPlan.stories) {
@@ -1272,12 +1311,28 @@ async function compareDocumentsTagged(
     ) {
       continue;
     }
+    if (
+      story.ancillaryMode === 'deleted' &&
+      !deletedStoryOutputPaths.has(story)
+    ) {
+      continue;
+    }
+    // A lifecycle story has content on one side only; its nested comparison
+    // runs the empty side against itself and the marker below supplies the
+    // revisions.
+    const lifecycleEmptySide =
+      story.ancillaryMode === 'inserted'
+        ? story.original
+        : story.ancillaryMode === 'deleted'
+          ? story.revised
+          : undefined;
     let result = await compareDocumentsTaggedCore(
-      story.original,
-      story.ancillaryMode === 'inserted' ? story.original : story.revised,
+      lifecycleEmptySide ?? story.original,
+      lifecycleEmptySide ?? story.revised,
       options,
       bookmarkNameReservations,
       nextPackageRevisionId,
+      false,
     );
     if (story.ancillaryMode === 'inserted') {
       const marked = await markInsertedAncillaryStoryParagraphs(
@@ -1287,7 +1342,7 @@ async function compareDocumentsTagged(
         options.date ?? new Date(),
         nextPackageRevisionId,
       );
-      const insertionRanges = marked.directParagraphs;
+      const insertionRanges = marked.markedParagraphs;
       result = {
         ...result,
         document: marked.document,
@@ -1297,7 +1352,29 @@ async function compareDocumentsTagged(
           insertedRanges: insertionRanges,
           insertedAtoms: Math.max(
             result.stats.insertedAtoms,
-            marked.directParagraphs,
+            marked.markedParagraphs,
+          ),
+        },
+      };
+    } else if (story.ancillaryMode === 'deleted') {
+      const marked = await markDeletedAncillaryStoryParagraphs(
+        story.original,
+        outerResult.document,
+        options.author ?? 'Comparison',
+        options.date ?? new Date(),
+        nextPackageRevisionId,
+      );
+      const deletionRanges = marked.markedParagraphs;
+      result = {
+        ...result,
+        document: marked.document,
+        stats: {
+          ...result.stats,
+          deletions: deletionRanges,
+          deletedRanges: deletionRanges,
+          deletedAtoms: Math.max(
+            result.stats.deletedAtoms,
+            marked.markedParagraphs,
           ),
         },
       };
@@ -1310,7 +1387,8 @@ async function compareDocumentsTagged(
     storyResults.push({
       index: story.index,
       visualIndex: story.visualIndex,
-      partPath: story.partPath,
+      // The splice targets the part where the outer package holds the story.
+      partPath: deletedStoryOutputPaths.get(story) ?? story.partPath,
       container: story.container,
       ancillaryMode: story.ancillaryMode,
       result,
@@ -1386,6 +1464,8 @@ async function compareDocumentsTagged(
       formatChanges: combined.formatChanges + result.stats.formatChanges,
       formatChangeAtoms:
         combined.formatChangeAtoms + result.stats.formatChangeAtoms,
+      insertedTableRows: combined.insertedTableRows + result.stats.insertedTableRows,
+      deletedTableRows: combined.deletedTableRows + result.stats.deletedTableRows,
     }),
     {
       atomMetricVersion: 'tagged-token-v1',
@@ -1399,6 +1479,8 @@ async function compareDocumentsTagged(
       modifiedParagraphs: 0,
       formatChanges: 0,
       formatChangeAtoms: 0,
+      insertedTableRows: 0,
+      deletedTableRows: 0,
     },
   );
   const unrepresentedChanges = outerResult.unrepresentedChanges?.filter(

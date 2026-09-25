@@ -9,7 +9,7 @@
  */
 import { SessionManager } from '../../session/manager.js';
 import { dispatchToolCall } from '../../server.js';
-import { resolveCliAiAuthor } from '../tool_runner.js';
+import { CliCommandFailure, resolveCliAiAuthor } from '../tool_runner.js';
 
 export interface GrepCommandArgs {
   pattern: string;
@@ -97,6 +97,9 @@ type GrepResult = {
     file_path: string;
     matches: unknown[];
     total_matches: number;
+    /** Set when the file could not be searched (for example a refused WML Strict package). */
+    error?: string;
+    error_code?: string;
   }>;
   [key: string]: unknown;
 };
@@ -107,7 +110,13 @@ function formatHumanOutput(result: GrepResult, filePath?: string): string {
   if (result.files) {
     // Multi-file results
     for (const file of result.files) {
-      const f = file as { file_path: string; matches: Array<{ para_id: string; context: string }>; total_matches: number };
+      const f = file as { file_path: string; matches: Array<{ para_id: string; context: string }>; total_matches: number; error?: string; error_code?: string };
+      if (f.error) {
+        // A file that could not be searched is reported, not silently counted as
+        // zero matches (#1025).
+        lines.push(`${f.file_path}: ${f.error_code ? `${f.error_code}: ` : ''}${f.error}`);
+        continue;
+      }
       if (f.total_matches === 0) continue;
       for (const match of f.matches) {
         lines.push(`${f.file_path}:${match.para_id}: ${match.context}`);
@@ -158,9 +167,10 @@ export async function runGrepCommand(
   const result = await dispatchToolCall(mgr, 'grep', toolArgs) as GrepResult;
 
   if (!result.success) {
-    const errResult = result as { error?: { message?: string } };
-    opts.writeError(errResult.error?.message ?? 'Grep failed');
-    throw new Error('grep failed');
+    // Same structured error object the generic tool commands print, so a
+    // typed refusal (UNSUPPORTED_CONFORMANCE_CLASS) keeps its code and hint.
+    opts.writeError(JSON.stringify(result, null, 2));
+    throw new CliCommandFailure('grep failed');
   }
 
   if (args.json) {

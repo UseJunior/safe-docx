@@ -104,6 +104,43 @@ The Safe-Docx MCP server SHALL support file-first entry for document tools while
 - **THEN** the server SHALL resolve a session for that file (reusing an active one or creating a new one)
 - **AND** return `resolved_session_id` and `resolved_file_path` in response metadata
 
+### Requirement: WML Strict Documents Are Refused With a Typed Tool Error
+Document tools SHALL surface docx-core's conformance-class refusal as a structured tool error with code `UNSUPPORTED_CONFORMANCE_CLASS`, the document-level message naming "WML Strict", and the re-save hint. Tools SHALL NOT report a generic read failure, return empty content, or leak a stack trace for such a file, and the CLI SHALL print the same structured error without a stack.
+
+#### Scenario: [SDX-CONF-04] Document tools refuse a WML Strict file with UNSUPPORTED_CONFORMANCE_CLASS
+- **GIVEN** a `.docx` whose `word/document.xml` root element is in the Strict WordprocessingML namespace
+- **WHEN** `read_file`, `open_document`, `grep`, or two-file `compare_documents` is called on it
+- **THEN** the response SHALL be `success: false` with `error.code` `UNSUPPORTED_CONFORMANCE_CLASS`
+- **AND** `error.message` SHALL name "WML Strict" and `error.hint` SHALL say how to re-save as Transitional
+- **AND** multi-file `grep` SHALL report the refusal per file with `error_code`
+- **AND** no session SHALL remain open for the refused file
+
+### Requirement: CLI Mutating Subcommands Never Report Success For A Discarded Edit
+The `safe-docx` CLI SHALL NOT report success for an edit that is discarded when its one-shot process exits. Every tool subcommand whose catalog entry is not read-only, other than those that write their own output or end the session (`save`, `export`, `convert-to-odt`, `close-file`), SHALL accept `-o, --output <path>` and save the edited document there, with an optional `--save-format <clean|tracked|both>` passed to the save. When such a subcommand, or `safe-docx edit`, finishes with unsaved in-memory edits and no output path, it SHALL exit non-zero and print `success: false` with error code `UNSAVED_EDITS_DISCARDED` and a hint naming the output-path option. It SHALL NOT print `success: true` alongside a warning. Google Docs sessions, whose edits are applied remotely, are exempt.
+
+#### Scenario: [SDX-CLI-01] A mutating subcommand without an output path is refused and the file is unchanged
+- **GIVEN** a `.docx` on disk
+- **WHEN** `safe-docx replace-text` (or another mutating subcommand, or `safe-docx edit`) applies an edit to it without `-o/--output`
+- **THEN** the process SHALL exit non-zero
+- **AND** stderr SHALL carry `success: false` with `error.code` `UNSAVED_EDITS_DISCARDED` and a hint naming `--output <path>`
+- **AND** no `success: true` SHALL be printed, including when a requested save fails
+- **AND** the input file SHALL be byte-for-byte unchanged
+
+#### Scenario: [SDX-CLI-02] A mutating subcommand with an output path saves the edit
+- **GIVEN** a `.docx` on disk
+- **WHEN** `safe-docx replace-text` applies an edit with `--output <path>`
+- **THEN** the command SHALL succeed and the file at `<path>` SHALL contain the edit
+- **AND** with `--save-format tracked`, a selective `accept-ai-edits` SHALL persist its accepted revision while keeping the others
+- **AND** the input file SHALL be unchanged
+
+#### Scenario: [SDX-CLI-03] Read-only subcommands are unaffected
+- **WHEN** a read-only subcommand (`read-file`, `grep`, `get-*`, `extract-revisions`, `has-tracked-changes`) runs without an output path
+- **THEN** it SHALL succeed and print its result as before
+
+#### Scenario: [SDX-CLI-04] Help states the output-path requirement
+- **WHEN** top-level help or a mutating subcommand's `--help` is shown
+- **THEN** it SHALL document `-o, --output <path>` and the `UNSAVED_EDITS_DISCARDED` refusal
+
 ### Requirement: Matching Fallback Parity
 The Safe-Docx MCP matching behavior SHALL retain Python-compatible fallback semantics for robust in-paragraph targeting.
 
@@ -259,7 +296,14 @@ The server SHALL run a hook pipeline around tool execution to normalize inputs a
 - **AND** the resulting document SHALL open cleanly in Microsoft Word
 
 ### Requirement: Accept Tracked Changes Tool
-The Safe-Docx MCP server SHALL provide an `accept_changes` tool that accepts every tracked change the acceptance engine can resolve, across the document body and the revisionable side stories it supports (`footnotes.xml`, `endnotes.xml`, `comments.xml`, `glossary/document.xml`); headers and footers remain deferred. Revision records the engine cannot resolve SHALL be preserved rather than stripped, and SHALL be reported to the caller, so the tool never claims a clean document while leaving unresolved markup behind.
+
+The Safe-Docx MCP server SHALL provide an `accept_changes` tool that accepts
+every tracked change the acceptance engine can resolve across the document body
+and supported revisionable side stories (`footnotes.xml`, `endnotes.xml`,
+`comments.xml`, `glossary/document.xml`); headers and footers remain deferred.
+Row-level markers (`w:trPr > w:ins|w:del`) SHALL resolve semantically: accepting
+an inserted row keeps it, and accepting a deleted row removes it. Records the
+engine cannot resolve SHALL remain preserved and reported rather than stripped.
 
 #### Scenario: accept_changes produces clean document body with no revision markup
 - **GIVEN** a document whose tracked changes (insertions, deletions, formatting changes, moves) are all of resolvable kinds
@@ -281,19 +325,19 @@ The Safe-Docx MCP server SHALL provide an `accept_changes` tool that accepts eve
 - **THEN** the original source document SHALL remain unchanged
 - **AND** the accepted output SHALL be written to a separate file or session working copy
 
-#### Scenario: [SDX-ROWREV-MCP-01] accept_changes reports unresolved row revisions instead of claiming a clean document
-- **GIVEN** a document whose table row carries a `w:trPr > w:del` row-level revision marker
+#### Scenario: [SDX-ROWREV-MCP-01] accept_changes resolves a deleted table row
+- **GIVEN** a document whose table row carries a `w:trPr > w:del` marker and deleted cell content
 - **WHEN** `accept_changes` is called
-- **THEN** the response SHALL report `unresolvedRowRevisions` as a non-zero count
-- **AND** the marker SHALL remain in the saved document rather than being stripped
-- **AND** the row SHALL remain in the saved document
+- **THEN** the row SHALL be absent from the saved document
+- **AND** the response SHALL report `unresolvedRowRevisions` as `0`
+- **AND** `deletionsAccepted` SHALL count the row marker once and SHALL NOT separately count removed inner records
 
-#### Scenario: [SDX-ROWREV-MCP-02] a document holding unresolved row revisions stays structurally valid
-- **GIVEN** a document processed by `accept_changes` that still holds a preserved row-level revision marker
+#### Scenario: [SDX-ROWREV-MCP-02] accepted output has no row marker and remains structurally valid
+- **GIVEN** a document processed by `accept_changes` whose input carried row-level markers
 - **WHEN** the output is inspected
-- **THEN** the preserved marker SHALL remain a child of `w:trPr`, the only position the schema admits
+- **THEN** no `w:trPr > w:ins|w:del` marker SHALL remain
+- **AND** every remaining table cell SHALL end in a direct `w:p`
 - **AND** the output SHALL remain well-formed
-- **AND** this scenario SHALL NOT be read as evidence about Microsoft Word's review pane, which is covered separately and only by resolvable input
 
 ### Requirement: Automatic Document Normalization
 The Safe-Docx MCP server SHALL automatically normalize documents on open by running merge_runs and simplify_redlines preprocessing, improving text matching accuracy and read_file context efficiency.
@@ -321,7 +365,16 @@ The Safe-Docx MCP server SHALL automatically normalize documents on open by runn
 
 ### Requirement: Revision Extraction Returns Structured Per-Paragraph Diffs
 
-The `extract_revisions` tool SHALL walk tracked-change markup in a session document and return a JSON array of per-paragraph revision records, each containing before text, after text, individual revision details, and associated comments. Paragraph matching uses `_bk_*` bookmark IDs as primary keys across accepted/rejected clones, not positional traversal.
+The `extract_revisions` tool SHALL walk tracked-change markup in a session document and return a JSON array of per-paragraph revision records, each containing before text, after text, individual revision details, and associated comments. Paragraph matching uses `_bk_*` bookmark IDs as primary keys across accepted/rejected clones, not positional traversal. Table-row revisions carried by `w:tr/w:trPr` (`w:ins`, `w:del`, `w:trPrChange`) SHALL be reported as records with `scope: "row"`, keyed by the row's first paragraph, in document order with the paragraph records.
+
+#### Scenario: [SDX-ER-003] row-level revisions are reported with their identity
+- **GIVEN** a session containing a table whose rows carry `w:trPr > w:del`, `w:trPr > w:ins`, or `w:trPr > w:trPrChange`
+- **WHEN** `extract_revisions` is called
+- **THEN** each such row yields one entry with `scope: "row"` and a `para_id` of the row's first paragraph
+- **AND** a deleted row yields a `ROW_DELETION` revision, an inserted row a `ROW_INSERTION` revision, and a row property change a `FORMAT_CHANGE` revision
+- **AND** each such revision carries the marker's `id`, `author`, and `date`
+- **AND** `before_text` / `after_text` are the row's cell texts (tab-joined), empty on the side where the row does not exist
+- **AND** `total_changes` counts the row entries
 
 #### Scenario: [SDX-ER-001] extracting revisions from a document with insertions and deletions
 - **GIVEN** a session containing a document with `w:ins` and `w:del` tracked changes
@@ -376,7 +429,7 @@ The `extract_revisions` tool SHALL walk tracked-change markup in a session docum
 - **WHEN** `extract_revisions` is called
 - **THEN** `total_changes` is greater than zero
 - **AND** each change has a non-empty `para_id`, at least one revision entry, and at least one of `before_text` or `after_text` non-empty
-- **AND** revision types are all valid (`INSERTION`, `DELETION`, `MOVE_FROM`, `MOVE_TO`, or `FORMAT_CHANGE`)
+- **AND** revision types are all valid (`INSERTION`, `DELETION`, `MOVE_FROM`, `MOVE_TO`, `FORMAT_CHANGE`, `ROW_INSERTION`, or `ROW_DELETION`)
 
 ### Requirement: Revision Extraction Supports Pagination
 

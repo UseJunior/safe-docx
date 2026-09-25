@@ -1264,6 +1264,21 @@ Cells spanning multiple grid columns emit `w:gridSpan`; validation
 rejects rows whose summed spans diverge from the declared grid with a
 typed `grid_mismatch` error before any XML is produced.
 
+## [ECMA-PART1-17-4-23] w:hMerge legacy horizontal cell merge
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.23"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hMerge
+verifiedBy: packages/docx-core/src/primitives/table_rows.ts
+```
+
+The structural row editor rejects legacy `w:hMerge` tables before mutation
+because treating their physical continuation cells as independent grid cells
+would misrepresent the authored horizontal merge.
+
 ## [ECMA-PART1-17-4-84] w:vMerge vertical cell merge
 
 ```yaml
@@ -2075,6 +2090,28 @@ two legal spellings of one glyph unequal by construction. A change confined to
 `@w:font` is therefore outside this claim, as are rendering, font substitution,
 and any mapping between a symbol font's private-use codepoints and Unicode
 characters with the same appearance.
+
+## [ECMA-PART1-2-1] Document conformance class (WML Strict) refused at load
+
+```yaml
+edition: 5
+part: 1
+section: "2.1"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/strict/wml.xsd#element:document
+verifiedBy: packages/docx-core/src/primitives/conformance.ts; packages/docx-core/test-primitives/conformance_gate.test.ts; packages/docx-compare/src/tagged/conformanceGate.test.ts
+```
+
+Part 1 §2.1 defines the document conformance class Office Open XML Strict
+("WML Strict" for the Wordprocessing category): every part is valid against the
+Strict schemas, whose WordprocessingML namespace is
+`http://purl.oclc.org/ooxml/wordprocessingml/main`. safe-docx consumes WML
+Transitional packages only. A package whose main document root element is in
+the Strict namespace is refused at load, and at either comparison input, with
+`UnsupportedConformanceClassError` (code `UNSUPPORTED_CONFORMANCE_CLASS`) that
+names the conformance class, instead of being read as an empty document. This
+entry claims detection and refusal of the Strict class; it does not claim Strict
+consumption or conversion.
 
 ## Non-Goals
 

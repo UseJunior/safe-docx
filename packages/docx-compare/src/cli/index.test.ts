@@ -1,10 +1,11 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
+import { buildDocxWithPageWidth } from '../testing/footer-story-fixture.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'CLI Bin Symlink Entrypoint' });
 
@@ -66,6 +67,39 @@ describe('docx-comparison bin entry guard', () => {
       expect(result.error).toBeUndefined();
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain('Usage: docx-comparison');
+    });
+  });
+
+  test('prints unrepresented-change warnings to stderr and keeps stdout a single JSON line (#1029)', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let dir!: string;
+    let result!: ReturnType<typeof runCliEntry>;
+
+    await given('an original on US Letter and a revision on A4', async () => {
+      dir = mkdtempSync(join(tmpdir(), 'docx-comparison-entry-unrepresented-'));
+      tempDirs.push(dir);
+      writeFileSync(join(dir, 'original.docx'), await buildDocxWithPageWidth('Body text', 12240));
+      writeFileSync(join(dir, 'revised.docx'), await buildDocxWithPageWidth('Body text, revised', 11906));
+    });
+
+    await when('the entrypoint compares the pair by its real path', () => {
+      result = runCliEntry(CLI_SOURCE_PATH, [join(dir, 'original.docx'), join(dir, 'revised.docx')]);
+    });
+
+    await then('stderr carries the warning and stdout is one JSON line with both fields', () => {
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stderr).toContain('changed section properties in section 1');
+      const lines = result.stdout.trim().split('\n');
+      expect(lines).toHaveLength(1);
+      const parsed = JSON.parse(lines[0]!) as Record<string, unknown>;
+      expect(parsed.unrepresented_changes).toEqual([
+        { scope: 'section', kind: 'changed', sectionIndex: 0 },
+      ]);
+      expect(parsed.warnings).toHaveLength(1);
     });
   });
 });

@@ -7,6 +7,7 @@
 
 import { compareDocumentsAtomizer } from './tagged/pipeline.js';
 import type { CompareOptions, CompareResult } from './compare-types.js';
+export { UnsupportedTableTopologyComparisonError } from './tagged/tableTopologyGuard.js';
 
 const REMOVED_COMPARISON_OPTIONS = [
   'reconstructionMode',
@@ -123,6 +124,10 @@ export {
   normalizeRunProperties,
 } from './propertyNaming.js';
 export { extractRoundTripComparisonText } from './fieldComparisonSemantics.js';
+export {
+  formatUnrepresentedChangeWarnings,
+  summarizeUnrepresentedChanges,
+} from './unrepresented-change-warnings.js';
 export * from './tagged/formattingFidelity.js';
 export {
   acceptAllChanges,
@@ -139,6 +144,7 @@ export {
 /** @deprecated fldChar inside w:del is valid; see the docx-core definition. */
 export { hasFldCharInsideDel } from '@usejunior/docx-core';
 export { parseDocumentXml } from './tagged/xmlToWmlElement.js';
+export { UnsupportedBlockContainerRevisionError } from './tagged/taggedTreeSerializer.js';
 export {
   AncillaryStorySafetyError,
 } from './tagged/ancillaryFieldSafety.js';

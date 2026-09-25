@@ -6,6 +6,8 @@ import { createProgram } from './index.js';
 import type { CompareCommandArgs } from './commands/compare.js';
 import { makeMinimalDocx } from '../testing/docx_test_utils.js';
 import { createTrackedTempDir, registerCleanup } from '../testing/session-test-utils.js';
+import { UnsupportedConformanceClassError } from '@usejunior/docx-core';
+import { CliCommandFailure } from './tool_runner.js';
 
 registerCleanup();
 
@@ -84,6 +86,38 @@ describe('safe-docx CLI routing', () => {
       expect(serve).not.toHaveBeenCalled();
       expect(output).toHaveLength(1);
       expect(output[0]).toContain('"output":"result.docx"');
+    });
+  });
+
+  test('prints compare warnings to stderr and keeps them in the JSON line (#1029)', async ({ when, then }: AllureBddContext) => {
+    const warning = 'Unrepresented change: removed default footer in section 1 (sectionIndex 0) has no tracked-change markup in the redline';
+    const compare = vi.fn(async (args: CompareCommandArgs) => ({
+      output: args.outputPath ?? '/tmp/default.docx',
+      package_base: 'revised' as const,
+      bytes: 99,
+      stats: {},
+      unrepresented_changes: [{ scope: 'footer' as const, kind: 'removed' as const, sectionIndex: 0, role: 'default' as const }],
+      warnings: [warning],
+    }));
+    const output: string[] = [];
+    const errors: string[] = [];
+    const program = createProgram({
+      serve: vi.fn(async () => undefined),
+      compare,
+      write: (line) => output.push(line),
+      writeError: (line) => errors.push(line),
+    });
+
+    await when('compare returns an unrepresented change', () =>
+      program.parseAsync(['node', 'safe-docx', 'compare', 'original.docx', 'revised.docx']),
+    );
+
+    await then('the warning is visible on stderr and stdout stays one JSON line carrying both fields', () => {
+      expect(errors).toEqual([warning]);
+      expect(output).toHaveLength(1);
+      const parsed = JSON.parse(output[0]!) as Record<string, unknown>;
+      expect(parsed.unrepresented_changes).toEqual([{ scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' }]);
+      expect(parsed.warnings).toEqual([warning]);
     });
   });
 
@@ -345,6 +379,46 @@ describe('safe-docx CLI — generic tool routing', () => {
 
     await then('serve handler is called', () => {
       expect(serve).toHaveBeenCalledTimes(1);
+    });
+  });
+  test('compare surfaces a WML Strict refusal as structured JSON without a stack (#1025)', async ({ given, when, then, and }: AllureBddContext) => {
+    const errors: string[] = [];
+    const output: string[] = [];
+    let program: ReturnType<typeof createProgram>;
+    let failure: unknown;
+
+    await given('a compare handler that refuses the revised input as WML Strict', () => {
+      const compare = vi.fn(async () => {
+        throw new UnsupportedConformanceClassError({ side: 'revised' });
+      });
+      program = createProgram({
+        serve: vi.fn(async () => undefined),
+        compare,
+        write: (line) => output.push(line),
+        writeError: (line) => errors.push(line),
+      });
+    });
+
+    await when('the compare command runs', async () => {
+      failure = await program
+        .parseAsync(['node', 'safe-docx', 'compare', 'original.docx', 'strict.docx'])
+        .then(() => undefined, (error: unknown) => error);
+    });
+
+    await then('stderr carries one structured error object with the typed code', () => {
+      expect(output).toEqual([]);
+      expect(errors).toHaveLength(1);
+      const parsed = JSON.parse(errors[0]!) as { success: boolean; error: { code: string; message: string; hint?: string } };
+      expect(parsed.success).toBe(false);
+      expect(parsed.error.code).toBe('UNSUPPORTED_CONFORMANCE_CLASS');
+      expect(parsed.error.message).toContain('WML Strict');
+      expect(parsed.error.message).toContain("the revised document's word/document.xml");
+      expect(parsed.error.hint).toMatch(/Transitional/);
+    });
+
+    await and('the command fails with a summary-only CliCommandFailure', () => {
+      expect(failure).toBeInstanceOf(CliCommandFailure);
+      expect((failure as Error).message).toBe('compare failed');
     });
   });
 });

@@ -5,7 +5,7 @@
 This inventory adjudicates every package-root export before the tagged-spine breaking release.
 “Deprecated” means retained for one release; “breaking removal” means intentionally absent now.
 
-- Stable compatibility surface: 62
+- Stable compatibility surface: 66
 - Deprecated for one release: 22
 - Documented breaking removals: 58
 
@@ -80,6 +80,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `FormattingDivergenceKind` | type | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `FormattingFidelityReport` | interface | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `FormattingScope` | type | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
+| `formatUnrepresentedChangeWarnings` | function | `src/unrepresented-change-warnings.ts` | yes | stable compatibility |
 | `generateFormatChangeMarkup` | function | `src/format-detection.ts` | no | breaking removal |
 | `generateMoveDestinationMarkup` | function | `src/move-detection.ts` | no | breaking removal |
 | `generateMoveSourceMarkup` | function | `src/move-detection.ts` | no | breaking removal |
@@ -141,6 +142,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `selectedElementsByTagNameNS` | function | `src/markupCompatibility.ts` | yes | stable compatibility |
 | `sha1` | function | `src/atomizer.ts` | no | breaking removal |
 | `splitAtomsIntoWords` | function | `src/atomizer.ts` | no | breaking removal |
+| `summarizeUnrepresentedChanges` | function | `src/unrepresented-change-warnings.ts` | yes | stable compatibility |
 | `TaggedPublicationSafetyCheckName` | type | `src/compare-types.ts` | yes | stable compatibility |
 | `TaggedPublicationSafetyChecks` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `TaggedPublicationSafetyError` | class | `src/tagged/pipeline.ts` | yes | stable compatibility |
@@ -150,6 +152,8 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `UnrepresentedChange` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `UnrepresentedChangeKind` | type | `src/compare-types.ts` | yes | stable compatibility |
 | `UnrepresentedChangeScope` | type | `src/compare-types.ts` | yes | stable compatibility |
+| `UnsupportedBlockContainerRevisionError` | class | `src/tagged/taggedTreeSerializer.ts` | yes | stable compatibility |
+| `UnsupportedTableTopologyComparisonError` | class | `src/tagged/tableTopologyGuard.ts` | yes | stable compatibility |
 | `UnsupportedTextBoxRevisionError` | class | `src/tagged/textBoxRevisionSafety.ts` | yes | stable compatibility |
 | `validateFieldStructure` | function | `@usejunior/docx-core` | yes | stable compatibility |
 | `wordContainmentSimilarity` | function | `src/textSimilarity.ts` | yes | stable compatibility |

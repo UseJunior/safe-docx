@@ -20,7 +20,7 @@ export function exportEditPairs(
   ir: MarkdocEditIR,
   options: { contextParagraphs?: number; verified?: boolean; provenance?: Record<string, string> } = {},
 ): EditPair[] {
-  if (ir.scaffold.some((paragraph) => paragraph.originalTextFromSource)) {
+  if ([...ir.scaffold, ...(ir.storyScaffold ?? [])].some((paragraph) => paragraph.originalTextFromSource)) {
     throw new DocxMarkdocError('UNRESOLVED_SOURCE_TEXT', 'Compile source-only edits against the pinned DOCX before exporting edit pairs.');
   }
   if (ir.operations.some(isTableRowOperation)) {
@@ -35,11 +35,12 @@ export function exportEditPairs(
     const existing = rationales.get(item.operationId) ?? [];
     rationales.set(item.operationId, [...existing, item]);
   }
-  const indexById = new Map(ir.scaffold.map((paragraph, index) => [paragraph.id, index]));
   const paragraphOperations = ir.operations.filter((operation): operation is Exclude<EditOperation, TableRowOperation> => !isTableRowOperation(operation));
   return paragraphOperations.map((operation) => {
     const anchorId = isInsertOperation(operation) ? operation.anchorId : operation.id;
-    const index = indexById.get(anchorId) ?? -1;
+    const story = 'story' in operation ? operation.story : undefined;
+    const contextScaffold = story ? (ir.storyScaffold ?? []).filter((paragraph) => paragraph.story === story) : ir.scaffold;
+    const contextIndex = contextScaffold.findIndex((paragraph) => paragraph.id === anchorId);
     const before = isInsertOperation(operation) ? '' : operation.originalText;
     const after = operation.kind === 'delete-source' ? '' : operation.revisedText;
     const operationRationales = rationales.get(operation.operationId) ?? [];
@@ -47,11 +48,12 @@ export function exportEditPairs(
     return {
       operationId: operation.operationId,
       kind: operation.kind,
+      ...(story ? { story } : {}),
       anchorId,
       before,
       after,
-      contextBefore: index < 0 ? [] : ir.scaffold.slice(Math.max(0, index - context), index).map((p) => p.originalText),
-      contextAfter: index < 0 ? [] : ir.scaffold.slice(index + 1, index + context + 1).map((p) => p.originalText),
+      contextBefore: contextIndex < 0 ? [] : contextScaffold.slice(Math.max(0, contextIndex - context), contextIndex).map((p) => p.originalText),
+      contextAfter: contextIndex < 0 ? [] : contextScaffold.slice(contextIndex + 1, contextIndex + context + 1).map((p) => p.originalText),
       rationales: operationRationales,
       ...(legacyRationale ? { rationale: legacyRationale.text, visibility: legacyRationale.visibility } : {}),
       verified: options.verified,

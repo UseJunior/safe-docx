@@ -4,6 +4,7 @@
 import { SAFE_DOCX_TOOL_CATALOG } from '../tool_catalog.js';
 import { generateToolHelp } from './flag_parser.js';
 import { toKebabCase } from './parse_utils.js';
+import { CLI_OUTPUT_HELP_LINES } from './output_option.js';
 
 // ---------------------------------------------------------------------------
 // Tool grouping by annotation
@@ -48,7 +49,7 @@ export function renderTopLevelHelp(): string {
   lines.push('    --author <name>                            Track-changes author (default: Comparison)');
   lines.push('                                                Output always uses the revised-based tagged package');
   lines.push('                                                Compare stats count revision ranges; atom totals use *Atoms fields');
-  lines.push('  edit <file> [--replace ...] [-o output]     Batch edit a DOCX file');
+  lines.push('  edit <file> [--replace ...] [-o output]     Batch edit a DOCX file (-o required to keep the edit)');
   lines.push('  grep "pattern" <file> [files...]            Search DOCX files for text');
   lines.push('');
 
@@ -62,6 +63,12 @@ export function renderTopLevelHelp(): string {
     }
     lines.push('');
   }
+
+  lines.push('Saving edits:');
+  lines.push('  edit and the editing tools take -o, --output <path>, e.g. safe-docx replace-text <file> ... -o edited.docx');
+  lines.push('  (save, export, convert-to-odt and close-file write their own output and do not.)');
+  for (const line of CLI_OUTPUT_HELP_LINES) lines.push(`  ${line}`);
+  lines.push('');
 
   lines.push('Global options:');
   lines.push('  -h, --help                                  Show help');
@@ -78,4 +85,30 @@ export function renderTopLevelHelp(): string {
 
 export function renderToolHelp(toolName: string): string {
   return generateToolHelp(toolName);
+}
+
+// ---------------------------------------------------------------------------
+// edit command help
+// ---------------------------------------------------------------------------
+
+export function renderEditHelp(): string {
+  return [
+    'safe-docx edit',
+    '',
+    'Apply several replace/insert edits to a DOCX file in one run (a batch_edit wrapper).',
+    '',
+    'Usage:',
+    '  safe-docx edit <file> [--replace <paragraph_id> <old> <new>]... [--insert-after <anchor_id> <text>]...',
+    '                        [--insert-before <anchor_id> <text>]... [--instruction <text>] -o <path>',
+    '',
+    'Options:',
+    '  --replace <paragraph_id> <old> <new>   Replace text in a paragraph (repeatable)',
+    '  --insert-after <anchor_id> <text>      Insert a paragraph after an anchor (repeatable)',
+    '  --insert-before <anchor_id> <text>     Insert a paragraph before an anchor (repeatable)',
+    '  --instruction <text>                   Instruction recorded with each step',
+    '  -o, --output <path>                    Save the edited document to this path',
+    '',
+    'Saving:',
+    ...CLI_OUTPUT_HELP_LINES.map((line) => `  ${line}`),
+  ].join('\n');
 }

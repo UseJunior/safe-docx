@@ -2,6 +2,54 @@
 
 ## Unreleased
 
+- **Breaking (CLI):** a mutating `safe-docx` tool subcommand (`replace-text`,
+  `insert-paragraph`, `add-comment`, `batch-edit`, `accept-changes`, ...) or
+  `safe-docx edit` run without an output path no longer reports `success: true`
+  for an edit it then discards. It exits non-zero with `success: false`
+  (code `UNSAVED_EDITS_DISCARDED`) and a hint to pass `-o, --output <path>`,
+  which these subcommands now accept to save the edited document (with an
+  optional `--save-format <clean|tracked|both>`). `safe-docx edit --help` now
+  prints help instead of failing. Read-only
+  subcommands are unaffected. (#1048)
+- DOCX comparison now marks a header or footer as a tracked deletion when the
+  revised document removes the section, or the section slot, that selected it:
+  every paragraph of the removed story carries a `w:del` paragraph mark and its
+  runs become `w:delText`, VML/DrawingML carriers stay unwrapped, accept-all
+  drops the story while reject-all restores it, and the story no longer appears
+  in `unrepresentedChanges`. Lifecycle story markers (inserted and removed) now
+  also cover runs inside hyperlinks, fields and table cells.
+- DOCX comparison now fails closed with a typed diagnostic when an entire
+  block-level content control or custom-XML container is inserted or deleted,
+  instead of publishing a schema-invalid run-revision wrapper. Inline
+  containers and text edits inside an aligned block control remain supported.
+  (#1075, #998)
+- DOCX comparison now reports generated table-row insertion/deletion counts,
+  emits native row revisions for supported whole-table changes (including
+  nested tables), and rejects unsupported body-table grid, cell, and
+  container-topology changes with a typed diagnostic before publication.
+  The comparison uses the docx-core table-occupancy reader, now exported from
+  the core package root. (#1043, #998)
+- Experimental `mergeAware: true` row insertion/deletion now admits validated
+  horizontal `w:gridSpan` tables while vertical merges and row offsets still
+  fail closed. Row-marker accept/reject removes a now-empty `w:trPr`; an
+  authored-empty one is normalized to absence. Default row edits now also
+  reject legacy `w:hMerge` tables that were previously misread as separate
+  cells; other default behavior is unchanged. (#1040)
+- `DocxDocument.load` and `compareDocuments` now refuse an ISO/IEC 29500 Strict
+  document (root element in `http://purl.oclc.org/ooxml/wordprocessingml/main`)
+  with `UnsupportedConformanceClassError` (code `UNSUPPORTED_CONFORMANCE_CLASS`)
+  instead of reading it as empty text. The MCP tools and the CLI return the same
+  structured error, with a hint on re-saving as Transitional; a Transitional
+  document is unaffected. Strict support remains out of scope. (#1025)
+- **Breaking:** Markdoc now always emits bounded readable-whitespace revision
+  grouping after token-minimal validation. Remove the short-lived
+  `revision-grouping` Markdoc declaration, `--revision-grouping` CLI flag, and
+  `revisionGrouping` API option; legacy values fail before comparison or
+  mutation. The exported `RevisionGroupingPolicy` and
+  `RevisionGroupingSource` types are removed, while certificate grouping
+  evidence retains literal `policy: 'readable-whitespace'` and
+  `source: 'default'` fields. The lower-level comparator keeps its internal
+  token-minimal default for non-Markdoc callers.
 - Selected header/footer projection checks now ignore serialization-only XML
   indentation after admitted paragraphs are removed, so real Word-authored
   running stories do not fail closed solely because their whitespace layout

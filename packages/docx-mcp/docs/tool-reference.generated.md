@@ -351,7 +351,7 @@ Delete a comment and all its threaded replies from the document. Cascade-deletes
 
 ## `compare_documents`
 
-Compare two documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original. DOCX and ODF (.odt) support both modes. DOCX output always uses the revised archive as its package base and publishes tagged revisions; engine, strategy, reconstruction, premerge, and refinement selectors are not exposed. DOCX stats count insertions/deletions as contiguous ranges, expose tagged-token-v1 totals as insertedAtoms/deletedAtoms with atomMetricVersion, and report formatChanges separately from modifiedParagraphs. ODF compares at inline granularity (a modified paragraph is marked up in place — only the changed spans are struck or inserted).
+Compare two documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original. DOCX and ODF (.odt) support both modes. DOCX output always uses the revised archive as its package base and publishes tagged revisions; engine, strategy, reconstruction, premerge, and refinement selectors are not exposed. DOCX stats count insertions/deletions as contiguous ranges, expose tagged-token-v1 totals as insertedAtoms/deletedAtoms with atomMetricVersion, and report formatChanges separately from modifiedParagraphs. When a DOCX input difference is preserved in the output without tracked-change markup (for example a removed section's header or footer, or an unsupported header/footer topology), the response includes `unrepresented_changes` (objects with scope, kind, sectionIndex, and — for header/footer scopes — role) plus one `warnings` string per entry, and the message carries a WARNING. Both fields are absent when no reportable unrepresented change was detected; the detector covers section properties and selected header/footer stories, so absence is not a guarantee about differences outside that scope. ODF compares at inline granularity (a modified paragraph is marked up in place — only the changed spans are struck or inserted).
 
 - readOnly: `true`
 - destructive: `false`
@@ -436,7 +436,7 @@ Clear specific run-level formatting (bold, italic, underline, highlight, color, 
 
 ## `extract_revisions`
 
-Extract tracked changes as structured JSON with before/after text per paragraph, revision details, and comments. Supports pagination via offset and limit. Read-only - does not modify the document.
+Extract tracked changes as structured JSON with before/after text per paragraph, revision details, and comments. Table rows inserted or deleted as a whole, and row property changes (w:trPr > w:ins / w:del / w:trPrChange), are reported as records with scope "row", keyed by the row's first paragraph, whose revisions are ROW_INSERTION / ROW_DELETION / FORMAT_CHANGE entries carrying the revision id, author and date. Supports pagination via offset and limit. Read-only - does not modify the document.
 
 - readOnly: `true`
 - destructive: `false`

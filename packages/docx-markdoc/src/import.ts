@@ -8,6 +8,7 @@ import {
 } from '@usejunior/docx-core';
 import { sha256 } from './hash.js';
 import { DocxMarkdocError } from './errors.js';
+import { anchorSelectedStories, selectedStories } from './story-inventory.js';
 import type { AnnotationAnchor, AnnotationParagraph, AnnotationRun, AnnotationRunStyle, CanonicalAnnotation, ImportResult } from './types.js';
 
 function escapeText(text: string): string {
@@ -294,7 +295,8 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
   const document = await DocxDocument.load(source);
   const attachmentId = sha256(source).slice(0, 16);
   document.insertParagraphBookmarks(attachmentId);
-  const anchoredSource = (await document.toBuffer({ cleanBookmarks: false })).buffer;
+  const bodyAnchored = (await document.toBuffer({ cleanBookmarks: false })).buffer;
+  const anchoredSource = await anchorSelectedStories(bodyAnchored);
   const anchored = await DocxDocument.load(anchoredSource);
   const { nodes } = anchored.buildDocumentView({ includeSemanticTags: false, showFormatting: false });
   const descriptor = { sha256: sha256(anchoredSource), paragraphs: nodes.length };
@@ -307,6 +309,32 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
       '{% /para %}',
       '',
     );
+  }
+  for (const story of await selectedStories(anchoredSource)) {
+    lines.push(
+      `{% story id="${story.id}" kind="${story.kind}" bindings="${story.bindings.join(',')}" fingerprint="${story.fingerprint}" paragraphs=${story.paragraphs} readonly=${story.readOnlyParagraphs} /%}`,
+      '',
+    );
+    for (const block of story.blocksInOrder) {
+      if (block.kind === 'readonly') {
+        const paragraph = block.paragraph;
+        lines.push(
+          `{% readonly story="${story.id}" ordinal=${paragraph.ordinal} fingerprint="${paragraph.fingerprint}" reason="${escapeAttribute(paragraph.reason)}" %}`,
+          escapeText(paragraph.text),
+          '{% /readonly %}',
+          '',
+        );
+        continue;
+      }
+      const paragraph = block.paragraph;
+      if (!paragraph.id) throw new DocxMarkdocError('STORY_ANCHOR_UNAVAILABLE', `Admitted story paragraph in ${story.id} has no operative anchor.`);
+      lines.push(
+        `{% para story="${story.id}" id="${escapeAttribute(paragraph.id)}" fingerprint="${computeContentFingerprint(paragraph.text)}" style="${escapeAttribute(paragraph.style)}" %}`,
+        escapeText(paragraph.text),
+        '{% /para %}',
+        '',
+      );
+    }
   }
   const annotations: CanonicalAnnotation[] = [];
   const styles = anchored.getStylesModel();

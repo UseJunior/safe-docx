@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import { SAFE_DOCX_TOOL_CATALOG } from '../tool_catalog.js';
 import { parseBoolean, toKebabCase, toSnakeCase } from './parse_utils.js';
+import { CLI_OUTPUT_HELP_LINES, acceptsCliOutputOption } from './output_option.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -253,6 +254,16 @@ export function generateToolHelp(toolName: string): string {
     const desc = propSchema.description ?? '';
     lines.push(`  ${flag} ${typeStr}${req}`);
     if (desc) lines.push(`      ${desc}`);
+  }
+
+  if (acceptsCliOutputOption(toolName)) {
+    lines.push('  -o, --output <path>');
+    lines.push('      Save the edited document to this path.');
+    lines.push('  --save-format <clean|tracked|both>');
+    lines.push('      With -o: which variant(s) to save (default: both). Use tracked to keep revisions left by a selective accept/reject.');
+    lines.push('');
+    lines.push('Saving:');
+    for (const line of CLI_OUTPUT_HELP_LINES) lines.push(`  ${line}`);
   }
 
   // Show aliases if any
