@@ -109,6 +109,14 @@ import {
   type DeleteTableColumnResult,
 } from './table_columns.js';
 import {
+  splitTableCell as splitTableCellImpl,
+  absorbTableCell as absorbTableCellImpl,
+  type SplitTableCellParams,
+  type SplitTableCellResult,
+  type AbsorbTableCellParams,
+  type AbsorbTableCellResult,
+} from './table_cells.js';
+import {
   bootstrapCommentParts,
   addComment as addCommentImpl,
   addCommentReply as addCommentReplyImpl,
@@ -680,6 +688,22 @@ export class DocxDocument {
   /** Apply a planned clean column deletion to the existing DOM. */
   deleteTableColumn(params: DeleteTableColumnParams, ctx?: RevisionContext): DeleteTableColumnResult {
     const result = deleteTableColumnImpl(this.documentXml, params, ctx);
+    this.dirty = true;
+    this.documentViewCache = null;
+    return result;
+  }
+
+  /** Split one horizontal-spanning physical cell, preserving its authored content on the chosen side. */
+  splitTableCell(params: SplitTableCellParams, ctx?: RevisionContext): SplitTableCellResult {
+    const result = splitTableCellImpl(this.documentXml, params, ctx, this.paragraphBookmarkReservation);
+    this.dirty = true;
+    this.documentViewCache = null;
+    return result;
+  }
+
+  /** Remove a physical cell and discard its content while an adjacent sibling absorbs its span. */
+  absorbTableCell(params: AbsorbTableCellParams, ctx?: RevisionContext): AbsorbTableCellResult {
+    const result = absorbTableCellImpl(this.documentXml, params, ctx);
     this.dirty = true;
     this.documentViewCache = null;
     return result;
