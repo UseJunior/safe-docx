@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Breaking (CLI):** a mutating `safe-docx` tool subcommand (`replace-text`,
+  `insert-paragraph`, `add-comment`, `batch-edit`, `accept-changes`, ...) or
+  `safe-docx edit` run without an output path no longer reports `success: true`
+  for an edit it then discards. It exits non-zero with `success: false`
+  (code `UNSAVED_EDITS_DISCARDED`) and a hint to pass `-o, --output <path>`,
+  which these subcommands now accept to save the edited document (with an
+  optional `--save-format <clean|tracked|both>`). `safe-docx edit --help` now
+  prints help instead of failing. Read-only
+  subcommands are unaffected. (#1048)
 - DOCX comparison now marks a header or footer as a tracked deletion when the
   revised document removes the section, or the section slot, that selected it:
   every paragraph of the removed story carries a `w:del` paragraph mark and its

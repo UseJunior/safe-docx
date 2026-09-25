@@ -5,6 +5,7 @@ import path from 'node:path';
 import { inspectZipEntries, parseXml } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { parseEditArgs, runEditCommand } from './edit.js';
+import { CliCommandFailure, UNSAVED_EDITS_DISCARDED } from '../tool_runner.js';
 import { makeMinimalDocx, extractParaIdsFromToon, readDocumentXmlFromPath } from '../../testing/docx_test_utils.js';
 import { createTrackedTempDir, registerCleanup, openSession } from '../../testing/session-test-utils.js';
 
@@ -86,28 +87,41 @@ describe('parseEditArgs', () => {
 });
 
 describe('runEditCommand E2E', () => {
-  test('builds steps from flags and applies edits via batch_edit', async ({ when, then }: AllureBddContext) => {
+  test('builds steps from flags, applies them, and refuses to report success without -o (#1048)', async ({ when, then }: AllureBddContext) => {
     const { firstParaId, inputPath } = await openSession(['Hello world']);
+    const before = await fs.readFile(inputPath);
 
     const output: string[] = [];
     const errors: string[] = [];
+    let failure: unknown;
 
-    await when('Run edit command with --replace', async () => {
-      await runEditCommand(
-        {
-          file_path: inputPath,
-          replaces: [{ paragraph_id: firstParaId, old_string: 'Hello', new_string: 'Goodbye' }],
-          inserts: [],
-        },
-        { write: (l) => output.push(l), writeError: (l) => errors.push(l) },
-      );
+    await when('Run edit command with --replace and no output path', async () => {
+      try {
+        await runEditCommand(
+          {
+            file_path: inputPath,
+            replaces: [{ paragraph_id: firstParaId, old_string: 'Hello', new_string: 'Goodbye' }],
+            inserts: [],
+          },
+          { write: (l) => output.push(l), writeError: (l) => errors.push(l) },
+        );
+      } catch (e) {
+        failure = e;
+      }
     });
 
-    await then('Verify output contains success', () => {
-      expect(errors).toHaveLength(0);
-      expect(output).toHaveLength(1);
-      const result = JSON.parse(output[0]!) as { success: boolean };
-      expect(result.success).toBe(true);
+    await then('the edit was applied in memory but the command fails with UNSAVED_EDITS_DISCARDED', async () => {
+      expect(failure).toBeInstanceOf(CliCommandFailure);
+      expect(output).toHaveLength(0);
+      const result = JSON.parse(errors[0]!) as {
+        success: boolean;
+        error: { code: string; hint: string };
+      };
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe(UNSAVED_EDITS_DISCARDED);
+      expect(result.error.hint).toContain('safe-docx edit <file> ... --output <path>');
+      expect(errors.join('\n')).not.toMatch(/"success":\s*true/);
+      expect(await fs.readFile(inputPath)).toEqual(before);
     });
   });
 

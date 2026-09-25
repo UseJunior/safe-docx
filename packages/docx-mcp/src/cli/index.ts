@@ -6,8 +6,9 @@ import { parseEditArgs, runEditCommand } from './commands/edit.js';
 import { parseGrepArgs, runGrepCommand } from './commands/grep.js';
 import { toSnakeCase } from './parse_utils.js';
 import { parseToolFlags, generateToolHelp } from './flag_parser.js';
-import { renderTopLevelHelp } from './help.js';
+import { renderEditHelp, renderTopLevelHelp } from './help.js';
 import { CliCommandFailure, runToolCommand } from './tool_runner.js';
+import { acceptsCliOutputOption, extractCliOutputOption } from './output_option.js';
 import { conformanceRefusalResponse } from '../tools/conformance_refusal.js';
 import { SAFE_DOCX_TOOL_CATALOG } from '../tool_catalog.js';
 
@@ -167,6 +168,10 @@ export function createProgram(overrides: Partial<CliHandlers> = {}): CliProgram 
 
       // Edit command — batched batch_edit wrapper
       if (command === 'edit') {
+        if (rest.includes('--help') || rest.includes('-h')) {
+          handlers.write(renderEditHelp());
+          return;
+        }
         const editArgs = parseEditArgs(rest);
         await runEditCommand(editArgs, { write: handlers.write, writeError: handlers.writeError });
         return;
@@ -176,12 +181,22 @@ export function createProgram(overrides: Partial<CliHandlers> = {}): CliProgram 
       const toolName = toSnakeCase(command);
       const catalogEntry = SAFE_DOCX_TOOL_CATALOG.find((t) => t.name === toolName);
       if (catalogEntry) {
-        const { args: toolArgs, help } = parseToolFlags(rest, toolName);
+        // Mutating tools take -o/--output: without it their edit would be
+        // discarded when this one-shot process exits (#1048).
+        const { argv: toolArgv, ...output } = acceptsCliOutputOption(toolName)
+          ? extractCliOutputOption(rest)
+          : { argv: rest };
+        const { args: toolArgs, help } = parseToolFlags(toolArgv, toolName);
         if (help) {
           handlers.write(generateToolHelp(toolName));
           return;
         }
-        await runToolCommand(toolName, toolArgs, { write: handlers.write, writeError: handlers.writeError });
+        await runToolCommand(
+          toolName,
+          toolArgs,
+          { write: handlers.write, writeError: handlers.writeError },
+          output,
+        );
         return;
       }
 
