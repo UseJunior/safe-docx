@@ -14,7 +14,7 @@ const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Spann
   );
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const DATE = 'w:author="A" w:date="2026-01-01T00:00:00Z"';
-const wrap = (body: string) => `<w:document xmlns:w="${W}"><w:body>${body}<w:sectPr/></w:body></w:document>`;
+const wrap = (body: string) => `<w:document xmlns:w="${W}" xmlns:v="urn:schemas-microsoft-com:vml"><w:body>${body}<w:sectPr/></w:body></w:document>`;
 const mark = (kind: 'del' | 'ins' | 'moveFrom', id: number) =>
   `<w:pPr><w:rPr><w:${kind} w:id="${id}" ${DATE}/></w:rPr></w:pPr>`;
 const deleted = `<w:del w:id="2" ${DATE}><w:r><w:delText>GONE</w:delText></w:r></w:del>`;
@@ -80,6 +80,28 @@ describe('Accept keeps a bookmark spanning out of a deleted paragraph (#1019)', 
       '</w:sdtContent></w:sdt>' +
       `<w:p>${mark('del', 1)}${deleted}<w:bookmarkEnd w:id="93"/></w:p>`,
       acceptChanges, acceptAllChanges, [['bs:93', 't:SDT', 'be:93']]],
+    ['Accept rescue stays out of a text-box story',
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:p>' +
+      '<w:bookmarkStart w:id="105" w:name="MainStory"/><w:r><w:t>HOST</w:t></w:r>' +
+      '<w:r><w:pict><v:shape><v:textbox><w:txbxContent><w:p><w:r><w:t>BOX</w:t></w:r></w:p></w:txbxContent></v:textbox></v:shape></w:pict></w:r>' +
+      '</w:p></w:tc></w:tr></w:tbl>' +
+      `<w:p>${mark('del', 1)}${deleted}<w:bookmarkEnd w:id="105"/></w:p>` +
+      '<w:sdt><w:sdtPr/><w:sdtContent><w:p><w:r><w:t>AFTER</w:t></w:r></w:p></w:sdtContent></w:sdt>',
+      acceptChanges, acceptAllChanges, [['bs:105', 't:HOST', 't:BOX', 'be:105'], ['t:BOX'], ['t:AFTER']]],
+    ['Accept rescue into a previous block takes its last same-story paragraph',
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc>' +
+      '<w:p><w:bookmarkStart w:id="104" w:name="Nested"/><w:r><w:t>OUTER</w:t></w:r></w:p>' +
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>INNER-LAST</w:t></w:r></w:p></w:tc></w:tr></w:tbl>' +
+      '<w:p/></w:tc></w:tr></w:tbl>' +
+      `<w:p>${mark('del', 1)}${deleted}<w:bookmarkEnd w:id="104"/></w:p>` +
+      '<w:sdt><w:sdtPr/><w:sdtContent><w:p><w:r><w:t>AFTER</w:t></w:r></w:p></w:sdtContent></w:sdt>',
+      acceptChanges, acceptAllChanges, [['bs:104', 't:OUTER'], ['t:INNER-LAST'], ['be:104'], ['t:AFTER']]],
+    ['Accept boundary rescued into a mark-deleted descendant rides its merge',
+      `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="101" w:name="Chain"/>${deleted}</w:p>` +
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc>' +
+      `<w:p>${mark('del', 3)}${deleted}</w:p>` +
+      '<w:p><w:r><w:t>CELL2</w:t></w:r><w:bookmarkEnd w:id="101"/></w:p></w:tc></w:tr></w:tbl>',
+      acceptChanges, acceptAllChanges, [['bs:101', 't:CELL2', 'be:101']]],
     ['Accept consumes a local pair in a wholly deleted paragraph',
       `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="79" w:name="Local"/>${deleted}<w:bookmarkEnd w:id="79"/></w:p>` +
       '<w:p><w:r><w:t>STABLE</w:t></w:r></w:p>',

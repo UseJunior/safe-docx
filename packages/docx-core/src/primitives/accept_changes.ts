@@ -284,13 +284,21 @@ function resolveParagraphMarkRevision(p: Element): void {
 function rescueBookmarksFromUnmergedEmptyParagraph(p: Element): void {
   if (!p.parentNode || findFollowingSiblingParagraph(p) || paragraphHasContent(p) || !canSafelyRemoveEmptyParagraph(p)) return;
   // Nearest paragraph in document order, descending into block containers
-  // (tables, content controls) that sit beside the removed paragraph.
+  // (tables, content controls) that sit beside the removed paragraph, but
+  // never into a nested story (a text box's paragraphs sit inside a w:p).
+  const sameStory = (candidate: Element, container: Node): boolean => {
+    for (let a = candidate.parentNode; a && a !== container; a = a.parentNode) {
+      if (isW(a, 'p') || isW(a, 'txbxContent')) return false;
+    }
+    return true;
+  };
   const nearest = (step: (n: Node) => Node | null, last: boolean): Element | null => {
     for (let n = step(p); n; n = step(n)) {
       if (isW(n, 'p')) return n;
       if (n.nodeType !== 1) continue;
-      const nested = (n as Element).getElementsByTagNameNS(W_NS, 'p');
-      if (nested.length > 0) return nested.item(last ? nested.length - 1 : 0);
+      const nested = Array.from((n as Element).getElementsByTagNameNS(W_NS, 'p'))
+        .filter(candidate => sameStory(candidate, n));
+      if (nested.length > 0) return nested[last ? nested.length - 1 : 0]!;
     }
     return null;
   };

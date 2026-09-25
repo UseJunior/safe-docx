@@ -19,7 +19,7 @@ const mark = (kind: 'del' | 'ins' | 'moveFrom', id: number) =>
   `<w:pPr><w:rPr><w:${kind} w:id="${id}" ${DATE}/></w:rPr></w:pPr>`;
 const deleted = (text: string) => `<w:del w:id="2" ${DATE}><w:r><w:delText>${text}</w:delText></w:r></w:del>`;
 const document = (body: string) =>
-  parseXml(`<w:document xmlns:w="${W}"><w:body>${body}<w:sectPr/></w:body></w:document>`);
+  parseXml(`<w:document xmlns:w="${W}" xmlns:v="urn:schemas-microsoft-com:vml"><w:body>${body}<w:sectPr/></w:body></w:document>`);
 const texts = (doc: Document) => Array.from(doc.getElementsByTagNameNS(W, 'p')).map(p =>
   Array.from(p.getElementsByTagNameNS(W, 't')).map(t => t.textContent).join(''));
 const ids = (doc: Document, kind: string) =>
@@ -135,6 +135,42 @@ describe('native Accept keeps bookmarks spanning out of a deleted paragraph (#10
     expect(ids(doc, 'bookmarkEnd')).toEqual(['70']);
     expect(texts(doc)).toEqual(['KEEPHUMAN']);
     expect(Array.from(doc.getElementsByTagNameNS(W, 'ins')).map(n => n.getAttributeNS(W, 'author'))).toEqual(['Human']);
+  });
+
+  test('a rescue never crosses into a text-box story', () => {
+    const doc = document(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:p>' +
+      '<w:bookmarkStart w:id="105" w:name="MainStory"/><w:r><w:t>HOST</w:t></w:r>' +
+      '<w:r><w:pict><v:shape><v:textbox><w:txbxContent><w:p><w:r><w:t>BOX</w:t></w:r></w:p></w:txbxContent></v:textbox></v:shape></w:pict></w:r>' +
+      '</w:p></w:tc></w:tr></w:tbl>' +
+      `<w:p>${mark('del', 1)}${deleted('GONE')}<w:bookmarkEnd w:id="105"/></w:p>` +
+      '<w:sdt><w:sdtPr/><w:sdtContent><w:p><w:r><w:t>AFTER</w:t></w:r></w:p></w:sdtContent></w:sdt>');
+    acceptChanges(doc);
+    const end = doc.getElementsByTagNameNS(W, 'bookmarkEnd').item(0)!;
+    expect((end.parentNode as Element).parentNode!.nodeName).toBe('w:tc');
+    expect(ids(doc, 'bookmarkStart')).toEqual(['105']);
+  });
+
+  test('a rescue into a previous block takes its last same-story paragraph', () => {
+    const doc = document(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc>' +
+      '<w:p><w:bookmarkStart w:id="104" w:name="Nested"/><w:r><w:t>OUTER</w:t></w:r></w:p>' +
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>INNER-LAST</w:t></w:r></w:p></w:tc></w:tr></w:tbl>' +
+      '<w:p/></w:tc></w:tr></w:tbl>' +
+      `<w:p>${mark('del', 1)}${deleted('GONE')}<w:bookmarkEnd w:id="104"/></w:p>` +
+      '<w:sdt><w:sdtPr/><w:sdtContent><w:p><w:r><w:t>AFTER</w:t></w:r></w:p></w:sdtContent></w:sdt>');
+    acceptChanges(doc);
+    expect(shape(doc)).toEqual([['bs:104', 't:OUTER'], ['t:INNER-LAST'], ['be:104'], ['t:AFTER']]);
+  });
+
+  test('a boundary rescued into a mark-deleted descendant rides its merge', () => {
+    const doc = document(
+      `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="101" w:name="Chain"/>${deleted('GONE')}</w:p>` +
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc>' +
+      `<w:p>${mark('del', 3)}${deleted('GONE')}</w:p>` +
+      '<w:p><w:r><w:t>CELL2</w:t></w:r><w:bookmarkEnd w:id="101"/></w:p></w:tc></w:tr></w:tbl>');
+    acceptChanges(doc);
+    expect(shape(doc)).toEqual([['bs:101', 't:CELL2', 'be:101']]);
   });
 
   test('a local pair inside a wholly deleted paragraph is still consumed', () => {
