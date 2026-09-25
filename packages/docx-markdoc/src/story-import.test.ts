@@ -377,9 +377,9 @@ describe('selected header/footer Markdoc import', () => {
     const selectors = ['default', 'first', 'even'] as const;
     const source = await buildDocxWithAncillaryParts({
       bodyXml: '<w:p><w:r><w:t>Body</w:t></w:r></w:p>',
-      sectPrXml: '<w:sectPr><w:titlePg/>'
+      sectPrXml: '<w:sectPr>'
         + selectors.map((role, index) => `<w:headerReference w:type="${role}" r:id="rIdHeader${index}"/>`).join('')
-        + '</w:sectPr>',
+        + '<w:titlePg/></w:sectPr>',
       relationships: selectors.map((_, index) => ({ id: `rIdHeader${index}`, type: REL, target: `header${index + 1}.xml` })),
       parts: selectors.map((role, index) => ({
         path: `word/header${index + 1}.xml`, contentType: HEADER_CONTENT_TYPE,
@@ -407,7 +407,7 @@ describe('selected header/footer Markdoc import', () => {
       bodyXml: '<w:p><w:r><w:t>Body</w:t></w:r></w:p>',
       sectPrXml: '<w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/>'
         + '<w:sectPrChange w:id="1" w:author="Tester" w:date="2026-09-23T00:00:00Z">'
-        + '<w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr>'
+        + '<w:sectPr><w:titlePg/></w:sectPr>'
         + '</w:sectPrChange></w:sectPr>',
       relationships: [{ id: 'rIdHeader', type: REL, target: 'header1.xml' }],
       parts: [{ path: 'word/header1.xml', contentType: HEADER_CONTENT_TYPE,
@@ -428,9 +428,9 @@ describe('selected header/footer Markdoc import', () => {
     const imported = await importDocxToMarkdoc(await singleHeader('<w:p><w:r><w:t>Header</w:t></w:r></w:p>'));
     const zip = await JSZip.loadAsync(imported.anchoredSource);
     const documentXml = await zip.file('word/document.xml')!.async('string');
-    const revisedXml = documentXml.replace('<w:sectPr>', '<w:sectPr><w:titlePg/>')
-      .replace('<w:headerReference w:type="default" r:id="rIdHeader"/>',
-        '<w:headerReference w:type="default" r:id="rIdHeader"/><w:headerReference w:type="first" r:id="rIdHeader"/>');
+    const revisedXml = documentXml.replace('<w:headerReference w:type="default" r:id="rIdHeader"/>',
+      '<w:headerReference w:type="default" r:id="rIdHeader"/>'
+      + '<w:headerReference w:type="first" r:id="rIdHeader"/><w:titlePg/>');
     expect(revisedXml).toContain('<w:titlePg/>');
     expect(revisedXml).toContain('w:type="first"');
     zip.file('word/document.xml', revisedXml);
