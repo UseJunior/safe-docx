@@ -15,6 +15,10 @@ running content changed.
 - When the selecting section is itself a tracked insertion, represent its
   footer with tracked paragraph and safe run insertions, leaving only the
   section-property change in `unrepresentedChanges`.
+- When the selecting section slot is removed, represent the header/footer it
+  selected with tracked paragraph and safe run deletions, so accept-all drops
+  the story and reject-all restores it, again leaving only the section-property
+  change in `unrepresentedChanges`.
 - Keep existing revision statistics unchanged; the new field makes their scope
   explicit instead of counting non-text changes as insertions or deletions.
 

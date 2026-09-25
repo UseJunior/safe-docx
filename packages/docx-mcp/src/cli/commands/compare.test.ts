@@ -2,7 +2,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
-import { makeMinimalDocx, makeMinimalDocxWithFooter } from '../../testing/docx_test_utils.js';
+import {
+  makeMinimalDocx,
+  makeMinimalDocxWithFooter,
+  makeMinimalDocxWithPageWidth,
+} from '../../testing/docx_test_utils.js';
 import { createTrackedTempDir, registerCleanup } from '../../testing/session-test-utils.js';
 import { runCompareCommand } from './compare.js';
 
@@ -44,12 +48,45 @@ describe('safe-docx compare command', () => {
     });
   });
 
-  test('surfaces unrepresented changes and warnings when the revised document drops a footer (#1029)', async ({
+  test('surfaces unrepresented changes and warnings when the revised document changes section properties (#1029)', async ({
     given,
     when,
     then,
   }: AllureBddContext) => {
     const tmpDir = await createTrackedTempDir('safe-docx-compare-unrepresented-');
+    const originalPath = path.join(tmpDir, 'original.docx');
+    const revisedPath = path.join(tmpDir, 'revised.docx');
+    await given('an original on US Letter and a revision on A4', async () => {
+      await Promise.all([
+        fs.writeFile(originalPath, await makeMinimalDocxWithPageWidth(['Body text'], 12240)),
+        fs.writeFile(revisedPath, await makeMinimalDocxWithPageWidth(['Body text, revised'], 11906)),
+      ]);
+    });
+
+    let result: Awaited<ReturnType<typeof runCompareCommand>>;
+    await when('the CLI compare command runs', async () => {
+      result = await runCompareCommand({ originalPath, revisedPath });
+    });
+
+    await then('the structured unrepresented change reaches the caller', () => {
+      expect(result.unrepresented_changes).toEqual([
+        { scope: 'section', kind: 'changed', sectionIndex: 0 },
+      ]);
+    });
+
+    await then('a human-readable warning names the unrepresented change', () => {
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings![0]).toContain('changed section properties in section 1');
+      expect(result.warnings![0]).toContain('no tracked-change markup');
+    });
+  });
+
+  test('reports no unrepresented change when the revised document drops a footer, which is now a tracked deletion (#754)', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const tmpDir = await createTrackedTempDir('safe-docx-compare-removed-footer-');
     const originalPath = path.join(tmpDir, 'original.docx');
     const revisedPath = path.join(tmpDir, 'revised.docx');
     await given('an original with a default footer and a revision that removes it', async () => {
@@ -64,16 +101,9 @@ describe('safe-docx compare command', () => {
       result = await runCompareCommand({ originalPath, revisedPath });
     });
 
-    await then('the structured unrepresented change reaches the caller', () => {
-      expect(result.unrepresented_changes).toEqual([
-        { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
-      ]);
-    });
-
-    await then('a human-readable warning names the unrepresented part', () => {
-      expect(result.warnings).toHaveLength(1);
-      expect(result.warnings![0]).toContain('removed default footer in section 1');
-      expect(result.warnings![0]).toContain('no tracked-change markup');
+    await then('the result carries neither unrepresented changes nor warnings', () => {
+      expect(result).not.toHaveProperty('unrepresented_changes');
+      expect(result).not.toHaveProperty('warnings');
     });
   });
 });

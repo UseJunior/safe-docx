@@ -7,7 +7,7 @@ import { compareDocuments_tool } from './compare_documents.js';
 import { replaceText } from './replace_text.js';
 import { MCP_TOOLS } from '../server.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { makeMinimalDocxWithFooter } from '../testing/docx_test_utils.js';
+import { makeMinimalDocxWithFooter, makeMinimalDocxWithPageWidth } from '../testing/docx_test_utils.js';
 import {
   assertSuccess,
   assertFailure,
@@ -220,7 +220,48 @@ describe('compare_documents tool', () => {
   // ── Unrepresented changes (issue #1029) ──────────────────────────
 
   test(
-    'Two-file mode: surfaces unrepresented_changes and a warning when the revised document drops a footer',
+    'Two-file mode: surfaces unrepresented_changes and a warning when the revised document changes section properties',
+    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
+      const mgr = createTestSessionManager();
+      const dir = await createTrackedTempDir();
+      const originalPath = path.join(dir, 'page-original.docx');
+      const revisedPath = path.join(dir, 'page-revised.docx');
+      await given('an original on US Letter and a revision on A4', async () => {
+        await fs.writeFile(originalPath, new Uint8Array(await makeMinimalDocxWithPageWidth(['Body text'], 12240)));
+        await fs.writeFile(revisedPath, new Uint8Array(await makeMinimalDocxWithPageWidth(['Body text, revised'], 11906)));
+      });
+      const outputPath = path.join(dir, 'page-redline.docx');
+
+      const result = await when('Call compare_documents (two-file)', () =>
+        compareDocuments_tool(mgr, {
+          original_file_path: originalPath,
+          revised_file_path: revisedPath,
+          save_to_local_path: outputPath,
+        }),
+      );
+      assertSuccess(result, 'compare_documents');
+      await attachPrettyJson('result', result);
+
+      await then('the structured unrepresented change reaches the caller', () => {
+        expect(result.unrepresented_changes).toEqual([
+          { scope: 'section', kind: 'changed', sectionIndex: 0 },
+        ]);
+      });
+
+      await then('a warning names the unrepresented change and the message flags it', () => {
+        const warnings = result.warnings as string[];
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toContain('changed section properties in section 1');
+        expect(warnings[0]).toContain('no tracked-change markup');
+        expect(result.message).toContain('WARNING: 1 input difference is not represented');
+      });
+    },
+  );
+
+  // ── Removed section footer (issue #754) ──────────────────────────
+
+  test(
+    'Two-file mode: a footer dropped by the revised document is a tracked deletion, not an unrepresented change',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
@@ -242,27 +283,20 @@ describe('compare_documents tool', () => {
       assertSuccess(result, 'compare_documents');
       await attachPrettyJson('result', result);
 
-      await then('the structured unrepresented change reaches the caller', () => {
-        expect(result.unrepresented_changes).toEqual([
-          { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
-        ]);
-      });
-
-      await then('a warning names the unrepresented part and the message flags it', () => {
-        const warnings = result.warnings as string[];
-        expect(warnings).toHaveLength(1);
-        expect(warnings[0]).toContain('removed default footer in section 1');
-        expect(warnings[0]).toContain('no tracked-change markup');
-        expect(result.message).toContain('WARNING: 1 input difference is not represented');
-      });
-
-      await then('the removed footer text carries no deletion markup in the redline, which is why it needed flagging', async () => {
+      await then('the removed footer text is a tracked deletion in the redline', async () => {
         const archive = await DocxArchive.load(await fs.readFile(outputPath));
         const footerXml = await archive.getFile('word/footer1.xml');
         // The pipeline keeps the original footer part so the emitted w:sectPrChange
-        // resolves, but nothing marks the footer's content as deleted.
-        expect(footerXml).toContain('Confidential');
-        expect(footerXml).not.toContain('<w:del');
+        // resolves, and marks its content deleted so accept-all drops it.
+        expect(footerXml).toContain('<w:del');
+        expect(footerXml).toContain('<w:delText>Confidential</w:delText>');
+        expect(footerXml).not.toContain('<w:t>');
+      });
+
+      await then('the response carries no unrepresented-change fields and no warning', () => {
+        expect(result).not.toHaveProperty('unrepresented_changes');
+        expect(result).not.toHaveProperty('warnings');
+        expect(result.message).not.toContain('WARNING');
       });
     },
   );

@@ -100,6 +100,8 @@ import {
 import {
   assembleTextBoxStoryComparison,
   assertAncillaryTextBoxStoryProjection,
+  deletedAncillaryStoryOutputPaths,
+  markDeletedAncillaryStoryParagraphs,
   markInsertedAncillaryStoryParagraphs,
   prepareTextBoxStoryComparison,
   rejectedSelectedAncillaryStoryPaths,
@@ -1286,13 +1288,20 @@ async function compareDocumentsTagged(
     visualIndex: number;
     partPath: string;
     container: 'textBox' | 'ancillaryPart';
-    ancillaryMode?: 'ordinary' | 'inserted';
+    ancillaryMode?: 'ordinary' | 'inserted' | 'deleted';
     result: CompareResult;
   }> = [];
   const rejectedSelectedStoryPaths =
     await rejectedSelectedAncillaryStoryPaths(
       textBoxPlan.outerOriginal,
     );
+  // A removed section's story is representable only where the outer
+  // comparison left it reachable from revision markup (#754). Stories that
+  // fail that check are skipped here and stay in unrepresentedChanges.
+  const deletedStoryOutputPaths = await deletedAncillaryStoryOutputPaths(
+    outerResult.document,
+    textBoxPlan.stories,
+  );
   const representedPartPaths = new Set<string>();
   let nextPackageRevisionId = await firstAvailablePackageRevisionId(outerResult.document);
   for (const story of textBoxPlan.stories) {
@@ -1302,9 +1311,24 @@ async function compareDocumentsTagged(
     ) {
       continue;
     }
+    if (
+      story.ancillaryMode === 'deleted' &&
+      !deletedStoryOutputPaths.has(story)
+    ) {
+      continue;
+    }
+    // A lifecycle story has content on one side only; its nested comparison
+    // runs the empty side against itself and the marker below supplies the
+    // revisions.
+    const lifecycleEmptySide =
+      story.ancillaryMode === 'inserted'
+        ? story.original
+        : story.ancillaryMode === 'deleted'
+          ? story.revised
+          : undefined;
     let result = await compareDocumentsTaggedCore(
-      story.original,
-      story.ancillaryMode === 'inserted' ? story.original : story.revised,
+      lifecycleEmptySide ?? story.original,
+      lifecycleEmptySide ?? story.revised,
       options,
       bookmarkNameReservations,
       nextPackageRevisionId,
@@ -1318,7 +1342,7 @@ async function compareDocumentsTagged(
         options.date ?? new Date(),
         nextPackageRevisionId,
       );
-      const insertionRanges = marked.directParagraphs;
+      const insertionRanges = marked.markedParagraphs;
       result = {
         ...result,
         document: marked.document,
@@ -1328,7 +1352,29 @@ async function compareDocumentsTagged(
           insertedRanges: insertionRanges,
           insertedAtoms: Math.max(
             result.stats.insertedAtoms,
-            marked.directParagraphs,
+            marked.markedParagraphs,
+          ),
+        },
+      };
+    } else if (story.ancillaryMode === 'deleted') {
+      const marked = await markDeletedAncillaryStoryParagraphs(
+        story.original,
+        outerResult.document,
+        options.author ?? 'Comparison',
+        options.date ?? new Date(),
+        nextPackageRevisionId,
+      );
+      const deletionRanges = marked.markedParagraphs;
+      result = {
+        ...result,
+        document: marked.document,
+        stats: {
+          ...result.stats,
+          deletions: deletionRanges,
+          deletedRanges: deletionRanges,
+          deletedAtoms: Math.max(
+            result.stats.deletedAtoms,
+            marked.markedParagraphs,
           ),
         },
       };
@@ -1341,7 +1387,8 @@ async function compareDocumentsTagged(
     storyResults.push({
       index: story.index,
       visualIndex: story.visualIndex,
-      partPath: story.partPath,
+      // The splice targets the part where the outer package holds the story.
+      partPath: deletedStoryOutputPaths.get(story) ?? story.partPath,
       container: story.container,
       ancillaryMode: story.ancillaryMode,
       result,
