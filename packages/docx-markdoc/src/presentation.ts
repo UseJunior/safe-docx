@@ -286,14 +286,21 @@ export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requ
       });
       continue;
     }
+    // Only an annotation that did not exist in the source may be emitted as a
+    // tracked insertion. A source comment re-emitted here (its anchor, author,
+    // initials, date or thread parent changed) was never a tracked change, so
+    // its date goes on the definition alone and reject-all keeps it (#961).
+    const revisionCtx = annotation.sourcePresentation === 'authored' && annotation.date
+      ? createRevisionContext({ author: annotation.author ?? 'Markdoc', date: annotation.date })
+      : undefined;
     if (annotation.replyParentId) {
       const parentCommentId = commentIds.get(annotation.replyParentId);
       if (parentCommentId === undefined) throw new DocxMarkdocError('ANNOTATION_REPLY_PROJECTION_UNRESOLVABLE', `Annotation ${annotation.id} reply parent was not emitted as a comment.`, { annotationId: annotation.id });
       const result = await document.addCommentReply({
         parentCommentId,
-        author: annotation.author ?? 'Markdoc', initials: annotation.initials,
+        author: annotation.author ?? 'Markdoc', initials: annotation.initials, date: annotation.date,
         text: flatText(annotation), body: mergedBody(annotation, rule?.bodyStyle),
-      }, annotation.date ? createRevisionContext({ author: annotation.author ?? 'Markdoc', date: annotation.date }) : undefined);
+      }, revisionCtx);
       commentIds.set(annotation.id, result.commentId);
       continue;
     }
@@ -301,9 +308,9 @@ export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requ
     const end = anchor.kind === 'point' ? anchor.point : anchor.end;
     const result = await document.addComment({
       paragraphId: start.paragraphId, start: start.offset, end: end.offset,
-      author: annotation.author ?? 'Markdoc', initials: annotation.initials,
+      author: annotation.author ?? 'Markdoc', initials: annotation.initials, date: annotation.date,
       text: flatText(annotation), body: mergedBody(annotation, rule?.bodyStyle),
-    }, annotation.date ? createRevisionContext({ author: annotation.author ?? 'Markdoc', date: annotation.date }) : undefined);
+    }, revisionCtx);
     commentIds.set(annotation.id, result.commentId);
   }
   const output = (await document.toBuffer({ cleanBookmarks: false })).buffer;
