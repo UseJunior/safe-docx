@@ -22,6 +22,39 @@ import {
 } from './taggedTree.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+/** A whole block-level container cannot be nested in a run revision. */
+export class UnsupportedBlockContainerRevisionError extends Error {
+  readonly partPath = 'word/document.xml';
+  constructor(readonly change: 'insert' | 'delete', readonly container: 'sdt' | 'customXml') {
+    super(`Unsupported ${change} of a block-level ${container} container`);
+    this.name = 'UnsupportedBlockContainerRevisionError';
+  }
+}
+
+/**
+ * Distinguish block-level containers from run-level controls before revision wrapping.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.31
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @see #1075
+ */
+function isBlockContainer(element: WmlElement): element is WmlElement {
+  if (element.namespaceURI !== W_NS || !['sdt', 'customXml'].includes(element.localName)) return false;
+  const hasBlockContent = (container: WmlElement): boolean => {
+    const children = container.localName === 'sdt'
+      ? childElements(container)
+        .filter((child) => child.namespaceURI === W_NS && child.localName === 'sdtContent')
+        .flatMap((content) => childElements(content))
+      : childElements(container);
+    return children.some((child) => child.namespaceURI === W_NS
+      && (['p', 'tbl'].includes(child.localName)
+        || (['sdt', 'customXml'].includes(child.localName) && hasBlockContent(child))));
+  };
+  return hasBlockContent(element);
+}
 const OPERATION_PROVENANCE_ATTRIBUTE = 'data-safe-docx-operation';
 export const COMPARISON_REVISION_ATTRIBUTE = 'data-safe-docx-comparison-revision';
 const DIRECT_PROPERTY_BY_CONTAINER: Readonly<Record<string, string>> = {
@@ -1503,6 +1536,11 @@ function emitNode(
 ): WmlElement {
   const nodeRevision = allocateRevision();
   const base = cloneElement(representative(node, node.tag === 'original' ? 'original' : node.tag === 'revised' ? 'revised' : bothSide)!);
+  if ((node.tag === 'original' || node.tag === 'revised') && isBlockContainer(base)) {
+    throw new UnsupportedBlockContainerRevisionError(
+      node.tag === 'revised' ? 'insert' : 'delete', base.localName as 'sdt' | 'customXml',
+    );
+  }
   if (!node.opaque && node.children.length > 0) {
     const directPropertyTag = DIRECT_PROPERTY_BY_CONTAINER[base.localName];
     const retainedProperty = directPropertyTag

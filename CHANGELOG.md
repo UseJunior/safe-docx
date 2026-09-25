@@ -18,7 +18,11 @@
   drops the story while reject-all restores it, and the story no longer appears
   in `unrepresentedChanges`. Lifecycle story markers (inserted and removed) now
   also cover runs inside hyperlinks, fields and table cells.
-
+- DOCX comparison now fails closed with a typed diagnostic when an entire
+  block-level content control or custom-XML container is inserted or deleted,
+  instead of publishing a schema-invalid run-revision wrapper. Inline
+  containers and text edits inside an aligned block control remain supported.
+  (#1075, #998)
 - DOCX comparison now reports generated table-row insertion/deletion counts,
   emits native row revisions for supported whole-table changes (including
   nested tables), and rejects unsupported body-table grid, cell, and
