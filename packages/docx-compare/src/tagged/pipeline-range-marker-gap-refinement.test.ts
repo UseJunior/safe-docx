@@ -65,11 +65,15 @@ function bracketed(boundary: Boundary, prefix: string, middle: string, suffix: s
 
 const plain = (text: string): string => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`;
 
-async function compare(originalBody: string, revisedBody: string): Promise<string> {
+async function compare(
+  originalBody: string,
+  revisedBody: string,
+  revisionGrouping?: 'readable-whitespace',
+): Promise<string> {
   const result = await compareDocumentsAtomizer(
     await buildDocxFromBodyXml(originalBody),
     await buildDocxFromBodyXml(revisedBody),
-    { date: DATE },
+    { date: DATE, ...(revisionGrouping ? { revisionGrouping } : {}) },
   );
   expect(result.engine).toBe('tagged-tree');
   return (await DocxArchive.load(result.document)).getDocumentXml();
@@ -88,11 +92,14 @@ function textRevisions(xml: string): string[] {
 }
 
 /**
- * Projection signature: paragraph text with range boundaries inlined, keyed by
- * bookmark name or comment id so serializer renumbering does not matter.
+ * Projection signature: paragraph text with range boundaries inlined. A
+ * bookmark end is labelled with the name of the start sharing its id, so the
+ * signature checks pairing without depending on serializer renumbering.
  */
 function projection(xml: string): string {
   const out: string[] = [];
+  const nameById = new Map(Array.from(body(xml).getElementsByTagNameNS(W_NS, 'bookmarkStart'))
+    .map((start) => [start.getAttributeNS(W_NS, 'id'), start.getAttributeNS(W_NS, 'name')]));
   const visit = (node: Node): void => {
     for (const child of Array.from(node.childNodes)) {
       if (child.nodeType !== 1) continue;
@@ -100,8 +107,8 @@ function projection(xml: string): string {
       const name = element.localName;
       if (name === 't') out.push(element.textContent ?? '');
       else if (name === 'p' && out.length > 0) { out.push('¶'); visit(element); }
-      else if (name === 'bookmarkStart') out.push(`[B:${element.getAttributeNS(W_NS, 'name') ?? element.getAttribute('w:name')}`);
-      else if (name === 'bookmarkEnd') out.push('B]');
+      else if (name === 'bookmarkStart') out.push(`[${element.getAttributeNS(W_NS, 'name')}:`);
+      else if (name === 'bookmarkEnd') out.push(`:${nameById.get(element.getAttributeNS(W_NS, 'id')) ?? '?'}]`);
       else if (name === 'commentRangeStart') out.push('[C');
       else if (name === 'commentRangeEnd') out.push('C]');
       else if (name === 'commentReference') out.push('(ref)');
@@ -158,7 +165,7 @@ describe('range boundaries inside a refined run gap (#1022)', () => {
       expect(textRevisions(xml)).toEqual(['del:beta gamma', 'ins:new']);
     });
     await and('Accept All keeps the new bookmark around the inserted word', () => {
-      expect(projection(acceptAllChanges(xml))).toBe('alpha [B:ClausenewB] omega');
+      expect(projection(acceptAllChanges(xml))).toBe('alpha [Clause:new:Clause] omega');
       expect(projection(rejectAllChanges(xml))).toBe('alpha beta gamma omega');
     });
   });
@@ -173,7 +180,7 @@ describe('range boundaries inside a refined run gap (#1022)', () => {
 
     await then('only "gamma" is replaced and both projections keep their boundaries', () => {
       expect(textRevisions(xml)).toEqual(['del:gamma', 'ins:delta']);
-      expect(projection(rejectAllChanges(xml))).toBe('alpha [B:Clausebeta gammaB] omega');
+      expect(projection(rejectAllChanges(xml))).toBe('alpha [Clause:beta gamma:Clause] omega');
       expect(projection(acceptAllChanges(xml))).toBe('alpha beta delta omega');
     });
   });
@@ -187,8 +194,67 @@ describe('range boundaries inside a refined run gap (#1022)', () => {
       compare(originalBody, plain('alpha new omega')));
 
     await then('Reject All keeps the boundary between the same characters', () => {
-      expect(projection(rejectAllChanges(xml))).toBe('alpha be[B:Clauseta gammaB] omega');
+      expect(projection(rejectAllChanges(xml))).toBe('alpha be[Clause:ta gamma:Clause] omega');
       expect(projection(acceptAllChanges(xml))).toBe('alpha new omega');
+    });
+  });
+
+  test('nested deleted bookmarks keep their order and pairing', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    const originalBody = await given('"alpha [Outer: beta [Inner: gamma] delta] omega"', () => '<w:p>' +
+      '<w:r><w:t xml:space="preserve">alpha </w:t></w:r><w:bookmarkStart w:id="1" w:name="Outer"/>' +
+      '<w:r><w:t xml:space="preserve">beta </w:t></w:r><w:bookmarkStart w:id="2" w:name="Inner"/>' +
+      '<w:r><w:t>gamma</w:t></w:r><w:bookmarkEnd w:id="2"/>' +
+      '<w:r><w:t xml:space="preserve"> delta</w:t></w:r><w:bookmarkEnd w:id="1"/>' +
+      '<w:r><w:t xml:space="preserve"> omega</w:t></w:r></w:p>');
+    const xml = await when('it is compared to "alpha new omega"', () =>
+      compare(originalBody, plain('alpha new omega')));
+
+    await then('only the bracketed words are revised and both projections are exact', () => {
+      expect(textRevisions(xml).join('|')).not.toContain('omega');
+      expect(textRevisions(xml).at(-1)).toBe('ins:new');
+      expect(projection(rejectAllChanges(xml)))
+        .toBe('alpha [Outer:beta [Inner:gamma:Inner] delta:Outer] omega');
+      expect(projection(acceptAllChanges(xml))).toBe('alpha new omega');
+    });
+  });
+
+  test('an inserted comment range with its reference mark around a kept word', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    const revisedBody = '<w:p><w:r><w:t xml:space="preserve">alpha </w:t></w:r>' +
+      '<w:commentRangeStart w:id="3"/><w:r><w:t>beta delta</w:t></w:r><w:commentRangeEnd w:id="3"/>' +
+      '<w:r><w:commentReference w:id="3"/></w:r><w:r><w:t xml:space="preserve"> omega</w:t></w:r></w:p>';
+    const originalBody = await given('"alpha beta gamma omega" in one run', () =>
+      plain('alpha beta gamma omega'));
+    const xml = await when('it is compared to a commented "beta delta"', () =>
+      compare(originalBody, revisedBody));
+
+    await then('only "gamma" is replaced and Accept All keeps the comment around "beta delta"', () => {
+      expect(textRevisions(xml)).toEqual(['del:gamma', 'ins:delta']);
+      expect(projection(acceptAllChanges(xml))).toBe('alpha [Cbeta deltaC](ref) omega');
+      expect(projection(rejectAllChanges(xml))).toBe('alpha beta gamma omega');
+    });
+  });
+
+  test('readable-whitespace grouping does not fold a boundary into a text wrapper', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    const originalBody = await given('"The [old red] term." with a bookmark', () =>
+      bracketed(BOUNDARIES.bookmark!, 'The ', 'old red', ' term.'));
+    const xml = await when('it is compared to "The new blue term." with readable grouping', () =>
+      compare(originalBody, plain('The new blue term.'), 'readable-whitespace'));
+
+    await then('the boundaries keep their own wrappers and both projections are exact', () => {
+      expect(textRevisions(xml)).toEqual(['del:old red', 'ins:new blue']);
+      for (const tag of ['bookmarkStart', 'bookmarkEnd']) {
+        const wrapper = body(xml).getElementsByTagNameNS(W_NS, tag)[0]!.parentNode as Element;
+        expect(wrapper.localName).toBe('del');
+        expect(wrapper.getElementsByTagNameNS(W_NS, 'r')).toHaveLength(0);
+      }
+      expect(projection(rejectAllChanges(xml))).toBe('The [Clause:old red:Clause] term.');
+      expect(projection(acceptAllChanges(xml))).toBe('The new blue term.');
     });
   });
 
@@ -209,7 +275,7 @@ describe('range boundaries inside a refined run gap (#1022)', () => {
       expect(children).toEqual(['pPr', 'del', 'bookmarkStart', 'del', 'bookmarkEnd', 'del']);
     });
     await and('Reject All restores the paragraph and Accept All removes it', () => {
-      expect(projection(rejectAllChanges(xml))).toBe('keep¶alpha [B:Clausebeta gammaB] omega');
+      expect(projection(rejectAllChanges(xml))).toBe('keep¶alpha [Clause:beta gamma:Clause] omega');
       expect(projection(acceptAllChanges(xml))).toBe('keep');
     });
   });
