@@ -1,5 +1,6 @@
 import { describe, expect } from 'vitest';
 import {
+  isArchivedScenarioSuperseded,
   isCanonicalScenarioSuperseded,
   parseChangedRequirementNames,
 } from '../scripts/validate_primitives_openspec_coverage.mjs';
@@ -36,5 +37,19 @@ describe('OpenSpec coverage supersession parsing', () => {
     expect(isCanonicalScenarioSuperseded('Requirement A', 'still canonical', removed, modifiedScenarios)).toBe(false);
     removed.add('Requirement A');
     expect(isCanonicalScenarioSuperseded('Requirement A', 'still canonical', removed, modifiedScenarios)).toBe(true);
+  });
+
+  test('retired archived scenarios remain superseded after their removing change is archived', () => {
+    const activeChanges = new Set<string>();
+    const archivedRemovals = new Set(['Unresolvable Row-Level Revision Preservation']);
+    const canonicalRequirements = new Set(['Row-Level Revision Resolution']);
+    expect(isArchivedScenarioSuperseded(
+      'Unresolvable Row-Level Revision Preservation', activeChanges, archivedRemovals, canonicalRequirements,
+    )).toBe(true);
+    expect(isArchivedScenarioSuperseded('Row-Level Revision Resolution', activeChanges, archivedRemovals, canonicalRequirements)).toBe(false);
+    canonicalRequirements.add('Unresolvable Row-Level Revision Preservation');
+    expect(isArchivedScenarioSuperseded(
+      'Unresolvable Row-Level Revision Preservation', activeChanges, archivedRemovals, canonicalRequirements,
+    )).toBe(false);
   });
 });

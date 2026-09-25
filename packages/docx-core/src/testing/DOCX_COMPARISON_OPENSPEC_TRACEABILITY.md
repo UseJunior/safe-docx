@@ -18,6 +18,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Bold added markup | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Bold removed markup | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Building footnote mapping | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Comparison refuses a WML Strict input with the same typed error as load | covered | `packages/docx-compare/src/tagged/conformanceGate.test.ts` |  |
 | Complete field deletion does not leave live controls | covered | `packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts` |  |
 | Contained phrase scores complete containment | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Continuation pattern inherits formatting | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |

@@ -6,10 +6,11 @@ import {
 import { childElements, createWmlElement, getDirectChildrenByName, isW } from './dom-helpers.js';
 import { SafeDocxError } from './errors.js';
 import { OOXML } from './namespaces.js';
+import { inventoryTableOccupancy, TableOccupancyError } from './table_occupancy.js';
 import { allocateRevisionId, createRevisionContainer, type RevisionContext } from './track-changes-emitter.js';
 
 export type TableRowEditFeature =
-  | 'gridSpan' | 'vMerge' | 'gridBefore' | 'gridAfter'
+  | 'gridSpan' | 'hMerge' | 'vMerge' | 'gridBefore' | 'gridAfter'
   | 'nestedTable' | 'rowContainer' | 'cellContainer' | 'tblPrEx'
   | 'occupancy' | 'trailingParagraph' | 'topologyRevision'
   | 'lastRow' | 'nestedAnchor' | 'alreadyInserted' | 'alreadyDeleted';
@@ -27,10 +28,16 @@ export type InsertTableRowParams = {
   positionalAnchorNodeId: string;
   relativePosition: 'BEFORE' | 'AFTER';
   cellTexts: string[];
+  /** @experimental Opt into validated horizontal spans; vertical merges still fail closed. */
+  mergeAware?: boolean;
 };
 
 export type InsertTableRowResult = { rowIndex: number; cellParagraphIds: string[] };
-export type DeleteTableRowParams = { targetParagraphId: string };
+export type DeleteTableRowParams = {
+  targetParagraphId: string;
+  /** @experimental Opt into validated horizontal spans; vertical merges still fail closed. */
+  mergeAware?: boolean;
+};
 export type DeleteTableRowResult = { rowIndex: number; deleted: true };
 
 type TableShape = {
@@ -88,14 +95,59 @@ export function removeOrphanedRangeEndpointsForSubtree(root: Element, subtree: E
   }
 }
 
-/** Remove a row and, when it was the table's final physical row, its empty table. */
+/**
+ * Resolve a deleted or rejected row without discarding surviving row containers.
+ * A table-level sdt/customXml child can hold rows even when no direct tr remains.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @see #1073
+ */
 export function removeTableRowAndEmptyTable(root: Element, row: Element): void {
+  const wrappers: Element[] = [];
+  let parent = row.parentNode;
+  while (parent?.nodeType === 1 && !isW(parent as Element, 'tbl')) {
+    if (isW(parent as Element, 'sdtContent') && parent.parentNode?.nodeType === 1
+      && isW(parent.parentNode as Element, 'sdt')) {
+      wrappers.push(parent.parentNode as Element);
+      parent = parent.parentNode.parentNode;
+    } else if (isW(parent as Element, 'customXml')) {
+      wrappers.push(parent as Element);
+      parent = parent.parentNode;
+    } else {
+      return;
+    }
+  }
+  if (!parent || parent.nodeType !== 1 || !isW(parent as Element, 'tbl')) return;
+  const table = parent as Element;
   removeOrphanedRangeEndpointsForSubtree(root, row);
-  const table = row.parentNode;
-  if (!table || table.nodeType !== 1 || !isW(table as Element, 'tbl')) return;
-  table.removeChild(row);
-  if (getDirectChildrenByName(table as Element, 'tr').length === 0) {
+  row.parentNode?.removeChild(row);
+  for (const wrapper of wrappers) {
+    if (wrapper.getElementsByTagNameNS(OOXML.W_NS, 'tr').length === 0) {
+      removeOrphanedRangeEndpointsForSubtree(root, wrapper);
+      wrapper.parentNode?.removeChild(wrapper);
+    }
+  }
+  if (!childElements(table).some((child) =>
+    isW(child, 'tr') || isW(child, 'sdt') || isW(child, 'customXml'))) {
     table.parentNode?.removeChild(table);
+  }
+}
+
+/**
+ * Remove a resolved row marker and its now-empty property container.
+ * An authored empty trPr is normalized to absence after row resolution.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @see #1040
+ */
+export function removeResolvedRowMarker(marker: Element): void {
+  const trPr = marker.parentNode;
+  trPr?.removeChild(marker);
+  if (trPr?.nodeType === 1 && isW(trPr as Element, 'trPr')
+    && childElements(trPr as Element).length === 0 && (trPr as Element).attributes.length === 0) {
+    trPr.parentNode?.removeChild(trPr);
   }
 }
 
@@ -125,10 +177,11 @@ function directBodyTables(body: Element): Element[] {
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.48
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.65
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.23
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.84
  * @see #764
  */
-function resolveTableShape(doc: Document, anchorId: string): TableShape {
+function resolveTableShape(doc: Document, anchorId: string, mergeAware = false): TableShape {
   const paragraph = findParagraphByBookmarkId(doc, anchorId);
   if (!paragraph) {
     fail('INVALID_ARGUMENT', `Paragraph anchor not found: ${anchorId}`, detail(anchorId, -1, -1, 'nestedAnchor'));
@@ -188,12 +241,12 @@ function resolveTableShape(doc: Document, anchorId: string): TableShape {
       }
       rowCells.push(child);
     }
-    if (rowCells.length !== gridColumns) {
+    if (!mergeAware && rowCells.length !== gridColumns) {
       fail('UNSUPPORTED_EDIT', 'Row occupancy does not match tblGrid', detail(anchorId, tableIndex, currentRowIndex, 'occupancy'));
     }
     for (const [cellIndex, currentCell] of rowCells.entries()) {
       const tcPr = getDirectChildrenByName(currentCell, 'tcPr')[0];
-      for (const feature of ['gridSpan', 'vMerge'] as const) {
+      for (const feature of (mergeAware ? ['hMerge', 'vMerge'] : ['gridSpan', 'hMerge', 'vMerge']) as Array<'gridSpan' | 'hMerge' | 'vMerge'>) {
         if (tcPr && getDirectChildrenByName(tcPr, feature).length > 0) {
           fail('UNSUPPORTED_EDIT', `Cell uses ${feature}`, detail(anchorId, tableIndex, currentRowIndex, feature, { cellIndex }));
         }
@@ -218,6 +271,14 @@ function resolveTableShape(doc: Document, anchorId: string): TableShape {
       }
     }
     cells.push(rowCells);
+  }
+  if (mergeAware) {
+    try {
+      inventoryTableOccupancy(table);
+    } catch (error) {
+      if (!(error instanceof TableOccupancyError)) throw error;
+      fail('UNSUPPORTED_EDIT', error.message, detail(anchorId, tableIndex, error.rowIndex, error.feature, { cellIndex: error.cellIndex }));
+    }
   }
   return { table, rows, anchorRow: row, rowIndex, tableIndex, cells };
 }
@@ -275,7 +336,7 @@ export function insertTableRow(
   ctx?: RevisionContext,
   bookmarkReservation?: BookmarkReservation,
 ): InsertTableRowResult {
-  const shape = resolveTableShape(doc, params.positionalAnchorNodeId);
+  const shape = resolveTableShape(doc, params.positionalAnchorNodeId, params.mergeAware);
   const anchorCells = shape.cells[shape.rowIndex]!;
   if (params.cellTexts.length !== anchorCells.length) {
     fail('INVALID_ARGUMENT', 'cellTexts must match the table grid column count', detail(params.positionalAnchorNodeId, shape.tableIndex, shape.rowIndex, 'occupancy'));
@@ -324,7 +385,7 @@ export function insertTableRow(
 
 /** Delete or deletion-mark a rectangular unmerged row. */
 export function deleteTableRow(doc: Document, params: DeleteTableRowParams, ctx?: RevisionContext): DeleteTableRowResult {
-  const shape = resolveTableShape(doc, params.targetParagraphId);
+  const shape = resolveTableShape(doc, params.targetParagraphId, params.mergeAware);
   if (shape.rows.length === 1) fail('INVALID_ARGUMENT', 'Cannot delete the final table row', detail(params.targetParagraphId, shape.tableIndex, shape.rowIndex, 'lastRow'));
   if (!ctx) {
     removeOrphanedRangeEndpointsForSubtree(doc.documentElement, shape.anchorRow);

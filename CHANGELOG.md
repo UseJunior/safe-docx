@@ -10,6 +10,24 @@
   in `unrepresentedChanges`. Lifecycle story markers (inserted and removed) now
   also cover runs inside hyperlinks, fields and table cells.
 
+- DOCX comparison now reports generated table-row insertion/deletion counts,
+  emits native row revisions for supported whole-table changes (including
+  nested tables), and rejects unsupported body-table grid, cell, and
+  container-topology changes with a typed diagnostic before publication.
+  The comparison uses the docx-core table-occupancy reader, now exported from
+  the core package root. (#1043, #998)
+- Experimental `mergeAware: true` row insertion/deletion now admits validated
+  horizontal `w:gridSpan` tables while vertical merges and row offsets still
+  fail closed. Row-marker accept/reject removes a now-empty `w:trPr`; an
+  authored-empty one is normalized to absence. Default row edits now also
+  reject legacy `w:hMerge` tables that were previously misread as separate
+  cells; other default behavior is unchanged. (#1040)
+- `DocxDocument.load` and `compareDocuments` now refuse an ISO/IEC 29500 Strict
+  document (root element in `http://purl.oclc.org/ooxml/wordprocessingml/main`)
+  with `UnsupportedConformanceClassError` (code `UNSUPPORTED_CONFORMANCE_CLASS`)
+  instead of reading it as empty text. The MCP tools and the CLI return the same
+  structured error, with a hint on re-saving as Transitional; a Transitional
+  document is unaffected. Strict support remains out of scope. (#1025)
 - **Breaking:** Markdoc now always emits bounded readable-whitespace revision
   grouping after token-minimal validation. Remove the short-lived
   `revision-grouping` Markdoc declaration, `--revision-grouping` CLI flag, and

@@ -1,6 +1,7 @@
 export * from './document.js';
 export * from './document_view.js';
 export * from './errors.js';
+export * from './conformance.js';
 export * from './list_labels.js';
 export * from './layout.js';
 export * from './matching.js';
@@ -41,6 +42,7 @@ export * from './formatting_tags.js';
 export * from './prevent_double_elevation.js';
 export * from './tables.js';
 export * from './table_rows.js';
+export * from './table_columns.js';
 export * from './content_fingerprint.js';
 export * from './field_evaluation.js';
 export * from './locator.js';

@@ -390,7 +390,8 @@ describe('ordinary relationship-selected story comparison', () => {
     },
   );
 
-  test.openspec('[SDX-CMP-STORY-05] Unsupported topology remains unrepresented')(
+  test.openspec('[SDX-COMPTABLE-07] selected story scaffold changes remain explicit')
+    .openspec('[SDX-CMP-STORY-05] Unsupported topology remains unrepresented')(
     'does not claim a structural table-row insertion as ordinary story text',
     async () => {
       const row = (text: string): string => `<w:tr><w:tc><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc></w:tr>`;

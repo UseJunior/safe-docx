@@ -2,6 +2,7 @@ import { DocxZip } from './zip.js';
 import { parseXml, serializeXml } from './xml.js';
 import { maybeCaptureEmittedDocumentXml } from './schema-corpus-capture.js';
 import { OOXML, W } from './namespaces.js';
+import { assertTransitionalWordprocessingML } from './conformance.js';
 import { createWmlElement, isW, getDirectChildrenByName } from './dom-helpers.js';
 import {
   findParagraphByBookmarkId,
@@ -99,6 +100,14 @@ import {
   type DeleteTableRowParams,
   type DeleteTableRowResult,
 } from './table_rows.js';
+import {
+  insertTableColumn as insertTableColumnImpl,
+  deleteTableColumn as deleteTableColumnImpl,
+  type InsertTableColumnParams,
+  type InsertTableColumnResult,
+  type DeleteTableColumnParams,
+  type DeleteTableColumnResult,
+} from './table_columns.js';
 import {
   bootstrapCommentParts,
   addComment as addCommentImpl,
@@ -417,6 +426,9 @@ export class DocxDocument {
     const zip = await DocxZip.load(buffer);
     const xml = await zip.readText('word/document.xml');
     const doc = parseXml(xml);
+    // Refuse WML Strict packages here, before any Transitional-only lookup
+    // could read them as empty (#1025).
+    assertTransitionalWordprocessingML(doc);
 
     // Optional parts used for fidelity: list labels + style fingerprints.
     const stylesText = await zip.readTextOrNull('word/styles.xml');
@@ -631,6 +643,22 @@ export class DocxDocument {
 
   deleteTableRow(params: DeleteTableRowParams, ctx?: RevisionContext): DeleteTableRowResult {
     const result = deleteTableRowImpl(this.documentXml, params, ctx);
+    this.dirty = true;
+    this.documentViewCache = null;
+    return result;
+  }
+
+  /** Apply a planned clean column edit to the existing DOM, preserving held element references. */
+  insertTableColumn(params: InsertTableColumnParams, ctx?: RevisionContext): InsertTableColumnResult {
+    const result = insertTableColumnImpl(this.documentXml, params, ctx, this.paragraphBookmarkReservation);
+    this.dirty = true;
+    this.documentViewCache = null;
+    return result;
+  }
+
+  /** Apply a planned clean column deletion to the existing DOM. */
+  deleteTableColumn(params: DeleteTableColumnParams, ctx?: RevisionContext): DeleteTableColumnResult {
+    const result = deleteTableColumnImpl(this.documentXml, params, ctx);
     this.dirty = true;
     this.documentViewCache = null;
     return result;

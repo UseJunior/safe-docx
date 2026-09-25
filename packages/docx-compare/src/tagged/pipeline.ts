@@ -3,7 +3,7 @@
 import { XMLSerializer } from '@xmldom/xmldom';
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
-import { auditSectPr, normalizeOpcRelationshipTarget, parseXml, OOXML } from '@usejunior/docx-core';
+import { assertTransitionalWordprocessingML, auditSectPr, normalizeOpcRelationshipTarget, parseXml, OOXML } from '@usejunior/docx-core';
 import { DocxArchive } from '@usejunior/docx-core';
 import type {
   CompareResult,
@@ -77,6 +77,7 @@ import {
   buildTaggedTreePublication,
   consumeTaggedPublicationStatistics,
 } from './taggedTreeShadow.js';
+import { bodyTableFootprint, UnsupportedTableTopologyComparisonError } from './tableTopologyGuard.js';
 import {
   compareSourceProjectedFormattingFidelity,
   type ProjectedFormattingFidelity,
@@ -145,6 +146,8 @@ export interface StandaloneTaggedPackageOptions {
   bookmarkNameReservations?: Set<string>;
   /** @internal First package-wide ID available to generated comparison revisions. */
   minimumRevisionId?: number;
+  /** @internal Selected story calls disable the main-body topology gate. */
+  guardTableTopology?: boolean;
 }
 
 export interface StandaloneTaggedPackageResult {
@@ -399,6 +402,7 @@ export async function buildStandaloneTaggedPackage(
       revisionGrouping: options.revisionGrouping,
       retainStatisticsMarkers: true,
       minimumRevisionId: options.minimumRevisionId,
+      guardTableTopology: options.guardTableTopology ?? true,
     });
     return {
       taggedOriginalXml,
@@ -532,6 +536,12 @@ export async function buildStandaloneTaggedPackage(
   // trees would reject a faithful publication.
   const originalProjectionXml = rejectAllChanges(originalXml);
   const revisedProjectionXml = acceptAllChanges(revisedXml);
+  if (options.guardTableTopology ?? true) {
+    if (bodyTableFootprint(rejectAllChanges(taggedXml)) !== bodyTableFootprint(originalProjectionXml)
+      || bodyTableFootprint(acceptAllChanges(taggedXml)) !== bodyTableFootprint(revisedProjectionXml)) {
+      throw new UnsupportedTableTopologyComparisonError('projection', -1);
+    }
+  }
   const publicationSafety = (options.publicationSafetyEvaluator ?? evaluateSafetyChecks)(
     extractRoundTripComparisonText(originalProjectionXml),
     extractRoundTripComparisonText(revisedProjectionXml),
@@ -1188,6 +1198,7 @@ async function compareDocumentsTaggedCore(
   options: AtomizerOptions,
   bookmarkNameReservations?: Set<string>,
   minimumRevisionId?: number,
+  guardTableTopology = true,
 ): Promise<TaggedCompareResult> {
   const standalone = await buildStandaloneTaggedPackage(original, revised, {
     author: options.author ?? 'Comparison',
@@ -1210,6 +1221,7 @@ async function compareDocumentsTaggedCore(
     formattingFidelityEvaluator: options.taggedTreeFormattingFidelityEvaluator,
     bookmarkNameReservations,
     minimumRevisionId,
+    guardTableTopology,
   });
   return {
     document: standalone.document,
@@ -1219,6 +1231,23 @@ async function compareDocumentsTaggedCore(
     ancillaryFieldEvidence: standalone.ancillaryFieldEvidence,
     revisionAttributions: standalone.revisionAttributions,
   };
+}
+
+/**
+ * Refuse a WML Strict input before any Transitional-only stage reads it as an
+ * empty document (#1025). The error names the side so a two-file caller knows
+ * which input to re-save; `DocxDocument.load` applies the same gate for the
+ * session path.
+ */
+async function assertTransitionalComparisonInputs(original: Buffer, revised: Buffer): Promise<void> {
+  const inputs: Array<['original' | 'revised', Buffer]> = [
+    ['original', original],
+    ['revised', revised],
+  ];
+  for (const [side, buffer] of inputs) {
+    const archive = await DocxArchive.load(buffer);
+    assertTransitionalWordprocessingML(parseXml(await archive.getDocumentXml()), { side });
+  }
 }
 
 /**
@@ -1233,6 +1262,7 @@ async function compareDocumentsTagged(
   revised: Buffer,
   options: AtomizerOptions,
 ): Promise<TaggedCompareResult> {
+  await assertTransitionalComparisonInputs(original, revised);
   const textBoxPlan = await prepareTextBoxStoryComparison(original, revised);
   if (!textBoxPlan) {
     return compareDocumentsTaggedCore(original, revised, options);
@@ -1302,6 +1332,7 @@ async function compareDocumentsTagged(
       options,
       bookmarkNameReservations,
       nextPackageRevisionId,
+      false,
     );
     if (story.ancillaryMode === 'inserted') {
       const marked = await markInsertedAncillaryStoryParagraphs(
@@ -1433,6 +1464,8 @@ async function compareDocumentsTagged(
       formatChanges: combined.formatChanges + result.stats.formatChanges,
       formatChangeAtoms:
         combined.formatChangeAtoms + result.stats.formatChangeAtoms,
+      insertedTableRows: combined.insertedTableRows + result.stats.insertedTableRows,
+      deletedTableRows: combined.deletedTableRows + result.stats.deletedTableRows,
     }),
     {
       atomMetricVersion: 'tagged-token-v1',
@@ -1446,6 +1479,8 @@ async function compareDocumentsTagged(
       modifiedParagraphs: 0,
       formatChanges: 0,
       formatChangeAtoms: 0,
+      insertedTableRows: 0,
+      deletedTableRows: 0,
     },
   );
   const unrepresentedChanges = outerResult.unrepresentedChanges?.filter(

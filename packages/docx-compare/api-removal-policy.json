@@ -62,6 +62,7 @@
       "UnrepresentedChange",
       "UnrepresentedChangeKind",
       "UnrepresentedChangeScope",
+      "UnsupportedTableTopologyComparisonError",
       "UnsupportedTextBoxRevisionError",
       "validateFieldStructure",
       "wordContainmentSimilarity"
