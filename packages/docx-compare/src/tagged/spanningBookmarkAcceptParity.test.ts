@@ -53,7 +53,7 @@ describe('Accept keeps a bookmark spanning out of a deleted paragraph (#1019)', 
       `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="77" w:name="Span"/>${deleted}</w:p>` +
       '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>CELL</w:t></w:r></w:p></w:tc></w:tr></w:tbl>' +
       '<w:p><w:r><w:t>AFTER</w:t></w:r><w:bookmarkEnd w:id="77"/></w:p>',
-      acceptChanges, acceptAllChanges, [['t:CELL'], ['bs:77', 't:AFTER', 'be:77']]],
+      acceptChanges, acceptAllChanges, [['bs:77', 't:CELL'], ['t:AFTER', 'be:77']]],
     ['Accept terminal deleted table-cell paragraph holding a spanning end',
       '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc>' +
       '<w:p><w:bookmarkStart w:id="82" w:name="Cell"/><w:r><w:t>KEEP</w:t></w:r></w:p>' +
@@ -70,6 +70,16 @@ describe('Accept keeps a bookmark spanning out of a deleted paragraph (#1019)', 
       `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="83" w:name="Both"/>${deleted}</w:p>` +
       `<w:p>${mark('del', 3)}${deleted}<w:bookmarkEnd w:id="83"/></w:p>`,
       acceptChanges, acceptAllChanges, [['t:KEEP', 'bs:83', 'be:83']]],
+    ['Accept deleted paragraph before a terminal table holding a spanning start',
+      `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="92" w:name="IntoTable"/>${deleted}</w:p>` +
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc>' +
+      '<w:p><w:r><w:t>CELL</w:t></w:r><w:bookmarkEnd w:id="92"/></w:p></w:tc></w:tr></w:tbl>',
+      acceptChanges, acceptAllChanges, [['bs:92', 't:CELL', 'be:92']]],
+    ['Accept terminal deleted paragraph after a content control',
+      '<w:sdt><w:sdtPr/><w:sdtContent><w:p><w:bookmarkStart w:id="93" w:name="Sdt"/><w:r><w:t>SDT</w:t></w:r></w:p>' +
+      '</w:sdtContent></w:sdt>' +
+      `<w:p>${mark('del', 1)}${deleted}<w:bookmarkEnd w:id="93"/></w:p>`,
+      acceptChanges, acceptAllChanges, [['bs:93', 't:SDT', 'be:93']]],
     ['Accept consumes a local pair in a wholly deleted paragraph',
       `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="79" w:name="Local"/>${deleted}<w:bookmarkEnd w:id="79"/></w:p>` +
       '<w:p><w:r><w:t>STABLE</w:t></w:r></w:p>',

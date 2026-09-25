@@ -74,13 +74,13 @@ describe('native Accept keeps bookmarks spanning out of a deleted paragraph (#10
     expect(shape(doc)).toEqual([['bs:78', 't:KEEP', 'be:78']]);
   });
 
-  test('a start in a deleted paragraph before a table is rescued into the next kept paragraph', () => {
+  test('a start in a deleted paragraph before a table is rescued into the nearest following paragraph', () => {
     const doc = document(
       `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="77" w:name="Span"/>${deleted('GONE')}</w:p>` +
       '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>CELL</w:t></w:r></w:p></w:tc></w:tr></w:tbl>' +
       '<w:p><w:r><w:t>AFTER</w:t></w:r><w:bookmarkEnd w:id="77"/></w:p>');
     acceptChanges(doc);
-    expect(shape(doc)).toEqual([['t:CELL'], ['bs:77', 't:AFTER', 'be:77']]);
+    expect(shape(doc)).toEqual([['bs:77', 't:CELL'], ['t:AFTER', 'be:77']]);
   });
 
   test('an end in a terminal deleted table-cell paragraph is rescued within the cell', () => {
@@ -106,6 +106,36 @@ describe('native Accept keeps bookmarks spanning out of a deleted paragraph (#10
         : [['t:KEEP'], ['bs:83', 'be:83', 't:STABLE']]);
     });
   }
+
+  test('a start in a deleted paragraph before a terminal table is rescued into the cell', () => {
+    const doc = document(
+      `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="92" w:name="IntoTable"/>${deleted('GONE')}</w:p>` +
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc>' +
+      '<w:p><w:r><w:t>CELL</w:t></w:r><w:bookmarkEnd w:id="92"/></w:p></w:tc></w:tr></w:tbl>');
+    acceptChanges(doc);
+    expect(shape(doc)).toEqual([['bs:92', 't:CELL', 'be:92']]);
+  });
+
+  test('an end in a terminal deleted paragraph after a content control is rescued into it', () => {
+    const doc = document(
+      '<w:sdt><w:sdtPr/><w:sdtContent><w:p><w:bookmarkStart w:id="93" w:name="Sdt"/><w:r><w:t>SDT</w:t></w:r></w:p>' +
+      '</w:sdtContent></w:sdt>' +
+      `<w:p>${mark('del', 1)}${deleted('GONE')}<w:bookmarkEnd w:id="93"/></w:p>`);
+    acceptChanges(doc);
+    expect(shape(doc)).toEqual([['bs:93', 't:SDT', 'be:93']]);
+  });
+
+  test('selective Accept rescues the selected endpoint and leaves a foreign revision', () => {
+    const doc = document(
+      '<w:p><w:bookmarkStart w:id="70" w:name="Sel"/><w:r><w:t>KEEP</w:t></w:r>' +
+      '<w:ins w:id="5" w:author="Human" w:date="2026-01-01T00:00:00Z"><w:r><w:t>HUMAN</w:t></w:r></w:ins></w:p>' +
+      `<w:p>${mark('del', 1)}${deleted('GONE')}<w:bookmarkEnd w:id="70"/></w:p>`);
+    acceptChanges(doc, { filter: e => e.getAttributeNS(W, 'author') === 'A' });
+    expect(ids(doc, 'bookmarkStart')).toEqual(['70']);
+    expect(ids(doc, 'bookmarkEnd')).toEqual(['70']);
+    expect(texts(doc)).toEqual(['KEEPHUMAN']);
+    expect(Array.from(doc.getElementsByTagNameNS(W, 'ins')).map(n => n.getAttributeNS(W, 'author'))).toEqual(['Human']);
+  });
 
   test('a local pair inside a wholly deleted paragraph is still consumed', () => {
     const doc = document(

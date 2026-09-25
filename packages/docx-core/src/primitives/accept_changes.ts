@@ -283,12 +283,19 @@ function resolveParagraphMarkRevision(p: Element): void {
  */
 function rescueBookmarksFromUnmergedEmptyParagraph(p: Element): void {
   if (!p.parentNode || findFollowingSiblingParagraph(p) || paragraphHasContent(p) || !canSafelyRemoveEmptyParagraph(p)) return;
-  const nearest = (step: (n: Node) => Node | null): Element | null => {
-    for (let n = step(p); n; n = step(n)) if (isW(n, 'p')) return n;
+  // Nearest paragraph in document order, descending into block containers
+  // (tables, content controls) that sit beside the removed paragraph.
+  const nearest = (step: (n: Node) => Node | null, last: boolean): Element | null => {
+    for (let n = step(p); n; n = step(n)) {
+      if (isW(n, 'p')) return n;
+      if (n.nodeType !== 1) continue;
+      const nested = (n as Element).getElementsByTagNameNS(W_NS, 'p');
+      if (nested.length > 0) return nested.item(last ? nested.length - 1 : 0);
+    }
     return null;
   };
-  const previous = nearest(n => n.previousSibling);
-  const target = previous ?? nearest(n => n.nextSibling);
+  const previous = nearest(n => n.previousSibling, true);
+  const target = previous ?? nearest(n => n.nextSibling, false);
   if (!target) return;
   let ref: Node | null = null;
   if (!previous) {

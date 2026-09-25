@@ -384,8 +384,11 @@ function rescueBookmarksFromUnmergedEmptyParagraph(p: Element): void {
   if (findFollowingSiblingParagraph(p) || paragraphHasContent(p) || !canSafelyRemoveEmptyParagraph(p)) return;
   const siblings = parentElement(p) ? childElements(parentElement(p)!) : [];
   const index = siblings.indexOf(p);
-  const previous = siblings.slice(0, index).reverse().find((el) => el.tagName === 'w:p');
-  const target = previous ?? siblings.slice(index + 1).find((el) => el.tagName === 'w:p');
+  // Nearest paragraph in document order, descending into block containers
+  // (tables, content controls) that sit beside the removed paragraph.
+  const paragraphsIn = (el: Element) => (el.tagName === 'w:p' ? [el] : findAllByTagName(el, 'w:p'));
+  const previous = siblings.slice(0, index).reverse().map((el) => paragraphsIn(el).at(-1)).find(Boolean);
+  const target = previous ?? siblings.slice(index + 1).map((el) => paragraphsIn(el)[0]).find(Boolean);
   if (!target) return;
   let insertIndex = paragraphContentStartIndex(target);
   for (const marker of childElements(p)) {
