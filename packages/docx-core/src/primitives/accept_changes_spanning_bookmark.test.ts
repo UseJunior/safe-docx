@@ -66,6 +66,47 @@ describe('native Accept keeps bookmarks spanning out of a deleted paragraph (#10
     expect(shape(doc)).toEqual([['bs:77', 't:STABLE', 'be:77']]);
   });
 
+  test('an end in a terminal deleted paragraph is rescued into the previous kept paragraph', () => {
+    const doc = document(
+      '<w:p><w:bookmarkStart w:id="78" w:name="Back"/><w:r><w:t>KEEP</w:t></w:r></w:p>' +
+      `<w:p>${mark('del', 1)}${deleted('GONE')}<w:bookmarkEnd w:id="78"/></w:p>`);
+    acceptChanges(doc);
+    expect(shape(doc)).toEqual([['bs:78', 't:KEEP', 'be:78']]);
+  });
+
+  test('a start in a deleted paragraph before a table is rescued into the next kept paragraph', () => {
+    const doc = document(
+      `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="77" w:name="Span"/>${deleted('GONE')}</w:p>` +
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>CELL</w:t></w:r></w:p></w:tc></w:tr></w:tbl>' +
+      '<w:p><w:r><w:t>AFTER</w:t></w:r><w:bookmarkEnd w:id="77"/></w:p>');
+    acceptChanges(doc);
+    expect(shape(doc)).toEqual([['t:CELL'], ['bs:77', 't:AFTER', 'be:77']]);
+  });
+
+  test('an end in a terminal deleted table-cell paragraph is rescued within the cell', () => {
+    const doc = document(
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc>' +
+      '<w:p><w:bookmarkStart w:id="82" w:name="Cell"/><w:r><w:t>KEEP</w:t></w:r></w:p>' +
+      `<w:p>${mark('del', 1)}${deleted('GONE')}<w:bookmarkEnd w:id="82"/></w:p>` +
+      '</w:tc></w:tr></w:tbl><w:p/>');
+    acceptChanges(doc);
+    expect(shape(doc)).toEqual([['bs:82', 't:KEEP', 'be:82'], []]);
+  });
+
+  for (const terminal of [false, true]) {
+    test(`a range across two ${terminal ? 'terminal ' : ''}deleted paragraphs collapses into the survivor`, () => {
+      const doc = document(
+        '<w:p><w:r><w:t>KEEP</w:t></w:r></w:p>' +
+        `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="83" w:name="Both"/>${deleted('G1')}</w:p>` +
+        `<w:p>${mark('del', 3)}${deleted('G2')}<w:bookmarkEnd w:id="83"/></w:p>` +
+        (terminal ? '' : '<w:p><w:r><w:t>STABLE</w:t></w:r></w:p>'));
+      acceptChanges(doc);
+      expect(shape(doc)).toEqual(terminal
+        ? [['t:KEEP', 'bs:83', 'be:83']]
+        : [['t:KEEP'], ['bs:83', 'be:83', 't:STABLE']]);
+    });
+  }
+
   test('a local pair inside a wholly deleted paragraph is still consumed', () => {
     const doc = document(
       `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="79" w:name="Local"/>${deleted('GONE')}<w:bookmarkEnd w:id="79"/></w:p>` +

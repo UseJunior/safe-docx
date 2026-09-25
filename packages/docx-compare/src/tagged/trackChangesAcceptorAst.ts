@@ -372,6 +372,30 @@ function locallyPairedBookmarkIds(siblings: Element[]): Set<string> {
   return ids;
 }
 
+/**
+ * An emptied paragraph with no following sibling paragraph has no break to
+ * merge into and is removed, taking its direct children with it. Bookmark
+ * boundaries still there survived the Accept cleanup because their
+ * counterpart lives in kept content, so move them to the nearest kept
+ * paragraph first to keep the range balanced (#1019): appended to the
+ * previous paragraph, else prepended to the next.
+ */
+function rescueBookmarksFromUnmergedEmptyParagraph(p: Element): void {
+  if (findFollowingSiblingParagraph(p) || paragraphHasContent(p) || !canSafelyRemoveEmptyParagraph(p)) return;
+  const siblings = parentElement(p) ? childElements(parentElement(p)!) : [];
+  const index = siblings.indexOf(p);
+  const previous = siblings.slice(0, index).reverse().find((el) => el.tagName === 'w:p');
+  const target = previous ?? siblings.slice(index + 1).find((el) => el.tagName === 'w:p');
+  if (!target) return;
+  let insertIndex = paragraphContentStartIndex(target);
+  for (const marker of childElements(p)) {
+    if (marker.tagName !== 'w:bookmarkStart' && marker.tagName !== 'w:bookmarkEnd') continue;
+    p.removeChild(marker);
+    if (previous) target.appendChild(marker);
+    else insertChildAt(target, marker, insertIndex++);
+  }
+}
+
 function collectBookmarksById(nodes: Element[]): Map<string, Element[]> {
   const byId = new Map<string, Element[]>();
   for (const node of nodes) {
@@ -702,6 +726,7 @@ export function acceptAllChanges(documentXml: string): string {
   // merge each into its following paragraph (document order, so consecutive
   // mark-deleted paragraphs cascade forward into the first surviving one).
   for (const p of markDeletedParagraphs) {
+    rescueBookmarksFromUnmergedEmptyParagraph(p);
     resolveParagraphMarkRevision(p, 'accept');
   }
 

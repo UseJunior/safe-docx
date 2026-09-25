@@ -45,6 +45,31 @@ describe('Accept keeps a bookmark spanning out of a deleted paragraph (#1019)', 
       `<w:moveFrom w:id="12" ${DATE}><w:r><w:t>MOVED</w:t></w:r></w:moveFrom></w:p>` +
       '<w:moveFromRangeEnd w:id="10"/>' + stableWithEnd,
       acceptChanges, acceptAllChanges, [['bs:77', 't:STABLE', 'be:77']]],
+    ['Accept terminal deleted paragraph holding a spanning end',
+      '<w:p><w:bookmarkStart w:id="78" w:name="Back"/><w:r><w:t>KEEP</w:t></w:r></w:p>' +
+      `<w:p>${mark('del', 1)}${deleted}<w:bookmarkEnd w:id="78"/></w:p>`,
+      acceptChanges, acceptAllChanges, [['bs:78', 't:KEEP', 'be:78']]],
+    ['Accept deleted paragraph before a table holding a spanning start',
+      `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="77" w:name="Span"/>${deleted}</w:p>` +
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>CELL</w:t></w:r></w:p></w:tc></w:tr></w:tbl>' +
+      '<w:p><w:r><w:t>AFTER</w:t></w:r><w:bookmarkEnd w:id="77"/></w:p>',
+      acceptChanges, acceptAllChanges, [['t:CELL'], ['bs:77', 't:AFTER', 'be:77']]],
+    ['Accept terminal deleted table-cell paragraph holding a spanning end',
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc>' +
+      '<w:p><w:bookmarkStart w:id="82" w:name="Cell"/><w:r><w:t>KEEP</w:t></w:r></w:p>' +
+      `<w:p>${mark('del', 1)}${deleted}<w:bookmarkEnd w:id="82"/></w:p>` +
+      '</w:tc></w:tr></w:tbl><w:p/>',
+      acceptChanges, acceptAllChanges, [['bs:82', 't:KEEP', 'be:82'], []]],
+    ['Accept range across two deleted paragraphs',
+      '<w:p><w:r><w:t>KEEP</w:t></w:r></w:p>' +
+      `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="83" w:name="Both"/>${deleted}</w:p>` +
+      `<w:p>${mark('del', 3)}${deleted}<w:bookmarkEnd w:id="83"/></w:p><w:p><w:r><w:t>STABLE</w:t></w:r></w:p>`,
+      acceptChanges, acceptAllChanges, [['t:KEEP'], ['bs:83', 'be:83', 't:STABLE']]],
+    ['Accept range across two terminal deleted paragraphs',
+      '<w:p><w:r><w:t>KEEP</w:t></w:r></w:p>' +
+      `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="83" w:name="Both"/>${deleted}</w:p>` +
+      `<w:p>${mark('del', 3)}${deleted}<w:bookmarkEnd w:id="83"/></w:p>`,
+      acceptChanges, acceptAllChanges, [['t:KEEP', 'bs:83', 'be:83']]],
     ['Accept consumes a local pair in a wholly deleted paragraph',
       `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="79" w:name="Local"/>${deleted}<w:bookmarkEnd w:id="79"/></w:p>` +
       '<w:p><w:r><w:t>STABLE</w:t></w:r></w:p>',

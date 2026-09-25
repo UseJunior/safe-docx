@@ -273,6 +273,34 @@ function resolveParagraphMarkRevision(p: Element): void {
   parent.removeChild(p);
 }
 
+/**
+ * An emptied paragraph with no following sibling paragraph has no break to
+ * merge into and is removed, taking its direct children with it. Bookmark
+ * boundaries still there survived the Accept cleanup because their
+ * counterpart lives in kept content, so move them to the nearest kept
+ * paragraph first to keep the range balanced (#1019): appended to the
+ * previous paragraph, else prepended to the next.
+ */
+function rescueBookmarksFromUnmergedEmptyParagraph(p: Element): void {
+  if (!p.parentNode || findFollowingSiblingParagraph(p) || paragraphHasContent(p) || !canSafelyRemoveEmptyParagraph(p)) return;
+  const nearest = (step: (n: Node) => Node | null): Element | null => {
+    for (let n = step(p); n; n = step(n)) if (isW(n, 'p')) return n;
+    return null;
+  };
+  const previous = nearest(n => n.previousSibling);
+  const target = previous ?? nearest(n => n.nextSibling);
+  if (!target) return;
+  let ref: Node | null = null;
+  if (!previous) {
+    for (let i = 0; i < target.childNodes.length && !ref; i++) {
+      if (!isW(target.childNodes[i]!, 'pPr')) ref = target.childNodes[i]!;
+    }
+  }
+  for (const marker of Array.from(p.childNodes)) {
+    if (isW(marker, 'bookmarkStart') || isW(marker, 'bookmarkEnd')) target.insertBefore(marker, ref);
+  }
+}
+
 // ── Public API ──────────────────────────────────────────────────────
 
 /**
@@ -449,6 +477,7 @@ export function acceptChanges(
   // paragraph (document order, so consecutive mark-deleted paragraphs cascade
   // forward into the first surviving one).
   for (const p of markDeletedParagraphs) {
+    rescueBookmarksFromUnmergedEmptyParagraph(p);
     resolveParagraphMarkRevision(p);
   }
   for (const p of resolvedMarkProperties) removeEmptyParagraphMarkProperties(p);
