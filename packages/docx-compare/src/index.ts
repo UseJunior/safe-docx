@@ -144,6 +144,7 @@ export {
 /** @deprecated fldChar inside w:del is valid; see the docx-core definition. */
 export { hasFldCharInsideDel } from '@usejunior/docx-core';
 export { parseDocumentXml } from './tagged/xmlToWmlElement.js';
+export { UnsupportedBlockContainerRevisionError } from './tagged/taggedTreeSerializer.js';
 export {
   AncillaryStorySafetyError,
 } from './tagged/ancillaryFieldSafety.js';
