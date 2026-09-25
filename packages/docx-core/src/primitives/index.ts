@@ -43,6 +43,7 @@ export * from './prevent_double_elevation.js';
 export * from './tables.js';
 export * from './table_rows.js';
 export * from './table_columns.js';
+export * from './table_cells.js';
 export * from './content_fingerprint.js';
 export * from './field_evaluation.js';
 export * from './locator.js';
