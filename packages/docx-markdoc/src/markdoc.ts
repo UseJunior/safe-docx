@@ -1,6 +1,6 @@
 import Markdoc, { type Config, type Node } from '@markdoc/markdoc';
 import { DocxMarkdocError } from './errors.js';
-import { IR_VERSION, type AnnotationAnchor, type AnnotationParagraph, type AnnotationRunStyle, type AtomicChangeSet, type CanonicalAnnotation, type CompilationProfile, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type RequirementWaiver, type RetainedFormat, type RetainedFormatSpan, type RunFormat, type RunFormatSpan, type SourceParagraph, type ValidationIssue, type ValidationResult } from './types.js';
+import { IR_VERSION, type AnnotationAnchor, type AnnotationParagraph, type AnnotationRunStyle, type AtomicChangeSet, type CanonicalAnnotation, type CompilationProfile, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type ReadOnlyStoryParagraph, type RequirementWaiver, type RetainedFormat, type RetainedFormatSpan, type RunFormat, type RunFormatSpan, type SourceParagraph, type StoryDeclaration, type ValidationIssue, type ValidationResult } from './types.js';
 
 const stringRequired = { type: String, required: true } as const;
 const runFormatAttributes = {
@@ -15,6 +15,25 @@ export const markdocConfig: Config = {
       attributes: {
         sha256: stringRequired,
         paragraphs: { type: Number, required: true },
+      },
+    },
+    readonly: {
+      attributes: {
+        story: stringRequired,
+        ordinal: { type: Number, required: true },
+        fingerprint: stringRequired,
+        reason: stringRequired,
+      },
+    },
+    story: {
+      selfClosing: true,
+      attributes: {
+        id: stringRequired,
+        kind: { type: String, required: true, matches: ['header', 'footer'] },
+        bindings: stringRequired,
+        fingerprint: stringRequired,
+        paragraphs: { type: Number, required: true },
+        readonly: { type: Number },
       },
     },
     compilation: {
@@ -32,6 +51,7 @@ export const markdocConfig: Config = {
     },
     para: {
       attributes: {
+        story: { type: String },
         id: stringRequired,
         fingerprint: stringRequired,
         style: stringRequired,
@@ -52,6 +72,7 @@ export const markdocConfig: Config = {
     },
     change: {
       attributes: {
+        story: { type: String },
         id: stringRequired,
         fingerprint: stringRequired,
         style: stringRequired,
@@ -65,6 +86,7 @@ export const markdocConfig: Config = {
     after: {},
     'replace-source': {
       attributes: {
+        story: { type: String },
         id: stringRequired,
         fingerprint: stringRequired,
         style: stringRequired,
@@ -77,6 +99,7 @@ export const markdocConfig: Config = {
     'delete-source': {
       selfClosing: true,
       attributes: {
+        story: { type: String },
         id: stringRequired,
         fingerprint: stringRequired,
         style: stringRequired,
@@ -87,6 +110,7 @@ export const markdocConfig: Config = {
     },
     'insert-before': {
       attributes: {
+        story: { type: String },
         anchor: stringRequired,
         operation: stringRequired,
         'style-source': { type: String },
@@ -96,6 +120,7 @@ export const markdocConfig: Config = {
     },
     'insert-after': {
       attributes: {
+        story: { type: String },
         anchor: stringRequired,
         operation: stringRequired,
         'style-source': { type: String },
@@ -229,7 +254,7 @@ function assertOnlyInlineRevisions(node: Node, issues: ValidationIssue[]): void 
  * Flattening arbitrary Markdown would silently lose links, formatting or blocks.
  */
 function validateTextBodies(ast: Node, issues: ValidationIssue[]): void {
-  const bodies = new Set(['para', 'before', 'after', 'replace-source', 'rationale', 'requirement', 'waiver']);
+  const bodies = new Set(['para', 'readonly', 'before', 'after', 'replace-source', 'rationale', 'requirement', 'waiver']);
   const plainNodes = new Set(['paragraph', 'inline', 'text', 'softbreak', 'hardbreak']);
   const insertionBodies = new Set([...ast.walk()]
     .filter((node) => node.tag === 'insert-before' || node.tag === 'insert-after')
@@ -437,6 +462,9 @@ export function parseMarkdoc(source: string): ValidationResult {
   let descriptor: MarkdocEditIR['source'] | undefined;
   let compilation: CompilationProfile | undefined;
   const scaffold: SourceParagraph[] = [];
+  const stories: StoryDeclaration[] = [];
+  const storyScaffold: SourceParagraph[] = [];
+  const storyReadOnly: ReadOnlyStoryParagraph[] = [];
   const operations: MarkdocEditIR['operations'] = [];
   const rationales: Rationale[] = [];
   const annotations: CanonicalAnnotation[] = [];
@@ -460,6 +488,37 @@ export function parseMarkdoc(source: string): ValidationResult {
     if (node.tag === 'source') {
       if (descriptor) issues.push(issue('DUPLICATE_SOURCE', 'Exactly one source tag is required.', node));
       descriptor = { sha256: String(a.sha256 ?? ''), paragraphs: Number(a.paragraphs) };
+      continue;
+    }
+    if (node.tag === 'story') {
+      const id = String(a.id ?? '');
+      const bindings = commaList(a.bindings);
+      if (stories.some((story) => story.id === id)) issues.push(issue('DUPLICATE_STORY', `Story ${id} is declared more than once.`, node));
+      if (!/^story-(?:header|footer)-[a-f0-9]+$/u.test(id)) issues.push(issue('INVALID_STORY_ID', `Story ${id} requires a deterministic opaque ID.`, node));
+      if (bindings.length === 0 || bindings.some((binding) => !/^\d+:(?:default|first|even)$/u.test(binding))
+        || new Set(bindings).size !== bindings.length || bindings.join(',') !== [...bindings].sort((left, right) => {
+          const [leftOrdinal] = left.split(':');
+          const [rightOrdinal] = right.split(':');
+          return Number(leftOrdinal) - Number(rightOrdinal) || left.localeCompare(right);
+        }).join(',')) {
+        issues.push(issue('INVALID_STORY_BINDINGS', `Story ${id} requires a complete sorted binding closure.`, node));
+      }
+      const paragraphs = Number(a.paragraphs);
+      if (!Number.isSafeInteger(paragraphs) || paragraphs < 0) issues.push(issue('INVALID_STORY_PARAGRAPHS', `Story ${id} has an invalid paragraph count.`, node));
+      const readOnlyParagraphs = a.readonly === undefined ? undefined : Number(a.readonly);
+      if (readOnlyParagraphs !== undefined && (!Number.isSafeInteger(readOnlyParagraphs) || readOnlyParagraphs < 0)) {
+        issues.push(issue('INVALID_STORY_PARAGRAPHS', `Story ${id} has an invalid read-only paragraph count.`, node));
+      }
+      stories.push({ id, kind: a.kind as StoryDeclaration['kind'], bindings, fingerprint: String(a.fingerprint ?? ''), paragraphs,
+        ...(readOnlyParagraphs === undefined ? {} : { readOnlyParagraphs }) });
+      continue;
+    }
+    if (node.tag === 'readonly') {
+      assertNoNestedTags(node, issues);
+      const ordinal = Number(a.ordinal);
+      if (!Number.isSafeInteger(ordinal) || ordinal < 0) issues.push(issue('INVALID_STORY_ORDINAL', 'Read-only story paragraphs require a non-negative ordinal.', node));
+      storyReadOnly.push({ story: String(a.story ?? ''), ordinal, fingerprint: String(a.fingerprint ?? ''),
+        reason: String(a.reason ?? ''), text: textProjection(node, 'original') });
       continue;
     }
     if (node.tag === 'compilation') {
@@ -638,6 +697,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       }
       operations.push({
         kind: node.tag,
+        ...(a.story === undefined ? {} : { story: String(a.story) }),
         operationId,
         anchorId: String(a.anchor ?? ''),
         revisedText: afterProjection.text,
@@ -676,13 +736,14 @@ export function parseMarkdoc(source: string): ValidationResult {
       if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
       operationIds.add(operationId);
       const paragraph: SourceParagraph = {
+        ...(a.story === undefined ? {} : { story: String(a.story) }),
         id,
         fingerprint: String(a.fingerprint ?? ''),
         style: String(a.style ?? ''),
         originalText: beforeText,
         revisedText: afterText,
       };
-      scaffold.push(paragraph);
+      (paragraph.story === undefined ? scaffold : storyScaffold).push(paragraph);
       operations.push(afterText === ''
         ? { kind: 'delete-source', operationId, format: 'inherit-source-paragraph', runFormat, runFormatSpans: afterProjection.spans, ...(afterProjection.retainedSpans.length ? { retainedFormatSpans: afterProjection.retainedSpans } : {}), ...paragraph }
         : {
@@ -714,6 +775,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       : revisedProjectionWithRunFormats(node, issues);
     const revisedText = revisedProjection.text;
     const paragraph: SourceParagraph = {
+      ...(a.story === undefined ? {} : { story: String(a.story) }),
       id,
       fingerprint: String(a.fingerprint ?? ''),
       style: String(a.style ?? ''),
@@ -721,7 +783,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       ...((node.tag === 'replace-source' || node.tag === 'delete-source') ? { originalTextFromSource: true as const } : {}),
       revisedText,
     };
-    scaffold.push(paragraph);
+    (paragraph.story === undefined ? scaffold : storyScaffold).push(paragraph);
     const operationId = a.operation === undefined ? undefined : String(a.operation);
     const runFormat = runFormatFromAttributes(a, node, issues);
     if (runFormat && revisedProjection.spans.length > 0) issues.push(issue('CONFLICTING_RUN_FORMAT_SCOPE', 'Use either operation-level or inline run formatting, not both.', node));
@@ -750,6 +812,24 @@ export function parseMarkdoc(source: string): ValidationResult {
   }
 
   if (!descriptor) issues.push(issue('MISSING_SOURCE', 'Exactly one source tag is required.'));
+  const storyIds = new Set(stories.map((story) => story.id));
+  for (const paragraph of storyScaffold) {
+    if (!storyIds.has(paragraph.story!)) issues.push(issue('UNDECLARED_STORY', `Paragraph ${paragraph.id} names undeclared story ${paragraph.story}.`));
+  }
+  for (const paragraph of storyReadOnly) {
+    if (!storyIds.has(paragraph.story)) issues.push(issue('UNDECLARED_STORY', `Read-only paragraph names undeclared story ${paragraph.story}.`));
+  }
+  for (const operation of operations) {
+    if ('story' in operation && operation.story !== undefined && !storyIds.has(operation.story)) {
+      issues.push(issue('UNDECLARED_STORY', `Operation ${operation.operationId} names undeclared story ${operation.story}.`));
+    }
+  }
+  for (const story of stories) {
+    const count = storyScaffold.filter((paragraph) => paragraph.story === story.id).length;
+    if (count !== story.paragraphs) issues.push(issue('STORY_SCAFFOLD_DRIFT', `Story ${story.id} declares ${story.paragraphs} paragraphs but projects ${count}.`));
+    const readOnlyCount = storyReadOnly.filter((paragraph) => paragraph.story === story.id).length;
+    if (readOnlyCount !== (story.readOnlyParagraphs ?? 0)) issues.push(issue('STORY_SCAFFOLD_DRIFT', `Story ${story.id} declares ${story.readOnlyParagraphs ?? 0} read-only paragraphs but projects ${readOnlyCount}.`));
+  }
   for (const rationale of rationales) {
     if (!operationIds.has(rationale.operationId)) {
       issues.push(issue('ORPHAN_RATIONALE', `Rationale targets unknown operation ${rationale.operationId}.`));
@@ -801,7 +881,7 @@ export function parseMarkdoc(source: string): ValidationResult {
   if (issues.length > 0 || !descriptor) return { valid: false, issues };
   return {
     valid: true,
-    ir: { version: IR_VERSION, source: descriptor, scaffold, operations, rationales, annotations, compilation, requirements, waivers, changeSets, assertions },
+    ir: { version: IR_VERSION, source: descriptor, scaffold, ...(stories.length ? { stories, storyScaffold, storyReadOnly } : {}), operations, rationales, annotations, compilation, requirements, waivers, changeSets, assertions },
   };
 }
 

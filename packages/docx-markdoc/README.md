@@ -123,6 +123,51 @@ rather than concatenated.
 anchored copy, so later compilation is stateless and never needs an editing
 session. The caller's original bytes remain untouched.
 
+## Existing headers and footers
+
+Import also inventories each relationship-selected physical header or footer
+once. Its opaque `story` ID represents the complete sorted set of section
+selectors that share that part; it is not a package filename. Admitted ordinary
+paragraphs receive anchors in the separate `anchored.docx` copy. For example:
+
+```markdoc
+{% story id="story-header-…" kind="header" bindings="0:default,1:default" fingerprint="sha256:…" paragraphs=1 readonly=0 /%}
+
+{% change story="story-header-…" id="_bk_…" fingerprint="sha256:…" style="Header" operation="update-date" format="inherit-source-paragraph" %}
+{% before %}Draft of September 17, 2026{% /before %}
+{% after %}Draft of September 18, 2026{% /after %}
+{% /change %}
+```
+
+Unsupported paragraphs remain visible, in physical story order, as non-operative
+`readonly` blocks. Their text, ordinal, reason, and whole-paragraph fingerprint
+are pinned to the source, but they have no Markdoc anchor:
+
+```markdoc
+{% readonly story="story-header-…" ordinal=0 fingerprint="sha256:…" reason="drawing" %}
+Company logo
+{% /readonly %}
+```
+
+The `story` attribute also works on `insert-before`, `insert-after`, and
+`delete-source`; without it, those tags still target the main body. An edit to
+a shared story affects every listed selector. The compiler requires the exact
+imported binding closure and source fingerprint, rejects body/other-story
+anchors, and certifies accept-all and reject-all text, formatting, scaffold,
+relationships, bindings, and unresolved revisions for each edited story.
+Existing physical table-cell paragraphs follow the same cell-boundary and
+trailing-paragraph rules as body edits. Field results and instructions remain
+preserved; ordinary text beside them can be edited.
+
+This is bounded paragraph authoring, not header/footer creation or structural
+editing. Markdoc cannot add, remove, rebind, or partly alias a story; change
+section selectors, tables, drawings, fields, content controls, or nested text
+boxes; or materialize Word comments on side-story edits. Paragraphs containing
+relationship-backed or unsupported content are read-only and have no operative
+Markdoc anchor; an attempted operation on an existing anchor there reports
+`UNSUPPORTED_STORY_CONTENT`. Unselected orphan parts remain untouched. Internal rationale
+may still accompany an operation without becoming a Word comment.
+
 ## Template-backed greenfield forms
 
 `compile-greenfield` creates a new clean form in an existing one-section house

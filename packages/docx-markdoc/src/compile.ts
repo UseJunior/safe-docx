@@ -1,11 +1,16 @@
 import JSZip from 'jszip';
 import {
   DocxDocument,
+  DocxZip,
+  OOXML,
+  W,
   addTrackedRangeComments,
   computeContentFingerprint,
+  findParagraphByBookmarkId,
   getParagraphBookmarkId,
   getParagraphRuns,
   parseXml,
+  relationshipPartPath,
   serializeXml,
   type ReplacementPart,
 } from '@usejunior/docx-core';
@@ -16,6 +21,7 @@ import {
 } from '@usejunior/docx-compare';
 import { DocxMarkdocError } from './errors.js';
 import { sha256 } from './hash.js';
+import { admittedStoryParagraphs, projectedStoryParagraphs, selectedStories, type SelectedStory } from './story-inventory.js';
 import { requireMarkdoc } from './markdoc.js';
 import { assessDraftCompleteness } from './completeness.js';
 import { projectAnnotations, type AnnotationProjectionResult } from './presentation.js';
@@ -34,6 +40,7 @@ import type {
   RunFormatSpan,
   TableRowOperation,
   TableTopologyReport,
+  StoryProjectionReport,
   VerificationCertificate,
 } from './types.js';
 
@@ -188,6 +195,7 @@ export function projectionChecksPassed(checks: Pick<
   | 'existingRevisionsPreserved'
   | 'retainedFormatting'
   | 'tableTopology'
+  | 'storyProjections'
 >): boolean {
   return checks.sourceSha256Matches
     && checks.scaffoldComplete
@@ -200,7 +208,8 @@ export function projectionChecksPassed(checks: Pick<
     && checks.unchangedPackagePartsPreserved
     && checks.existingRevisionsPreserved
     && (checks.retainedFormatting?.passed ?? true)
-    && (checks.tableTopology?.passed ?? true);
+    && (checks.tableTopology?.passed ?? true)
+    && (checks.storyProjections?.every((story) => story.passed) ?? true);
 }
 
 function directElementChildren(parent: Element, localName?: string): Element[] {
@@ -834,6 +843,7 @@ function replacePreservingMixedFormatting(
 function validateRunFormatScopes(ir: MarkdocEditIR, source: DocxDocument): ResolvedRetainedSpan[] {
   const retained: ResolvedRetainedSpan[] = [];
   for (const operation of ir.operations) {
+    if ('story' in operation && operation.story) continue;
     if (isTableRowOperation(operation)) continue;
     if (!operation.runFormat && !(operation.runFormatSpans?.length) && !(operation.retainedFormatSpans?.length)) continue;
     if (isInsertOperation(operation)) {
@@ -927,11 +937,11 @@ function isVerticalMergeContinuation(cell: Element): boolean {
   return !value || value === 'continue';
 }
 
-async function unchangedPartsEqual(source: Buffer, clean: Buffer): Promise<boolean> {
+async function unchangedPartsEqual(source: Buffer, clean: Buffer, editedStoryParts: ReadonlySet<string> = new Set()): Promise<boolean> {
   const [a, b] = await Promise.all([JSZip.loadAsync(source), JSZip.loadAsync(clean)]);
   const names = new Set([...Object.keys(a.files), ...Object.keys(b.files)]);
   for (const name of names) {
-    if (name === 'word/document.xml') continue;
+    if (name === 'word/document.xml' || editedStoryParts.has(name)) continue;
     const left = a.file(name);
     const right = b.file(name);
     if (!left || !right) return false;
@@ -942,12 +952,174 @@ async function unchangedPartsEqual(source: Buffer, clean: Buffer): Promise<boole
   return true;
 }
 
+function storyScaffoldXml(xml: string): string {
+  const doc = parseXml(xml);
+  const internalBookmarkIds = new Set<string>();
+  for (const start of Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkStart))) {
+    const name = start.getAttributeNS(OOXML.W_NS, 'name') ?? start.getAttribute('w:name') ?? '';
+    if (!name.startsWith('_bk_')) continue;
+    const id = start.getAttributeNS(OOXML.W_NS, 'id') ?? start.getAttribute('w:id');
+    if (id) internalBookmarkIds.add(id);
+    start.parentNode?.removeChild(start);
+  }
+  for (const end of Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkEnd))) {
+    const id = end.getAttributeNS(OOXML.W_NS, 'id') ?? end.getAttribute('w:id');
+    if (id && internalBookmarkIds.has(id)) end.parentNode?.removeChild(end);
+  }
+  for (const paragraph of admittedStoryParagraphs(doc)) paragraph.parentNode?.removeChild(paragraph);
+  const removeFormattingWhitespace = (node: Node): void => {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === 3 && !(child.nodeValue ?? '').trim()
+        && node.nodeType === 1
+        && !['t', 'delText', 'instrText', 'delInstrText'].includes((node as Element).localName)) {
+        node.removeChild(child);
+      } else {
+        removeFormattingWhitespace(child);
+      }
+    }
+  };
+  removeFormattingWhitespace(doc.documentElement);
+  // Prefix placement and xmlns redeclarations can change when an unchanged
+  // DrawingML subtree is serialized. Compare expanded names and attributes,
+  // not lexical namespace placement, while retaining all non-namespace nodes.
+  const canonical = (node: Node): unknown => {
+    if (node.nodeType !== 1) return { type: node.nodeType, value: node.nodeValue ?? '' };
+    const element = node as Element;
+    return {
+      name: `${element.namespaceURI ?? ''}:${element.localName}`,
+      attributes: Array.from(element.attributes)
+        .filter((attribute) => attribute.namespaceURI !== 'http://www.w3.org/2000/xmlns/')
+        .map((attribute) => `${attribute.namespaceURI ?? ''}:${attribute.localName}=${attribute.value}`)
+        .sort(),
+      children: Array.from(element.childNodes).map(canonical),
+    };
+  };
+  return JSON.stringify(canonical(doc.documentElement));
+}
+
+function scaffoldDifference(expected: string, actual: string): { offset: number; expected: string; actual: string } | null {
+  if (expected === actual) return null;
+  let offset = 0;
+  while (offset < expected.length && offset < actual.length && expected[offset] === actual[offset]) offset += 1;
+  return {
+    offset,
+    expected: expected.slice(Math.max(0, offset - 30), offset + 90),
+    actual: actual.slice(Math.max(0, offset - 30), offset + 90),
+  };
+}
+
+function storyUnresolvedRevisions(xml: string): number {
+  const doc = parseXml(xml);
+  const revisionNames = ['ins', 'del', 'moveFrom', 'moveTo', 'pPrChange', 'rPrChange', 'tblPrChange', 'trPrChange', 'tcPrChange'];
+  return revisionNames.reduce((count, name) => count + doc.getElementsByTagNameNS(OOXML.W_NS, name).length, 0);
+}
+
+function storyProtectedContentSignature(xml: string): string {
+  const document = parseXml(xml);
+  const protectedNames = new Set(['fldChar', 'instrText', 'delInstrText', 'fldSimple', 'hyperlink']);
+  return JSON.stringify(Array.from(document.getElementsByTagNameNS(OOXML.W_NS, '*'))
+    .filter((element) => protectedNames.has(element.localName))
+    .map((element) => ({
+      name: element.localName,
+      attributes: Array.from(element.attributes)
+        .map((attribute) => `${attribute.namespaceURI ?? ''}:${attribute.localName}=${attribute.value}`)
+        .sort(),
+      ...(['instrText', 'delInstrText', 'fldSimple'].includes(element.localName)
+        ? { text: element.textContent ?? '' } : {}),
+    })));
+}
+
+async function verifyStoryProjections(params: {
+  source: Buffer;
+  clean: Buffer;
+  accepted: Buffer;
+  rejected: Buffer;
+  edited: ReadonlyMap<string, SelectedStory>;
+  unrepresentedChanges?: ReadonlyArray<{ scope: string; sectionIndex: number; role?: string }>;
+}): Promise<StoryProjectionReport[]> {
+  const packages = await Promise.all([params.source, params.clean, params.accepted, params.rejected].map((buffer) => DocxZip.load(buffer)));
+  const inventories = await Promise.all([params.source, params.clean, params.accepted, params.rejected].map(selectedStories));
+  const reports: StoryProjectionReport[] = [];
+  for (const declared of params.edited.values()) {
+    const matched = inventories.map((inventory) => inventory.find((story) => story.id === declared.id));
+    const [sourceStory, cleanStory, acceptedStory, rejectedStory] = matched;
+    if (!sourceStory || !cleanStory || !acceptedStory || !rejectedStory) {
+      throw new DocxMarkdocError('STORY_TOPOLOGY_DRIFT', `Selected story ${declared.id} disappeared during projection.`);
+    }
+    const [sourceXml, cleanXml, acceptedXml, rejectedXml] = await Promise.all(matched.map((story, index) => packages[index]!.readText(story!.partPath)));
+    const relations = await Promise.all(matched.map((story, index) => packages[index]!.readTextOrNull(relationshipPartPath(story!.partPath))));
+    const bindingClosurePreserved = matched.every((story) => story!.kind === declared.kind
+      && story!.bindings.join(',') === declared.bindings.join(','));
+    const sourceText = sourceStory.paragraphsInOrder.map((paragraph) => paragraph.text);
+    const cleanText = cleanStory.paragraphsInOrder.map((paragraph) => paragraph.text);
+    const rejectAllTextEqualsSource = JSON.stringify(rejectedStory.paragraphsInOrder.map((paragraph) => paragraph.text)) === JSON.stringify(sourceText);
+    const acceptAllTextEqualsClean = JSON.stringify(acceptedStory.paragraphsInOrder.map((paragraph) => paragraph.text)) === JSON.stringify(cleanText);
+    const rejectAllFormattingEqualsSource = formattingEquivalent(compareFormattingFidelity(sourceXml!, rejectedXml!));
+    const acceptAllFormattingEqualsClean = formattingEquivalent(compareFormattingFidelity(cleanXml!, acceptedXml!));
+    const [sourceScaffold, cleanScaffold, acceptedScaffold, rejectedScaffold] = [sourceXml!, cleanXml!, acceptedXml!, rejectedXml!].map(storyScaffoldXml);
+    const scaffoldProjections = {
+      sourceClean: sourceScaffold === cleanScaffold,
+      sourceReject: sourceScaffold === rejectedScaffold,
+      cleanAccept: cleanScaffold === acceptedScaffold,
+    };
+    const scaffoldPreserved = Object.values(scaffoldProjections).every(Boolean);
+    const [sourceProtected, cleanProtected, acceptedProtected, rejectedProtected] =
+      [sourceXml!, cleanXml!, acceptedXml!, rejectedXml!].map(storyProtectedContentSignature);
+    const protectedContentPreserved = {
+      sourceClean: sourceProtected === cleanProtected,
+      sourceReject: sourceProtected === rejectedProtected,
+      cleanAccept: cleanProtected === acceptedProtected,
+    };
+    const scaffoldDifferences = [
+      { projection: 'source-reject' as const, difference: scaffoldDifference(sourceScaffold!, rejectedScaffold!) },
+      { projection: 'clean-accept' as const, difference: scaffoldDifference(cleanScaffold!, acceptedScaffold!) },
+    ].filter((item): item is { projection: 'source-reject' | 'clean-accept'; difference: NonNullable<typeof item.difference> } => item.difference !== null)
+      .map(({ projection, difference }) => ({ projection, ...difference }));
+    const relationshipsPreserved = relations.every((relation) => relation === relations[0]);
+    const unresolvedRevisions = {
+      accept: storyUnresolvedRevisions(acceptedXml!),
+      reject: storyUnresolvedRevisions(rejectedXml!),
+    };
+    const unrepresented = declared.bindings.some((binding) => {
+      const [ordinal, role] = binding.split(':');
+      return params.unrepresentedChanges?.some((change) => change.scope === declared.kind
+        && change.sectionIndex === Number(ordinal) && change.role === role) ?? false;
+    });
+    reports.push({
+      storyId: declared.id,
+      kind: declared.kind,
+      bindings: declared.bindings,
+      sourceFingerprint: sourceStory.fingerprint,
+      cleanFingerprint: cleanStory.fingerprint,
+      rejectAllTextEqualsSource,
+      acceptAllTextEqualsClean,
+      rejectAllFormattingEqualsSource,
+      acceptAllFormattingEqualsClean,
+      scaffoldPreserved,
+      scaffoldProjections,
+      protectedContentPreserved,
+      ...(scaffoldDifferences.length ? { scaffoldDifferences } : {}),
+      relationshipsPreserved,
+      bindingClosurePreserved,
+      unresolvedRevisions,
+      unrepresented,
+      passed: rejectAllTextEqualsSource && acceptAllTextEqualsClean
+        && rejectAllFormattingEqualsSource && acceptAllFormattingEqualsClean
+        && scaffoldPreserved && Object.values(protectedContentPreserved).every(Boolean)
+        && relationshipsPreserved && bindingClosurePreserved
+        && unresolvedRevisions.accept === 0 && unresolvedRevisions.reject === 0 && !unrepresented,
+    });
+  }
+  return reports;
+}
+
 function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsupported: string[] } {
+  const bodyOperations = ir.operations.filter((operation) => !('story' in operation && operation.story));
   const { nodes } = source.buildDocumentView({ includeSemanticTags: false, showFormatting: true });
   if (nodes.length !== ir.source.paragraphs || ir.scaffold.length !== nodes.length) {
     throw new DocxMarkdocError('SCAFFOLD_DRIFT', `Expected ${nodes.length} source paragraphs, found ${ir.scaffold.length}.`);
   }
-  const replacements = new Map(ir.operations
+  const replacements = new Map(bodyOperations
     .filter((operation) => operation.kind === 'replace-source' || operation.kind === 'delete-source')
     .map((operation) => [sourceOperationId(operation), operation]));
   const unsupported = new Set<string>();
@@ -979,7 +1151,7 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     if (node.comments?.length) unsupported.add('comments');
   });
   const deletionsByCell = new Map<Element, { paragraphs: Set<Element>; operationId: string }>();
-  for (const operation of ir.operations) {
+  for (const operation of bodyOperations) {
     const id = sourceOperationId(operation);
     if (!id) continue;
     const node = nodeById.get(id);
@@ -1010,7 +1182,7 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
       );
     }
   }
-  for (const operation of ir.operations.filter(isInsertOperation)) {
+  for (const operation of bodyOperations.filter(isInsertOperation)) {
     const anchor = nodeById.get(operation.anchorId);
     if (!anchor) {
       throw new DocxMarkdocError('MISSING_ANCHOR', `Operation ${operation.operationId} targets missing paragraph ${operation.anchorId}.`);
@@ -1051,7 +1223,7 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
 
   const structuralRows = new Map<Element, TableRowOperation>();
   const deletedRows = new Map<Element, TableRowOperation>();
-  for (const operation of ir.operations.filter(isTableRowOperation)) {
+  for (const operation of bodyOperations.filter(isTableRowOperation)) {
     const anchor = nodeById.get(operation.anchorId);
     if (!anchor) throw new DocxMarkdocError('MISSING_ANCHOR', `Operation ${operation.operationId} targets missing paragraph ${operation.anchorId}.`);
     const row = nearestTableRow(source.getParagraphElementById(operation.anchorId));
@@ -1063,7 +1235,7 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     structuralRows.set(row, operation);
     if (operation.kind === 'delete-table-row') deletedRows.set(row, operation);
   }
-  for (const operation of ir.operations) {
+  for (const operation of bodyOperations) {
     if (isTableRowOperation(operation)) {
       if (operation.kind === 'insert-table-rows') {
         const row = nearestTableRow(source.getParagraphElementById(operation.anchorId));
@@ -1100,6 +1272,219 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
   return { unsupported: [...unsupported].sort() };
 }
 
+function operationStory(operation: EditOperation): string | undefined {
+  return 'story' in operation ? operation.story : undefined;
+}
+
+function assertStoryFieldRangesUntouched(
+  paragraph: Element,
+  operationId: string,
+  ranges: ReadonlyArray<{ start: number; end: number }>,
+): void {
+  let offset = 0;
+  for (const run of getParagraphRuns(paragraph)) {
+    const start = offset;
+    const end = start + run.text.length;
+    offset = end;
+    let inSimpleField = false;
+    for (let parent = run.r.parentElement; parent; parent = parent.parentElement) {
+      if (parent.namespaceURI === OOXML.W_NS && parent.localName === 'fldSimple') inSimpleField = true;
+    }
+    if (!run.isFieldResult && !inSimpleField) continue;
+    if (ranges.some((range) => range.start === range.end
+      ? range.start >= start && range.start <= end
+      : range.start < end && range.end > start)) {
+      throw new DocxMarkdocError('UNSUPPORTED_STORY_FIELD_EDIT', `Operation ${operationId} intersects a preserved story field result.`);
+    }
+  }
+}
+
+function assertStoryParagraphDeletionPreservesProtectedContent(paragraph: Element, operationId: string): void {
+  if (['fldSimple', 'fldChar', 'instrText', 'delInstrText'].some((name) =>
+    paragraph.getElementsByTagNameNS(OOXML.W_NS, name).length > 0)) {
+    throw new DocxMarkdocError('UNSUPPORTED_STORY_FIELD_EDIT', `Operation ${operationId} cannot delete a preserved story field.`);
+  }
+  if (paragraph.getElementsByTagNameNS(OOXML.W_NS, W.hyperlink).length > 0) {
+    throw new DocxMarkdocError('UNSUPPORTED_STORY_HYPERLINK_EDIT', `Operation ${operationId} cannot delete a preserved story hyperlink.`);
+  }
+}
+
+async function validateStoriesAgainstSource(
+  ir: MarkdocEditIR,
+  sourceBuffer: Buffer,
+): Promise<Map<string, SelectedStory>> {
+  const declarations = ir.stories ?? [];
+  if (declarations.length === 0) return new Map();
+  const physical = await selectedStories(sourceBuffer);
+  if (physical.length !== declarations.length) {
+    throw new DocxMarkdocError('STORY_TOPOLOGY_DRIFT', 'Declared story inventory does not match selected physical stories.');
+  }
+  const storyById = new Map<string, SelectedStory>();
+  for (const [index, actual] of physical.entries()) {
+    const claimed = declarations[index];
+    if (!claimed || claimed.id !== actual.id || claimed.kind !== actual.kind
+      || claimed.bindings.join(',') !== actual.bindings.join(',')
+      || claimed.fingerprint !== actual.fingerprint || claimed.paragraphs !== actual.paragraphs
+      || (claimed.readOnlyParagraphs ?? 0) !== actual.readOnlyParagraphs) {
+      throw new DocxMarkdocError('STORY_TOPOLOGY_DRIFT', `Story declaration at position ${index} does not match the pinned source.`);
+    }
+    storyById.set(actual.id, actual);
+  }
+  const expected = physical.flatMap((story) => story.paragraphsInOrder.map((paragraph) => ({ story, paragraph })));
+  if ((ir.storyScaffold ?? []).length !== expected.length) {
+    throw new DocxMarkdocError('STORY_SCAFFOLD_DRIFT', 'Story paragraph scaffold does not match the pinned source.');
+  }
+  for (const [index, { story, paragraph }] of expected.entries()) {
+    const claimed = ir.storyScaffold?.[index];
+    if (!claimed || claimed.story !== story.id || claimed.id !== paragraph.id
+      || claimed.fingerprint !== computeContentFingerprint(paragraph.text)
+      || claimed.style !== paragraph.style || claimed.originalText !== paragraph.text) {
+      throw new DocxMarkdocError('STORY_SCAFFOLD_DRIFT', `Story paragraph at position ${index} does not match the pinned source.`);
+    }
+  }
+  const expectedReadOnly = physical.flatMap((story) => story.readOnlyInOrder);
+  if ((ir.storyReadOnly ?? []).length !== expectedReadOnly.length) {
+    throw new DocxMarkdocError('STORY_SCAFFOLD_DRIFT', 'Read-only story paragraph inventory does not match the pinned source.');
+  }
+  for (const [index, expectedParagraph] of expectedReadOnly.entries()) {
+    const claimed = ir.storyReadOnly?.[index];
+    if (!claimed || claimed.story !== expectedParagraph.story || claimed.ordinal !== expectedParagraph.ordinal
+      || claimed.fingerprint !== expectedParagraph.fingerprint || claimed.reason !== expectedParagraph.reason
+      || claimed.text !== expectedParagraph.text) {
+      throw new DocxMarkdocError('STORY_SCAFFOLD_DRIFT', `Read-only story paragraph at position ${index} does not match the pinned source.`);
+    }
+  }
+  const sourceZip = await DocxZip.load(sourceBuffer);
+  const sourceStoryDocs = new Map<string, Document>();
+  // Replay all operations on one disposable package. Independent one-op trials
+  // miss cumulative cell/root deletion and stale-anchor combinations.
+  const trial = await DocxDocument.load(sourceBuffer);
+  for (const operation of ir.operations) {
+    if (isTableRowOperation(operation)) continue;
+    const storyId = operationStory(operation);
+    if (!storyId) continue;
+    const story = storyById.get(storyId);
+    if (!story) throw new DocxMarkdocError('UNDECLARED_STORY', `Operation ${operation.operationId} names undeclared story ${storyId}.`);
+    const anchorId = isInsertOperation(operation) ? operation.anchorId : operation.id;
+    if (isInsertOperation(operation) && operation.styleSourceId
+      && !story.paragraphsInOrder.some((paragraph) => paragraph.id === operation.styleSourceId)) {
+      throw new DocxMarkdocError('STORY_ANCHOR_MISMATCH', `Operation ${operation.operationId} style source is outside ${storyId}.`);
+    }
+    let storyDom = sourceStoryDocs.get(story.partPath);
+    if (!storyDom) {
+      storyDom = parseXml(await sourceZip.readText(story.partPath));
+      sourceStoryDocs.set(story.partPath, storyDom);
+    }
+    if (!story.paragraphsInOrder.some((paragraph) => paragraph.id === anchorId)) {
+      // A host paragraph can contain a nested text-box paragraph's bookmark.
+      // Diagnose the innermost physical bookmark owner, not that host.
+      const directBookmarkOwner = anchorId.startsWith('_bk_')
+        ? Array.from(storyDom.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkStart))
+          .filter((start) => (start.getAttributeNS(OOXML.W_NS, 'name') ?? start.getAttribute('w:name')) === anchorId)
+          .map((start) => {
+            for (let current = start.parentElement; current; current = current.parentElement) {
+              if (current.namespaceURI === OOXML.W_NS && current.localName === W.p) return current;
+            }
+            return null;
+          })
+          .find((paragraph) => paragraph && projectedStoryParagraphs(storyDom).includes(paragraph))
+        : null;
+      const target = directBookmarkOwner ?? findParagraphByBookmarkId(storyDom, anchorId);
+      if (target) {
+        const ordinal = projectedStoryParagraphs(storyDom).indexOf(target);
+        const reason = story.readOnlyInOrder.find((paragraph) => paragraph.ordinal === ordinal)?.reason ?? 'unsupported';
+        throw new DocxMarkdocError('UNSUPPORTED_STORY_CONTENT', `Operation ${operation.operationId} targets read-only ${reason} content in ${storyId}.`);
+      }
+      throw new DocxMarkdocError('STORY_ANCHOR_MISMATCH', `Operation ${operation.operationId} anchor ${anchorId} is not admitted in ${storyId}.`);
+    }
+    if (isInsertOperation(operation) && operation.retainedFormatSpans?.length) {
+      throw new DocxMarkdocError('NON_COMMON_RETAINED_SCOPE', `Story insertion ${operation.operationId} cannot retain-format generated text.`);
+    }
+    // Trial mutations validate field boundaries and physical cell safety on a
+    // disposable document before the intended-clean package is ever built.
+    try {
+      if (isInsertOperation(operation)) {
+        await trial.insertStoryParagraph({
+          partPath: story.partPath,
+          positionalAnchorNodeId: operation.anchorId,
+          relativePosition: operation.kind === 'insert-before' ? 'BEFORE' : 'AFTER',
+          newText: operation.revisedText,
+          styleSourceId: operation.styleSourceId,
+          runStyleSourceText: operation.formatSource,
+        });
+      } else if (operation.kind === 'delete-source') {
+        const sourceParagraph = findParagraphByBookmarkId(storyDom, operation.id);
+        if (!sourceParagraph) throw new Error('story source paragraph disappeared');
+        assertStoryParagraphDeletionPreservesProtectedContent(sourceParagraph, operation.operationId);
+        await trial.deleteStoryParagraph(story.partPath, operation.id);
+      } else {
+        const original = await trial.getStoryParagraphTextById(story.partPath, operation.id);
+        if (original === null) throw new Error('story anchor disappeared');
+        const hunks = textHunks(original, operation.revisedText);
+        const sourceParagraph = findParagraphByBookmarkId(storyDom, operation.id);
+        if (!sourceParagraph) throw new Error('story source paragraph disappeared');
+        const sourceSpans = runSpans(sourceParagraph);
+        assertStoryFieldRangesUntouched(sourceParagraph, operation.operationId, hunks);
+        let previousEnd = -1;
+        const retained = (operation.retainedFormatSpans ?? []).map((span) => {
+          if (span.start < previousEnd || span.end <= span.start || span.end > operation.revisedText.length) {
+            throw new DocxMarkdocError('AMBIGUOUS_RETAINED_FORMAT_SCOPE', `Operation ${operation.operationId} has an invalid retained-format span.`);
+          }
+          previousEnd = span.end;
+          return mapRetainedSpan(operation.operationId, operation.id, span, hunks, sourceSpans, original);
+        });
+        assertStoryFieldRangesUntouched(sourceParagraph, operation.operationId, retained.map((span) => ({
+          start: span.sourceStart, end: span.sourceEnd,
+        })));
+        for (const hunk of [...hunks].reverse()) {
+          await trial.replaceStoryTextAtRange({
+            partPath: story.partPath,
+            targetParagraphId: operation.id,
+            start: hunk.start,
+            end: hunk.end,
+            replaceText: hunk.replacement,
+          });
+        }
+        for (const span of [...retained].reverse()) {
+          await trial.formatStoryTextAtRange({
+            partPath: story.partPath,
+            targetParagraphId: operation.id,
+            start: span.start,
+            end: span.end,
+            format: span.format,
+          });
+        }
+      }
+    } catch (error) {
+      if (error instanceof DocxMarkdocError) throw error;
+      throw new DocxMarkdocError('UNSUPPORTED_STORY_EDIT', `Operation ${operation.operationId} is unsafe in ${storyId}.`, { cause: (error as Error).message });
+    }
+  }
+  if (ir.operations.some((operation) => operationStory(operation))) {
+    const trialZip = await DocxZip.load((await trial.toBuffer({ cleanBookmarks: false })).buffer);
+    const editedPartPaths = new Set(ir.operations
+      .map(operationStory)
+      .filter((storyId): storyId is string => Boolean(storyId))
+      .map((storyId) => storyById.get(storyId)!.partPath));
+    for (const partPath of editedPartPaths) {
+      const root = parseXml(await trialZip.readText(partPath)).documentElement;
+      const sourceRoot = sourceStoryDocs.get(partPath)!.documentElement;
+      const directParagraphCount = (element: Element): number => Array.from(element.childNodes)
+        .filter((node) => node.nodeType === 1 && (node as Element).namespaceURI === OOXML.W_NS
+          && (node as Element).localName === W.p).length;
+      const lastBlock = (element: Element): string | undefined => Array.from(element.childNodes)
+        .filter((node): node is Element => node.nodeType === 1 && (node as Element).namespaceURI === OOXML.W_NS
+          && ['p', 'tbl', 'sdt', 'customXml', 'altChunk'].includes((node as Element).localName))
+        .at(-1)?.localName;
+      if ((directParagraphCount(sourceRoot) > 0 && directParagraphCount(root) === 0)
+        || (lastBlock(sourceRoot) === W.p && lastBlock(root) !== W.p)) {
+        throw new DocxMarkdocError('STORY_REQUIRES_PARAGRAPH', `Selected story ${partPath} would lose its final direct paragraph after edits.`);
+      }
+    }
+  }
+  return storyById;
+}
+
 type AttributedRange = {
   operationId: string;
   projection: 'source' | 'clean';
@@ -1113,10 +1498,111 @@ async function applyOperations(
   sourceBuffer: Buffer,
   ir: MarkdocEditIR,
   retainedSpans: ResolvedRetainedSpan[],
+  stories: ReadonlyMap<string, SelectedStory>,
 ): Promise<{ buffer: Buffer; ranges: AttributedRange[] }> {
   const document = await DocxDocument.load(sourceBuffer);
+  const sourceZip = await DocxZip.load(sourceBuffer);
+  const sourceStoryDocs = new Map<string, Document>();
   const ranges: AttributedRange[] = [];
   for (const operation of ir.operations) {
+    const storyId = operationStory(operation);
+    if (storyId) {
+      const story = stories.get(storyId);
+      if (!story || isTableRowOperation(operation)) throw new DocxMarkdocError('UNDECLARED_STORY', `Operation ${operation.operationId} has no admitted story.`);
+      let storyDom = sourceStoryDocs.get(story.partPath);
+      if (!storyDom) {
+        storyDom = parseXml(await sourceZip.readText(story.partPath));
+        sourceStoryDocs.set(story.partPath, storyDom);
+      }
+      if (isInsertOperation(operation)) {
+        const sourceId = operation.styleSourceId ?? operation.anchorId;
+        const sourceParagraph = findParagraphByBookmarkId(storyDom, sourceId);
+        if (!sourceParagraph) throw new DocxMarkdocError('STORY_ANCHOR_MISMATCH', `Story style source ${sourceId} is missing.`);
+        const sourceText = await document.getStoryParagraphTextById(story.partPath, sourceId);
+        if (sourceText === null) throw new DocxMarkdocError('STORY_ANCHOR_MISMATCH', `Story style source ${sourceId} is missing.`);
+        const sourceSpans = runSpans(sourceParagraph);
+        const signatures = new Set(sourceSpans.map((span) => span.signature));
+        if (signatures.size > 1 && !operation.formatSource) {
+          throw new DocxMarkdocError('MIXED_FORMATTING_REQUIRES_DETAIL', `Story insertion ${operation.operationId} requires format-source.`);
+        }
+        const templateRun = operation.formatSource
+          ? uniqueSourceTemplate(sourceSpans, sourceText, operation.formatSource, sourceId)
+          : sourceSpans[0]?.run;
+        if ((operation.runFormat || operation.runFormatSpans?.length) && !templateRun) {
+          throw new DocxMarkdocError('MIXED_FORMATTING_REQUIRES_DETAIL', `Story insertion ${operation.operationId} has no source run template.`);
+        }
+        if (operation.runFormat || operation.runFormatSpans?.length) {
+          if (operation.revisedText.length === 0 || operation.revisedText.replace(/\r\n/gu, '\n').split(/\n{2,}/u).length !== 1) {
+            throw new DocxMarkdocError('AMBIGUOUS_RUN_FORMAT_SCOPE', `Story insertion ${operation.operationId} requires one generated paragraph.`);
+          }
+          validateInlineRunFormatSpans(operation.operationId, [{
+            start: 0, end: 0, replacement: operation.revisedText,
+            revisedStart: 0, revisedEnd: operation.revisedText.length,
+          }], operation.runFormatSpans ?? []);
+        }
+        const inserted = await document.insertStoryParagraph({
+          partPath: story.partPath,
+          positionalAnchorNodeId: operation.anchorId,
+          relativePosition: operation.kind === 'insert-before' ? 'BEFORE' : 'AFTER',
+          newText: operation.revisedText,
+          styleSourceId: operation.styleSourceId,
+          runStyleSourceText: operation.formatSource,
+        });
+        if (templateRun && (operation.runFormat || operation.runFormatSpans?.length)) {
+          await document.replaceStoryTextAtRange({
+            partPath: story.partPath,
+            targetParagraphId: inserted.newParagraphId,
+            start: 0,
+            end: operation.revisedText.length,
+            replaceText: replacementPartsForHunk({
+              start: 0, end: 0, replacement: operation.revisedText,
+              revisedStart: 0, revisedEnd: operation.revisedText.length,
+            }, templateRun, operation.runFormatSpans ?? [], operation.runFormat),
+          });
+        }
+      } else if (operation.kind === 'delete-source') {
+        const sourceParagraph = findParagraphByBookmarkId(storyDom, operation.id);
+        if (!sourceParagraph) throw new DocxMarkdocError('STORY_ANCHOR_MISMATCH', `Story paragraph ${operation.id} is missing.`);
+        assertStoryParagraphDeletionPreservesProtectedContent(sourceParagraph, operation.operationId);
+        await document.deleteStoryParagraph(story.partPath, operation.id);
+      } else {
+        const sourceParagraph = findParagraphByBookmarkId(storyDom, operation.id);
+        if (!sourceParagraph) throw new DocxMarkdocError('STORY_ANCHOR_MISMATCH', `Story paragraph ${operation.id} is missing.`);
+        const original = await document.getStoryParagraphTextById(story.partPath, operation.id);
+        if (original === null) throw new DocxMarkdocError('STORY_ANCHOR_MISMATCH', `Story paragraph ${operation.id} is missing.`);
+        const hunks = textHunks(original, operation.revisedText);
+        const sourceSpans = runSpans(sourceParagraph);
+        const storyRetained = (operation.retainedFormatSpans ?? []).map((span) =>
+          mapRetainedSpan(operation.operationId, operation.id, span, hunks, sourceSpans, original));
+        const formatted = operation.runFormat ? requireSingleGeneratedHunk(operation.operationId, hunks) : undefined;
+        validateInlineRunFormatSpans(operation.operationId, hunks, operation.runFormatSpans ?? []);
+        for (const hunk of [...hunks].reverse()) {
+          const template = hunk.replacement.length === 0 ? undefined : templateForHunk(
+            sourceSpans, hunk, original, operation.id,
+            operation.kind === 'replace-source' ? operation.formatSource : undefined,
+          );
+          await document.replaceStoryTextAtRange({
+            partPath: story.partPath,
+            targetParagraphId: operation.id,
+            start: hunk.start,
+            end: hunk.end,
+            replaceText: template
+              ? replacementPartsForHunk(hunk, template, operation.runFormatSpans ?? [], hunk === formatted ? operation.runFormat : undefined)
+              : [],
+          });
+        }
+        for (const span of [...storyRetained].reverse()) {
+          await document.formatStoryTextAtRange({
+            partPath: story.partPath,
+            targetParagraphId: operation.id,
+            start: span.start,
+            end: span.end,
+            format: span.format,
+          });
+        }
+      }
+      continue;
+    }
     if (operation.kind === 'insert-table-rows') {
       const insertedCells: Array<{ id: string; text: string }> = [];
       let anchorId = operation.anchorId;
@@ -1400,6 +1886,22 @@ export async function compileMarkdoc(
   options: CompileOptions = {},
 ): Promise<CompileResult> {
   const ir = requireMarkdoc(markdoc);
+  const storyOperationIds = new Set(ir.operations.filter((operation) => operationStory(operation)).map((operation) => operation.operationId));
+  const includeStoryExternalComments = options.externalComments ?? ir.compilation?.externalComments !== 'omit';
+  const includeStoryInternalComments = options.dangerouslyIncludeInternalComments === true;
+  for (const rationale of ir.rationales) {
+    if (!storyOperationIds.has(rationale.operationId)) continue;
+    if ((rationale.visibility === 'external-facing' && includeStoryExternalComments)
+      || (rationale.visibility === 'internal' && includeStoryInternalComments)) {
+      throw new DocxMarkdocError('STORY_COMMENT_UNSUPPORTED', `Rationale for side-story operation ${rationale.operationId} cannot materialize as a Word comment.`);
+    }
+  }
+  for (const annotation of ir.annotations) {
+    if (annotation.id.startsWith('rationale:')) continue;
+    if (annotation.operationId && storyOperationIds.has(annotation.operationId)) {
+      throw new DocxMarkdocError('STORY_COMMENT_UNSUPPORTED', `Annotation ${annotation.id} cannot target a side-story operation.`);
+    }
+  }
   const resolvedCompilation = resolveCompilation(options, ir);
   const materializations = rationaleMaterializations(resolvedCompilation, ir);
   const sourceHashMatches = sha256(sourceBuffer) === ir.source.sha256;
@@ -1414,6 +1916,7 @@ export async function compileMarkdoc(
     );
   }
   const sourceDocument = await DocxDocument.load(sourceBuffer);
+  const storyById = await validateStoriesAgainstSource(ir, sourceBuffer);
   const { unsupported } = validateAgainstSource(ir, sourceDocument);
   const retainedSpans = validateRunFormatScopes(ir, sourceDocument);
   const declaredOperationIds = ir.operations.map((operation) => operation.operationId);
@@ -1427,7 +1930,7 @@ export async function compileMarkdoc(
     );
   }
   await preflightTableRowOperations(sourceBuffer, ir);
-  const applied = await applyOperations(sourceBuffer, ir, retainedSpans);
+  const applied = await applyOperations(sourceBuffer, ir, retainedSpans, storyById);
   const clean = applied.buffer;
   const rangesByOperation = new Map(applied.ranges.map((range) => [range.operationId, range]));
   for (const item of materializations) {
@@ -1549,7 +2052,26 @@ export async function compileMarkdoc(
   const rejectAllEqualsSource = rejectedText === sourceText;
   const acceptAllEqualsClean = acceptedText === cleanText;
   const formattingProjection = await verifyFormattingProjections(sourceBuffer, clean, tracked, sourceContainsRevisions);
-  const unchangedPackagePartsPreserved = await unchangedPartsEqual(sourceBuffer, clean);
+  const editedStoryIds = new Set(ir.operations.map(operationStory).filter((story): story is string => Boolean(story)));
+  const editedStories = new Map([...storyById].filter(([id]) => editedStoryIds.has(id)));
+  const unchangedPackagePartsPreserved = await unchangedPartsEqual(
+    sourceBuffer, clean, new Set([...editedStories.values()].map((story) => story.partPath)),
+  );
+  let storyProjections: StoryProjectionReport[] | undefined;
+  if (editedStories.size > 0) {
+    const [acceptedBuffer, rejectedBuffer] = await Promise.all([
+      acceptedDoc.toBuffer({ cleanBookmarks: false }).then((result) => result.buffer),
+      rejectedDoc.toBuffer({ cleanBookmarks: false }).then((result) => result.buffer),
+    ]);
+    storyProjections = await verifyStoryProjections({
+      source: sourceBuffer,
+      clean,
+      accepted: acceptedBuffer,
+      rejected: rejectedBuffer,
+      edited: editedStories,
+      unrepresentedChanges: comparison?.unrepresentedChanges,
+    });
+  }
   let tableTopology: TableTopologyReport | undefined;
   if (ir.operations.some(isTableRowOperation)) {
     const [acceptedBuffer, rejectedBuffer] = await Promise.all([
@@ -1610,6 +2132,7 @@ export async function compileMarkdoc(
       source: 'default',
       ...revisionGroupingEvidence,
     },
+    ...(storyProjections ? { storyProjections } : {}),
     ...(tableTopology ? { tableTopology } : {}),
     commentRendering: {
       configurationSource: resolvedCompilation.source,

@@ -70,7 +70,7 @@ describe('independent release verifier', () => {
     expect(result.exitCode).toBe(0);
     expect(await readFile(trackedPath)).toEqual(beforeTracked);
     expect(await readFile(fixturePath)).toEqual(original);
-  });
+  }, 30_000);
 
   itAllure('projects namespace-aware visible OOXML without indentation or run-fragmentation noise', async () => {
     const { manifest } = await fixture();

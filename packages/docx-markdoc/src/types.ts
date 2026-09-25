@@ -118,6 +118,8 @@ export type DraftAssertion = {
 };
 
 export type SourceParagraph = {
+  /** Omitted for the main body; side-story anchors are never resolved globally. */
+  story?: string;
   id: string;
   fingerprint: string;
   style: string;
@@ -188,6 +190,7 @@ export type DeleteSourceOperation = SourceParagraph & {
 
 export type InsertOperation = {
   kind: 'insert-before' | 'insert-after';
+  story?: string;
   operationId: string;
   anchorId: string;
   revisedText: string;
@@ -216,6 +219,24 @@ export type DeleteTableRowOperation = {
 
 export type TableRowOperation = InsertTableRowsOperation | DeleteTableRowOperation;
 
+export type StoryDeclaration = {
+  id: string;
+  kind: 'header' | 'footer';
+  /** Complete sorted set of section-ordinal:selector bindings. */
+  bindings: string[];
+  fingerprint: string;
+  paragraphs: number;
+  readOnlyParagraphs?: number;
+};
+
+export type ReadOnlyStoryParagraph = {
+  story: string;
+  ordinal: number;
+  fingerprint: string;
+  reason: string;
+  text: string;
+};
+
 export type EditOperation =
   | InlineEditOperation
   | ReplaceSourceOperation
@@ -227,6 +248,10 @@ export type MarkdocEditIR = {
   version: typeof IR_VERSION;
   source: SourceDescriptor;
   scaffold: SourceParagraph[];
+  /** Physical selected stories, declared once despite potentially shared bindings. */
+  stories?: StoryDeclaration[];
+  storyScaffold?: SourceParagraph[];
+  storyReadOnly?: ReadOnlyStoryParagraph[];
   operations: EditOperation[];
   rationales: Rationale[];
   annotations: CanonicalAnnotation[];
@@ -274,6 +299,8 @@ export type VerificationCertificate = {
   revisionGrouping: RevisionGroupingReport;
   /** Present only for builds that author table-row topology changes. */
   tableTopology?: TableTopologyReport;
+  /** Present for builds with edits in selected physical header/footer stories. */
+  storyProjections?: StoryProjectionReport[];
   commentRendering: {
     configurationSource: 'markdoc' | 'api' | 'cli' | 'default';
     buildDate: string;
@@ -298,6 +325,27 @@ export type VerificationCertificate = {
   deliveryReady: boolean;
   completeness: DraftCompletenessReport;
   /** Conservative aggregate verdict: true only when the artifact is delivery-ready. */
+  passed: boolean;
+};
+
+export type StoryProjectionReport = {
+  storyId: string;
+  kind: 'header' | 'footer';
+  bindings: string[];
+  sourceFingerprint: string;
+  cleanFingerprint: string;
+  rejectAllTextEqualsSource: boolean;
+  acceptAllTextEqualsClean: boolean;
+  rejectAllFormattingEqualsSource: boolean;
+  acceptAllFormattingEqualsClean: boolean;
+  scaffoldPreserved: boolean;
+  scaffoldProjections: { sourceClean: boolean; sourceReject: boolean; cleanAccept: boolean };
+  protectedContentPreserved: { sourceClean: boolean; sourceReject: boolean; cleanAccept: boolean };
+  scaffoldDifferences?: Array<{ projection: 'source-reject' | 'clean-accept'; offset: number; expected: string; actual: string }>;
+  relationshipsPreserved: boolean;
+  bindingClosurePreserved: boolean;
+  unresolvedRevisions: { accept: number; reject: number };
+  unrepresented: boolean;
   passed: boolean;
 };
 
@@ -421,6 +469,7 @@ export type ImportResult = {
 export type EditPair = {
   operationId: string;
   kind: EditOperation['kind'];
+  story?: string;
   anchorId: string;
   before: string;
   after: string;

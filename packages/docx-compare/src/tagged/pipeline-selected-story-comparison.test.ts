@@ -102,6 +102,32 @@ describe('ordinary relationship-selected story comparison', () => {
   );
 
   test.openspec('[SDX-CMP-STORY-01] Ordinary selected header text receives native revisions')(
+    'represents paragraph insertion beside package-unique internal story anchors',
+    async () => {
+      const first = '<w:bookmarkStart w:id="1" w:name="_bk_first"/>' + paragraph('First') + '<w:bookmarkEnd w:id="1"/>';
+      const inserted = '<w:bookmarkStart w:id="2" w:name="_bk_second"/>' + paragraph('Second') + '<w:bookmarkEnd w:id="2"/>';
+      const original = await selectedHeaderFixture({ storyContent: first });
+      const revised = await selectedHeaderFixture({ storyContent: first + inserted });
+      const result = await compareDocumentsAtomizer(original, revised);
+      const output = await selectedHeaderXml(result.document);
+      expect(revisionCounts(output).insertions).toBeGreaterThan(0);
+      expect(extractRoundTripComparisonText(acceptAllChanges(output))).toContain('Second');
+      expect(extractRoundTripComparisonText(rejectAllChanges(output))).not.toContain('Second');
+      expect(result.unrepresentedChanges).toBeUndefined();
+    },
+  );
+
+  test.openspec('[SDX-CMP-STORY-01] Ordinary selected header text receives native revisions')(
+    'keeps a changed foreign bookmark outside the internal-anchor exemption',
+    async () => {
+      const original = await selectedHeaderFixture({ storyContent: '<w:bookmarkStart w:id="1" w:name="clientBookmark"/>' + paragraph('First') + '<w:bookmarkEnd w:id="1"/>' });
+      const revised = await selectedHeaderFixture({ storyContent: '<w:bookmarkStart w:id="1" w:name="renamedClientBookmark"/>' + paragraph('First') + '<w:bookmarkEnd w:id="1"/>' });
+      const result = await compareDocumentsAtomizer(original, revised);
+      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([expect.objectContaining({ scope: 'header', kind: 'changed' })]));
+    },
+  );
+
+  test.openspec('[SDX-CMP-STORY-01] Ordinary selected header text receives native revisions')(
     'reserves revision IDs package-wide across body, ordinary header, and nested text-box edits',
     async () => {
       const original = await selectedHeaderFixture({
