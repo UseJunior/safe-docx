@@ -473,14 +473,26 @@ interface WholeParagraphMoveEndpoint {
   wholeParagraph: boolean;
 }
 
+type MoveRangeMarkerIndex = ReadonlyMap<string, WmlElement>;
+
+function indexMoveRangeMarkers(root: WmlElement): MoveRangeMarkerIndex {
+  const index = new Map<string, WmlElement>();
+  for (const localName of ['moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd']) {
+    for (const element of Array.from(root.getElementsByTagNameNS(W_NS, localName)) as WmlElement[]) {
+      const key = `${localName}:${element.getAttributeNS(W_NS, 'id')}`;
+      if (!index.has(key)) index.set(key, element);
+    }
+  }
+  return index;
+}
+
 function wholeParagraphMoveEndpoint(
   root: WmlElement,
   direction: 'From' | 'To',
   rangeId: number,
+  markers: MoveRangeMarkerIndex = indexMoveRangeMarkers(root),
 ): WholeParagraphMoveEndpoint | undefined {
-  const matches = (localName: string): WmlElement | undefined =>
-    Array.from(root.getElementsByTagNameNS(W_NS, localName))
-      .find((element) => element.getAttributeNS(W_NS, 'id') === String(rangeId)) as WmlElement | undefined;
+  const matches = (localName: string): WmlElement | undefined => markers.get(`${localName}:${rangeId}`);
   const start = matches(`move${direction}RangeStart`);
   const end = matches(`move${direction}RangeEnd`);
   if (!start || !end || start.parentNode?.nodeType !== 1 || end.parentNode?.nodeType !== 1) return undefined;
@@ -540,10 +552,9 @@ function containWholeParagraphMoveRange(
   direction: 'From' | 'To',
   rangeId: number,
   containEnd: boolean,
+  markers: MoveRangeMarkerIndex = indexMoveRangeMarkers(root),
 ): void {
-  const element = (localName: string): WmlElement | undefined =>
-    Array.from(root.getElementsByTagNameNS(W_NS, localName))
-      .find((candidate) => candidate.getAttributeNS(W_NS, 'id') === String(rangeId)) as WmlElement | undefined;
+  const element = (localName: string): WmlElement | undefined => markers.get(`${localName}:${rangeId}`);
   const start = element(`move${direction}RangeStart`);
   const end = element(`move${direction}RangeEnd`);
   if (!start || !end) return;
@@ -562,11 +573,15 @@ function normalizeWholeParagraphMoveRangeStarts(
   root: WmlElement,
   relations: readonly TaggedMoveRelation[],
 ): void {
+  // Index once per pass: whole-document marker scans dominate ILPA under V8 coverage.
+  const markers = indexMoveRangeMarkers(root);
   for (const relation of relations) {
-    const source = wholeParagraphMoveEndpoint(root, 'From', relation.sourceRangeId);
-    const destination = wholeParagraphMoveEndpoint(root, 'To', relation.destinationRangeId);
-    if (source?.wholeParagraph) containWholeParagraphMoveRange(root, source, 'From', relation.sourceRangeId, false);
-    if (destination?.wholeParagraph) containWholeParagraphMoveRange(root, destination, 'To', relation.destinationRangeId, false);
+    const source = wholeParagraphMoveEndpoint(root, 'From', relation.sourceRangeId, markers);
+    const destination = wholeParagraphMoveEndpoint(root, 'To', relation.destinationRangeId, markers);
+    if (source?.wholeParagraph) containWholeParagraphMoveRange(root, source, 'From', relation.sourceRangeId, false, markers);
+    if (destination?.wholeParagraph) {
+      containWholeParagraphMoveRange(root, destination, 'To', relation.destinationRangeId, false, markers);
+    }
   }
 }
 
@@ -696,9 +711,10 @@ function normalizeTerminalWholeParagraphMoveOwnership(
     placeParagraphMarkRevisionMarker(runProperties, replacement, `w:${kind}`);
   };
 
+  const markers = indexMoveRangeMarkers(root);
   for (const relation of relations) {
-    const source = wholeParagraphMoveEndpoint(root, 'From', relation.sourceRangeId);
-    const destination = wholeParagraphMoveEndpoint(root, 'To', relation.destinationRangeId);
+    const source = wholeParagraphMoveEndpoint(root, 'From', relation.sourceRangeId, markers);
+    const destination = wholeParagraphMoveEndpoint(root, 'To', relation.destinationRangeId, markers);
     if (!source?.wholeParagraph || !destination?.wholeParagraph || source.terminal === destination.terminal) continue;
     const sourceMarker = paragraphMarkRevision(source.paragraph, 'moveFrom');
     const destinationMarker = paragraphMarkRevision(destination.paragraph, 'moveTo');
@@ -712,8 +728,8 @@ function normalizeTerminalWholeParagraphMoveOwnership(
     }
     replaceMarker(source, sourceMarker, sourceTarget, 'del');
     replaceMarker(destination, destinationMarker, destinationTarget, 'ins');
-    containWholeParagraphMoveRange(root, source, 'From', relation.sourceRangeId, true);
-    containWholeParagraphMoveRange(root, destination, 'To', relation.destinationRangeId, true);
+    containWholeParagraphMoveRange(root, source, 'From', relation.sourceRangeId, true, markers);
+    containWholeParagraphMoveRange(root, destination, 'To', relation.destinationRangeId, true, markers);
     ensureMoveParagraphRevisionSessionIds(
       source.paragraph.parentNode as WmlElement,
       relation.sourceRangeId,
@@ -2207,6 +2223,7 @@ export function verifySerializedMoveRanges(
   relations: readonly TaggedMoveRelation[],
 ): string[] {
   const document = parseXml(xml);
+  const markers = indexMoveRangeMarkers(document.documentElement as WmlElement);
   const violations: string[] = collectMoveContentIssues(document.documentElement);
   const stacks: Record<'From' | 'To', string[]> = { From: [], To: [] };
   const elements = Array.from(document.getElementsByTagName('*'));
@@ -2248,11 +2265,13 @@ export function verifySerializedMoveRanges(
       document.documentElement as WmlElement,
       'From',
       relation.sourceRangeId,
+      markers,
     );
     const destination = wholeParagraphMoveEndpoint(
       document.documentElement as WmlElement,
       'To',
       relation.destinationRangeId,
+      markers,
     );
     if (source?.wholeParagraph && destination?.wholeParagraph && source.terminal !== destination.terminal &&
         !paragraphMarkRevision(source.paragraph, 'moveFrom') &&
