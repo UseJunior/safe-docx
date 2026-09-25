@@ -8,6 +8,7 @@ import { toSnakeCase } from './parse_utils.js';
 import { parseToolFlags, generateToolHelp } from './flag_parser.js';
 import { renderTopLevelHelp } from './help.js';
 import { CliCommandFailure, runToolCommand } from './tool_runner.js';
+import { acceptsCliOutputOption, extractCliOutputOption } from './output_option.js';
 import { conformanceRefusalResponse } from '../tools/conformance_refusal.js';
 import { SAFE_DOCX_TOOL_CATALOG } from '../tool_catalog.js';
 
@@ -176,12 +177,22 @@ export function createProgram(overrides: Partial<CliHandlers> = {}): CliProgram 
       const toolName = toSnakeCase(command);
       const catalogEntry = SAFE_DOCX_TOOL_CATALOG.find((t) => t.name === toolName);
       if (catalogEntry) {
-        const { args: toolArgs, help } = parseToolFlags(rest, toolName);
+        // Mutating tools take -o/--output: without it their edit would be
+        // discarded when this one-shot process exits (#1048).
+        const { argv: toolArgv, outputPath } = acceptsCliOutputOption(toolName)
+          ? extractCliOutputOption(rest)
+          : { argv: rest, outputPath: undefined };
+        const { args: toolArgs, help } = parseToolFlags(toolArgv, toolName);
         if (help) {
           handlers.write(generateToolHelp(toolName));
           return;
         }
-        await runToolCommand(toolName, toolArgs, { write: handlers.write, writeError: handlers.writeError });
+        await runToolCommand(
+          toolName,
+          toolArgs,
+          { write: handlers.write, writeError: handlers.writeError },
+          outputPath,
+        );
         return;
       }
 

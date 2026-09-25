@@ -499,6 +499,14 @@ export class SessionManager {
   }
 
   /**
+   * Every live session. The CLI uses this after a one-shot tool call to find
+   * edits it would otherwise discard when the process exits (#1048).
+   */
+  listSessions(): Session[] {
+    return [...this.sessions.values()];
+  }
+
+  /**
    * @deprecated Use getSessionByPath instead. Kept only for backward compatibility during migration.
    */
   getSession(sessionId: string): Session {

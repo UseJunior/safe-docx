@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Breaking (CLI):** a mutating `safe-docx` tool subcommand (`replace-text`,
+  `insert-paragraph`, `add-comment`, `batch-edit`, `accept-changes`, ...) or
+  `safe-docx edit` run without an output path no longer reports `success: true`
+  for an edit it then discards. It exits non-zero with `success: false`
+  (code `UNSAVED_EDITS_DISCARDED`) and a hint to pass `-o, --output <path>`,
+  which these subcommands now accept to save the edited document. Read-only
+  subcommands are unaffected. (#1048)
+
 - DOCX comparison now reports generated table-row insertion/deletion counts,
   emits native row revisions for supported whole-table changes (including
   nested tables), and rejects unsupported body-table grid, cell, and

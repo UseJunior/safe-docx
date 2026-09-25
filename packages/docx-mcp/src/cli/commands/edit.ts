@@ -4,7 +4,7 @@
  */
 import { SessionManager } from '../../session/manager.js';
 import { dispatchToolCall } from '../../server.js';
-import { resolveCliAiAuthor } from '../tool_runner.js';
+import { CliCommandFailure, finishCliCommand, resolveCliAiAuthor } from '../tool_runner.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -169,24 +169,14 @@ export async function runEditCommand(args: EditCommandArgs, opts: EditCommandIO)
   const applySuccess = (applyResult as { success?: boolean }).success;
   if (applySuccess === false) {
     opts.writeError(JSON.stringify(applyResult, null, 2));
-    throw new Error('Edit batch_edit failed');
+    throw new CliCommandFailure('Edit batch_edit failed');
   }
 
-  // Save if output path specified
-  if (args.output_path) {
-    const saveResult = await dispatchToolCall(mgr, 'save', {
-      file_path: args.file_path,
-      save_to_local_path: args.output_path,
-    });
-
-    const saveSuccess = (saveResult as { success?: boolean }).success;
-    if (saveSuccess === false) {
-      opts.writeError(JSON.stringify(saveResult, null, 2));
-      throw new Error('Edit save failed');
-    }
-
-    opts.write(JSON.stringify({ apply: applyResult, save: saveResult }, null, 2));
-  } else {
-    opts.write(JSON.stringify(applyResult, null, 2));
-  }
+  // Save to the output path, or refuse to report success for an edit that
+  // would be discarded when the process exits (#1048).
+  await finishCliCommand(
+    mgr,
+    { command: 'edit', args: { file_path: args.file_path }, result: applyResult, outputPath: args.output_path },
+    opts,
+  );
 }

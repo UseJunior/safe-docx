@@ -4,6 +4,7 @@
 import { SAFE_DOCX_TOOL_CATALOG } from '../tool_catalog.js';
 import { generateToolHelp } from './flag_parser.js';
 import { toKebabCase } from './parse_utils.js';
+import { CLI_OUTPUT_HELP_LINES } from './output_option.js';
 
 // ---------------------------------------------------------------------------
 // Tool grouping by annotation
@@ -48,7 +49,7 @@ export function renderTopLevelHelp(): string {
   lines.push('    --author <name>                            Track-changes author (default: Comparison)');
   lines.push('                                                Output always uses the revised-based tagged package');
   lines.push('                                                Compare stats count revision ranges; atom totals use *Atoms fields');
-  lines.push('  edit <file> [--replace ...] [-o output]     Batch edit a DOCX file');
+  lines.push('  edit <file> [--replace ...] [-o output]     Batch edit a DOCX file (-o required to keep the edit)');
   lines.push('  grep "pattern" <file> [files...]            Search DOCX files for text');
   lines.push('');
 
@@ -62,6 +63,12 @@ export function renderTopLevelHelp(): string {
     }
     lines.push('');
   }
+
+  lines.push('Saving edits:');
+  lines.push('  edit and the editing tools take -o, --output <path>, e.g. safe-docx replace-text <file> ... -o edited.docx');
+  lines.push('  (save, export, convert-to-odt and close-file write their own output and do not.)');
+  for (const line of CLI_OUTPUT_HELP_LINES) lines.push(`  ${line}`);
+  lines.push('');
 
   lines.push('Global options:');
   lines.push('  -h, --help                                  Show help');
