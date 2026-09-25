@@ -9,6 +9,7 @@ import {
 } from './track-changes-emitter.js';
 import { buildParagraphIndex } from './paragraph-index.js';
 import { canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
+import { SYM_LOCAL_NAME } from './symbol_run_content.js';
 
 export type TextRun = {
   r: Element; // w:r
@@ -264,6 +265,25 @@ function cleanupEmptyRuns(parent: Node): void {
 
 function getRunVisibleLength(run: Element): number {
   return getDirectContentElements(run).reduce((sum, child) => sum + visibleLengthForEl(child), 0);
+}
+
+/**
+ * True when a run removed from a replaced range must be kept for `w:del`
+ * wrapping. Visible text qualifies, and so does a `w:sym` symbol character
+ * (a Wingdings checkbox, a bullet): it is run content that Word renders as a
+ * character, but it contributes no visible length in the paragraph text
+ * coordinate space, so the length test alone let a sym-only run be detached
+ * and never recorded — an untracked deletion inside a tracked edit
+ * (issue #1044). Recording it puts the symbol in the same `w:del` as the
+ * surrounding text, so accept-all removes it with the text and reject-all
+ * restores it in place.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.3.30
+ * @see https://github.com/UseJunior/safe-docx/issues/1044
+ */
+function runCarriesDeletableContent(run: Element): boolean {
+  if (getRunVisibleLength(run) > 0) return true;
+  return getDirectContentElements(run).some((el) => isW(el, SYM_LOCAL_NAME));
 }
 
 // OOXML embedded run content that references package parts: DrawingML drawing
@@ -913,7 +933,7 @@ export function replaceParagraphTextRange(
       if (cur.nodeType === 1 && isW(cur as Element, W.r)) {
         const runEl = cur as Element;
         runEl.parentNode?.removeChild(runEl);
-        if (getRunVisibleLength(runEl) > 0) {
+        if (runCarriesDeletableContent(runEl)) {
           removedRuns.push(runEl);
         }
       }
@@ -929,7 +949,7 @@ export function replaceParagraphTextRange(
     const removeRunInPlace = (runEl: Element): void => {
       const parentNode = runEl.parentNode;
       if (!parentNode) return;
-      if (ctx && getRunVisibleLength(runEl) > 0) {
+      if (ctx && runCarriesDeletableContent(runEl)) {
         if (!currentDeletion) {
           currentDeletion = createRevisionContainer(doc, 'del', ctx);
           parentNode.insertBefore(currentDeletion, runEl);
@@ -973,9 +993,11 @@ export function replaceParagraphTextRange(
         const embeddedContent = getEmbeddedContentElements(runEl);
         if (embeddedContent.length === 0) {
           removeRunInPlace(runEl);
-        } else if (getRunVisibleLength(runEl) === 0) {
+        } else if (!runCarriesDeletableContent(runEl)) {
           // Embedded-only run: the replaced text lives entirely in sibling
-          // runs. Leave it in the paragraph as-is.
+          // runs. Leave it in the paragraph as-is. A run that also holds a
+          // w:sym is mixed, not embedded-only: the split below keeps the
+          // embedded content live and deletes the symbol with the range.
           preservedEmbeddedContent = true;
           currentDeletion = null;
         } else {
