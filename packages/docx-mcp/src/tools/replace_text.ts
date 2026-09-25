@@ -27,6 +27,35 @@ import {
   hasHeaderTags,
 } from './tag_parser.js';
 
+/**
+ * Symbol characters (`w:sym`: a Wingdings checkbox, a bullet) that are not
+ * inside a tracked deletion. They render as characters but contribute nothing
+ * to the paragraph text the caller matched against, so a range that spans one
+ * takes it out without the caller having seen it (issue #1044). The edit
+ * reports the count it removed so the caller can review the checkbox or bullet
+ * it could not see; under tracked changes the symbol sits in `w:del` with the
+ * surrounding text and reject-all restores it.
+ */
+function countLiveSymbolCharacters(paragraph: Element): number {
+  return Array.from(paragraph.getElementsByTagNameNS(OOXML.W_NS, 'sym')).filter((sym) => {
+    for (let node: Node | null = sym.parentNode; node && node !== paragraph; node = node.parentNode) {
+      if (node.nodeType === 1 && (node as Element).namespaceURI === OOXML.W_NS && (node as Element).localName === 'del') {
+        return false;
+      }
+    }
+    return true;
+  }).length;
+}
+
+function symbolRemovalWarning(removed: number, tracked: boolean): string {
+  const noun = removed === 1 ? 'symbol character' : 'symbol characters';
+  const outcome = tracked
+    ? 'deleted with the replaced text as a tracked change; reject the deletion to restore'
+    : 'removed with the replaced text';
+  return `The replaced range spanned ${removed} ${noun} (w:sym, such as a checkbox or bullet) ` +
+    `not shown in the paragraph text; ${removed === 1 ? 'it was' : 'they were'} ${outcome}.`;
+}
+
 function mergeAddRunProps(
   a: NonNullable<ReplacementPart['addRunProps']> | null | undefined,
   b: NonNullable<ReplacementPart['addRunProps']> | null | undefined,
@@ -234,7 +263,12 @@ export async function replaceText(
 
     }
 
+    // Filled by the last run of `mutate` (the preflight preview runs it on a
+    // copy first; the session run comes last and is the one reported).
+    const editWarnings: string[] = [];
+
     const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined): void => {
+      editWarnings.length = 0;
       if (params.normalize_first) {
         doc.mergeRunsOnly();
       }
@@ -243,6 +277,11 @@ export async function replaceText(
       if (!pEl) {
         throw new Error(`Paragraph ID ${pid} not found in document`);
       }
+      const liveSymbolsBefore = countLiveSymbolCharacters(pEl);
+      const reportRemovedSymbols = (): void => {
+        const removed = liveSymbolsBefore - countLiveSymbolCharacters(pEl);
+        if (removed > 0) editWarnings.push(symbolRemovalWarning(removed, !!activeCtx));
+      };
 
       const paraRuns = getParagraphRuns(pEl);
       const { templateRun: contextTemplateRun, allOverlappedRunsHighlighted } = chooseContextTemplateRun(paraRuns, matchStart, matchEnd);
@@ -264,6 +303,7 @@ export async function replaceText(
         } else {
           doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText: parts });
         }
+        reportRemovedSymbols();
         return;
       }
 
@@ -294,6 +334,7 @@ export async function replaceText(
       } else {
         doc.replaceTextAtRange({ targetParagraphId: pid, start: trimmedStart, end: trimmedEnd, replaceText: trimmedReplace });
       }
+      reportRemovedSymbols();
       doc.mergeRunsOnly({ preserveRsidIdentity: true });
     };
 
@@ -305,10 +346,11 @@ export async function replaceText(
           insertedText: stripAllInlineTags(newStr),
         });
     if (revisionPreflight?.blocked) return revisionPreflight.blocked;
-    const warnings = revisionPreflight?.warnings ?? [];
+    const preflightWarnings = revisionPreflight?.warnings ?? [];
 
     mutate(session.doc, revisionCtx);
     manager.markEdited(session);
+    const warnings = [...preflightWarnings, ...editWarnings];
 
     return ok(mergeSessionResolutionMetadata({
       success: true,

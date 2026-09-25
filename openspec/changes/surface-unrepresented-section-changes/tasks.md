@@ -6,3 +6,4 @@
 - [x] 1.4 Add regression and no-change tests using shared DOCX fixture builders.
 - [x] 1.5 Run OpenSpec validation and repository pre-submit checks.
 - [x] 1.6 Represent inserted-section footer paragraphs and validate their selected-story projections.
+- [x] 1.7 Represent removed-section header/footer paragraphs as tracked deletions and validate their selected-story projections.
