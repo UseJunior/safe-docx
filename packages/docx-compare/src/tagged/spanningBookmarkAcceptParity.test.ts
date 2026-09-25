@@ -102,6 +102,18 @@ describe('Accept keeps a bookmark spanning out of a deleted paragraph (#1019)', 
       `<w:p>${mark('del', 3)}${deleted}</w:p>` +
       '<w:p><w:r><w:t>CELL2</w:t></w:r><w:bookmarkEnd w:id="101"/></w:p></w:tc></w:tr></w:tbl>',
       acceptChanges, acceptAllChanges, [['bs:101', 't:CELL2', 'be:101']]],
+    ['Accept: a lone end in a terminal deleted paragraph is not rescued into an orphan',
+      '<w:p><w:r><w:t>KEEP</w:t></w:r></w:p>' +
+      `<w:p>${mark('del', 1)}${deleted}<w:bookmarkEnd w:id="94"/></w:p>`,
+      acceptChanges, acceptAllChanges, [['t:KEEP']]],
+    ['Accept: a lone start in a terminal deleted paragraph is not rescued into an orphan',
+      '<w:p><w:r><w:t>KEEP</w:t></w:r></w:p>' +
+      `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="95" w:name="Lone"/>${deleted}</w:p>`,
+      acceptChanges, acceptAllChanges, [['t:KEEP']]],
+    ['Accept: a duplicate end in a terminal deleted paragraph is not rescued',
+      '<w:p><w:bookmarkStart w:id="96" w:name="Dup"/><w:r><w:t>KEEP</w:t></w:r><w:bookmarkEnd w:id="96"/></w:p>' +
+      `<w:p>${mark('del', 1)}${deleted}<w:bookmarkEnd w:id="96"/></w:p>`,
+      acceptChanges, acceptAllChanges, [['bs:96', 't:KEEP', 'be:96']]],
     ['Accept consumes a local pair in a wholly deleted paragraph',
       `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="79" w:name="Local"/>${deleted}<w:bookmarkEnd w:id="79"/></w:p>` +
       '<w:p><w:r><w:t>STABLE</w:t></w:r></w:p>',

@@ -173,6 +173,30 @@ describe('native Accept keeps bookmarks spanning out of a deleted paragraph (#10
     expect(shape(doc)).toEqual([['bs:101', 't:CELL2', 'be:101']]);
   });
 
+  test('a lone end in a terminal deleted paragraph is not rescued into an orphan', () => {
+    const doc = document(
+      '<w:p><w:r><w:t>KEEP</w:t></w:r></w:p>' +
+      `<w:p>${mark('del', 1)}${deleted('GONE')}<w:bookmarkEnd w:id="94"/></w:p>`);
+    acceptChanges(doc);
+    expect(shape(doc)).toEqual([['t:KEEP']]);
+  });
+
+  test('a lone start in a terminal deleted paragraph is not rescued into an orphan', () => {
+    const doc = document(
+      '<w:p><w:r><w:t>KEEP</w:t></w:r></w:p>' +
+      `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="95" w:name="Lone"/>${deleted('GONE')}</w:p>`);
+    acceptChanges(doc);
+    expect(shape(doc)).toEqual([['t:KEEP']]);
+  });
+
+  test('a duplicate end in a terminal deleted paragraph is not rescued', () => {
+    const doc = document(
+      '<w:p><w:bookmarkStart w:id="96" w:name="Dup"/><w:r><w:t>KEEP</w:t></w:r><w:bookmarkEnd w:id="96"/></w:p>' +
+      `<w:p>${mark('del', 1)}${deleted('GONE')}<w:bookmarkEnd w:id="96"/></w:p>`);
+    acceptChanges(doc);
+    expect(shape(doc)).toEqual([['bs:96', 't:KEEP', 'be:96']]);
+  });
+
   test('a local pair inside a wholly deleted paragraph is still consumed', () => {
     const doc = document(
       `<w:p>${mark('del', 1)}<w:bookmarkStart w:id="79" w:name="Local"/>${deleted('GONE')}<w:bookmarkEnd w:id="79"/></w:p>` +
