@@ -369,10 +369,15 @@ export function acceptChanges(
       (isW(child, 'del') || isW(child, 'moveFrom')) && filter(child))) {
       continue;
     }
-    for (const boundary of direct.filter((child) =>
-      isW(child, 'bookmarkStart') || isW(child, 'bookmarkEnd'))) {
-      const id = boundary.getAttributeNS(W_NS, 'id') ?? boundary.getAttribute('w:id');
-      if (id) deletedBookmarkIds.add(id);
+    // Harvest only endpoint pairs local to this paragraph (the mirror of
+    // Reject's moveTo guard). A boundary whose counterpart lives in a kept
+    // paragraph rides the Phase-E merge into the surviving content instead of
+    // being dropped with its live counterpart (#1019).
+    const endIds = new Set(direct.filter((child) => isW(child, 'bookmarkEnd'))
+      .map((child) => child.getAttributeNS(W_NS, 'id') ?? child.getAttribute('w:id')));
+    for (const start of direct.filter((child) => isW(child, 'bookmarkStart'))) {
+      const id = start.getAttributeNS(W_NS, 'id') ?? start.getAttribute('w:id');
+      if (id && endIds.has(id)) deletedBookmarkIds.add(id);
     }
   }
   const isInsideRevision = (marker: Element): boolean => {

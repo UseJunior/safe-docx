@@ -355,6 +355,23 @@ function moveBookmarkMarker(
   targetParagraph.appendChild(marker);
 }
 
+/**
+ * Bookmark ids whose start and end are both among `siblings`. Accepting a
+ * wholly deleted paragraph consumes only these local pairs; a boundary whose
+ * counterpart lives in a kept paragraph rides the paragraph-mark merge into the
+ * surviving content instead (#1019, mirroring Reject's moveTo guard).
+ */
+function locallyPairedBookmarkIds(siblings: Element[]): Set<string> {
+  const idOf = (marker: Element) => marker.getAttribute('w:id') ?? marker.getAttributeNS(W_NS, 'id');
+  const endIds = new Set(siblings.filter((child) => child.tagName === 'w:bookmarkEnd').map(idOf));
+  const ids = new Set<string>();
+  for (const start of siblings.filter((child) => child.tagName === 'w:bookmarkStart')) {
+    const id = idOf(start);
+    if (id && endIds.has(id)) ids.add(id);
+  }
+  return ids;
+}
+
 function collectBookmarksById(nodes: Element[]): Map<string, Element[]> {
   const byId = new Map<string, Element[]>();
   for (const node of nodes) {
@@ -631,11 +648,7 @@ export function acceptAllChanges(documentXml: string): string {
       !['w:pPr', 'w:bookmarkStart', 'w:bookmarkEnd'].includes(child.tagName));
     if (substantive.length === 0 || !substantive.every((child) =>
       child.tagName === 'w:del' || child.tagName === 'w:moveFrom')) continue;
-    for (const boundary of direct.filter((child) =>
-      child.tagName === 'w:bookmarkStart' || child.tagName === 'w:bookmarkEnd')) {
-      const id = boundary.getAttribute('w:id') ?? boundary.getAttributeNS(W_NS, 'id');
-      if (id) deletedBookmarkIds.add(id);
-    }
+    for (const id of locallyPairedBookmarkIds(direct)) deletedBookmarkIds.add(id);
   }
   const isInsideRevision = (marker: Element): boolean => {
     let current = parentElement(marker);
