@@ -1,49 +1,78 @@
 name: Bug report
-description: Report a reproducible problem in safe-docx.
-title: "fix(scope): "
+description: Report wrong, corrupt or missing output from safe-docx.
+title: "<package>: <what goes wrong, as observed>"
 labels:
-  - bug
+  - kind:defect
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a bug. Please include enough detail for a maintainer to reproduce the behavior.
+        Title the issue with the observed symptom, not the fix. For example, "docx-compare: accept-all leaves a deleted table row in place" rather than "fix(docx-compare): handle row deletions".
+
+        Check [docs/scope.md](https://github.com/UseJunior/safe-docx/blob/main/docs/scope.md) first. **Never attach a client or confidential document.** Reduce the problem to synthetic OOXML or a public fixture.
   - type: textarea
     id: summary
     attributes:
       label: Summary
-      description: What went wrong?
-      placeholder: Describe the observed behavior and why it is incorrect.
-    validations:
-      required: true
-  - type: textarea
-    id: expected
-    attributes:
-      label: Expected behavior
-      description: What should have happened instead?
+      description: What goes wrong, and what harm does it cause to someone relying on the output?
     validations:
       required: true
   - type: textarea
     id: reproduction
     attributes:
-      label: Reproduction
-      description: Provide commands, a small fixture, or a minimal code sample.
-      placeholder: |
-        1. Run ...
-        2. Open ...
-        3. Observe ...
+      label: Minimal reproduction
+      description: The smallest synthetic OOXML, fixture path, or code sample that shows the problem, plus the command or tool call you ran.
+      render: xml
     validations:
       required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or package version
+      placeholder: "main @ abc1234, or @usejunior/safe-docx 0.12.0"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+      description: Include the error, the relevant output XML, or what Word/LibreOffice shows.
+    validations:
+      required: true
+  - type: textarea
+    id: cause
+    attributes:
+      label: Suspected cause
+      description: Optional. The file and function you believe is responsible, if known.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Optional. Checks that would show this is fixed, written so they can become tests.
+      placeholder: |
+        - [ ] accept-all output equals the revised document
+        - [ ] the output opens in Word without a repair prompt
   - type: dropdown
     id: package
     attributes:
       label: Affected package
       options:
-        - packages/docx-core
-        - packages/docx-mcp
-        - packages/safe-docx-mcpb
-        - spec-compliance
-        - openspec
+        - docx-core
+        - docx-compare
+        - docx-markdoc
+        - docx-mcp
+        - safe-docx (CLI)
+        - safe-docx-mcpb
+        - docx-render-verifier
+        - docx-release-verifier
+        - odf-core
+        - google-docs-core
         - CI / release
         - unknown / multiple
     validations:
@@ -51,21 +80,13 @@ body:
   - type: textarea
     id: conformance
     attributes:
-      label: ECMA-376 / OOXML impact
-      description: If this touches OOXML behavior, cite the relevant ECMA-376 section or explain why none is known.
-      placeholder: "ECMA-376 5th edition, Part ..., section ..."
-  - type: textarea
-    id: logs
+      label: ECMA-376 / OOXML reference
+      description: Optional. The relevant ECMA-376 section, if known.
+      placeholder: "ECMA-376 5th edition, Part 1, §17.13.5"
+  - type: checkboxes
+    id: confidentiality
     attributes:
-      label: Logs or artifacts
-      description: Paste relevant logs, failing test output, screenshots, or attach a DOCX fixture if appropriate.
-      render: shell
-  - type: textarea
-    id: environment
-    attributes:
-      label: Environment
-      description: Include Node/npm versions, OS, package version, and any relevant runtime details.
-      placeholder: |
-        node --version:
-        npm --version:
-        OS:
+      label: Confidentiality
+      options:
+        - label: This issue contains no client or confidential document content.
+          required: true

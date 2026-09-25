@@ -73,6 +73,20 @@ openspec list
 openspec list --specs
 ```
 
+## Issues
+
+[`docs/scope.md`](docs/scope.md) decides what we work on. Anything outside it is closed with `out-of-scope`.
+
+- **Title the symptom, not the fix.** "docx-compare: accept-all leaves a deleted table row in place", not "fix(docx-compare): handle row deletions". Commit-style titles belong on pull requests.
+- **Reproduce with synthetic OOXML or a public fixture.** Never attach a client or confidential document. Issues found during real document work get `source:matter` and a synthetic reproduction.
+- **Labels** are defined in [`.github/labels.json`](.github/labels.json) and synced with `node scripts/sync-labels.mjs --apply`. Every open issue has:
+  - one `area:` label for the quality property at stake (`opens-clean`, `redline-correct`, `preservation`, `legal-structure`, `agent-contract`, `performance`, `infra`);
+  - one or more `component:` labels for the owning package;
+  - one `priority:` label. `high` means silently wrong or corrupt output that could reach a client; `medium` means it fails loudly or blocks a common workflow; `low` is everything else;
+  - one `kind:` label: `defect`, `capability`, `investigation` (time-boxed, ends in issues or a close) or `epic` (a task list of child issues only).
+- **`loop-ready`** marks an issue one focused session can fix: it has a minimal reproduction, a named cause or search area, and acceptance criteria that can become tests. Split anything larger into child issues under an epic.
+- **Rewriting an issue** keeps the original report at the bottom in a collapsed `<details>` block, so nothing reported is lost.
+
 ## Branches
 
 Issue work uses:
