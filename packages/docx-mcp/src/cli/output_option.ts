@@ -22,27 +22,49 @@ export function acceptsCliOutputOption(toolName: string): boolean {
   return !TOOLS_WITH_OWN_OUTPUT.has(toolName);
 }
 
-/** Remove `-o/--output <path>` from a tool subcommand's argv. */
-export function extractCliOutputOption(argv: string[]): { argv: string[]; outputPath?: string } {
+const SAVE_FORMATS = ['clean', 'tracked', 'both'] as const;
+export type CliSaveFormat = (typeof SAVE_FORMATS)[number];
+
+/**
+ * Remove `-o/--output <path>` and `--save-format <clean|tracked|both>` from a
+ * tool subcommand's argv. `--save-format` is passed to the save; it is needed,
+ * for example, to keep a selective accept/reject as tracked output.
+ */
+export function extractCliOutputOption(argv: string[]): {
+  argv: string[];
+  outputPath?: string;
+  saveFormat?: CliSaveFormat;
+} {
   const rest: string[] = [];
   let outputPath: string | undefined;
+  let saveFormat: CliSaveFormat | undefined;
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]!;
-    if (token === '-o' || token === '--output') {
+    if (token === '-o' || token === '--output' || token === '--save-format') {
       const next = argv[i + 1];
       if (next === undefined || next.startsWith('-')) {
         throw new Error(`Missing value for ${token}`);
+      }
+      i += 1;
+      if (token === '--save-format') {
+        if (!(SAVE_FORMATS as readonly string[]).includes(next)) {
+          throw new Error(`Invalid value for --save-format: "${next}". Must be one of: ${SAVE_FORMATS.join(', ')}`);
+        }
+        saveFormat = next as CliSaveFormat;
+        continue;
       }
       if (outputPath !== undefined) {
         throw new Error('-o/--output may be specified only once.');
       }
       outputPath = next;
-      i += 1;
       continue;
     }
     rest.push(token);
   }
-  return { argv: rest, outputPath };
+  if (saveFormat !== undefined && outputPath === undefined) {
+    throw new Error('--save-format requires -o/--output <path>.');
+  }
+  return { argv: rest, outputPath, saveFormat };
 }
 
 /** Help text for the output-path contract, shared by top-level and per-tool help. */

@@ -259,6 +259,8 @@ export function generateToolHelp(toolName: string): string {
   if (acceptsCliOutputOption(toolName)) {
     lines.push('  -o, --output <path>');
     lines.push('      Save the edited document to this path.');
+    lines.push('  --save-format <clean|tracked|both>');
+    lines.push('      With -o: which variant(s) to save (default: both). Use tracked to keep revisions left by a selective accept/reject.');
     lines.push('');
     lines.push('Saving:');
     for (const line of CLI_OUTPUT_HELP_LINES) lines.push(`  ${line}`);

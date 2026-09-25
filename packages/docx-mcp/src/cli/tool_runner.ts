@@ -4,6 +4,7 @@
 import { SessionManager } from '../session/manager.js';
 import { dispatchToolCall } from '../server.js';
 import { toKebabCase } from './parse_utils.js';
+import type { CliSaveFormat } from './output_option.js';
 
 export interface ToolRunnerIO {
   write: (line: string) => void;
@@ -56,6 +57,8 @@ export interface FinishCommandOptions {
   result: unknown;
   /** `-o/--output` value, when given. */
   outputPath?: string;
+  /** `--save-format` value, passed to the save when given. */
+  saveFormat?: CliSaveFormat;
 }
 
 /**
@@ -70,15 +73,18 @@ export async function finishCliCommand(
   opts: FinishCommandOptions,
   io: ToolRunnerIO,
 ): Promise<void> {
-  const { command, args, result, outputPath } = opts;
+  const { command, args, result, outputPath, saveFormat } = opts;
 
   if (outputPath !== undefined) {
     const saveArgs: Record<string, unknown> = { save_to_local_path: outputPath };
     if (args.file_path !== undefined) saveArgs.file_path = args.file_path;
     if (args.google_doc_id !== undefined) saveArgs.google_doc_id = args.google_doc_id;
+    if (saveFormat !== undefined) saveArgs.save_format = saveFormat;
     const saveResult = await dispatchToolCall(mgr, 'save', saveArgs);
     if ((saveResult as { success?: boolean }).success === false) {
-      io.writeError(JSON.stringify({ success: false, apply: result, save: saveResult }, null, 2));
+      // Print only the save error: the tool's own response says
+      // `success: true`, but its edit was not written.
+      io.writeError(JSON.stringify(saveResult, null, 2));
       throw new CliCommandFailure(`${command}: saving to ${outputPath} failed; the edit was not written`);
     }
     io.write(JSON.stringify({ success: true, apply: result, save: saveResult }, null, 2));
@@ -116,7 +122,7 @@ export async function runToolCommand(
   toolName: string,
   args: Record<string, unknown>,
   opts: ToolRunnerIO,
-  outputPath?: string,
+  output: { outputPath?: string; saveFormat?: CliSaveFormat } = {},
 ): Promise<void> {
   const mgr = new SessionManager({ defaultAiAuthor: resolveCliAiAuthor() });
   const result = await dispatchToolCall(mgr, toolName, args);
@@ -128,5 +134,5 @@ export async function runToolCommand(
     throw new CliCommandFailure(`Tool "${toolName}" failed`);
   }
 
-  await finishCliCommand(mgr, { command: toKebabCase(toolName), args, result, outputPath }, opts);
+  await finishCliCommand(mgr, { command: toKebabCase(toolName), args, result, ...output }, opts);
 }

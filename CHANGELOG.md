@@ -7,7 +7,9 @@
   `safe-docx edit` run without an output path no longer reports `success: true`
   for an edit it then discards. It exits non-zero with `success: false`
   (code `UNSAVED_EDITS_DISCARDED`) and a hint to pass `-o, --output <path>`,
-  which these subcommands now accept to save the edited document. Read-only
+  which these subcommands now accept to save the edited document (with an
+  optional `--save-format <clean|tracked|both>`). `safe-docx edit --help` now
+  prints help instead of failing. Read-only
   subcommands are unaffected. (#1048)
 
 - DOCX comparison now reports generated table-row insertion/deletion counts,

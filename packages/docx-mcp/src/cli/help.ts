@@ -86,3 +86,29 @@ export function renderTopLevelHelp(): string {
 export function renderToolHelp(toolName: string): string {
   return generateToolHelp(toolName);
 }
+
+// ---------------------------------------------------------------------------
+// edit command help
+// ---------------------------------------------------------------------------
+
+export function renderEditHelp(): string {
+  return [
+    'safe-docx edit',
+    '',
+    'Apply several replace/insert edits to a DOCX file in one run (a batch_edit wrapper).',
+    '',
+    'Usage:',
+    '  safe-docx edit <file> [--replace <paragraph_id> <old> <new>]... [--insert-after <anchor_id> <text>]...',
+    '                        [--insert-before <anchor_id> <text>]... [--instruction <text>] -o <path>',
+    '',
+    'Options:',
+    '  --replace <paragraph_id> <old> <new>   Replace text in a paragraph (repeatable)',
+    '  --insert-after <anchor_id> <text>      Insert a paragraph after an anchor (repeatable)',
+    '  --insert-before <anchor_id> <text>     Insert a paragraph before an anchor (repeatable)',
+    '  --instruction <text>                   Instruction recorded with each step',
+    '  -o, --output <path>                    Save the edited document to this path',
+    '',
+    'Saving:',
+    ...CLI_OUTPUT_HELP_LINES.map((line) => `  ${line}`),
+  ].join('\n');
+}

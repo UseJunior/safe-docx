@@ -52,7 +52,7 @@ async function trackedFixture(): Promise<{ inputPath: string; firstParaId: strin
   const trackedPath = path.join(tmpDir, 'tracked.docx');
   const res = await runInProcess([
     'replace-text', inputPath, '--para', firstParaId, '--old', 'Alpha', '--new', 'Omega', '--instruction', 't',
-    '-o', trackedPath,
+    '-o', trackedPath, '--save-format', 'tracked',
   ]);
   expect(res.failure, res.err.join('\n')).toBeUndefined();
   return { inputPath: trackedPath, firstParaId };
@@ -178,6 +178,68 @@ describe('CLI mutating subcommands never report success for a discarded edit (#1
     },
   );
 
+  test.openspec('[SDX-CLI-01] A mutating subcommand without an output path is refused and the file is unchanged')(
+    '[SDX-CLI-01] a save that fails (output path is the input) exits non-zero without any success:true',
+    async ({ given, when, then }: AllureBddContext) => {
+      let inputPath!: string;
+      let firstParaId!: string;
+      let before!: string;
+      let res!: Awaited<ReturnType<typeof runInProcess>>;
+
+      await given('a fixture DOCX', async () => {
+        ({ inputPath, firstParaId } = await openSession(['First item.']));
+        before = await sha256(inputPath);
+      });
+
+      await when('replace-text is told to save over its own input', async () => {
+        res = await runInProcess([
+          'replace-text', inputPath, '--para', firstParaId, '--old', 'First', '--new', 'Altered',
+          '--instruction', 't', '-o', inputPath,
+        ]);
+      });
+
+      await then('the save error is printed alone, the command fails, and the file is unchanged', async () => {
+        expect(res.failure).toBeInstanceOf(CliCommandFailure);
+        expect(res.out).toEqual([]);
+        const printed = JSON.parse(res.err[0]!) as { success: boolean; error: { code: string } };
+        expect(printed.success).toBe(false);
+        expect(printed.error.code).toBe('OVERWRITE_BLOCKED');
+        expect(res.err.join('\n')).not.toMatch(/"success":\s*true/);
+        expect(await sha256(inputPath)).toBe(before);
+      });
+    },
+  );
+
+  test.openspec('[SDX-CLI-02] A mutating subcommand with an output path saves the edit')(
+    '[SDX-CLI-02] a selective accept-ai-edits persists with -o and --save-format tracked',
+    async ({ given, when, then }: AllureBddContext) => {
+      let redlinePath!: string;
+      let outPath!: string;
+      let res!: Awaited<ReturnType<typeof runInProcess>>;
+
+      await given('a redline carrying an AI deletion (w:id 1) and insertion (w:id 2)', async () => {
+        ({ inputPath: redlinePath } = await trackedFixture());
+        const xml = await readDocumentXmlFromPath(redlinePath);
+        expect(xml).toMatch(/<w:del w:id="1"/);
+        expect(xml).toMatch(/<w:ins w:id="2"/);
+        outPath = path.join(await createTrackedTempDir(), 'selective.docx');
+      });
+
+      await when('accept-ai-edits accepts only revision 1 and saves tracked output', async () => {
+        res = await runInProcess([
+          'accept-ai-edits', redlinePath, '--revision-ids', '1', '-o', outPath, '--save-format', 'tracked',
+        ]);
+      });
+
+      await then('the output keeps revision 2 and no longer carries revision 1', async () => {
+        expect(res.failure, res.err.join('\n')).toBeUndefined();
+        const xml = await readDocumentXmlFromPath(outPath);
+        expect(xml).not.toMatch(/<w:del w:id="1"/);
+        expect(xml).toMatch(/<w:ins w:id="2"/);
+      });
+    },
+  );
+
   test.openspec('[SDX-CLI-03] Read-only subcommands are unaffected')(
     '[SDX-CLI-03] read-file, grep, get-* , extract-revisions and has-tracked-changes succeed without an output path',
     async ({ given, then }: AllureBddContext) => {
@@ -213,6 +275,13 @@ describe('CLI mutating subcommands never report success for a discarded edit (#1
         const help = renderTopLevelHelp();
         expect(help).toContain('-o, --output <path>');
         expect(help).toContain(UNSAVED_EDITS_DISCARDED);
+      });
+
+      await and('edit --help prints the edit help, including -o/--output', async () => {
+        const { out, failure } = await runInProcess(['edit', '--help']);
+        expect(failure).toBeUndefined();
+        expect(out[0]).toContain('-o, --output <path>');
+        expect(out[0]).toContain(UNSAVED_EDITS_DISCARDED);
       });
 
       await and('every non-read-only tool without its own output path lists -o/--output', () => {
