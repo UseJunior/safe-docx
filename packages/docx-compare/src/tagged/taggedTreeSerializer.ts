@@ -1169,6 +1169,39 @@ function emitCommonToken(
 }
 
 /**
+ * A side-only zero-width range boundary (bookmark or comment range) found
+ * inside a run gap, positioned by the text offset on its own side.
+ */
+interface GapRangeMarker {
+  side: 'original' | 'revised';
+  offset: number;
+  build: () => WmlElement;
+}
+
+const GAP_RANGE_MARKERS = new Set([
+  'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
+]);
+
+/**
+ * True for a side-only node the run-gap refinement may step over: a range
+ * boundary, or a run that carries only a comment reference mark. Neither
+ * contributes text to either projection.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.4
+ * @see https://github.com/UseJunior/safe-docx/issues/1022
+ */
+function isGapRangeMarker(node: TaggedNode): boolean {
+  if (node.tag === 'both') return false;
+  const element = representative(node, node.tag);
+  if (!element || element.namespaceURI !== W_NS) return false;
+  if (GAP_RANGE_MARKERS.has(element.localName)) return true;
+  if (element.localName !== 'r' || revisionProvenance(element).length > 0) return false;
+  const content = childElements(element).filter((child) => child.localName !== 'rPr');
+  return content.length === 1 && content[0]!.localName === 'commentReference';
+}
+
+/**
  * Refine plain-text run gaps into conforming deletion/insertion wrappers. The
  * readable policy may deliberately place an identical U+0020 bridge in both
  * wrapper sides while retaining exact reject/accept projections.
@@ -1183,10 +1216,48 @@ function refineSimpleRunGap(
   allocateRevision: () => ComparisonRevision,
   provenanceByRun: ReadonlyMap<WmlElement, readonly string[]>,
   revisionGrouping: RevisionGroupingPolicy,
+  markers: readonly GapRangeMarker[] = [],
 ): WmlElement[] | undefined {
   if (originals.length === 0 || revised.length === 0) return undefined;
   const before = originals.map(runText).join('');
   const after = revised.map(runText).join('');
+  const emitted: WmlElement[] = [];
+  const pending = {
+    original: markers.filter((marker) => marker.side === 'original'),
+    revised: markers.filter((marker) => marker.side === 'revised'),
+  };
+  const position = { original: 0, revised: 0 };
+  const markerElements = new Set<WmlElement>();
+  const flushMarkers = (): void => {
+    for (const side of ['original', 'revised'] as const) {
+      while (pending[side].length > 0 && pending[side][0]!.offset <= position[side]) {
+        const marker = pending[side].shift()!.build();
+        emitted.push(marker);
+        markerElements.add(marker);
+      }
+    }
+  };
+  // Place side-only range markers at their exact text offset on their own
+  // side, so each projection keeps the boundary between the same characters.
+  // Returns false when a marker would fall inside an emitted fragment.
+  const emit = (
+    element: WmlElement,
+    originalLength: number,
+    revisedLength: number,
+    append: (target: WmlElement[], next: WmlElement) => void,
+  ): boolean => {
+    flushMarkers();
+    for (const [side, length] of [['original', originalLength], ['revised', revisedLength]] as const) {
+      const next = pending[side][0];
+      if (next && next.offset < position[side] + length) return false;
+    }
+    const previous = emitted[emitted.length - 1];
+    if (previous && markerElements.has(previous)) emitted.push(element);
+    else append(emitted, element);
+    position.original += originalLength;
+    position.revised += revisedLength;
+    return true;
+  };
   const hasAuxiliaryContent = [...originals, ...revised].some((run) =>
     childElements(run).some((child) => !['rPr', 't'].includes(child.localName)));
   if (before === after) {
@@ -1208,14 +1279,16 @@ function refineSimpleRunGap(
       for (const run of runs) { end += runText(run).length; if (offset < end) return run; }
       return runs[runs.length - 1]!;
     };
-    const emitted: WmlElement[] = [];
-    offsets.slice(0, -1).forEach((start, index) => {
+    for (const [index, start] of offsets.slice(0, -1).entries()) {
       const value = before.slice(start, offsets[index + 1]);
-      if (value) appendCoalescedTextEmission(
-        emitted,
+      if (value && !emit(
         emitCommonRun(ownerAt(originals, start), ownerAt(revised, start), value, allocateRevision),
-      );
-    });
+        value.length,
+        value.length,
+        appendCoalescedTextEmission,
+      )) return undefined;
+    }
+    flushMarkers();
     return emitted;
   }
   if (hasAuxiliaryContent) return undefined;
@@ -1257,32 +1330,35 @@ function refineSimpleRunGap(
   };
   const matches = new Map(alignment.matches.map((match) => [match.originalIndex, match.revisedIndex]));
   const deleted = new Set(alignment.deletedIndices);
-  const emitted: WmlElement[] = [];
   const appendRevision = bridgeMatches.size > 0 ? appendReadableRevisionEmission : appendCoalescedTextEmission;
   let i = 0;
   let j = 0;
   while (i < left.length || j < right.length) {
     if (i < left.length && j < right.length && matches.get(i) === j) {
       for (const common of emitCommonToken(left[i]!, right[j]!, originals, revised, allocateRevision)) {
-        appendCoalescedTextEmission(emitted, common);
+        const length = runText(common).length;
+        if (!emit(common, length, length, appendCoalescedTextEmission)) return undefined;
       }
       i++; j++;
     } else if (i < left.length && deleted.has(i)) {
-      appendRevision(emitted, wrapRevision(
+      if (!emit(wrapRevision(
         runFragment(left[i]!.run, left[i]!.value),
         'del',
         allocateRevision(),
         provenanceByRun.get(left[i]!.run) ?? [],
-      )); i++;
+      ), left[i]!.value.length, 0, appendRevision)) return undefined;
+      i++;
     } else {
-      appendRevision(emitted, wrapRevision(
+      if (!emit(wrapRevision(
         runFragment(right[j]!.run, right[j]!.value),
         'ins',
         allocateRevision(),
         provenanceByRun.get(right[j]!.run) ?? [],
-      )); j++;
+      ), 0, right[j]!.value.length, appendRevision)) return undefined;
+      j++;
     }
   }
+  flushMarkers();
   return emitted;
 }
 
@@ -1610,33 +1686,62 @@ function emitNode(
         continue;
       }
       if (child.tag === 'original' || child.tag === 'revised') {
-        let end = index;
-        const originals: WmlElement[] = [];
-        const revisions: WmlElement[] = [];
-        const provenanceByRun = new Map<WmlElement, readonly string[]>();
-        while (end < node.children.length) {
-          const candidate = node.children[end]!;
-          if (candidate.tag === 'both' || moveFor(candidate, moves)) break;
-          const run = simpleTextRun(candidate, candidate.tag);
-          if (!run) break;
-          (candidate.tag === 'original' ? originals : revisions).push(run);
-          provenanceByRun.set(run, operationProvenance(candidate));
-          end++;
-        }
-        if (end > index + 1) {
-          const refined = refineSimpleRunGap(
-            originals,
-            revisions,
-            allocateRevision,
-            provenanceByRun,
-            revisionGrouping,
-          );
-          if (refined) {
-            emitted.push(...refined);
-            index = end - 1;
-            continue;
+        let refinedGap = false;
+        // First try a gap that steps over side-only bookmark and comment range
+        // boundaries (#1022); without them, alignment stops at the boundary and
+        // unchanged text after it is deleted and re-inserted. Fall back to the
+        // boundary-delimited gap when that refinement is not possible.
+        for (const spanMarkers of [true, false]) {
+          let end = index;
+          let lastRunEnd = index;
+          const originals: WmlElement[] = [];
+          const revisions: WmlElement[] = [];
+          const provenanceByRun = new Map<WmlElement, readonly string[]>();
+          const markers: Array<GapRangeMarker & { index: number }> = [];
+          const textLength = { original: 0, revised: 0 };
+          while (end < node.children.length) {
+            const candidate = node.children[end]!;
+            if (candidate.tag === 'both' || moveFor(candidate, moves)) break;
+            const run = simpleTextRun(candidate, candidate.tag);
+            if (!run) {
+              if (!spanMarkers || !isGapRangeMarker(candidate)) break;
+              markers.push({
+                index: end,
+                side: candidate.tag,
+                offset: textLength[candidate.tag],
+                build: () => emitNode(candidate, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds, revisionGrouping),
+              });
+              end++;
+              continue;
+            }
+            (candidate.tag === 'original' ? originals : revisions).push(run);
+            provenanceByRun.set(run, operationProvenance(candidate));
+            textLength[candidate.tag] += runText(run).length;
+            end++;
+            lastRunEnd = end;
+          }
+          // Trailing boundaries stay with the ordinary emission path.
+          end = lastRunEnd;
+          const spanned = markers.filter((marker) => marker.index < end);
+          if (spanMarkers && (spanned.length === 0 || originals.length === 0 || revisions.length === 0)) continue;
+          if (end > index + 1) {
+            const refined = refineSimpleRunGap(
+              originals,
+              revisions,
+              allocateRevision,
+              provenanceByRun,
+              revisionGrouping,
+              spanned,
+            );
+            if (refined) {
+              emitted.push(...refined);
+              index = end - 1;
+              refinedGap = true;
+              break;
+            }
           }
         }
+        if (refinedGap) continue;
       }
       const next = node.children[index + 1];
       if (child.tag === 'original' && next?.tag === 'revised' &&

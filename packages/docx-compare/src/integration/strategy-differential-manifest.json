@@ -403,14 +403,14 @@
         "strategy": "tagged-tree",
         "projections": {
           "accept": {
-            "xmlSha256": "b3a7b635b67515c4a699088657e36a843cb575d6e2c3197e57694523b45694e9",
+            "xmlSha256": "f344ae1c768571a3372523b47eef55c430bdbbf37fca9a71d37a948c106908cc",
             "textSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "sourceTextSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "matchesSourceText": true,
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "a2cdc9dbe59496491d8a469f7f350699544828c18936f73502c00b33e65efaa8",
+            "xmlSha256": "c6e0c131b5d31c5ffb79c39f09e73296e7d99ac9c9b2e452605af07d8ba38114",
             "textSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "sourceTextSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "matchesSourceText": true,
@@ -480,8 +480,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 1213274,
-            "sha256": "cc3536ed7980b7e941d57e52ad69d56a4b4ceab77ad031f3fcfb5dcc0fba4b89",
+            "bytes": 1212759,
+            "sha256": "0f05da795882cc8a0b490cd77f21693e5692f0fb272d0812fef777f62cd5a91b",
             "kind": "xml"
           },
           {
@@ -811,11 +811,11 @@
         ],
         "stats": {
           "atomMetricVersion": "tagged-token-v1",
-          "insertions": 869,
-          "deletions": 781,
+          "insertions": 844,
+          "deletions": 758,
           "modifications": 496,
-          "insertedRanges": 869,
-          "deletedRanges": 781,
+          "insertedRanges": 844,
+          "deletedRanges": 758,
           "insertedAtoms": 3662,
           "deletedAtoms": 2101,
           "modifiedParagraphs": 496,
@@ -1468,14 +1468,14 @@
         "strategy": "tagged-tree",
         "projections": {
           "accept": {
-            "xmlSha256": "b5bce532eb0c94a3d621dddb5f1d2357807740345f263b81a6fab2149c7f62f1",
+            "xmlSha256": "6d10bb22c753735aee5c3c97d6bfeb1509251222fde4857ba06049a519d9d81d",
             "textSha256": "708094ea72e7000c794b348f7994c2e6d5390b937d81c916a315fffb2f8f0931",
             "sourceTextSha256": "708094ea72e7000c794b348f7994c2e6d5390b937d81c916a315fffb2f8f0931",
             "matchesSourceText": true,
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "2e0281b376da6b5099c05900d1fb4b7c79b360afd2b99227fbe24583fc463fe2",
+            "xmlSha256": "cae78aaab1c9c71f1750eb1657c507da3a2851cfbc4bac7ca60b3094dea00746",
             "textSha256": "f0b3e43b082b628387e94d73a3db1d9357ddd30e443b044dfa8b8cb9a241405c",
             "sourceTextSha256": "f0b3e43b082b628387e94d73a3db1d9357ddd30e443b044dfa8b8cb9a241405c",
             "matchesSourceText": true,
@@ -1539,8 +1539,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 433521,
-            "sha256": "de1af33ee2ec17ba834e9489b2eebba27a7a7c120f61c4e60d8674908c2b6403",
+            "bytes": 433051,
+            "sha256": "9a709396180aa4233d621215a5a7a4d7710b8fdd8602b377bf7b6402d71492b5",
             "kind": "xml"
           },
           {
@@ -1582,10 +1582,10 @@
         ],
         "stats": {
           "atomMetricVersion": "tagged-token-v1",
-          "insertions": 49,
+          "insertions": 46,
           "deletions": 11,
           "modifications": 13,
-          "insertedRanges": 49,
+          "insertedRanges": 46,
           "deletedRanges": 11,
           "insertedAtoms": 37,
           "deletedAtoms": 105,

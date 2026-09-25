@@ -152,15 +152,14 @@ describe('tagged publication range statistics', () => {
 
       expectRetainedMarkersAndStatsAliasesAgree(publication);
       expect(publication.stats.insertedRanges, boundary.name).toBe(1);
-      expect(publication.stats.deletedRanges, boundary.name).toBe(4);
+      expect(publication.stats.deletedRanges, boundary.name).toBe(3);
       expect(withoutBoundary.stats.deletedRanges, boundary.name).toBe(1);
       // Characterization: compared with the control's one text deletion, this
-      // public total contains two boundary-only wrappers plus a separate
-      // trailing-text deletion caused by suffix-alignment loss. #938 tracks
-      // both the range-counting rule and the avoidable alignment churn.
+      // public total contains two boundary-only wrappers. #938 tracks the
+      // range-counting rule; #1022 removed the trailing-text churn.
       expect(generatedDeletions.map((element) => element.textContent), boundary.name)
-        .toEqual(['', 'beta gamma', '', ' omega']);
-      expect(generatedInsertions[0]!.textContent, boundary.name).toBe('new omega');
+        .toEqual(['', 'beta gamma', '']);
+      expect(generatedInsertions[0]!.textContent, boundary.name).toBe('new');
       expect(emitted.getElementsByTagNameNS(W_NS, boundary.startLocalName), boundary.name)
         .toHaveLength(1);
       expect(emitted.getElementsByTagNameNS(W_NS, boundary.endLocalName), boundary.name)
