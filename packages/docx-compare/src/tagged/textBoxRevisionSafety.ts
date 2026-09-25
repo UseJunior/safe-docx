@@ -1126,13 +1126,19 @@ function unmatchedSequenceOrdinals(
  * exclusively by inserted sections. `deleted` stories exist only on the
  * original side and are selected exclusively by section slots with no
  * revised-side counterpart: the section was removed, or it survived but no
- * longer selects that header/footer role. Both are represented by tracking
- * every paragraph of the story. The pipeline still confirms, against the
- * outer comparison, that reject-all reselects a deleted story and accept-all
- * does not (`deletedAncillaryStoryOutputPaths`); a story that fails that
- * check stays unrepresented.
+ * longer selects that header/footer role. A slot counts as removed only when
+ * no unmatched revised section selects the same header/footer role; when one
+ * does, the revision may have rebound the slot to a different part rather
+ * than removed it, and the pair stays unrepresented rather than being shown
+ * as a deletion with no matching insertion. Both lifecycles are represented
+ * by tracking every paragraph of the story. The pipeline still confirms,
+ * against the outer comparison, that reject-all reselects a deleted story
+ * and accept-all does not (`deletedAncillaryStoryOutputPaths`).
  *
- * Unpaired text-box stories outside those lifecycles are unsupported.
+ * Unpaired text-box stories outside those lifecycles are unsupported. On the
+ * original side the guard also admits the older, wider rule (the section
+ * count fell and the story's sections are unmatched) so that inputs which
+ * compared before #754 keep comparing; those stories are left unrepresented.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
@@ -1160,15 +1166,23 @@ function assertLifecycleStoriesAreSectionBound(
     sectionSignatures(revisedState, 'revised', revisedPairIds),
   );
   const changes: TextBoxRevisionChange[] = [];
-  // One admissibility rule per side, shared by the text-box guard and the
-  // lifecycle classification below, so a story cannot pass one and fail the
-  // other.
   const isInsertedLifecycle = (story: SelectedAncillaryStory): boolean =>
     revisedState.sectionCount > originalState.sectionCount &&
     story.bindings.every((binding) =>
       unmatched.revised.has(binding.sectionOrdinal),
     );
+  const reboundRoles = new Set(
+    revisedState.auditBindings
+      .filter((binding) => unmatched.revised.has(binding.sectionOrdinal))
+      .map((binding) => `${binding.kind}:${binding.role}`),
+  );
   const isDeletedLifecycle = (story: SelectedAncillaryStory): boolean =>
+    story.bindings.every((binding) =>
+      unmatched.original.has(binding.sectionOrdinal) &&
+      !reboundRoles.has(`${binding.kind}:${binding.role}`),
+    );
+  const isRemovedSectionStory = (story: SelectedAncillaryStory): boolean =>
+    originalState.sectionCount > revisedState.sectionCount &&
     story.bindings.every((binding) =>
       unmatched.original.has(binding.sectionOrdinal),
     );
@@ -1176,7 +1190,7 @@ function assertLifecycleStoriesAreSectionBound(
   for (const story of unpairedOriginal.filter(
     (candidate) => candidate.textBoxes.length > 0,
   )) {
-    if (!isDeletedLifecycle(story)) {
+    if (!isDeletedLifecycle(story) && !isRemovedSectionStory(story)) {
       changes.push({
         index: 0,
         partPath: story.targetPath,

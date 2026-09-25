@@ -376,6 +376,45 @@ describe('relationship-selected story removed with its section (#754)', () => {
   );
 
   test.openspec('[SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion')(
+    'does not track-delete a footer whose slot the revision rebinds to a different part',
+    async () => {
+      // The section survives and still selects a default footer, but through a
+      // different, unpaired part. The slot was rebound, not removed, so showing
+      // the old footer as deleted with no matching insertion would misstate
+      // the revision; the pair stays in unrepresentedChanges instead. The
+      // checked-in ILPA pair exercises the same shape across many sections.
+      const withFooter = async (
+        pageWidth: number,
+        target: string,
+        paragraphs: string[],
+      ): Promise<Buffer> => packageWithSelectedStory({
+        bodyXml: paragraph('Body'),
+        sectPrXml:
+          `<w:sectPr><w:footerReference w:type="default" r:id="rIdStory"/>` +
+          `<w:pgSz w:w="${pageWidth}" w:h="15840"/></w:sectPr>`,
+        kind: 'footer',
+        target,
+        storyXml:
+          `<?xml version="1.0"?><w:ftr xmlns:w="${OOXML.W_NS}">` +
+          paragraphs.map(paragraph).join('') +
+          `</w:ftr>`,
+      });
+      const original = await withFooter(12240, 'footer1.xml', ['Old footer']);
+      const revised = await withFooter(15840, 'footer2.xml', ['New line one', 'New line two']);
+
+      const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+      const archive = await DocxArchive.load(result.document);
+      for (const path of archive.listFiles().filter((name) => /^word\/footer/u.test(name))) {
+        expect(await archive.getFile(path), path).not.toContain('<w:del');
+      }
+      expect(result.stats.deletions).toBe(0);
+      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+        { scope: 'footer', kind: 'changed', sectionIndex: 0, role: 'default' },
+      ]));
+    },
+  );
+
+  test.openspec('[SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion')(
     'leaves a story unrepresented when accept-all would still select it',
     async () => {
       // A package with no revisions selects the footer on both projections, so
