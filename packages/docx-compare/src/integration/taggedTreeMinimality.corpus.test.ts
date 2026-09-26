@@ -95,7 +95,18 @@ describe('public ILPA tagged-tree redline minimality', () => {
     });
     const fidelity = compareSourceProjectedFormattingFidelity(originalXml, revisedXml, taggedXml);
     expect(fidelity.accept.score).toBe(1);
-    expect(fidelity.reject.score).toBe(1);
+    // Reject keeps the live header/footer references: a w:sectPrChange
+    // snapshot is CT_SectPrBase and cannot restore them (#944). Those
+    // bindings are reported through unrepresentedChanges; every other
+    // reject dimension stays exact.
+    expect(fidelity.reject.runFormatting.score).toBe(1);
+    expect(fidelity.reject.paragraphFormatting.score).toBe(1);
+    expect(fidelity.reject.tableFormatting.score).toBe(1);
+    expect(fidelity.reject.divergences.length).toBeGreaterThan(0);
+    for (const divergence of fidelity.reject.divergences) {
+      expect(divergence.scope).toBe('section');
+      expect(['w:headerReference', 'w:footerReference']).toContain(divergence.property);
+    }
 
     const document = parseXml(taggedXml);
     const paragraphs = Array.from(document.getElementsByTagName('w:p'));
