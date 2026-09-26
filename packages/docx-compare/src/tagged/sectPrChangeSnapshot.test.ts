@@ -44,7 +44,7 @@ const COMPARE_OPTIONS = {
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({
-    feature: 'docx-comparison',
+    feature: 'DOCX Comparison',
     story: 'Section Property Change Snapshots',
     severity: 'critical',
   })
