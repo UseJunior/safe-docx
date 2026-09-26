@@ -1554,8 +1554,9 @@ function slotKey(binding: Pick<SectPrBinding, 'sectionOrdinal' | 'kind' | 'role'
  * Locate each `deleted` lifecycle story in the outer compared package.
  *
  * The outer comparison keeps the removed section's selection reachable from
- * revision markup (a deleted paragraph mark's `w:sectPr`, or a
- * `w:sectPrChange`), and imports the selected part wherever the package
+ * revision markup (a deleted paragraph mark's `w:sectPr`; a `w:sectPrChange`
+ * snapshot is `CT_SectPrBase` and cannot carry it, see #944), and imports the
+ * selected part wherever the package
  * allocator placed it. A story is representable only when reject-all of the
  * outer document reselects one part for every one of its original slots and
  * accept-all selects that part through no slot at all; otherwise a tracked

@@ -81,7 +81,7 @@ describe('safe-docx compare command', () => {
     });
   });
 
-  test('reports no unrepresented change when the revised document drops a footer, which is now a tracked deletion (#754)', async ({
+  test('reports a footer the revised document drops from a surviving section as unrepresented (#944)', async ({
     given,
     when,
     then,
@@ -101,9 +101,12 @@ describe('safe-docx compare command', () => {
       result = await runCompareCommand({ originalPath, revisedPath });
     });
 
-    await then('the result carries neither unrepresented changes nor warnings', () => {
-      expect(result).not.toHaveProperty('unrepresented_changes');
-      expect(result).not.toHaveProperty('warnings');
+    await then('the dropped footer is reported with a warning', () => {
+      expect(result.unrepresented_changes).toEqual([
+        { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
+      ]);
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings![0]).toContain('removed default footer in section 1');
     });
   });
 });

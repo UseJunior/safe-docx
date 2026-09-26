@@ -1,6 +1,7 @@
 import { XMLSerializer } from '@xmldom/xmldom';
 import type { WmlElement } from '@usejunior/docx-core';
 import {
+  buildSectPrBaseSnapshot,
   childElements,
   parseXml,
   REVISION_ID_ELEMENT_NAME_SET,
@@ -693,6 +694,14 @@ const CHANGE_ELEMENT_BY_SCOPE = {
   section: 'w:sectPrChange',
 } as const;
 
+/**
+ * Emit the native property-change record for an aligned node. Section
+ * snapshots use the shared `CT_SectPrBase` policy, so live header/footer
+ * references are never copied into `w:sectPrChange/w:sectPr` (#944).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @see https://github.com/UseJunior/safe-docx/issues/944
+ */
 function applyPropertyDelta(node: WmlElement, tagged: TaggedNode, revision: ComparisonRevision): void {
   if (tagged.tag !== 'both' || !tagged.propertyDelta) return;
   const delta = tagged.propertyDelta;
@@ -711,13 +720,7 @@ function applyPropertyDelta(node: WmlElement, tagged: TaggedNode, revision: Comp
     }
     const change = node.ownerDocument!.createElementNS(W_NS, 'w:sectPrChange') as WmlElement;
     appendChangeMetadata(change, revision);
-    const snapshot = node.ownerDocument!.createElementNS(W_NS, 'w:sectPr') as WmlElement;
-    if (original) {
-      for (const child of childElements(original)) {
-        if (child.localName !== 'sectPrChange') snapshot.appendChild(cloneElement(child));
-      }
-    }
-    change.appendChild(snapshot);
+    change.appendChild(buildSectPrBaseSnapshot(original, node.ownerDocument!));
     node.appendChild(change);
     return;
   }
@@ -809,13 +812,7 @@ function applyParagraphPropertyDelta(
     }
     const change = paragraph.ownerDocument!.createElementNS(W_NS, 'w:sectPrChange') as WmlElement;
     appendChangeMetadata(change, revision);
-    const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:sectPr') as WmlElement;
-    if (originalSection) {
-      for (const child of childElements(originalSection)) {
-        if (child.localName !== 'sectPrChange') snapshot.appendChild(cloneElement(child));
-      }
-    }
-    change.appendChild(snapshot);
+    change.appendChild(buildSectPrBaseSnapshot(originalSection, paragraph.ownerDocument!));
     section.appendChild(change);
   }
   const pPrChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPrChange') as WmlElement;

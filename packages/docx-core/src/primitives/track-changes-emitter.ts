@@ -13,10 +13,14 @@ const EXCLUDED_TRPR_CHANGE_CHILDREN = new Set(['w:trPrChange', 'w:ins', 'w:del']
 // change-of-a-change marker w:tcPrChange itself is excluded. See:
 // https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.previoustablecellproperties
 const EXCLUDED_TCPR_CHANGE_CHILDREN = new Set(['w:tcPrChange']);
+// CT_SectPrBase is EG_SectPrContents only: the live CT_SectPr adds
+// EG_HdrFtrReferences and the w:sectPrChange record itself, neither of which
+// may appear in the historical snapshot. Matched by namespace + local name so
+// the policy does not depend on the source document's prefix.
 const EXCLUDED_SECTPR_CHANGE_CHILDREN = new Set([
-  'w:headerReference',
-  'w:footerReference',
-  'w:sectPrChange',
+  'headerReference',
+  'footerReference',
+  'sectPrChange',
 ]);
 const SECTPR_BASE_ATTRIBUTE_NAMES = new Set([
   'rsidRPr',
@@ -242,23 +246,25 @@ export function buildTcPrChangeElement(oldTcPr: Element | null, ctx: RevisionCon
 }
 
 /**
- * Build a `<w:sectPrChange>` wrapper containing the previous section
- * properties. A prior change record is excluded from the nested snapshot so
- * the emitter never authors a change-of-a-change.
+ * Build the `CT_SectPrBase` snapshot recorded inside `<w:sectPrChange>`.
+ *
+ * The snapshot keeps only `EG_SectPrContents` and the base `rsid*`
+ * attributes. Header/footer references (`EG_HdrFtrReferences`) are
+ * relationship-bound properties of the live `CT_SectPr` only, and a prior
+ * `w:sectPrChange` would be a change-of-a-change; both are excluded. This is
+ * the single snapshot policy shared by every emitter of section-property
+ * revisions, including the comparison serializer (#944).
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
- * @see #654
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.17
+ * @see https://github.com/UseJunior/safe-docx/issues/944
  */
-export function buildSectPrChangeElement(
-  oldSectPr: Element,
-  ctx: RevisionContext,
+export function buildSectPrBaseSnapshot(
+  oldSectPr: Element | null | undefined,
+  ownerDocument: Document,
 ): Element {
-  const sectPrChange = createWmlElement(
-    getOwnerDocument(oldSectPr),
-    'sectPrChange',
-    revisionAttributes(ctx),
-  );
-  const previousSectPr = createWmlElement(getOwnerDocument(oldSectPr), W.sectPr);
+  const previousSectPr = createWmlElement(ownerDocument, W.sectPr);
+  if (!oldSectPr) return previousSectPr;
 
   for (let i = 0; i < oldSectPr.attributes.length; i++) {
     const attribute = oldSectPr.attributes.item(i);
@@ -276,12 +282,35 @@ export function buildSectPrChangeElement(
   }
 
   for (const child of childElements(oldSectPr)) {
-    if (!EXCLUDED_SECTPR_CHANGE_CHILDREN.has(child.tagName)) {
-      previousSectPr.appendChild(child.cloneNode(true));
+    if (
+      child.namespaceURI === OOXML.W_NS
+      && EXCLUDED_SECTPR_CHANGE_CHILDREN.has(child.localName)
+    ) {
+      continue;
     }
+    previousSectPr.appendChild(child.cloneNode(true));
   }
+  return previousSectPr;
+}
 
-  sectPrChange.appendChild(previousSectPr);
+/**
+ * Build a `<w:sectPrChange>` wrapper containing the previous section
+ * properties as a `CT_SectPrBase` snapshot (see `buildSectPrBaseSnapshot`).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @see #654
+ */
+export function buildSectPrChangeElement(
+  oldSectPr: Element,
+  ctx: RevisionContext,
+): Element {
+  const ownerDocument = getOwnerDocument(oldSectPr);
+  const sectPrChange = createWmlElement(
+    ownerDocument,
+    'sectPrChange',
+    revisionAttributes(ctx),
+  );
+  sectPrChange.appendChild(buildSectPrBaseSnapshot(oldSectPr, ownerDocument));
   return sectPrChange;
 }
 

@@ -31,10 +31,18 @@ statistics SHALL retain their existing meaning.
 
 #### Scenario: [SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion
 
-- **GIVEN** an original DOCX whose header or footer is selected only by section slots that the revised DOCX no longer has, because the section was removed or it no longer selects that role
+- **GIVEN** an original DOCX whose header or footer is selected only by section slots that the revised DOCX no longer has, because the section was removed
 - **WHEN** the pair is successfully compared in place
 - **THEN** every paragraph in the removed story SHALL carry a tracked paragraph-mark deletion and its text SHALL be `w:delText` inside `w:del`
 - **AND** deletions SHALL NOT wrap VML or DrawingML carrier objects
 - **AND** reject-all SHALL reselect the story with its original text while accept-all SHALL select it through no section
 - **AND** revision identifiers SHALL remain unique across the package
 - **AND** the represented story SHALL NOT appear in `unrepresentedChanges`
+
+#### Scenario: [SDX-CMP-UNREP-05] Story slot dropped from a surviving section is reported as unrepresented
+
+- **GIVEN** an original DOCX whose surviving section selects a header or footer role that the revised section no longer selects
+- **WHEN** the pair is successfully compared in place
+- **THEN** no `w:sectPrChange/w:sectPr` snapshot SHALL contain `w:headerReference` or `w:footerReference`, because that snapshot is `CT_SectPrBase`
+- **AND** accept-all and reject-all SHALL both keep the revised section's live header/footer references
+- **AND** the dropped slot SHALL appear in `unrepresentedChanges` with its section ordinal and role

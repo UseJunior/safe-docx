@@ -91,13 +91,15 @@ describe('unrepresented section and header/footer reporting', () => {
       });
       const [original, revised] = await issue648Pair();
       const result = await compareDocuments(original, revised);
-      expect(result.stats.insertions).toBe(1);
+      // The section break lands on an aligned paragraph, so its footer
+      // reference is live on both projections: a w:sectPrChange snapshot
+      // (CT_SectPrBase) cannot drop it on reject (#944). The footer is
+      // therefore reported rather than shown as a tracked insertion.
+      expect(result.stats.insertions).toBe(0);
       expect(result.stats.deletions).toBe(0);
       expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
         expect.objectContaining({ scope: 'section', kind: 'added' }),
-      ]));
-      expect(result.unrepresentedChanges).not.toEqual(expect.arrayContaining([
-        expect.objectContaining({ scope: 'footer' }),
+        expect.objectContaining({ scope: 'footer', kind: 'added', role: 'default' }),
       ]));
     },
   );

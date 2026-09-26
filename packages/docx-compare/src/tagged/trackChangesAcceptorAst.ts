@@ -889,14 +889,28 @@ function removeEmptyTablePropertyContainers(root: Element): void {
   }
 }
 
+/**
+ * Restore the `CT_SectPrBase` snapshot carried by `w:sectPrChange`. The
+ * snapshot cannot hold header/footer references, so the live references are
+ * kept ahead of the restored properties, matching docx-core's native reject.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @see https://github.com/UseJunior/safe-docx/issues/944
+ */
 function restoreSectionPropertiesFromChanges(root: Element): void {
   for (const change of findAllByTagName(root, 'w:sectPrChange')) {
     const live = change.parentNode as Element | null;
     if (!live || live.tagName !== 'w:sectPr') continue;
     const snapshot = childElements(change).find((child) => child.tagName === 'w:sectPr');
     if (!snapshot) continue;
-    for (const child of childElements(live)) live.removeChild(child);
-    for (const child of childElements(snapshot)) live.appendChild(child.cloneNode(true));
+    for (const child of childElements(live)) {
+      if (child.tagName === 'w:headerReference' || child.tagName === 'w:footerReference') continue;
+      live.removeChild(child);
+    }
+    for (const child of childElements(snapshot)) {
+      if (child.tagName === 'w:headerReference' || child.tagName === 'w:footerReference') continue;
+      live.appendChild(child.cloneNode(true));
+    }
   }
 }
 
