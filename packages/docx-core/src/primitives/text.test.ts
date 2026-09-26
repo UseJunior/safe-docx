@@ -2499,3 +2499,245 @@ describe('replaceParagraphTextRange — symbol runs inside a replaced range (#10
     });
   });
 });
+
+describe('replaceParagraphTextRange — result-less complex field inside a replaced range (#1082)', () => {
+  const fieldTest = test.conformance(
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.13' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' },
+  );
+
+  // A complex field with no cached result: begin, instruction, end, no
+  // `separate`. XE (index entry) and TC (table-of-contents entry) have this
+  // shape; PAGE is the issue's shared-run example.
+  const INSTRUCTIONS: Array<{ name: string; instruction: string }> = [
+    { name: 'XE index entry', instruction: ' XE "Alpha" ' },
+    { name: 'TC entry', instruction: ' TC "Alpha" \\l 1 ' },
+    { name: 'PAGE without a result', instruction: ' PAGE ' },
+  ];
+
+  const TEXT_RUN = (s: string): string => `<w:r><w:t xml:space="preserve">${s}</w:t></w:r>`;
+  /** Each marker in its own run, between two text runs. Visible text: "Alpha  Bravo". */
+  const separateRuns = (instruction: string): string =>
+    '<w:p>' +
+      TEXT_RUN('Alpha ') +
+      fldChar('begin') +
+      instrText(instruction, { preserve: true }) +
+      fldChar('end') +
+      TEXT_RUN(' Bravo') +
+    '</w:p>';
+  /** All three markers inside one run with the text. Visible text: "Alpha  Bravo". */
+  const sharedRun = (instruction: string): string =>
+    '<w:p><w:r>' +
+      '<w:t xml:space="preserve">Alpha </w:t>' +
+      '<w:fldChar w:fldCharType="begin"/>' +
+      `<w:instrText xml:space="preserve">${instruction}</w:instrText>` +
+      '<w:fldChar w:fldCharType="end"/>' +
+      '<w:t xml:space="preserve"> Bravo</w:t>' +
+    '</w:r></w:p>';
+  const LAYOUTS: Array<{ name: string; build: (instruction: string) => string }> = [
+    { name: 'each marker in its own run', build: separateRuns },
+    { name: 'markers sharing one run with the text', build: sharedRun },
+  ];
+
+  /**
+   * Paragraph content in document order: live text, field markers as
+   * [begin]/[end], instructions as [instr:…]; content inside w:del or w:ins is
+   * prefixed with del:/ins:. `w:delInstrText` is reported as a deleted
+   * instruction so a dropped instruction cannot hide behind the rename.
+   */
+  const fieldSequence = (p: Element): string[] => {
+    const out: string[] = [];
+    const walk = (node: Node, prefix: string): void => {
+      for (const child of Array.from(node.childNodes)) {
+        if (child.nodeType !== 1) continue;
+        const el = child as Element;
+        if (isWElement(el, W.pPr) || isWElement(el, W.rPr)) continue;
+        if (isWElement(el, 'del')) { walk(el, 'del:'); continue; }
+        if (isWElement(el, 'ins')) { walk(el, 'ins:'); continue; }
+        if (isWElement(el, W.t) || isWElement(el, 'delText')) { out.push(prefix + (el.textContent ?? '')); continue; }
+        if (isWElement(el, W.fldChar)) { out.push(`${prefix}[${el.getAttribute('w:fldCharType')}]`); continue; }
+        if (isWElement(el, W.instrText)) { out.push(`${prefix}[instr:${el.textContent ?? ''}]`); continue; }
+        if (isWElement(el, 'delInstrText')) { out.push(`${prefix}[delInstr:${el.textContent ?? ''}]`); continue; }
+        walk(el, prefix);
+      }
+    };
+    walk(p, '');
+    // Merge adjacent plain-text tokens with the same prefix so run
+    // fragmentation does not change the sequence.
+    const merged: string[] = [];
+    for (const token of out) {
+      const last = merged[merged.length - 1];
+      const isText = (s: string): boolean => !/^(del:|ins:)?\[/u.test(s);
+      const prefixOf = (s: string): string => (s.startsWith('del:') ? 'del:' : s.startsWith('ins:') ? 'ins:' : '');
+      if (last !== undefined && isText(last) && isText(token) && prefixOf(last) === prefixOf(token)) {
+        merged[merged.length - 1] = last + token.slice(prefixOf(token).length);
+      } else {
+        merged.push(token);
+      }
+    }
+    return merged;
+  };
+  const fieldElements = (p: Element): Element[] =>
+    ['fldChar', 'instrText', 'delInstrText'].flatMap((local) => Array.from(p.getElementsByTagNameNS(W_NS, local)));
+
+  for (const { name: fieldName, instruction } of INSTRUCTIONS) {
+    for (const layout of LAYOUTS) {
+      fieldTest(`tracked (${fieldName}, ${layout.name}): every field marker in the range is inside w:del, and reject-all restores the complete field`, async ({ given, when, then }: AllureBddContext) => {
+        let doc: Document;
+        let p: Element;
+        let original: string[];
+
+        await given(`a paragraph with a result-less ${fieldName} field between "Alpha " and " Bravo"`, () => {
+          doc = makeDoc(layout.build(instruction));
+          p = firstParagraph(doc);
+          expect(getParagraphText(p)).toBe('Alpha  Bravo');
+          original = fieldSequence(p);
+          expect(original).toEqual(['Alpha ', '[begin]', `[instr:${instruction}]`, '[end]', ' Bravo']);
+        });
+
+        await when('the range "a  B" (offsets 4-8, spanning the field) is replaced with "X" under tracked changes', () => {
+          replaceParagraphTextRange(p, 4, 8, 'X', trackedCtx());
+        });
+
+        await then('all three field markers survive, each inside a w:del, with the instruction as w:delInstrText', () => {
+          const markers = fieldElements(p);
+          expect(markers).toHaveLength(3);
+          for (const marker of markers) expect(isInsideRevisionWrapper(marker, p)).toBe(true);
+          expect(p.getElementsByTagNameNS(W_NS, W.instrText)).toHaveLength(0);
+          expect(fieldSequence(p)).toEqual([
+            'Alph',
+            'del:a ', 'del:[begin]', `del:[delInstr:${instruction}]`, 'del:[end]', 'del: B',
+            'ins:X',
+            'ravo',
+          ]);
+        });
+
+        await then('reject-all yields the original paragraph, field included', () => {
+          rejectChanges(doc);
+          expect(getParagraphText(p)).toBe('Alpha  Bravo');
+          expect(fieldSequence(p)).toEqual(original);
+          expect(p.getElementsByTagNameNS(W_NS, 'delInstrText')).toHaveLength(0);
+        });
+      });
+
+      fieldTest(`tracked (${fieldName}, ${layout.name}): accept-all yields the target text with the field gone`, async ({ given, when, then }: AllureBddContext) => {
+        let doc: Document;
+        let p: Element;
+
+        await given(`the same paragraph with a result-less ${fieldName} field`, () => {
+          doc = makeDoc(layout.build(instruction));
+          p = firstParagraph(doc);
+        });
+
+        await when('the range spanning the field is replaced under tracked changes and every change is accepted', () => {
+          replaceParagraphTextRange(p, 4, 8, 'X', trackedCtx());
+          acceptChanges(doc);
+        });
+
+        await then('the paragraph reads "AlphXravo" with no field markers and no revision markup', () => {
+          expect(getParagraphText(p)).toBe('AlphXravo');
+          expect(fieldSequence(p)).toEqual(['AlphXravo']);
+          expect(fieldElements(p)).toHaveLength(0);
+          expect(p.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(0);
+          expect(p.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(0);
+        });
+      });
+
+      fieldTest(`tracked (${fieldName}, ${layout.name}): a range that ends before the field leaves the field live`, async ({ given, when, then }: AllureBddContext) => {
+        let doc: Document;
+        let p: Element;
+
+        await given(`the same paragraph with a result-less ${fieldName} field`, () => {
+          doc = makeDoc(layout.build(instruction));
+          p = firstParagraph(doc);
+        });
+
+        await when('the range "pha " (offsets 2-6, ending where the field starts) is replaced with "X"', () => {
+          replaceParagraphTextRange(p, 2, 6, 'X', trackedCtx());
+        });
+
+        await then('the field markers stay live and in place, after the tracked replacement', () => {
+          const markers = fieldElements(p);
+          expect(markers).toHaveLength(3);
+          for (const marker of markers) expect(isInsideRevisionWrapper(marker, p)).toBe(false);
+          expect(fieldSequence(p)).toEqual([
+            'Al', 'del:pha ', 'ins:X', '[begin]', `[instr:${instruction}]`, '[end]', ' Bravo',
+          ]);
+        });
+
+        await then('reject-all yields the original paragraph', () => {
+          rejectChanges(doc);
+          expect(fieldSequence(p)).toEqual(['Alpha ', '[begin]', `[instr:${instruction}]`, '[end]', ' Bravo']);
+        });
+      });
+    }
+  }
+
+  fieldTest('tracked (each marker in its own run): a range that starts after the field leaves the field live', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a paragraph with a result-less XE field in its own runs', () => {
+      p = firstParagraph(makeDoc(separateRuns(' XE "Alpha" ')));
+    });
+
+    await when('the range " B" (offsets 6-8, starting where the field ends) is replaced with "X"', () => {
+      replaceParagraphTextRange(p, 6, 8, 'X', trackedCtx());
+    });
+
+    await then('the field markers stay live and in place, before the tracked replacement', () => {
+      for (const marker of fieldElements(p)) expect(isInsideRevisionWrapper(marker, p)).toBe(false);
+      expect(fieldSequence(p)).toEqual([
+        'Alpha ', '[begin]', '[instr: XE "Alpha" ]', '[end]', 'del: B', 'ins:X', 'ravo',
+      ]);
+    });
+  });
+
+  fieldTest('untracked: the clean replace removes the field with the range (the accept-all outcome)', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a paragraph with a result-less XE field in its own runs', () => {
+      p = firstParagraph(makeDoc(separateRuns(' XE "Alpha" ')));
+    });
+
+    await when('the range spanning the field is replaced without tracking', () => {
+      replaceParagraphTextRange(p, 4, 8, 'X');
+    });
+
+    await then('the paragraph reads "AlphXravo" and no orphaned field marker is left behind', () => {
+      expect(getParagraphText(p)).toBe('AlphXravo');
+      expect(fieldElements(p)).toHaveLength(0);
+    });
+  });
+
+  fieldTest('reject-all renames a restored w:delInstrText back to w:instrText, keeping xml:space', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+    let p: Element;
+
+    await given('a tracked deletion of a whole result-less field, as Word writes it', () => {
+      doc = makeDoc(
+        '<w:p>' +
+          TEXT_RUN('Alpha ') +
+          '<w:del w:id="1" w:author="Reviewer" w:date="2026-01-01T00:00:00Z">' +
+            fldChar('begin') +
+            '<w:r><w:delInstrText xml:space="preserve"> XE "Alpha" </w:delInstrText></w:r>' +
+            fldChar('end') +
+          '</w:del>' +
+          TEXT_RUN('Bravo') +
+        '</w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('every change is rejected', () => {
+      rejectChanges(doc);
+    });
+
+    await then('the field is live again with its instruction as w:instrText', () => {
+      expect(fieldSequence(p)).toEqual(['Alpha ', '[begin]', '[instr: XE "Alpha" ]', '[end]', 'Bravo']);
+      const instr = p.getElementsByTagNameNS(W_NS, W.instrText).item(0)!;
+      expect(instr.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'space')).toBe('preserve');
+      expect(p.getElementsByTagNameNS(W_NS, 'delInstrText')).toHaveLength(0);
+    });
+  });
+});

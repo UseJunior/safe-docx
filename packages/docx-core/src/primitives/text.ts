@@ -268,22 +268,42 @@ function getRunVisibleLength(run: Element): number {
 }
 
 /**
+ * Zero-visible-length run content that a replaced range deletes with the
+ * surrounding text: a `w:sym` symbol character (issue #1044), and the
+ * `w:fldChar` / `w:instrText` markers of a complex field whose markers sit
+ * inside the range (issue #1082: a result-less field such as an `XE` index
+ * entry or a `TC` entry — begin, instruction, end, no `separate`). A field
+ * that has a cached result never reaches here with its markers in range: the
+ * range would include the result text, and that edit is refused earlier.
+ */
+const DELETABLE_ZERO_LENGTH_LOCALS: ReadonlySet<string> = new Set([
+  SYM_LOCAL_NAME,
+  W.fldChar,
+  W.instrText,
+]);
+
+/**
  * True when a run removed from a replaced range must be kept for `w:del`
- * wrapping. Visible text qualifies, and so does a `w:sym` symbol character
- * (a Wingdings checkbox, a bullet): it is run content that Word renders as a
- * character, but it contributes no visible length in the paragraph text
- * coordinate space, so the length test alone let a sym-only run be detached
- * and never recorded — an untracked deletion inside a tracked edit
- * (issue #1044). Recording it puts the symbol in the same `w:del` as the
- * surrounding text, so accept-all removes it with the text and reject-all
- * restores it in place.
+ * wrapping. Visible text qualifies, and so does zero-length content the range
+ * deletes with the text. A `w:sym` symbol character (a Wingdings checkbox, a
+ * bullet) is run content that Word renders as a character, but it contributes
+ * no visible length in the paragraph text coordinate space, so the length test
+ * alone let a sym-only run be detached and never recorded — an untracked
+ * deletion inside a tracked edit (issue #1044). Complex field markers
+ * (`w:fldChar`, `w:instrText`) had the same defect (issue #1082): a run
+ * holding only a marker was dropped, so reject-all could not restore the
+ * field. Recording the run puts it in the same `w:del` as the surrounding
+ * text, so accept-all removes it with the text and reject-all restores it in
+ * place; the emitter renames a deleted `w:instrText` to `w:delInstrText`.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.3.30
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  * @see https://github.com/UseJunior/safe-docx/issues/1044
+ * @see https://github.com/UseJunior/safe-docx/issues/1082
  */
 function runCarriesDeletableContent(run: Element): boolean {
   if (getRunVisibleLength(run) > 0) return true;
-  return getDirectContentElements(run).some((el) => isW(el, SYM_LOCAL_NAME));
+  return getDirectContentElements(run).some((el) => DELETABLE_ZERO_LENGTH_LOCALS.has(el.localName ?? ''));
 }
 
 // OOXML embedded run content that references package parts: DrawingML drawing
