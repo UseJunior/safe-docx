@@ -80,6 +80,7 @@ import {
 import { bodyTableFootprint, UnsupportedTableTopologyComparisonError } from './tableTopologyGuard.js';
 import {
   compareSourceProjectedFormattingFidelity,
+  type FormattingDivergence,
   type ProjectedFormattingFidelity,
 } from './formattingFidelity.js';
 import { resolveTaggedRevisionAttributions } from './taggedTreeSerializer.js';
@@ -558,14 +559,16 @@ export async function buildStandaloneTaggedPackage(
     taggedXml,
   );
   const sectionFormattingIsExplicitlyUnrepresented =
-    unrepresentedChanges.some((change) => change.scope === 'section') &&
+    unrepresentedChanges.some((change) =>
+      change.scope === 'section' || change.scope === 'header' || change.scope === 'footer') &&
     [formattingFidelity.accept, formattingFidelity.reject].every((report) =>
       report.runFormatting.score === 1 &&
       report.paragraphFormatting.score === 1 &&
       report.tableFormatting.score === 1 &&
       report.unalignedExpectedParagraphs === 0 &&
       report.unalignedActualParagraphs === 0 &&
-      report.divergences.every((divergence) => divergence.scope === 'section'),
+      report.divergences.every((divergence) =>
+        sectionDivergenceIsReported(divergence, unrepresentedChanges)),
     );
   // Disabling detection opts out of representing original-to-revised format
   // differences; it does not opt out of validating the published package.
@@ -604,6 +607,34 @@ export async function buildStandaloneTaggedPackage(
     unrepresentedChanges:
       unrepresentedChanges.length > 0 ? unrepresentedChanges : undefined,
   };
+}
+
+const STORY_SCOPE_BY_REFERENCE_PROPERTY: Readonly<Record<string, 'header' | 'footer'>> = {
+  'w:headerReference': 'header',
+  'w:footerReference': 'footer',
+};
+
+/**
+ * A section-scope projection divergence is admissible only when the caller is
+ * told about it. `w:sectPrChange` records a `CT_SectPrBase` snapshot, which
+ * cannot carry header/footer references, so reject keeps the live references;
+ * a reference divergence must therefore be matched by an unrepresented
+ * header/footer change on the same section (#944). Any other section property
+ * divergence still needs an unrepresented section change.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @see https://github.com/UseJunior/safe-docx/issues/944
+ */
+export function sectionDivergenceIsReported(
+  divergence: Pick<FormattingDivergence, 'scope' | 'property' | 'sectionIndex'>,
+  unrepresentedChanges: readonly UnrepresentedChange[],
+): boolean {
+  if (divergence.scope !== 'section') return false;
+  const storyScope = STORY_SCOPE_BY_REFERENCE_PROPERTY[divergence.property];
+  if (!storyScope) return unrepresentedChanges.some((change) => change.scope === 'section');
+  return unrepresentedChanges.some((change) =>
+    change.scope === storyScope && change.sectionIndex === divergence.sectionIndex);
 }
 
 async function relationshipClosureDigest(
@@ -1295,6 +1326,12 @@ async function compareDocumentsTagged(
     await rejectedSelectedAncillaryStoryPaths(
       textBoxPlan.outerOriginal,
     );
+  // A w:sectPrChange snapshot is CT_SectPrBase, so reject-all keeps a live
+  // header/footer reference (#944). A story the compared document still
+  // selects after reject-all cannot be a tracked insertion; it stays in
+  // unrepresentedChanges.
+  const rejectedComparedStoryPaths =
+    await rejectedSelectedAncillaryStoryPaths(outerResult.document);
   // A removed section's story is representable only where the outer
   // comparison left it reachable from revision markup (#754). Stories that
   // fail that check are skipped here and stay in unrepresentedChanges.
@@ -1307,7 +1344,8 @@ async function compareDocumentsTagged(
   for (const story of textBoxPlan.stories) {
     if (
       story.ancillaryMode === 'inserted' &&
-      rejectedSelectedStoryPaths.has(story.partPath)
+      (rejectedSelectedStoryPaths.has(story.partPath) ||
+        rejectedComparedStoryPaths.has(story.partPath))
     ) {
       continue;
     }

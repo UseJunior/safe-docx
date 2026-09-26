@@ -261,7 +261,7 @@ describe('compare_documents tool', () => {
   // ── Removed section footer (issue #754) ──────────────────────────
 
   test(
-    'Two-file mode: a footer dropped by the revised document is a tracked deletion, not an unrepresented change',
+    'Two-file mode: a footer dropped from a surviving section is reported as unrepresented (#944)',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
@@ -283,20 +283,21 @@ describe('compare_documents tool', () => {
       assertSuccess(result, 'compare_documents');
       await attachPrettyJson('result', result);
 
-      await then('the removed footer text is a tracked deletion in the redline', async () => {
+      await then('the redline carries no snapshot header/footer reference and no footer deletion', async () => {
         const archive = await DocxArchive.load(await fs.readFile(outputPath));
+        // A w:sectPrChange snapshot is CT_SectPrBase and cannot carry the
+        // footer reference, so no revision can reselect the footer (#944).
+        const documentXml = await archive.getDocumentXml();
+        expect(documentXml).not.toMatch(/<w:sectPrChange\b[\s\S]*?<w:footerReference[\s\S]*?<\/w:sectPrChange>/);
         const footerXml = await archive.getFile('word/footer1.xml');
-        // The pipeline keeps the original footer part so the emitted w:sectPrChange
-        // resolves, and marks its content deleted so accept-all drops it.
-        expect(footerXml).toContain('<w:del');
-        expect(footerXml).toContain('<w:delText>Confidential</w:delText>');
-        expect(footerXml).not.toContain('<w:t>');
+        expect(footerXml ?? '').not.toContain('<w:del');
       });
 
-      await then('the response carries no unrepresented-change fields and no warning', () => {
-        expect(result).not.toHaveProperty('unrepresented_changes');
-        expect(result).not.toHaveProperty('warnings');
-        expect(result.message).not.toContain('WARNING');
+      await then('the response reports the dropped footer with a warning', () => {
+        expect(result.unrepresented_changes).toEqual([
+          { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
+        ]);
+        expect(result.message).toContain('WARNING: 1 input difference is not represented');
       });
     },
   );

@@ -24,6 +24,7 @@ export * from './primitives/xml-helpers.js';
 export {
   allocateRevisionId,
   buildPPrChangeElement,
+  buildSectPrBaseSnapshot,
   buildTcPrChangeElement,
   buildTrPrChangeElement,
   buildRPrChangeElement,

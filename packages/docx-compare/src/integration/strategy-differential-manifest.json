@@ -410,7 +410,7 @@
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "c6e0c131b5d31c5ffb79c39f09e73296e7d99ac9c9b2e452605af07d8ba38114",
+            "xmlSha256": "a2786b6750a82dcf025bdaa4c0139db2f7eb16353fc472ab3cd8cac43323f8a2",
             "textSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "sourceTextSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "matchesSourceText": true,
@@ -420,8 +420,8 @@
         "packageParts": [
           {
             "path": "[Content_Types].xml",
-            "bytes": 7861,
-            "sha256": "e4857e34063741a0901d914d91132eb6bc7a5edef68570bbb603e69a8ff33ad5",
+            "bytes": 5548,
+            "sha256": "8169e396ab8830d7cf16167eb407ddfe0c99d51f4dd31c228d6a575c907b87a0",
             "kind": "xml"
           },
           {
@@ -468,8 +468,8 @@
           },
           {
             "path": "word/_rels/document.xml.rels",
-            "bytes": 6942,
-            "sha256": "f91da0cb6b4a673729e620634def8faac44df959b9ba0f9c6ad054bb282fe4e7",
+            "bytes": 4612,
+            "sha256": "7cc246cab46d5874f6b3c2405ee9c8b4811f80bd795bd6f231eea07d3cba5939",
             "kind": "xml"
           },
           {
@@ -480,8 +480,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 1212759,
-            "sha256": "0f05da795882cc8a0b490cd77f21693e5692f0fb272d0812fef777f62cd5a91b",
+            "bytes": 1212046,
+            "sha256": "90040e02ab4666fa79544c50af056e905b053b5e5f889239d6cd40877c5192a5",
             "kind": "xml"
           },
           {
@@ -509,12 +509,6 @@
             "kind": "xml"
           },
           {
-            "path": "word/footer10_merged1.xml",
-            "bytes": 2676,
-            "sha256": "0ea3ff1d9410a2e343dcbe235c9a52fd1fb8015fcb431ca350a6b13fefc98691",
-            "kind": "xml"
-          },
-          {
             "path": "word/footer11.xml",
             "bytes": 5871,
             "sha256": "a3973eb0649b3d6d8d113d644a0e47a41a08552f023ae88c597aafbbe5745768",
@@ -527,21 +521,9 @@
             "kind": "xml"
           },
           {
-            "path": "word/footer1_merged1.xml",
-            "bytes": 2835,
-            "sha256": "e34905fc090c50e7bc18c577f7f783363abd35bb86114aeeb5da1d4fa016824d",
-            "kind": "xml"
-          },
-          {
             "path": "word/footer2.xml",
             "bytes": 4477,
             "sha256": "6d794ba8314391bfd686167c89a2b03466e61200b050063790ac2710ed002f39",
-            "kind": "xml"
-          },
-          {
-            "path": "word/footer2_merged1.xml",
-            "bytes": 3787,
-            "sha256": "63e4295398e4d1b30547bcfcfa3410f15ebd6ee77f90d4f5fc7643a966198003",
             "kind": "xml"
           },
           {
@@ -551,21 +533,9 @@
             "kind": "xml"
           },
           {
-            "path": "word/footer3_merged1.xml",
-            "bytes": 3841,
-            "sha256": "bedca9ee14f97a7cd279d447ae921a570aa1685a317c5401d37a716d4aea664c",
-            "kind": "xml"
-          },
-          {
             "path": "word/footer4.xml",
             "bytes": 3815,
             "sha256": "dcb2c3bb8f85d5f82b539ea33271ed860f353589cb3a65f5b1208e692f1b786e",
-            "kind": "xml"
-          },
-          {
-            "path": "word/footer4_merged1.xml",
-            "bytes": 2828,
-            "sha256": "82d88a518bb033546dba462fe68260c6f1b2e667a07518380efe38a41546f77c",
             "kind": "xml"
           },
           {
@@ -575,21 +545,9 @@
             "kind": "xml"
           },
           {
-            "path": "word/footer5_merged1.xml",
-            "bytes": 3219,
-            "sha256": "4134a2a7e0370d8bd6154dac54930531f203c784362306ff7258ad9ee098101c",
-            "kind": "xml"
-          },
-          {
             "path": "word/footer6.xml",
             "bytes": 3538,
             "sha256": "425c18091e282b97bafadcdb8b287227b47e2e06435d92527c249704a3e790cb",
-            "kind": "xml"
-          },
-          {
-            "path": "word/footer6_merged1.xml",
-            "bytes": 2995,
-            "sha256": "b12a10136da0e43d4ae73ae843647f0dc0ecca40b9e993fe24365f49aca109f4",
             "kind": "xml"
           },
           {
@@ -599,33 +557,15 @@
             "kind": "xml"
           },
           {
-            "path": "word/footer7_merged1.xml",
-            "bytes": 2676,
-            "sha256": "a9096c45dd6caf174303ad3dbb9bacf4b9c4d023120c2427cd6944fd0839df82",
-            "kind": "xml"
-          },
-          {
             "path": "word/footer8.xml",
             "bytes": 3366,
             "sha256": "4de0bd0b460fbb68bcba7996dce6083b77b83ab60b5137bb25ab1c1e423709d9",
             "kind": "xml"
           },
           {
-            "path": "word/footer8_merged1.xml",
-            "bytes": 2676,
-            "sha256": "d0c429775c38dc8e9946f699b9aa9ca851a67efe371ebcc00208773312a47616",
-            "kind": "xml"
-          },
-          {
             "path": "word/footer9.xml",
             "bytes": 5851,
             "sha256": "e10b51a8c5c3c432e9bcac08f7e17d5766df509d2f385119c4e083732972c27d",
-            "kind": "xml"
-          },
-          {
-            "path": "word/footer9_merged1.xml",
-            "bytes": 5897,
-            "sha256": "5ea7e689fc7d0e804cca0d4aa9b78a3023757577919f55dd8603a864ad03926c",
             "kind": "xml"
           },
           {
@@ -683,21 +623,9 @@
             "kind": "xml"
           },
           {
-            "path": "word/header1_merged1.xml",
-            "bytes": 2439,
-            "sha256": "f41577c5883826457b6f559726a2d5cda1090c0d509163fb11d7505d8bdc7814",
-            "kind": "xml"
-          },
-          {
             "path": "word/header2.xml",
             "bytes": 2439,
             "sha256": "afde273fd27daa0bd7c15c55cf4dd35d57d49fb783f0dda55ca740976b28b0c3",
-            "kind": "xml"
-          },
-          {
-            "path": "word/header2_merged1.xml",
-            "bytes": 2912,
-            "sha256": "f8887d11e31d9235380089fb70c56a6228371bf59bdb006aadf39ca68709e8a3",
             "kind": "xml"
           },
           {
@@ -707,21 +635,9 @@
             "kind": "xml"
           },
           {
-            "path": "word/header3_merged1.xml",
-            "bytes": 2439,
-            "sha256": "8bc3b3534b85319cd27c6850accb7e327a0cb7feaa6d6a3772a9f655ea2b457a",
-            "kind": "xml"
-          },
-          {
             "path": "word/header4.xml",
             "bytes": 2439,
             "sha256": "38c2ee42a1565710068b988afac63ac9bf750dc74ac655b441596dfa444e43ee",
-            "kind": "xml"
-          },
-          {
-            "path": "word/header4_merged1.xml",
-            "bytes": 2439,
-            "sha256": "95fdd1631f125ff17913f5abffff2ddc0a284d0e352cf14a26fe3c5b33eaca82",
             "kind": "xml"
           },
           {
@@ -731,33 +647,15 @@
             "kind": "xml"
           },
           {
-            "path": "word/header5_merged1.xml",
-            "bytes": 2439,
-            "sha256": "44fc54803fc6bbf5300f10498cdc9ae59590be78ec630b6d0dffbeca6e4b6c14",
-            "kind": "xml"
-          },
-          {
             "path": "word/header6.xml",
             "bytes": 2439,
             "sha256": "c03b65a32f8e5f1af2c1593a0d76b9da503852e5d53bcb7582630814198ec212",
             "kind": "xml"
           },
           {
-            "path": "word/header6_merged1.xml",
-            "bytes": 2439,
-            "sha256": "272b31c05b50928455b457bf2cc7729c2a952b9fb14988129673a935e0ff2376",
-            "kind": "xml"
-          },
-          {
             "path": "word/header7.xml",
             "bytes": 2439,
             "sha256": "e64778a7ea3867ef287ec745214510d3a7a9510829af253c2de44425ed3343b2",
-            "kind": "xml"
-          },
-          {
-            "path": "word/header7_merged1.xml",
-            "bytes": 2439,
-            "sha256": "cfff75f55b0369cebeb44b0f6b8b96b729d334fb44a56a5e34fb4c11e4e1f092",
             "kind": "xml"
           },
           {
@@ -982,7 +880,7 @@
           "acceptScore": 1,
           "rejectScore": 0.75,
           "acceptDivergences": 0,
-          "rejectDivergences": 11
+          "rejectDivergences": 12
         },
         "closure": {
           "relationshipIssues": [],
