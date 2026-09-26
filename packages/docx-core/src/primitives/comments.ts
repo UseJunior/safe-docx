@@ -204,6 +204,14 @@ export type AddCommentParams = {
   text: string;
   initials?: string;
   body?: CommentBodyParagraph[];
+  /**
+   * Creation stamp for the comment definition (`w:date`), independent of any
+   * `RevisionContext`. A caller re-emitting a comment that already existed in
+   * the source stamps its date here without wrapping the reference run in a
+   * tracked insertion. Takes precedence over `ctx.date` when both are given.
+   * @see https://github.com/UseJunior/safe-docx/issues/961
+   */
+  date?: string;
 };
 
 /**
@@ -391,7 +399,7 @@ export async function addComment(
     initials: initials ?? author.charAt(0).toUpperCase(),
     text,
     paraId,
-    date: ctx?.date,
+    date: params.date ?? ctx?.date,
     body: params.body,
     hyperlinkRelationshipIds,
   });
@@ -411,6 +419,8 @@ export type AddCommentReplyParams = {
   text: string;
   initials?: string;
   body?: CommentBodyParagraph[];
+  /** Creation stamp for the reply definition (`w:date`); see `AddCommentParams.date`. */
+  date?: string;
 };
 
 export type AddCommentReplyResult = {
@@ -425,9 +435,10 @@ export type AddCommentReplyResult = {
  * Thread linkage is stored in commentsExtended.xml via paraIdParent.
  * Replies emit no body revision markup (there is nothing to anchor), but the
  * reply's comment definition still claims creation metadata — so a
- * caller-supplied `ctx.date` stamps `w:date` exactly as it does for root
- * comments, keeping reply timestamps deterministic alongside the rest of the
- * operation. Author and initials intentionally stay sourced from `params`.
+ * caller-supplied `params.date` (or, failing that, `ctx.date`) stamps
+ * `w:date` exactly as it does for root comments, keeping reply timestamps
+ * deterministic alongside the rest of the operation. Author and initials
+ * intentionally stay sourced from `params`.
  */
 export async function addCommentReply(
   _documentXml: Document,
@@ -461,7 +472,7 @@ export async function addCommentReply(
     initials: initials ?? author.charAt(0).toUpperCase(),
     text,
     paraId: replyParaId,
-    date: ctx?.date,
+    date: params.date ?? ctx?.date,
     body: params.body,
     hyperlinkRelationshipIds,
   });
@@ -622,15 +633,19 @@ function ensureCommentPartNamespaceAliases(commentsDoc: Document): void {
  * Append a `w:comment` definition to the comments part.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.2
- * The `w:date` creation stamp uses the caller-supplied revision date when one
- * is provided, so the comment definition and the body revision markup emitted
- * for the same operation agree on the calendar date Word displays — even
- * across a UTC/local day boundary. Only when the caller supplies no date does
- * the process clock remain the default. Author and initials always come from
- * `AddCommentParams` / `AddCommentReplyParams`, never from `RevisionContext`:
- * the comment's attribution is the commenting author, which is allowed to
- * differ from the tracked-change author wrapping the reference run.
+ * The `w:date` creation stamp uses the caller-supplied date when one is
+ * provided — an explicit `AddCommentParams.date`, or else the revision
+ * context's date — so the comment definition and any body revision markup
+ * emitted for the same operation agree on the calendar date Word displays,
+ * even across a UTC/local day boundary. Only when the caller supplies no date
+ * does the process clock remain the default. Author and initials always come
+ * from `AddCommentParams` / `AddCommentReplyParams`, never from
+ * `RevisionContext`: the comment's attribution is the commenting author, which
+ * is allowed to differ from the tracked-change author wrapping the reference
+ * run. A date alone never produces revision markup; only a `RevisionContext`
+ * does.
  * @see #859
+ * @see #961
  */
 function addCommentElement(
   commentsDoc: Document,

@@ -1,0 +1,269 @@
+{
+  "$comment": "Source of truth for issue and PR labels. Sync with: node scripts/sync-labels.mjs [--apply] [--prune]. Every open issue carries one area:, one or more component:, one priority: and one kind: label. See CONTRIBUTING.md#issues and docs/scope.md. PR type labels are applied by .github/workflows/pr-title.yml and are not used on issues.",
+  "labels": [
+    {
+      "name": "area:opens-clean",
+      "color": "b60205",
+      "description": "Word or LibreOffice opens the output with no repair prompt or error"
+    },
+    {
+      "name": "area:redline-correct",
+      "color": "d93f0b",
+      "description": "Accept-all gives the target, reject-all gives the base; no phantom or missing changes"
+    },
+    {
+      "name": "area:preservation",
+      "color": "e99695",
+      "description": "Untouched parts, rsids, fields, content controls and formatting survive"
+    },
+    {
+      "name": "area:legal-structure",
+      "color": "fbca04",
+      "description": "Numbering, defined terms, cross-references, footnotes, tables, headers and footers"
+    },
+    {
+      "name": "area:agent-contract",
+      "color": "0e8a16",
+      "description": "MCP/CLI tool behaviour, warnings, error shape and schemas"
+    },
+    {
+      "name": "area:performance",
+      "color": "c2e0c6",
+      "description": "Speed and memory"
+    },
+    {
+      "name": "area:infra",
+      "color": "bfdadc",
+      "description": "CI, release, coverage, test harness and corpus tooling"
+    },
+    {
+      "name": "component:docx-core",
+      "color": "1d76db",
+      "description": "packages/docx-core"
+    },
+    {
+      "name": "component:docx-compare",
+      "color": "1d76db",
+      "description": "packages/docx-compare"
+    },
+    {
+      "name": "component:docx-markdoc",
+      "color": "1d76db",
+      "description": "packages/docx-markdoc"
+    },
+    {
+      "name": "component:docx-mcp",
+      "color": "1d76db",
+      "description": "packages/docx-mcp"
+    },
+    {
+      "name": "component:safe-docx",
+      "color": "1d76db",
+      "description": "packages/safe-docx (CLI and published entry point)"
+    },
+    {
+      "name": "component:safe-docx-mcpb",
+      "color": "1d76db",
+      "description": "packages/safe-docx-mcpb"
+    },
+    {
+      "name": "component:docx-render-verifier",
+      "color": "1d76db",
+      "description": "packages/docx-render-verifier"
+    },
+    {
+      "name": "component:docx-release-verifier",
+      "color": "1d76db",
+      "description": "packages/docx-release-verifier"
+    },
+    {
+      "name": "component:odf-core",
+      "color": "1d76db",
+      "description": "packages/odf-core"
+    },
+    {
+      "name": "component:google-docs-core",
+      "color": "1d76db",
+      "description": "packages/google-docs-core"
+    },
+    {
+      "name": "priority:high",
+      "color": "b60205",
+      "description": "Silently wrong or corrupt output that could reach a client"
+    },
+    {
+      "name": "priority:medium",
+      "color": "fbca04",
+      "description": "Fails loudly, or blocks a common legal-document workflow"
+    },
+    {
+      "name": "priority:low",
+      "color": "c5def5",
+      "description": "Rare, cosmetic, or a feature legal documents rarely use"
+    },
+    {
+      "name": "kind:defect",
+      "color": "d73a4a",
+      "description": "Observed wrong behaviour"
+    },
+    {
+      "name": "kind:capability",
+      "color": "a2eeef",
+      "description": "Something safe-docx cannot do yet"
+    },
+    {
+      "name": "kind:investigation",
+      "color": "d876e3",
+      "description": "Time-boxed question; ends in concrete issues or a close"
+    },
+    {
+      "name": "kind:epic",
+      "color": "3e4b9e",
+      "description": "Task list of child issues only; no work happens on the epic itself"
+    },
+    {
+      "name": "internet-sourced",
+      "color": "5319e7",
+      "description": "Found by testing against a document from the public internet"
+    },
+    {
+      "name": "source:matter",
+      "color": "5319e7",
+      "description": "Found during real document work; reproduced with synthetic OOXML only"
+    },
+    {
+      "name": "loop-ready",
+      "color": "0e8a16",
+      "description": "Minimal repro, named cause or search area, acceptance criteria; one session can fix it"
+    },
+    {
+      "name": "out-of-scope",
+      "color": "ffffff",
+      "description": "Outside docs/scope.md"
+    },
+    {
+      "name": "duplicate",
+      "color": "cfd3d7",
+      "description": "This issue or pull request already exists"
+    },
+    {
+      "name": "good first issue",
+      "color": "7057ff",
+      "description": "Good for newcomers"
+    },
+    {
+      "name": "help wanted",
+      "color": "008672",
+      "description": "Extra attention is needed"
+    },
+    {
+      "name": "feat",
+      "color": "a2eeef",
+      "description": "PR type: feature"
+    },
+    {
+      "name": "fix",
+      "color": "d73a4a",
+      "description": "PR type: bug fix"
+    },
+    {
+      "name": "refactor",
+      "color": "fef2c0",
+      "description": "PR type: refactor"
+    },
+    {
+      "name": "test",
+      "color": "c5def5",
+      "description": "PR type: tests"
+    },
+    {
+      "name": "docs",
+      "color": "0075ca",
+      "description": "PR type: documentation"
+    },
+    {
+      "name": "chore",
+      "color": "ededed",
+      "description": "PR type: chore"
+    },
+    {
+      "name": "ci",
+      "color": "bfdadc",
+      "description": "PR type: CI"
+    },
+    {
+      "name": "perf",
+      "color": "c2e0c6",
+      "description": "PR type: performance"
+    },
+    {
+      "name": "style",
+      "color": "ededed",
+      "description": "PR type: style"
+    },
+    {
+      "name": "revert",
+      "color": "ededed",
+      "description": "PR type: revert"
+    },
+    {
+      "name": "build",
+      "color": "ededed",
+      "description": "PR type: build"
+    },
+    {
+      "name": "dependencies",
+      "color": "0366d6",
+      "description": "Pull requests that update a dependency file"
+    },
+    {
+      "name": "github_actions",
+      "color": "000000",
+      "description": "Pull requests that update GitHub Actions code"
+    },
+    {
+      "name": "javascript",
+      "color": "168700",
+      "description": "Pull requests that update javascript code"
+    },
+    {
+      "name": "llm-gate/override",
+      "color": "ededed",
+      "description": "Maintainer override for the LLM quality gate"
+    }
+  ],
+  "retired": [
+    {
+      "name": "bug",
+      "replaced_by": "kind:defect"
+    },
+    {
+      "name": "enhancement",
+      "replaced_by": "kind:capability"
+    },
+    {
+      "name": "documentation",
+      "replaced_by": "docs"
+    },
+    {
+      "name": "question",
+      "replaced_by": "kind:investigation"
+    },
+    {
+      "name": "invalid",
+      "replaced_by": "out-of-scope"
+    },
+    {
+      "name": "wontfix",
+      "replaced_by": "out-of-scope"
+    },
+    {
+      "name": "comparison",
+      "replaced_by": "component:docx-compare"
+    },
+    {
+      "name": "tracked-changes",
+      "replaced_by": "area:redline-correct"
+    }
+  ]
+}

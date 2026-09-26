@@ -25,6 +25,7 @@ import { admittedStoryParagraphs, projectedStoryParagraphs, selectedStories, typ
 import { requireMarkdoc } from './markdoc.js';
 import { assessDraftCompleteness } from './completeness.js';
 import { projectAnnotations, type AnnotationProjectionResult } from './presentation.js';
+import { verifyRevisionPreservation, type RevisionSnapshot } from './revision-preservation.js';
 import type {
   CompileResult,
   CompileOptions,
@@ -316,16 +317,6 @@ function topologyDiagnostics(
  */
 const REVISION_ELEMENT_PATTERN = /<w:(ins|del|moveFrom|moveTo|moveFromRangeStart|moveFromRangeEnd|moveToRangeStart|moveToRangeEnd|rPrChange|pPrChange|tblPrChange|tblGridChange|trPrChange|tcPrChange|sectPrChange)\b(?:[^>]*\/>|[\s\S]*?<\/w:\1>)/gu;
 
-type RevisionSnapshot = Array<{ part: string; xml: string }>;
-
-type RevisionDescriptor = { part: string; element: string; id?: string };
-
-type RevisionPreservationReport = {
-  preserved: boolean;
-  /** Source revisions, in source order, that the projection no longer contains verbatim at or after the previous match. */
-  missing: RevisionDescriptor[];
-};
-
 /**
  * Capture exact revision elements together with their WordprocessingML story.
  * This intentionally retains serialized IDs, authors, dates, content, and
@@ -346,40 +337,6 @@ async function revisionSnapshot(buffer: Buffer): Promise<RevisionSnapshot> {
     for (const match of xml.matchAll(REVISION_ELEMENT_PATTERN)) snapshot.push({ part, xml: match[0] });
   }
   return snapshot;
-}
-
-function describeRevision(item: RevisionSnapshot[number]): RevisionDescriptor {
-  const element = /^<w:(\w+)/u.exec(item.xml)?.[1] ?? 'unknown';
-  const id = /^<[^>]*?\sw:id="([^"]*)"/u.exec(item.xml)?.[1];
-  return { part: item.part, element, ...(id === undefined ? {} : { id }) };
-}
-
-/**
- * Every source revision must reappear verbatim in the projected output, in
- * the same story part and in the same relative order. Projection may add
- * revision markup of its own (see issue #961), so this is an ordered
- * subsequence check per part rather than equality.
- */
-function verifyRevisionPreservation(source: RevisionSnapshot, projected: RevisionSnapshot): RevisionPreservationReport {
-  const projectedByPart = new Map<string, string[]>();
-  for (const item of projected) {
-    const list = projectedByPart.get(item.part) ?? [];
-    list.push(item.xml);
-    projectedByPart.set(item.part, list);
-  }
-  const cursors = new Map<string, number>();
-  const missing: RevisionDescriptor[] = [];
-  for (const item of source) {
-    const candidates = projectedByPart.get(item.part) ?? [];
-    let index = cursors.get(item.part) ?? 0;
-    while (index < candidates.length && candidates[index] !== item.xml) index += 1;
-    if (index >= candidates.length) {
-      missing.push(describeRevision(item));
-      continue;
-    }
-    cursors.set(item.part, index + 1);
-  }
-  return { preserved: missing.length === 0, missing };
 }
 
 function verificationText(document: DocxDocument): string {
@@ -2028,6 +1985,7 @@ export async function compileMarkdoc(
         sourceRevisionCount: sourceRevisions.length,
         projectedRevisionCount: trackedRevisions.length,
         missingRevisions: revisionPreservation.missing.slice(0, 8),
+        duplicatedRevisions: revisionPreservation.duplicated.slice(0, 8),
       },
     );
   }
