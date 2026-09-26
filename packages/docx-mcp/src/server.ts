@@ -1,7 +1,11 @@
 import path from 'node:path';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+  type CallToolResult,
+} from '@modelcontextprotocol/sdk/types.js';
 
 import { SessionManager, type GDocsSession, type OdfSession } from './session/manager.js';
 import { SAFE_DOCX_MCP_TOOLS } from './tool_catalog.js';
@@ -38,6 +42,7 @@ import { clearFormatting } from './tools/clear_formatting.js';
 import { resolveGDocsSessionForTool, resolveOdfSessionForTool } from './tools/session_resolution.js';
 import { checkGDocsSupport, checkOdfSupport } from './tools/provider_guard.js';
 import type { ToolResponse } from './tools/types.js';
+import { errorMessage } from './error_utils.js';
 
 export const MCP_TRANSPORT = 'stdio' as const;
 
@@ -277,7 +282,40 @@ export async function dispatchToolCall(
   }
 }
 
-export async function runServer(): Promise<void> {
+/**
+ * Run one tool call and wrap its JSON envelope as an MCP `CallToolResult`.
+ *
+ * The tool JSON is passed through unchanged (including `success: false` and the
+ * error code/message). When the tool reports `success: false`, or throws, the
+ * result also carries `isError: true` so MCP clients that branch on the
+ * transport-level flag see the failure (#1085). A thrown failure is reported
+ * with the standard envelope under code `INTERNAL_ERROR`.
+ */
+export async function handleCallTool(
+  sessions: SessionManager,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<CallToolResult> {
+  let result: Record<string, unknown>;
+  try {
+    result = await dispatchToolCall(sessions, name, args);
+  } catch (e: unknown) {
+    result = {
+      success: false,
+      error: { code: 'INTERNAL_ERROR', message: errorMessage(e) },
+    };
+  }
+
+  // MCP SDK expects tool results as content blocks.
+  const callResult: CallToolResult = {
+    content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+  };
+  if (result.success === false) callResult.isError = true;
+  return callResult;
+}
+
+/** Build the MCP server with its tool handlers, without connecting a transport. */
+export function createServer(sessions?: SessionManager): Server {
   const server = new Server(
     { name: 'safe-docx', version: '0.2.0' },
     {
@@ -291,9 +329,13 @@ export async function runServer(): Promise<void> {
   // Configurable via SAFE_DOCX_AI_AUTHOR env var; defaults to "SafeDocX".
   // Set to empty string explicitly to disable tracked emission and fall back
   // to legacy untracked behavior.
-  const aiAuthorEnv = process.env.SAFE_DOCX_AI_AUTHOR;
-  const defaultAiAuthor = aiAuthorEnv === '' ? null : (aiAuthorEnv ?? 'SafeDocX');
-  const sessions = new SessionManager({ defaultAiAuthor });
+  let manager = sessions;
+  if (!manager) {
+    const aiAuthorEnv = process.env.SAFE_DOCX_AI_AUTHOR;
+    const defaultAiAuthor = aiAuthorEnv === '' ? null : (aiAuthorEnv ?? 'SafeDocX');
+    manager = new SessionManager({ defaultAiAuthor });
+  }
+  const activeSessions = manager;
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return { tools: MCP_TOOLS };
@@ -302,14 +344,14 @@ export async function runServer(): Promise<void> {
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const { name } = req.params;
     const args = (req.params.arguments ?? {}) as Record<string, unknown>;
-    const result = await dispatchToolCall(sessions, name, args);
-
-    // MCP SDK expects tool results as content blocks.
-    return {
-      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-    };
+    return await handleCallTool(activeSessions, name, args);
   });
 
+  return server;
+}
+
+export async function runServer(): Promise<void> {
+  const server = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
