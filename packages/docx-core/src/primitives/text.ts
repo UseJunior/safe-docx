@@ -273,8 +273,10 @@ function getRunVisibleLength(run: Element): number {
  * `w:fldChar` / `w:instrText` markers of a complex field whose markers sit
  * inside the range (issue #1082: a result-less field such as an `XE` index
  * entry or a `TC` entry — begin, instruction, end, no `separate`). A field
- * that has a cached result never reaches here with its markers in range: the
- * range would include the result text, and that edit is refused earlier.
+ * whose cached result is empty (begin, instruction, separate, end) is also
+ * zero-length and is handled the same way. A field with a non-empty cached
+ * result never reaches here with its markers in range: the range would
+ * include the result text, and that edit is refused earlier.
  */
 const DELETABLE_ZERO_LENGTH_LOCALS: ReadonlySet<string> = new Set([
   SYM_LOCAL_NAME,
