@@ -355,6 +355,109 @@ function moveBookmarkMarker(
   targetParagraph.appendChild(marker);
 }
 
+/**
+ * Bookmark ids whose start and end are both among `siblings`. Accepting a
+ * wholly deleted paragraph consumes only these local pairs; a boundary whose
+ * counterpart lives in a kept paragraph rides the paragraph-mark merge into the
+ * surviving content instead (#1019, mirroring Reject's moveTo guard).
+ */
+function locallyPairedBookmarkIds(siblings: Element[]): Set<string> {
+  const idOf = (marker: Element) => marker.getAttribute('w:id') ?? marker.getAttributeNS(W_NS, 'id');
+  const endIds = new Set(siblings.filter((child) => child.tagName === 'w:bookmarkEnd').map(idOf));
+  const ids = new Set<string>();
+  for (const start of siblings.filter((child) => child.tagName === 'w:bookmarkStart')) {
+    const id = idOf(start);
+    if (id && endIds.has(id)) ids.add(id);
+  }
+  return ids;
+}
+
+/**
+ * An emptied paragraph with no following sibling paragraph has no break to
+ * merge into and is removed, taking its direct children with it. A bookmark
+ * boundary there whose opposite endpoint survives elsewhere would be orphaned,
+ * so move it first to the nearest same-story paragraph in document order
+ * (#1019): appended to the previous one, else prepended to the next.
+ */
+function rescueBookmarksFromUnmergedEmptyParagraph(
+  root: Element,
+  p: Element,
+  bookmarksById: ReadonlyMap<string, readonly Element[]>,
+): void {
+  if (!childElements(p).some((c) => c.tagName === 'w:bookmarkStart' || c.tagName === 'w:bookmarkEnd')) return;
+  if (paragraphHasContent(p) || findFollowingSiblingParagraph(p) || !canSafelyRemoveEmptyParagraph(p)) return;
+  const idOf = (marker: Element) => marker.getAttribute('w:id') ?? marker.getAttributeNS(W_NS, 'id');
+  // The story (text box content, else the root) holding an attached node.
+  const storyOf = (node: Element): Element | undefined => {
+    let story: Element | undefined;
+    let current: Element | undefined = node;
+    for (; current && current !== root; current = parentElement(current)) {
+      if (!story && current.tagName === 'w:txbxContent') story = current;
+    }
+    return current === root ? story ?? root : undefined;
+  };
+  const story = storyOf(p);
+  // Rescue only a boundary that stays paired: exactly one attached endpoint of
+  // each kind with its id, both in this paragraph's story.
+  const attachedOfKind = (tagName: string, id: string) => (bookmarksById.get(id) ?? [])
+    .filter((other) => other.tagName === tagName && storyOf(other));
+  const pairedInStory = (tagName: string, id: string) => {
+    const opposite = tagName === 'w:bookmarkStart' ? 'w:bookmarkEnd' : 'w:bookmarkStart';
+    const same = attachedOfKind(tagName, id);
+    const other = attachedOfKind(opposite, id);
+    return same.length === 1 && other.length === 1 && storyOf(other[0]!) === story;
+  };
+  const boundaries = childElements(p).filter((marker) =>
+    marker.tagName === 'w:bookmarkStart' || marker.tagName === 'w:bookmarkEnd');
+  let rescued = boundaries.filter((marker) => {
+    const id = idOf(marker);
+    return !!id && pairedInStory(marker.tagName, id);
+  });
+  // Descend into block containers (tables, content controls) beside the
+  // removed paragraph, but never into a nested story (a text box's
+  // paragraphs sit inside a w:p).
+  const sameStory = (candidate: Element, container: Element): boolean => {
+    for (let a = parentElement(candidate); a && a !== container; a = parentElement(a)) {
+      if (a.tagName === 'w:p' || a.tagName === 'w:txbxContent') return false;
+    }
+    return true;
+  };
+  const nearestIn = (el: Element, last: boolean): Element | undefined => {
+    if (el.tagName === 'w:p') return el;
+    const nested = findAllByTagName(el, 'w:p').filter((candidate) => sameStory(candidate, el));
+    return last ? nested.at(-1) : nested[0];
+  };
+  let previous: Element | undefined;
+  let target: Element | undefined;
+  if (rescued.length > 0) {
+    const siblings = childElements(parentElement(p)!);
+    const index = siblings.indexOf(p);
+    for (let i = index - 1; i >= 0 && !previous; i--) previous = nearestIn(siblings[i]!, true);
+    target = previous;
+    for (let i = index + 1; i < siblings.length && !target; i++) target = nearestIn(siblings[i]!, false);
+    if (!target) rescued = [];
+  }
+  // A boundary that cannot be rescued leaves with the paragraph. Unless a
+  // same-kind duplicate survives elsewhere, drop its counterparts too, as
+  // before #1019, so no endpoint is left orphaned.
+  for (const marker of boundaries) {
+    const id = idOf(marker);
+    if (!id || rescued.includes(marker)) continue;
+    const peers = bookmarksById.get(id) ?? [];
+    if (peers.some((other) => other.tagName === marker.tagName && parentElement(other) !== p && storyOf(other))) continue;
+    for (const other of peers) {
+      if (other !== marker) other.parentNode?.removeChild(other);
+    }
+  }
+  if (!target) return;
+  let insertIndex = paragraphContentStartIndex(target);
+  for (const marker of rescued) {
+    p.removeChild(marker);
+    if (previous) target.appendChild(marker);
+    else insertChildAt(target, marker, insertIndex++);
+  }
+}
+
 function collectBookmarksById(nodes: Element[]): Map<string, Element[]> {
   const byId = new Map<string, Element[]>();
   for (const node of nodes) {
@@ -631,11 +734,7 @@ export function acceptAllChanges(documentXml: string): string {
       !['w:pPr', 'w:bookmarkStart', 'w:bookmarkEnd'].includes(child.tagName));
     if (substantive.length === 0 || !substantive.every((child) =>
       child.tagName === 'w:del' || child.tagName === 'w:moveFrom')) continue;
-    for (const boundary of direct.filter((child) =>
-      child.tagName === 'w:bookmarkStart' || child.tagName === 'w:bookmarkEnd')) {
-      const id = boundary.getAttribute('w:id') ?? boundary.getAttributeNS(W_NS, 'id');
-      if (id) deletedBookmarkIds.add(id);
-    }
+    for (const id of locallyPairedBookmarkIds(direct)) deletedBookmarkIds.add(id);
   }
   const isInsideRevision = (marker: Element): boolean => {
     let current = parentElement(marker);
@@ -688,7 +787,10 @@ export function acceptAllChanges(documentXml: string): string {
   // Resolve the PPR-DEL-marked paragraphs (their paragraph mark was deleted):
   // merge each into its following paragraph (document order, so consecutive
   // mark-deleted paragraphs cascade forward into the first surviving one).
+  const bookmarksById = markDeletedParagraphs.length === 0 ? new Map<string, Element[]>() : collectBookmarksById([
+    ...findAllByTagName(root, 'w:bookmarkStart'), ...findAllByTagName(root, 'w:bookmarkEnd')]);
   for (const p of markDeletedParagraphs) {
+    rescueBookmarksFromUnmergedEmptyParagraph(root, p, bookmarksById);
     resolveParagraphMarkRevision(p, 'accept');
   }
 
