@@ -8,6 +8,7 @@ import { getDirectChildrenByName, isW as isWElement } from './dom-helpers.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
 import { rejectChanges } from './reject_changes.js';
 import { acceptChanges } from './accept_changes.js';
+import { mergeRuns } from './merge_runs.js';
 import { revisionEvidence, revisionEvidenceCases } from '../testing/revision-evidence.js';
 import {
   fldChar,
@@ -2738,6 +2739,178 @@ describe('replaceParagraphTextRange — result-less complex field inside a repla
       const instr = p.getElementsByTagNameNS(W_NS, W.instrText).item(0)!;
       expect(instr.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'space')).toBe('preserve');
       expect(p.getElementsByTagNameNS(W_NS, 'delInstrText')).toHaveLength(0);
+    });
+  });
+});
+
+describe('replaceParagraphTextRange — zero-length markers inside a replaced range stay in place (#1083)', () => {
+  const markerTest = test.conformance(
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.4' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.3' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.5' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' },
+  );
+
+  // xml:space="preserve" only where the text has edge whitespace, as Word
+  // writes it, so the run merge in the reject-all comparison is a no-op on it.
+  const TEXT_RUN = (s: string): string =>
+    `<w:r><w:t${/^\s|\s$/u.test(s) ? ' xml:space="preserve"' : ''}>${s}</w:t></w:r>`;
+  const CRS = '<w:commentRangeStart w:id="0"/>';
+  const CRE = '<w:commentRangeEnd w:id="0"/>';
+  const REF_RUN = '<w:r><w:commentReference w:id="0"/></w:r>';
+
+  // Every case replaces a range that spans the markers with "X"; the target
+  // text is always "AlphXravo".
+  const CASES: Array<{ name: string; paragraph: string; start: number; end: number }> = [
+    {
+      name: 'comment range "Alpha", its reference run inside the range (the issue\'s case 1)',
+      paragraph: `<w:p>${CRS}${TEXT_RUN('Alpha')}${CRE}${REF_RUN}${TEXT_RUN(' Bravo')}</w:p>`,
+      start: 4, end: 7, // "a B"
+    },
+    {
+      name: 'empty comment range just before the reference, all inside the range',
+      paragraph: `<w:p>${TEXT_RUN('Alpha ')}${CRS}${CRE}${REF_RUN}${TEXT_RUN(' Bravo')}</w:p>`,
+      start: 4, end: 8, // "a  B"
+    },
+    {
+      name: 'comment reference sharing a run with the following text (the merged-on-open shape)',
+      paragraph: `<w:p>${CRS}${TEXT_RUN('Alpha')}${CRE}` +
+        '<w:r><w:commentReference w:id="0"/><w:t xml:space="preserve"> Bravo</w:t></w:r></w:p>',
+      start: 4, end: 7, // "a B"
+    },
+    {
+      name: 'result-less w:fldSimple (the issue\'s case 2)',
+      paragraph: `<w:p>${TEXT_RUN('Alpha ')}<w:fldSimple w:instr=" PAGE "/>${TEXT_RUN(' Bravo')}</w:p>`,
+      start: 4, end: 8, // "a  B"
+    },
+    {
+      name: 'bookmark pair inside the range',
+      paragraph: `<w:p>${TEXT_RUN('Alpha ')}<w:bookmarkStart w:id="7" w:name="mark"/><w:bookmarkEnd w:id="7"/>${TEXT_RUN(' Bravo')}</w:p>`,
+      start: 4, end: 8, // "a  B"
+    },
+  ];
+
+  const serializer = new XMLSerializer();
+  /** Paragraph XML after merging format-identical adjacent runs, so run fragmentation from the edit does not count. */
+  const normalizedParagraphXml = (doc: Document): string => {
+    mergeRuns(doc);
+    return serializer.serializeToString(firstParagraph(doc));
+  };
+  const LIVE_MARKER_LOCALS = ['commentRangeStart', 'commentRangeEnd', 'commentReference', 'fldSimple', 'bookmarkStart', 'bookmarkEnd'];
+  const markers = (p: Element): Element[] =>
+    Array.from(p.getElementsByTagNameNS(W_NS, '*')).filter((el) => LIVE_MARKER_LOCALS.includes(el.localName ?? ''));
+  const liveIds = (p: Element, local: string): string[] =>
+    Array.from(p.getElementsByTagNameNS(W_NS, local))
+      .filter((el) => !isInsideRevisionWrapper(el, p))
+      .map((el) => el.getAttribute('w:id') ?? '');
+
+  for (const c of CASES) {
+    markerTest(`tracked (${c.name}): the markers stay live in place, and reject-all equals the original paragraph XML`, async ({ given, when, then }: AllureBddContext) => {
+      let doc: Document;
+      let p: Element;
+      let originalXml: string;
+      let originalMarkers: string[];
+
+      await given('a paragraph with zero-length markers between "Alph" and "ravo"', () => {
+        originalXml = normalizedParagraphXml(makeDoc(c.paragraph));
+        doc = makeDoc(c.paragraph);
+        p = firstParagraph(doc);
+        originalMarkers = markers(p).map((el) => el.localName ?? '');
+        expect(originalMarkers.length).toBeGreaterThan(0);
+      });
+
+      await when('the range spanning the markers is replaced with "X" under tracked changes', () => {
+        replaceParagraphTextRange(p, c.start, c.end, 'X', trackedCtx());
+      });
+
+      await then('every marker is still present, live, and outside any w:del or w:ins', () => {
+        expect(markers(p).map((el) => el.localName ?? '')).toEqual(originalMarkers);
+        for (const marker of markers(p)) expect(isInsideRevisionWrapper(marker, p)).toBe(false);
+      });
+
+      await then('reject-all gives back the original paragraph XML, marker positions included', () => {
+        rejectChanges(doc);
+        expect(normalizedParagraphXml(doc)).toBe(originalXml);
+      });
+    });
+
+    markerTest(`tracked (${c.name}): accept-all gives the target text and leaves no comment range without its reference`, async ({ given, when, then }: AllureBddContext) => {
+      let doc: Document;
+      let p: Element;
+      let cleanXml: string;
+
+      await given('the same paragraph, and the same edit made without tracking (the accept-all reference)', () => {
+        const cleanDoc = makeDoc(c.paragraph);
+        replaceParagraphTextRange(firstParagraph(cleanDoc), c.start, c.end, 'X');
+        cleanXml = normalizedParagraphXml(cleanDoc);
+        doc = makeDoc(c.paragraph);
+        p = firstParagraph(doc);
+      });
+
+      await when('the range is replaced under tracked changes and every change is accepted', () => {
+        replaceParagraphTextRange(p, c.start, c.end, 'X', trackedCtx());
+        acceptChanges(doc);
+      });
+
+      await then('the paragraph reads "AlphXravo", with no revision markup', () => {
+        expect(getParagraphText(p)).toBe('AlphXravo');
+        expect(p.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(0);
+        expect(p.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(0);
+      });
+
+      await then('every live comment range marker has a live reference with the same id', () => {
+        const refs = new Set(liveIds(p, 'commentReference'));
+        for (const id of [...liveIds(p, 'commentRangeStart'), ...liveIds(p, 'commentRangeEnd')]) {
+          expect(refs.has(id)).toBe(true);
+        }
+      });
+
+      await then('accept-all equals the untracked edit', () => {
+        expect(normalizedParagraphXml(doc)).toBe(cleanXml);
+      });
+    });
+  }
+
+  markerTest('tracked: the comment range keeps anchoring the surviving text after accept-all', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+    let p: Element;
+
+    await given('a comment anchored on "Alpha", its reference run after the range', () => {
+      doc = makeDoc(`<w:p>${CRS}${TEXT_RUN('Alpha')}${CRE}${REF_RUN}${TEXT_RUN(' Bravo')}</w:p>`);
+      p = firstParagraph(doc);
+    });
+
+    await when('"a B" is replaced with "X" under tracked changes and accepted', () => {
+      replaceParagraphTextRange(p, 4, 7, 'X', trackedCtx());
+      acceptChanges(doc);
+    });
+
+    await then('the paragraph is ⟨start⟩Alph⟨end⟩⟨reference⟩Xravo: the range covers "Alph" and the reference follows it', () => {
+      const sequence: string[] = [];
+      for (const child of Array.from(p.getElementsByTagNameNS(W_NS, '*'))) {
+        if (isWElement(child, W.t)) sequence.push(child.textContent ?? '');
+        else if (LIVE_MARKER_LOCALS.includes(child.localName ?? '')) sequence.push(`⟨${child.localName}⟩`);
+      }
+      expect(sequence.join('')).toBe('⟨commentRangeStart⟩Alph⟨commentRangeEnd⟩⟨commentReference⟩Xravo');
+    });
+  });
+
+  markerTest('untracked: a comment reference inside the range is kept, not dropped', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('an empty comment range and its reference between "Alpha " and " Bravo"', () => {
+      p = firstParagraph(makeDoc(`<w:p>${TEXT_RUN('Alpha ')}${CRS}${CRE}${REF_RUN}${TEXT_RUN(' Bravo')}</w:p>`));
+    });
+
+    await when('"a  B" is replaced with "X" without tracking', () => {
+      replaceParagraphTextRange(p, 4, 8, 'X');
+    });
+
+    await then('the reference survives with its range markers', () => {
+      expect(getParagraphText(p)).toBe('AlphXravo');
+      expect(liveIds(p, 'commentReference')).toEqual(['0']);
+      expect(liveIds(p, 'commentRangeStart')).toEqual(['0']);
+      expect(liveIds(p, 'commentRangeEnd')).toEqual(['0']);
     });
   });
 });
