@@ -201,10 +201,11 @@ npm run lint:workspaces && \
 npm run test:run && \
 npm run check:spec-coverage && \
 npm run check:conformance-citations && \
-npm run check:conformance-doc
+npm run check:conformance-doc && \
+npm run check:cycles
 ```
 
-Also run checks specific to the changed surface, including generated tool docs, site links, package manifests, or release-verification evidence where applicable.
+Also run checks specific to the changed surface, including generated tool docs, site links, package manifests, or release-verification evidence where applicable. The required CI jobs `workspace-lint` and `spec-coverage` in `.github/workflows/ci.yml` are the authoritative list; they run a few further checks (for example `check:control-bytes` and `check:ecma-376-coverage`) that rarely fail locally.
 
 ## Pull Requests
 
