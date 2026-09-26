@@ -2,6 +2,7 @@ import { SessionManager } from '../session/manager.js';
 import { errorMessage } from '../error_utils.js';
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
+import { revisionResultChangedDocument } from './revision_result.js';
 import { AmbiguousRevisionOverlapError } from '@usejunior/docx-core';
 
 /**
@@ -36,7 +37,8 @@ export async function acceptAiEdits(
       author: params.author,
       normalizeFirst: params.normalize_first,
     });
-    manager.markEdited(session);
+    // A selector that resolved nothing must not look like an edit (#1084).
+    if (revisionResultChangedDocument(result)) manager.markEdited(session);
     if (selectedIds.length > 0) {
       manager.recordSelectiveRevisionAction(session, {
         tool: 'accept_ai_edits',
