@@ -55,6 +55,34 @@ export type RejectChangesResult = {
   unresolvedRowRevisions: number;
 };
 
+/**
+ * Rename each `w:delInstrText` whose `w:del` wrapper was just unwrapped back to
+ * `w:instrText`, with the same selection rule as the `w:delText` → `w:t`
+ * rename. A deleted complex field (begin, instruction, end) comes back with
+ * its instruction: left as `w:delInstrText` outside a `w:del`, the restored
+ * field would be an empty shell with no instruction (issue #1082).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
+ * @see https://github.com/UseJunior/safe-docx/issues/1082
+ */
+function restoreDeletedInstructionText(doc: Document, root: Element, selective: boolean): void {
+  const deletedInstructions = collectByLocalName(root, 'delInstrText').filter(
+    (el) => !hasWAncestor(el, 'del') && (!selective || !hasWAncestor(el, 'moveFrom')),
+  );
+  for (const deleted of deletedInstructions) {
+    const parent = deleted.parentNode;
+    if (!parent) continue;
+    const instr = doc.createElementNS(W_NS, 'w:instrText');
+    for (const child of Array.from(deleted.childNodes)) instr.appendChild(child);
+    const xmlSpace = deleted.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'space')
+      ?? deleted.getAttribute('xml:space');
+    if (xmlSpace) {
+      instr.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', xmlSpace);
+    }
+    parent.replaceChild(instr, deleted);
+  }
+}
+
 // ── DOM helpers (internal) ──────────────────────────────────────────
 
 function isW(node: Node, localName: string): node is Element {
@@ -587,6 +615,7 @@ export function rejectChanges(
     }
     parent.replaceChild(t, dt);
   }
+  restoreDeletedInstructionText(doc, root, selective);
 
   // Phase E — Unwrap move sources (keep content at original position)
   const moveFromUnwrapped = unwrapAllByLocalName(root, 'moveFrom', filter);

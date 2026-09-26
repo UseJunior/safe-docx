@@ -5,6 +5,8 @@ import { DocxZip } from '@usejunior/docx-core';
 import { SessionManager, type DocxSession } from '../session/manager.js';
 import { acceptAiEdits } from './accept_ai_edits.js';
 import { rejectAiEdits } from './reject_ai_edits.js';
+import { acceptChanges } from './accept_changes.js';
+import { getFileStatus } from './get_file_status.js';
 import { save } from './save.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { assertFailure, assertSuccess, openSession, registerCleanup } from '../testing/session-test-utils.js';
@@ -271,4 +273,124 @@ describe('Selective accept/reject AI edits (#123)', () => {
       });
     },
   );
+});
+
+// #1084: a no-op accept/reject must not bump the session's edit counters or
+// drop its caches; a real one still must (control).
+describe('No-op accept/reject leaves the session unedited (#1084)', () => {
+  registerCleanup();
+
+  const PLAIN_BODY = `<w:p><w:r><w:t xml:space="preserve">no tracked changes here</w:t></w:r></w:p>`;
+
+  function counters(session: DocxSession): { editCount: number; editRevision: number } {
+    return { editCount: session.editCount, editRevision: session.editRevision };
+  }
+
+  async function fileStatusCounters(mgr: SessionManager, filePath: string) {
+    const status = await getFileStatus(mgr, { file_path: filePath });
+    assertSuccess(status, 'get_file_status');
+    return { edit_count: status.edit_count, edit_revision: status.edit_revision };
+  }
+
+  test('accept_changes on a document with no tracked changes leaves edit counters unchanged', async ({ given, when, then }: AllureBddContext) => {
+    const opened = await given('a session on a document with no tracked changes', () =>
+      openSession([], { mgr: manager(), xml: documentXml(PLAIN_BODY) }),
+    );
+    const session = await docxSession(opened.mgr, opened.filePath);
+    const before = counters(session);
+    const statusBefore = await fileStatusCounters(opened.mgr, opened.filePath);
+
+    const result = await when('accept_changes is called', () =>
+      acceptChanges(opened.mgr, { file_path: opened.filePath }),
+    );
+
+    await then('it succeeds with zero counts and the session is not marked edited', async () => {
+      assertSuccess(result, 'accept_changes');
+      expect(result.insertionsAccepted).toBe(0);
+      expect(result.deletionsAccepted).toBe(0);
+      expect(counters(session)).toEqual(before);
+      expect(await fileStatusCounters(opened.mgr, opened.filePath)).toEqual(statusBefore);
+    });
+  });
+
+  test('reject_ai_edits with a selector matching nothing leaves edit counters unchanged', async ({ given, when, then }: AllureBddContext) => {
+    const opened = await given('a session with AI and reviewer revisions', () =>
+      openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) }),
+    );
+    const session = await docxSession(opened.mgr, opened.filePath);
+    const before = counters(session);
+
+    const byAuthor = await when('reject_ai_edits targets an author with no revisions', () =>
+      rejectAiEdits(opened.mgr, { file_path: opened.filePath, author: 'Nobody' }),
+    );
+    const byIds = await when('reject_ai_edits targets revision ids that do not exist', () =>
+      rejectAiEdits(opened.mgr, { file_path: opened.filePath, revision_ids: [999] }),
+    );
+
+    await then('both succeed with no selection and the session is not marked edited', () => {
+      assertSuccess(byAuthor, 'reject_ai_edits');
+      assertSuccess(byIds, 'reject_ai_edits');
+      expect(byAuthor.selected_revision_ids).toEqual([]);
+      // Unknown revision_ids are echoed back as selected, so zero counts (not an
+      // empty selection) are what prove nothing changed.
+      expect(byIds.insertionsRemoved).toBe(0);
+      expect(byIds.deletionsRestored).toBe(0);
+      expect(counters(session)).toEqual(before);
+    });
+  });
+
+  test('accept_ai_edits with a selector matching nothing leaves edit counters unchanged', async ({ given, when, then }: AllureBddContext) => {
+    const opened = await given('a session with AI and reviewer revisions', () =>
+      openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) }),
+    );
+    const session = await docxSession(opened.mgr, opened.filePath);
+    const before = counters(session);
+
+    const result = await when('accept_ai_edits targets an author with no revisions', () =>
+      acceptAiEdits(opened.mgr, { file_path: opened.filePath, author: 'Nobody' }),
+    );
+
+    await then('it succeeds with no selection and the session is not marked edited', () => {
+      assertSuccess(result, 'accept_ai_edits');
+      expect(result.selected_revision_ids).toEqual([]);
+      expect(counters(session)).toEqual(before);
+    });
+  });
+
+  test('a real accept_changes, accept_ai_edits and reject_ai_edits still mark the session edited (control)', async ({ given, when, then }: AllureBddContext) => {
+    const acceptAll = await given('a session with tracked changes', () =>
+      openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) }),
+    );
+    const selective = await given('a second session with tracked changes', () =>
+      openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) }),
+    );
+    const acceptSession = await docxSession(acceptAll.mgr, acceptAll.filePath);
+    const selectiveSession = await docxSession(selective.mgr, selective.filePath);
+    const acceptBefore = counters(acceptSession);
+    const selectiveBefore = counters(selectiveSession);
+
+    const accepted = await when('accept_changes resolves every revision', () =>
+      acceptChanges(acceptAll.mgr, { file_path: acceptAll.filePath }),
+    );
+    const acceptedAi = await when('accept_ai_edits accepts one AI revision', () =>
+      acceptAiEdits(selective.mgr, { file_path: selective.filePath, revision_ids: [101] }),
+    );
+    const rejectedAi = await when('reject_ai_edits rejects another AI revision', () =>
+      rejectAiEdits(selective.mgr, { file_path: selective.filePath, revision_ids: [103] }),
+    );
+
+    await then('each real change increments edit count and revision by one', () => {
+      assertSuccess(accepted, 'accept_changes');
+      assertSuccess(acceptedAi, 'accept_ai_edits');
+      assertSuccess(rejectedAi, 'reject_ai_edits');
+      expect(counters(acceptSession)).toEqual({
+        editCount: acceptBefore.editCount + 1,
+        editRevision: acceptBefore.editRevision + 1,
+      });
+      expect(counters(selectiveSession)).toEqual({
+        editCount: selectiveBefore.editCount + 2,
+        editRevision: selectiveBefore.editRevision + 2,
+      });
+    });
+  });
 });
