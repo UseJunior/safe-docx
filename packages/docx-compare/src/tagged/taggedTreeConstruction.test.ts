@@ -447,7 +447,8 @@ describe('complete tagged-tree construction', () => {
   moveConformanceTest('balances content wrappers independently from paragraph-mark revisions', () => {
     const document = parseXml(serializedReorderedMove());
     const revisions = Array.from(document.getElementsByTagNameNS(W_NS, 'moveFrom'));
-    const mark = revisions.find((element) => element.parentNode?.nodeName === 'w:rPr')!;
+    const mark = Array.from(document.getElementsByTagNameNS(W_NS, 'del'))
+      .find((element) => element.parentNode?.nodeName === 'w:rPr')!;
     mark.parentNode!.removeChild(mark);
     const serializer = new XMLSerializer();
     expect(moveBalanceIssues(serializer.serializeToString(document))).toEqual([]);
@@ -532,7 +533,8 @@ describe('complete tagged-tree construction', () => {
       const document = parseXml(output);
       const start = document.getElementsByTagNameNS(W_NS, 'moveFromRangeStart')[0]!;
       const moves = Array.from(document.getElementsByTagNameNS(W_NS, 'moveFrom'));
-      const marker = moves.find((element) => element.parentNode?.parentNode?.nodeName === 'w:pPr');
+      const marker = Array.from(document.getElementsByTagNameNS(W_NS, 'del'))
+        .find((element) => element.parentNode?.parentNode?.nodeName === 'w:pPr');
       const wrapper = moves.find((element) => element.parentNode?.nodeName === 'w:p');
       const end = document.getElementsByTagNameNS(W_NS, 'moveFromRangeEnd')[0]!;
       expect(output.indexOf('<w:moveFromRangeStart')).toBeLessThan(output.indexOf('<w:moveFrom '));
@@ -555,7 +557,8 @@ describe('complete tagged-tree construction', () => {
       const document = parseXml(output);
       const start = document.getElementsByTagNameNS(W_NS, 'moveToRangeStart')[0]!;
       const moves = Array.from(document.getElementsByTagNameNS(W_NS, 'moveTo'));
-      const marker = moves.find((element) => element.parentNode?.parentNode?.nodeName === 'w:pPr');
+      const marker = Array.from(document.getElementsByTagNameNS(W_NS, 'ins'))
+        .find((element) => element.parentNode?.parentNode?.nodeName === 'w:pPr');
       const wrapper = moves.find((element) => element.parentNode?.nodeName === 'w:p');
       const end = document.getElementsByTagNameNS(W_NS, 'moveToRangeEnd')[0]!;
       const sourceName = document.getElementsByTagNameNS(W_NS, 'moveFromRangeStart')[0]!
