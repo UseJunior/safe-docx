@@ -308,16 +308,21 @@ function runCarriesDeletableContent(run: Element): boolean {
   return getDirectContentElements(run).some((el) => DELETABLE_ZERO_LENGTH_LOCALS.has(el.localName ?? ''));
 }
 
-// OOXML embedded run content that references package parts: DrawingML drawing
-// (w:drawing), VML picture (w:pict), embedded OLE object (w:object), and
-// imported content part (w:contentPart, a CT_Rel relationship reference).
-// These carry no visible text length, so a caller-approved text match never
-// covers them — a text replacement must not destroy them (issue #739).
+// Run content a text replacement keeps live, in place. OOXML embedded content
+// that references package parts: DrawingML drawing (w:drawing), VML picture
+// (w:pict), embedded OLE object (w:object), and imported content part
+// (w:contentPart, a CT_Rel relationship reference) (issue #739). And a comment
+// anchor's reference mark (w:commentReference): deleting it with the text
+// would leave the comment's live w:commentRangeStart/End without a reference
+// after accept-all, or, when it sat alone in its run, drop it untracked
+// (issue #1083). None of these carry visible text length, so a caller-approved
+// text match never covers them — a text replacement must not destroy them.
 const EMBEDDED_CONTENT_LOCALS: ReadonlySet<string> = new Set([
   W.drawing,
   W.pict,
   W.object,
   W.contentPart,
+  W.commentReference,
 ]);
 
 const FORMAT_RANGE_CONTENT_LOCALS: ReadonlySet<string> = new Set([
@@ -782,6 +787,10 @@ function getContainerBoundaryError(
  * visible text, so no text match ever covers it and no text edit may delete
  * it. Tracked deletions around preserved content are emitted as in-place
  * segments so rejectChanges() restores the original content order exactly.
+ * A comment's reference mark is preserved the same way, and zero-length
+ * sibling markers inside the range (comment range start/end, a result-less
+ * `w:fldSimple`, bookmarks) stay live where they are, with the deletion split
+ * around them, so reject-all equals the original paragraph.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
@@ -789,6 +798,7 @@ function getContainerBoundaryError(
  * @see #652
  * @see #741
  * @see #739
+ * @see #1083
  */
 export function replaceParagraphTextRange(
   p: Element,
@@ -933,12 +943,18 @@ export function replaceParagraphTextRange(
   // restore the removed text AFTER the preserved object, permanently
   // reordering content the user never touched. When no embedded content is
   // involved the historical single-deletion emission is kept unchanged.
+  //
+  // Zero-length markers that are siblings of the removed runs — comment range
+  // markers (w:commentRangeStart / w:commentRangeEnd), a result-less
+  // w:fldSimple, bookmarks — are never removed, but a single terminal w:del
+  // would still move the removed text past them, so reject-all would restore
+  // the text on the wrong side of each marker (issue #1083). They take the
+  // in-place segment emission too, and each one closes the open segment.
   let rangeContainsEmbeddedContent = false;
   for (let node: Node | null = rangeStartRunEl; node; node = node.nextSibling) {
     if (
       node.nodeType === 1 &&
-      isW(node as Element, W.r) &&
-      getEmbeddedContentElements(node as Element).length > 0
+      (!isW(node as Element, W.r) || getEmbeddedContentElements(node as Element).length > 0)
     ) {
       rangeContainsEmbeddedContent = true;
     }
@@ -1010,7 +1026,11 @@ export function replaceParagraphTextRange(
     while (cur) {
       const nextNode: Node | null = cur.nextSibling as Node | null;
       const atRangeEnd = cur === rangeEndRunEl;
-      if (cur.nodeType === 1 && isW(cur as Element, W.r)) {
+      if (cur.nodeType === 1 && !isW(cur as Element, W.r)) {
+        // A sibling marker stays where it is; the next removed run opens a
+        // new w:del after it (issue #1083).
+        currentDeletion = null;
+      } else if (cur.nodeType === 1) {
         const runEl = cur as Element;
         const embeddedContent = getEmbeddedContentElements(runEl);
         if (embeddedContent.length === 0) {
