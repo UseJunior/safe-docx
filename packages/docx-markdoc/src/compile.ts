@@ -42,6 +42,7 @@ import type {
   TableRowOperation,
   TableTopologyReport,
   StoryProjectionReport,
+  ValidationIssue,
   VerificationCertificate,
 } from './types.js';
 
@@ -1842,7 +1843,8 @@ export async function compileMarkdoc(
   markdoc: string,
   options: CompileOptions = {},
 ): Promise<CompileResult> {
-  const ir = requireMarkdoc(markdoc);
+  const markdocWarnings: ValidationIssue[] = [];
+  const ir = requireMarkdoc(markdoc, { onWarning: (warning) => markdocWarnings.push(warning) });
   const storyOperationIds = new Set(ir.operations.filter((operation) => operationStory(operation)).map((operation) => operation.operationId));
   const includeStoryExternalComments = options.externalComments ?? ir.compilation?.externalComments !== 'omit';
   const includeStoryInternalComments = options.dangerouslyIncludeInternalComments === true;
@@ -2092,6 +2094,7 @@ export async function compileMarkdoc(
     },
     ...(storyProjections ? { storyProjections } : {}),
     ...(tableTopology ? { tableTopology } : {}),
+    ...(markdocWarnings.length ? { markdocWarnings } : {}),
     commentRendering: {
       configurationSource: resolvedCompilation.source,
       buildDate: resolvedCompilation.date.toISOString(),

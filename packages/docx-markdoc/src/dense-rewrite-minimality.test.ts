@@ -36,7 +36,7 @@ async function compileAndScore(before: string, after: string) {
   const imported = await importDocxToMarkdoc(original);
   const paragraph = requireMarkdoc(imported.markdoc).scaffold[0]!;
   const replaceBlock = [
-    `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="rewrite" format="inherit-source-paragraph" %}`,
+    `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="rewrite" format="inherit-source-paragraph" %}`,
     '{% before %}', before, '{% /before %}',
     '{% after %}', after, '{% /after %}',
     '{% /change %}',

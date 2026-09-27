@@ -79,7 +79,7 @@ mean the main body. This preserves the existing parser and keeps diffs readable:
 (17 September 2026 Draft)
 {% /para %}
 
-{% change story="story-header-a1b2c3" id="_bk_..." fingerprint="sha256:nfkc:..." style="Header" operation="update-date" format="inherit-source-paragraph" %}
+{% change story="story-header-a1b2c3" id="_bk_..." fingerprint="sha256:nfkc:..." style="Header" edit="update-date" format="inherit-source-paragraph" %}
 {% before %}(17 September 2026 Draft){% /before %}
 {% after %}(18 September 2026 Draft){% /after %}
 {% /change %}

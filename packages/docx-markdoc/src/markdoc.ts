@@ -3,6 +3,15 @@ import { DocxMarkdocError } from './errors.js';
 import { IR_VERSION, type AnnotationAnchor, type AnnotationParagraph, type AnnotationRunStyle, type AtomicChangeSet, type CanonicalAnnotation, type CompilationProfile, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type ReadOnlyStoryParagraph, type RequirementWaiver, type RetainedFormat, type RetainedFormatSpan, type RunFormat, type RunFormatSpan, type SourceParagraph, type StoryDeclaration, type ValidationIssue, type ValidationResult } from './types.js';
 
 const stringRequired = { type: String, required: true } as const;
+/** `edit=` names an edit (e.g. `add-cure-period`); rationale `for=`, annotation `edit=`,
+ * requirement `satisfied-by=` and change-set `edits=` point at that name. `operation=` is
+ * the deprecated spelling, accepted with a warning for one minor version. Presence is
+ * enforced in parseMarkdoc so that either spelling satisfies it.
+ */
+const editNameAttributes = {
+  edit: { type: String },
+  operation: { type: String },
+};
 const runFormatAttributes = {
   underline: { type: String, matches: ['single'] },
   highlight: { type: String, matches: ['yellow'] },
@@ -76,7 +85,7 @@ export const markdocConfig: Config = {
         id: stringRequired,
         fingerprint: stringRequired,
         style: stringRequired,
-        operation: stringRequired,
+        ...editNameAttributes,
         format: { type: String, required: true, matches: ['inherit-source-paragraph'] },
         'format-source': { type: String },
         ...runFormatAttributes,
@@ -90,7 +99,7 @@ export const markdocConfig: Config = {
         id: stringRequired,
         fingerprint: stringRequired,
         style: stringRequired,
-        operation: stringRequired,
+        ...editNameAttributes,
         format: { type: String, required: true, matches: ['inherit-source-paragraph'] },
         'format-source': { type: String },
         ...runFormatAttributes,
@@ -103,7 +112,7 @@ export const markdocConfig: Config = {
         id: stringRequired,
         fingerprint: stringRequired,
         style: stringRequired,
-        operation: stringRequired,
+        ...editNameAttributes,
         format: { type: String, required: true, matches: ['inherit-source-paragraph'] },
         ...runFormatAttributes,
       },
@@ -112,7 +121,7 @@ export const markdocConfig: Config = {
       attributes: {
         story: { type: String },
         anchor: stringRequired,
-        operation: stringRequired,
+        ...editNameAttributes,
         'style-source': { type: String },
         'format-source': { type: String },
         ...runFormatAttributes,
@@ -122,7 +131,7 @@ export const markdocConfig: Config = {
       attributes: {
         story: { type: String },
         anchor: stringRequired,
-        operation: stringRequired,
+        ...editNameAttributes,
         'style-source': { type: String },
         'format-source': { type: String },
         ...runFormatAttributes,
@@ -131,7 +140,7 @@ export const markdocConfig: Config = {
     'insert-table-rows': {
       attributes: {
         anchor: stringRequired,
-        operation: stringRequired,
+        ...editNameAttributes,
         position: { type: String, required: true, matches: ['before', 'after'] },
       },
     },
@@ -142,7 +151,7 @@ export const markdocConfig: Config = {
     },
     'delete-table-row': {
       selfClosing: true,
-      attributes: { anchor: stringRequired, operation: stringRequired },
+      attributes: { anchor: stringRequired, ...editNameAttributes },
     },
     rationale: {
       attributes: {
@@ -153,7 +162,7 @@ export const markdocConfig: Config = {
     annotation: {
       attributes: {
         id: stringRequired,
-        operation: { type: String },
+        ...editNameAttributes,
         audience: { type: String, required: true, matches: ['internal', 'external-facing', 'unspecified'] },
         role: { type: String, required: true, matches: ['drafting-note', 'substantive-footnote', 'unspecified'] },
         'source-presentation': { type: String, required: true, matches: ['comment', 'footnote', 'authored'] },
@@ -195,7 +204,8 @@ export const markdocConfig: Config = {
       selfClosing: true,
       attributes: {
         id: stringRequired,
-        operations: stringRequired,
+        edits: { type: String },
+        operations: { type: String },
         atomic: { type: Boolean, required: true },
       },
     },
@@ -300,6 +310,27 @@ function assertNoNestedTags(node: Node, issues: ValidationIssue[]): void {
 
 function commaList(value: unknown): string[] {
   return String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+/** Reads the edit name from `edit=`, or from the deprecated `operation=` spelling
+ * (`edits=`/`operations=` on change-set). Both spellings on one tag is an error; the
+ * old spelling alone is a warning, so files written before the rename still compile.
+ */
+function editName(node: Node, issues: ValidationIssue[], warnings: ValidationIssue[], required: boolean, plural = false): string | undefined {
+  const current = plural ? 'edits' : 'edit';
+  const deprecated = plural ? 'operations' : 'operation';
+  const a = node.attributes;
+  if (a[current] !== undefined && a[deprecated] !== undefined) {
+    issues.push(issue('CONFLICTING_EDIT_ATTRIBUTES', `${node.tag} sets both ${current}= and ${deprecated}=; use ${current}= only.`, node));
+  } else if (a[deprecated] !== undefined) {
+    warnings.push(issue('DEPRECATED_EDIT_ATTRIBUTE', `${deprecated}= is deprecated; use ${current}=.`, node));
+  }
+  const value = a[current] ?? a[deprecated];
+  if (value === undefined || String(value) === '') {
+    if (required) issues.push(issue('MISSING_EDIT_NAME', `${node.tag} requires a non-empty ${current}= name.`, node));
+    return value === undefined ? undefined : '';
+  }
+  return String(value);
 }
 
 const HIGHLIGHTS = new Set(['black', 'blue', 'cyan', 'green', 'magenta', 'red', 'yellow', 'white', 'darkBlue', 'darkCyan', 'darkGreen', 'darkMagenta', 'darkRed', 'darkYellow', 'darkGray', 'lightGray', 'none']);
@@ -457,6 +488,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       line: entry.lines?.[0] === undefined ? undefined : entry.lines[0] + 1,
     }));
 
+  const warnings: ValidationIssue[] = [];
   validateTextBodies(ast, issues);
 
   let descriptor: MarkdocEditIR['source'] | undefined;
@@ -563,10 +595,11 @@ export function parseMarkdoc(source: string): ValidationResult {
       if (annotations.some((annotation) => annotation.id === id)) issues.push(issue('DUPLICATE_ANNOTATION_ID', `Duplicate annotation ID ${id}.`, node));
       const date = a.date === undefined ? undefined : String(a.date);
       if (date !== undefined && !Number.isFinite(Date.parse(date))) issues.push(issue('INVALID_ANNOTATION_DATE', 'Annotation dates must be valid ISO-8601 instants.', node));
+      const annotationEdit = editName(node, issues, warnings, false);
       annotations.push({
         id,
         body: annotationBody(node, issues),
-        ...(a.operation === undefined ? {} : { operationId: String(a.operation) }),
+        ...(annotationEdit === undefined ? {} : { operationId: annotationEdit }),
         ...(a.author === undefined ? {} : { author: String(a.author) }),
         ...(a.initials === undefined ? {} : { initials: String(a.initials) }),
         ...(date === undefined ? {} : { date }),
@@ -586,10 +619,10 @@ export function parseMarkdoc(source: string): ValidationResult {
       if (requirementIds.has(id)) issues.push(issue('DUPLICATE_REQUIREMENT', `Duplicate requirement ID ${id}.`, node));
       requirementIds.add(id);
       const satisfiedBy = commaList(a['satisfied-by']);
-      if (satisfiedBy.length === 0) issues.push(issue('EMPTY_REQUIREMENT_OPERATIONS', `Requirement ${id} must name at least one satisfying operation.`, node));
+      if (satisfiedBy.length === 0) issues.push(issue('EMPTY_REQUIREMENT_EDITS', `Requirement ${id} must name at least one satisfying edit.`, node));
       const description = textProjection(node, 'revised').trim();
       if (!description) issues.push(issue('EMPTY_REQUIREMENT_DESCRIPTION', `Requirement ${id} requires a description.`, node));
-      if (new Set(satisfiedBy).size !== satisfiedBy.length) issues.push(issue('DUPLICATE_REQUIREMENT_OPERATION', `Requirement ${id} repeats a satisfying operation.`, node));
+      if (new Set(satisfiedBy).size !== satisfiedBy.length) issues.push(issue('DUPLICATE_REQUIREMENT_EDIT', `Requirement ${id} repeats a satisfying edit.`, node));
       requirements.push({ id, description, satisfiedBy, mode: a.mode === 'any' ? 'any' : 'all' });
       continue;
     }
@@ -606,10 +639,10 @@ export function parseMarkdoc(source: string): ValidationResult {
       const id = String(a.id ?? '');
       if (changeSetIds.has(id)) issues.push(issue('DUPLICATE_CHANGE_SET', `Duplicate change-set ID ${id}.`, node));
       changeSetIds.add(id);
-      const operationIdsInSet = commaList(a.operations);
+      const operationIdsInSet = commaList(editName(node, issues, warnings, true, true));
       if (a.atomic !== true) issues.push(issue('NONATOMIC_CHANGE_SET', `Change-set ${id} must declare atomic=true.`, node));
-      if (operationIdsInSet.length === 0) issues.push(issue('EMPTY_CHANGE_SET', `Change-set ${id} must name at least one operation.`, node));
-      if (new Set(operationIdsInSet).size !== operationIdsInSet.length) issues.push(issue('DUPLICATE_CHANGE_SET_OPERATION', `Change-set ${id} repeats an operation.`, node));
+      if (operationIdsInSet.length === 0) issues.push(issue('EMPTY_CHANGE_SET', `Change-set ${id} must name at least one edit.`, node));
+      if (new Set(operationIdsInSet).size !== operationIdsInSet.length) issues.push(issue('DUPLICATE_CHANGE_SET_EDIT', `Change-set ${id} repeats an edit.`, node));
       changeSets.push({ id, operationIds: operationIdsInSet });
       continue;
     }
@@ -623,8 +656,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       continue;
     }
     if (node.tag === 'insert-table-rows') {
-      const operationId = String(a.operation ?? '');
-      if (!operationId) issues.push(issue('EMPTY_OPERATION_ID', 'insert-table-rows requires a non-empty operation ID.', node));
+      const operationId = editName(node, issues, warnings, true) ?? '';
       if (hasMeaningfulNonTagContent(node)) {
         issues.push(issue('INVALID_TABLE_ROW_BATCH', 'insert-table-rows admits direct row tags only.', node));
       }
@@ -661,17 +693,16 @@ export function parseMarkdoc(source: string): ValidationResult {
         relativePosition: a.position === 'before' ? 'BEFORE' : 'AFTER',
         rows,
       });
-      if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
+      if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_EDIT', `Duplicate edit name ${operationId}.`, node));
       operationIds.add(operationId);
       continue;
     }
     if (node.tag === 'delete-table-row') {
-      const operationId = String(a.operation ?? '');
-      if (!operationId) issues.push(issue('EMPTY_OPERATION_ID', 'delete-table-row requires a non-empty operation ID.', node));
+      const operationId = editName(node, issues, warnings, true) ?? '';
       operations.push({
         kind: 'delete-table-row', operationId, anchorId: String(a.anchor ?? ''),
       });
-      if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
+      if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_EDIT', `Duplicate edit name ${operationId}.`, node));
       operationIds.add(operationId);
       continue;
     }
@@ -682,16 +713,16 @@ export function parseMarkdoc(source: string): ValidationResult {
         issues.push(issue('INVALID_INSERT_STATES', 'An insertion requires exactly one clean after block; its before state is empty.', node));
       }
       if (afterNodes.some(hasRevision)) issues.push(issue('REVISION_TAGS_NONCANONICAL', 'The after state contains clean text; inline ins/del belongs only in generated views.', node));
-      const operationId = String(a.operation ?? '');
+      const operationId = editName(node, issues, warnings, true) ?? '';
       const runFormat = runFormatFromAttributes(a, node, issues);
       const afterProjection = afterNodes[0]
         ? revisedProjectionWithRunFormats(afterNodes[0], issues)
         : { text: '', spans: [], retainedSpans: [] };
-      if (runFormat && afterProjection.spans.length > 0) issues.push(issue('CONFLICTING_RUN_FORMAT_SCOPE', 'Use either operation-level or inline run formatting, not both.', node));
+      if (runFormat && afterProjection.spans.length > 0) issues.push(issue('CONFLICTING_RUN_FORMAT_SCOPE', 'Use either edit-level or inline run formatting, not both.', node));
       if (runFormat && afterNodes[0]?.children.filter((child) => child.type === 'paragraph').length !== 1) {
         issues.push(issue(
           'AMBIGUOUS_RUN_FORMAT_SCOPE',
-          `Operation ${operationId} run formatting requires exactly one generated replacement block.`,
+          `Edit ${operationId} run formatting requires exactly one generated replacement block.`,
           node,
         ));
       }
@@ -707,7 +738,7 @@ export function parseMarkdoc(source: string): ValidationResult {
         runFormatSpans: afterProjection.spans,
         ...(afterProjection.retainedSpans.length ? { retainedFormatSpans: afterProjection.retainedSpans } : {}),
       });
-      if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
+      if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_EDIT', `Duplicate edit name ${operationId}.`, node));
       operationIds.add(operationId);
       continue;
     }
@@ -730,10 +761,10 @@ export function parseMarkdoc(source: string): ValidationResult {
       if (beforeNodes.some(hasRunFormat)) issues.push(issue('RUN_FORMAT_OUTSIDE_AFTER', 'Inline run-format declarations are permitted only in the clean after state.', node));
       if (beforeNodes.some(hasRetainedFormat)) issues.push(issue('RETAINED_FORMAT_OUTSIDE_AFTER', 'Inline retain-format declarations are permitted only in the clean after state.', node));
       if (children.some(hasRevision)) issues.push(issue('REVISION_TAGS_NONCANONICAL', 'Before/after states contain clean text; inline ins/del belongs only in generated views.', node));
-      const operationId = String(a.operation ?? '');
+      const operationId = editName(node, issues, warnings, true) ?? '';
       const runFormat = runFormatFromAttributes(a, node, issues);
-      if (runFormat && afterProjection.spans.length > 0) issues.push(issue('CONFLICTING_RUN_FORMAT_SCOPE', 'Use either operation-level or inline run formatting, not both.', node));
-      if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
+      if (runFormat && afterProjection.spans.length > 0) issues.push(issue('CONFLICTING_RUN_FORMAT_SCOPE', 'Use either edit-level or inline run formatting, not both.', node));
+      if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_EDIT', `Duplicate edit name ${operationId}.`, node));
       operationIds.add(operationId);
       const paragraph: SourceParagraph = {
         ...(a.story === undefined ? {} : { story: String(a.story) }),
@@ -784,14 +815,14 @@ export function parseMarkdoc(source: string): ValidationResult {
       revisedText,
     };
     (paragraph.story === undefined ? scaffold : storyScaffold).push(paragraph);
-    const operationId = a.operation === undefined ? undefined : String(a.operation);
+    const operationId = editName(node, issues, warnings, node.tag !== 'para');
     const runFormat = runFormatFromAttributes(a, node, issues);
-    if (runFormat && revisedProjection.spans.length > 0) issues.push(issue('CONFLICTING_RUN_FORMAT_SCOPE', 'Use either operation-level or inline run formatting, not both.', node));
+    if (runFormat && revisedProjection.spans.length > 0) issues.push(issue('CONFLICTING_RUN_FORMAT_SCOPE', 'Use either edit-level or inline run formatting, not both.', node));
     if (node.tag === 'para' && hasRevision(node)) issues.push(issue('INLINE_REVISIONS_NONCANONICAL', `Paragraph ${id} must be represented as clean before/after states.`, node));
-    if (!operationId && revisedProjection.spans.length > 0) issues.push(issue('RUN_FORMAT_REQUIRES_OPERATION', `Paragraph ${id} cannot declare run formatting without an edit operation.`, node));
-    if (!operationId && revisedProjection.retainedSpans.length > 0) issues.push(issue('RETAINED_FORMAT_REQUIRES_OPERATION', `Paragraph ${id} cannot declare retained formatting without an edit operation.`, node));
+    if (!operationId && revisedProjection.spans.length > 0) issues.push(issue('RUN_FORMAT_REQUIRES_EDIT', `Paragraph ${id} cannot declare run formatting without an edit.`, node));
+    if (!operationId && revisedProjection.retainedSpans.length > 0) issues.push(issue('RETAINED_FORMAT_REQUIRES_EDIT', `Paragraph ${id} cannot declare retained formatting without an edit.`, node));
     if (!operationId) continue;
-    if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_OPERATION', `Duplicate operation ID ${operationId}.`, node));
+    if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_EDIT', `Duplicate edit name ${operationId}.`, node));
     operationIds.add(operationId);
     if (node.tag === 'para') {
       operations.push({ kind: 'inline-edit', operationId, runFormat, runFormatSpans: revisedProjection.spans, ...(revisedProjection.retainedSpans.length ? { retainedFormatSpans: revisedProjection.retainedSpans } : {}), ...paragraph });
@@ -821,7 +852,7 @@ export function parseMarkdoc(source: string): ValidationResult {
   }
   for (const operation of operations) {
     if ('story' in operation && operation.story !== undefined && !storyIds.has(operation.story)) {
-      issues.push(issue('UNDECLARED_STORY', `Operation ${operation.operationId} names undeclared story ${operation.story}.`));
+      issues.push(issue('UNDECLARED_STORY', `Edit ${operation.operationId} names undeclared story ${operation.story}.`));
     }
   }
   for (const story of stories) {
@@ -832,11 +863,11 @@ export function parseMarkdoc(source: string): ValidationResult {
   }
   for (const rationale of rationales) {
     if (!operationIds.has(rationale.operationId)) {
-      issues.push(issue('ORPHAN_RATIONALE', `Rationale targets unknown operation ${rationale.operationId}.`));
+      issues.push(issue('ORPHAN_RATIONALE', `Rationale targets unknown edit ${rationale.operationId}.`));
     }
   }
   for (const annotation of annotations) {
-    if (annotation.operationId && !operationIds.has(annotation.operationId)) issues.push(issue('ORPHAN_ANNOTATION_OPERATION', `Annotation ${annotation.id} targets unknown operation ${annotation.operationId}.`));
+    if (annotation.operationId && !operationIds.has(annotation.operationId)) issues.push(issue('ORPHAN_ANNOTATION_EDIT', `Annotation ${annotation.id} targets unknown edit ${annotation.operationId}.`));
     if (annotation.replyParentId && !annotations.some((parent) => parent.id === annotation.replyParentId)) issues.push(issue('ORPHAN_ANNOTATION_REPLY', `Annotation ${annotation.id} targets unknown reply parent ${annotation.replyParentId}.`));
   }
   const waiverTargets = new Set<string>();
@@ -851,7 +882,7 @@ export function parseMarkdoc(source: string): ValidationResult {
     if (rationaleTargets.has(target)) {
       issues.push(issue(
         'DUPLICATE_RATIONALE_VISIBILITY',
-        `Operation ${rationale.operationId} has more than one ${rationale.visibility} rationale.`,
+        `Edit ${rationale.operationId} has more than one ${rationale.visibility} rationale.`,
       ));
     }
     rationaleTargets.add(target);
@@ -878,15 +909,20 @@ export function parseMarkdoc(source: string): ValidationResult {
       });
     }
   }
-  if (issues.length > 0 || !descriptor) return { valid: false, issues };
+  if (issues.length > 0 || !descriptor) return { valid: false, issues, warnings };
   return {
     valid: true,
     ir: { version: IR_VERSION, source: descriptor, scaffold, ...(stories.length ? { stories, storyScaffold, storyReadOnly } : {}), operations, rationales, annotations, compilation, requirements, waivers, changeSets, assertions },
+    warnings,
   };
 }
 
-export function requireMarkdoc(source: string): MarkdocEditIR {
+/** Non-fatal diagnostics (such as deprecated attribute spellings) are reported through
+ * `onWarning`; callers that ignore them still get the IR.
+ */
+export function requireMarkdoc(source: string, options: { onWarning?: (warning: ValidationIssue) => void } = {}): MarkdocEditIR {
   const result = parseMarkdoc(source);
   if (!result.valid) throw new DocxMarkdocError('INVALID_MARKDOC', 'Markdoc validation failed.', result.issues);
+  for (const warning of result.warnings) options.onWarning?.(warning);
   return result.ir;
 }

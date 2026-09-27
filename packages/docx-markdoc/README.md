@@ -16,7 +16,7 @@ npx docx-markdoc --help
 ```markdoc
 {% source sha256="..." paragraphs=2 /%}
 
-{% change id="_bk_..." fingerprint="sha256:nfkc:..." style="Normal" operation="rename" format="inherit-source-paragraph" %}
+{% change id="_bk_..." fingerprint="sha256:nfkc:..." style="Normal" edit="update-entity-name" format="inherit-source-paragraph" %}
 {% before %}
 The Old Name.
 {% /before %}
@@ -25,10 +25,18 @@ The New Name.
 {% /after %}
 {% /change %}
 
-{% rationale for="rename" visibility="internal" %}
+{% rationale for="update-entity-name" visibility="internal" %}
 Use the entity's current legal name.
 {% /rationale %}
 ```
+
+`edit=` names the edit; `id=` is the source paragraph's bookmark. A rationale's
+`for=`, an annotation's `edit=`, a requirement's `satisfied-by=` and a
+change-set's `edits=` refer to an edit by that name, so name what the edit does
+(`add-cure-period`), not the kind of edit. The former spelling `operation=`
+(`operations=` on `change-set`) is still accepted for this minor version with a
+deprecation warning and is removed in the next; setting both spellings on one
+tag is an error. Import emits only `edit=`.
 
 Compilation verifies the clean before state against the pinned source, applies
 the clean after state, and derives native tracked changes with Safe DOCX's
@@ -45,7 +53,7 @@ alarming internal-comment capability. Missing, misspelled, or differently cased
 visibility fails validation rather than guessing.
 
 ```markdoc
-{% rationale for="rename" visibility="external-facing" %}
+{% rationale for="update-entity-name" visibility="external-facing" %}
 The revised name matches the synthetic review record.
 {% /rationale %}
 ```
@@ -133,7 +141,7 @@ paragraphs receive anchors in the separate `anchored.docx` copy. For example:
 ```markdoc
 {% story id="story-header-…" kind="header" bindings="0:default,1:default" fingerprint="sha256:…" paragraphs=1 readonly=0 /%}
 
-{% change story="story-header-…" id="_bk_…" fingerprint="sha256:…" style="Header" operation="update-date" format="inherit-source-paragraph" %}
+{% change story="story-header-…" id="_bk_…" fingerprint="sha256:…" style="Header" edit="update-date" format="inherit-source-paragraph" %}
 {% before %}Draft of September 17, 2026{% /before %}
 {% after %}Draft of September 18, 2026{% /after %}
 {% /change %}
@@ -164,9 +172,9 @@ editing. Markdoc cannot add, remove, rebind, or partly alias a story; change
 section selectors, tables, drawings, fields, content controls, or nested text
 boxes; or materialize Word comments on side-story edits. Paragraphs containing
 relationship-backed or unsupported content are read-only and have no operative
-Markdoc anchor; an attempted operation on an existing anchor there reports
+Markdoc anchor; an attempted edit on an existing anchor there reports
 `UNSUPPORTED_STORY_CONTENT`. Unselected orphan parts remain untouched. Internal rationale
-may still accompany an operation without becoming a Word comment.
+may still accompany an edit without becoming a Word comment.
 
 ## Template-backed greenfield forms
 
@@ -225,7 +233,7 @@ The actual filename is forced to end in `INTERNAL COMMENTS INCLUDED.docx`, even
 when the requested basename must be truncated to fit the filesystem limit.
 
 Each selected rationale becomes one native root Word comment around the
-tracked edit attributable to its operation. Insertions and replacements prefer
+tracked edit attributable to its edit name. Insertions and replacements prefer
 inserted text; deletion-only edits remain anchored to deleted tracked markup;
 multi-paragraph edits receive one bounded range. Accept-all and reject-all keep
 the comment components balanced, collapsing the range at the edit boundary
@@ -234,14 +242,14 @@ when its tracked anchor disappears.
 ## Delivery completeness
 
 Exact DOCX replay and drafting completeness are separate claims. A required
-drafting decision names the operation or operations that satisfy it:
+drafting decision names the edit or edits that satisfy it:
 
 ```markdoc
 {% requirement id="remove-obsolete-block" satisfied-by="remove-heading,remove-body" mode="all" %}
 Remove the obsolete block without leaving a heading or signature remnant.
 {% /requirement %}
 
-{% change-set id="remove-obsolete-block" operations="remove-heading,remove-body" atomic=true /%}
+{% change-set id="remove-obsolete-block" edits="remove-heading,remove-body" atomic=true /%}
 {% assert id="obsolete-label-absent" kind="absent" text="OBSOLETE LABEL" /%}
 ```
 
@@ -275,7 +283,7 @@ not encode document domains, clause types, parties, or legal conclusions.
 Whole-paragraph changes keep both clean states explicit:
 
 ```markdoc
-{% change id="_bk_..." fingerprint="..." style="Normal" operation="rewrite" format="inherit-source-paragraph" %}
+{% change id="_bk_..." fingerprint="..." style="Normal" edit="revise-provision" format="inherit-source-paragraph" %}
 {% before %}The original paragraph.{% /before %}
 {% after %}The complete revised paragraph.{% /after %}
 {% /change %}
@@ -329,7 +337,7 @@ paragraph as the formatting source so the compiler never guesses between an
 adjacent list level and a list terminator:
 
 ```markdoc
-{% insert-after anchor="_bk_current_item" operation="add-item" style-source="_bk_current_item" %}
+{% insert-after anchor="_bk_current_item" edit="add-item" style-source="_bk_current_item" %}
 {% after %}The new numbered item.{% /after %}
 {% /insert-after %}
 ```
@@ -350,7 +358,7 @@ and merge topology.
 Simple rectangular body tables also admit whole-row insertion and deletion:
 
 ```markdoc
-{% insert-table-rows anchor="_bk_inventory" position="after" operation="add-inventory" %}
+{% insert-table-rows anchor="_bk_inventory" position="after" edit="add-inventory" %}
 {% row %}
 {% cell text="Acme Manufacturing, Inc." /%}
 {% cell text="Pending" /%}
@@ -361,7 +369,7 @@ Simple rectangular body tables also admit whole-row insertion and deletion:
 {% /row %}
 {% /insert-table-rows %}
 
-{% delete-table-row anchor="_bk_obsolete" operation="remove-obsolete" /%}
+{% delete-table-row anchor="_bk_obsolete" edit="remove-obsolete" /%}
 ```
 
 Rows are inserted in authored order. `position="after"` chains each new row
@@ -385,7 +393,7 @@ formats, or a replacement crosses formats, compilation fails closed. The
 author may resolve that ambiguity by naming one unique source substring:
 
 ```markdoc
-{% change id="_bk_..." fingerprint="..." style="Normal" operation="rewrite" format="inherit-source-paragraph" format-source="Defined Term" %}
+{% change id="_bk_..." fingerprint="..." style="Normal" edit="revise-defined-term" format="inherit-source-paragraph" format-source="Defined Term" %}
 {% before %}The Defined Term applies.{% /before %}
 {% after %}The Revised Term applies.{% /after %}
 {% /change %}
@@ -412,7 +420,7 @@ additive overlay using the closed `underline="single"` and
 `highlight="yellow"` vocabulary:
 
 ```markdoc
-{% change id="_bk_..." fingerprint="..." style="Normal" operation="replace-fill" format="inherit-source-paragraph" underline="single" highlight="yellow" %}
+{% change id="_bk_..." fingerprint="..." style="Normal" edit="blank-date" format="inherit-source-paragraph" underline="single" highlight="yellow" %}
 {% before %}2026-08-12{% /before %}
 {% after %}________________{% /after %}
 {% /change %}
@@ -420,9 +428,9 @@ additive overlay using the closed `underline="single"` and
 
 Only the generated replacement receives those direct properties. All
 undeclared properties remain inherited from the selected source run. A
-run-format declaration is rejected before mutation if its operation produces
+run-format declaration is rejected before mutation if its edit produces
 zero or multiple generated text hunks; split the work into separate
-source-anchored operations instead. An inserted paragraph is one zero-width
+source-anchored edits instead. An inserted paragraph is one zero-width
 source hunk and may use the same overlay.
 
 The canonical Markdoc is compact. `inspectMarkdocSource` generates normalized

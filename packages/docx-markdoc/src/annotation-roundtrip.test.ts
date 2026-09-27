@@ -440,7 +440,7 @@ describe('canonical annotation round trips', () => {
     await expect(compileMarkdoc(imported.anchoredSource, imported.markdoc)).rejects.toMatchObject({ code: 'UNROUTED_ANNOTATION' });
     const paragraph = requireMarkdoc(imported.markdoc).scaffold[0]!;
     const edited = imported.markdoc
-      .replace(new RegExp(`\\{% para id="${paragraph.id}"[\\s\\S]*?\\{% /para %\\}`), `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="rewrite" format="inherit-source-paragraph" %}\n{% before %}\nAlpha beta gamma.\n{% /before %}\n{% after %}\nAlpha changed gamma.\n{% /after %}\n{% /change %}`)
+      .replace(new RegExp(`\\{% para id="${paragraph.id}"[\\s\\S]*?\\{% /para %\\}`), `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="rewrite" format="inherit-source-paragraph" %}\n{% before %}\nAlpha beta gamma.\n{% /before %}\n{% after %}\nAlpha changed gamma.\n{% /after %}\n{% /change %}`)
       .replace('source-presentation="comment"', 'source-presentation="comment" presentation="comment"');
     await expect(compileMarkdoc(imported.anchoredSource, edited)).rejects.toMatchObject({
       code: 'ANNOTATION_ANCHOR_AMBIGUOUS', details: { annotationId: imported.annotations[0]!.id },
@@ -451,7 +451,7 @@ describe('canonical annotation round trips', () => {
     const imported = await importDocxToMarkdoc(await sourceWithComment(11, 16));
     const paragraph = requireMarkdoc(imported.markdoc).scaffold[0]!;
     const edited = imported.markdoc
-      .replace(new RegExp(`\\{% para id="${paragraph.id}"[\\s\\S]*?\\{% /para %\\}`), `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="rewrite" format="inherit-source-paragraph" %}\n{% before %}\nAlpha beta gamma.\n{% /before %}\n{% after %}\nNew Alpha beta gamma.\n{% /after %}\n{% /change %}`)
+      .replace(new RegExp(`\\{% para id="${paragraph.id}"[\\s\\S]*?\\{% /para %\\}`), `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="rewrite" format="inherit-source-paragraph" %}\n{% before %}\nAlpha beta gamma.\n{% /before %}\n{% after %}\nNew Alpha beta gamma.\n{% /after %}\n{% /change %}`)
       .replace('source-presentation="comment"', 'source-presentation="comment" presentation="comment"');
     const result = await compileMarkdoc(imported.anchoredSource, edited);
     const comment = (await (await DocxDocument.load(result.tracked)).getComments())[0]!;

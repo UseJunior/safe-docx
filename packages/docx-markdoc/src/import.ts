@@ -261,7 +261,7 @@ function annotationMarkdoc(annotation: CanonicalAnnotation): string[] {
     `source-presentation="${annotation.sourcePresentation}"`,
     ...anchorAttributes('source-', annotation.sourceAnchor),
     ...anchorAttributes('', annotation.anchor),
-    ...(annotation.operationId ? [`operation="${escapeAttribute(annotation.operationId)}"`] : []),
+    ...(annotation.operationId ? [`edit="${escapeAttribute(annotation.operationId)}"`] : []),
     ...(annotation.author ? [`author="${escapeAttribute(annotation.author)}"`] : []),
     ...(annotation.initials ? [`initials="${escapeAttribute(annotation.initials)}"`] : []),
     ...(annotation.date ? [`date="${escapeAttribute(annotation.date)}"`] : []),

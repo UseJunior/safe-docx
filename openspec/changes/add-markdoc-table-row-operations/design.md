@@ -5,7 +5,7 @@
 Insertion uses one operation tag containing rows and cells:
 
 ```markdoc
-{% insert-table-rows anchor="_bk_inventory" position="after" operation="add-inventory" %}
+{% insert-table-rows anchor="_bk_inventory" position="after" edit="add-inventory" %}
 {% row %}
 {% cell text="Acme Manufacturing, Inc." /%}
 {% cell text="Pending" /%}
@@ -20,7 +20,7 @@ Insertion uses one operation tag containing rows and cells:
 Deletion is source-anchored and self-closing:
 
 ```markdoc
-{% delete-table-row anchor="_bk_obsolete" operation="remove-obsolete" /%}
+{% delete-table-row anchor="_bk_obsolete" edit="remove-obsolete" /%}
 ```
 
 `row` is valid only directly inside `insert-table-rows`; self-closing `cell` is
