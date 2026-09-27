@@ -6,7 +6,9 @@ import { spawnSync } from 'node:child_process';
 import { describe, expect } from 'vitest';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure } from '../testing/allure-test.js';
+import { acceptChanges, DocxArchive, parseXml, rejectChanges, serializeXml } from '@usejunior/docx-core';
 import { compareDocuments, UnsupportedBlockContainerRevisionError } from '../index.js';
+import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 
 const TEST_FEATURE = 'Block Container Revisions';
 const test = testAllure.epic('Document Comparison')
@@ -101,4 +103,66 @@ describe('block content-control revision publication', () => {
       });
     }
   });
+});
+
+describe('block content-control boundary moves (#1028)', () => {
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const para = (text: string) => `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+  const control = (inner: string) => `<w:sdt><w:sdtPr><w:id w:val="1"/></w:sdtPr><w:sdtContent>${inner}</w:sdtContent></w:sdt>`;
+  const intoControl = [
+    para('Before control.') + control(para('Inside control.')) + para('After control.'),
+    control(para('Before control.') + para('Inside control.')) + para('After control, amended.'),
+  ] as const;
+  const trailingOutOfControl = [
+    para('Lead paragraph.') + control(para('Inside control.') + para('Leaving control.')),
+    para('Lead paragraph.') + control(para('Inside control.')) + para('Leaving control.'),
+  ] as const;
+  // Each paragraph's text, marked with whether it sits inside the block control.
+  const shape = (xml: string) => Array.from(parseXml(xml).getElementsByTagNameNS(W, 'p')).map((p) => {
+    let inControl = false;
+    for (let node = p.parentNode; node; node = node.parentNode) {
+      if ((node as Element).localName === 'sdtContent') inControl = true;
+    }
+    const text = Array.from(p.getElementsByTagNameNS(W, 't')).map((t) => t.textContent).join('');
+    return `${inControl ? 'sdt:' : ''}${text}`;
+  });
+  const cases = [
+    ['a paragraph moves into the control', intoControl],
+    ['a paragraph moves into the control (reverse direction)', [intoControl[1], intoControl[0]]],
+    ['a trailing paragraph leaves the control', trailingOutOfControl],
+    ['a trailing paragraph leaves the control (reverse direction)', [trailingOutOfControl[1], trailingOutOfControl[0]]],
+  ] as const;
+
+  for (const [name, [originalBody, revisedBody]] of cases) {
+    for (const detectMoves of [false, true]) {
+      test(`${name} with detectMoves=${detectMoves} tracks paragraphs, not the control`, async () => {
+        const original = await buildDocxFromBodyXml(originalBody);
+        const revised = await buildDocxFromBodyXml(revisedBody);
+        const result = await compareDocuments(original, revised, { detectMoves });
+        await assertSchema(result.document);
+        const xml = (await (await DocxArchive.load(result.document)).getDocumentXml());
+        const document = parseXml(xml);
+        for (const tag of ['ins', 'del', 'moveFrom', 'moveTo']) {
+          for (const wrapper of Array.from(document.getElementsByTagNameNS(W, tag))) {
+            if (wrapper.parentNode && (wrapper.parentNode as Element).localName === 'rPr') continue;
+            const blockChildren = Array.from(wrapper.childNodes)
+              .filter((child) => child.nodeType === 1 && ['sdt', 'p', 'tbl'].includes((child as Element).localName));
+            expect(blockChildren, `${tag} wraps block content`).toHaveLength(0);
+          }
+        }
+        expect(document.getElementsByTagNameNS(W, 'sdt')).toHaveLength(1);
+        const originalXml = await (await DocxArchive.load(original)).getDocumentXml();
+        const revisedXml = await (await DocxArchive.load(revised)).getDocumentXml();
+        for (const [astProject, nativeProject, expected] of [
+          [acceptAllChanges, acceptChanges, revisedXml],
+          [rejectAllChanges, rejectChanges, originalXml],
+        ] as const) {
+          expect(shape(astProject(xml))).toEqual(shape(expected));
+          const native = parseXml(xml);
+          nativeProject(native);
+          expect(shape(serializeXml(native))).toEqual(shape(expected));
+        }
+      });
+    }
+  }
 });

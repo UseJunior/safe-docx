@@ -281,12 +281,40 @@ function lcsPairs(
   return pairs;
 }
 
+/**
+ * Pair one block-level content control across a boundary move so paragraphs
+ * entering or leaving it are tracked at paragraph level inside and outside the
+ * control, rather than wrapping the whole control in a run-level revision.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @see https://github.com/UseJunior/safe-docx/issues/1028
+ */
+function sameBlockContentControl(left: WmlElement, right: WmlElement): boolean {
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const isBlock = (sdt: WmlElement): boolean => childElements(sdt)
+    .filter((child) => child.namespaceURI === W && child.localName === 'sdtContent')
+    .flatMap((content) => childElements(content))
+    .some((child) => child.namespaceURI === W && ['p', 'tbl'].includes(child.localName));
+  const properties = (sdt: WmlElement): string => childElements(sdt)
+    .filter((child) => child.namespaceURI === W && ['sdtPr', 'sdtEndPr'].includes(child.localName))
+    .map((child) => subtreeSignature(child))
+    .join('|');
+  return left.namespaceURI === W && right.namespaceURI === W &&
+    left.localName === 'sdt' && right.localName === 'sdt' &&
+    isBlock(left) && isBlock(right) &&
+    semanticAttributeSignature(left) === semanticAttributeSignature(right) &&
+    properties(left) === properties(right);
+}
+
 function paragraphSimilarity(
   left: WmlElement,
   right: WmlElement,
   originalNumberingIdentities: ReadonlyMap<WmlElement, string>,
   revisedNumberingIdentities: ReadonlyMap<WmlElement, string>,
 ): number {
+  if (sameBlockContentControl(left, right)) return 1;
   if (left.localName !== right.localName || !['p', 'r'].includes(left.localName)) return 0;
   if (semanticAttributeSignature(left) !== semanticAttributeSignature(right)) return 0;
   if ((originalNumberingIdentities.get(left) ?? '') !==

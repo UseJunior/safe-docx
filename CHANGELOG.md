@@ -18,6 +18,13 @@
   drops the story while reject-all restores it, and the story no longer appears
   in `unrepresentedChanges`. Lifecycle story markers (inserted and removed) now
   also cover runs inside hyperlinks, fields and table cells.
+- DOCX comparison now pairs a block-level content control whose boundary
+  moves (a paragraph enters or leaves it) when the control keeps the same
+  properties. The moved paragraph is tracked at paragraph level inside and
+  outside the control, so accept-all yields the revised document, reject-all
+  yields the original, and LibreOffice keeps the control's content. The
+  comparison previously refused it as a whole-control insertion and deletion.
+  (#1028)
 - DOCX comparison now fails closed with a typed diagnostic when an entire
   block-level content control or custom-XML container is inserted or deleted,
   instead of publishing a schema-invalid run-revision wrapper. Inline
