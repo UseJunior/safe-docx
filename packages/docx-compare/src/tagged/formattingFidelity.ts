@@ -57,6 +57,8 @@ export interface FormattingDivergence {
   paragraphIndex: number;
   /** Aligned text the divergence applies to (truncated). */
   textSample: string;
+  /** Zero-based document-order section ordinal for section-scope divergences. */
+  sectionIndex?: number;
 }
 
 export interface FormattingDimensionTally {
@@ -598,6 +600,7 @@ function compareSectionFormatting(
         scope: 'section',
         paragraphIndex: -1,
         textSample: '',
+        sectionIndex: i,
         ...diff,
       });
     }
