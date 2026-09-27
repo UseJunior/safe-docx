@@ -268,34 +268,61 @@ function getRunVisibleLength(run: Element): number {
 }
 
 /**
+ * Zero-visible-length run content that a replaced range deletes with the
+ * surrounding text: a `w:sym` symbol character (issue #1044), and the
+ * `w:fldChar` / `w:instrText` markers of a complex field whose markers sit
+ * inside the range (issue #1082: a result-less field such as an `XE` index
+ * entry or a `TC` entry — begin, instruction, end, no `separate`). A field
+ * whose cached result is empty (begin, instruction, separate, end) is also
+ * zero-length and is handled the same way. A field with a non-empty cached
+ * result never reaches here with its markers in range: the range would
+ * include the result text, and that edit is refused earlier.
+ */
+const DELETABLE_ZERO_LENGTH_LOCALS: ReadonlySet<string> = new Set([
+  SYM_LOCAL_NAME,
+  W.fldChar,
+  W.instrText,
+]);
+
+/**
  * True when a run removed from a replaced range must be kept for `w:del`
- * wrapping. Visible text qualifies, and so does a `w:sym` symbol character
- * (a Wingdings checkbox, a bullet): it is run content that Word renders as a
- * character, but it contributes no visible length in the paragraph text
- * coordinate space, so the length test alone let a sym-only run be detached
- * and never recorded — an untracked deletion inside a tracked edit
- * (issue #1044). Recording it puts the symbol in the same `w:del` as the
- * surrounding text, so accept-all removes it with the text and reject-all
- * restores it in place.
+ * wrapping. Visible text qualifies, and so does zero-length content the range
+ * deletes with the text. A `w:sym` symbol character (a Wingdings checkbox, a
+ * bullet) is run content that Word renders as a character, but it contributes
+ * no visible length in the paragraph text coordinate space, so the length test
+ * alone let a sym-only run be detached and never recorded — an untracked
+ * deletion inside a tracked edit (issue #1044). Complex field markers
+ * (`w:fldChar`, `w:instrText`) had the same defect (issue #1082): a run
+ * holding only a marker was dropped, so reject-all could not restore the
+ * field. Recording the run puts it in the same `w:del` as the surrounding
+ * text, so accept-all removes it with the text and reject-all restores it in
+ * place; the emitter renames a deleted `w:instrText` to `w:delInstrText`.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.3.30
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  * @see https://github.com/UseJunior/safe-docx/issues/1044
+ * @see https://github.com/UseJunior/safe-docx/issues/1082
  */
 function runCarriesDeletableContent(run: Element): boolean {
   if (getRunVisibleLength(run) > 0) return true;
-  return getDirectContentElements(run).some((el) => isW(el, SYM_LOCAL_NAME));
+  return getDirectContentElements(run).some((el) => DELETABLE_ZERO_LENGTH_LOCALS.has(el.localName ?? ''));
 }
 
-// OOXML embedded run content that references package parts: DrawingML drawing
-// (w:drawing), VML picture (w:pict), embedded OLE object (w:object), and
-// imported content part (w:contentPart, a CT_Rel relationship reference).
-// These carry no visible text length, so a caller-approved text match never
-// covers them — a text replacement must not destroy them (issue #739).
+// Run content a text replacement keeps live, in place. OOXML embedded content
+// that references package parts: DrawingML drawing (w:drawing), VML picture
+// (w:pict), embedded OLE object (w:object), and imported content part
+// (w:contentPart, a CT_Rel relationship reference) (issue #739). And a comment
+// anchor's reference mark (w:commentReference): deleting it with the text
+// would leave the comment's live w:commentRangeStart/End without a reference
+// after accept-all, or, when it sat alone in its run, drop it untracked
+// (issue #1083). None of these carry visible text length, so a caller-approved
+// text match never covers them — a text replacement must not destroy them.
 const EMBEDDED_CONTENT_LOCALS: ReadonlySet<string> = new Set([
   W.drawing,
   W.pict,
   W.object,
   W.contentPart,
+  W.commentReference,
 ]);
 
 const FORMAT_RANGE_CONTENT_LOCALS: ReadonlySet<string> = new Set([
@@ -760,6 +787,10 @@ function getContainerBoundaryError(
  * visible text, so no text match ever covers it and no text edit may delete
  * it. Tracked deletions around preserved content are emitted as in-place
  * segments so rejectChanges() restores the original content order exactly.
+ * A comment's reference mark is preserved the same way, and zero-length
+ * sibling markers inside the range (comment range start/end, a result-less
+ * `w:fldSimple`, bookmarks) stay live where they are, with the deletion split
+ * around them, so reject-all equals the original paragraph.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
@@ -767,6 +798,7 @@ function getContainerBoundaryError(
  * @see #652
  * @see #741
  * @see #739
+ * @see #1083
  */
 export function replaceParagraphTextRange(
   p: Element,
@@ -911,12 +943,18 @@ export function replaceParagraphTextRange(
   // restore the removed text AFTER the preserved object, permanently
   // reordering content the user never touched. When no embedded content is
   // involved the historical single-deletion emission is kept unchanged.
+  //
+  // Zero-length markers that are siblings of the removed runs — comment range
+  // markers (w:commentRangeStart / w:commentRangeEnd), a result-less
+  // w:fldSimple, bookmarks — are never removed, but a single terminal w:del
+  // would still move the removed text past them, so reject-all would restore
+  // the text on the wrong side of each marker (issue #1083). They take the
+  // in-place segment emission too, and each one closes the open segment.
   let rangeContainsEmbeddedContent = false;
   for (let node: Node | null = rangeStartRunEl; node; node = node.nextSibling) {
     if (
       node.nodeType === 1 &&
-      isW(node as Element, W.r) &&
-      getEmbeddedContentElements(node as Element).length > 0
+      (!isW(node as Element, W.r) || getEmbeddedContentElements(node as Element).length > 0)
     ) {
       rangeContainsEmbeddedContent = true;
     }
@@ -988,7 +1026,11 @@ export function replaceParagraphTextRange(
     while (cur) {
       const nextNode: Node | null = cur.nextSibling as Node | null;
       const atRangeEnd = cur === rangeEndRunEl;
-      if (cur.nodeType === 1 && isW(cur as Element, W.r)) {
+      if (cur.nodeType === 1 && !isW(cur as Element, W.r)) {
+        // A sibling marker stays where it is; the next removed run opens a
+        // new w:del after it (issue #1083).
+        currentDeletion = null;
+      } else if (cur.nodeType === 1) {
         const runEl = cur as Element;
         const embeddedContent = getEmbeddedContentElements(runEl);
         if (embeddedContent.length === 0) {
