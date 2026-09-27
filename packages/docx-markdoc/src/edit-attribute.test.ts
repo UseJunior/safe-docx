@@ -79,6 +79,34 @@ describe('edit= names an edit', () => {
     if (!parsed.valid) return;
     expect(parsed.ir.operations.map((operation) => operation.operationId)).toEqual(['add-cure-period', 'add-notice']);
     expect(parsed.ir.annotations.find((annotation) => annotation.id === 'note-1')?.operationId).toBe('add-cure-period');
+
+    // Parse-level coverage of the remaining edit tags; anchors need not resolve until compile.
+    const everyTag = [
+      '{% source sha256="0000" paragraphs=2 /%}',
+      '{% replace-source id="_bk_a" fingerprint="sha256:nfkc:a" style="Normal" edit="replace-a" format="inherit-source-paragraph" %}',
+      'Replacement text.',
+      '{% /replace-source %}',
+      '{% delete-source id="_bk_b" fingerprint="sha256:nfkc:b" style="Normal" edit="delete-b" format="inherit-source-paragraph" /%}',
+      '{% insert-before anchor="_bk_a" edit="insert-before-a" %}',
+      '{% after %}', 'Inserted before.', '{% /after %}',
+      '{% /insert-before %}',
+      '{% insert-table-rows anchor="_bk_row" position="after" edit="add-rows" %}',
+      '{% row %}', '{% cell text="Acme" /%}', '{% /row %}',
+      '{% /insert-table-rows %}',
+      '{% delete-table-row anchor="_bk_old_row" edit="remove-row" /%}',
+      '',
+    ].join('\n');
+    const everyTagParsed = parseMarkdoc(everyTag);
+    expect(everyTagParsed.valid).toBe(true);
+    expect(everyTagParsed.warnings).toEqual([]);
+    if (!everyTagParsed.valid) return;
+    expect(everyTagParsed.ir.operations.map((operation) => [operation.kind, operation.operationId])).toEqual([
+      ['replace-source', 'replace-a'],
+      ['delete-source', 'delete-b'],
+      ['insert-before', 'insert-before-a'],
+      ['insert-table-rows', 'add-rows'],
+      ['delete-table-row', 'remove-row'],
+    ]);
   });
 
   itAllure('[SDX-MDOC-148] the deprecated operation= spelling warns and still compiles', async () => {
@@ -149,6 +177,9 @@ describe('edit= names an edit', () => {
     expect(result.issues.map((issue) => issue.code)).not.toContain('DUPLICATE_OPERATION');
   });
 
+  // Imported Word comments carry no edit reference (import.ts builds them without
+  // operationId), so this proves the emitter writes no old spelling and is
+  // deterministic; the parser tests above cover `edit=` on an annotation.
   itAllure('[SDX-MDOC-150] import emits only the new spelling and is byte-identical across runs', async () => {
     const base = await buildSyntheticDocx({ paragraphs: ['Either party may terminate this Agreement.'] });
     const document = await DocxDocument.load(base);
