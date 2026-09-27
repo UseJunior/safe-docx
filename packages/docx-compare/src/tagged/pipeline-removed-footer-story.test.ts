@@ -118,16 +118,32 @@ function revisionIds(xml: string, localNames: readonly string[]): string[] {
   );
 }
 
+/** Header/footer references nested in a `w:sectPrChange` snapshot (CT_SectPrBase forbids them). */
+function snapshotStoryReferences(documentXml: string): number {
+  const document = parseXml(documentXml);
+  return Array.from(document.getElementsByTagNameNS(OOXML.W_NS, 'sectPrChange')).reduce(
+    (count, change) =>
+      count +
+      change.getElementsByTagNameNS(OOXML.W_NS, 'headerReference').length +
+      change.getElementsByTagNameNS(OOXML.W_NS, 'footerReference').length,
+    0,
+  );
+}
+
 async function selectedTargets(archive: DocxArchive, documentXml: string): Promise<string[]> {
   const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
   return auditSectPr(documentXml, relationshipsXml).bindings.map((binding) => binding.targetPath);
 }
 
+const deletedSectionParagraph =
+  `<w:p><w:pPr><w:sectPr>` +
+  `<w:footerReference w:type="default" r:id="rIdStory"/>` +
+  `</w:sectPr></w:pPr><w:r><w:t>Deleted section</w:t></w:r></w:p>`;
+
+const UNREP_05 =
+  '[SDX-CMP-UNREP-05] Story slot dropped from a surviving section is reported as unrepresented';
+
 describe('relationship-selected story removed with its section (#754)', () => {
-  const deletedSectionParagraph =
-    `<w:p><w:pPr><w:sectPr>` +
-    `<w:footerReference w:type="default" r:id="rIdStory"/>` +
-    `</w:sectPr></w:pPr><w:r><w:t>Deleted section</w:t></w:r></w:p>`;
 
   test.openspec('[SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion')(
     'tracks every paragraph of a footer whose selecting section was deleted',
@@ -210,8 +226,8 @@ describe('relationship-selected story removed with its section (#754)', () => {
     },
   );
 
-  test.openspec('[SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion')(
-    'tracks a first-page header dropped from a surviving section',
+  test.openspec(UNREP_05)(
+    'reports a first-page header dropped from a surviving section as unrepresented',
     async () => {
       const storyXml =
         `<?xml version="1.0"?><w:hdr xmlns:w="${OOXML.W_NS}">` +
@@ -235,26 +251,25 @@ describe('relationship-selected story removed with its section (#754)', () => {
 
       const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
       const archive = await DocxArchive.load(result.document);
-      const header = await archive.getFile('word/header1.xml');
-      if (header === null) throw new Error('compared package lost word/header1.xml');
-
-      expect(header).toContain('<w:del');
-      expect(header).toContain('<w:delText>Cover page header</w:delText>');
-      expect(extractRoundTripComparisonText(acceptAllChanges(header)).trim()).toBe('');
-      expect(extractRoundTripComparisonText(rejectAllChanges(header))).toContain('Cover page header');
       const documentXml = await archive.getDocumentXml();
+
+      // CT_SectPrBase cannot carry the dropped reference, so no revision can
+      // restore it; the difference is reported instead of snapshotted (#944).
+      expect(snapshotStoryReferences(documentXml)).toBe(0);
       expect(await selectedTargets(archive, acceptAllChanges(documentXml))).toEqual([]);
-      expect(await selectedTargets(archive, rejectAllChanges(documentXml))).toEqual(['word/header1.xml']);
-      expect(result.unrepresentedChanges).toBeUndefined();
+      expect(await selectedTargets(archive, rejectAllChanges(documentXml))).toEqual([]);
+      expect(result.unrepresentedChanges).toEqual([
+        { scope: 'header', kind: 'removed', sectionIndex: 0, role: 'first' },
+      ]);
     },
   );
 
-  test.openspec('[SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion')(
-    'tracks a VML text-box footer dropped from a surviving section',
+  test.openspec(UNREP_05)(
+    'reports a VML text-box footer dropped from a surviving section as unrepresented',
     async () => {
       // The text-box lifecycle guard and the deleted classifier share one
-      // admissibility rule; before that, this input threw
-      // UnsupportedTextBoxRevisionError instead of being represented.
+      // admissibility rule; this input must neither throw
+      // UnsupportedTextBoxRevisionError nor emit an invalid snapshot.
       const original = await packageWithSelectedStory({
         bodyXml: paragraph('Body'),
         sectPrXml: `<w:sectPr><w:footerReference w:type="default" r:id="rIdStory"/></w:sectPr>`,
@@ -266,23 +281,14 @@ describe('relationship-selected story removed with its section (#754)', () => {
 
       const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
       const archive = await DocxArchive.load(result.document);
-      const footer = await archive.getFile('word/footer1.xml');
-      if (footer === null) throw new Error('compared package lost word/footer1.xml');
-
-      const parsed = parseXml(footer);
-      expect(parsed.getElementsByTagNameNS(OOXML.W_NS, 't')).toHaveLength(0);
-      expect(parsed.getElementsByTagNameNS(OOXML.W_NS, 'delText')).toHaveLength(4);
-      for (const deletion of Array.from(parsed.getElementsByTagNameNS(OOXML.W_NS, 'del'))) {
-        expect(deletion.getElementsByTagNameNS(OOXML.W_NS, 'pict')).toHaveLength(0);
-      }
-      expect(extractRoundTripComparisonText(acceptAllChanges(footer)).trim()).toBe('');
-      const rejected = extractRoundTripComparisonText(rejectAllChanges(footer));
-      for (const text of FOOTER_TEXTS) expect(rejected).toContain(text);
       const documentXml = await archive.getDocumentXml();
+
+      expect(snapshotStoryReferences(documentXml)).toBe(0);
       expect(await selectedTargets(archive, acceptAllChanges(documentXml))).toEqual([]);
-      expect(await selectedTargets(archive, rejectAllChanges(documentXml))).toEqual(['word/footer1.xml']);
-      expect(result.stats.deletions).toBeGreaterThanOrEqual(5);
-      expect(result.unrepresentedChanges).toBeUndefined();
+      expect(await selectedTargets(archive, rejectAllChanges(documentXml))).toEqual([]);
+      expect(result.unrepresentedChanges).toEqual([
+        { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
+      ]);
     },
   );
 
@@ -293,9 +299,10 @@ describe('relationship-selected story removed with its section (#754)', () => {
         `<?xml version="1.0"?><w:ftr xmlns:w="${OOXML.W_NS}"><w:tbl><w:tr>` +
         `<w:tc>${paragraph('Left cell')}</w:tc><w:tc>${paragraph('Right cell')}</w:tc>` +
         `</w:tr></w:tbl></w:ftr>`;
+      // The selecting section is removed: a surviving section's dropped slot
+      // cannot be represented (#944, SDX-CMP-UNREP-05).
       const original = await packageWithSelectedStory({
-        bodyXml: paragraph('Body'),
-        sectPrXml: `<w:sectPr><w:footerReference w:type="default" r:id="rIdStory"/></w:sectPr>`,
+        bodyXml: paragraph('Body') + deletedSectionParagraph,
         kind: 'footer',
         target: 'footer1.xml',
         storyXml: tableFooter,
@@ -312,9 +319,11 @@ describe('relationship-selected story removed with its section (#754)', () => {
       expect(extractRoundTripComparisonText(acceptAllChanges(footer)).trim()).toBe('');
       // Both cell paragraphs are represented ranges, so the caller's stats
       // must not read as an empty comparison.
-      expect(result.stats.deletions).toBe(2);
-      expect(result.stats.deletedRanges).toBe(2);
-      expect(result.unrepresentedChanges).toBeUndefined();
+      expect(result.stats.deletions).toBeGreaterThanOrEqual(2);
+      expect(result.stats.deletedRanges).toBeGreaterThanOrEqual(2);
+      expect(result.unrepresentedChanges).toEqual([
+        { scope: 'section', kind: 'removed', sectionIndex: 1 },
+      ]);
     },
   );
 
@@ -440,8 +449,8 @@ describe('relationship-selected story removed with its section (#754)', () => {
     },
   );
 
-  test.openspec('[SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion')(
-    'tracks the CC BY footer dropped from the real OpenAgreements Mutual NDA',
+  test.openspec(UNREP_05)(
+    'reports the CC BY footer dropped from the real OpenAgreements Mutual NDA as unrepresented',
     async () => {
       const original = await readFile(new URL(
         '../../../../tests/test_documents/open-agreements/mutual-nda.docx',
@@ -463,21 +472,16 @@ describe('relationship-selected story removed with its section (#754)', () => {
       const result = await compareDocumentsAtomizer(original, await revisedArchive.save(), COMPARE_OPTIONS);
       const archive = await DocxArchive.load(result.document);
       const footer = await archive.getFile('word/footer1.xml');
-      if (footer === null) throw new Error('compared package lost word/footer1.xml');
-
-      const parsed = parseXml(footer);
-      expect(parsed.getElementsByTagNameNS(OOXML.W_NS, 't')).toHaveLength(0);
-      const hyperlinkDeletions = Array.from(parsed.getElementsByTagNameNS(OOXML.W_NS, 'hyperlink'))
-        .map((hyperlink) => hyperlink.getElementsByTagNameNS(OOXML.W_NS, 'del').length);
-      expect(hyperlinkDeletions).toEqual([1, 1]);
-      expect(extractRoundTripComparisonText(acceptAllChanges(footer)).trim()).toBe('');
-      expect(extractRoundTripComparisonText(rejectAllChanges(footer)))
-        .toContain('Common Paper Mutual Non-Disclosure Agreement (Version 1.0) free to use under CC BY 4.0.');
+      // The revised package still carries the unselected part; it is not
+      // redlined because no schema-valid revision can reselect it.
+      expect(footer ?? '').not.toContain('<w:del');
       const documentXml = await archive.getDocumentXml();
+      expect(snapshotStoryReferences(documentXml)).toBe(0);
       expect(await selectedTargets(archive, acceptAllChanges(documentXml))).toEqual(['word/header1.xml']);
-      expect(await selectedTargets(archive, rejectAllChanges(documentXml)))
-        .toEqual(['word/header1.xml', 'word/footer1.xml']);
-      expect(result.unrepresentedChanges).toBeUndefined();
+      expect(await selectedTargets(archive, rejectAllChanges(documentXml))).toEqual(['word/header1.xml']);
+      expect(result.unrepresentedChanges).toEqual([
+        { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
+      ]);
     },
     30_000,
   );

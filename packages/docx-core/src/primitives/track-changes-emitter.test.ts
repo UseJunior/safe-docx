@@ -8,6 +8,8 @@ import {
   allocateRevisionId,
   buildPPrChangeElement,
   buildRPrChangeElement,
+  buildSectPrBaseSnapshot,
+  buildSectPrChangeElement,
   buildTcPrChangeElement,
   buildTrPrChangeElement,
   convertSerializedDeletionContent,
@@ -439,4 +441,33 @@ describe('track-changes-emitter', () => {
       });
     },
   );
+  test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' })(
+      'buildSectPrBaseSnapshot keeps only CT_SectPrBase content under any WML prefix (#944)',
+      () => {
+        const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+        const doc = parseXml(
+          `<root xmlns:x="${OOXML.W_NS}" xmlns:r="${R_NS}">` +
+            `<x:sectPr x:rsidR="00AB12CD" x:rsidSect="00EF3456">` +
+            `<x:headerReference x:type="default" r:id="rId1"/>` +
+            `<x:footerReference x:type="even" r:id="rId2"/>` +
+            `<x:pgSz x:w="12240" x:h="15840"/><x:titlePg/>` +
+            `<x:sectPrChange x:id="1" x:author="Prior" x:date="2026-01-01T00:00:00Z"><x:sectPr/></x:sectPrChange>` +
+            `</x:sectPr></root>`,
+        );
+        const live = childElements(doc.documentElement)[0]!;
+
+        const snapshot = buildSectPrBaseSnapshot(live, doc);
+        expect(snapshot.localName).toBe('sectPr');
+        expect(childElements(snapshot).map((child) => child.localName)).toEqual(['pgSz', 'titlePg']);
+        expect(snapshot.getAttributeNS(OOXML.W_NS, 'rsidR')).toBe('00AB12CD');
+        expect(snapshot.getAttributeNS(OOXML.W_NS, 'rsidSect')).toBe('00EF3456');
+        expect(childElements(buildSectPrBaseSnapshot(null, doc))).toHaveLength(0);
+
+        // The primitive emitter shares the same policy.
+        const change = buildSectPrChangeElement(live, createRevisionContext({ author: 'A', date: new Date(0) }));
+        expect(childElements(childElements(change)[0]!).map((child) => child.localName))
+          .toEqual(['pgSz', 'titlePg']);
+      },
+    );
 });
