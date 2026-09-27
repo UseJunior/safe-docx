@@ -20,7 +20,7 @@ function withBeforeAfterEdit(markdoc: string): string {
   if (!match?.[1]) throw new Error('fixture paragraph not found');
   return markdoc.replace(
     /\{% para ([^\n]+) %\}\nThe Old Name\.\n\{% \/para %\}/,
-    `{% change ${match[1]} operation="rename" format="inherit-source-paragraph" %}\n{% before %}\nThe Old Name.\n{% /before %}\n{% after %}\nThe New Name.\n{% /after %}\n{% /change %}`,
+    `{% change ${match[1]} edit="rename" format="inherit-source-paragraph" %}\n{% before %}\nThe Old Name.\n{% /before %}\n{% after %}\nThe New Name.\n{% /after %}\n{% /change %}`,
   ) + '\n{% rationale for="rename" visibility="internal" %}\nUse the current name.\n{% /rationale %}\n';
 }
 
@@ -58,7 +58,7 @@ describe('brownfield Markdoc authoring', () => {
     const imported = await importDocxToMarkdoc(original);
     const paragraph = requireMarkdoc(imported.markdoc).scaffold[0]!;
     const replaceBlock = [
-      `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="rewrite" format="inherit-source-paragraph" %}`,
+      `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="rewrite" format="inherit-source-paragraph" %}`,
       '{% before %}', 'Original provision.', '{% /before %}',
       '{% after %}', 'Revised provision.', '{% /after %}',
       '{% /change %}',
@@ -87,7 +87,7 @@ describe('brownfield Markdoc authoring', () => {
     let markdoc = withCanonicalChange(imported.markdoc, 'Old value', 'New value', 'update-cell');
     markdoc = withCanonicalChange(markdoc, 'Remove this line.', '', 'delete-cell-line');
     markdoc += [
-      `{% insert-after anchor="${value.id}" operation="insert-cell-line" style-source="${value.id}" %}`,
+      `{% insert-after anchor="${value.id}" edit="insert-cell-line" style-source="${value.id}" %}`,
       '{% after %}', 'Inserted line.', '{% /after %}', '{% /insert-after %}', '',
     ].join('\n');
     const result = await compileMarkdoc(imported.anchoredSource, markdoc, {
@@ -147,11 +147,11 @@ describe('brownfield Markdoc authoring', () => {
     if (!keep || !remove) throw new Error('table row anchors missing');
     const paragraphEditedMarkdoc = withCanonicalChange(imported.markdoc, 'Keep B', 'Kept B', 'edit-existing-cell');
     const markdoc = `${paragraphEditedMarkdoc}\n`
-      + `{% insert-table-rows anchor="${keep.id}" position="after" operation="add-rows" %}\n`
+      + `{% insert-table-rows anchor="${keep.id}" position="after" edit="add-rows" %}\n`
       + '{% row %}\n{% cell text="New 1A" /%}\n{% cell text="" /%}\n{% /row %}\n'
       + '{% row %}\n{% cell text="New 2A" /%}\n{% cell text="New 2B" /%}\n{% /row %}\n'
       + '{% /insert-table-rows %}\n'
-      + `{% delete-table-row anchor="${remove.id}" operation="remove-row" /%}\n`
+      + `{% delete-table-row anchor="${remove.id}" edit="remove-row" /%}\n`
       + '{% rationale for="add-rows" visibility="external-facing" %}\nAdd the approved inventory rows.\n{% /rationale %}\n';
 
     const parsed = requireMarkdoc(markdoc);
@@ -216,7 +216,7 @@ describe('brownfield Markdoc authoring', () => {
     const imported = await importDocxToMarkdoc(original);
     const anchor = requireMarkdoc(imported.markdoc).scaffold.find((paragraph) => paragraph.originalText === 'Delete first.');
     if (!anchor) throw new Error('deletion anchor missing');
-    const markdoc = `${imported.markdoc}\n{% delete-table-row anchor="${anchor.id}" operation="delete-row" /%}\n`;
+    const markdoc = `${imported.markdoc}\n{% delete-table-row anchor="${anchor.id}" edit="delete-row" /%}\n`;
     const result = await compileMarkdoc(imported.anchoredSource, markdoc, {
       author: 'Test Author', date: new Date('2026-09-20T00:00:00.000Z'),
     });
@@ -239,20 +239,20 @@ describe('brownfield Markdoc authoring', () => {
     );
     const imported = await importDocxToMarkdoc(original);
     const anchor = requireMarkdoc(imported.markdoc).scaffold[0]!;
-    const emptyCells = `${imported.markdoc}\n{% insert-table-rows anchor="${anchor.id}" position="after" operation="empty-cells" %}\n`
+    const emptyCells = `${imported.markdoc}\n{% insert-table-rows anchor="${anchor.id}" position="after" edit="empty-cells" %}\n`
       + '{% row %}\n{% cell text="" /%}\n{% cell text="" /%}\n{% /row %}\n{% /insert-table-rows %}\n';
     expect(parseMarkdoc(emptyCells)).toMatchObject({ valid: true });
-    const inconsistent = `${imported.markdoc}\n{% insert-table-rows anchor="${anchor.id}" position="after" operation="bad" %}\n`
+    const inconsistent = `${imported.markdoc}\n{% insert-table-rows anchor="${anchor.id}" position="after" edit="bad" %}\n`
       + '{% row %}\n{% cell text="one" /%}\n{% cell text="two" /%}\n{% /row %}\n'
       + '{% row %}\n{% cell text="only one" /%}\n{% /row %}\n{% /insert-table-rows %}\n';
     expect(parseMarkdoc(inconsistent)).toMatchObject({ valid: false });
-    const strayText = `${imported.markdoc}\n{% insert-table-rows anchor="${anchor.id}" position="after" operation="stray" %}\n`
+    const strayText = `${imported.markdoc}\n{% insert-table-rows anchor="${anchor.id}" position="after" edit="stray" %}\n`
       + '{% row %}\nnot a cell\n{% cell text="one" /%}\n{% cell text="two" /%}\n{% /row %}\n{% /insert-table-rows %}\n';
     expect(parseMarkdoc(strayText)).toMatchObject({ valid: false });
-    const emptyOperation = `${imported.markdoc}\n{% delete-table-row anchor="${anchor.id}" operation="" /%}\n`;
+    const emptyOperation = `${imported.markdoc}\n{% delete-table-row anchor="${anchor.id}" edit="" /%}\n`;
     expect(parseMarkdoc(emptyOperation)).toMatchObject({ valid: false });
 
-    const wrongWidth = `${imported.markdoc}\n{% insert-table-rows anchor="${anchor.id}" position="after" operation="bad-width" %}\n`
+    const wrongWidth = `${imported.markdoc}\n{% insert-table-rows anchor="${anchor.id}" position="after" edit="bad-width" %}\n`
       + '{% row %}\n{% cell text="only one" /%}\n{% /row %}\n{% /insert-table-rows %}\n';
     await expect(compileMarkdoc(imported.anchoredSource, wrongWidth)).rejects.toMatchObject({
       code: 'TABLE_ROW_PREFLIGHT_FAILED',
@@ -282,7 +282,7 @@ describe('brownfield Markdoc authoring', () => {
     await expect(compileMarkdoc(imported.anchoredSource, deletion)).rejects.toMatchObject({
       code: 'UNSUPPORTED_EDIT_STRUCTURE',
     });
-    const crossCellInsertion = `${imported.markdoc}\n{% insert-after anchor="${required.id}" operation="cross-cell" style-source="${other.id}" %}\n{% after %}\nInserted.\n{% /after %}\n{% /insert-after %}\n`;
+    const crossCellInsertion = `${imported.markdoc}\n{% insert-after anchor="${required.id}" edit="cross-cell" style-source="${other.id}" %}\n{% after %}\nInserted.\n{% /after %}\n{% /insert-after %}\n`;
     await expect(compileMarkdoc(imported.anchoredSource, crossCellInsertion)).rejects.toMatchObject({
       code: 'UNSUPPORTED_EDIT_STRUCTURE',
     });
@@ -357,7 +357,7 @@ describe('brownfield Markdoc authoring', () => {
     const paragraph = requireMarkdoc(imported.markdoc).scaffold[0]!;
     const markdoc = imported.markdoc.replace(
       new RegExp(`\\{% para id="${paragraph.id}"[\\s\\S]*?\\{% /para %\\}`),
-      `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="rewrite" format="inherit-source-paragraph" %}\n{% before %}\nOriginal provision.\n{% /before %}\n{% after %}\nRevised provision.\n{% /after %}\n{% /change %}`,
+      `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="rewrite" format="inherit-source-paragraph" %}\n{% before %}\nOriginal provision.\n{% /before %}\n{% after %}\nRevised provision.\n{% /after %}\n{% /change %}`,
     ) + '\n{% rationale for="rewrite" visibility="internal" %}\nPrivate record.\n{% /rationale %}\n{% rationale for="rewrite" visibility="external-facing" %}\nPublic explanation.\n{% /rationale %}\n';
     const pair = exportEditPairs(requireMarkdoc(markdoc))[0]!;
     expect(pair.rationales).toEqual([
@@ -374,7 +374,7 @@ describe('brownfield Markdoc authoring', () => {
     const paragraph = requireMarkdoc(imported.markdoc).scaffold[0]!;
     const invalid = [
       `{% source sha256="${imported.source.sha256}" paragraphs=1 /%}`,
-      `{% para id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="bad" %}`,
+      `{% para id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="bad" %}`,
       '{% del %}A {% ins %}nested{% /ins %} edit{% /del %}',
       '{% /para %}',
       '{% rationale for="missing" %}Orphan.{% /rationale %}',
@@ -428,9 +428,9 @@ describe('brownfield Markdoc authoring', () => {
     const imported = await importDocxToMarkdoc(original);
     const [keep, remove] = requireMarkdoc(imported.markdoc).scaffold;
     if (!keep || !remove) throw new Error('fixture paragraphs missing');
-    const deletion = `{% change id="${remove.id}" fingerprint="${remove.fingerprint}" style="${remove.style}" operation="delete" format="inherit-source-paragraph" %}\n{% before %}\nDelete me.\n{% /before %}\n{% after %}\n{% /after %}\n{% /change %}`;
+    const deletion = `{% change id="${remove.id}" fingerprint="${remove.fingerprint}" style="${remove.style}" edit="delete" format="inherit-source-paragraph" %}\n{% before %}\nDelete me.\n{% /before %}\n{% after %}\n{% /after %}\n{% /change %}`;
     const removeBlock = new RegExp(`\\{% para id="${remove.id}"[\\s\\S]*?\\{% /para %\\}`);
-    const markdoc = `${imported.markdoc.replace(removeBlock, deletion)}\n{% insert-after anchor="${keep.id}" operation="insert" style-source="${keep.id}" %}\n{% after %}\nInserted.\n{% /after %}\n{% /insert-after %}\n`;
+    const markdoc = `${imported.markdoc.replace(removeBlock, deletion)}\n{% insert-after anchor="${keep.id}" edit="insert" style-source="${keep.id}" %}\n{% after %}\nInserted.\n{% /after %}\n{% /insert-after %}\n`;
     const parsed = parseMarkdoc(markdoc);
     if (!parsed.valid) throw new Error(JSON.stringify(parsed.issues));
     const result = await compileMarkdoc(imported.anchoredSource, markdoc);
@@ -448,7 +448,7 @@ describe('brownfield Markdoc authoring', () => {
     let markdoc = withCanonicalChange(imported.markdoc, 'First item.', 'First item revised.', 'replace-numbered');
     markdoc = withCanonicalChange(markdoc, 'Second item.', '', 'delete-numbered');
     markdoc += [
-      `{% insert-after anchor="${first.id}" operation="insert-numbered" style-source="${first.id}" %}`,
+      `{% insert-after anchor="${first.id}" edit="insert-numbered" style-source="${first.id}" %}`,
       '{% after %}', 'Inserted item.', '{% /after %}', '{% /insert-after %}', '',
     ].join('\n');
 
@@ -483,7 +483,7 @@ describe('brownfield Markdoc authoring', () => {
   itAllure('[SDX-MDOC-06][SDX-MDOC-14] requires an explicit numbered insertion style source and rejects stale sources', async () => {
     const imported = await importDocxToMarkdoc(await numberedFixture());
     const first = requireMarkdoc(imported.markdoc).scaffold[0]!;
-    const insertion = (styleSource = '') => `${imported.markdoc}\n{% insert-after anchor="${first.id}" operation="insert"${styleSource} %}\n{% after %}\nInserted.\n{% /after %}\n{% /insert-after %}\n`;
+    const insertion = (styleSource = '') => `${imported.markdoc}\n{% insert-after anchor="${first.id}" edit="insert"${styleSource} %}\n{% after %}\nInserted.\n{% /after %}\n{% /insert-after %}\n`;
     await expect(compileMarkdoc(imported.anchoredSource, insertion()))
       .rejects.toMatchObject({ code: 'NUMBERED_INSERT_REQUIRES_STYLE_SOURCE' });
     await expect(compileMarkdoc(imported.anchoredSource, insertion(' style-source="_bk_missing"')))
@@ -662,7 +662,7 @@ The reviewer expressly deferred this decision to a later instrument.
     const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.'] });
     const imported = await importDocxToMarkdoc(original);
     const markdoc = `${withBeforeAfterEdit(imported.markdoc)}
-{% change-set id="remove-certification-block" operations="rename,remove-witness-line" atomic=true /%}
+{% change-set id="remove-certification-block" edits="rename,remove-witness-line" atomic=true /%}
 `;
 
     await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({
@@ -675,7 +675,7 @@ The reviewer expressly deferred this decision to a later instrument.
     const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.'] });
     const imported = await importDocxToMarkdoc(original);
     const markdoc = `${withBeforeAfterEdit(imported.markdoc)}
-{% change-set id="rename-unit" operations="rename" atomic=true /%}
+{% change-set id="rename-unit" edits="rename" atomic=true /%}
 {% requirement id="rename-required" satisfied-by="rename" %}
 Use the current name.
 {% /requirement %}
@@ -700,7 +700,7 @@ Use the current name.
     const imported = await importDocxToMarkdoc((await styled.toBuffer({ cleanBookmarks: false })).buffer);
     const sourceId = requireMarkdoc(imported.markdoc).scaffold[0]!.id;
     const insertion = [
-      `{% insert-after anchor="${sourceId}" operation="insert-item" style-source="${sourceId}" %}`,
+      `{% insert-after anchor="${sourceId}" edit="insert-item" style-source="${sourceId}" %}`,
       '{% after %}', 'Inserted item.', '{% /after %}', '{% /insert-after %}',
     ].join('\n');
     await expect(compileMarkdoc(imported.anchoredSource, `${imported.markdoc}\n${insertion}`))
@@ -793,7 +793,7 @@ function withCanonicalChange(markdoc: string, before: string, after: string, ope
   const match = markdoc.match(pattern);
   if (!match?.[1]) throw new Error(`Fixture paragraph block not found: ${before}`);
   return markdoc.replace(pattern, [
-    `{% change ${match[1]} operation="${operation}" format="inherit-source-paragraph" %}`,
+    `{% change ${match[1]} edit="${operation}" format="inherit-source-paragraph" %}`,
     '{% before %}', before, '{% /before %}',
     '{% after %}', after, '{% /after %}',
     '{% /change %}',

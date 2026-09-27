@@ -77,7 +77,7 @@ Changed paragraphs use the same clean-state convention lawyers use when
 negotiating documents:
 
 ```markdoc
-{% change id="_bk_..." fingerprint="..." style="Normal" operation="charter-term" format="inherit-source-paragraph" %}
+{% change id="_bk_..." fingerprint="..." style="Normal" edit="charter-term" format="inherit-source-paragraph" %}
 {% before %}In accordance with its Certificate of Incorporation, the Corporation...{% /before %}
 {% after %}In accordance with its Charter, the Corporation...{% /after %}
 {% /change %}

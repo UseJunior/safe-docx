@@ -97,7 +97,7 @@ function rewriteFirstParagraph(markdoc: string): string {
   const paragraph = requireMarkdoc(markdoc).scaffold[0]!;
   return markdoc.replace(
     new RegExp(`\\{% para id="${paragraph.id}"[\\s\\S]*?\\{% /para %\\}`),
-    `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="rewrite" format="inherit-source-paragraph" %}\n{% before %}\n${paragraph.originalText}\n{% /before %}\n{% after %}\nRewritten.\n{% /after %}\n{% /change %}`,
+    `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="rewrite" format="inherit-source-paragraph" %}\n{% before %}\n${paragraph.originalText}\n{% /before %}\n{% after %}\nRewritten.\n{% /after %}\n{% /change %}`,
   );
 }
 

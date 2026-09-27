@@ -27,7 +27,7 @@ describe('real selected-story Markdoc authoring', () => {
       const before = match![2]!;
       const after = before.replace('Letter of Intent', 'Letter of Interest');
       const markdoc = imported.markdoc.replace(match![0], [
-        `{% change ${match![1]} operation="footer-title" format="inherit-source-paragraph" %}`,
+        `{% change ${match![1]} edit="footer-title" format="inherit-source-paragraph" %}`,
         '{% before %}', before, '{% /before %}',
         '{% after %}', after, '{% /after %}', '{% /change %}',
       ].join('\n'));

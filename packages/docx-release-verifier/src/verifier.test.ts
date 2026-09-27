@@ -45,7 +45,7 @@ describe('independent release verifier', () => {
     if (!paragraph) throw new Error('Public LOI title paragraph missing');
     const block = new RegExp(`\\{% para id="${paragraph.id}"[\\s\\S]*?\\{% /para %\\}`);
     const replacement = [
-      `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="clarify-title" format="inherit-source-paragraph" %}`,
+      `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="clarify-title" format="inherit-source-paragraph" %}`,
       '{% before %}', 'Letter of Intent', '{% /before %}',
       '{% after %}', 'Mutual Letter of Intent', '{% /after %}', '{% /change %}',
     ].join('\n');
@@ -255,7 +255,7 @@ describe('independent release verifier', () => {
     const paragraph = requireMarkdoc(imported.markdoc).scaffold[0]!;
     const block = new RegExp(`\\{% para id="${paragraph.id}"[\\s\\S]*?\\{% /para %\\}`);
     const replacement = [
-      `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="edit" format="inherit-source-paragraph" %}`,
+      `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="edit" format="inherit-source-paragraph" %}`,
       '{% before %}', 'Synthetic old value.', '{% /before %}',
       '{% after %}', 'Synthetic new value.', '{% /after %}', '{% /change %}',
     ].join('\n');

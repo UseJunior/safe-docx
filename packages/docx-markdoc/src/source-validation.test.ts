@@ -9,7 +9,7 @@ import { exportEditPairs } from './export.js';
 async function fixture() {
   const imported = await importDocxToMarkdoc(await buildSyntheticDocx({ paragraphs: ['Original provision.'] }));
   const p = requireMarkdoc(imported.markdoc).scaffold[0]!;
-  const attributes = `id="${p.id}" fingerprint="${p.fingerprint}" style="${p.style}" operation="rewrite" format="inherit-source-paragraph"`;
+  const attributes = `id="${p.id}" fingerprint="${p.fingerprint}" style="${p.style}" edit="rewrite" format="inherit-source-paragraph"`;
   const replace = (block: string) => imported.markdoc.replace(/\{% para [\s\S]*?\{% \/para %\}/, block);
   return { imported, attributes, replace };
 }

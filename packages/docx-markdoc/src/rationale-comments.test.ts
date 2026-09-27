@@ -28,7 +28,7 @@ function replaceOperation(markdoc: string, before: string, after: string, operat
   if (!paragraph) throw new Error(`Synthetic paragraph not found: ${before}`);
   const block = new RegExp(`\\{% para id="${paragraph.id}"[\\s\\S]*?\\{% /para %\\}`);
   return markdoc.replace(block, [
-    `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="${operationId}" format="inherit-source-paragraph" %}`,
+    `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="${operationId}" format="inherit-source-paragraph" %}`,
     '{% before %}', before, '{% /before %}',
     '{% after %}', after, '{% /after %}',
     '{% /change %}',
@@ -324,7 +324,7 @@ describe('external-facing rationale comments', () => {
     const source = await buildSyntheticDocx({ paragraphs: ['Anchor text.', 'Tail text.'] });
     const imported = await importDocxToMarkdoc(source);
     const anchor = requireMarkdoc(imported.markdoc).scaffold[0]!;
-    const insertion = `\n{% insert-after anchor="${anchor.id}" operation="add" %}\n{% after %}\nInserted synthetic text.\n{% /after %}\n{% /insert-after %}`;
+    const insertion = `\n{% insert-after anchor="${anchor.id}" edit="add" %}\n{% after %}\nInserted synthetic text.\n{% /after %}\n{% /insert-after %}`;
     const result = await compileMarkdoc(imported.anchoredSource, imported.markdoc + insertion + rationale('add', 'external-facing'), compileOptions);
     const xml = (await parts(result.tracked)).document;
     expect(xml).toMatch(/commentRangeStart[\s\S]*?<w:ins\b[\s\S]*?Inserted synthetic text\.[\s\S]*?<\/w:ins>[\s\S]*?commentRangeEnd/u);
@@ -394,7 +394,7 @@ describe('external-facing rationale comments', () => {
     const source = await buildSyntheticDocx({ paragraphs: ['Anchor text.', 'Tail text.'] });
     const imported = await importDocxToMarkdoc(source);
     const anchor = requireMarkdoc(imported.markdoc).scaffold[0]!;
-    const insertion = `\n{% insert-after anchor="${anchor.id}" operation="add-many" %}\n{% after %}\nFirst inserted paragraph.\n\nSecond inserted paragraph.\n{% /after %}\n{% /insert-after %}`;
+    const insertion = `\n{% insert-after anchor="${anchor.id}" edit="add-many" %}\n{% after %}\nFirst inserted paragraph.\n\nSecond inserted paragraph.\n{% /after %}\n{% /insert-after %}`;
     const result = await compileMarkdoc(imported.anchoredSource, imported.markdoc + insertion + rationale('add-many', 'external-facing'), compileOptions);
     const clean = await DocxDocument.load(result.clean);
     expect(clean.buildDocumentView().nodes.map((node) => node.raw_text)).toEqual([
@@ -465,7 +465,7 @@ describe('external-facing rationale comments', () => {
     if (!paragraph) throw new Error('real rationale smoke paragraph not found');
     const block = new RegExp(`\\{% para id="${paragraph.id}"[\\s\\S]*?\\{% /para %\\}`);
     const replacement = [
-      `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="real-rationale" format="inherit-source-paragraph" %}`,
+      `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="real-rationale" format="inherit-source-paragraph" %}`,
       '{% before %}', paragraph.originalText, '{% /before %}',
       '{% after %}', `${paragraph.originalText} Clarified.`, '{% /after %}',
       '{% /change %}',

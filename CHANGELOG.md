@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Markdoc names an edit with `edit=` on `change`, `replace-source`,
+  `delete-source`, `insert-before`, `insert-after`, `insert-table-rows`,
+  `delete-table-row` and `annotation`, and a `change-set` lists its members
+  with `edits=`; `rationale for=` and `requirement satisfied-by=` keep pointing
+  at that name. The former `operation=`/`operations=` spelling still parses for
+  this minor version with a non-fatal `DEPRECATED_EDIT_ATTRIBUTE` warning,
+  surfaced through `parseMarkdoc(...).warnings`, `requireMarkdoc`'s new
+  `onWarning` option, the certificate's `markdocWarnings` and CLI stderr;
+  setting both spellings on one tag fails with `CONFLICTING_EDIT_ATTRIBUTES`.
+  Import emits only `edit=`. Validation codes that named operations now name
+  edits (`DUPLICATE_EDIT`, `ORPHAN_ANNOTATION_EDIT`, `MISSING_EDIT_NAME`,
+  `EMPTY_REQUIREMENT_EDITS`, `DUPLICATE_REQUIREMENT_EDIT`,
+  `DUPLICATE_CHANGE_SET_EDIT`, `RUN_FORMAT_REQUIRES_EDIT`,
+  `RETAINED_FORMAT_REQUIRES_EDIT`). (#1104)
+
 - **Breaking (CLI):** a mutating `safe-docx` tool subcommand (`replace-text`,
   `insert-paragraph`, `add-comment`, `batch-edit`, `accept-changes`, ...) or
   `safe-docx edit` run without an output path no longer reports `success: true`

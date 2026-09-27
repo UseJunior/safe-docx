@@ -61,7 +61,7 @@ function change(markdoc: string, before: string, afterMarkup: string, operation 
   const escapedId = source.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = new RegExp(`\\{% para (id="${escapedId}"[^\\n]*) %\\}[\\s\\S]*?\\{% /para %\\}`);
   return markdoc.replace(pattern, [
-    `{% change $1 operation="${operation}" format="inherit-source-paragraph" %}`,
+    `{% change $1 edit="${operation}" format="inherit-source-paragraph" %}`,
     '{% before %}', before, '{% /before %}',
     '{% after %}', afterMarkup, '{% /after %}',
     '{% /change %}',

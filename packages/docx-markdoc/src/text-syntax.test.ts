@@ -5,7 +5,7 @@ import { importDocxToMarkdoc } from './import.js';
 import { requireMarkdoc, parseMarkdoc } from './markdoc.js';
 
 const header = `{% source sha256="${'a'.repeat(64)}" paragraphs=1 /%}\n`;
-const attributes = 'id="_bk_1" fingerprint="sha256:nfkc:x" style="Normal" operation="edit" format="inherit-source-paragraph"';
+const attributes = 'id="_bk_1" fingerprint="sha256:nfkc:x" style="Normal" edit="edit" format="inherit-source-paragraph"';
 const change = (after: string) => `${header}{% change ${attributes} %}\n{% before %}\nOriginal\n{% /before %}\n{% after %}\n${after}\n{% /after %}\n{% /change %}`;
 
 describe('lossless plain-text authoring syntax', () => {

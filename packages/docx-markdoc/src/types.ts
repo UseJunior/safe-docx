@@ -269,9 +269,12 @@ export type ValidationIssue = {
   line?: number;
 };
 
+/** `warnings` are non-fatal diagnostics (for example a deprecated attribute spelling);
+ * they never make a result invalid.
+ */
 export type ValidationResult =
-  | { valid: true; ir: MarkdocEditIR }
-  | { valid: false; issues: ValidationIssue[] };
+  | { valid: true; ir: MarkdocEditIR; warnings: ValidationIssue[] }
+  | { valid: false; issues: ValidationIssue[]; warnings: ValidationIssue[] };
 
 export type VerificationCertificate = {
   version: 1;
@@ -301,6 +304,8 @@ export type VerificationCertificate = {
   tableTopology?: TableTopologyReport;
   /** Present for builds with edits in selected physical header/footer stories. */
   storyProjections?: StoryProjectionReport[];
+  /** Present when the Markdoc source parsed with non-fatal diagnostics, such as the deprecated `operation=` spelling. */
+  markdocWarnings?: ValidationIssue[];
   commentRendering: {
     configurationSource: 'markdoc' | 'api' | 'cli' | 'default';
     buildDate: string;

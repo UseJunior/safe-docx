@@ -35,7 +35,7 @@ function changeMarkdoc(markdoc: string, before: string, after: string, attribute
   const escapedId = source.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = new RegExp(`\\{% para (id="${escapedId}"[^\\n]*) %\\}[\\s\\S]*?\\{% /para %\\}`);
   return markdoc.replace(pattern, [
-    `{% change $1 operation="format-replacement" format="inherit-source-paragraph"${attributes} %}`,
+    `{% change $1 edit="format-replacement" format="inherit-source-paragraph"${attributes} %}`,
     '{% before %}', before, '{% /before %}',
     // Underscores are operative text here, not CommonMark emphasis syntax.
     '{% after %}', after.replaceAll('_', '\\_'), '{% /after %}',
@@ -49,7 +49,7 @@ function changeMarkdocWithInlineFormats(markdoc: string, before: string, afterMa
   const escapedId = source.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = new RegExp(`\\{% para (id="${escapedId}"[^\\n]*) %\\}[\\s\\S]*?\\{% /para %\\}`);
   return markdoc.replace(pattern, [
-    '{% change $1 operation="format-two-spans" format="inherit-source-paragraph" %}',
+    '{% change $1 edit="format-two-spans" format="inherit-source-paragraph" %}',
     '{% before %}', before, '{% /before %}',
     '{% after %}', afterMarkup, '{% /after %}',
     '{% /change %}',
@@ -195,7 +195,7 @@ describe('explicit Markdoc run formatting', () => {
     const anchor = requireMarkdoc(imported.markdoc).scaffold[0]!;
     const insertion = [
       imported.markdoc,
-      `{% insert-after anchor="${anchor.id}" operation="insert-formatted" underline="single" highlight="yellow" %}`,
+      `{% insert-after anchor="${anchor.id}" edit="insert-formatted" underline="single" highlight="yellow" %}`,
       '{% after %}',
       'Inserted text.',
       '{% /after %}',
@@ -216,7 +216,7 @@ describe('explicit Markdoc run formatting', () => {
     const anchor = requireMarkdoc(imported.markdoc).scaffold[0]!;
     const insertion = [
       imported.markdoc,
-      `{% insert-after anchor="${anchor.id}" operation="insert-many" underline="single" %}`,
+      `{% insert-after anchor="${anchor.id}" edit="insert-many" underline="single" %}`,
       '{% after %}',
       'First paragraph.',
       '',

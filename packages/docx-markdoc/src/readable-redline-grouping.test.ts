@@ -28,7 +28,7 @@ async function fixture(
   const imported = await importDocxToMarkdoc(source);
   const paragraph = requireMarkdoc(imported.markdoc).scaffold[0]!;
   const change = [
-    `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="rewrite" format="inherit-source-paragraph"${changeAttributes} %}`,
+    `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="rewrite" format="inherit-source-paragraph"${changeAttributes} %}`,
     '{% before %}', before, '{% /before %}',
     '{% after %}', after, '{% /after %}',
     '{% /change %}',
@@ -50,7 +50,7 @@ async function customRunFixture(bodyXml: string, before: string, afterMarkup: st
   const imported = await importDocxToMarkdoc(await buildDocxFromBodyXml(bodyXml));
   const paragraph = requireMarkdoc(imported.markdoc).scaffold[0]!;
   const change = [
-    `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="custom" format="inherit-source-paragraph" %}`,
+    `{% change id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="custom" format="inherit-source-paragraph" %}`,
     '{% before %}', before, '{% /before %}',
     '{% after %}', afterMarkup, '{% /after %}',
     '{% /change %}',

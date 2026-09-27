@@ -90,7 +90,7 @@ describe('selected header/footer Markdoc import', () => {
       '{% /para %}',
     ].join('\n');
     const newBlock = [
-      `{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="header-date" format="inherit-source-paragraph" %}`,
+      `{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="header-date" format="inherit-source-paragraph" %}`,
       '{% before %}', paragraph.originalText, '{% /before %}',
       '{% after %}', 'Draft of September 2, 2026', '{% /after %}',
       '{% /change %}',
@@ -117,7 +117,7 @@ describe('selected header/footer Markdoc import', () => {
     const imported = await importDocxToMarkdoc(await singleHeader('<w:p><w:r><w:t>Header text</w:t></w:r></w:p>'));
     const ir = requireMarkdoc(imported.markdoc);
     const markdoc = imported.markdoc + [
-      `{% insert-after story="${ir.stories![0]!.id}" anchor="${ir.scaffold[0]!.id}" operation="wrong-story" %}`,
+      `{% insert-after story="${ir.stories![0]!.id}" anchor="${ir.scaffold[0]!.id}" edit="wrong-story" %}`,
       '{% after %}', 'Not in the header', '{% /after %}', '{% /insert-after %}', '',
     ].join('\n');
     await expect(compileMarkdoc(imported.anchoredSource, markdoc)).rejects.toMatchObject({ code: 'STORY_ANCHOR_MISMATCH' });
@@ -144,7 +144,7 @@ describe('selected header/footer Markdoc import', () => {
     const protectedImport = await importDocxToMarkdoc(foreign);
     const story = requireMarkdoc(protectedImport.markdoc).stories![0]!;
     const attempted = protectedImport.markdoc + [
-      `{% insert-after story="${story.id}" anchor="_bk_legacy" operation="unsafe-drawing" %}`,
+      `{% insert-after story="${story.id}" anchor="_bk_legacy" edit="unsafe-drawing" %}`,
       '{% after %}', 'Not allowed', '{% /after %}', '{% /insert-after %}', '',
     ].join('\n');
     await expect(compileMarkdoc(protectedImport.anchoredSource, attempted))
@@ -162,7 +162,7 @@ describe('selected header/footer Markdoc import', () => {
       const paragraph = requireMarkdoc(imported.markdoc).storyScaffold![0]!;
       const block = [`{% para story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" %}`,
         paragraph.originalText, '{% /para %}'].join('\n');
-      const deletion = [`{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="delete-field" format="inherit-source-paragraph" %}`,
+      const deletion = [`{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="delete-field" format="inherit-source-paragraph" %}`,
         '{% before %}', paragraph.originalText, '{% /before %}', '{% after %}', '{% /after %}', '{% /change %}'].join('\n');
       await expect(compileMarkdoc(imported.anchoredSource, imported.markdoc.replace(block, deletion)))
         .rejects.toMatchObject({ code: 'UNSUPPORTED_STORY_FIELD_EDIT' });
@@ -174,7 +174,7 @@ describe('selected header/footer Markdoc import', () => {
     const paragraph = requireMarkdoc(imported.markdoc).storyScaffold![0]!;
     const block = [`{% para story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" %}`,
       'Only', '{% /para %}'].join('\n');
-    const deletion = [`{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="delete-only" format="inherit-source-paragraph" %}`,
+    const deletion = [`{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="delete-only" format="inherit-source-paragraph" %}`,
       '{% before %}', 'Only', '{% /before %}', '{% after %}', '{% /after %}', '{% /change %}'].join('\n');
     await expect(compileMarkdoc(imported.anchoredSource, imported.markdoc.replace(block, deletion)))
       .rejects.toMatchObject({ code: 'STORY_REQUIRES_PARAGRAPH' });
@@ -190,7 +190,7 @@ describe('selected header/footer Markdoc import', () => {
     for (const [index, paragraph] of requireMarkdoc(imported.markdoc).storyScaffold!.entries()) {
       const block = [`{% para story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" %}`,
         paragraph.originalText, '{% /para %}'].join('\n');
-      const deletion = [`{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="delete-cell-${index}" format="inherit-source-paragraph" %}`,
+      const deletion = [`{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="delete-cell-${index}" format="inherit-source-paragraph" %}`,
         '{% before %}', paragraph.originalText, '{% /before %}', '{% after %}', '{% /after %}', '{% /change %}'].join('\n');
       markdoc = markdoc.replace(block, deletion);
     }
@@ -207,7 +207,7 @@ describe('selected header/footer Markdoc import', () => {
     const tail = requireMarkdoc(imported.markdoc).storyScaffold!.at(-1)!;
     const block = [`{% para story="${tail.story}" id="${tail.id}" fingerprint="${tail.fingerprint}" style="${tail.style}" %}`,
       'Tail', '{% /para %}'].join('\n');
-    const deletion = [`{% change story="${tail.story}" id="${tail.id}" fingerprint="${tail.fingerprint}" style="${tail.style}" operation="delete-tail" format="inherit-source-paragraph" %}`,
+    const deletion = [`{% change story="${tail.story}" id="${tail.id}" fingerprint="${tail.fingerprint}" style="${tail.style}" edit="delete-tail" format="inherit-source-paragraph" %}`,
       '{% before %}', 'Tail', '{% /before %}', '{% after %}', '{% /after %}', '{% /change %}'].join('\n');
     await expect(compileMarkdoc(imported.anchoredSource, imported.markdoc.replace(block, deletion)))
       .rejects.toMatchObject({ code: 'STORY_REQUIRES_PARAGRAPH' });
@@ -221,7 +221,7 @@ describe('selected header/footer Markdoc import', () => {
     const paragraph = requireMarkdoc(imported.markdoc).storyScaffold![0]!;
     const block = [`{% para story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" %}`,
       'Link', '{% /para %}'].join('\n');
-    const deletion = [`{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="delete-hyperlink" format="inherit-source-paragraph" %}`,
+    const deletion = [`{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="delete-hyperlink" format="inherit-source-paragraph" %}`,
       '{% before %}', 'Link', '{% /before %}', '{% after %}', '{% /after %}', '{% /change %}'].join('\n');
     await expect(compileMarkdoc(imported.anchoredSource, imported.markdoc.replace(block, deletion)))
       .rejects.toMatchObject({ code: 'UNSUPPORTED_STORY_HYPERLINK_EDIT' });
@@ -240,7 +240,7 @@ describe('selected header/footer Markdoc import', () => {
     const paragraph = requireMarkdoc(imported.markdoc).storyScaffold![0]!;
     const block = [`{% para story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" %}`,
       'Plain', '{% /para %}'].join('\n');
-    const edit = [`{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="beside-box" format="inherit-source-paragraph" %}`,
+    const edit = [`{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="beside-box" format="inherit-source-paragraph" %}`,
       '{% before %}', 'Plain', '{% /before %}', '{% after %}', 'Plainer', '{% /after %}', '{% /change %}'].join('\n');
     const result = await compileMarkdoc(imported.anchoredSource, imported.markdoc.replace(block, edit));
     expect(result.certificate.storyProjections?.[0]?.passed).toBe(true);
@@ -267,7 +267,7 @@ describe('selected header/footer Markdoc import', () => {
     expect(ir.storyScaffold?.map((paragraph) => paragraph.originalText)).toEqual(['Plain']);
     expect(ir.storyReadOnly?.map((paragraph) => paragraph.reason)).toEqual(['drawing', 'nested']);
     const attempt = imported.markdoc + [
-      `{% insert-after story="${ir.stories![0]!.id}" anchor="_bk_nested" operation="nested-cell" %}`,
+      `{% insert-after story="${ir.stories![0]!.id}" anchor="_bk_nested" edit="nested-cell" %}`,
       '{% after %}', 'Unsafe', '{% /after %}', '{% /insert-after %}', '',
     ].join('\n');
     await expect(compileMarkdoc(imported.anchoredSource, attempt))
@@ -301,16 +301,16 @@ describe('selected header/footer Markdoc import', () => {
       'Cell A', '{% /para %}',
     ].join('\n');
     const replacement = imported.markdoc.replace(oldBlock, [
-      `{% change story="${first.story}" id="${first.id}" fingerprint="${first.fingerprint}" style="${first.style}" operation="cell-replace" format="inherit-source-paragraph" %}`,
+      `{% change story="${first.story}" id="${first.id}" fingerprint="${first.fingerprint}" style="${first.style}" edit="cell-replace" format="inherit-source-paragraph" %}`,
       '{% before %}', 'Cell A', '{% /before %}',
       '{% after %}', 'Cell X', '{% /after %}', '{% /change %}',
     ].join('\n'));
     const insertion = imported.markdoc + [
-      `{% insert-after story="${first.story}" anchor="${first.id}" operation="cell-insert" %}`,
+      `{% insert-after story="${first.story}" anchor="${first.id}" edit="cell-insert" %}`,
       '{% after %}', 'Cell B', '{% /after %}', '{% /insert-after %}', '',
     ].join('\n');
     const deletion = imported.markdoc.replace(oldBlock, [
-      `{% change story="${first.story}" id="${first.id}" fingerprint="${first.fingerprint}" style="${first.style}" operation="cell-delete" format="inherit-source-paragraph" %}`,
+      `{% change story="${first.story}" id="${first.id}" fingerprint="${first.fingerprint}" style="${first.style}" edit="cell-delete" format="inherit-source-paragraph" %}`,
       '{% before %}', 'Cell A', '{% /before %}',
       '{% after %}', '{% /after %}', '{% /change %}',
     ].join('\n'));
@@ -337,7 +337,7 @@ describe('selected header/footer Markdoc import', () => {
     const imported = await importDocxToMarkdoc(await singleHeader('<w:p><w:r><w:t>Header text</w:t></w:r></w:p>'));
     const ir = requireMarkdoc(imported.markdoc);
     const markdoc = imported.markdoc + [
-      `{% insert-after story="${ir.stories![0]!.id}" anchor="${ir.storyScaffold![0]!.id}" operation="story-note" %}`,
+      `{% insert-after story="${ir.stories![0]!.id}" anchor="${ir.storyScaffold![0]!.id}" edit="story-note" %}`,
       '{% after %}', 'Another line', '{% /after %}', '{% /insert-after %}',
       '{% rationale for="story-note" visibility="external-facing" %}', 'Explain the new line.', '{% /rationale %}', '',
     ].join('\n');
@@ -393,7 +393,7 @@ describe('selected header/footer Markdoc import', () => {
     if (!first?.story) throw new Error('Expected first-page header');
     const block = [`{% para story="${first.story}" id="${first.id}" fingerprint="${first.fingerprint}" style="${first.style}" %}`,
       'first text', '{% /para %}'].join('\n');
-    const edit = [`{% change story="${first.story}" id="${first.id}" fingerprint="${first.fingerprint}" style="${first.style}" operation="first-title" format="inherit-source-paragraph" %}`,
+    const edit = [`{% change story="${first.story}" id="${first.id}" fingerprint="${first.fingerprint}" style="${first.style}" edit="first-title" format="inherit-source-paragraph" %}`,
       '{% before %}', 'first text', '{% /before %}', '{% after %}', 'first revised', '{% /after %}', '{% /change %}'].join('\n');
     const result = await compileMarkdoc(imported.anchoredSource, imported.markdoc.replace(block, edit));
     expect(result.certificate.storyProjections).toMatchObject([{ bindings: ['0:first'], passed: true }]);
@@ -418,7 +418,7 @@ describe('selected header/footer Markdoc import', () => {
     if (!paragraph?.story) throw new Error('Expected story paragraph');
     const block = [`{% para story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" %}`,
       'Before', '{% /para %}'].join('\n');
-    const edit = [`{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="section-revision" format="inherit-source-paragraph" %}`,
+    const edit = [`{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="section-revision" format="inherit-source-paragraph" %}`,
       '{% before %}', 'Before', '{% /before %}', '{% after %}', 'After', '{% /after %}', '{% /change %}'].join('\n');
     await expect(compileMarkdoc(imported.anchoredSource, imported.markdoc.replace(block, edit)))
       .rejects.toMatchObject({ code: 'EXISTING_REVISIONS_WITH_OPERATIVE_EDITS_UNSUPPORTED' });
@@ -479,7 +479,7 @@ describe('selected header/footer Markdoc import', () => {
     const after = before.replace('17', '18');
     const oldBlock = [`{% para story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" %}`, before, '{% /para %}'].join('\n');
     const newBlock = [
-      `{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="field-neighbor" format="inherit-source-paragraph" %}`,
+      `{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="field-neighbor" format="inherit-source-paragraph" %}`,
       '{% before %}', before, '{% /before %}', '{% after %}', after, '{% /after %}', '{% /change %}',
     ].join('\n');
     const result = await compileMarkdoc(imported.anchoredSource, imported.markdoc.replace(oldBlock, newBlock));
@@ -497,7 +497,7 @@ describe('selected header/footer Markdoc import', () => {
     if (!paragraph?.story) throw new Error('Expected highlighted header paragraph');
     const oldBlock = [`{% para story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" %}`, 'Placeholder', '{% /para %}'].join('\n');
     const newBlock = [
-      `{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="remove-highlight" format="inherit-source-paragraph" %}`,
+      `{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="remove-highlight" format="inherit-source-paragraph" %}`,
       '{% before %}', 'Placeholder', '{% /before %}',
       '{% after %}', '{% retain-format highlight="none" %}Placeholder{% /retain-format %}', '{% /after %}', '{% /change %}',
     ].join('\n');
@@ -517,7 +517,7 @@ describe('selected header/footer Markdoc import', () => {
     if (!paragraph?.story) throw new Error('Expected field-bearing story paragraph');
     const oldBlock = [`{% para story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" %}`, paragraph.originalText, '{% /para %}'].join('\n');
     const newBlock = [
-      `{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" operation="field-result" format="inherit-source-paragraph" %}`,
+      `{% change story="${paragraph.story}" id="${paragraph.id}" fingerprint="${paragraph.fingerprint}" style="${paragraph.style}" edit="field-result" format="inherit-source-paragraph" %}`,
       '{% before %}', paragraph.originalText, '{% /before %}',
       '{% after %}', paragraph.originalText.replace('1.', '2.'), '{% /after %}', '{% /change %}',
     ].join('\n');

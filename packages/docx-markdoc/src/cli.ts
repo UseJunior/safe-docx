@@ -11,7 +11,7 @@ import { convertCommentsToFootnotes } from '@usejunior/docx-core';
 import { DocxMarkdocError } from './errors.js';
 import { assertDistinctInternalPath, EXTERNAL_FILENAME, parseGreenfieldCliArgs, parseRenderingFlags, warnedInternalPath } from './cli-options.js';
 import { normalizeAnnotationPresentationProfile } from './presentation.js';
-import type { AnnotationPresentationProfile } from './types.js';
+import type { AnnotationPresentationProfile, ValidationIssue } from './types.js';
 import { compileGreenfieldMarkdoc, type GreenfieldStyleProfile } from './greenfield.js';
 
 function usage(): string {
@@ -28,6 +28,10 @@ function usage(): string {
     '  docx-markdoc export-edits <document.mdoc> <output.json>',
     '  docx-markdoc comments-to-footnotes <input.docx> <output.docx> [--prefix TEXT] [--prefix-separator TEXT] [--bold-prefix] [--prefix-color RRGGBB] [--prefix-highlight COLOR] [--body-color RRGGBB] [--body-highlight COLOR] [--flatten-threads]',
   ].join('\n');
+}
+
+function writeWarning(warning: ValidationIssue): void {
+  process.stderr.write(`WARNING: ${warning.message}${warning.line === undefined ? '' : ` (line ${warning.line})`}\n`);
 }
 
 async function main(): Promise<void> {
@@ -47,7 +51,7 @@ async function main(): Promise<void> {
   if (command === 'validate') {
     const [markdocPath] = args;
     if (!markdocPath) throw new Error(usage());
-    const ir = requireMarkdoc(await readFile(markdocPath, 'utf8'));
+    const ir = requireMarkdoc(await readFile(markdocPath, 'utf8'), { onWarning: writeWarning });
     process.stdout.write(`${JSON.stringify(ir, null, 2)}\n`);
     return;
   }
@@ -156,6 +160,7 @@ async function main(): Promise<void> {
         process.stderr.write(`WARNING: ${warning}\n`);
       }
     }
+    for (const warning of result.certificate.markdocWarnings ?? []) writeWarning(warning);
     process.stdout.write(`${JSON.stringify(result.certificate, null, 2)}\n`);
     if (command === 'verify' && !result.certificate.deliveryReady) process.exitCode = 2;
     return;
@@ -163,7 +168,7 @@ async function main(): Promise<void> {
   if (command === 'export-edits') {
     const [markdocPath, outputPath] = args;
     if (!markdocPath || !outputPath) throw new Error(usage());
-    const ir = requireMarkdoc(await readFile(markdocPath, 'utf8'));
+    const ir = requireMarkdoc(await readFile(markdocPath, 'utf8'), { onWarning: writeWarning });
     await writeNewFiles([[outputPath, `${JSON.stringify(exportEditPairs(ir), null, 2)}\n`]]);
     return;
   }
