@@ -111,16 +111,26 @@ export function assertDistinctInternalPath(internalPath: string, paths: string[]
  * a single `ERROR <code>: <message>` line when it carries none, so an agent
  * reading the output learns why a document was rejected. Its stack is appended
  * only when `debug` is set. Any other error keeps printing its stack.
+ *
+ * `DocxMarkdocError` exposes any array-valued `details` as `issues`, and not
+ * every thrower passes `ValidationIssue`s (story topology failures pass
+ * `SectPrAuditIssue`s, which carry `message` but no `code`), so each field is
+ * taken from the entry only when it has the expected type and otherwise falls
+ * back to the error's own code and message.
  */
 export function formatCliError(error: unknown, debug: boolean): string {
   if (!(error instanceof DocxMarkdocError)) {
     return error instanceof Error ? error.stack ?? error.message : String(error);
   }
-  const issues: ValidationIssue[] = error.issues && error.issues.length > 0
+  const entries: ReadonlyArray<Partial<ValidationIssue> | undefined> = error.issues && error.issues.length > 0
     ? error.issues
-    : [{ code: error.code, message: error.message }];
-  const lines = issues.map((issue) =>
-    `ERROR ${issue.code}: ${issue.message}${issue.line === undefined ? '' : ` (line ${issue.line})`}`);
+    : [undefined];
+  const lines = entries.map((entry) => {
+    const code = typeof entry?.code === 'string' ? entry.code : error.code;
+    const message = typeof entry?.message === 'string' ? entry.message : error.message;
+    const line = typeof entry?.line === 'number' ? ` (line ${entry.line})` : '';
+    return `ERROR ${code}: ${message}${line}`;
+  });
   if (debug && error.stack) lines.push(error.stack);
   return lines.join('\n');
 }

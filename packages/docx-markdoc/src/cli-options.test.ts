@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect } from 'vitest';
-import { buildSyntheticDocx } from '@usejunior/docx-core';
+import { auditSectPr, buildSyntheticDocx } from '@usejunior/docx-core';
 import { itAllure } from '../../docx-core/src/testing/allure-test.js';
 import { formatCliError, INTERNAL_SUFFIX, parseGreenfieldCliArgs, parseRenderingFlags, warnedInternalPath } from './cli-options.js';
 import { DocxMarkdocError } from './errors.js';
@@ -141,12 +141,29 @@ describe('Markdoc CLI error output', () => {
 
     const run = runValidate(authored);
     expect(run.status).toBe(1);
-    expect(run.stderr.trim().split('\n')).toEqual(lines);
+    expect(run.stderr.replace(/\n$/u, '').split('\n')).toEqual(lines);
 
     expect(formatCliError(new DocxMarkdocError('GREENFIELD_OUTPUT_EXISTS', 'Output exists.'), false))
       .toBe('ERROR GREENFIELD_OUTPUT_EXISTS: Output exists.');
     expect(formatCliError(new DocxMarkdocError('SOURCE_MISMATCH', 'Fingerprint differs.', { expected: 'a' }), false))
       .toBe('ERROR SOURCE_MISMATCH: Fingerprint differs.');
+
+    // Story topology failures pass SectPrAuditIssue[] (message but no code) as
+    // details, exactly as story-inventory.ts does; the line must keep the
+    // error's own code rather than print `ERROR undefined`.
+    const audit = auditSectPr(
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+      + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+      + '<w:body><w:sectPr><w:headerReference w:type="default" r:id="rId99"/></w:sectPr></w:body></w:document>',
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>',
+    );
+    expect(audit.ok).toBe(false);
+    if (audit.ok) return;
+    expect(audit.issues.map((issue) => issue.type)).toContain('sectpr_reference_dangling_rid');
+    const topology = new DocxMarkdocError('STORY_TOPOLOGY_UNSUPPORTED', 'Selected header/footer bindings are invalid.', audit.issues);
+    const formattedTopology = formatCliError(topology, false);
+    expect(formattedTopology).toBe(audit.issues.map((issue) => `ERROR STORY_TOPOLOGY_UNSUPPORTED: ${issue.message}`).join('\n'));
+    expect(formattedTopology).not.toContain('undefined');
   });
 
   itAllure('[SDX-MDOC-153] DEBUG appends the stack, and non-Markdoc errors keep printing theirs', async () => {

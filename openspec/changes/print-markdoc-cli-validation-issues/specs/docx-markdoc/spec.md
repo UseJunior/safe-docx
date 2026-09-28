@@ -21,6 +21,7 @@ keep printing the stack of any other exception, and SHALL exit with code 1.
 - **WHEN** `docx-markdoc validate` runs on it
 - **THEN** stderr SHALL contain exactly one `ERROR <code>: <message> (line N)` line per issue, in validation order
 - **AND** a `DocxMarkdocError` carrying no issues SHALL print a single `ERROR <code>: <message>` line
+- **AND** an issue entry without a string `code` or `message` (such as a story topology audit issue) SHALL fall back to the error's own code and message rather than print `undefined`
 
 #### Scenario: [SDX-MDOC-153] DEBUG appends the stack
 - **GIVEN** the same invalid Markdoc document
