@@ -6,6 +6,15 @@
 of the 0.21.0 changes below, including its breaking changes; upgrade notes for
 both sections apply when moving from 0.20.x.
 
+- DOCX comparison now gives a whole-paragraph move whose terminal endpoint is
+  the last paragraph of a block content control that closes the body story the
+  same Word-native break ownership as a body-level terminal move (#1055): the
+  removed and created breaks carry ordinary `w:del`/`w:ins` paragraph-mark
+  revisions on the stable predecessor, and the moved content stays in paired
+  move ranges. LibreOffice Accept All and Reject All no longer leave an extra
+  empty paragraph after `control([A,B,C]) -> control([C,A,B])` or
+  `-> control([B,C,A])`; safe-docx's own projections remain exact, and a
+  control that another block follows keeps the middle-move topology. (#1101)
 - DOCX comparison no longer emits a `w:sectPrChange` whose snapshot equals
   the live section properties when two sections differ only in their header
   or footer references (a footer removed or added, a header retargeted to

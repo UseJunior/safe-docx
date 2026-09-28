@@ -48,18 +48,25 @@ oracle('issue #1028 — LibreOffice block content-control boundary move projecti
   }
 
   // When the control is the last block of the body, the paragraph crossing its
-  // boundary is the story's terminal paragraph. LibreOffice then leaves one empty
-  // trailing paragraph on the projection that removes it, exactly as it does for
-  // a plain terminal paragraph insertion on main (the #973 family). This gate
-  // pins what #1028 is about: no content is dropped in either projection.
+  // boundary is the story's terminal paragraph. Without a detected move,
+  // LibreOffice leaves one empty trailing paragraph on the projection that
+  // removes it, exactly as it does for a plain terminal paragraph insertion on
+  // main (the #973 family), so those rows pin only what #1028 is about: no
+  // content is dropped in either projection. A detected move whose terminal
+  // endpoint is inside the story-closing control gets Word-native break
+  // ownership (#1101), so the "enters" and "leaves" rows are exact there. The
+  // "after it" row's control-side endpoint is not terminal (a body paragraph
+  // follows the control), so it keeps the legacy topology and the empty
+  // trailing paragraph.
   const nonEmpty = (xml: string) => paragraphTexts(xml).filter(text => text !== '');
-  for (const [name, fromBody, toBody] of [
-    ['paragraph enters a terminal control', para('Move') + control(para('Inside')), control(para('Inside') + para('Move'))],
-    ['paragraph leaves a terminal control', control(para('Inside') + para('Move')), para('Move') + control(para('Inside'))],
-    ['paragraph leaves a terminal control after it', control(para('Inside') + para('Move')), control(para('Inside')) + para('Move')],
+  for (const [name, fromBody, toBody, exactWithMoves] of [
+    ['paragraph enters a terminal control', para('Move') + control(para('Inside')), control(para('Inside') + para('Move')), true],
+    ['paragraph leaves a terminal control', control(para('Inside') + para('Move')), para('Move') + control(para('Inside')), true],
+    ['paragraph leaves a terminal control after it', control(para('Inside') + para('Move')), control(para('Inside')) + para('Move'), false],
   ] as const) {
     for (const detectMoves of [false, true]) {
-      test(`${name} (detectMoves=${detectMoves}) keeps every paragraph's content on accept and reject`, async () => {
+      const exact = detectMoves && exactWithMoves;
+      test(`${name} (detectMoves=${detectMoves}) keeps every paragraph${exact ? ' and the paragraph shape' : "'s content"} on accept and reject`, async () => {
         const original = await buildDocxFromBodyXml(fromBody);
         const revised = await buildDocxFromBodyXml(toBody);
         const compared = await compareDocuments(original, revised, {
@@ -71,8 +78,13 @@ oracle('issue #1028 — LibreOffice block content-control boundary move projecti
           { op: 'identity', documentXml: (await readZipText(revised, 'word/document.xml'))! },
           { op: 'identity', documentXml: (await readZipText(original, 'word/document.xml'))! },
         ], soffice);
-        expect(nonEmpty(accepted!)).toEqual(nonEmpty(expectedAccept!));
-        expect(nonEmpty(rejected!)).toEqual(nonEmpty(expectedReject!));
+        const project = exact ? paragraphTexts : nonEmpty;
+        expect(project(accepted!)).toEqual(project(expectedAccept!));
+        expect(project(rejected!)).toEqual(project(expectedReject!));
+        if (exact) {
+          expect(paragraphShape(accepted!)).toEqual(paragraphShape(expectedAccept!));
+          expect(paragraphShape(rejected!)).toEqual(paragraphShape(expectedReject!));
+        }
       }, 180_000);
     }
   }
