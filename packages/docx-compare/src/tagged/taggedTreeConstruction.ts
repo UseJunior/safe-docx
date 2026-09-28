@@ -9,8 +9,9 @@ import type { RevisionAttributionRange } from '../compare-types.js';
 import { getChangedPropertyNames } from '../propertyNaming.js';
 import {
   countWords,
-  jaccardWordSimilarity,
-  wordContainmentSimilarity,
+  jaccardWordSetSimilarity,
+  normalizedWordSet,
+  wordSetContainmentSimilarity,
 } from '../textSimilarity.js';
 import { computeNumberingIdentities } from './numberingIntegration.js';
 import {
@@ -257,13 +258,16 @@ function lcsPairs(
     field: string | undefined,
     numberingIdentities: ReadonlyMap<WmlElement, string>,
   ): string => JSON.stringify([field ?? null, alignmentKey(element, numberingIdentities)]);
+  const originalKeys = original.map((element, index) =>
+    key(element, originalFields.get(index), originalNumberingIdentities));
+  const revisedKeys = revised.map((element, index) =>
+    key(element, revisedFields.get(index), revisedNumberingIdentities));
   const rows = original.length + 1;
   const cols = revised.length + 1;
   const dp = Array.from({ length: rows }, () => Array<number>(cols).fill(0));
   for (let i = original.length - 1; i >= 0; i--) {
     for (let j = revised.length - 1; j >= 0; j--) {
-      dp[i]![j] = key(original[i]!, originalFields.get(i), originalNumberingIdentities) ===
-        key(revised[j]!, revisedFields.get(j), revisedNumberingIdentities)
+      dp[i]![j] = originalKeys[i] === revisedKeys[j]
         ? 1 + dp[i + 1]![j + 1]!
         : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
     }
@@ -272,8 +276,7 @@ function lcsPairs(
   let i = 0;
   let j = 0;
   while (i < original.length && j < revised.length) {
-    if (key(original[i]!, originalFields.get(i), originalNumberingIdentities) ===
-        key(revised[j]!, revisedFields.get(j), revisedNumberingIdentities)) {
+    if (originalKeys[i] === revisedKeys[j]) {
       pairs.push([i++, j++]);
     } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
     else j++;
@@ -755,8 +758,16 @@ function collectMoveCandidates(tree: TaggedNode): {
 export function globallyPairCandidates(
   scores: ReadonlyArray<ReadonlyArray<number | undefined>>,
 ): Array<[number, number]> {
-  const rowCount = scores.length;
-  const realColumnCount = scores[0]?.length ?? 0;
+  const originalColumnCount = scores[0]?.length ?? 0;
+  // A row or column with no eligible score always takes a zero-cost dummy
+  // column, so dropping it leaves the optimum unchanged and keeps the solver
+  // proportional to the candidates that can actually pair.
+  const activeRows = scores.flatMap((row, index) =>
+    row.some((score) => score !== undefined) ? [index] : []);
+  const activeColumns = Array.from({ length: originalColumnCount }, (_, index) => index)
+    .filter((column) => scores.some((row) => row[column] !== undefined));
+  const rowCount = activeRows.length;
+  const realColumnCount = activeColumns.length;
   if (rowCount === 0 || realColumnCount === 0) return [];
   const columnCount = realColumnCount + rowCount;
   const u = Array<number>(rowCount + 1).fill(0);
@@ -765,9 +776,11 @@ export function globallyPairCandidates(
   const previousColumn = Array<number>(columnCount + 1).fill(0);
   const cost = (row: number, column: number): number => {
     if (column > realColumnCount) return 0;
-    const score = scores[row - 1]?.[column - 1];
+    const originalRow = activeRows[row - 1]!;
+    const originalColumn = activeColumns[column - 1]!;
+    const score = scores[originalRow]?.[originalColumn];
     if (score === undefined) return 1;
-    const tieRank = (row - 1) * realColumnCount + column - 1;
+    const tieRank = originalRow * originalColumnCount + originalColumn;
     return -score - 1e-7 + tieRank * 1e-12;
   };
   for (let row = 1; row <= rowCount; row++) {
@@ -807,10 +820,11 @@ export function globallyPairCandidates(
       column0 = column1;
     } while (column0 !== 0);
   }
-  return matchedRow.flatMap((row, column) =>
-    row > 0 && column > 0 && column <= realColumnCount && scores[row - 1]?.[column - 1] !== undefined
-      ? [[row - 1, column - 1] as [number, number]]
-      : [])
+  return matchedRow.flatMap((row, column) => {
+    if (row === 0 || column === 0 || column > realColumnCount) return [];
+    const pair: [number, number] = [activeRows[row - 1]!, activeColumns[column - 1]!];
+    return scores[pair[0]]?.[pair[1]] !== undefined ? [pair] : [];
+  })
     .sort(([left], [right]) => left - right);
 }
 
@@ -856,11 +870,15 @@ function classifyMoves(
     !bound.has(candidate.node) && countWords(candidate.text) >= settings.moveMinimumWordCount);
   const residualRevised = revisedCandidates.filter((candidate) =>
     !bound.has(candidate.node) && countWords(candidate.text) >= settings.moveMinimumWordCount);
-  const scores = residualOriginals.map((source) => residualRevised.map((destination) => {
+  const originalWords = residualOriginals.map((candidate) =>
+    normalizedWordSet(candidate.text, settings.caseInsensitiveMove));
+  const revisedWords = residualRevised.map((candidate) =>
+    normalizedWordSet(candidate.text, settings.caseInsensitiveMove));
+  const scores = residualOriginals.map((source, sourceIndex) => residualRevised.map((destination, destinationIndex) => {
     if (source.paragraphOwner && source.paragraphOwner === destination.paragraphOwner) return undefined;
     const score = Math.max(
-      jaccardWordSimilarity(source.text, destination.text, settings.caseInsensitiveMove),
-      wordContainmentSimilarity(source.text, destination.text, settings.caseInsensitiveMove),
+      jaccardWordSetSimilarity(originalWords[sourceIndex]!, revisedWords[destinationIndex]!),
+      wordSetContainmentSimilarity(originalWords[sourceIndex]!, revisedWords[destinationIndex]!),
     );
     return score >= settings.moveSimilarityThreshold ? score : undefined;
   }));

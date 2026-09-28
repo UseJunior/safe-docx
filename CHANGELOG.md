@@ -12,6 +12,19 @@
   surfaces render as a warning. Text edits inside the control are still
   tracked normally, and stats no longer count the property difference. (#1095)
 
+- A tracked `replace_text` whose range covers a footnote or endnote reference
+  that sits alone in a `w:rStyle` run (the shape Word writes) now deletes the
+  reference inside the same `w:del` as the surrounding text, so reject-all
+  restores the note and accept-all removes it with the text. The reference
+  used to be dropped untracked. (#1094)
+- `replace_text` keeps zero-length run content that sits at a range boundary
+  — a result-less field's `w:fldChar`/`w:instrText` markers, a note
+  reference, a drawing — outside the range when it shares a run with the
+  matched text, in tracked and clean modes: a replace starting right after an
+  `XE` entry, or ending right before one, leaves the entry live and in place,
+  and a replacement now lands before, not after, a drawing that trailed the
+  matched text in its run. A range that spans the field still deletes it.
+  (#1096)
 - `docx-markdoc` import now produces the same anchored source, `source sha256`
   and Markdoc every time it is given the same `.docx`. The anchored package was
   serialized with wall-clock ZIP entry times (2-second resolution), so two
@@ -21,6 +34,14 @@
   for this, and `ZIP_EPOCH` is exported from `@usejunior/docx-core`. The hash
   still names the anchored bytes that `compile` receives, so existing
   Markdoc/anchored pairs keep compiling. (#1110)
+
+- Comparing large documents is faster. The tagged-tree comparison rebuilt each
+  element's alignment key inside its paragraph-alignment loop and re-split each
+  candidate's text into words for every move-candidate pair, so both costs grew
+  with the product of the two documents' lengths; each is now computed once per
+  element. The move matcher also skips candidates with no eligible pairing.
+  Output is unchanged. One ILPA-sized comparison drops from about 84s to 37s of
+  CPU time. (#1116)
 
 ## 0.21.0
 

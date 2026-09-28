@@ -465,6 +465,32 @@ describe('splitRunAtVisibleOffset', () => {
     });
   });
 
+  test('zero-length content exactly at the offset goes right by default and left on request (#1096)', async ({ given, when, then }: AllureBddContext) => {
+    const FIELD_RUN =
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/><w:instrText xml:space="preserve"> XE "B" </w:instrText>' +
+      '<w:fldChar w:fldCharType="end"/><w:t>AB</w:t></w:r></w:p>';
+    const locals = (run: Element): string[] => getDirectContentElements(run).map((el) => el.localName ?? '');
+    let byDefault: { left: Element; right: Element };
+    let toLeft: { left: Element; right: Element };
+
+    await given('two copies of a run whose result-less field markers precede the text "AB"', () => {
+      byDefault = { left: firstParagraph(makeDoc(FIELD_RUN)).firstChild as Element, right: null as unknown as Element };
+      toLeft = { left: firstParagraph(makeDoc(FIELD_RUN)).firstChild as Element, right: null as unknown as Element };
+    });
+
+    await when('each is split at visible offset 0, one with the default side and one with zeroLengthAtOffset "left"', () => {
+      byDefault = splitRunAtVisibleOffset(byDefault.left, 0);
+      toLeft = splitRunAtVisibleOffset(toLeft.left, 0, 'left');
+    });
+
+    await then('the default keeps the markers with the text on the right; "left" separates them from it', () => {
+      expect(locals(byDefault.left)).toEqual([]);
+      expect(locals(byDefault.right)).toEqual(['fldChar', 'instrText', 'fldChar', 't']);
+      expect(locals(toLeft.left)).toEqual(['fldChar', 'instrText', 'fldChar']);
+      expect(locals(toLeft.right)).toEqual(['t']);
+    });
+  });
+
   test('preserves rPr formatting in both halves', async ({ given, when, then }: AllureBddContext) => {
     let r: Element;
     let left: Element;
@@ -1738,6 +1764,32 @@ describe('replaceParagraphTextRange — embedded object preservation', () => {
     });
   });
 
+  test('tracked replacement of text that follows a drawing in the same run keeps the drawing live before the edit', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+    let p: Element;
+
+    await given('a single run holding a drawing and then caption text', () => {
+      doc = makeDoc(`<w:p><w:r>${MINIMAL_DRAWING}<w:t>caption</w:t></w:r></w:p>`);
+      p = firstParagraph(doc);
+    });
+
+    await when('the caption is replaced under tracked changes', () => {
+      replaceParagraphTextRange(p, 0, 'caption'.length, 'new caption', trackedCtx());
+    });
+
+    await then('the drawing stays live, first, with the deletion and insertion after it; reject-all yields the original', () => {
+      // The drawing leads the matched text, so it sits before the range
+      // start (#1096): it is split into its own run and left untouched, and
+      // both revision segments follow it.
+      const drawings = embeddedObjectsIn(p, W.drawing);
+      expect(drawings).toHaveLength(1);
+      expect(isInsideRevisionWrapper(drawings[0]!, p)).toBe(false);
+      expect(paragraphContentSequence(p)).toEqual(['[drawing]', 'del:caption', 'ins:new caption']);
+      rejectChanges(doc);
+      expect(paragraphContentSequence(p)).toEqual(['[drawing]', 'caption']);
+    });
+  });
+
   test('tracked replacement of a run with co-resident text and drawing keeps the drawing live in original order', async ({ given, when, then }: AllureBddContext) => {
     let p: Element;
 
@@ -1762,8 +1814,14 @@ describe('replaceParagraphTextRange — embedded object preservation', () => {
 
       // Original order was caption-then-drawing, so the deletion segment must
       // precede the preserved drawing run for reject to restore that order.
+      // The insertion sits with the deletion, before the drawing: the range
+      // ended at the last matched character, so the drawing that trailed it
+      // in the same run is outside the range (#1096) and accept-all keeps
+      // the new caption before the image. Before #1096 the insertion landed
+      // after the drawing, moving the caption to the other side of the image
+      // on accept.
       const sequence = paragraphContentSequence(p);
-      expect(sequence).toEqual(['del:caption', '[drawing]', 'ins:new caption']);
+      expect(sequence).toEqual(['del:caption', 'ins:new caption', '[drawing]']);
     });
   });
 
@@ -2739,6 +2797,400 @@ describe('replaceParagraphTextRange — result-less complex field inside a repla
       const instr = p.getElementsByTagNameNS(W_NS, W.instrText).item(0)!;
       expect(instr.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'space')).toBe('preserve');
       expect(p.getElementsByTagNameNS(W_NS, 'delInstrText')).toHaveLength(0);
+    });
+  });
+});
+
+describe('replaceParagraphTextRange — note reference alone in a styled run inside a replaced range (#1094)', () => {
+  const noteTest = test.conformance(
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' },
+  );
+
+  const TEXT_RUN = (s: string): string => `<w:r><w:t xml:space="preserve">${s}</w:t></w:r>`;
+  /** The shape Word writes: the reference mark alone in a run styled FootnoteReference / EndnoteReference. */
+  const styledNoteRun = (local: string, style: string): string =>
+    `<w:r><w:rPr><w:rStyle w:val="${style}"/></w:rPr><w:${local} w:id="1"/></w:r>`;
+  /** "Alpha", the note reference, " Bravo". Visible text: "Alpha Bravo" (the reference contributes nothing). */
+  const issueParagraph = (local: string, style: string): string =>
+    `<w:p>${TEXT_RUN('Alpha')}${styledNoteRun(local, style)}${TEXT_RUN(' Bravo')}</w:p>`;
+
+  const NOTES: Array<{ local: string; style: string }> = [
+    { local: W.footnoteReference, style: 'FootnoteReference' },
+    { local: W.endnoteReference, style: 'EndnoteReference' },
+  ];
+
+  /**
+   * Paragraph content in document order: text, the reference as [ref], each
+   * prefixed with del:/ins: inside a revision wrapper. Adjacent plain-text
+   * tokens with the same prefix are merged so run fragmentation from the
+   * edit does not change the sequence.
+   */
+  const noteSequence = (p: Element, local: string): string[] => {
+    const out: string[] = [];
+    const walk = (node: Node, prefix: string): void => {
+      for (const child of Array.from(node.childNodes)) {
+        if (child.nodeType !== 1) continue;
+        const el = child as Element;
+        if (isWElement(el, W.pPr) || isWElement(el, W.rPr)) continue;
+        if (isWElement(el, 'del')) { walk(el, 'del:'); continue; }
+        if (isWElement(el, 'ins')) { walk(el, 'ins:'); continue; }
+        if (isWElement(el, W.t) || isWElement(el, 'delText')) { out.push(prefix + (el.textContent ?? '')); continue; }
+        if (isWElement(el, local)) { out.push(`${prefix}[ref]`); continue; }
+        walk(el, prefix);
+      }
+    };
+    walk(p, '');
+    const merged: string[] = [];
+    for (const token of out) {
+      const last = merged[merged.length - 1];
+      const isText = (s: string): boolean => !s.endsWith('[ref]');
+      const prefixOf = (s: string): string => (s.startsWith('del:') ? 'del:' : s.startsWith('ins:') ? 'ins:' : '');
+      if (last !== undefined && isText(last) && isText(token) && prefixOf(last) === prefixOf(token)) {
+        merged[merged.length -1] = last + token.slice(prefixOf(token).length);
+      } else {
+        merged.push(token);
+      }
+    }
+    return merged;
+  };
+  const references = (p: Element, local: string): Element[] => Array.from(p.getElementsByTagNameNS(W_NS, local));
+  const styledRunOf = (ref: Element): Element | null => {
+    const run = ref.parentNode as Element | null;
+    if (!run || !isWElement(run, W.r)) return null;
+    const rPr = getDirectChildrenByName(run, W.rPr)[0];
+    return rPr && getDirectChildrenByName(rPr, 'rStyle').length === 1 ? run : null;
+  };
+
+  for (const { local, style } of NOTES) {
+    noteTest(`tracked (w:${local}): a range covering the reference deletes it inside the same w:del as the text, and reject-all equals the original`, async ({ given, when, then }: AllureBddContext) => {
+      let doc: Document;
+      let p: Element;
+
+      await given(`a paragraph "Alpha Bravo" with a w:${local} alone in a w:rStyle run after "Alpha"`, () => {
+        doc = makeDoc(issueParagraph(local, style));
+        p = firstParagraph(doc);
+        expect(getParagraphText(p)).toBe('Alpha Bravo');
+        expect(noteSequence(p, local)).toEqual(['Alpha', '[ref]', ' Bravo']);
+      });
+
+      await when('the whole text "Alpha Bravo" is replaced with "Charlie" under tracked changes', () => {
+        replaceParagraphTextRange(p, 0, 11, 'Charlie', trackedCtx());
+      });
+
+      await then('the reference is still in the paragraph, inside a w:del, keeping its styled run', () => {
+        const refs = references(p, local);
+        expect(refs).toHaveLength(1);
+        expect(isInsideRevisionWrapper(refs[0]!, p)).toBe(true);
+        expect(styledRunOf(refs[0]!)).not.toBeNull();
+        expect(noteSequence(p, local)).toEqual(['del:Alpha', 'del:[ref]', 'del: Bravo', 'ins:Charlie']);
+        expect(p.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(1);
+      });
+
+      await then('reject-all yields the original paragraph, reference included and live', () => {
+        rejectChanges(doc);
+        expect(getParagraphText(p)).toBe('Alpha Bravo');
+        expect(noteSequence(p, local)).toEqual(['Alpha', '[ref]', ' Bravo']);
+        const refs = references(p, local);
+        expect(refs).toHaveLength(1);
+        expect(refs[0]!.getAttribute('w:id')).toBe('1');
+        expect(styledRunOf(refs[0]!)).not.toBeNull();
+      });
+    });
+
+    noteTest(`tracked (w:${local}): accept-all yields the target text with the reference gone`, async ({ given, when, then }: AllureBddContext) => {
+      let doc: Document;
+      let p: Element;
+
+      await given('the same paragraph', () => {
+        doc = makeDoc(issueParagraph(local, style));
+        p = firstParagraph(doc);
+      });
+
+      await when('the whole text is replaced under tracked changes and every change is accepted', () => {
+        replaceParagraphTextRange(p, 0, 11, 'Charlie', trackedCtx());
+        acceptChanges(doc);
+      });
+
+      await then('the paragraph reads "Charlie" with no reference and no revision markup', () => {
+        expect(getParagraphText(p)).toBe('Charlie');
+        expect(references(p, local)).toHaveLength(0);
+        expect(p.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(0);
+        expect(p.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(0);
+      });
+    });
+
+    noteTest(`tracked (w:${local}): a range that only partly covers the text around the reference still tracks it`, async ({ given, when, then }: AllureBddContext) => {
+      let doc: Document;
+      let p: Element;
+
+      await given('the same paragraph', () => {
+        doc = makeDoc(issueParagraph(local, style));
+        p = firstParagraph(doc);
+      });
+
+      await when('the range "ha Br" (offsets 3-8, spanning the reference) is replaced with "X" under tracked changes', () => {
+        replaceParagraphTextRange(p, 3, 8, 'X', trackedCtx());
+      });
+
+      await then('the reference is inside the w:del between the deleted text halves', () => {
+        const refs = references(p, local);
+        expect(refs).toHaveLength(1);
+        expect(isInsideRevisionWrapper(refs[0]!, p)).toBe(true);
+        expect(noteSequence(p, local)).toEqual(['Alp', 'del:ha', 'del:[ref]', 'del: Br', 'ins:X', 'avo']);
+      });
+
+      await then('reject-all yields the original paragraph', () => {
+        rejectChanges(doc);
+        expect(noteSequence(p, local)).toEqual(['Alpha', '[ref]', ' Bravo']);
+      });
+    });
+
+    noteTest(`tracked (w:${local}): a range that stops short of the reference leaves it live`, async ({ given, when, then }: AllureBddContext) => {
+      let p: Element;
+
+      await given('the same paragraph', () => {
+        p = firstParagraph(makeDoc(issueParagraph(local, style)));
+      });
+
+      await when('"Bravo" (offsets 6-11, after the reference) is replaced with "Delta" under tracked changes', () => {
+        replaceParagraphTextRange(p, 6, 11, 'Delta', trackedCtx());
+      });
+
+      await then('the reference stays live in place, before the tracked replacement', () => {
+        const refs = references(p, local);
+        expect(refs).toHaveLength(1);
+        expect(isInsideRevisionWrapper(refs[0]!, p)).toBe(false);
+        expect(noteSequence(p, local)).toEqual(['Alpha', '[ref]', ' ', 'del:Bravo', 'ins:Delta']);
+      });
+    });
+  }
+
+  noteTest('tracked: the unstyled reference run (the control that already passed) is tracked the same way', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+    let p: Element;
+
+    await given('the paragraph with the footnote reference alone in a run without w:rStyle', () => {
+      doc = makeDoc(`<w:p>${TEXT_RUN('Alpha')}<w:r><w:footnoteReference w:id="1"/></w:r>${TEXT_RUN(' Bravo')}</w:p>`);
+      p = firstParagraph(doc);
+    });
+
+    await when('the whole text is replaced with "Charlie" under tracked changes', () => {
+      replaceParagraphTextRange(p, 0, 11, 'Charlie', trackedCtx());
+    });
+
+    await then('the reference is inside the w:del and reject-all restores it', () => {
+      expect(noteSequence(p, W.footnoteReference)).toEqual(['del:Alpha', 'del:[ref]', 'del: Bravo', 'ins:Charlie']);
+      rejectChanges(doc);
+      expect(noteSequence(p, W.footnoteReference)).toEqual(['Alpha', '[ref]', ' Bravo']);
+    });
+  });
+});
+
+describe('replaceParagraphTextRange — zero-length content at a range boundary stays outside the range (#1096)', () => {
+  const boundaryTest = test.conformance(
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.13' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' },
+  );
+
+  const TEXT_RUN = (s: string): string => `<w:r><w:t xml:space="preserve">${s}</w:t></w:r>`;
+  const XE = ' XE "B" ';
+  /** A result-less XE field: begin, instruction, end, no separate — as inline run content. */
+  const XE_MARKERS =
+    '<w:fldChar w:fldCharType="begin"/>' +
+    `<w:instrText xml:space="preserve">${XE}</w:instrText>` +
+    '<w:fldChar w:fldCharType="end"/>';
+  const XE_TOKENS = ['[begin]', `[instr:${XE}]`, '[end]'];
+  const DEL_XE_TOKENS = ['del:[begin]', `del:[delInstr:${XE}]`, 'del:[end]'];
+
+  /** The issue's paragraph: "Alpha ", then one run holding the field and "Bravo Charlie". Visible text: "Alpha Bravo Charlie". */
+  const FIELD_LEADS_RUN = `<w:p>${TEXT_RUN('Alpha ')}<w:r>${XE_MARKERS}<w:t>Bravo Charlie</w:t></w:r></w:p>`;
+  /** The field-plus-text run is the first run of the paragraph. */
+  const FIELD_LEADS_PARAGRAPH = `<w:p><w:r>${XE_MARKERS}<w:t>Bravo Charlie</w:t></w:r></w:p>`;
+  /** Mirror: the field follows the text in the same run, more text after. Visible text: "Alpha Bravo Charlie". */
+  const FIELD_TRAILS_RUN = `<w:p><w:r><w:t xml:space="preserve">Alpha Bravo</w:t>${XE_MARKERS}</w:r>${TEXT_RUN(' Charlie')}</w:p>`;
+  /** Mirror at the paragraph end: the field-plus-text run is the last run. */
+  const FIELD_TRAILS_PARAGRAPH = `<w:p>${TEXT_RUN('Alpha ')}<w:r><w:t>Bravo</w:t>${XE_MARKERS}</w:r></w:p>`;
+
+  const sequence = (p: Element): string[] => {
+    const out: string[] = [];
+    const walk = (node: Node, prefix: string): void => {
+      for (const child of Array.from(node.childNodes)) {
+        if (child.nodeType !== 1) continue;
+        const el = child as Element;
+        if (isWElement(el, W.pPr) || isWElement(el, W.rPr)) continue;
+        if (isWElement(el, 'del')) { walk(el, 'del:'); continue; }
+        if (isWElement(el, 'ins')) { walk(el, 'ins:'); continue; }
+        if (isWElement(el, W.t) || isWElement(el, 'delText')) { out.push(prefix + (el.textContent ?? '')); continue; }
+        if (isWElement(el, W.fldChar)) { out.push(`${prefix}[${el.getAttribute('w:fldCharType')}]`); continue; }
+        if (isWElement(el, W.instrText)) { out.push(`${prefix}[instr:${el.textContent ?? ''}]`); continue; }
+        if (isWElement(el, 'delInstrText')) { out.push(`${prefix}[delInstr:${el.textContent ?? ''}]`); continue; }
+        if (isWElement(el, W.footnoteReference)) { out.push(`${prefix}[ref]`); continue; }
+        walk(el, prefix);
+      }
+    };
+    walk(p, '');
+    const merged: string[] = [];
+    for (const token of out) {
+      const last = merged[merged.length - 1];
+      const isText = (s: string): boolean => !/^(del:|ins:)?\[/u.test(s);
+      const prefixOf = (s: string): string => (s.startsWith('del:') ? 'del:' : s.startsWith('ins:') ? 'ins:' : '');
+      if (last !== undefined && isText(last) && isText(token) && prefixOf(last) === prefixOf(token)) {
+        merged[merged.length - 1] = last + token.slice(prefixOf(token).length);
+      } else {
+        merged.push(token);
+      }
+    }
+    return merged;
+  };
+  const fieldElements = (p: Element): Element[] =>
+    ['fldChar', 'instrText', 'delInstrText'].flatMap((local) => Array.from(p.getElementsByTagNameNS(W_NS, local)));
+  const expectFieldLive = (p: Element): void => {
+    const markers = fieldElements(p);
+    expect(markers.map((m) => m.localName)).toEqual(['fldChar', 'fldChar', 'instrText']);
+    for (const marker of markers) expect(isInsideRevisionWrapper(marker, p)).toBe(false);
+  };
+
+  const CASES: Array<{
+    name: string;
+    paragraph: string;
+    start: number;
+    end: number;
+    original: string[];
+    tracked: string[];
+    clean: string[];
+  }> = [
+    {
+      name: 'the field leads the run (the issue\'s paragraph)',
+      paragraph: FIELD_LEADS_RUN,
+      start: 6, end: 11, // "Bravo"
+      original: ['Alpha ', ...XE_TOKENS, 'Bravo Charlie'],
+      tracked: ['Alpha ', ...XE_TOKENS, 'del:Bravo', 'ins:Delta', ' Charlie'],
+      clean: ['Alpha ', ...XE_TOKENS, 'Delta Charlie'],
+    },
+    {
+      name: 'the field leads the first run of the paragraph',
+      paragraph: FIELD_LEADS_PARAGRAPH,
+      start: 0, end: 5, // "Bravo"
+      original: [...XE_TOKENS, 'Bravo Charlie'],
+      tracked: [...XE_TOKENS, 'del:Bravo', 'ins:Delta', ' Charlie'],
+      clean: [...XE_TOKENS, 'Delta Charlie'],
+    },
+    {
+      name: 'the field trails the run (mirror case)',
+      paragraph: FIELD_TRAILS_RUN,
+      start: 6, end: 11, // "Bravo"
+      original: ['Alpha Bravo', ...XE_TOKENS, ' Charlie'],
+      tracked: ['Alpha ', 'del:Bravo', 'ins:Delta', ...XE_TOKENS, ' Charlie'],
+      clean: ['Alpha Delta', ...XE_TOKENS, ' Charlie'],
+    },
+    {
+      name: 'the field trails the last run of the paragraph (mirror case)',
+      paragraph: FIELD_TRAILS_PARAGRAPH,
+      start: 6, end: 11, // "Bravo"
+      original: ['Alpha Bravo', ...XE_TOKENS],
+      tracked: ['Alpha ', 'del:Bravo', 'ins:Delta', ...XE_TOKENS],
+      clean: ['Alpha Delta', ...XE_TOKENS],
+    },
+  ];
+
+  for (const c of CASES) {
+    boundaryTest(`tracked, ${c.name}: the field stays live and in place; only the matched text is replaced`, async ({ given, when, then }: AllureBddContext) => {
+      let doc: Document;
+      let p: Element;
+
+      await given('a paragraph with a result-less XE field sharing a run with the text next to it', () => {
+        doc = makeDoc(c.paragraph);
+        p = firstParagraph(doc);
+        expect(sequence(p)).toEqual(c.original);
+      });
+
+      await when(`"Bravo" (offsets ${c.start}-${c.end}, adjacent to the field) is replaced with "Delta" under tracked changes`, () => {
+        replaceParagraphTextRange(p, c.start, c.end, 'Delta', trackedCtx());
+      });
+
+      await then('every field marker is live, outside any revision wrapper, and the sequence keeps the field in place', () => {
+        expectFieldLive(p);
+        expect(sequence(p)).toEqual(c.tracked);
+      });
+
+      await then('accept-all keeps the field and reject-all yields the original', () => {
+        const accepted = makeDoc(c.paragraph);
+        const acceptedP = firstParagraph(accepted);
+        replaceParagraphTextRange(acceptedP, c.start, c.end, 'Delta', trackedCtx());
+        acceptChanges(accepted);
+        expect(sequence(acceptedP)).toEqual(c.clean);
+        expectFieldLive(acceptedP);
+
+        rejectChanges(doc);
+        expect(sequence(p)).toEqual(c.original);
+        expectFieldLive(p);
+      });
+    });
+
+    boundaryTest(`untracked, ${c.name}: the field stays live and in place; only the matched text is replaced`, async ({ given, when, then }: AllureBddContext) => {
+      let p: Element;
+
+      await given('the same paragraph', () => {
+        p = firstParagraph(makeDoc(c.paragraph));
+      });
+
+      await when(`"Bravo" (offsets ${c.start}-${c.end}) is replaced with "Delta" without tracking`, () => {
+        replaceParagraphTextRange(p, c.start, c.end, 'Delta');
+      });
+
+      await then('the field is intact and the text reads as intended', () => {
+        expectFieldLive(p);
+        expect(sequence(p)).toEqual(c.clean);
+      });
+    });
+  }
+
+  boundaryTest('tracked: a range that genuinely spans the field still deletes it, as in #1082', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+    let p: Element;
+
+    await given('the issue\'s paragraph', () => {
+      doc = makeDoc(FIELD_LEADS_RUN);
+      p = firstParagraph(doc);
+    });
+
+    await when('"a Bravo" (offsets 4-11, spanning the field) is replaced with "a Delta" under tracked changes', () => {
+      replaceParagraphTextRange(p, 4, 11, 'a Delta', trackedCtx());
+    });
+
+    await then('the field markers are inside the w:del with the text, and reject-all restores the original', () => {
+      const markers = fieldElements(p);
+      expect(markers).toHaveLength(3);
+      for (const marker of markers) expect(isInsideRevisionWrapper(marker, p)).toBe(true);
+      expect(sequence(p)).toEqual(['Alph', 'del:a ', ...DEL_XE_TOKENS, 'del:Bravo', 'ins:a Delta', ' Charlie']);
+      rejectChanges(doc);
+      expect(sequence(p)).toEqual(['Alpha ', ...XE_TOKENS, 'Bravo Charlie']);
+    });
+  });
+
+  boundaryTest('tracked: a note reference that leads the run of the matched text stays live (#1094 shape at a #1096 boundary)', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+    let p: Element;
+    const paragraph = `<w:p>${TEXT_RUN('Alpha')}<w:r><w:footnoteReference w:id="1"/><w:t xml:space="preserve"> Bravo</w:t></w:r></w:p>`;
+
+    await given('a paragraph whose footnote reference shares a run with the following text (the merged-on-open shape)', () => {
+      doc = makeDoc(paragraph);
+      p = firstParagraph(doc);
+      expect(sequence(p)).toEqual(['Alpha', '[ref]', ' Bravo']);
+    });
+
+    await when('"Bravo" (offsets 6-11, right after the reference) is replaced with "Delta" under tracked changes', () => {
+      replaceParagraphTextRange(p, 6, 11, 'Delta', trackedCtx());
+    });
+
+    await then('the reference stays live before the tracked replacement, and reject-all yields the original', () => {
+      const ref = p.getElementsByTagNameNS(W_NS, W.footnoteReference).item(0)!;
+      expect(isInsideRevisionWrapper(ref, p)).toBe(false);
+      expect(sequence(p)).toEqual(['Alpha', '[ref]', ' ', 'del:Bravo', 'ins:Delta']);
+      rejectChanges(doc);
+      expect(sequence(p)).toEqual(['Alpha', '[ref]', ' Bravo']);
     });
   });
 });
