@@ -15,8 +15,25 @@
   and a replacement now lands before, not after, a drawing that trailed the
   matched text in its run. A range that spans the field still deletes it.
   (#1096)
+- `docx-markdoc` import now produces the same anchored source, `source sha256`
+  and Markdoc every time it is given the same `.docx`. The anchored package was
+  serialized with wall-clock ZIP entry times (2-second resolution), so two
+  imports of one file could disagree on the hash. Every entry is now written
+  with the fixed `ZIP_EPOCH` date that document generation already uses;
+  `DocxZip.toBuffer()` and `DocxDocument.toBuffer()` take an optional `fileDate`
+  for this, and `ZIP_EPOCH` is exported from `@usejunior/docx-core`. The hash
+  still names the anchored bytes that `compile` receives, so existing
+  Markdoc/anchored pairs keep compiling. (#1110)
 
 ## 0.21.0
+
+- `compileMarkdoc` no longer stamps the compile time on a source comment that
+  had no `w:date` when an author, initials, anchor or thread-parent change
+  forces it to be re-emitted; the output comment and its replies carry no
+  `w:date`, as the source did. Dated source comments keep their date and newly
+  authored comments are still dated. `DocxDocument.addComment` and
+  `addCommentReply` accept `date: null` to write no `w:date`; leaving `date`
+  out keeps the existing default. (#1103)
 
 - The `docx-markdoc` CLI now reports why a `.mdoc` was rejected. When a
   command fails with a `DocxMarkdocError`, stderr prints one

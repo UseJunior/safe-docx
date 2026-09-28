@@ -126,8 +126,10 @@ those boundaries are preserved in the DOCX. Rationale, requirement, and waiver
 bodies likewise use one plain-text block; multiple Markdown blocks are rejected
 rather than concatenated.
 
-`anchored.docx` differs from `source.docx` only where Safe DOCX had to add stable
-`_bk_*` paragraph bookmarks. The Markdoc hash and paragraph IDs target that
+`anchored.docx` differs from `source.docx` in content only where Safe DOCX had
+to add stable `_bk_*` paragraph bookmarks; its ZIP entries also all carry one
+fixed date, so importing the same `source.docx` again reproduces the same
+`anchored.docx` and hash. The Markdoc hash and paragraph IDs target that
 anchored copy, so later compilation is stateless and never needs an editing
 session. The caller's original bytes remain untouched.
 

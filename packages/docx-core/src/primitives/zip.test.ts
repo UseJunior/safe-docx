@@ -7,7 +7,7 @@
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { DocxZip, inspectZipEntries, readZipText } from './zip.js';
+import { DocxZip, ZIP_EPOCH, inspectZipEntries, readZipText } from './zip.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Document Primitives' });
 
@@ -71,6 +71,47 @@ describe('DocxZip archive packing (issue #408)', () => {
       expect(entries.some((e) => e.isDirectory)).toBe(false);
       const names = entries.map((e) => e.name).sort();
       expect(names).toEqual(['[Content_Types].xml', '_rels/.rels', 'word/document.xml', 'word/settings.xml']);
+    });
+  });
+});
+
+async function entryDates(buffer: Buffer): Promise<Set<number>> {
+  const zip = await JSZip.loadAsync(buffer);
+  return new Set(Object.values(zip.files).map((file) => file.date.getTime()));
+}
+
+describe('DocxZip fixed entry dates (issue #1110)', () => {
+  const SOURCE_DATE = new Date(Date.UTC(2020, 5, 15, 12, 0, 0));
+
+  async function buildDatedArchive(): Promise<Buffer> {
+    const zip = new JSZip();
+    zip.file('word/document.xml', COMPRESSIBLE_XML, { createFolders: false, date: SOURCE_DATE });
+    zip.file('[Content_Types].xml', '<Types/>', { createFolders: false, date: SOURCE_DATE });
+    return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+  }
+
+  test('a fileDate save stamps every entry, and an overlapping default save keeps the source dates', async ({ given, when, then }: AllureBddContext) => {
+    let zip: DocxZip;
+    let fixed: Buffer;
+    let concurrentDefault: Buffer;
+    let laterDefault: Buffer;
+
+    await given('a loaded archive whose entries carry their source dates', async () => {
+      zip = await DocxZip.load(await buildDatedArchive());
+    });
+
+    await when('a fixed-date save and a default save start before either settles', async () => {
+      const fixedSave = zip.toBuffer({ fileDate: ZIP_EPOCH });
+      const defaultSave = zip.toBuffer();
+      [fixed, concurrentDefault] = await Promise.all([fixedSave, defaultSave]);
+      laterDefault = await zip.toBuffer();
+    });
+
+    await then('only the fixed-date save carries the fixed date', async () => {
+      expect(await entryDates(fixed)).toEqual(new Set([ZIP_EPOCH.getTime()]));
+      expect(await entryDates(concurrentDefault)).toEqual(new Set([SOURCE_DATE.getTime()]));
+      expect(await entryDates(laterDefault)).toEqual(new Set([SOURCE_DATE.getTime()]));
+      expect(laterDefault.equals(concurrentDefault)).toBe(true);
     });
   });
 });
