@@ -4,13 +4,18 @@
  * `CT_SectPr` alone, so the comparison must never copy them into the
  * snapshot, must keep the live ones bound on accept and reject, and must
  * report the binding differences it therefore cannot represent (#944).
+ * When the sections differ only in those references, the snapshot would
+ * equal the live contents, so no `w:sectPrChange` is emitted and none is
+ * counted (#1100).
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.6.17
  * @see https://github.com/UseJunior/safe-docx/issues/944
+ * @see https://github.com/UseJunior/safe-docx/issues/1100
  */
 
+import { XMLSerializer } from '@xmldom/xmldom';
 import { describe, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -290,5 +295,188 @@ describe('w:sectPrChange snapshots are CT_SectPrBase (#944)', () => {
     expect(sectionDivergenceIsReported({ ...divergence, property: 'w:pgSz' }, [
       { scope: 'footer', kind: 'removed', sectionIndex: 1, role: 'even' },
     ])).toBe(false);
+  });
+});
+
+const HEADER_TWO: StoryPart = { id: 'rIdHeader2', kind: 'header', target: 'header2.xml', text: 'Other header' };
+
+/** Live (non-snapshot) `w:sectPr` elements in document order. */
+function liveSections(documentXml: string): Element[] {
+  return Array.from(parseXml(documentXml).getElementsByTagNameNS(OOXML.W_NS, 'sectPr'))
+    .filter((section) => section.parentNode?.nodeName !== 'w:sectPrChange');
+}
+
+describe('sections that differ only in header/footer references emit no w:sectPrChange (#1100)', () => {
+  const cases: Array<{
+    label: string;
+    originalSectPr: string;
+    revisedSectPr: string;
+    originalParts: StoryPart[];
+    revisedParts: StoryPart[];
+    unrepresentedChanges: unknown;
+    liveBindings: string[];
+  }> = [
+    {
+      label: 'footer reference removed',
+      originalSectPr: `<w:sectPr><w:footerReference w:type="default" r:id="${FOOTER.id}"/>${PORTRAIT}</w:sectPr>`,
+      revisedSectPr: `<w:sectPr>${PORTRAIT}</w:sectPr>`,
+      originalParts: [FOOTER],
+      revisedParts: [],
+      unrepresentedChanges: [{ scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' }],
+      liveBindings: [],
+    },
+    {
+      label: 'footer reference added',
+      originalSectPr: `<w:sectPr>${PORTRAIT}</w:sectPr>`,
+      revisedSectPr: `<w:sectPr><w:footerReference w:type="default" r:id="${FOOTER.id}"/>${PORTRAIT}</w:sectPr>`,
+      originalParts: [],
+      revisedParts: [FOOTER],
+      unrepresentedChanges: [{ scope: 'footer', kind: 'added', sectionIndex: 0, role: 'default' }],
+      liveBindings: ['0:footer:default=word/footer1.xml'],
+    },
+    {
+      label: 'header reference retargeted to another part',
+      originalSectPr: `<w:sectPr><w:headerReference w:type="default" r:id="${HEADER.id}"/>${PORTRAIT}</w:sectPr>`,
+      revisedSectPr: `<w:sectPr><w:headerReference w:type="default" r:id="${HEADER_TWO.id}"/>${PORTRAIT}</w:sectPr>`,
+      originalParts: [HEADER],
+      revisedParts: [HEADER_TWO],
+      // The retarget is carried as a tracked text change inside the header
+      // story, so nothing is left unrepresented.
+      unrepresentedChanges: undefined,
+      liveBindings: ['0:header:default=word/header2.xml'],
+    },
+  ];
+
+  for (const scenario of cases) {
+    test(`body section, ${scenario.label}: no w:sectPrChange, formatChanges 0, difference still disclosed`, async () => {
+      const original = await packageWithStories(paragraph('Body'), scenario.originalSectPr, scenario.originalParts);
+      const revised = await packageWithStories(paragraph('Body'), scenario.revisedSectPr, scenario.revisedParts);
+
+      const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+      const archive = await DocxArchive.load(result.document);
+      const documentXml = await archive.getDocumentXml();
+
+      expect(sectPrChangeCount(documentXml)).toBe(0);
+      expect(result.stats.formatChanges).toBe(0);
+      expect(result.stats.formatChangeAtoms).toBe(0);
+      expect(result.unrepresentedChanges).toEqual(scenario.unrepresentedChanges);
+      // The live section is the revised one: its references survive whole,
+      // and neither is wrapped in w:ins/w:del.
+      const [live] = liveSections(documentXml);
+      expect(live).toBeDefined();
+      expect(new XMLSerializer().serializeToString(live!)).not.toMatch(/<w:(ins|del)\b/);
+      for (const projection of [
+        acceptAllChanges(documentXml),
+        rejectAllChanges(documentXml),
+        nativeProjection(documentXml, acceptChanges),
+        nativeProjection(documentXml, rejectChanges),
+      ]) {
+        expect((await resolvedBindings(archive, projection)).sort()).toEqual(scenario.liveBindings);
+      }
+      await expectSchemaValidPackages(result.document);
+    });
+  }
+
+  test('paragraph section break that differs only in a footer reference emits no w:sectPrChange', async () => {
+    const sectionBreak = (references: string): string =>
+      `<w:p><w:pPr><w:sectPr>${references}${PORTRAIT}</w:sectPr></w:pPr>` +
+      `<w:r><w:t>First section</w:t></w:r></w:p>`;
+    const original = await packageWithStories(
+      sectionBreak(`<w:footerReference w:type="default" r:id="${FOOTER.id}"/>`) + paragraph('Second section'),
+      `<w:sectPr>${PORTRAIT}</w:sectPr>`,
+      [FOOTER],
+    );
+    const revised = await packageWithStories(
+      sectionBreak('') + paragraph('Second section'),
+      `<w:sectPr>${PORTRAIT}</w:sectPr>`,
+      [],
+    );
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+    const archive = await DocxArchive.load(result.document);
+    const documentXml = await archive.getDocumentXml();
+
+    expect(sectPrChangeCount(documentXml)).toBe(0);
+    expect(result.unrepresentedChanges).toEqual([
+      { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
+    ]);
+    expect(await resolvedBindings(archive, nativeProjection(documentXml, rejectChanges))).toEqual([]);
+    await expectSchemaValidPackages(result.document);
+  });
+
+  test('a prior w:sectPrChange in the revised input is not republished when the sections agree', async () => {
+    const original = await packageWithStories(paragraph('Body'), `<w:sectPr>${PORTRAIT}</w:sectPr>`, []);
+    const revised = await packageWithStories(
+      paragraph('Body'),
+      `<w:sectPr>${PORTRAIT}<w:sectPrChange w:id="1" w:author="Reviewer"><w:sectPr>${LANDSCAPE}</w:sectPr></w:sectPrChange></w:sectPr>`,
+      [],
+    );
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+    const documentXml = await (await DocxArchive.load(result.document)).getDocumentXml();
+
+    expect(sectPrChangeCount(documentXml)).toBe(0);
+    expect(result.stats.formatChanges).toBe(0);
+    expect(result.unrepresentedChanges).toBeUndefined();
+    expect(rejectAllChanges(documentXml)).not.toContain('w:orient="landscape"');
+    await expectSchemaValidPackages(result.document);
+  });
+
+  test('paragraph section break: a prior w:sectPrChange is dropped when the paragraph properties change but the sections agree', async () => {
+    const sectionBreak = (justification: string, priorChange: string): string =>
+      `<w:p><w:pPr>${justification}<w:sectPr>${PORTRAIT}${priorChange}</w:sectPr></w:pPr>` +
+      `<w:r><w:t>First section</w:t></w:r></w:p>`;
+    const original = await packageWithStories(
+      sectionBreak('', '') + paragraph('Second section'),
+      `<w:sectPr>${PORTRAIT}</w:sectPr>`,
+      [],
+    );
+    const revised = await packageWithStories(
+      sectionBreak(
+        '<w:jc w:val="center"/>',
+        `<w:sectPrChange w:id="1" w:author="Reviewer"><w:sectPr>${LANDSCAPE}</w:sectPr></w:sectPrChange>`,
+      ) + paragraph('Second section'),
+      `<w:sectPr>${PORTRAIT}</w:sectPr>`,
+      [],
+    );
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+    const documentXml = await (await DocxArchive.load(result.document)).getDocumentXml();
+
+    expect(sectPrChangeCount(documentXml)).toBe(0);
+    // The justification change is the only property revision.
+    expect(result.stats.formatChanges).toBe(1);
+    expect(parseXml(documentXml).getElementsByTagNameNS(OOXML.W_NS, 'pPrChange').length).toBe(1);
+    expect(rejectAllChanges(documentXml)).not.toContain('w:orient="landscape"');
+    expect(result.unrepresentedChanges).toBeUndefined();
+    await expectSchemaValidPackages(result.document);
+  });
+
+  test('control: a section that also changes page size keeps one w:sectPrChange with the prior page setup', async () => {
+    const original = await packageWithStories(
+      paragraph('Body'),
+      `<w:sectPr><w:footerReference w:type="default" r:id="${FOOTER.id}"/>${PORTRAIT}</w:sectPr>`,
+      [FOOTER],
+    );
+    const revised = await packageWithStories(paragraph('Body'), `<w:sectPr>${LANDSCAPE}</w:sectPr>`, []);
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+    const archive = await DocxArchive.load(result.document);
+    const documentXml = await archive.getDocumentXml();
+
+    expect(sectPrChangeCount(documentXml)).toBe(1);
+    expect(snapshotStoryReferences(documentXml)).toBe(0);
+    expect(result.stats.formatChanges).toBe(1);
+    const snapshot = parseXml(documentXml)
+      .getElementsByTagNameNS(OOXML.W_NS, 'sectPrChange').item(0)!
+      .getElementsByTagNameNS(OOXML.W_NS, 'pgSz').item(0)!;
+    expect(snapshot.getAttributeNS(OOXML.W_NS, 'w')).toBe('12240');
+    expect(rejectAllChanges(documentXml)).toContain('w:w="12240"');
+    expect(acceptAllChanges(documentXml)).toContain('w:orient="landscape"');
+    expect(result.unrepresentedChanges).toEqual([
+      { scope: 'section', kind: 'changed', sectionIndex: 0 },
+      { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
+    ]);
+    await expectSchemaValidPackages(result.document);
   });
 });

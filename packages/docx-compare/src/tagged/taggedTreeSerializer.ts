@@ -1073,14 +1073,21 @@ function applyParagraphPropertyDelta(
     markChange.appendChild(snapshot);
     mark.appendChild(markChange);
   }
+  // A prior w:sectPrChange in the revised input is not this comparison's
+  // revision; drop it whether or not a new one is recorded below.
+  if (liveSection) {
+    for (const stale of childElements(liveSection).filter((child) => child.localName === 'sectPrChange')) {
+      liveSection.removeChild(stale);
+    }
+  }
+  // Compare the `CT_SectPrBase` snapshots, not the raw elements: a section
+  // that differs only in header/footer references has nothing for
+  // `w:sectPrChange` to record (#944, #1100).
   const serialize = (element: WmlElement | null | undefined): string =>
-    element ? new XMLSerializer().serializeToString(element) : '';
+    element ? new XMLSerializer().serializeToString(buildSectPrBaseSnapshot(element, paragraph.ownerDocument!)) : '';
   if (serialize(liveSection) !== serialize(originalSection)) {
     const section = liveSection ?? paragraph.ownerDocument!.createElementNS(W_NS, 'w:sectPr') as WmlElement;
     if (!liveSection) live.appendChild(section);
-    for (const stale of childElements(section).filter((child) => child.localName === 'sectPrChange')) {
-      section.removeChild(stale);
-    }
     const change = paragraph.ownerDocument!.createElementNS(W_NS, 'w:sectPrChange') as WmlElement;
     appendChangeMetadata(change, revision);
     change.appendChild(buildSectPrBaseSnapshot(originalSection, paragraph.ownerDocument!));
@@ -2052,6 +2059,14 @@ function emitNode(
       allocateBookmarkId,
       allocateRevision,
     );
+  }
+  if (node.tag === 'both' && node.opaque && base.namespaceURI === W_NS && base.localName === 'sectPr') {
+    // An aligned section is published whole from the revised side (#1100).
+    // A prior w:sectPrChange in that input is not this comparison's revision
+    // and would be reverted by Reject All; drop it as the delta path does.
+    for (const stale of childElements(base).filter((child) => child.localName === 'sectPrChange')) {
+      base.removeChild(stale);
+    }
   }
   applyPropertyDelta(base, node, nodeRevision);
   const entry = plan.entries.get(node)!;
