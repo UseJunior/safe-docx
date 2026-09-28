@@ -49,6 +49,7 @@ export type {
   UnrepresentedChange,
   UnrepresentedChangeKind,
   UnrepresentedChangeScope,
+  UnrepresentedContentControlChange,
   ReconstructionRebuildSafetyDiagnostics,
   ReconstructionSafetyCheckName,
   ReconstructionSafetyChecks,

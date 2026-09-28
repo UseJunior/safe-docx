@@ -16,9 +16,15 @@ import {
   verifySerializedMoveRanges,
 } from './taggedTreeSerializer.js';
 import { formatDate, isParagraphMoveMarker } from './revisionMarkup.js';
-import type { CompareStats, RevisionAttributionRange, RevisionGroupingPolicy } from '../compare-types.js';
+import type {
+  CompareStats,
+  RevisionAttributionRange,
+  RevisionGroupingPolicy,
+  UnrepresentedChange,
+} from '../compare-types.js';
 import { representative, type TaggedNode } from './taggedTree.js';
 import { guardBodyTableTopology } from './tableTopologyGuard.js';
+import { collectContentControlPropertyChanges } from './unrepresentedChanges.js';
 
 export type TaggedTreeDivergenceClass = 'projection-inequivalent' | 'projection-equivalent';
 
@@ -93,6 +99,8 @@ export interface TaggedTreePublication {
     moveToRanges: number;
   };
   moves: ReturnType<typeof constructTaggedTree>['moves'];
+  /** Differences the story carries without revision markup (content-control properties, #1095). */
+  unrepresentedChanges: UnrepresentedChange[];
 }
 
 const COMPARISON_LEAF_NAMES = new Set([
@@ -320,6 +328,7 @@ export function buildTaggedTreePublication(
     stats: consumed.stats,
     serializedRangeStats: consumed.serializedRangeStats,
     moves: constructed.moves,
+    unrepresentedChanges: collectContentControlPropertyChanges(constructed.tree),
   };
 }
 

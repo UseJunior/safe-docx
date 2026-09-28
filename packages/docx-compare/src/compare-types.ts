@@ -88,8 +88,20 @@ export type ComparisonStrategy = 'tagged-tree' | 'legacy';
 export type ComparisonStrategyFallbackReason =
   | 'tagged_tree_publication_safety_check_failed';
 
-export type UnrepresentedChangeScope = 'section' | 'header' | 'footer';
+export type UnrepresentedChangeScope = 'section' | 'header' | 'footer' | 'contentControl';
 export type UnrepresentedChangeKind = 'added' | 'removed' | 'changed';
+
+/** Identity of the content control whose properties differ (`contentControl` scope). */
+export interface UnrepresentedContentControlChange {
+  /** Zero-based document-order ordinal among the revised document's content controls. */
+  index: number;
+  /** The property element that differs. */
+  element: 'sdtPr' | 'sdtEndPr';
+  /** `w:id`, `w:tag` and `w:alias` from the control's `w:sdtPr` (revised side first), when present. */
+  id?: string;
+  tag?: string;
+  alias?: string;
+}
 
 /**
  * A package-level input difference not expressed by emitted tracked-change
@@ -98,10 +110,12 @@ export type UnrepresentedChangeKind = 'added' | 'removed' | 'changed';
 export interface UnrepresentedChange {
   scope: UnrepresentedChangeScope;
   kind: UnrepresentedChangeKind;
-  /** Zero-based document-order section ordinal. */
+  /** Zero-based document-order section ordinal (the containing section for a content control). */
   sectionIndex: number;
   /** Header/footer role when scope is not `section`. */
   role?: 'default' | 'first' | 'even';
+  /** The affected control when scope is `contentControl` (a changed `w:sdtPr`/`w:sdtEndPr`). */
+  contentControl?: UnrepresentedContentControlChange;
 }
 
 /** @deprecated Tagged publication throws instead of falling back to reconstruction. */

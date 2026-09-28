@@ -2,6 +2,17 @@ import type { UnrepresentedChange } from './compare-types.js';
 
 function describeScope(change: UnrepresentedChange): string {
   if (change.scope === 'section') return 'section properties';
+  if (change.scope === 'contentControl') {
+    const control = change.contentControl;
+    const identity = [
+      control?.tag !== undefined ? `tag "${control.tag}"` : undefined,
+      control?.alias !== undefined ? `alias "${control.alias}"` : undefined,
+      control?.id !== undefined ? `id ${control.id}` : undefined,
+    ].filter((part) => part !== undefined);
+    const ordinal = control ? `content control #${control.index + 1}` : 'content control';
+    const element = control?.element ?? 'sdtPr';
+    return `properties (w:${element}) of ${ordinal}${identity.length > 0 ? ` (${identity.join(', ')})` : ''}`;
+  }
   return change.role ? `${change.role} ${change.scope}` : change.scope;
 }
 

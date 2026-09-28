@@ -944,8 +944,20 @@
           "path": "packages/docx-core/src/primitives/reject_changes.ts"
         },
         {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/text.ts"
+        },
+        {
           "kind": "test",
           "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/text.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/retained-format.test.ts"
         }
       ]
     },
@@ -1732,6 +1744,30 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-2-2",
+      "title": "Main document body",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.2.2"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:body",
+      "claimRationale": "Part 1 §17.2.2 defines `w:body` as the main document story container. The\ngreenfield compiler admits one body with one final direct `w:sectPr`, replaces\nthe other direct body children with canonical paragraphs, and reloads the\nresult to verify their authored order. Multiple or misplaced section-property\ntopologies remain outside this bounded projection and fail closed.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/greenfield.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/greenfield.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-3-1-19",
       "title": "w:numPr paragraph numbering reference",
       "classification": "targeted",
@@ -1836,6 +1872,30 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-3-1-27",
+      "title": "Paragraph style reference",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.1.27"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle",
+      "claimRationale": "Part 1 §17.3.1.27 defines `w:pStyle` as a paragraph's referenced style. The\ngreenfield compiler resolves each canonical body role to an explicit style ID,\nrequires that ID in the template style table, emits it under `w:pPr`, and\nreloads the package to verify the resolved body/style projection.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/greenfield.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/greenfield.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-3-2-26",
       "title": "Run fonts and theme-font references",
       "classification": "targeted",
@@ -1886,12 +1946,24 @@
           "path": "packages/docx-core/src/generation/emit/properties.ts"
         },
         {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/text.ts"
+        },
+        {
           "kind": "test",
           "path": "packages/docx-core/src/generation/ordering-schema.test.ts"
         },
         {
           "kind": "test",
           "path": "packages/docx-core/src/generation/generation-styles-formatting.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/text.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/retained-format.test.ts"
         }
       ]
     },
@@ -2060,6 +2132,26 @@
         {
           "kind": "source",
           "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-4-23",
+      "title": "w:hMerge legacy horizontal cell merge",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.4.23"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hMerge",
+      "claimRationale": "The structural row editor rejects legacy `w:hMerge` tables before mutation\nbecause treating their physical continuation cells as independent grid cells\nwould misrepresent the authored horizontal merge.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/table_rows.ts"
         }
       ]
     },
@@ -2608,6 +2700,18 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/taggedTreeConstruction.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/unrepresentedChanges.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-content-control-properties.test.ts"
         }
       ]
     },
@@ -3192,6 +3296,34 @@
       ]
     },
     {
+      "id": "ECMA-PART1-2-1",
+      "title": "Document conformance class (WML Strict) refused at load",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "2.1"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/strict/wml.xsd#element:document",
+      "claimRationale": "Part 1 §2.1 defines the document conformance class Office Open XML Strict\n(\"WML Strict\" for the Wordprocessing category): every part is valid against the\nStrict schemas, whose WordprocessingML namespace is\n`http://purl.oclc.org/ooxml/wordprocessingml/main`. safe-docx consumes WML\nTransitional packages only. A package whose main document root element is in\nthe Strict namespace is refused at load, and at either comparison input, with\n`UnsupportedConformanceClassError` (code `UNSUPPORTED_CONFORMANCE_CLASS`) that\nnames the conformance class, instead of being read as an empty document. This\nentry claims detection and refusal of the Strict class; it does not claim Strict\nconsumption or conversion.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/conformance.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/conformance_gate.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/conformanceGate.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART2-6-5-2-3",
       "title": "part Relationships part ownership and naming",
       "classification": "targeted",
@@ -3333,6 +3465,20 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/strict/wml.xsd#element:document",
+      "schemaPath": "spec-compliance/ecma-376/schemas/strict/wml.xsd",
+      "conformanceClass": "strict",
+      "targetNamespace": "http://purl.oclc.org/ooxml/wordprocessingml/main",
+      "kind": "element",
+      "name": "document",
+      "occurrences": [
+        {
+          "contextPath": "schema/element:document",
+          "declaredType": "CT_Document"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/vml-main.xsd",
       "conformanceClass": "transitional",
@@ -3373,6 +3519,22 @@
           "contextPath": "schema/type:CT_Num/sequence/element:abstractNumId",
           "declaredType": "CT_DecimalNumber",
           "minOccurs": "1"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:body",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "body",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Document/complexContent/extension/sequence/element:body",
+          "declaredType": "CT_Body",
+          "minOccurs": "0",
+          "maxOccurs": "1"
         }
       ]
     },
@@ -3811,6 +3973,21 @@
         {
           "contextPath": "schema/type:CT_TcPrBase/sequence/element:gridSpan",
           "declaredType": "CT_DecimalNumber",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hMerge",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "hMerge",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_TcPrBase/sequence/element:hMerge",
+          "declaredType": "CT_HMerge",
           "minOccurs": "0"
         }
       ]

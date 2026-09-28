@@ -344,7 +344,7 @@ export async function buildStandaloneTaggedPackage(
   const revisedArchive = await DocxArchive.load(revised);
   await canonicalizeNoteArchiveIds(originalArchive);
   await canonicalizeNoteArchiveIds(revisedArchive);
-  const unrepresentedChanges = await detectUnrepresentedChanges(
+  const packageUnrepresentedChanges = await detectUnrepresentedChanges(
     originalArchive,
     revisedArchive,
   );
@@ -376,6 +376,7 @@ export async function buildStandaloneTaggedPackage(
     taggedOriginalXml: string;
     taggedRevisedXml: string;
     finalizedPublication: ReturnType<typeof consumeTaggedPublicationStatistics>;
+    unrepresentedChanges: UnrepresentedChange[];
   }> => {
     // Canonicalization needs one relationship table containing both sides, but
     // that temporary clone is discarded so unused original parts never leak
@@ -412,6 +413,7 @@ export async function buildStandaloneTaggedPackage(
         finalizeTaggedDocumentXml(taggedPublication.xml),
         taggedPublication.stats,
       ),
+      unrepresentedChanges: taggedPublication.unrepresentedChanges,
     };
   };
 
@@ -441,6 +443,12 @@ export async function buildStandaloneTaggedPackage(
     publication = await publish();
   }
   const { taggedOriginalXml, taggedRevisedXml, finalizedPublication } = publication;
+  // Package-level differences (sections, stories) come from the archives; a
+  // content-control property difference is only visible in the tagged tree.
+  const unrepresentedChanges: UnrepresentedChange[] = [
+    ...packageUnrepresentedChanges,
+    ...publication.unrepresentedChanges,
+  ];
   let taggedXml = finalizedPublication.xml;
   let revisionAttributions: RevisionAttribution[] | undefined;
   if ((options.revisionAttributionRanges?.length ?? 0) > 0) {
