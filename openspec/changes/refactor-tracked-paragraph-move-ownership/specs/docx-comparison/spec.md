@@ -22,6 +22,14 @@ The serializer SHALL keep the range topology balanced, SHALL keep wrapper IDs in
 - **AND** the destination paragraph mark SHALL carry `w:ins`
 - **AND** the terminal source paragraph SHALL carry moved-from content without a paragraph-mark move revision
 
+#### Scenario: Terminal content-control paragraph uses body-story break ownership
+
+- **GIVEN** a single complete paragraph moves between a non-terminal position and the last paragraph of a block content control that closes the body story (nothing but range boundaries and `w:sectPr` follows the control), with a stable unrevised predecessor at the terminal endpoint
+- **WHEN** tagged move markup is serialized
+- **THEN** the removed and created breaks SHALL carry `w:del` and `w:ins` paragraph-mark revisions exactly as for a body-level terminal move
+- **AND** the terminal paragraph SHALL carry moved content without a paragraph-mark move revision
+- **AND** a control that another block follows SHALL keep the middle-move topology for its last paragraph
+
 #### Scenario: Middle move retains paragraph-mark move ownership
 
 - **GIVEN** both complete-paragraph move endpoints are non-terminal body paragraphs

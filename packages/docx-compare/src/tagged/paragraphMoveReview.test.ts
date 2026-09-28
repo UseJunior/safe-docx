@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { describe, expect } from 'vitest';
-import { DocxArchive, parseXml } from '@usejunior/docx-core';
+import { DocxArchive, acceptChanges, parseXml, rejectChanges, serializeXml } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml, paragraphWithText, resultText } from '../testing/ooxml-fixtures.js';
 import { testAllure } from '../testing/allure-test.js';
 import { compareDocuments } from '../index.js';
@@ -129,6 +129,122 @@ describe('paragraph move review regressions', () => {
         .map((paragraph) => paragraph.textContent), `${scenario.name} accept`).toEqual(scenario.revised);
       expect(Array.from(parseXml(rejectAllChanges(xml)).getElementsByTagNameNS(W_NS, 'p'))
         .map((paragraph) => paragraph.textContent), `${scenario.name} reject`).toEqual(scenario.original);
+    }
+  });
+
+  // coverage-rationale: One matrix pins the content-control extension of the terminal ownership rule (#1101) together with its middle-move and non-terminal-control controls.
+  test.openspec('Terminal content-control paragraph uses body-story break ownership')
+    ('uses Word-native break ownership when a move crosses the terminus of a story-closing content control', async () => {
+    const moved = 'the complete movable clause paragraph changes its position here';
+    const first = 'first stable anchor paragraph remains unchanged in its position';
+    const second = 'second stable anchor paragraph remains unchanged throughout';
+    const control = (texts: readonly string[]) =>
+      `<w:sdt><w:sdtPr><w:id w:val="1"/></w:sdtPr><w:sdtContent>${texts.map((text) => paragraphWithText(text)).join('')}</w:sdtContent></w:sdt>`;
+    const trailer = 'trailing body paragraph after the control';
+    for (const scenario of [
+      {
+        name: 'terminal destination inside a story-closing control',
+        original: control([moved, first, second]),
+        revised: control([first, second, moved]),
+        originalTexts: [moved, first, second],
+        revisedTexts: [first, second, moved],
+        marks: [['del'], [], ['ins'], []],
+        rangeParents: ['p', 'p'],
+      },
+      {
+        name: 'terminal source inside a story-closing control',
+        original: control([first, second, moved]),
+        revised: control([moved, first, second]),
+        originalTexts: [first, second, moved],
+        revisedTexts: [moved, first, second],
+        marks: [['ins'], [], ['del'], []],
+        rangeParents: ['p', 'p'],
+      },
+      {
+        name: 'terminal destination inside a story-closing control after a body paragraph',
+        original: paragraphWithText(trailer) + control([moved, first, second]),
+        revised: paragraphWithText(trailer) + control([first, second, moved]),
+        originalTexts: [trailer, moved, first, second],
+        revisedTexts: [trailer, first, second, moved],
+        marks: [[], ['del'], [], ['ins'], []],
+        rangeParents: ['p', 'p'],
+      },
+      {
+        name: 'middle move inside a story-closing control',
+        original: control([moved, first, second]),
+        revised: control([first, moved, second]),
+        originalTexts: [moved, first, second],
+        revisedTexts: [first, moved, second],
+        marks: [['moveFrom'], [], ['moveTo'], []],
+        rangeParents: ['p', 'sdtContent'],
+      },
+      {
+        // The control's last paragraph has a real break after it: a body
+        // paragraph follows the control, so nothing is terminal and the
+        // range markers keep the legacy topology outside the paragraphs.
+        name: 'end of a control that a body paragraph follows',
+        original: control([moved, first, second]) + paragraphWithText(trailer),
+        revised: control([first, second, moved]) + paragraphWithText(trailer),
+        originalTexts: [moved, first, second, trailer],
+        revisedTexts: [first, second, moved, trailer],
+        marks: [['moveFrom'], [], [], ['moveTo'], []],
+        rangeParents: ['sdtContent', 'sdtContent'],
+      },
+    ]) {
+      const compared = await compareDocuments(
+        await buildDocxFromBodyXml(scenario.original),
+        await buildDocxFromBodyXml(scenario.revised),
+        { detectMoves: true, author: 'Comparator', date: new Date('2026-09-28T00:00:00Z') },
+      );
+      const xml = await (await DocxArchive.load(compared.document)).getDocumentXml();
+      const document = parseXml(xml);
+      // Every paragraph in document order, body-level or inside the control.
+      const paragraphs = Array.from(document.getElementsByTagNameNS(W_NS, 'p'));
+      const markNames = paragraphs.map((paragraph) => {
+        const pPr = Array.from(paragraph.childNodes).find((node) =>
+          node.nodeType === 1 && (node as Element).localName === 'pPr') as Element | undefined;
+        const rPr = pPr && Array.from(pPr.childNodes).find((node) =>
+          node.nodeType === 1 && (node as Element).localName === 'rPr') as Element | undefined;
+        return rPr ? Array.from(rPr.childNodes).filter((node): node is Element => node.nodeType === 1)
+          .map((node) => node.localName) : [];
+      });
+      expect(markNames, scenario.name).toEqual(scenario.marks);
+      for (const direction of ['From', 'To']) {
+        const start = document.getElementsByTagNameNS(W_NS, `move${direction}RangeStart`)[0]!;
+        const end = document.getElementsByTagNameNS(W_NS, `move${direction}RangeEnd`)[0]!;
+        expect((start.parentNode as Element).localName, `${scenario.name} ${direction} start`)
+          .toBe(scenario.rangeParents[0]);
+        expect((end.parentNode as Element).localName, `${scenario.name} ${direction} end`)
+          .toBe(scenario.rangeParents[1]);
+      }
+      // The serializer's own verifier sees the detected relation, so a terminal
+      // move left in the legacy topology would be reported here.
+      const treeBody = (body: string) => parseXml(`<w:document xmlns:w="${W_NS}"><w:body>${body}</w:body></w:document>`).documentElement;
+      const { tree, moves } = constructTaggedTree(treeBody(scenario.original), treeBody(scenario.revised));
+      expect(moves, scenario.name).toHaveLength(1);
+      const treeXml = serializeTaggedTree(tree, createPreservePlan(treeBody(scenario.original), treeBody(scenario.revised), tree, {
+        author: 'Comparator', date: '2026-09-28T00:00:00Z',
+      }), { moves });
+      expect(verifySerializedMoveRanges(treeXml, moves), scenario.name).toEqual([]);
+      // The control survives both projections with the moved paragraph inside it.
+      const texts = (projection: string) => Array.from(parseXml(projection).getElementsByTagNameNS(W_NS, 'p'))
+        .map((paragraph) => paragraph.textContent);
+      const controlTexts = (projection: string) => Array.from(parseXml(projection).getElementsByTagNameNS(W_NS, 'sdtContent'))
+        .flatMap((content) => Array.from(content.getElementsByTagNameNS(W_NS, 'p')).map((paragraph) => paragraph.textContent));
+      expect(texts(acceptAllChanges(xml)), `${scenario.name} accept`).toEqual(scenario.revisedTexts);
+      expect(texts(rejectAllChanges(xml)), `${scenario.name} reject`).toEqual(scenario.originalTexts);
+      expect(controlTexts(acceptAllChanges(xml)), `${scenario.name} accept control`)
+        .toEqual(scenario.revisedTexts.filter((text) => text !== trailer));
+      expect(controlTexts(rejectAllChanges(xml)), `${scenario.name} reject control`)
+        .toEqual(scenario.originalTexts.filter((text) => text !== trailer));
+      for (const [project, expected, label] of [
+        [acceptChanges, scenario.revisedTexts, 'native accept'],
+        [rejectChanges, scenario.originalTexts, 'native reject'],
+      ] as const) {
+        const projected = parseXml(xml);
+        project(projected);
+        expect(texts(serializeXml(projected)), `${scenario.name} ${label}`).toEqual(expected);
+      }
     }
   });
 

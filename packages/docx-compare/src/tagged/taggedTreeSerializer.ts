@@ -487,6 +487,34 @@ function indexMoveRangeMarkers(root: WmlElement): MoveRangeMarkerIndex {
   return index;
 }
 
+/**
+ * True for `w:body`, and for the `w:sdtContent` of a block content control
+ * whose closing edge is the end of the body story: nothing but range
+ * boundaries and `w:sectPr` follows the control (or any control it nests in)
+ * up to the body. Word treats the last paragraph of such a control exactly as
+ * the last paragraph of the body: its mark is the story's terminal mark, so a
+ * move that crosses it needs ordinary break ownership (#973) rather than a
+ * paragraph-mark move revision. A control followed by more blocks closes
+ * nothing; its final paragraph has a real break after it.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.34
+ * @see https://github.com/UseJunior/safe-docx/issues/1101
+ */
+function closesBodyStory(container: WmlElement): boolean {
+  if (container.namespaceURI !== W_NS) return false;
+  if (container.localName === 'body') return true;
+  if (container.localName !== 'sdtContent') return false;
+  const control = container.parentNode as WmlElement | null;
+  if (!control || control.namespaceURI !== W_NS || control.localName !== 'sdt') return false;
+  const outer = control.parentNode as WmlElement | null;
+  if (!outer || !closesBodyStory(outer)) return false;
+  const siblings = childElements(outer);
+  const index = siblings.indexOf(control);
+  return index >= 0 && siblings.slice(index + 1).every((candidate) =>
+    RANGE_BOUNDARY_LOCALS.has(candidate.localName) ||
+    (candidate.namespaceURI === W_NS && candidate.localName === 'sectPr'));
+}
+
 function wholeParagraphMoveEndpoint(
   root: WmlElement,
   direction: 'From' | 'To',
@@ -527,7 +555,9 @@ function wholeParagraphMoveEndpoint(
   const parent = paragraph.parentNode as WmlElement | null;
   // Final paragraphs inside table cells carry a structural cell terminator, not
   // the body-story terminal mark characterized by Word's native comparison.
-  if (!parent || parent.namespaceURI !== W_NS || parent.localName !== 'body') return undefined;
+  // A block content control that closes the body story adds no terminator of
+  // its own: its last paragraph mark is the story's terminal mark (#1101).
+  if (!parent || !closesBodyStory(parent)) return undefined;
   const siblings = childElements(parent);
   const paragraphIndex = siblings.indexOf(paragraph);
   if (paragraphIndex < 0) return undefined;
