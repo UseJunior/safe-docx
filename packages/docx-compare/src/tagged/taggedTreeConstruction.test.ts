@@ -258,6 +258,18 @@ describe('complete tagged-tree construction', () => {
         [0.8, 0.8],
         [0.8, 0.8],
       ]));
+      // Rows and columns with no eligible score cannot pair; skipping them must
+      // not change the pairs chosen or the indices they are reported under.
+      expect(globallyPairCandidates([
+        [undefined, undefined, undefined],
+        [0.9, undefined, 0.8],
+        [undefined, undefined, undefined],
+        [0.85, undefined, undefined],
+      ])).toEqual([
+        [1, 2],
+        [3, 0],
+      ]);
+      expect(globallyPairCandidates([[undefined, undefined], [undefined, undefined]])).toEqual([]);
     },
   );
 

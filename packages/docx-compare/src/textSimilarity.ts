@@ -1,4 +1,5 @@
-function normalizedWordSet(text: string, caseInsensitive: boolean): Set<string> {
+/** Lowercase (optionally) and split text into its set of whitespace-delimited words. */
+export function normalizedWordSet(text: string, caseInsensitive: boolean): Set<string> {
   const normalized = caseInsensitive ? text.toLowerCase() : text;
   return new Set(normalized.split(/\s+/u).filter(Boolean));
 }
@@ -14,8 +15,14 @@ export function jaccardWordSimilarity(
   text2: string,
   caseInsensitive = true,
 ): number {
-  const words1 = normalizedWordSet(text1, caseInsensitive);
-  const words2 = normalizedWordSet(text2, caseInsensitive);
+  return jaccardWordSetSimilarity(
+    normalizedWordSet(text1, caseInsensitive),
+    normalizedWordSet(text2, caseInsensitive),
+  );
+}
+
+/** {@link jaccardWordSimilarity} over word sets that are already normalized. */
+export function jaccardWordSetSimilarity(words1: ReadonlySet<string>, words2: ReadonlySet<string>): number {
   if (words1.size === 0 && words2.size === 0) return 1;
   if (words1.size === 0 || words2.size === 0) return 0;
   let intersectionSize = 0;
@@ -29,8 +36,14 @@ export function wordContainmentSimilarity(
   text2: string,
   caseInsensitive = true,
 ): number {
-  const words1 = normalizedWordSet(text1, caseInsensitive);
-  const words2 = normalizedWordSet(text2, caseInsensitive);
+  return wordSetContainmentSimilarity(
+    normalizedWordSet(text1, caseInsensitive),
+    normalizedWordSet(text2, caseInsensitive),
+  );
+}
+
+/** {@link wordContainmentSimilarity} over word sets that are already normalized. */
+export function wordSetContainmentSimilarity(words1: ReadonlySet<string>, words2: ReadonlySet<string>): number {
   if (words1.size === 0 && words2.size === 0) return 1;
   if (words1.size === 0 || words2.size === 0) return 0;
   let intersectionSize = 0;
