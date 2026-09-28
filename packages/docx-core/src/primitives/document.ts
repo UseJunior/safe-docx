@@ -1506,8 +1506,8 @@ export class DocxDocument {
     text: string;
     initials?: string;
     body?: import('./comments.js').CommentBodyParagraph[];
-    /** Definition `w:date`, settable without a `RevisionContext` (#961). */
-    date?: string;
+    /** Definition `w:date`, settable without a `RevisionContext` (#961); `null` writes none (#1103). */
+    date?: string | null;
   }, ctx?: RevisionContext): Promise<AddCommentResult> {
     const p = findParagraphByBookmarkId(this.documentXml, params.paragraphId);
     if (!p) throw new Error(`Paragraph not found: ${params.paragraphId}`);
@@ -1541,8 +1541,8 @@ export class DocxDocument {
     text: string;
     initials?: string;
     body?: import('./comments.js').CommentBodyParagraph[];
-    /** Definition `w:date`, settable without a `RevisionContext` (#961). */
-    date?: string;
+    /** Definition `w:date`, settable without a `RevisionContext` (#961); `null` writes none (#1103). */
+    date?: string | null;
   }, ctx?: RevisionContext): Promise<AddCommentReplyResult> {
     await bootstrapCommentParts(this.zip);
     const result = await addCommentReplyImpl(this.documentXml, this.zip, {

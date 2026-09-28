@@ -67,6 +67,14 @@ async function partXml(buffer: Buffer, path: string): Promise<string> {
   return zip.file(path)!.async('string');
 }
 
+/** Drop every `w:date` from the comments part, as a source authored without creation stamps would look (#1103). */
+async function stripCommentDates(buffer: Buffer): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(buffer);
+  const commentsXml = await zip.file('word/comments.xml')!.async('string');
+  zip.file('word/comments.xml', commentsXml.replace(/ w:date="[^"]*"/gu, ''));
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
 function physicalText(document: DocxDocument): string {
   return document.getParagraphs().map((paragraph) => getParagraphRuns(paragraph).map((run) => run.text).join('')).join('\n');
 }
@@ -342,6 +350,56 @@ describe('annotation-only projection preserves existing revisions', () => {
     const rejected = await rejectAll(result.tracked);
     expect(rejected.referenceIds).toHaveLength(2);
     expect(rejected.comments.map((comment) => comment.text)).toEqual(['Original note', 'Fresh note']);
+  });
+
+  test('[SDX-MDOC-154] re-emits an undated source comment and its replies with no w:date', async () => {
+    // Issue #1103 reproduction: a source comment that never carried w:date was
+    // stamped with the compile time once an author change forced re-emission.
+    const source = await stripCommentDates(await revisedSource('ins', 'comment', 'nested'));
+    expect(await partXml(source, 'word/comments.xml')).not.toContain('w:date=');
+    const imported = await importDocxToMarkdoc(source);
+    const annotationTags = imported.markdoc.match(/\{% annotation [^%]*%\}/gu) ?? [];
+    expect(annotationTags).toHaveLength(3);
+    expect(annotationTags.some((tag) => tag.includes(' date='))).toBe(false);
+    const markdoc = imported.markdoc
+      .replaceAll('source-presentation="comment"', 'source-presentation="comment" presentation="comment"')
+      .replace('author="Reviewer"', 'author="Other Reviewer"');
+
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+
+    expect(await partXml(result.tracked, 'word/comments.xml')).not.toContain('w:date=');
+    expect(await insertionsWrappingCommentReferences(result.tracked)).toEqual([]);
+    const projected = await (await DocxDocument.load(result.tracked)).getComments();
+    expect(projected).toHaveLength(1);
+    expect(projected[0]).toMatchObject({ author: 'Other Reviewer', initials: 'RV', text: 'Original note', date: '' });
+    expect(projected[0]?.replies[0]).toMatchObject({ author: 'Responder', text: 'Original reply', date: '' });
+    expect(projected[0]?.replies[0]?.replies[0]).toMatchObject({ author: 'Leaf', text: 'Original leaf', date: '' });
+  });
+
+  test('[SDX-MDOC-154] keeps a dated source comment\'s date on re-emission and still dates a new undated authored comment', async () => {
+    // Control for #1103: the omission is limited to source comments that had
+    // no date. A dated source comment keeps its own date through the same
+    // author-change path, and a newly authored comment with no date= attribute
+    // is still stamped with the compile time.
+    const source = await revisedSource('ins', 'comment', true);
+    const sourceComments = await (await DocxDocument.load(source)).getComments();
+    const sourceDates = [sourceComments[0]!.date, sourceComments[0]!.replies[0]!.date];
+    expect(sourceDates.every((date) => date.length > 0)).toBe(true);
+    const imported = await importDocxToMarkdoc(source);
+    const paragraphId = requireMarkdoc(imported.markdoc).scaffold[0]!.id;
+    const markdoc = imported.markdoc
+      .replaceAll('source-presentation="comment"', 'source-presentation="comment" presentation="comment"')
+      .replace('author="Reviewer"', 'author="Other Reviewer"')
+      + authoredAnnotation(paragraphId);
+
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+
+    const projected = await (await DocxDocument.load(result.tracked)).getComments();
+    expect(projected.map((comment) => comment.text)).toEqual(['Original note', 'Fresh note']);
+    expect(projected[0]).toMatchObject({ author: 'Other Reviewer', date: sourceDates[0] });
+    expect(projected[0]?.replies[0]).toMatchObject({ author: 'Responder', date: sourceDates[1] });
+    expect(projected[1]).toMatchObject({ author: 'New Reviewer', text: 'Fresh note' });
+    expect(projected[1]!.date).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u);
   });
 
   test('[SDX-MDOC-99] revision preservation requires per-part equality of pre-existing revisions', () => {

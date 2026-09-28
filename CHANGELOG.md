@@ -2,6 +2,14 @@
 
 ## 0.21.0
 
+- `compileMarkdoc` no longer stamps the compile time on a source comment that
+  had no `w:date` when an author, initials, anchor or thread-parent change
+  forces it to be re-emitted; the output comment and its replies carry no
+  `w:date`, as the source did. Dated source comments keep their date and newly
+  authored comments are still dated. `DocxDocument.addComment` and
+  `addCommentReply` accept `date: null` to write no `w:date`; leaving `date`
+  out keeps the existing default. (#1103)
+
 - The `docx-markdoc` CLI now reports why a `.mdoc` was rejected. When a
   command fails with a `DocxMarkdocError`, stderr prints one
   `ERROR <code>: <message> (line N)` line per validation issue (for example

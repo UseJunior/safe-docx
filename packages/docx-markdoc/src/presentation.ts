@@ -293,12 +293,17 @@ export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requ
     const revisionCtx = annotation.sourcePresentation === 'authored' && annotation.date
       ? createRevisionContext({ author: annotation.author ?? 'Markdoc', date: annotation.date })
       : undefined;
+    // A source comment that never carried `w:date` must not gain the compile
+    // time on re-emission: `null` tells docx-core to write no `w:date`. Any
+    // other annotation keeps the default, so a newly authored comment without
+    // a `date=` attribute is still stamped (#1103).
+    const date = annotation.sourcePresentation === 'comment' ? (annotation.date ?? null) : annotation.date;
     if (annotation.replyParentId) {
       const parentCommentId = commentIds.get(annotation.replyParentId);
       if (parentCommentId === undefined) throw new DocxMarkdocError('ANNOTATION_REPLY_PROJECTION_UNRESOLVABLE', `Annotation ${annotation.id} reply parent was not emitted as a comment.`, { annotationId: annotation.id });
       const result = await document.addCommentReply({
         parentCommentId,
-        author: annotation.author ?? 'Markdoc', initials: annotation.initials, date: annotation.date,
+        author: annotation.author ?? 'Markdoc', initials: annotation.initials, date,
         text: flatText(annotation), body: mergedBody(annotation, rule?.bodyStyle),
       }, revisionCtx);
       commentIds.set(annotation.id, result.commentId);
@@ -308,7 +313,7 @@ export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requ
     const end = anchor.kind === 'point' ? anchor.point : anchor.end;
     const result = await document.addComment({
       paragraphId: start.paragraphId, start: start.offset, end: end.offset,
-      author: annotation.author ?? 'Markdoc', initials: annotation.initials, date: annotation.date,
+      author: annotation.author ?? 'Markdoc', initials: annotation.initials, date,
       text: flatText(annotation), body: mergedBody(annotation, rule?.bodyStyle),
     }, revisionCtx);
     commentIds.set(annotation.id, result.commentId);
