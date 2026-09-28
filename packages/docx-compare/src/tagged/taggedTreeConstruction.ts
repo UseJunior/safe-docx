@@ -444,6 +444,18 @@ function constructBoth(
     ));
   };
   const emitGap = (originalEnd: number, revisedEnd: number): void => {
+    // Content-control property elements are singletons under w:sdt, so pair
+    // them by name whatever the gap lengths: an added w:sdtEndPr must not turn
+    // a changed w:sdtPr into a delete plus insert.
+    while (oi < originalEnd && ri < revisedEnd) {
+      const left = originalChildren[oi]!;
+      const right = revisedChildren[ri]!;
+      if (!isContentControlProperties(left) || left.localName !== right.localName ||
+          left.namespaceURI !== right.namespaceURI) break;
+      emitAlignedPair(left, right);
+      oi++;
+      ri++;
+    }
     while (originalEnd - oi === revisedEnd - ri && oi < originalEnd && ri < revisedEnd) {
       const left = originalChildren[oi]!;
       const right = revisedChildren[ri]!;

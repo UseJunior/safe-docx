@@ -20,8 +20,9 @@ const test = testAllure.epic('Document Comparison')
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' },
   );
 const P = (text: string) => `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
-const sdt = (properties: string, inner: string) =>
-  `<w:sdt>${properties === '' ? '' : `<w:sdtPr>${properties}</w:sdtPr>`}<w:sdtContent>${inner}</w:sdtContent></w:sdt>`;
+const sdt = (properties: string, inner: string, endProperties = '') =>
+  `<w:sdt>${properties === '' ? '' : `<w:sdtPr>${properties}</w:sdtPr>`}`
+  + `${endProperties === '' ? '' : `<w:sdtEndPr>${endProperties}</w:sdtEndPr>`}<w:sdtContent>${inner}</w:sdtContent></w:sdt>`;
 const TAG1 = '<w:tag w:val="t1"/><w:id w:val="5"/>';
 const TAG2 = '<w:tag w:val="t2"/><w:id w:val="5"/>';
 const schemaScript = fileURLToPath(new URL('../../../../scripts/check_emitted_document_schema.mjs', import.meta.url));
@@ -72,43 +73,60 @@ const cases = [
     name: 'block control tag changed, content unchanged (#1095 row 2)',
     original: P('Out') + sdt(TAG1, P('Inside text')),
     revised: P('Out') + sdt(TAG2, P('Inside text')),
-    kind: 'changed', control: { index: 0, id: '5', tag: 't2' }, text: { insertions: 0, deletions: 0 },
+    changes: [{ kind: 'changed', control: { index: 0, id: '5', tag: 't2', element: 'sdtPr' } }], text: { insertions: 0, deletions: 0 },
   },
   {
     name: 'block control tag changed, inner text edited (#1095 row 3)',
     original: P('Out') + sdt(TAG1, P('Inside text')),
     revised: P('Out') + sdt(TAG2, P('Inside text edited')),
-    kind: 'changed', control: { index: 0, id: '5', tag: 't2' }, text: { insertions: 1, deletions: 0 },
+    changes: [{ kind: 'changed', control: { index: 0, id: '5', tag: 't2', element: 'sdtPr' } }], text: { insertions: 1, deletions: 0 },
   },
   {
     name: 'block control alias added (#1095 row 4)',
     original: P('Out') + sdt('<w:id w:val="5"/>', P('Inside text')),
     revised: P('Out') + sdt('<w:alias w:val="Clause"/><w:id w:val="5"/>', P('Inside text')),
-    kind: 'changed', control: { index: 0, id: '5', alias: 'Clause' }, text: { insertions: 0, deletions: 0 },
+    changes: [{ kind: 'changed', control: { index: 0, id: '5', alias: 'Clause', element: 'sdtPr' } }], text: { insertions: 0, deletions: 0 },
   },
   {
     name: 'block control w:sdtPr added',
     original: P('Out') + sdt('', P('Inside text')),
     revised: P('Out') + sdt(TAG1, P('Inside text')),
-    kind: 'added', control: { index: 0, id: '5', tag: 't1' }, text: { insertions: 0, deletions: 0 },
+    changes: [{ kind: 'added', control: { index: 0, id: '5', tag: 't1', element: 'sdtPr' } }], text: { insertions: 0, deletions: 0 },
   },
   {
     name: 'block control w:sdtPr removed',
     original: P('Out') + sdt(TAG1, P('Inside text')),
     revised: P('Out') + sdt('', P('Inside text')),
-    kind: 'removed', control: { index: 0, id: '5', tag: 't1' }, text: { insertions: 0, deletions: 0 },
+    changes: [{ kind: 'removed', control: { index: 0, id: '5', tag: 't1', element: 'sdtPr' } }], text: { insertions: 0, deletions: 0 },
   },
   {
     name: 'inline (run-level) control tag changed',
     original: `<w:p><w:r><w:t>Out </w:t></w:r>${sdt(TAG1, '<w:r><w:t>Inside text</w:t></w:r>')}</w:p>`,
     revised: `<w:p><w:r><w:t>Out </w:t></w:r>${sdt(TAG2, '<w:r><w:t>Inside text</w:t></w:r>')}</w:p>`,
-    kind: 'changed', control: { index: 0, id: '5', tag: 't2' }, text: { insertions: 0, deletions: 0 },
+    changes: [{ kind: 'changed', control: { index: 0, id: '5', tag: 't2', element: 'sdtPr' } }], text: { insertions: 0, deletions: 0 },
   },
   {
     name: 'inline (run-level) control tag changed and its text edited',
     original: `<w:p><w:r><w:t>Out </w:t></w:r>${sdt(TAG1, '<w:r><w:t>Inside text</w:t></w:r>')}</w:p>`,
     revised: `<w:p><w:r><w:t>Out </w:t></w:r>${sdt(TAG2, '<w:r><w:t>Inside text edited</w:t></w:r>')}</w:p>`,
-    kind: 'changed', control: { index: 0, id: '5', tag: 't2' }, text: { insertions: 1, deletions: 0 },
+    changes: [{ kind: 'changed', control: { index: 0, id: '5', tag: 't2', element: 'sdtPr' } }], text: { insertions: 1, deletions: 0 },
+  },
+  {
+    name: 'block control tag changed while w:sdtEndPr is added',
+    original: P('Out') + sdt(TAG1, P('Inside text')),
+    revised: P('Out') + sdt(TAG2, P('Inside text'), '<w:rPr><w:b/></w:rPr>'),
+    changes: [
+      { kind: 'changed', control: { index: 0, id: '5', tag: 't2', element: 'sdtPr' } },
+      { kind: 'added', control: { index: 0, id: '5', tag: 't2', element: 'sdtEndPr' } },
+    ],
+    text: { insertions: 0, deletions: 0 },
+  },
+  {
+    name: 'block control w:sdtEndPr changed alone',
+    original: P('Out') + sdt(TAG1, P('Inside text'), '<w:rPr><w:b/></w:rPr>'),
+    revised: P('Out') + sdt(TAG1, P('Inside text'), '<w:rPr><w:i/></w:rPr>'),
+    changes: [{ kind: 'changed', control: { index: 0, id: '5', tag: 't1', element: 'sdtEndPr' } }],
+    text: { insertions: 0, deletions: 0 },
   },
 ] as const;
 
@@ -132,12 +150,14 @@ describe('content-control property differences (#1095)', () => {
       expect({ insertions: result.stats.insertions, deletions: result.stats.deletions }).toEqual(scenario.text);
 
       // AC 2: never silent — the difference is disclosed with the control's identity.
-      expect(result.unrepresentedChanges).toEqual([
-        { scope: 'contentControl', kind: scenario.kind, sectionIndex: 0, contentControl: scenario.control },
-      ]);
-      const [warning] = formatUnrepresentedChangeWarnings(result.unrepresentedChanges);
-      expect(warning).toContain(`${scenario.kind} properties (w:sdtPr) of content control #1`);
-      expect(warning).toContain('has no tracked-change markup');
+      expect(result.unrepresentedChanges).toEqual(scenario.changes.map(({ kind, control }) =>
+        ({ scope: 'contentControl', kind, sectionIndex: 0, contentControl: control })));
+      const warnings = formatUnrepresentedChangeWarnings(result.unrepresentedChanges);
+      expect(warnings).toHaveLength(scenario.changes.length);
+      for (const [position, { kind, control }] of scenario.changes.entries()) {
+        expect(warnings[position]).toContain(`${kind} properties (w:${control.element}) of content control #1`);
+        expect(warnings[position]).toContain('has no tracked-change markup');
+      }
 
       // AC 3: accept-all and reject-all still project the revised and original
       // control text, through both the AST projector and the native one.
@@ -173,7 +193,7 @@ describe('content-control property differences (#1095)', () => {
     const result = await compareDocuments(original, revised, { author: 'C' });
     await assertSchema(result.document);
     expect(result.unrepresentedChanges).toEqual([
-      { scope: 'contentControl', kind: 'changed', sectionIndex: 1, contentControl: { index: 1, id: '2', tag: 'b2' } },
+      { scope: 'contentControl', kind: 'changed', sectionIndex: 1, contentControl: { index: 1, id: '2', tag: 'b2', element: 'sdtPr' } },
     ]);
     expect(formatUnrepresentedChangeWarnings(result.unrepresentedChanges)[0])
       .toContain('content control #2 (tag "b2", id 2) in section 2');

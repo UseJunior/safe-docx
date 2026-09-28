@@ -10,7 +10,8 @@ function describeScope(change: UnrepresentedChange): string {
       control?.id !== undefined ? `id ${control.id}` : undefined,
     ].filter((part) => part !== undefined);
     const ordinal = control ? `content control #${control.index + 1}` : 'content control';
-    return `properties (w:sdtPr) of ${ordinal}${identity.length > 0 ? ` (${identity.join(', ')})` : ''}`;
+    const element = control?.element ?? 'sdtPr';
+    return `properties (w:${element}) of ${ordinal}${identity.length > 0 ? ` (${identity.join(', ')})` : ''}`;
   }
   return change.role ? `${change.role} ${change.scope}` : change.scope;
 }

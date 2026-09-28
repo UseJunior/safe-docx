@@ -95,7 +95,9 @@ export type UnrepresentedChangeKind = 'added' | 'removed' | 'changed';
 export interface UnrepresentedContentControlChange {
   /** Zero-based document-order ordinal among the revised document's content controls. */
   index: number;
-  /** `w:id`, `w:tag` and `w:alias` of the published (revised) properties, when present. */
+  /** The property element that differs. */
+  element: 'sdtPr' | 'sdtEndPr';
+  /** `w:id`, `w:tag` and `w:alias` from the control's `w:sdtPr` (revised side first), when present. */
   id?: string;
   tag?: string;
   alias?: string;

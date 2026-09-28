@@ -28,32 +28,44 @@ const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
  * @see https://github.com/UseJunior/safe-docx/issues/1095
  */
 export function collectContentControlPropertyChanges(tree: TaggedNode): UnrepresentedChange[] {
+  type ControlIdentity = Omit<UnrepresentedContentControlChange, 'element'>;
   const changes: UnrepresentedChange[] = [];
   let sectionIndex = 0;
   let controlIndex = -1;
-  const identity = (properties: Element, index: number): UnrepresentedContentControlChange => {
+  const isNamed = (candidate: Element, name: string): boolean =>
+    candidate.namespaceURI === W_NS && localName(candidate) === name;
+  const propertiesOf = (control: Element | undefined): Element | undefined =>
+    control && childElements(control).find((candidate) => isNamed(candidate, 'sdtPr'));
+  const identity = (control: TaggedNode, index: number): ControlIdentity => {
+    // The control's w:sdtPr names it (w:id, w:tag, w:alias); read the revised
+    // side first so an w:sdtEndPr change or a removed w:sdtPr still names the
+    // control the reader will find in the published document.
+    const properties = propertiesOf(representative(control, 'revised'))
+      ?? propertiesOf(representative(control, 'original'));
     const value = (name: string): string | undefined => {
-      const child = childElements(properties).find(
-        (candidate) => candidate.namespaceURI === W_NS && localName(candidate) === name,
-      );
+      const child = properties && childElements(properties).find((candidate) => isNamed(candidate, name));
       const attribute = child?.getAttributeNS(W_NS, 'val');
       return attribute === null || attribute === undefined ? undefined : attribute;
     };
-    const control: UnrepresentedContentControlChange = { index };
+    const result: ControlIdentity = { index };
     const id = value('id');
     const tag = value('tag');
     const alias = value('alias');
-    if (id !== undefined) control.id = id;
-    if (tag !== undefined) control.tag = tag;
-    if (alias !== undefined) control.alias = alias;
-    return control;
+    if (id !== undefined) result.id = id;
+    if (tag !== undefined) result.tag = tag;
+    if (alias !== undefined) result.alias = alias;
+    return result;
   };
-  const visit = (node: TaggedNode): void => {
+  const visit = (node: TaggedNode, control: ControlIdentity | undefined): void => {
     const revisedSide = node.tag !== 'original';
     const element = representative(node, revisedSide ? 'revised' : 'original')!;
+    let current = control;
     if (element.namespaceURI === W_NS) {
       const name = localName(element);
-      if (name === 'sdt' && revisedSide) controlIndex++;
+      if (name === 'sdt') {
+        if (revisedSide) controlIndex++;
+        current = identity(node, Math.max(controlIndex, 0));
+      }
       if (name === 'sdtPr' || name === 'sdtEndPr') {
         const kind: UnrepresentedChangeKind | null = node.tag === 'both'
           ? (subtreeSignature(node.original) === subtreeSignature(node.revised) ? null : 'changed')
@@ -63,7 +75,7 @@ export function collectContentControlPropertyChanges(tree: TaggedNode): Unrepres
             scope: 'contentControl',
             kind,
             sectionIndex,
-            contentControl: identity(element, Math.max(controlIndex, 0)),
+            contentControl: { ...(current ?? { index: Math.max(controlIndex, 0) }), element: name },
           });
         }
         return;
@@ -72,9 +84,9 @@ export function collectContentControlPropertyChanges(tree: TaggedNode): Unrepres
       // final w:sectPr follows every block, so counting it changes nothing.
       if (name === 'sectPr' && revisedSide) sectionIndex++;
     }
-    node.children.forEach(visit);
+    node.children.forEach((child) => visit(child, current));
   };
-  visit(tree);
+  visit(tree, undefined);
   return changes;
 }
 
