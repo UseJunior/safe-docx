@@ -209,9 +209,13 @@ export type AddCommentParams = {
    * `RevisionContext`. A caller re-emitting a comment that already existed in
    * the source stamps its date here without wrapping the reference run in a
    * tracked insertion. Takes precedence over `ctx.date` when both are given.
+   * `null` writes no `w:date` at all, for re-emitting a source comment that
+   * never carried one; `undefined` keeps the default (`ctx.date`, else the
+   * process clock).
    * @see https://github.com/UseJunior/safe-docx/issues/961
+   * @see https://github.com/UseJunior/safe-docx/issues/1103
    */
-  date?: string;
+  date?: string | null;
 };
 
 /**
@@ -399,7 +403,7 @@ export async function addComment(
     initials: initials ?? author.charAt(0).toUpperCase(),
     text,
     paraId,
-    date: params.date ?? ctx?.date,
+    date: resolveDefinitionDate(params.date, ctx),
     body: params.body,
     hyperlinkRelationshipIds,
   });
@@ -411,6 +415,16 @@ export async function addComment(
   return { commentId };
 }
 
+/**
+ * Resolve the `w:date` a new comment definition should carry. An explicit
+ * `null` from the caller means "no `w:date`" and wins over `ctx.date`, exactly
+ * as an explicit string does; `undefined` defers to the revision context and
+ * then to the process clock inside `addCommentElement` (#961, #1103).
+ */
+function resolveDefinitionDate(date: string | null | undefined, ctx?: RevisionContext): string | null | undefined {
+  return date === null ? null : (date ?? ctx?.date);
+}
+
 // ── Threaded replies ────────────────────────────────────────────────────
 
 export type AddCommentReplyParams = {
@@ -420,7 +434,7 @@ export type AddCommentReplyParams = {
   initials?: string;
   body?: CommentBodyParagraph[];
   /** Creation stamp for the reply definition (`w:date`); see `AddCommentParams.date`. */
-  date?: string;
+  date?: string | null;
 };
 
 export type AddCommentReplyResult = {
@@ -472,7 +486,7 @@ export async function addCommentReply(
     initials: initials ?? author.charAt(0).toUpperCase(),
     text,
     paraId: replyParaId,
-    date: params.date ?? ctx?.date,
+    date: resolveDefinitionDate(params.date, ctx),
     body: params.body,
     hyperlinkRelationshipIds,
   });
@@ -638,7 +652,10 @@ function ensureCommentPartNamespaceAliases(commentsDoc: Document): void {
  * context's date — so the comment definition and any body revision markup
  * emitted for the same operation agree on the calendar date Word displays,
  * even across a UTC/local day boundary. Only when the caller supplies no date
- * does the process clock remain the default. Author and initials always come
+ * does the process clock remain the default. An explicit `null` writes no
+ * `w:date` attribute at all, which is how a source comment that never carried
+ * one is re-emitted without gaining the compile time (#1103); `w:date` is
+ * optional on `w:comment`. Author and initials always come
  * from `AddCommentParams` / `AddCommentReplyParams`, never from
  * `RevisionContext`: the comment's attribution is the commenting author, which
  * is allowed to differ from the tracked-change author wrapping the reference
@@ -646,6 +663,7 @@ function ensureCommentPartNamespaceAliases(commentsDoc: Document): void {
  * does.
  * @see #859
  * @see #961
+ * @see #1103
  */
 function addCommentElement(
   commentsDoc: Document,
@@ -655,7 +673,7 @@ function addCommentElement(
     initials: string;
     text: string;
     paraId: string;
-    date?: string;
+    date?: string | null;
     body?: CommentBodyParagraph[];
     hyperlinkRelationshipIds?: ReadonlyMap<string, string>;
   },
@@ -669,7 +687,7 @@ function addCommentElement(
   const commentEl = commentsDoc.createElementNS(OOXML.W_NS, 'w:comment');
   commentEl.setAttribute('w:id', String(params.id));
   commentEl.setAttribute('w:author', params.author);
-  commentEl.setAttribute('w:date', params.date ?? isoNow());
+  if (params.date !== null) commentEl.setAttribute('w:date', params.date ?? isoNow());
   commentEl.setAttribute('w:initials', params.initials);
 
   // Comment body: <w:p w14:paraId="..."><w:pPr><w:pStyle w:val="CommentText"/></w:pPr><w:r><w:annotationRef/></w:r><w:r><w:t>text</w:t></w:r></w:p>

@@ -1506,8 +1506,8 @@ export class DocxDocument {
     text: string;
     initials?: string;
     body?: import('./comments.js').CommentBodyParagraph[];
-    /** Definition `w:date`, settable without a `RevisionContext` (#961). */
-    date?: string;
+    /** Definition `w:date`, settable without a `RevisionContext` (#961); `null` writes none (#1103). */
+    date?: string | null;
   }, ctx?: RevisionContext): Promise<AddCommentResult> {
     const p = findParagraphByBookmarkId(this.documentXml, params.paragraphId);
     if (!p) throw new Error(`Paragraph not found: ${params.paragraphId}`);
@@ -1541,8 +1541,8 @@ export class DocxDocument {
     text: string;
     initials?: string;
     body?: import('./comments.js').CommentBodyParagraph[];
-    /** Definition `w:date`, settable without a `RevisionContext` (#961). */
-    date?: string;
+    /** Definition `w:date`, settable without a `RevisionContext` (#961); `null` writes none (#1103). */
+    date?: string | null;
   }, ctx?: RevisionContext): Promise<AddCommentReplyResult> {
     await bootstrapCommentParts(this.zip);
     const result = await addCommentReplyImpl(this.documentXml, this.zip, {
@@ -1834,13 +1834,19 @@ export class DocxDocument {
    * Falls back to full re-serialization (blocksRestored: 0) when no original
    * text was captured or reconciliation fails.
    *
+   * With `fileDate`, every ZIP entry is written with that date instead of the
+   * wall clock, so the bytes depend only on the document's content.
+   *
    * @see https://github.com/UseJunior/safe-docx/issues/408
+   * @see https://github.com/UseJunior/safe-docx/issues/1110
    */
   async toBuffer(opts?: {
     cleanBookmarks?: boolean;
     minimalReserialization?: boolean;
     preserveOriginalBookmarks?: boolean;
+    fileDate?: Date;
   }): Promise<{ buffer: Buffer; bookmarksRemoved: number; blocksRestored: number }> {
+    const zipOptions = opts?.fileDate ? { fileDate: opts.fileDate } : undefined;
     // Always write the latest document.xml when saving.
     // Important: when cleanBookmarks=true (download), we must NOT mutate session state.
     const xmlWithBookmarks = serializeXml(this.documentXml);
@@ -1869,12 +1875,12 @@ export class DocxDocument {
       // Temporarily swap document.xml in the zip for output, then restore.
       maybeCaptureEmittedDocumentXml(cleanedXml);
       this.zip.writeText('word/document.xml', cleanedXml);
-      const buffer = await this.zip.toBuffer();
+      const buffer = await this.zip.toBuffer(zipOptions);
       this.zip.writeText('word/document.xml', xmlWithBookmarks);
       return { buffer, bookmarksRemoved, blocksRestored };
     }
 
-    const buffer = await this.zip.toBuffer();
+    const buffer = await this.zip.toBuffer(zipOptions);
     return { buffer, bookmarksRemoved: 0, blocksRestored: 0 };
   }
 

@@ -2,6 +2,15 @@ import JSZip from 'jszip';
 
 export type ZipCompression = 'STORE' | 'DEFLATE';
 
+/**
+ * Fixed ZIP entry date for archives whose bytes must depend only on their
+ * content. JSZip stamps each entry it writes with the current time, and the
+ * DOS timestamp has 2-second resolution, so two otherwise-identical archives
+ * produced on different ticks differ byte-for-byte (issue #1110). Any date on
+ * or after 1980-01-01 works; 2006-01-01T00:00:00Z is the OOXML vintage.
+ */
+export const ZIP_EPOCH = new Date(Date.UTC(2006, 0, 1));
+
 export type ZipEntryInfo = {
   name: string;
   isDirectory: boolean;
@@ -22,6 +31,8 @@ function safeNonNegativeInt(value: unknown): number {
 
 export class DocxZip {
   private zip: JSZip;
+  /** Tail of the in-flight `toBuffer` chain; see `toBuffer`. */
+  private serialization: Promise<void> = Promise.resolve();
 
   private constructor(zip: JSZip) {
     this.zip = zip;
@@ -62,7 +73,21 @@ export class DocxZip {
     return files;
   }
 
-  async toBuffer(): Promise<Buffer> {
+  /**
+   * Serialize the archive. With `fileDate`, every entry is written with that
+   * date instead of the time it was (re)written, so the output depends only on
+   * the entries' content; the in-memory dates are restored afterwards so a
+   * later save without the option behaves as before. Overlapping calls on one
+   * instance run one at a time, so a concurrent save without the option never
+   * observes another call's fixed date.
+   */
+  toBuffer(opts?: { fileDate?: Date }): Promise<Buffer> {
+    const run = this.serialization.then(() => this.serialize(opts));
+    this.serialization = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  private async serialize(opts?: { fileDate?: Date }): Promise<Buffer> {
     // OPC packages never need directory entries (Word does not emit them);
     // drop any that came in via the source archive or earlier writes so the
     // output contract is simply "zero directory entries". NOT zip.remove():
@@ -70,13 +95,27 @@ export class DocxZip {
     for (const file of Object.values(this.zip.files)) {
       if (file.dir) delete this.zip.files[file.name];
     }
-    // jszip defaults to STORE, which inflated saves ~6x.
-    const out = await this.zip.generateAsync({
-      type: 'nodebuffer',
-      compression: 'DEFLATE',
-      compressionOptions: { level: 6 },
-    });
-    return out as Buffer;
+    const savedDates = new Map<string, Date>();
+    if (opts?.fileDate) {
+      for (const file of Object.values(this.zip.files)) {
+        savedDates.set(file.name, file.date);
+        file.date = opts.fileDate;
+      }
+    }
+    try {
+      // jszip defaults to STORE, which inflated saves ~6x.
+      const out = await this.zip.generateAsync({
+        type: 'nodebuffer',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 6 },
+      });
+      return out as Buffer;
+    } finally {
+      for (const [name, date] of savedDates) {
+        const file = this.zip.files[name];
+        if (file) file.date = date;
+      }
+    }
   }
 }
 

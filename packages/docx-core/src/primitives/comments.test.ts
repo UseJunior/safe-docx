@@ -1944,6 +1944,54 @@ describe('comments — edge cases and branch coverage', () => {
       });
     });
 
+    test('writes no w:date when params.date is null and still stamps the process clock when it is omitted', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+      let paragraph: Element;
+      let commentEls: Element[];
+
+      // A source comment that never carried w:date is re-emitted without one.
+      // An explicit null must also win over the revision context's date, the
+      // way an explicit string does; undefined keeps the clock default (#1103).
+      const frozenClock = '2026-05-03T14:15:16Z';
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-02-02T02:02:02Z',
+        idState: createRevisionIdState(),
+      });
+
+      await given('a bootstrapped document and a frozen process clock', async () => {
+        ({ zip, doc, p: paragraph } = await setupWithComment());
+      });
+
+      await when('a null-dated root and reply, a null-dated root under a revision context, and an undated root are added', async () => {
+        await withDeterministicMetadata([0.1357, 0.2468, 0.3579, 0.4680], async () => {
+          const nullDated = await addComment(doc, zip, {
+            paragraphEl: paragraph, start: 0, end: 5, author: 'Reviewer', initials: 'RV', text: 'No date', date: null,
+          });
+          await addCommentReply(doc, zip, {
+            parentCommentId: nullDated.commentId, author: 'Responder', initials: 'RS', text: 'No date either', date: null,
+          });
+          await addComment(doc, zip, {
+            paragraphEl: paragraph, start: 6, end: 11, author: 'Reviewer', initials: 'RV', text: 'Null beats ctx', date: null,
+          }, ctx);
+          await addComment(doc, zip, {
+            paragraphEl: paragraph, start: 0, end: 11, author: 'Reviewer', initials: 'RV', text: 'Default clock',
+          });
+        });
+
+        const commentsDoc = parseXml(await zip.readText('word/comments.xml'));
+        commentEls = Array.from(commentsDoc.getElementsByTagNameNS(W_NS, W.comment)) as Element[];
+      });
+
+      await then('the three null-dated definitions carry no w:date and the undated one carries the clock', () => {
+        expect(commentEls).toHaveLength(4);
+        expect(commentEls.slice(0, 3).map((el) => el.hasAttribute('w:date'))).toEqual([false, false, false]);
+        expect(commentEls.slice(0, 3).map((el) => el.getAttribute('w:author'))).toEqual(['Reviewer', 'Responder', 'Reviewer']);
+        expect(commentEls[3]!.getAttribute('w:date')).toBe(frozenClock);
+      });
+    });
+
     test('preserves the legacy untracked body behavior when ctx is omitted for addComment, addCommentReply, and deleteComment', async ({ given, when, then }: AllureBddContext) => {
       let zip: DocxZip;
       let doc: Document;
