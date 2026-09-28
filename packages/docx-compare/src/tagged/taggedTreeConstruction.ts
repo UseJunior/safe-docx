@@ -1,5 +1,6 @@
 import type { WmlElement } from '@usejunior/docx-core';
 import {
+  buildSectPrBaseSnapshot,
   childElements,
   DEFAULT_MOVE_DETECTION_SETTINGS,
   findParagraphByBookmarkId,
@@ -187,7 +188,15 @@ function propertyDelta(original: WmlElement, revised: WmlElement): PropertyDelta
     : childElements(revised).find((child) => child.localName === descriptor.child) ?? null;
   const propertySignature = (property: WmlElement | null): string => {
     if (!property) return '';
-    const normalized = property.cloneNode(true) as WmlElement;
+    // A section delta is recorded as a `CT_SectPrBase` snapshot, which never
+    // carries header/footer references (#944). Compare what that snapshot
+    // would hold, so sections that differ only in their story references
+    // produce no delta: there would be nothing for `w:sectPrChange` to
+    // record and nothing for `stats.formatChanges` to count (#1100). The
+    // reference difference is disclosed through `unrepresentedChanges`.
+    const normalized = descriptor.scope === 'section'
+      ? buildSectPrBaseSnapshot(property, property.ownerDocument!) as WmlElement
+      : property.cloneNode(true) as WmlElement;
     const stripPriorRevisionsAndWhitespace = (element: Element): void => {
       for (const child of Array.from(element.childNodes)) {
         if (child.nodeType === 1) {
@@ -295,6 +304,18 @@ function lcsPairs(
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.38
  * @see https://github.com/UseJunior/safe-docx/issues/1095
  */
+/**
+ * Section properties are revised as one `w:sectPrChange` unit; their children
+ * are never aligned or revised individually.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @see https://github.com/UseJunior/safe-docx/issues/1100
+ */
+function isSectionProperties(element: WmlElement): boolean {
+  return element.namespaceURI === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' &&
+    element.localName === 'sectPr';
+}
+
 export function isContentControlProperties(element: WmlElement): boolean {
   return element.namespaceURI === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' &&
     ['sdtPr', 'sdtEndPr'].includes(element.localName);
@@ -418,6 +439,20 @@ function constructBoth(
   originalNumberingIdentities: ReadonlyMap<WmlElement, string>,
   revisedNumberingIdentities: ReadonlyMap<WmlElement, string>,
 ): BothNode {
+  if (isSectionProperties(original)) {
+    // Never descend: section properties are revised as one unit through
+    // `w:sectPrChange`, and a child-level diff would wrap a header/footer
+    // reference in w:ins/w:del inside w:sectPr. The revised properties are
+    // published whole (#1100).
+    return {
+      tag: 'both',
+      original,
+      revised,
+      children: [],
+      opaque: true,
+      propertyDelta: options.detectFormatChanges ? propertyDelta(original, revised) : undefined,
+    };
+  }
   const originalChildren = childElements(original);
   const revisedChildren = childElements(revised);
   const pairs = lcsPairs(

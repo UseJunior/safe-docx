@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- DOCX comparison no longer emits a `w:sectPrChange` whose snapshot equals
+  the live section properties when two sections differ only in their header
+  or footer references (a footer removed or added, a header retargeted to
+  another part). The `CT_SectPrBase` snapshot never carries those references
+  (#944), so the revision changed nothing and `stats.formatChanges` counted
+  it. The comparison now decides on the contents the snapshot would hold; the
+  reference difference is still disclosed through `unrepresentedChanges`, and
+  a section whose page setup also changes still gets one `w:sectPrChange`.
+  (#1100)
+
 - DOCX comparison no longer writes `w:ins`/`w:del` inside `w:sdtPr` when an
   aligned content control's properties differ (a changed `w:tag`, an added
   `w:alias`, a side-only `w:sdtPr`). `CT_SdtPr` admits no revision elements,

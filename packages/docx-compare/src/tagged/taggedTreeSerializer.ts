@@ -1073,8 +1073,11 @@ function applyParagraphPropertyDelta(
     markChange.appendChild(snapshot);
     mark.appendChild(markChange);
   }
+  // Compare the `CT_SectPrBase` snapshots, not the raw elements: a section
+  // that differs only in header/footer references has nothing for
+  // `w:sectPrChange` to record (#944, #1100).
   const serialize = (element: WmlElement | null | undefined): string =>
-    element ? new XMLSerializer().serializeToString(element) : '';
+    element ? new XMLSerializer().serializeToString(buildSectPrBaseSnapshot(element, paragraph.ownerDocument!)) : '';
   if (serialize(liveSection) !== serialize(originalSection)) {
     const section = liveSection ?? paragraph.ownerDocument!.createElementNS(W_NS, 'w:sectPr') as WmlElement;
     if (!liveSection) live.appendChild(section);
@@ -2052,6 +2055,14 @@ function emitNode(
       allocateBookmarkId,
       allocateRevision,
     );
+  }
+  if (node.tag === 'both' && node.opaque && base.namespaceURI === W_NS && base.localName === 'sectPr') {
+    // An aligned section is published whole from the revised side (#1100).
+    // A prior w:sectPrChange in that input is not this comparison's revision
+    // and would be reverted by Reject All; drop it as the delta path does.
+    for (const stale of childElements(base).filter((child) => child.localName === 'sectPrChange')) {
+      base.removeChild(stale);
+    }
   }
   applyPropertyDelta(base, node, nodeRevision);
   const entry = plan.entries.get(node)!;
