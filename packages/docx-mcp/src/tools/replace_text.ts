@@ -70,8 +70,10 @@ function insideTrackedDeletion(el: Element, paragraph: Element): boolean {
  * without the caller having seen them (issue #1097): a field with no result
  * (an `XE` index entry, a `TC` entry, a `PAGE` never updated: complex fields
  * with no `separate` marker) and a footnote or endnote reference. Each is
- * described once, in document order, so a before/after comparison names
- * exactly what the edit removed. Fields with a cached result are left out:
+ * described once, in the order it is closed (a note reference where it sits,
+ * a field at its `end` marker, so a nested field precedes the field around
+ * it), and a before/after comparison names exactly what the edit removed.
+ * Fields with a cached result are left out:
  * their result is in the paragraph text the caller matched, so the caller saw
  * what the range covers. An empty `w:fldSimple` is a zero-length marker the
  * replace primitive keeps in place, so it needs no count.
