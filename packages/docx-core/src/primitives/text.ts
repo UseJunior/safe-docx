@@ -545,14 +545,21 @@ function addParagraphMarkDeletion(p: Element, ctx: RevisionContext): void {
  * anchors: only w:pPr, proofing marks, and runs or hyperlinks whose content
  * was removed. Range markers (bookmarks, comment anchors), embedded content,
  * and every other child count as content.
+ *
+ * Under tracked changes the blanked text is still in the paragraph, inside
+ * the `w:del` the edit emitted, and accept-all removes it; so with
+ * `deletionsAreInert` a `w:del` (or `w:moveFrom`) counts as nothing, and a
+ * `w:ins` counts as whatever it wraps. The tracked and clean paths then ask
+ * the same question of the same paragraph (issue #1098).
  */
-function isParagraphInertAfterBlanking(p: Element): boolean {
+function isParagraphInertAfterBlanking(p: Element, deletionsAreInert = false): boolean {
   const isInert = (el: Element): boolean => {
     if (isW(el, W.pPr) || isW(el, 'proofErr')) return true;
+    if (deletionsAreInert && (isW(el, W.del) || isW(el, W.moveFrom))) return true;
     if (isW(el, W.r)) {
       return Array.from(el.childNodes).every((c) => c.nodeType !== 1 || isW(c as Element, W.rPr));
     }
-    if (isW(el, W.hyperlink)) {
+    if (isW(el, W.hyperlink) || (deletionsAreInert && isW(el, 'ins'))) {
       return Array.from(el.childNodes).every((c) => c.nodeType !== 1 || isInert(c as Element));
     }
     return false;
@@ -833,6 +840,12 @@ function getContainerBoundaryError(
  * `w:fldSimple`, bookmarks) stay live where they are, with the deletion split
  * around them, so reject-all equals the original paragraph.
  *
+ * Blanking the whole paragraph deletes its paragraph mark (tracked) or
+ * removes the paragraph (untracked) only when nothing that renders or
+ * anchors is left: embedded content, a bookmark or a comment range keeps the
+ * paragraph in both modes, so accept-all of the tracked edit equals the
+ * untracked edit and a bookmark never disappears.
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
@@ -840,6 +853,7 @@ function getContainerBoundaryError(
  * @see #741
  * @see #739
  * @see #1083
+ * @see #1098
  */
 export function replaceParagraphTextRange(
   p: Element,
@@ -1144,8 +1158,18 @@ export function replaceParagraphTextRange(
     // Only delete the paragraph mark when the edit leaves nothing live behind.
     // Preserved embedded content keeps the paragraph meaningful, and merging
     // it into the following paragraph on accept would move the image the user
-    // never touched (issue #739).
-    if (start === 0 && end === fullText.length && replacementRuns.length === 0 && !preservedEmbeddedContent) {
+    // never touched (issue #739). Range markers the paragraph still carries —
+    // a bookmark, a comment anchor — keep it the same way: accepting a
+    // deleted mark would merge the comment's markers into the next paragraph,
+    // or drop a bookmark whose whole content was deleted and with it a
+    // cross-reference target, while the untracked edit below keeps the
+    // paragraph with its markers. Tracked and clean must agree on whether the
+    // paragraph survives, so this asks the same question removeBlankedParagraph
+    // asks (issue #1098).
+    if (
+      start === 0 && end === fullText.length && replacementRuns.length === 0 && !preservedEmbeddedContent &&
+      isParagraphInertAfterBlanking(p, true)
+    ) {
       addParagraphMarkDeletion(p, ctx);
     }
   } else {

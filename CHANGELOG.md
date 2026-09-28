@@ -16,6 +16,16 @@
   a paragraph whose only difference is inside its `w:sectPr` (the ILPA
   differential row drops from 496 to 491). (#1100)
 
+- Blanking a whole paragraph with `replace_text` (`new_string: ""`) now gives
+  the same document in tracked and clean modes when the paragraph carries a
+  bookmark or a comment range. The tracked edit used to delete the paragraph
+  mark as well, so accept-all dropped a bookmark whose whole content was
+  deleted (a lost cross-reference target) or moved the comment's markers into
+  the next paragraph, while the clean edit kept an empty paragraph with the
+  markers. The tracked edit now keeps the paragraph mark whenever the paragraph
+  still carries such markers, the rule the clean path already applied;
+  accept-all then equals the clean output and reject-all the original. A
+  paragraph with nothing left in it still has its mark deleted. (#1098)
 - DOCX comparison no longer writes `w:ins`/`w:del` inside `w:sdtPr` when an
   aligned content control's properties differ (a changed `w:tag`, an added
   `w:alias`, a side-only `w:sdtPr`). `CT_SdtPr` admits no revision elements,
