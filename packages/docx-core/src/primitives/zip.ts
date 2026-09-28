@@ -31,6 +31,8 @@ function safeNonNegativeInt(value: unknown): number {
 
 export class DocxZip {
   private zip: JSZip;
+  /** Tail of the in-flight `toBuffer` chain; see `toBuffer`. */
+  private serialization: Promise<void> = Promise.resolve();
 
   private constructor(zip: JSZip) {
     this.zip = zip;
@@ -75,9 +77,17 @@ export class DocxZip {
    * Serialize the archive. With `fileDate`, every entry is written with that
    * date instead of the time it was (re)written, so the output depends only on
    * the entries' content; the in-memory dates are restored afterwards so a
-   * later save without the option behaves as before.
+   * later save without the option behaves as before. Overlapping calls on one
+   * instance run one at a time, so a concurrent save without the option never
+   * observes another call's fixed date.
    */
-  async toBuffer(opts?: { fileDate?: Date }): Promise<Buffer> {
+  toBuffer(opts?: { fileDate?: Date }): Promise<Buffer> {
+    const run = this.serialization.then(() => this.serialize(opts));
+    this.serialization = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  private async serialize(opts?: { fileDate?: Date }): Promise<Buffer> {
     // OPC packages never need directory entries (Word does not emit them);
     // drop any that came in via the source archive or earlier writes so the
     // output contract is simply "zero directory entries". NOT zip.remove():
