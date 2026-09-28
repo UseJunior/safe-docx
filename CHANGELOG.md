@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- The `docx-markdoc` CLI now reports why a `.mdoc` was rejected. When a
+  command fails with a `DocxMarkdocError`, stderr prints one
+  `ERROR <code>: <message> (line N)` line per validation issue (for example
+  `MISSING_EDIT_NAME` or `DUPLICATE_EDIT`), or a single
+  `ERROR <code>: <message>` line when the error carries no issues, matching
+  the existing `WARNING: … (line N)` lines. The stack trace prints only when
+  `DEBUG` is set; other exceptions still print theirs. Exit code stays 1.
+  (#1107)
+
 - Markdoc names an edit with `edit=` on `change`, `replace-source`,
   `delete-source`, `insert-before`, `insert-after`, `insert-table-rows`,
   `delete-table-row` and `annotation`, and a `change-set` lists its members

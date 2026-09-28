@@ -9,7 +9,7 @@ import { inspectMarkdocSource } from './inspect.js';
 import { requireMarkdoc } from './markdoc.js';
 import { convertCommentsToFootnotes } from '@usejunior/docx-core';
 import { DocxMarkdocError } from './errors.js';
-import { assertDistinctInternalPath, EXTERNAL_FILENAME, parseGreenfieldCliArgs, parseRenderingFlags, warnedInternalPath } from './cli-options.js';
+import { assertDistinctInternalPath, EXTERNAL_FILENAME, formatCliError, parseGreenfieldCliArgs, parseRenderingFlags, warnedInternalPath } from './cli-options.js';
 import { normalizeAnnotationPresentationProfile } from './presentation.js';
 import type { AnnotationPresentationProfile, ValidationIssue } from './types.js';
 import { compileGreenfieldMarkdoc, type GreenfieldStyleProfile } from './greenfield.js';
@@ -201,7 +201,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.stack ?? error.message : String(error);
-  process.stderr.write(`${message}\n`);
+  process.stderr.write(`${formatCliError(error, Boolean(process.env.DEBUG))}\n`);
   process.exitCode = 1;
 });

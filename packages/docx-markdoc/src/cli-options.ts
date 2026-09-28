@@ -1,5 +1,6 @@
 import path from 'node:path';
-import type { AnnotationAudience, AnnotationPresentation } from './types.js';
+import { DocxMarkdocError } from './errors.js';
+import type { AnnotationAudience, AnnotationPresentation, ValidationIssue } from './types.js';
 
 export type RenderingFlags = {
   positional: string[];
@@ -102,4 +103,24 @@ export function assertDistinctInternalPath(internalPath: string, paths: string[]
   if (paths.some((candidate) => path.resolve(candidate) === resolved)) {
     throw new Error('Internal-comment output must be distinct from the source, clean, and external redline paths.');
   }
+}
+
+/**
+ * Formats a fatal CLI error for stderr. A `DocxMarkdocError` prints one
+ * `ERROR <code>: <message> (line N)` line per validation issue it carries, or
+ * a single `ERROR <code>: <message>` line when it carries none, so an agent
+ * reading the output learns why a document was rejected. Its stack is appended
+ * only when `debug` is set. Any other error keeps printing its stack.
+ */
+export function formatCliError(error: unknown, debug: boolean): string {
+  if (!(error instanceof DocxMarkdocError)) {
+    return error instanceof Error ? error.stack ?? error.message : String(error);
+  }
+  const issues: ValidationIssue[] = error.issues && error.issues.length > 0
+    ? error.issues
+    : [{ code: error.code, message: error.message }];
+  const lines = issues.map((issue) =>
+    `ERROR ${issue.code}: ${issue.message}${issue.line === undefined ? '' : ` (line ${issue.line})`}`);
+  if (debug && error.stack) lines.push(error.stack);
+  return lines.join('\n');
 }
