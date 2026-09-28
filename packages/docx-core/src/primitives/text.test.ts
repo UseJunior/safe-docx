@@ -3366,3 +3366,159 @@ describe('replaceParagraphTextRange — zero-length markers inside a replaced ra
     });
   });
 });
+
+describe('replaceParagraphTextRange — blanking a paragraph that carries a bookmark or a comment range (#1098)', () => {
+  const blankingMarkerTest = test.conformance(
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.15' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.6.2' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.6.1' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.4' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.3' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.5' },
+  );
+
+  const INTRO = '<w:p><w:r><w:t>Intro paragraph.</w:t></w:r></w:p>';
+  const CLOSING = '<w:p><w:r><w:t>Closing paragraph.</w:t></w:r></w:p>';
+  const TARGET_TEXT = 'Alpha Bravo';
+  const MARKER_LOCALS = ['bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd', 'commentReference'];
+
+  const CASES: Array<{ name: string; target: string; markers: string[] }> = [
+    {
+      name: 'a bookmark spanning the whole text (the issue\'s reproduction 1)',
+      target: `<w:p><w:bookmarkStart w:id="5" w:name="Sec1"/><w:r><w:t>${TARGET_TEXT}</w:t></w:r><w:bookmarkEnd w:id="5"/></w:p>`,
+      markers: ['bookmarkStart', 'bookmarkEnd'],
+    },
+    {
+      name: 'a comment range spanning the whole text, reference run last (the issue\'s reproduction 2)',
+      target: `<w:p><w:commentRangeStart w:id="0"/><w:r><w:t>${TARGET_TEXT}</w:t></w:r><w:commentRangeEnd w:id="0"/><w:r><w:commentReference w:id="0"/></w:r></w:p>`,
+      markers: ['commentRangeStart', 'commentRangeEnd', 'commentReference'],
+    },
+  ];
+
+  const serializer = new XMLSerializer();
+  /** Body XML after merging format-identical adjacent runs, so run fragmentation from the edit does not count. */
+  const normalizedBodyXml = (doc: Document): string => {
+    mergeRuns(doc);
+    return serializer.serializeToString(doc.getElementsByTagNameNS(W_NS, 'body')[0]!);
+  };
+  const paragraphs = (doc: Document): Element[] => Array.from(doc.getElementsByTagNameNS(W_NS, W.p));
+  /** Live marker tags in the body, in document order, with the paragraph index each sits in. */
+  const liveMarkers = (doc: Document): string[] =>
+    paragraphs(doc).flatMap((p, index) =>
+      Array.from(p.getElementsByTagNameNS(W_NS, '*'))
+        .filter((el) => MARKER_LOCALS.includes(el.localName ?? '') && !isInsideRevisionWrapper(el, p))
+        .map((el) => `p${index}:${el.localName}`));
+  const paragraphMarkDeleted = (p: Element): boolean => {
+    const pPr = getDirectChildrenByName(p, W.pPr)[0];
+    const rPr = pPr ? getDirectChildrenByName(pPr, W.rPr)[0] : undefined;
+    return rPr ? getDirectChildrenByName(rPr, 'del').length > 0 : false;
+  };
+  const blankMiddle = (doc: Document, tracked: boolean): void => {
+    replaceParagraphTextRange(paragraphAt(doc, 1), 0, TARGET_TEXT.length, '', tracked ? trackedCtx() : undefined);
+  };
+
+  for (const c of CASES) {
+    blankingMarkerTest(`tracked and clean agree that the paragraph survives (${c.name})`, async ({ given, when, then }: AllureBddContext) => {
+      let trackedDoc: Document;
+      let cleanDoc: Document;
+
+      await given('three paragraphs, the middle one carrying the markers', () => {
+        trackedDoc = makeDoc(INTRO + c.target + CLOSING);
+        cleanDoc = makeDoc(INTRO + c.target + CLOSING);
+        expect(liveMarkers(trackedDoc)).toEqual(c.markers.map((m) => `p1:${m}`));
+      });
+
+      await when('the middle paragraph\'s whole text is replaced with nothing, once tracked and once untracked', () => {
+        blankMiddle(trackedDoc, true);
+        blankMiddle(cleanDoc, false);
+      });
+
+      await then('the untracked edit keeps an empty paragraph carrying the markers', () => {
+        expect(paragraphs(cleanDoc)).toHaveLength(3);
+        expect(getParagraphText(paragraphAt(cleanDoc, 1))).toBe('');
+        expect(liveMarkers(cleanDoc)).toEqual(c.markers.map((m) => `p1:${m}`));
+      });
+
+      await then('the tracked edit deletes the text but not the paragraph mark, and the markers stay live', () => {
+        const middle = paragraphAt(trackedDoc, 1);
+        expect(paragraphs(trackedDoc)).toHaveLength(3);
+        expect(Array.from(middle.getElementsByTagNameNS(W_NS, 'delText')).map((t) => t.textContent).join('')).toBe(TARGET_TEXT);
+        expect(paragraphMarkDeleted(middle)).toBe(false);
+        expect(liveMarkers(trackedDoc)).toEqual(c.markers.map((m) => `p1:${m}`));
+      });
+    });
+
+    blankingMarkerTest(`accept-all of the tracked edit equals the untracked edit, markers included (${c.name})`, async ({ given, when, then }: AllureBddContext) => {
+      let trackedDoc: Document;
+      let cleanXml: string;
+
+      await given('the untracked edit as the reference', () => {
+        const cleanDoc = makeDoc(INTRO + c.target + CLOSING);
+        blankMiddle(cleanDoc, false);
+        cleanXml = normalizedBodyXml(cleanDoc);
+        trackedDoc = makeDoc(INTRO + c.target + CLOSING);
+      });
+
+      await when('the same edit is made under tracked changes and every change is accepted', () => {
+        blankMiddle(trackedDoc, true);
+        acceptChanges(trackedDoc);
+      });
+
+      await then('no marker was dropped or moved into the next paragraph', () => {
+        expect(liveMarkers(trackedDoc)).toEqual(c.markers.map((m) => `p1:${m}`));
+        expect(paragraphs(trackedDoc).map((p) => getParagraphText(p))).toEqual(['Intro paragraph.', '', 'Closing paragraph.']);
+      });
+
+      await then('the accepted body XML equals the untracked body XML', () => {
+        expect(normalizedBodyXml(trackedDoc)).toBe(cleanXml);
+      });
+    });
+
+    blankingMarkerTest(`reject-all of the tracked edit equals the original (${c.name})`, async ({ given, when, then }: AllureBddContext) => {
+      let doc: Document;
+      let originalXml: string;
+
+      await given('the original body XML', () => {
+        originalXml = normalizedBodyXml(makeDoc(INTRO + c.target + CLOSING));
+        doc = makeDoc(INTRO + c.target + CLOSING);
+      });
+
+      await when('the middle paragraph is blanked under tracked changes and every change is rejected', () => {
+        blankMiddle(doc, true);
+        rejectChanges(doc);
+      });
+
+      await then('the body XML is the original, markers in place', () => {
+        expect(normalizedBodyXml(doc)).toBe(originalXml);
+        expect(liveMarkers(doc)).toEqual(c.markers.map((m) => `p1:${m}`));
+      });
+    });
+  }
+
+  blankingMarkerTest('control: a paragraph with no markers still has its mark deleted, and accept-all merges it away as the untracked edit does', async ({ given, when, then }: AllureBddContext) => {
+    let trackedDoc: Document;
+    let cleanDoc: Document;
+    const PLAIN = `<w:p><w:r><w:t>${TARGET_TEXT}</w:t></w:r></w:p>`;
+
+    await given('three plain paragraphs', () => {
+      trackedDoc = makeDoc(INTRO + PLAIN + CLOSING);
+      cleanDoc = makeDoc(INTRO + PLAIN + CLOSING);
+    });
+
+    await when('the middle paragraph is blanked, once tracked and once untracked', () => {
+      blankMiddle(trackedDoc, true);
+      blankMiddle(cleanDoc, false);
+    });
+
+    await then('the tracked paragraph mark is deleted, so the policy for marker-free paragraphs is unchanged', () => {
+      expect(paragraphs(trackedDoc)).toHaveLength(3);
+      expect(paragraphMarkDeleted(paragraphAt(trackedDoc, 1))).toBe(true);
+    });
+
+    await then('accept-all and the untracked edit both leave two paragraphs', () => {
+      acceptChanges(trackedDoc);
+      expect(paragraphs(cleanDoc).map((p) => getParagraphText(p))).toEqual(['Intro paragraph.', 'Closing paragraph.']);
+      expect(normalizedBodyXml(trackedDoc)).toBe(normalizedBodyXml(cleanDoc));
+    });
+  });
+});
