@@ -248,7 +248,7 @@ describe('paragraph move review regressions', () => {
     }
   });
 
-  // coverage-rationale: One matrix pins the containers closesBodyStory must accept (a nested terminal control) and reject (a customXml wrapper, a control with no in-control predecessor) with identical projection assertions. Table cells are not represented: the comparator does not detect moves inside a cell.
+  // coverage-rationale: One matrix pins the containers closesBodyStory must accept (a nested terminal control) and reject (a customXml wrapper, a control whose terminal paragraph has no paragraph predecessor) with identical projection assertions. Moves inside a table cell are not detected by the comparator, so a cell-level control is not represented.
   test.openspec('Terminal content-control paragraph uses body-story break ownership')
     ('applies content-control terminal ownership only where the control closes the body story', async () => {
     const moved = 'the complete movable clause paragraph changes its position here';
@@ -257,6 +257,7 @@ describe('paragraph move review regressions', () => {
     const paragraphs = (texts: readonly string[]) => texts.map((text) => paragraphWithText(text)).join('');
     const control = (inner: string, id = 1) => `<w:sdt><w:sdtPr><w:id w:val="${id}"/></w:sdtPr><w:sdtContent>${inner}</w:sdtContent></w:sdt>`;
     const customXml = (inner: string) => `<w:customXml w:element="clause">${inner}</w:customXml>`;
+    const inner = 'nested control paragraph that stays in place';
     for (const scenario of [
       {
         name: 'nested terminal controls',
@@ -265,7 +266,7 @@ describe('paragraph move review regressions', () => {
         originalTexts: [moved, first, second],
         revisedTexts: [first, second, moved],
         marks: [['del'], [], ['ins'], []],
-        rangeParents: ['p', 'p'],
+        rangeParents: [['p', 'p'], ['p', 'p']],
       },
       {
         name: 'customXml wrapper closing the body',
@@ -274,18 +275,19 @@ describe('paragraph move review regressions', () => {
         originalTexts: [moved, first, second],
         revisedTexts: [first, second, moved],
         marks: [['moveFrom'], [], [], ['moveTo']],
-        rangeParents: ['customXml', 'customXml'],
+        rangeParents: [['customXml', 'customXml'], ['customXml', 'customXml']],
       },
       {
-        // The terminal endpoint has no paragraph before it inside the control,
-        // so no predecessor can own the created break: legacy topology.
+        // The terminal endpoint follows a nested control inside the control, so
+        // no paragraph predecessor can own the created break: legacy topology,
+        // with the range starts contained in the whole moved paragraphs.
         name: 'terminal control with no in-control predecessor',
-        original: paragraphs([moved, first, second]),
-        revised: paragraphs([first, second]) + control(paragraphs([moved])),
-        originalTexts: [moved, first, second],
-        revisedTexts: [first, second, moved],
-        marks: [['moveFrom'], [], [], ['moveTo']],
-        rangeParents: ['p', 'p'],
+        original: paragraphs([moved, first, second]) + control(control(paragraphWithText(inner), 2)),
+        revised: paragraphs([first, second]) + control(control(paragraphWithText(inner), 2) + paragraphs([moved])),
+        originalTexts: [moved, first, second, inner],
+        revisedTexts: [first, second, inner, moved],
+        marks: [['moveFrom'], [], [], [], ['moveTo']],
+        rangeParents: [['p', 'body'], ['p', 'sdtContent']],
       },
     ]) {
       const compared = await compareDocuments(
@@ -304,11 +306,11 @@ describe('paragraph move review regressions', () => {
           .map((node) => node.localName) : [];
       });
       expect(markNames, scenario.name).toEqual(scenario.marks);
-      for (const direction of ['From', 'To']) {
+      for (const [index, direction] of (['From', 'To'] as const).entries()) {
         const start = document.getElementsByTagNameNS(W_NS, `move${direction}RangeStart`)[0]!;
         const end = document.getElementsByTagNameNS(W_NS, `move${direction}RangeEnd`)[0]!;
-        expect((start.parentNode as Element).localName, `${scenario.name} ${direction} start`).toBe(scenario.rangeParents[0]);
-        expect((end.parentNode as Element).localName, `${scenario.name} ${direction} end`).toBe(scenario.rangeParents[1]);
+        expect((start.parentNode as Element).localName, `${scenario.name} ${direction} start`).toBe(scenario.rangeParents[index]![0]);
+        expect((end.parentNode as Element).localName, `${scenario.name} ${direction} end`).toBe(scenario.rangeParents[index]![1]);
       }
       const texts = (projection: string) => Array.from(parseXml(projection).getElementsByTagNameNS(W_NS, 'p'))
         .map((paragraph) => paragraph.textContent);
