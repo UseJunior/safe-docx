@@ -12,6 +12,14 @@
   still names the anchored bytes that `compile` receives, so existing
   Markdoc/anchored pairs keep compiling. (#1110)
 
+- Comparing large documents is faster. The tagged-tree comparison rebuilt each
+  element's alignment key inside its paragraph-alignment loop and re-split each
+  candidate's text into words for every move-candidate pair, so both costs grew
+  with the product of the two documents' lengths; each is now computed once per
+  element. The move matcher also skips candidates with no eligible pairing.
+  Output is unchanged. One ILPA-sized comparison drops from about 84s to 37s of
+  CPU time. (#1116)
+
 ## 0.21.0
 
 - `compileMarkdoc` no longer stamps the compile time on a source comment that
