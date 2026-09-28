@@ -245,11 +245,13 @@ export async function selectedStories(buffer: Buffer): Promise<SelectedStory[]> 
 /**
  * Add bookmarks to admitted side paragraphs in a separate DOCX copy, sharing
  * one reservation with the already-anchored main body and every selected part.
+ * With `fileDate`, rewritten parts are stamped with that date instead of the
+ * wall clock so the copy's bytes depend only on its content (#1110).
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
  * @see #1034
  */
-export async function anchorSelectedStories(bodyAnchored: Buffer): Promise<Buffer> {
+export async function anchorSelectedStories(bodyAnchored: Buffer, options?: { fileDate?: Date }): Promise<Buffer> {
   const zip = await DocxZip.load(bodyAnchored);
   const { body, stories } = await storyParts(zip);
   if (stories.length === 0) return bodyAnchored;
@@ -263,5 +265,5 @@ export async function anchorSelectedStories(bodyAnchored: Buffer): Promise<Buffe
     }
     if (changed) zip.writeText(story.partPath, serializeXml(story.doc));
   }
-  return zip.toBuffer();
+  return zip.toBuffer(options?.fileDate ? { fileDate: options.fileDate } : undefined);
 }

@@ -2,6 +2,7 @@ import {
   DocxDocument,
   OOXML,
   W,
+  ZIP_EPOCH,
   computeContentFingerprint,
   parseRelationshipEntries,
   type StylesModel,
@@ -295,8 +296,11 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
   const document = await DocxDocument.load(source);
   const attachmentId = sha256(source).slice(0, 16);
   document.insertParagraphBookmarks(attachmentId);
-  const bodyAnchored = (await document.toBuffer({ cleanBookmarks: false })).buffer;
-  const anchoredSource = await anchorSelectedStories(bodyAnchored);
+  // The anchored package is what `source sha256` names and what compile later
+  // hashes, so it must depend only on the input bytes: stamp every ZIP entry
+  // with a fixed date rather than the wall clock (#1110).
+  const bodyAnchored = (await document.toBuffer({ cleanBookmarks: false, fileDate: ZIP_EPOCH })).buffer;
+  const anchoredSource = await anchorSelectedStories(bodyAnchored, { fileDate: ZIP_EPOCH });
   const anchored = await DocxDocument.load(anchoredSource);
   const { nodes } = anchored.buildDocumentView({ includeSemanticTags: false, showFormatting: false });
   const descriptor = { sha256: sha256(anchoredSource), paragraphs: nodes.length };

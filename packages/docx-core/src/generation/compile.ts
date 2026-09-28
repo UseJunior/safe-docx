@@ -13,7 +13,7 @@
  * part registry.
  */
 
-import { createZipBuffer } from '../primitives/zip.js';
+import { createZipBuffer, ZIP_EPOCH } from '../primitives/zip.js';
 import { maybeCaptureEmittedDocumentXml } from '../primitives/schema-corpus-capture.js';
 import { CompileContext } from './context.js';
 import { emitCommentsPartsIfNeeded } from './emit/comments-part.js';
@@ -30,9 +30,6 @@ import { emitWebSettingsPart } from './emit/web-settings-part.js';
 import { resolveThemeColorValues } from './theme-colors.js';
 import type { DocumentSpec } from './types.js';
 import { validateSpec } from './validate-spec.js';
-
-/** Fixed zip-entry timestamp (2006-01-01T00:00:00Z, the OOXML vintage). */
-const ZIP_EPOCH = new Date(Date.UTC(2006, 0, 1));
 
 export type GenerateDocxOptions = {
   /** Overrides spec.options.includeDraftingNotes when provided. */

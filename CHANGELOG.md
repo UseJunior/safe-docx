@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- `docx-markdoc` import now produces the same anchored source, `source sha256`
+  and Markdoc every time it is given the same `.docx`. The anchored package was
+  serialized with wall-clock ZIP entry times (2-second resolution), so two
+  imports of one file could disagree on the hash. Every entry is now written
+  with the fixed `ZIP_EPOCH` date that document generation already uses;
+  `DocxZip.toBuffer()` and `DocxDocument.toBuffer()` take an optional `fileDate`
+  for this, and `ZIP_EPOCH` is exported from `@usejunior/docx-core`. The hash
+  still names the anchored bytes that `compile` receives, so existing
+  Markdoc/anchored pairs keep compiling. (#1110)
+
 ## 0.21.0
 
 - The `docx-markdoc` CLI now reports why a `.mdoc` was rejected. When a

@@ -129,7 +129,8 @@ rather than concatenated.
 `anchored.docx` differs from `source.docx` only where Safe DOCX had to add stable
 `_bk_*` paragraph bookmarks. The Markdoc hash and paragraph IDs target that
 anchored copy, so later compilation is stateless and never needs an editing
-session. The caller's original bytes remain untouched.
+session. The caller's original bytes remain untouched, and importing the same
+`source.docx` again reproduces the same `anchored.docx` and hash.
 
 ## Existing headers and footers
 
