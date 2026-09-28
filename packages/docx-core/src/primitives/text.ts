@@ -177,7 +177,20 @@ export function getDirectContentElements(run: Element): Element[] {
   return out;
 }
 
-export function splitRunAtVisibleOffset(run: Element, offset: number): { left: Element; right: Element } {
+/**
+ * Which side of a split receives the zero-length run content (field markers,
+ * note references, proofing marks, ...) that sits exactly at the split offset,
+ * between the last visible character before it and the first one after it.
+ * A range boundary uses the side outside the range: `left` at a range start,
+ * `right` at a range end (issue #1096).
+ */
+export type ZeroLengthAtOffsetSide = 'left' | 'right';
+
+export function splitRunAtVisibleOffset(
+  run: Element,
+  offset: number,
+  zeroLengthAtOffset: ZeroLengthAtOffsetSide = 'right',
+): { left: Element; right: Element } {
   const doc = run.ownerDocument;
   if (!doc) throw new Error('Run has no ownerDocument');
 
@@ -198,8 +211,9 @@ export function splitRunAtVisibleOffset(run: Element, offset: number): { left: E
 
     if (len === 0) {
       // Zero-length nodes (proofing, field markers, etc.) should not be duplicated. Keep them on the side
-      // determined by the current visible position.
-      if (pos < offset) rEl.parentNode?.removeChild(rEl);
+      // determined by the current visible position; a node exactly at the offset goes to the caller's side.
+      const keepLeft = pos < offset || (pos === offset && zeroLengthAtOffset === 'left');
+      if (keepLeft) rEl.parentNode?.removeChild(rEl);
       else lEl.parentNode?.removeChild(lEl);
       continue;
     }
@@ -267,21 +281,42 @@ function getRunVisibleLength(run: Element): number {
   return getDirectContentElements(run).reduce((sum, child) => sum + visibleLengthForEl(child), 0);
 }
 
+/** True when the run's first direct content element carries no visible length. */
+function runStartsWithZeroLengthContent(run: Element): boolean {
+  const first = getDirectContentElements(run)[0];
+  return first !== undefined && visibleLengthForEl(first) === 0;
+}
+
+/** True when the run's last direct content element carries no visible length. */
+function runEndsWithZeroLengthContent(run: Element): boolean {
+  const last = getDirectContentElements(run).at(-1);
+  return last !== undefined && visibleLengthForEl(last) === 0;
+}
+
 /**
  * Zero-visible-length run content that a replaced range deletes with the
- * surrounding text: a `w:sym` symbol character (issue #1044), and the
+ * surrounding text: a `w:sym` symbol character (issue #1044), the
  * `w:fldChar` / `w:instrText` markers of a complex field whose markers sit
  * inside the range (issue #1082: a result-less field such as an `XE` index
- * entry or a `TC` entry — begin, instruction, end, no `separate`). A field
- * whose cached result is empty (begin, instruction, separate, end) is also
- * zero-length and is handled the same way. A field with a non-empty cached
- * result never reaches here with its markers in range: the range would
- * include the result text, and that edit is refused earlier.
+ * entry or a `TC` entry — begin, instruction, end, no `separate`), and a
+ * footnote or endnote reference mark (issue #1094). A field whose cached
+ * result is empty (begin, instruction, separate, end) is also zero-length and
+ * is handled the same way. A field with a non-empty cached result never
+ * reaches here with its markers in range: the range would include the result
+ * text, and that edit is refused earlier.
+ *
+ * A note reference is deleted with the text, as Word does when a tracked
+ * deletion covers it, rather than kept live like a comment reference: the
+ * comment's range markers stay live around the edit, so its reference must
+ * too (issue #1083), whereas a note is anchored only by its reference, and a
+ * caller replacing the text around it has covered it.
  */
 const DELETABLE_ZERO_LENGTH_LOCALS: ReadonlySet<string> = new Set([
   SYM_LOCAL_NAME,
   W.fldChar,
   W.instrText,
+  W.footnoteReference,
+  W.endnoteReference,
 ]);
 
 /**
@@ -297,11 +332,17 @@ const DELETABLE_ZERO_LENGTH_LOCALS: ReadonlySet<string> = new Set([
  * field. Recording the run puts it in the same `w:del` as the surrounding
  * text, so accept-all removes it with the text and reject-all restores it in
  * place; the emitter renames a deleted `w:instrText` to `w:delInstrText`.
+ * A footnote or endnote reference mark alone in a run — the shape Word
+ * writes, with `w:rStyle` FootnoteReference — was dropped the same way
+ * (issue #1094); it now joins the `w:del` so reject-all restores the note.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.3.30
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  * @see https://github.com/UseJunior/safe-docx/issues/1044
  * @see https://github.com/UseJunior/safe-docx/issues/1082
+ * @see https://github.com/UseJunior/safe-docx/issues/1094
  */
 function runCarriesDeletableContent(run: Element): boolean {
   if (getRunVisibleLength(run) > 0) return true;
@@ -887,33 +928,39 @@ export function replaceParagraphTextRange(
   const parts: ReplacementPart[] = typeof replacement === 'string' ? [{ text: replacement }] : replacement;
 
   // Split boundary runs so we can remove whole runs cleanly.
+  //
+  // Zero-length content at a range boundary — a result-less field's markers,
+  // a note reference, a proofing mark — that shares a run with the matched
+  // text stays outside the range: the caller's match never covered it. So a
+  // boundary run is split even when the range starts at its first visible
+  // character or ends at its last one, whenever zero-length content sits at
+  // that edge, and a split puts content exactly at the offset on the side
+  // away from the range (issue #1096). Only content between the first and
+  // last matched characters is removed with the text (issue #1082).
   let rangeStartRunEl: Element = startRun.r;
   let rangeEndRunEl: Element = endRun.r;
 
+  const splitStart = (run: Element): Element =>
+    splitRunAtVisibleOffset(run, startOffset, 'left').right;
+  const splitEnd = (run: Element): Element =>
+    splitRunAtVisibleOffset(run, endOffset, 'right').left;
+  const needsStartSplit = startOffset > 0 || runStartsWithZeroLengthContent(startRun.r);
+  const needsEndSplit = endOffset < endRun.text.length || runEndsWithZeroLengthContent(endRun.r);
+
   if (startRunIdx === endRunIdx) {
     // Single-run replacement: split end first, then start.
-    const runLen = startRun.text.length;
-    if (endOffset < runLen) {
-      const { left } = splitRunAtVisibleOffset(rangeStartRunEl, endOffset);
-      rangeStartRunEl = left;
-      rangeEndRunEl = left;
+    if (needsEndSplit) {
+      rangeStartRunEl = splitEnd(rangeStartRunEl);
+      rangeEndRunEl = rangeStartRunEl;
     }
-    if (startOffset > 0) {
-      const { right } = splitRunAtVisibleOffset(rangeStartRunEl, startOffset);
-      rangeStartRunEl = right;
-      rangeEndRunEl = right;
+    if (needsStartSplit) {
+      rangeStartRunEl = splitStart(rangeStartRunEl);
+      rangeEndRunEl = rangeStartRunEl;
     }
   } else {
     // Multi-run replacement: split start then end.
-    if (startOffset > 0) {
-      const { right } = splitRunAtVisibleOffset(rangeStartRunEl, startOffset);
-      rangeStartRunEl = right;
-    }
-    const endLen = endRun.text.length;
-    if (endOffset < endLen) {
-      const { left } = splitRunAtVisibleOffset(rangeEndRunEl, endOffset);
-      rangeEndRunEl = left;
-    }
+    if (needsStartSplit) rangeStartRunEl = splitStart(rangeStartRunEl);
+    if (needsEndSplit) rangeEndRunEl = splitEnd(rangeEndRunEl);
   }
 
   const parent = rangeStartRunEl.parentNode;

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- A tracked `replace_text` whose range covers a footnote or endnote reference
+  that sits alone in a `w:rStyle` run (the shape Word writes) now deletes the
+  reference inside the same `w:del` as the surrounding text, so reject-all
+  restores the note and accept-all removes it with the text. The reference
+  used to be dropped untracked. (#1094)
+- `replace_text` keeps zero-length run content that sits at a range boundary
+  — a result-less field's `w:fldChar`/`w:instrText` markers, a note
+  reference, a drawing — outside the range when it shares a run with the
+  matched text, in tracked and clean modes: a replace starting right after an
+  `XE` entry, or ending right before one, leaves the entry live and in place,
+  and a replacement now lands before, not after, a drawing that trailed the
+  matched text in its run. A range that spans the field still deletes it.
+  (#1096)
 - `docx-markdoc` import now produces the same anchored source, `source sha256`
   and Markdoc every time it is given the same `.docx`. The anchored package was
   serialized with wall-clock ZIP entry times (2-second resolution), so two
