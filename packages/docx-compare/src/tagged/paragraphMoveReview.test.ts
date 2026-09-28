@@ -248,6 +248,83 @@ describe('paragraph move review regressions', () => {
     }
   });
 
+  // coverage-rationale: One matrix pins the containers closesBodyStory must accept (a nested terminal control) and reject (a customXml wrapper, a control with no in-control predecessor) with identical projection assertions. Table cells are not represented: the comparator does not detect moves inside a cell.
+  test.openspec('Terminal content-control paragraph uses body-story break ownership')
+    ('applies content-control terminal ownership only where the control closes the body story', async () => {
+    const moved = 'the complete movable clause paragraph changes its position here';
+    const first = 'first stable anchor paragraph remains unchanged in its position';
+    const second = 'second stable anchor paragraph remains unchanged throughout';
+    const paragraphs = (texts: readonly string[]) => texts.map((text) => paragraphWithText(text)).join('');
+    const control = (inner: string, id = 1) => `<w:sdt><w:sdtPr><w:id w:val="${id}"/></w:sdtPr><w:sdtContent>${inner}</w:sdtContent></w:sdt>`;
+    const customXml = (inner: string) => `<w:customXml w:element="clause">${inner}</w:customXml>`;
+    for (const scenario of [
+      {
+        name: 'nested terminal controls',
+        original: control(control(paragraphs([moved, first, second]), 2)),
+        revised: control(control(paragraphs([first, second, moved]), 2)),
+        originalTexts: [moved, first, second],
+        revisedTexts: [first, second, moved],
+        marks: [['del'], [], ['ins'], []],
+        rangeParents: ['p', 'p'],
+      },
+      {
+        name: 'customXml wrapper closing the body',
+        original: customXml(paragraphs([moved, first, second])),
+        revised: customXml(paragraphs([first, second, moved])),
+        originalTexts: [moved, first, second],
+        revisedTexts: [first, second, moved],
+        marks: [['moveFrom'], [], [], ['moveTo']],
+        rangeParents: ['customXml', 'customXml'],
+      },
+      {
+        // The terminal endpoint has no paragraph before it inside the control,
+        // so no predecessor can own the created break: legacy topology.
+        name: 'terminal control with no in-control predecessor',
+        original: paragraphs([moved, first, second]),
+        revised: paragraphs([first, second]) + control(paragraphs([moved])),
+        originalTexts: [moved, first, second],
+        revisedTexts: [first, second, moved],
+        marks: [['moveFrom'], [], [], ['moveTo']],
+        rangeParents: ['p', 'p'],
+      },
+    ]) {
+      const compared = await compareDocuments(
+        await buildDocxFromBodyXml(scenario.original),
+        await buildDocxFromBodyXml(scenario.revised),
+        { detectMoves: true, author: 'Comparator', date: new Date('2026-09-28T00:00:00Z') },
+      );
+      const xml = await (await DocxArchive.load(compared.document)).getDocumentXml();
+      const document = parseXml(xml);
+      const markNames = Array.from(document.getElementsByTagNameNS(W_NS, 'p')).map((paragraph) => {
+        const pPr = Array.from(paragraph.childNodes).find((node) =>
+          node.nodeType === 1 && (node as Element).localName === 'pPr') as Element | undefined;
+        const rPr = pPr && Array.from(pPr.childNodes).find((node) =>
+          node.nodeType === 1 && (node as Element).localName === 'rPr') as Element | undefined;
+        return rPr ? Array.from(rPr.childNodes).filter((node): node is Element => node.nodeType === 1)
+          .map((node) => node.localName) : [];
+      });
+      expect(markNames, scenario.name).toEqual(scenario.marks);
+      for (const direction of ['From', 'To']) {
+        const start = document.getElementsByTagNameNS(W_NS, `move${direction}RangeStart`)[0]!;
+        const end = document.getElementsByTagNameNS(W_NS, `move${direction}RangeEnd`)[0]!;
+        expect((start.parentNode as Element).localName, `${scenario.name} ${direction} start`).toBe(scenario.rangeParents[0]);
+        expect((end.parentNode as Element).localName, `${scenario.name} ${direction} end`).toBe(scenario.rangeParents[1]);
+      }
+      const texts = (projection: string) => Array.from(parseXml(projection).getElementsByTagNameNS(W_NS, 'p'))
+        .map((paragraph) => paragraph.textContent);
+      expect(texts(acceptAllChanges(xml)), `${scenario.name} accept`).toEqual(scenario.revisedTexts);
+      expect(texts(rejectAllChanges(xml)), `${scenario.name} reject`).toEqual(scenario.originalTexts);
+      for (const [project, expected, label] of [
+        [acceptChanges, scenario.revisedTexts, 'native accept'],
+        [rejectChanges, scenario.originalTexts, 'native reject'],
+      ] as const) {
+        const projected = parseXml(xml);
+        project(projected);
+        expect(texts(serializeXml(projected)), `${scenario.name} ${label}`).toEqual(expected);
+      }
+    }
+  });
+
   test.openspec('Accept removes source-range bookmarks')
     .openspec('Reject removes destination-range bookmarks')
     ('allocates distinct revisions when interior bookmarks split moved paragraph content', async () => {
