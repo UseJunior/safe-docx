@@ -2,6 +2,16 @@
 
 ## 0.21.0
 
+- DOCX comparison no longer writes `w:ins`/`w:del` inside `w:sdtPr` when an
+  aligned content control's properties differ (a changed `w:tag`, an added
+  `w:alias`, a side-only `w:sdtPr`). `CT_SdtPr` admits no revision elements,
+  so that output failed the ECMA-376 schema gate silently. The redline now
+  carries the revised properties whole and discloses the difference as an
+  `unrepresentedChanges` entry with `scope: 'contentControl'` (plus the
+  control's ordinal, `w:id`, `w:tag` and `w:alias`), which the CLI and MCP
+  surfaces render as a warning. Text edits inside the control are still
+  tracked normally, and stats no longer count the property difference. (#1095)
+
 - The `docx-markdoc` CLI now reports why a `.mdoc` was rejected. When a
   command fails with a `DocxMarkdocError`, stderr prints one
   `ERROR <code>: <message> (line N)` line per validation issue (for example

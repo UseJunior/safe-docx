@@ -487,7 +487,7 @@ part: 1
 section: "17.5.2.38"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr
-verifiedBy: packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts
+verifiedBy: packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.ts; packages/docx-compare/src/tagged/unrepresentedChanges.ts; packages/docx-compare/src/tagged/pipeline-content-control-properties.test.ts
 ```
 
 The pilot retains known and ignorable-extension children under `w:sdtPr` in

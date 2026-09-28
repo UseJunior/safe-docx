@@ -38,7 +38,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-5-2-33` | w:sdtContent cell-level structured document tag content | 5 | 1 | 17.5.2.33 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentCell` | packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts |
 | `ECMA-PART1-17-5-2-34` | w:sdtContent block-level structured document tag content | 5 | 1 | 17.5.2.34 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentBlock` | packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts |
 | `ECMA-PART1-17-5-2-36` | w:sdtContent inline-level structured document tag content | 5 | 1 | 17.5.2.36 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentRun` | packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts |
-| `ECMA-PART1-17-5-2-38` | w:sdtPr structured document tag properties | 5 | 1 | 17.5.2.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr` | packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts |
+| `ECMA-PART1-17-5-2-38` | w:sdtPr structured document tag properties | 5 | 1 | 17.5.2.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr` | packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.ts; packages/docx-compare/src/tagged/unrepresentedChanges.ts; packages/docx-compare/src/tagged/pipeline-content-control-properties.test.ts |
 | `ECMA-PART1-17-6-17` | w:sectPr document-final section properties | 5 | 1 | 17.6.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr` | packages/docx-compare/src/tagged/unrepresentedChanges.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/generation/emit/document-part.ts |
 | `ECMA-PART1-17-6-13` | w:pgSz page size emission | 5 | 1 | 17.6.13 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgSz` | packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/generation/emit/section.ts |
 | `ECMA-PART1-17-6-11` | w:pgMar page margin emission | 5 | 1 | 17.6.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgMar` | packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/generation/emit/section.ts |
@@ -537,7 +537,7 @@ controlled text when that subtree is unchanged between comparison inputs.
 - **Part / Section:** Part 1 § 17.5.2.38
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr`
-- **Verified by:** packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts
+- **Verified by:** packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.ts; packages/docx-compare/src/tagged/unrepresentedChanges.ts; packages/docx-compare/src/tagged/pipeline-content-control-properties.test.ts
 
 The pilot retains known and ignorable-extension children under `w:sdtPr` in
 their source order. Retention of unknown extension payload is a metamorphic

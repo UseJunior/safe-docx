@@ -8,9 +8,75 @@ import {
 import type {
   UnrepresentedChange,
   UnrepresentedChangeKind,
+  UnrepresentedContentControlChange,
 } from '../compare-types.js';
+import { representative, subtreeSignature, type TaggedNode } from './taggedTree.js';
 
 const REVISION_TAGS = new Set(['sectPrChange']);
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+/**
+ * Report aligned content controls whose `w:sdtPr`/`w:sdtEndPr` differ.
+ *
+ * `CT_SdtPr` admits no revision particle, so tagged construction carries the
+ * property element as one opaque node and the serializer publishes the revised
+ * properties whole. Nothing in the redline marks that difference; this walk of
+ * the constructed tree is the only place it is disclosed. Side-only property
+ * elements (a `w:sdtPr` present on one side) are reported the same way.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.38
+ * @see https://github.com/UseJunior/safe-docx/issues/1095
+ */
+export function collectContentControlPropertyChanges(tree: TaggedNode): UnrepresentedChange[] {
+  const changes: UnrepresentedChange[] = [];
+  let sectionIndex = 0;
+  let controlIndex = -1;
+  const identity = (properties: Element, index: number): UnrepresentedContentControlChange => {
+    const value = (name: string): string | undefined => {
+      const child = childElements(properties).find(
+        (candidate) => candidate.namespaceURI === W_NS && localName(candidate) === name,
+      );
+      const attribute = child?.getAttributeNS(W_NS, 'val');
+      return attribute === null || attribute === undefined ? undefined : attribute;
+    };
+    const control: UnrepresentedContentControlChange = { index };
+    const id = value('id');
+    const tag = value('tag');
+    const alias = value('alias');
+    if (id !== undefined) control.id = id;
+    if (tag !== undefined) control.tag = tag;
+    if (alias !== undefined) control.alias = alias;
+    return control;
+  };
+  const visit = (node: TaggedNode): void => {
+    const revisedSide = node.tag !== 'original';
+    const element = representative(node, revisedSide ? 'revised' : 'original')!;
+    if (element.namespaceURI === W_NS) {
+      const name = localName(element);
+      if (name === 'sdt' && revisedSide) controlIndex++;
+      if (name === 'sdtPr' || name === 'sdtEndPr') {
+        const kind: UnrepresentedChangeKind | null = node.tag === 'both'
+          ? (subtreeSignature(node.original) === subtreeSignature(node.revised) ? null : 'changed')
+          : node.tag === 'revised' ? 'added' : 'removed';
+        if (kind) {
+          changes.push({
+            scope: 'contentControl',
+            kind,
+            sectionIndex,
+            contentControl: identity(element, Math.max(controlIndex, 0)),
+          });
+        }
+        return;
+      }
+      // A paragraph-bound w:sectPr closes the section it sits in; the body-level
+      // final w:sectPr follows every block, so counting it changes nothing.
+      if (name === 'sectPr' && revisedSide) sectionIndex++;
+    }
+    node.children.forEach(visit);
+  };
+  visit(tree);
+  return changes;
+}
 
 interface StorySlot {
   kind: 'header' | 'footer';

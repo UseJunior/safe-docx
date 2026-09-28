@@ -282,6 +282,22 @@ function lcsPairs(
 }
 
 /**
+ * Content-control property elements (`w:sdtPr`, `w:sdtEndPr`) admit no
+ * revision markup: `CT_SdtPr` has no `w:ins`/`w:del` particle, so a property
+ * difference between aligned controls cannot be tracked in place. Aligned
+ * property elements are carried as one opaque `both` node, which publishes the
+ * revised properties whole; the pipeline discloses the difference through
+ * `unrepresentedChanges` (see `collectContentControlPropertyChanges`).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.38
+ * @see https://github.com/UseJunior/safe-docx/issues/1095
+ */
+export function isContentControlProperties(element: WmlElement): boolean {
+  return element.namespaceURI === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' &&
+    ['sdtPr', 'sdtEndPr'].includes(element.localName);
+}
+
+/**
  * Pair one block-level content control across a boundary move so paragraphs
  * entering or leaving it are tracked at paragraph level inside and outside the
  * control, rather than wrapping the whole control in a run-level revision.
@@ -412,6 +428,11 @@ function constructBoth(
     if (!canRecursivelyAlignContent(left, right)) {
       children.push({ tag: 'original', node: left, children: [], opaque: true });
       children.push({ tag: 'revised', node: right, children: [], opaque: true });
+      return;
+    }
+    if (isContentControlProperties(left)) {
+      // Never descend: a child-level diff would emit w:ins/w:del inside w:sdtPr.
+      children.push({ tag: 'both', original: left, revised: right, children: [], opaque: true });
       return;
     }
     children.push(constructBoth(

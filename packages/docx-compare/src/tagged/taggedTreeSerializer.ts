@@ -1920,6 +1920,18 @@ function emitNode(
         continue;
       }
       if (
+        childElement?.namespaceURI === W_NS &&
+        ['sdtPr', 'sdtEndPr'].includes(childElement.localName) &&
+        child.tag !== 'both'
+      ) {
+        // CT_SdtBlock/CT_SdtRun carry w:sdtPr outside any revision particle, so
+        // a side-only property element cannot be wrapped. Keep the revised
+        // properties live; the difference is reported through
+        // unrepresentedChanges (#1095).
+        if (child.tag === 'revised') emitted.push(cloneElement(childElement));
+        continue;
+      }
+      if (
         child.tag === 'both' &&
         (childElement?.localName === 'bookmarkStart' || childElement?.localName === 'bookmarkEnd')
       ) {
