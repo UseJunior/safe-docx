@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.21.1
+
+0.21.0 was tagged but not published. 0.21.1 is the first published release
+of the 0.21.0 changes below, including its breaking changes; upgrade notes for
+both sections apply when moving from 0.20.x.
 
 - Blanking a whole paragraph with `replace_text` (`new_string: ""`) now gives
   the same document in tracked and clean modes when the paragraph carries a
