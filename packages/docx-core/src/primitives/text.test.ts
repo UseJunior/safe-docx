@@ -1764,6 +1764,32 @@ describe('replaceParagraphTextRange — embedded object preservation', () => {
     });
   });
 
+  test('tracked replacement of text that follows a drawing in the same run keeps the drawing live before the edit', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+    let p: Element;
+
+    await given('a single run holding a drawing and then caption text', () => {
+      doc = makeDoc(`<w:p><w:r>${MINIMAL_DRAWING}<w:t>caption</w:t></w:r></w:p>`);
+      p = firstParagraph(doc);
+    });
+
+    await when('the caption is replaced under tracked changes', () => {
+      replaceParagraphTextRange(p, 0, 'caption'.length, 'new caption', trackedCtx());
+    });
+
+    await then('the drawing stays live, first, with the deletion and insertion after it; reject-all yields the original', () => {
+      // The drawing leads the matched text, so it sits before the range
+      // start (#1096): it is split into its own run and left untouched, and
+      // both revision segments follow it.
+      const drawings = embeddedObjectsIn(p, W.drawing);
+      expect(drawings).toHaveLength(1);
+      expect(isInsideRevisionWrapper(drawings[0]!, p)).toBe(false);
+      expect(paragraphContentSequence(p)).toEqual(['[drawing]', 'del:caption', 'ins:new caption']);
+      rejectChanges(doc);
+      expect(paragraphContentSequence(p)).toEqual(['[drawing]', 'caption']);
+    });
+  });
+
   test('tracked replacement of a run with co-resident text and drawing keeps the drawing live in original order', async ({ given, when, then }: AllureBddContext) => {
     let p: Element;
 
