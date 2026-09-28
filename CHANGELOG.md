@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.21.0
 
 - The `docx-markdoc` CLI now reports why a `.mdoc` was rejected. When a
   command fails with a `DocxMarkdocError`, stderr prints one
@@ -96,6 +96,17 @@
 - Accept/reject, selective revision processing, validation, and revision-ID
   seeding now include relationship-selected header/footer stories while
   leaving orphan header/footer package parts untouched.
+- **Breaking:** library `CompareResult` now reports the sole implementation as
+  `engine: 'tagged-tree'` and removes requested/used strategy, reconstruction
+  mode, and fallback metadata for the deleted comparison spine. Callers should
+  handle typed publication errors instead of branching on fallback fields.
+- **Breaking:** `AncillaryStorySafetyError.attempts` and the exported
+  `AncillaryStorySafetyAttempt` type are removed because tagged publication does
+  not make reconstruction-mode attempts. Deep imports of the internal result
+  type should migrate from `AtomizerCompareResult` to `TaggedCompareResult`.
+
+## 0.20.1 and earlier
+
 - **Breaking:** DOCX comparison now has one public behavior: tagged revisions
   are assembled into the revised archive and publication fails closed if its
   safety gates do not pass. `CompareOptions` no longer accepts `engine`,
@@ -110,14 +121,6 @@
   that assumed original-side package identities.
 - CLI and MCP comparison results now report `package_base: 'revised'` instead
   of engine, strategy, mode, or fallback metadata.
-- **Breaking:** library `CompareResult` now reports the sole implementation as
-  `engine: 'tagged-tree'` and removes requested/used strategy, reconstruction
-  mode, and fallback metadata for the deleted comparison spine. Callers should
-  handle typed publication errors instead of branching on fallback fields.
-- **Breaking:** `AncillaryStorySafetyError.attempts` and the exported
-  `AncillaryStorySafetyAttempt` type are removed because tagged publication does
-  not make reconstruction-mode attempts. Deep imports of the internal result
-  type should migrate from `AtomizerCompareResult` to `TaggedCompareResult`.
 - Migration note: DOCX comparison and redline generation moved from
   `@usejunior/docx-core` to `@usejunior/docx-compare`. Update comparison
   imports such as `compareDocuments` to use the new package name.
