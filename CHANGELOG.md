@@ -7,10 +7,11 @@
   or footer references (a footer removed or added, a header retargeted to
   another part). The `CT_SectPrBase` snapshot never carries those references
   (#944), so the revision changed nothing and `stats.formatChanges` counted
-  it. The comparison now decides on the contents the snapshot would hold; the
-  reference difference is still disclosed through `unrepresentedChanges`, and
-  a section whose page setup also changes still gets one `w:sectPrChange`.
-  (#1100)
+  it. The comparison now decides on the contents the snapshot would hold. A
+  reference difference that no story revision represents is still disclosed
+  through `unrepresentedChanges` (a retargeted header whose new text is
+  tracked inside the header story needs no entry), and a section whose page
+  setup also changes still gets one `w:sectPrChange`. (#1100)
 
 - DOCX comparison no longer writes `w:ins`/`w:del` inside `w:sdtPr` when an
   aligned content control's properties differ (a changed `w:tag`, an added

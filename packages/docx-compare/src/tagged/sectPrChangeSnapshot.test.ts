@@ -422,6 +422,36 @@ describe('sections that differ only in header/footer references emit no w:sectPr
     await expectSchemaValidPackages(result.document);
   });
 
+  test('paragraph section break: a prior w:sectPrChange is dropped when the paragraph properties change but the sections agree', async () => {
+    const sectionBreak = (justification: string, priorChange: string): string =>
+      `<w:p><w:pPr>${justification}<w:sectPr>${PORTRAIT}${priorChange}</w:sectPr></w:pPr>` +
+      `<w:r><w:t>First section</w:t></w:r></w:p>`;
+    const original = await packageWithStories(
+      sectionBreak('', '') + paragraph('Second section'),
+      `<w:sectPr>${PORTRAIT}</w:sectPr>`,
+      [],
+    );
+    const revised = await packageWithStories(
+      sectionBreak(
+        '<w:jc w:val="center"/>',
+        `<w:sectPrChange w:id="1" w:author="Reviewer"><w:sectPr>${LANDSCAPE}</w:sectPr></w:sectPrChange>`,
+      ) + paragraph('Second section'),
+      `<w:sectPr>${PORTRAIT}</w:sectPr>`,
+      [],
+    );
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+    const documentXml = await (await DocxArchive.load(result.document)).getDocumentXml();
+
+    expect(sectPrChangeCount(documentXml)).toBe(0);
+    // The justification change is the only property revision.
+    expect(result.stats.formatChanges).toBe(1);
+    expect(parseXml(documentXml).getElementsByTagNameNS(OOXML.W_NS, 'pPrChange').length).toBe(1);
+    expect(rejectAllChanges(documentXml)).not.toContain('w:orient="landscape"');
+    expect(result.unrepresentedChanges).toBeUndefined();
+    await expectSchemaValidPackages(result.document);
+  });
+
   test('control: a section that also changes page size keeps one w:sectPrChange with the prior page setup', async () => {
     const original = await packageWithStories(
       paragraph('Body'),
