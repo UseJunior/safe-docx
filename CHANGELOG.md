@@ -1,10 +1,11 @@
 # Changelog
 
-## 0.21.1
+## 0.21.2
 
-0.21.0 was tagged but not published. 0.21.1 is the first published release
-of the 0.21.0 changes below, including its breaking changes; upgrade notes for
-both sections apply when moving from 0.20.x.
+0.21.0 and 0.21.1 were tagged but not published; their release preflights
+failed on test timeouts. 0.21.2 is the first published release of the changes
+below and of the 0.21.0 changes, including its breaking changes; upgrade notes
+for both sections apply when moving from 0.20.x.
 
 - DOCX comparison now gives a whole-paragraph move whose terminal endpoint is
   the last paragraph of a block content control that closes the body story the
