@@ -243,7 +243,9 @@ describe('compareDocuments options', () => {
         expect(await documentXml(omitted.document)).toBe(await documentXml(explicitDefaults.document));
       });
     },
-    10_000,
+    // Two full real-document comparisons; under the release coverage run this
+    // takes ~11s on CI runners (~3.5s locally), so 10s timed out v0.21.1.
+    60_000,
   );
 
   test(
