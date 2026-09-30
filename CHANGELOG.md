@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Breaking:** docx-markdoc no longer accepts the `operation=` edit-name
+  attribute or the `operations=` attribute on `change-set`, deprecated in
+  0.21.2. A file that uses either now fails validation with
+  `REMOVED_EDIT_ATTRIBUTE`, and the message names the replacement ("operation=
+  was renamed to edit=", "operations= was renamed to edits="). To migrate,
+  rename the attribute: `operation=` to `edit=`, `operations=` to `edits=`.
+  `DEPRECATED_EDIT_ATTRIBUTE` and `CONFLICTING_EDIT_ATTRIBUTES` are no longer
+  produced. (#1106)
+
 ## 0.21.3
 
 - The `@usejunior/safe-docx` npm package README now covers installing, configuring

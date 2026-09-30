@@ -126,11 +126,11 @@ describe('Markdoc CLI error output', () => {
   itAllure('[SDX-MDOC-152] several issues print one ERROR line each, and an issue-less error prints its own code', async () => {
     const { markdoc } = await markdocWithChange('edit="add-cure-period"');
     const authored = `${markdoc}\n{% rationale for="no-such-edit" visibility="internal" %}\nOrphan.\n{% /rationale %}\n`
-      + `{% change-set id="cure-period" edits="add-cure-period" operations="add-cure-period" atomic=true /%}\n`;
+      + `{% change-set id="cure-period" operations="add-cure-period" atomic=true /%}\n`;
     const error = caughtValidationError(authored);
     const codes = error.issues!.map((issue) => issue.code);
     expect(codes).toContain('ORPHAN_RATIONALE');
-    expect(codes).toContain('CONFLICTING_EDIT_ATTRIBUTES');
+    expect(codes).toContain('REMOVED_EDIT_ATTRIBUTE');
     // One issue carries a line and one does not, so both suffix shapes are exercised.
     expect(error.issues!.some((issue) => issue.line !== undefined)).toBe(true);
     expect(error.issues!.some((issue) => issue.line === undefined)).toBe(true);

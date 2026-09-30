@@ -4,9 +4,9 @@ import { IR_VERSION, type AnnotationAnchor, type AnnotationParagraph, type Annot
 
 const stringRequired = { type: String, required: true } as const;
 /** `edit=` names an edit (e.g. `add-cure-period`); rationale `for=`, annotation `edit=`,
- * requirement `satisfied-by=` and change-set `edits=` point at that name. `operation=` is
- * the deprecated spelling, accepted with a warning for one minor version. Presence is
- * enforced in parseMarkdoc so that either spelling satisfies it.
+ * requirement `satisfied-by=` and change-set `edits=` point at that name. The removed
+ * `operation=` spelling stays declared so parseMarkdoc can reject it with a migration
+ * message instead of a generic invalid-attribute error; presence is enforced there too.
  */
 const editNameAttributes = {
   edit: { type: String },
@@ -312,20 +312,18 @@ function commaList(value: unknown): string[] {
   return String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean);
 }
 
-/** Reads the edit name from `edit=`, or from the deprecated `operation=` spelling
- * (`edits=`/`operations=` on change-set). Both spellings on one tag is an error; the
- * old spelling alone is a warning, so files written before the rename still compile.
+/** Reads the edit name from `edit=` (`edits=` on change-set). The removed `operation=`
+ * (`operations=`) spelling is an error that names the replacement; its value still feeds
+ * cross-reference checks so a renamed file reports one error per tag, not a cascade.
  */
-function editName(node: Node, issues: ValidationIssue[], warnings: ValidationIssue[], required: boolean, plural = false): string | undefined {
+function editName(node: Node, issues: ValidationIssue[], required: boolean, plural = false): string | undefined {
   const current = plural ? 'edits' : 'edit';
-  const deprecated = plural ? 'operations' : 'operation';
+  const removed = plural ? 'operations' : 'operation';
   const a = node.attributes;
-  if (a[current] !== undefined && a[deprecated] !== undefined) {
-    issues.push(issue('CONFLICTING_EDIT_ATTRIBUTES', `${node.tag} sets both ${current}= and ${deprecated}=; use ${current}= only.`, node));
-  } else if (a[deprecated] !== undefined) {
-    warnings.push(issue('DEPRECATED_EDIT_ATTRIBUTE', `${deprecated}= is deprecated; use ${current}=.`, node));
+  if (a[removed] !== undefined) {
+    issues.push(issue('REMOVED_EDIT_ATTRIBUTE', `${removed}= was renamed to ${current}=; rename the attribute on this ${node.tag}.`, node));
   }
-  const value = a[current] ?? a[deprecated];
+  const value = a[current] ?? a[removed];
   if (value === undefined || String(value) === '') {
     if (required) issues.push(issue('MISSING_EDIT_NAME', `${node.tag} requires a non-empty ${current}= name.`, node));
     return value === undefined ? undefined : '';
@@ -595,7 +593,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       if (annotations.some((annotation) => annotation.id === id)) issues.push(issue('DUPLICATE_ANNOTATION_ID', `Duplicate annotation ID ${id}.`, node));
       const date = a.date === undefined ? undefined : String(a.date);
       if (date !== undefined && !Number.isFinite(Date.parse(date))) issues.push(issue('INVALID_ANNOTATION_DATE', 'Annotation dates must be valid ISO-8601 instants.', node));
-      const annotationEdit = editName(node, issues, warnings, false);
+      const annotationEdit = editName(node, issues, false);
       annotations.push({
         id,
         body: annotationBody(node, issues),
@@ -639,7 +637,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       const id = String(a.id ?? '');
       if (changeSetIds.has(id)) issues.push(issue('DUPLICATE_CHANGE_SET', `Duplicate change-set ID ${id}.`, node));
       changeSetIds.add(id);
-      const operationIdsInSet = commaList(editName(node, issues, warnings, true, true));
+      const operationIdsInSet = commaList(editName(node, issues, true, true));
       if (a.atomic !== true) issues.push(issue('NONATOMIC_CHANGE_SET', `Change-set ${id} must declare atomic=true.`, node));
       if (operationIdsInSet.length === 0) issues.push(issue('EMPTY_CHANGE_SET', `Change-set ${id} must name at least one edit.`, node));
       if (new Set(operationIdsInSet).size !== operationIdsInSet.length) issues.push(issue('DUPLICATE_CHANGE_SET_EDIT', `Change-set ${id} repeats an edit.`, node));
@@ -656,7 +654,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       continue;
     }
     if (node.tag === 'insert-table-rows') {
-      const operationId = editName(node, issues, warnings, true) ?? '';
+      const operationId = editName(node, issues, true) ?? '';
       if (hasMeaningfulNonTagContent(node)) {
         issues.push(issue('INVALID_TABLE_ROW_BATCH', 'insert-table-rows admits direct row tags only.', node));
       }
@@ -698,7 +696,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       continue;
     }
     if (node.tag === 'delete-table-row') {
-      const operationId = editName(node, issues, warnings, true) ?? '';
+      const operationId = editName(node, issues, true) ?? '';
       operations.push({
         kind: 'delete-table-row', operationId, anchorId: String(a.anchor ?? ''),
       });
@@ -713,7 +711,7 @@ export function parseMarkdoc(source: string): ValidationResult {
         issues.push(issue('INVALID_INSERT_STATES', 'An insertion requires exactly one clean after block; its before state is empty.', node));
       }
       if (afterNodes.some(hasRevision)) issues.push(issue('REVISION_TAGS_NONCANONICAL', 'The after state contains clean text; inline ins/del belongs only in generated views.', node));
-      const operationId = editName(node, issues, warnings, true) ?? '';
+      const operationId = editName(node, issues, true) ?? '';
       const runFormat = runFormatFromAttributes(a, node, issues);
       const afterProjection = afterNodes[0]
         ? revisedProjectionWithRunFormats(afterNodes[0], issues)
@@ -761,7 +759,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       if (beforeNodes.some(hasRunFormat)) issues.push(issue('RUN_FORMAT_OUTSIDE_AFTER', 'Inline run-format declarations are permitted only in the clean after state.', node));
       if (beforeNodes.some(hasRetainedFormat)) issues.push(issue('RETAINED_FORMAT_OUTSIDE_AFTER', 'Inline retain-format declarations are permitted only in the clean after state.', node));
       if (children.some(hasRevision)) issues.push(issue('REVISION_TAGS_NONCANONICAL', 'Before/after states contain clean text; inline ins/del belongs only in generated views.', node));
-      const operationId = editName(node, issues, warnings, true) ?? '';
+      const operationId = editName(node, issues, true) ?? '';
       const runFormat = runFormatFromAttributes(a, node, issues);
       if (runFormat && afterProjection.spans.length > 0) issues.push(issue('CONFLICTING_RUN_FORMAT_SCOPE', 'Use either edit-level or inline run formatting, not both.', node));
       if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_EDIT', `Duplicate edit name ${operationId}.`, node));
@@ -815,7 +813,7 @@ export function parseMarkdoc(source: string): ValidationResult {
       revisedText,
     };
     (paragraph.story === undefined ? scaffold : storyScaffold).push(paragraph);
-    const operationId = editName(node, issues, warnings, node.tag !== 'para');
+    const operationId = editName(node, issues, node.tag !== 'para');
     const runFormat = runFormatFromAttributes(a, node, issues);
     if (runFormat && revisedProjection.spans.length > 0) issues.push(issue('CONFLICTING_RUN_FORMAT_SCOPE', 'Use either edit-level or inline run formatting, not both.', node));
     if (node.tag === 'para' && hasRevision(node)) issues.push(issue('INLINE_REVISIONS_NONCANONICAL', `Paragraph ${id} must be represented as clean before/after states.`, node));

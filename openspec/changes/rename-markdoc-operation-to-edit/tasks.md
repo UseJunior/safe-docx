@@ -13,3 +13,9 @@
 
 - [x] 3.1 Test the new spelling, the deprecated spelling with its warning, the both-set error, and import output free of `operation=`.
 - [x] 3.2 Update README examples to edit names such as `add-cure-period`, and note the deprecation window.
+
+## 4. Removal of the former spelling (#1106)
+
+- [x] 4.1 Reject `operation=`/`operations=` with `REMOVED_EDIT_ATTRIBUTE` and a message naming the replacement; drop `DEPRECATED_EDIT_ATTRIBUTE` and `CONFLICTING_EDIT_ATTRIBUTES`.
+- [x] 4.2 Replace the deprecation tests with tests for the new error on both spellings and every edit tag, and keep `edit=`/`edits=` files passing unchanged.
+- [x] 4.3 Update the README note and CHANGELOG.
