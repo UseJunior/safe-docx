@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.21.3
 
 - The `@usejunior/safe-docx` npm package README now covers installing, configuring
   an MCP client and the available tools, with links that resolve on npmjs.com;
