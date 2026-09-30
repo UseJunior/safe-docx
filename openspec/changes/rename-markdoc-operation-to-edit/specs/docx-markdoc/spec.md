@@ -25,6 +25,7 @@ error that names the replacement attribute.
 - **THEN** validation SHALL fail
 - **AND** each removed attribute SHALL produce one `REMOVED_EDIT_ATTRIBUTE` error whose message names the replacement attribute (`edit=` or `edits=`), with its line
 - **AND** compilation SHALL refuse the Markdoc
+- **AND** validating against the exported Markdoc schema configuration alone SHALL report the same `REMOVED_EDIT_ATTRIBUTE` error, not a generic attribute error
 - **AND** renaming the attribute SHALL make the same Markdoc validate without warnings
 
 #### Scenario: [SDX-MDOC-149] Removed spelling beside the new one is rejected

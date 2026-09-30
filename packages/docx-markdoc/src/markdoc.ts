@@ -3,14 +3,24 @@ import { DocxMarkdocError } from './errors.js';
 import { IR_VERSION, type AnnotationAnchor, type AnnotationParagraph, type AnnotationRunStyle, type AtomicChangeSet, type CanonicalAnnotation, type CompilationProfile, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type ReadOnlyStoryParagraph, type RequirementWaiver, type RetainedFormat, type RetainedFormatSpan, type RunFormat, type RunFormatSpan, type SourceParagraph, type StoryDeclaration, type ValidationIssue, type ValidationResult } from './types.js';
 
 const stringRequired = { type: String, required: true } as const;
+/** Attribute type for the removed `operation=`/`operations=` spellings. Declaring them with
+ * this type makes Markdoc.validate, and so the exported markdocConfig, report the targeted
+ * REMOVED_EDIT_ATTRIBUTE migration error instead of a generic invalid-attribute error.
+ */
+class RemovedEditAttribute {
+  validate(_value: unknown, _config: Config, name: string) {
+    const current = name === 'operations' ? 'edits' : 'edit';
+    return [{ id: 'REMOVED_EDIT_ATTRIBUTE', level: 'error' as const, message: `${name}= was renamed to ${current}=; rename the attribute.` }];
+  }
+}
 /** `edit=` names an edit (e.g. `add-cure-period`); rationale `for=`, annotation `edit=`,
  * requirement `satisfied-by=` and change-set `edits=` point at that name. The removed
- * `operation=` spelling stays declared so parseMarkdoc can reject it with a migration
- * message instead of a generic invalid-attribute error; presence is enforced there too.
+ * `operation=` spelling stays declared with RemovedEditAttribute so it is rejected with a
+ * migration message. Presence of the edit name is enforced in parseMarkdoc.
  */
 const editNameAttributes = {
   edit: { type: String },
-  operation: { type: String },
+  operation: { type: RemovedEditAttribute },
 };
 const runFormatAttributes = {
   underline: { type: String, matches: ['single'] },
@@ -205,7 +215,7 @@ export const markdocConfig: Config = {
       attributes: {
         id: stringRequired,
         edits: { type: String },
-        operations: { type: String },
+        operations: { type: RemovedEditAttribute },
         atomic: { type: Boolean, required: true },
       },
     },
@@ -313,16 +323,14 @@ function commaList(value: unknown): string[] {
 }
 
 /** Reads the edit name from `edit=` (`edits=` on change-set). The removed `operation=`
- * (`operations=`) spelling is an error that names the replacement; its value still feeds
- * cross-reference checks so a renamed file reports one error per tag, not a cascade.
+ * (`operations=`) spelling is rejected by the schema (RemovedEditAttribute); its value
+ * still feeds cross-reference checks so an unmigrated file reports one error per tag,
+ * not a cascade of missing-name and orphan-reference errors.
  */
 function editName(node: Node, issues: ValidationIssue[], required: boolean, plural = false): string | undefined {
   const current = plural ? 'edits' : 'edit';
   const removed = plural ? 'operations' : 'operation';
   const a = node.attributes;
-  if (a[removed] !== undefined) {
-    issues.push(issue('REMOVED_EDIT_ATTRIBUTE', `${removed}= was renamed to ${current}=; rename the attribute on this ${node.tag}.`, node));
-  }
   const value = a[current] ?? a[removed];
   if (value === undefined || String(value) === '') {
     if (required) issues.push(issue('MISSING_EDIT_NAME', `${node.tag} requires a non-empty ${current}= name.`, node));
@@ -915,7 +923,7 @@ export function parseMarkdoc(source: string): ValidationResult {
   };
 }
 
-/** Non-fatal diagnostics (such as deprecated attribute spellings) are reported through
+/** Non-fatal diagnostics are reported through
  * `onWarning`; callers that ignore them still get the IR.
  */
 export function requireMarkdoc(source: string, options: { onWarning?: (warning: ValidationIssue) => void } = {}): MarkdocEditIR {

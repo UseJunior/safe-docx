@@ -1,9 +1,11 @@
+import Markdoc from '@markdoc/markdoc';
 import { describe, expect } from 'vitest';
 import { buildSyntheticDocx, DocxDocument } from '@usejunior/docx-core';
 import { itAllure } from '../../docx-core/src/testing/allure-test.js';
 import { compileMarkdoc } from './compile.js';
 import { DocxMarkdocError } from './errors.js';
 import { importDocxToMarkdoc } from './import.js';
+import { markdocConfig } from './index.js';
 import { parseMarkdoc, requireMarkdoc } from './markdoc.js';
 import type { SourceParagraph } from './types.js';
 
@@ -124,8 +126,8 @@ describe('edit= names an edit', () => {
     expect(parsed.warnings).toEqual([]);
     if (parsed.valid) return;
     expect(parsed.issues.map((issue) => [issue.code, issue.message])).toEqual([
-      ['REMOVED_EDIT_ATTRIBUTE', 'operation= was renamed to edit=; rename the attribute on this change.'],
-      ['REMOVED_EDIT_ATTRIBUTE', 'operations= was renamed to edits=; rename the attribute on this change-set.'],
+      ['REMOVED_EDIT_ATTRIBUTE', 'operation= was renamed to edit=; rename the attribute.'],
+      ['REMOVED_EDIT_ATTRIBUTE', 'operations= was renamed to edits=; rename the attribute.'],
     ]);
     expect(parsed.issues.every((issue) => Number.isInteger(issue.line))).toBe(true);
 
@@ -164,12 +166,35 @@ describe('edit= names an edit', () => {
     const parsed = parseMarkdoc(tags);
     expect(parsed.valid).toBe(false);
     if (parsed.valid) return;
-    expect(parsed.issues.map((issue) => issue.message)).toEqual(
-      ['replace-source', 'delete-source', 'insert-before', 'insert-after', 'insert-table-rows', 'delete-table-row', 'annotation']
-        .map((tag) => `operation= was renamed to edit=; rename the attribute on this ${tag}.`),
+    // One error per tag: replace-source, delete-source, insert-before, insert-after,
+    // insert-table-rows, delete-table-row and annotation, each on its own line.
+    expect(parsed.issues.map((issue) => [issue.code, issue.message])).toEqual(
+      Array.from({ length: 7 }, () => ['REMOVED_EDIT_ATTRIBUTE', 'operation= was renamed to edit=; rename the attribute.']),
     );
-    expect(new Set(parsed.issues.map((issue) => issue.code))).toEqual(new Set(['REMOVED_EDIT_ATTRIBUTE']));
+    expect(new Set(parsed.issues.map((issue) => issue.line)).size).toBe(7);
     expect(parseMarkdoc(tags.replaceAll('operation=', 'edit=')).valid).toBe(true);
+  });
+
+  itAllure('[SDX-MDOC-148] the exported markdocConfig rejects the removed spellings on its own', async () => {
+    const { markdoc, paragraph } = await fixture();
+    const rawErrors = (source: string) => Markdoc.validate(Markdoc.parse(source), markdocConfig)
+      .map((entry) => [entry.error.id, entry.error.level, entry.error.message]);
+    const changeSet = (attributes: string) => `\n{% change-set id="cure-period" ${attributes} atomic=true /%}\n`;
+
+    expect(rawErrors(withChange(markdoc, paragraph, 'operation="add-cure-period"'))).toEqual([
+      ['REMOVED_EDIT_ATTRIBUTE', 'error', 'operation= was renamed to edit=; rename the attribute.'],
+    ]);
+    expect(rawErrors(withChange(markdoc, paragraph, 'edit="add-cure-period" operation="add-cure-period"'))).toEqual([
+      ['REMOVED_EDIT_ATTRIBUTE', 'error', 'operation= was renamed to edit=; rename the attribute.'],
+    ]);
+    const renamed = withChange(markdoc, paragraph, 'edit="add-cure-period"');
+    expect(rawErrors(renamed + changeSet('operations="add-cure-period"'))).toEqual([
+      ['REMOVED_EDIT_ATTRIBUTE', 'error', 'operations= was renamed to edits=; rename the attribute.'],
+    ]);
+    expect(rawErrors(renamed + changeSet('edits="add-cure-period" operations="add-cure-period"'))).toEqual([
+      ['REMOVED_EDIT_ATTRIBUTE', 'error', 'operations= was renamed to edits=; rename the attribute.'],
+    ]);
+    expect(rawErrors(renamed + changeSet('edits="add-cure-period"'))).toEqual([]);
   });
 
   itAllure('[SDX-MDOC-149] the removed spelling is rejected even beside the new one', async () => {
