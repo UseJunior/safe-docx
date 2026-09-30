@@ -9,8 +9,8 @@ The system SHALL read the name of an edit from the `edit` attribute on the
 `for` and requirement `satisfied-by` references SHALL resolve against those
 names. The `id` attribute of a source-anchored tag SHALL remain the source
 paragraph identity and SHALL NOT be used as the edit name. The former
-`operation` and `operations` spellings SHALL be accepted with a deprecation
-warning for one minor version.
+`operation` and `operations` spellings SHALL be rejected with a validation
+error that names the replacement attribute.
 
 #### Scenario: [SDX-MDOC-147] New spelling parses without warnings and compiles
 - **GIVEN** canonical Markdoc whose edit tags use `edit=` and whose change sets use `edits=`
@@ -19,17 +19,19 @@ warning for one minor version.
 - **AND** rationale, annotation, requirement and change-set references SHALL resolve to the named edit
 - **AND** the verification certificate SHALL carry no Markdoc warnings
 
-#### Scenario: [SDX-MDOC-148] Deprecated `operation=` spelling warns but still compiles
-- **GIVEN** Markdoc that names an edit with `operation=` or lists change-set members with `operations=`
-- **WHEN** the Markdoc is validated and compiled
-- **THEN** validation SHALL succeed
-- **AND** each deprecated attribute SHALL produce a `DEPRECATED_EDIT_ATTRIBUTE` warning naming the replacement spelling and its line
-- **AND** compilation SHALL record those warnings in the certificate without changing delivery readiness
+#### Scenario: [SDX-MDOC-148] Removed `operation=` spelling fails with a migration message
+- **GIVEN** Markdoc that names an edit with `operation=` on any edit tag or annotation, or lists change-set members with `operations=`
+- **WHEN** the Markdoc is validated or compiled
+- **THEN** validation SHALL fail
+- **AND** each removed attribute SHALL produce one `REMOVED_EDIT_ATTRIBUTE` error whose message names the replacement attribute (`edit=` or `edits=`), with its line
+- **AND** compilation SHALL refuse the Markdoc
+- **AND** validating against the exported Markdoc schema configuration alone SHALL report the same `REMOVED_EDIT_ATTRIBUTE` error, not a generic attribute error
+- **AND** renaming the attribute SHALL make the same Markdoc validate without warnings
 
-#### Scenario: [SDX-MDOC-149] Both spellings on one tag are rejected
+#### Scenario: [SDX-MDOC-149] Removed spelling beside the new one is rejected
 - **GIVEN** one tag that sets both `edit=` and `operation=`, or both `edits=` and `operations=`
 - **WHEN** the Markdoc is validated
-- **THEN** validation SHALL fail with `CONFLICTING_EDIT_ATTRIBUTES`
+- **THEN** validation SHALL fail with `REMOVED_EDIT_ATTRIBUTE`
 
 #### Scenario: [SDX-MDOC-150] Import emits only the new spelling
 - **GIVEN** a DOCX imported to canonical Markdoc

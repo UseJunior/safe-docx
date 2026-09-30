@@ -33,10 +33,10 @@ Use the entity's current legal name.
 `edit=` names the edit; `id=` is the source paragraph's bookmark. A rationale's
 `for=`, an annotation's `edit=`, a requirement's `satisfied-by=` and a
 change-set's `edits=` refer to an edit by that name, so name what the edit does
-(`add-cure-period`), not the kind of edit. The former spelling `operation=`
-(`operations=` on `change-set`) is still accepted for this minor version with a
-deprecation warning and is removed in the next; setting both spellings on one
-tag is an error. Import emits only `edit=`.
+(`add-cure-period`), not the kind of edit. The former spelling (`operation=`,
+and `operations=` on `change-set`) was removed after its deprecation window; a
+file that still uses it fails validation with `REMOVED_EDIT_ATTRIBUTE` naming
+the replacement, so rename the attribute. Import emits only `edit=`.
 
 Compilation verifies the clean before state against the pinned source, applies
 the clean after state, and derives native tracked changes with Safe DOCX's

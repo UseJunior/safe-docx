@@ -1,11 +1,13 @@
+import Markdoc from '@markdoc/markdoc';
 import { describe, expect } from 'vitest';
 import { buildSyntheticDocx, DocxDocument } from '@usejunior/docx-core';
 import { itAllure } from '../../docx-core/src/testing/allure-test.js';
 import { compileMarkdoc } from './compile.js';
 import { DocxMarkdocError } from './errors.js';
 import { importDocxToMarkdoc } from './import.js';
+import { markdocConfig } from './index.js';
 import { parseMarkdoc, requireMarkdoc } from './markdoc.js';
-import type { SourceParagraph, ValidationIssue } from './types.js';
+import type { SourceParagraph } from './types.js';
 
 async function fixture(): Promise<{ source: Buffer; anchored: Buffer; markdoc: string; paragraph: SourceParagraph }> {
   const source = await buildSyntheticDocx({ paragraphs: ['Either party may terminate this Agreement.', 'Second paragraph.'] });
@@ -109,7 +111,7 @@ describe('edit= names an edit', () => {
     ]);
   });
 
-  itAllure('[SDX-MDOC-148] the deprecated operation= spelling warns and still compiles', async () => {
+  itAllure('[SDX-MDOC-148] the removed operation= spelling fails validation with a migration message', async () => {
     const { anchored, markdoc, paragraph } = await fixture();
     const authored = [
       withChange(markdoc, paragraph, 'operation="add-cure-period"'),
@@ -120,35 +122,89 @@ describe('edit= names an edit', () => {
       '',
     ].join('\n');
     const parsed = parseMarkdoc(authored);
-    expect(parsed.valid).toBe(true);
-    expect(parsed.warnings.map((warning) => warning.code)).toEqual(['DEPRECATED_EDIT_ATTRIBUTE', 'DEPRECATED_EDIT_ATTRIBUTE']);
-    expect(parsed.warnings.map((warning) => warning.message)).toEqual([
-      'operation= is deprecated; use edit=.',
-      'operations= is deprecated; use edits=.',
+    expect(parsed.valid).toBe(false);
+    expect(parsed.warnings).toEqual([]);
+    if (parsed.valid) return;
+    expect(parsed.issues.map((issue) => [issue.code, issue.message])).toEqual([
+      ['REMOVED_EDIT_ATTRIBUTE', 'operation= was renamed to edit=; rename the attribute.'],
+      ['REMOVED_EDIT_ATTRIBUTE', 'operations= was renamed to edits=; rename the attribute.'],
     ]);
-    expect(parsed.warnings.every((warning) => Number.isInteger(warning.line))).toBe(true);
-    if (!parsed.valid) return;
-    expect(parsed.ir.operations.map((operation) => operation.operationId)).toEqual(['add-cure-period']);
-    expect(parsed.ir.changeSets?.[0]?.operationIds).toEqual(['add-cure-period']);
+    expect(parsed.issues.every((issue) => Number.isInteger(issue.line))).toBe(true);
 
-    const reported: ValidationIssue[] = [];
-    requireMarkdoc(authored, { onWarning: (warning) => reported.push(warning) });
-    expect(reported).toEqual(parsed.warnings);
+    expect(() => requireMarkdoc(authored)).toThrow(DocxMarkdocError);
+    await expect(compileMarkdoc(anchored, authored, { author: 'Test Author', date: new Date('2026-09-27T00:00:00.000Z') }))
+      .rejects.toThrow(DocxMarkdocError);
 
-    const result = await compileMarkdoc(anchored, authored, { author: 'Test Author', date: new Date('2026-09-27T00:00:00.000Z') });
-    expect(result.certificate.passed).toBe(true);
-    expect(result.certificate.deliveryReady).toBe(true);
-    expect(result.certificate.markdocWarnings).toEqual(parsed.warnings);
+    const renamed = authored.replace('operation="add-cure-period"', 'edit="add-cure-period"').replace('operations="add-cure-period"', 'edits="add-cure-period"');
+    const fixed = parseMarkdoc(renamed);
+    expect(fixed.valid).toBe(true);
+    expect(fixed.warnings).toEqual([]);
   });
 
-  itAllure('[SDX-MDOC-149] setting both spellings on one tag is rejected', async () => {
+  itAllure('[SDX-MDOC-148] operation= is rejected on every edit tag and on annotations', async () => {
+    const tags = [
+      '{% source sha256="0000" paragraphs=2 /%}',
+      '{% replace-source id="_bk_a" fingerprint="sha256:nfkc:a" style="Normal" operation="replace-a" format="inherit-source-paragraph" %}',
+      'Replacement text.',
+      '{% /replace-source %}',
+      '{% delete-source id="_bk_b" fingerprint="sha256:nfkc:b" style="Normal" operation="delete-b" format="inherit-source-paragraph" /%}',
+      '{% insert-before anchor="_bk_a" operation="insert-before-a" %}',
+      '{% after %}', 'Inserted before.', '{% /after %}',
+      '{% /insert-before %}',
+      '{% insert-after anchor="_bk_b" operation="insert-after-b" %}',
+      '{% after %}', 'Inserted after.', '{% /after %}',
+      '{% /insert-after %}',
+      '{% insert-table-rows anchor="_bk_row" position="after" operation="add-rows" %}',
+      '{% row %}', '{% cell text="Acme" /%}', '{% /row %}',
+      '{% /insert-table-rows %}',
+      '{% delete-table-row anchor="_bk_old_row" operation="remove-row" /%}',
+      '{% annotation id="note-1" operation="replace-a" audience="internal" role="drafting-note" source-presentation="authored" source-kind="point" source-paragraph="_bk_a" source-offset=0 anchor-kind="point" paragraph="_bk_a" offset=0 %}',
+      '{% annotation-p %}', 'Cure period agreed on the call.', '{% /annotation-p %}',
+      '{% /annotation %}',
+      '',
+    ].join('\n');
+    const parsed = parseMarkdoc(tags);
+    expect(parsed.valid).toBe(false);
+    if (parsed.valid) return;
+    // One error per tag: replace-source, delete-source, insert-before, insert-after,
+    // insert-table-rows, delete-table-row and annotation, each on its own line.
+    expect(parsed.issues.map((issue) => [issue.code, issue.message])).toEqual(
+      Array.from({ length: 7 }, () => ['REMOVED_EDIT_ATTRIBUTE', 'operation= was renamed to edit=; rename the attribute.']),
+    );
+    expect(new Set(parsed.issues.map((issue) => issue.line)).size).toBe(7);
+    expect(parseMarkdoc(tags.replaceAll('operation=', 'edit=')).valid).toBe(true);
+  });
+
+  itAllure('[SDX-MDOC-148] the exported markdocConfig rejects the removed spellings on its own', async () => {
+    const { markdoc, paragraph } = await fixture();
+    const rawErrors = (source: string) => Markdoc.validate(Markdoc.parse(source), markdocConfig)
+      .map((entry) => [entry.error.id, entry.error.level, entry.error.message]);
+    const changeSet = (attributes: string) => `\n{% change-set id="cure-period" ${attributes} atomic=true /%}\n`;
+
+    expect(rawErrors(withChange(markdoc, paragraph, 'operation="add-cure-period"'))).toEqual([
+      ['REMOVED_EDIT_ATTRIBUTE', 'error', 'operation= was renamed to edit=; rename the attribute.'],
+    ]);
+    expect(rawErrors(withChange(markdoc, paragraph, 'edit="add-cure-period" operation="add-cure-period"'))).toEqual([
+      ['REMOVED_EDIT_ATTRIBUTE', 'error', 'operation= was renamed to edit=; rename the attribute.'],
+    ]);
+    const renamed = withChange(markdoc, paragraph, 'edit="add-cure-period"');
+    expect(rawErrors(renamed + changeSet('operations="add-cure-period"'))).toEqual([
+      ['REMOVED_EDIT_ATTRIBUTE', 'error', 'operations= was renamed to edits=; rename the attribute.'],
+    ]);
+    expect(rawErrors(renamed + changeSet('edits="add-cure-period" operations="add-cure-period"'))).toEqual([
+      ['REMOVED_EDIT_ATTRIBUTE', 'error', 'operations= was renamed to edits=; rename the attribute.'],
+    ]);
+    expect(rawErrors(renamed + changeSet('edits="add-cure-period"'))).toEqual([]);
+  });
+
+  itAllure('[SDX-MDOC-149] the removed spelling is rejected even beside the new one', async () => {
     const { markdoc, paragraph } = await fixture();
     const bothOnChange = withChange(markdoc, paragraph, 'edit="add-cure-period" operation="add-cure-period"');
-    expect(invalidCodes(bothOnChange)).toEqual(['CONFLICTING_EDIT_ATTRIBUTES']);
+    expect(invalidCodes(bothOnChange)).toEqual(['REMOVED_EDIT_ATTRIBUTE']);
     expect(() => requireMarkdoc(bothOnChange)).toThrow(DocxMarkdocError);
 
     const bothOnChangeSet = `${withChange(markdoc, paragraph, 'edit="add-cure-period"')}\n{% change-set id="cure-period" edits="add-cure-period" operations="add-cure-period" atomic=true /%}\n`;
-    expect(invalidCodes(bothOnChangeSet)).toEqual(['CONFLICTING_EDIT_ATTRIBUTES']);
+    expect(invalidCodes(bothOnChangeSet)).toEqual(['REMOVED_EDIT_ATTRIBUTE']);
 
     const missing = withChange(markdoc, paragraph, '');
     expect(invalidCodes(missing)).toEqual(['MISSING_EDIT_NAME']);
