@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/docx-compare",
-  "version": "0.21.3",
+  "version": "0.22.0",
   "description": "DOCX comparison and redline generation for Safe DOCX.",
   "type": "module",
   "main": "dist/index.js",
@@ -20,7 +20,7 @@
     "cli": "node dist/cli/index.js"
   },
   "dependencies": {
-    "@usejunior/docx-core": "^0.21.3",
+    "@usejunior/docx-core": "^0.22.0",
     "@xmldom/xmldom": "^0.9.12",
     "jszip": "^3.10.1"
   },
