@@ -3,9 +3,8 @@
 ## Unreleased
 
 - Accepting all changes in a comparison redline no longer leaves a stray
-  section break where the revised document removed one. The accepted document
-  matches the revised document's section layout; the final section settings
-  and section breaks the revised document kept are preserved.
+  section break where the revised document removed a section break that had
+  its own page settings. The document's final section settings are unchanged.
   (#981)
 
 ## 0.22.0

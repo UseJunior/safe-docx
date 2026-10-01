@@ -15,8 +15,11 @@ committed fixture content.
 ## What Changes
 
 - Treat a paragraph-owned `w:sectPr` whose only element child is its
-  `w:sectPrChange` snapshot as a tracked removal of that section break when
-  accepting revisions.
+  `w:sectPrChange`, and whose snapshot records at least one prior section
+  property, as a tracked removal of that section break when accepting
+  revisions. An empty snapshot is left alone because the same shape also
+  records an added default-property break; see design.md for the remaining
+  ambiguous shapes.
 - Remove that paragraph-level section-properties container in the accept-all
   projection while preserving body-level final section properties and live
   section formatting.
