@@ -83,6 +83,7 @@ import { rejectChanges as rejectChangesImpl, type RejectChangesResult } from './
 import {
   collectRevisionElements,
   resolveSelectedIds,
+  matchedSelectedIds,
   detectAmbiguousOverlaps,
   selectedIdFilter,
   AmbiguousRevisionOverlapError,
@@ -873,7 +874,11 @@ export class DocxDocument {
    */
   private async prepareSelectiveStories(
     selector: AiEditSelector,
-  ): Promise<{ stories: Array<{ path: string | null; doc: Document }>; selectedIds: Set<string> }> {
+  ): Promise<{
+    stories: Array<{ path: string | null; doc: Document }>;
+    selectedIds: Set<string>;
+    matchedIds: string[];
+  }> {
     const stories: Array<{ path: string | null; doc: Document }> = [
       { path: null, doc: this.documentXml },
     ];
@@ -891,7 +896,8 @@ export class DocxDocument {
       );
       if (overlaps.length > 0) throw new AmbiguousRevisionOverlapError(overlaps);
     }
-    return { stories, selectedIds };
+    // Computed before the sweep removes the selected revisions.
+    return { stories, selectedIds, matchedIds: matchedSelectedIds(allRevisionElements, selectedIds) };
   }
 
   /**
@@ -901,7 +907,7 @@ export class DocxDocument {
    * `normalizeFirst` is set.
    */
   async acceptAIEdits(selector: AiEditSelector): Promise<{ result: AcceptChangesResult; selectedIds: string[] }> {
-    const { stories, selectedIds } = await this.prepareSelectiveStories(selector);
+    const { stories, selectedIds, matchedIds } = await this.prepareSelectiveStories(selector);
     const filter = selectedIdFilter(selectedIds);
     const total = emptyAcceptChangesResult();
 
@@ -930,7 +936,7 @@ export class DocxDocument {
       this.dirty = true;
       this.documentViewCache = null;
     }
-    return { result: total, selectedIds: [...selectedIds] };
+    return { result: total, selectedIds: matchedIds };
   }
 
   /**
@@ -939,7 +945,7 @@ export class DocxDocument {
    * Symmetric to {@link DocxDocument.acceptAIEdits}.
    */
   async rejectAIEdits(selector: AiEditSelector): Promise<{ result: RejectChangesResult; selectedIds: string[] }> {
-    const { stories, selectedIds } = await this.prepareSelectiveStories(selector);
+    const { stories, selectedIds, matchedIds } = await this.prepareSelectiveStories(selector);
     const filter = selectedIdFilter(selectedIds);
     const total = emptyRejectChangesResult();
 
@@ -968,7 +974,7 @@ export class DocxDocument {
       this.dirty = true;
       this.documentViewCache = null;
     }
-    return { result: total, selectedIds: [...selectedIds] };
+    return { result: total, selectedIds: matchedIds };
   }
 
   removeJuniorBookmarks(): number {

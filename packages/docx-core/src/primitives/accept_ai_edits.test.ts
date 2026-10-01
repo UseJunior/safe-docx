@@ -45,6 +45,14 @@ describe('selective accept/reject by revision id/author (#123)', () => {
       expect([...ids].sort()).toEqual(['1', '2']);
     });
 
+    it('reports only the selected ids that name a revision present in the story', () => {
+      const doc = body(`<w:p>${aiIns(1, 'a')}${humanIns(2, 'b')}</w:p>`);
+      const { selectedIds } = acceptAIEdits(doc, { revisionIds: [999, 1] });
+      expect(selectedIds).toEqual(['1']);
+      const none = rejectAIEdits(body(`<w:p>${aiIns(1, 'a')}</w:p>`), { revisionIds: [999] });
+      expect(none.selectedIds).toEqual([]);
+    });
+
     it('resolves an author to the ids of every revision it authored', () => {
       const doc = body(`<w:p>${aiIns(1, 'a')}${humanIns(2, 'b')}${aiDel(3, 'c')}</w:p>`);
       const ids = resolveSelectedIds(collectRevisionElements(doc), { author: AI });

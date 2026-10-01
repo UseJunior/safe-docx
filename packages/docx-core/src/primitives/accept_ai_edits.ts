@@ -171,6 +171,22 @@ export function resolveSelectedIds(revisionElements: Element[], selector: AiEdit
 }
 
 /**
+ * The selected ids that name a tracked change actually present in
+ * `revisionElements`, in selection order. `resolveSelectedIds` keeps requested
+ * `revisionIds` verbatim (an unknown id simply filters nothing); this is what a
+ * caller should report as selected, so an id that matches no revision is not
+ * echoed back as if it had been acted on (#1099).
+ */
+export function matchedSelectedIds(revisionElements: Element[], selectedIds: Set<string>): string[] {
+  const present = new Set<string>();
+  for (const el of revisionElements) {
+    const id = revisionElementId(el);
+    if (id != null) present.add(id);
+  }
+  return [...selectedIds].filter((id) => present.has(id));
+}
+
+/**
  * Find ambiguous overlaps within a single story: a targeted content-wrapper
  * revision that structurally contains — or is contained by — a non-targeted
  * content-wrapper revision.
@@ -270,11 +286,13 @@ export function selectedIdFilter(selectedIds: Set<string>): RevisionFilter {
 export function acceptAIEdits(doc: Document, selector: AiEditSelector): SelectiveAcceptResult {
   const root = storyRoot(doc);
   if (!root) return { result: emptyAccept(), selectedIds: [], overlaps: [] };
-  const selectedIds = resolveSelectedIds(collectRevisionElements(root), selector);
+  const revisionElements = collectRevisionElements(root);
+  const selectedIds = resolveSelectedIds(revisionElements, selector);
   const overlaps = selector.normalizeFirst ? [] : detectAmbiguousOverlaps(root, selectedIds);
   if (overlaps.length > 0) throw new AmbiguousRevisionOverlapError(overlaps);
+  const matched = matchedSelectedIds(revisionElements, selectedIds);
   const result = acceptChanges(doc, { filter: selectedIdFilter(selectedIds) });
-  return { result, selectedIds: [...selectedIds], overlaps };
+  return { result, selectedIds: matched, overlaps };
 }
 
 /**
@@ -284,11 +302,13 @@ export function acceptAIEdits(doc: Document, selector: AiEditSelector): Selectiv
 export function rejectAIEdits(doc: Document, selector: AiEditSelector): SelectiveRejectResult {
   const root = storyRoot(doc);
   if (!root) return { result: emptyReject(), selectedIds: [], overlaps: [] };
-  const selectedIds = resolveSelectedIds(collectRevisionElements(root), selector);
+  const revisionElements = collectRevisionElements(root);
+  const selectedIds = resolveSelectedIds(revisionElements, selector);
   const overlaps = selector.normalizeFirst ? [] : detectAmbiguousOverlaps(root, selectedIds);
   if (overlaps.length > 0) throw new AmbiguousRevisionOverlapError(overlaps);
+  const matched = matchedSelectedIds(revisionElements, selectedIds);
   const result = rejectChanges(doc, { filter: selectedIdFilter(selectedIds) });
-  return { result, selectedIds: [...selectedIds], overlaps };
+  return { result, selectedIds: matched, overlaps };
 }
 
 function emptyAccept(): AcceptChangesResult {

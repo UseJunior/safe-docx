@@ -56,6 +56,86 @@ function symbolRemovalWarning(removed: number, tracked: boolean): string {
     `not shown in the paragraph text; ${removed === 1 ? 'it was' : 'they were'} ${outcome}.`;
 }
 
+function insideTrackedDeletion(el: Element, paragraph: Element): boolean {
+  for (let node: Node | null = el.parentNode; node && node !== paragraph; node = node.parentNode) {
+    if (node.nodeType === 1 && (node as Element).namespaceURI === OOXML.W_NS && (node as Element).localName === W.del) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Other constructs the paragraph text does not show and a range can take out
+ * without the caller having seen them (issue #1097): a field with no result
+ * (an `XE` index entry, a `TC` entry, a `PAGE` never updated: complex fields
+ * with no `separate` marker) and a footnote or endnote reference. Each is
+ * described once, in the order it is closed (a note reference where it sits,
+ * a field at its `end` marker, so a nested field precedes the field around
+ * it), and a before/after comparison names exactly what the edit removed.
+ * Fields with a cached result are left out:
+ * their result is in the paragraph text the caller matched, so the caller saw
+ * what the range covers. An empty `w:fldSimple` is a zero-length marker the
+ * replace primitive keeps in place, so it needs no count.
+ */
+function collectLiveHiddenConstructs(paragraph: Element): string[] {
+  const labels: string[] = [];
+  const openFields: Array<{ instruction: string; separated: boolean }> = [];
+  const all = paragraph.getElementsByTagNameNS(OOXML.W_NS, '*');
+  for (let i = 0; i < all.length; i++) {
+    const el = all[i]!;
+    if (insideTrackedDeletion(el, paragraph)) continue;
+    switch (el.localName) {
+      case W.fldChar: {
+        const kind = el.getAttributeNS(OOXML.W_NS, 'fldCharType') ?? el.getAttribute('w:fldCharType');
+        if (kind === 'begin') openFields.push({ instruction: '', separated: false });
+        else if (kind === 'separate' && openFields.length > 0) openFields[openFields.length - 1]!.separated = true;
+        else if (kind === 'end') {
+          const field = openFields.pop();
+          if (field && !field.separated) labels.push(`field with no result (instruction: ${field.instruction.trim()})`);
+        }
+        break;
+      }
+      case W.instrText:
+        if (openFields.length > 0) openFields[openFields.length - 1]!.instruction += el.textContent ?? '';
+        break;
+      case W.footnoteReference:
+      case W.endnoteReference: {
+        const id = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id') ?? '?';
+        labels.push(`${el.localName === W.footnoteReference ? 'footnote' : 'endnote'} reference (note id ${id})`);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return labels;
+}
+
+/** Labels present before the edit and missing after it, as a multiset difference. */
+function removedHiddenConstructs(before: string[], after: string[]): string[] {
+  const remaining = new Map<string, number>();
+  for (const label of after) remaining.set(label, (remaining.get(label) ?? 0) + 1);
+  const removed: string[] = [];
+  for (const label of before) {
+    const count = remaining.get(label) ?? 0;
+    if (count > 0) remaining.set(label, count - 1);
+    else removed.push(label);
+  }
+  return removed;
+}
+
+function hiddenConstructRemovalWarning(label: string, tracked: boolean): string {
+  const outcome = tracked
+    ? 'deleted with the replaced text as a tracked change; reject the deletion to restore'
+    : 'removed with the replaced text';
+  const aftermath = !tracked && /^(?:footnote|endnote) reference/u.test(label)
+    ? ' Its note body stays in the notes part, no longer referenced.'
+    : '';
+  const article = /^[aeiou]/iu.test(label) ? 'an' : 'a';
+  return `The replaced range spanned ${article} ${label} not shown in the paragraph text; it was ${outcome}.${aftermath}`;
+}
+
 function mergeAddRunProps(
   a: NonNullable<ReplacementPart['addRunProps']> | null | undefined,
   b: NonNullable<ReplacementPart['addRunProps']> | null | undefined,
@@ -278,9 +358,13 @@ export async function replaceText(
         throw new Error(`Paragraph ID ${pid} not found in document`);
       }
       const liveSymbolsBefore = countLiveSymbolCharacters(pEl);
+      const hiddenBefore = collectLiveHiddenConstructs(pEl);
       const reportRemovedSymbols = (): void => {
         const removed = liveSymbolsBefore - countLiveSymbolCharacters(pEl);
         if (removed > 0) editWarnings.push(symbolRemovalWarning(removed, !!activeCtx));
+        for (const label of removedHiddenConstructs(hiddenBefore, collectLiveHiddenConstructs(pEl))) {
+          editWarnings.push(hiddenConstructRemovalWarning(label, !!activeCtx));
+        }
       };
 
       const paraRuns = getParagraphRuns(pEl);

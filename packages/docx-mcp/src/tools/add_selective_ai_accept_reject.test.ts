@@ -331,8 +331,9 @@ describe('No-op accept/reject leaves the session unedited (#1084)', () => {
       assertSuccess(byAuthor, 'reject_ai_edits');
       assertSuccess(byIds, 'reject_ai_edits');
       expect(byAuthor.selected_revision_ids).toEqual([]);
-      // Unknown revision_ids are echoed back as selected, so zero counts (not an
-      // empty selection) are what prove nothing changed.
+      // Unknown revision_ids are no longer echoed back as selected (#1099);
+      // the zero counts are what prove nothing changed.
+      expect(byIds.selected_revision_ids).toEqual([]);
       expect(byIds.insertionsRemoved).toBe(0);
       expect(byIds.deletionsRestored).toBe(0);
       expect(counters(session)).toEqual(before);
@@ -391,6 +392,140 @@ describe('No-op accept/reject leaves the session unedited (#1084)', () => {
         editCount: selectiveBefore.editCount + 2,
         editRevision: selectiveBefore.editRevision + 2,
       });
+    });
+  });
+});
+
+// #1099: accept/reject with revision_ids that match nothing used to report
+// persistence_required: true with a save instruction, echo the unknown ids as
+// selected, and record a selective action that made a later clean save fail
+// with SELECTIVE_REVISIONS_WOULD_BE_DISCARDED although nothing had changed.
+describe('No-op accept/reject by unknown revision id has nothing to persist (#1099)', () => {
+  registerCleanup();
+
+  const TOOLS = [
+    { name: 'accept_ai_edits', call: acceptAiEdits },
+    { name: 'reject_ai_edits', call: rejectAiEdits },
+  ] as const;
+
+  for (const tool of TOOLS) {
+    test(`${tool.name} with revision ids that match no revision reports persistence_required: false and no next_step`, async ({ given, when, then }: AllureBddContext) => {
+      const opened = await given('a session with AI and reviewer revisions', () =>
+        openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) }),
+      );
+      const session = await docxSession(opened.mgr, opened.filePath);
+
+      const result = await when(`${tool.name} targets revision ids that do not exist`, () =>
+        tool.call(opened.mgr, { file_path: opened.filePath, revision_ids: [999, '998'] }),
+      );
+
+      await then('it succeeds, reports nothing to persist and records no selective action', () => {
+        assertSuccess(result, tool.name);
+        expect(result.persistence_required).toBe(false);
+        expect(result).not.toHaveProperty('next_step');
+        expect(result.selected_revision_ids).toEqual([]);
+        expect(session.selectiveRevisionAction).toBeNull();
+      });
+    });
+
+    test(`a clean save after a no-op ${tool.name} succeeds exactly as it would without the call`, async ({ given, when, then }: AllureBddContext) => {
+      const opened = await given('a session with AI and reviewer revisions', () =>
+        openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) }),
+      );
+      const control = await given('a control session on the same document with no accept/reject call', () =>
+        openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) }),
+      );
+      const cleanPath = path.join(opened.tmpDir, 'no-op-by-id-clean.docx');
+      const controlPath = path.join(control.tmpDir, 'control-clean.docx');
+
+      const saved = await when(`${tool.name} targets an unknown revision id and the session is saved clean`, async () => {
+        assertSuccess(await tool.call(opened.mgr, { file_path: opened.filePath, revision_ids: [999] }), tool.name);
+        return save(opened.mgr, { file_path: opened.filePath, save_to_local_path: cleanPath, save_format: 'clean' });
+      });
+      const controlSaved = await when('the control session is saved clean', () =>
+        save(control.mgr, { file_path: control.filePath, save_to_local_path: controlPath, save_format: 'clean' }),
+      );
+
+      await then('both clean saves succeed and write the same document.xml', async () => {
+        assertSuccess(saved, 'clean save after no-op selection by id');
+        assertSuccess(controlSaved, 'control clean save');
+        expect(saved.selective_revision_disposition).toBeUndefined();
+        expect(controlSaved.selective_revision_disposition).toBeUndefined();
+        const xml = await (await DocxZip.load(await fs.readFile(cleanPath))).readText('word/document.xml');
+        const controlXml = await (await DocxZip.load(await fs.readFile(controlPath))).readText('word/document.xml');
+        expect(xml).toBe(controlXml);
+      });
+    });
+  }
+
+  for (const tool of [
+    { name: 'accept_ai_edits', call: acceptAiEdits, realId: '101' },
+    { name: 'reject_ai_edits', call: rejectAiEdits, realId: '103' },
+  ] as const) {
+    test(`${tool.name} with one real and one unknown revision id reports and records only the real id`, async ({ given, when, then }: AllureBddContext) => {
+      const opened = await given('a session with AI and reviewer revisions', () =>
+        openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) }),
+      );
+      const session = await docxSession(opened.mgr, opened.filePath);
+
+      const result = await when(`${tool.name} targets one existing and one nonexistent revision id`, () =>
+        tool.call(opened.mgr, { file_path: opened.filePath, revision_ids: [tool.realId, 999] }),
+      );
+
+      await then('the unknown id is neither reported as selected nor recorded on the session', () => {
+        assertSuccess(result, tool.name);
+        expect(result.selected_revision_ids).toEqual([tool.realId]);
+        expect(result.persistence_required).toBe(true);
+        expect(session.selectiveRevisionAction).toMatchObject({ tool: tool.name, selectedRevisionIds: [tool.realId] });
+      });
+    });
+  }
+
+  test('a real selective accept still records the action and blocks a clean save that would discard remaining AI revisions (control)', async ({ given, when, then }: AllureBddContext) => {
+    const opened = await given('a session with AI and reviewer revisions', () =>
+      openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) }),
+    );
+    const session = await docxSession(opened.mgr, opened.filePath);
+    const cleanPath = path.join(opened.tmpDir, 'real-selective-clean.docx');
+
+    const accepted = await when('accept_ai_edits accepts one of the two AI revisions by id', () =>
+      acceptAiEdits(opened.mgr, { file_path: opened.filePath, revision_ids: [101] }),
+    );
+    const blocked = await when('the session is saved clean without an acknowledgement', () =>
+      save(opened.mgr, { file_path: opened.filePath, save_to_local_path: cleanPath, save_format: 'clean' }),
+    );
+
+    await then('the call reports the selection to persist and the clean save is refused', () => {
+      assertSuccess(accepted, 'accept_ai_edits');
+      expect(accepted.selected_revision_ids).toEqual(['101']);
+      expect(accepted.persistence_required).toBe(true);
+      expect(accepted.next_step).toMatch(/save_format='tracked'/u);
+      expect(session.selectiveRevisionAction).toMatchObject({ tool: 'accept_ai_edits', selector: 'revision_ids', selectedRevisionIds: ['101'] });
+      assertFailure(blocked, 'SELECTIVE_REVISIONS_WOULD_BE_DISCARDED');
+    });
+  });
+
+  test('a real selective reject still records the action and blocks a clean save that would discard remaining AI revisions (control)', async ({ given, when, then }: AllureBddContext) => {
+    const opened = await given('a session with AI and reviewer revisions', () =>
+      openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) }),
+    );
+    const session = await docxSession(opened.mgr, opened.filePath);
+    const cleanPath = path.join(opened.tmpDir, 'real-selective-reject-clean.docx');
+
+    const rejected = await when('reject_ai_edits rejects one of the two AI revisions by id', () =>
+      rejectAiEdits(opened.mgr, { file_path: opened.filePath, revision_ids: [103] }),
+    );
+    const blocked = await when('the session is saved clean without an acknowledgement', () =>
+      save(opened.mgr, { file_path: opened.filePath, save_to_local_path: cleanPath, save_format: 'clean' }),
+    );
+
+    await then('the call reports the selection to persist and the clean save is refused', () => {
+      assertSuccess(rejected, 'reject_ai_edits');
+      expect(rejected.selected_revision_ids).toEqual(['103']);
+      expect(rejected.persistence_required).toBe(true);
+      expect(rejected.next_step).toMatch(/save_format='tracked'/u);
+      expect(session.selectiveRevisionAction).toMatchObject({ tool: 'reject_ai_edits', selector: 'revision_ids', selectedRevisionIds: ['103'] });
+      assertFailure(blocked, 'SELECTIVE_REVISIONS_WOULD_BE_DISCARDED');
     });
   });
 });

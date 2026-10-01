@@ -17,6 +17,22 @@
   section break where the revised document removed a section break that had
   its own page settings. The document's final section settings are unchanged.
   (#981)
+- `accept_ai_edits` / `reject_ai_edits` called with `revision_ids` that match
+  no revision no longer report `persistence_required: true` or a save
+  `next_step`, no longer echo the unknown ids in `selected_revision_ids` (now
+  `[]`), and no longer record a selective action on the session, so a following
+  `save` with `save_format: 'clean'` succeeds instead of failing with
+  `SELECTIVE_REVISIONS_WOULD_BE_DISCARDED`. When only some of the requested ids
+  exist, `selected_revision_ids` lists just those. A real selective
+  accept/reject still blocks a clean save that would discard the remaining AI
+  revisions. (#1099)
+- `replace_text` now warns when the replaced range removes a construct the
+  paragraph text does not show: a field with no result (for example an `XE` or
+  `TC` entry), named by its instruction, or a footnote/endnote reference, named
+  by its note id. One warning per construct removed, in the same style as the
+  existing symbol-character warning; in tracked mode the warning says it was
+  deleted as a tracked change. Fields with a cached result are not reported.
+  (#1097)
 
 ## 0.22.0
 
