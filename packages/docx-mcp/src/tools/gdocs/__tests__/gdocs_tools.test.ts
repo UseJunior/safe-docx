@@ -264,6 +264,16 @@ describe('Google Docs MCP tool dispatch', () => {
       assertSuccess(result);
       expect(result.total_matches).toBe(0);
     });
+
+    it('rejects an invalid regex with INVALID_PATTERN', async () => {
+      setupGDocsSession(manager);
+      const result = await dispatchToolCall(manager, 'grep', {
+        google_doc_id: 'test-doc-id-123',
+        pattern: '[',
+      });
+      assertError(result);
+      expect((result as ErrorResult).error.code).toBe('INVALID_PATTERN');
+    });
   });
 
   describe('save', () => {
