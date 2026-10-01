@@ -29,5 +29,5 @@ committed fixture content.
 - Affected code: `packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts`
 - Affected tests: tagged accept/reject projection and formatting-fidelity tests
 - Dependency: UseJunior/legal-context#918
-- Base: UseJunior/safe-docx `31b1d8fd2e9f0f285cc6167906ef6e2c9f220699`
+- Base: UseJunior/safe-docx `main` (rebased onto `4e146155`)
 

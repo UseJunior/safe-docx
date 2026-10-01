@@ -19,6 +19,7 @@ import {
   compareProjectedFormattingFidelity,
   compareSourceProjectedFormattingFidelity,
 } from './formattingFidelity.js';
+import { acceptAllChanges } from './trackChangesAcceptorAst.js';
 
 const TEST_FEATURE = 'add-formatting-fidelity-comparison-check';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
@@ -326,6 +327,12 @@ describe('Formatting-fidelity comparison check', () => {
     expect(result.engine).toBe('tagged-tree');
     expect(fidelity.accept.score).toBe(1);
     expect(fidelity.reject.score).toBe(1);
+    // The fidelity gate alone does not see an empty ghost w:sectPr, so assert
+    // the accepted structure directly: no paragraph-owned section break
+    // survives, and the body-level final section properties do.
+    const accepted = acceptAllChanges(candidateXml);
+    expect(accepted).not.toMatch(/<w:pPr>(?:(?!<\/w:pPr>)[\s\S])*<w:sectPr/);
+    expect(accepted).toMatch(/<\/w:p><w:sectPr\/><\/w:body>/);
   });
 
   humanReadableTest.openspec('pipeline inplace and rebuild candidates are measurable end-to-end')(

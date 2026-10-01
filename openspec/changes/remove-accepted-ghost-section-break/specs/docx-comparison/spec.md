@@ -1,18 +1,8 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
-### Requirement: Projection-Based Candidate Formatting Comparison
+### Requirement: Accept-All Removes Tracked Paragraph Section-Break Removals
 
-The system SHALL provide `compareProjectedFormattingFidelity(expectedCandidateXml, actualCandidateXml)` that compares the accept-all projections and the reject-all projections of two tracked-changes candidates and returns both formatting-fidelity reports plus an overall score equal to the minimum of the two projection scores, so that revision-markup granularity differences between reconstruction modes do not register as formatting divergence. Accepting a tracked removal of a paragraph-level section break SHALL remove the paragraph-owned section-properties container when the change snapshot is its only element child; it SHALL NOT remove the body-level final section-properties container or a section-properties container with live formatting children.
-
-#### Scenario: projected fidelity ignores revision markup granularity differences
-
-- **WHEN** two candidates encode the same insertion with different `w:ins` wrapper and run granularity but identical formatting
-- **THEN** the overall projected score is exactly 1.0
-
-#### Scenario: pipeline inplace and rebuild candidates are measurable end-to-end
-
-- **WHEN** the comparison pipeline produces an inplace candidate and a rebuild candidate for the same original and revised documents
-- **THEN** the projected formatting-fidelity comparison of the two candidates returns well-formed accept and reject reports with scores in [0, 1]
+When accepting all revisions, the system SHALL treat a paragraph-owned `w:sectPr` whose only element child is its `w:sectPrChange` snapshot as a tracked removal of that paragraph-level section break, and SHALL remove that section-properties container from the accept-all projection so no ghost section remains. It SHALL NOT remove the body-level final section-properties container or a paragraph-owned section-properties container that has any live section-property child. Reject-all restoration of the prior section properties SHALL be unchanged.
 
 #### Scenario: accepting a tracked section-break removal does not leave a ghost section
 

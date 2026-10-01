@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Accepting all changes in a comparison redline no longer leaves a stray
+  section break where the revised document removed one. The accepted document
+  matches the revised document's section layout; the final section settings
+  and every section break the revised document kept are preserved.
+  (#981)
+
 ## 0.22.0
 
 Migration: in `.mdoc` revision files, rename `operation=` to `edit=` and
