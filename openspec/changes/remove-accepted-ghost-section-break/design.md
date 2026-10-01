@@ -32,9 +32,13 @@ that revision record into an empty but semantically active section break.
 - An empty live `w:sectPr` over an empty snapshot is kept: the serializer emits
   that shape for an added break with default properties, which accept-all must
   keep. A removed break whose original carried no `CT_SectPrBase` property has
-  the same shape and still leaves an empty break; the fidelity gate reports it.
+  the same shape, so accept-all still leaves that default-property break in
+  place. This is a known limitation: the formatting-fidelity gate compares
+  section properties, not section counts, and scores this case 1.0, so it is
+  not a safeguard here.
 - A break the revised document kept as a completely empty `w:sectPr` while the
   original carried properties is indistinguishable from a removal in the
-  tracked XML and is removed on accept-all. Real section breaks carry page
-  setup, so this shape is not expected from Word-authored input.
-
+  tracked XML and is removed on accept-all. The fidelity gate also scores this
+  case 1.0. Real section breaks carry page setup, so this shape is not
+  expected from Word-authored input; disambiguating it would need a serializer
+  change and is out of scope here.
