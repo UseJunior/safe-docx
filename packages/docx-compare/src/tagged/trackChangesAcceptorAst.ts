@@ -798,6 +798,7 @@ export function acceptAllChanges(documentXml: string): string {
   removeAllByTagName(root, 'w:pPrChange');
   removeAllByTagName(root, 'w:trPrChange');
   removeAllByTagName(root, 'w:tcPrChange');
+  removeAcceptedSectionBreakRemovals(root);
   removeAllByTagName(root, 'w:sectPrChange');
   removeEmptyTablePropertyContainers(root);
 
@@ -1009,6 +1010,37 @@ function removeEmptyTablePropertyContainers(root: Element): void {
   for (const propertyTag of ['w:trPr', 'w:tcPr']) {
     for (const properties of findAllByTagName(root, propertyTag)) {
       if (childElements(properties).length === 0) properties.parentNode?.removeChild(properties);
+    }
+  }
+}
+
+/**
+ * Remove a paragraph-level section break whose tracked prior state is the only
+ * content of its live section-properties container. Accepting that revision
+ * means accepting the absence of the break; retaining an empty `w:sectPr`
+ * would instead create a ghost section. Body-level final section properties
+ * and paragraph sections with any live property remain untouched.
+ *
+ * The prior-state snapshot must itself carry a section property. An empty
+ * snapshot under an empty live `w:sectPr` is how an ADDED break with default
+ * properties is recorded, so that break is kept.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ */
+function removeAcceptedSectionBreakRemovals(root: Element): void {
+  for (const change of findAllByTagName(root, 'w:sectPrChange')) {
+    const sectionProperties = parentElement(change);
+    const paragraphProperties = sectionProperties ? parentElement(sectionProperties) : undefined;
+    const snapshot = childElements(change).find((child) => child.tagName === 'w:sectPr');
+    if (
+      sectionProperties?.tagName === 'w:sectPr' &&
+      paragraphProperties?.tagName === 'w:pPr' &&
+      childElements(sectionProperties).length === 1 &&
+      childElements(sectionProperties)[0] === change &&
+      snapshot !== undefined &&
+      childElements(snapshot).length > 0
+    ) {
+      paragraphProperties.removeChild(sectionProperties);
     }
   }
 }

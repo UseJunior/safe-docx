@@ -13,6 +13,10 @@
   valid regular expression now fails with `INVALID_PATTERN` (and `isError: true`)
   instead of returning `success: true` with zero matches and an `error` string.
   (#1085)
+- Accepting all changes in a comparison redline no longer leaves a stray
+  section break where the revised document removed a section break that had
+  its own page settings. The document's final section settings are unchanged.
+  (#981)
 
 ## 0.22.0
 
