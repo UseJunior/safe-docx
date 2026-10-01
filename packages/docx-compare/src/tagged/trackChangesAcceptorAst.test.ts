@@ -253,6 +253,31 @@ describe('trackChangesAcceptorAst', () => {
       },
     );
 
+  test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' })
+    .openspec('an added default section break survives accept-all')(
+      'Scenario: an added default section break survives accept-all',
+      () => {
+        const input = `<?xml version="1.0"?>
+          <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:body>
+              <w:p><w:pPr><w:sectPr><w:sectPrChange w:id="1"><w:sectPr/></w:sectPrChange></w:sectPr></w:pPr>
+                <w:r><w:t>Invented added break</w:t></w:r></w:p>
+              <w:sectPr/>
+            </w:body>
+          </w:document>`;
+
+        const result = acceptAllChanges(input);
+        const root = parseDocumentXml(result);
+        const paragraphSections = findAllByTagName(root, 'w:sectPr')
+          .filter((section) => (section.parentNode as Element | null)?.tagName === 'w:pPr');
+
+        expect(paragraphSections).toHaveLength(1);
+        expect(findAllByTagName(root, 'w:sectPr')).toHaveLength(2);
+        expect(result).not.toContain('w:sectPrChange');
+      },
+    );
+
   describe('rejectAllChanges', () => {
     test('should remove w:ins elements entirely', async ({ given, when, then, and }: AllureBddContext) => {
       let input: string;

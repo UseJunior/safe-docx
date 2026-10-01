@@ -2,7 +2,7 @@
 
 ### Requirement: Accept-All Removes Tracked Paragraph Section-Break Removals
 
-When accepting all revisions, the system SHALL treat a paragraph-owned `w:sectPr` whose only element child is its `w:sectPrChange` snapshot as a tracked removal of that paragraph-level section break, and SHALL remove that section-properties container from the accept-all projection so no ghost section remains. It SHALL NOT remove the body-level final section-properties container or a paragraph-owned section-properties container that has any live section-property child. Reject-all restoration of the prior section properties SHALL be unchanged.
+When accepting all revisions, the system SHALL treat a paragraph-owned `w:sectPr` whose only element child is its `w:sectPrChange` snapshot as a tracked removal of that paragraph-level section break when the `w:sectPrChange` snapshot records at least one prior section property, and SHALL remove that section-properties container from the accept-all projection so no ghost section remains. It SHALL NOT remove the body-level final section-properties container or a paragraph-owned section-properties container that has any live section-property child, and SHALL NOT remove an empty paragraph-owned section-properties container whose snapshot is also empty, because that shape records an added section break with default properties. Reject-all restoration of the prior section properties SHALL be unchanged.
 
 #### Scenario: accepting a tracked section-break removal does not leave a ghost section
 
@@ -17,3 +17,9 @@ When accepting all revisions, the system SHALL treat a paragraph-owned `w:sectPr
 - **GIVEN** section-properties containers with live formatting children or a body-level final section-properties container
 - **WHEN** revisions are accepted
 - **THEN** those section-properties containers remain present
+
+#### Scenario: an added default section break survives accept-all
+
+- **GIVEN** a paragraph-owned `w:sectPr` whose only child is a `w:sectPrChange` with an empty `w:sectPr` snapshot
+- **WHEN** revisions are accepted
+- **THEN** the paragraph-owned section-properties container remains present

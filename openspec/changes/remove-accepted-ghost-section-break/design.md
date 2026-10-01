@@ -16,7 +16,8 @@ that revision record into an empty but semantically active section break.
 
 - Record removable section containers before deleting property-change records.
   A container qualifies only when it is `w:pPr > w:sectPr`, has a direct
-  `w:sectPrChange`, and has no other direct element children.
+  `w:sectPrChange`, has no other direct element children, and the change
+  snapshot records at least one prior section property.
 - Never remove `w:body > w:sectPr`; it is the final section-properties container,
   not a paragraph-level section break.
 - Keep the fidelity oracle and its exact threshold unchanged. The regression
@@ -28,4 +29,12 @@ that revision record into an empty but semantically active section break.
   remain untouched and visible to safety checks.
 - A paragraph section with any live property child remains a live section break,
   even if it also carries a historical snapshot.
+- An empty live `w:sectPr` over an empty snapshot is kept: the serializer emits
+  that shape for an added break with default properties, which accept-all must
+  keep. A removed break whose original carried no `CT_SectPrBase` property has
+  the same shape and still leaves an empty break; the fidelity gate reports it.
+- A break the revised document kept as a completely empty `w:sectPr` while the
+  original carried properties is indistinguishable from a removal in the
+  tracked XML and is removed on accept-all. Real section breaks carry page
+  setup, so this shape is not expected from Word-authored input.
 

@@ -1021,17 +1021,24 @@ function removeEmptyTablePropertyContainers(root: Element): void {
  * would instead create a ghost section. Body-level final section properties
  * and paragraph sections with any live property remain untouched.
  *
+ * The prior-state snapshot must itself carry a section property. An empty
+ * snapshot under an empty live `w:sectPr` is how an ADDED break with default
+ * properties is recorded, so that break is kept.
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
  */
 function removeAcceptedSectionBreakRemovals(root: Element): void {
   for (const change of findAllByTagName(root, 'w:sectPrChange')) {
     const sectionProperties = parentElement(change);
     const paragraphProperties = sectionProperties ? parentElement(sectionProperties) : undefined;
+    const snapshot = childElements(change).find((child) => child.tagName === 'w:sectPr');
     if (
       sectionProperties?.tagName === 'w:sectPr' &&
       paragraphProperties?.tagName === 'w:pPr' &&
       childElements(sectionProperties).length === 1 &&
-      childElements(sectionProperties)[0] === change
+      childElements(sectionProperties)[0] === change &&
+      snapshot !== undefined &&
+      childElements(snapshot).length > 0
     ) {
       paragraphProperties.removeChild(sectionProperties);
     }
