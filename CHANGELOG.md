@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **Client-visible (MCP):** a failed tool call now sets `isError: true` on the
+  MCP `CallToolResult`, so clients and agent frameworks that branch on the
+  transport flag stop treating failures as successes. The tool JSON in the text
+  content is unchanged (`success: false` with the same `error.code` /
+  `error.message`), and successful calls still omit `isError`. A tool that
+  throws instead of returning an error now also comes back as a `CallToolResult`
+  with `isError: true` and the standard envelope under code `INTERNAL_ERROR`,
+  rather than as a JSON-RPC protocol error. `grep` with a pattern that is not a
+  valid regular expression now fails with `INVALID_PATTERN` (and `isError: true`)
+  instead of returning `success: true` with zero matches and an `error` string.
+  (#1085)
+
 ## 0.22.0
 
 Migration: in `.mdoc` revision files, rename `operation=` to `edit=` and
