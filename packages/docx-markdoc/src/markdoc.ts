@@ -494,6 +494,10 @@ export function parseMarkdoc(source: string): ValidationResult {
       line: entry.lines?.[0] === undefined ? undefined : entry.lines[0] + 1,
     }));
 
+  // Nothing emits Markdoc validation warnings today: the last producer,
+  // DEPRECATED_EDIT_ATTRIBUTE, became the REMOVED_EDIT_ATTRIBUTE error (#1106).
+  // The channel stays because `warnings` is part of the public
+  // ValidationResult shape and `requireMarkdoc` forwards it to `onWarning`.
   const warnings: ValidationIssue[] = [];
   validateTextBodies(ast, issues);
 

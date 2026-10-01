@@ -355,6 +355,7 @@ jobs:
         run: |
           npm run test:coverage -w @usejunior/docx-core
           npm run test:coverage -w @usejunior/docx-compare
+          npm run test:coverage -w @usejunior/docx-markdoc
           npm run test:coverage -w @usejunior/docx-mcp
           npm run test:run -w @usejunior/safe-docx
           npm run test:run -w @usejunior/safedocx-mcpb
@@ -386,16 +387,18 @@ jobs:
             coverage/package-coverage-table.txt
             packages/docx-core/coverage/coverage-summary.json
             packages/docx-compare/coverage/coverage-summary.json
+            packages/docx-markdoc/coverage/coverage-summary.json
             packages/docx-mcp/coverage/coverage-summary.json
             packages/docx-core/coverage/lcov.info
             packages/docx-compare/coverage/lcov.info
+            packages/docx-markdoc/coverage/lcov.info
             packages/docx-mcp/coverage/lcov.info
       - name: Upload coverage to Codecov
         if: ${{ matrix.coverage && !cancelled() }}
         continue-on-error: true
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
-          files: ./packages/docx-core/coverage/lcov.info,./packages/docx-compare/coverage/lcov.info,./packages/docx-mcp/coverage/lcov.info
+          files: ./packages/docx-core/coverage/lcov.info,./packages/docx-compare/coverage/lcov.info,./packages/docx-markdoc/coverage/lcov.info,./packages/docx-mcp/coverage/lcov.info
           disable_search: true
           use_oidc: true
           fail_ci_if_error: false

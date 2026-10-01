@@ -17,6 +17,11 @@ const PACKAGES = [
     summaryPath: path.join(ROOT, 'packages/docx-compare/coverage/coverage-summary.json'),
   },
   {
+    name: '@usejunior/docx-markdoc',
+    id: 'docx-markdoc',
+    summaryPath: path.join(ROOT, 'packages/docx-markdoc/coverage/coverage-summary.json'),
+  },
+  {
     name: '@usejunior/docx-mcp',
     id: 'docx-mcp',
     summaryPath: path.join(ROOT, 'packages/docx-mcp/coverage/coverage-summary.json'),

@@ -325,23 +325,45 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
 
       - name: Wait for npm propagation
+        # Backstop above the script's own 10-minute deadline in case `npm view` hangs.
+        timeout-minutes: 15
         run: |
           TAG_REF="${RELEASE_TAG:-$GITHUB_REF_NAME}"
           VERSION="${TAG_REF#v}"
-          for attempt in 1 2 3 4 5 6; do
-            echo "npm propagation check attempt ${attempt}/6 (sleep $((attempt * 10))s)"
+          # npm can take several minutes to serve a fresh version from the
+          # registry endpoint `npm view` hits. Poll until a fixed deadline
+          # instead of a short attempt count so a slow propagation does not
+          # fail the job and force a manual rerun.
+          TIMEOUT_SECONDS=600
+          INTERVAL_SECONDS=20
+          START="$(date +%s)"
+          DEADLINE=$((START + TIMEOUT_SECONDS))
+          attempt=0
+          # Every probe below tolerates failure (`|| true`): a 404, a network error or
+          # a malformed/partial JSON body must lead to another poll, not abort the step
+          # under `bash -e`.
+          while :; do
+            attempt=$((attempt + 1))
+            echo "npm propagation check attempt ${attempt} ($(( $(date +%s) - START ))s elapsed, deadline ${TIMEOUT_SECONDS}s)"
             RESULT="$(npm view "@usejunior/safe-docx@${VERSION}" version mcpName --json 2>/dev/null || true)"
-            PKG_VERSION="$(echo "$RESULT" | jq -r '.version // empty' 2>/dev/null)"
-            PKG_MCP="$(echo "$RESULT" | jq -r '.mcpName // empty' 2>/dev/null)"
+            PKG_VERSION="$(echo "$RESULT" | jq -r '.version // empty' 2>/dev/null || true)"
+            PKG_MCP="$(echo "$RESULT" | jq -r '.mcpName // empty' 2>/dev/null || true)"
             if [ "$PKG_VERSION" = "$VERSION" ] && [ "$PKG_MCP" = "io.github.UseJunior/safe-docx" ]; then
               echo "@usejunior/safe-docx@${VERSION} is available on npm with correct mcpName."
               exit 0
             fi
-            if [ "$attempt" -lt 6 ]; then
-              sleep $((attempt * 10))
+            NOW="$(date +%s)"
+            if [ "$NOW" -ge "$DEADLINE" ]; then
+              break
+            fi
+            REMAINING=$((DEADLINE - NOW))
+            if [ "$REMAINING" -lt "$INTERVAL_SECONDS" ]; then
+              sleep "$REMAINING"
+            else
+              sleep "$INTERVAL_SECONDS"
             fi
           done
-          echo "@usejunior/safe-docx@${VERSION} not found on npm after 6 attempts (~150s)."
+          echo "@usejunior/safe-docx@${VERSION} not found on npm after ${attempt} attempts (~$((TIMEOUT_SECONDS / 60)) min)."
           exit 1
 
       - name: Download mcp-publisher
