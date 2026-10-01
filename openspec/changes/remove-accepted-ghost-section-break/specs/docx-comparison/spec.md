@@ -6,7 +6,7 @@ When accepting all revisions, the system SHALL treat a paragraph-owned `w:sectPr
 
 #### Scenario: accepting a tracked section-break removal does not leave a ghost section
 
-- **GIVEN** an invented candidate whose paragraph-owned `w:sectPr` has a `w:sectPrChange` snapshot and no live section-property child
+- **GIVEN** an invented candidate whose paragraph-owned `w:sectPr` has no live section-property child and a `w:sectPrChange` snapshot containing at least one prior section property
 - **WHEN** accept-all and reject-all projections are compared with their corresponding revised and original source views
 - **THEN** both formatting-fidelity scores are exactly 1.0
 - **AND** accept-all contains no paragraph-owned section-properties container for the removed break
