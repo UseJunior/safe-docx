@@ -339,12 +339,15 @@ jobs:
           START="$(date +%s)"
           DEADLINE=$((START + TIMEOUT_SECONDS))
           attempt=0
+          # Every probe below tolerates failure (`|| true`): a 404, a network error or
+          # a malformed/partial JSON body must lead to another poll, not abort the step
+          # under `bash -e`.
           while :; do
             attempt=$((attempt + 1))
             echo "npm propagation check attempt ${attempt} ($(( $(date +%s) - START ))s elapsed, deadline ${TIMEOUT_SECONDS}s)"
             RESULT="$(npm view "@usejunior/safe-docx@${VERSION}" version mcpName --json 2>/dev/null || true)"
-            PKG_VERSION="$(echo "$RESULT" | jq -r '.version // empty' 2>/dev/null)"
-            PKG_MCP="$(echo "$RESULT" | jq -r '.mcpName // empty' 2>/dev/null)"
+            PKG_VERSION="$(echo "$RESULT" | jq -r '.version // empty' 2>/dev/null || true)"
+            PKG_MCP="$(echo "$RESULT" | jq -r '.mcpName // empty' 2>/dev/null || true)"
             if [ "$PKG_VERSION" = "$VERSION" ] && [ "$PKG_MCP" = "io.github.UseJunior/safe-docx" ]; then
               echo "@usejunior/safe-docx@${VERSION} is available on npm with correct mcpName."
               exit 0
