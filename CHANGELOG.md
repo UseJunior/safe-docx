@@ -22,8 +22,10 @@
   `next_step`, no longer echo the unknown ids in `selected_revision_ids` (now
   `[]`), and no longer record a selective action on the session, so a following
   `save` with `save_format: 'clean'` succeeds instead of failing with
-  `SELECTIVE_REVISIONS_WOULD_BE_DISCARDED`. A real selective accept/reject still
-  blocks a clean save that would discard the remaining AI revisions. (#1099)
+  `SELECTIVE_REVISIONS_WOULD_BE_DISCARDED`. When only some of the requested ids
+  exist, `selected_revision_ids` lists just those. A real selective
+  accept/reject still blocks a clean save that would discard the remaining AI
+  revisions. (#1099)
 - `replace_text` now warns when the replaced range removes a construct the
   paragraph text does not show: a field with no result (for example an `XE` or
   `TC` entry), named by its instruction, or a footnote/endnote reference, named

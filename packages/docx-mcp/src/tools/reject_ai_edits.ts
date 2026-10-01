@@ -42,8 +42,8 @@ export async function rejectAiEdits(
     // a call that changed nothing has nothing to persist: it records no
     // selective action (which would make a later clean save fail with
     // SELECTIVE_REVISIONS_WOULD_BE_DISCARDED) and echoes no ids as selected.
-    // docx-core echoes requested revision_ids whether or not they exist, so
-    // the result counts, not the echoed ids, are what prove a change (#1099).
+    // The result counts are what prove a change; selectedIds lists only the
+    // requested ids that named a revision present in the document (#1099).
     const changed = revisionResultChangedDocument(result);
     const effectiveIds = changed ? selectedIds : [];
     if (changed) {

@@ -458,6 +458,29 @@ describe('No-op accept/reject by unknown revision id has nothing to persist (#10
     });
   }
 
+  for (const tool of [
+    { name: 'accept_ai_edits', call: acceptAiEdits, realId: '101' },
+    { name: 'reject_ai_edits', call: rejectAiEdits, realId: '103' },
+  ] as const) {
+    test(`${tool.name} with one real and one unknown revision id reports and records only the real id`, async ({ given, when, then }: AllureBddContext) => {
+      const opened = await given('a session with AI and reviewer revisions', () =>
+        openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) }),
+      );
+      const session = await docxSession(opened.mgr, opened.filePath);
+
+      const result = await when(`${tool.name} targets one existing and one nonexistent revision id`, () =>
+        tool.call(opened.mgr, { file_path: opened.filePath, revision_ids: [tool.realId, 999] }),
+      );
+
+      await then('the unknown id is neither reported as selected nor recorded on the session', () => {
+        assertSuccess(result, tool.name);
+        expect(result.selected_revision_ids).toEqual([tool.realId]);
+        expect(result.persistence_required).toBe(true);
+        expect(session.selectiveRevisionAction).toMatchObject({ tool: tool.name, selectedRevisionIds: [tool.realId] });
+      });
+    });
+  }
+
   test('a real selective accept still records the action and blocks a clean save that would discard remaining AI revisions (control)', async ({ given, when, then }: AllureBddContext) => {
     const opened = await given('a session with AI and reviewer revisions', () =>
       openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) }),
