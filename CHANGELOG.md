@@ -9,7 +9,10 @@
   `error.message`), and successful calls still omit `isError`. A tool that
   throws instead of returning an error now also comes back as a `CallToolResult`
   with `isError: true` and the standard envelope under code `INTERNAL_ERROR`,
-  rather than as a JSON-RPC protocol error. (#1085)
+  rather than as a JSON-RPC protocol error. `grep` with a pattern that is not a
+  valid regular expression now fails with `INVALID_PATTERN` (and `isError: true`)
+  instead of returning `success: true` with zero matches and an `error` string.
+  (#1085)
 
 ## 0.22.0
 

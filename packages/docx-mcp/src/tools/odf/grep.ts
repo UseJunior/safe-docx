@@ -49,15 +49,11 @@ export async function odfGrep(
     try {
       re = new RegExp(patternStr, caseSensitive ? 'g' : 'gi');
     } catch (e: unknown) {
-      return ok({
-        file_path: session.originalPath,
-        provider: 'odf',
-        patterns,
-        total_matches: 0,
-        matches: [],
-        error: `Invalid regex pattern: ${errorMessage(e)}`,
-        ...metadata,
-      });
+      return err(
+        'INVALID_PATTERN',
+        `Invalid regex pattern: ${errorMessage(e)}`,
+        'Patterns are regular expressions; escape metacharacters such as ( [ . * to match them literally.',
+      );
     }
 
     if (searchXml) {

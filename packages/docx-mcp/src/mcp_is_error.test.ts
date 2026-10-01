@@ -107,7 +107,32 @@ describe('MCP CallToolResult isError', () => {
     });
   });
 
-  test('a tool that throws sets isError with an INTERNAL_ERROR envelope', async ({ given, when, then }: AllureBddContext) => {
+  test('grep with an invalid regex sets isError with the INVALID_PATTERN envelope', async ({ given, when, then }: AllureBddContext) => {
+    let client: Client;
+    let result: CallToolResult;
+    let filePath: string;
+
+    await given('an MCP client and a readable DOCX on disk', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'is-error-test-'));
+      cleanups.push(() => fs.rm(dir, { recursive: true, force: true }));
+      filePath = path.join(dir, 'grep.docx');
+      await fs.writeFile(filePath, new Uint8Array(await makeMinimalDocx(['Hello world'])));
+      client = await connect(new SessionManager());
+    });
+    await when('grep is called with a pattern that is not a valid regular expression', async () => {
+      result = (await client.callTool({ name: 'grep', arguments: { file_path: filePath, patterns: ['['] } })) as CallToolResult;
+    });
+    await then('the result has isError: true and code INVALID_PATTERN', () => {
+      expect(result.isError).toBe(true);
+      const body = bodyOf(result);
+      expect(body.success).toBe(false);
+      const error = body.error as { code: string; message: string };
+      expect(error.code).toBe('INVALID_PATTERN');
+      expect(error.message).toContain('Invalid regex pattern');
+    });
+  });
+
+  test('a tool that throws sets isError with an INTERNAL_ERROR envelope',async ({ given, when, then }: AllureBddContext) => {
     let client: Client;
     let result: CallToolResult;
 

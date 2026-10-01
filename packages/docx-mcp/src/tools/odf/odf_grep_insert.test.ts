@@ -76,6 +76,24 @@ describe('ODF grep + insert_paragraph lane', () => {
     },
   );
 
+  test('grep rejects an invalid regex on an ODF session with INVALID_PATTERN', async ({ given, when, then }: AllureBddContext) => {
+    let manager: SessionManager;
+    let filePath: string;
+    let result: Awaited<ReturnType<typeof dispatchToolCall>>;
+
+    await given('a file-first ODF session', async () => {
+      manager = new SessionManager();
+      filePath = await copyFixture();
+    });
+    await when('grep is called with a pattern that is not a valid regular expression', async () => {
+      result = await dispatchToolCall(manager, 'grep', { file_path: filePath, pattern: '[' });
+    });
+    await then('the ODF handler returns the INVALID_PATTERN error envelope', () => {
+      assertError(result, 'INVALID_PATTERN');
+      expect((result as ErrorResult).error.message).toContain('Invalid regex pattern');
+    });
+  });
+
   test.openspec('[OPLR-07] `insert_paragraph` inserts into an ODF session')(
     'insert_paragraph adds a paragraph and returns ID-invalidation fields',
     async ({ given, when, then, and }: AllureBddContext) => {
