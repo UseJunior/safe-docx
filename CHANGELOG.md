@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.22.0
+
+Migration: in `.mdoc` revision files, rename `operation=` to `edit=` and
+`operations=` to `edits=`. The old spellings now fail with `REMOVED_EDIT_ATTRIBUTE`.
 
 - **Breaking:** docx-markdoc no longer accepts the `operation=` edit-name
   attribute or the `operations=` attribute on `change-set`, deprecated in
