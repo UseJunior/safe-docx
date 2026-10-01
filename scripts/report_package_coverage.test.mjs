@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const scriptPath = resolve(dirname(fileURLToPath(import.meta.url)), 'report_package_coverage.mjs');
-const packages = ['docx-core', 'docx-compare', 'docx-mcp'];
+const packages = ['docx-core', 'docx-compare', 'docx-markdoc', 'docx-mcp'];
 
 function fixture(metrics = {}) {
   const root = mkdtempSync(join(tmpdir(), 'safe-docx-coverage-report-'));

@@ -313,7 +313,13 @@ function hasTrackedRevisionAncestor(element: Element): boolean {
   return false;
 }
 
-describe('VML text-box story comparison (#713)', () => {
+// These round trips compare multi-story DOCX packages end to end. They finish
+// well inside vitest's 5s default alone but overrun it when the whole suite runs
+// in parallel (release preflight), so the file sets an explicit per-test timeout
+// instead of raising the global default.
+const LOAD_SENSITIVE_TIMEOUT_MS = 30_000;
+
+describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
   test('reserves generated bookmark names across outer and text-box stories', async () => {
     const original = await buildDocxFromBodyXml(
       '<w:p><w:bookmarkStart w:id="1" w:name="OuterRange"/>' +
@@ -1225,7 +1231,7 @@ describe('VML text-box story comparison (#713)', () => {
  * @see https://github.com/UseJunior/safe-docx/issues/795
  * @see https://github.com/UseJunior/safe-docx/issues/794
  */
-describe('Word-authored text-box corpus (#795)', () => {
+describe('Word-authored text-box corpus (#795)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
   const CORPUS = join(
     import.meta.dirname,
     '../../../..',

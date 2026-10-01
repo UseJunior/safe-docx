@@ -32,6 +32,18 @@
         "statements": null
       }
     },
+    "docx-markdoc": {
+      "lines": 90.69,
+      "branches": 77.06,
+      "functions": 95.8,
+      "statements": 86.37,
+      "deltas": {
+        "lines": null,
+        "branches": null,
+        "functions": null,
+        "statements": null
+      }
+    },
     "docx-mcp": {
       "lines": 87.69,
       "branches": 77.57,
@@ -46,9 +58,9 @@
     }
   },
   "aggregate": {
-    "lines_mean": 88.64,
-    "branches_mean": 77.38,
-    "functions_mean": 91.34,
-    "statements_mean": 86.63
+    "lines_mean": 89.42,
+    "branches_mean": 77.85,
+    "functions_mean": 92.85,
+    "statements_mean": 86.83
   }
 }

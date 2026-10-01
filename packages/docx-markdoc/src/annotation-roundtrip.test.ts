@@ -14,6 +14,17 @@ const commentsConformance = test
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.5' });
 const footnoteConformance = test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' });
 
+// These round trips build, compile and re-import real DOCX packages. They finish
+// well inside vitest's 5s default alone but overrun it when the whole suite runs
+// in parallel (release preflight), so the file sets an explicit per-test timeout
+// instead of raising the global default.
+const LOAD_SENSITIVE_TIMEOUT_MS = 30_000;
+// The cases that import and re-project a full public ILPA agreement are an order
+// of magnitude heavier: one finishes in about 10s alone but has taken over 30s
+// under V8 coverage on a loaded machine. They keep a separate, larger bound so
+// the coverage ratchet in release preflight cannot fail on wall-clock time.
+const REAL_ILPA_DOCUMENT_TIMEOUT_MS = 90_000;
+
 async function sourceWithComment(start: number, end: number, reply = false): Promise<Buffer> {
   const base = await buildSyntheticDocx({ paragraphs: ['Alpha beta gamma.'] });
   const document = await DocxDocument.load(base);
@@ -116,7 +127,7 @@ function relationshipEntries(xml: string): ReturnType<typeof parseRelationshipEn
   return parseRelationshipEntries(parseXml(xml));
 }
 
-describe('canonical annotation round trips', () => {
+describe('canonical annotation round trips', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
   commentsConformance('[SDX-MDOC-82] imports and re-emits exact ranged comments with editable structured bodies', async () => {
     const imported = await importDocxToMarkdoc(await sourceWithComment(6, 10));
     const annotation = imported.annotations[0]!;
@@ -225,7 +236,7 @@ describe('canonical annotation round trips', () => {
     const imported = await importDocxToMarkdoc(dealByDeal);
     expect(imported.annotations.find((annotation) => annotation.id === 'footnote:6')?.body[0]?.runs)
       .toContainEqual(expect.objectContaining({ hyperlink: { destination: PRIMARY_LINK.replace('example.com/annotation-primary', 'ilpa.org/wp-content/uploads/2017/06/ILPA-Subscription-Lines-of-Credit-and-Alignment-of-Interests-June-2017.pdf') } }));
-  }, 30_000);
+  }, REAL_ILPA_DOCUMENT_TIMEOUT_MS);
 
   const hyperlinkConformance = test
     .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.22' })
@@ -356,7 +367,7 @@ describe('canonical annotation round trips', () => {
     });
   });
 
-  // Each full-document projection has its own unchanged 30-second bound.
+  // Each full-document projection has its own REAL_ILPA_DOCUMENT_TIMEOUT_MS bound.
   // Aggregating all four made CI time out before their assertions completed.
   for (const [label, fixture] of [
     ['whole-of-fund', '../../../tests/test_documents/redline/ILPA-Model-Limited-Partnership-Agreement-WOF_v2.docx'],
@@ -390,7 +401,7 @@ describe('canonical annotation round trips', () => {
         expect(partXml).toContain('<w:rStyle w:val="Hyperlink"/>');
         expect(partXml).toContain('<w:sz w:val="18"/>');
         expect(partXml).toContain(expectedText);
-      }, 30_000);
+      }, REAL_ILPA_DOCUMENT_TIMEOUT_MS);
     }
   }
 
