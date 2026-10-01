@@ -17,7 +17,8 @@ import {
   serializeXml,
 } from '@usejunior/docx-core';
 
-const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Track Changes Acceptor' });
+const TEST_FEATURE = 'Track Changes Acceptor';
+const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
 
 describe('trackChangesAcceptorAst', () => {
   describe('acceptAllChanges', () => {
