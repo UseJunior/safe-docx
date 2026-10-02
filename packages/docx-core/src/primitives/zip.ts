@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { isXmlPartPath, stripXmlLeadingNoise } from './xml.js';
 
 export type ZipCompression = 'STORE' | 'DEFLATE';
 
@@ -29,6 +30,15 @@ function safeNonNegativeInt(value: unknown): number {
   return Math.floor(parsed);
 }
 
+/**
+ * XML parts may legally begin with a BOM (and some producers emit whitespace
+ * before `<?xml`); strip it at read time so every consumer sees markup first.
+ * Re-emitted parts are written without it (#1024).
+ */
+function normalizePartText(path: string, text: string): string {
+  return isXmlPartPath(path) ? stripXmlLeadingNoise(text) : text;
+}
+
 export class DocxZip {
   private zip: JSZip;
   /** Tail of the in-flight `toBuffer` chain; see `toBuffer`. */
@@ -43,16 +53,16 @@ export class DocxZip {
     return new DocxZip(zip);
   }
 
-  readText(path: string): Promise<string> {
+  async readText(path: string): Promise<string> {
     const file = this.zip.file(path);
     if (!file) throw new Error(`Missing file in .docx: ${path}`);
-    return file.async('text');
+    return normalizePartText(path, await file.async('text'));
   }
 
   async readTextOrNull(path: string): Promise<string | null> {
     const file = this.zip.file(path);
     if (!file) return null;
-    return file.async('text');
+    return normalizePartText(path, await file.async('text'));
   }
 
   writeText(path: string, text: string): void {

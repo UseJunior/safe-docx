@@ -204,3 +204,18 @@ export async function deleteOneRealParagraph(
     targetedBookmarkNames: selected.targetedBookmarkNames,
   };
 }
+
+/**
+ * Re-zip a package with `prefix` (a UTF-8 BOM by default) in front of every
+ * XML and relationship part, the shape Word's ISO-Strict exports and the
+ * Open Agreements cache copy of the NVCA Voting Agreement carry (#1024). The
+ * SHA-pinned NVCA downloads have no BOM, so the gate derives this variant.
+ */
+export async function prefixEveryXmlPart(source: Buffer, prefix = '\uFEFF'): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(source);
+  for (const file of Object.values(zip.files)) {
+    if (file.dir || !/\.(xml|rels)$/i.test(file.name)) continue;
+    zip.file(file.name, prefix + (await file.async('string')));
+  }
+  return zip.generateAsync({ type: 'nodebuffer' });
+}

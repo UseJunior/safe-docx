@@ -1,5 +1,5 @@
 import { DocxZip } from './zip.js';
-import { parseXml, serializeXml } from './xml.js';
+import { attributeXmlParseError, parseXml, serializeXml } from './xml.js';
 import { maybeCaptureEmittedDocumentXml } from './schema-corpus-capture.js';
 import { OOXML, W } from './namespaces.js';
 import { assertTransitionalWordprocessingML } from './conformance.js';
@@ -432,9 +432,19 @@ export class DocxDocument {
   }
 
   static async load(buffer: Buffer): Promise<DocxDocument> {
+    try {
+      return await DocxDocument.loadUnattributed(buffer);
+    } catch (error) {
+      // Name the offending part when a parse failure surfaced from a helper
+      // that only held the part's text (#1024).
+      throw await attributeXmlParseError(error, buffer);
+    }
+  }
+
+  private static async loadUnattributed(buffer: Buffer): Promise<DocxDocument> {
     const zip = await DocxZip.load(buffer);
     const xml = await zip.readText('word/document.xml');
-    const doc = parseXml(xml);
+    const doc = parseXml(xml, { partName: 'word/document.xml' });
     // Refuse WML Strict packages here, before any Transitional-only lookup
     // could read them as empty (#1025).
     assertTransitionalWordprocessingML(doc);
@@ -443,23 +453,25 @@ export class DocxDocument {
     const stylesText = await zip.readTextOrNull('word/styles.xml');
     const themeText = await zip.readTextOrNull('word/theme/theme1.xml');
     const numberingText = await zip.readTextOrNull('word/numbering.xml');
-    const stylesXml = stylesText ? parseXml(stylesText) : null;
-    const themeXml = themeText ? parseXml(themeText) : null;
-    const numberingXml = numberingText ? parseXml(numberingText) : null;
+    const stylesXml = stylesText ? parseXml(stylesText, { partName: 'word/styles.xml' }) : null;
+    const themeXml = themeText ? parseXml(themeText, { partName: 'word/theme/theme1.xml' }) : null;
+    const numberingXml = numberingText ? parseXml(numberingText, { partName: 'word/numbering.xml' }) : null;
 
     // Load footnotes for [^N] marker rendering in document view.
     const footnotesText = await zip.readTextOrNull('word/footnotes.xml');
-    const footnotesXml = footnotesText ? parseXml(footnotesText) : null;
+    const footnotesXml = footnotesText ? parseXml(footnotesText, { partName: 'word/footnotes.xml' }) : null;
 
     // Load document relationships for hyperlink resolution.
     const relsText = await zip.readTextOrNull('word/_rels/document.xml.rels');
-    const relsMap = relsText ? parseDocumentRels(parseXml(relsText)) : new Map<string, string>();
+    const relsMap = relsText
+      ? parseDocumentRels(parseXml(relsText, { partName: 'word/_rels/document.xml.rels' }))
+      : new Map<string, string>();
 
     const document = new DocxDocument(zip, doc, stylesXml, themeXml, numberingXml, footnotesXml, relsMap, xml);
     const storyDocuments: Document[] = [];
     for (const partPath of await enumerateSelectedHeaderFooterPartPaths(zip)) {
       const storyXml = await zip.readTextOrNull(partPath);
-      if (storyXml) storyDocuments.push(parseXml(storyXml));
+      if (storyXml) storyDocuments.push(parseXml(storyXml, { partName: partPath }));
     }
     document.paragraphBookmarkReservation = collectBookmarkReservation([doc, ...storyDocuments]);
     return document;

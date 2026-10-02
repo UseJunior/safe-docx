@@ -17,6 +17,7 @@
  * @see https://github.com/UseJunior/safe-docx/issues/643
  * @see https://github.com/UseJunior/safe-docx/issues/645
  * @see https://github.com/UseJunior/safe-docx/issues/646
+ * @see https://github.com/UseJunior/safe-docx/issues/1024
  */
 
 import { readFileSync } from 'node:fs';
@@ -31,8 +32,10 @@ import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { compareDocumentsAtomizer } from '../tagged/pipeline.js';
 import { testAllure } from '../testing/allure-test.js';
+import { stripXmlLeadingNoise } from '@usejunior/docx-core';
 import {
   deleteOneRealParagraph,
+  prefixEveryXmlPart,
   REAL_CORPUS_ENV,
   REAL_CORPUS_REQUIRED_ENV,
   resolveRealCorpusAvailability,
@@ -211,5 +214,45 @@ describe.skipIf(!corpusAvailability.available)('real-corpus paragraph style no-p
         },
         120_000,
       );
+  }
+});
+
+async function comparedDocumentXml(document: Buffer): Promise<string> {
+  const zip = await JSZip.loadAsync(document);
+  return stripXmlLeadingNoise(await zip.file('word/document.xml')!.async('string'));
+}
+
+// The SHA-pinned NVCA sources carry no BOM, so this matrix derives the
+// BOM-prefixed variant that crashed comparison of the Open Agreements cache
+// copy of the Voting Agreement (#1024): every XML and relationship part gets
+// a leading U+FEFF, and the result must match the clean comparison.
+describe.skipIf(!corpusAvailability.available)('real-corpus BOM-prefixed XML parts matrix', () => {
+  for (const entry of corpusAvailability.entries) {
+    test(
+      `${entry.id} × tagged-spine × BOM-prefixed XML parts`,
+      async () => {
+        const options = { author: 'Real Corpus BOM Gate', date: new Date('2026-10-01T00:00:00Z') };
+        const source = readFileSync(join(corpusRoot, entry.id, 'source.docx'));
+        const deletion = await deleteOneRealParagraph(source, entry.id);
+        const bomSource = await prefixEveryXmlPart(source);
+        const bomRevised = await prefixEveryXmlPart(deletion.revised);
+
+        const self = await compareDocumentsAtomizer(bomSource, bomSource, options);
+        expect({
+          insertions: self.stats.insertions,
+          deletions: self.stats.deletions,
+          modifications: self.stats.modifications,
+          formatChanges: self.stats.formatChanges,
+        }).toEqual({ insertions: 0, deletions: 0, modifications: 0, formatChanges: 0 });
+
+        const clean = await compareDocumentsAtomizer(source, deletion.revised, options);
+        const bom = await compareDocumentsAtomizer(bomSource, bomRevised, options);
+        expect(bom.stats).toEqual(clean.stats);
+        expect(await comparedDocumentXml(bom.document)).toBe(
+          await comparedDocumentXml(clean.document),
+        );
+      },
+      240_000,
+    );
   }
 });
