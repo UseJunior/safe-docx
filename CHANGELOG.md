@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.22.1
 
 - A `.docx` whose XML parts begin with a UTF-8 byte-order mark, or with
   whitespace before the `<?xml` declaration, now opens and compares exactly
