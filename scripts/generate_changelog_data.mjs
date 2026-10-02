@@ -10,7 +10,8 @@
  *   node scripts/generate_changelog_data.mjs
  *   node scripts/generate_changelog_data.mjs --output site/src/_data/changelog.json
  *
- * Requires `gh auth login` locally. In CI, set GH_TOKEN env var.
+ * Requires `gh auth login` locally. In CI, set GH_TOKEN env var; without it
+ * the script exits non-zero instead of preserving stale data.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -49,25 +50,26 @@ function ghAvailable() {
 }
 
 function fetchReleases() {
-  const PER_PAGE = 100;
-  const allReleases = [];
-  let page = 1;
+  // --slurp wraps every page in one outer array, so the output stays a single
+  // JSON document past 100 releases (--paginate with --jq emits one per page).
+  const raw = execFileSync('gh', [
+    'api',
+    `repos/{owner}/{repo}/releases?per_page=100`,
+    '--paginate',
+    '--slurp',
+  ], { stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 });
 
-  while (true) {
-    const raw = execFileSync('gh', [
-      'api',
-      `repos/{owner}/{repo}/releases`,
-      '--paginate',
-      '--jq',
-      '[.[] | select(.draft == false and .prerelease == false) | {tag: .tag_name, title: .name, published_at: .published_at, url: .html_url, body_md: .body, assets: [.assets[] | {name: .name, url: .browser_download_url, size: .size}]}]',
-    ], { stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf-8' });
-
-    const releases = JSON.parse(raw);
-    allReleases.push(...releases);
-
-    // --paginate handles all pages, so we break after the first call
-    break;
-  }
+  const allReleases = JSON.parse(raw)
+    .flat()
+    .filter((r) => !r.draft && !r.prerelease)
+    .map((r) => ({
+      tag: r.tag_name,
+      title: r.name,
+      published_at: r.published_at,
+      url: r.html_url,
+      body_md: r.body,
+      assets: (r.assets || []).map((a) => ({ name: a.name, url: a.browser_download_url, size: a.size })),
+    }));
 
   // Sort by published_at descending
   allReleases.sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
@@ -83,22 +85,30 @@ function fetchReleases() {
   }));
 }
 
+// In CI a skipped fetch would silently keep stale data behind a green job, so
+// fail loudly there; locally, keep the existing file and just warn.
+function skip(reason) {
+  console.warn(`Warning: ${reason}`);
+  if (process.env.CI) {
+    console.error('Refusing to preserve stale changelog.json in CI.');
+    process.exit(1);
+  }
+  console.warn('Existing changelog.json (if any) will be preserved.');
+  process.exit(0);
+}
+
 function main() {
   const { outputPath } = parseArgs();
 
   if (!ghAvailable()) {
-    console.warn('Warning: gh CLI not available — skipping changelog generation.');
-    console.warn('Existing changelog.json (if any) will be preserved.');
-    process.exit(0);
+    skip('gh CLI not available — skipping changelog generation.');
   }
 
   let releases;
   try {
     releases = fetchReleases();
   } catch (err) {
-    console.warn(`Warning: failed to fetch releases from GitHub API — ${err.message}`);
-    console.warn('Existing changelog.json (if any) will be preserved.');
-    process.exit(0);
+    skip(`failed to fetch releases from GitHub API — ${err.message}`);
   }
 
   const data = {

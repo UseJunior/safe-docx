@@ -508,6 +508,8 @@ jobs:
           cache: npm
 
       - name: Generate changelog data
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: node scripts/generate_changelog_data.mjs
 
       - name: Check for changes
