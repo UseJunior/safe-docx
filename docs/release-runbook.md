@@ -193,4 +193,6 @@ gh auth login
 gh auth status  # verify
 ```
 
-In CI, the workflow sets `GH_TOKEN: ${{ github.token }}` — no manual auth needed.
+In CI, the `update-changelog-data` job passes the release-bot App token as
+`GH_TOKEN` to the generator. If the release fetch fails there, the generator
+exits non-zero instead of keeping stale `changelog.json`.

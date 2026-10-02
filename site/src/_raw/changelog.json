@@ -1,6 +1,656 @@
 {
-  "generated_at_utc": "2026-03-06T22:28:30.153Z",
+  "generated_at_utc": "2026-10-02T21:08:44.857Z",
   "releases": [
+    {
+      "version": "0.22.1",
+      "tag": "v0.22.1",
+      "title": "v0.22.1",
+      "published_at": "2026-10-02T04:11:31Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.22.1",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.22.1 -->\n\n## What's Changed\n### Bug Fixes\n* fix(docx-mcp): set MCP isError on failed tool calls by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/1090\n* fix(docx-compare): remove accepted ghost section breaks by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/981\n* fix(docx-mcp): no-op accept/reject has nothing to persist; clean replace warns on hidden fields and note refs by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/1113\n* fix(docx-core): tolerate a UTF-8 BOM or leading whitespace before XML parts by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/1138\n### Documentation\n* docs(contributing): add check:cycles to the pre-submit list by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/1086\n### CI / Infrastructure\n* ci: make releases reliable (npm propagation wait, test timeouts, docx-markdoc coverage ratchet) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/1133\n### Other Changes\n* chore(ci): bump codeql-action init and analyze to v4.37.7 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/1134\n* chore(release): bump workspace versions to 0.22.1 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/1139\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.22.0...v0.22.1",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.22.1/safe-docx.mcpb",
+          "size": 738151
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.22.1/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.22.0",
+      "tag": "v0.22.0",
+      "title": "v0.22.0",
+      "published_at": "2026-10-01T02:15:34Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.22.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.22.0 -->\n\n## What's Changed\n### Features\n* feat(docx-markdoc)!: remove the deprecated operation=/operations= spellings by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/1130\n### Other Changes\n* chore(release): bump workspace versions to 0.22.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/1131\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.21.3...v0.22.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.22.0/safe-docx.mcpb",
+          "size": 734141
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.22.0/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.21.3",
+      "tag": "v0.21.3",
+      "title": "v0.21.3",
+      "published_at": "2026-09-30T21:23:40Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.21.3",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.21.3 -->\n\n## What's Changed\n### Documentation\n* docs(safe-docx): write a real npm README for the package by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/1125\n### Other Changes\n* chore(release): bump workspace versions to 0.21.3 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/1126\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.21.2...v0.21.3",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.21.3/safe-docx.mcpb",
+          "size": 734145
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.21.3/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.21.2",
+      "tag": "v0.21.2",
+      "title": "v0.21.2",
+      "published_at": "2026-09-29T02:25:58Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.21.2",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.21.2 -->\n\n## What's Changed\n### Bug Fixes\n* fix(docx-compare): own terminal move breaks inside a story-closing content control by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/1122\n### Other Changes\n* test(docx-compare): give the real-fixture default-options test a 60s timeout by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/1123\n* chore(release): bump workspace versions to 0.21.2 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/1124\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.21.1...v0.21.2",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.21.2/safe-docx.mcpb",
+          "size": 734147
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.21.2/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.19.1",
+      "tag": "v0.19.1",
+      "title": "v0.19.1",
+      "published_at": "2026-07-24T23:44:13Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.19.1",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.19.1 -->\n\n## What's Changed\n### Features\n* feat(docx-compare): verify ancillary field stories by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/623\n* feat(compare): expose ignore_formatting + compare_moves on compare_documents (closes #625) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/628\n* feat(docx-core): add w:pBdr paragraph-border primitive to ParagraphSpec (#611) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/632\n### Bug Fixes\n* fix(docx-core): harden serialized attribute escaping by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/620\n### Refactoring\n* refactor(docx-compare)!: remove the dead diffmatch baseline by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/624\n### Other Changes\n* test(docx-compare): cover auxiliary ID collision resolution by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/622\n* chore(release): bump workspace versions to 0.19.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/629\n* test(docx-compare): cover inPlaceModifier per-status handlers by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/630\n* test(docx-core): raise nvca-coi inplace test timeout 60s→180s for loaded CI by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/634\n* chore(release): bump workspace versions to 0.19.1 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/635\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.18.0...v0.19.1",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.19.1/safe-docx.mcpb",
+          "size": 696301
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.19.1/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.18.0",
+      "tag": "v0.18.0",
+      "title": "v0.18.0",
+      "published_at": "2026-07-24T03:08:56Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.18.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.18.0 -->\n\n## What's Changed\n### Features\n* feat(docx-mcp): single-call body + footnotes retrieval via structured read_file footnotes (#207) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/532\n* feat(docx-core): expose deterministic heading provenance by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/614\n### Bug Fixes\n* fix(release): install xmllint before preflight tests by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/605\n* fix(docx-compare): certify tracked move range pairing (#446) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/530\n* fix(docx-core): key merged commentEx rows by last content paraId for multi-paragraph comments (#470) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/529\n* fix(docx-compare): preserve inline content controls on rebuild by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/607\n* fix(docx-compare): preserve body block controls on rebuild by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/608\n* fix(docx-core): preserve original-document bookmarks through default tracked save (closes #609) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/610\n* fix(docx-mcp): guard selective revisions on clean save by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/612\n* fix(docx-compare): preserve complex fields on rebuild by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/617\n* fix(docx-mcp): read_file node_ids resolves host-app bookmark names (closes #616) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/619\n* fix(docx-compare): resolve insertion provenance collisions by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/613\n### CI / Infrastructure\n* ci: restore save validation gates by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/618\n### Other Changes\n* chore(release): bump workspace versions to 0.18.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/621\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.17.0...v0.18.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.18.0/safe-docx.mcpb",
+          "size": 698121
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.18.0/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.17.0",
+      "tag": "v0.17.0",
+      "title": "v0.17.0",
+      "published_at": "2026-07-23T01:59:43Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.17.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.17.0 -->\n\n## What's Changed\n### Features\n* feat(spec-compliance): establish ECMA coverage denominator by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/574\n* feat(verification): verify fixed WordprocessingML stories by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/577\n* feat(docx-core): verify section story relationships by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/579\n* feat(docx-core): accept any paragraph bookmark name as an edit anchor by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/594\n* feat(spec-compliance): add capability evidence projection by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/603\n* feat(docx-core): always emit settings.xml with compatibilityMode=15 (#487) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/531\n### Bug Fixes\n* fix(safe-docx): escape invariant table backslashes by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/554\n* fix: clean up README and fix compatibility matrix link by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/570\n* fix(release): let a partially-published tag be recovered by re-run by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/587\n* fix(docx-core): validate structural vocabulary values by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/581\n### Performance\n* perf(docx-compare): intern atom identity for LCS, compute SHA1 lazily (Refs #585) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/589\n### Documentation\n* docs(conformance): add WordprocessingML coverage ledger by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/556\n* docs(conformance): close tracked revision coverage by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/566\n* docs(openspec): propose centralizing the LLM quality gate behind a GitHub App by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/567\n* docs(conformance): close complex field coverage by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/571\n* docs: simplify repository documentation by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/572\n* docs(conformance): trace note and comment coverage by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/578\n* docs(conformance): classify advanced revision records by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/592\n### CI / Infrastructure\n* ci: add central LLM gate dispatch workflow by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/568\n* ci(llm-gate): mint dispatch app token by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/575\n* ci(llm-gate): remove copied gate runner by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/596\n### Other Changes\n* test(docx-core): substantiate paragraph and run conformance by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/580\n* chore(release): bump workspace versions to 0.17.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/604\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.16.0...v0.17.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.17.0/safe-docx.mcpb",
+          "size": 682731
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.17.0/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.16.0",
+      "tag": "v0.16.0",
+      "title": "v0.16.0",
+      "published_at": "2026-07-08T15:49:56Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.16.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.16.0 -->\n\n## What's Changed\n### Features\n* feat(schema): add optional crossImplementation.suiteScenarioIds corpus field by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/526\n* feat(docx-mcp): add opt-in fingerprint ordinal disambiguation to read_file by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/525\n* feat(docx-mcp): add read-only get_document_outline tool by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/527\n* feat(docx-mcp): forbid untracked AI mutations (surface classification + non-revision manifest) [#122] by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/535\n* feat(docx-core,docx-mcp): selective accept/reject by revision id or author [#123] by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/538\n* feat(docx-mcp): remove comparison from the default save path; write-time markup canonical (#126) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/546\n* feat(verification): invariant registry + #print axioms CI axiom gate + drift-checked INVARIANTS.md (#547) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/551\n### Bug Fixes\n* fix(docx-core): normalize paragraph mark revision reuse by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/463\n* fix(docx-core): preserve merge-source commentsIds durable-ID rows by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/524\n* fix(docx-core): thread original inline w:ins provenance through comparison (#358) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/528\n* fix(docx-core): retargeted hyperlink compares as delete-old-link + insert-new-link (#376) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/536\n* fix(docx-core): flip spec-coverage gate to --strict (honest cross-run scenario reclassification) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/537\n* fix(odf-core): reject-all of an EOF replacement anchored in a table cell no longer strands an empty paragraph by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/539\n* fix(odf-core): pure end-of-document deletion after a table restores after the cell, not inside it by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/545\n* fix(docx-mcp): reference comparison package in tsconfig by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/552\n### Documentation\n* docs(llm-gate): repoint re-derived-facts canonical example at footnote_refs by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/523\n* docs(docx-core): complete cross-reader compat matrix for generateDocx (#482) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/541\n* docs(verification): verified-checker direction + Increment 1 OpenSpec proposal (invariant registry + axiom-audit gate) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/548\n### CI / Infrastructure\n* ci(llm-gate): stop matrix flakiness from config-resolution and oversized diffs by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/533\n### Refactoring\n* refactor(docx-core): split comparison into package by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/549\n### Other Changes\n* test(docx-core): bump docx-platform-tests pin to cover paragraph-mark merge scenarios by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/534\n* test(docx-core): invariant corpus for selective accept/reject [#124] by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/543\n* test(docx-core): mixed-author preservation corpus [#125] by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/544\n* test(docx-core): resolve split packages from source in vitest by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/550\n* [codex] Link compatibility matrix and bump 0.16.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/555\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.15.0...v0.16.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.16.0/safe-docx.mcpb",
+          "size": 676043
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.16.0/safe-docx.mcpb.sha256",
+          "size": 105
+        },
+        {
+          "name": "tests-corpus.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.16.0/tests-corpus.json",
+          "size": 157
+        },
+        {
+          "name": "tests-corpus.schema.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.16.0/tests-corpus.schema.json",
+          "size": 9625
+        }
+      ]
+    },
+    {
+      "version": "0.15.0",
+      "tag": "v0.15.0",
+      "title": "v0.15.0",
+      "published_at": "2026-06-22T23:19:01Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.15.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.15.0 -->\n\n## What's Changed\n### Features\n* feat(docx-core): guard openspec tag-density with coverage-rationale annotation by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/518\n* feat(docx-core): deterministic THEN-keyword spec-coverage check by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/519\n* feat(docx-core)!: remove agreement-domain recipes (coverTermsTable, signatureBlock) — 0.15.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/520\n### CI / Infrastructure\n* ci(llm-gate): add .openspec tag↔assertion-drift checklist item by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/517\n### Other Changes\n* test(docx-core): raise docx-comparison spec coverage to 68/69 and split coverage scripts by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/513\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.14.0...v0.15.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.15.0/safe-docx.mcpb",
+          "size": 653710
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.15.0/safe-docx.mcpb.sha256",
+          "size": 105
+        },
+        {
+          "name": "tests-corpus.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.15.0/tests-corpus.json",
+          "size": 157
+        },
+        {
+          "name": "tests-corpus.schema.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.15.0/tests-corpus.schema.json",
+          "size": 9107
+        }
+      ]
+    },
+    {
+      "version": "0.14.0",
+      "tag": "v0.14.0",
+      "title": "v0.14.0",
+      "published_at": "2026-06-20T23:07:30Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.14.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.14.0 -->\n\n## What's Changed\n### Features\n* feat(docx-core): OA recipe border + header styling hooks (SDX-GEN-112/113) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/511\n### Documentation\n* docs(safe-docx): add competitor comparison section to README by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/510\n### Other Changes\n* test(odf-core): skip LibreOffice-gated tests when soffice is present but unusable by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/438\n* chore(release): bump workspace versions to 0.14.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/512\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.13.0...v0.14.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.14.0/safe-docx.mcpb",
+          "size": 653734
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.14.0/safe-docx.mcpb.sha256",
+          "size": 105
+        },
+        {
+          "name": "tests-corpus.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.14.0/tests-corpus.json",
+          "size": 157
+        },
+        {
+          "name": "tests-corpus.schema.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.14.0/tests-corpus.schema.json",
+          "size": 9107
+        }
+      ]
+    },
+    {
+      "version": "0.13.0",
+      "tag": "v0.13.0",
+      "title": "v0.13.0",
+      "published_at": "2026-06-19T19:28:37Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.13.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.13.0 -->\n\n## What's Changed\n### Features\n* feat(docx-core): OA recipe styling hooks — cover-terms run styling + signature oa-stacked-ruled by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/507\n### Other Changes\n* chore(release): bump workspace versions to 0.13.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/508\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.12.1...v0.13.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.13.0/safe-docx.mcpb",
+          "size": 653733
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.13.0/safe-docx.mcpb.sha256",
+          "size": 105
+        },
+        {
+          "name": "tests-corpus.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.13.0/tests-corpus.json",
+          "size": 157
+        },
+        {
+          "name": "tests-corpus.schema.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.13.0/tests-corpus.schema.json",
+          "size": 9107
+        }
+      ]
+    },
+    {
+      "version": "0.12.1",
+      "tag": "v0.12.1",
+      "title": "v0.12.1",
+      "published_at": "2026-06-17T11:17:44Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.12.1",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.12.1 -->\n\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.12.0...v0.12.1",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.12.1/safe-docx.mcpb",
+          "size": 653732
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.12.1/safe-docx.mcpb.sha256",
+          "size": 105
+        },
+        {
+          "name": "tests-corpus.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.12.1/tests-corpus.json",
+          "size": 157
+        },
+        {
+          "name": "tests-corpus.schema.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.12.1/tests-corpus.schema.json",
+          "size": 9107
+        }
+      ]
+    },
+    {
+      "version": "0.12.0",
+      "tag": "v0.12.0",
+      "title": "v0.12.0",
+      "published_at": "2026-06-17T11:08:15Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.12.0",
+      "body_md": "",
+      "assets": [
+        {
+          "name": "tests-corpus.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.12.0/tests-corpus.json",
+          "size": 157
+        },
+        {
+          "name": "tests-corpus.schema.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.12.0/tests-corpus.schema.json",
+          "size": 9107
+        }
+      ]
+    },
+    {
+      "version": "0.11.2",
+      "tag": "v0.11.2",
+      "title": "v0.11.2",
+      "published_at": "2026-06-16T22:09:00Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.11.2",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.11.2 -->\n\n## What's Changed\n### Features\n* feat(docx-core): two-column signatureBlock layout + keepLines on ParagraphSpec by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/501\n* feat(docx-core): add lvlJc level justification to NumberingSpec (closes #502) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/503\n### Other Changes\n* chore(release): bump workspace versions to 0.11.2 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/504\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.11.1...v0.11.2",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.11.2/safe-docx.mcpb",
+          "size": 653537
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.11.2/safe-docx.mcpb.sha256",
+          "size": 105
+        },
+        {
+          "name": "tests-corpus.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.11.2/tests-corpus.json",
+          "size": 157
+        },
+        {
+          "name": "tests-corpus.schema.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.11.2/tests-corpus.schema.json",
+          "size": 9107
+        }
+      ]
+    },
+    {
+      "version": "0.11.1",
+      "tag": "v0.11.1",
+      "title": "v0.11.1",
+      "published_at": "2026-06-14T23:55:39Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.11.1",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.11.1 -->\n\n## What's Changed\n### Features\n* feat(docx-core): emit theme/fontTable/webSettings on generated packages by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/485\n* feat(docx-core): support w:highlight on RunProps (closes #491) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/495\n* feat(docx-core): cover-terms table house style (horizontal rules, groups, vertical rhythm) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/497\n* feat(docx-mcp): replace init_plan/merge_plans/apply_plan with batch_edit (closes #494) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/496\n* feat(docx-core): custom theme palette + theme-relative color authoring (closes #492) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/499\n### Bug Fixes\n* fix(docx-mcp): clear CodeQL alerts for biased RNG and no-op replace by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/486\n* fix(security): complete sanitization to clear CodeQL false-positive alerts by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/490\n### Other Changes\n* chore(deps): bump uuid and esbuild to clear Dependabot alerts by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/489\n* chore(release): bump workspace versions to 0.11.1 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/498\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.11.0...v0.11.1",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.11.1/safe-docx.mcpb",
+          "size": 653464
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.11.1/safe-docx.mcpb.sha256",
+          "size": 105
+        },
+        {
+          "name": "tests-corpus.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.11.1/tests-corpus.json",
+          "size": 157
+        },
+        {
+          "name": "tests-corpus.schema.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.11.1/tests-corpus.schema.json",
+          "size": 9107
+        }
+      ]
+    },
+    {
+      "version": "0.11.0",
+      "tag": "v0.11.0",
+      "title": "v0.11.0",
+      "published_at": "2026-06-13T18:23:00Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.11.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.11.0 -->\n\n## What's Changed\n### Features\n* feat(docx-core): from-scratch generation phase 1 — DocumentSpec skeleton, structural checks, OpenSpec change by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/397\n* feat(docx-core): from-scratch generation phase 2 — styles.xml + run/paragraph formatting by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/402\n* feat(docx-core): conformance adapter bin + docx-platform-tests self-check (M2 of #283) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/394\n* feat: native DOCX → ODT conversion (convertDocxToOdt + convert_to_odt tool) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/401\n* feat(docx-core): from-scratch generation phase 3 — sections, headers/footers, PAGE/NUMPAGES fields by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/407\n* feat(gate): stamp-or-rerun on synchronize (closes #410) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/412\n* feat(docx-core): from-scratch generation phase 4 — tables by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/414\n* feat(odf-core): DOCX → ODT phase 3 — richer style fidelity by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/415\n* feat(docx-core): from-scratch generation phase 5 — numbering and legal recipes by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/417\n* feat(docx-core): from-scratch generation phase 6 — drafting notes as anchored comments by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/422\n* feat(docx-core): from-scratch generation phase 7 — compatibility sign-off and repositioning by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/428\n* feat(docx-mcp): expose comment range metadata in get_comments by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/442\n* feat(docx-mcp): inline footnote bodies in read_file via include_footnotes by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/445\n* feat(docx-core): add AI revision validator with MCP transactional enforcement by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/454\n### Bug Fixes\n* fix(safe-docx): keep server.json description within the MCP registry's 100-char cap by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/400\n* fix(docx-core): run docx-comparison bin when invoked via node_modules/.bin symlink by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/404\n* fix: minimal edit saves — preserve untouched paragraphs, DEFLATE re-pack (#408) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/420\n* fix(docx-core): write hyperlinkKey NUL separator as an escape; guard source against raw control bytes by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/429\n* fix(docx-core): stabilize empty paragraph atom hashes by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/432\n* fix(docx-mcp): restore untouched redline blocks by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/433\n* fix(docx-mcp): surface tracked restore post-pass errors by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/437\n* fix(docx-core): rewrite serialized deletion text via DOM traversal by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/439\n* fix(docx-core): keep matched multi-paragraph comment ranges on rebuild by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/441\n* fix(docx-core): screen rebuild output through round-trip safety checks by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/443\n* fix(docx-core): renumber colliding auxiliary part IDs before comparison by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/447\n* fix(docx-core): reconstruct explicit moveFromRange*/moveToRange* markers on rebuild by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/449\n* fix(docx-core): atomize proofErr-only paragraphs as empty-paragraph atoms by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/457\n* fix(docx-core): reconstruct permStart/permEnd paragraph-level markers on rebuild by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/440\n* fix(docx-core): keep paragraph sectPr inside diffmatch paragraphs by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/458\n* fix(docx-core): replace duplicate rPrChange snapshots by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/459\n* fix(docx-core): reuse ordered paragraph mark revisions by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/460\n* fix(docx-core): restamp colliding comment paraIds before comparison by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/465\n* fix(docx-core): cover cross-implementation spec scenarios by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/468\n* fix(docx-core): interleave logical start/end cell margins in CT_TcMar order by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/478\n* fix(docx-core): restore untouched hyperlink paragraphs by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/479\n* fix(docx-core): merge paragraph-mark revisions into the following paragraph by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/464\n### Documentation\n* docs(openspec): propose cross-implementation conformance suite (M0 of #283) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/392\n* docs(openspec): archive add-cross-implementation-conformance-suite by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/419\n* docs(openspec): archive add-docx-generation by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/430\n* docs: translated README generation parity + ODT generation boundary proposal by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/435\n* docs(github): add issue and pull request templates by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/466\n* docs(docx-core): record commentsIds OPC string provenance by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/474\n* docs(docx-core): correct root comment revision support by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/475\n* docs(readme): add Report Bug / Request Feature quick links under badges by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/476\n### CI / Infrastructure\n* ci(release): pack all publishable packages into the preflight runtime smoke by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/396\n* ci(llm-gate): add checklist item catching re-derived facts vs canonical sources by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/405\n* ci(docx-core): validate emitted document.xml against the ECMA-376 schema by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/455\n### Refactoring\n* refactor: expose footnote refs as document-view node metadata — one derivation, not five fldChar walks by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/413\n### Other Changes\n* chore(release): bump workspace versions to 0.11.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/423\n* chore: relicense MIT → Apache-2.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/424\n* [codex] fix compare stats range counts by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/434\n* test(docx-core): add required tblGrid to synthetic tables by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/461\n* test(docx-core): lock the author->compare round-trip guarantee (#483) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/484\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.10.0...v0.11.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.11.0/safe-docx.mcpb",
+          "size": 653891
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.11.0/safe-docx.mcpb.sha256",
+          "size": 105
+        },
+        {
+          "name": "tests-corpus.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.11.0/tests-corpus.json",
+          "size": 157
+        },
+        {
+          "name": "tests-corpus.schema.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.11.0/tests-corpus.schema.json",
+          "size": 9107
+        }
+      ]
+    },
+    {
+      "version": "0.10.0",
+      "tag": "v0.10.0",
+      "title": "v0.10.0",
+      "published_at": "2026-06-11T00:24:46Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.10.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.10.0 -->\n\n## What's Changed\n### Features\n* feat(docx-core): publish DOM-aware tracked-change emitter helpers (#135) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/147\n* feat(docx-core): emit w:ins/w:del at write time in text.ts (#136) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/149\n* feat(docx-core): expose comment range metadata in getComments() by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/134\n* feat(docx-mcp): render comments inline at paragraph level in read_file by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/132\n* feat(docx-mcp): render comment ranges inline in read_file with milestone markers by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/150\n* feat(docx-core): emit tracked-change markup from insertParagraph (#137) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/162\n* feat(docx-core): emit tracked-change markup for comment body anchors (#138) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/163\n* feat(docx-core): emit tracked-change markup for footnote body + note text (#139) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/166\n* feat(docx-core): emit pPrChange/trPrChange/tcPrChange from layout setters (#140) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/167\n* feat(docx-mcp): emit rPrChange from clear_formatting MCP tool (#141) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/170\n* feat(docx-mcp): wire configurable AI author through MCP layer (#142) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/172\n* feat(docx-core): add derived heading object to DocumentViewNode (closes #179) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/190\n* feat(verification): close inv_field_001 with Tier 2 OoxmlDoc subset by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/208\n* feat(docx-core): sweep side-part revisions on accept/reject by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/218\n* feat(docx-core): emit rPrChange for formatted paragraph replacements by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/215\n* feat(spec-compliance): structured ECMA-376 traceability framework by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/230\n* feat(test-narrative): add narrative-tag Zod schema package by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/243\n* feat(allure-test-factory): add visibility metadata + corpusVisibility label by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/245\n* feat(test-narrative): add AST extractor + check_test_narratives CI gate by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/247\n* feat(scripts): add draft-narrative-jsdoc.mjs local Codex authoring helper by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/249\n* feat(scripts): emit tests-corpus.json + schema artifact at tag time by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/251\n* feat(scripts): batch narrative-generation driver for unattended Codex runs by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/258\n* feat(ci): add LLM-Based Quality Gate (Phase 1, advisory) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/253\n* feat(verification): close inv_rt_001 round-trip text proof (zero-sorry spike) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/293\n* feat(verification): reproducible Lean↔TS LCS differential harness (Tier 2.5) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/308\n* feat(verification): extend Lean↔TS differential to Tier 2 accept/reject/validate helpers (Tier 2.5) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/309\n* feat(docx-mcp): DOCX → Markdown export via shared serializer core by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/310\n* feat(verification): broaden the Lean Atom projection past the overfit LCS-soundness lemma (Tier 2.5) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/316\n* feat(docx-mcp): DOCX → HTML export (first wave) (#304) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/322\n* feat(docx-core): add DOCX → plain text export (#305) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/327\n* feat(odf-core): add ODF .odt core library (archive, view, replace) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/328\n* feat(verification): close the LCS DP-equivalence proof (Tier 2.5) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/330\n* feat(verification): model the DeletedFieldCode locality constraint in Lean (closes G1/G2) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/334\n* feat(docx-mcp): provider-aware ODF (.odt) backend (Phase 1 wiring) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/335\n* feat(docx-mcp): ODF grep + insert_paragraph (Phase 2a) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/336\n* feat(verification): broaden lean accept to keep empty-collapsing paragraphs (closes g3) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/340\n* feat(docx-mcp): ODF comments — add_comment + get_comments for .odt (Phase 2b-1) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/341\n* feat(docx-mcp): ODF compare_documents — paragraph-granularity redline for .odt (Slice 1) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/348\n* feat(docx-core): formatting-fidelity comparison check (#363) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/365\n* feat(docx-mcp): ODF compare_documents session mode — redline a .odt session against its original by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/366\n* feat(odf-core,docx-mcp): ODF compare_documents — intra-paragraph (run-level) tracked changes (#356) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/370\n### Bug Fixes\n* fix(docx-core): split runs in insertCommentMarkers for sub-paragraph anchor ranges by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/153\n* fix(docx-core): handle collapsed ranges and validate offsets in addComment by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/155\n* fix(docx-mcp): document _bk_* paragraph ID stability and add opt-in content_fingerprint by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/161\n* fix(docx-mcp): honor SAFE_DOCX_AI_AUTHOR in CLI entry points (#181) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/182\n* fix(docx-core): harden heading detection (#157 Phase 1) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/178\n* fix(docx-mcp): warn when read_file budget is exceeded by a single node (closes #184) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/186\n* fix(docx-core): declare xmlns:w14/w15 on comments root before writing prefixed attributes (#154) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/180\n* fix(docx-mcp): surface comment_load_error on the default budgeted read path (closes #189) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/191\n* fix(docx-core): suppress non-sectional false-positive headings (closes #187) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/188\n* fix(docx-mcp): allow system temp roots in path policy by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/210\n* fix(docx-core): validate w:delInstrText placement and reject w:fldChar inside <w:del> by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/211\n* fix(docx-core): partition field-closure validation by ECMA-376 story (#212) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/225\n* fix(docx-mcp): seed revision ids from side parts by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/216\n* fix(docx-core): fragment w:fldChar outside w:del per ECMA-376 Part 4 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/228\n* fix(spec-compliance): make conformance-doc generator deterministic (closes #231) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/232\n* fix(scripts): allure-labels validator false positives on factory self-test and fixture sources by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/267\n* fix(ci): npm 11 rejects double-loaded user/global config — split paths by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/270\n* fix(ci): harden LLM-gate against npm config-load failures (closes #273) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/274\n* fix(ci): pass --repo to gh pr view in workflow_dispatch path (closes #275) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/276\n* fix(docx-core): strip sectPr from cloned paragraph shell in insert_paragraph by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/289\n* fix(docx-core): preserve rsid identity in replace_text post-mutation merge by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/290\n* fix(allure-test-factory): restore Allure tree grouping under allure-vitest ≥3.6 project-scoped labels by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/314\n* fix(docx-mcp): resolve final write-path component to block symlink escape (#313) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/320\n* fix(llm-gate): stagger LLM calls + retry backoff to avoid API bursts by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/338\n* fix(docx-core): make Reject All paragraph removal mark-based, not content-based (closes G4) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/337\n* fix(docx-core): make accept all paragraph removal mark-based, not content-based (closes g5) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/342\n* fix(docx-core): use replaceData in setLeafText to sync xmldom data/nodeValue by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/40\n* fix(docx-core): corrected reject/accept round-trip oracle — projection-to-projection (#347) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/361\n* fix(docx-core): skip xmlns declarations in formatting-fidelity canonicalization by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/371\n* fix(docx-core): preserve w:hyperlink wrappers in rebuild reconstruction by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/377\n* fix(odf-core): anchor EOF-replacement deletion backward so reject-all restores the original (#367) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/374\n* fix(odf-core): group adjacent word replacements in ODF inline compare by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/379\n* fix(docx-core): surface text-empty paragraphs that anchor a footnote reference by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/384\n* fix(docx-mcp): render each footnote marker exactly once in read_file output by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/386\n* fix(docx-core): surface text-empty paragraphs anchoring endnotes, comments, or drawings by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/387\n### Documentation\n* docs(docx-core): ratify revisionable AI editing surface in SUPPORT.md (#119) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/133\n* docs(readme): add architecture diagram by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/234\n* docs(readme): replace branding header with action-led title and autosync translations by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/237\n* docs(spec): add openspec change add-test-corpus-narrative by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/236\n* docs(openspec): align spec text with impl — only canonical README.md is auto-generated by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/268\n* docs(comments): reclassify addCommentReply as Table B (side-part metadata only) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/269\n* docs(scripts): align conformance script headers with canonical-README contract by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/271\n* docs(spec-compliance): enumerate ECMA-376 Non-Goals and hide generator banner by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/292\n* docs(openspec): archive merged Lean-spike changes (inv-rt-001 + field-bearing arbitrary) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/295\n### CI / Infrastructure\n* ci(verification): fix actionlint SC2086 in lean-build zero-sorry audit by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/193\n* ci(llm-gate): skip package-lock-only PRs by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/279\n* ci(llm-gate): mirror conclusion to PR head SHA on workflow_dispatch by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/288\n* ci(llm-gate): path-filter checks + bound per-check diff input (closes #324, fixes #272 large-diff) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/325\n* ci(docx-core): eliminate import cycles + add madge --circular gate (closes #321) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/323\n* ci(release): add ODF release-isolation guard and OpenSpec proposal by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/326\n* ci(release): auto-tag version-bump merges so releases cannot strand untagged by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/385\n### Refactoring\n* refactor(verification): weaken inv_field_001 axiom to document-level preservationFriendly (rebased follow-up to #208) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/220\n* refactor(docx-core): extract shared OOXML test fixtures (#221) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/229\n* refactor(scripts): lift shared conformance-registry parser by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/241\n* refactor(docx-core): extract shared xml-helpers (dedupe defensive XML access) (closes #311) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/312\n* refactor(docx-core): split document_view into focused modules (closes #315) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/317\n* refactor(docx-core): split inPlaceModifier into focused modules (closes #318) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/319\n### Other Changes\n* chore(assets): add 400x400 logo for marketplace listings by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/148\n* test(docx-core,docx-mcp): final regression suite for canonical emission (#143) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/175\n* chore(verification): atom-level Lean 4 spike with proofs + bridge + CI by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/164\n* test(docx-core): extend Lean bridge to pre-tracked paragraph-only document.xml input (closes #194) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/195\n* chore(verification): scaffold OpenSpec change for Tier 2 OoxmlDoc model + inv_field_001 closure by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/202\n* test(docx-core): fix intermittent lean-spec-bridge whitespace failure (#203) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/204\n* Update README to clarify Safe Docx positioning by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/254\n* chore(readme): UTM-tag usejunior.com privacy link across all 5 READMEs by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/281\n* test: pin OOXML preservation invariants (and discover two real bugs) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/287\n* test(docx-comparison): field-bearing fast-check arbitrary for the Lean spec bridge by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/294\n* test(docx-comparison): fragmented-field fast-check arbitrary for the Lean spec bridge by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/296\n* chore(openspec): archive add-comment-read-tool (already implemented) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/297\n* chore(openspec): archive add-ecma-376-conformance-framework change by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/329\n* chore(deps): declare @xmldom/xmldom + jszip as explicit root devDeps by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/332\n* test(docx-core): enable three pre-existing skipped tests by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/344\n* test(docx-core): wire a libreoffice accept/reject oracle voter into the differential harness by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/345\n* chore(gitignore): ignore Office lock files (~$*) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/277\n* test(docx-core): characterize collision/salt-loop in insertParagraphBookmarks (closes #282) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/284\n* test(docx-core): characterize the LibreOffice accept/reject oracle trust boundary by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/364\n* chore(release): fold @usejunior/odf-core into the suite release train by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/373\n* chore(release): bump workspace versions to 0.10.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/375\n\n## New Contributors\n* @dependabot[bot] made their first contribution in https://github.com/UseJunior/safe-docx/pull/89\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.9.1...v0.10.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.10.0/safe-docx.mcpb",
+          "size": 627338
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.10.0/safe-docx.mcpb.sha256",
+          "size": 105
+        },
+        {
+          "name": "tests-corpus.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.10.0/tests-corpus.json",
+          "size": 157
+        },
+        {
+          "name": "tests-corpus.schema.json",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.10.0/tests-corpus.schema.json",
+          "size": 9107
+        }
+      ]
+    },
+    {
+      "version": "0.9.1",
+      "tag": "v0.9.1",
+      "title": "v0.9.1",
+      "published_at": "2026-04-28T13:48:33Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.9.1",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.9.1 -->\n\n## What's Changed\n### Bug Fixes\n* fix(docx-core): merge auxiliary parts in rebuild mode (#94) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/101\n* fix(docx-core): emit paragraph-level markers outside <w:r> on rebuild by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/109\n* fix(docx-core): preserve reply comments in rebuild mode (#108) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/112\n### CI / Infrastructure\n* ci: SHA-pin all actions, add dependency review and Dependabot by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/81\n### Other Changes\n* Add license and compatibility metadata to docx-editing SKILL.md by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/87\n* ci: fix PR title check for acronyms and fork PRs by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/88\n* chore(skills): sync docx-editing to 0.3.0 matching ClawHub by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/95\n* test(docx-mcp): harden vitest path allowlist against /tmp symlink topology by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/105\n* chore(release): bump workspace versions to 0.9.1 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/113\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.9.0...v0.9.1",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.9.1/safe-docx.mcpb",
+          "size": 630445
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.9.1/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.9.0",
+      "tag": "v0.9.0",
+      "title": "v0.9.0",
+      "published_at": "2026-04-04T23:11:43Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.9.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.9.0 -->\n\n## What's Changed\n### Features\n* feat(docx-core)!: upgrade xmldom to 0.9.x and adopt .children getter by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/75\n### Bug Fixes\n* fix(docx-core): preserve spaces in deleted text for inplace mode by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/77\n* fix(docx-core): add Jaccard fallback for word-level inplace changes by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/79\n### CI / Infrastructure\n* ci(release): fix shellcheck SC2005 in mcp-publisher download step by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/72\n### Other Changes\n* chore(ci): add Gemini extension manifest validation by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/73\n* test(docx-mcp): assert entrypoint and contextFileName in Gemini manifest by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/74\n* chore(release): bump workspace versions to 0.9.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/80\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.8.2...v0.9.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.9.0/safe-docx.mcpb",
+          "size": 627431
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.9.0/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.8.2",
+      "tag": "v0.8.2",
+      "title": "v0.8.2",
+      "published_at": "2026-04-03T22:05:04Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.8.2",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.8.2 -->\n\n## What's Changed\n### CI / Infrastructure\n* ci(release): automate MCP Registry publishing via GitHub Actions OIDC by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/70\n### Other Changes\n* chore(release): bump to 0.8.2 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/71\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.8.1...v0.8.2",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.8.2/safe-docx.mcpb",
+          "size": 581900
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.8.2/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.8.1",
+      "tag": "v0.8.1",
+      "title": "v0.8.1",
+      "published_at": "2026-04-02T21:03:09Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.8.1",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.8.1 -->\n\n## What's Changed\n### Documentation\n* docs: improve package discoverability for AI agents + bump to 0.8.1 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/69\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.8.0...v0.8.1",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.8.1/safe-docx.mcpb",
+          "size": 581897
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.8.1/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.8.0",
+      "tag": "v0.8.0",
+      "title": "v0.8.0",
+      "published_at": "2026-03-31T01:14:38Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.8.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.8.0 -->\n\n## What's Changed\n### Features\n* feat(docx-core): make start/end optional in addComment() by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/67\n### Bug Fixes\n* fix(docx-core): container-aware inplace matching for tables with merged cells by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/66\n### Other Changes\n* chore(release): bump to 0.8.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/68\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.7.2...v0.8.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.8.0/safe-docx.mcpb",
+          "size": 581896
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.8.0/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.7.2",
+      "tag": "v0.7.2",
+      "title": "v0.7.2",
+      "published_at": "2026-03-27T07:04:12Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.7.2",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.7.2 -->\n\n## What's Changed\n### Other Changes\n* chore(release): bump to 0.7.2 + fix Smithery manifest version sync by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/64\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.7.1...v0.7.2",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.7.2/safe-docx.mcpb",
+          "size": 579358
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.7.2/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.7.1",
+      "tag": "v0.7.1",
+      "title": "v0.7.1",
+      "published_at": "2026-03-27T03:07:02Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.7.1",
+      "body_md": "### Fixed\n\n- **Paragraph similarity alignment on legal boilerplate documents** (#62, fixes #61) — The hierarchical paragraph matching used a greedy first-match algorithm that allowed low-similarity matches to consume revised paragraphs intended for higher-similarity matches later in the document. On documents with extensive shared legal vocabulary (e.g., NVCA Certificate of Incorporation), this caused incorrect paragraph alignment, garbled reject-all output, and fallback to the rebuild reconstruction path with ~950 phantom insertions.\n\n  **Fix:** Two-part improvement:\n  1. **Order-constrained gap matching** — Pass 1 exact-hash anchors divide documents into gaps. Pass 2 similarity matching is scoped to each gap via mini-LCS, guaranteeing document order preservation.\n  2. **TF-IDF cosine similarity** — Replaces Jaccard word similarity, which over-weights common boilerplate. IDF down-weights high-frequency terms like \"holders\", \"Preferred Stock\", \"Corporation\"; cosine similarity on TF-IDF vectors produces more discriminating scores.\n\n  **Before:** 949 phantom insertions (rebuild fallback) → **After:** 332 insertions (inplace, correct)\n\n<!-- Release notes generated using configuration in .github/release.yml at v0.7.1 -->\n\n## What's Changed\n### Bug Fixes\n* fix(docx-core): order-constrained TF-IDF paragraph matching prevents phantom redlines by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/62\n### Other Changes\n* Add translated READMEs (zh, es, pt-br, de) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/60\n* chore(release): bump to 0.7.1 — fix paragraph similarity alignment (#61) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/63\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.7.0...v0.7.1",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.7.1/safe-docx.mcpb",
+          "size": 579356
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.7.1/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.7.0",
+      "tag": "v0.7.0",
+      "title": "v0.7.0",
+      "published_at": "2026-03-19T05:31:05Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.7.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.7.0 -->\n\n## What's Changed\n### Bug Fixes\n* fix(skills): add trigger phrases and CONNECTORS.md link by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/56\n### Documentation\n* docs: update release runbook and MCP registry docs by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/57\n### Other Changes\n* chore(release): bump to 0.7.0 — MCP registry metadata by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/58\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.6.0...v0.7.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.7.0/safe-docx.mcpb",
+          "size": 578106
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.7.0/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.6.0",
+      "tag": "v0.6.0",
+      "title": "v0.6.0",
+      "published_at": "2026-03-17T23:59:20Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.6.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.6.0 -->\n\n## What's Changed\n### Features\n* feat(docx-mcp): file-path-only API + grep enhancements by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/51\n* feat: add Google Docs core library + MCP tool handlers by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/53\n### Other Changes\n* chore(release): bump workspace versions to 0.5.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/54\n* chore(release): bump workspace versions to 0.6.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/55\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.4.0...v0.6.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.6.0/safe-docx.mcpb",
+          "size": 578078
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.6.0/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.4.0",
+      "tag": "v0.4.0",
+      "title": "v0.4.0",
+      "published_at": "2026-03-14T16:44:11Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.4.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.4.0 -->\n\n## What's Changed\n### Features\n* feat(seo): activate 301 redirects to usejunior.com by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/47\n* feat(docx-core): add table structure context to document view by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/48\n* feat: table context in document view + MCP registry metadata by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/50\n### Other Changes\n* chore(tests): enrich all tests with BDD Given/When/Then steps by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/46\n* chore: table context coverage tests follow-up by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/49\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.3.1...v0.4.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.4.0/safe-docx.mcpb",
+          "size": 382842
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.4.0/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
+    {
+      "version": "0.3.1",
+      "tag": "v0.3.1",
+      "title": "v0.3.1",
+      "published_at": "2026-03-09T02:19:20Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.3.1",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.3.1 -->\n\n## What's Changed\n### Features\n* feat(docx-core): field structure fixes, premerge default, diffmatch removal by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/36\n* feat(site): format release notes with grouped conventional commit categories by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/38\n### Bug Fixes\n* fix(docx-core): improve inplace word-split fidelity and tracked change grouping by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/41\n* fix(docx-core): group multi-word replacements in inplace tracked changes by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/43\n### Documentation\n* docs(site): add About page and clarify brownfield positioning by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/37\n### Other Changes\n* chore: add version bump script + fix changelog PR creation by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/32\n* chore(site): update changelog data for v0.3.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/33\n* chore(release): v0.3.1 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/44\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.3.0...v0.3.1",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.3.1/safe-docx.mcpb",
+          "size": 379876
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.3.1/safe-docx.mcpb.sha256",
+          "size": 105
+        }
+      ]
+    },
     {
       "version": "0.1.0",
       "tag": "v0.1.0",
@@ -20,13 +670,13 @@
       "assets": [
         {
           "name": "safe-docx.mcpb",
-          "size": 391592,
-          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.3.0/safe-docx.mcpb"
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.3.0/safe-docx.mcpb",
+          "size": 391592
         },
         {
           "name": "safe-docx.mcpb.sha256",
-          "size": 105,
-          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.3.0/safe-docx.mcpb.sha256"
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.3.0/safe-docx.mcpb.sha256",
+          "size": 105
         }
       ]
     },
@@ -40,13 +690,13 @@
       "assets": [
         {
           "name": "safe-docx.mcpb",
-          "size": 388719,
-          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.2.0/safe-docx.mcpb"
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.2.0/safe-docx.mcpb",
+          "size": 388719
         },
         {
           "name": "safe-docx.mcpb.sha256",
-          "size": 105,
-          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.2.0/safe-docx.mcpb.sha256"
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.2.0/safe-docx.mcpb.sha256",
+          "size": 105
         }
       ]
     },
@@ -60,13 +710,13 @@
       "assets": [
         {
           "name": "safe-docx.mcpb",
-          "size": 385843,
-          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.1.2/safe-docx.mcpb"
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.1.2/safe-docx.mcpb",
+          "size": 385843
         },
         {
           "name": "safe-docx.mcpb.sha256",
-          "size": 105,
-          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.1.2/safe-docx.mcpb.sha256"
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.1.2/safe-docx.mcpb.sha256",
+          "size": 105
         }
       ]
     },
@@ -80,13 +730,13 @@
       "assets": [
         {
           "name": "safe-docx.mcpb",
-          "size": 398868,
-          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.1.1/safe-docx.mcpb"
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.1.1/safe-docx.mcpb",
+          "size": 398868
         },
         {
           "name": "safe-docx.mcpb.sha256",
-          "size": 105,
-          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.1.1/safe-docx.mcpb.sha256"
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.1.1/safe-docx.mcpb.sha256",
+          "size": 105
         }
       ]
     }
