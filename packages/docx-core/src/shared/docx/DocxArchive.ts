@@ -6,6 +6,7 @@
  */
 
 import JSZip from 'jszip';
+import { isXmlPartPath, stripXmlLeadingNoise } from '../../primitives/xml.js';
 
 /** Standard paths within a DOCX archive */
 export const DOCX_PATHS = {
@@ -101,7 +102,9 @@ export class DocxArchive {
     if (!file) {
       throw new Error('Document XML not found');
     }
-    return file.async('string');
+    // A leading BOM or whitespace before `<?xml` is legal on disk but breaks
+    // xmldom and string scans; parts are re-emitted without it (#1024).
+    return stripXmlLeadingNoise(await file.async('string'));
   }
 
   /**
@@ -126,7 +129,8 @@ export class DocxArchive {
     if (!file) {
       return null;
     }
-    return file.async('string');
+    const text = await file.async('string');
+    return isXmlPartPath(path) ? stripXmlLeadingNoise(text) : text;
   }
 
   /** Get an arbitrary archive entry without decoding binary payloads as text. */

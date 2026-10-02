@@ -16,6 +16,7 @@
  */
 
 import JSZip from 'jszip';
+import { isXmlPartPath, stripXmlLeadingNoise } from '@usejunior/docx-core';
 
 import { ODF_NS, ODF_PATHS, ODT_MIMETYPE } from './namespaces.js';
 
@@ -108,7 +109,8 @@ export class OdfArchive {
     if (!file) {
       throw new Error('content.xml not found');
     }
-    return file.async('string');
+    // Same leading-BOM/whitespace tolerance as DocxArchive (#1024).
+    return stripXmlLeadingNoise(await file.async('string'));
   }
 
   /** Replace `content.xml`. */
@@ -121,7 +123,8 @@ export class OdfArchive {
   async getFile(path: string): Promise<string | null> {
     const file = this.zip.file(path);
     if (!file) return null;
-    return file.async('string');
+    const text = await file.async('string');
+    return isXmlPartPath(path) ? stripXmlLeadingNoise(text) : text;
   }
 
   /** Set an arbitrary part. */

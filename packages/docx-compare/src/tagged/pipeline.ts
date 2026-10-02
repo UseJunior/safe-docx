@@ -3,7 +3,15 @@
 import { XMLSerializer } from '@xmldom/xmldom';
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
-import { assertTransitionalWordprocessingML, auditSectPr, normalizeOpcRelationshipTarget, parseXml, OOXML } from '@usejunior/docx-core';
+import {
+  assertTransitionalWordprocessingML,
+  auditSectPr,
+  findUnparseableXmlPart,
+  isUnattributedXmlParseError,
+  normalizeOpcRelationshipTarget,
+  parseXml,
+  OOXML,
+} from '@usejunior/docx-core';
 import { DocxArchive } from '@usejunior/docx-core';
 import type {
   CompareResult,
@@ -1561,7 +1569,15 @@ export async function compareDocumentsAtomizer(
     originalBytes: original.length,
     revisedBytes: revised.length,
   });
-  return compareDocumentsTagged(original, revised, options);
+  try {
+    return await compareDocumentsTagged(original, revised, options);
+  } catch (error) {
+    // A raw xmldom ParseError names no part; find and name it (#1024).
+    if (!isUnattributedXmlParseError(error)) throw error;
+    const attributed = await findUnparseableXmlPart(original, 'original') ??
+      await findUnparseableXmlPart(revised, 'revised');
+    throw attributed ?? error;
+  }
 }
 
 // =============================================================================

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- A `.docx` whose XML parts begin with a UTF-8 byte-order mark, or with
+  whitespace before the `<?xml` declaration, now opens and compares exactly
+  like the same package without it. Previously `DocxDocument.load()`, the
+  `read_file` / `compare_documents` tools, and `compareDocuments()` threw a raw
+  xmldom `ParseError` (`processing instruction at position 1 is an xml
+  declaration…`) — for example on Word ISO-Strict exports and on a cached copy
+  of the NVCA Voting Agreement whose `word/_rels/document.xml.rels` starts with
+  a BOM. Parts the library re-serializes are written without the BOM. A part
+  that still fails to parse now raises `XmlPartParseError`, whose message and
+  `partName` name the part (and, from a comparison, whether it was the
+  original or revised document). (#1024)
 - **Client-visible (MCP):** a failed tool call now sets `isError: true` on the
   MCP `CallToolResult`, so clients and agent frameworks that branch on the
   transport flag stop treating failures as successes. The tool JSON in the text
