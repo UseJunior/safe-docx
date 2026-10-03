@@ -13,7 +13,7 @@ revised document does not have (#1143). `remove-accepted-ghost-section-break`
 ## What Changes
 
 - Export `acceptedSectionBreakRemovalContainer` from docx-core: given a
-  `w:sectPrChange`, it returns the paragraph-owned `w:sectPr` to remove when
+  `w:sectPrChange`, it returns the live paragraph's `w:p > w:pPr > w:sectPr` to remove when
   that container's only element child is the change record and the record's
   snapshot carries at least one prior section property; otherwise `null`.
 - Native `acceptChanges` removes those containers for selected

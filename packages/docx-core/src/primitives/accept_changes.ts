@@ -187,16 +187,20 @@ const PR_CHANGE_LOCALS = [
  * The paragraph-level section-properties container that accepting this
  * `w:sectPrChange` removes, or `null` when accepting it only drops the record.
  *
- * A paragraph-owned `w:sectPr` whose only element child is its
- * `w:sectPrChange` records the REMOVAL of that section break: the live state
- * has no section properties and the snapshot holds the prior ones. Accepting
- * that revision accepts the absence of the break, so the container goes too;
- * keeping an empty `w:sectPr` would leave a ghost section break.
+ * Supported removal shape: a live paragraph's `w:p > w:pPr > w:sectPr` whose
+ * only element child is its `w:sectPrChange`, and whose snapshot holds at
+ * least one prior section property. The live state has no section properties,
+ * so accepting the revision accepts the absence of the break and the
+ * container goes too; keeping an empty `w:sectPr` would leave a ghost section
+ * break.
  *
- * The snapshot must itself carry a section property. An empty live `w:sectPr`
- * over an empty snapshot is how an ADDED break with default properties is
- * recorded, so that break is kept. Body-level (final) section properties and
- * paragraph sections with any live property child are never selected.
+ * An empty live `w:sectPr` over an empty snapshot is how an ADDED break with
+ * default properties is recorded, so that break is kept. Body-level (final)
+ * section properties and paragraph sections with any live property child are
+ * never selected. Known limitations (see the `remove-accepted-ghost-section-break`
+ * design): removal of a break that originally had no properties has the
+ * added-break shape and is kept, and a kept break emptied of all its
+ * properties is indistinguishable from a removal and is removed.
  *
  * Shared by native `acceptChanges` and docx-compare's `acceptAllChanges` so
  * both accept paths apply the same rule (#981, #1143).
@@ -209,6 +213,9 @@ export function acceptedSectionBreakRemovalContainer(change: Element): Element |
   if (!sectionProperties || !isW(sectionProperties, 'sectPr')) return null;
   const paragraphProperties = sectionProperties.parentNode;
   if (!paragraphProperties || !isW(paragraphProperties, 'pPr')) return null;
+  // Only a live paragraph's own properties; never a w:pPr nested in history.
+  const paragraph = paragraphProperties.parentNode;
+  if (!paragraph || !isW(paragraph, 'p')) return null;
   const liveChildren = Array.from(sectionProperties.childNodes).filter(n => n.nodeType === 1);
   if (liveChildren.length !== 1 || liveChildren[0] !== change) return null;
   const snapshot = Array.from(change.childNodes).find((n): n is Element => isW(n, 'sectPr'));

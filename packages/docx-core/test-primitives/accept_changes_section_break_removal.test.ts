@@ -6,7 +6,8 @@
  */
 import { describe, expect } from 'vitest';
 import { acceptAllChanges } from '@usejunior/docx-compare';
-import { acceptChanges } from '../src/primitives/accept_changes.js';
+import { acceptChanges, acceptedSectionBreakRemovalContainer } from '../src/primitives/accept_changes.js';
+import { acceptAIEdits } from '../src/primitives/accept_ai_edits.js';
 import { parseXml, serializeXml } from '../src/primitives/xml.js';
 import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 
@@ -169,4 +170,61 @@ describe('Traceability: Accept Tracked Section-Break Removals', () => {
       });
     },
   );
+
+  test('recognizes the removal shape under any namespace prefix', async ({ given, when, then }: AllureBddContext) => {
+    let doc!: Document;
+
+    await given('the removal shape under an alternate prefix and under a default element namespace', async () => {
+      doc = parseXml(
+        `<x:document xmlns:x="${W_NS}"><x:body>`
+        + '<x:p><x:pPr><x:sectPr><x:sectPrChange x:id="1" x:author="A"><x:sectPr><x:pgSz x:w="12240"/></x:sectPr></x:sectPrChange></x:sectPr></x:pPr></x:p>'
+        + `<p xmlns="${W_NS}"><pPr><sectPr><sectPrChange xmlns:w="${W_NS}" w:id="2" w:author="A"><sectPr><pgSz/></sectPr></sectPrChange></sectPr></pPr></p>`
+        + '<x:sectPr/></x:body></x:document>',
+      );
+    });
+    await when('all changes are accepted', async () => {
+      acceptChanges(doc);
+    });
+    await then('both paragraph-level section breaks are removed', async () => {
+      expect(paragraphSections(doc)).toHaveLength(0);
+      expect(bodySections(doc)).toHaveLength(1);
+    });
+  });
+
+  test('ignores a section snapshot nested in paragraph-property history', async ({ given, then }: AllureBddContext) => {
+    let change!: Element;
+
+    await given('a malformed w:sectPr inside a w:pPrChange snapshot', async () => {
+      const doc = parseXml(wrapBodyXml(
+        '<w:p><w:pPr><w:pPrChange w:id="8" w:author="Foreign"><w:pPr><w:sectPr>'
+        + '<w:sectPrChange w:id="9" w:author="Target"><w:sectPr><w:pgSz w:w="12240"/></w:sectPr></w:sectPrChange>'
+        + '</w:sectPr></w:pPr></w:pPrChange></w:pPr><w:r><w:t>Snapshot</w:t></w:r></w:p>',
+      ));
+      change = doc.getElementsByTagNameNS(W_NS, 'sectPrChange').item(0)!;
+    });
+    await then('the predicate does not select a container to remove', async () => {
+      expect(acceptedSectionBreakRemovalContainer(change)).toBeNull();
+    });
+  });
+
+  test('acceptAIEdits removes only the selected revision\'s ghost section break', async ({ given, when, then, and }: AllureBddContext) => {
+    let doc!: Document;
+    const foreign = removedBreak('2', 'Foreign', 'Bravo');
+
+    await given('two tracked section-break removals with different revision ids', async () => {
+      doc = parseXml(wrapBodyXml(removedBreak('1', 'Target', 'Alpha') + foreign + FINAL_SECTION));
+    });
+    await when('revision id 1 is accepted', async () => {
+      const { selectedIds, result } = acceptAIEdits(doc, { revisionIds: ['1'] });
+      expect(selectedIds).toEqual(['1']);
+      expect(result.propertyChangesResolved).toBe(1);
+    });
+    await then('the selected removal leaves no paragraph-level section break', async () => {
+      expect(paragraphSections(doc)).toHaveLength(1);
+    });
+    await and('the foreign paragraph is byte-identical', async () => {
+      const paragraphs = Array.from(doc.getElementsByTagNameNS(W_NS, 'p'));
+      expect(serializeXml(paragraphs[1]!).replace(` xmlns:w="${W_NS}"`, '')).toBe(foreign);
+    });
+  });
 });
