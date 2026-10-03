@@ -112,20 +112,42 @@ const COMPARISON_LEAF_NAMES = new Set([
   'AlternateContent',
 ]);
 
+/**
+ * Adjacent `w:t` leaves are tokenized as one text stream within a paragraph,
+ * so the weighting does not depend on how identical text is split into runs
+ * (#1142). Any other leaf, and every paragraph boundary, ends the stream.
+ */
 function comparisonAtomKeys(element: Element): string[] {
-  if (COMPARISON_LEAF_NAMES.has(element.localName)) {
-    const localName = element.localName === 'delText' ? 't' : element.localName;
-    const text = element.textContent ?? '';
-    if (element.localName === 't') {
-      return tokenizeComparisonText(text).map((token) => `${localName}\0${token}`);
+  const keys: string[] = [];
+  let text = '';
+  const flushText = (): void => {
+    for (const token of tokenizeComparisonText(text)) keys.push(`t\0${token}`);
+    text = '';
+  };
+  const visit = (current: Element): void => {
+    if (COMPARISON_LEAF_NAMES.has(current.localName)) {
+      if (current.localName === 't') {
+        text += current.textContent ?? '';
+        return;
+      }
+      flushText();
+      const localName = current.localName === 'delText' ? 't' : current.localName;
+      keys.push(`${localName}\0${current.textContent ?? ''}`);
+      return;
     }
-    return [`${localName}\0${text}`];
-  }
-  const children = childElements(element);
-  if (element.localName === 'p' && children.every((child) => child.localName === 'pPr')) {
-    return ['__emptyParagraph__\0'];
-  }
-  return children.flatMap(comparisonAtomKeys);
+    const children = childElements(current);
+    if (current.localName !== 'p') {
+      children.forEach(visit);
+      return;
+    }
+    flushText();
+    if (children.every((child) => child.localName === 'pPr')) keys.push('__emptyParagraph__\0');
+    else children.forEach(visit);
+    flushText();
+  };
+  visit(element);
+  flushText();
+  return keys;
 }
 
 /**

@@ -18,6 +18,7 @@
  * @see https://github.com/UseJunior/safe-docx/issues/645
  * @see https://github.com/UseJunior/safe-docx/issues/646
  * @see https://github.com/UseJunior/safe-docx/issues/1024
+ * @see https://github.com/UseJunior/safe-docx/issues/1142
  */
 
 import { readFileSync } from 'node:fs';
@@ -38,6 +39,7 @@ import {
   prefixEveryXmlPart,
   REAL_CORPUS_ENV,
   REAL_CORPUS_REQUIRED_ENV,
+  resegmentAndReplaceRealRunText,
   resolveRealCorpusAvailability,
   type RealCorpusEntry,
 } from './real-corpus-fixtures.js';
@@ -255,4 +257,37 @@ describe.skipIf(!corpusAvailability.available)('real-corpus BOM-prefixed XML par
       240_000,
     );
   }
+});
+
+// A safe-docx save of a one-word edit re-segments the Voting Agreement
+// preamble (18 runs to 5), so `)` + `,` in separate runs become `),` in one.
+// Identical text with identical formatting must still align (#1142).
+describe.skipIf(!corpusAvailability.available)('real-corpus run re-segmentation', () => {
+  const entryId = 'nvca-voting-agreement';
+  const options = { author: 'Real Corpus Segmentation Gate', date: new Date('2026-10-03T00:00:00Z') };
+  const redlineRevisionTexts = async (document: Buffer): Promise<string[]> => {
+    const compared = new DOMParser().parseFromString(await comparedDocumentXml(document), 'text/xml');
+    return [...elements(compared, 'w:del'), ...elements(compared, 'w:ins')]
+      .map((wrapper) => `${wrapper.tagName}:${wrapper.textContent ?? ''}`);
+  };
+
+  test(`${entryId} × tagged-spine × re-segmented one-word edit`, async () => {
+    const source = readFileSync(join(corpusRoot, entryId, 'source.docx'));
+    const edited = await resegmentAndReplaceRealRunText(source, 'Company', 'SMOKEWORD');
+    const result = await compareDocumentsAtomizer(source, edited, options);
+    expect(result.stats).toMatchObject({
+      insertions: 1, deletions: 1, insertedAtoms: 1, deletedAtoms: 1, formatChanges: 0,
+    });
+    expect((await redlineRevisionTexts(result.document)).sort()).toEqual(['w:del:Company', 'w:ins:SMOKEWORD']);
+  }, 120_000);
+
+  test(`${entryId} × tagged-spine × re-segmentation alone`, async () => {
+    const source = readFileSync(join(corpusRoot, entryId, 'source.docx'));
+    const resegmented = await resegmentAndReplaceRealRunText(source, 'Company', 'Company');
+    const result = await compareDocumentsAtomizer(source, resegmented, options);
+    expect(result.stats).toMatchObject({
+      insertions: 0, deletions: 0, insertedAtoms: 0, deletedAtoms: 0, formatChanges: 0,
+    });
+    expect(await redlineRevisionTexts(result.document)).toEqual([]);
+  }, 120_000);
 });
