@@ -232,4 +232,23 @@ describe('replace_text — a clean range spanning a result-less field or a note 
       ]);
     });
   });
+
+  test('control: a field and a note reference already inside a tracked deletion are not reported', async ({ given, when, then }: AllureBddContext) => {
+    const paragraph = await given('a paragraph whose XE field and footnote reference sit inside an existing w:del', () =>
+      `<w:p>${T('Alpha ')}<w:del w:id="90" w:author="Reviewer" w:date="2024-01-01T00:00:00Z">` +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:delInstrText xml:space="preserve"> XE "Alpha" </w:delInstrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+      '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="1"/></w:r>' +
+      `</w:del>${T('Bravo')}</w:p>`);
+
+    const result = await when('replace_text replaces "Alpha Bravo" with "Charlie" without tracking', () =>
+      cleanReplace(paragraph, 'Alpha Bravo', 'Charlie', { 'word/footnotes.xml': FOOTNOTES_XML }));
+
+    await then('no hidden-construct warning is raised: the deleted constructs were never live', () => {
+      expect(result.afterText).toBe('Charlie');
+      expect(result.warnings.filter((w) => w.includes('not shown in the paragraph text'))).toEqual([]);
+    });
+  });
 });
+

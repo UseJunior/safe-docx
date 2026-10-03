@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- `buildParagraphIndex` now also returns `fields`: each complex field in the
+  paragraph with its instruction, whether it has a cached result (`separate`
+  marker), and its `begin` / `end` marker nodes; and it classifies
+  `w:endnoteReference` as `endnote-reference` (previously `other`). The
+  `replace_text` warning for a removed result-less field or note reference
+  (#1097) is now derived from that index. When a nested field sits inside the
+  instruction of a result-less field, the warning's instruction text now
+  includes the nested field's cached result, as Word evaluates it.
+
 ## 0.22.1
 
 - A `.docx` whose XML parts begin with a UTF-8 byte-order mark, or with
