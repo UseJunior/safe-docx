@@ -31,7 +31,7 @@ export type AnnotatedRun = {
 };
 
 export type FormattingBaseline = {
-  // A modal member remains null when the dominant runs leave it unresolved.
+  // Null when some body run leaves the member unresolved: the norm is unknown.
   bold: boolean | null;
   italic: boolean | null;
   underline: boolean | null;
@@ -78,10 +78,25 @@ export function computeModalBaseline(
     return { bold: false, italic: false, underline: false, suppressed: false };
   }
 
+  // An unresolved member must not split the tuple mode and so change the
+  // suppression of members that are resolved (#752). A member that any body
+  // run leaves unresolved is dropped from the modal key and reported as null:
+  // the paragraph norm for it is unknown, so suppression never hides a
+  // resolved value of it, and an unresolved value is never emitted.
+  const allResolve = (member: (r: AnnotatedRun) => boolean | null): boolean =>
+    bodyRuns.every((r) => member(r) !== null);
+  const keyBold = allResolve((r) => r.formatting.bold);
+  const keyItalic = allResolve((r) => r.formatting.italic);
+  const keyUnderline = allResolve((r) => r.formatting.underline);
+
   const comboCounts = new Map<FormattingKey, { chars: number; firstIdx: number }>();
   for (let i = 0; i < bodyRuns.length; i++) {
     const r = bodyRuns[i]!;
-    const key = fmtKey(r.formatting.bold, r.formatting.italic, r.formatting.underline);
+    const key = fmtKey(
+      keyBold ? r.formatting.bold : null,
+      keyItalic ? r.formatting.italic : null,
+      keyUnderline ? r.formatting.underline : null,
+    );
     const existing = comboCounts.get(key);
     if (existing) {
       existing.chars += r.charCount;

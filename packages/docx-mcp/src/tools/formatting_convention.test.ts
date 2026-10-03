@@ -52,12 +52,14 @@ type RunStyle = {
   underline?: boolean;
   rStyle?: string;
   boldOff?: boolean;
+  italicOff?: boolean;
 };
 
 function rPr(style: RunStyle): string {
   const parts: string[] = [];
   if (style.rStyle) parts.push(`<w:rStyle w:val="${style.rStyle}"/>`);
   if (style.boldOff) parts.push(`<w:b w:val="0"/>`);
+  if (style.italicOff) parts.push(`<w:i w:val="0"/>`);
   if (style.bold) parts.push('<w:b/>');
   if (style.italic) parts.push('<w:i/>');
   if (style.underline) parts.push('<w:u w:val="single"/>');
@@ -441,7 +443,62 @@ describe('formatting-convention check', () => {
     await and('the resolved bold divergence is reported, naming italic as unresolved', () => {
       expect(differsWhereResolved).toHaveLength(1);
       expect(differsWhereResolved[0]).toContain('is bold=false, italic=unresolved, underline=false');
-      expect(differsWhereResolved[0]).toContain('are bold=true, italic=true, underline=false');
+      // The one plain pre-existing term leaves italic unresolved, so italic is
+      // not part of the convention either.
+      expect(differsWhereResolved[0]).toContain('are bold=true, italic=unresolved, underline=false');
+    });
+  });
+
+  test('uncertainty in one member does not erase a unanimous convention on another (#752 review)', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    const stylesWith = (rPr: string): Record<string, string> => ({
+      'word/styles.xml':
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w:styles xmlns:w="${W_NS}"><w:docDefaults><w:rPrDefault><w:rPr>${rPr}</w:rPr>` +
+        `</w:rPrDefault></w:docDefaults></w:styles>`,
+    });
+    // Ten directly bold terms: five turn italic off directly, five leave it to
+    // docDefaults (italic on), so italic is unresolved for half the population.
+    const mixed = [
+      ...Array.from({ length: 5 }, (_, i) => definedTermParagraph(i + 1, { bold: true, italicOff: true })),
+      ...Array.from({ length: 5 }, (_, i) => definedTermParagraph(i + 6, { bold: true })),
+    ].join('');
+    let resolvedBoldDivergence: string[] = [];
+    let unresolvedBoldInsertion: string[] = [];
+
+    await given('a unanimous direct-bold defined-term convention whose italic is half unresolved', async () => {
+      expect(definedTermPopulation(await loadDoc(mixed))).toBe(10);
+    });
+
+    await when('a term with direct bold off is inserted, and (control) a term whose bold is itself unresolved', async () => {
+      resolvedBoldDivergence = await check(
+        mixed + TARGET_PLAIN,
+        mixed + insertedDefinedTermParagraph({ boldOff: true }),
+        INSERTED_DEFINED_TERM_TEXT,
+        stylesWith('<w:i/>'),
+      );
+      // docDefaults also turn bold on here, so the plain insertion's bold is
+      // unresolved: the member that differs is unknown, and nothing is said.
+      unresolvedBoldInsertion = await check(
+        mixed + TARGET_PLAIN,
+        mixed + insertedDefinedTermParagraph({}),
+        INSERTED_DEFINED_TERM_TEXT,
+        stylesWith('<w:b/><w:i/>'),
+      );
+    });
+
+    await then('the provable bold divergence is reported against the 10-of-10 bold convention', () => {
+      expect(resolvedBoldDivergence).toHaveLength(1);
+      expect(resolvedBoldDivergence[0]).toContain('10 of 10 (100%)');
+      expect(resolvedBoldDivergence[0]).toContain('are bold=true, italic=unresolved, underline=false');
+    });
+
+    await and('an insertion whose differing member is unresolved stays silent', () => {
+      expect(unresolvedBoldInsertion).toEqual([]);
     });
   });
 

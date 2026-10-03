@@ -1,7 +1,14 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { OOXML } from './namespaces.js';
-import { extractEffectiveRunFormatting, parseStylesXml, type RunFormatting, type StylesModel } from './styles.js';
+import {
+  extractEffectiveRunFormatting,
+  parseStylesXml,
+  parseThemeXml,
+  type RunFormatting,
+  type StylesModel,
+  type ThemeModel,
+} from './styles.js';
 import { parseXml } from './xml.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({
@@ -14,6 +21,16 @@ const DOC_DEFAULTS = (rPr: string): string =>
 const CHARACTER_STYLE = (styleId: string, rPr: string): string =>
   `<w:style w:type="character" w:styleId="${styleId}"><w:rPr>${rPr}</w:rPr></w:style>`;
 
+const THEME = parseThemeXml(
+  parseXml(
+    `<a:theme xmlns:a="${OOXML.A_NS}" name="T"><a:themeElements>` +
+      `<a:clrScheme name="T"><a:accent1><a:srgbClr val="C0504D"/></a:accent1></a:clrScheme>` +
+      `<a:fontScheme name="T"><a:majorFont><a:latin typeface="Aptos Display"/></a:majorFont>` +
+      `<a:minorFont><a:latin typeface="Aptos"/></a:minorFont></a:fontScheme>` +
+      `</a:themeElements></a:theme>`,
+  ),
+);
+
 function stylesModel(stylesInner: string): StylesModel {
   return parseStylesXml(parseXml(`<w:styles xmlns:w="${OOXML.W_NS}">${stylesInner}</w:styles>`));
 }
@@ -21,7 +38,7 @@ function stylesModel(stylesInner: string): StylesModel {
 function extract(
   stylesInner: string,
   runProperties = '',
-  opts: { inTable?: boolean; styles?: StylesModel } = {},
+  opts: { inTable?: boolean; styles?: StylesModel; theme?: ThemeModel | null } = {},
 ): RunFormatting {
   const paragraph = `<w:p><w:r><w:rPr>${runProperties}</w:rPr><w:t>x</w:t></w:r></w:p>`;
   const body = opts.inTable
@@ -35,6 +52,7 @@ function extract(
     paragraphPPr: null,
     paragraphStyleId: null,
     styles: opts.styles ?? stylesModel(stylesInner),
+    theme: opts.theme ?? null,
   });
 }
 
@@ -221,6 +239,66 @@ describe('unresolved effective run formatting (#752)', () => {
       expect(model.docDefaultsRPr).toBeNull();
       expect(model.tableStyleRPrs).toEqual([]);
       expect(extract('', '', { styles: model }).bold).toBe(false);
+    });
+  });
+
+  test('a theme colour or font reference that cannot be resolved is unresolved, not auto and not inherited', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    const styles = CHARACTER_STYLE('Red', '<w:color w:val="FF0000"/><w:rFonts w:ascii="Georgia"/>');
+    const direct = '<w:rStyle w:val="Red"/><w:color w:val="auto" w:themeColor="accent1"/><w:rFonts w:asciiTheme="minorHAnsi"/>';
+    let noTheme!: RunFormatting;
+    let emptyTheme!: RunFormatting;
+    let withTheme!: RunFormatting;
+    let unreadNoTheme!: RunFormatting;
+    let unreadWithTheme!: RunFormatting;
+    let hexFallback!: RunFormatting;
+
+    await given('a run whose own colour and font are theme references, over a character style with concrete values', async () => {});
+    await when('it is resolved without a theme, with an empty theme, and with a resolving theme', async () => {
+      noTheme = extract(styles, direct);
+      emptyTheme = extract(styles, direct, { theme: { fonts: new Map(), colors: new Map() } });
+      withTheme = extract(styles, direct, { theme: THEME });
+      unreadNoTheme = extract(DOC_DEFAULTS('<w:color w:val="auto" w:themeColor="accent1"/>'));
+      unreadWithTheme = extract(DOC_DEFAULTS('<w:color w:val="auto" w:themeColor="accent1"/>'), '', { theme: THEME });
+      hexFallback = extract('', '<w:color w:val="00FF00" w:themeColor="accent1"/>');
+    });
+    await then('without a usable theme the declared references are unresolved and the style does not show through', async () => {
+      expect(noTheme.colorHex).toBeNull();
+      expect(noTheme.fontName).toBeNull();
+      expect(emptyTheme.colorHex).toBeNull();
+      expect(emptyTheme.fontName).toBeNull();
+    });
+    await and('with the theme they resolve; a docDefaults-only reference stays unresolved either way', async () => {
+      expect(withTheme.colorHex).toBe('C0504D');
+      expect(withTheme.fontName).toBe('Aptos');
+      expect(unreadNoTheme.colorHex).toBeNull();
+      expect(unreadWithTheme.colorHex).toBeNull();
+      // An explicit hex val remains the fallback when the theme is absent.
+      expect(hexFallback.colorHex).toBe('00FF00');
+    });
+  });
+
+  test('explicit automatic colour and no-highlight stop inheritance from a character style', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let formatting!: RunFormatting;
+
+    await given('a character style with red text and a yellow highlight', async () => {});
+    await when('the run selects the style but sets colour auto and highlight none directly', async () => {
+      formatting = extract(
+        CHARACTER_STYLE('Loud', '<w:color w:val="FF0000"/><w:highlight w:val="yellow"/>'),
+        '<w:rStyle w:val="Loud"/><w:color w:val="auto"/><w:highlight w:val="none"/>',
+      );
+    });
+    await then('the direct declarations win; before #752 the style values showed through', async () => {
+      expect(formatting.colorHex).toBe('auto');
+      expect(formatting.highlightVal).toBe(false);
     });
   });
 });

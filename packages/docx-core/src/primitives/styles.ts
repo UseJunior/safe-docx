@@ -270,16 +270,22 @@ export function extractParagraphFormatting(
 
 /**
  * Effective run formatting. `null` means the resolver could not establish the
- * property: it is declared only in a layer the resolver does not read
- * (`w:docDefaults`, table-style run properties), or it has no OOXML default
- * (`fontName`, `fontSizePt`) and no consulted layer declares it. It never
- * stands in for a rendered default.
+ * property, and never stands in for a rendered default. That happens when:
+ * - the property is declared only in a layer the resolver does not read
+ *   (`w:docDefaults`, table-style run properties);
+ * - the nearest layer that declares it does so through a theme colour or
+ *   theme font reference that cannot be resolved (no theme, or no matching
+ *   theme entry, and no explicit fallback value); or
+ * - it has no OOXML default (`fontName`, `fontSizePt`) and no consulted layer
+ *   declares it.
  *
  * A property declared nowhere in the document resolves to its OOXML default:
  * `false` for toggles and `underline`, `false` for `highlightVal` (no
  * highlight), and `'auto'` for `colorHex`. Explicit "off" declarations
  * (`w:b w:val="0"`, `w:u w:val="none"`, `w:highlight w:val="none"`,
- * `w:color w:val="auto"`) resolve to the same values.
+ * `w:color w:val="auto"`) resolve to the same values, and like any other
+ * declaration they stop inheritance: `w:color w:val="auto"` on a run hides a
+ * character style's red, and `w:highlight w:val="none"` hides its highlight.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/752
  */
@@ -465,12 +471,40 @@ function parseHighlightVal(parent: Element | null): string | null {
   return v;
 }
 
-/** `'auto'` for a declared automatic colour, the hex otherwise, `null` if undeclared. */
-function parseEffectiveColorHex(parent: Element | null, theme: ThemeModel | null): string | 'auto' | null {
+/**
+ * Marks a layer that *does* declare a property whose value cannot be
+ * established — a theme colour or theme font with no theme to resolve it
+ * against. Resolution stops at that layer (a lower layer must not show
+ * through) and the property is reported as unresolved.
+ */
+const DECLARED_UNRESOLVED: unique symbol = Symbol('declared-unresolved');
+type Declared<T> = T | typeof DECLARED_UNRESOLVED;
+
+/**
+ * `'auto'` for a declared automatic colour, the hex otherwise, `null` if
+ * undeclared, {@link DECLARED_UNRESOLVED} for a theme colour reference that
+ * resolves neither through the theme nor through an explicit hex `w:val`.
+ */
+function parseEffectiveColorHex(parent: Element | null, theme: ThemeModel | null): Declared<string> | null {
   if (!parent) return null;
   const el = getFirstChild(parent, OOXML.W_NS, W.color);
   if (!el) return null;
-  return parseColorHex(parent, theme) ?? 'auto';
+  const hex = parseColorHex(parent, theme);
+  if (hex !== null) return hex;
+  return getWAttr(el, 'themeColor') ? DECLARED_UNRESOLVED : 'auto';
+}
+
+/**
+ * The font name, `null` if `w:rFonts` names none, or {@link DECLARED_UNRESOLVED}
+ * when it names the Latin font only through a theme reference that does not
+ * resolve and carries no explicit `w:ascii` / `w:hAnsi` fallback.
+ */
+function parseEffectiveFontName(parent: Element | null, theme: ThemeModel | null): Declared<string> | null {
+  const name = parseFontName(parent, theme);
+  if (name !== null || !parent) return name;
+  const el = getFirstChild(parent, OOXML.W_NS, W.rFonts);
+  if (!el) return null;
+  return getWAttr(el, 'asciiTheme') || getWAttr(el, 'hAnsiTheme') ? DECLARED_UNRESOLVED : null;
 }
 
 /** `false` for a declared `none`, the value otherwise, `null` if undeclared. */
@@ -586,11 +620,16 @@ export function extractEffectiveRunFormatting(params: {
       tagLocal,
       unreadLayerSetsNonDefault((layer) => parseBoolProp(layer, tagLocal) === true),
     );
+  const resolveDeclared = <T>(parse: (el: Element | null) => Declared<T> | null): T | null => {
+    const value = resolve(parse);
+    return value === DECLARED_UNRESOLVED ? null : value;
+  };
   const resolveWithDefault = <T>(
-    parse: (el: Element | null) => T | null,
+    parse: (el: Element | null) => Declared<T> | null,
     ooxmlDefault: T,
   ): T | null => {
     const value = resolve(parse);
+    if (value === DECLARED_UNRESOLVED) return null;
     if (value !== null) return value;
     return unreadLayerSetsNonDefault((layer) => {
       const declared = parse(layer);
@@ -615,7 +654,7 @@ export function extractEffectiveRunFormatting(params: {
     highlightVal: resolveWithDefault<string | false>(parseEffectiveHighlightVal, false),
     // No OOXML default: the rendered font and size are application-defined
     // when nothing declares them, so an undeclared value stays unresolved.
-    fontName: resolve((el) => parseFontName(el, theme)),
+    fontName: resolveDeclared((el) => parseEffectiveFontName(el, theme)),
     fontSizePt: resolve(parseFontSizePt),
     colorHex: resolveWithDefault<string>((el) => parseEffectiveColorHex(el, theme), 'auto'),
   };

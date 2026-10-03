@@ -5,6 +5,7 @@ import {
   computeModalBaseline,
   computeParagraphFontBaseline,
   emitFormattingTags,
+  mergeAdjacentTags,
   type AnnotatedRun,
   type FormattingBaseline,
   type FontBaseline,
@@ -513,6 +514,39 @@ describe('formatting_tags', () => {
 
     await then('only the highlighted run carries the tag', async () => {
       expect(tagged).toBe('none unknown <highlight color="yellow">lit</highlight>');
+    });
+  });
+
+  test('an unresolved member does not change suppression of a resolved one (#752 review)', async ({ given, when, then, and }: AllureBddContext) => {
+    let unanimousBold: string;
+    let partlyUnknownItalic: string;
+
+    await given('paragraphs whose italic is unresolved in some runs', async () => {
+      // setup is inline
+    });
+
+    await when('compact tags are emitted against the modal baseline', async () => {
+      const boldRuns: AnnotatedRun[] = [
+        annotatedRun('aaaaa', { bold: true, italic: false }),
+        annotatedRun('bbbbb', { bold: true, italic: null }),
+      ];
+      unanimousBold = mergeAdjacentTags(emitFormattingTags({ runs: boldRuns, baseline: computeModalBaseline(boldRuns) }));
+      const italicRuns: AnnotatedRun[] = [
+        annotatedRun('Mostly italic text ', { italic: true }),
+        annotatedRun('unknown', { italic: null }),
+      ];
+      partlyUnknownItalic = emitFormattingTags({ runs: italicRuns, baseline: computeModalBaseline(italicRuns) });
+    });
+
+    await then('the unanimous resolved bold stays suppressed, exactly as before #752', async () => {
+      expect(unanimousBold).toBe('aaaaabbbbb');
+    });
+
+    await and('a member some run leaves unresolved has no known norm, so its resolved values are tagged (pinned tradeoff)', async () => {
+      // Before #752 the unresolved run counted as non-italic and the italic
+      // majority was suppressed. The norm is not known, so the resolved italic
+      // is shown rather than hidden; the unresolved run is never tagged.
+      expect(partlyUnknownItalic).toBe('<i>Mostly italic text </i>unknown');
     });
   });
 });

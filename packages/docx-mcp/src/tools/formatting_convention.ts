@@ -487,10 +487,25 @@ function resolveConvention(
 ): ConventionSummary | null {
   if (instances.length < minInstances) return null;
 
+  // A member any instance leaves unresolved (#752) is dropped from the vote
+  // and from the convention (it becomes null there). Otherwise uncertainty in
+  // one member would split the population and erase a unanimous convention on
+  // the others; and a member the population does not fully resolve is not
+  // evidence of a convention for it.
+  const known = new Set(
+    TUPLE_MEMBERS.filter((member) => instances.every((instance) => instance.tuple[member] !== null)),
+  );
+  const project = (tuple: ConventionTuple): ConventionTuple => ({
+    bold: known.has('bold') ? tuple.bold : null,
+    italic: known.has('italic') ? tuple.italic : null,
+    underline: known.has('underline') ? tuple.underline : null,
+  });
+
   const counts = new Map<string, { count: number; tuple: ConventionTuple }>();
   for (const instance of instances) {
-    const key = tupleKey(instance.tuple);
-    const entry = counts.get(key) ?? { count: 0, tuple: instance.tuple };
+    const projected = project(instance.tuple);
+    const key = tupleKey(projected);
+    const entry = counts.get(key) ?? { count: 0, tuple: projected };
     entry.count += 1;
     counts.set(key, entry);
   }

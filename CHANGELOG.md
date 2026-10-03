@@ -25,26 +25,39 @@
   Non-XML entries are unchanged.
 - **Breaking (docx-core public type):** every field of `RunFormatting`, the
   return type of `extractEffectiveRunFormatting`, is now nullable, and `null`
-  now means only "unresolved": the property is declared in a layer the
-  resolver does not read yet (`w:docDefaults`, or a table style for a run
-  inside a table), or it has no OOXML default and nothing declares it
+  means only "unresolved". That covers three cases: the property is declared
+  only in a layer the resolver does not read yet (`w:docDefaults`, or a table
+  style for a run inside a table); the nearest declaration is a theme colour or
+  theme font reference that cannot be resolved (no theme, and no explicit
+  fallback); or the property has no OOXML default and nothing declares it
   (`fontName`, `fontSizePt`). Previously the resolver returned `''`, `0` and
-  `false` for those cases, indistinguishable from real values. Values for
-  properties the resolver does establish are unchanged. A property declared
+  `false` for these, indistinguishable from real values. A property declared
   nowhere resolves to its OOXML default, now spelled explicitly:
   `highlightVal: false` (was `null`) for no highlight, and `colorHex: 'auto'`
-  (was `null`) for automatic colour. TypeScript callers must handle `null`;
+  (was `null`) for automatic colour. TypeScript callers must handle `null`.
   `StylesModel` gains optional `docDefaultsRPr` / `tableStyleRPrs` fields, and
   hand-built `{ byId }` models still type-check. (#752)
-- **Client-visible (MCP):** `read_file` JSON `body_run_formatting` carries the
-  same shape: `fontName` / `fontSizePt` are `null` instead of `""` / `0` when
+- An explicit `w:color w:val="auto"` or `w:highlight w:val="none"` now stops
+  inheritance as Word does. A run that sets automatic colour over the
+  `Hyperlink` character style now resolves to `'auto'` instead of the style's
+  blue, so `read_file` no longer tags it `<font color="0000FF">`. In the repo
+  and NVCA corpus (19 documents) this changes one paragraph each in three
+  documents. (#752)
+- **Client-visible (MCP):** in `read_file` JSON, `body_run_formatting` takes
+  the new shape: `fontName` / `fontSizePt` are `null` instead of `""` / `0` when
   unresolved, `highlightVal` is `false` instead of `null` for an unhighlighted
   run, and `colorHex` is `"auto"` instead of `null` for automatic colour.
-  Formatting tags in `read_file` output are unchanged for resolved values; an
-  unresolved run inside a paragraph with a resolved modal size no longer gets a
-  `<font size="0">` tag. The inserted-run formatting-convention warning is no
-  longer raised from an unresolved bold/italic/underline value, and names such
-  a member as `unresolved` when it reports a divergence on another one. (#752)
+  Formatting tags change only where a value is now unresolved:
+  - an unresolved run inside a paragraph whose modal size is resolved no longer
+    gets `<font size="0">`;
+  - when some run leaves bold, italic or underline unresolved (for example,
+    italic turned on only in `w:docDefaults`), that property has no known norm,
+    so runs that resolve it are tagged rather than suppressed.
+
+  The inserted-run formatting-convention warning is never raised from an
+  unresolved bold/italic/underline. A property that any instance leaves
+  unresolved is left out of the document's convention, and the warning prints
+  it as `unresolved`. (#752)
 
 ## 0.22.1
 
