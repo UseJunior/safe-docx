@@ -4,15 +4,18 @@
 
 - `buildParagraphIndex` now also returns `fields`: each complex field in the
   paragraph with its instruction, whether it has a cached result (`separate`
-  marker), and its `begin` / `end` marker nodes; and it classifies
-  `w:endnoteReference` as `endnote-reference` (previously `other`). The
+  marker), and its `begin` / `end` marker nodes; it classifies
+  `w:endnoteReference` as `endnote-reference` (previously `other`); and it
+  takes `{ skipTrackedDeletions: true }` to leave out everything inside
+  `w:del`, so deleted field markers take no part in field pairing. The
   `replace_text` warning for a removed result-less field or note reference
-  (#1097) is now derived from that index. When a nested field sits inside the
-  instruction of a result-less field, the warning's instruction text now
-  includes the nested field's cached result, as Word evaluates it.
+  (#1097) is now derived from that index. When a nested field's cached result
+  is stored as `w:instrText` inside the instruction of a result-less field,
+  the warning's instruction text now includes that cached result.
 - `readZipText` drops a leading UTF-8 byte-order mark (and whitespace before
   the first `<`) from an XML or `.rels` part, as `DocxZip.readText` already
-  did, so its result parses with `parseXml`. Non-XML entries are unchanged.
+  did, so the text it returns starts with markup and can go to any XML parser.
+  Non-XML entries are unchanged.
 
 ## 0.22.1
 

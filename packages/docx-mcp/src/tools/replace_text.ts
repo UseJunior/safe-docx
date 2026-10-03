@@ -58,15 +58,6 @@ function symbolRemovalWarning(removed: number, tracked: boolean): string {
     `not shown in the paragraph text; ${removed === 1 ? 'it was' : 'they were'} ${outcome}.`;
 }
 
-function insideTrackedDeletion(el: Element, paragraph: Element): boolean {
-  for (let node: Node | null = el.parentNode; node && node !== paragraph; node = node.parentNode) {
-    if (node.nodeType === 1 && (node as Element).namespaceURI === OOXML.W_NS && (node as Element).localName === W.del) {
-      return true;
-    }
-  }
-  return false;
-}
-
 /**
  * Other constructs the paragraph text does not show and a range can take out
  * without the caller having seen them (issue #1097): a field with no result
@@ -81,25 +72,23 @@ function insideTrackedDeletion(el: Element, paragraph: Element): boolean {
  * replace primitive keeps in place, so it needs no count.
  *
  * Field state and note references come from docx-core's `buildParagraphIndex`,
- * the same index that defines the paragraph text the caller matched; this
- * function only adds the tracked-change filter (a construct inside `w:del` is
- * already gone from the live document, so it is neither counted before the
- * edit nor reported as removed after a tracked edit moves it into `w:del`).
- * A field's instruction is the index's: when a nested field sits inside the
- * outer field's instruction, its cached result is part of the outer
- * instruction text, as Word evaluates it.
+ * the same traversal that defines the paragraph text the caller matched, built
+ * with `skipTrackedDeletions`: a construct inside `w:del` is already gone from
+ * the live document, so it is neither counted before the edit nor reported as
+ * removed after a tracked edit moves it into `w:del`, and a deleted field
+ * marker cannot pair with a live field. A field's instruction is the index's:
+ * an `instrText` inside a nested field's result (as Word stores a nested
+ * field's cached result within an outer instruction) is part of the outer
+ * instruction.
  */
 function collectLiveHiddenConstructs(paragraph: Element): string[] {
-  const index = buildParagraphIndex(paragraph);
+  const index = buildParagraphIndex(paragraph, { skipTrackedDeletions: true });
   const resultlessFieldsByEnd = new Map<Element, IndexedField>();
   for (const field of index.fields) {
-    if (!field.hasResult && field.end && !insideTrackedDeletion(field.begin.element, paragraph)) {
-      resultlessFieldsByEnd.set(field.end.element, field);
-    }
+    if (!field.hasResult && field.end) resultlessFieldsByEnd.set(field.end.element, field);
   }
   const labels: string[] = [];
   for (const node of index.nodes) {
-    if (insideTrackedDeletion(node.element, paragraph)) continue;
     if (node.kind === 'footnote-reference' || node.kind === 'endnote-reference') {
       const id = node.element.getAttributeNS(OOXML.W_NS, 'id') ?? node.element.getAttribute('w:id') ?? '?';
       labels.push(`${node.kind === 'footnote-reference' ? 'footnote' : 'endnote'} reference (note id ${id})`);

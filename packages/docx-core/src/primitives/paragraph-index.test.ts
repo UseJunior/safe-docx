@@ -123,4 +123,31 @@ describe('buildParagraphIndex', () => {
       expect(index.nodes.filter((node) => node.kind === 'endnote-reference').map((node) => node.visibleStart)).toEqual([9]);
     });
   });
+
+  test('skipTrackedDeletions keeps deleted field markers and instruction text out of field pairing', async ({ given, then }: AllureBddContext) => {
+    let xml: string;
+    await given('a live XE field whose instruction has a deleted fragment and which contains a deleted separate and a deleted end marker', () => {
+      const del = (inner: string): string => `<w:del w:id="9" w:author="R" w:date="2024-01-01T00:00:00Z">${inner}</w:del>`;
+      xml =
+        `<w:p>` +
+        `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+        `<w:r><w:instrText> XE </w:instrText></w:r>` +
+        del(`<w:r><w:delInstrText>"old"</w:delInstrText></w:r>`) +
+        `<w:r><w:instrText>"Alpha" </w:instrText></w:r>` +
+        del(`<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>`) +
+        `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+        `</w:p>`;
+    });
+    await then('the live view has one result-less field closed by the live end; the default view pairs the deleted markers', () => {
+      const live = buildParagraphIndex(paragraph(xml), { skipTrackedDeletions: true });
+      expect(live.fields.map((field) => [field.instruction, field.hasResult, field.end?.element.parentNode?.parentNode?.nodeName])).toEqual([
+        ['XE "Alpha"', false, 'w:p'],
+      ]);
+      const all = buildParagraphIndex(paragraph(xml));
+      expect(all.fields.map((field) => [field.instruction, field.hasResult, field.end?.element.parentNode?.parentNode?.nodeName])).toEqual([
+        ['XE "old""Alpha"', true, 'w:del'],
+      ]);
+    });
+  });
 });
+

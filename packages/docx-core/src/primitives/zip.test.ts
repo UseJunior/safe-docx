@@ -152,4 +152,19 @@ describe('readZipText byte-order mark', () => {
       expect(await readZipText(archive, 'word/missing.xml')).toBeNull();
     });
   });
+
+  test('drops whitespace before the declaration of an XML part and leaves a non-XML entry untouched', async ({ given, then }: AllureBddContext) => {
+    let archive: Buffer;
+    const BOM_TEXT = '\uFEFF \nnot xml';
+
+    await given('an archive with an XML part led by whitespace and a text entry led by a BOM', async () => {
+      archive = await createZipBuffer({ 'word/document.xml': `\n  ${XML}`, 'notes.txt': BOM_TEXT });
+    });
+
+    await then('the XML part starts at the declaration and the text entry keeps its BOM', async () => {
+      expect(await readZipText(archive, 'word/document.xml')).toBe(XML);
+      expect(await readZipText(archive, 'notes.txt')).toBe(BOM_TEXT);
+    });
+  });
 });
+

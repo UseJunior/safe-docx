@@ -52,6 +52,15 @@ export type ParagraphIndex = {
   fields: IndexedField[];
 };
 
+export type BuildParagraphIndexOptions = {
+  /**
+   * Leave out everything inside a tracked deletion (`w:del`), as if the
+   * deletion were accepted. Deleted field markers then take no part in
+   * field pairing, so the index describes the live paragraph only.
+   */
+  skipTrackedDeletions?: boolean;
+};
+
 type FieldFrame = { id: number; phase: 'instruction' | 'result'; instruction: string; field: IndexedField };
 
 function wordAttr(element: Element, localName: string): string | null {
@@ -85,10 +94,13 @@ function kindOf(element: Element): ParagraphNodeKind {
  * structural coordinate; field instruction text remains zero-width while
  * cached field results participate in visible coordinates.
  *
+ * With `skipTrackedDeletions`, content inside `w:del` is not visited at all,
+ * so a deleted `separate` or `end` marker cannot pair with a live field.
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  * @see https://github.com/UseJunior/safe-docx/issues/904
  */
-export function buildParagraphIndex(paragraph: Element): ParagraphIndex {
+export function buildParagraphIndex(paragraph: Element, options: BuildParagraphIndexOptions = {}): ParagraphIndex {
   const nodes: IndexedParagraphNode[] = [];
   const runs: IndexedParagraphNode[] = [];
   const fieldStack: FieldFrame[] = [];
@@ -106,6 +118,7 @@ export function buildParagraphIndex(paragraph: Element): ParagraphIndex {
 
   const visit = (element: Element, containingRun: IndexedParagraphNode | null): void => {
     if (element !== paragraph && element.namespaceURI === OOXML.W_NS && element.localName === W.p) return;
+    if (options.skipTrackedDeletions && element.namespaceURI === OOXML.W_NS && element.localName === W.del) return;
     const isRun = element.namespaceURI === OOXML.W_NS && element.localName === W.r;
     let activeRun = containingRun;
     if (isRun) {

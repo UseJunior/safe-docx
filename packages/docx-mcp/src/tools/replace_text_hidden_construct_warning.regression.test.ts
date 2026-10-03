@@ -250,5 +250,34 @@ describe('replace_text — a clean range spanning a result-less field or a note 
       expect(result.warnings.filter((w) => w.includes('not shown in the paragraph text'))).toEqual([]);
     });
   });
+
+  describe('a live result-less field mixed with tracked-deleted field markers is still reported', () => {
+    const DEL = (inner: string): string => `<w:del w:id="91" w:author="Reviewer" w:date="2024-01-01T00:00:00Z">${inner}</w:del>`;
+    const FLD = (type: string): string => `<w:r><w:fldChar w:fldCharType="${type}"/></w:r>`;
+    const INSTR = (text: string): string => `<w:r><w:instrText xml:space="preserve">${text}</w:instrText></w:r>`;
+    const cases: Array<[string, string]> = [
+      ['a deleted separate marker inside the live field', FLD('begin') + INSTR(' XE "Alpha" ') + DEL(FLD('separate')) + FLD('end')],
+      ['a deleted end marker before the live end', FLD('begin') + INSTR(' XE "Alpha" ') + DEL(FLD('end')) + FLD('end')],
+      ['a deleted fragment of the instruction', FLD('begin') + INSTR(' XE ') + DEL('<w:r><w:delInstrText xml:space="preserve">"old" </w:delInstrText></w:r>') + INSTR('"Alpha" ') + FLD('end')],
+    ];
+    for (const [name, field] of cases) {
+      test(`with ${name}`, async ({ given, when, then }: AllureBddContext) => {
+        const paragraph = await given(`a paragraph "Alpha ⟨XE "Alpha"⟩Bravo" whose field has ${name}`, () =>
+          `<w:p>${T('Alpha ')}${field}${T('Bravo')}</w:p>`);
+
+        const result = await when('replace_text replaces "Alpha Bravo" with "Charlie" without tracking', () =>
+          cleanReplace(paragraph, 'Alpha Bravo', 'Charlie'));
+
+        await then('the warning names the live instruction XE "Alpha" and the live field is gone', () => {
+          expect(result.afterText).toBe('Charlie');
+          expect(result.warnings).toEqual([
+            'The replaced range spanned a field with no result (instruction: XE "Alpha") not shown in the paragraph text; it was removed with the replaced text.',
+          ]);
+          expect(result.savedXml).not.toContain('w:instrText');
+          expect(result.savedXml).not.toContain('fldCharType="begin"');
+        });
+      });
+    }
+  });
 });
 
