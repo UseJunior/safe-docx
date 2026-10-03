@@ -5,7 +5,8 @@
  * - Removing w:del elements and their content
  * - Unwrapping w:ins elements (promoting children)
  * - Removing w:moveFrom (source), unwrapping w:moveTo (destination)
- * - Removing all *PrChange property change records
+ * - Removing all *PrChange property change records, and the paragraph-level
+ *   w:sectPr of an accepted section-break removal
  * - Stripping paragraph-level revision markers, merging a paragraph whose
  *   mark was a tracked deletion into the following paragraph
  * - Cleaning up move range markers and rsidDel attributes
@@ -181,6 +182,46 @@ const PR_CHANGE_LOCALS = [
   'rPrChange', 'pPrChange', 'sectPrChange',
   'tblPrChange', 'trPrChange', 'tcPrChange',
 ];
+
+/**
+ * The paragraph-level section-properties container that accepting this
+ * `w:sectPrChange` removes, or `null` when accepting it only drops the record.
+ *
+ * Supported removal shape: a live paragraph's `w:p > w:pPr > w:sectPr` whose
+ * only element child is its `w:sectPrChange`, and whose snapshot holds at
+ * least one prior section property. The live state has no section properties,
+ * so accepting the revision accepts the absence of the break and the
+ * container goes too; keeping an empty `w:sectPr` would leave a ghost section
+ * break.
+ *
+ * An empty live `w:sectPr` over an empty snapshot is how an ADDED break with
+ * default properties is recorded, so that break is kept. Body-level (final)
+ * section properties and paragraph sections with any live property child are
+ * never selected. Known limitations (see the `remove-accepted-ghost-section-break`
+ * design): removal of a break that originally had no properties has the
+ * added-break shape and is kept, and a kept break emptied of all its
+ * properties is indistinguishable from a removal and is removed.
+ *
+ * Shared by native `acceptChanges` and docx-compare's `acceptAllChanges` so
+ * both accept paths apply the same rule (#981, #1143).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ */
+export function acceptedSectionBreakRemovalContainer(change: Element): Element | null {
+  if (!isW(change, 'sectPrChange')) return null;
+  const sectionProperties = change.parentNode;
+  if (!sectionProperties || !isW(sectionProperties, 'sectPr')) return null;
+  const paragraphProperties = sectionProperties.parentNode;
+  if (!paragraphProperties || !isW(paragraphProperties, 'pPr')) return null;
+  // Only a live paragraph's own properties; never a w:pPr nested in history.
+  const paragraph = paragraphProperties.parentNode;
+  if (!paragraph || !isW(paragraph, 'p')) return null;
+  const liveChildren = Array.from(sectionProperties.childNodes).filter(n => n.nodeType === 1);
+  if (liveChildren.length !== 1 || liveChildren[0] !== change) return null;
+  const snapshot = Array.from(change.childNodes).find((n): n is Element => isW(n, 'sectPr'));
+  if (!snapshot || !Array.from(snapshot.childNodes).some(n => n.nodeType === 1)) return null;
+  return sectionProperties;
+}
 
 /**
  * Find the next sibling paragraph a paragraph-mark revision can merge into,
@@ -501,10 +542,19 @@ export function acceptChanges(
   const insertionsAccepted = rowRevisions.insertions + unwrapAllByLocalName(root, 'ins', filter);
   const moveToUnwrapped = unwrapAllByLocalName(root, 'moveTo', filter);
 
-  // Phase D — Remove property change records
+  // Phase D — Remove property change records. A selected section-break
+  // removal takes its now-empty paragraph-level w:sectPr with it (#1143);
+  // identify those containers before their change records are removed.
+  const acceptedSectionBreakRemovals = collectByLocalName(root, 'sectPrChange')
+    .filter(filter)
+    .map(acceptedSectionBreakRemovalContainer)
+    .filter((section): section is Element => section !== null);
   let propertyChangesResolved = 0;
   for (const localName of PR_CHANGE_LOCALS) {
     propertyChangesResolved += removeAllByLocalName(root, localName, filter);
+  }
+  for (const section of acceptedSectionBreakRemovals) {
+    section.parentNode?.removeChild(section);
   }
 
   // Phase E — Cleanup
