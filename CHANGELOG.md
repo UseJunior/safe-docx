@@ -10,6 +10,9 @@
   (#1097) is now derived from that index. When a nested field sits inside the
   instruction of a result-less field, the warning's instruction text now
   includes the nested field's cached result, as Word evaluates it.
+- `readZipText` drops a leading UTF-8 byte-order mark (and whitespace before
+  the first `<`) from an XML or `.rels` part, as `DocxZip.readText` already
+  did, so its result parses with `parseXml`. Non-XML entries are unchanged.
 
 ## 0.22.1
 

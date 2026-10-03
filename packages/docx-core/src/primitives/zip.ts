@@ -152,11 +152,17 @@ export async function createZipBuffer(
   return out as Buffer;
 }
 
+/**
+ * Read one entry of a zip buffer as text, or null when the entry is missing.
+ * An XML part is normalized like `DocxZip.readText`: a leading byte-order
+ * mark (and whitespace before the first `<`) is dropped, so the result can be
+ * handed straight to `parseXml`.
+ */
 export async function readZipText(buffer: Buffer, path: string): Promise<string | null> {
   const zip = await JSZip.loadAsync(buffer);
   const file = zip.file(path);
   if (!file) return null;
-  return file.async('text');
+  return normalizePartText(path, await file.async('text'));
 }
 
 export async function inspectZipEntries(buffer: Buffer): Promise<ZipEntryInfo[]> {

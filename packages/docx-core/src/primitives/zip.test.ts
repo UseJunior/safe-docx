@@ -7,7 +7,8 @@
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { DocxZip, ZIP_EPOCH, inspectZipEntries, readZipText } from './zip.js';
+import { parseXml } from './xml.js';
+import { DocxZip, ZIP_EPOCH, createZipBuffer, inspectZipEntries, readZipText } from './zip.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Document Primitives' });
 
@@ -112,6 +113,43 @@ describe('DocxZip fixed entry dates (issue #1110)', () => {
       expect(await entryDates(concurrentDefault)).toEqual(new Set([SOURCE_DATE.getTime()]));
       expect(await entryDates(laterDefault)).toEqual(new Set([SOURCE_DATE.getTime()]));
       expect(laterDefault.equals(concurrentDefault)).toBe(true);
+    });
+  });
+});
+
+describe('readZipText byte-order mark', () => {
+  const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>';
+
+  test('drops a leading UTF-8 BOM from an XML part so the text parses', async ({ given, when, then }: AllureBddContext) => {
+    let archive: Buffer;
+    let text: string | null;
+
+    await given('an archive whose relationships part starts with a UTF-8 BOM', async () => {
+      archive = await createZipBuffer({
+        'word/_rels/document.xml.rels': Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(XML, 'utf8')]),
+      });
+    });
+
+    await when('the part is read with readZipText', async () => {
+      text = await readZipText(archive, 'word/_rels/document.xml.rels');
+    });
+
+    await then('the text starts at the XML declaration and parses', () => {
+      expect(text).toBe(XML);
+      expect(parseXml(text!).documentElement.localName).toBe('Relationships');
+    });
+  });
+
+  test('keeps a BOM-free part and a missing entry unchanged', async ({ given, then }: AllureBddContext) => {
+    let archive: Buffer;
+
+    await given('an archive with a BOM-free XML part', async () => {
+      archive = await createZipBuffer({ 'word/document.xml': XML });
+    });
+
+    await then('the part reads back byte-for-byte and a missing entry is null', async () => {
+      expect(await readZipText(archive, 'word/document.xml')).toBe(XML);
+      expect(await readZipText(archive, 'word/missing.xml')).toBeNull();
     });
   });
 });
