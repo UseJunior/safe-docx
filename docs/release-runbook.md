@@ -75,7 +75,7 @@ Two constraints to preserve when touching this machinery:
 The workflow runs these jobs in order:
 
 ```
-preflight → publish-suite → ensure-release → publish-mcpb-asset → update-changelog-data
+preflight → publish-suite → ensure-release → publish-mcpb-asset
                          ↘ publish-mcp-registry (parallel, soft-fail)
 ```
 
@@ -84,7 +84,6 @@ preflight → publish-suite → ensure-release → publish-mcpb-asset → update
 - **ensure-release**: Creates the GitHub Release with auto-generated notes
 - **publish-mcp-registry**: Publishes `server.json` to the official MCP Registry via OIDC (soft-fail; does not block other jobs)
 - **publish-mcpb-asset**: Attaches `safe-docx.mcpb` + checksum to the release
-- **update-changelog-data**: Regenerates `changelog.json` and opens a PR
 
 ### 4. Verify
 
@@ -177,7 +176,9 @@ The `publish-mcp-registry` job uses `continue-on-error: true` — failures appea
 
 ### Stale changelog data
 
-The `update-changelog-data` job runs automatically on release. If it fails or you need a manual refresh:
+The release workflow no longer regenerates `site/src/_raw/changelog.json`: the
+safe-docx site only redirects to usejunior.com, so nothing publishes it. To
+refresh it manually:
 
 ```bash
 node scripts/generate_changelog_data.mjs
@@ -192,7 +193,3 @@ The generator requires the GitHub CLI to be authenticated:
 gh auth login
 gh auth status  # verify
 ```
-
-In CI, the `update-changelog-data` job passes the release-bot App token as
-`GH_TOKEN` to the generator. If the release fetch fails there, the generator
-exits non-zero instead of keeping stale `changelog.json`.
