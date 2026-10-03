@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Accepting tracked changes with `acceptChanges` (and the `accept_changes` /
+  `accept_ai_edits` tools) no longer leaves a stray section break where a
+  tracked revision removed a section break that had its own page settings.
+  The document's final section settings are unchanged, an added section break
+  is kept, and accepting only some authors' changes leaves other authors'
+  section-break revisions untouched. Native accept and comparison accept-all
+  now share one rule for this case. (#1143)
+
 ## 0.22.1
 
 - A `.docx` whose XML parts begin with a UTF-8 byte-order mark, or with
