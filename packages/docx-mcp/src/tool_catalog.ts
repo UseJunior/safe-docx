@@ -162,7 +162,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'batch_edit',
     surface: 'revisionable',
     description:
-      'Single-agent front door for applying multiple edit steps (replace_text, insert_paragraph) to a document in one call. Validates all steps first, rejects conflicts before applying anything, then executes valid steps sequentially. Accepts inline steps or a plan_file_path JSON array. Surface: revisionable — every applied step emits native OOXML tracked changes.',
+      'Single-agent front door for applying multiple edit steps (replace_text, insert_paragraph) to a document in one call. Validates all steps first, rejects conflicts before applying anything, then executes valid steps sequentially. Two source-proven bonded heading/body insertions may share an anchor and position when both declare the same bonded_pair_id and distinct style_source_id values; unrelated same-slot inserts remain conflicts. Accepts inline steps or a plan_file_path JSON array. Surface: revisionable — every applied step emits native OOXML tracked changes.',
     input: z.object({
       ...FILE_FIELD,
       steps: z
@@ -202,7 +202,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'insert_paragraph',
     surface: 'revisionable',
-    description: 'Insert a paragraph before/after an anchor paragraph by paragraph id. Supports DOCX, ODT, and Google Docs. (ODT paragraph ids are positional and shift after insertion — re-read before further edits.) Surface: revisionable — DOCX insertions emit native OOXML tracked changes.',
+    description: 'Insert a paragraph before/after an anchor paragraph by paragraph id. DOCX responses include structural_warnings when the placement may slice a hierarchy, mismatch list levels, or renumber a list. Supports DOCX, ODT, and Google Docs. (ODT paragraph ids are positional and shift after insertion — re-read before further edits.) Surface: revisionable — DOCX insertions emit native OOXML tracked changes.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,

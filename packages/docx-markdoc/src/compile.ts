@@ -12,6 +12,8 @@ import {
   parseXml,
   relationshipPartPath,
   serializeXml,
+  validateStructuralInsertions,
+  type StructuralDiagnostic,
   type ReplacementPart,
 } from '@usejunior/docx-core';
 import {
@@ -1071,7 +1073,7 @@ async function verifyStoryProjections(params: {
   return reports;
 }
 
-function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsupported: string[] } {
+function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsupported: string[]; structuralDiagnostics: StructuralDiagnostic[] } {
   const bodyOperations = ir.operations.filter((operation) => !('story' in operation && operation.story));
   const { nodes } = source.buildDocumentView({ includeSemanticTags: false, showFormatting: true });
   if (nodes.length !== ir.source.paragraphs || ir.scaffold.length !== nodes.length) {
@@ -1227,7 +1229,27 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
       throw new DocxMarkdocError('STRUCTURAL_ANNOTATION_TARGET_DELETED', `Annotation ${annotation.id} targets a row deleted by the same build.`);
     }
   }
-  return { unsupported: [...unsupported].sort() };
+  const structuralDiagnostics = validateStructuralInsertions(nodes, bodyOperations.filter(isInsertOperation).map((operation) => ({
+    operationId: operation.operationId,
+    position: operation.kind === 'insert-before' ? 'BEFORE' : 'AFTER',
+    anchorId: operation.anchorId,
+    styleSourceId: operation.styleSourceId,
+  })));
+  return { unsupported: [...unsupported].sort(), structuralDiagnostics };
+}
+
+export async function validateMarkdocAgainstSource(
+  sourceBuffer: Buffer,
+  markdoc: string,
+  options: { onWarning?: (warning: ValidationIssue) => void } = {},
+): Promise<{ ir: MarkdocEditIR; diagnostics: StructuralDiagnostic[] }> {
+  const ir = requireMarkdoc(markdoc, { onWarning: options.onWarning });
+  if (sha256(sourceBuffer) !== ir.source.sha256) {
+    throw new DocxMarkdocError('SOURCE_HASH_DRIFT', 'Source DOCX hash does not match canonical Markdoc.');
+  }
+  const sourceDocument = await DocxDocument.load(sourceBuffer);
+  const { structuralDiagnostics } = validateAgainstSource(ir, sourceDocument);
+  return { ir, diagnostics: structuralDiagnostics };
 }
 
 function operationStory(operation: EditOperation): string | undefined {
@@ -1876,7 +1898,15 @@ export async function compileMarkdoc(
   }
   const sourceDocument = await DocxDocument.load(sourceBuffer);
   const storyById = await validateStoriesAgainstSource(ir, sourceBuffer);
-  const { unsupported } = validateAgainstSource(ir, sourceDocument);
+  const { unsupported, structuralDiagnostics } = validateAgainstSource(ir, sourceDocument);
+  const structuralErrors = structuralDiagnostics.filter((diagnostic) => diagnostic.severity === 'error');
+  if (structuralErrors.length > 0) {
+    throw new DocxMarkdocError(
+      'STRUCTURAL_VALIDATION_FAILED',
+      'Resolved operations would create an unsafe document structure.',
+      structuralErrors,
+    );
+  }
   const retainedSpans = validateRunFormatScopes(ir, sourceDocument);
   const declaredOperationIds = ir.operations.map((operation) => operation.operationId);
   const atomicPreflight = assessDraftCompleteness(ir, declaredOperationIds);
@@ -2135,5 +2165,5 @@ export async function compileMarkdoc(
     cleanText,
     acceptedText,
   });
-  return { clean, tracked, ir, certificate };
+  return { clean, tracked, ir, certificate, structuralDiagnostics };
 }
