@@ -60,8 +60,8 @@
   it as `unresolved`. (#752)
 - Comparing a paragraph with mixed run formatting no longer reports unchanged
   punctuation as deleted and re-inserted when the two versions split identical
-  text into runs differently (for example `)` and `,` in separate runs against
-  `),` in one run, as a safe-docx save produces). A one-word edit in the NVCA
+  text within a changed stretch into runs differently (for example `)` and `,`
+  in separate runs against `),` in one run, as a safe-docx save produces). A one-word edit in the NVCA
   Voting Agreement preamble now yields one deletion and one insertion instead
   of seven deletions and four insertions. Adjacent runs that share a
   formatting signature are compared as one text stream; a formatting change is
