@@ -209,7 +209,7 @@ async function underRemovalGuard(
     if (Date.now() > deadline) {
       throw new Error(
         `Timed out waiting for the LibreOffice lock guard at ${guard}` +
-          (holder ? ` (held by live pid ${holder.pid} since ${holder.at})` : '') +
+          (holder ? ` (recorded holder pid ${holder.pid} since ${holder.at})` : '') +
           '. Delete it only if that process is not a safe-docx LibreOffice launcher.',
       );
     }
