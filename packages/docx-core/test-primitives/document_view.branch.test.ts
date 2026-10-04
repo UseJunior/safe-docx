@@ -885,33 +885,63 @@ describe('document_view branch coverage', () => {
 
   test('heading detectors do not treat unresolved bold as bold (#752)', async ({ given, when, then, and }: AllureBddContext) => {
     let nodes: DocumentViewNode[];
+    let controls: DocumentViewNode[];
 
-    await given('docDefaults that turn bold on, so a character-style bold toggle is unresolved', async () => {
-      // setup is inline
+    await given('a table style that turns bold on, so bold reached only through a character style is unresolved inside the table', async () => {
+      // setup is inline. Table styles are the one unread layer left since #753.
     });
 
-    await when('a would-be run-in header and a would-be centered title reach bold only through that style', async () => {
-      nodes = buildTestNodes(
+    await when('a would-be run-in header and a would-be centered title reach bold only through that style, in a table and (control) outside it', async () => {
+      const paragraphs =
         `<w:p>` +
           `<w:r><w:rPr><w:rStyle w:val="Strong"/></w:rPr><w:t>Indemnification.</w:t></w:r>` +
           `<w:r><w:t xml:space="preserve"> The Company shall indemnify each Investor.</w:t></w:r>` +
         `</w:p>` +
         `<w:p><w:pPr><w:jc w:val="center"/></w:pPr>` +
           `<w:r><w:rPr><w:rStyle w:val="Strong"/></w:rPr><w:t>STOCK PURCHASE AGREEMENT</w:t></w:r>` +
-        `</w:p>`,
-        makeStylesXml(
-          `<w:docDefaults><w:rPrDefault><w:rPr><w:b/></w:rPr></w:rPrDefault></w:docDefaults>` +
-          `<w:style w:type="character" w:styleId="Strong"><w:rPr><w:b/></w:rPr></w:style>`,
-        ),
+        `</w:p>`;
+      const styles = makeStylesXml(
+        `<w:style w:type="table" w:styleId="Grid"><w:rPr><w:b/></w:rPr></w:style>` +
+        `<w:style w:type="character" w:styleId="Strong"><w:rPr><w:b/></w:rPr></w:style>`,
       );
+      nodes = buildTestNodes(
+        `<w:tbl><w:tblPr><w:tblStyle w:val="Grid"/></w:tblPr><w:tr><w:tc>${paragraphs}</w:tc></w:tr></w:tbl>`,
+        styles,
+      );
+      controls = buildTestNodes(paragraphs, styles);
     });
 
     await then('the run-in header is not asserted from an unresolved value', async () => {
       expect(nodes[0]!.list_metadata.header_style).not.toBe('run_in_header');
+      expect(controls[0]!.list_metadata.header_style).toBe('run_in_header');
     });
 
     await and('the centered title is not asserted from an unresolved value', async () => {
       expect(nodes[1]!.list_metadata.header_style).not.toBe('title_caps_centered');
+      expect(controls[1]!.list_metadata.header_style).toBe('title_caps_centered');
+    });
+  });
+
+  test('a run-in header that is bold only through docDefaults is detected (#753)', async ({ given, when, then }: AllureBddContext) => {
+    let nodes: DocumentViewNode[];
+
+    await given('docDefaults that turn bold on, and body text that turns it off directly', async () => {
+      // setup is inline. Before #753 the header's bold was unresolved (null).
+    });
+
+    await when('a run-in header carries no run formatting of its own', async () => {
+      nodes = buildTestNodes(
+        `<w:p>` +
+          `<w:r><w:t>Indemnification.</w:t></w:r>` +
+          `<w:r><w:rPr><w:b w:val="0"/></w:rPr><w:t xml:space="preserve"> The Company shall indemnify each Investor.</w:t></w:r>` +
+        `</w:p>`,
+        makeStylesXml(`<w:docDefaults><w:rPrDefault><w:rPr><w:b/></w:rPr></w:rPrDefault></w:docDefaults>`),
+      );
+    });
+
+    await then('its bold resolves from docDefaults and the header is detected', async () => {
+      expect(nodes[0]!.list_metadata.header_style).toBe('run_in_header');
+      expect(nodes[0]!.list_metadata.header_formatting).toEqual({ bold: true, italic: false, underline: false });
     });
   });
 

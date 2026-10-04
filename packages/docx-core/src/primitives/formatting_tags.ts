@@ -188,6 +188,25 @@ export function computeParagraphFontBaseline(
   };
 }
 
+/**
+ * Font baseline for annotation bodies (comments, footnotes) emitted in `full`
+ * mode: a run's colour, size and font are tagged only where they differ from
+ * what the document defaults alone give it (see
+ * `extractDocDefaultsRunFormatting`). Without it, every run in a document
+ * whose `w:docDefaults` declares a font would carry that font as a `face`
+ * attribute once the resolver reads document defaults (#753).
+ */
+export function documentDefaultsFontBaseline(defaults: RunFormatting): FontBaseline {
+  return {
+    modalColor: defaults.colorHex === 'auto' ? null : defaults.colorHex,
+    colorSuppressed: true,
+    modalFontSizePt: defaults.fontSizePt ?? 0,
+    fontSizeSuppressed: true,
+    modalFontName: defaults.fontName ?? '',
+    fontNameSuppressed: true,
+  };
+}
+
 // ── Tag emission ─────────────────────────────────────────────────────
 
 type ActiveTags = {

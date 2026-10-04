@@ -650,15 +650,15 @@ part: 1
 section: "17.7.3"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_RPr
-verifiedBy: packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-toggle.test.ts; scripts/check_docx_formatting_loss.test.mjs
+verifiedBy: packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-toggle.test.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts; scripts/check_docx_formatting_loss.test.mjs
 ```
 
 Run toggle properties accumulate differently from ordinary properties. An on
 declaration in a style hierarchy inverts the previously effective value, an
 off declaration leaves that value unchanged, and direct run formatting sets
 the absolute result. The effective-formatting resolver evaluates the supported
-toggle set independently and retains nearest-declaration resolution for
-ordinary properties.
+toggle set independently, starting from the `w:docDefaults` value (or off),
+and retains nearest-declaration resolution for ordinary properties.
 
 ## [ECMA-PART1-17-3-2-26] Run fonts and theme-font references
 
@@ -737,14 +737,20 @@ part: 1
 section: "17.7.5.1"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults
-verifiedBy: packages/docx-core/src/generation/emit/styles-part.ts
+verifiedBy: packages/docx-core/src/generation/emit/styles-part.ts; packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts; packages/docx-core/src/primitives/styles-unresolved.test.ts
 ```
 
 `w:docDefaults` carries the document-wide default run and paragraph
 properties that styles and direct formatting layer over. Generation emits
 explicit defaults (font bound across ascii/hAnsi/cs script ranges plus an
 explicit size) rather than relying on reader fallbacks, which diverge
-between Word, LibreOffice, and Google Docs import.
+between Word, LibreOffice, and Google Docs import. Effective run formatting
+reads `w:rPrDefault/w:rPr` as its lowest-precedence layer; for toggle
+properties that layer seeds the starting value before style parity and
+absolute direct formatting apply (Microsoft's [MS-OI29500] note on §17.7.3
+describes document defaults as the base for toggle evaluation, and
+[MS-OE376] §2.7.7 documents no deviation that makes them another style
+level).
 
 ## [ECMA-PART1-17-6-18] w:sectPr paragraph-level section break emission
 

@@ -183,6 +183,40 @@ describe('structured footnote model', () => {
     },
   );
 
+  test('footnote tags carry font and size only where they differ from the document defaults (#753)',
+    async ({ given, when, then }: AllureBddContext) => {
+      const files = await given('Times New Roman 12pt document defaults, a 9pt footnote style, and one Arial run', async () => {
+        const documentXml = makeDocumentXml(refParagraph('_bk_anchor', 'See', 1));
+        const body =
+          `<w:r><w:t xml:space="preserve">inherited </w:t></w:r>` +
+          `<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr><w:t>arial</w:t></w:r>`;
+        const fnXml = footnotesXml(`<w:footnote w:id="1">${footnoteBodyParagraph(body)}</w:footnote>`);
+        const stylesXml =
+          `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+          `<w:styles xmlns:w="${OOXML.W_NS}">` +
+          `<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/>` +
+          `<w:sz w:val="24"/></w:rPr></w:rPrDefault></w:docDefaults>` +
+          `<w:style w:type="paragraph" w:styleId="FootnoteText"><w:rPr><w:sz w:val="18"/></w:rPr></w:style>` +
+          `</w:styles>`;
+        return { documentXml, fnXml, stylesXml };
+      });
+      const note = await when('the footnote is read', async () => {
+        const zip = await loadZip({
+          'word/document.xml': files.documentXml,
+          'word/footnotes.xml': files.fnXml,
+        });
+        return getFootnote(zip, parseXml(files.documentXml), 1, parseStylesXml(parseXml(files.stylesXml)));
+      });
+      await then('the inherited default font is not tagged; the style size and the Arial run are', async () => {
+        const tagged = note!.paragraphs[0]!.tagged_text;
+        expect(tagged).not.toContain('Times New Roman');
+        expect(tagged).toContain('face="Arial"');
+        expect(tagged).toContain('size="9"');
+        expect(tagged).not.toContain('size="12"');
+      });
+    },
+  );
+
   test.openspec('Reference paragraph ids are an array')(
     'Reference paragraph ids are an array',
     async ({ given, when, then }: AllureBddContext) => {

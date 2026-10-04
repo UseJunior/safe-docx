@@ -20,17 +20,17 @@ export type StylesModel = {
   byId: Map<string, StyleDef>;
   /**
    * `w:docDefaults/w:rPrDefault/w:rPr`, when the styles part declares one.
-   * {@link extractEffectiveRunFormatting} does not resolve values from this
-   * layer yet (#753); it only uses it to tell "declared nowhere" (the OOXML
-   * default is known) apart from "declared in a layer the resolver does not
-   * read" (unresolved). Optional so callers that build the `{ byId }` shape by
-   * hand remain source-compatible.
+   * {@link extractEffectiveRunFormatting} reads it as the lowest-precedence
+   * run-property layer (#753). Optional so callers that build the `{ byId }`
+   * shape by hand remain source-compatible; such a model has no document
+   * defaults.
    */
   docDefaultsRPr?: Element | null;
   /**
    * Every `w:rPr` carried by a table style, including the conditional
-   * `w:tblStylePr/w:rPr` blocks. Used the same way as `docDefaultsRPr`: a
-   * declaration here makes a property of a run inside a table unresolved.
+   * `w:tblStylePr/w:rPr` blocks. A detection-only probe: the resolver does not
+   * read table styles, so a declaration here that could change a property of a
+   * run inside a table makes that property unresolved.
    */
   tableStyleRPrs?: Element[];
 };
@@ -271,13 +271,15 @@ export function extractParagraphFormatting(
 /**
  * Effective run formatting. `null` means the resolver could not establish the
  * property, and never stands in for a rendered default. That happens when:
- * - the property is declared only in a layer the resolver does not read
- *   (`w:docDefaults`, table-style run properties);
+ * - no layer the resolver reads above `w:docDefaults` declares the property,
+ *   the run is inside a table, and a table style's run properties declare a
+ *   value that differs from what `w:docDefaults` (or the OOXML default) gives
+ *   — table styles sit above document defaults and are not read;
  * - the nearest layer that declares it does so through a theme colour or
  *   theme font reference that cannot be resolved (no theme, or no matching
  *   theme entry, and no explicit fallback value); or
- * - it has no OOXML default (`fontName`, `fontSizePt`) and no consulted layer
- *   declares it.
+ * - it has no OOXML default (`fontName`, `fontSizePt`) and no consulted layer,
+ *   `w:docDefaults` included, declares it.
  *
  * A property declared nowhere in the document resolves to its OOXML default:
  * `false` for toggles and `underline`, `false` for `highlightVal` (no
@@ -350,16 +352,27 @@ function parseBoolProp(parent: Element | null, tagLocal: string): boolean | null
 
 type ToggleStep = {
   rPr: Element | null;
-  kind: 'style' | 'direct';
+  kind: 'default' | 'style' | 'direct';
 };
 
 /**
- * Evaluate a toggle property in hierarchy order. Style-level true values
- * invert the accumulated state while style-level false values preserve it;
- * direct formatting sets an absolute value.
+ * Evaluate a toggle property in hierarchy order. Document defaults seed the
+ * starting value; style-level true values invert the accumulated state while
+ * style-level false values preserve it; direct formatting sets an absolute
+ * value.
+ *
+ * Microsoft's ISO/IEC 29500 implementation note for §17.7.3 says Word falls
+ * back to the document defaults when a hierarchy level supplies no value and
+ * treats the document-default value as the base for subsequent parity.
+ * MS-OE376 §2.7.7 documents a separate Word deviation for paragraph styles but
+ * does not make `w:docDefaults` another toggling style level. So defaults seed
+ * the state rather than invert it.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.7.3
  * @see https://github.com/UseJunior/safe-docx/issues/737
+ * @see https://github.com/UseJunior/safe-docx/issues/753
+ * @see https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/f7130225-2368-48f3-acae-a9d278d0fb25
+ * @see https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/f936abaf-a9cb-439b-923d-7f688d9202e9
  */
 function resolveToggleProperty(
   steps: ToggleStep[],
@@ -373,16 +386,21 @@ function resolveToggleProperty(
   for (const { rPr, kind } of steps) {
     const declaration = parseBoolProp(rPr, tagLocal);
     if (declaration === null) continue;
-    if (kind === 'direct') {
+    if (kind === 'default') {
+      // The seed sits below every unread layer (table styles), so it does not
+      // make the result absolute.
+      effective = declaration;
+    } else if (kind === 'direct') {
       effective = declaration;
       absolute = true;
     } else if (declaration) {
       effective = !effective;
     }
   }
-  // The walk starts from `false`, the OOXML default. That start is only known
-  // when no unread layer (document defaults, table styles) turns the toggle
-  // on; otherwise the result depends on a base the resolver does not read.
+  // The walk starts from the document default (or `false`, the OOXML
+  // default). Table styles sit between that seed and the paragraph style and
+  // are not read, so a table style that turns the toggle on leaves the result
+  // depending on a layer the resolver does not read.
   if (absolute || !unreadLayerTurnsOn) return effective;
   return null;
 }
@@ -520,7 +538,8 @@ function parseEffectiveHighlightVal(parent: Element | null): string | false | nu
  * the run declares. Ordinary properties are taken from the first layer that
  * specifies them: direct `w:rPr` on the run, then the `w:rStyle`
  * character-style `basedOn` chain, then the paragraph mark's `w:rPr` inside
- * `pPr`, then the paragraph style's `basedOn` chain.
+ * `pPr`, then the paragraph style's `basedOn` chain, and finally the
+ * document defaults (`w:docDefaults/w:rPrDefault/w:rPr`).
  *
  * Each property is resolved independently down the chain — a style that
  * specifies only color does not mask an ancestor's bold.
@@ -532,14 +551,17 @@ function parseEffectiveHighlightVal(parent: Element | null): string | false | nu
  * `w:caps`, `w:smallCaps`, `w:strike`, `w:emboss`, `w:imprint`, `w:outline`,
  * `w:shadow`, and `w:vanish`.
  *
- * Not read: `w:docDefaults` and table-style run properties. When a property
- * is declared nowhere in the layers above and one of those layers declares a
- * non-default value for it (for a toggle: turns it on),
- * the result is `null` (unresolved) rather than a guess; when no layer
- * declares it at all, the result is the OOXML default (see
- * {@link RunFormatting}). A toggle that a direct layer sets absolutely is
- * resolved regardless of those layers. Numbering-level `rPr` formats only the
- * list label (`w:lvlText`), never the paragraph's runs, so it is out of scope.
+ * Document defaults seed toggle evaluation as an absolute base value rather
+ * than acting as another parity level (see {@link resolveToggleProperty}).
+ *
+ * Not read: table-style run properties. For a run inside a table, when a
+ * property is declared nowhere above the document defaults and a table style
+ * declares a value that would change it (for a toggle: turns it on), the
+ * result is `null` (unresolved) rather than a guess; when no layer declares it
+ * at all, the result is the OOXML default (see {@link RunFormatting}). A
+ * toggle that a direct layer sets absolutely is resolved regardless of table
+ * styles. Numbering-level `rPr` formats only the list label (`w:lvlText`),
+ * never the paragraph's runs, so it is out of scope.
  *
  * Part of docx-core's public surface (see `src/index.ts`) so external
  * diagnostics — `scripts/check_docx_formatting_loss.mjs` today, the planned
@@ -555,8 +577,10 @@ function parseEffectiveHighlightVal(parent: Element | null): string | false | nu
  *   omitted, direct font/color fallbacks retain their previous behavior
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.7.3
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.5.1
  * @see https://github.com/UseJunior/safe-docx/issues/737
  * @see https://github.com/UseJunior/safe-docx/issues/752
+ * @see https://github.com/UseJunior/safe-docx/issues/753
  */
 export function extractEffectiveRunFormatting(params: {
   run: Element;
@@ -577,66 +601,68 @@ export function extractEffectiveRunFormatting(params: {
   const paragraphStyleChain = resolveStyleChain(styles, paragraphStyleId);
 
   // Priority: direct rPr → rStyle chain rPrs → paragraph mark rPr → paragraph
-  // style chain rPrs. Each property resolves independently down this list: a
-  // chain member that specifies only color must not mask an ancestor's bold,
-  // so the sources are the individual rPr containers, never "the first chain
-  // member that has an rPr" (peer review on #684; extractStyleRunFormatting
-  // above already resolved per property).
-  const sources: Array<Element | null> = [
+  // style chain rPrs → document defaults. Each property resolves
+  // independently down this list: a chain member that specifies only color
+  // must not mask an ancestor's bold, so the sources are the individual rPr
+  // containers, never "the first chain member that has an rPr" (peer review
+  // on #684; extractStyleRunFormatting above already resolved per property).
+  const sourcesAboveDefaults: Array<Element | null> = [
     rPr,
     ...rStyleChain.map((s) => s.rPr),
     pRPr,
     ...paragraphStyleChain.map((s) => s.rPr),
   ];
-  const resolve = <T>(parse: (el: Element | null) => T | null): T | null =>
-    firstNonNull(sources.map(parse));
+  const docDefaultsRPr = styles.docDefaultsRPr ?? null;
 
-  // Apply from the least specific style ancestor to direct run formatting.
-  // Paragraph-mark rPr is direct formatting at its hierarchy level; a
-  // character style can still contribute above it before the run's own rPr
-  // supplies the final absolute override.
+  // Apply from the document defaults through the least specific style
+  // ancestor to direct run formatting. Paragraph-mark rPr is direct
+  // formatting at its hierarchy level; a character style can still contribute
+  // above it before the run's own rPr supplies the final absolute override.
   const toggleSteps: ToggleStep[] = [
+    { rPr: docDefaultsRPr, kind: 'default' },
     ...[...paragraphStyleChain].reverse().map((style) => ({ rPr: style.rPr, kind: 'style' as const })),
     { rPr: pRPr, kind: 'direct' },
     ...[...rStyleChain].reverse().map((style) => ({ rPr: style.rPr, kind: 'style' as const })),
     { rPr, kind: 'direct' },
   ];
 
-  // Layers this resolver does not read. A non-default declaration there makes
-  // an otherwise-undeclared property unresolved instead of its OOXML default.
-  // A declaration of the default itself (`w:b w:val="0"`, `w:color
-  // w:val="auto"`) cannot change the outcome, so it does not.
-  const unreadLayers: Element[] = [
-    ...(styles.docDefaultsRPr ? [styles.docDefaultsRPr] : []),
-    ...(styles.tableStyleRPrs && styles.tableStyleRPrs.length > 0 && isInsideTable(run)
+  // Table styles are the one layer this resolver does not read. They sit
+  // between the document defaults and the paragraph style, so for a property
+  // declared nowhere above the document defaults, a table-style declaration
+  // that differs from the base below it makes the property unresolved. A
+  // declaration that restates that base cannot change the outcome.
+  const tableLayers: Element[] =
+    styles.tableStyleRPrs && styles.tableStyleRPrs.length > 0 && isInsideTable(run)
       ? styles.tableStyleRPrs
-      : []),
-  ];
-  const unreadLayerSetsNonDefault = (isNonDefault: (layer: Element) => boolean): boolean =>
-    unreadLayers.some(isNonDefault);
+      : [];
   const toggle = (tagLocal: string): boolean | null =>
     resolveToggleProperty(
       toggleSteps,
       tagLocal,
-      unreadLayerSetsNonDefault((layer) => parseBoolProp(layer, tagLocal) === true),
+      tableLayers.some((layer) => parseBoolProp(layer, tagLocal) === true),
     );
-  const resolveDeclared = <T>(parse: (el: Element | null) => Declared<T> | null): T | null => {
-    const value = resolve(parse);
-    return value === DECLARED_UNRESOLVED ? null : value;
-  };
-  const resolveWithDefault = <T>(
+  /**
+   * Nearest declaration above the document defaults; otherwise the document
+   * default, otherwise `ooxmlDefault` (`null` for a property with no OOXML
+   * default), unless an unread table style could change that base.
+   */
+  const resolveLayered = <T>(
     parse: (el: Element | null) => Declared<T> | null,
-    ooxmlDefault: T,
+    ooxmlDefault: T | null,
   ): T | null => {
-    const value = resolve(parse);
-    if (value === DECLARED_UNRESOLVED) return null;
-    if (value !== null) return value;
-    return unreadLayerSetsNonDefault((layer) => {
-      const declared = parse(layer);
-      return declared !== null && declared !== ooxmlDefault;
-    })
-      ? null
-      : ooxmlDefault;
+    const above = firstNonNull(sourcesAboveDefaults.map(parse));
+    if (above === DECLARED_UNRESOLVED) return null;
+    if (above !== null) return above;
+    const base = parse(docDefaultsRPr) ?? ooxmlDefault;
+    if (
+      tableLayers.some((layer) => {
+        const declared = parse(layer);
+        return declared !== null && declared !== base;
+      })
+    ) {
+      return null;
+    }
+    return base === DECLARED_UNRESOLVED ? null : base;
   };
 
   return {
@@ -650,12 +676,56 @@ export function extractEffectiveRunFormatting(params: {
     outline: toggle(W.outline),
     shadow: toggle(W.shadow),
     vanish: toggle(W.vanish),
-    underline: resolveWithDefault(parseUnderline, false),
-    highlightVal: resolveWithDefault<string | false>(parseEffectiveHighlightVal, false),
+    underline: resolveLayered(parseUnderline, false),
+    highlightVal: resolveLayered<string | false>(parseEffectiveHighlightVal, false),
     // No OOXML default: the rendered font and size are application-defined
     // when nothing declares them, so an undeclared value stays unresolved.
-    fontName: resolveDeclared((el) => parseEffectiveFontName(el, theme)),
-    fontSizePt: resolve(parseFontSizePt),
-    colorHex: resolveWithDefault<string>((el) => parseEffectiveColorHex(el, theme), 'auto'),
+    fontName: resolveLayered((el) => parseEffectiveFontName(el, theme), null),
+    fontSizePt: resolveLayered(parseFontSizePt, null),
+    colorHex: resolveLayered<string>((el) => parseEffectiveColorHex(el, theme), 'auto'),
   };
+}
+
+/**
+ * The run formatting the document defaults alone give a run: what
+ * {@link extractEffectiveRunFormatting} returns for a run that no style or
+ * direct formatting touches, outside a table. Annotation bodies (comments,
+ * footnotes) use it as their tag baseline, so a font or size inherited from
+ * `w:docDefaults` is not re-emitted on every run.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/753
+ */
+export function extractDocDefaultsRunFormatting(
+  styles: StylesModel,
+  theme: ThemeModel | null = null,
+): RunFormatting {
+  const docDefaultsRPr = styles.docDefaultsRPr ?? null;
+  if (!docDefaultsRPr) {
+    return {
+      bold: false,
+      italic: false,
+      caps: false,
+      smallCaps: false,
+      strike: false,
+      emboss: false,
+      imprint: false,
+      outline: false,
+      shadow: false,
+      vanish: false,
+      underline: false,
+      highlightVal: false,
+      fontName: null,
+      fontSizePt: null,
+      colorHex: 'auto',
+    };
+  }
+  // A non-run element contributes no direct rPr, and the styles part is never
+  // inside a table, so only the document defaults are consulted.
+  return extractEffectiveRunFormatting({
+    run: docDefaultsRPr,
+    paragraphPPr: null,
+    paragraphStyleId: null,
+    styles,
+    theme,
+  });
 }
