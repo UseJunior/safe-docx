@@ -13,14 +13,31 @@
  * @see https://github.com/UseJunior/safe-docx/issues/627
  */
 import { execFile } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
-import { afterEach, beforeEach, describe, expect } from 'vitest';
+import { afterEach, beforeEach, describe, expect, vi } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { acquireSofficeLock, sofficeLockPath, withSofficeLock } from './soffice-lock.js';
+import { sofficeProbeRecordDir } from './libreoffice-oracle.js';
+
+// Fault injection for the lock module's filesystem calls (passthrough unless a flag is set).
+const faults = vi.hoisted(() => ({ failWrite: false, failStatPath: '' }));
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  const fail = (code: string): never => {
+    throw Object.assign(new Error(`${code}: injected`), { code });
+  };
+  return {
+    ...actual,
+    writeSync: ((...args: Parameters<typeof actual.writeSync>) =>
+      faults.failWrite ? fail('ENOSPC') : actual.writeSync(...args)) as typeof actual.writeSync,
+    statSync: ((...args: Parameters<typeof actual.statSync>) =>
+      faults.failStatPath && String(args[0]) === faults.failStatPath ? fail('EIO') : actual.statSync(...args)) as typeof actual.statSync,
+  };
+});
 
 const execFileAsync = promisify(execFile);
 const TEST_FEATURE = 'LibreOffice Oracle Cross-Process Lock';
@@ -72,11 +89,102 @@ describe('soffice cross-process lock', () => {
     lockPath = path.join(dir, 'soffice.lock');
   });
   afterEach(() => {
+    faults.failWrite = false;
+    faults.failStatPath = '';
     rmSync(dir, { recursive: true, force: true });
   });
 
+  const liveRecord = (token: string): string =>
+    JSON.stringify({ pid: process.ppid, host: os.hostname(), token, at: new Date().toISOString() });
+
+  test('a steal re-checks under the guard and never deletes a lock that replaced the stale one', async ({ given, when, then }: AllureBddContext) => {
+    const guard = `${lockPath}.guard`;
+    let waiter!: Promise<unknown>;
+    await given('a stale lock (dead holder) and the removal guard held by someone else', () => {
+      writeFileSync(lockPath, JSON.stringify({ pid: DEAD_PID, host: os.hostname(), token: 'stale', at: new Date().toISOString() }));
+      writeFileSync(guard, '');
+    });
+    await when('a waiter judges it stale, and a fresh live holder replaces it before the guard frees', async () => {
+      waiter = acquireSofficeLock(lockPath, { timeoutMs: 400, pollMs: 20 }).then(
+        async (release) => { await release(); return 'acquired'; },
+        (err: Error) => err.message,
+      );
+      await new Promise((r) => setTimeout(r, 60)); // waiter is now blocked on the guard
+      rmSync(lockPath);
+      writeFileSync(lockPath, liveRecord('fresh'));
+      rmSync(guard);
+    });
+    await then('the fresh lock survives and the waiter times out instead of entering', async () => {
+      expect(await waiter).toMatch(/Timed out/);
+      expect(readHolder(lockPath).token).toBe('fresh');
+    });
+  });
+
+  test('a release waits for the guard and then spares a successor', async ({ given, when, then }: AllureBddContext) => {
+    const guard = `${lockPath}.guard`;
+    let release!: () => Promise<void>;
+    await given('a holder whose release must wait on a held guard', async () => {
+      release = await acquireSofficeLock(lockPath, { timeoutMs: 5_000, pollMs: 20 });
+      writeFileSync(guard, '');
+    });
+    await when('the lock passes to a successor while the release is waiting', async () => {
+      const pending = release();
+      await new Promise((r) => setTimeout(r, 40));
+      writeFileSync(lockPath, liveRecord('successor'));
+      rmSync(guard);
+      await pending;
+    });
+    await then("the successor's lock is untouched", () => {
+      expect(readHolder(lockPath).token).toBe('successor');
+    });
+  });
+
+  test('a failed lockfile write removes the half-created lock', async ({ when, then }: AllureBddContext) => {
+    let error = '';
+    await when('writing the holder record fails', async () => {
+      faults.failWrite = true;
+      error = await acquireSofficeLock(lockPath, { timeoutMs: 1_000, pollMs: 20 }).then(() => 'acquired', (e: Error) => e.message);
+      faults.failWrite = false;
+    });
+    await then('the acquisition fails and leaves no lockfile behind', () => {
+      expect(error).toMatch(/ENOSPC/);
+      expect(existsSync(lockPath)).toBe(false);
+    });
+  });
+
+  test('a lockfile that cannot be stat-ed is waited on until the deadline, not spun on', async ({ given, then }: AllureBddContext) => {
+    await given('a live lock whose stat fails with EIO', () => {
+      writeFileSync(lockPath, liveRecord('live'));
+      faults.failStatPath = lockPath;
+    });
+    await then('the waiter honours its timeout', async () => {
+      const started = Date.now();
+      await expect(acquireSofficeLock(lockPath, { timeoutMs: 100, pollMs: 20 })).rejects.toThrow(/Timed out/);
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(readHolder(lockPath).token).toBe('live');
+    });
+  });
+
+  test('work that outlives the holder must re-acquire the lock', async ({ when, then }: AllureBddContext) => {
+    const opts = { lockPath, timeoutMs: 150, pollMs: 20 };
+    let detached!: Promise<string>;
+    let otherRelease!: () => Promise<void>;
+    await when('a holder starts detached work, releases, and another holder takes the lock', async () => {
+      await withSofficeLock('unused', async () => {
+        detached = new Promise((r) => setTimeout(r, 50)).then(() =>
+          withSofficeLock('unused', async () => 'entered', opts).catch((e: Error) => e.message),
+        );
+      }, opts);
+      otherRelease = await acquireSofficeLock(lockPath, { timeoutMs: 1_000, pollMs: 20 });
+    });
+    await then('the detached work waits on the new holder instead of entering under a dead lease', async () => {
+      expect(await detached).toMatch(/Timed out/);
+      await otherRelease();
+    });
+  });
+
   test('acquires exclusively and releases idempotently', async ({ given, when, then, and }: AllureBddContext) => {
-    let release!: () => void;
+    let release!: () => Promise<void>;
     await given('a free lock path', () => {
       expect(existsSync(lockPath)).toBe(false);
     });
@@ -88,15 +196,15 @@ describe('soffice cross-process lock', () => {
       expect(holder.pid).toBe(process.pid);
       expect(holder.host).toBe(os.hostname());
     });
-    await and('releasing removes it and a second release is a no-op', () => {
-      release();
+    await and('releasing removes it and a second release is a no-op', async () => {
+      await release();
       expect(existsSync(lockPath)).toBe(false);
-      expect(() => release()).not.toThrow();
+      await expect(release()).resolves.toBeUndefined();
     });
   });
 
   test('a second waiter blocks until the holder releases', async ({ given, when, then }: AllureBddContext) => {
-    let firstRelease!: () => void;
+    let firstRelease!: () => Promise<void>;
     let acquiredSecond = false;
     await given('the lock is already held', async () => {
       firstRelease = await acquireSofficeLock(lockPath, { timeoutMs: 5_000, pollMs: 20 });
@@ -108,8 +216,8 @@ describe('soffice cross-process lock', () => {
       });
       await new Promise((r) => setTimeout(r, 150));
       expect(acquiredSecond).toBe(false);
-      firstRelease();
-      (await pending)();
+      await firstRelease();
+      await (await pending)();
     });
     await then('the second acquisition succeeded only after release', () => {
       expect(acquiredSecond).toBe(true);
@@ -118,7 +226,7 @@ describe('soffice cross-process lock', () => {
   });
 
   test('times out with a diagnostic naming the live holder', async ({ given, then }: AllureBddContext) => {
-    let release!: () => void;
+    let release!: () => Promise<void>;
     await given('the lock is held by this live process', async () => {
       release = await acquireSofficeLock(lockPath, { timeoutMs: 5_000, pollMs: 20 });
     });
@@ -126,7 +234,7 @@ describe('soffice cross-process lock', () => {
       await expect(acquireSofficeLock(lockPath, { timeoutMs: 100, pollMs: 20 })).rejects.toThrow(
         new RegExp(`held by pid ${process.pid}`),
       );
-      release();
+      await release();
     });
   });
 
@@ -134,13 +242,13 @@ describe('soffice cross-process lock', () => {
     await given('a lockfile owned by a non-existent PID on this host', () => {
       writeFileSync(lockPath, JSON.stringify({ pid: DEAD_PID, host: os.hostname(), token: 'dead', at: new Date().toISOString() }));
     });
-    let release!: () => void;
+    let release!: () => Promise<void>;
     await when('a new acquisition runs', async () => {
       release = await acquireSofficeLock(lockPath, { timeoutMs: 5_000, pollMs: 20 });
     });
-    await then('it steals the stale lock and takes ownership', () => {
+    await then('it steals the stale lock and takes ownership', async () => {
       expect(readHolder(lockPath).pid).toBe(process.pid);
-      release();
+      await release();
       expect(existsSync(lockPath)).toBe(false);
     });
   });
@@ -152,13 +260,13 @@ describe('soffice cross-process lock', () => {
       const old = new Date(Date.now() - 60_000);
       utimesSync(lockPath, old, old);
     });
-    let release!: () => void;
+    let release!: () => Promise<void>;
     await when('an acquisition runs with a 30s stale window', async () => {
       release = await acquireSofficeLock(lockPath, { timeoutMs: 5_000, pollMs: 20, staleMs: 30_000 });
     });
-    await then('the aged lock was stolen', () => {
+    await then('the aged lock was stolen', async () => {
       expect(readHolder(lockPath).token).not.toBe('old');
-      release();
+      await release();
     });
   });
 
@@ -173,13 +281,13 @@ describe('soffice cross-process lock', () => {
   });
 
   test('release never removes a lock that has since passed to another holder', async ({ given, when, then }: AllureBddContext) => {
-    let release!: () => void;
+    let release!: () => Promise<void>;
     await given('a holder whose lock was replaced by another process', async () => {
       release = await acquireSofficeLock(lockPath, { timeoutMs: 5_000, pollMs: 20 });
       writeFileSync(lockPath, JSON.stringify({ pid: process.ppid, host: os.hostname(), token: 'successor', at: new Date().toISOString() }));
     });
-    await when('the original holder releases', () => {
-      release();
+    await when('the original holder releases', async () => {
+      await release();
     });
     await then("the successor's lockfile is untouched", () => {
       expect(readHolder(lockPath).token).toBe('successor');
@@ -206,7 +314,16 @@ describe('soffice cross-process lock', () => {
     });
   });
 
-  test('keys the lock by the resolved binary so symlinks share one lock', async ({ given, then }: AllureBddContext) => {
+  test('every LibreOffice entry point shares one machine-wide lock', async ({ then }: AllureBddContext) => {
+    await then('the Homebrew wrapper, the app bundle binary and a Linux install map to the same lockfile', () => {
+      const shared = sofficeLockPath('/Applications/LibreOffice.app/Contents/MacOS/soffice');
+      expect(sofficeLockPath('/opt/homebrew/Caskroom/libreoffice-still/26.2.5/.homebrew-command-wrappers/soffice')).toBe(shared);
+      expect(sofficeLockPath('/usr/lib/libreoffice/program/soffice')).toBe(shared);
+      expect(shared).toBe(path.join(os.tmpdir(), 'safe-docx-soffice-libreoffice.lock'));
+    });
+  });
+
+  test('keys any other binary by its resolved path so symlinks share one lock', async ({ given, then }: AllureBddContext) => {
     const target = path.join(dir, 'soffice-real');
     const link = path.join(dir, 'soffice-link');
     await given('a binary and a symlink to it', () => {
@@ -233,7 +350,7 @@ describe('soffice cross-process lock', () => {
           `appendFileSync(logPath, 'enter ' + id + ' ' + Date.now() + '\\n');\n` +
           `await new Promise((r) => setTimeout(r, 250));\n` +
           `appendFileSync(logPath, 'exit ' + id + ' ' + Date.now() + '\\n');\n` +
-          `release();\n`,
+          `await release();\n`,
       );
     });
     await when('three processes start at once', async () => {
@@ -274,10 +391,11 @@ describe('soffice cross-process lock', () => {
           `process.stdout.write(String(await probeSofficeUsable(process.argv[2])));\n`,
       );
     });
-    const probeRecord = sofficeLockPath(stub).replace(/\.lock$/, '.probe.json');
+    const runTag = `${process.pid}-${Date.now()}`;
+    const shared = `shared-${runTag}`;
     try {
       await when('three processes of one tagged run probe at once', async () => {
-        const outs = await Promise.all([1, 2, 3].map(() => runChild(child, [stub], { SAFE_DOCX_SOFFICE_RUN_ID: 'run-shared' })));
+        const outs = await Promise.all([1, 2, 3].map(() => runChild(child, [stub], { SAFE_DOCX_SOFFICE_RUN_ID: shared })));
         expect(outs.map((o) => o.stdout)).toEqual(['true', 'true', 'true']);
       });
       await then('soffice launched exactly once for the whole run', () => {
@@ -285,14 +403,26 @@ describe('soffice cross-process lock', () => {
       });
       await and('processes of different runs each probe, one launch at a time, and leave no lock behind', async () => {
         rmSync(launchLog, { force: true });
-        await Promise.all(['run-a', 'run-b', 'run-c'].map((runId) => runChild(child, [stub], { SAFE_DOCX_SOFFICE_RUN_ID: runId })));
+        await Promise.all(['a', 'b', 'c'].map((r) => runChild(child, [stub], { SAFE_DOCX_SOFFICE_RUN_ID: `${r}-${runTag}` })));
         const spans = intervals(readFileSync(launchLog, 'utf8'));
         expect(spans).toHaveLength(3);
         expectNoOverlap(spans);
         expect(existsSync(sofficeLockPath(stub))).toBe(false);
       });
+      await and('a later worker of the first run still reuses its verdict after the other runs', async () => {
+        rmSync(launchLog, { force: true });
+        expect((await runChild(child, [stub], { SAFE_DOCX_SOFFICE_RUN_ID: shared })).stdout).toBe('true');
+        expect(existsSync(launchLog)).toBe(false);
+      });
     } finally {
-      rmSync(probeRecord, { force: true });
+      // Verdict files of this test's runs (the stub path is unique to this test).
+      const records = sofficeProbeRecordDir();
+      for (const name of existsSync(records) ? readdirSync(records) : []) {
+        const file = path.join(records, name);
+        try {
+          if ((JSON.parse(readFileSync(file, 'utf8')) as { soffice?: string }).soffice === stub) rmSync(file, { force: true });
+        } catch { /* another run's file mid-write */ }
+      }
       rmSync(sofficeLockPath(stub), { force: true });
     }
   }, 90_000);

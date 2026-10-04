@@ -6,24 +6,39 @@
  * nothing coordinated ACROSS processes: parallel Vitest workers, sibling sessions, and a human
  * running the oracle at the same time each spawned their own headless LibreOffice. On macOS
  * concurrent headless launches are the amplification vector behind issue #627 (one environment
- * incompatibility became several simultaneous SIGABRT crash reports), so launches of the same
- * LibreOffice binary serialize on a lockfile in the OS temp dir (issue #1037).
+ * incompatibility became several simultaneous SIGABRT crash reports), so LibreOffice launches
+ * serialize on a lockfile in the OS temp dir (issue #1037).
  *
- * Protocol: exclusive-create (`wx`) a JSON lockfile. The holder records its PID, host, and a
- * random token. Waiters poll with jitter and steal the lock only when the recorded holder is
- * provably gone (same host, `process.kill(pid, 0)` reports ESRCH) or the file is older than
- * `staleMs` (a SIGKILLed holder cannot clean up; a recycled PID cannot pin the lock forever).
- * A steal renames the file aside first and checks that the renamed file is the one judged stale,
- * so two waiters racing a steal cannot delete a lock a third process just created. Release
- * removes the file only while it still carries the holder's token.
+ * Protocol:
+ * - Acquire = exclusive-create (`wx`) a JSON lockfile recording PID, host, and a random token.
+ *   Creation can only succeed while no lockfile exists, so it never displaces a holder.
+ * - Every REMOVAL of the lockfile — a holder's release or a waiter's stale steal — happens under
+ *   a short-lived guard file (also `wx`), and only after re-reading the lockfile under that guard
+ *   and confirming it is still the exact record (by token) the remover is entitled to delete.
+ *   Because removers are serialized and a present lockfile cannot be replaced by a create, the
+ *   record cannot change between that re-read and the `rm`. So a release never deletes a
+ *   successor's lock, and two waiters racing to steal the same stale lock cannot delete a fresh
+ *   lock a third process created.
+ * - A waiter steals only when the recorded holder is provably gone (same host and
+ *   `process.kill(pid, 0)` reports ESRCH), or the file is older than `staleMs` (a SIGKILLed holder
+ *   cannot clean up; a recycled PID cannot pin the lock forever). A lockfile that cannot be parsed
+ *   (a creator between `open` and `write`) is stolen only after a grace period.
+ * - The guard is held for a few synchronous filesystem calls. A guard left behind by a process
+ *   killed inside that window is cleared after `GUARD_STALE_MS`.
  *
- * Re-entrancy: the lock is held per async context. A launch nested inside a launch that already
- * holds the lock for the same binary (for example, a probe started from an oracle's
- * `captureOutput` callback) runs inside the held lock instead of waiting on itself.
+ * Re-entrancy: a call nested inside a holder's async context (for the same lockfile) runs under
+ * the holder's lease instead of waiting on itself. The lease is invalidated before release, so
+ * work that outlives the holder (a detached promise) must acquire the lock again. Nested calls
+ * share the holder's lease and are not serialized among themselves; the package's launchers
+ * never nest.
  *
- * The lock is keyed by the binary's resolved real path, so every caller of the same LibreOffice
- * installation shares one lock, while a stub converter used by unit tests gets its own and never
- * queues behind a real oracle run in another worker.
+ * Scope: every real LibreOffice binary (anything whose path or resolved real path contains
+ * "libreoffice", e.g. the Homebrew wrapper and the app-bundle binary it execs) shares ONE
+ * machine-wide lock. Any other executable — the stub converters used by unit tests — is locked by
+ * its own real path, so stubs never queue behind a real oracle run in another worker.
+ *
+ * If the temp dir cannot be written (a restricted sandbox), launches proceed unlocked with a
+ * one-time warning rather than turning a skip-on-unusable-soffice into a hard failure.
  *
  * Deliberately NOT part of the package's public API: it is internal coordination for this
  * package's soffice launchers, which callers reach through `runLibreOfficeOracle` /
@@ -34,17 +49,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
-import {
-  closeSync,
-  linkSync,
-  openSync,
-  readFileSync,
-  realpathSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeSync,
-} from 'node:fs';
+import { closeSync, openSync, readFileSync, realpathSync, rmSync, statSync, writeSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -54,23 +59,29 @@ import path from 'node:path';
 export const DEFAULT_STALE_LOCK_MS = 10 * 60_000;
 /** Default wait for a contended lock before giving up with a diagnostic. */
 export const DEFAULT_LOCK_TIMEOUT_MS = 5 * 60_000;
-/** A lockfile that exists but cannot be parsed (a holder between create and write, or a torn
- *  write) is only stolen after this grace period. */
+/** A lockfile that exists but cannot be parsed is only stolen after this grace period. */
 const UNREADABLE_LOCK_GRACE_MS = 10_000;
+/** The removal guard is held for microseconds; one this old was abandoned by a killed process. */
+const GUARD_STALE_MS = 5_000;
+/** Give up on the removal guard after this long (only reachable if the guard dir misbehaves). */
+const GUARD_TIMEOUT_MS = 30_000;
 
 type LockRecord = { pid: number; host: string; token: string; at: string };
 
 export type SofficeLockOptions = {
-  /** Lockfile path; defaults to the per-binary path in the OS temp dir. */
+  /** Lockfile path; defaults to {@link sofficeLockPath}. */
   lockPath?: string;
   timeoutMs?: number;
   pollMs?: number;
   staleMs?: number;
 };
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+/** An idempotent release; resolves once the lockfile is removed (or confirmed not ours). */
+export type SofficeLockRelease = () => Promise<void>;
 
-/** Resolve symlinks so `/opt/homebrew/bin/soffice` and the app-bundle binary share a lock. */
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const errCode = (err: unknown): string | undefined => (err as NodeJS.ErrnoException | undefined)?.code;
+
 function canonicalBinary(soffice: string): string {
   try {
     return realpathSync(soffice);
@@ -79,10 +90,14 @@ function canonicalBinary(soffice: string): string {
   }
 }
 
-/** Machine-wide (per OS user temp dir) lockfile path for one LibreOffice binary. */
+/** Lockfile path for a binary: one machine-wide (per OS user temp dir) lock for every real
+ *  LibreOffice entry point, a per-path lock for anything else. */
 export function sofficeLockPath(soffice: string): string {
-  const digest = createHash('sha256').update(canonicalBinary(soffice)).digest('hex').slice(0, 16);
-  return path.join(os.tmpdir(), `safe-docx-soffice-${digest}.lock`);
+  const real = canonicalBinary(soffice);
+  const key = /libreoffice/i.test(real) || /libreoffice/i.test(soffice)
+    ? 'libreoffice'
+    : createHash('sha256').update(real).digest('hex').slice(0, 16);
+  return path.join(os.tmpdir(), `safe-docx-soffice-${key}.lock`);
 }
 
 function readRecord(file: string): LockRecord | null {
@@ -104,45 +119,53 @@ function holderAlive(record: LockRecord): boolean {
     process.kill(record.pid, 0);
     return true;
   } catch (err) {
-    return (err as NodeJS.ErrnoException).code !== 'ESRCH';
+    return errCode(err) !== 'ESRCH';
   }
 }
 
-/** Age of the lockfile in ms, or null if it vanished. */
+/** Age of the lockfile in ms; null if it no longer exists. Any other stat failure is reported as
+ *  age 0 (fresh), so an unreadable file is waited on, never stolen or spun on. */
 function lockAgeMs(lockPath: string): number | null {
   try {
     return Date.now() - statSync(lockPath).mtimeMs;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Remove a stale lock without clobbering a fresh one: rename it aside (atomic), then confirm the
- * renamed file is the one judged stale. If a racer already replaced it, put the fresh lock back
- * (`link` fails rather than overwrite if yet another lock appeared meanwhile).
- */
-function stealStaleLock(lockPath: string, judged: LockRecord | null): boolean {
-  const aside = `${lockPath}.stale-${randomUUID()}`;
-  try {
-    renameSync(lockPath, aside);
   } catch (err) {
-    // ENOENT: it vanished or another waiter moved it first — retry the create at once. Anything
-    // else (e.g. EPERM on another user's file in a sticky /tmp) means we cannot steal it: wait.
-    return (err as NodeJS.ErrnoException).code === 'ENOENT';
+    return errCode(err) === 'ENOENT' ? null : 0;
   }
-  const moved = readRecord(aside);
-  const sameLock = judged ? moved?.token === judged.token : moved === null;
-  if (!sameLock) {
-    try { linkSync(aside, lockPath); } catch { /* a newer lock exists; ours was already superseded */ }
+}
+
+/** Run `fn` (synchronous filesystem work only) while holding the removal guard. */
+async function underRemovalGuard(lockPath: string, fn: () => void): Promise<void> {
+  const guard = `${lockPath}.guard`;
+  const deadline = Date.now() + GUARD_TIMEOUT_MS;
+  for (;;) {
+    let fd: number | undefined;
+    try {
+      fd = openSync(guard, 'wx');
+    } catch (err) {
+      if (errCode(err) !== 'EEXIST') throw err;
+    }
+    if (fd !== undefined) {
+      closeSync(fd);
+      try {
+        fn();
+        return;
+      } finally {
+        rmSync(guard, { force: true });
+      }
+    }
+    const age = lockAgeMs(guard);
+    if (age !== null && age > GUARD_STALE_MS) {
+      try { rmSync(guard, { force: true }); } catch { /* another waiter cleared it */ }
+      continue;
+    }
+    if (Date.now() > deadline) throw new Error(`Timed out waiting for the LibreOffice lock guard at ${guard}`);
+    await sleep(5 + Math.floor(Math.random() * 10));
   }
-  try { rmSync(aside, { force: true }); } catch { /* best effort */ }
-  return true;
 }
 
 /**
- * Acquire the lockfile, returning an idempotent release function. Exported for unit tests and
- * for the two-process contention test; production code uses {@link withSofficeLock}.
+ * Acquire the lockfile, returning an idempotent async release. Exported for unit tests and the
+ * multi-process contention test; production code uses {@link withSofficeLock}.
  */
 export async function acquireSofficeLock(
   lockPath: string,
@@ -151,7 +174,7 @@ export async function acquireSofficeLock(
     pollMs = 200,
     staleMs = DEFAULT_STALE_LOCK_MS,
   }: Omit<SofficeLockOptions, 'lockPath'> = {},
-): Promise<() => void> {
+): Promise<SofficeLockRelease> {
   const deadline = Date.now() + timeoutMs;
   const record: LockRecord = { pid: process.pid, host: os.hostname(), token: randomUUID(), at: new Date().toISOString() };
   for (;;) {
@@ -159,32 +182,54 @@ export async function acquireSofficeLock(
     try {
       fd = openSync(lockPath, 'wx');
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      if (errCode(err) !== 'EEXIST') throw err;
     }
     if (fd !== undefined) {
       try {
         writeSync(fd, JSON.stringify(record));
-      } finally {
         closeSync(fd);
+      } catch (err) {
+        // We created the file exclusively and it is younger than the unreadable-lock grace, so
+        // no one else will remove it: clean it up ourselves before reporting the failure.
+        try { closeSync(fd); } catch { /* already closed */ }
+        try { rmSync(lockPath, { force: true }); } catch { /* best effort */ }
+        throw err;
       }
-      let released = false;
+      let released: Promise<void> | undefined;
       return () => {
-        if (released) return;
-        released = true;
-        // Only remove the file if it is still ours — after a stale steal it belongs to someone else.
-        if (readRecord(lockPath)?.token === record.token) {
-          try { rmSync(lockPath, { force: true }); } catch { /* best effort */ }
-        }
+        released ??= underRemovalGuard(lockPath, () => {
+          if (readRecord(lockPath)?.token === record.token) rmSync(lockPath, { force: true });
+        }).catch(() => {
+          // Guard unavailable: fall back to an unguarded ownership-checked removal.
+          if (readRecord(lockPath)?.token === record.token) {
+            try { rmSync(lockPath, { force: true }); } catch { /* best effort */ }
+          }
+        });
+        return released;
       };
     }
 
     const holder = readRecord(lockPath);
     const age = lockAgeMs(lockPath);
-    if (age === null) continue; // released between our create and our read — retry at once
-    const stale = holder
-      ? !holderAlive(holder) || age > staleMs
-      : age > UNREADABLE_LOCK_GRACE_MS;
-    if (stale && stealStaleLock(lockPath, holder)) continue;
+    if (age === null) continue; // released between our create and our read — retry the create
+    const stale = holder ? !holderAlive(holder) || age > staleMs : age > UNREADABLE_LOCK_GRACE_MS;
+    if (stale) {
+      // Re-check under the guard: remove only the exact record judged stale. If it changed
+      // (released, or replaced by a fresh holder), the next iteration re-evaluates.
+      let removed = false;
+      await underRemovalGuard(lockPath, () => {
+        const current = readRecord(lockPath);
+        const currentAge = lockAgeMs(lockPath);
+        const same = holder
+          ? current?.token === holder.token
+          : current === null && currentAge !== null && currentAge > UNREADABLE_LOCK_GRACE_MS;
+        if (same) {
+          rmSync(lockPath, { force: true });
+          removed = true;
+        }
+      });
+      if (removed) continue;
+    }
     if (Date.now() > deadline) {
       throw new Error(
         `Timed out after ${timeoutMs}ms waiting for the cross-process LibreOffice lock at ${lockPath}` +
@@ -196,12 +241,17 @@ export async function acquireSofficeLock(
   }
 }
 
-const heldLocks = new AsyncLocalStorage<ReadonlySet<string>>();
+type Lease = { lockPath: string; active: boolean };
+const leases = new AsyncLocalStorage<ReadonlyMap<string, Lease>>();
+let warnedUnlocked = false;
+
+/** Filesystem errors meaning "the lock cannot be created here", not "the lock is contended". */
+const UNWRITABLE = new Set(['EACCES', 'EPERM', 'EROFS']);
 
 /**
- * Run `fn` while holding the cross-process lock for `soffice`. Re-entrant within one async
- * context: a nested call for the same lock runs immediately. The lock is released on every exit
- * path, including a throw or timeout inside `fn`.
+ * Run `fn` while holding the cross-process lock for `soffice`. The lock is released on every
+ * exit path, including a throw or timeout inside `fn`. See the module comment for re-entrancy
+ * and the unwritable-temp-dir fallback.
  */
 export async function withSofficeLock<T>(
   soffice: string,
@@ -209,12 +259,26 @@ export async function withSofficeLock<T>(
   options: SofficeLockOptions = {},
 ): Promise<T> {
   const lockPath = options.lockPath ?? sofficeLockPath(soffice);
-  const held = heldLocks.getStore();
-  if (held?.has(lockPath)) return fn();
-  const release = await acquireSofficeLock(lockPath, options);
+  const current = leases.getStore();
+  if (current?.get(lockPath)?.active) return fn();
+
+  let release: SofficeLockRelease;
   try {
-    return await heldLocks.run(new Set([...(held ?? []), lockPath]), fn);
+    release = await acquireSofficeLock(lockPath, options);
+  } catch (err) {
+    if (!UNWRITABLE.has(errCode(err) ?? '')) throw err;
+    if (!warnedUnlocked) {
+      warnedUnlocked = true;
+      // eslint-disable-next-line no-console
+      console.warn(`[soffice-lock] cannot create ${lockPath} (${errCode(err)}); launching LibreOffice without the cross-process lock.`);
+    }
+    return fn();
+  }
+  const lease: Lease = { lockPath, active: true };
+  try {
+    return await leases.run(new Map([...(current ?? []), [lockPath, lease]]), fn);
   } finally {
-    release();
+    lease.active = false;
+    await release();
   }
 }

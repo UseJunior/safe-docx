@@ -24,14 +24,15 @@
  * the same binary (issue #1037).
  */
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { createZipBuffer, readZipText } from '../primitives/zip.js';
 import { parseXml } from '../primitives/xml.js';
-import { sofficeLockPath, withSofficeLock } from './soffice-lock.js';
+import { withSofficeLock } from './soffice-lock.js';
 
 const execFileAsync = promisify(execFile);
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -96,23 +97,41 @@ const probeResults = new Map<string, Promise<boolean>>();
  */
 const PROBE_RUN_ENV = 'SAFE_DOCX_SOFFICE_RUN_ID';
 
-function probeRecordPath(soffice: string): string {
-  return sofficeLockPath(soffice).replace(/\.lock$/, '.probe.json');
+const PROBE_RECORD_MAX_AGE_MS = 24 * 60 * 60_000;
+
+/** One verdict file per (run, binary) in a dedicated temp subdirectory (cheap to sweep even when
+ *  the OS temp dir is huge), so concurrent runs never evict each other's verdicts. */
+export function sofficeProbeRecordDir(): string {
+  return path.join(os.tmpdir(), 'safe-docx-soffice-probes');
+}
+
+function probeRecordPath(soffice: string, runId: string): string {
+  const key = createHash('sha256').update(`${runId}\0${soffice}`).digest('hex').slice(0, 16);
+  return path.join(sofficeProbeRecordDir(), `probe-${key}.json`);
 }
 
 function readSharedProbe(soffice: string, runId: string): boolean | null {
   try {
-    const rec = JSON.parse(readFileSync(probeRecordPath(soffice), 'utf8')) as { runId?: unknown; usable?: unknown };
-    return rec.runId === runId && typeof rec.usable === 'boolean' ? rec.usable : null;
+    const rec = JSON.parse(readFileSync(probeRecordPath(soffice, runId), 'utf8')) as { runId?: unknown; soffice?: unknown; usable?: unknown };
+    return rec.runId === runId && rec.soffice === soffice && typeof rec.usable === 'boolean' ? rec.usable : null;
   } catch {
     return null;
   }
 }
 
 function writeSharedProbe(soffice: string, runId: string, usable: boolean): void {
+  const dir = sofficeProbeRecordDir();
   try {
-    writeFileSync(probeRecordPath(soffice), JSON.stringify({ runId, soffice, usable, at: new Date().toISOString() }));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(probeRecordPath(soffice, runId), JSON.stringify({ runId, soffice, usable, at: new Date().toISOString() }));
   } catch { /* best effort — workers fall back to probing themselves */ }
+  // Bounded cleanup: drop verdicts from runs older than a day.
+  try {
+    for (const name of readdirSync(dir)) {
+      const full = path.join(dir, name);
+      if (Date.now() - statSync(full).mtimeMs > PROBE_RECORD_MAX_AGE_MS) rmSync(full, { force: true });
+    }
+  } catch { /* best effort */ }
 }
 
 async function launchProbe(soffice: string): Promise<boolean> {
