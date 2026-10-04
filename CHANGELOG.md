@@ -58,6 +58,21 @@
   unresolved bold/italic/underline. A property that any instance leaves
   unresolved is left out of the document's convention, and the warning prints
   it as `unresolved`. (#752)
+- Comparing a paragraph with mixed run formatting no longer reports unchanged
+  punctuation as deleted and re-inserted when the two versions split identical
+  text within a changed stretch into runs differently (for example `)` and `,`
+  in separate runs against `),` in one run, as a safe-docx save produces). A
+  one-word edit in the NVCA Voting Agreement preamble now yields one deletion
+  and one insertion instead of seven deletions and four insertions. Adjacent
+  runs that share a formatting signature are compared as one text stream; a
+  formatting change is still a token boundary and is still reported.
+  `insertedAtoms` / `deletedAtoms` are likewise independent of run
+  segmentation, so a re-segmentation-only change now reports zero atoms, and
+  zero ranges unless an unchanged run is matched at a different text offset
+  (#1154); documents whose words were split across runs report correspondingly
+  fewer atoms. Within a changed paragraph, whitespace is now compared
+  character by character, so shortening a run of spaces counts as one deleted
+  atom rather than one deleted and one inserted. (#1142)
 
 - `extractEffectiveRunFormatting` now reads `w:docDefaults/w:rPrDefault/w:rPr`
   as the lowest-precedence run-property layer, below the paragraph style

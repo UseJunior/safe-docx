@@ -9,13 +9,16 @@ import {
   composeTaggedStories,
   createPreservePlan,
   preservedStack,
+  resolveTaggedRevisionAttributions,
   serializeTaggedTree,
   splitWithPreservedProvenance,
 } from './taggedTreeSerializer.js';
 import { constructTaggedTree } from './taggedTreeConstruction.js';
+import { buildTaggedTreePublication } from './taggedTreeShadow.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
-import { completeField, fldChar, instrText, resultText } from '../testing/ooxml-fixtures.js';
+import { buildDocxFromBodyXml, completeField, fldChar, instrText, resultText } from '../testing/ooxml-fixtures.js';
+import { compareDocuments } from '../index.js';
 
 const TEST_FEATURE = 'refactor-tagged-tree-redline-construction';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
@@ -1012,5 +1015,254 @@ describe('tagged-tree shadow serializer', () => {
       expect(extractRoundTripComparisonText(acceptAllChanges(output))).toBe(kind === 'ins' ? 'Row' : '');
       expect(extractRoundTripComparisonText(rejectAllChanges(output))).toBe(kind === 'del' ? 'Row' : '');
     }
+  });
+});
+
+/**
+ * Identical text with identical formatting must align regardless of how it is
+ * segmented into runs, while formatting boundaries stay token boundaries.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1142
+ */
+describe('mixed-format run re-segmentation (#1142)', () => {
+  const bold = '<w:rPr><w:b/></w:rPr>';
+  const run = (value: string, properties = ''): string =>
+    `<w:r>${properties}<w:t xml:space="preserve">${value}</w:t></w:r>`;
+  // Mirrors the NVCA Voting Agreement preamble: a bold defined term, then
+  // plain text whose closing punctuation is split `)` + `,` in one version
+  // and merged `),` in the other.
+  const segmented = (term: string): string => `<w:p>${[
+    run('This agreement is made by ', ''),
+    run(term, bold),
+    run(' (the “', ''),
+    run('Parent', bold),
+    run('”', ''),
+    run(')', ''),
+    run(', and the holders (the “', ''),
+    run('Holders', bold),
+    run('”', ''),
+    run(')', ''),
+    run('.', ''),
+  ].join('')}</w:p>`;
+  const merged = (term: string): string => `<w:p>${[
+    run('This agreement is made by ', ''),
+    run(term, bold),
+    run(' (the “', ''),
+    run('Parent', bold),
+    run('”), and the holders (the “', ''),
+    run('Holders', bold),
+    run('”).', ''),
+  ].join('')}</w:p>`;
+  const serialize = (
+    originalXml: string,
+    revisedXml: string,
+    revisionGrouping: 'token-minimal' | 'readable-whitespace' = 'token-minimal',
+  ): string => {
+    const original = documentBody(originalXml);
+    const revised = documentBody(revisedXml);
+    const constructed = constructTaggedTree(original, revised);
+    return serializeTaggedTree(constructed.tree, createPreservePlan(
+      original, revised, constructed.tree,
+      { author: 'Comparator', date: '2026-10-03T00:00:00Z' },
+    ), { revisionGrouping });
+  };
+  const revisionTexts = (xml: string, localName: 'del' | 'ins'): string[] =>
+    Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, localName))
+      .map((wrapper) => wrapper.textContent ?? '');
+  const compareBodies = async (originalXml: string, revisedXml: string) =>
+    compareDocuments(
+      await buildDocxFromBodyXml(originalXml),
+      await buildDocxFromBodyXml(revisedXml),
+      { author: 'Comparator', date: new Date('2026-10-03T00:00:00Z') },
+    );
+
+  test('reports a one-word edit once when punctuation runs were re-segmented', async () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' });
+    for (const [originalXml, revisedXml] of [
+      [segmented('Company'), merged('SMOKEWORD')],
+      [merged('Company'), segmented('SMOKEWORD')],
+    ] as const) {
+      const output = serialize(originalXml, revisedXml);
+      expect(revisionTexts(output, 'del')).toEqual(['Company']);
+      expect(revisionTexts(output, 'ins')).toEqual(['SMOKEWORD']);
+      expect(extractRoundTripComparisonText(rejectAllChanges(output)))
+        .toBe('This agreement is made by Company (the “Parent”), and the holders (the “Holders”).');
+      expect(extractRoundTripComparisonText(acceptAllChanges(output)))
+        .toBe('This agreement is made by SMOKEWORD (the “Parent”), and the holders (the “Holders”).');
+
+      const { stats } = await compareBodies(originalXml, revisedXml);
+      expect(stats).toMatchObject({
+        insertedRanges: 1, deletedRanges: 1, insertedAtoms: 1, deletedAtoms: 1, formatChanges: 0,
+      });
+    }
+  });
+
+  test('reports no insertion or deletion ranges or atoms for re-segmentation alone', async () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' });
+    const output = serialize(segmented('Company'), merged('Company'));
+    expect(revisionTexts(output, 'del')).toEqual([]);
+    expect(revisionTexts(output, 'ins')).toEqual([]);
+    const { stats } = await compareBodies(segmented('Company'), merged('Company'));
+    expect(stats).toMatchObject({
+      insertions: 0, deletions: 0, insertedRanges: 0, deletedRanges: 0,
+      insertedAtoms: 0, deletedAtoms: 0, formatChanges: 0,
+    });
+  });
+
+  test('still reports a formatting change at a run boundary beside a text edit', async () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.31' });
+    // `Fee` loses bold and `)` + `,` are merged while one word changes.
+    const originalXml = `<w:p>${[
+      run('The ', ''), run('Company', bold), run(' shall pay the ', ''),
+      run('Fee', bold), run(' (as defined', ''), run(')', ''), run(',', ''), run(' now.', ''),
+    ].join('')}</w:p>`;
+    const revisedXml = `<w:p>${[
+      run('The ', ''), run('SMOKEWORD', bold), run(' shall pay the Fee (as defined), now.', ''),
+    ].join('')}</w:p>`;
+    const output = serialize(originalXml, revisedXml);
+    expect(revisionTexts(output, 'del')).toEqual(['Company']);
+    expect(revisionTexts(output, 'ins')).toEqual(['SMOKEWORD']);
+    const changed = Array.from(parseXml(output).getElementsByTagNameNS(W_NS, 'rPrChange'))
+      .map((change) => ((change.parentNode as Element).parentNode as Element).textContent);
+    expect(changed).toEqual(['Fee']);
+    expect(extractRoundTripComparisonText(rejectAllChanges(output)))
+      .toBe('The Company shall pay the Fee (as defined), now.');
+    expect(extractRoundTripComparisonText(acceptAllChanges(output)))
+      .toBe('The SMOKEWORD shall pay the Fee (as defined), now.');
+
+    // `formatChanges` counts tagged-tree property deltas, not the run-level
+    // deltas a refined text gap emits (#937), so it is not asserted here.
+    const { stats } = await compareBodies(originalXml, revisedXml);
+    expect(stats).toMatchObject({
+      insertedRanges: 1, deletedRanges: 1, insertedAtoms: 1, deletedAtoms: 1,
+    });
+  });
+
+  test('keeps a formatting boundary as a token boundary when text changes across it', () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' });
+    // `Comp` is bold and `any` plain in the original, so the word is two
+    // differently formatted tokens and cannot align with the plain `Company`.
+    const output = serialize(
+      `<w:p>${run('Comp', bold)}${run('any terms, as amended.', '')}</w:p>`,
+      `<w:p>${run('Company terms, as revised.', '')}</w:p>`,
+    );
+    expect(revisionTexts(output, 'del')).toEqual(['Comp', 'any', 'amended']);
+    expect(revisionTexts(output, 'ins')).toEqual(['Company', 'revised']);
+    const deletedBold = Array.from(parseXml(output).getElementsByTagNameNS(W_NS, 'del'))
+      .filter((wrapper) => wrapper.getElementsByTagNameNS(W_NS, 'b').length > 0)
+      .map((wrapper) => wrapper.textContent);
+    expect(deletedBold).toEqual(['Comp']);
+    expect(extractRoundTripComparisonText(rejectAllChanges(output))).toBe('Company terms, as amended.');
+    expect(extractRoundTripComparisonText(acceptAllChanges(output))).toBe('Company terms, as revised.');
+  });
+
+  test('keeps readable whitespace bridges to gaps with one formatting signature', () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' });
+    const uniform = serialize(
+      `<w:p>${run('The old red ', '')}${run('term', '')}${run('.', '')}</w:p>`,
+      `<w:p>${run('The new blue term.', '')}</w:p>`,
+      'readable-whitespace',
+    );
+    expect(revisionTexts(uniform, 'del')).toEqual(['old red']);
+    expect(revisionTexts(uniform, 'ins')).toEqual(['new blue']);
+    const mixed = serialize(
+      `<w:p>${run('The ', '')}${run('old', bold)}${run(' red term.', '')}</w:p>`,
+      `<w:p>${run('The ', '')}${run('new', bold)}${run(' blue term.', '')}</w:p>`,
+      'readable-whitespace',
+    );
+    expect(revisionTexts(mixed, 'del')).toEqual(['old', 'red']);
+    expect(revisionTexts(mixed, 'ins')).toEqual(['new', 'blue']);
+    expect(extractRoundTripComparisonText(rejectAllChanges(mixed))).toBe('The old red term.');
+    expect(extractRoundTripComparisonText(acceptAllChanges(mixed))).toBe('The new blue term.');
+  });
+
+  const publish = (
+    originalParagraphs: readonly string[],
+    revisedParagraphs: readonly string[],
+    options: Partial<Parameters<typeof buildTaggedTreePublication>[0]> = {},
+  ) => buildTaggedTreePublication({
+    originalXml: `<w:document xmlns:w="${W_NS}"><w:body>${originalParagraphs.join('')}</w:body></w:document>`,
+    revisedXml: `<w:document xmlns:w="${W_NS}"><w:body>${revisedParagraphs.join('')}</w:body></w:document>`,
+    author: 'Comparator',
+    date: new Date('2026-10-03T00:00:00Z'),
+    detectMoves: false,
+    ...options,
+  });
+
+  test('keeps adjacent runs from different attributed operations in separate revisions', () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' });
+    const paragraph = (runs: string): string =>
+      `<w:p><w:bookmarkStart w:id="0" w:name="_safe_docx_p_1"/>${runs}<w:bookmarkEnd w:id="0"/></w:p>`;
+    const range = (operationId: string, start: number, end: number) => ({
+      operationId, side: 'revised' as const,
+      startParagraphId: '_safe_docx_p_1', endParagraphId: '_safe_docx_p_1', start, end,
+    });
+    // `blue` (operation A) and `stone` (operation B) share formatting and
+    // abut without a space, so one concatenated token would span both.
+    const publication = publish(
+      [paragraph(run('Old', bold) + run(' red') + run('wood'))],
+      [paragraph(run('New', bold) + run(' blue') + run('stone'))],
+      { revisionAttributionRanges: [range('A', 4, 8), range('B', 8, 13)] },
+    );
+    const inserted = Array.from(parseXml(publication.xml).getElementsByTagNameNS(W_NS, 'ins'))
+      .map((wrapper) => [wrapper.getAttribute('data-safe-docx-operation'), wrapper.textContent]);
+    expect(inserted).toEqual([[null, 'New'], ['A', 'blue'], ['B', 'stone']]);
+    expect(resolveTaggedRevisionAttributions(publication.xml, ['A', 'B']).attributions
+      .map((attribution) => attribution.operationId)).toEqual(['A', 'B']);
+  });
+
+  test('weighs atoms without the whitespace merged around removed or moved runs', () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
+    const paragraph = (...texts: string[]): string => `<w:p>${texts.map((text) => run(text)).join('')}</w:p>`;
+    // Deleting a word that sits in its own run leaves `prefix  suffix`.
+    const deletion = publish(
+      [paragraph('Keep the prefix ', 'Company', ' suffix unchanged.')],
+      [paragraph('Keep the prefix ', ' suffix unchanged.')],
+    );
+    expect(deletion.stats).toMatchObject({ deletedRanges: 1, insertedRanges: 0, deletedAtoms: 1, insertedAtoms: 0 });
+    // A moved run is left out of its paragraphs' atom streams.
+    const alpha = ['Alpha keeps the same prefix ', ' suffix remains unchanged.'];
+    const beta = ['Beta keeps a different prefix ', ' suffix remains unchanged.'];
+    const move = (extra: string[]) => publish(
+      [paragraph(alpha[0]!, 'cat', ...extra, alpha[1]!), paragraph(...beta)],
+      [paragraph(...alpha), paragraph(beta[0]!, 'cat', beta[1]!)],
+      { detectMoves: true },
+    );
+    const pure = move([]);
+    expect(pure.moves).toHaveLength(1);
+    expect(pure.stats).toMatchObject({ insertedRanges: 0, deletedRanges: 0, insertedAtoms: 0, deletedAtoms: 0 });
+    const withDeletion = move(['old']);
+    expect(withDeletion.moves).toHaveLength(1);
+    expect(withDeletion.stats).toMatchObject({ insertedRanges: 0, deletedRanges: 1, insertedAtoms: 0, deletedAtoms: 1 });
+    // An independently deleted space beside a moved run still counts.
+    const spaceBesideMove = publish(
+      [paragraph(alpha[0]!, ' cat ', ' ', alpha[1]!), paragraph(...beta)],
+      [paragraph(...alpha), paragraph(beta[0]!, ' cat ', beta[1]!)],
+      { detectMoves: true },
+    );
+    expect(spaceBesideMove.moves).toHaveLength(1);
+    expect(spaceBesideMove.stats).toMatchObject({ deletedRanges: 1, insertedAtoms: 0, deletedAtoms: 1 });
+  });
+
+  test('weighs whitespace edits independently of run segmentation', () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
+    const paragraph = (...texts: string[]): string => `<w:p>${texts.map((text) => run(text)).join('')}</w:p>`;
+    // Moving a long space run does not unalign the words around it: nine
+    // spaces leave one gap and ten arrive at the end.
+    const moved = publish([paragraph('a          b c d e')], [paragraph('a b c d e          ')]);
+    expect(moved.stats).toMatchObject({ insertedAtoms: 1, deletedAtoms: 1 });
+    // The same three spaces split differently by run boundaries.
+    const shifted = publish([paragraph('a ', '  b')], [paragraph('a  ', ' b')]);
+    expect(shifted.stats).toMatchObject({ insertedRanges: 0, deletedRanges: 0, insertedAtoms: 0, deletedAtoms: 0 });
+    const split = publish([paragraph('Keep the ', ' double space.')], [paragraph('Keep the  double space.')]);
+    expect(split.stats).toMatchObject({ insertedRanges: 0, deletedRanges: 0, insertedAtoms: 0, deletedAtoms: 0 });
+    // A deleted paragraph weighs the same however its text is split.
+    const unchanged = paragraph('unchanged');
+    expect(publish([paragraph('a ', ' b'), unchanged], [unchanged]).stats.deletedAtoms)
+      .toBe(publish([paragraph('a  b'), unchanged], [unchanged]).stats.deletedAtoms);
   });
 });

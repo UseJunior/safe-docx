@@ -1327,6 +1327,11 @@ function runProperties(run: WmlElement): WmlElement | null {
   return childElements(run).find((child) => child.localName === 'rPr') ?? null;
 }
 
+function runPropertySignature(run: WmlElement): string {
+  const property = runProperties(run);
+  return property ? new XMLSerializer().serializeToString(property) : '';
+}
+
 function emitCommonRun(
   original: WmlElement,
   revised: WmlElement,
@@ -1409,33 +1414,46 @@ function appendReadableRevisionEmission(emitted: WmlElement[], next: WmlElement)
   for (const child of Array.from(next.childNodes)) previous.appendChild(child);
 }
 
-function tokenizedRuns(runs: readonly WmlElement[], concatenate: boolean): TextToken[] {
-  if (!concatenate) {
-    let start = 0;
-    return runs.flatMap((run) => {
-      const tokens = tokenizeComparisonText(runText(run)).map((value) => {
-        const token = { value, run, start };
-        start += value.length;
-        return token;
-      });
-      return tokens;
-    });
-  }
-  const text = runs.map(runText).join('');
+/**
+ * Tokenize each maximal group of adjacent runs that share one run-property
+ * signature and one operation provenance as concatenated text. Token
+ * boundaries are forced where either changes, so a token never mixes
+ * formatting or operation attribution, while identical text with identical
+ * formatting yields identical tokens regardless of how it is segmented into
+ * runs. Each token keeps its gap-level text offset and the run that owns its
+ * first character.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1142
+ */
+function tokenizedRuns(
+  runs: readonly WmlElement[],
+  provenanceByRun: ReadonlyMap<WmlElement, readonly string[]>,
+): TextToken[] {
+  const groupKey = (run: WmlElement): string =>
+    JSON.stringify([runPropertySignature(run), provenanceByRun.get(run) ?? []]);
+  const tokens: TextToken[] = [];
   let offset = 0;
-  const ownerAt = (position: number): WmlElement => {
-    let end = 0;
-    for (const run of runs) {
-      end += runText(run).length;
-      if (position < end) return run;
+  for (let first = 0; first < runs.length;) {
+    const key = groupKey(runs[first]!);
+    let end = first + 1;
+    while (end < runs.length && groupKey(runs[end]!) === key) end++;
+    const group = runs.slice(first, end);
+    const groupStart = offset;
+    const ownerAt = (position: number): WmlElement => {
+      let groupEnd = groupStart;
+      for (const run of group) {
+        groupEnd += runText(run).length;
+        if (position < groupEnd) return run;
+      }
+      return group[group.length - 1]!;
+    };
+    for (const value of tokenizeComparisonText(group.map(runText).join(''))) {
+      tokens.push({ value, run: ownerAt(offset), start: offset });
+      offset += value.length;
     }
-    return runs[runs.length - 1]!;
-  };
-  return tokenizeComparisonText(text).map((value) => {
-    const token = { value, run: ownerAt(offset), start: offset };
-    offset += value.length;
-    return token;
-  });
+    first = end;
+  }
+  return tokens;
 }
 
 function emitCommonToken(
@@ -1597,13 +1615,13 @@ function refineSimpleRunGap(
     return emitted;
   }
   if (hasAuxiliaryContent) return undefined;
-  const directPropertySignatures = new Set([...originals, ...revised].map((run) => {
-    const property = runProperties(run);
-    return property ? new XMLSerializer().serializeToString(property) : '';
-  }));
+  const directPropertySignatures = new Set([...originals, ...revised].map(runPropertySignature));
+  // Tokenization is per formatting group (#1142). The readable #998 bridges
+  // stay limited to gaps with one signature, so they never coalesce a
+  // deletion/insertion chain across a formatting change.
   const concatenate = directPropertySignatures.size === 1;
-  const left = tokenizedRuns(originals, concatenate);
-  const right = tokenizedRuns(revised, concatenate);
+  const left = tokenizedRuns(originals, provenanceByRun);
+  const right = tokenizedRuns(revised, provenanceByRun);
   const minimalAlignment = alignComparisonSequences(left, right, (a, b) => a.value === b.value);
   const bridgeMatches = revisionGrouping === 'readable-whitespace' && concatenate
     ? new Set(minimalAlignment.matches.flatMap((match, index, matches) => {
