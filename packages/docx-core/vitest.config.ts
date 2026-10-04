@@ -3,6 +3,11 @@ import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 import { createRequire } from 'module';
 import { existsSync } from 'fs';
+import { randomUUID } from 'node:crypto';
+
+// One id per test invocation, inherited by every worker: LibreOffice-backed suites share a
+// single launchability probe per run instead of one per worker (issue #1037).
+process.env.SAFE_DOCX_SOFFICE_RUN_ID ??= randomUUID();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
