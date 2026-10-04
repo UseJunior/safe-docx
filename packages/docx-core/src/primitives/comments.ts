@@ -15,7 +15,7 @@ import { isW } from './dom-helpers.js';
 import { buildParagraphIndex, type IndexedParagraphNode, type ParagraphIndex } from './paragraph-index.js';
 import { getAttributeSafe } from './xml-helpers.js';
 import { getFirstChild } from './xml-helpers.js';
-import { extractEffectiveRunFormatting, parseStylesXml, parseThemeXml, type StylesModel, type ThemeModel } from './styles.js';
+import { extractAnnotationRunFormatting, parseStylesXml, parseThemeXml, type StylesModel, type ThemeModel } from './styles.js';
 import { emitFormattingTags, mergeAdjacentTags, type AnnotatedRun } from './formatting_tags.js';
 import { ensureExternalHyperlinkRelationships } from './relationships.js';
 import { SafeDocxError } from './errors.js';
@@ -1491,7 +1491,7 @@ function extractCommentParagraphs(commentEl: Element, styles: StylesModel, theme
       const ts = run.getElementsByTagNameNS(OOXML.W_NS, W.t);
       for (let ti = 0; ti < ts.length; ti++) text += (ts.item(ti) as Element).textContent ?? '';
       if (!text) continue;
-      const formatting = extractEffectiveRunFormatting({
+      const formatting = extractAnnotationRunFormatting({
         run,
         paragraphPPr: pPr,
         paragraphStyleId: style,

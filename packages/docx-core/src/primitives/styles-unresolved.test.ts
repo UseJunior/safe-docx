@@ -59,12 +59,12 @@ function extract(
 describe('unresolved effective run formatting (#752)', () => {
   test
     .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.7.5.1' })(
-      'docDefaults-only declarations remain explicitly unresolved',
+      'docDefaults-only declarations resolve from the document defaults (#753)',
       async ({ given, when, then }: AllureBddContext) => {
         let formatting!: RunFormatting;
 
         await given('a font, bold, colour, underline and highlight declared only in docDefaults', async () => {});
-        await when('effective formatting is extracted without consulting docDefaults', async () => {
+        await when('effective formatting is extracted', async () => {
           formatting = extract(
             DOC_DEFAULTS(
               '<w:rFonts w:ascii="Georgia" w:hAnsi="Georgia"/><w:b/><w:color w:val="112233"/>' +
@@ -72,12 +72,13 @@ describe('unresolved effective run formatting (#752)', () => {
             ),
           );
         });
-        await then('the result reports unresolved values instead of neutral-looking sentinels', async () => {
-          expect(formatting.fontName).toBeNull();
-          expect(formatting.bold).toBeNull();
-          expect(formatting.colorHex).toBeNull();
-          expect(formatting.underline).toBeNull();
-          expect(formatting.highlightVal).toBeNull();
+        await then('the document defaults supply the values; the undeclared size stays unresolved', async () => {
+          // Before #753 docDefaults was an unread layer and all of these were null.
+          expect(formatting.fontName).toBe('Georgia');
+          expect(formatting.bold).toBe(true);
+          expect(formatting.colorHex).toBe('112233');
+          expect(formatting.underline).toBe(true);
+          expect(formatting.highlightVal).toBe('yellow');
           expect(formatting.fontSizePt).toBeNull();
           // Not declared anywhere, so the OOXML default is known.
           expect(formatting.italic).toBe(false);
@@ -131,7 +132,7 @@ describe('unresolved effective run formatting (#752)', () => {
     });
   });
 
-  test('a docDefaults declaration of the default value itself does not make a property unresolved', async ({
+  test('a docDefaults declaration of the default value itself resolves to that default', async ({
     given,
     when,
     then,
@@ -147,19 +148,19 @@ describe('unresolved effective run formatting (#752)', () => {
         ),
       );
     });
-    await then('the defaults are resolved, and the unread size stays unresolved', async () => {
+    await then('the defaults and the declared size are resolved', async () => {
       expect(formatting.bold).toBe(false);
       expect(formatting.italic).toBe(false);
       expect(formatting.underline).toBe(false);
       expect(formatting.highlightVal).toBe(false);
       expect(formatting.colorHex).toBe('auto');
-      expect(formatting.fontSizePt).toBeNull();
+      expect(formatting.fontSizePt).toBe(11);
     });
   });
 
   test
     .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.7.3' })(
-      'a style-level toggle over a docDefaults toggle is unresolved; a direct one is absolute',
+      'a style-level toggle inverts a docDefaults toggle seed; a direct one is absolute',
       async ({ given, when, then }: AllureBddContext) => {
         let styleOnly!: RunFormatting;
         let direct!: RunFormatting;
@@ -172,8 +173,9 @@ describe('unresolved effective run formatting (#752)', () => {
           direct = extract(styles, '<w:b/>');
           directThenStyle = extract(styles, '<w:rStyle w:val="Strong"/><w:b w:val="0"/>');
         });
-        await then('only the style-only result depends on the unread base', async () => {
-          expect(styleOnly.bold).toBeNull();
+        await then('the style toggles the seeded base off; direct formatting is absolute', async () => {
+          // Before #753 the seed was unread, so the style-only result was null.
+          expect(styleOnly.bold).toBe(false);
           expect(direct.bold).toBe(true);
           expect(directThenStyle.bold).toBe(false);
         });
@@ -253,8 +255,8 @@ describe('unresolved effective run formatting (#752)', () => {
     let noTheme!: RunFormatting;
     let emptyTheme!: RunFormatting;
     let withTheme!: RunFormatting;
-    let unreadNoTheme!: RunFormatting;
-    let unreadWithTheme!: RunFormatting;
+    let defaultsNoTheme!: RunFormatting;
+    let defaultsWithTheme!: RunFormatting;
     let hexFallback!: RunFormatting;
 
     await given('a run whose own colour and font are theme references, over a character style with concrete values', async () => {});
@@ -262,8 +264,8 @@ describe('unresolved effective run formatting (#752)', () => {
       noTheme = extract(styles, direct);
       emptyTheme = extract(styles, direct, { theme: { fonts: new Map(), colors: new Map() } });
       withTheme = extract(styles, direct, { theme: THEME });
-      unreadNoTheme = extract(DOC_DEFAULTS('<w:color w:val="auto" w:themeColor="accent1"/>'));
-      unreadWithTheme = extract(DOC_DEFAULTS('<w:color w:val="auto" w:themeColor="accent1"/>'), '', { theme: THEME });
+      defaultsNoTheme = extract(DOC_DEFAULTS('<w:color w:val="auto" w:themeColor="accent1"/>'));
+      defaultsWithTheme = extract(DOC_DEFAULTS('<w:color w:val="auto" w:themeColor="accent1"/>'), '', { theme: THEME });
       hexFallback = extract('', '<w:color w:val="00FF00" w:themeColor="accent1"/>');
     });
     await then('without a usable theme the declared references are unresolved and the style does not show through', async () => {
@@ -272,11 +274,11 @@ describe('unresolved effective run formatting (#752)', () => {
       expect(emptyTheme.colorHex).toBeNull();
       expect(emptyTheme.fontName).toBeNull();
     });
-    await and('with the theme they resolve; a docDefaults-only reference stays unresolved either way', async () => {
+    await and('with the theme they resolve, in docDefaults as anywhere else', async () => {
       expect(withTheme.colorHex).toBe('C0504D');
       expect(withTheme.fontName).toBe('Aptos');
-      expect(unreadNoTheme.colorHex).toBeNull();
-      expect(unreadWithTheme.colorHex).toBeNull();
+      expect(defaultsNoTheme.colorHex).toBeNull();
+      expect(defaultsWithTheme.colorHex).toBe('C0504D');
       // An explicit hex val remains the fallback when the theme is absent.
       expect(hexFallback.colorHex).toBe('00FF00');
     });

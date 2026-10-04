@@ -14,7 +14,7 @@ import { findUniqueSubstringMatch } from './matching.js';
 import { childElements, isW } from './dom-helpers.js';
 import { getFirstChild } from './xml-helpers.js';
 import {
-  extractEffectiveRunFormatting,
+  extractAnnotationRunFormatting,
   parseStylesXml,
   parseThemeXml,
   type StylesModel,
@@ -463,7 +463,7 @@ function extractFootnoteParagraphs(
       if (!runText) continue;
       textParts.push(runText);
 
-      const formatting = extractEffectiveRunFormatting({
+      const formatting = extractAnnotationRunFormatting({
         run,
         paragraphPPr: paraPPr ?? null,
         paragraphStyleId: style,

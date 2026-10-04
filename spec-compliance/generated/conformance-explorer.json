@@ -2903,7 +2903,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_RPr",
-      "claimRationale": "Run toggle properties accumulate differently from ordinary properties. An on\ndeclaration in a style hierarchy inverts the previously effective value, an\noff declaration leaves that value unchanged, and direct run formatting sets\nthe absolute result. The effective-formatting resolver evaluates the supported\ntoggle set independently and retains nearest-declaration resolution for\nordinary properties.",
+      "claimRationale": "Run toggle properties accumulate differently from ordinary properties. An on\ndeclaration in a style hierarchy inverts the previously effective value, an\noff declaration leaves that value unchanged, and direct run formatting sets\nthe absolute result. The effective-formatting resolver evaluates the supported\ntoggle set independently, starting from the `w:docDefaults` value (or off),\nand retains nearest-declaration resolution for ordinary properties.",
       "evidence": [
         {
           "kind": "source",
@@ -2912,6 +2912,10 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/primitives/styles-toggle.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/styles-doc-defaults.test.ts"
         },
         {
           "kind": "test",
@@ -2979,11 +2983,23 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults",
-      "claimRationale": "`w:docDefaults` carries the document-wide default run and paragraph\nproperties that styles and direct formatting layer over. Generation emits\nexplicit defaults (font bound across ascii/hAnsi/cs script ranges plus an\nexplicit size) rather than relying on reader fallbacks, which diverge\nbetween Word, LibreOffice, and Google Docs import.",
+      "claimRationale": "`w:docDefaults` carries the document-wide default run and paragraph\nproperties that styles and direct formatting layer over. Generation emits\nexplicit defaults (font bound across ascii/hAnsi/cs script ranges plus an\nexplicit size) rather than relying on reader fallbacks, which diverge\nbetween Word, LibreOffice, and Google Docs import. Effective run formatting\nreads `w:rPrDefault/w:rPr` as its lowest-precedence layer; for toggle\nproperties that layer seeds the starting value before style parity and\nabsolute direct formatting apply (Microsoft's [MS-OI29500] note on §17.7.3\ndescribes document defaults as the base for toggle evaluation, and\n[MS-OE376] §2.7.7 documents no deviation that makes them another style\nlevel).",
       "evidence": [
         {
           "kind": "source",
           "path": "packages/docx-core/src/generation/emit/styles-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/styles.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/styles-doc-defaults.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/styles-unresolved.test.ts"
         }
       ]
     },
