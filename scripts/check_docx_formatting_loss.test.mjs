@@ -43,7 +43,8 @@ function compare(beforeBody, afterBody, options, styles = {}, themes = {}) {
 }
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-const U = 'unresolved';
+// Unresolved fields project as null (never a string that a real font could share).
+const U = null;
 
 function theme(fonts = { major: 'Aptos Display', minor: 'Aptos' }, accent1 = 'C0504D') {
   return wrapThemeXml(
@@ -360,6 +361,17 @@ test('documents without a theme part retain direct font and color fallbacks', ()
   assert.deepEqual(projection.byParaId.get('AAAA0024').emphasisSpans, [
     [8, false, false, false, false, false, false, false, false, false, false, false, 'none', 'Georgia', U, '123456'],
   ]);
+});
+
+test('a font literally named "unresolved" does not collide with an unresolved font (#758 review)', () => {
+  const before = paragraph('AAAA0025', run('Named', '<w:rFonts w:ascii="unresolved" w:hAnsi="unresolved"/>'));
+  const after = paragraph('AAAA0025', run('Named', ''));
+  const named = projectParagraphs(wrapBodyXml(before)).byParaId.get('AAAA0025').emphasisSpans[0];
+  const unknown = projectParagraphs(wrapBodyXml(after)).byParaId.get('AAAA0025').emphasisSpans[0];
+  assert.equal(named[13], 'unresolved');
+  assert.equal(unknown[13], null);
+  // Dropping the explicit font is a run-formatting change D1 must still see.
+  assert.deepEqual(compare(before, after).flattenedParagraphIds, ['AAAA0025']);
 });
 
 test('a present styles part that is not w:styles is rejected rather than read as an empty model', () => {
