@@ -5,6 +5,7 @@ import {
   computeModalBaseline,
   computeParagraphFontBaseline,
   emitFormattingTags,
+  mergeAdjacentTags,
   type AnnotatedRun,
   type FormattingBaseline,
   type FontBaseline,
@@ -26,10 +27,11 @@ function runFormatting(partial?: Partial<RunFormatting>): RunFormatting {
     shadow: false,
     vanish: false,
     underline: false,
-    highlightVal: null,
-    fontName: '',
-    fontSizePt: 0,
-    colorHex: null,
+    highlightVal: false,
+    // What the resolver reports for a run that declares no font or size (#752).
+    fontName: null,
+    fontSizePt: null,
+    colorHex: 'auto',
     ...(partial ?? {}),
   };
 }
@@ -412,6 +414,139 @@ describe('formatting_tags', () => {
     await and('no size or face attributes are emitted', async () => {
       expect(tagged).not.toContain('size=');
       expect(tagged).not.toContain('face=');
+    });
+  });
+
+  test('unresolved runs form their own modal bucket, so explicitly sized minority runs keep their tags (#752)', async ({ given, when, then }: AllureBddContext) => {
+    let fb: FontBaseline;
+    let tagged: string;
+
+    await given('a paragraph whose majority runs leave size, font and colour unresolved', async () => {
+      // setup is inline
+    });
+
+    await when('the font baseline is computed and tags emitted', async () => {
+      const runs: AnnotatedRun[] = [
+        annotatedRun('Unresolved majority text ', { colorHex: null }),
+        annotatedRun('Big', { fontSizePt: 14, fontName: 'Georgia', colorHex: 'FF0000' }),
+      ];
+      fb = computeParagraphFontBaseline(runs);
+      tagged = emitFormattingTags({ runs, baseline: computeModalBaseline(runs), fontBaseline: fb });
+    });
+
+    await then('the unresolved bucket is the modal, reported as "no modal", and the minority run is tagged', async () => {
+      expect(fb.modalFontSizePt).toBe(0);
+      expect(fb.modalFontName).toBe('');
+      expect(fb.modalColor).toBeNull();
+      expect(fb.fontSizeSuppressed).toBe(true);
+      expect(tagged).toBe('Unresolved majority text <font color="FF0000" size="14" face="Georgia">Big</font>');
+    });
+  });
+
+  test('an unresolved run inside a resolved modal paragraph gets no fabricated size, font or colour (#752)', async ({ given, when, then }: AllureBddContext) => {
+    let tagged: string;
+
+    await given('a paragraph sized 12pt in Arial except one run whose size, font and colour are unresolved', async () => {
+      // setup is inline
+    });
+
+    await when('tags are emitted against the paragraph baseline', async () => {
+      const runs: AnnotatedRun[] = [
+        annotatedRun('Resolved body text here ', { fontSizePt: 12, fontName: 'Arial', colorHex: '000000' }),
+        annotatedRun('odd', { fontSizePt: null, fontName: null, colorHex: null }),
+      ];
+      tagged = emitFormattingTags({
+        runs,
+        baseline: computeModalBaseline(runs),
+        fontBaseline: computeParagraphFontBaseline(runs),
+      });
+    });
+
+    await then('no size="0" or empty face is emitted for the unresolved run', async () => {
+      expect(tagged).toBe('Resolved body text here odd');
+    });
+  });
+
+  test('an unresolved b/i/u modal never tags unresolved runs, and resolved deviations still tag (#752)', async ({ given, when, then, and }: AllureBddContext) => {
+    let baseline: FormattingBaseline;
+    let tagged: string;
+
+    await given('a paragraph whose majority bold/italic/underline are unresolved', async () => {
+      // setup is inline
+    });
+
+    await when('the modal baseline is computed and tags emitted', async () => {
+      const runs: AnnotatedRun[] = [
+        annotatedRun('Unresolved majority ', { bold: null, italic: null, underline: null }),
+        annotatedRun('Bold', { bold: true, italic: false, underline: false }),
+      ];
+      baseline = computeModalBaseline(runs);
+      tagged = emitFormattingTags({ runs, baseline });
+    });
+
+    await then('the baseline keeps the unresolved members as null', async () => {
+      expect(baseline).toEqual({ bold: null, italic: null, underline: null, suppressed: true });
+    });
+
+    await and('only the resolved bold deviation is tagged', async () => {
+      expect(tagged).toBe('Unresolved majority <b>Bold</b>');
+    });
+  });
+
+  test('explicit no-highlight and unresolved highlight emit no highlight tag (#752)', async ({ given, when, then }: AllureBddContext) => {
+    let tagged: string;
+
+    await given('runs with explicit none, unresolved, and a real highlight', async () => {
+      // setup is inline
+    });
+
+    await when('tags are emitted in full mode', async () => {
+      tagged = emitFormattingTags({
+        runs: [
+          annotatedRun('none ', { highlightVal: false }),
+          annotatedRun('unknown ', { highlightVal: null }),
+          annotatedRun('lit', { highlightVal: 'yellow' }),
+        ],
+        baseline: { bold: false, italic: false, underline: false, suppressed: false },
+        formattingMode: 'full',
+      });
+    });
+
+    await then('only the highlighted run carries the tag', async () => {
+      expect(tagged).toBe('none unknown <highlight color="yellow">lit</highlight>');
+    });
+  });
+
+  test('an unresolved member does not change suppression of a resolved one (#752 review)', async ({ given, when, then, and }: AllureBddContext) => {
+    let unanimousBold: string;
+    let partlyUnknownItalic: string;
+
+    await given('paragraphs whose italic is unresolved in some runs', async () => {
+      // setup is inline
+    });
+
+    await when('compact tags are emitted against the modal baseline', async () => {
+      const boldRuns: AnnotatedRun[] = [
+        annotatedRun('aaaaa', { bold: true, italic: false }),
+        annotatedRun('bbbbb', { bold: true, italic: null }),
+      ];
+      unanimousBold = mergeAdjacentTags(emitFormattingTags({ runs: boldRuns, baseline: computeModalBaseline(boldRuns) }));
+      const italicRuns: AnnotatedRun[] = [
+        annotatedRun('Mostly italic text ', { italic: true }),
+        annotatedRun('unknown', { italic: null }),
+      ];
+      partlyUnknownItalic = emitFormattingTags({ runs: italicRuns, baseline: computeModalBaseline(italicRuns) });
+    });
+
+    await then('the unanimous resolved bold stays suppressed, exactly as before #752', async () => {
+      expect(unanimousBold).toBe('aaaaabbbbb');
+    });
+
+    await and('a member some run leaves unresolved has no known norm, so its resolved values are tagged (pinned tradeoff)', async () => {
+      // Before #752 the unresolved run counted as non-italic and the italic
+      // majority was suppressed. The norm is not known, so the resolved italic
+      // is shown rather than hidden; the unresolved run is never tagged.
+      expect(partlyUnknownItalic).toBe('<i>Mostly italic text </i>unknown');
     });
   });
 });

@@ -194,8 +194,11 @@ function runHasRenderableContent(run, paragraph) {
  * effective run formatting, resolved through styles.xml. Two runs whose
  * declarations differ but resolve identically produce the same tuple, and a
  * style-definition edit changes the tuple with no change to the run at all.
- * Nullable fields are pinned to sentinel strings so tuple positions compare
- * by value. Color hex is compared case-insensitively — ff0000 and FF0000 are
+ * An unresolved field stays `null`. No resolved value is ever `null`, so it
+ * compares distinctly by value and can never collide with a real string, such
+ * as a font literally named "unresolved". Known defaults keep their sentinel
+ * strings ('none' for no highlight, 'auto' for automatic colour).
+ * Color hex is compared case-insensitively — ff0000 and FF0000 are
  * the same ink, and the raw casing is a property of the writer, not the page.
  */
 function runEmphasis(run, paragraphPPr, paragraphStyleId, styles, theme) {
@@ -212,10 +215,12 @@ function runEmphasis(run, paragraphPPr, paragraphStyleId, styles, theme) {
     formatting.shadow,
     formatting.vanish,
     formatting.underline,
-    formatting.highlightVal ?? 'none',
+    formatting.highlightVal === null ? null : formatting.highlightVal || 'none',
     formatting.fontName,
     formatting.fontSizePt,
-    formatting.colorHex === null ? 'auto' : formatting.colorHex.toUpperCase(),
+    formatting.colorHex === null || formatting.colorHex === 'auto'
+      ? formatting.colorHex
+      : formatting.colorHex.toUpperCase(),
   ];
 }
 

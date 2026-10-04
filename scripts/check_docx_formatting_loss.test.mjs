@@ -43,6 +43,8 @@ function compare(beforeBody, afterBody, options, styles = {}, themes = {}) {
 }
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+// Unresolved fields project as null (never a string that a real font could share).
+const U = null;
 
 function theme(fonts = { major: 'Aptos Display', minor: 'Aptos' }, accent1 = 'C0504D') {
   return wrapThemeXml(
@@ -240,7 +242,7 @@ test('basedOn resolution is per property: a derived style adding color does not 
 
   const projection = projectParagraphs(wrapBodyXml(body), withBold);
   assert.deepEqual(projection.byParaId.get('AAAA0013').emphasisSpans, [
-    [4, true, false, false, false, false, false, false, false, false, false, false, 'none', '', 0, 'FF0000'],
+    [4, true, false, false, false, false, false, false, false, false, false, false, 'none', U, U, 'FF0000'],
   ]);
 
   // And a de-bolding of the ancestor is therefore a finding, color intact.
@@ -304,7 +306,7 @@ test('Word differential from PR #691: style-level off preserves paragraph-style 
     styles,
   );
   assert.deepEqual(projection.byParaId.get('AAAA0020').emphasisSpans, [
-    [4, true, false, false, false, false, false, false, false, false, false, false, 'none', '', 0, 'FF0000'],
+    [4, true, false, false, false, false, false, false, false, false, false, false, 'none', U, U, 'FF0000'],
   ]);
 });
 
@@ -357,8 +359,19 @@ test('documents without a theme part retain direct font and color fallbacks', ()
   );
   const projection = projectParagraphs(wrapBodyXml(body));
   assert.deepEqual(projection.byParaId.get('AAAA0024').emphasisSpans, [
-    [8, false, false, false, false, false, false, false, false, false, false, false, 'none', 'Georgia', 0, '123456'],
+    [8, false, false, false, false, false, false, false, false, false, false, false, 'none', 'Georgia', U, '123456'],
   ]);
+});
+
+test('a font literally named "unresolved" does not collide with an unresolved font (#758 review)', () => {
+  const before = paragraph('AAAA0025', run('Named', '<w:rFonts w:ascii="unresolved" w:hAnsi="unresolved"/>'));
+  const after = paragraph('AAAA0025', run('Named', ''));
+  const named = projectParagraphs(wrapBodyXml(before)).byParaId.get('AAAA0025').emphasisSpans[0];
+  const unknown = projectParagraphs(wrapBodyXml(after)).byParaId.get('AAAA0025').emphasisSpans[0];
+  assert.equal(named[13], 'unresolved');
+  assert.equal(unknown[13], null);
+  // Dropping the explicit font is a run-formatting change D1 must still see.
+  assert.deepEqual(compare(before, after).flattenedParagraphIds, ['AAAA0025']);
 });
 
 test('a present styles part that is not w:styles is rejected rather than read as an empty model', () => {
@@ -460,7 +473,7 @@ test('a paragraph nested in a text box is projected separately from the paragrap
   assert.equal(projection.totalParagraphs, 2);
   // Span tuple: length, ten toggles, underline, highlight, font, size, color.
   assert.deepEqual(projection.byParaId.get('CCCC0001').emphasisSpans, [
-    [5, true, false, false, false, false, false, false, false, false, false, false, 'none', '', 0, 'auto'],
+    [5, true, false, false, false, false, false, false, false, false, false, false, 'none', U, U, 'auto'],
   ]);
 
   const result = compare(before, after);

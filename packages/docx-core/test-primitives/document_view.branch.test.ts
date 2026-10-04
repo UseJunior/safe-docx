@@ -859,6 +859,84 @@ describe('document_view branch coverage', () => {
     });
   });
 
+  test('detectRunInHeader accepts an underline-only header spread over several runs (#752)', async ({ given, when, then }: AllureBddContext) => {
+    let nodes: DocumentViewNode[];
+
+    await given('an underlined, partly italic "Governing Law." prefix split across two runs, then body text', async () => {
+      // setup is inline
+    });
+
+    await when('nodes are built', async () => {
+      nodes = buildTestNodes(
+        `<w:p>` +
+          `<w:r><w:rPr><w:i/><w:u w:val="single"/></w:rPr><w:t xml:space="preserve">Governing </w:t></w:r>` +
+          `<w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>Law.</w:t></w:r>` +
+          `<w:r><w:t xml:space="preserve"> This Agreement is governed by the laws of the chosen state.</w:t></w:r>` +
+        `</w:p>`,
+      );
+    });
+
+    await then('the header is detected and its formatting comes from the first header run', async () => {
+      expect(nodes[0]!.list_metadata.header_style).toBe('run_in_header');
+      expect(nodes[0]!.list_metadata.header_text).toBe('Governing Law');
+      expect(nodes[0]!.list_metadata.header_formatting).toEqual({ bold: false, italic: true, underline: true });
+    });
+  });
+
+  test('heading detectors do not treat unresolved bold as bold (#752)', async ({ given, when, then, and }: AllureBddContext) => {
+    let nodes: DocumentViewNode[];
+
+    await given('docDefaults that turn bold on, so a character-style bold toggle is unresolved', async () => {
+      // setup is inline
+    });
+
+    await when('a would-be run-in header and a would-be centered title reach bold only through that style', async () => {
+      nodes = buildTestNodes(
+        `<w:p>` +
+          `<w:r><w:rPr><w:rStyle w:val="Strong"/></w:rPr><w:t>Indemnification.</w:t></w:r>` +
+          `<w:r><w:t xml:space="preserve"> The Company shall indemnify each Investor.</w:t></w:r>` +
+        `</w:p>` +
+        `<w:p><w:pPr><w:jc w:val="center"/></w:pPr>` +
+          `<w:r><w:rPr><w:rStyle w:val="Strong"/></w:rPr><w:t>STOCK PURCHASE AGREEMENT</w:t></w:r>` +
+        `</w:p>`,
+        makeStylesXml(
+          `<w:docDefaults><w:rPrDefault><w:rPr><w:b/></w:rPr></w:rPrDefault></w:docDefaults>` +
+          `<w:style w:type="character" w:styleId="Strong"><w:rPr><w:b/></w:rPr></w:style>`,
+        ),
+      );
+    });
+
+    await then('the run-in header is not asserted from an unresolved value', async () => {
+      expect(nodes[0]!.list_metadata.header_style).not.toBe('run_in_header');
+    });
+
+    await and('the centered title is not asserted from an unresolved value', async () => {
+      expect(nodes[1]!.list_metadata.header_style).not.toBe('title_caps_centered');
+    });
+  });
+
+  test('title_caps_centered takes formatting from the first bold run of several (#752)', async ({ given, when, then }: AllureBddContext) => {
+    let nodes: DocumentViewNode[];
+
+    await given('a centered ALL-CAPS title split into an italic bold run and a plain bold run', async () => {
+      // setup is inline
+    });
+
+    await when('nodes are built', async () => {
+      nodes = buildTestNodes(
+        `<w:p><w:pPr><w:jc w:val="center"/></w:pPr>` +
+          `<w:r><w:rPr><w:b/><w:i/></w:rPr><w:t xml:space="preserve">SERIES A </w:t></w:r>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>PURCHASE AGREEMENT</w:t></w:r>` +
+        `</w:p>`,
+      );
+    });
+
+    await then('the title formatting reflects the first bold run', async () => {
+      expect(nodes[0]!.list_metadata.header_style).toBe('title_caps_centered');
+      expect(nodes[0]!.list_metadata.header_formatting).toEqual({ bold: true, italic: true, underline: false });
+    });
+  });
+
   test('detects centered ALL-CAPS bold standalone title as title_caps_centered (#157)', async ({ given, when, then, and }: AllureBddContext) => {
     let bodyXml: string;
     let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
