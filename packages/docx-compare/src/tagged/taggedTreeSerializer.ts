@@ -1416,21 +1416,27 @@ function appendReadableRevisionEmission(emitted: WmlElement[], next: WmlElement)
 
 /**
  * Tokenize each maximal group of adjacent runs that share one run-property
- * signature as concatenated text. Token boundaries are forced where the
- * signature changes, so formatting provenance is kept, while identical text
- * with identical formatting yields identical tokens regardless of how it is
- * segmented into runs. Each token keeps its paragraph-level text offset and
- * the run that owns its first character.
+ * signature and one operation provenance as concatenated text. Token
+ * boundaries are forced where either changes, so a token never mixes
+ * formatting or operation attribution, while identical text with identical
+ * formatting yields identical tokens regardless of how it is segmented into
+ * runs. Each token keeps its gap-level text offset and the run that owns its
+ * first character.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/1142
  */
-function tokenizedRuns(runs: readonly WmlElement[]): TextToken[] {
+function tokenizedRuns(
+  runs: readonly WmlElement[],
+  provenanceByRun: ReadonlyMap<WmlElement, readonly string[]>,
+): TextToken[] {
+  const groupKey = (run: WmlElement): string =>
+    JSON.stringify([runPropertySignature(run), provenanceByRun.get(run) ?? []]);
   const tokens: TextToken[] = [];
   let offset = 0;
   for (let first = 0; first < runs.length;) {
-    const signature = runPropertySignature(runs[first]!);
+    const key = groupKey(runs[first]!);
     let end = first + 1;
-    while (end < runs.length && runPropertySignature(runs[end]!) === signature) end++;
+    while (end < runs.length && groupKey(runs[end]!) === key) end++;
     const group = runs.slice(first, end);
     const groupStart = offset;
     const ownerAt = (position: number): WmlElement => {
@@ -1614,8 +1620,8 @@ function refineSimpleRunGap(
   // stay limited to gaps with one signature, so they never coalesce a
   // deletion/insertion chain across a formatting change.
   const concatenate = directPropertySignatures.size === 1;
-  const left = tokenizedRuns(originals);
-  const right = tokenizedRuns(revised);
+  const left = tokenizedRuns(originals, provenanceByRun);
+  const right = tokenizedRuns(revised, provenanceByRun);
   const minimalAlignment = alignComparisonSequences(left, right, (a, b) => a.value === b.value);
   const bridgeMatches = revisionGrouping === 'readable-whitespace' && concatenate
     ? new Set(minimalAlignment.matches.flatMap((match, index, matches) => {

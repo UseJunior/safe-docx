@@ -9,10 +9,12 @@ import {
   composeTaggedStories,
   createPreservePlan,
   preservedStack,
+  resolveTaggedRevisionAttributions,
   serializeTaggedTree,
   splitWithPreservedProvenance,
 } from './taggedTreeSerializer.js';
 import { constructTaggedTree } from './taggedTreeConstruction.js';
+import { buildTaggedTreePublication } from './taggedTreeShadow.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
 import { buildDocxFromBodyXml, completeField, fldChar, instrText, resultText } from '../testing/ooxml-fixtures.js';
@@ -1176,5 +1178,65 @@ describe('mixed-format run re-segmentation (#1142)', () => {
     expect(revisionTexts(mixed, 'ins')).toEqual(['new', 'blue']);
     expect(extractRoundTripComparisonText(rejectAllChanges(mixed))).toBe('The old red term.');
     expect(extractRoundTripComparisonText(acceptAllChanges(mixed))).toBe('The new blue term.');
+  });
+
+  const publish = (
+    originalParagraphs: readonly string[],
+    revisedParagraphs: readonly string[],
+    options: Partial<Parameters<typeof buildTaggedTreePublication>[0]> = {},
+  ) => buildTaggedTreePublication({
+    originalXml: `<w:document xmlns:w="${W_NS}"><w:body>${originalParagraphs.join('')}</w:body></w:document>`,
+    revisedXml: `<w:document xmlns:w="${W_NS}"><w:body>${revisedParagraphs.join('')}</w:body></w:document>`,
+    author: 'Comparator',
+    date: new Date('2026-10-03T00:00:00Z'),
+    detectMoves: false,
+    ...options,
+  });
+
+  test('keeps adjacent runs from different attributed operations in separate revisions', () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' });
+    const paragraph = (runs: string): string =>
+      `<w:p><w:bookmarkStart w:id="0" w:name="_safe_docx_p_1"/>${runs}<w:bookmarkEnd w:id="0"/></w:p>`;
+    const range = (operationId: string, start: number, end: number) => ({
+      operationId, side: 'revised' as const,
+      startParagraphId: '_safe_docx_p_1', endParagraphId: '_safe_docx_p_1', start, end,
+    });
+    // `blue` (operation A) and `stone` (operation B) share formatting and
+    // abut without a space, so one concatenated token would span both.
+    const publication = publish(
+      [paragraph(run('Old', bold) + run(' red') + run('wood'))],
+      [paragraph(run('New', bold) + run(' blue') + run('stone'))],
+      { revisionAttributionRanges: [range('A', 4, 8), range('B', 8, 13)] },
+    );
+    const inserted = Array.from(parseXml(publication.xml).getElementsByTagNameNS(W_NS, 'ins'))
+      .map((wrapper) => [wrapper.getAttribute('data-safe-docx-operation'), wrapper.textContent]);
+    expect(inserted).toEqual([[null, 'New'], ['A', 'blue'], ['B', 'stone']]);
+    expect(resolveTaggedRevisionAttributions(publication.xml, ['A', 'B']).attributions
+      .map((attribution) => attribution.operationId)).toEqual(['A', 'B']);
+  });
+
+  test('weighs atoms without the whitespace merged around removed or moved runs', () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
+    const paragraph = (...texts: string[]): string => `<w:p>${texts.map((text) => run(text)).join('')}</w:p>`;
+    // Deleting a word that sits in its own run leaves `prefix  suffix`.
+    const deletion = publish(
+      [paragraph('Keep the prefix ', 'Company', ' suffix unchanged.')],
+      [paragraph('Keep the prefix ', ' suffix unchanged.')],
+    );
+    expect(deletion.stats).toMatchObject({ deletedRanges: 1, insertedRanges: 0, deletedAtoms: 1, insertedAtoms: 0 });
+    // A moved run is left out of its paragraphs' atom streams.
+    const alpha = ['Alpha keeps the same prefix ', ' suffix remains unchanged.'];
+    const beta = ['Beta keeps a different prefix ', ' suffix remains unchanged.'];
+    const move = (extra: string[]) => publish(
+      [paragraph(alpha[0]!, 'cat', ...extra, alpha[1]!), paragraph(...beta)],
+      [paragraph(...alpha), paragraph(beta[0]!, 'cat', beta[1]!)],
+      { detectMoves: true },
+    );
+    const pure = move([]);
+    expect(pure.moves).toHaveLength(1);
+    expect(pure.stats).toMatchObject({ insertedRanges: 0, deletedRanges: 0, insertedAtoms: 0, deletedAtoms: 0 });
+    const withDeletion = move(['old']);
+    expect(withDeletion.moves).toHaveLength(1);
+    expect(withDeletion.stats).toMatchObject({ insertedRanges: 0, deletedRanges: 1, insertedAtoms: 0, deletedAtoms: 1 });
   });
 });
