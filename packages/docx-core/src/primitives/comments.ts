@@ -15,8 +15,8 @@ import { isW } from './dom-helpers.js';
 import { buildParagraphIndex, type IndexedParagraphNode, type ParagraphIndex } from './paragraph-index.js';
 import { getAttributeSafe } from './xml-helpers.js';
 import { getFirstChild } from './xml-helpers.js';
-import { extractDocDefaultsRunFormatting, extractEffectiveRunFormatting, parseStylesXml, parseThemeXml, type StylesModel, type ThemeModel } from './styles.js';
-import { documentDefaultsFontBaseline, emitFormattingTags, mergeAdjacentTags, type AnnotatedRun } from './formatting_tags.js';
+import { extractAnnotationRunFormatting, parseStylesXml, parseThemeXml, type StylesModel, type ThemeModel } from './styles.js';
+import { emitFormattingTags, mergeAdjacentTags, type AnnotatedRun } from './formatting_tags.js';
 import { ensureExternalHyperlinkRelationships } from './relationships.js';
 import { SafeDocxError } from './errors.js';
 import {
@@ -1477,7 +1477,6 @@ function hasElementChildren(element: Element): boolean {
 function extractCommentParagraphs(commentEl: Element, styles: StylesModel, theme: ThemeModel): CommentParagraph[] {
   const paragraphs = commentEl.getElementsByTagNameNS(OOXML.W_NS, W.p);
   const result: CommentParagraph[] = [];
-  const fontBaseline = documentDefaultsFontBaseline(extractDocDefaultsRunFormatting(styles, theme));
   for (let pi = 0; pi < paragraphs.length; pi++) {
     const paragraph = paragraphs.item(pi) as Element;
     const pPr = getFirstChild(paragraph, OOXML.W_NS, W.pPr);
@@ -1492,7 +1491,7 @@ function extractCommentParagraphs(commentEl: Element, styles: StylesModel, theme
       const ts = run.getElementsByTagNameNS(OOXML.W_NS, W.t);
       for (let ti = 0; ti < ts.length; ti++) text += (ts.item(ti) as Element).textContent ?? '';
       if (!text) continue;
-      const formatting = extractEffectiveRunFormatting({
+      const formatting = extractAnnotationRunFormatting({
         run,
         paragraphPPr: pPr,
         paragraphStyleId: style,
@@ -1504,7 +1503,7 @@ function extractCommentParagraphs(commentEl: Element, styles: StylesModel, theme
     const tagged_text = mergeAdjacentTags(emitFormattingTags({
       runs: annotated,
       baseline: { bold: false, italic: false, underline: false, suppressed: false },
-      fontBaseline,
+      fontBaseline: { modalColor: null, colorSuppressed: false, modalFontSizePt: 0, fontSizeSuppressed: true, modalFontName: '', fontNameSuppressed: true },
       formattingMode: 'full',
     }));
     result.push({ text: annotated.map((run) => run.text).join(''), tagged_text, style });

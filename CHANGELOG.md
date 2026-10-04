@@ -77,12 +77,13 @@
   whose runs inherit the document defaults get a resolved font and size
   baseline, and the formatting-convention check counts bold/italic/underline
   inherited from the document defaults. Comment and footnote `tagged_text`
-  (`get_comments`, `get_footnotes`, `read_file` footnotes) tag colour, size and
-  font only where they differ from the document defaults, so a font or size
-  inherited from `w:docDefaults` is not repeated on every run, and a run that
-  restates the default font explicitly no longer gets a `face` attribute.
-  New docx-core exports: `extractDocDefaultsRunFormatting` and
-  `documentDefaultsFontBaseline`. (#753)
+  (`get_comments`, `get_footnotes`, `read_file` footnotes) keep tagging colour,
+  size and font only where a layer above `w:docDefaults` declares them, so the
+  inherited document font is not repeated as `face` on every run (and
+  docx-markdoc annotation import keeps admitting such documents). New
+  docx-core export: `extractAnnotationRunFormatting`. Hex colours and font
+  names compare case-insensitively when deciding whether a table style
+  restates the base value. (#753)
 
 ## 0.22.1
 

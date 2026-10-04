@@ -646,6 +646,10 @@ export function extractEffectiveRunFormatting(params: {
    * default, otherwise `ooxmlDefault` (`null` for a property with no OOXML
    * default), unless an unread table style could change that base.
    */
+  // Hex colours and font names compare case-insensitively: `abcdef` restates
+  // `ABCDEF`.
+  const sameValue = (a: unknown, b: unknown): boolean =>
+    typeof a === 'string' && typeof b === 'string' ? a.toUpperCase() === b.toUpperCase() : a === b;
   const resolveLayered = <T>(
     parse: (el: Element | null) => Declared<T> | null,
     ooxmlDefault: T | null,
@@ -657,7 +661,7 @@ export function extractEffectiveRunFormatting(params: {
     if (
       tableLayers.some((layer) => {
         const declared = parse(layer);
-        return declared !== null && declared !== base;
+        return declared !== null && !sameValue(declared, base);
       })
     ) {
       return null;
@@ -687,45 +691,33 @@ export function extractEffectiveRunFormatting(params: {
 }
 
 /**
- * The run formatting the document defaults alone give a run: what
- * {@link extractEffectiveRunFormatting} returns for a run that no style or
- * direct formatting touches, outside a table. Annotation bodies (comments,
- * footnotes) use it as their tag baseline, so a font or size inherited from
- * `w:docDefaults` is not re-emitted on every run.
+ * Effective run formatting for annotation bodies (comments, footnotes), whose
+ * `tagged_text` is emitted in `full` mode and read back by docx-markdoc.
+ * Toggles, underline and highlight resolve through every layer, document
+ * defaults included. Colour, size and font are reported only when a layer
+ * above `w:docDefaults` declares them, otherwise as not declared (`'auto'` /
+ * `null`), so the inherited document font is not tagged as `face` on every run
+ * and a direct value that restates the document default is still emitted
+ * over a character style that would otherwise show through on import.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/753
  */
-export function extractDocDefaultsRunFormatting(
-  styles: StylesModel,
-  theme: ThemeModel | null = null,
-): RunFormatting {
-  const docDefaultsRPr = styles.docDefaultsRPr ?? null;
-  if (!docDefaultsRPr) {
-    return {
-      bold: false,
-      italic: false,
-      caps: false,
-      smallCaps: false,
-      strike: false,
-      emboss: false,
-      imprint: false,
-      outline: false,
-      shadow: false,
-      vanish: false,
-      underline: false,
-      highlightVal: false,
-      fontName: null,
-      fontSizePt: null,
-      colorHex: 'auto',
-    };
-  }
-  // A non-run element contributes no direct rPr, and the styles part is never
-  // inside a table, so only the document defaults are consulted.
-  return extractEffectiveRunFormatting({
-    run: docDefaultsRPr,
-    paragraphPPr: null,
-    paragraphStyleId: null,
-    styles,
-    theme,
+export function extractAnnotationRunFormatting(params: {
+  run: Element;
+  paragraphPPr: Element | null;
+  paragraphStyleId: string | null;
+  styles: StylesModel;
+  theme?: ThemeModel | null;
+}): RunFormatting {
+  const effective = extractEffectiveRunFormatting(params);
+  const declared = extractEffectiveRunFormatting({
+    ...params,
+    styles: { ...params.styles, docDefaultsRPr: null },
   });
+  return {
+    ...effective,
+    colorHex: declared.colorHex,
+    fontSizePt: declared.fontSizePt,
+    fontName: declared.fontName,
+  };
 }

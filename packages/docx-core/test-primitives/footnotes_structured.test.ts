@@ -183,13 +183,14 @@ describe('structured footnote model', () => {
     },
   );
 
-  test('footnote tags carry font and size only where they differ from the document defaults (#753)',
+  test('footnote tags carry font and size only where declared above the document defaults (#753)',
     async ({ given, when, then }: AllureBddContext) => {
       const files = await given('Times New Roman 12pt document defaults, a 9pt footnote style, and one Arial run', async () => {
         const documentXml = makeDocumentXml(refParagraph('_bk_anchor', 'See', 1));
         const body =
           `<w:r><w:t xml:space="preserve">inherited </w:t></w:r>` +
-          `<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr><w:t>arial</w:t></w:r>`;
+          `<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr><w:t>arial</w:t></w:r>` +
+          `<w:r><w:rPr><w:rStyle w:val="Sans"/><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/></w:rPr><w:t>restated</w:t></w:r>`;
         const fnXml = footnotesXml(`<w:footnote w:id="1">${footnoteBodyParagraph(body)}</w:footnote>`);
         const stylesXml =
           `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
@@ -197,6 +198,7 @@ describe('structured footnote model', () => {
           `<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/>` +
           `<w:sz w:val="24"/></w:rPr></w:rPrDefault></w:docDefaults>` +
           `<w:style w:type="paragraph" w:styleId="FootnoteText"><w:rPr><w:sz w:val="18"/></w:rPr></w:style>` +
+          `<w:style w:type="character" w:styleId="Sans"><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr></w:style>` +
           `</w:styles>`;
         return { documentXml, fnXml, stylesXml };
       });
@@ -207,9 +209,12 @@ describe('structured footnote model', () => {
         });
         return getFootnote(zip, parseXml(files.documentXml), 1, parseStylesXml(parseXml(files.stylesXml)));
       });
-      await then('the inherited default font is not tagged; the style size and the Arial run are', async () => {
+      await then('the inherited default font is not tagged; the style size, the Arial run and a direct restatement are', async () => {
         const tagged = note!.paragraphs[0]!.tagged_text;
-        expect(tagged).not.toContain('Times New Roman');
+        // Only the run that restates the default font directly, over a style
+        // that would otherwise show through, carries it.
+        expect(tagged.match(/face="Times New Roman"/g)).toHaveLength(1);
+        expect(tagged).toContain('face="Times New Roman">restated');
         expect(tagged).toContain('face="Arial"');
         expect(tagged).toContain('size="9"');
         expect(tagged).not.toContain('size="12"');

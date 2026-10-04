@@ -14,14 +14,13 @@ import { findUniqueSubstringMatch } from './matching.js';
 import { childElements, isW } from './dom-helpers.js';
 import { getFirstChild } from './xml-helpers.js';
 import {
-  extractDocDefaultsRunFormatting,
-  extractEffectiveRunFormatting,
+  extractAnnotationRunFormatting,
   parseStylesXml,
   parseThemeXml,
   type StylesModel,
   type ThemeModel,
 } from './styles.js';
-import { documentDefaultsFontBaseline, emitFormattingTags, mergeAdjacentTags, type AnnotatedRun } from './formatting_tags.js';
+import { emitFormattingTags, mergeAdjacentTags, type AnnotatedRun } from './formatting_tags.js';
 import { ensureExternalHyperlinkRelationships } from './relationships.js';
 import {
   createRevisionContainer,
@@ -441,7 +440,6 @@ function extractFootnoteParagraphs(
   const paragraphs = footnoteEl.getElementsByTagNameNS(OOXML.W_NS, W.p);
   const out: FootnoteParagraph[] = [];
 
-  const fontBaseline = documentDefaultsFontBaseline(extractDocDefaultsRunFormatting(styles, theme));
   for (let pi = 0; pi < paragraphs.length; pi++) {
     const p = paragraphs.item(pi) as Element;
     const style = getFootnoteParagraphStyle(p);
@@ -465,7 +463,7 @@ function extractFootnoteParagraphs(
       if (!runText) continue;
       textParts.push(runText);
 
-      const formatting = extractEffectiveRunFormatting({
+      const formatting = extractAnnotationRunFormatting({
         run,
         paragraphPPr: paraPPr ?? null,
         paragraphStyleId: style,
@@ -476,13 +474,12 @@ function extractFootnoteParagraphs(
     }
 
     // `full` mode: no baseline suppression, so every run's bold/italic/etc.
-    // survives into tagged_text at node-level fidelity. Colour, size and font
-    // are tagged where they differ from the document defaults (#753).
+    // survives into tagged_text at node-level fidelity.
     const tagged = mergeAdjacentTags(
       emitFormattingTags({
         runs: annotated,
         baseline: FOOTNOTE_TAG_BASELINE,
-        fontBaseline,
+        fontBaseline: { modalColor: null, colorSuppressed: false, modalFontSizePt: 0, fontSizeSuppressed: true, modalFontName: '', fontNameSuppressed: true },
         formattingMode: 'full',
       }),
     );

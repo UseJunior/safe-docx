@@ -224,6 +224,54 @@ describe('canonical annotation round trips', { timeout: LOAD_SENSITIVE_TIMEOUT_M
     });
   });
 
+  runStyleConformance('keeps a direct colour and size that restate the document defaults over a named style (#753)', async () => {
+    // docDefaults: red, 12pt, Times New Roman. The character style turns the
+    // run blue at 9pt. The run then restates red and 12pt directly, so its
+    // effective formatting equals the document defaults but differs from the
+    // style that a re-import would otherwise let show through.
+    const stylesXml =
+      `<w:styles xmlns:w="${OOXML.W_NS}">` +
+      `<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/>` +
+      `<w:color w:val="FF0000"/><w:sz w:val="24"/></w:rPr></w:rPrDefault></w:docDefaults>` +
+      `<w:style w:type="character" w:styleId="Blue"><w:name w:val="Blue"/><w:rPr><w:color w:val="0000FF"/><w:sz w:val="18"/></w:rPr></w:style>` +
+      `</w:styles>`;
+    for (const source of ['comment', 'footnote'] as const) {
+      const base = await buildDocxFromParts({
+        bodyXml: '<w:p><w:r><w:t>Alpha beta gamma.</w:t></w:r></w:p>',
+        stylesXml,
+        documentRelEntries: [
+          '<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>',
+        ],
+      });
+      const document = await DocxDocument.load(base);
+      document.insertParagraphBookmarks(`defaults-${source}`);
+      const paragraphId = document.buildDocumentView().nodes[0]!.id;
+      const body = [{ runs: [
+        { text: 'restated', style: { styleId: 'Blue', color: 'FF0000', fontSizeHalfPoints: 24 } },
+        { text: ' inherited' },
+      ] }];
+      if (source === 'comment') {
+        await document.addComment({ paragraphId, start: 0, end: 5, author: 'Probe', initials: 'PR', text: 'restated', body });
+      } else {
+        await document.addFootnote({ paragraphId, visibleOffset: 5, text: 'restated', presentation: { body } });
+      }
+      const imported = await importDocxToMarkdoc((await document.toBuffer({ cleanBookmarks: false })).buffer);
+      const runs = imported.annotations[0]!.body[0]!.runs;
+      // The inherited document font is not tagged, so the import is admitted.
+      expect(runs.find((run) => run.text === 'restated')).toMatchObject({ style: { styleId: 'Blue', color: 'FF0000', fontSizeHalfPoints: 24 } });
+      expect(runs.find((run) => run.text === ' inherited')).toEqual({ text: ' inherited' });
+
+      const compiled = await compileMarkdoc(imported.anchoredSource, imported.markdoc
+        .replace(`source-presentation="${source}"`, `source-presentation="${source}" presentation="${source}"`)
+        .replace('restated', 'edited'));
+      const after = await DocxDocument.load(compiled.tracked);
+      const paragraphs = source === 'comment'
+        ? (await after.getComments())[0]!.paragraphs
+        : (await after.getFootnotes())[0]!.paragraphs;
+      expect(paragraphs[0]!.tagged_text).toContain('<font color="FF0000" size="12">edited</font>');
+    }
+  }, LOAD_SENSITIVE_TIMEOUT_MS);
+
   runStyleConformance('[SDX-MDOC-103] admits real ILPA style runs and external hyperlinks before the next bookmark boundary', async () => {
     const wof = await readFile(new URL('../../../tests/test_documents/redline/ILPA-Model-Limited-Partnership-Agreement-WOF_v2.docx', import.meta.url));
     await expect(importDocxToMarkdoc(wof)).rejects.toMatchObject({

@@ -188,6 +188,8 @@ describe('document-default effective run formatting (#753)', () => {
     let restated!: RunFormatting;
     let outside!: RunFormatting;
     let directWins!: RunFormatting;
+    let restatedOtherCase!: RunFormatting;
+    let restatedThroughTheme!: RunFormatting;
 
     await given('Georgia 12pt red document defaults, and table styles that sit above them', async () => {});
     await when('runs inside and outside a table are resolved', async () => {
@@ -209,6 +211,17 @@ describe('document-default effective run formatting (#753)', () => {
         '',
         { inTable: true },
       );
+      restatedOtherCase = resolve(
+        docDefaults('<w:rFonts w:ascii="Georgia"/><w:color w:val="C0504D"/>') +
+          tableStyle('<w:rFonts w:ascii="georgia"/><w:color w:val="c0504d"/>'),
+        '',
+        { inTable: true },
+      );
+      restatedThroughTheme = resolve(
+        docDefaults('<w:color w:val="C0504D"/>') + tableStyle('<w:color w:val="auto" w:themeColor="accent1"/>'),
+        '',
+        { inTable: true, theme: THEME },
+      );
     });
     await then('a differing table-style value makes the in-table property unresolved', async () => {
       expect(overridden).toMatchObject({ fontName: null, fontSizePt: null, colorHex: null, underline: null });
@@ -217,6 +230,10 @@ describe('document-default effective run formatting (#753)', () => {
     });
     await and('a table style that restates the docDefaults value cannot change it', async () => {
       expect(restated).toMatchObject({ fontName: 'Georgia', fontSizePt: 12, colorHex: 'FF0000', underline: true });
+      // Hex colours and font names compare case-insensitively; a theme colour
+      // that resolves to the same hex restates it too.
+      expect(restatedOtherCase).toMatchObject({ fontName: 'Georgia', colorHex: 'C0504D' });
+      expect(restatedThroughTheme.colorHex).toBe('C0504D');
     });
   });
 
