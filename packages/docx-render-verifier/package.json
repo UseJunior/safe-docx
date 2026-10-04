@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/docx-render-verifier",
-  "version": "0.22.1",
+  "version": "0.23.0",
   "description": "Optional independent LibreOffice and PDF renderer checks for finished tracked DOCX artifacts.",
   "type": "module",
   "main": "dist/index.js",
