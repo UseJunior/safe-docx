@@ -23,8 +23,16 @@
  *   `process.kill(pid, 0)` reports ESRCH), or the file is older than `staleMs` (a SIGKILLed holder
  *   cannot clean up; a recycled PID cannot pin the lock forever). A lockfile that cannot be parsed
  *   (a creator between `open` and `write`) is stolen only after a grace period.
- * - The guard is held for a few synchronous filesystem calls. A guard left behind by a process
- *   killed inside that window is cleared after `GUARD_STALE_MS`.
+ * - The guard is held for a few synchronous filesystem calls and records its holder like the
+ *   lock does. A guard is cleared only when its holder is provably dead (a process killed inside
+ *   that window), or after `GUARD_STALE_MS` (PID reuse, or a holder stopped mid-section). Clearing
+ *   renames the guard aside and puts it back if it turns out not to be the one judged stale.
+ *   Residual risk: two waiters clearing the SAME dead guard while a third creates a new one can
+ *   still overlap. That needs a process to die inside a microsecond critical section and three
+ *   more to race within microseconds of it; the worst outcome is two concurrent soffice launches,
+ *   the behaviour before this lock existed.
+ * - If the guard cannot be taken, a release leaves its lockfile in place rather than removing it
+ *   unguarded; waiters reclaim it once the holder exits (ESRCH) or after `staleMs`.
  *
  * Re-entrancy: a call nested inside a holder's async context (for the same lockfile) runs under
  * the holder's lease instead of waiting on itself. The lease is invalidated before release, so
@@ -49,7 +57,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
-import { closeSync, openSync, readFileSync, realpathSync, rmSync, statSync, writeSync } from 'node:fs';
+import { closeSync, linkSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -61,8 +69,9 @@ export const DEFAULT_STALE_LOCK_MS = 10 * 60_000;
 export const DEFAULT_LOCK_TIMEOUT_MS = 5 * 60_000;
 /** A lockfile that exists but cannot be parsed is only stolen after this grace period. */
 const UNREADABLE_LOCK_GRACE_MS = 10_000;
-/** The removal guard is held for microseconds; one this old was abandoned by a killed process. */
-const GUARD_STALE_MS = 5_000;
+/** The removal guard is held for microseconds. A guard this old is cleared even if its recorded
+ *  holder looks alive (PID reuse, or a holder that was stopped inside the critical section). */
+const GUARD_STALE_MS = 60_000;
 /** Give up on the removal guard after this long (only reachable if the guard dir misbehaves). */
 const GUARD_TIMEOUT_MS = 30_000;
 
@@ -133,31 +142,65 @@ function lockAgeMs(lockPath: string): number | null {
   }
 }
 
+/** Exclusive-create `file` holding `record`; false if it already exists. A failed write removes
+ *  the half-created file (no one else removes a fresh unparseable file) and rethrows. */
+function tryCreate(file: string, record: LockRecord): boolean {
+  let fd: number;
+  try {
+    fd = openSync(file, 'wx');
+  } catch (err) {
+    if (errCode(err) === 'EEXIST') return false;
+    throw err;
+  }
+  try {
+    writeSync(fd, JSON.stringify(record));
+    closeSync(fd);
+  } catch (err) {
+    try { closeSync(fd); } catch { /* already closed */ }
+    try { rmSync(file, { force: true }); } catch { /* best effort */ }
+    throw err;
+  }
+  return true;
+}
+
+const newRecord = (): LockRecord => ({ pid: process.pid, host: os.hostname(), token: randomUUID(), at: new Date().toISOString() });
+
+/** Clear an abandoned guard: rename it aside, keep it removed only if it is the record judged
+ *  stale, otherwise put it back (`link` refuses to overwrite a newer guard). */
+function clearStaleGuard(guard: string, judged: LockRecord | null): void {
+  const aside = `${guard}.stale-${randomUUID()}`;
+  try {
+    renameSync(guard, aside);
+  } catch {
+    return; // vanished, or cannot be moved — the caller waits and re-evaluates
+  }
+  const moved = readRecord(aside);
+  const same = judged ? moved?.token === judged.token : moved === null;
+  if (!same) {
+    try { linkSync(aside, guard); } catch { /* a newer guard exists */ }
+  }
+  try { rmSync(aside, { force: true }); } catch { /* best effort */ }
+}
+
 /** Run `fn` (synchronous filesystem work only) while holding the removal guard. */
 async function underRemovalGuard(lockPath: string, fn: () => void): Promise<void> {
   const guard = `${lockPath}.guard`;
   const deadline = Date.now() + GUARD_TIMEOUT_MS;
   for (;;) {
-    let fd: number | undefined;
-    try {
-      fd = openSync(guard, 'wx');
-    } catch (err) {
-      if (errCode(err) !== 'EEXIST') throw err;
-    }
-    if (fd !== undefined) {
-      closeSync(fd);
+    const mine = newRecord();
+    if (tryCreate(guard, mine)) {
       try {
         fn();
         return;
       } finally {
-        rmSync(guard, { force: true });
+        if (readRecord(guard)?.token === mine.token) rmSync(guard, { force: true });
       }
     }
+    const holder = readRecord(guard);
     const age = lockAgeMs(guard);
-    if (age !== null && age > GUARD_STALE_MS) {
-      try { rmSync(guard, { force: true }); } catch { /* another waiter cleared it */ }
-      continue;
-    }
+    if (age === null) continue; // freed between our create and our read — retry at once
+    const stale = age > GUARD_STALE_MS || (holder !== null && !holderAlive(holder));
+    if (stale) clearStaleGuard(guard, holder);
     if (Date.now() > deadline) throw new Error(`Timed out waiting for the LibreOffice lock guard at ${guard}`);
     await sleep(5 + Math.floor(Math.random() * 10));
   }
@@ -176,34 +219,18 @@ export async function acquireSofficeLock(
   }: Omit<SofficeLockOptions, 'lockPath'> = {},
 ): Promise<SofficeLockRelease> {
   const deadline = Date.now() + timeoutMs;
-  const record: LockRecord = { pid: process.pid, host: os.hostname(), token: randomUUID(), at: new Date().toISOString() };
+  const record = newRecord();
   for (;;) {
-    let fd: number | undefined;
-    try {
-      fd = openSync(lockPath, 'wx');
-    } catch (err) {
-      if (errCode(err) !== 'EEXIST') throw err;
-    }
-    if (fd !== undefined) {
-      try {
-        writeSync(fd, JSON.stringify(record));
-        closeSync(fd);
-      } catch (err) {
-        // We created the file exclusively and it is younger than the unreadable-lock grace, so
-        // no one else will remove it: clean it up ourselves before reporting the failure.
-        try { closeSync(fd); } catch { /* already closed */ }
-        try { rmSync(lockPath, { force: true }); } catch { /* best effort */ }
-        throw err;
-      }
+    if (tryCreate(lockPath, record)) {
       let released: Promise<void> | undefined;
       return () => {
         released ??= underRemovalGuard(lockPath, () => {
           if (readRecord(lockPath)?.token === record.token) rmSync(lockPath, { force: true });
-        }).catch(() => {
-          // Guard unavailable: fall back to an unguarded ownership-checked removal.
-          if (readRecord(lockPath)?.token === record.token) {
-            try { rmSync(lockPath, { force: true }); } catch { /* best effort */ }
-          }
+        }).catch((err: unknown) => {
+          // Never remove unguarded (a successor could be deleted). The lockfile stays until this
+          // process exits (ESRCH) or it ages past staleMs, when waiters reclaim it.
+          // eslint-disable-next-line no-console
+          console.warn(`[soffice-lock] could not release ${lockPath} (${(err as Error).message}); it will be reclaimed as stale.`);
         });
         return released;
       };

@@ -24,7 +24,7 @@ import { acquireSofficeLock, sofficeLockPath, withSofficeLock } from './soffice-
 import { sofficeProbeRecordDir } from './libreoffice-oracle.js';
 
 // Fault injection for the lock module's filesystem calls (passthrough unless a flag is set).
-const faults = vi.hoisted(() => ({ failWrite: false, failStatPath: '' }));
+const faults = vi.hoisted(() => ({ failWrite: false, failStatPath: '', failOpenPath: '' }));
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
   const fail = (code: string): never => {
@@ -34,6 +34,8 @@ vi.mock('node:fs', async (importOriginal) => {
     ...actual,
     writeSync: ((...args: Parameters<typeof actual.writeSync>) =>
       faults.failWrite ? fail('ENOSPC') : actual.writeSync(...args)) as typeof actual.writeSync,
+    openSync: ((...args: Parameters<typeof actual.openSync>) =>
+      faults.failOpenPath && String(args[0]) === faults.failOpenPath ? fail('EACCES') : actual.openSync(...args)) as typeof actual.openSync,
     statSync: ((...args: Parameters<typeof actual.statSync>) =>
       faults.failStatPath && String(args[0]) === faults.failStatPath ? fail('EIO') : actual.statSync(...args)) as typeof actual.statSync,
   };
@@ -91,6 +93,7 @@ describe('soffice cross-process lock', () => {
   afterEach(() => {
     faults.failWrite = false;
     faults.failStatPath = '';
+    faults.failOpenPath = '';
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -136,6 +139,58 @@ describe('soffice cross-process lock', () => {
     });
     await then("the successor's lock is untouched", () => {
       expect(readHolder(lockPath).token).toBe('successor');
+    });
+  });
+
+  test('a guard held by a live process is respected even when it is old', async ({ given, when, then }: AllureBddContext) => {
+    const guard = `${lockPath}.guard`;
+    let release!: () => Promise<void>;
+    let settled = false;
+    await given('a held lock and a 10-second-old guard whose holder is alive', async () => {
+      release = await acquireSofficeLock(lockPath, { timeoutMs: 5_000, pollMs: 20 });
+      writeFileSync(guard, liveRecord('guard-holder'));
+      const old = new Date(Date.now() - 10_000);
+      utimesSync(guard, old, old);
+    });
+    await when('the holder releases', async () => {
+      const pending = release().then(() => { settled = true; });
+      await new Promise((r) => setTimeout(r, 200));
+      expect(settled).toBe(false); // still waiting: the live guard was not cleared
+      rmSync(guard);
+      await pending;
+    });
+    await then('the release completed only after the guard was freed', () => {
+      expect(existsSync(lockPath)).toBe(false);
+    });
+  });
+
+  test('a guard abandoned by a dead process is cleared', async ({ given, when, then }: AllureBddContext) => {
+    const guard = `${lockPath}.guard`;
+    let release!: () => Promise<void>;
+    await given('a held lock and a guard whose holder is dead', async () => {
+      release = await acquireSofficeLock(lockPath, { timeoutMs: 5_000, pollMs: 20 });
+      writeFileSync(guard, JSON.stringify({ pid: DEAD_PID, host: os.hostname(), token: 'dead-guard', at: new Date().toISOString() }));
+    });
+    await when('the holder releases', async () => {
+      await release();
+    });
+    await then('the dead guard was cleared and the lock released', () => {
+      expect(existsSync(guard)).toBe(false);
+      expect(existsSync(lockPath)).toBe(false);
+    });
+  });
+
+  test('a release that cannot take the guard leaves the lock rather than removing it unguarded', async ({ given, when, then }: AllureBddContext) => {
+    let release!: () => Promise<void>;
+    await given('a held lock whose guard cannot be created', async () => {
+      release = await acquireSofficeLock(lockPath, { timeoutMs: 5_000, pollMs: 20 });
+      faults.failOpenPath = `${lockPath}.guard`;
+    });
+    await when('the holder releases', async () => {
+      await release();
+    });
+    await then('the lockfile is still there, still ours, to be reclaimed as stale', () => {
+      expect(readHolder(lockPath).pid).toBe(process.pid);
     });
   });
 
