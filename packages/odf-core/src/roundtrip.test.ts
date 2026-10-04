@@ -1,17 +1,13 @@
-import { execFile } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
-import os from 'node:os';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
 
 import { describe, it, expect } from 'vitest';
-import { probeSofficeUsable, resolveSoffice } from '@usejunior/docx-core';
+import { probeSofficeUsable, resolveSoffice, runLibreOfficeOracle } from '@usejunior/docx-core';
 
 import { OdfArchive } from './shared/odf/OdfArchive.js';
 import { OdfDocument } from './document.js';
 
-const execFileAsync = promisify(execFile);
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), '__fixtures__/sample.odt');
 
 describe('ODF round trip', () => {
@@ -61,25 +57,12 @@ describe('ODF round trip', () => {
     doc.replaceTextById(target.id, 'quick brown fox', 'slow grey cat');
     archive.setContentXml(doc.toXml());
 
-    const dir = mkdtempSync(path.join(os.tmpdir(), 'odf-rt-'));
-    const odtPath = path.join(dir, 'edited.odt');
-    writeFileSync(odtPath, await archive.save());
-
-    // Convert to text headlessly; success + correct extracted text proves LibreOffice
-    // accepted our package and read the edit.
-    await execFileAsync(soffice, [
-      '-env:UserInstallation=file://' + path.join(dir, 'lo-profile'),
-      '--headless',
-      '--convert-to',
-      'txt:Text',
-      '--outdir',
-      dir,
-      odtPath,
-    ]);
-
-    const txt = readdirSync(dir).find((f) => f.endsWith('.txt'));
-    expect(txt, 'soffice should produce a .txt (it accepted the .odt)').toBeTruthy();
-    const extracted = readFileSync(path.join(dir, txt!), 'utf8');
-    expect(extracted).toContain('slow grey cat');
+    // Load and re-save through LibreOffice (an `identity` oracle job: no dispatch). A saved
+    // content.xml carrying the edit proves LibreOffice accepted our package and read the edit.
+    // Going through the oracle keeps this launch under docx-core's cross-process soffice lock
+    // instead of overlapping other workers' LibreOffice runs (#1037).
+    const [contentXml] = await runLibreOfficeOracle([{ op: 'identity', odt: await archive.save() }], soffice);
+    expect(contentXml, 'LibreOffice should load and re-save the edited .odt').toBeTruthy();
+    expect(contentXml).toContain('slow grey cat');
   }, 60_000);
 });
