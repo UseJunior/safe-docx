@@ -1238,5 +1238,24 @@ describe('mixed-format run re-segmentation (#1142)', () => {
     const withDeletion = move(['old']);
     expect(withDeletion.moves).toHaveLength(1);
     expect(withDeletion.stats).toMatchObject({ insertedRanges: 0, deletedRanges: 1, insertedAtoms: 0, deletedAtoms: 1 });
+    // An independently deleted space beside a moved run still counts.
+    const spaceBesideMove = publish(
+      [paragraph(alpha[0]!, ' cat ', ' ', alpha[1]!), paragraph(...beta)],
+      [paragraph(...alpha), paragraph(beta[0]!, ' cat ', beta[1]!)],
+      { detectMoves: true },
+    );
+    expect(spaceBesideMove.moves).toHaveLength(1);
+    expect(spaceBesideMove.stats).toMatchObject({ deletedRanges: 1, insertedAtoms: 0, deletedAtoms: 1 });
+  });
+
+  test('weighs whitespace edits by whole tokens, independent of run segmentation', () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
+    const paragraph = (...texts: string[]): string => `<w:p>${texts.map((text) => run(text)).join('')}</w:p>`;
+    // Moving a long space run does not unalign the words around it.
+    const moved = publish([paragraph('a          b c d e')], [paragraph('a b c d e          ')]);
+    expect(moved.stats).toMatchObject({ insertedRanges: 2, deletedRanges: 1, insertedAtoms: 2, deletedAtoms: 1 });
+    // A double space split across runs on one side only is not a change.
+    const split = publish([paragraph('Keep the ', ' double space.')], [paragraph('Keep the  double space.')]);
+    expect(split.stats).toMatchObject({ insertedRanges: 0, deletedRanges: 0, insertedAtoms: 0, deletedAtoms: 0 });
   });
 });
