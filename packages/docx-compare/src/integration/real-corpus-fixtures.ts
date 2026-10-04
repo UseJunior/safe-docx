@@ -219,3 +219,59 @@ export async function prefixEveryXmlPart(source: Buffer, prefix = '\uFEFF'): Pro
   }
   return zip.generateAsync({ type: 'nodebuffer' });
 }
+
+function isPlainTextRun(node: XmlNode | null): node is XmlElement {
+  if (node?.nodeType !== 1 || (node as XmlElement).tagName !== 'w:r') return false;
+  const children = Array.from(node.childNodes).filter((child) => child.nodeType === 1) as XmlElement[];
+  const content = children.filter((child) => child.tagName !== 'w:rPr');
+  return content.length === 1 && content[0]!.tagName === 'w:t'
+    && children.length - content.length <= 1;
+}
+
+function runPropertiesXml(run: XmlElement): string {
+  const properties = Array.from(run.childNodes)
+    .find((child) => child.nodeType === 1 && (child as XmlElement).tagName === 'w:rPr');
+  return properties ? new XMLSerializer().serializeToString(properties) : '';
+}
+
+/**
+ * Replace one whole-run word in the first body paragraph that carries it, and
+ * re-segment that paragraph the way a save does: every maximal sequence of
+ * adjacent plain-text runs with identical run properties becomes one run.
+ * Text and formatting elsewhere in the paragraph are unchanged (#1142).
+ */
+export async function resegmentAndReplaceRealRunText(
+  original: Buffer,
+  word: string,
+  replacement: string,
+): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(original);
+  const documentPart = zip.file('word/document.xml');
+  if (!documentPart) throw new Error('DOCX has no word/document.xml');
+  const document = new DOMParser().parseFromString(await documentPart.async('string'), 'text/xml');
+  const isTarget = (run: XmlElement): boolean =>
+    isPlainTextRun(run) && elements(run, 'w:t')[0]!.textContent === word;
+  const paragraph = directBodyParagraphs(document)
+    .find((candidate) => elements(candidate, 'w:r').some(isTarget));
+  if (!paragraph) throw new Error(`no body paragraph has a run reading "${word}"`);
+  elements(paragraph, 'w:t').find((text) => isTarget(text.parentNode as XmlElement))!
+    .textContent = replacement;
+  let previous: XmlElement | null = null;
+  for (const node of Array.from(paragraph.childNodes)) {
+    if (node.nodeType === 3 && (node.nodeValue ?? '').trim() === '') continue;
+    if (!isPlainTextRun(node)) {
+      previous = null;
+      continue;
+    }
+    if (previous && runPropertiesXml(previous) === runPropertiesXml(node)) {
+      const text = elements(previous, 'w:t')[0]!;
+      text.textContent = (text.textContent ?? '') + (elements(node, 'w:t')[0]!.textContent ?? '');
+      text.setAttribute('xml:space', 'preserve');
+      paragraph.removeChild(node);
+      continue;
+    }
+    previous = node;
+  }
+  zip.file('word/document.xml', new XMLSerializer().serializeToString(document));
+  return zip.generateAsync({ type: 'nodebuffer' });
+}

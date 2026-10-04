@@ -4,7 +4,7 @@ import {
   childElements,
   parseXml,
 } from '@usejunior/docx-core';
-import { alignComparisonSequences, tokenizeComparisonText } from '../textAlignment.js';
+import { tokenizeComparisonText } from '../textAlignment.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
@@ -112,20 +112,85 @@ const COMPARISON_LEAF_NAMES = new Set([
   'AlternateContent',
 ]);
 
-function comparisonAtomKeys(element: Element): string[] {
-  if (COMPARISON_LEAF_NAMES.has(element.localName)) {
-    const localName = element.localName === 'delText' ? 't' : element.localName;
-    const text = element.textContent ?? '';
-    if (element.localName === 't') {
-      return tokenizeComparisonText(text).map((token) => `${localName}\0${token}`);
+/**
+ * Paragraph alignment keys. `whitespaceToken[i]` is the ordinal of the
+ * whitespace token a per-character whitespace key came from, or -1;
+ * `isolated[i]` marks keys inside an isolated (moved) subtree.
+ */
+interface ParagraphAtomStream {
+  keys: string[];
+  whitespaceToken: number[];
+  isolated: boolean[];
+}
+
+/**
+ * Adjacent `w:t` leaves are tokenized as one text stream within a paragraph,
+ * so the keys do not depend on how identical text is split into runs
+ * (#1142). Any other leaf, every paragraph boundary, and the start and end of
+ * every `isolated` subtree end the stream, so an isolated subtree (moved
+ * content) is weighed exactly as it is on its own. With a `stream` target,
+ * each whitespace token is emitted as one key per character.
+ */
+function comparisonAtomKeys(
+  element: Element,
+  isolated: ReadonlySet<Element> = new Set(),
+  stream?: ParagraphAtomStream,
+): string[] {
+  const keys = stream?.keys ?? [];
+  let text = '';
+  let whitespaceTokens = 0;
+  let isolatedDepth = 0;
+  const push = (key: string, whitespaceToken = -1): void => {
+    keys.push(key);
+    stream?.whitespaceToken.push(whitespaceToken);
+    stream?.isolated.push(isolatedDepth > 0);
+  };
+  const flushText = (): void => {
+    for (const token of tokenizeComparisonText(text)) {
+      if (stream && /^\s+$/u.test(token)) {
+        const ordinal = whitespaceTokens++;
+        for (const character of token) push(`t\0${character}`, ordinal);
+      } else {
+        push(`t\0${token}`);
+      }
     }
-    return [`${localName}\0${text}`];
-  }
-  const children = childElements(element);
-  if (element.localName === 'p' && children.every((child) => child.localName === 'pPr')) {
-    return ['__emptyParagraph__\0'];
-  }
-  return children.flatMap(comparisonAtomKeys);
+    text = '';
+  };
+  const visit = (current: Element): void => {
+    if (isolated.has(current)) {
+      flushText();
+      isolatedDepth++;
+      visitContent(current);
+      flushText();
+      isolatedDepth--;
+      return;
+    }
+    visitContent(current);
+  };
+  const visitContent = (current: Element): void => {
+    if (COMPARISON_LEAF_NAMES.has(current.localName)) {
+      if (current.localName === 't') {
+        text += current.textContent ?? '';
+        return;
+      }
+      flushText();
+      const localName = current.localName === 'delText' ? 't' : current.localName;
+      push(`${localName}\0${current.textContent ?? ''}`);
+      return;
+    }
+    const children = childElements(current);
+    if (current.localName !== 'p') {
+      children.forEach(visit);
+      return;
+    }
+    flushText();
+    if (children.every((child) => child.localName === 'pPr')) push('__emptyParagraph__\0');
+    else children.forEach(visit);
+    flushText();
+  };
+  visit(element);
+  flushText();
+  return keys;
 }
 
 /**
@@ -139,12 +204,72 @@ function taggedAtomWeight(node: TaggedNode, side: 'original' | 'revised'): numbe
   return comparisonAtomKeys(element).length;
 }
 
-function taggedAtomKeys(nodes: readonly TaggedNode[], side: 'original' | 'revised'): string[] {
-  return nodes.flatMap((node) => {
-    const element = representative(node, side);
-    if (!element) return [];
-    return comparisonAtomKeys(element);
-  });
+function paragraphAtomStream(
+  node: TaggedNode,
+  side: 'original' | 'revised',
+  isolated: ReadonlySet<Element>,
+): ParagraphAtomStream {
+  const stream: ParagraphAtomStream = { keys: [], whitespaceToken: [], isolated: [] };
+  const element = representative(node, side);
+  if (element) comparisonAtomKeys(element, isolated, stream);
+  return stream;
+}
+
+/**
+ * Count the unaligned atoms of a paragraph's two sides.
+ *
+ * Concatenating adjacent text merges the spaces on either side of removed
+ * content (`a ` + `b` + ` c` without `b` reads `a  c`), so whitespace is
+ * aligned one character at a time; the unaligned characters of one
+ * whitespace token weigh one atom together, as the token does elsewhere in
+ * the metric. Any word or control match outweighs every whitespace match, so
+ * whitespace never displaces an unchanged word. A match involving moved
+ * (isolated) content weighs half an unmoved one, so moved keys stay
+ * unaligned, and are later subtracted at their standalone weight, whenever
+ * unmoved content can take the same match.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1142
+ */
+function unalignedParagraphAtoms(
+  before: ParagraphAtomStream,
+  after: ParagraphAtomStream,
+): { deleted: number; inserted: number } {
+  const n = before.keys.length;
+  const m = after.keys.length;
+  const whitespaceKeys = [...before.whitespaceToken, ...after.whitespaceToken]
+    .filter((token) => token >= 0).length;
+  const weight = (i: number, j: number): number =>
+    (before.whitespaceToken[i]! >= 0 ? 1 : 2 * whitespaceKeys + 1)
+    * (before.isolated[i] || after.isolated[j] ? 1 : 2);
+  const score = Array.from({ length: n + 1 }, () => new Float64Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      let best = Math.max(score[i + 1]![j]!, score[i]![j + 1]!);
+      if (before.keys[i] === after.keys[j]) best = Math.max(best, score[i + 1]![j + 1]! + weight(i, j));
+      score[i]![j] = best;
+    }
+  }
+  const deleted: number[] = [];
+  const inserted: number[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (before.keys[i] === after.keys[j] && score[i]![j] === score[i + 1]![j + 1]! + weight(i, j)) {
+      i++; j++;
+    } else if (score[i + 1]![j]! >= score[i]![j + 1]!) {
+      deleted.push(i++);
+    } else {
+      inserted.push(j++);
+    }
+  }
+  while (i < n) deleted.push(i++);
+  while (j < m) inserted.push(j++);
+  const count = (stream: ParagraphAtomStream, indices: readonly number[]): number =>
+    new Set(indices.map((index) => {
+      const token = stream.whitespaceToken[index]!;
+      return token < 0 ? `key:${index}` : `whitespace:${token}`;
+    })).size;
+  return { deleted: count(before, deleted), inserted: count(after, inserted) };
 }
 
 function deriveTaggedTreeStats(tree: TaggedNode, movedNodes: ReadonlySet<TaggedNode>): Pick<
@@ -167,11 +292,26 @@ function deriveTaggedTreeStats(tree: TaggedNode, movedNodes: ReadonlySet<TaggedN
       } else if (node.tag === 'revised') {
         insertedAtoms += taggedAtomWeight(node, 'revised');
       } else {
-        const before = taggedAtomKeys([node], 'original');
-        const after = taggedAtomKeys([node], 'revised');
-        const alignment = alignComparisonSequences(before, after, (left, right) => left === right);
-        let paragraphDeleted = alignment.deletedIndices.length;
-        let paragraphInserted = alignment.insertedIndices.length;
+        // Moved content keeps its own token boundaries in the paragraph
+        // streams, so subtracting its standalone weight removes exactly the
+        // atoms it contributed.
+        const movedElements = { original: new Set<Element>(), revised: new Set<Element>() };
+        const collectMoves = (descendant: TaggedNode): void => {
+          if (movedNodes.has(descendant)) {
+            if (descendant.tag === 'original' || descendant.tag === 'revised') {
+              movedElements[descendant.tag].add(descendant.node);
+            }
+            return;
+          }
+          descendant.children.forEach(collectMoves);
+        };
+        node.children.forEach(collectMoves);
+        const unaligned = unalignedParagraphAtoms(
+          paragraphAtomStream(node, 'original', movedElements.original),
+          paragraphAtomStream(node, 'revised', movedElements.revised),
+        );
+        let paragraphDeleted = unaligned.deleted;
+        let paragraphInserted = unaligned.inserted;
         const subtractMoves = (descendant: TaggedNode): void => {
           if (movedNodes.has(descendant)) {
             if (descendant.tag === 'original') {
