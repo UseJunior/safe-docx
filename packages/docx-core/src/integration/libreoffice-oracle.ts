@@ -18,15 +18,21 @@
  *
  * This module is gated by callers: when `resolveSoffice()` returns null the oracle is skipped.
  * CI does not install LibreOffice, so the oracle voter is a local developer check.
+ *
+ * Every soffice launch here runs under the cross-process lock in `soffice-lock.ts`, so parallel
+ * Vitest workers and sibling processes never start concurrent headless LibreOffice instances of
+ * the same binary (issue #1037).
  */
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { createZipBuffer, readZipText } from '../primitives/zip.js';
 import { parseXml } from '../primitives/xml.js';
+import { withSofficeLock } from './soffice-lock.js';
 
 const execFileAsync = promisify(execFile);
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -82,6 +88,80 @@ export function resolveSoffice(): string | null {
 const probeResults = new Map<string, Promise<boolean>>();
 
 /**
+ * Run-scoped probe sharing. A test runner sets `SAFE_DOCX_SOFFICE_RUN_ID` once per invocation
+ * (the Vitest configs of the packages that drive the oracle do), and every worker inherits it.
+ * The first worker to take the lock probes and records the verdict; the rest reuse it, so one
+ * run performs at most one launchability probe per binary — in particular at most one FAILED
+ * launch, instead of one SIGABRT crash report per worker. Outside a tagged run the verdict is
+ * memoized per process only, so a stale verdict can never leak into a later run.
+ */
+const PROBE_RUN_ENV = 'SAFE_DOCX_SOFFICE_RUN_ID';
+
+const PROBE_RECORD_MAX_AGE_MS = 24 * 60 * 60_000;
+
+/** One verdict file per (run, binary) in a dedicated temp subdirectory (cheap to sweep even when
+ *  the OS temp dir is huge), so concurrent runs never evict each other's verdicts. */
+export function sofficeProbeRecordDir(): string {
+  return path.join(os.tmpdir(), 'safe-docx-soffice-probes');
+}
+
+function probeRecordPath(soffice: string, runId: string): string {
+  const key = createHash('sha256').update(`${runId}\0${soffice}`).digest('hex').slice(0, 16);
+  return path.join(sofficeProbeRecordDir(), `probe-${key}.json`);
+}
+
+function readSharedProbe(soffice: string, runId: string): boolean | null {
+  try {
+    const rec = JSON.parse(readFileSync(probeRecordPath(soffice, runId), 'utf8')) as { runId?: unknown; soffice?: unknown; usable?: unknown };
+    return rec.runId === runId && rec.soffice === soffice && typeof rec.usable === 'boolean' ? rec.usable : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSharedProbe(soffice: string, runId: string, usable: boolean): void {
+  const dir = sofficeProbeRecordDir();
+  try {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(probeRecordPath(soffice, runId), JSON.stringify({ runId, soffice, usable, at: new Date().toISOString() }));
+  } catch { /* best effort — workers fall back to probing themselves */ }
+  // Bounded cleanup: drop verdicts from runs older than a day.
+  try {
+    for (const name of readdirSync(dir)) {
+      const full = path.join(dir, name);
+      if (Date.now() - statSync(full).mtimeMs > PROBE_RECORD_MAX_AGE_MS) rmSync(full, { force: true });
+    }
+  } catch { /* best effort */ }
+}
+
+async function launchProbe(soffice: string): Promise<boolean> {
+  const work = mkdtempSync(path.join(os.tmpdir(), 'lo-probe-'));
+  try {
+    const inPath = path.join(work, 'probe-input.txt');
+    const outDir = path.join(work, 'out');
+    writeFileSync(inPath, 'probe');
+    await runSoffice(
+      soffice,
+      [
+        '--headless',
+        '--norestore',
+        '--nologo',
+        `-env:UserInstallation=${pathToFileURL(path.join(work, 'profile')).href}`,
+        '--convert-to',
+        'txt',
+        '--outdir',
+        outDir,
+        inPath,
+      ],
+      30_000,
+    );
+    return existsSync(path.join(outDir, 'probe-input.txt'));
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+/**
  * Preflight launchability probe. `resolveSoffice()` proves the binary EXISTS, not that it can
  * launch: under a restricted shell (observed: macOS Seatbelt, e.g. `codex exec --sandbox
  * workspace-write`) soffice dies with SIGABRT ("Abort trap: 6") during init, so a
@@ -91,37 +171,21 @@ const probeResults = new Map<string, Promise<boolean>>();
  *
  * The probe is the same throwaway headless `--convert-to txt` the oracle uses to initialize its
  * profile — the cheapest operation known to discriminate "can launch" from "aborts on init".
- * Memoized per binary path so a multi-test file pays for one launch.
+ * Memoized per binary path so a multi-test file pays for one launch, shared across the workers
+ * of one tagged test run (see `SAFE_DOCX_SOFFICE_RUN_ID` above), and serialized with every other
+ * soffice launch by the cross-process lock.
  */
 export function probeSofficeUsable(soffice: string): Promise<boolean> {
   let result = probeResults.get(soffice);
   if (!result) {
-    result = (async () => {
-      const work = mkdtempSync(path.join(os.tmpdir(), 'lo-probe-'));
-      try {
-        const inPath = path.join(work, 'probe-input.txt');
-        const outDir = path.join(work, 'out');
-        writeFileSync(inPath, 'probe');
-        await runSoffice(
-          soffice,
-          [
-            '--headless',
-            '--norestore',
-            '--nologo',
-            `-env:UserInstallation=${pathToFileURL(path.join(work, 'profile')).href}`,
-            '--convert-to',
-            'txt',
-            '--outdir',
-            outDir,
-            inPath,
-          ],
-          30_000,
-        );
-        return existsSync(path.join(outDir, 'probe-input.txt'));
-      } finally {
-        rmSync(work, { recursive: true, force: true });
-      }
-    })();
+    result = withSofficeLock(soffice, async () => {
+      const runId = process.env[PROBE_RUN_ENV];
+      const shared = runId ? readSharedProbe(soffice, runId) : null;
+      if (shared !== null) return shared;
+      const usable = await launchProbe(soffice);
+      if (runId) writeSharedProbe(soffice, runId, usable);
+      return usable;
+    });
     probeResults.set(soffice, result);
   }
   return result;
@@ -305,30 +369,36 @@ export async function runLibreOfficeOracle(
     const baseArgs = ['--headless', '--norestore', '--nologo', `-env:UserInstallation=${profileUrl}`];
     const diag: string[] = [];
 
-    // (1) INIT the profile: a throwaway convert makes soffice populate user/basic/Standard
-    // (which would otherwise clobber a pre-placed Module1.xba on first real launch).
-    const init = await runSoffice(
-      soffice,
-      [...baseArgs, '--convert-to', 'txt', '--outdir', path.join(work, 'init'), path.join(inDir, 'job0.docx')],
-      20_000,
-    );
-    diag.push(`[init] ${(init.stderr || init.stdout || '(no output)').trim()}`);
+    // Hold the cross-process lock only around the launches themselves. Reading the outputs and
+    // running `captureOutput` happen after release, so a callback that starts its own LibreOffice
+    // work does not hold up other workers (and could not deadlock even if it ran inside: the lock
+    // is re-entrant within an async context).
+    await withSofficeLock(soffice, async () => {
+      // (1) INIT the profile: a throwaway convert makes soffice populate user/basic/Standard
+      // (which would otherwise clobber a pre-placed Module1.xba on first real launch).
+      const init = await runSoffice(
+        soffice,
+        [...baseArgs, '--convert-to', 'txt', '--outdir', path.join(work, 'init'), path.join(inDir, 'job0.docx')],
+        20_000,
+      );
+      diag.push(`[init] ${(init.stderr || init.stdout || '(no output)').trim()}`);
 
-    // (2) Overwrite the Basic library with our macro.
-    mkdirSync(basicDir, { recursive: true });
-    writeFileSync(path.join(userDir, 'basic', 'script.xlc'), SCRIPT_XLC);
-    writeFileSync(path.join(basicDir, 'script.xlb'), SCRIPT_XLB);
-    writeFileSync(path.join(basicDir, 'Module1.xba'), module1Xba(jobsPath, marker));
+      // (2) Overwrite the Basic library with our macro.
+      mkdirSync(basicDir, { recursive: true });
+      writeFileSync(path.join(userDir, 'basic', 'script.xlc'), SCRIPT_XLC);
+      writeFileSync(path.join(basicDir, 'script.xlb'), SCRIPT_XLB);
+      writeFileSync(path.join(basicDir, 'Module1.xba'), module1Xba(jobsPath, marker));
 
-    // (3) Run the macro via a bare macro:/// URL — but only once the init instance has fully
-    // released the profile, so LibreOffice's single-instance model can't forward our macro command
-    // to the dying init process. Retry once: the first macro launch can still race a slow init exit.
-    for (let attempt = 1; attempt <= 2 && !existsSync(marker); attempt++) {
-      await settleProfile(profile);
-      const run = await runSoffice(soffice, [...baseArgs, 'macro:///Standard.Module1.RunOracle'], 45_000);
-      diag.push(`[macro attempt ${attempt}] ${(run.stderr || run.stdout || '(no output)').trim()}`);
-      if (!existsSync(marker)) await sleep(400);
-    }
+      // (3) Run the macro via a bare macro:/// URL — but only once the init instance has fully
+      // released the profile, so LibreOffice's single-instance model can't forward our macro command
+      // to the dying init process. Retry once: the first macro launch can still race a slow init exit.
+      for (let attempt = 1; attempt <= 2 && !existsSync(marker); attempt++) {
+        await settleProfile(profile);
+        const run = await runSoffice(soffice, [...baseArgs, 'macro:///Standard.Module1.RunOracle'], 45_000);
+        diag.push(`[macro attempt ${attempt}] ${(run.stderr || run.stdout || '(no output)').trim()}`);
+        if (!existsSync(marker)) await sleep(400);
+      }
+    });
 
     if (!existsSync(marker)) {
       keepWork = Boolean(process.env.SAFE_DOCX_ORACLE_DEBUG);

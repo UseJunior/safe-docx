@@ -35,6 +35,7 @@ import { promisify } from 'node:util';
 import { parseXml } from '../primitives/xml.js';
 import { readZipText } from '../primitives/zip.js';
 import { resolveSoffice } from './libreoffice-oracle.js';
+import { withSofficeLock } from './soffice-lock.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -114,32 +115,36 @@ async function runConvert(
       outDir,
       inPath,
     ];
-    let diagnostics: ConvertDiagnostics;
-    try {
-      const r = await execFileAsync(soffice, args, { timeout: 45_000, killSignal: 'SIGKILL', maxBuffer: 8 * 1024 * 1024 });
-      diagnostics = {
-        exitCode: 0,
-        signal: null,
-        output: String(r.stderr ?? '') || String(r.stdout ?? ''),
-      };
-    } catch (err) {
-      const e = err as {
-        stdout?: unknown;
-        stderr?: unknown;
-        message?: string;
-        code?: unknown;
-        signal?: unknown;
-      };
-      diagnostics = {
-        // execFile surfaces a signal death with no numeric code, and a
-        // spawn failure (ENOENT) with a string code — neither is an exit
-        // status, so both land as null and the signal/status check below
-        // still rejects because exitCode !== 0.
-        exitCode: typeof e.code === 'number' ? e.code : null,
-        signal: typeof e.signal === 'string' ? e.signal : null,
-        output: String(e.stderr ?? e.stdout ?? e.message ?? ''),
-      };
-    }
+    // Serialized with every other soffice launch of this binary across processes (#1037). The
+    // lock wraps the whole launch so a lock timeout surfaces as its own error, never as a
+    // converter failure.
+    const diagnostics = await withSofficeLock(soffice, async (): Promise<ConvertDiagnostics> => {
+      try {
+        const r = await execFileAsync(soffice, args, { timeout: 45_000, killSignal: 'SIGKILL', maxBuffer: 8 * 1024 * 1024 });
+        return {
+          exitCode: 0,
+          signal: null,
+          output: String(r.stderr ?? '') || String(r.stdout ?? ''),
+        };
+      } catch (err) {
+        const e = err as {
+          stdout?: unknown;
+          stderr?: unknown;
+          message?: string;
+          code?: unknown;
+          signal?: unknown;
+        };
+        return {
+          // execFile surfaces a signal death with no numeric code, and a
+          // spawn failure (ENOENT) with a string code — neither is an exit
+          // status, so both land as null and the signal/status check below
+          // still rejects because exitCode !== 0.
+          exitCode: typeof e.code === 'number' ? e.code : null,
+          signal: typeof e.signal === 'string' ? e.signal : null,
+          output: String(e.stderr ?? e.stdout ?? e.message ?? ''),
+        };
+      }
+    });
 
     // Fail on the converter's own verdict FIRST, so a failed run that still
     // dropped a partial file at the output path cannot be read back as a
