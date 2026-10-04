@@ -232,4 +232,52 @@ describe('replace_text — a clean range spanning a result-less field or a note 
       ]);
     });
   });
+
+  test('control: a field and a note reference already inside a tracked deletion are not reported', async ({ given, when, then }: AllureBddContext) => {
+    const paragraph = await given('a paragraph whose XE field and footnote reference sit inside an existing w:del', () =>
+      `<w:p>${T('Alpha ')}<w:del w:id="90" w:author="Reviewer" w:date="2024-01-01T00:00:00Z">` +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:delInstrText xml:space="preserve"> XE "Alpha" </w:delInstrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+      '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="1"/></w:r>' +
+      `</w:del>${T('Bravo')}</w:p>`);
+
+    const result = await when('replace_text replaces "Alpha Bravo" with "Charlie" without tracking', () =>
+      cleanReplace(paragraph, 'Alpha Bravo', 'Charlie', { 'word/footnotes.xml': FOOTNOTES_XML }));
+
+    await then('no hidden-construct warning is raised: the deleted constructs were never live', () => {
+      expect(result.afterText).toBe('Charlie');
+      expect(result.warnings.filter((w) => w.includes('not shown in the paragraph text'))).toEqual([]);
+    });
+  });
+
+  describe('a live result-less field mixed with tracked-deleted field markers is still reported', () => {
+    const DEL = (inner: string): string => `<w:del w:id="91" w:author="Reviewer" w:date="2024-01-01T00:00:00Z">${inner}</w:del>`;
+    const FLD = (type: string): string => `<w:r><w:fldChar w:fldCharType="${type}"/></w:r>`;
+    const INSTR = (text: string): string => `<w:r><w:instrText xml:space="preserve">${text}</w:instrText></w:r>`;
+    const cases: Array<[string, string]> = [
+      ['a deleted separate marker inside the live field', FLD('begin') + INSTR(' XE "Alpha" ') + DEL(FLD('separate')) + FLD('end')],
+      ['a deleted end marker before the live end', FLD('begin') + INSTR(' XE "Alpha" ') + DEL(FLD('end')) + FLD('end')],
+      ['a deleted fragment of the instruction', FLD('begin') + INSTR(' XE ') + DEL('<w:r><w:delInstrText xml:space="preserve">"old" </w:delInstrText></w:r>') + INSTR('"Alpha" ') + FLD('end')],
+    ];
+    for (const [name, field] of cases) {
+      test(`with ${name}`, async ({ given, when, then }: AllureBddContext) => {
+        const paragraph = await given(`a paragraph "Alpha ⟨XE "Alpha"⟩Bravo" whose field has ${name}`, () =>
+          `<w:p>${T('Alpha ')}${field}${T('Bravo')}</w:p>`);
+
+        const result = await when('replace_text replaces "Alpha Bravo" with "Charlie" without tracking', () =>
+          cleanReplace(paragraph, 'Alpha Bravo', 'Charlie'));
+
+        await then('the warning names the live instruction XE "Alpha" and the live field is gone', () => {
+          expect(result.afterText).toBe('Charlie');
+          expect(result.warnings).toEqual([
+            'The replaced range spanned a field with no result (instruction: XE "Alpha") not shown in the paragraph text; it was removed with the replaced text.',
+          ]);
+          expect(result.savedXml).not.toContain('w:instrText');
+          expect(result.savedXml).not.toContain('fldCharType="begin"');
+        });
+      });
+    }
+  });
 });
+

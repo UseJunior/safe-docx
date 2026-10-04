@@ -10,6 +10,7 @@ export type ParagraphNodeKind =
   | 'comment-range-end'
   | 'comment-reference'
   | 'footnote-reference'
+  | 'endnote-reference'
   | 'field-code'
   | 'bookmark'
   | 'other';
@@ -28,14 +29,39 @@ export type IndexedParagraphNode = {
   fieldInstruction: string | null;
 };
 
+/**
+ * One complex field (`w:fldChar` begin … end) opened in the paragraph, in the
+ * order its `begin` marker appears. `hasResult` is false for a field with no
+ * `separate` marker (an `XE` or `TC` entry, a never-updated `PAGE`): such a
+ * field contributes nothing to the visible text. `end` is null when the field
+ * is still open at the end of the paragraph.
+ */
+export type IndexedField = {
+  id: number;
+  instruction: string;
+  hasResult: boolean;
+  begin: IndexedParagraphNode;
+  end: IndexedParagraphNode | null;
+};
+
 export type ParagraphIndex = {
   paragraph: Element;
   text: string;
   nodes: IndexedParagraphNode[];
   runs: IndexedParagraphNode[];
+  fields: IndexedField[];
 };
 
-type FieldFrame = { id: number; phase: 'instruction' | 'result'; instruction: string };
+export type BuildParagraphIndexOptions = {
+  /**
+   * Leave out everything inside a tracked deletion (`w:del`), as if the
+   * deletion were accepted. Deleted field markers then take no part in
+   * field pairing, so the index describes the live paragraph only.
+   */
+  skipTrackedDeletions?: boolean;
+};
+
+type FieldFrame = { id: number; phase: 'instruction' | 'result'; instruction: string; field: IndexedField };
 
 function wordAttr(element: Element, localName: string): string | null {
   return getAttributeSafe(element, OOXML.W_NS, localName, 'w');
@@ -52,6 +78,7 @@ function kindOf(element: Element): ParagraphNodeKind {
     case W.commentRangeEnd: return 'comment-range-end';
     case W.commentReference: return 'comment-reference';
     case W.footnoteReference: return 'footnote-reference';
+    case W.endnoteReference: return 'endnote-reference';
     case W.fldChar:
     case W.instrText:
     case 'delInstrText': return 'field-code';
@@ -67,13 +94,17 @@ function kindOf(element: Element): ParagraphNodeKind {
  * structural coordinate; field instruction text remains zero-width while
  * cached field results participate in visible coordinates.
  *
+ * With `skipTrackedDeletions`, content inside `w:del` is not visited at all,
+ * so a deleted `separate` or `end` marker cannot pair with a live field.
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  * @see https://github.com/UseJunior/safe-docx/issues/904
  */
-export function buildParagraphIndex(paragraph: Element): ParagraphIndex {
+export function buildParagraphIndex(paragraph: Element, options: BuildParagraphIndexOptions = {}): ParagraphIndex {
   const nodes: IndexedParagraphNode[] = [];
   const runs: IndexedParagraphNode[] = [];
   const fieldStack: FieldFrame[] = [];
+  const fields: IndexedField[] = [];
   const instructions = new Map<number, string>();
   let nextFieldId = 1;
   let structuralIndex = 0;
@@ -87,6 +118,7 @@ export function buildParagraphIndex(paragraph: Element): ParagraphIndex {
 
   const visit = (element: Element, containingRun: IndexedParagraphNode | null): void => {
     if (element !== paragraph && element.namespaceURI === OOXML.W_NS && element.localName === W.p) return;
+    if (options.skipTrackedDeletions && element.namespaceURI === OOXML.W_NS && element.localName === W.del) return;
     const isRun = element.namespaceURI === OOXML.W_NS && element.localName === W.r;
     let activeRun = containingRun;
     if (isRun) {
@@ -124,14 +156,25 @@ export function buildParagraphIndex(paragraph: Element): ParagraphIndex {
 
       if (node.kind === 'field-code' && element.localName === W.fldChar) {
         const type = wordAttr(element, 'fldCharType') ?? '';
-        if (type === 'begin') fieldStack.push({ id: nextFieldId++, phase: 'instruction', instruction: '' });
-        else if (type === 'separate') {
+        if (type === 'begin') {
+          const field: IndexedField = { id: nextFieldId++, instruction: '', hasResult: false, begin: node, end: null };
+          fields.push(field);
+          fieldStack.push({ id: field.id, phase: 'instruction', instruction: '', field });
+        } else if (type === 'separate') {
           const frame = fieldStack.at(-1);
           if (frame) {
             frame.phase = 'result';
+            frame.field.hasResult = true;
+            frame.field.instruction = frame.instruction.trim();
             instructions.set(frame.id, frame.instruction.trim());
           }
-        } else if (type === 'end') fieldStack.pop();
+        } else if (type === 'end') {
+          const frame = fieldStack.pop();
+          if (frame) {
+            frame.field.end = node;
+            frame.field.instruction = frame.instruction.trim();
+          }
+        }
       } else {
         const instructionFrame = [...fieldStack].reverse().find((frame) => frame.phase === 'instruction');
         if (instructionFrame && (element.localName === W.instrText || element.localName === 'delInstrText')) {
@@ -166,5 +209,6 @@ export function buildParagraphIndex(paragraph: Element): ParagraphIndex {
   for (const node of nodes) {
     if (node.fieldResultId !== null) node.fieldInstruction = instructions.get(node.fieldResultId) ?? null;
   }
-  return { paragraph, text: runs.map((run) => run.visibleText).join(''), nodes, runs };
+  for (const frame of fieldStack) frame.field.instruction = frame.instruction.trim();
+  return { paragraph, text: runs.map((run) => run.visibleText).join(''), nodes, runs, fields };
 }

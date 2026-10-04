@@ -87,4 +87,67 @@ describe('buildParagraphIndex', () => {
       expect(marker?.runIndex).toBeNull();
     });
   });
+
+  test('lists each complex field with its instruction, whether it has a result, and its markers', async ({ given, then }: AllureBddContext) => {
+    let index: ReturnType<typeof buildParagraphIndex>;
+    await given('a result-less XE field nested in a REF field with a result, then an unterminated field and an endnote reference', () => {
+      index = buildParagraphIndex(paragraph(
+        `<w:p>` +
+        `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+        `<w:r><w:instrText> REF </w:instrText></w:r>` +
+        `<w:r><w:instrText>Sec1 </w:instrText></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="separate"/><w:t>Section 1</w:t></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+        `<w:r><w:instrText> XE "Alpha" </w:instrText></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+        `<w:r><w:endnoteReference w:id="3"/></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+        `<w:r><w:instrText> PAGE </w:instrText></w:r>` +
+        `</w:p>`,
+      ));
+    });
+    await then('fields are listed in begin order with the end marker that closed each one', () => {
+      expect(index.text).toBe('Section 1');
+      const fldChars = index.nodes.filter((node) => node.element.localName === W.fldChar);
+      expect(index.fields.map((field) => ({
+        instruction: field.instruction,
+        hasResult: field.hasResult,
+        begin: fldChars.indexOf(field.begin),
+        end: field.end ? fldChars.indexOf(field.end) : null,
+      }))).toEqual([
+        { instruction: 'REF Sec1', hasResult: true, begin: 0, end: 4 },
+        { instruction: 'XE "Alpha"', hasResult: false, begin: 2, end: 3 },
+        { instruction: 'PAGE', hasResult: false, begin: 5, end: null },
+      ]);
+      expect(index.nodes.filter((node) => node.kind === 'endnote-reference').map((node) => node.visibleStart)).toEqual([9]);
+    });
+  });
+
+  test('skipTrackedDeletions keeps deleted field markers and instruction text out of field pairing', async ({ given, then }: AllureBddContext) => {
+    let xml: string;
+    await given('a live XE field whose instruction has a deleted fragment and which contains a deleted separate and a deleted end marker', () => {
+      const del = (inner: string): string => `<w:del w:id="9" w:author="R" w:date="2024-01-01T00:00:00Z">${inner}</w:del>`;
+      xml =
+        `<w:p>` +
+        `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+        `<w:r><w:instrText> XE </w:instrText></w:r>` +
+        del(`<w:r><w:delInstrText>"old"</w:delInstrText></w:r>`) +
+        `<w:r><w:instrText>"Alpha" </w:instrText></w:r>` +
+        del(`<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>`) +
+        `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+        `</w:p>`;
+    });
+    await then('the live view has one result-less field closed by the live end; the default view pairs the deleted markers', () => {
+      const live = buildParagraphIndex(paragraph(xml), { skipTrackedDeletions: true });
+      expect(live.fields.map((field) => [field.instruction, field.hasResult, field.end?.element.parentNode?.parentNode?.nodeName])).toEqual([
+        ['XE "Alpha"', false, 'w:p'],
+      ]);
+      const all = buildParagraphIndex(paragraph(xml));
+      expect(all.fields.map((field) => [field.instruction, field.hasResult, field.end?.element.parentNode?.parentNode?.nodeName])).toEqual([
+        ['XE "old""Alpha"', true, 'w:del'],
+      ]);
+    });
+  });
 });
+

@@ -11,12 +11,14 @@ import {
   SafeDocxError,
   findUniqueSubstringMatch,
   applyDocumentQuoteStyle,
+  buildParagraphIndex,
   getParagraphRuns,
   hasHighlightTags,
   hasHyperlinkTags,
   replaceParagraphTextRange,
   stripHyperlinkTags,
   stripAllInlineTags,
+  type IndexedField,
   type ReplacementPart,
   type RevisionContext,
 } from '@usejunior/docx-core';
@@ -56,15 +58,6 @@ function symbolRemovalWarning(removed: number, tracked: boolean): string {
     `not shown in the paragraph text; ${removed === 1 ? 'it was' : 'they were'} ${outcome}.`;
 }
 
-function insideTrackedDeletion(el: Element, paragraph: Element): boolean {
-  for (let node: Node | null = el.parentNode; node && node !== paragraph; node = node.parentNode) {
-    if (node.nodeType === 1 && (node as Element).namespaceURI === OOXML.W_NS && (node as Element).localName === W.del) {
-      return true;
-    }
-  }
-  return false;
-}
-
 /**
  * Other constructs the paragraph text does not show and a range can take out
  * without the caller having seen them (issue #1097): a field with no result
@@ -77,37 +70,32 @@ function insideTrackedDeletion(el: Element, paragraph: Element): boolean {
  * their result is in the paragraph text the caller matched, so the caller saw
  * what the range covers. An empty `w:fldSimple` is a zero-length marker the
  * replace primitive keeps in place, so it needs no count.
+ *
+ * Field state and note references come from docx-core's `buildParagraphIndex`,
+ * the same traversal that defines the paragraph text the caller matched, built
+ * with `skipTrackedDeletions`: a construct inside `w:del` is already gone from
+ * the live document, so it is neither counted before the edit nor reported as
+ * removed after a tracked edit moves it into `w:del`, and a deleted field
+ * marker cannot pair with a live field. A field's instruction is the index's:
+ * an `instrText` inside a nested field's result (as Word stores a nested
+ * field's cached result within an outer instruction) is part of the outer
+ * instruction.
  */
 function collectLiveHiddenConstructs(paragraph: Element): string[] {
+  const index = buildParagraphIndex(paragraph, { skipTrackedDeletions: true });
+  const resultlessFieldsByEnd = new Map<Element, IndexedField>();
+  for (const field of index.fields) {
+    if (!field.hasResult && field.end) resultlessFieldsByEnd.set(field.end.element, field);
+  }
   const labels: string[] = [];
-  const openFields: Array<{ instruction: string; separated: boolean }> = [];
-  const all = paragraph.getElementsByTagNameNS(OOXML.W_NS, '*');
-  for (let i = 0; i < all.length; i++) {
-    const el = all[i]!;
-    if (insideTrackedDeletion(el, paragraph)) continue;
-    switch (el.localName) {
-      case W.fldChar: {
-        const kind = el.getAttributeNS(OOXML.W_NS, 'fldCharType') ?? el.getAttribute('w:fldCharType');
-        if (kind === 'begin') openFields.push({ instruction: '', separated: false });
-        else if (kind === 'separate' && openFields.length > 0) openFields[openFields.length - 1]!.separated = true;
-        else if (kind === 'end') {
-          const field = openFields.pop();
-          if (field && !field.separated) labels.push(`field with no result (instruction: ${field.instruction.trim()})`);
-        }
-        break;
-      }
-      case W.instrText:
-        if (openFields.length > 0) openFields[openFields.length - 1]!.instruction += el.textContent ?? '';
-        break;
-      case W.footnoteReference:
-      case W.endnoteReference: {
-        const id = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id') ?? '?';
-        labels.push(`${el.localName === W.footnoteReference ? 'footnote' : 'endnote'} reference (note id ${id})`);
-        break;
-      }
-      default:
-        break;
+  for (const node of index.nodes) {
+    if (node.kind === 'footnote-reference' || node.kind === 'endnote-reference') {
+      const id = node.element.getAttributeNS(OOXML.W_NS, 'id') ?? node.element.getAttribute('w:id') ?? '?';
+      labels.push(`${node.kind === 'footnote-reference' ? 'footnote' : 'endnote'} reference (note id ${id})`);
+      continue;
     }
+    const field = resultlessFieldsByEnd.get(node.element);
+    if (field) labels.push(`field with no result (instruction: ${field.instruction})`);
   }
   return labels;
 }
