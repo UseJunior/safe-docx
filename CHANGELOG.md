@@ -69,7 +69,9 @@
   `deletedAtoms` are likewise independent of run segmentation, so a
   re-segmentation-only change now reports zero atoms as well as zero ranges;
   documents whose words were split across runs report correspondingly fewer
-  atoms. (#1142)
+  atoms. Within a changed paragraph, whitespace is now compared character by
+  character, so shortening a run of spaces counts as one deleted atom rather
+  than one deleted and one inserted. (#1142)
 
 ## 0.22.1
 
