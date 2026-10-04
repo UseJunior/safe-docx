@@ -26,8 +26,8 @@
 - **Breaking (docx-core public type):** every field of `RunFormatting`, the
   return type of `extractEffectiveRunFormatting`, is now nullable, and `null`
   means only "unresolved". That covers three cases: the property is declared
-  only in a layer the resolver does not read yet (`w:docDefaults`, or a table
-  style for a run inside a table); the nearest declaration is a theme colour or
+  only in a layer the resolver does not read (a table style, for a run inside
+  a table); the nearest declaration is a theme colour or
   theme font reference that cannot be resolved (no theme, and no explicit
   fallback); or the property has no OOXML default and nothing declares it
   (`fontName`, `fontSizePt`). Previously the resolver returned `''`, `0` and
@@ -51,13 +51,39 @@
   - an unresolved run inside a paragraph whose modal size is resolved no longer
     gets `<font size="0">`;
   - when some run leaves bold, italic or underline unresolved (for example,
-    italic turned on only in `w:docDefaults`), that property has no known norm,
+    italic turned on only by a table style), that property has no known norm,
     so runs that resolve it are tagged rather than suppressed.
 
   The inserted-run formatting-convention warning is never raised from an
   unresolved bold/italic/underline. A property that any instance leaves
   unresolved is left out of the document's convention, and the warning prints
   it as `unresolved`. (#752)
+
+- `extractEffectiveRunFormatting` now reads `w:docDefaults/w:rPrDefault/w:rPr`
+  as the lowest-precedence run-property layer, below the paragraph style
+  chain, for every property it resolves. A document whose base font and size
+  live only in the document defaults (Word writes them there) now resolves
+  `fontName` / `fontSizePt` instead of `null`, and bold, italic, colour,
+  underline and highlight declared there resolve instead of being `null`. A
+  theme font in the document defaults (`w:rFonts w:asciiTheme`) resolves
+  through the theme part, and stays `null` without one. For the ten toggle
+  properties the document default seeds the starting value; style-level
+  parity and absolute direct formatting apply on top of it, as in Word.
+  Table-style run properties remain unread: for a run inside a table, a
+  property that nothing above the document defaults declares is `null` when a
+  table style declares a different value. `StylesModel.docDefaultsRPr` is now
+  a resolution layer rather than a detection probe. In `read_file`,
+  `body_run_formatting` and the formatting tags change accordingly: paragraphs
+  whose runs inherit the document defaults get a resolved font and size
+  baseline, and the formatting-convention check counts bold/italic/underline
+  inherited from the document defaults. Comment and footnote `tagged_text`
+  (`get_comments`, `get_footnotes`, `read_file` footnotes) keep tagging colour,
+  size and font only where a layer above `w:docDefaults` declares them, so the
+  inherited document font is not repeated as `face` on every run (and
+  docx-markdoc annotation import keeps admitting such documents). New
+  docx-core export: `extractAnnotationRunFormatting`. Hex colours and font
+  names compare case-insensitively when deciding whether a table style
+  restates the base value. (#753)
 
 ## 0.22.1
 

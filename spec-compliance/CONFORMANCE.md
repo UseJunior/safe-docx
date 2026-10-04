@@ -46,12 +46,12 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-3-1-26` | w:pPr child-element ordering | 5 | 1 | 17.3.1.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr` | packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts |
 | `ECMA-PART1-17-3-1-20` | w:outlineLvl paragraph outline level | 5 | 1 | 17.3.1.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:outlineLvl` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts |
 | `ECMA-PART1-17-3-2-28` | w:rPr direct-property uniqueness | 5 | 1 | 17.3.2.28 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPr` | packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/primitives/text.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts; packages/docx-core/test-primitives/text.test.ts; packages/docx-markdoc/src/retained-format.test.ts |
-| `ECMA-PART1-17-7-3` | Toggle-property evaluation | 5 | 1 | 17.7.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_RPr` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-toggle.test.ts; scripts/check_docx_formatting_loss.test.mjs |
+| `ECMA-PART1-17-7-3` | Toggle-property evaluation | 5 | 1 | 17.7.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_RPr` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-toggle.test.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts; scripts/check_docx_formatting_loss.test.mjs |
 | `ECMA-PART1-17-3-2-26` | Run fonts and theme-font references | 5 | 1 | 17.3.2.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Fonts` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-theme.test.ts; scripts/check_docx_formatting_loss.test.mjs |
 | `ECMA-PART1-17-3-2-6` | Run color and theme transforms | 5 | 1 | 17.3.2.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Color` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-theme.test.ts; scripts/check_docx_formatting_loss.test.mjs |
 | `ECMA-PART1-17-7-4-18` | w:styles style-definitions part emission | 5 | 1 | 17.7.4.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:styles` | packages/docx-core/src/generation/emit/styles-part.ts |
 | `ECMA-PART1-17-7-4-17` | w:style style-definition emission | 5 | 1 | 17.7.4.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:style` | packages/docx-core/src/generation/schema-enum-domains.ts; packages/docx-core/src/generation/emit/styles-part.ts; packages/docx-core/src/generation/validate-spec.ts |
-| `ECMA-PART1-17-7-5-1` | w:docDefaults document-default properties | 5 | 1 | 17.7.5.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults` | packages/docx-core/src/generation/emit/styles-part.ts |
+| `ECMA-PART1-17-7-5-1` | w:docDefaults document-default properties | 5 | 1 | 17.7.5.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults` | packages/docx-core/src/generation/emit/styles-part.ts; packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts; packages/docx-core/src/primitives/styles-unresolved.test.ts |
 | `ECMA-PART1-17-6-18` | w:sectPr paragraph-level section break emission | 5 | 1 | 17.6.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr` | packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts |
 | `ECMA-PART1-17-6-22` | w:type section start kind | 5 | 1 | 17.6.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SectType` | packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts |
 | `ECMA-PART1-17-6-12` | w:pgNumType page-numbering settings emission | 5 | 1 | 17.6.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgNumType` | packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/tools/format_section.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts |
@@ -662,14 +662,14 @@ exact values, namespace-aware live attributes, and load/save preservation.
 - **Part / Section:** Part 1 § 17.7.3
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_RPr`
-- **Verified by:** packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-toggle.test.ts; scripts/check_docx_formatting_loss.test.mjs
+- **Verified by:** packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-toggle.test.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts; scripts/check_docx_formatting_loss.test.mjs
 
 Run toggle properties accumulate differently from ordinary properties. An on
 declaration in a style hierarchy inverts the previously effective value, an
 off declaration leaves that value unchanged, and direct run formatting sets
 the absolute result. The effective-formatting resolver evaluates the supported
-toggle set independently and retains nearest-declaration resolution for
-ordinary properties.
+toggle set independently, starting from the `w:docDefaults` value (or off),
+and retains nearest-declaration resolution for ordinary properties.
 
 ### ECMA-PART1-17-3-2-26 — Run fonts and theme-font references
 
@@ -734,13 +734,19 @@ at spec validation, before any XML is built.
 - **Part / Section:** Part 1 § 17.7.5.1
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults`
-- **Verified by:** packages/docx-core/src/generation/emit/styles-part.ts
+- **Verified by:** packages/docx-core/src/generation/emit/styles-part.ts; packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts; packages/docx-core/src/primitives/styles-unresolved.test.ts
 
 `w:docDefaults` carries the document-wide default run and paragraph
 properties that styles and direct formatting layer over. Generation emits
 explicit defaults (font bound across ascii/hAnsi/cs script ranges plus an
 explicit size) rather than relying on reader fallbacks, which diverge
-between Word, LibreOffice, and Google Docs import.
+between Word, LibreOffice, and Google Docs import. Effective run formatting
+reads `w:rPrDefault/w:rPr` as its lowest-precedence layer; for toggle
+properties that layer seeds the starting value before style parity and
+absolute direct formatting apply (Microsoft's [MS-OI29500] note on §17.7.3
+describes document defaults as the base for toggle evaluation, and
+[MS-OE376] §2.7.7 documents no deviation that makes them another style
+level).
 
 ### ECMA-PART1-17-6-18 — w:sectPr paragraph-level section break emission
 

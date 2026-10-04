@@ -400,37 +400,49 @@ describe('formatting-convention check', () => {
     });
   });
 
+  /**
+   * Since #753 the resolver reads docDefaults, so the only layer left that can
+   * leave a toggle unresolved is a table style (for a run inside a table).
+   * These fixtures put the whole body in a one-cell table whose table style
+   * declares `rPr`.
+   */
+  const inTable = (body: string): string =>
+    `<w:tbl><w:tblPr><w:tblStyle w:val="Grid"/></w:tblPr><w:tr><w:tc>${body}</w:tc></w:tr></w:tbl>`;
+  const tableStyleFiles = (rPr: string): Record<string, string> => ({
+    'word/styles.xml':
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:styles xmlns:w="${W_NS}"><w:style w:type="table" w:styleId="Grid">` +
+      `<w:name w:val="Grid"/><w:rPr>${rPr}</w:rPr></w:style></w:styles>`,
+  });
+
   test('never warns from an unresolved member, but still reports a resolved divergence (#752)', async ({
     given,
     when,
     then,
     and,
   }: AllureBddContext) => {
-    // docDefaults turn italic on. The resolver does not read docDefaults, so a
-    // run that does not set italic directly has italic unresolved (null), not
-    // false. The convention's own italic is direct, hence resolved.
-    const docDefaultsItalic =
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-      `<w:styles xmlns:w="${W_NS}"><w:docDefaults><w:rPrDefault><w:rPr><w:i/></w:rPr>` +
-      `</w:rPrDefault></w:docDefaults></w:styles>`;
-    const files = { 'word/styles.xml': docDefaultsItalic };
+    // A table style turns italic on. The resolver does not read table styles,
+    // so a run in the table that does not set italic directly has italic
+    // unresolved (null), not false. The convention's own italic is direct,
+    // hence resolved.
+    const files = tableStyleFiles('<w:i/>');
     let differsOnlyWhereUnresolved: string[] = [];
     let differsWhereResolved: string[] = [];
 
-    await given('a bold-italic defined-term convention in a document whose docDefaults turn italic on', async () => {
-      expect(definedTermPopulation(await loadDoc(CONVENTION_BODY))).toBeGreaterThanOrEqual(DEFAULT_MIN_INSTANCES);
+    await given('a bold-italic defined-term convention in a table whose table style turns italic on', async () => {
+      expect(definedTermPopulation(await loadDoc(inTable(CONVENTION_BODY)))).toBeGreaterThanOrEqual(DEFAULT_MIN_INSTANCES);
     });
 
     await when('a bold term with unresolved italic, and a plain term, are inserted', async () => {
       differsOnlyWhereUnresolved = await check(
-        CONVENTION_BODY + TARGET_PLAIN,
-        CONVENTION_BODY + insertedDefinedTermParagraph({ bold: true }),
+        inTable(CONVENTION_BODY + TARGET_PLAIN),
+        inTable(CONVENTION_BODY + insertedDefinedTermParagraph({ bold: true })),
         INSERTED_DEFINED_TERM_TEXT,
         files,
       );
       differsWhereResolved = await check(
-        CONVENTION_BODY + TARGET_PLAIN,
-        CONVENTION_BODY + insertedDefinedTermParagraph({}),
+        inTable(CONVENTION_BODY + TARGET_PLAIN),
+        inTable(CONVENTION_BODY + insertedDefinedTermParagraph({})),
         INSERTED_DEFINED_TERM_TEXT,
         files,
       );
@@ -455,14 +467,9 @@ describe('formatting-convention check', () => {
     then,
     and,
   }: AllureBddContext) => {
-    const stylesWith = (rPr: string): Record<string, string> => ({
-      'word/styles.xml':
-        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-        `<w:styles xmlns:w="${W_NS}"><w:docDefaults><w:rPrDefault><w:rPr>${rPr}</w:rPr>` +
-        `</w:rPrDefault></w:docDefaults></w:styles>`,
-    });
     // Ten directly bold terms: five turn italic off directly, five leave it to
-    // docDefaults (italic on), so italic is unresolved for half the population.
+    // the table style (italic on), so italic is unresolved for half the
+    // population.
     const mixed = [
       ...Array.from({ length: 5 }, (_, i) => definedTermParagraph(i + 1, { bold: true, italicOff: true })),
       ...Array.from({ length: 5 }, (_, i) => definedTermParagraph(i + 6, { bold: true })),
@@ -471,23 +478,23 @@ describe('formatting-convention check', () => {
     let unresolvedBoldInsertion: string[] = [];
 
     await given('a unanimous direct-bold defined-term convention whose italic is half unresolved', async () => {
-      expect(definedTermPopulation(await loadDoc(mixed))).toBe(10);
+      expect(definedTermPopulation(await loadDoc(inTable(mixed)))).toBe(10);
     });
 
     await when('a term with direct bold off is inserted, and (control) a term whose bold is itself unresolved', async () => {
       resolvedBoldDivergence = await check(
-        mixed + TARGET_PLAIN,
-        mixed + insertedDefinedTermParagraph({ boldOff: true }),
+        inTable(mixed + TARGET_PLAIN),
+        inTable(mixed + insertedDefinedTermParagraph({ boldOff: true })),
         INSERTED_DEFINED_TERM_TEXT,
-        stylesWith('<w:i/>'),
+        tableStyleFiles('<w:i/>'),
       );
-      // docDefaults also turn bold on here, so the plain insertion's bold is
-      // unresolved: the member that differs is unknown, and nothing is said.
+      // The table style also turns bold on here, so the plain insertion's bold
+      // is unresolved: the member that differs is unknown, and nothing is said.
       unresolvedBoldInsertion = await check(
-        mixed + TARGET_PLAIN,
-        mixed + insertedDefinedTermParagraph({}),
+        inTable(mixed + TARGET_PLAIN),
+        inTable(mixed + insertedDefinedTermParagraph({})),
         INSERTED_DEFINED_TERM_TEXT,
-        stylesWith('<w:b/><w:i/>'),
+        tableStyleFiles('<w:b/><w:i/>'),
       );
     });
 
@@ -501,6 +508,52 @@ describe('formatting-convention check', () => {
       expect(unresolvedBoldInsertion).toEqual([]);
     });
   });
+
+  test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.7.5.1' })(
+      'docDefaults toggles resolve, so they take part in the convention vote (#753)',
+      async ({ given, when, then, and }: AllureBddContext) => {
+        // docDefaults turn italic on. Before #753 that left italic unresolved
+        // for every term that did not set it directly; now it resolves to true.
+        const files = {
+          'word/styles.xml':
+            `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+            `<w:styles xmlns:w="${W_NS}"><w:docDefaults><w:rPrDefault><w:rPr><w:i/></w:rPr>` +
+            `</w:rPrDefault></w:docDefaults></w:styles>`,
+        };
+        let onConvention: string[] = [];
+        let offConvention: string[] = [];
+
+        await given('a bold-italic defined-term convention in a document whose docDefaults turn italic on', async () => {
+          expect(definedTermPopulation(await loadDoc(CONVENTION_BODY))).toBeGreaterThanOrEqual(DEFAULT_MIN_INSTANCES);
+        });
+
+        await when('a bold term (italic from docDefaults) and a plain term are inserted', async () => {
+          onConvention = await check(
+            CONVENTION_BODY + TARGET_PLAIN,
+            CONVENTION_BODY + insertedDefinedTermParagraph({ bold: true }),
+            INSERTED_DEFINED_TERM_TEXT,
+            files,
+          );
+          offConvention = await check(
+            CONVENTION_BODY + TARGET_PLAIN,
+            CONVENTION_BODY + insertedDefinedTermParagraph({}),
+            INSERTED_DEFINED_TERM_TEXT,
+            files,
+          );
+        });
+
+        await then('the bold term inherits italic and matches the convention', () => {
+          expect(onConvention).toEqual([]);
+        });
+
+        await and('the plain term is reported with italic resolved on both sides', () => {
+          expect(offConvention).toHaveLength(1);
+          expect(offConvention[0]).toContain('is bold=false, italic=true, underline=false');
+          expect(offConvention[0]).toContain('are bold=true, italic=true, underline=false');
+        });
+      },
+    );
 
   test('NEGATIVE CONTROL: the same fixture with an on-convention insertion is silent', async () => {
     expect(
