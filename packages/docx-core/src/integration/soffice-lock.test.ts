@@ -142,14 +142,14 @@ describe('soffice cross-process lock', () => {
     });
   });
 
-  test('a guard held by a live process is respected even when it is old', async ({ given, when, then }: AllureBddContext) => {
+  test('a guard held by a live process is respected however old it is', async ({ given, when, then }: AllureBddContext) => {
     const guard = `${lockPath}.guard`;
     let release!: () => Promise<void>;
     let settled = false;
-    await given('a held lock and a 10-second-old guard whose holder is alive', async () => {
+    await given('a held lock and a two-hour-old guard whose holder is alive (a stopped process)', async () => {
       release = await acquireSofficeLock(lockPath, { timeoutMs: 5_000, pollMs: 20 });
       writeFileSync(guard, liveRecord('guard-holder'));
-      const old = new Date(Date.now() - 10_000);
+      const old = new Date(Date.now() - 2 * 60 * 60_000);
       utimesSync(guard, old, old);
     });
     await when('the holder releases', async () => {
@@ -161,6 +161,20 @@ describe('soffice cross-process lock', () => {
     });
     await then('the release completed only after the guard was freed', () => {
       expect(existsSync(lockPath)).toBe(false);
+    });
+  });
+
+  test("a steal blocked on a live guard honours the caller's timeout", async ({ given, then }: AllureBddContext) => {
+    const guard = `${lockPath}.guard`;
+    await given('a stale lock whose removal guard is held by a live process', () => {
+      writeFileSync(lockPath, JSON.stringify({ pid: DEAD_PID, host: os.hostname(), token: 'stale', at: new Date().toISOString() }));
+      writeFileSync(guard, liveRecord('guard-holder'));
+    });
+    await then('the acquisition fails at its own short deadline, not the guard default', async () => {
+      const started = Date.now();
+      await expect(acquireSofficeLock(lockPath, { timeoutMs: 100, pollMs: 20 })).rejects.toThrow(/Timed out/);
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(readHolder(lockPath).token).toBe('stale');
     });
   });
 

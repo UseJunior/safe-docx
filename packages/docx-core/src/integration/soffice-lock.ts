@@ -25,8 +25,11 @@
  *   (a creator between `open` and `write`) is stolen only after a grace period.
  * - The guard is held for a few synchronous filesystem calls and records its holder like the
  *   lock does. A guard is cleared only when its holder is provably dead (a process killed inside
- *   that window), or after `GUARD_STALE_MS` (PID reuse, or a holder stopped mid-section). Clearing
- *   renames the guard aside and puts it back if it turns out not to be the one judged stale.
+ *   that window), or when it is still unparseable after `GUARD_STALE_MS` (its creator died between
+ *   `open` and `write`). A guard whose holder is alive is never cleared, however old: a holder
+ *   stopped mid-section (SIGSTOP, a debugger) keeps it, and waiters time out with a diagnostic
+ *   naming the guard file rather than overlap. Clearing renames the guard aside and puts it back
+ *   if it turns out not to be the one judged stale.
  *   Residual risk: two waiters clearing the SAME dead guard while a third creates a new one can
  *   still overlap. That needs a process to die inside a microsecond critical section and three
  *   more to race within microseconds of it; the worst outcome is two concurrent soffice launches,
@@ -69,8 +72,7 @@ export const DEFAULT_STALE_LOCK_MS = 10 * 60_000;
 export const DEFAULT_LOCK_TIMEOUT_MS = 5 * 60_000;
 /** A lockfile that exists but cannot be parsed is only stolen after this grace period. */
 const UNREADABLE_LOCK_GRACE_MS = 10_000;
-/** The removal guard is held for microseconds. A guard this old is cleared even if its recorded
- *  holder looks alive (PID reuse, or a holder that was stopped inside the critical section). */
+/** A guard still unparseable after this long was abandoned between `open` and `write`. */
 const GUARD_STALE_MS = 60_000;
 /** Give up on the removal guard after this long (only reachable if the guard dir misbehaves). */
 const GUARD_TIMEOUT_MS = 30_000;
@@ -183,9 +185,12 @@ function clearStaleGuard(guard: string, judged: LockRecord | null): void {
 }
 
 /** Run `fn` (synchronous filesystem work only) while holding the removal guard. */
-async function underRemovalGuard(lockPath: string, fn: () => void): Promise<void> {
+async function underRemovalGuard(
+  lockPath: string,
+  fn: () => void,
+  deadline = Date.now() + GUARD_TIMEOUT_MS,
+): Promise<void> {
   const guard = `${lockPath}.guard`;
-  const deadline = Date.now() + GUARD_TIMEOUT_MS;
   for (;;) {
     const mine = newRecord();
     if (tryCreate(guard, mine)) {
@@ -199,9 +204,15 @@ async function underRemovalGuard(lockPath: string, fn: () => void): Promise<void
     const holder = readRecord(guard);
     const age = lockAgeMs(guard);
     if (age === null) continue; // freed between our create and our read — retry at once
-    const stale = age > GUARD_STALE_MS || (holder !== null && !holderAlive(holder));
+    const stale = holder ? !holderAlive(holder) : age > GUARD_STALE_MS;
     if (stale) clearStaleGuard(guard, holder);
-    if (Date.now() > deadline) throw new Error(`Timed out waiting for the LibreOffice lock guard at ${guard}`);
+    if (Date.now() > deadline) {
+      throw new Error(
+        `Timed out waiting for the LibreOffice lock guard at ${guard}` +
+          (holder ? ` (held by live pid ${holder.pid} since ${holder.at})` : '') +
+          '. Delete it only if that process is not a safe-docx LibreOffice launcher.',
+      );
+    }
     await sleep(5 + Math.floor(Math.random() * 10));
   }
 }
@@ -243,6 +254,8 @@ export async function acquireSofficeLock(
     if (stale) {
       // Re-check under the guard: remove only the exact record judged stale. If it changed
       // (released, or replaced by a fresh holder), the next iteration re-evaluates.
+      // The guard wait is bounded by the caller's deadline, and a removal that finishes past it
+      // does not turn into a late acquisition.
       let removed = false;
       await underRemovalGuard(lockPath, () => {
         const current = readRecord(lockPath);
@@ -254,8 +267,8 @@ export async function acquireSofficeLock(
           rmSync(lockPath, { force: true });
           removed = true;
         }
-      });
-      if (removed) continue;
+      }, deadline);
+      if (removed && Date.now() <= deadline) continue;
     }
     if (Date.now() > deadline) {
       throw new Error(
