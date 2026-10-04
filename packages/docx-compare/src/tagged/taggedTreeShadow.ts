@@ -113,23 +113,23 @@ const COMPARISON_LEAF_NAMES = new Set([
 ]);
 
 /**
- * Paragraph alignment keys; `isolated[i]` marks keys inside an isolated
- * (moved) subtree.
+ * Paragraph alignment keys. `whitespaceToken[i]` is the ordinal of the
+ * whitespace token a per-character whitespace key came from, or -1;
+ * `isolated[i]` marks keys inside an isolated (moved) subtree.
  */
 interface ParagraphAtomStream {
   keys: string[];
+  whitespaceToken: number[];
   isolated: boolean[];
 }
 
 /**
  * Adjacent `w:t` leaves are tokenized as one text stream within a paragraph,
- * so a word or punctuation token does not depend on how identical text is
- * split into runs (#1142). A whitespace token is still split where a `w:t`
- * boundary falls inside it, so the spaces on either side of a removed or
- * moved run (`a ` + `b` + ` c` without `b`) stay two tokens rather than
- * merging into a different one. Any other leaf, every paragraph boundary,
- * and the start and end of every `isolated` subtree end the stream, so an
- * isolated subtree (moved content) is weighed exactly as it is on its own.
+ * so the keys do not depend on how identical text is split into runs
+ * (#1142). Any other leaf, every paragraph boundary, and the start and end of
+ * every `isolated` subtree end the stream, so an isolated subtree (moved
+ * content) is weighed exactly as it is on its own. With a `stream` target,
+ * each whitespace token is emitted as one key per character.
  */
 function comparisonAtomKeys(
   element: Element,
@@ -138,31 +138,23 @@ function comparisonAtomKeys(
 ): string[] {
   const keys = stream?.keys ?? [];
   let text = '';
-  const textBoundaries: number[] = [];
+  let whitespaceTokens = 0;
   let isolatedDepth = 0;
-  const push = (key: string): void => {
+  const push = (key: string, whitespaceToken = -1): void => {
     keys.push(key);
+    stream?.whitespaceToken.push(whitespaceToken);
     stream?.isolated.push(isolatedDepth > 0);
   };
   const flushText = (): void => {
-    let offset = 0;
     for (const token of tokenizeComparisonText(text)) {
-      const end = offset + token.length;
-      if (/^\s+$/u.test(token)) {
-        let start = offset;
-        for (const boundary of textBoundaries) {
-          if (boundary <= start || boundary >= end) continue;
-          push(`t\0${text.slice(start, boundary)}`);
-          start = boundary;
-        }
-        push(`t\0${text.slice(start, end)}`);
+      if (stream && /^\s+$/u.test(token)) {
+        const ordinal = whitespaceTokens++;
+        for (const character of token) push(`t\0${character}`, ordinal);
       } else {
         push(`t\0${token}`);
       }
-      offset = end;
     }
     text = '';
-    textBoundaries.length = 0;
   };
   const visit = (current: Element): void => {
     if (isolated.has(current)) {
@@ -178,7 +170,6 @@ function comparisonAtomKeys(
   const visitContent = (current: Element): void => {
     if (COMPARISON_LEAF_NAMES.has(current.localName)) {
       if (current.localName === 't') {
-        if (text) textBoundaries.push(text.length);
         text += current.textContent ?? '';
         return;
       }
@@ -218,15 +209,22 @@ function paragraphAtomStream(
   side: 'original' | 'revised',
   isolated: ReadonlySet<Element>,
 ): ParagraphAtomStream {
-  const stream: ParagraphAtomStream = { keys: [], isolated: [] };
+  const stream: ParagraphAtomStream = { keys: [], whitespaceToken: [], isolated: [] };
   const element = representative(node, side);
   if (element) comparisonAtomKeys(element, isolated, stream);
   return stream;
 }
 
 /**
- * Count the unaligned atoms of a paragraph's two sides. A match involving
- * moved (isolated) content weighs half an unmoved one, so moved keys stay
+ * Count the unaligned atoms of a paragraph's two sides.
+ *
+ * Concatenating adjacent text merges the spaces on either side of removed
+ * content (`a ` + `b` + ` c` without `b` reads `a  c`), so whitespace is
+ * aligned one character at a time; the unaligned characters of one
+ * whitespace token weigh one atom together, as the token does elsewhere in
+ * the metric. Any word or control match outweighs every whitespace match, so
+ * whitespace never displaces an unchanged word. A match involving moved
+ * (isolated) content weighs half an unmoved one, so moved keys stay
  * unaligned, and are later subtracted at their standalone weight, whenever
  * unmoved content can take the same match.
  *
@@ -238,7 +236,11 @@ function unalignedParagraphAtoms(
 ): { deleted: number; inserted: number } {
   const n = before.keys.length;
   const m = after.keys.length;
-  const weight = (i: number, j: number): number => (before.isolated[i] || after.isolated[j] ? 1 : 2);
+  const whitespaceKeys = [...before.whitespaceToken, ...after.whitespaceToken]
+    .filter((token) => token >= 0).length;
+  const weight = (i: number, j: number): number =>
+    (before.whitespaceToken[i]! >= 0 ? 1 : 2 * whitespaceKeys + 1)
+    * (before.isolated[i] || after.isolated[j] ? 1 : 2);
   const score = Array.from({ length: n + 1 }, () => new Float64Array(m + 1));
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
@@ -247,41 +249,27 @@ function unalignedParagraphAtoms(
       score[i]![j] = best;
     }
   }
-  let deleted = 0;
-  let inserted = 0;
-  const gap = { deleted: [] as number[], inserted: [] as number[] };
-  // A gap whose deleted and inserted keys spell the same unmoved text is a
-  // whitespace token split differently by run boundaries, not a change.
-  const closeGap = (): void => {
-    const text = (stream: ParagraphAtomStream, indices: readonly number[]): string | undefined =>
-      indices.every((index) => stream.keys[index]!.startsWith('t\0') && !stream.isolated[index])
-        ? indices.map((index) => stream.keys[index]!.slice(2)).join('')
-        : undefined;
-    const deletedText = text(before, gap.deleted);
-    const unchanged = gap.deleted.length > 0 && gap.inserted.length > 0
-      && deletedText !== undefined && deletedText === text(after, gap.inserted);
-    if (!unchanged) {
-      deleted += gap.deleted.length;
-      inserted += gap.inserted.length;
-    }
-    gap.deleted.length = 0;
-    gap.inserted.length = 0;
-  };
+  const deleted: number[] = [];
+  const inserted: number[] = [];
   let i = 0;
   let j = 0;
-  while (i < n || j < m) {
-    if (i < n && j < m && before.keys[i] === after.keys[j]
-        && score[i]![j] === score[i + 1]![j + 1]! + weight(i, j)) {
-      closeGap();
+  while (i < n && j < m) {
+    if (before.keys[i] === after.keys[j] && score[i]![j] === score[i + 1]![j + 1]! + weight(i, j)) {
       i++; j++;
-    } else if (j >= m || (i < n && score[i + 1]![j]! >= score[i]![j + 1]!)) {
-      gap.deleted.push(i++);
+    } else if (score[i + 1]![j]! >= score[i]![j + 1]!) {
+      deleted.push(i++);
     } else {
-      gap.inserted.push(j++);
+      inserted.push(j++);
     }
   }
-  closeGap();
-  return { deleted, inserted };
+  while (i < n) deleted.push(i++);
+  while (j < m) inserted.push(j++);
+  const count = (stream: ParagraphAtomStream, indices: readonly number[]): number =>
+    new Set(indices.map((index) => {
+      const token = stream.whitespaceToken[index]!;
+      return token < 0 ? `key:${index}` : `whitespace:${token}`;
+    })).size;
+  return { deleted: count(before, deleted), inserted: count(after, inserted) };
 }
 
 function deriveTaggedTreeStats(tree: TaggedNode, movedNodes: ReadonlySet<TaggedNode>): Pick<

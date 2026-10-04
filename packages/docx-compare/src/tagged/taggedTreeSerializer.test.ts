@@ -1248,14 +1248,21 @@ describe('mixed-format run re-segmentation (#1142)', () => {
     expect(spaceBesideMove.stats).toMatchObject({ deletedRanges: 1, insertedAtoms: 0, deletedAtoms: 1 });
   });
 
-  test('weighs whitespace edits by whole tokens, independent of run segmentation', () => {
+  test('weighs whitespace edits independently of run segmentation', () => {
     testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
     const paragraph = (...texts: string[]): string => `<w:p>${texts.map((text) => run(text)).join('')}</w:p>`;
-    // Moving a long space run does not unalign the words around it.
+    // Moving a long space run does not unalign the words around it: nine
+    // spaces leave one gap and ten arrive at the end.
     const moved = publish([paragraph('a          b c d e')], [paragraph('a b c d e          ')]);
-    expect(moved.stats).toMatchObject({ insertedRanges: 2, deletedRanges: 1, insertedAtoms: 2, deletedAtoms: 1 });
-    // A double space split across runs on one side only is not a change.
+    expect(moved.stats).toMatchObject({ insertedAtoms: 1, deletedAtoms: 1 });
+    // The same three spaces split differently by run boundaries.
+    const shifted = publish([paragraph('a ', '  b')], [paragraph('a  ', ' b')]);
+    expect(shifted.stats).toMatchObject({ insertedRanges: 0, deletedRanges: 0, insertedAtoms: 0, deletedAtoms: 0 });
     const split = publish([paragraph('Keep the ', ' double space.')], [paragraph('Keep the  double space.')]);
     expect(split.stats).toMatchObject({ insertedRanges: 0, deletedRanges: 0, insertedAtoms: 0, deletedAtoms: 0 });
+    // A deleted paragraph weighs the same however its text is split.
+    const unchanged = paragraph('unchanged');
+    expect(publish([paragraph('a ', ' b'), unchanged], [unchanged]).stats.deletedAtoms)
+      .toBe(publish([paragraph('a  b'), unchanged], [unchanged]).stats.deletedAtoms);
   });
 });
