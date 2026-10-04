@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.23.0
+
+Migration: every field of docx-core's `RunFormatting` (returned by
+`extractEffectiveRunFormatting`) is now nullable, and `null` means
+"unresolved". TypeScript callers must handle `null`, and `read_file` JSON
+clients should expect `null` for `fontName` / `fontSizePt` where they
+previously got `""` / `0`. See the breaking entries below. (#752)
 
 - Accepting tracked changes with `acceptChanges` (and the `accept_changes` /
   `accept_ai_edits` tools) no longer leaves a stray section break where a
@@ -73,7 +79,6 @@
   fewer atoms. Within a changed paragraph, whitespace is now compared
   character by character, so shortening a run of spaces counts as one deleted
   atom rather than one deleted and one inserted. (#1142)
-
 - `extractEffectiveRunFormatting` now reads `w:docDefaults/w:rPrDefault/w:rPr`
   as the lowest-precedence run-property layer, below the paragraph style
   chain, for every property it resolves. A document whose base font and size
