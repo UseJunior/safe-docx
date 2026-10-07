@@ -26,6 +26,11 @@ const STYLES_SKELETON = `<w:styles xmlns:w="${OOXML.W_NS}"/>`;
 const DEFAULT_FONT = 'Calibri';
 const DEFAULT_SIZE_PT = 11;
 
+/** The typeface w:rPrDefault declares: the spec's default font, else Calibri. */
+export function documentDefaultFont(spec: DocumentSpec): string {
+  return spec.defaults?.run?.font ?? DEFAULT_FONT;
+}
+
 export function emitStylesPart(spec: DocumentSpec, ctx: CompileContext): void {
   ctx.registerPart('word/styles.xml', STYLES_CONTENT_TYPE, STYLES_REL_TYPE);
 
@@ -59,10 +64,12 @@ function buildDocDefaults(
   const docDefaults = createWmlElement(doc, W.docDefaults);
 
   const rPrDefault = createWmlElement(doc, W.rPrDefault);
+  // Nullish fallbacks (not a spread) so an explicit `undefined` cannot erase
+  // the baseline and leave font and size to reader-specific fallbacks.
   const rPr = buildRunPropsElement(doc, {
-    font: DEFAULT_FONT,
-    sizePt: DEFAULT_SIZE_PT,
     ...spec.defaults?.run,
+    font: documentDefaultFont(spec),
+    sizePt: spec.defaults?.run?.sizePt ?? DEFAULT_SIZE_PT,
   }, { themeColorValues });
   if (rPr) rPrDefault.appendChild(rPr);
   docDefaults.appendChild(rPrDefault);

@@ -16,4 +16,6 @@ explicit run font SHALL be written to all four `w:rFonts` channels (`ascii`,
 - **AND** a body paragraph without direct formatting SHALL carry no `w:rPr` or `w:pPr`
 - **AND** the direct run font and the numbering-level font SHALL each emit `w:rFonts` with exactly the four channels `ascii`, `hAnsi`, `eastAsia` and `cs`
 - **AND** omitting `defaults` SHALL emit the Calibri 11pt baseline on all four channels, and a partial `defaults.run` SHALL merge over that baseline
-- **AND** empty typeface names, non-positive sizes and negative spacing SHALL be rejected before emission
+- **AND** `word/fontTable.xml` SHALL list the declared default typeface first
+- **AND** an explicitly `undefined` default font or size SHALL fall back to the baseline rather than omit it
+- **AND** empty typeface names, non-positive sizes and negative before/after spacing SHALL be rejected before emission

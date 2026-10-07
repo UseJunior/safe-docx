@@ -22,7 +22,11 @@ renderer because safe-docx could not declare the house style once (#1162).
 - Make `RunProps.font` write all four `w:rFonts` channels (`ascii`, `hAnsi`,
   `eastAsia`, `cs`) wherever generation emits it: direct runs, styles,
   numbering levels and document defaults (the generation half of #786).
-  Generation writes no theme-font attributes, so this fully pins the face.
+  Generation writes no theme-font attributes, so no theme font can override
+  the requested name. Glyph coverage is still the font's: a Latin face asked
+  to set CJK text falls back as Word always does, and a caller can no longer
+  choose a separate East Asian face through `font`.
+- List the document default font first in `word/fontTable.xml`.
 - Reject empty typeface names.
 - Add scenario `SDX-GEN-110`.
 

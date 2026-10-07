@@ -33,6 +33,7 @@ function houseStyleSpec(): DocumentSpec {
   return {
     meta: { title: 'House style', createdIso: '2026-10-07T00:00:00Z' },
     numbering: [{ numId: 'clauses', levels: [{ ilvl: 0, numFmt: 'decimal', lvlText: '%1.', runProps: { font: 'Arial' } }] }],
+    styles: [{ styleId: 'Caption', name: 'Caption', type: 'paragraph', basedOn: 'Normal', run: { font: 'Garamond' } }],
     defaults: {
       run: { font: 'Times New Roman', sizePt: 11 },
       paragraph: { spacing: { afterTwips: 160, lineTwips: 276, lineRule: 'auto' } },
@@ -79,12 +80,14 @@ describe('Traceability: document defaults and four-channel fonts', () => {
       let stylesXml!: string;
       let documentXml!: string;
       let numberingXml!: string;
+      let fontTableXml!: string;
       await when('the document is generated and its parts are read back', async () => {
         const buffer = await generateDocx(spec);
         expect((await checkGeneratedPackage(buffer)).issues).toEqual([]);
         stylesXml = (await readZipText(buffer, 'word/styles.xml'))!;
         documentXml = (await readZipText(buffer, 'word/document.xml'))!;
         numberingXml = (await readZipText(buffer, 'word/numbering.xml'))!;
+        fontTableXml = (await readZipText(buffer, 'word/fontTable.xml'))!;
         await attachPrettyXml('word/styles.xml', stylesXml);
       });
 
@@ -113,7 +116,16 @@ describe('Traceability: document defaults and four-channel fonts', () => {
         expect(paragraphs[0]!.getElementsByTagName('w:pPr')).toHaveLength(0);
       });
 
-      await then('direct run fonts and numbering-level fonts pin the same four channels', async () => {
+      await then('the font table lists the house default first and drops the unused Calibri baseline', async () => {
+        const names = Array.from(parseXml(fontTableXml).getElementsByTagName('w:font')).map((font) => attr(font, 'name'));
+        expect(names).toEqual(['Times New Roman', 'Arial', 'Garamond', 'Georgia']);
+      });
+
+      await then('direct run, style and numbering-level fonts pin the same four channels', async () => {
+        const styleFonts = Array.from(parseXml(stylesXml).getElementsByTagName('w:style'))
+          .find((style) => attr(style, 'styleId') === 'Caption')!.getElementsByTagName('w:rFonts').item(0)!;
+        expect(Array.from(styleFonts.attributes).map((a) => a.name)).toEqual(FOUR_CHANNELS);
+        expect(new Set(FOUR_CHANNELS.map((name) => styleFonts.getAttribute(name)))).toEqual(new Set(['Garamond']));
         const direct = parseXml(documentXml).getElementsByTagName('w:rFonts').item(0)!;
         expect(Array.from(direct.attributes).map((a) => a.name)).toEqual(FOUR_CHANNELS);
         expect(new Set(FOUR_CHANNELS.map((name) => direct.getAttribute(name)))).toEqual(new Set(['Georgia']));
@@ -140,6 +152,11 @@ describe('Traceability: document defaults and four-channel fonts', () => {
       expect(attr(rFonts, 'eastAsia')).toBe('Calibri');
       expect(attr(rPrDefault.getElementsByTagName('w:sz').item(0)!, 'val')).toBe('24');
       expect(childElements(parseXml(partial).getElementsByTagName('w:pPrDefault').item(0)!)).toHaveLength(0);
+      // An explicit undefined must not erase the baseline (it would leave font and size to reader fallbacks).
+      const erased = (await readZipText(await generateDocx({ defaults: { run: { font: undefined, sizePt: undefined } }, sections: body('Plain.') }), 'word/styles.xml'))!;
+      expect(erased).toContain(BASELINE_DOC_DEFAULTS);
+      const fontTable = (await readZipText(await generateDocx({ sections: body('Plain.') }), 'word/fontTable.xml'))!;
+      expect(Array.from(parseXml(fontTable).getElementsByTagName('w:font')).map((font) => attr(font, 'name'))).toEqual(['Calibri']);
     },
   );
 
