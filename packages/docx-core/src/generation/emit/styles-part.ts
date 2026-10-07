@@ -24,7 +24,7 @@ const STYLES_SKELETON = `<w:styles xmlns:w="${OOXML.W_NS}"/>`;
 
 /** Default run properties for docDefaults: Calibri 11pt, matching Word's baseline. */
 const DEFAULT_FONT = 'Calibri';
-const DEFAULT_SIZE_HALF_POINTS = '22';
+const DEFAULT_SIZE_PT = 11;
 
 export function emitStylesPart(spec: DocumentSpec, ctx: CompileContext): void {
   ctx.registerPart('word/styles.xml', STYLES_CONTENT_TYPE, STYLES_REL_TYPE);
@@ -33,7 +33,7 @@ export function emitStylesPart(spec: DocumentSpec, ctx: CompileContext): void {
   const root = doc.documentElement!;
 
   const themeColorValues = resolveThemeColorValues(spec.theme);
-  root.appendChild(buildDocDefaults(doc));
+  root.appendChild(buildDocDefaults(doc, spec, themeColorValues));
   root.appendChild(buildNormalStyle(doc));
   for (const style of spec.styles ?? []) {
     root.appendChild(buildStyle(doc, style, themeColorValues));
@@ -42,23 +42,34 @@ export function emitStylesPart(spec: DocumentSpec, ctx: CompileContext): void {
   ctx.setFileContent('word/styles.xml', XML_DECL + serializeXml(doc));
 }
 
-/** @conformance ECMA-376 edition 5, Part 1 § 17.7.5.1 */
-function buildDocDefaults(doc: Document): Element {
+/**
+ * Document defaults: the declared run defaults merge over the Calibri 11pt
+ * baseline, and declared paragraph defaults fill `w:pPrDefault`. Both go
+ * through the shared property builders, so a default serializes exactly like
+ * the same property on a style or a run.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.5.1
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.26
+ */
+function buildDocDefaults(
+  doc: Document,
+  spec: DocumentSpec,
+  themeColorValues: ReadonlyMap<ThemeColorSlot, string>,
+): Element {
   const docDefaults = createWmlElement(doc, W.docDefaults);
 
   const rPrDefault = createWmlElement(doc, W.rPrDefault);
-  const rPr = createWmlElement(doc, W.rPr);
-  rPr.appendChild(createWmlElement(doc, W.rFonts, {
-    'w:ascii': DEFAULT_FONT,
-    'w:hAnsi': DEFAULT_FONT,
-    'w:cs': DEFAULT_FONT,
-  }));
-  rPr.appendChild(createWmlElement(doc, W.sz, { 'w:val': DEFAULT_SIZE_HALF_POINTS }));
-  rPr.appendChild(createWmlElement(doc, W.szCs, { 'w:val': DEFAULT_SIZE_HALF_POINTS }));
-  rPrDefault.appendChild(rPr);
+  const rPr = buildRunPropsElement(doc, {
+    font: DEFAULT_FONT,
+    sizePt: DEFAULT_SIZE_PT,
+    ...spec.defaults?.run,
+  }, { themeColorValues });
+  if (rPr) rPrDefault.appendChild(rPr);
   docDefaults.appendChild(rPrDefault);
 
   const pPrDefault = createWmlElement(doc, W.pPrDefault);
+  const pPr = spec.defaults?.paragraph ? buildParagraphPropsElement(doc, spec.defaults.paragraph) : null;
+  if (pPr) pPrDefault.appendChild(pPr);
   docDefaults.appendChild(pPrDefault);
 
   return docDefaults;

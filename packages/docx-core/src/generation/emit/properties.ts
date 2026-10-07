@@ -29,8 +29,8 @@ const ALIGNMENT_TO_JC: Record<NonNullable<ParagraphProps['alignment']>, string> 
  * property is set so callers can omit the rPr container entirely.
  *
  * Complex-script twins (bCs/iCs/szCs) and the full rFonts script coverage
- * (ascii + hAnsi + cs) are always emitted alongside their base properties so
- * all script ranges agree.
+ * (ascii + hAnsi + eastAsia + cs) are always emitted alongside their base
+ * properties so all script ranges agree.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.28
  */
@@ -42,9 +42,12 @@ export function buildRunPropsElement(
   const children = new Map<string, Element | Element[]>();
 
   if (props.font !== undefined) {
+    // Generation never writes theme-font attributes, so these four explicit
+    // channels fully pin the typeface (CT_Fonts attribute order).
     children.set(W.rFonts, createWmlElement(doc, W.rFonts, {
       'w:ascii': props.font,
       'w:hAnsi': props.font,
+      'w:eastAsia': props.font,
       'w:cs': props.font,
     }));
   }
