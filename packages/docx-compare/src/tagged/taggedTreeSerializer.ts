@@ -1622,7 +1622,15 @@ function refineSimpleRunGap(
   const concatenate = directPropertySignatures.size === 1;
   const left = tokenizedRuns(originals, provenanceByRun);
   const right = tokenizedRuns(revised, provenanceByRun);
-  const minimalAlignment = alignComparisonSequences(left, right, (a, b) => a.value === b.value);
+  // Among equally long alignments, prefer pairing tokens whose runs share
+  // formatting, so a space beside an inserted formatted word is not taken for
+  // the differently formatted space already there (#743).
+  const minimalAlignment = alignComparisonSequences(
+    left,
+    right,
+    (a, b) => a.value === b.value,
+    (a, b) => runPropertySignature(a.run) === runPropertySignature(b.run),
+  );
   const bridgeMatches = revisionGrouping === 'readable-whitespace' && concatenate
     ? new Set(minimalAlignment.matches.flatMap((match, index, matches) => {
       const previous = matches[index - 1];

@@ -8,6 +8,7 @@ import {
 } from '@usejunior/docx-core';
 import type { RevisionAttributionRange } from '../compare-types.js';
 import { getChangedPropertyNames } from '../propertyNaming.js';
+import { alignComparisonSequences, tokenizeComparisonText } from '../textAlignment.js';
 import {
   countWords,
   jaccardWordSetSimilarity,
@@ -65,9 +66,16 @@ function bookmarkStartFor(element: WmlElement): WmlElement | undefined {
   return id ? starts.get(id) : undefined;
 }
 function semanticAttributeSignature(element: WmlElement): string {
+  // `xml:space="preserve"` only matters when the text has leading or trailing
+  // whitespace; elsewhere it is a serialization choice that differs between
+  // producers and must not make identical text unalignable (#743).
+  const insignificantSpace = ['t', 'delText', 'instrText', 'delInstrText'].includes(element.localName ?? '') &&
+    !/^\s|\s$/u.test(element.textContent ?? '');
   return JSON.stringify(Array.from(element.attributes)
     .filter((attribute) => {
       if (attribute.namespaceURI === 'http://www.w3.org/2000/xmlns/') return false;
+      if (insignificantSpace && attribute.namespaceURI === 'http://www.w3.org/XML/1998/namespace' &&
+          attribute.localName === 'space') return false;
       if (attribute.namespaceURI === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' &&
           (attribute.localName ?? '').startsWith('rsid')) return false;
       if (attribute.namespaceURI === 'http://schemas.microsoft.com/office/word/2010/wordml' &&
@@ -224,6 +232,120 @@ function propertyDelta(original: WmlElement, revised: WmlElement): PropertyDelta
   };
 }
 
+/**
+ * Restrict text-run anchors to pairs that the container's text alignment also
+ * pairs. Run alignment keys compare whole run text, so when the two inputs
+ * split identical text into different runs, a short run such as `" "` or a
+ * repeated word can match an unrelated run elsewhere in the paragraph. That
+ * stray anchor forces the text between it and its true counterpart into a
+ * delete-plus-insert, and carries a format revision whenever the two runs'
+ * properties differ. An anchor is rejected when the segmentation-independent
+ * token alignment of the container text places any of its characters
+ * somewhere other than the partner run's matching character.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/743
+ */
+const MAX_RUN_ANCHOR_ALIGNMENT_CELLS = 4_000_000;
+
+function textConsistentRunAnchors(
+  original: readonly WmlElement[],
+  revised: readonly WmlElement[],
+): (originalIndex: number, revisedIndex: number) => boolean {
+  const isTextRun = (element: WmlElement): boolean =>
+    element.localName === 'r' && (element.textContent ?? '').length > 0;
+  if (!original.some(isTextRun) || !revised.some(isTextRun)) return () => true;
+  const formatting = (element: WmlElement): string => {
+    if (element.localName !== 'r') return element.localName ?? element.tagName;
+    const properties = childElements(element).find((child) => child.localName === 'rPr');
+    return properties ? subtreeSignature(properties) : '';
+  };
+  const offsets = (elements: readonly WmlElement[]): { text: string; starts: number[] } => {
+    const starts: number[] = [];
+    let text = '';
+    for (const element of elements) {
+      starts.push(text.length);
+      text += element.textContent ?? '';
+    }
+    return { text, starts };
+  };
+  const left = offsets(original);
+  const right = offsets(revised);
+  interface Token { value: string; start: number; formatting: string }
+  const tokens = (
+    elements: readonly WmlElement[],
+    side: { text: string; starts: number[] },
+  ): Token[] => {
+    let start = 0;
+    let owner = 0;
+    return tokenizeComparisonText(side.text).map((value) => {
+      while (owner + 1 < elements.length && side.starts[owner + 1]! <= start) owner++;
+      const token = { value, start, formatting: formatting(elements[owner]!) };
+      start += value.length;
+      return token;
+    });
+  };
+  const leftTokens = tokens(original, left);
+  const rightTokens = tokens(revised, right);
+  const identical = (a: Token, b: Token): boolean => a.value === b.value && a.formatting === b.formatting;
+  // Aligned character offsets, in both directions.
+  const forward = new Map<number, number>();
+  const backward = new Map<number, number>();
+  const mapToken = (leftIndex: number, rightIndex: number): void => {
+    const leftToken = leftTokens[leftIndex]!;
+    const rightToken = rightTokens[rightIndex]!;
+    for (let offset = 0; offset < leftToken.value.length; offset++) {
+      forward.set(leftToken.start + offset, rightToken.start + offset);
+      backward.set(rightToken.start + offset, leftToken.start + offset);
+    }
+  };
+  let prefix = 0;
+  while (prefix < leftTokens.length && prefix < rightTokens.length &&
+      identical(leftTokens[prefix]!, rightTokens[prefix]!)) {
+    mapToken(prefix, prefix);
+    prefix++;
+  }
+  let suffix = 0;
+  while (suffix < leftTokens.length - prefix && suffix < rightTokens.length - prefix &&
+      identical(leftTokens[leftTokens.length - 1 - suffix]!, rightTokens[rightTokens.length - 1 - suffix]!)) {
+    mapToken(leftTokens.length - 1 - suffix, rightTokens.length - 1 - suffix);
+    suffix++;
+  }
+  // The quadratic token alignment is bounded; past the bound, run anchors
+  // keep their text-only identity.
+  if ((leftTokens.length - prefix - suffix) * (rightTokens.length - prefix - suffix) >
+      MAX_RUN_ANCHOR_ALIGNMENT_CELLS) return () => true;
+  // Text decides the alignment; formatting only chooses among equally long
+  // alignments, so an inserted space beside a bold word is not taken for the
+  // unformatted space that was already there.
+  const middle = alignComparisonSequences(
+    leftTokens.slice(prefix, leftTokens.length - suffix),
+    rightTokens.slice(prefix, rightTokens.length - suffix),
+    (a, b) => a.value === b.value,
+    identical,
+  );
+  for (const match of middle.matches) mapToken(prefix + match.originalIndex, prefix + match.revisedIndex);
+  return (originalIndex, revisedIndex) => {
+    const originalElement = original[originalIndex]!;
+    if (!isTextRun(originalElement)) return true;
+    const text = originalElement.textContent ?? '';
+    const originalStart = left.starts[originalIndex]!;
+    const revisedStart = right.starts[revisedIndex]!;
+    // Characters inside changed tokens align with nothing and do not decide;
+    // a character the text alignment places anywhere else rejects the pair.
+    // Whitespace tokens merge across run boundaries, so where a space falls in
+    // one is arbitrary: whitespace decides only for a whitespace-only run.
+    const whitespaceOnly = text.trim() === '';
+    for (let offset = 0; offset < text.length; offset++) {
+      if (!whitespaceOnly && /\s/u.test(text[offset]!)) continue;
+      const revisedOffset = forward.get(originalStart + offset);
+      if (revisedOffset !== undefined && revisedOffset !== revisedStart + offset) return false;
+      const originalOffset = backward.get(revisedStart + offset);
+      if (originalOffset !== undefined && originalOffset !== originalStart + offset) return false;
+    }
+    return true;
+  };
+}
+
 function lcsPairs(
   original: readonly WmlElement[],
   revised: readonly WmlElement[],
@@ -271,12 +393,15 @@ function lcsPairs(
     key(element, originalFields.get(index), originalNumberingIdentities));
   const revisedKeys = revised.map((element, index) =>
     key(element, revisedFields.get(index), revisedNumberingIdentities));
+  const consistentAnchor = textConsistentRunAnchors(original, revised);
+  const anchors = (i: number, j: number): boolean =>
+    originalKeys[i] === revisedKeys[j] && consistentAnchor(i, j);
   const rows = original.length + 1;
   const cols = revised.length + 1;
   const dp = Array.from({ length: rows }, () => Array<number>(cols).fill(0));
   for (let i = original.length - 1; i >= 0; i--) {
     for (let j = revised.length - 1; j >= 0; j--) {
-      dp[i]![j] = originalKeys[i] === revisedKeys[j]
+      dp[i]![j] = anchors(i, j)
         ? 1 + dp[i + 1]![j + 1]!
         : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
     }
@@ -285,7 +410,7 @@ function lcsPairs(
   let i = 0;
   let j = 0;
   while (i < original.length && j < revised.length) {
-    if (originalKeys[i] === revisedKeys[j]) {
+    if (anchors(i, j)) {
       pairs.push([i++, j++]);
     } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
     else j++;
