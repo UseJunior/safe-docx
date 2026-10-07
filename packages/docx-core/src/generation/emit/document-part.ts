@@ -56,8 +56,10 @@ export function emitDocumentPart(spec: DocumentSpec, refs?: SectionHeaderFooterR
       }
       body.appendChild(sectPr);
     } else if (section.breakPlacement === 'lastParagraph') {
-      // Validation guarantees the section ends with a paragraph. sectPr is the
-      // last CT_PPr child generation can emit (only pPrChange follows it).
+      // Validation guarantees the section ends with a paragraph. CT_PPr orders
+      // base properties, rPr, sectPr, pPrChange; generation emits neither a
+      // paragraph-mark rPr nor pPrChange, so appending keeps schema order.
+      // Ordered insertion is needed if either is ever emitted.
       const lastParagraph = body.lastChild as Element | null;
       if (!lastParagraph || lastParagraph.nodeName !== 'w:p') {
         throw new GenerationInternalError('lastParagraph section break has no final paragraph to bind to');

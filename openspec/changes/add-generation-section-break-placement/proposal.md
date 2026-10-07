@@ -4,12 +4,14 @@
 
 `generateDocx` ends every non-final section with a dedicated empty paragraph
 that holds the section's `w:sectPr`. That is what Word's Insert → Section Break
-writes, but in a finished instrument the empty paragraph is a stray blank line
-at the foot of the section. When the page is already full, it pushes onto a
-blank page of its own. It also shows up as an extra empty paragraph in text
-read-back and in the brownfield `docx-markdoc import` scaffold. A resolution
-whose signature page is its own section, the main case in #1162, needs a
-section break that adds no paragraph.
+writes. In a generated instrument, though, it is an extra empty paragraph that
+the source never asked for: a text read-back against the source finds a
+paragraph the source does not have, and the brownfield `docx-markdoc import`
+scaffold anchors an empty paragraph an author never wrote. A resolution whose
+signature page is its own section, the main case in #1162, needs a section
+break that adds no paragraph, which is how the per-matter python-docx renderer
+places it. In LibreOffice 25.8, both placements paginate identically, so this
+change makes no pagination claim.
 
 ## What Changes
 

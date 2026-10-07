@@ -93,7 +93,24 @@ describe('Traceability: section break placement', () => {
         const pPr = childElements(legend)[0]!;
         expect(pPr.nodeName).toBe('w:pPr');
         expect(childElements(pPr).map((el) => el.nodeName)).toEqual(['w:jc', 'w:sectPr']);
-        expect(childElements(pPr)[1]!.getElementsByTagName('w:footerReference')).toHaveLength(1);
+      });
+
+      await then('each section\'s footer reference resolves to that section\'s own footer text', async () => {
+        const rels = parseXml((await readZipText(buffer, 'word/_rels/document.xml.rels'))!);
+        const targets = new Map(Array.from(rels.getElementsByTagName('Relationship'))
+          .map((rel) => [rel.getAttribute('Id')!, rel.getAttribute('Target')!]));
+        const sectPrs = Array.from(parseXml(documentXml).getElementsByTagName('w:sectPr'));
+        const footerTexts: Array<string | null> = [];
+        for (const sectPr of sectPrs) {
+          const ref = sectPr.getElementsByTagName('w:footerReference').item(0);
+          if (!ref) {
+            footerTexts.push(null);
+            continue;
+          }
+          const part = parseXml((await readZipText(buffer, `word/${targets.get(ref.getAttribute('r:id')!)}`))!);
+          footerTexts.push(Array.from(part.getElementsByTagName('w:t')).map((t) => t.textContent).join(''));
+        }
+        expect(footerTexts).toEqual(['First footer', 'Signature page footer', null]);
       });
 
       await then('the section audit sees two paragraph-level breaks, one body-level sectPr and both footer bindings', async () => {
@@ -131,6 +148,34 @@ describe('Traceability: section break placement', () => {
       expect(childElements(first).map((el) => el.nodeName)).toEqual(['w:pPr', 'w:r']);
       expect(childElements(childElements(first)[0]!).map((el) => el.nodeName)).toEqual(['w:sectPr']);
       expect(childElements(body).filter((el) => el.nodeName === 'w:p')).toHaveLength(2);
+      validateAgainstSchema(xml);
+    },
+  );
+
+  test.openspec('[SDX-GEN-111] a last-paragraph break keeps first-page footers, titlePg and page-number restarts')(
+    'Scenario: a last-paragraph break keeps first-page footers, titlePg and page-number restarts',
+    async () => {
+      const xml = (await readZipText(await generateDocx({
+        sections: [
+          {
+            breakPlacement: 'lastParagraph',
+            pageNumbering: { start: 3, format: 'lowerRoman' },
+            footers: { first: footer('Cover footer'), default: footer('Body footer') },
+            blocks: [paragraph('Cover.'), paragraph('Body.', { keepNext: true })],
+          },
+          { blocks: [paragraph('Next.')] },
+        ],
+      }), 'word/document.xml'))!;
+      const body = parseXml(xml).getElementsByTagName('w:body').item(0)!;
+      const last = childElements(body).filter((el) => el.nodeName === 'w:p')[1]!;
+      const pPr = childElements(last)[0]!;
+      expect(childElements(pPr).map((el) => el.nodeName)).toEqual(['w:keepNext', 'w:sectPr']);
+      const sectPr = childElements(pPr)[1]!;
+      expect(Array.from(sectPr.getElementsByTagName('w:footerReference')).map((ref) => ref.getAttribute('w:type')).sort()).toEqual(['default', 'first']);
+      expect(sectPr.getElementsByTagName('w:titlePg')).toHaveLength(1);
+      const pgNumType = sectPr.getElementsByTagName('w:pgNumType').item(0)!;
+      expect([pgNumType.getAttribute('w:start'), pgNumType.getAttribute('w:fmt')]).toEqual(['3', 'lowerRoman']);
+      expect(childElements(body).filter((el) => el.nodeName === 'w:p')).toHaveLength(3);
       validateAgainstSchema(xml);
     },
   );
