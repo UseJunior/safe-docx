@@ -312,4 +312,30 @@ describe('run segmentation independence (#743)', () => {
       expect(parseXml(multiTextResult.xml).getElementsByTagNameNS(W_NS, 'rPrChange')).toHaveLength(1);
     });
   });
+
+  test('repeated text inserted in a structural run keeps the following plain run anchored', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const insertions = await given('inserted runs with a tab, break, several text elements, or a hyperlink', () => [
+      run('alpha ').replace('</w:t>', '</w:t><w:tab/>'),
+      run('alpha ').replace('</w:t>', '</w:t><w:br/>'),
+      '<w:r><w:t>alpha</w:t><w:t xml:space="preserve"> </w:t></w:r>',
+      `<w:hyperlink w:anchor="dest">${run('alpha ')}</w:hyperlink>`,
+    ]);
+
+    const results = await when('each insertion precedes an unchanged plain `alpha` run', () => Promise.all(
+      insertions.map((inserted) => compare(
+        paragraph(run('alpha'), run(' beta')),
+        paragraph(inserted, run('alpha'), run(' beta')),
+      )),
+    ));
+
+    await then('only the inserted run is revised', () => {
+      for (const compared of results) {
+        expect(compared.stats).toMatchObject({ insertions: 1, deletions: 0, formatChanges: 0 });
+      }
+    });
+  });
 });

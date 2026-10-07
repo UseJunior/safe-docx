@@ -247,19 +247,80 @@ function propertyDelta(original: WmlElement, revised: WmlElement): PropertyDelta
  */
 const MAX_RUN_ANCHOR_ALIGNMENT_CELLS = 4_000_000;
 
+/**
+ * A run of one text element (and optional rPr): the only run the serializer's
+ * gap refinement can re-align once its anchor is rejected. A run with several
+ * text elements, a tab, break, field code, or other content falls back to a
+ * whole-run delete-plus-insert, so its anchor is kept.
+ */
+function isPlainTextRun(element: WmlElement): boolean {
+  if (element.localName !== 'r' || (element.textContent ?? '').length === 0) return false;
+  const content = childElements(element).filter((child) => child.localName !== 'rPr');
+  return content.length === 1 && content[0]!.localName === 't';
+}
+
+/** Content that gap refinement can step over or re-align (#1022, #743). */
+const REFINABLE_GAP_MARKERS = new Set([
+  'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
+]);
+function isRefinableGapContent(element: WmlElement): boolean {
+  return isPlainTextRun(element) || REFINABLE_GAP_MARKERS.has(element.localName ?? '');
+}
+
+/**
+ * Longest common subsequence of child indices under an anchor predicate,
+ * taking the first anchor in document order on ties.
+ */
+function anchorPairs(
+  originalLength: number,
+  revisedLength: number,
+  anchors: (i: number, j: number) => boolean,
+): Array<[number, number]> {
+  const dp = Array.from({ length: originalLength + 1 }, () => Array<number>(revisedLength + 1).fill(0));
+  for (let i = originalLength - 1; i >= 0; i--) {
+    for (let j = revisedLength - 1; j >= 0; j--) {
+      dp[i]![j] = anchors(i, j)
+        ? 1 + dp[i + 1]![j + 1]!
+        : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
+    }
+  }
+  const pairs: Array<[number, number]> = [];
+  let i = 0;
+  let j = 0;
+  while (i < originalLength && j < revisedLength) {
+    if (anchors(i, j)) {
+      pairs.push([i++, j++]);
+    } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
+    else j++;
+  }
+  return pairs;
+}
+
+/**
+ * Gaps (original start/end, revised start/end) between consecutive pairs.
+ */
+function pairGaps(
+  pairs: ReadonlyArray<[number, number]>,
+  originalLength: number,
+  revisedLength: number,
+): Array<[number, number, number, number]> {
+  const gaps: Array<[number, number, number, number]> = [];
+  let originalStart = 0;
+  let revisedStart = 0;
+  for (const [originalIndex, revisedIndex] of [...pairs, [originalLength, revisedLength] as [number, number]]) {
+    if (originalIndex > originalStart || revisedIndex > revisedStart) {
+      gaps.push([originalStart, originalIndex, revisedStart, revisedIndex]);
+    }
+    originalStart = originalIndex + 1;
+    revisedStart = revisedIndex + 1;
+  }
+  return gaps;
+}
+
 function textConsistentRunAnchors(
   original: readonly WmlElement[],
   revised: readonly WmlElement[],
 ): (originalIndex: number, revisedIndex: number) => boolean {
-  // Only runs of one text element (and optional rPr) can be re-aligned by gap
-  // refinement once their anchor is rejected; a run with several text
-  // elements, a tab, break, field code, or other content would fall back to a
-  // whole-run delete-plus-insert, so its anchor is kept.
-  const isPlainTextRun = (element: WmlElement): boolean => {
-    if (element.localName !== 'r' || (element.textContent ?? '').length === 0) return false;
-    const content = childElements(element).filter((child) => child.localName !== 'rPr');
-    return content.length === 1 && content[0]!.localName === 't';
-  };
   if (!original.some(isPlainTextRun) || !revised.some(isPlainTextRun)) return () => true;
   const formatting = (element: WmlElement): string => {
     if (element.localName !== 'r') return element.localName ?? element.tagName;
@@ -400,29 +461,25 @@ function lcsPairs(
     key(element, originalFields.get(index), originalNumberingIdentities));
   const revisedKeys = revised.map((element, index) =>
     key(element, revisedFields.get(index), revisedNumberingIdentities));
+  const keyed = (i: number, j: number): boolean => originalKeys[i] === revisedKeys[j];
+  const textOnly = anchorPairs(original.length, revised.length, keyed);
   const consistentAnchor = textConsistentRunAnchors(original, revised);
-  const anchors = (i: number, j: number): boolean =>
-    originalKeys[i] === revisedKeys[j] && consistentAnchor(i, j);
-  const rows = original.length + 1;
-  const cols = revised.length + 1;
-  const dp = Array.from({ length: rows }, () => Array<number>(cols).fill(0));
-  for (let i = original.length - 1; i >= 0; i--) {
-    for (let j = revised.length - 1; j >= 0; j--) {
-      dp[i]![j] = anchors(i, j)
-        ? 1 + dp[i + 1]![j + 1]!
-        : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
-    }
-  }
-  const pairs: Array<[number, number]> = [];
-  let i = 0;
-  let j = 0;
-  while (i < original.length && j < revised.length) {
-    if (anchors(i, j)) {
-      pairs.push([i++, j++]);
-    } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
-    else j++;
-  }
-  return pairs;
+  const consistent = anchorPairs(
+    original.length,
+    revised.length,
+    (i, j) => keyed(i, j) && consistentAnchor(i, j),
+  );
+  // Use the text-consistent anchors only when every gap they change can be
+  // re-aligned by gap refinement; otherwise a rejected anchor would turn
+  // unchanged structural content into a delete-plus-insert.
+  const unchanged = new Set(pairGaps(textOnly, original.length, revised.length)
+    .map((gap) => gap.join(',')));
+  const refinable = pairGaps(consistent, original.length, revised.length)
+    .filter((gap) => !unchanged.has(gap.join(',')))
+    .every(([originalStart, originalEnd, revisedStart, revisedEnd]) =>
+      original.slice(originalStart, originalEnd).every(isRefinableGapContent) &&
+      revised.slice(revisedStart, revisedEnd).every(isRefinableGapContent));
+  return refinable ? consistent : textOnly;
 }
 
 /**
