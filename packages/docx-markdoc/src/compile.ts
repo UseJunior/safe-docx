@@ -682,6 +682,63 @@ function insertionFormatSource(document: DocxDocument, operation: InsertOperatio
   return operation.formatSource;
 }
 
+/** The single source run a hunk can inherit from, or undefined at an ambiguous formatting boundary. */
+function unambiguousTemplate(spans: RunSpan[], hunk: Pick<TextHunk, 'start' | 'end'>): Element | undefined {
+  const touched = spans.filter((span) => span.start < hunk.end && span.end > hunk.start);
+  if (touched.length > 0) {
+    const signatures = new Set(touched.map((span) => span.signature));
+    return signatures.size === 1 ? touched[0]!.run : undefined;
+  }
+  const left = [...spans].reverse().find((span) => span.end <= hunk.start);
+  const right = spans.find((span) => span.start >= hunk.start);
+  if (left && right && left.signature === right.signature) return left.run;
+  if (!left && right) return right.run;
+  if (left && !right) return left.run;
+  return undefined;
+}
+
+const isSurrogate = (value: string | undefined): boolean => value !== undefined && /[\uD800-\uDFFF]/.test(value);
+
+/**
+ * A pure insertion whose text begins or ends with the characters around it
+ * has several equivalent offsets: inserting "up to " before "[Number]" equals
+ * inserting " up to" one character earlier. Sliding across those equal
+ * characters is a standard diff normalization and changes no resulting text.
+ * When the token diff lands an insertion on a formatting boundary, try the
+ * equivalent offsets (left first, then right, never past a neighbouring hunk
+ * or through a surrogate pair) and keep the first one with an unambiguous
+ * template. This never chooses between two formats; when no equivalent
+ * in-run offset exists the hunk is returned unchanged and still fails closed.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1167
+ */
+function placeInsertionHunks(hunks: TextHunk[], spans: RunSpan[], source: string): TextHunk[] {
+  return hunks.map((hunk, index) => {
+    if (hunk.start !== hunk.end || hunk.replacement.length === 0 || unambiguousTemplate(spans, hunk)) return hunk;
+    const lower = index > 0 ? hunks[index - 1]!.end : 0;
+    const upper = index < hunks.length - 1 ? hunks[index + 1]!.start : source.length;
+    let left = hunk;
+    while (left.start > lower && source[left.start - 1] === left.replacement.at(-1) && !isSurrogate(source[left.start - 1])) {
+      const offset = left.start - 1;
+      left = { start: offset, end: offset, replacement: source[offset]! + left.replacement.slice(0, -1), revisedStart: left.revisedStart - 1, revisedEnd: left.revisedEnd - 1 };
+      if (unambiguousTemplate(spans, left)) return left;
+    }
+    let right = hunk;
+    while (right.start < upper && source[right.start] === right.replacement[0] && !isSurrogate(source[right.start])) {
+      const offset = right.start + 1;
+      right = { start: offset, end: offset, replacement: right.replacement.slice(1) + source[right.start]!, revisedStart: right.revisedStart + 1, revisedEnd: right.revisedEnd + 1 };
+      if (unambiguousTemplate(spans, right)) return right;
+    }
+    return hunk;
+  });
+}
+
+/** Body-paragraph hunks, with boundary insertions moved to an equivalent in-run offset when formatting is inherited. */
+function bodyTextHunks(before: string, after: string, spans: RunSpan[], declaresFormatting: boolean): TextHunk[] {
+  const hunks = textHunks(before, after);
+  return declaresFormatting ? hunks : placeInsertionHunks(hunks, spans, before);
+}
+
 function templateForHunk(
   spans: RunSpan[],
   hunk: TextHunk,
@@ -690,17 +747,8 @@ function templateForHunk(
   explicit?: string,
 ): Element {
   if (explicit !== undefined) return uniqueSourceTemplate(spans, sourceText, explicit, id);
-  const touched = spans.filter((span) => span.start < hunk.end && span.end > hunk.start);
-  if (touched.length > 0) {
-    const signatures = new Set(touched.map((span) => span.signature));
-    if (signatures.size === 1) return touched[0]!.run;
-  } else {
-    const left = [...spans].reverse().find((span) => span.end <= hunk.start);
-    const right = spans.find((span) => span.start >= hunk.start);
-    if (left && right && left.signature === right.signature) return left.run;
-    if (!left && right) return right.run;
-    if (left && !right) return left.run;
-  }
+  const template = unambiguousTemplate(spans, hunk);
+  if (template) return template;
   throw new DocxMarkdocError(
     'MIXED_FORMATTING_REQUIRES_DETAIL',
     `Paragraph ${id} replacement crosses a formatting boundary; inspect normalized runs and set format-source to a unique source substring.`,
@@ -778,6 +826,11 @@ function insertionTemplate(document: DocxDocument, operation: InsertOperation): 
   return spans[0]!.run;
 }
 
+/** An edit that names its own formatting keeps the token diff's exact hunk offsets. */
+function declaresFormatting(formatSource: string | undefined, runFormat: RunFormat | undefined, runFormatSpans: RunFormatSpan[] | undefined): boolean {
+  return formatSource !== undefined || runFormat !== undefined || (runFormatSpans?.length ?? 0) > 0;
+}
+
 function replacePreservingMixedFormatting(
   document: DocxDocument,
   id: string,
@@ -789,7 +842,7 @@ function replacePreservingMixedFormatting(
 ): void {
   const paragraph = assertAdmittedStructure(document, id);
   const spans = runSpans(paragraph);
-  const hunks = textHunks(before, after);
+  const hunks = bodyTextHunks(before, after, spans, declaresFormatting(formatSource, runFormat, runFormatSpans));
   const formatted = runFormat ? requireSingleGeneratedHunk(id, hunks) : undefined;
   validateInlineRunFormatSpans(id, hunks, runFormatSpans);
   for (const hunk of [...hunks].reverse()) {
@@ -1681,7 +1734,13 @@ async function applyOperations(
       paragraph?.parentNode?.removeChild(paragraph);
       continue;
     }
-    const operationHunks = textHunks(original, operation.revisedText);
+    // Same placement replacePreservingMixedFormatting uses, so rationale
+    // ranges cover exactly the text that edit inserts.
+    const operationParagraph = document.getParagraphElementById(operation.id);
+    const operationHunks = operationParagraph
+      ? bodyTextHunks(original, operation.revisedText, runSpans(operationParagraph), declaresFormatting(
+        operation.kind === 'replace-source' ? operation.formatSource : undefined, operation.runFormat, operation.runFormatSpans))
+      : textHunks(original, operation.revisedText);
     const generated = operationHunks.filter((hunk) => hunk.replacement.length > 0);
     if (generated.length > 0) {
       ranges.push({
