@@ -279,7 +279,7 @@ describe('run segmentation independence (#743)', () => {
     });
   });
 
-  test('repeated text inserted before a run with a tab, break, or field keeps that run anchored', async ({
+  test('repeated text inserted before a run with a tab, break, field, or several text elements keeps that run anchored', async ({
     given,
     when,
     then,
@@ -289,16 +289,27 @@ describe('run segmentation independence (#743)', () => {
       { stable: run('alpha', '').replace('</w:t>', '</w:t><w:br/>'), inserted: 'alpha ' },
       { stable: completeField(' PAGE ', '1'), inserted: ' PAGE 1 ' },
     ]);
+    // A run of two text elements whose formatting also changes keeps its
+    // anchor and is reported as a format change, not deleted and reinserted.
+    const multiText = '<w:r><w:t>al</w:t><w:t>pha</w:t></w:r>';
+    const multiTextBold = '<w:r><w:rPr><w:b/></w:rPr><w:t>al</w:t><w:t>pha</w:t></w:r>';
 
     const results = await when('each pair is compared', () => Promise.all(cases.map(({ stable, inserted }) => compare(
       paragraph(stable, run(' beta')),
       paragraph(run(inserted), stable, run(' beta')),
     ))));
 
+    const multiTextResult = await when('a multi-text run is restyled after repeated text', () => compare(
+      paragraph(multiText, run(' beta')),
+      paragraph(run('alpha '), multiTextBold, run(' beta')),
+    ));
+
     await then('only the inserted text is revised', () => {
       for (const compared of results) {
         expect(compared.stats).toMatchObject({ insertions: 1, deletions: 0, formatChanges: 0 });
       }
+      expect(multiTextResult.stats).toMatchObject({ insertions: 1, deletions: 0 });
+      expect(parseXml(multiTextResult.xml).getElementsByTagNameNS(W_NS, 'rPrChange')).toHaveLength(1);
     });
   });
 });
