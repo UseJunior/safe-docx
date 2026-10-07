@@ -32,6 +32,8 @@ function resolveTable(
     cols?: number;
     cell?: (r: number, c: number) => Cell;
     trPr?: (r: number) => string;
+    tblPrEx?: (r: number) => string;
+    gridCols?: number;
   } = {},
 ): { cells: RunFormatting[][]; outside: RunFormatting } {
   const rows = opts.rows ?? 1;
@@ -44,8 +46,10 @@ function resolveTable(
     );
   };
   let table = `<w:tbl><w:tblPr>${opts.tblPr ?? ''}</w:tblPr>`;
+  if (opts.gridCols) table += `<w:tblGrid>${'<w:gridCol/>'.repeat(opts.gridCols)}</w:tblGrid>`;
   for (let r = 0; r < rows; r++) {
-    table += `<w:tr>${opts.trPr ? `<w:trPr>${opts.trPr(r)}</w:trPr>` : ''}`;
+    const ex = opts.tblPrEx?.(r);
+    table += `<w:tr>${ex ? `<w:tblPrEx>${ex}</w:tblPrEx>` : ''}${opts.trPr ? `<w:trPr>${opts.trPr(r)}</w:trPr>` : ''}`;
     for (let c = 0; c < cols; c++) {
       const cell = opts.cell?.(r, c) ?? {};
       table += `<w:tc>${cell.tcPr ? `<w:tcPr>${cell.tcPr}</w:tcPr>` : ''}${paragraph(`${r},${c}`, cell)}</w:tc>`;
@@ -287,11 +291,12 @@ describe('table-style effective run formatting (#1159)', () => {
 
   test
     .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.7.3' })(
-      'the table style is one toggle level below the paragraph style',
+      'a table-style toggle resets the value, and a paragraph style above it still toggles',
       async ({ given, when, then }: AllureBddContext) => {
         let result!: ReturnType<typeof resolveTable>;
-        await given('a table style and a paragraph style that both turn bold on', async () => {});
-        await when('runs with and without the paragraph style are resolved', async () => {
+        let boldDefaults!: ReturnType<typeof resolveTable>;
+        await given('bold-on and bold-off table styles, a bold paragraph style, and bold document defaults', async () => {});
+        await when('runs are resolved with and without the paragraph style and bold defaults', async () => {
           result = resolveTable(
             STYLES(
               TABLE_STYLE('Grid', '<w:rPr><w:b/></w:rPr>') +
@@ -299,13 +304,119 @@ describe('table-style effective run formatting (#1159)', () => {
             ),
             { tblPr: '<w:tblStyle w:val="Grid"/>', cols: 2, cell: (_r, c) => (c === 1 ? { pStyle: 'Strong' } : {}) },
           );
+          const defaults =
+            '<w:docDefaults><w:rPrDefault><w:rPr><w:b/></w:rPr></w:rPrDefault></w:docDefaults>';
+          boldDefaults = resolveTable(
+            defaults + TABLE_STYLE('On', '<w:rPr><w:b/></w:rPr>') + TABLE_STYLE('Off', '<w:rPr><w:b w:val="0"/></w:rPr>'),
+            { tblPr: '<w:tblStyle w:val="On"/>' },
+          );
+          boldDefaults.cells.push(
+            resolveTable(
+              defaults + TABLE_STYLE('Off', '<w:rPr><w:b w:val="0"/></w:rPr>'),
+              { tblPr: '<w:tblStyle w:val="Off"/>' },
+            ).cells[0]!,
+          );
         });
-        await then('two style-level on declarations toggle each other off', async () => {
+        await then('the table style assigns its value (Word), and the paragraph style toggles it', async () => {
           expect(result.cells[0]![0]!.bold).toBe(true);
           expect(result.cells[0]![1]!.bold).toBe(false);
+          // Over bold document defaults, a bold-on table style stays bold
+          // rather than toggling off, and a bold-off one turns it off.
+          expect(boldDefaults.cells[0]![0]!.bold).toBe(true);
+          expect(boldDefaults.cells[1]![0]!.bold).toBe(false);
         });
       },
     );
+
+  test('tracked table-property changes are the previous state and are not read', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let removedStyle!: ReturnType<typeof resolveTable>;
+    let removedLook!: ReturnType<typeof resolveTable>;
+    await given('a table whose w:tblPrChange records an older style and look', async () => {});
+    await when('runs in tables with those tracked changes are resolved', async () => {
+      const lookOff = LOOK_ALL_OFF;
+      removedStyle = resolveTable(STYLES(TABLE_STYLE('Old', '<w:rPr><w:color w:val="FF0000"/></w:rPr>')), {
+        tblPr: '<w:tblPrChange w:id="1" w:author="R"><w:tblPr><w:tblStyle w:val="Old"/></w:tblPr></w:tblPrChange>',
+      });
+      removedLook = resolveTable(STYLES(TABLE_STYLE('Grid', COND('firstRow', '<w:color w:val="FF0000"/>'))), {
+        tblPr: `<w:tblStyle w:val="Grid"/><w:tblPrChange w:id="1" w:author="R"><w:tblPr>${lookOff}</w:tblPr></w:tblPrChange>`,
+      });
+    });
+    await then('only the current table properties count', async () => {
+      expect(removedStyle.cells[0]![0]!.colorHex).toBe('auto');
+      // No current tblLook: Word's default turns the first row on.
+      expect(removedLook.cells[0]![0]!.colorHex).toBe('FF0000');
+    });
+  });
+
+  test('columns are grid columns: gridBefore and gridSpan move a cell off the first or last column', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let result!: ReturnType<typeof resolveTable>;
+    await given('first- and last-column conditions on a three-column grid', async () => {});
+    await when('a row skipping one grid column, and a row whose first cell spans two columns, are resolved', async () => {
+      result = resolveTable(
+        STYLES(
+          TABLE_STYLE(
+            'Grid',
+            COND('firstCol', '<w:color w:val="FF0000"/>') + COND('lastCol', '<w:color w:val="0000FF"/>'),
+          ),
+        ),
+        {
+          tblPr: '<w:tblStyle w:val="Grid"/><w:tblLook w:firstColumn="1" w:lastColumn="1" w:noHBand="1" w:noVBand="1"/>',
+          gridCols: 3,
+          rows: 2,
+          cols: 2,
+          trPr: (r) => (r === 0 ? '<w:gridBefore w:val="1"/>' : ''),
+          cell: (r, c) => (r === 1 && c === 0 ? { tcPr: '<w:gridSpan w:val="2"/>' } : {}),
+        },
+      );
+    });
+    await then('the cell after gridBefore is not the first column; spans reach the last column', async () => {
+      expect(result.cells[0]!.map((f) => f.colorHex)).toEqual(['auto', '0000FF']);
+      expect(result.cells[1]!.map((f) => f.colorHex)).toEqual(['FF0000', '0000FF']);
+    });
+  });
+
+  test('a row-level tblPrEx look overrides the table look for that row', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let result!: ReturnType<typeof resolveTable>;
+    await given('a first-row condition switched on by the table but off by the first row\'s exception', async () => {});
+    await when('the table is resolved', async () => {
+      result = resolveTable(STYLES(TABLE_STYLE('Grid', COND('firstRow', '<w:color w:val="FF0000"/>'))), {
+        tblPr: `<w:tblStyle w:val="Grid"/>${LOOK_ALL_ON}`,
+        rows: 2,
+        tblPrEx: (r) => (r === 0 ? LOOK_ALL_OFF : ''),
+      });
+    });
+    await then('the first row takes no first-row formatting', async () => {
+      expect(result.cells[0]![0]!.colorHex).toBe('auto');
+    });
+  });
+
+  test('the last of several default table styles is the default', async ({ given, when, then }: AllureBddContext) => {
+    let result!: ReturnType<typeof resolveTable>;
+    await given('two table styles both marked default', async () => {});
+    await when('a run in an unstyled table is resolved', async () => {
+      result = resolveTable(
+        STYLES(
+          TABLE_STYLE('First', '<w:rPr><w:color w:val="111111"/></w:rPr>', ' w:default="1"') +
+            TABLE_STYLE('Last', '<w:rPr><w:color w:val="222222"/></w:rPr>', ' w:default="1"'),
+        ),
+      );
+    });
+    await then('the later one applies', async () => {
+      expect(result.cells[0]![0]!.colorHex).toBe('222222');
+    });
+  });
 
   test('a run in a nested table takes the innermost table style', async ({ given, when, then }: AllureBddContext) => {
     let inner!: RunFormatting;

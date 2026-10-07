@@ -676,8 +676,9 @@ style, character style, direct formatting. The effective-formatting resolver
 reads the table style for a run inside a table — the innermost table's
 `w:tblStyle`, or the default table style when it names none — with its
 `basedOn` chain, between the document defaults and the paragraph style. Each
-property resolves independently; for toggle properties the table style is one
-style level.
+property resolves independently. For toggle properties a table-style
+declaration resets the value instead of toggling it, as Word does
+(Microsoft's [MS-OI29500] note on §17.7.6).
 
 ## [ECMA-PART1-17-7-6] Table style conditional formatting
 
@@ -692,10 +693,12 @@ verifiedBy: packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/
 
 A table style's `w:tblStylePr` blocks format the first and last row and
 column, odd and even row and column bands, and the four corner cells. The
-resolver applies the run properties of each block whose switch the table's
-`w:tblLook` turns on (Word's 0x04A0 when the element is absent) and whose
-position matches the cell, with banding counted after the header row and
-column in groups of `w:tblStyleRowBandSize` / `w:tblStyleColBandSize`. It
+resolver applies the run properties of each block whose switch the row's
+`w:tblPrEx/w:tblLook` or the table's `w:tblLook` turns on (Word's 0x04A0 when
+neither is present) and whose position matches the cell. Columns are grid
+columns (`w:gridBefore`, `w:gridSpan`, `w:tblGrid`); banding is counted after
+the header row and column in groups of `w:tblStyleRowBandSize` /
+`w:tblStyleColBandSize`. Corner cells need both edges switched on. It
 applies the types in the order Office uses (Microsoft's [MS-OI29500] note on
 §17.7.6.6): row bands, column bands, first/last column, first/last row, then
 the corners, each overriding the ones before it.

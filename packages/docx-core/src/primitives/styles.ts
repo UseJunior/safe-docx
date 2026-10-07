@@ -21,6 +21,15 @@ function childElements(parent: Element, localName: string): Element[] {
   return out;
 }
 
+/**
+ * The first direct `w:` child named `localName`. Unlike getFirstChild (a
+ * descendant search) it never reaches into a nested `w:tblPrChange` /
+ * `w:trPrChange` (the previous state) or a nested table.
+ */
+function ownChild(parent: Element, localName: string): Element | null {
+  return childElements(parent, localName)[0] ?? null;
+}
+
 export type StyleDef = {
   styleId: string;
   styleType: string | null;
@@ -162,10 +171,10 @@ export function parseStylesXml(stylesDoc: Document | null): StylesModel {
     // rPr / tblPr inside each w:tblStylePr, so its own properties must be read
     // from direct children, or a style without its own rPr would take the
     // first conditional's as if it applied to the whole table.
-    const ownChild = (localName: string): Element | null =>
-      styleType === 'table' ? (childElements(st, localName)[0] ?? null) : getFirstChild(st, OOXML.W_NS, localName);
-    const pPr = ownChild(W.pPr);
-    const rPr = ownChild(W.rPr);
+    const styleChild = (localName: string): Element | null =>
+      styleType === 'table' ? ownChild(st, localName) : getFirstChild(st, OOXML.W_NS, localName);
+    const pPr = styleChild(W.pPr);
+    const rPr = styleChild(W.rPr);
 
     const name = nameEl ? (getWAttr(nameEl, 'val') ?? id) : id;
     const basedOn = basedOnEl ? (getWAttr(basedOnEl, 'val') ?? null) : null;
@@ -188,10 +197,11 @@ export function parseStylesXml(stylesDoc: Document | null): StylesModel {
         // The first block of a type wins, matching getFirstChild elsewhere.
         if (type && !conditionalRPrs.has(type)) conditionalRPrs.set(type, conditionalRPr);
       }
-      def.tblPr = ownChild(W.tblPr);
+      def.tblPr = styleChild(W.tblPr);
       def.conditionalRPrs = conditionalRPrs;
       const isDefault = getWAttr(st, 'default');
-      if (defaultTableStyleId === null && isDefault !== null && isOnValue(isDefault)) defaultTableStyleId = id;
+      // The last default style of a type wins (§ 17.7.4.17).
+      if (isDefault !== null && isOnValue(isDefault)) defaultTableStyleId = id;
     }
 
     byId.set(id, def);
@@ -401,7 +411,7 @@ type ToggleStep = {
    * place of `rPr` when present.
    */
   declare?: (tagLocal: string) => boolean | null;
-  kind: 'default' | 'style' | 'direct';
+  kind: 'default' | 'style' | 'table' | 'direct';
 };
 
 /**
@@ -428,6 +438,8 @@ function resolveToggleProperty(steps: ToggleStep[], tagLocal: string): boolean {
   for (const { rPr, declare, kind } of steps) {
     const declaration = declare ? declare(tagLocal) : parseBoolProp(rPr ?? null, tagLocal);
     if (declaration === null) continue;
+    // A table style resets the toggle to its declared value (Word; see the
+    // MS-OI29500 note on § 17.7.6), like the default and direct levels.
     if (kind === 'style') {
       if (declaration) effective = !effective;
     } else {
@@ -506,8 +518,7 @@ function tableLookFromBits(bits: number): TableLook {
  *
  * @see https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/90f075ce-b16d-422a-b1b0-39c9777a594e
  */
-function parseTableLook(tblPr: Element | null): TableLook {
-  const el = tblPr ? getFirstChild(tblPr, OOXML.W_NS, 'tblLook') : null;
+function parseTableLook(el: Element | null): TableLook {
   if (!el) return tableLookFromBits(WORD_DEFAULT_TABLE_LOOK);
   const named = ['firstRow', 'lastRow', 'firstColumn', 'lastColumn', 'noHBand', 'noVBand'].map((a) =>
     getWAttr(el, a),
@@ -540,74 +551,143 @@ function nearestAncestor(node: Node, localName: string, stopAt: string | null = 
 }
 
 /**
- * The `w:tr` rows of a table (or `w:tc` cells of a row), looking through the
- * content-control and custom-XML wrappers that may enclose them.
+ * Visit the `w:tr` rows of a table (or `w:tc` cells of a row) in document
+ * order, or in reverse with `fromEnd`, looking through the content-control
+ * and custom-XML wrappers that may enclose them. Stops early when `visit`
+ * returns true.
  */
-function collectTableChildren(parent: Element, localName: 'tr' | 'tc'): Element[] {
-  const out: Element[] = [];
-  const visit = (el: Element): void => {
-    for (let c = el.firstChild; c; c = c.nextSibling) {
-      if (c.nodeType !== 1) continue;
-      const child = c as Element;
-      if (child.namespaceURI !== OOXML.W_NS) continue;
-      if (child.localName === localName) out.push(child);
-      else if (child.localName === 'sdt') {
-        const content = getFirstChild(child, OOXML.W_NS, 'sdtContent');
-        if (content) visit(content);
-      } else if (child.localName === 'customXml') visit(child);
+function walkTableChildren(
+  parent: Element,
+  localName: 'tr' | 'tc',
+  visit: (el: Element) => boolean | void,
+  fromEnd = false,
+): boolean {
+  for (let c = fromEnd ? parent.lastChild : parent.firstChild; c; c = fromEnd ? c.previousSibling : c.nextSibling) {
+    if (c.nodeType !== 1 || (c as Element).namespaceURI !== OOXML.W_NS) continue;
+    const child = c as Element;
+    if (child.localName === localName) {
+      if (visit(child)) return true;
+    } else if (child.localName === 'sdt') {
+      const content = ownChild(child, 'sdtContent');
+      if (content && walkTableChildren(content, localName, visit, fromEnd)) return true;
+    } else if (child.localName === 'customXml') {
+      if (walkTableChildren(child, localName, visit, fromEnd)) return true;
     }
-  };
-  visit(parent);
-  return out;
+  }
+  return false;
+}
+
+function edgeTableChild(parent: Element, localName: 'tr' | 'tc', fromEnd: boolean): Element | null {
+  let found: Element | null = null;
+  walkTableChildren(
+    parent,
+    localName,
+    (el) => {
+      found = el;
+      return true;
+    },
+    fromEnd,
+  );
+  return found;
+}
+
+function tableChildIndex(parent: Element, localName: 'tr' | 'tc', target: Element): number {
+  let index = 0;
+  let found = -1;
+  walkTableChildren(parent, localName, (el) => {
+    if (el === target) {
+      found = index;
+      return true;
+    }
+    index++;
+    return false;
+  });
+  return found;
+}
+
+function intVal(parent: Element | null, localName: string, fallback: number): number {
+  const el = parent ? ownChild(parent, localName) : null;
+  const v = el ? Number.parseInt(getWAttr(el, 'val') ?? '', 10) : Number.NaN;
+  return Number.isSafeInteger(v) && v >= 0 ? v : fallback;
 }
 
 function bandSize(sources: Array<Element | null>, localName: string): number {
   for (const tblPr of sources) {
-    const el = tblPr ? getFirstChild(tblPr, OOXML.W_NS, localName) : null;
-    const v = el ? Number.parseInt(getWAttr(el, 'val') ?? '', 10) : Number.NaN;
-    if (Number.isSafeInteger(v) && v > 0) return v;
+    const v = intVal(tblPr, localName, 0);
+    if (v > 0) return v;
   }
   return 1;
 }
 
+/**
+ * The cell's span of table grid columns. A row's `w:gridBefore` skips grid
+ * columns before its first cell (§ 17.4.15) and each cell covers
+ * `w:gridSpan` columns, so the first physical cell is not always the first
+ * column. The grid width is the table's `w:tblGrid`, or the row's own extent
+ * when the table has none.
+ */
+function cellGridSpan(tbl: Element, tr: Element, tc: Element): { start: number; end: number; gridCount: number } {
+  const trPr = ownChild(tr, W.trPr);
+  let col = intVal(trPr, 'gridBefore', 0);
+  let start = -1;
+  let end = -1;
+  walkTableChildren(tr, 'tc', (cell) => {
+    const span = Math.max(1, intVal(ownChild(cell, W.tcPr), 'gridSpan', 1));
+    if (cell === tc) {
+      start = col;
+      end = col + span;
+    }
+    col += span;
+  });
+  const grid = ownChild(tbl, W.tblGrid);
+  const gridCols = grid ? childElements(grid, 'gridCol').length : 0;
+  const gridCount = gridCols > 0 ? gridCols : col + intVal(trPr, 'gridAfter', 0);
+  return { start, end, gridCount };
+}
+
 type CellPosition = {
-  rowIndex: number;
-  rowCount: number;
-  colIndex: number;
-  colCount: number;
+  isFirstRow: boolean;
+  isLastRow: boolean;
+  /** Row index for banding; computed only when row banding can apply. */
+  rowIndex: () => number;
+  /** First grid column the cell covers. */
+  colStart: number;
+  isLastCol: boolean;
   rowBandSize: number;
   colBandSize: number;
 };
 
 /**
- * Which conditional types apply to a cell, given the table's `w:tblLook`.
- * Corner types need both of their edges switched on. Banding counts rows
- * (columns) after the header row (first column) when that is switched on,
- * in groups of `w:tblStyleRowBandSize` (`w:tblStyleColBandSize`).
- * Columns are counted by cell, not by grid column.
+ * Which conditional types apply to a cell, given the `w:tblLook` in force
+ * for its row. Corner types need both of their edges switched on (MS-OI29500
+ * note on § 17.7.6). Banding counts rows (grid columns) after the header row
+ * (first column) when that is switched on, in groups of
+ * `w:tblStyleRowBandSize` (`w:tblStyleColBandSize`). `rowBandsUsed` skips
+ * the row-index walk when the style has no row-band conditional.
  */
-function applicableConditionals(pos: CellPosition, look: TableLook): Set<ConditionalType> {
+function applicableConditionals(
+  pos: CellPosition,
+  look: TableLook,
+  rowBandsUsed: boolean,
+): Set<ConditionalType> {
   const out = new Set<ConditionalType>();
-  const isFirstRow = pos.rowIndex === 0;
-  const isLastRow = pos.rowIndex === pos.rowCount - 1;
-  const isFirstCol = pos.colIndex === 0;
-  const isLastCol = pos.colIndex === pos.colCount - 1;
-  if (look.hBand) {
-    const idx = pos.rowIndex - (look.firstRow ? 1 : 0);
+  const isFirstCol = pos.colStart === 0;
+  if (look.hBand && rowBandsUsed) {
+    const idx = pos.rowIndex() - (look.firstRow ? 1 : 0);
     if (idx >= 0) out.add(Math.floor(idx / pos.rowBandSize) % 2 === 0 ? 'band1Horz' : 'band2Horz');
   }
   if (look.vBand) {
-    const idx = pos.colIndex - (look.firstColumn ? 1 : 0);
+    const idx = pos.colStart - (look.firstColumn ? 1 : 0);
     if (idx >= 0) out.add(Math.floor(idx / pos.colBandSize) % 2 === 0 ? 'band1Vert' : 'band2Vert');
   }
   if (look.firstColumn && isFirstCol) out.add('firstCol');
-  if (look.lastColumn && isLastCol) out.add('lastCol');
-  if (look.firstRow && isFirstRow) out.add('firstRow');
-  if (look.lastRow && isLastRow) out.add('lastRow');
-  if (look.firstRow && look.firstColumn && isFirstRow && isFirstCol) out.add('nwCell');
-  if (look.firstRow && look.lastColumn && isFirstRow && isLastCol) out.add('neCell');
-  if (look.lastRow && look.firstColumn && isLastRow && isFirstCol) out.add('swCell');
-  if (look.lastRow && look.lastColumn && isLastRow && isLastCol) out.add('seCell');
+  if (look.lastColumn && pos.isLastCol) out.add('lastCol');
+  if (look.firstRow && pos.isFirstRow) out.add('firstRow');
+  if (look.lastRow && pos.isLastRow) out.add('lastRow');
+  if (look.firstRow && look.firstColumn && pos.isFirstRow && isFirstCol) out.add('nwCell');
+  if (look.firstRow && look.lastColumn && pos.isFirstRow && pos.isLastCol) out.add('neCell');
+  if (look.lastRow && look.firstColumn && pos.isLastRow && isFirstCol) out.add('swCell');
+  if (look.lastRow && look.lastColumn && pos.isLastRow && pos.isLastCol) out.add('seCell');
   return out;
 }
 
@@ -654,8 +734,9 @@ function tableStyleLayersForRun(run: Element, styles: StylesModel): Element[] {
   const tbl = tr ? nearestAncestor(tr, W.tbl) : null;
   if (!tc || !tr || !tbl) return [];
 
-  const tblPr = getFirstChild(tbl, OOXML.W_NS, W.tblPr);
-  const tblStyleEl = tblPr ? getFirstChild(tblPr, OOXML.W_NS, 'tblStyle') : null;
+  // Direct children only: a nested w:tblPrChange holds the previous state.
+  const tblPr = ownChild(tbl, W.tblPr);
+  const tblStyleEl = tblPr ? ownChild(tblPr, 'tblStyle') : null;
   const named = tblStyleEl ? getWAttr(tblStyleEl, 'val') : null;
   const styleId =
     named && styles.byId.get(named)?.styleType === 'table' ? named : (styles.defaultTableStyleId ?? null);
@@ -665,18 +746,22 @@ function tableStyleLayersForRun(run: Element, styles: StylesModel): Element[] {
     return tableStyleLayers(chain, new Set());
   }
 
-  const rows = collectTableChildren(tbl, 'tr');
-  const cells = collectTableChildren(tr, 'tc');
+  // A row's w:tblPrEx/w:tblLook overrides the table's for that row (§ 17.4.54).
+  const tblPrEx = ownChild(tr, 'tblPrEx');
+  const lookEl = (tblPrEx ? ownChild(tblPrEx, 'tblLook') : null) ?? (tblPr ? ownChild(tblPr, 'tblLook') : null);
   const bandSources = [tblPr, ...chain.map((st) => st.tblPr ?? null)];
+  const { start, end, gridCount } = cellGridSpan(tbl, tr, tc);
   const pos: CellPosition = {
-    rowIndex: rows.indexOf(tr),
-    rowCount: rows.length,
-    colIndex: cells.indexOf(tc),
-    colCount: cells.length,
+    isFirstRow: edgeTableChild(tbl, 'tr', false) === tr,
+    isLastRow: edgeTableChild(tbl, 'tr', true) === tr,
+    rowIndex: () => tableChildIndex(tbl, 'tr', tr),
+    colStart: start,
+    isLastCol: end === gridCount,
     rowBandSize: bandSize(bandSources, 'tblStyleRowBandSize'),
     colBandSize: bandSize(bandSources, 'tblStyleColBandSize'),
   };
-  return tableStyleLayers(chain, applicableConditionals(pos, parseTableLook(tblPr)));
+  const rowBandsUsed = chain.some((st) => st.conditionalRPrs?.has('band1Horz') || st.conditionalRPrs?.has('band2Horz'));
+  return tableStyleLayers(chain, applicableConditionals(pos, parseTableLook(lookEl), rowBandsUsed));
 }
 
 function parseUnderline(parent: Element | null): boolean | null {
@@ -825,9 +910,13 @@ function parseEffectiveHighlightVal(parent: Element | null): string | false | nu
  * `basedOn` chain, `w:tblLook`, and the cell's row and column. The style's
  * `w:rPr` and every conditional `w:tblStylePr/w:rPr` that applies to the
  * cell merge into one layer between the document defaults and the paragraph
- * style (see {@link tableStyleLayers} for the order). For toggles
- * that merged layer is one style level: its nearest declaration inverts or
- * preserves the state like any other style.
+ * style (see {@link tableStyleLayers} for the order). For toggles the
+ * merged layer's nearest declaration resets the value rather than toggling
+ * it: the standard says a table style toggles like any other style, but Word
+ * assigns the declared value (MS-OI29500 note on § 17.7.6), and this follows
+ * Word.
+ *
+ * @see https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/14452bbe-be4d-4dbb-90e6-3d23ae9361bc
  *
  * Numbering-level `rPr` formats only the list label (`w:lvlText`), never the
  * paragraph's runs, so it is out of scope.
@@ -898,7 +987,7 @@ export function extractEffectiveRunFormatting(params: {
     { rPr: docDefaultsRPr, kind: 'default' },
     {
       declare: (tagLocal) => firstNonNull(tableLayers.map((layer) => parseBoolProp(layer, tagLocal))),
-      kind: 'style',
+      kind: 'table',
     },
     ...[...paragraphStyleChain].reverse().map((style) => ({ rPr: style.rPr, kind: 'style' as const })),
     { rPr: pRPr, kind: 'direct' },
