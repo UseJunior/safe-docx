@@ -660,6 +660,51 @@ the absolute result. The effective-formatting resolver evaluates the supported
 toggle set independently, starting from the `w:docDefaults` value (or off),
 and retains nearest-declaration resolution for ordinary properties.
 
+## [ECMA-PART1-17-7-2] Style hierarchy for runs in tables
+
+```yaml
+edition: 5
+part: 1
+section: "17.7.2"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Style
+verifiedBy: packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-table.test.ts; packages/docx-core/src/primitives/styles-unresolved.test.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts
+```
+
+Run properties layer in the order document defaults, table style, paragraph
+style, character style, direct formatting. The effective-formatting resolver
+reads the table style for a run inside a table — the innermost table's
+`w:tblStyle`, or the default table style when it names none — with its
+`basedOn` chain, between the document defaults and the paragraph style. Each
+property resolves independently. For toggle properties a table-style
+declaration resets the value instead of toggling it, as Word does
+(Microsoft's [MS-OI29500] note on §17.7.6).
+
+## [ECMA-PART1-17-7-6] Table style conditional formatting
+
+```yaml
+edition: 5
+part: 1
+section: "17.7.6"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_TblStylePr
+verifiedBy: packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-table.test.ts
+```
+
+A table style's `w:tblStylePr` blocks format the first and last row and
+column, odd and even row and column bands, and the four corner cells. The
+resolver applies the run properties of each block whose switch the row's
+`w:tblPrEx/w:tblLook` or the table's `w:tblLook` turns on (Word's 0x04A0 when
+neither is present) and whose position matches the cell. Columns are grid
+columns (`w:gridBefore`, `w:gridSpan`, `w:tblGrid`); banding is counted after
+the header row and column in groups of `w:tblStyleRowBandSize` /
+`w:tblStyleColBandSize`. Corner cells need both edges switched on. A
+`wholeTable` conditional is ignored, as Word ignores it (MS-OI29500 note on
+§17.18.89); the style's own `w:rPr` is the whole-table formatting. It
+applies the types in the order Office uses (Microsoft's [MS-OI29500] note on
+§17.7.6.6): row bands, column bands, first/last column, first/last row, then
+the corners, each overriding the ones before it.
+
 ## [ECMA-PART1-17-3-2-26] Run fonts and theme-font references
 
 ```yaml

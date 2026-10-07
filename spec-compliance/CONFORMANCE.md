@@ -47,6 +47,8 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-3-1-20` | w:outlineLvl paragraph outline level | 5 | 1 | 17.3.1.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:outlineLvl` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts |
 | `ECMA-PART1-17-3-2-28` | w:rPr direct-property uniqueness | 5 | 1 | 17.3.2.28 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPr` | packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/primitives/text.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts; packages/docx-core/test-primitives/text.test.ts; packages/docx-markdoc/src/retained-format.test.ts |
 | `ECMA-PART1-17-7-3` | Toggle-property evaluation | 5 | 1 | 17.7.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_RPr` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-toggle.test.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts; scripts/check_docx_formatting_loss.test.mjs |
+| `ECMA-PART1-17-7-2` | Style hierarchy for runs in tables | 5 | 1 | 17.7.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Style` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-table.test.ts; packages/docx-core/src/primitives/styles-unresolved.test.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts |
+| `ECMA-PART1-17-7-6` | Table style conditional formatting | 5 | 1 | 17.7.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_TblStylePr` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-table.test.ts |
 | `ECMA-PART1-17-3-2-26` | Run fonts and theme-font references | 5 | 1 | 17.3.2.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Fonts` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-theme.test.ts; scripts/check_docx_formatting_loss.test.mjs |
 | `ECMA-PART1-17-3-2-6` | Run color and theme transforms | 5 | 1 | 17.3.2.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Color` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-theme.test.ts; scripts/check_docx_formatting_loss.test.mjs |
 | `ECMA-PART1-17-7-4-18` | w:styles style-definitions part emission | 5 | 1 | 17.7.4.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:styles` | packages/docx-core/src/generation/emit/styles-part.ts |
@@ -670,6 +672,45 @@ off declaration leaves that value unchanged, and direct run formatting sets
 the absolute result. The effective-formatting resolver evaluates the supported
 toggle set independently, starting from the `w:docDefaults` value (or off),
 and retains nearest-declaration resolution for ordinary properties.
+
+### ECMA-PART1-17-7-2 — Style hierarchy for runs in tables
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.7.2
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Style`
+- **Verified by:** packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-table.test.ts; packages/docx-core/src/primitives/styles-unresolved.test.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts
+
+Run properties layer in the order document defaults, table style, paragraph
+style, character style, direct formatting. The effective-formatting resolver
+reads the table style for a run inside a table — the innermost table's
+`w:tblStyle`, or the default table style when it names none — with its
+`basedOn` chain, between the document defaults and the paragraph style. Each
+property resolves independently. For toggle properties a table-style
+declaration resets the value instead of toggling it, as Word does
+(Microsoft's [MS-OI29500] note on §17.7.6).
+
+### ECMA-PART1-17-7-6 — Table style conditional formatting
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.7.6
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_TblStylePr`
+- **Verified by:** packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-table.test.ts
+
+A table style's `w:tblStylePr` blocks format the first and last row and
+column, odd and even row and column bands, and the four corner cells. The
+resolver applies the run properties of each block whose switch the row's
+`w:tblPrEx/w:tblLook` or the table's `w:tblLook` turns on (Word's 0x04A0 when
+neither is present) and whose position matches the cell. Columns are grid
+columns (`w:gridBefore`, `w:gridSpan`, `w:tblGrid`); banding is counted after
+the header row and column in groups of `w:tblStyleRowBandSize` /
+`w:tblStyleColBandSize`. Corner cells need both edges switched on. A
+`wholeTable` conditional is ignored, as Word ignores it (MS-OI29500 note on
+§17.18.89); the style's own `w:rPr` is the whole-table formatting. It
+applies the types in the order Office uses (Microsoft's [MS-OI29500] note on
+§17.7.6.6): row bands, column bands, first/last column, first/last row, then
+the corners, each overriding the ones before it.
 
 ### ECMA-PART1-17-3-2-26 — Run fonts and theme-font references
 
