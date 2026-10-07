@@ -5,6 +5,7 @@ import {
   findUniqueSubstringMatch,
   replaceParagraphTextRange,
   isRecognizedBondedInsertionPair,
+  collectRunInHeadingIds,
   type RevisionContext,
 } from '@usejunior/docx-core';
 import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
@@ -404,7 +405,9 @@ function recognizedBondedSlots(steps: ConflictStep[], doc: DocxDocument): Set<st
   const inserts = steps.filter((step) => step.operation === 'insert_paragraph' && step.bonded_pair_id);
   const groups = new Map<string, ConflictStep[]>();
   for (const step of inserts) groups.set(step.bonded_pair_id!, [...(groups.get(step.bonded_pair_id!) ?? []), step]);
+  if (![...groups.values()].some((group) => group.length === 2)) return result;
   const nodes = doc.buildDocumentView({ includeSemanticTags: false, showFormatting: true }).nodes;
+  const options = { runInHeadingIds: collectRunInHeadingIds(doc.getParagraphs()) };
   for (const group of groups.values()) {
     if (group.length !== 2 || group.some((step) => !step.style_source_id || !step.positional_anchor_node_id || !step.position)) continue;
     const contexts = group.map((step) => ({
@@ -413,7 +416,7 @@ function recognizedBondedSlots(steps: ConflictStep[], doc: DocxDocument): Set<st
       anchorId: step.positional_anchor_node_id!,
       styleSourceId: step.style_source_id,
     }));
-    if (isRecognizedBondedInsertionPair(nodes, contexts)) {
+    if (isRecognizedBondedInsertionPair(nodes, contexts, options)) {
       result.add(`${group[0]!.positional_anchor_node_id}::${group[0]!.position}`);
     }
   }

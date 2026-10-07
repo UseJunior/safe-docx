@@ -186,7 +186,7 @@ describe('Traceability: replace plan tools with batch_edit', () => {
   });
 
   test('permits exactly one source-proven bonded heading/body pair in a shared insert slot', async () => {
-    const paragraph = (style: string, level: number | null, text: string) => `<w:p><w:pPr><w:pStyle w:val="${style}"/>${level == null ? '' : `<w:outlineLvl w:val="${level}"/>`}</w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+    const paragraph = (style: string, level: number | null, text: string) => `<w:p><w:pPr><w:pStyle w:val="${style}"/>${level == null ? '' : `<w:outlineLvl w:val="${level}"/>`}${style === 'Heading2' ? '<w:rPr><w:vanish/><w:specVanish/></w:rPr>' : ''}</w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
     const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraph('Heading2', 1, 'Heading one.')}${paragraph('HeadingPara2', null, 'Body one.')}${paragraph('Heading2', 1, 'Heading two.')}${paragraph('HeadingPara2', null, 'Body two.')}${paragraph('Heading1', 0, 'Anchor.')}</w:body></w:document>`;
     const opened = await openSession([], { xml });
     const result = await batchEdit(opened.mgr, {
@@ -201,7 +201,7 @@ describe('Traceability: replace plan tools with batch_edit', () => {
   });
 
   test('keeps an unrelated third insertion in a bonded slot as a hard collision', async () => {
-    const paragraph = (style: string, level: number | null, text: string) => `<w:p><w:pPr><w:pStyle w:val="${style}"/>${level == null ? '' : `<w:outlineLvl w:val="${level}"/>`}</w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+    const paragraph = (style: string, level: number | null, text: string) => `<w:p><w:pPr><w:pStyle w:val="${style}"/>${level == null ? '' : `<w:outlineLvl w:val="${level}"/>`}${style === 'Heading2' ? '<w:rPr><w:vanish/><w:specVanish/></w:rPr>' : ''}</w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
     const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraph('Heading2', 1, 'Heading one.')}${paragraph('HeadingPara2', null, 'Body one.')}${paragraph('Heading2', 1, 'Heading two.')}${paragraph('HeadingPara2', null, 'Body two.')}${paragraph('Heading1', 0, 'Anchor.')}</w:body></w:document>`;
     const opened = await openSession([], { xml });
     const base = { operation: 'insert_paragraph', positional_anchor_node_id: opened.paraIds[4], position: 'AFTER', bonded_pair_id: 'new-subsection' };
@@ -231,7 +231,7 @@ describe('Traceability: replace plan tools with batch_edit', () => {
   });
 
   test('does not exempt a bonded slot whose pair is incomplete or in the wrong order', async () => {
-    const paragraph = (style: string, level: number | null, text: string) => `<w:p><w:pPr><w:pStyle w:val="${style}"/>${level == null ? '' : `<w:outlineLvl w:val="${level}"/>`}</w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+    const paragraph = (style: string, level: number | null, text: string) => `<w:p><w:pPr><w:pStyle w:val="${style}"/>${level == null ? '' : `<w:outlineLvl w:val="${level}"/>`}${style === 'Heading2' ? '<w:rPr><w:vanish/><w:specVanish/></w:rPr>' : ''}</w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
     const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraph('Heading2', 1, 'Heading one.')}${paragraph('HeadingPara2', null, 'Body one.')}${paragraph('Heading2', 1, 'Heading two.')}${paragraph('HeadingPara2', null, 'Body two.')}${paragraph('Heading1', 0, 'Anchor.')}</w:body></w:document>`;
     const opened = await openSession([], { xml });
     const base = { operation: 'insert_paragraph', positional_anchor_node_id: opened.paraIds[4], position: 'AFTER', bonded_pair_id: 'new-subsection' };

@@ -7,6 +7,7 @@ import {
   stripAllInlineTags,
   type ReplacementPart,
   validateStructuralInsertions,
+  collectRunInHeadingIds,
 } from '@usejunior/docx-core';
 import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
 import { errorMessage } from "../error_utils.js";
@@ -175,6 +176,7 @@ export async function insertParagraph(
         anchorId: params.positional_anchor_node_id,
         styleSourceId,
       }],
+      { runInHeadingIds: collectRunInHeadingIds(session.doc.getParagraphs()) },
     );
 
     let inputText = params.new_string;

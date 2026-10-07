@@ -453,11 +453,15 @@ structural evidence, and a corrective anchor when one is unambiguous.
 
 The registry detects parent/child slicing, list-level mismatch, foreign
 numbering inserted into a continuous list, and incomplete bonded paragraph
-pairs. A repeated deterministic-heading-to-body-style transition (for example,
-`Heading2` followed by `HeadingPara2`) is treated as a two-paragraph structural
-unit: both halves need distinct style sources, one body operation cannot satisfy
-multiple headings, and operation order is checked separately for `BEFORE` and
-`AFTER`. Ambiguous repeated follower styles fail with an explicit diagnostic.
+pairs. Parent/child slicing is checked for both `BEFORE` and `AFTER`
+placement. A run-in heading (a deterministic heading whose paragraph mark is a
+Word style separator, `w:specVanish`) that is repeatedly followed by the same
+body style (for example, NVCA `Heading2` followed by `HeadingPara2`) is treated
+as a two-paragraph structural unit: both halves need distinct style sources,
+each heading must land immediately before its body in the insertion slot, and
+operation order is checked separately for `BEFORE` and `AFTER`. An ordinary
+heading followed by `Normal` text is not bonded. Ambiguous repeated follower
+styles fail with an explicit diagnostic.
 No title-case or legal-content regex is used as structural authority.
 
 Junior Harness retry state, warn-once policy, Aspose adapters, legal section

@@ -425,6 +425,15 @@ describe('brownfield Markdoc authoring', () => {
     ]);
   });
 
+  itAllure('does not bond an ordinary heading to its repeated follower without a style separator', async () => {
+    const imported = await importDocxToMarkdoc(await bondedRunInFixture(false));
+    const [headingPeer, , , , parent] = requireMarkdoc(imported.markdoc).scaffold;
+    if (!headingPeer || !parent) throw new Error('fixture missing');
+    const loneHeading = `${imported.markdoc}\n{% insert-after anchor="${parent.id}" edit="heading" style-source="${headingPeer.id}" %}\n{% after %}\n2.1 Additional Heading.\n{% /after %}\n{% /insert-after %}\n`;
+    const result = await compileMarkdoc(imported.anchoredSource, loneHeading);
+    expect(result.structuralDiagnostics.filter((item) => item.code.startsWith('BONDED'))).toEqual([]);
+  });
+
   itAllure('[SDX-MDOC-01] preserves source-significant boundary spaces and literal entities', async () => {
     const text = '  # Price * &amp; value  ';
     const original = await buildSyntheticDocx({ paragraphs: [text] });
@@ -857,8 +866,11 @@ async function structuralFixture(): Promise<Buffer> {
   });
 }
 
-async function bondedRunInFixture(): Promise<Buffer> {
-  const paragraph = (style: string, text: string) => `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+async function bondedRunInFixture(runIn = true): Promise<Buffer> {
+  // NVCA run-in headings end in a Word style separator: the heading's
+  // paragraph mark is hidden with w:specVanish so the body renders inline.
+  const separator = '<w:rPr><w:vanish/><w:specVanish/></w:rPr>';
+  const paragraph = (style: string, text: string) => `<w:p><w:pPr><w:pStyle w:val="${style}"/>${runIn && style === 'Heading2' ? separator : ''}</w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
   return buildDocxFromParts({
     bodyXml: [
       paragraph('Heading2', 'Existing heading one.'), paragraph('HeadingPara2', 'Existing body one.'),

@@ -1,4 +1,6 @@
 import type { DocumentViewNode } from './document_view-types.js';
+import { getParagraphBookmarkId } from './bookmarks.js';
+import { getDirectChildrenByName } from './dom-helpers.js';
 
 export type StructuralDiagnosticSeverity = 'warning' | 'error';
 
@@ -25,6 +27,19 @@ export type StructuralDiagnostic = {
   message: string;
   evidence: StructuralDiagnosticEvidence;
   suggested_anchor_id?: string;
+  /** Position to use with `suggested_anchor_id`; omitted when it matches the original position. */
+  suggested_position?: 'BEFORE' | 'AFTER';
+};
+
+/**
+ * Source evidence the node view does not carry. `runInHeadingIds` names
+ * paragraphs whose paragraph mark is a Word style separator (`w:specVanish`),
+ * so the heading renders run-in with the following paragraph. Only those
+ * paragraphs can anchor a bonded heading/body pair; a repeated
+ * `Heading1 → Normal` transition by itself is ordinary section structure.
+ */
+export type StructuralValidationOptions = {
+  runInHeadingIds?: ReadonlySet<string>;
 };
 
 export type ResolvedInsertionContext = {
@@ -55,43 +70,49 @@ function structuralStyle(node: DocumentViewNode | undefined): string {
 }
 
 const parentChildSlicing: StructuralValidator = (nodes, context) => {
-  if (context.position !== 'AFTER') return [];
   const anchorIndex = nodes.findIndex((node) => node.id === context.anchorId);
   const source = nodes.find((node) => node.id === (context.styleSourceId ?? context.anchorId));
   if (anchorIndex < 0 || !source) return [];
-  const anchorLevel = hierarchyLevel(nodes[anchorIndex]);
   const intendedLevel = hierarchyLevel(source);
-  if (anchorLevel == null || intendedLevel == null || intendedLevel > anchorLevel) return [];
+  if (intendedLevel == null) return [];
 
-  const descendants: Array<{ id: string; level: number }> = [];
-  let lastDescendantId: string | undefined;
-  for (let index = anchorIndex + 1; index < nodes.length; index += 1) {
+  // The insertion lands in the gap between `gapIndex` and `gapIndex + 1`.
+  const gapIndex = context.position === 'AFTER' ? anchorIndex : anchorIndex - 1;
+  // The run the new paragraph would capture: every following paragraph until
+  // one at or above the intended level.
+  let firstCaptured: { id: string; level: number } | undefined;
+  let lastCapturedId: string | undefined;
+  for (let index = gapIndex + 1; index < nodes.length; index += 1) {
     const level = hierarchyLevel(nodes[index]);
-    if (level == null) {
-      if (descendants.length > 0) lastDescendantId = nodes[index]!.id;
-      continue;
-    }
-    if (level <= anchorLevel) break;
-    descendants.push({ id: nodes[index]!.id, level });
-    lastDescendantId = nodes[index]!.id;
+    if (level != null && level <= intendedLevel) break;
+    if (level != null && !firstCaptured) firstCaptured = { id: nodes[index]!.id, level };
+    lastCapturedId = nodes[index]!.id;
   }
-  if (descendants.length === 0) return [];
-  const first = descendants[0]!;
-  const suggestedAnchorId = lastDescendantId!;
+  if (!firstCaptured) return [];
+  // Slicing only happens when the captured paragraph already has a parent
+  // before the gap: the insertion would steal it from that parent.
+  let hasExistingParent = false;
+  for (let index = gapIndex; index >= 0; index -= 1) {
+    const level = hierarchyLevel(nodes[index]);
+    if (level != null && level < firstCaptured.level) { hasExistingParent = true; break; }
+  }
+  if (!hasExistingParent) return [];
+  const suggestedAnchorId = lastCapturedId!;
   return [{
     code: 'PARENT_CHILD_SLICE',
     severity: 'error',
     operation_id: context.operationId,
     anchor_id: context.anchorId,
-    message: `Insertion ${context.operationId} would separate ${context.anchorId} from its existing descendants; insert after ${suggestedAnchorId} instead.`,
+    message: `Insertion ${context.operationId} would separate ${firstCaptured.id} from its existing parent; insert after ${suggestedAnchorId} instead.`,
     evidence: {
-      anchor_level: anchorLevel,
+      anchor_level: hierarchyLevel(nodes[anchorIndex]),
       intended_level: intendedLevel,
-      first_descendant_id: first.id,
-      first_descendant_level: first.level,
+      first_descendant_id: firstCaptured.id,
+      first_descendant_level: firstCaptured.level,
       style_source_id: context.styleSourceId,
     },
     suggested_anchor_id: suggestedAnchorId,
+    suggested_position: 'AFTER',
   }];
 };
 
@@ -160,17 +181,33 @@ export function validateStructuralInsertion(
 export function validateStructuralInsertions(
   nodes: readonly DocumentViewNode[],
   contexts: readonly ResolvedInsertionContext[],
+  options: StructuralValidationOptions = {},
 ): StructuralDiagnostic[] {
   const diagnostics = contexts.flatMap((context) => validateStructuralInsertion(nodes, context));
+  diagnostics.push(...validateBondedPairs(nodes, contexts, options));
+  return diagnostics;
+}
 
-  // A repeated deterministic-heading → follower-style transition is document
-  // evidence that the two paragraphs form one run-in structural unit. This is
-  // intentionally style/position based: title casing and punctuation are not
-  // reliable structural authorities.
-  const transitions = new Map<string, { headingStyle: string; bodyStyle: string; count: number }>();
+function sourceNode(nodes: readonly DocumentViewNode[], context: ResolvedInsertionContext): DocumentViewNode | undefined {
+  return nodes.find((node) => node.id === (context.styleSourceId ?? context.anchorId));
+}
+
+type BondedTransition = { headingStyle: string; bodyStyle: string; count: number };
+
+/**
+ * A heading style is bonded to a follower style only when the source shows the
+ * Word run-in construction (a style-separator paragraph mark on the heading)
+ * followed by the same follower style at the same indent, at least twice.
+ * Title casing and punctuation are not structural authorities.
+ */
+function bondedTransitions(nodes: readonly DocumentViewNode[], options: StructuralValidationOptions): BondedTransition[] {
+  const runInHeadingIds = options.runInHeadingIds;
+  if (!runInHeadingIds || runInHeadingIds.size === 0) return [];
+  const transitions = new Map<string, BondedTransition>();
   for (let index = 0; index < nodes.length - 1; index += 1) {
     const heading = nodes[index]!;
     const body = nodes[index + 1]!;
+    if (!runInHeadingIds.has(heading.id)) continue;
     if (hierarchyLevel(heading) == null || hierarchyLevel(body) != null) continue;
     if (Math.abs(heading.paragraph_indents_pt.left - body.paragraph_indents_pt.left) > 0.5) continue;
     const headingStyle = structuralStyle(heading);
@@ -180,104 +217,135 @@ export function validateStructuralInsertions(
     const current = transitions.get(key);
     transitions.set(key, { headingStyle, bodyStyle, count: (current?.count ?? 0) + 1 });
   }
-  const bonded = [...transitions.values()].filter((transition) => transition.count >= 2);
-  const consumedBodyOperations = new Set<number>();
-  contexts.forEach((context, headingOperationIndex) => {
-    const source = nodes.find((node) => node.id === (context.styleSourceId ?? context.anchorId));
-    const candidatePairs = bonded.filter((transition) => transition.headingStyle === structuralStyle(source));
-    if (candidatePairs.length === 0) return;
-    const availableBodies = contexts.map((candidate, index) => ({ candidate, index })).filter(({ candidate, index }) => {
-      if (consumedBodyOperations.has(index)) return false;
-      return candidate.anchorId === context.anchorId && candidate.position === context.position;
+  return [...transitions.values()].filter((transition) => transition.count >= 2);
+}
+
+function validateBondedPairs(
+  nodes: readonly DocumentViewNode[],
+  contexts: readonly ResolvedInsertionContext[],
+  options: StructuralValidationOptions,
+): StructuralDiagnostic[] {
+  const bonded = bondedTransitions(nodes, options);
+  if (bonded.length === 0) return [];
+  const diagnostics: StructuralDiagnostic[] = [];
+
+  // Group operations by insertion slot. Repeated AFTER insertion lands each
+  // new paragraph directly after the anchor, so the slot's document order is
+  // the reverse of operation order; repeated BEFORE preserves operation order.
+  const slots = new Map<string, number[]>();
+  contexts.forEach((context, index) => {
+    const key = `${context.anchorId}\u0000${context.position}`;
+    slots.set(key, [...(slots.get(key) ?? []), index]);
+  });
+
+  for (const operationIndexes of slots.values()) {
+    const position = contexts[operationIndexes[0]!]!.position;
+    const documentOrder = position === 'AFTER' ? [...operationIndexes].reverse() : operationIndexes;
+    const styleOf = (operationIndex: number) => structuralStyle(sourceNode(nodes, contexts[operationIndex]!));
+    const consumedBodies = new Set<number>();
+    const unpaired: Array<{ operationIndex: number; candidatePairs: BondedTransition[] }> = [];
+
+    documentOrder.forEach((operationIndex, slotIndex) => {
+      const candidatePairs = bonded.filter((transition) => transition.headingStyle === styleOf(operationIndex));
+      if (candidatePairs.length === 0) return;
+      const next = documentOrder[slotIndex + 1];
+      const nextStyle = next == null ? undefined : styleOf(next);
+      const adjacentPair = candidatePairs.find((pair) => pair.bodyStyle === nextStyle);
+      if (next != null && adjacentPair && !consumedBodies.has(next)) {
+        consumedBodies.add(next);
+        return;
+      }
+      unpaired.push({ operationIndex, candidatePairs });
     });
-    const suppliedBodyStyles = new Set(availableBodies.map(({ candidate }) => {
-      const candidateSource = nodes.find((node) => node.id === (candidate.styleSourceId ?? candidate.anchorId));
-      return structuralStyle(candidateSource);
-    }));
-    const matchingPairs = candidatePairs.filter((pair) => suppliedBodyStyles.has(pair.bodyStyle));
-    if (candidatePairs.length > 1 && matchingPairs.length !== 1) {
-      diagnostics.push({
-        code: 'BONDED_PARAGRAPH_PAIR_AMBIGUOUS', severity: 'error', operation_id: context.operationId,
-        anchor_id: context.anchorId,
-        message: `Style ${structuralStyle(source)} has multiple repeated body followers (${candidatePairs.map((pair) => pair.bodyStyle).sort().join(', ')}); supply exactly one matching body peer in this insertion slot.`,
-        evidence: {
-          anchor_level: hierarchyLevel(nodes.find((node) => node.id === context.anchorId)),
-          intended_level: hierarchyLevel(source),
-          style_source_id: context.styleSourceId,
-          bonded_heading_style: structuralStyle(source),
-          bonded_body_style_candidates: candidatePairs.map((pair) => pair.bodyStyle).sort(),
-        },
-      });
-      return;
-    }
-    const pair = matchingPairs[0] ?? candidatePairs[0]!;
-    const bodyOperation = availableBodies.find(({ candidate }) => {
-      const candidateSource = nodes.find((node) => node.id === (candidate.styleSourceId ?? candidate.anchorId));
-      return structuralStyle(candidateSource) === pair.bodyStyle;
-    });
-    const bodyOperationIndex = bodyOperation?.index ?? -1;
-    const evidence = {
-      anchor_level: hierarchyLevel(nodes.find((node) => node.id === context.anchorId)),
-      intended_level: hierarchyLevel(source),
-      style_source_id: context.styleSourceId,
-      bonded_heading_style: pair.headingStyle,
-      bonded_body_style: pair.bodyStyle,
-    };
-    if (bodyOperationIndex < 0) {
-      diagnostics.push({
-        code: 'BONDED_PARAGRAPH_PAIR_REQUIRED', severity: 'error', operation_id: context.operationId,
-        anchor_id: context.anchorId,
-        message: `Style ${pair.headingStyle} is repeatedly followed by ${pair.bodyStyle}; insert both paragraphs with distinct structural peers.`,
-        evidence,
-      });
-    } else {
-      consumedBodyOperations.add(bodyOperationIndex);
-    }
-    const wrongOrder = bodyOperationIndex >= 0 && (
-      (context.position === 'AFTER' && bodyOperationIndex > headingOperationIndex)
-      || (context.position === 'BEFORE' && headingOperationIndex > bodyOperationIndex)
-    );
-    if (wrongOrder) {
-      const requiredOrder = context.position === 'AFTER'
-        ? `${pair.bodyStyle} before ${pair.headingStyle}`
-        : `${pair.headingStyle} before ${pair.bodyStyle}`;
+
+    for (const { operationIndex, candidatePairs } of unpaired) {
+      const context = contexts[operationIndex]!;
+      const source = sourceNode(nodes, context);
+      const availableBodyStyles = new Set(operationIndexes
+        .filter((index) => !consumedBodies.has(index))
+        .map(styleOf));
+      const matchingPairs = candidatePairs.filter((pair) => availableBodyStyles.has(pair.bodyStyle));
+      const baseEvidence = {
+        anchor_level: hierarchyLevel(nodes.find((node) => node.id === context.anchorId)),
+        intended_level: hierarchyLevel(source),
+        style_source_id: context.styleSourceId,
+      };
+      if (candidatePairs.length > 1 && matchingPairs.length !== 1) {
+        const candidates = candidatePairs.map((pair) => pair.bodyStyle).sort();
+        diagnostics.push({
+          code: 'BONDED_PARAGRAPH_PAIR_AMBIGUOUS', severity: 'error', operation_id: context.operationId,
+          anchor_id: context.anchorId,
+          message: `Style ${structuralStyle(source)} has multiple repeated run-in body followers (${candidates.join(', ')}); supply exactly one matching body peer immediately after the heading in this insertion slot.`,
+          evidence: { ...baseEvidence, bonded_heading_style: structuralStyle(source), bonded_body_style_candidates: candidates },
+        });
+        continue;
+      }
+      const pair = matchingPairs[0] ?? candidatePairs[0]!;
+      const evidence = { ...baseEvidence, bonded_heading_style: pair.headingStyle, bonded_body_style: pair.bodyStyle };
+      if (matchingPairs.length === 0) {
+        diagnostics.push({
+          code: 'BONDED_PARAGRAPH_PAIR_REQUIRED', severity: 'error', operation_id: context.operationId,
+          anchor_id: context.anchorId,
+          message: `Style ${pair.headingStyle} is a run-in heading repeatedly followed by ${pair.bodyStyle}; insert both paragraphs with distinct structural peers.`,
+          evidence,
+        });
+        continue;
+      }
+      const requiredOrder = position === 'AFTER'
+        ? `${pair.bodyStyle} immediately before ${pair.headingStyle}`
+        : `${pair.headingStyle} immediately before ${pair.bodyStyle}`;
       diagnostics.push({
         code: 'RUN_IN_PAIR_ORDER', severity: 'error', operation_id: context.operationId,
         anchor_id: context.anchorId,
-        message: `For repeated ${context.position} insertion, order operations ${requiredOrder} so the document yields heading then body.`,
+        message: `For repeated ${position} insertion, order operations ${requiredOrder} so the document yields each heading directly followed by its body.`,
         evidence,
       });
     }
-  });
+  }
   return diagnostics;
+}
+
+/**
+ * Paragraph ids whose paragraph mark carries `w:specVanish` (Word's style
+ * separator), i.e. headings that render run-in with the next paragraph.
+ */
+export function collectRunInHeadingIds(paragraphs: Iterable<Element>): Set<string> {
+  const ids = new Set<string>();
+  for (const paragraph of paragraphs) {
+    if (!isRunInHeadingParagraph(paragraph)) continue;
+    const id = getParagraphBookmarkId(paragraph);
+    if (id) ids.add(id);
+  }
+  return ids;
+}
+
+export function isRunInHeadingParagraph(paragraph: Element): boolean {
+  const pPr = getDirectChildrenByName(paragraph, 'pPr')[0];
+  const markRPr = pPr ? getDirectChildrenByName(pPr, 'rPr')[0] : undefined;
+  const specVanish = markRPr ? getDirectChildrenByName(markRPr, 'specVanish')[0] : undefined;
+  if (!specVanish) return false;
+  const value = (specVanish.getAttribute('w:val') ?? '').trim().toLowerCase();
+  return value !== '0' && value !== 'false' && value !== 'off';
 }
 
 /** True only for the explicit two-operation form of a source-proven bonded pair. */
 export function isRecognizedBondedInsertionPair(
   nodes: readonly DocumentViewNode[],
   contexts: readonly ResolvedInsertionContext[],
+  options: StructuralValidationOptions = {},
 ): boolean {
   if (contexts.length !== 2) return false;
   const [first, second] = contexts;
   if (!first || !second || first.anchorId !== second.anchorId || first.position !== second.position) return false;
-  const sources = contexts.map((context) => nodes.find((node) => node.id === (context.styleSourceId ?? context.anchorId)));
+  const sources = contexts.map((context) => sourceNode(nodes, context));
   if (!sources[0] || !sources[1] || structuralStyle(sources[0]) === structuralStyle(sources[1])) return false;
   const headingIndex = sources.findIndex((source) => hierarchyLevel(source) != null);
   const bodyIndex = sources.findIndex((source) => hierarchyLevel(source) == null);
   if (headingIndex < 0 || bodyIndex < 0) return false;
   const headingStyle = structuralStyle(sources[headingIndex]);
   const bodyStyle = structuralStyle(sources[bodyIndex]);
-  let transitionCount = 0;
-  for (let index = 0; index < nodes.length - 1; index += 1) {
-    const heading = nodes[index]!;
-    const body = nodes[index + 1]!;
-    if (structuralStyle(heading) === headingStyle && structuralStyle(body) === bodyStyle
-      && hierarchyLevel(heading) != null && hierarchyLevel(body) == null
-      && Math.abs(heading.paragraph_indents_pt.left - body.paragraph_indents_pt.left) <= 0.5) transitionCount += 1;
-  }
-  if (transitionCount < 2) return false;
-  return !validateStructuralInsertions(nodes, contexts).some((diagnostic) =>
-    diagnostic.code === 'BONDED_PARAGRAPH_PAIR_REQUIRED'
-    || diagnostic.code === 'BONDED_PARAGRAPH_PAIR_AMBIGUOUS'
-    || diagnostic.code === 'RUN_IN_PAIR_ORDER');
+  const proven = bondedTransitions(nodes, options)
+    .some((transition) => transition.headingStyle === headingStyle && transition.bodyStyle === bodyStyle);
+  if (!proven) return false;
+  return !validateBondedPairs(nodes, contexts, options).length;
 }

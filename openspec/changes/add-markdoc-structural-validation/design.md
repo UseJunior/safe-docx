@@ -10,7 +10,7 @@ Markdoc compilation treats unsafe structural placement as fail-closed by default
 
 ## Parent-child slicing
 
-For a section-level insertion, scan forward from the positional anchor until a shallower ancestor boundary. If deeper descendants occur before that boundary and the inserted level would separate them from their parent, diagnose slicing and identify the last descendant as the corrective anchor. Insertion at or below the first child's level does not slice the hierarchy.
+For a section-level insertion, consider the gap it lands in (after the anchor for `AFTER`, before it for `BEFORE`). Scan forward from that gap until a paragraph at or above the inserted level. If that run contains a deeper paragraph that already has a parent before the gap, the insertion would re-parent it: diagnose slicing and identify the last paragraph of the run as the corrective `AFTER` anchor. Insertion at or below the first following child's level does not slice the hierarchy.
 
 Content-based section-header detection from the harness is not authoritative in Safe DOCX. Markdoc operation kind plus resolved numbering/style hierarchy must drive applicability; content heuristics may only provide advisory evidence.
 
@@ -24,11 +24,14 @@ Content-based section-header detection from the harness is not authoritative in 
 ## Bonded run-in paragraph pairs
 
 The NVCA form represents a run-in provision as two adjacent paragraphs with
-different roles: a heading paragraph and a body follower. Repeated adjacent
-style transitions in the source establish that pairing. Validation requires
-both insertions, distinct structural peers, and an application order that
-produces heading then body. Text casing and punctuation are not authoritative.
-Pairing is one-to-one. `AFTER` operations name the body first because repeated
+different roles: a heading paragraph whose paragraph mark is a Word style
+separator (`w:specVanish`) and a body follower that renders inline with it.
+Repeated adjacent transitions from such a run-in heading to the same follower
+style establish the pairing; a repeated ordinary heading-to-`Normal` transition
+does not, because that is plain section structure. Validation requires both
+insertions, distinct structural peers, and an application order that places
+each heading immediately before its body within the insertion slot. Text casing
+and punctuation are not authoritative. Pairing is one-to-one. `AFTER` operations name the body first because repeated
 insertion reverses around the anchor; `BEFORE` operations name the heading
 first. Multiple repeated followers for one heading style are resolved only when
 the submitted body peer makes the choice unique, otherwise validation emits an

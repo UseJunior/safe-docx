@@ -26,7 +26,7 @@ The system SHALL validate resolved Markdoc operations against the pinned source 
 
 #### Scenario: Bonded run-in subsection requires two paragraphs
 
-- **GIVEN** the source repeatedly pairs a deterministic heading style with a distinct body-follower style
-- **WHEN** an insertion supplies only the heading half or orders the two insertions incorrectly
+- **GIVEN** the source repeatedly pairs a run-in heading (a deterministic heading whose paragraph mark is a Word style separator) with a distinct body-follower style
+- **WHEN** an insertion supplies only the heading half or orders the insertions so a heading is not immediately followed by its body
 - **THEN** strict validation SHALL fail before mutation
 - **AND** SHALL identify both structural peer styles without relying on title-case text

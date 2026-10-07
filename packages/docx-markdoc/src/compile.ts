@@ -12,6 +12,7 @@ import {
   parseXml,
   relationshipPartPath,
   serializeXml,
+  collectRunInHeadingIds,
   validateStructuralInsertions,
   type StructuralDiagnostic,
   type ReplacementPart,
@@ -1234,7 +1235,7 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     position: operation.kind === 'insert-before' ? 'BEFORE' : 'AFTER',
     anchorId: operation.anchorId,
     styleSourceId: operation.styleSourceId,
-  })));
+  })), { runInHeadingIds: collectRunInHeadingIds(source.getParagraphs()) });
   return { unsupported: [...unsupported].sort(), structuralDiagnostics };
 }
 

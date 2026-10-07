@@ -3,6 +3,8 @@ import { isRecognizedBondedInsertionPair, validateStructuralInsertion, validateS
 import { testAllure } from './testing/allure-test.js';
 
 const TEST_FEATURE = 'add-markdoc-structural-validation';
+// h1/h2 end in a Word style separator (w:specVanish on the paragraph mark).
+const RUN_IN = { runInHeadingIds: new Set(['h1', 'h2']) };
 const scenario = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
 
 function node(id: string, level: number | null, style?: string): DocumentViewNode {
@@ -43,8 +45,11 @@ describe('OpenSpec traceability: add-markdoc-structural-validation', () => {
 
   scenario.openspec('Bonded run-in subsection requires two paragraphs')('Scenario: Bonded run-in subsection requires two paragraphs', () => {
     const nodes = [node('h1', 2), node('b1', null, 'HeadingPara2'), node('h2', 2), node('b2', null, 'HeadingPara2'), node('p', 1)];
-    expect(validateStructuralInsertions(nodes, [{ operationId: 'heading', position: 'AFTER', anchorId: 'p', styleSourceId: 'h1' }]))
+    expect(validateStructuralInsertions(nodes, [{ operationId: 'heading', position: 'AFTER', anchorId: 'p', styleSourceId: 'h1' }], RUN_IN))
       .toContainEqual(expect.objectContaining({ code: 'BONDED_PARAGRAPH_PAIR_REQUIRED' }));
+    // Without the style-separator evidence, the same transitions are ordinary section structure.
+    expect(validateStructuralInsertions(nodes, [{ operationId: 'heading', position: 'AFTER', anchorId: 'p', styleSourceId: 'h1' }])
+      .filter((item) => item.code.startsWith('BONDED'))).toEqual([]);
   });
 
   scenario.openspec('Unsafe insertion returns corrective guidance')('Scenario: Unsafe insertion returns corrective guidance', () => {
@@ -59,6 +64,6 @@ describe('OpenSpec traceability: add-markdoc-structural-validation', () => {
     expect(isRecognizedBondedInsertionPair(nodes, [
       { operationId: 'body', position: 'AFTER', anchorId: 'p', styleSourceId: 'b1' },
       { operationId: 'heading', position: 'AFTER', anchorId: 'p', styleSourceId: 'h1' },
-    ])).toBe(true);
+    ], RUN_IN)).toBe(true);
   });
 });
