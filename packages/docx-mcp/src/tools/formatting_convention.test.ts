@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { describe, expect } from 'vitest';
+import { describe, expect, vi } from 'vitest';
 import { DocxDocument, getParagraphRuns } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { makeDocxWithDocumentXml } from '../testing/docx_test_utils.js';
@@ -19,6 +19,58 @@ import {
   findProvisoKeywordSpans,
   summarizeDocumentConvention,
 } from './formatting_convention.js';
+
+/**
+ * Since #1159 the resolver reads every run-property layer, table styles
+ * included, so no real document leaves a toggle unresolved. `RunFormatting`
+ * still types every member as nullable (#752), and the check must never warn
+ * from an unresolved member. The tests for that contract set
+ * `simulatedUnresolved`: for a run inside a table, each listed member the run
+ * does not declare directly is reported as `null`, the way the resolver
+ * reported a table-style toggle before #1159.
+ */
+const simulatedUnresolved = vi.hoisted(() => ({
+  members: null as ReadonlyArray<'bold' | 'italic' | 'underline'> | null,
+}));
+
+vi.mock('@usejunior/docx-core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@usejunior/docx-core')>();
+  const TAG = { bold: 'b', italic: 'i', underline: 'u' } as const;
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  return {
+    ...actual,
+    extractEffectiveRunFormatting: (params: Parameters<typeof actual.extractEffectiveRunFormatting>[0]) => {
+      const formatting = actual.extractEffectiveRunFormatting(params);
+      const members = simulatedUnresolved.members;
+      if (!members) return formatting;
+      let inTable = false;
+      for (let cur = params.run.parentNode; cur; cur = cur.parentNode) {
+        if ((cur as Element).localName === 'tbl') inTable = true;
+      }
+      if (!inTable) return formatting;
+      const direct = Array.from(params.run.childNodes).find((n) => (n as Element).localName === 'rPr') as
+        | Element
+        | undefined;
+      const result = { ...formatting };
+      for (const member of members) {
+        if (!direct || direct.getElementsByTagNameNS(W, TAG[member]).length === 0) result[member] = null;
+      }
+      return result;
+    },
+  };
+});
+
+async function withSimulatedUnresolved<T>(
+  members: ReadonlyArray<'bold' | 'italic' | 'underline'>,
+  fn: () => Promise<T>,
+): Promise<T> {
+  simulatedUnresolved.members = members;
+  try {
+    return await fn();
+  } finally {
+    simulatedUnresolved.members = null;
+  }
+}
 
 const test = testAllure
   .epic('Document Editing')
@@ -401,10 +453,10 @@ describe('formatting-convention check', () => {
   });
 
   /**
-   * Since #753 the resolver reads docDefaults, so the only layer left that can
-   * leave a toggle unresolved is a table style (for a run inside a table).
    * These fixtures put the whole body in a one-cell table whose table style
-   * declares `rPr`.
+   * declares `rPr`. With the real resolver the table style's toggles resolve
+   * (#1159); the #752 tests below simulate them as unresolved instead (see
+   * `simulatedUnresolved`).
    */
   const inTable = (body: string): string =>
     `<w:tbl><w:tblPr><w:tblStyle w:val="Grid"/></w:tblPr><w:tr><w:tc>${body}</w:tc></w:tr></w:tbl>`;
@@ -421,10 +473,9 @@ describe('formatting-convention check', () => {
     then,
     and,
   }: AllureBddContext) => {
-    // A table style turns italic on. The resolver does not read table styles,
-    // so a run in the table that does not set italic directly has italic
-    // unresolved (null), not false. The convention's own italic is direct,
-    // hence resolved.
+    // A table style turns italic on, simulated as unresolved (null) for a run
+    // in the table that does not set italic directly. The convention's own
+    // italic is direct, hence resolved.
     const files = tableStyleFiles('<w:i/>');
     let differsOnlyWhereUnresolved: string[] = [];
     let differsWhereResolved: string[] = [];
@@ -433,20 +484,22 @@ describe('formatting-convention check', () => {
       expect(definedTermPopulation(await loadDoc(inTable(CONVENTION_BODY)))).toBeGreaterThanOrEqual(DEFAULT_MIN_INSTANCES);
     });
 
-    await when('a bold term with unresolved italic, and a plain term, are inserted', async () => {
-      differsOnlyWhereUnresolved = await check(
-        inTable(CONVENTION_BODY + TARGET_PLAIN),
-        inTable(CONVENTION_BODY + insertedDefinedTermParagraph({ bold: true })),
-        INSERTED_DEFINED_TERM_TEXT,
-        files,
-      );
-      differsWhereResolved = await check(
-        inTable(CONVENTION_BODY + TARGET_PLAIN),
-        inTable(CONVENTION_BODY + insertedDefinedTermParagraph({})),
-        INSERTED_DEFINED_TERM_TEXT,
-        files,
-      );
-    });
+    await when('a bold term with unresolved italic, and a plain term, are inserted', () =>
+      withSimulatedUnresolved(['italic'], async () => {
+        differsOnlyWhereUnresolved = await check(
+          inTable(CONVENTION_BODY + TARGET_PLAIN),
+          inTable(CONVENTION_BODY + insertedDefinedTermParagraph({ bold: true })),
+          INSERTED_DEFINED_TERM_TEXT,
+          files,
+        );
+        differsWhereResolved = await check(
+          inTable(CONVENTION_BODY + TARGET_PLAIN),
+          inTable(CONVENTION_BODY + insertedDefinedTermParagraph({})),
+          INSERTED_DEFINED_TERM_TEXT,
+          files,
+        );
+      }),
+    );
 
     await then('a tuple that differs only on the unresolved italic is silent', () => {
       expect(differsOnlyWhereUnresolved).toEqual([]);
@@ -461,6 +514,46 @@ describe('formatting-convention check', () => {
     });
   });
 
+  test('table-style toggles resolve and take part in the convention vote (#1159)', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    // The same table style as above turns italic on; the real resolver now
+    // reads it, so every term in the table is italic.
+    const files = tableStyleFiles('<w:i/>');
+    let boldInsertion: string[] = [];
+    let plainInsertion: string[] = [];
+
+    await given('a bold-italic defined-term convention in a table whose table style turns italic on', async () => {});
+
+    await when('a directly bold term, and a plain term, are inserted', async () => {
+      boldInsertion = await check(
+        inTable(CONVENTION_BODY + TARGET_PLAIN),
+        inTable(CONVENTION_BODY + insertedDefinedTermParagraph({ bold: true })),
+        INSERTED_DEFINED_TERM_TEXT,
+        files,
+      );
+      plainInsertion = await check(
+        inTable(CONVENTION_BODY + TARGET_PLAIN),
+        inTable(CONVENTION_BODY + insertedDefinedTermParagraph({})),
+        INSERTED_DEFINED_TERM_TEXT,
+        files,
+      );
+    });
+
+    await then('the bold term inherits italic from the table style and matches the convention', () => {
+      expect(boldInsertion).toEqual([]);
+    });
+
+    await and('the plain term diverges on bold only, with italic resolved', () => {
+      expect(plainInsertion).toHaveLength(1);
+      expect(plainInsertion[0]).toContain('is bold=false, italic=true, underline=false');
+      expect(plainInsertion[0]).toContain('are bold=true, italic=true, underline=false');
+    });
+  });
+
   test('uncertainty in one member does not erase a unanimous convention on another (#752 review)', async ({
     given,
     when,
@@ -468,8 +561,8 @@ describe('formatting-convention check', () => {
     and,
   }: AllureBddContext) => {
     // Ten directly bold terms: five turn italic off directly, five leave it to
-    // the table style (italic on), so italic is unresolved for half the
-    // population.
+    // the table style (italic on, simulated as unresolved), so italic is
+    // unresolved for half the population.
     const mixed = [
       ...Array.from({ length: 5 }, (_, i) => definedTermParagraph(i + 1, { bold: true, italicOff: true })),
       ...Array.from({ length: 5 }, (_, i) => definedTermParagraph(i + 6, { bold: true })),
@@ -482,19 +575,23 @@ describe('formatting-convention check', () => {
     });
 
     await when('a term with direct bold off is inserted, and (control) a term whose bold is itself unresolved', async () => {
-      resolvedBoldDivergence = await check(
-        inTable(mixed + TARGET_PLAIN),
-        inTable(mixed + insertedDefinedTermParagraph({ boldOff: true })),
-        INSERTED_DEFINED_TERM_TEXT,
-        tableStyleFiles('<w:i/>'),
+      resolvedBoldDivergence = await withSimulatedUnresolved(['italic'], () =>
+        check(
+          inTable(mixed + TARGET_PLAIN),
+          inTable(mixed + insertedDefinedTermParagraph({ boldOff: true })),
+          INSERTED_DEFINED_TERM_TEXT,
+          tableStyleFiles('<w:i/>'),
+        ),
       );
       // The table style also turns bold on here, so the plain insertion's bold
       // is unresolved: the member that differs is unknown, and nothing is said.
-      unresolvedBoldInsertion = await check(
-        inTable(mixed + TARGET_PLAIN),
-        inTable(mixed + insertedDefinedTermParagraph({})),
-        INSERTED_DEFINED_TERM_TEXT,
-        tableStyleFiles('<w:b/><w:i/>'),
+      unresolvedBoldInsertion = await withSimulatedUnresolved(['bold', 'italic'], () =>
+        check(
+          inTable(mixed + TARGET_PLAIN),
+          inTable(mixed + insertedDefinedTermParagraph({})),
+          INSERTED_DEFINED_TERM_TEXT,
+          tableStyleFiles('<w:b/><w:i/>'),
+        ),
       );
     });
 

@@ -2892,6 +2892,38 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-7-2",
+      "title": "Style hierarchy for runs in tables",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.7.2"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Style",
+      "claimRationale": "Run properties layer in the order document defaults, table style, paragraph\nstyle, character style, direct formatting. The effective-formatting resolver\nreads the table style for a run inside a table — the innermost table's\n`w:tblStyle`, or the default table style when it names none — with its\n`basedOn` chain, between the document defaults and the paragraph style. Each\nproperty resolves independently; for toggle properties the table style is one\nstyle level.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/styles.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/styles-table.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/styles-unresolved.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/styles-doc-defaults.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-7-3",
       "title": "Toggle-property evaluation",
       "classification": "targeted",
@@ -3000,6 +3032,30 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/primitives/styles-unresolved.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-7-6",
+      "title": "Table style conditional formatting",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.7.6"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_TblStylePr",
+      "claimRationale": "A table style's `w:tblStylePr` blocks format the first and last row and\ncolumn, odd and even row and column bands, and the four corner cells. The\nresolver applies the run properties of each block whose switch the table's\n`w:tblLook` turns on (Word's 0x04A0 when the element is absent) and whose\nposition matches the cell, with banding counted after the header row and\ncolumn in groups of `w:tblStyleRowBandSize` / `w:tblStyleColBandSize`. It\napplies the types in the order Office uses (Microsoft's [MS-OI29500] note on\n§17.7.6.6): row bands, column bands, first/last column, first/last row, then\nthe corners, each overriding the ones before it.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/styles.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/styles-table.test.ts"
         }
       ]
     },
@@ -5460,6 +5516,19 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Style",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "type",
+      "name": "CT_Style",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Style"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Sym",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -5469,6 +5538,19 @@
       "occurrences": [
         {
           "contextPath": "schema/type:CT_Sym"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_TblStylePr",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "type",
+      "name": "CT_TblStylePr",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_TblStylePr"
         }
       ]
     }

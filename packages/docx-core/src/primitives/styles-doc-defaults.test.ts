@@ -178,7 +178,7 @@ describe('document-default effective run formatting (#753)', () => {
     });
   });
 
-  test('a table style that would override a docDefaults value leaves it unresolved inside a table', async ({
+  test('a table style overrides a docDefaults value inside a table (#1159)', async ({
     given,
     when,
     then,
@@ -223,16 +223,18 @@ describe('document-default effective run formatting (#753)', () => {
         { inTable: true, theme: THEME },
       );
     });
-    await then('a differing table-style value makes the in-table property unresolved', async () => {
-      expect(overridden).toMatchObject({ fontName: null, fontSizePt: null, colorHex: null, underline: null });
+    await then('the table-style value replaces the docDefaults value for in-table runs only', async () => {
+      expect(overridden).toMatchObject({ fontName: 'Arial', fontSizePt: 9, colorHex: 'auto', underline: false });
       expect(outside).toMatchObject({ fontName: 'Georgia', fontSizePt: 12, colorHex: 'FF0000', underline: true });
-      expect(directWins).toMatchObject({ fontName: 'Verdana', fontSizePt: 10, colorHex: null });
+      // Direct formatting sits above the table style; undeclared directly,
+      // the colour still comes from the table style.
+      expect(directWins).toMatchObject({ fontName: 'Verdana', fontSizePt: 10, colorHex: 'auto', underline: false });
     });
-    await and('a table style that restates the docDefaults value cannot change it', async () => {
+    await and('a table style that restates the docDefaults value resolves to that value', async () => {
       expect(restated).toMatchObject({ fontName: 'Georgia', fontSizePt: 12, colorHex: 'FF0000', underline: true });
-      // Hex colours and font names compare case-insensitively; a theme colour
-      // that resolves to the same hex restates it too.
-      expect(restatedOtherCase).toMatchObject({ fontName: 'Georgia', colorHex: 'C0504D' });
+      // The table style is the nearest declaration, so its spelling is kept;
+      // a theme colour resolves through the theme.
+      expect(restatedOtherCase).toMatchObject({ fontName: 'georgia', colorHex: 'c0504d' });
       expect(restatedThroughTheme.colorHex).toBe('C0504D');
     });
   });

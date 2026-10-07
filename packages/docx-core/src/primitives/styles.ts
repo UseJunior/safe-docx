@@ -7,6 +7,20 @@ function getWAttr(el: Element, localName: string): string | null {
   return getAttributeSafe(el, OOXML.W_NS, localName, 'w', { emptyIsMissing: true });
 }
 
+function isOnValue(v: string): boolean {
+  return v !== '0' && v !== 'false' && v !== 'off';
+}
+
+function childElements(parent: Element, localName: string): Element[] {
+  const out: Element[] = [];
+  for (let c = parent.firstChild; c; c = c.nextSibling) {
+    if (c.nodeType !== 1) continue;
+    const el = c as Element;
+    if (el.localName === localName && el.namespaceURI === OOXML.W_NS) out.push(el);
+  }
+  return out;
+}
+
 export type StyleDef = {
   styleId: string;
   styleType: string | null;
@@ -14,6 +28,14 @@ export type StyleDef = {
   basedOn: string | null;
   pPr: Element | null;
   rPr: Element | null;
+  /**
+   * Table styles only: the style's own `w:tblPr` (read for
+   * `w:tblStyleRowBandSize` / `w:tblStyleColBandSize`), and the `w:rPr` of
+   * each conditional `w:tblStylePr`, keyed by its `w:type`. Optional so
+   * hand-built models remain source-compatible.
+   */
+  tblPr?: Element | null;
+  conditionalRPrs?: Map<string, Element>;
 };
 
 export type StylesModel = {
@@ -27,10 +49,17 @@ export type StylesModel = {
    */
   docDefaultsRPr?: Element | null;
   /**
+   * The `w:styleId` of the default table style (`w:type="table"` with
+   * `w:default="1"`), which applies to a table that names no `w:tblStyle`.
+   */
+  defaultTableStyleId?: string | null;
+  /**
    * Every `w:rPr` carried by a table style, including the conditional
-   * `w:tblStylePr/w:rPr` blocks. A detection-only probe: the resolver does not
-   * read table styles, so a declaration here that could change a property of a
-   * run inside a table makes that property unresolved.
+   * `w:tblStylePr/w:rPr` blocks.
+   *
+   * @deprecated No longer read: {@link extractEffectiveRunFormatting} resolves
+   * table styles from the run's table context since #1159. Still populated so
+   * existing readers keep compiling.
    */
   tableStyleRPrs?: Element[];
 };
@@ -114,12 +143,13 @@ export function parseThemeXml(themeDoc: Document | null): ThemeModel {
 
 export function parseStylesXml(stylesDoc: Document | null): StylesModel {
   const byId = new Map<string, StyleDef>();
-  if (!stylesDoc) return { byId, docDefaultsRPr: null, tableStyleRPrs: [] };
+  if (!stylesDoc) return { byId, docDefaultsRPr: null, defaultTableStyleId: null, tableStyleRPrs: [] };
 
   const docDefaults = stylesDoc.getElementsByTagNameNS(OOXML.W_NS, W.docDefaults).item(0);
   const rPrDefault = docDefaults ? getFirstChild(docDefaults, OOXML.W_NS, W.rPrDefault) : null;
   const docDefaultsRPr = rPrDefault ? getFirstChild(rPrDefault, OOXML.W_NS, W.rPr) : null;
   const tableStyleRPrs: Element[] = [];
+  let defaultTableStyleId: string | null = null;
 
   const styles = Array.from(stylesDoc.getElementsByTagNameNS(OOXML.W_NS, W.style));
   for (const st of styles) {
@@ -127,30 +157,46 @@ export function parseStylesXml(stylesDoc: Document | null): StylesModel {
     if (!id) continue;
     const nameEl = getFirstChild(st, OOXML.W_NS, W.name);
     const basedOnEl = getFirstChild(st, OOXML.W_NS, W.basedOn);
-    const pPr = getFirstChild(st, OOXML.W_NS, W.pPr);
-    const rPr = getFirstChild(st, OOXML.W_NS, W.rPr);
+    const styleType = getWAttr(st, 'type');
+    // getFirstChild searches descendants. A table style nests further pPr /
+    // rPr / tblPr inside each w:tblStylePr, so its own properties must be read
+    // from direct children, or a style without its own rPr would take the
+    // first conditional's as if it applied to the whole table.
+    const ownChild = (localName: string): Element | null =>
+      styleType === 'table' ? (childElements(st, localName)[0] ?? null) : getFirstChild(st, OOXML.W_NS, localName);
+    const pPr = ownChild(W.pPr);
+    const rPr = ownChild(W.rPr);
 
     const name = nameEl ? (getWAttr(nameEl, 'val') ?? id) : id;
     const basedOn = basedOnEl ? (getWAttr(basedOnEl, 'val') ?? null) : null;
-    const styleType = getWAttr(st, 'type');
-    if (styleType === 'table') {
-      if (rPr) tableStyleRPrs.push(rPr);
-      for (const conditional of Array.from(st.getElementsByTagNameNS(OOXML.W_NS, 'tblStylePr'))) {
-        const conditionalRPr = getFirstChild(conditional, OOXML.W_NS, W.rPr);
-        if (conditionalRPr) tableStyleRPrs.push(conditionalRPr);
-      }
-    }
-
-    byId.set(id, {
+    const def: StyleDef = {
       styleId: id,
       styleType,
       name,
       basedOn,
       pPr: pPr ?? null,
       rPr: rPr ?? null,
-    });
+    };
+    if (styleType === 'table') {
+      if (rPr) tableStyleRPrs.push(rPr);
+      const conditionalRPrs = new Map<string, Element>();
+      for (const conditional of childElements(st, 'tblStylePr')) {
+        const type = getWAttr(conditional, 'type');
+        const conditionalRPr = getFirstChild(conditional, OOXML.W_NS, W.rPr);
+        if (!conditionalRPr) continue;
+        tableStyleRPrs.push(conditionalRPr);
+        // The first block of a type wins, matching getFirstChild elsewhere.
+        if (type && !conditionalRPrs.has(type)) conditionalRPrs.set(type, conditionalRPr);
+      }
+      def.tblPr = ownChild(W.tblPr);
+      def.conditionalRPrs = conditionalRPrs;
+      const isDefault = getWAttr(st, 'default');
+      if (defaultTableStyleId === null && isDefault !== null && isOnValue(isDefault)) defaultTableStyleId = id;
+    }
+
+    byId.set(id, def);
   }
-  return { byId, docDefaultsRPr: docDefaultsRPr ?? null, tableStyleRPrs };
+  return { byId, docDefaultsRPr: docDefaultsRPr ?? null, defaultTableStyleId, tableStyleRPrs };
 }
 
 function resolveStyleChain(model: StylesModel, styleId: string | null): StyleDef[] {
@@ -271,10 +317,6 @@ export function extractParagraphFormatting(
 /**
  * Effective run formatting. `null` means the resolver could not establish the
  * property, and never stands in for a rendered default. That happens when:
- * - no layer the resolver reads above `w:docDefaults` declares the property,
- *   the run is inside a table, and a table style's run properties declare a
- *   value that differs from what `w:docDefaults` (or the OOXML default) gives
- *   — table styles sit above document defaults and are not read;
  * - the nearest layer that declares it does so through a theme colour or
  *   theme font reference that cannot be resolved (no theme, or no matching
  *   theme entry, and no explicit fallback value); or
@@ -351,7 +393,14 @@ function parseBoolProp(parent: Element | null, tagLocal: string): boolean | null
 }
 
 type ToggleStep = {
-  rPr: Element | null;
+  /** The layer's `w:rPr`, read for the toggle being resolved. */
+  rPr?: Element | null;
+  /**
+   * A layer whose declaration is already merged from several `w:rPr`
+   * containers (the table style with its conditional formatting). Used in
+   * place of `rPr` when present.
+   */
+  declare?: (tagLocal: string) => boolean | null;
   kind: 'default' | 'style' | 'direct';
 };
 
@@ -374,44 +423,260 @@ type ToggleStep = {
  * @see https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/f7130225-2368-48f3-acae-a9d278d0fb25
  * @see https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/f936abaf-a9cb-439b-923d-7f688d9202e9
  */
-function resolveToggleProperty(
-  steps: ToggleStep[],
-  tagLocal: string,
-  unreadLayerTurnsOn: boolean,
-): boolean | null {
+function resolveToggleProperty(steps: ToggleStep[], tagLocal: string): boolean {
   let effective = false;
-  // Once a direct step sets an absolute value, the base the hierarchy started
-  // from no longer affects the result.
-  let absolute = false;
-  for (const { rPr, kind } of steps) {
-    const declaration = parseBoolProp(rPr, tagLocal);
+  for (const { rPr, declare, kind } of steps) {
+    const declaration = declare ? declare(tagLocal) : parseBoolProp(rPr ?? null, tagLocal);
     if (declaration === null) continue;
-    if (kind === 'default') {
-      // The seed sits below every unread layer (table styles), so it does not
-      // make the result absolute.
+    if (kind === 'style') {
+      if (declaration) effective = !effective;
+    } else {
       effective = declaration;
-    } else if (kind === 'direct') {
-      effective = declaration;
-      absolute = true;
-    } else if (declaration) {
-      effective = !effective;
     }
   }
-  // The walk starts from the document default (or `false`, the OOXML
-  // default). Table styles sit between that seed and the paragraph style and
-  // are not read, so a table style that turns the toggle on leaves the result
-  // depending on a layer the resolver does not read.
-  if (absolute || !unreadLayerTurnsOn) return effective;
-  return null;
+  return effective;
 }
 
-function isInsideTable(node: Node): boolean {
+/**
+ * Conditional formatting types (ST_TblStyleOverrideType, § 17.18.89) in the
+ * order Word applies them; each later type overrides the ones before it.
+ * `wholeTable` always applies and sits below all of them.
+ *
+ * ECMA-376 § 17.7.6 lists whole table, column bands, row bands, first/last
+ * row, first/last column, then the corner cells. Microsoft's implementation
+ * note for § 17.7.6.6 records that Office instead applies row bands, column
+ * bands, first/last column, first/last row, then the corners. This follows
+ * Office, the renderer whose output the resolver is meant to report.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.6
+ * @see https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/2ac331d4-cf1e-4fa0-8bca-6da74411e284
+ */
+const CONDITIONAL_ORDER = [
+  'band1Horz',
+  'band2Horz',
+  'band1Vert',
+  'band2Vert',
+  'firstCol',
+  'lastCol',
+  'firstRow',
+  'lastRow',
+  'nwCell',
+  'neCell',
+  'swCell',
+  'seCell',
+] as const;
+type ConditionalType = (typeof CONDITIONAL_ORDER)[number];
+
+/**
+ * The table's `w:tblLook` switches. Banding is
+ * expressed positively: `hBand` is `!noHBand`.
+ */
+type TableLook = {
+  firstRow: boolean;
+  lastRow: boolean;
+  firstColumn: boolean;
+  lastColumn: boolean;
+  hBand: boolean;
+  vBand: boolean;
+};
+
+const WORD_DEFAULT_TABLE_LOOK = 0x04a0;
+
+function tableLookFromBits(bits: number): TableLook {
+  return {
+    firstRow: (bits & 0x0020) !== 0,
+    lastRow: (bits & 0x0040) !== 0,
+    firstColumn: (bits & 0x0080) !== 0,
+    lastColumn: (bits & 0x0100) !== 0,
+    hBand: (bits & 0x0200) === 0,
+    vBand: (bits & 0x0400) === 0,
+  };
+}
+
+/**
+ * Read `w:tblLook`. The explicit attributes win; the transitional `w:val`
+ * hex bitmask is read only when none of them is present (0x0020 first row,
+ * 0x0040 last row, 0x0080 first column, 0x0100 last column, 0x0200 no
+ * horizontal banding, 0x0400 no vertical banding). An absent attribute is
+ * off.
+ *
+ * When the table has no `w:tblLook`, the standard assumes 0x0000 but Word
+ * assumes 0x04A0 (first row, first column, no vertical banding); this
+ * follows Word, the renderer whose output the resolver reports.
+ *
+ * @see https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/90f075ce-b16d-422a-b1b0-39c9777a594e
+ */
+function parseTableLook(tblPr: Element | null): TableLook {
+  const el = tblPr ? getFirstChild(tblPr, OOXML.W_NS, 'tblLook') : null;
+  if (!el) return tableLookFromBits(WORD_DEFAULT_TABLE_LOOK);
+  const named = ['firstRow', 'lastRow', 'firstColumn', 'lastColumn', 'noHBand', 'noVBand'].map((a) =>
+    getWAttr(el, a),
+  );
+  if (named.some((v) => v !== null)) {
+    const on = (v: string | null): boolean => v !== null && isOnValue(v);
+    const [firstRow, lastRow, firstColumn, lastColumn, noHBand, noVBand] = named;
+    return {
+      firstRow: on(firstRow!),
+      lastRow: on(lastRow!),
+      firstColumn: on(firstColumn!),
+      lastColumn: on(lastColumn!),
+      hBand: !on(noHBand!),
+      vBand: !on(noVBand!),
+    };
+  }
+  const raw = getWAttr(el, 'val');
+  return tableLookFromBits(raw && /^[0-9A-Fa-f]{1,4}$/u.test(raw) ? Number.parseInt(raw, 16) : 0);
+}
+
+function nearestAncestor(node: Node, localName: string, stopAt: string | null = null): Element | null {
   for (let cur = node.parentNode; cur; cur = cur.parentNode) {
     if (cur.nodeType !== 1) continue;
     const el = cur as Element;
-    if (el.localName === W.tbl && el.namespaceURI === OOXML.W_NS) return true;
+    if (el.namespaceURI !== OOXML.W_NS) continue;
+    if (el.localName === localName) return el;
+    if (stopAt && el.localName === stopAt) return null;
   }
-  return false;
+  return null;
+}
+
+/**
+ * The `w:tr` rows of a table (or `w:tc` cells of a row), looking through the
+ * content-control and custom-XML wrappers that may enclose them.
+ */
+function collectTableChildren(parent: Element, localName: 'tr' | 'tc'): Element[] {
+  const out: Element[] = [];
+  const visit = (el: Element): void => {
+    for (let c = el.firstChild; c; c = c.nextSibling) {
+      if (c.nodeType !== 1) continue;
+      const child = c as Element;
+      if (child.namespaceURI !== OOXML.W_NS) continue;
+      if (child.localName === localName) out.push(child);
+      else if (child.localName === 'sdt') {
+        const content = getFirstChild(child, OOXML.W_NS, 'sdtContent');
+        if (content) visit(content);
+      } else if (child.localName === 'customXml') visit(child);
+    }
+  };
+  visit(parent);
+  return out;
+}
+
+function bandSize(sources: Array<Element | null>, localName: string): number {
+  for (const tblPr of sources) {
+    const el = tblPr ? getFirstChild(tblPr, OOXML.W_NS, localName) : null;
+    const v = el ? Number.parseInt(getWAttr(el, 'val') ?? '', 10) : Number.NaN;
+    if (Number.isSafeInteger(v) && v > 0) return v;
+  }
+  return 1;
+}
+
+type CellPosition = {
+  rowIndex: number;
+  rowCount: number;
+  colIndex: number;
+  colCount: number;
+  rowBandSize: number;
+  colBandSize: number;
+};
+
+/**
+ * Which conditional types apply to a cell, given the table's `w:tblLook`.
+ * Corner types need both of their edges switched on. Banding counts rows
+ * (columns) after the header row (first column) when that is switched on,
+ * in groups of `w:tblStyleRowBandSize` (`w:tblStyleColBandSize`).
+ * Columns are counted by cell, not by grid column.
+ */
+function applicableConditionals(pos: CellPosition, look: TableLook): Set<ConditionalType> {
+  const out = new Set<ConditionalType>();
+  const isFirstRow = pos.rowIndex === 0;
+  const isLastRow = pos.rowIndex === pos.rowCount - 1;
+  const isFirstCol = pos.colIndex === 0;
+  const isLastCol = pos.colIndex === pos.colCount - 1;
+  if (look.hBand) {
+    const idx = pos.rowIndex - (look.firstRow ? 1 : 0);
+    if (idx >= 0) out.add(Math.floor(idx / pos.rowBandSize) % 2 === 0 ? 'band1Horz' : 'band2Horz');
+  }
+  if (look.vBand) {
+    const idx = pos.colIndex - (look.firstColumn ? 1 : 0);
+    if (idx >= 0) out.add(Math.floor(idx / pos.colBandSize) % 2 === 0 ? 'band1Vert' : 'band2Vert');
+  }
+  if (look.firstColumn && isFirstCol) out.add('firstCol');
+  if (look.lastColumn && isLastCol) out.add('lastCol');
+  if (look.firstRow && isFirstRow) out.add('firstRow');
+  if (look.lastRow && isLastRow) out.add('lastRow');
+  if (look.firstRow && look.firstColumn && isFirstRow && isFirstCol) out.add('nwCell');
+  if (look.firstRow && look.lastColumn && isFirstRow && isLastCol) out.add('neCell');
+  if (look.lastRow && look.firstColumn && isLastRow && isFirstCol) out.add('swCell');
+  if (look.lastRow && look.lastColumn && isLastRow && isLastCol) out.add('seCell');
+  return out;
+}
+
+/**
+ * The table-style `w:rPr` layers for one set of applicable conditionals,
+ * highest precedence first: the applied conditional types from last to first
+ * in {@link CONDITIONAL_ORDER}, then `wholeTable`, then the style's own
+ * `w:rPr`. Within each, the derived style precedes its `basedOn` ancestors.
+ */
+function tableStyleLayers(chain: StyleDef[], applied: Set<ConditionalType>): Element[] {
+  const layers: Element[] = [];
+  const types: string[] = [...CONDITIONAL_ORDER].filter((t) => applied.has(t)).reverse();
+  types.push('wholeTable');
+  for (const type of types) {
+    for (const style of chain) {
+      const rPr = style.conditionalRPrs?.get(type);
+      if (rPr) layers.push(rPr);
+    }
+  }
+  for (const style of chain) if (style.rPr) layers.push(style.rPr);
+  return layers;
+}
+
+/**
+ * The table-style layers for a run, highest precedence first (see
+ * {@link tableStyleLayers}); empty when the run is not in a table or the
+ * table has no style.
+ *
+ * The table style is the table's `w:tblStyle`, or the default table style
+ * when it names none (or names one that does not exist). The innermost
+ * table governs a run in a nested table. Which conditionals apply is
+ * computed from the cell's position and the table's `w:tblLook`. The
+ * `w:cnfStyle` elements on paragraphs, rows and cells are not consulted: the
+ * standard describes them as an optimization that records the outcome, and
+ * the position and `w:tblLook` determine it.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.6
+ * @see https://github.com/UseJunior/safe-docx/issues/1159
+ */
+function tableStyleLayersForRun(run: Element, styles: StylesModel): Element[] {
+  const tc = nearestAncestor(run, W.tc, W.tbl);
+  const tr = tc ? nearestAncestor(tc, W.tr, W.tbl) : null;
+  const tbl = tr ? nearestAncestor(tr, W.tbl) : null;
+  if (!tc || !tr || !tbl) return [];
+
+  const tblPr = getFirstChild(tbl, OOXML.W_NS, W.tblPr);
+  const tblStyleEl = tblPr ? getFirstChild(tblPr, OOXML.W_NS, 'tblStyle') : null;
+  const named = tblStyleEl ? getWAttr(tblStyleEl, 'val') : null;
+  const styleId =
+    named && styles.byId.get(named)?.styleType === 'table' ? named : (styles.defaultTableStyleId ?? null);
+  const chain = resolveStyleChain(styles, styleId).filter((st) => st.styleType === 'table');
+  if (chain.length === 0) return [];
+  if (!chain.some((st) => st.conditionalRPrs && st.conditionalRPrs.size > 0)) {
+    return tableStyleLayers(chain, new Set());
+  }
+
+  const rows = collectTableChildren(tbl, 'tr');
+  const cells = collectTableChildren(tr, 'tc');
+  const bandSources = [tblPr, ...chain.map((st) => st.tblPr ?? null)];
+  const pos: CellPosition = {
+    rowIndex: rows.indexOf(tr),
+    rowCount: rows.length,
+    colIndex: cells.indexOf(tc),
+    colCount: cells.length,
+    rowBandSize: bandSize(bandSources, 'tblStyleRowBandSize'),
+    colBandSize: bandSize(bandSources, 'tblStyleColBandSize'),
+  };
+  return tableStyleLayers(chain, applicableConditionals(pos, parseTableLook(tblPr)));
 }
 
 function parseUnderline(parent: Element | null): boolean | null {
@@ -538,8 +803,9 @@ function parseEffectiveHighlightVal(parent: Element | null): string | false | nu
  * the run declares. Ordinary properties are taken from the first layer that
  * specifies them: direct `w:rPr` on the run, then the `w:rStyle`
  * character-style `basedOn` chain, then the paragraph mark's `w:rPr` inside
- * `pPr`, then the paragraph style's `basedOn` chain, and finally the
- * document defaults (`w:docDefaults/w:rPrDefault/w:rPr`).
+ * `pPr`, then the paragraph style's `basedOn` chain, then — for a run inside
+ * a table — the table style, and finally the document defaults
+ * (`w:docDefaults/w:rPrDefault/w:rPr`).
  *
  * Each property is resolved independently down the chain — a style that
  * specifies only color does not mask an ancestor's bold.
@@ -554,14 +820,17 @@ function parseEffectiveHighlightVal(parent: Element | null): string | false | nu
  * Document defaults seed toggle evaluation as an absolute base value rather
  * than acting as another parity level (see {@link resolveToggleProperty}).
  *
- * Not read: table-style run properties. For a run inside a table, when a
- * property is declared nowhere above the document defaults and a table style
- * declares a value that would change it (for a toggle: turns it on), the
- * result is `null` (unresolved) rather than a guess; when no layer declares it
- * at all, the result is the OOXML default (see {@link RunFormatting}). A
- * toggle that a direct layer sets absolutely is resolved regardless of table
- * styles. Numbering-level `rPr` formats only the list label (`w:lvlText`),
- * never the paragraph's runs, so it is out of scope.
+ * Table styles (#1159): the table context is read from the run's ancestors —
+ * the innermost `w:tbl`, its `w:tblStyle` (or the default table style), the
+ * `basedOn` chain, `w:tblLook`, and the cell's row and column. The style's
+ * `w:rPr` and every conditional `w:tblStylePr/w:rPr` that applies to the
+ * cell merge into one layer between the document defaults and the paragraph
+ * style (see {@link tableStyleLayers} for the order). For toggles
+ * that merged layer is one style level: its nearest declaration inverts or
+ * preserves the state like any other style.
+ *
+ * Numbering-level `rPr` formats only the list label (`w:lvlText`), never the
+ * paragraph's runs, so it is out of scope.
  *
  * Part of docx-core's public surface (see `src/index.ts`) so external
  * diagnostics — `scripts/check_docx_formatting_loss.mjs` today, the planned
@@ -576,11 +845,14 @@ function parseEffectiveHighlightVal(parent: Element | null): string | false | nu
  * @param params.theme the model produced by {@link parseThemeXml}; when
  *   omitted, direct font/color fallbacks retain their previous behavior
  *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.2
  * @conformance ECMA-376 edition 5, Part 1 § 17.7.3
  * @conformance ECMA-376 edition 5, Part 1 § 17.7.5.1
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.6
  * @see https://github.com/UseJunior/safe-docx/issues/737
  * @see https://github.com/UseJunior/safe-docx/issues/752
  * @see https://github.com/UseJunior/safe-docx/issues/753
+ * @see https://github.com/UseJunior/safe-docx/issues/1159
  */
 export function extractEffectiveRunFormatting(params: {
   run: Element;
@@ -601,11 +873,12 @@ export function extractEffectiveRunFormatting(params: {
   const paragraphStyleChain = resolveStyleChain(styles, paragraphStyleId);
 
   // Priority: direct rPr → rStyle chain rPrs → paragraph mark rPr → paragraph
-  // style chain rPrs → document defaults. Each property resolves
-  // independently down this list: a chain member that specifies only color
-  // must not mask an ancestor's bold, so the sources are the individual rPr
-  // containers, never "the first chain member that has an rPr" (peer review
-  // on #684; extractStyleRunFormatting above already resolved per property).
+  // style chain rPrs → table style (when in a table) → document defaults.
+  // Each property resolves independently down this list: a chain member that
+  // specifies only color must not mask an ancestor's bold, so the sources are
+  // the individual rPr containers, never "the first chain member that has an
+  // rPr" (peer review on #684; extractStyleRunFormatting above already
+  // resolved per property).
   const sourcesAboveDefaults: Array<Element | null> = [
     rPr,
     ...rStyleChain.map((s) => s.rPr),
@@ -614,61 +887,38 @@ export function extractEffectiveRunFormatting(params: {
   ];
   const docDefaultsRPr = styles.docDefaultsRPr ?? null;
 
-  // Apply from the document defaults through the least specific style
-  // ancestor to direct run formatting. Paragraph-mark rPr is direct
-  // formatting at its hierarchy level; a character style can still contribute
-  // above it before the run's own rPr supplies the final absolute override.
+  const tableLayers = tableStyleLayersForRun(run, styles);
+
+  // Apply from the document defaults through the table style and the least
+  // specific paragraph-style ancestor to direct run formatting.
+  // Paragraph-mark rPr is direct formatting at its hierarchy level; a
+  // character style can still contribute above it before the run's own rPr
+  // supplies the final absolute override.
   const toggleSteps: ToggleStep[] = [
     { rPr: docDefaultsRPr, kind: 'default' },
+    {
+      declare: (tagLocal) => firstNonNull(tableLayers.map((layer) => parseBoolProp(layer, tagLocal))),
+      kind: 'style',
+    },
     ...[...paragraphStyleChain].reverse().map((style) => ({ rPr: style.rPr, kind: 'style' as const })),
     { rPr: pRPr, kind: 'direct' },
     ...[...rStyleChain].reverse().map((style) => ({ rPr: style.rPr, kind: 'style' as const })),
     { rPr, kind: 'direct' },
   ];
-
-  // Table styles are the one layer this resolver does not read. They sit
-  // between the document defaults and the paragraph style, so for a property
-  // declared nowhere above the document defaults, a table-style declaration
-  // that differs from the base below it makes the property unresolved. A
-  // declaration that restates that base cannot change the outcome.
-  const tableLayers: Element[] =
-    styles.tableStyleRPrs && styles.tableStyleRPrs.length > 0 && isInsideTable(run)
-      ? styles.tableStyleRPrs
-      : [];
-  const toggle = (tagLocal: string): boolean | null =>
-    resolveToggleProperty(
-      toggleSteps,
-      tagLocal,
-      tableLayers.some((layer) => parseBoolProp(layer, tagLocal) === true),
-    );
+  const toggle = (tagLocal: string): boolean => resolveToggleProperty(toggleSteps, tagLocal);
+  const sources = [...sourcesAboveDefaults, ...tableLayers];
   /**
-   * Nearest declaration above the document defaults; otherwise the document
-   * default, otherwise `ooxmlDefault` (`null` for a property with no OOXML
-   * default), unless an unread table style could change that base.
+   * Nearest declaration above the document defaults (table style
+   * included); otherwise the document default, otherwise `ooxmlDefault`
+   * (`null` for a property with no OOXML default).
    */
-  // Hex colours and font names compare case-insensitively: `abcdef` restates
-  // `ABCDEF`.
-  const sameValue = (a: unknown, b: unknown): boolean =>
-    typeof a === 'string' && typeof b === 'string' ? a.toUpperCase() === b.toUpperCase() : a === b;
   const resolveLayered = <T>(
     parse: (el: Element | null) => Declared<T> | null,
     ooxmlDefault: T | null,
   ): T | null => {
-    const above = firstNonNull(sourcesAboveDefaults.map(parse));
-    if (above === DECLARED_UNRESOLVED) return null;
-    if (above !== null) return above;
-    const base = parse(docDefaultsRPr) ?? ooxmlDefault;
-    if (
-      tableLayers.some((layer) => {
-        const declared = parse(layer);
-        return declared !== null && !sameValue(declared, base);
-      })
-    ) {
-      return null;
-    }
-    return base === DECLARED_UNRESOLVED ? null : base;
+    const value = firstNonNull(sources.map(parse)) ?? parse(docDefaultsRPr) ?? ooxmlDefault;
+    return value === DECLARED_UNRESOLVED ? null : value;
   };
-
   return {
     bold: toggle(W.b),
     italic: toggle(W.i),

@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- `extractEffectiveRunFormatting` (and so `read_file` formatting) now reads
+  table styles for a run inside a table, per ECMA-376 Part 1 § 17.7.2: the
+  table's `w:tblStyle` (or the default table style when it names none) with
+  its `basedOn` chain sits between the document defaults and the paragraph
+  style. Conditional `w:tblStylePr` formatting (first/last row and column,
+  row and column bands, corner cells) applies when the table's `w:tblLook`
+  turns it on (Word's default when the element is absent) and the cell's
+  position matches, in the order Word applies it. Properties that a table
+  style could change are no longer reported as `null`; table-cell runs that
+  inherit their font only from the document defaults now report it. Runs
+  outside tables are unchanged. `StylesModel.tableStyleRPrs` is deprecated and
+  no longer read; `StylesModel` gains `defaultTableStyleId`, and table
+  `StyleDef`s gain `tblPr` and `conditionalRPrs`. (#1159)
+
 ## 0.23.0
 
 Migration: every field of docx-core's `RunFormatting` (returned by

@@ -182,7 +182,7 @@ describe('unresolved effective run formatting (#752)', () => {
       },
     );
 
-  test('table-style run properties make an undeclared property of a run inside a table unresolved', async ({
+  test('table-style run properties resolve for a run inside a table, not outside (#1159)', async ({
     given,
     when,
     then,
@@ -190,25 +190,33 @@ describe('unresolved effective run formatting (#752)', () => {
     let inTable!: RunFormatting;
     let outsideTable!: RunFormatting;
     let declaredDirectly!: RunFormatting;
+    let undefinedStyle!: RunFormatting;
 
-    await given('a table style that sets bold, and one whose first-row condition sets colour', async () => {});
+    await given('a table style that sets bold and, on its first-row condition, red', async () => {});
     await when('runs inside and outside a table are extracted', async () => {
       const styles =
-        `<w:style w:type="table" w:styleId="Grid"><w:rPr><w:b/></w:rPr></w:style>` +
-        `<w:style w:type="table" w:styleId="Banded"><w:tblStylePr w:type="firstRow">` +
+        `<w:style w:type="table" w:styleId="Grid"><w:rPr><w:b/></w:rPr><w:tblStylePr w:type="firstRow">` +
         `<w:rPr><w:color w:val="FF0000"/></w:rPr></w:tblStylePr></w:style>`;
       inTable = extract(styles, '', { inTable: true });
       outsideTable = extract(styles, '');
-      declaredDirectly = extract(styles, '<w:b/><w:color w:val="00FF00"/>', { inTable: true });
+      declaredDirectly = extract(styles, '<w:b w:val="0"/><w:color w:val="00FF00"/>', { inTable: true });
+      // The table names "Grid"; with no such style and no default table
+      // style, no table-style layer applies.
+      undefinedStyle = extract(
+        `<w:style w:type="table" w:styleId="Other"><w:rPr><w:b/></w:rPr></w:style>`,
+        '',
+        { inTable: true },
+      );
     });
-    await then('only the in-table run reports the table-declared properties as unresolved', async () => {
-      expect(inTable.bold).toBeNull();
-      expect(inTable.colorHex).toBeNull();
+    await then('the single-row table is its own first row; direct formatting still wins', async () => {
+      expect(inTable.bold).toBe(true);
+      expect(inTable.colorHex).toBe('FF0000');
       expect(inTable.italic).toBe(false);
       expect(outsideTable.bold).toBe(false);
       expect(outsideTable.colorHex).toBe('auto');
-      expect(declaredDirectly.bold).toBe(true);
+      expect(declaredDirectly.bold).toBe(false);
       expect(declaredDirectly.colorHex).toBe('00FF00');
+      expect(undefinedStyle.bold).toBe(false);
     });
   });
 
