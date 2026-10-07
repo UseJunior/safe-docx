@@ -22,11 +22,13 @@ const DOCUMENT_SKELETON =
   `<w:body/></w:document>`;
 
 /**
- * Compile the body: each section's blocks in order. Every non-final section
- * ends with a dedicated break paragraph whose pPr contains only that
- * section's sectPr (what Word itself emits on Insert → Section Break; it
- * also sidesteps the trailing-table case), and the final section's
- * properties bind as the body's last child.
+ * Compile the body: each section's blocks in order. By default every
+ * non-final section ends with a dedicated break paragraph whose pPr contains
+ * only that section's sectPr (what Word itself emits on Insert → Section
+ * Break; it also sidesteps the trailing-table case). With
+ * `breakPlacement: 'lastParagraph'` the sectPr instead binds to the section's
+ * final paragraph, adding no empty paragraph. The final section's properties
+ * bind as the body's last child.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.6.18
  * @conformance ECMA-376 edition 5, Part 1 § 17.6.17
@@ -53,6 +55,19 @@ export function emitDocumentPart(spec: DocumentSpec, refs?: SectionHeaderFooterR
         body.appendChild(createWmlElement(doc, W.p));
       }
       body.appendChild(sectPr);
+    } else if (section.breakPlacement === 'lastParagraph') {
+      // Validation guarantees the section ends with a paragraph. sectPr is the
+      // last CT_PPr child generation can emit (only pPrChange follows it).
+      const lastParagraph = body.lastChild as Element | null;
+      if (!lastParagraph || lastParagraph.nodeName !== 'w:p') {
+        throw new GenerationInternalError('lastParagraph section break has no final paragraph to bind to');
+      }
+      let pPr = lastParagraph.firstChild as Element | null;
+      if (!pPr || pPr.nodeName !== 'w:pPr') {
+        pPr = createWmlElement(doc, W.pPr);
+        lastParagraph.insertBefore(pPr, lastParagraph.firstChild);
+      }
+      pPr.appendChild(sectPr);
     } else {
       const breakParagraph = createWmlElement(doc, W.p);
       const pPr = createWmlElement(doc, W.pPr);
