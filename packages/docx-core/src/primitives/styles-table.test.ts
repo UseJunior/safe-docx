@@ -418,6 +418,45 @@ describe('table-style effective run formatting (#1159)', () => {
     });
   });
 
+  test('a wholeTable conditional is ignored, as Word does', async ({ given, when, then }: AllureBddContext) => {
+    let result!: ReturnType<typeof resolveTable>;
+    await given('a table style with its own colour and a wholeTable conditional setting bold red', async () => {});
+    await when('a run in the table is resolved', async () => {
+      result = resolveTable(
+        STYLES(
+          TABLE_STYLE('Grid', '<w:rPr><w:color w:val="111111"/></w:rPr>' + COND('wholeTable', '<w:b/><w:color w:val="FF0000"/>')),
+        ),
+        { tblPr: '<w:tblStyle w:val="Grid"/>' },
+      );
+    });
+    await then('only the style\'s own run properties apply', async () => {
+      expect(result.cells[0]![0]).toMatchObject({ bold: false, colorHex: '111111' });
+    });
+  });
+
+  test('a tracked rPrChange inside a table style is the previous state and is not read', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const old = '<w:rPrChange w:id="1" w:author="R"><w:rPr><w:b/><w:color w:val="FF0000"/></w:rPr></w:rPrChange>';
+    let own!: ReturnType<typeof resolveTable>;
+    let conditional!: ReturnType<typeof resolveTable>;
+    await given('table-style rPr blocks whose only bold and red sit in w:rPrChange', async () => {});
+    await when('runs in tables using them are resolved', async () => {
+      own = resolveTable(STYLES(TABLE_STYLE('Grid', `<w:rPr><w:i/>${old}</w:rPr>`)), {
+        tblPr: '<w:tblStyle w:val="Grid"/>',
+      });
+      conditional = resolveTable(STYLES(TABLE_STYLE('Grid', COND('firstRow', `<w:i/>${old}`))), {
+        tblPr: '<w:tblStyle w:val="Grid"/>',
+      });
+    });
+    await then('only the current properties apply', async () => {
+      expect(own.cells[0]![0]).toMatchObject({ italic: true, bold: false, colorHex: 'auto' });
+      expect(conditional.cells[0]![0]).toMatchObject({ italic: true, bold: false, colorHex: 'auto' });
+    });
+  });
+
   test('a run in a nested table takes the innermost table style', async ({ given, when, then }: AllureBddContext) => {
     let inner!: RunFormatting;
     let outer!: RunFormatting;

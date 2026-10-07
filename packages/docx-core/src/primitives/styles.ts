@@ -27,7 +27,25 @@ function childElements(parent: Element, localName: string): Element[] {
  * `w:trPrChange` (the previous state) or a nested table.
  */
 function ownChild(parent: Element, localName: string): Element | null {
-  return childElements(parent, localName)[0] ?? null;
+  for (let c = parent.firstChild; c; c = c.nextSibling) {
+    if (c.nodeType !== 1) continue;
+    const el = c as Element;
+    if (el.localName === localName && el.namespaceURI === OOXML.W_NS) return el;
+  }
+  return null;
+}
+
+/**
+ * A table-style `w:rPr` without its `w:rPrChange`, which records the
+ * previous state of a tracked formatting change. The property readers search
+ * descendants, so the change record would otherwise read as current. The
+ * copy is detached and only ever read.
+ */
+function currentRPr(rPr: Element | null): Element | null {
+  if (!rPr || !ownChild(rPr, 'rPrChange')) return rPr;
+  const copy = rPr.cloneNode(true) as Element;
+  for (const change of childElements(copy, 'rPrChange')) copy.removeChild(change);
+  return copy;
 }
 
 export type StyleDef = {
@@ -184,14 +202,14 @@ export function parseStylesXml(stylesDoc: Document | null): StylesModel {
       name,
       basedOn,
       pPr: pPr ?? null,
-      rPr: rPr ?? null,
+      rPr: (styleType === 'table' ? currentRPr(rPr) : rPr) ?? null,
     };
     if (styleType === 'table') {
-      if (rPr) tableStyleRPrs.push(rPr);
+      if (def.rPr) tableStyleRPrs.push(def.rPr);
       const conditionalRPrs = new Map<string, Element>();
       for (const conditional of childElements(st, 'tblStylePr')) {
         const type = getWAttr(conditional, 'type');
-        const conditionalRPr = getFirstChild(conditional, OOXML.W_NS, W.rPr);
+        const conditionalRPr = currentRPr(ownChild(conditional, W.rPr));
         if (!conditionalRPr) continue;
         tableStyleRPrs.push(conditionalRPr);
         // The first block of a type wins, matching getFirstChild elsewhere.
@@ -452,7 +470,9 @@ function resolveToggleProperty(steps: ToggleStep[], tagLocal: string): boolean {
 /**
  * Conditional formatting types (ST_TblStyleOverrideType, § 17.18.89) in the
  * order Word applies them; each later type overrides the ones before it.
- * `wholeTable` always applies and sits below all of them.
+ * `wholeTable` is not among them: Word neither applies nor keeps a
+ * `wholeTable` conditional (MS-OI29500 note on § 17.18.89), and the style's
+ * own `w:rPr` is the whole-table formatting.
  *
  * ECMA-376 § 17.7.6 lists whole table, column bands, row bands, first/last
  * row, first/last column, then the corner cells. Microsoft's implementation
@@ -694,13 +714,14 @@ function applicableConditionals(
 /**
  * The table-style `w:rPr` layers for one set of applicable conditionals,
  * highest precedence first: the applied conditional types from last to first
- * in {@link CONDITIONAL_ORDER}, then `wholeTable`, then the style's own
- * `w:rPr`. Within each, the derived style precedes its `basedOn` ancestors.
+ * in {@link CONDITIONAL_ORDER}, then the style's own `w:rPr`. Within each,
+ * the derived style precedes its `basedOn` ancestors.
+ *
+ * @see https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/3359ff85-c423-4b9d-be78-d1cf96f79486
  */
 function tableStyleLayers(chain: StyleDef[], applied: Set<ConditionalType>): Element[] {
   const layers: Element[] = [];
-  const types: string[] = [...CONDITIONAL_ORDER].filter((t) => applied.has(t)).reverse();
-  types.push('wholeTable');
+  const types = [...CONDITIONAL_ORDER].filter((t) => applied.has(t)).reverse();
   for (const type of types) {
     for (const style of chain) {
       const rPr = style.conditionalRPrs?.get(type);

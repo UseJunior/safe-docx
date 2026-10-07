@@ -705,7 +705,9 @@ resolver applies the run properties of each block whose switch the row's
 neither is present) and whose position matches the cell. Columns are grid
 columns (`w:gridBefore`, `w:gridSpan`, `w:tblGrid`); banding is counted after
 the header row and column in groups of `w:tblStyleRowBandSize` /
-`w:tblStyleColBandSize`. Corner cells need both edges switched on. It
+`w:tblStyleColBandSize`. Corner cells need both edges switched on. A
+`wholeTable` conditional is ignored, as Word ignores it (MS-OI29500 note on
+§17.18.89); the style's own `w:rPr` is the whole-table formatting. It
 applies the types in the order Office uses (Microsoft's [MS-OI29500] note on
 §17.7.6.6): row bands, column bands, first/last column, first/last row, then
 the corners, each overriding the ones before it.
