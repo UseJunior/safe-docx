@@ -28,7 +28,7 @@ different roles: a heading paragraph whose paragraph mark is a Word style
 separator (`w:specVanish`) and a body follower that renders inline with it.
 Repeated adjacent transitions from such a run-in heading to the same follower
 style establish the pairing; a repeated ordinary heading-to-`Normal` transition
-does not, because that is plain section structure. Validation requires both
+does not, because that is plain section structure. The pairing applies only when the inserted heading's style source is itself a run-in heading; an ordinary paragraph that shares the style (for example, a `Heading2` with `Heading3` children) is not bonded. Validation requires both
 insertions, distinct structural peers, and an application order that places
 each heading immediately before its body within the insertion slot. Text casing
 and punctuation are not authoritative. Pairing is one-to-one. `AFTER` operations name the body first because repeated

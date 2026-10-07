@@ -318,4 +318,20 @@ describe('structural insertion validation', () => {
     expect(paragraphs.map(isRunInHeadingParagraph)).toEqual([true, false, false, true]);
     expect([...collectRunInHeadingIds(paragraphs)]).toEqual(['_bk_runin']);
   });
+
+  test('does not bond an ordinary paragraph that merely shares the run-in heading style', () => {
+    // h1/h2 are run-in Heading2s; `plain` is a Heading2 with a Heading3 child and no style separator.
+    const nodes = [
+      node('h1', 2), { ...node('b1', null), style: 'HeadingPara2' },
+      node('h2', 2), { ...node('b2', null), style: 'HeadingPara2' },
+      node('plain', 2), node('child', 3), node('anchor', 1),
+    ];
+    expect(validateStructuralInsertions(nodes, [{
+      operationId: 'heading', position: 'AFTER', anchorId: 'anchor', styleSourceId: 'plain',
+    }], RUN_IN).filter((item) => item.code.startsWith('BONDED') || item.code === 'RUN_IN_PAIR_ORDER')).toEqual([]);
+    expect(isRecognizedBondedInsertionPair(nodes, [
+      { operationId: 'body', position: 'AFTER', anchorId: 'anchor', styleSourceId: 'b1' },
+      { operationId: 'heading', position: 'AFTER', anchorId: 'anchor', styleSourceId: 'plain' },
+    ], RUN_IN)).toBe(false);
+  });
 });

@@ -246,6 +246,11 @@ function validateBondedPairs(
     const unpaired: Array<{ operationIndex: number; candidatePairs: BondedTransition[] }> = [];
 
     documentOrder.forEach((operationIndex, slotIndex) => {
+      // Only a run-in heading source binds a body; an ordinary paragraph that
+      // happens to share the run-in style (e.g. a Heading2 with Heading3
+      // children) does not.
+      const headingSource = sourceNode(nodes, contexts[operationIndex]!);
+      if (!headingSource || !options.runInHeadingIds?.has(headingSource.id)) return;
       const candidatePairs = bonded.filter((transition) => transition.headingStyle === styleOf(operationIndex));
       if (candidatePairs.length === 0) return;
       const next = documentOrder[slotIndex + 1];
@@ -342,6 +347,7 @@ export function isRecognizedBondedInsertionPair(
   const headingIndex = sources.findIndex((source) => hierarchyLevel(source) != null);
   const bodyIndex = sources.findIndex((source) => hierarchyLevel(source) == null);
   if (headingIndex < 0 || bodyIndex < 0) return false;
+  if (!options.runInHeadingIds?.has(sources[headingIndex]!.id)) return false;
   const headingStyle = structuralStyle(sources[headingIndex]);
   const bodyStyle = structuralStyle(sources[bodyIndex]);
   const proven = bondedTransitions(nodes, options)
