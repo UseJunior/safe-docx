@@ -10,7 +10,7 @@
 
 import { DocxArchive, parseXml } from '@usejunior/docx-core';
 import { describe, expect } from 'vitest';
-import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
+import { buildDocxFromBodyXml, completeField } from '../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
 import {
@@ -276,6 +276,29 @@ describe('run segmentation independence (#743)', () => {
     });
     await and('accept and reject reproduce the inputs', () => {
       expectProjections(compared, originalBody, revisedBody);
+    });
+  });
+
+  test('repeated text inserted before a run with a tab, break, or field keeps that run anchored', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const cases = await given('unchanged structural runs preceded by an insertion of their text', () => [
+      { stable: run('alpha', '').replace('</w:t>', '</w:t><w:tab/>'), inserted: 'alpha ' },
+      { stable: run('alpha', '').replace('</w:t>', '</w:t><w:br/>'), inserted: 'alpha ' },
+      { stable: completeField(' PAGE ', '1'), inserted: ' PAGE 1 ' },
+    ]);
+
+    const results = await when('each pair is compared', () => Promise.all(cases.map(({ stable, inserted }) => compare(
+      paragraph(stable, run(' beta')),
+      paragraph(run(inserted), stable, run(' beta')),
+    ))));
+
+    await then('only the inserted text is revised', () => {
+      for (const compared of results) {
+        expect(compared.stats).toMatchObject({ insertions: 1, deletions: 0, formatChanges: 0 });
+      }
     });
   });
 });

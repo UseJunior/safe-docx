@@ -251,9 +251,13 @@ function textConsistentRunAnchors(
   original: readonly WmlElement[],
   revised: readonly WmlElement[],
 ): (originalIndex: number, revisedIndex: number) => boolean {
-  const isTextRun = (element: WmlElement): boolean =>
-    element.localName === 'r' && (element.textContent ?? '').length > 0;
-  if (!original.some(isTextRun) || !revised.some(isTextRun)) return () => true;
+  // Only plain text runs can be re-aligned by gap refinement once their anchor
+  // is rejected; a run with a tab, break, field code, or other content would
+  // fall back to a whole-run delete-plus-insert, so its anchor is kept.
+  const isPlainTextRun = (element: WmlElement): boolean =>
+    element.localName === 'r' && (element.textContent ?? '').length > 0 &&
+    childElements(element).every((child) => child.localName === 'rPr' || child.localName === 't');
+  if (!original.some(isPlainTextRun) || !revised.some(isPlainTextRun)) return () => true;
   const formatting = (element: WmlElement): string => {
     if (element.localName !== 'r') return element.localName ?? element.tagName;
     const properties = childElements(element).find((child) => child.localName === 'rPr');
@@ -326,7 +330,7 @@ function textConsistentRunAnchors(
   for (const match of middle.matches) mapToken(prefix + match.originalIndex, prefix + match.revisedIndex);
   return (originalIndex, revisedIndex) => {
     const originalElement = original[originalIndex]!;
-    if (!isTextRun(originalElement)) return true;
+    if (!isPlainTextRun(originalElement) || !isPlainTextRun(revised[revisedIndex]!)) return true;
     const text = originalElement.textContent ?? '';
     const originalStart = left.starts[originalIndex]!;
     const revisedStart = right.starts[revisedIndex]!;
