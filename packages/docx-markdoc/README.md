@@ -444,6 +444,30 @@ while `start`, `end`, `paragraphPropertySha256`, `runPropertySha256`, and
 the readable view tied to the source formatting without copying raw OOXML into
 canonical Markdoc. Inspection output is diagnostic and cannot be compiled.
 
+## Structural diagnostics
+
+When an anchored source is available, `validateMarkdocAgainstSource` and
+compile preflight run the same deterministic validators used by DOCX insertion
+tools. Diagnostics have stable codes, severity, operation/anchor identity,
+structural evidence, and a corrective anchor when one is unambiguous.
+
+The registry detects parent/child slicing, list-level mismatch, foreign
+numbering inserted into a continuous list, and incomplete bonded paragraph
+pairs. Parent/child slicing is checked for both `BEFORE` and `AFTER`
+placement. A run-in heading (a deterministic heading whose paragraph mark is a
+Word style separator, `w:specVanish`) that is repeatedly followed by the same
+body style (for example, NVCA `Heading2` followed by `HeadingPara2`) is treated
+as a two-paragraph structural unit: both halves need distinct style sources,
+each heading must land immediately before its body in the insertion slot, and
+operation order is checked separately for `BEFORE` and `AFTER`. An ordinary
+heading followed by `Normal` text is not bonded. Ambiguous repeated follower
+styles fail with an explicit diagnostic.
+No title-case or legal-content regex is used as structural authority.
+
+Junior Harness retry state, warn-once policy, Aspose adapters, legal section
+classifiers, and content-specific remediation remain application concerns and
+are intentionally not ported.
+
 Leading or trailing spaces in operative text must be written as `&#32;` because
 Markdown treats ordinary boundary spaces as syntax. The importer does this
 automatically, including escaping literal `&` first, so import and replay remain
