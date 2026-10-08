@@ -54,3 +54,22 @@ Transforms and their input/output hashes are retained in the verdict.
 The private corpus runner accepts a local gitignored manifest; see
 `private-corpus/README.md`. It refuses tracked manifests and output paths and
 never emits artifact text in its summary.
+
+## Plain PDF render for finished documents
+
+`renderPlainPdf` renders a finished, non-tracked DOCX with LibreOffice in a
+disposable profile, then checks the `pdftotext` text layer. Each
+`requiredText` entry must appear, compared with whitespace collapsed. An
+empty PDF or an empty text layer fails. Missing tools report `not_run`,
+never a pass. The input DOCX is copied, never modified, and on success the
+PDF is copied to `outputPdfPath`. `docx-markdoc create` uses it for its
+optional PDF check.
+
+```ts
+const verdict = await renderPlainPdf({
+  docxPath: 'consent.docx',
+  outputPdfPath: 'consent.pdf',
+  requiredText: ['ACME WIDGETS INC.', '[Signature Page to Consent]'],
+});
+// verdict.status: 'passed' | 'failed' | 'not_run'
+```
