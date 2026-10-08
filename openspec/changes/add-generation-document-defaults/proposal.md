@@ -40,6 +40,11 @@ renderer because safe-docx could not declare the house style once (#1162).
 - Affected code: `packages/docx-core/src/generation/types.ts`,
   `emit/styles-part.ts`, `emit/properties.ts`, `validate-spec.ts`, the type
   re-exports, and `generation-document-defaults.test.ts`.
-- Every generated package changes by one attribute: `w:eastAsia` now
-  accompanies each explicit font, including the Calibri baseline. Nothing else
-  in output without `defaults` changes.
+- Output changes for specs that do not use `defaults` in two ways:
+  - every generated package gains `w:eastAsia` beside each explicit font,
+    including the Calibri baseline;
+  - a paragraph or style that sets `keepNext`, `keepLines` or
+    `pageBreakBefore` to `false` now emits that property with `w:val="0"`
+    (before, an explicit `false` emitted nothing).
+
+  Nothing else changes.
