@@ -1,12 +1,12 @@
 import { existsSync } from 'node:fs';
 import JSZip from 'jszip';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect } from 'vitest';
 import { itAllure } from '../../docx-core/src/testing/allure-test.js';
 import { defaultRendererTools } from './render.js';
-import { renderPlainPdf } from './plain-render.js';
+import { renderPlainPdf, splitPdfTextPages } from './plain-render.js';
 import type { RendererTools } from './types.js';
 
 const dirs: string[] = [];
@@ -22,11 +22,14 @@ async function workspace(): Promise<{ docx: string; pdf: string }> {
   return { docx, pdf: path.join(dir, 'doc.pdf') };
 }
 
-/** Fake soffice writes `pdfBytes` beside the copied input; fake pdftotext returns `text`. */
-function fakeTools(text: string, pdfBytes = '%PDF-fake'): RendererTools {
+type Call = { command: string; args: string[] };
+
+/** Fake soffice writes `pdfBytes` beside the copied input; fake pdftotext returns `text`. Records every call. */
+function fakeTools(text: string, pdfBytes = '%PDF-fake', calls: Call[] = []): RendererTools {
   return {
     resolve: (name) => (name === 'soffice' || name === 'pdftotext' ? `/fake/${name}` : null),
     async run(command, args) {
+      calls.push({ command, args: [...args] });
       if (command.endsWith('soffice')) {
         const outdir = args[args.indexOf('--outdir') + 1]!;
         await mkdir(outdir, { recursive: true });
@@ -57,6 +60,49 @@ describe('plain PDF render for finished non-tracked documents', () => {
     expect(verdict).toMatchObject({ status: 'passed', pageCount: 2 });
     expect(verdict.pdfSha256).toMatch(/^[0-9a-f]{64}$/);
     expect(await readFile(pdf, 'utf8')).toBe('%PDF-fake');
+  });
+
+  itAllure('renders a private copy in a fresh profile and removes the workspace afterwards', async () => {
+    const { docx, pdf } = await workspace();
+    const calls: Call[] = [];
+    await Promise.all([
+      renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: [], tools: fakeTools('x', '%PDF-fake', calls) }),
+      renderPlainPdf({ docxPath: docx, outputPdfPath: `${pdf}.b`, requiredText: [], tools: fakeTools('x', '%PDF-fake', calls) }),
+    ]);
+    const renders = calls.filter((call) => call.command.endsWith('soffice'));
+    const inputs = renders.map((call) => call.args.at(-1)!);
+    const profiles = renders.map((call) => call.args.find((arg) => arg.startsWith('-env:UserInstallation=file://'))!);
+    expect(inputs.every((input) => input !== docx && input.endsWith('input.docx'))).toBe(true);
+    expect(new Set(inputs).size).toBe(2);
+    expect(new Set(profiles).size).toBe(2);
+    expect(inputs.some((input) => existsSync(path.dirname(input)))).toBe(false);
+    const thrower: RendererTools = { resolve: (name) => `/fake/${name}`, run: async (_command, args) => { calls.push({ command: 'throw', args }); throw new Error('boom'); } };
+    await expect(renderPlainPdf({ docxPath: docx, outputPdfPath: `${pdf}.c`, requiredText: [], tools: thrower })).rejects.toThrow('boom');
+    expect(existsSync(path.dirname(calls.at(-1)!.args.at(-1)!))).toBe(false);
+  });
+
+  itAllure('counts blank pages and refuses to match text across a page break', async () => {
+    expect(splitPdfTextPages('Title\f\fSignature\f')).toEqual(['Title', '', 'Signature']);
+    expect(splitPdfTextPages('Only page')).toEqual(['Only page']);
+    const { docx, pdf } = await workspace();
+    const blank = await renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: ['Signature'], tools: fakeTools('Title\f\fSignature\f') });
+    expect(blank).toMatchObject({ status: 'passed', pageCount: 3 });
+    const split = await renderPlainPdf({ docxPath: docx, outputPdfPath: `${pdf}.2`, requiredText: ['Approval granted'], tools: fakeTools('Approval\fgranted\f') });
+    expect(split).toMatchObject({ status: 'failed', missingText: ['Approval granted'] });
+  });
+
+  itAllure('never writes the PDF on a failed check and refuses an output that aliases the input', async () => {
+    const { docx, pdf } = await workspace();
+    await renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: ['Absent'], tools: fakeTools('Present\f') });
+    expect(existsSync(pdf)).toBe(false);
+    await writeFile(pdf, 'previous');
+    await renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: ['Absent'], tools: fakeTools('Present\f') });
+    expect(await readFile(pdf, 'utf8')).toBe('previous');
+    await expect(renderPlainPdf({ docxPath: docx, outputPdfPath: docx, requiredText: [], tools: fakeTools('x') })).rejects.toThrow(/alias/);
+    const link = `${docx}.link.pdf`;
+    await symlink(docx, link);
+    await expect(renderPlainPdf({ docxPath: docx, outputPdfPath: link, requiredText: [], tools: fakeTools('x') })).rejects.toThrow(/alias/);
+    expect(await readFile(docx, 'utf8')).toBe('not inspected by the fake renderer');
   });
 
   itAllure('fails and names missing text, and fails an empty text layer', async () => {
