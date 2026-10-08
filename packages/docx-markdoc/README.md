@@ -477,3 +477,27 @@ exact. Ordinary interior spaces stay ordinary and readable.
 hash-pinned source. It copies caller-supplied labels verbatim and never infers an
 actor, cause, authorization, privilege status, de-identification status, or
 training eligibility; those remain downstream responsibilities.
+
+## Generic Markdoc → DocumentSpec engine
+
+`createMarkdocxRenderer` lowers a Markdoc AST to `@usejunior/docx-core`
+`DocumentSpec` blocks. Domain conventions are supplied through its seams, not
+built into it: a `Theme` (paragraph and run styling, list levels, field runs),
+block and inline tag plugins, a `resolveField` callback, and a
+`transformBlock` hook.
+
+```ts
+import { renderMarkdocxToDocx } from '@usejunior/docx-markdoc';
+
+const docx = await renderMarkdocxToDocx('# Title\n\nA **bold** word.\n\n1. one');
+```
+
+The engine is deliberately lenient:
+
+- links keep their text and lose the hyperlink;
+- code spans render as plain text;
+- soft and hard breaks render as spaces unless a plugin asks for line breaks;
+- a paragraph with no runs renders nothing (whitespace text is not trimmed).
+
+A node or tag no seam handles throws `MarkdocxUnhandledNodeError` rather than
+being dropped.
