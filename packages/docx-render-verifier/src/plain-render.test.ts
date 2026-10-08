@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import JSZip from 'jszip';
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect } from 'vitest';
@@ -103,6 +103,25 @@ describe('plain PDF render for finished non-tracked documents', () => {
     await symlink(docx, link);
     await expect(renderPlainPdf({ docxPath: docx, outputPdfPath: link, requiredText: [], tools: fakeTools('x') })).rejects.toThrow(/alias/);
     expect(await readFile(docx, 'utf8')).toBe('not inspected by the fake renderer');
+  });
+
+  itAllure('never writes through an output alias that appears while rendering', async () => {
+    for (const makeAlias of [symlink, link] as const) {
+      const { docx, pdf } = await workspace();
+      const before = await readFile(docx);
+      // The destination does not exist when the call starts; it becomes an alias of the input mid-render.
+      const racing = fakeTools('Present\f');
+      const run = racing.run;
+      racing.run = async (command, args) => {
+        if (command.endsWith('soffice')) await makeAlias(docx, pdf);
+        return run(command, args);
+      };
+      const verdict = await renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: ['Present'], tools: racing });
+      expect(verdict.status, makeAlias.name).toBe('passed');
+      expect(await readFile(docx), makeAlias.name).toEqual(before);
+      expect(await readFile(pdf, 'utf8'), makeAlias.name).toBe('%PDF-fake');
+      expect((await readdir(path.dirname(pdf))).filter((name) => name.endsWith('.tmp')), makeAlias.name).toEqual([]);
+    }
   });
 
   itAllure('fails and names missing text, and fails an empty text layer', async () => {
