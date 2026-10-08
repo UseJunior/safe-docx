@@ -211,7 +211,10 @@ describe('relationship-selected story removed with its section (#754)', () => {
         expect(extractRoundTripComparisonText(rejectedDocument)).toBe(
           extractRoundTripComparisonText(await (await DocxArchive.load(original)).getDocumentXml()),
         );
-        expect(await selectedTargets(archive, acceptedDocument)).toEqual([]);
+        // Accept All removes the boundary; as in Word, its footer reference
+        // moves to the linked final section (#1144), whose footer content is
+        // accepted away, so the accepted package shows no footer text.
+        expect(await selectedTargets(archive, acceptedDocument)).toEqual(['word/footer1.xml']);
         expect(await selectedTargets(archive, rejectedDocument)).toEqual(['word/footer1.xml']);
         expect(extractRoundTripComparisonText(acceptAllChanges(outputFooter)).trim()).toBe('');
         const rejectedFooter = extractRoundTripComparisonText(rejectAllChanges(outputFooter));

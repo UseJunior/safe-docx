@@ -26,6 +26,16 @@ import {
 } from './revisionMarkup.js';
 
 const WORD_2010_NS = 'http://schemas.microsoft.com/office/word/2010/wordml';
+
+/**
+ * Document projections for the header/footer story checks below. They ask
+ * which stories surviving references still select, so they do not apply
+ * Word's carry of a removed section's references onto a linked following
+ * section (#1144). With the carry, a lifecycle story whose content projects
+ * to empty would also stay selected, and these explicit-binding checks would
+ * treat that as a different story graph.
+ */
+const SELECTION_PROJECTION = { carryHeaderFooterReferences: false } as const;
 const VML_NS = 'urn:schemas-microsoft-com:vml';
 const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
 const RELATIONSHIPS_NS =
@@ -1537,7 +1547,7 @@ export async function rejectedSelectedAncillaryStoryPaths(
   compared: Buffer,
 ): Promise<Set<string>> {
   const archive = await DocxArchive.load(compared);
-  const documentXml = rejectAllChanges(await archive.getDocumentXml());
+  const documentXml = rejectAllChanges(await archive.getDocumentXml(), SELECTION_PROJECTION);
   const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
   return new Set(
     auditSectPr(documentXml, relationshipsXml).bindings.map(
@@ -1578,12 +1588,12 @@ export async function deletedAncillaryStoryOutputPaths(
   const documentXml = await archive.getDocumentXml();
   const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
   const rejectedPathBySlot = new Map(
-    auditSectPr(rejectAllChanges(documentXml), relationshipsXml).bindings.map(
+    auditSectPr(rejectAllChanges(documentXml, SELECTION_PROJECTION), relationshipsXml).bindings.map(
       (binding) => [slotKey(binding), binding.targetPath],
     ),
   );
   const acceptedPaths = new Set(
-    auditSectPr(acceptAllChanges(documentXml), relationshipsXml).bindings.map(
+    auditSectPr(acceptAllChanges(documentXml, SELECTION_PROJECTION), relationshipsXml).bindings.map(
       (binding) => binding.targetPath,
     ),
   );
@@ -2085,22 +2095,22 @@ export async function assertAncillaryTextBoxStoryProjection(
   ] = await Promise.all([
     selectedStoryProjectionInventory(
       originalArchive,
-      rejectAllChanges(originalXml),
+      rejectAllChanges(originalXml, SELECTION_PROJECTION),
       'reject',
     ),
     selectedStoryProjectionInventory(
       revisedArchive,
-      acceptAllChanges(revisedXml),
+      acceptAllChanges(revisedXml, SELECTION_PROJECTION),
       'accept',
     ),
     selectedStoryProjectionInventory(
       comparedArchive,
-      rejectAllChanges(comparedXml),
+      rejectAllChanges(comparedXml, SELECTION_PROJECTION),
       'reject',
     ),
     selectedStoryProjectionInventory(
       comparedArchive,
-      acceptAllChanges(comparedXml),
+      acceptAllChanges(comparedXml, SELECTION_PROJECTION),
       'accept',
     ),
   ]);

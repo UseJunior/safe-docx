@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Accepting or rejecting a tracked section break no longer drops the removed
+  section's headers and footers. Word 16 puts the header/footer references on
+  the inserted break and leaves the following section linked to previous, so
+  rejecting that insertion (or accepting a deleted break) used to leave the
+  surviving section with no header or footer. Now, as in Word's Accept All and
+  Reject All, the following section receives all of the removed section's
+  references when it has none of its own, and keeps exactly its own when it has
+  any; its title-page setting and page setup are unchanged. This applies to
+  docx-core `acceptChanges`/`rejectChanges` and docx-compare
+  `acceptAllChanges`/`rejectAllChanges`, and so also to comparison output,
+  which records section-break edits on the paragraph mark since #1171
+  (0.24.0). (#1144)
+
 ## 0.24.0
 
 - **New: `docx-markdoc create`** builds a new Word document from Markdoc with
