@@ -823,9 +823,9 @@ function normalizeWholeParagraphRevisionBoundaries(
   };
   const carriesParagraphMarkRevision = (paragraph: WmlElement): boolean => {
     const properties = paragraphProperties(paragraph);
-    const markProperties = properties && childElements(properties).find((child) => child.localName === 'rPr');
-    return !!markProperties && childElements(markProperties).some((child) =>
-      child.namespaceURI === W_NS && PARAGRAPH_MARK_REVISION_LOCALS.has(child.localName));
+    return carriesParagraphMarkRevisionMarker(
+      properties && childElements(properties).find((child) => child.localName === 'rPr'),
+    );
   };
 
   const relocate = (paragraph: WmlElement, predecessor: WmlElement | undefined): void => {
@@ -1079,6 +1079,7 @@ function appendChangeMetadata(change: WmlElement, revision: ComparisonRevision):
  */
 const sectionBoundaryParagraphs = new WeakMap<WmlElement, WmlElement>();
 
+/** True when paragraph-mark run properties already hold a tracked break revision. */
 function carriesParagraphMarkRevisionMarker(mark: WmlElement | null | undefined): boolean {
   return !!mark && childElements(mark).some((child) =>
     child.namespaceURI === W_NS && PARAGRAPH_MARK_REVISION_LOCALS.has(child.localName));
