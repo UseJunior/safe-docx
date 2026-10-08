@@ -52,6 +52,14 @@ function isLiveSectionProperties(element: Element): boolean {
   return isW(parent, 'pPr') && isW(parent.parentNode, 'p');
 }
 
+/** True when `node` sits in a text-box story (`w:txbxContent`), not the main story. */
+function insideTextBox(node: Node): boolean {
+  for (let current = node.parentNode; current; current = current.parentNode) {
+    if (isW(current, 'txbxContent')) return true;
+  }
+  return false;
+}
+
 /** The node after `node`'s subtree in document order. */
 function nextOutsideSubtree(node: Node): Node | null {
   for (let current: Node | null = node; current; current = current.parentNode) {
@@ -64,7 +72,9 @@ function nextOutsideSubtree(node: Node): Node | null {
  * The section properties of the section that follows `paragraph`'s own
  * boundary: the next paragraph-owned `w:sectPr` after the paragraph in
  * document order, else the body-level `w:sectPr`. History snapshots
- * (`w:sectPrChange > w:sectPr`) never count.
+ * (`w:sectPrChange > w:sectPr`) never count, and text-box stories
+ * (`w:txbxContent`) are skipped: they are separate stories, not part of the
+ * main story's section sequence.
  */
 export function followingSectionProperties(paragraph: Element): Element | null {
   let current = nextOutsideSubtree(paragraph);
@@ -72,7 +82,8 @@ export function followingSectionProperties(paragraph: Element): Element | null {
     if (current.nodeType === 1) {
       const element = current as Element;
       if (isLiveSectionProperties(element)) return element;
-      if (element.firstChild) {
+      const textBoxStory = element.namespaceURI === W_NS && element.localName === 'txbxContent';
+      if (element.firstChild && !textBoxStory) {
         current = element.firstChild;
         continue;
       }
@@ -104,9 +115,12 @@ export function carryForwardHeaderFooterRefs(removed: Element, survivor: Element
  * merged or dropped, or its `w:sectPr` taken away): carries the boundary's
  * header/footer references forward to the following section per
  * {@link carryForwardHeaderFooterRefs}. A paragraph without a section
- * boundary, or a document without a following section, is left alone.
+ * boundary, a paragraph in a text-box story, or a document without a
+ * following section, is left alone.
  */
 export function carryHeaderFooterRefsFromRemovedBoundary(paragraph: Element): boolean {
+  // A text-box paragraph's w:sectPr is not a boundary of the main story.
+  if (insideTextBox(paragraph)) return false;
   const pPr = Array.from(paragraph.childNodes).find((node): node is Element => isW(node, 'pPr'));
   const removed = pPr && Array.from(pPr.childNodes).find((node): node is Element => isW(node, 'sectPr'));
   if (!removed || !Array.from(removed.childNodes).some(isHeaderFooterReference)) return false;

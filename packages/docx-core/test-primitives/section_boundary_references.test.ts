@@ -348,6 +348,36 @@ describe('section boundary reference helpers', () => {
     });
   });
 
+  test('the following section skips text-box stories', async ({ given, then }: AllureBddContext) => {
+    const box = (inner: string): string =>
+      '<w:p><w:r><w:pict><v:shape xmlns:v="urn:schemas-microsoft-com:vml" id="box1" style="width:100pt;height:100pt">'
+      + `<v:textbox><w:txbxContent>${inner}</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>`;
+    const cases: Array<[Shape, string]> = [
+      ['s3b', paragraph('First section', `<w:rPr><w:del w:id="1" ${DATE}/></w:rPr>${sectPr(removedSection())}`)],
+      ['s1e', paragraph('First section') + `<w:p><w:pPr><w:rPr><w:ins w:id="1" ${DATE}/></w:rPr>${sectPr(removedSection())}</w:pPr></w:p>`],
+    ];
+    await given('a removed boundary followed by a text box whose paragraph owns a sectPr, then an unbound body section', async () => {});
+    await then('the body section receives the references and the text box does not', async () => {
+      for (const [shape, boundary] of cases) {
+        const xml = wrap(boundary + paragraph('Next') + box(paragraph('Box', '<w:sectPr/>')) + paragraph('After') + sectPr({ set: 'B' }));
+        for (const applier of APPLIERS[shape]) {
+          const doc = parseXml(applier.apply(xml));
+          const body = Array.from(doc.getElementsByTagNameNS(W_NS, 'sectPr')).find((s) => (s.parentNode as Element).localName === 'body')!;
+          const textBox = doc.getElementsByTagNameNS(W_NS, 'txbxContent').item(0)!;
+          expect(body.getElementsByTagNameNS(W_NS, 'headerReference').length, applier.name).toBe(3);
+          expect(textBox.getElementsByTagNameNS(W_NS, 'headerReference').length, applier.name).toBe(0);
+        }
+      }
+    });
+    await then('a boundary inside a text box carries nothing', async () => {
+      const doc = parseXml(wrap(box(paragraph('Box', `<w:rPr><w:del w:id="1" ${DATE}/></w:rPr>${sectPr(removedSection())}`) + paragraph('Box two'))
+        + paragraph('After') + sectPr({ set: 'B' })));
+      acceptChanges(doc);
+      const body = Array.from(doc.getElementsByTagNameNS(W_NS, 'sectPr')).find((s) => (s.parentNode as Element).localName === 'body')!;
+      expect(body.getElementsByTagNameNS(W_NS, 'headerReference').length).toBe(0);
+    });
+  });
+
   test('carryForwardHeaderFooterRefs reports whether it copied anything', async ({ given, then }: AllureBddContext) => {
     let removed!: Element;
     await given('a removed section with one header reference', async () => {
