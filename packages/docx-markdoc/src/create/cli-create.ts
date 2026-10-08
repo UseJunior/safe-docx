@@ -1,4 +1,4 @@
-import { lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { link, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { renderPlainPdf, type PlainPdfVerdict, type RendererTools } from '@usejunior/docx-render-verifier';
 import { DocxMarkdocError } from '../errors.js';
@@ -67,26 +67,93 @@ export function requiredPdfText(created: CreatedDocument): string[] {
   return [...new Set([title, lastNeedle, ...footers].filter((value): value is string => Boolean(value?.trim())))];
 }
 
+/** Filesystem operations used to publish outputs; injectable so tests can force a mid-publication failure. */
+export type PublishFileOps = {
+  link: (from: string, to: string) => Promise<void>;
+  rename: (from: string, to: string) => Promise<void>;
+  unlink: (target: string) => Promise<void>;
+};
+const DEFAULT_FILE_OPS: PublishFileOps = { link, rename, unlink };
+
+async function exists(target: string): Promise<boolean> {
+  return (await existingKind(target)) !== null;
+}
+
+/**
+ * Publish staged files as one unit. Each existing target (including a stale
+ * artifact this build does not produce) moves to a backup first; then every
+ * new file is placed with an exclusive hard link, which fails instead of
+ * overwriting if anything appeared at the target meanwhile. Any failure
+ * restores the backups and removes what was placed, so the directory is left
+ * as it was.
+ */
+async function publish(
+  produced: Map<string, string>,
+  retired: string[],
+  backupDir: string,
+  replace: boolean,
+  ops: PublishFileOps,
+): Promise<void> {
+  const backups: Array<{ target: string; backup: string }> = [];
+  const placed: string[] = [];
+  try {
+    for (const target of [...produced.keys(), ...retired]) {
+      if (!(await exists(target))) continue;
+      if (!replace) throw new DocxMarkdocError('CREATION_OUTPUT_EXISTS', `Output appeared during the build: ${target}. Pass --replace to rebuild in place.`);
+      const backup = path.join(backupDir, path.basename(target));
+      await ops.rename(target, backup);
+      backups.push({ target, backup });
+    }
+    for (const [target, staged] of produced) {
+      await ops.link(staged, target);
+      placed.push(target);
+    }
+  } catch (error) {
+    await Promise.allSettled(placed.map((target) => ops.unlink(target)));
+    for (const { target, backup } of backups.reverse()) {
+      if (!(await exists(target))) await ops.rename(backup, target).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+async function sameFile(a: string, b: string): Promise<boolean> {
+  const [left, right] = await Promise.all([stat(a).catch(() => null), stat(b).catch(() => null)]);
+  return Boolean(left && right && left.dev === right.dev && left.ino === right.ino);
+}
+
 /**
  * `docx-markdoc create <document.mdoc> <output-dir>`: build the DOCX, the
- * read-back text mirror, an optional PDF and the certificate. Every output is
- * written to a temporary sibling and renamed into place only after every check
- * passes, so a failed build leaves the output directory as it was.
+ * read-back text mirror, an optional PDF and the certificate. Outputs are
+ * staged in a private directory inside the output directory and published as
+ * one unit only after every check passes; a failed build leaves the output
+ * directory as it was. Without --replace, any existing output (including a
+ * PDF from an earlier build) refuses the build. With --replace, an artifact
+ * this build does not produce (for example a PDF under --no-pdf) is retired so
+ * the directory reflects this build only.
  */
-export async function runCreateCommand(args: string[], deps: { renderTools?: RendererTools } = {}): Promise<CreateCliResult> {
+export async function runCreateCommand(
+  args: string[],
+  deps: { renderTools?: RendererTools; fileOps?: Partial<PublishFileOps> } = {},
+): Promise<CreateCliResult> {
   const options = parseCreateCliArgs(args);
+  const ops = { ...DEFAULT_FILE_OPS, ...deps.fileOps };
   const stem = path.basename(options.markdocPath, path.extname(options.markdocPath));
-  const outputs = {
-    docx: path.resolve(options.outputDir, `${stem}.docx`),
-    text: path.resolve(options.outputDir, `${stem}.txt`),
-    certificate: path.resolve(options.outputDir, `${stem}.verification.json`),
-    ...(options.pdf ? { pdf: path.resolve(options.outputDir, `${stem}.pdf`) } : {}),
-  };
-  const inputs = [options.markdocPath, ...(options.profilePath ? [options.profilePath] : [])].map((value) => path.resolve(value));
-  if (Object.values(outputs).some((output) => inputs.includes(output))) {
-    throw new DocxMarkdocError('CREATION_PATH_COLLISION', 'An output path would overwrite an input.');
-  }
   await mkdir(options.outputDir, { recursive: true });
+  const outputDir = await realpath(options.outputDir);
+  const outputs = {
+    docx: path.join(outputDir, `${stem}.docx`),
+    text: path.join(outputDir, `${stem}.txt`),
+    certificate: path.join(outputDir, `${stem}.verification.json`),
+    pdf: path.join(outputDir, `${stem}.pdf`),
+  };
+  // Compare canonical paths (and inodes) so a symlinked directory or file cannot alias an input.
+  const inputs = await Promise.all([options.markdocPath, ...(options.profilePath ? [options.profilePath] : [])].map((value) => realpath(value)));
+  for (const output of Object.values(outputs)) {
+    if (inputs.includes(output) || (await Promise.all(inputs.map((input) => sameFile(input, output)))).some(Boolean)) {
+      throw new DocxMarkdocError('CREATION_PATH_COLLISION', `Output ${output} would overwrite an input.`);
+    }
+  }
   for (const target of Object.values(outputs)) {
     const kind = await existingKind(target);
     if (kind === 'symlink' || kind === 'other') throw new DocxMarkdocError('CREATION_OUTPUT_NOT_FILE', `Refusing to replace non-file output ${target}.`);
@@ -110,36 +177,39 @@ export async function runCreateCommand(args: string[], deps: { renderTools?: Ren
     mirrorLabel: path.basename(outputs.docx),
   });
 
-  const temporary = (target: string): string => path.join(path.dirname(target), `.${path.basename(target)}.${process.pid}.tmp`);
-  const staged = new Map<string, string>();
+  // The staging directory is created exclusively, so everything inside it is ours to remove.
+  const staging = await mkdtemp(path.join(outputDir, `.${stem}.create-`));
   try {
-    staged.set(outputs.docx, temporary(outputs.docx));
-    await writeFile(staged.get(outputs.docx)!, created.docx, { flag: 'wx' });
+    const staged = (target: string): string => path.join(staging, path.basename(target));
+    const produced = new Map<string, string>();
+    await writeFile(staged(outputs.docx), created.docx, { flag: 'wx' });
+    produced.set(outputs.docx, staged(outputs.docx));
     let pdf: CreateCliResult['pdf'] = { status: 'skipped' };
-    if (outputs.pdf) {
-      staged.set(outputs.pdf, temporary(outputs.pdf));
+    if (options.pdf) {
       pdf = await renderPlainPdf({
-        docxPath: staged.get(outputs.docx)!,
-        outputPdfPath: staged.get(outputs.pdf)!,
+        docxPath: staged(outputs.docx),
+        outputPdfPath: staged(outputs.pdf),
         requiredText: requiredPdfText(created),
         ...(deps.renderTools ? { tools: deps.renderTools } : {}),
       });
-      if (pdf.status !== 'passed') staged.delete(outputs.pdf);
       if (pdf.status === 'failed' || (pdf.status === 'not_run' && options.requirePdf)) {
         throw new DocxMarkdocError('CREATION_PDF_FAILED', `PDF check ${pdf.status}: ${pdf.reason ?? 'unknown'}${pdf.missingText ? ` (missing: ${pdf.missingText.join(' | ')})` : ''}.`, pdf);
       }
+      if (pdf.status === 'passed') produced.set(outputs.pdf, staged(outputs.pdf));
     }
     const certificate = { ...created.certificate, pdf };
-    staged.set(outputs.text, temporary(outputs.text));
-    await writeFile(staged.get(outputs.text)!, created.text, { flag: 'wx' });
-    staged.set(outputs.certificate, temporary(outputs.certificate));
-    await writeFile(staged.get(outputs.certificate)!, `${JSON.stringify(certificate, null, 2)}\n`, { flag: 'wx' });
+    await writeFile(staged(outputs.text), created.text, { flag: 'wx' });
+    produced.set(outputs.text, staged(outputs.text));
+    await writeFile(staged(outputs.certificate), `${JSON.stringify(certificate, null, 2)}\n`, { flag: 'wx' });
+    produced.set(outputs.certificate, staged(outputs.certificate));
     // The mirror on disk must still equal the read-back it was written from.
-    if ((await readFile(staged.get(outputs.text)!, 'utf8')) !== created.text) {
+    if ((await readFile(staged(outputs.text), 'utf8')) !== created.text) {
       throw new DocxMarkdocError('CREATION_MIRROR_MISMATCH', 'The written text mirror does not match the read-back.');
     }
-    for (const [target, source] of staged) await rename(source, target);
-    staged.clear();
+    const backupDir = path.join(staging, 'replaced');
+    await mkdir(backupDir);
+    const retired = Object.values(outputs).filter((target) => !produced.has(target));
+    await publish(produced, retired, backupDir, options.replace, ops);
     const { checks } = created.certificate;
     const summary = [
       `created ${path.basename(outputs.docx)}: ${checks.readback.paragraphs} paragraphs, ${checks.footers.sections} section(s)`,
@@ -149,8 +219,13 @@ export async function runCreateCommand(args: string[], deps: { renderTools?: Ren
       `brownfield ok (${checks.brownfield.anchoredParagraphs} anchored)`,
       pdf.status === 'skipped' ? 'pdf skipped' : `pdf ${pdf.status}${'pageCount' in pdf && pdf.pageCount ? ` (${pdf.pageCount} pages)` : ''}${pdf.status === 'not_run' ? ` (${pdf.reason})` : ''}`,
     ].join('; ');
-    return { outputs, created, pdf, summary };
+    return {
+      outputs: { docx: outputs.docx, text: outputs.text, certificate: outputs.certificate, ...(produced.has(outputs.pdf) ? { pdf: outputs.pdf } : {}) },
+      created,
+      pdf,
+      summary,
+    };
   } finally {
-    await Promise.allSettled([...staged.values()].map((file) => rm(file, { force: true })));
+    await rm(staging, { recursive: true, force: true });
   }
 }

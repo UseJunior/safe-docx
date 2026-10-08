@@ -61,7 +61,8 @@ function legacyProjection() {
   const strip = (text) => text.replace(/\\\n/g, '\n').replace(/\*\*/g, '').replace(/\*/g, '');
   const out = [];
   for (const block of body.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean)) {
-    if (/^<!--.*-->$/.test(block)) continue;
+    // The synthetic legacy source uses three fixed layout markers; none carries text.
+    if (block.startsWith('<!-- ') && block.endsWith(' -->')) continue;
     const signer = /^<signer>(.+?) \| (.+?)<\/signer>$/.exec(block);
     if (signer) { out.push(`${'_'.repeat(30)}\n${signer[1]}\t${signer[2]}`); continue; }
     if (block.startsWith('|')) {
@@ -204,9 +205,10 @@ async function brownfield(docx) {
       const attrs = `${header[1]} edit="benchmark-edit" format="inherit-source-paragraph"${hint ? ` format-source="${hint}"` : ''}`;
       const revised = imported.markdoc.replace(block, `{% change ${attrs} %}\n{% before %}\n${before}\n{% /before %}\n{% after %}\n${after}\n{% /after %}\n{% /change %}`);
       const result = await compileMarkdoc(imported.anchoredSource, revised, { date: new Date('2026-10-07T00:00:00Z') });
-      const xml = await (await JSZip.loadAsync(result.tracked)).file('word/document.xml').async('string');
-      const insertions = [...xml.matchAll(/<w:ins\b[\s\S]*?<\/w:ins>/g)].map((m) => m[0].replace(/<[^>]+>/g, '')).join('');
-      const deletions = (xml.match(/<w:del\b/g) ?? []).length;
+      const tracked = parseXml(await (await JSZip.loadAsync(result.tracked)).file('word/document.xml').async('string'));
+      const insertions = Array.from(tracked.getElementsByTagNameNS(W, 'ins'))
+        .flatMap((ins) => Array.from(ins.getElementsByTagNameNS(W, 't')).map((t) => t.textContent ?? '')).join('');
+      const deletions = tracked.getElementsByTagNameNS(W, 'del').length;
       return { ok: result.certificate.deliveryReady && insertions.trim() === edit.inserted.trim() && deletions === 0, insertions, deletions };
     };
     try {

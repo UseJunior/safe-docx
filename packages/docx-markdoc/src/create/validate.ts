@@ -106,6 +106,11 @@ function inlineText(node: MarkdocNode): string {
 
 /** Check one run of inline content: admitted node types, legacy markup, and balanced fill-in brackets. */
 function checkInline(children: MarkdocNode[], line: number | undefined, highlight: boolean): void {
+  // Whole-paragraph legacy pseudo-HTML first: it gets a migration hint rather than a generic HTML error.
+  const text = children.map(inlineText).join('').trim();
+  for (const [pattern, hint] of LEGACY_HINTS) {
+    if (pattern.test(text)) creationError('LEGACY_MARKUP', `Legacy markup '${text.slice(0, 40)}' is not supported; use ${hint}.`, undefined, line);
+  }
   let depth = 0;
   const visit = (node: MarkdocNode, literal: boolean): void => {
     switch (node.type) {
@@ -118,6 +123,10 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
       case 'hardbreak':
         return;
       case 'text': {
+        const content = String(node.attributes.content ?? '');
+        if (!literal && /<\/?[A-Za-z][A-Za-z0-9-]*(\s[^<>]*)?\/?>/.test(content)) {
+          creationError('UNSUPPORTED_HTML', `HTML is not supported in created documents ('${content.match(/<[^>]*>/)![0]}'); use Markdoc, or wrap literal text in {% literal %}.`, undefined, line);
+        }
         if (literal || !highlight) return;
         for (const char of String(node.attributes.content ?? '')) {
           if (char === '[') depth += 1;
@@ -140,12 +149,8 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
     }
   };
   children.forEach((child) => visit(child, false));
-  if (depth > 0) creationError('UNBALANCED_FILL_IN', `Unclosed '[' in fill-in text; wrap literal brackets in {% literal %}.`, undefined, line);
-  const text = children.map(inlineText).join('').trim();
   if (!text) creationError('EMPTY_CREATION_BLOCK', 'Empty block.', undefined, line);
-  for (const [pattern, hint] of LEGACY_HINTS) {
-    if (pattern.test(text)) creationError('LEGACY_MARKUP', `Legacy markup '${text.slice(0, 40)}' is not supported; use ${hint}.`, undefined, line);
-  }
+  if (depth > 0) creationError('UNBALANCED_FILL_IN', `Unclosed '[' in fill-in text; wrap literal brackets in {% literal %}.`, undefined, line);
 }
 
 function checkList(list: MarkdocNode, depth: number): void {
@@ -161,6 +166,9 @@ function checkList(list: MarkdocNode, depth: number): void {
     for (const child of nested) {
       if ((child.attributes.ordered === true) !== (list.attributes.ordered === true)) {
         creationError('MIXED_LIST_NESTING', 'A nested list must match its parent list type (ordered or bullet).', child);
+      }
+      if (child.attributes.ordered === true && Number.isInteger(child.attributes.start) && child.attributes.start !== 1) {
+        creationError('NESTED_LIST_START', 'A nested list always numbers from (a) or (i); start it at 1.', child);
       }
       checkList(child, depth + 1);
     }
@@ -235,8 +243,16 @@ function checkBlockTag(node: MarkdocNode, topLevel: boolean, line: number | unde
   }
 }
 
+/** Markdoc's own parse errors (for example an unclosed tag) fail before anything else. */
+function checkParseErrors(node: MarkdocNode): void {
+  const error = node.errors?.[0];
+  if (error) creationError('INVALID_CREATION_MARKDOC', `Markdoc error: ${error.message}.`, node);
+  node.children.forEach(checkParseErrors);
+}
+
 /** Validate every top-level block of a parsed creation document. */
 export function validateCreationAst(children: MarkdocNode[]): void {
+  children.forEach(checkParseErrors);
   for (const node of children) {
     const line = lineOf(node);
     switch (node.type) {

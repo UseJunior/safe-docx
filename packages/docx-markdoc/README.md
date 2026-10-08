@@ -520,8 +520,14 @@ It writes four files:
 - `consent.pdf`, when LibreOffice and `pdftotext` are installed;
 - `consent.verification.json`.
 
-Each output must be new unless you pass `--replace`. Outputs are renamed into
-place only after every check passes. Use `--no-pdf` to skip the PDF, or
+Outputs are staged privately and published together only after every check
+passes; any failure while publishing restores what was there before. Without
+`--replace`, the build refuses if any of the four files already exists,
+including a PDF from an earlier build, and it never overwrites a file that
+appears while it runs. With `--replace`, the outputs are swapped in together,
+and a stale artifact this build did not produce (a PDF under `--no-pdf`) is
+removed. An output that would overwrite an input, including through a
+symlinked directory or a hard link, is refused. Use `--no-pdf` to skip the PDF, or
 `--require-pdf` to treat missing tools as a failure. `--style-profile
 house.json` overrides any of `font`, `sizePt`, `spacingAfterPt`,
 `lineSpacing`, `marginsIn`, `titleSizePt`, `signatureTabIn` and `justify`.
@@ -563,18 +569,20 @@ The directors of Acme Widgets Inc. (the **"Company"**) adopt these resolutions e
 ```
 
 The grammar is closed. Anything else fails with a line number before any
-output is written: links, images, code, `---`, HTML, unknown tags or
-attributes, and headings below `###`.
+output is written: links, images, code, `---`, HTML (inline tags too, unless
+wrapped in `{% literal %}`), unknown tags or attributes, Markdoc parse errors
+such as an unclosed tag, and headings below `###`.
 
 - `[...]` anywhere is a highlighted fill-in, with nesting allowed. Wrap
   literal brackets in `{% literal %}…{% /literal %}`; a legend is never
   highlighted.
-- Ordered lists get real `1.` / `(a)` / `(i)` numbering, and each list starts
-  at its first marker.
+- Ordered lists get real `1.` / `(a)` / `(i)` numbering. Each top-level list
+  starts at its first marker; nested lists always start at (a) or (i).
 - A line ending in `\` is a line break.
 - `{% page-break /%}` starts the next block on a new page.
 - `{% section %}` starts a next-page section. With no `footer` or
   `page-numbers` attribute, the section keeps the previous section's footer.
+  `page-numbers=false` alone gives the section its own empty footer.
 
 ### Moving from per-matter pseudo-HTML `.mdoc`
 

@@ -21,7 +21,7 @@ come from named paragraph styles over document defaults.
 - **AND** an unbalanced bracket outside those exemptions SHALL fail with a line number
 
 #### Scenario: [SDX-MDOC-CREATE-03] unsupported and legacy syntax fails closed
-- **GIVEN** sources containing a link, an image, a code span, an unknown tag, unknown frontmatter, and whole-paragraph `<center>`, `<signer>` or `<!-- pagebreak -->` markup
+- **GIVEN** sources containing a link, an image, a code span, an unknown tag, unknown frontmatter, an unclosed tag, inline HTML outside `{% literal %}`, a nested ordered list that does not start at 1, and whole-paragraph `<center>`, `<signer>` or `<!-- pagebreak -->` markup
 - **WHEN** each is created
 - **THEN** creation SHALL fail before writing any output, with a stable error code and the source line, and legacy markup SHALL name the Markdoc tag to use
 
@@ -44,6 +44,7 @@ unlinked with declared content.
 - **WHEN** it is created
 - **THEN** the document SHALL have three sections, and each non-final `w:sectPr` SHALL sit on the last paragraph of its section
 - **AND** the first footer SHALL contain a centred PAGE field, the second SHALL be unlinked with the declared centred italic text, and the third SHALL have no footer reference so it inherits the second
+- **AND** a section declaring only `page-numbers=false` SHALL get an unlinked empty footer instead of inheriting
 
 ### Requirement: Lists and tables in created documents
 
@@ -82,7 +83,10 @@ verification fails.
 
 #### Scenario: [SDX-MDOC-CREATE-10] the CLI writes docx, text mirror and certificate, and the PDF check is honest
 - **GIVEN** the `create` command with an existing output directory
-- **WHEN** it runs without `--replace` against existing outputs
+- **WHEN** it runs without `--replace` against existing outputs, including a stale PDF
 - **THEN** it SHALL refuse and leave the existing files unchanged
+- **AND** a failure while publishing SHALL leave every existing output byte-identical, and a file appearing at an output path during the build SHALL never be overwritten without `--replace`
+- **AND** with `--replace` a stale artifact the build does not produce SHALL be removed
+- **AND** an output that aliases an input through a symlinked directory or a hard link SHALL be refused
 - **AND** a successful run SHALL write `<stem>.docx`, `<stem>.txt` from the read-back, and `<stem>.verification.json`
 - **AND** when LibreOffice or `pdftotext` is unavailable the PDF check SHALL be recorded as `not_run`, and `--require-pdf` SHALL make that a failure

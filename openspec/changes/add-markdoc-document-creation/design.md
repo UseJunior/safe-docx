@@ -96,7 +96,12 @@ Inline:
 
 - `**bold**`, `*italic*` (they may nest), and a hard break (a line ending in
   `\`).
-- Soft breaks become one space.
+- Soft breaks become one space. They are turned into text before rendering,
+  so a fill-in that wraps across source lines stays highlighted through the
+  space.
+- Inline HTML is rejected unless it is wrapped in `{% literal %}`, as are
+  Markdoc parse errors such as an unclosed tag.
+- A nested ordered list must start at 1.
 - A link, image, code span, HTML or unknown inline tag is an error.
 
 Fill-ins: after parsing, every character from a `[` to its matching `]`
@@ -119,7 +124,8 @@ Sections:
 - `{% section /%}` ends the current section with a next-page break. The
   `sectPr` sits on the last paragraph, so no empty paragraph is added.
 - A `footer` or `page-numbers` attribute gives the new section its own
-  unlinked footer: centred italic text, then a centred PAGE line.
+  unlinked footer: centred italic text, then a centred PAGE line. An explicit
+  `page-numbers=false` with no `footer` gives it an unlinked empty footer.
 - With neither attribute the footer stays linked to the previous section, as
   in Word.
 
@@ -168,10 +174,10 @@ fails:
    each footer's text (`<PAGE>` for the field) equal the projection, with a
    negative control.
 5. **Brownfield editability:** `importDocxToMarkdoc` on the output anchors
-   every non-empty body paragraph: the anchored count equals the non-empty
-   read-back paragraph count. (Import does not anchor empty paragraphs; the
-   only empty paragraph creation emits is the break after a table that ends a
-   section.)
+   every paragraph with text and every table-cell paragraph, including blank
+   cells. The anchored count must equal that count. Import does not anchor an
+   empty body paragraph, and the only one creation emits is the break after a
+   table that ends a section.
 6. **Mirror:** `<stem>.txt` is written from the read-back, re-read and
    compared.
 7. **PDF (optional):** render with LibreOffice in a disposable profile and run
@@ -193,8 +199,15 @@ docx-markdoc create <document.mdoc> <output-dir>
 - The output directory may already exist.
 - Each output path must be new unless `--replace` is given. `--replace` is
   meant for rebuild loops in a matter's `outbound/draft`.
-- Outputs are written to temporary siblings and renamed only after every
-  check passes.
+- Outputs are staged in a private directory inside the output directory and
+  published as one transaction after every check passes:
+  - each existing target, including a stale artifact this build does not
+    produce, is first moved to a backup;
+  - each new file is then placed with an exclusive hard link, so a file that
+    appears mid-build is never overwritten;
+  - any failure restores the backups.
+- Input and output paths are compared canonically (realpath and inode), so a
+  symlinked directory or a hard link cannot alias an input.
 
 ## Risks
 

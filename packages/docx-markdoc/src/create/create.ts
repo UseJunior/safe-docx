@@ -101,12 +101,12 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
   const readbackControl = firstParagraphMismatch(perturbParagraphs(lowering.projection.paragraphs), readback.paragraphs) !== -1;
   const footersPassed = footersEqual(lowering.projection.footers, readback.footers);
   const footerControl = !footersEqual(perturbFooters(lowering.projection.footers), readback.footers);
-  // Brownfield import anchors every paragraph that has text; an empty
-  // paragraph (the break paragraph after a section-ending table) has nothing
-  // to edit and is not anchored.
+  // Brownfield import anchors every paragraph with text and every table-cell
+  // paragraph (a blank cell is still an editable slot); an empty body
+  // paragraph (the break after a section-ending table) is not anchored.
   const imported = await importDocxToMarkdoc(docx);
   const anchored = imported.source.paragraphs;
-  const editable = readback.paragraphs.filter((paragraph) => paragraph.length > 0).length;
+  const editable = readback.paragraphs.filter((paragraph, index) => paragraph.length > 0 || readback.inTableCell[index]).length;
 
   const text = creationTextMirror(readback, options.mirrorLabel);
   const checks: CreationCertificate['checks'] = {
@@ -132,7 +132,7 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
     brownfield: {
       passed: anchored === editable,
       anchoredParagraphs: anchored,
-      ...(anchored === editable ? {} : { detail: `import anchored ${anchored} paragraphs; read-back has ${editable} non-empty paragraphs` }),
+      ...(anchored === editable ? {} : { detail: `import anchored ${anchored} paragraphs; read-back has ${editable} anchorable paragraphs` }),
     },
   };
   const certificate: CreationCertificate = {

@@ -6,7 +6,7 @@ import { compileMarkdoc } from './compile.js';
 import { createDocumentFromMarkdoc, firstParagraphMismatch } from './create/create.js';
 import { lowerCreationMarkdoc } from './create/lower.js';
 import { importDocxToMarkdoc } from './import.js';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { RendererTools } from '@usejunior/docx-render-verifier';
@@ -327,6 +327,105 @@ describe('Traceability: Markdoc document creation without a template', () => {
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
+    },
+  );
+
+  test.openspec('[SDX-MDOC-CREATE-10] publication is one transaction and never aliases an input')(
+    'Scenario: publication is one transaction and never aliases an input',
+    async () => {
+      const dir = await mkdtemp(path.join(os.tmpdir(), 'sdx-create-publish-'));
+      const noTools: RendererTools = { resolve: () => null, run: async () => ({ code: 1, stdout: '', stderr: '' }) };
+      try {
+        const source = path.join(dir, 'consent.mdoc');
+        await writeFile(source, '# CONSENT\n\nFirst build.');
+        const out = path.join(dir, 'out');
+        await runCreateCommand([source, out], { renderTools: noTools });
+        const snapshot = async () => Object.fromEntries(await Promise.all((await readdir(out)).sort().map(async (name) => [name, (await readFile(path.join(out, name))).toString('base64')] as const)));
+        const before = await snapshot();
+
+        // A failure while placing the second file rolls everything back.
+        await writeFile(source, '# CONSENT\n\nSecond build.');
+        let links = 0;
+        const failingLink = async (from: string, to: string) => {
+          links += 1;
+          if (links === 2) throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+          await link(from, to);
+        };
+        await expect(runCreateCommand([source, out, '--replace'], { renderTools: noTools, fileOps: { link: failingLink } })).rejects.toThrow('disk full');
+        // Every file, byte for byte, is the first build's.
+        expect(await snapshot()).toEqual(before);
+
+        // Without --replace, a file that appears during the build is never overwritten.
+        const raced = path.join(dir, 'raced');
+        const racingLink = async (from: string, to: string) => {
+          if (to.endsWith('.docx')) await writeFile(to, 'someone else');
+          await link(from, to);
+        };
+        await expect(runCreateCommand([source, raced], { renderTools: noTools, fileOps: { link: racingLink } })).rejects.toThrow(/EEXIST|appeared/);
+        expect(await readFile(path.join(raced, 'consent.docx'), 'utf8')).toBe('someone else');
+        expect((await readdir(raced)).filter((name) => name !== 'consent.docx')).toEqual([]);
+
+        // A stale PDF is retired by --replace --no-pdf, and refuses a build without --replace.
+        await writeFile(path.join(out, 'consent.pdf'), 'old pdf');
+        await expect(runCreateCommand([source, path.join(dir, 'out'), '--no-pdf'])).rejects.toMatchObject({ code: 'CREATION_OUTPUT_EXISTS' });
+        await runCreateCommand([source, out, '--replace', '--no-pdf']);
+        expect((await readdir(out)).sort()).toEqual(['consent.docx', 'consent.txt', 'consent.verification.json']);
+        expect(await readFile(path.join(out, 'consent.txt'), 'utf8')).toContain('Second build.');
+
+        // An output directory reached through a symlink cannot overwrite the source.
+        const notes = path.join(dir, 'notes.txt');
+        await writeFile(notes, 'Body.');
+        await symlink(dir, path.join(dir, 'alias'));
+        await expect(runCreateCommand([notes, path.join(dir, 'alias'), '--replace', '--no-pdf'])).rejects.toMatchObject({ code: 'CREATION_PATH_COLLISION' });
+        expect(await readFile(notes, 'utf8')).toBe('Body.');
+        // A hard link to the source under the output name is refused too.
+        const hard = path.join(dir, 'hard');
+        await mkdir(hard);
+        await link(source, path.join(hard, 'consent.txt'));
+        await expect(runCreateCommand([source, hard, '--replace', '--no-pdf'])).rejects.toMatchObject({ code: 'CREATION_PATH_COLLISION' });
+        // No staging directories are left behind anywhere.
+        for (const target of [out, raced, hard]) expect((await readdir(target)).filter((name) => name.startsWith('.'))).toEqual([]);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test.openspec('[SDX-MDOC-CREATE-05] an explicit page-numbers=false unlinks an empty footer instead of inheriting')(
+    'Scenario: an explicit page-numbers=false unlinks an empty footer instead of inheriting',
+    async () => {
+      const { readback, certificate } = await createDocumentFromMarkdoc('---\npage-numbers: true\n---\n\nFirst.\n\n{% section page-numbers=false /%}\n\nSecond.');
+      expect(readback.footers).toEqual([['<PAGE>'], ['']]);
+      expect(certificate.passed).toBe(true);
+    },
+  );
+
+  test.openspec('[SDX-MDOC-CREATE-02] a fill-in that wraps across source lines stays highlighted through the space')(
+    'Scenario: a fill-in that wraps across source lines stays highlighted through the space',
+    async () => {
+      const { docx } = await createDocumentFromMarkdoc('Pay [Amount in\nwords] now.');
+      const paragraph = bodyParagraphs(await part(docx, 'word/document.xml'))[0]!;
+      expect(runs(paragraph).map((run) => [run.text, run.highlight])).toEqual([['Pay ', null], ['[Amount in words]', 'yellow'], [' now.', null]]);
+    },
+  );
+
+  test.openspec('[SDX-MDOC-CREATE-03] malformed Markdoc and inline HTML fail closed')(
+    'Scenario: malformed Markdoc and inline HTML fail closed',
+    async () => {
+      await expectCode('{% center %}\nUnclosed\n\nNext', 'INVALID_CREATION_MARKDOC', /missing closing/);
+      await expectCode('Hello <b>world</b>.', 'UNSUPPORTED_HTML', /<b>/);
+      const literal = await createDocumentFromMarkdoc('Type {% literal %}<b>{% /literal %} to bold.');
+      expect(literal.readback.paragraphs).toEqual(['Type <b> to bold.']);
+      await expectCode('1. A\n\n   3. nested', 'NESTED_LIST_START');
+    },
+  );
+
+  test.openspec('[SDX-MDOC-CREATE-07] a blank table cell is an anchored, editable slot')(
+    'Scenario: a blank table cell is an anchored, editable slot',
+    async () => {
+      const { certificate, readback } = await createDocumentFromMarkdoc('{% table %}\n* Holder\n* Shares\n---\n* [Holder]\n* \n{% /table %}\n\nAfter.');
+      expect(readback.paragraphs).toEqual(['Holder', 'Shares', '[Holder]', '', 'After.']);
+      expect(certificate.checks.brownfield).toMatchObject({ passed: true, anchoredParagraphs: 5 });
     },
   );
 });

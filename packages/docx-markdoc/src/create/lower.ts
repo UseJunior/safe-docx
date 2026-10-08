@@ -55,6 +55,17 @@ type FooterDeclaration = { text?: string; pageNumbers?: boolean };
 type Entry = { kind: CreationBlockKind; line?: number; blocks: BlockSpec[]; pageBreakBefore: boolean };
 type SectionState = { entries: Entry[]; footer?: FooterDeclaration };
 
+/**
+ * A soft break (an ordinary line wrap in the source) reads as one space. Turn
+ * it into a text node before rendering so it flows through the theme like any
+ * other text; inside a fill-in that space is highlighted too. The engine's own
+ * lenient handling of soft breaks is left untouched for other consumers.
+ */
+function normalizeSoftBreaks(node: MarkdocNode): void {
+  node.children = node.children.map((child) => (child.type === 'softbreak' ? new Markdoc.Ast.Node('text', { content: ' ' }) : child));
+  node.children.forEach(normalizeSoftBreaks);
+}
+
 function kindOf(node: MarkdocNode): CreationBlockKind {
   if (node.type === 'heading') return node.attributes.level === 1 ? 'title' : 'heading';
   if (node.type === 'blockquote') return 'quote';
@@ -90,6 +101,8 @@ function projectBlocks(blocks: BlockSpec[]): string[] {
 }
 
 function footerSpec(footer: FooterDeclaration): HeaderFooterSpec {
+  // A declared footer with neither text nor page numbers is an unlinked, empty footer.
+  if (!footer.text && !footer.pageNumbers) return { blocks: [{ kind: 'paragraph', styleId: CREATION_STYLE.footer, runs: [] }] };
   const blocks: ParagraphSpec[] = [];
   if (footer.text) blocks.push({ kind: 'paragraph', styleId: CREATION_STYLE.footer, runs: [{ kind: 'text', text: footer.text, italic: true }] });
   if (footer.pageNumbers) blocks.push({ kind: 'paragraph', styleId: CREATION_STYLE.footer, runs: [{ kind: 'field', field: 'PAGE', cachedResult: '1' }] });
@@ -131,6 +144,7 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
   const ast = Markdoc.parse(source);
   const frontmatter = parseCreationFrontmatter(ast.attributes.frontmatter as string | undefined);
   validateCreationAst(ast.children);
+  normalizeSoftBreaks(ast);
 
   const theme = new CreationTheme(profile);
   const plugins = creationPlugins(theme);
@@ -168,8 +182,10 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
       if (pendingPageBreak) creationError('PAGE_BREAK_BEFORE_SECTION', '{% page-break /%} directly before {% section /%} is redundant; a section starts a new page.', node);
       if (current.entries.length === 0) creationError('EMPTY_CREATION_SECTION', '{% section /%} must follow at least one block.', node);
       const footer = tag.attributes.footer as string | undefined;
-      const pageNumbers = tag.attributes['page-numbers'] === true;
-      sections.push({ entries: [], ...(footer || pageNumbers ? { footer: { ...(footer ? { text: footer } : {}), ...(pageNumbers ? { pageNumbers: true } : {}) } } : {}) });
+      const pageNumbersAttribute = tag.attributes['page-numbers'] as boolean | undefined;
+      // Any footer attribute, including an explicit page-numbers=false, unlinks the footer; none inherits.
+      const declared = footer !== undefined || pageNumbersAttribute !== undefined;
+      sections.push({ entries: [], ...(declared ? { footer: { ...(footer ? { text: footer } : {}), ...(pageNumbersAttribute ? { pageNumbers: true } : {}) } } : {}) });
       continue;
     }
     const blocks = api.renderBlocks([node], { listDepth: 0 });
@@ -218,7 +234,9 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     projection: {
       paragraphs,
       footers: sections.map((section) => (section.footer
-        ? [...(section.footer.text ? [section.footer.text] : []), ...(section.footer.pageNumbers ? [PAGE_FIELD_TOKEN] : [])]
+        ? (section.footer.text || section.footer.pageNumbers
+          ? [...(section.footer.text ? [section.footer.text] : []), ...(section.footer.pageNumbers ? [PAGE_FIELD_TOKEN] : [])]
+          : [''])
         : null)),
     },
     frontmatter,

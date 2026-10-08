@@ -10,6 +10,8 @@ const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 export type CreationReadback = {
   /** Body paragraphs in document order, table-cell paragraphs included. */
   paragraphs: string[];
+  /** Parallel to `paragraphs`: whether each paragraph sits in a table cell. */
+  inTableCell: boolean[];
   /** Per section: the default footer's paragraph texts, or null without a footer reference. */
   footers: FooterProjection[];
 };
@@ -69,12 +71,14 @@ export function paragraphReadbackText(paragraph: Element): string {
   return text;
 }
 
-function blockParagraphs(container: Element, out: string[]): void {
+function blockParagraphs(container: Element, out: string[], cells: boolean[] = [], inCell = false): void {
   for (const child of elementChildren(container)) {
-    if (isW(child, 'p')) out.push(paragraphReadbackText(child));
-    else if (isW(child, 'tbl')) {
+    if (isW(child, 'p')) {
+      out.push(paragraphReadbackText(child));
+      cells.push(inCell);
+    } else if (isW(child, 'tbl')) {
       for (const row of elementChildren(child).filter((node) => isW(node, 'tr'))) {
-        for (const cell of elementChildren(row).filter((node) => isW(node, 'tc'))) blockParagraphs(cell, out);
+        for (const cell of elementChildren(row).filter((node) => isW(node, 'tc'))) blockParagraphs(cell, out, cells, true);
       }
     }
   }
@@ -92,7 +96,8 @@ export async function readCreatedDocx(buffer: Buffer): Promise<CreationReadback>
   const body = document.getElementsByTagNameNS(W, 'body').item(0);
   if (!body) throw new DocxMarkdocError('CREATION_READBACK_FAILED', 'Created document has no w:body.');
   const paragraphs: string[] = [];
-  blockParagraphs(body, paragraphs);
+  const inTableCell: boolean[] = [];
+  blockParagraphs(body, paragraphs, inTableCell);
 
   const rels = parseXml(await read('word/_rels/document.xml.rels'));
   const targets = new Map(Array.from(rels.getElementsByTagName('Relationship'))
@@ -112,5 +117,5 @@ export async function readCreatedDocx(buffer: Buffer): Promise<CreationReadback>
     blockParagraphs(footer.documentElement!, lines);
     footers.push(lines);
   }
-  return { paragraphs, footers };
+  return { paragraphs, inTableCell, footers };
 }
