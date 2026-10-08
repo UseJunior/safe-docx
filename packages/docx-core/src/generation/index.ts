@@ -13,6 +13,7 @@ export type {
   BlockSpec,
   BorderSpec,
   BreakSpec,
+  DocumentDefaultsSpec,
   DocumentMetaSpec,
   DocumentSpec,
   DraftingNoteSpec,

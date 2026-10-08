@@ -2,8 +2,9 @@
  * word/fontTable.xml emitter.
  *
  * Emitted on every package. Word-authored documents declare a font table; we
- * enumerate the fonts the spec actually references (the Calibri default plus any
- * font named on a style, run, or numbering level) rather than a fixed stub, so the
+ * enumerate the fonts the spec actually references (the document default font,
+ * Calibri unless `defaults.run.font` says otherwise, plus any font named on a
+ * style, run, or numbering level) rather than a fixed stub, so the
  * metadata is faithful — a run set in Georgia produces a Georgia entry. panose1 is
  * omitted because we cannot derive it for an arbitrary font name, and Word tolerates
  * its absence. The walk is pure over the spec, so output stays deterministic.
@@ -16,14 +17,12 @@ import { OOXML, W } from '../../primitives/namespaces.js';
 import { parseXml, serializeXml, XML_DECL } from '../../primitives/xml.js';
 import type { CompileContext } from '../context.js';
 import type { BlockSpec, DocumentSpec, RunProps } from '../types.js';
+import { documentDefaultFont } from './styles-part.js';
 
 const FONT_TABLE_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml';
 const FONT_TABLE_REL_TYPE =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable';
-
-/** The docDefaults run font (see styles-part.ts DEFAULT_FONT); always declared. */
-const DEFAULT_FONT = 'Calibri';
 
 export function emitFontTablePart(spec: DocumentSpec, ctx: CompileContext): void {
   ctx.registerPart('word/fontTable.xml', FONT_TABLE_CONTENT_TYPE, FONT_TABLE_REL_TYPE);
@@ -60,8 +59,9 @@ function collectFonts(spec: DocumentSpec): string[] {
     walkBlocks(section.blocks, add);
   }
 
-  names.delete(DEFAULT_FONT);
-  return [DEFAULT_FONT, ...Array.from(names).sort()];
+  const defaultFont = documentDefaultFont(spec);
+  names.delete(defaultFont);
+  return [defaultFont, ...Array.from(names).sort()];
 }
 
 function walkBlocks(blocks: BlockSpec[], add: (props?: Pick<RunProps, 'font'>) => void): void {
