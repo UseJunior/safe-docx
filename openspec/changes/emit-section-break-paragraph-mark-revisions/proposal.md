@@ -25,6 +25,10 @@ docx-core's tracked `insertSectionBreak` already emits that shape.
 - A `w:pPrChange` is emitted on the content paragraph only when its base
   paragraph properties also changed; a mark-formatting change keeps its
   `w:rPrChange`.
+- When either side's paragraph mark already carries a tracked insertion,
+  deletion or move (a mark admits one), the split is not applied: the legacy
+  `w:sectPrChange` shape is kept and the section difference stays reported in
+  `unrepresentedChanges`.
 - `w:sectPrChange` remains the representation for page-setup changes to a
   section present on both sides. Whole inserted or deleted section-bearing
   paragraphs already carry a paragraph-mark revision and are unchanged.

@@ -2,7 +2,7 @@
 
 ### Requirement: Section-Break Inserts and Deletes Are Paragraph-Mark Revisions
 
-When an aligned paragraph gains or loses its paragraph-owned `w:sectPr`, the comparison SHALL record the change on paragraph marks rather than as a `w:sectPrChange`. The content paragraph SHALL carry the revised properties and an inserted paragraph mark, and SHALL carry the revised full `w:sectPr` when the break was added. An empty boundary paragraph immediately after it SHALL carry the original base properties and a deleted paragraph mark, and SHALL carry the original full `w:sectPr`, including its header/footer references, when the break was removed. Accept All SHALL reproduce the revised document's sections and Reject All the original's, on both the docx-core and docx-compare appliers. A page-setup change to a section present on both sides SHALL still be recorded as `w:sectPrChange`.
+When an aligned paragraph gains or loses its paragraph-owned `w:sectPr`, the comparison SHALL record the change on paragraph marks rather than as a `w:sectPrChange`. The content paragraph SHALL carry the revised properties and an inserted paragraph mark, and SHALL carry the revised full `w:sectPr` when the break was added. An empty boundary paragraph immediately after it SHALL carry the original base properties and a deleted paragraph mark, and SHALL carry the original full `w:sectPr`, including its header/footer references, when the break was removed. Accept All SHALL reproduce the revised document's sections and Reject All the original's, on both the docx-core and docx-compare appliers. A page-setup change to a section present on both sides SHALL still be recorded as `w:sectPrChange`. When either side's paragraph mark already carries a tracked insertion, deletion or move, the mark cannot take a second revision; the comparison SHALL then keep the `w:sectPrChange` representation and SHALL report the section difference in `unrepresentedChanges`.
 
 #### Scenario: rejecting a removed section break restores its header and footer bindings
 
@@ -23,3 +23,10 @@ When an aligned paragraph gains or loses its paragraph-owned `w:sectPr`, the com
 - **GIVEN** a paragraph-owned section present on both sides whose page size changes
 - **WHEN** the documents are compared
 - **THEN** one `w:sectPrChange` records the prior page setup and no boundary paragraph is added
+
+#### Scenario: a break change on a mark that already carries a tracked revision is reported
+
+- **GIVEN** an aligned paragraph whose mark carries the same tracked deletion on both sides, and a revised document that adds a section break to it
+- **WHEN** the documents are compared
+- **THEN** no boundary paragraph is added and the break is recorded as a `w:sectPrChange`
+- **AND** `unrepresentedChanges` includes a section entry

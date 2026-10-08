@@ -50,10 +50,11 @@ const COMPARE_OPTIONS = {
   date: new Date('2026-10-07T00:00:00.000Z'),
 };
 
+const TEST_FEATURE = 'emit-section-break-paragraph-mark-revisions';
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({
-    feature: 'DOCX Comparison',
+    feature: TEST_FEATURE,
     story: 'Section Break Paragraph-Mark Revisions',
     severity: 'critical',
   })
@@ -496,4 +497,31 @@ describe('section-break inserts and deletes are paragraph-mark revisions (#1144)
     expect(await documentShape(archive, acceptAllChanges(trackedXml), acceptAllChanges))
       .toEqual(await sideShape(revised));
   });
+
+  test.openspec('a break change on a mark that already carries a tracked revision is reported')(
+    'a break change on a mark that already carries a tracked revision keeps w:sectPrChange and is reported', async () => {
+      const priorDeletedMark = '<w:rPr><w:del w:id="50" w:author="Existing" w:date="2026-01-01T00:00:00Z"/></w:rPr>';
+      const original: Side = {
+        body: paragraph('First part', priorDeletedMark) + paragraph('Second part'),
+        finalSection: ONE_SECTION_FINAL,
+        parts: [HEADER_ONE, FOOTER_ONE],
+      };
+      const revised: Side = {
+        ...original,
+        body: paragraph('First part', priorDeletedMark + section(NEXT_PAGE, LANDSCAPE)) + paragraph('Second part'),
+      };
+      const result = await compareDocumentsAtomizer(
+        await sidePackage(original),
+        await sidePackage(revised),
+        COMPARE_OPTIONS,
+      );
+      const document = parseXml(await (await DocxArchive.load(result.document)).getDocumentXml());
+      const body = document.getElementsByTagNameNS(W_NS, 'body').item(0)!;
+      // A mark admits one tracked revision, so no split pair is emitted.
+      expect(wChildren(body).filter((child) => child.localName === 'p')).toHaveLength(2);
+      expect(document.getElementsByTagNameNS(W_NS, 'sectPrChange').length).toBe(1);
+      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+        expect.objectContaining({ scope: 'section' }),
+      ]));
+    });
 });
