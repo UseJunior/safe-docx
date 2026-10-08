@@ -5,8 +5,8 @@ import { copyFile, mkdtemp, readFile, realpath, rename, rm, stat } from 'node:fs
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { defaultRendererTools } from './render.js';
-import type { RendererTools } from './types.js';
+import { defaultPdfRenderTools } from './tools.js';
+import type { PdfRenderTools } from './tools.js';
 
 export type PlainPdfRequest = {
   /** Finished DOCX to render; never modified. */
@@ -21,7 +21,7 @@ export type PlainPdfRequest = {
    * extracted text must match as written).
    */
   requiredText: readonly string[];
-  tools?: RendererTools;
+  tools?: PdfRenderTools;
 };
 
 export type PlainPdfVerdict = {
@@ -74,7 +74,7 @@ async function publishPdf(pdfPath: string, destination: string): Promise<void> {
  * pass. Independent of how the DOCX was produced.
  */
 export async function renderPlainPdf(request: PlainPdfRequest): Promise<PlainPdfVerdict> {
-  const tools = request.tools ?? defaultRendererTools();
+  const tools = request.tools ?? defaultPdfRenderTools();
   const soffice = tools.resolve('soffice');
   const pdftotext = tools.resolve('pdftotext');
   const missing = [...(soffice ? [] : ['soffice']), ...(pdftotext ? [] : ['pdftotext'])];
