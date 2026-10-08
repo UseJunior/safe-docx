@@ -89,6 +89,7 @@ verification fails.
 - **AND** with `--replace` a stale artifact the build does not produce SHALL be removed
 - **AND** an output that aliases an input through a symlinked directory or a hard link SHALL be refused
 - **AND** a second run publishing to the same output directory and stem while one is active SHALL fail with `CREATION_LOCKED`, leaving the first run's outputs intact
-- **AND** a rollback SHALL never remove a file another writer placed at an output path, and an original that cannot be restored SHALL be kept in a named recovery directory rather than deleted
+- **AND** a rollback SHALL remove an output only if, when checked, its inode is that of the file this run staged, so a file another writer placed there earlier is kept, and an original that cannot be restored SHALL be kept in a named recovery directory rather than deleted
+- **AND** a lock whose initialization fails SHALL be closed and removed, so the stem can be retried at once
 - **AND** a successful run SHALL write `<stem>.docx`, `<stem>.txt` from the read-back, and `<stem>.verification.json`
 - **AND** when LibreOffice or `pdftotext` is unavailable the PDF check SHALL be recorded as `not_run`, and `--require-pdf` SHALL make that a failure

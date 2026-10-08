@@ -206,12 +206,15 @@ docx-markdoc create <document.mdoc> <output-dir>
   - each new file is then placed with an exclusive hard link, so a file that
     appears mid-build is never overwritten;
   - any failure restores the backups, and a rollback removes only files whose
-    inode is still the one this run placed;
+    inode, when checked, is that of the file this run staged. Ownership is
+    read from the private staged file before linking. Check-then-unlink is
+    not atomic, so the guarantee covers cooperating create runs (serialized
+    by the lock) but not an unrelated program racing that instant;
   - an original that cannot be restored is moved to a named
     `.<stem>.create-recovery-…` directory instead of being deleted, and the
     error reports every recovery problem;
   - an exclusive `.<stem>.create.lock` file serializes runs on the same output
-    directory and stem.
+    directory and stem. If writing the lock fails, it is closed and removed.
 - Input and output paths are compared canonically (realpath and inode), so a
   symlinked directory or a hard link cannot alias an input.
 

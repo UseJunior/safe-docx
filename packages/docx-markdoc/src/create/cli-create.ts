@@ -71,11 +71,13 @@ export function requiredPdfText(created: CreatedDocument): string[] {
 
 /** Filesystem operations used to publish outputs; injectable so tests can force a mid-publication failure. */
 export type PublishFileOps = {
+  /** Opens the stem lock file (exclusive create). */
+  open: typeof open;
   link: (from: string, to: string) => Promise<void>;
   rename: (from: string, to: string) => Promise<void>;
   unlink: (target: string) => Promise<void>;
 };
-const DEFAULT_FILE_OPS: PublishFileOps = { link, rename, unlink };
+const DEFAULT_FILE_OPS: PublishFileOps = { open, link, rename, unlink };
 
 async function exists(target: string): Promise<boolean> {
   return (await existingKind(target)) !== null;
@@ -119,15 +121,20 @@ async function publish(
       backups.push({ target, backup });
     }
     for (const [target, staged] of produced) {
+      // Ownership is the private staged file's inode, read before linking: the
+      // hard link shares it, and nothing outside this run can change it.
+      const owned = await lstat(staged);
+      placed.push({ target, dev: owned.dev, ino: owned.ino });
       await ops.link(staged, target);
-      const placedStat = await stat(target);
-      placed.push({ target, dev: placedStat.dev, ino: placedStat.ino });
     }
   } catch (error) {
     const problems: string[] = [];
-    // Remove only what this run placed: a path whose inode changed belongs to someone else now.
+    // Remove only what this run placed: an entry whose inode is not the staged
+    // file's belongs to someone else. (Check and unlink are two steps, so a
+    // non-cooperating writer replacing the path in that instant is not covered;
+    // cooperating create runs are serialized by the stem lock.)
     for (const { target, dev, ino } of placed) {
-      const current = await stat(target).catch(() => null);
+      const current = await lstat(target).catch(() => null);
       if (!current || current.dev !== dev || current.ino !== ino) continue;
       await ops.unlink(target).catch((unlinkError: Error) => problems.push(`could not remove ${target}: ${unlinkError.message}`));
     }
@@ -163,15 +170,28 @@ async function publish(
 }
 
 /** One create run per output directory and stem at a time; the lock file is created exclusively. */
-async function acquireLock(lockPath: string): Promise<() => Promise<void>> {
+async function acquireLock(lockPath: string, openFile: typeof open): Promise<() => Promise<void>> {
+  let handle;
   try {
-    const handle = await open(lockPath, 'wx');
-    await handle.writeFile(`${process.pid}\n`);
-    await handle.close();
+    handle = await openFile(lockPath, 'wx');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
       throw new DocxMarkdocError('CREATION_LOCKED', `Another create run is publishing to this output (lock ${lockPath}). If no run is active, delete the lock file and retry.`);
     }
+    throw error;
+  }
+  // The lock file is ours from here: if initialising it fails, close the handle and remove it.
+  try {
+    await handle.writeFile(`${process.pid}\n`);
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await rm(lockPath, { force: true });
+    throw error;
+  }
+  try {
+    await handle.close();
+  } catch (error) {
+    await rm(lockPath, { force: true });
     throw error;
   }
   return () => rm(lockPath, { force: true });
@@ -207,7 +227,7 @@ export async function runCreateCommand(
     certificate: path.join(outputDir, `${stem}.verification.json`),
     pdf: path.join(outputDir, `${stem}.pdf`),
   };
-  const releaseLock = await acquireLock(path.join(outputDir, `.${stem}.create.lock`));
+  const releaseLock = await acquireLock(path.join(outputDir, `.${stem}.create.lock`), ops.open);
   try {
     return await createLocked(options, deps, ops, stem, outputDir, outputs);
   } finally {

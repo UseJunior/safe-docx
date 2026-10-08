@@ -6,7 +6,7 @@ import { compileMarkdoc } from './compile.js';
 import { createDocumentFromMarkdoc, firstParagraphMismatch } from './create/create.js';
 import { lowerCreationMarkdoc } from './create/lower.js';
 import { importDocxToMarkdoc } from './import.js';
-import { link, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { PdfRenderTools } from './pdf/tools.js';
@@ -464,6 +464,35 @@ describe('Traceability: Markdoc document creation without a template', () => {
         };
         await expect(runCreateCommand([source, foreign, '--no-pdf'], { fileOps: { link: replacedMeanwhile } })).rejects.toThrow('disk full');
         expect(await readFile(path.join(foreign, 'doc.docx'), 'utf8')).toBe('someone else');
+
+        // Ownership comes from the staged file: a foreign file swapped in before the link call even returns is kept.
+        const early = path.join(dir, 'early');
+        let earlyLinks = 0;
+        const swapBeforeReturn = async (from: string, to: string) => {
+          earlyLinks += 1;
+          if (earlyLinks === 2) throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+          await link(from, to);
+          await writeFile(`${to}.foreign`, 'foreign original bytes');
+          await rename(`${to}.foreign`, to);
+        };
+        await expect(runCreateCommand([source, early, '--no-pdf'], { fileOps: { link: swapBeforeReturn } })).rejects.toThrow('disk full');
+        expect(await readFile(path.join(early, 'doc.docx'), 'utf8')).toBe('foreign original bytes');
+
+        // A lock that cannot be initialised is closed and removed, so the stem is immediately retryable.
+        const locked = path.join(dir, 'locked');
+        let closed = false;
+        const failingLockOpen = (async (file: string, flags: string) => {
+          const handle = await open(file, flags);
+          return Object.assign(Object.create(Object.getPrototypeOf(handle)), handle, {
+            writeFile: async () => { throw Object.assign(new Error('no space for the lock'), { code: 'ENOSPC' }); },
+            close: async () => { closed = true; await handle.close(); },
+          });
+        }) as unknown as typeof open;
+        await expect(runCreateCommand([source, locked, '--no-pdf'], { fileOps: { open: failingLockOpen } })).rejects.toThrow('no space for the lock');
+        expect(closed).toBe(true);
+        expect(await listing(locked)).toEqual([]);
+        await runCreateCommand([source, locked, '--no-pdf']);
+        expect(await listing(locked)).toEqual(['doc.docx', 'doc.txt', 'doc.verification.json']);
 
         // If the originals cannot be put back, they are kept in a named recovery directory, never deleted.
         const kept = path.join(dir, 'kept');

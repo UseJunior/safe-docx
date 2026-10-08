@@ -526,7 +526,11 @@ original cannot be put back, it is kept, never deleted, in a
 `.<stem>.create-recovery-…` directory that the error names. Only one `create`
 run may publish to the same output directory and stem at a time; a second run
 fails with `CREATION_LOCKED`. If no run is active, delete the
-`.<stem>.create.lock` file the error names. Without
+`.<stem>.create.lock` file the error names. A rollback removes an output only
+if, when checked, it is still the file this run staged. The check and the
+removal are two steps, so the guarantee is complete against other `create`
+runs, which the lock serializes, but not against an unrelated program
+replacing the file in that instant. Without
 `--replace`, the build refuses if any of the four files already exists,
 including a PDF from an earlier build, and it never overwrites a file that
 appears while it runs. With `--replace`, the outputs are swapped in together,
