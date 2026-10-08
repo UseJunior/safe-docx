@@ -64,6 +64,10 @@ byte-deterministic, which the renderer's is not. What is missing is:
   layer must match the source word for word; list labels, each page's
   footer and page number, and repeated table headers are modelled from the
   source, not excused by shape (#1185).
+- `--replace` rebuilds only over the DOCX the last build certified (its
+  SHA-256 in `<stem>.verification.json`); an edited or uncertified DOCX is
+  refused unless `--dangerously-overwrite-edited-docx`, which keeps its exact
+  bytes in a named directory (#1186).
 - A build that fails verification with a mismatch publishes nothing and
   leaves `<stem>.failed-verification.json`, named in the error; the next
   successful build removes it (#1185).
