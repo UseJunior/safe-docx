@@ -21,6 +21,7 @@
  */
 
 import { OOXML } from './namespaces.js';
+import { carryHeaderFooterRefsFromRemovedBoundary } from './section_boundary_references.js';
 import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun, removeEmptyParagraphMarkProperties } from './paragraph_merge_formatting.js';
 import { removeResolvedRowMarker, removeTableRowAndEmptyTable } from './table_rows.js';
 import { RANGE_MARKUP_BLOCK_SIBLING_LOCALS, canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
@@ -285,6 +286,7 @@ function resolveParagraphMarkRevision(p: Element): void {
   if (!target) {
     removeEmptyParagraphMarkProperties(p);
     if (!paragraphHasContent(p) && canSafelyRemoveEmptyParagraph(p)) {
+      carryHeaderFooterRefsFromRemovedBoundary(p);
       parent.removeChild(p);
     }
     return;
@@ -311,6 +313,8 @@ function resolveParagraphMarkRevision(p: Element): void {
   for (const c of toMove) {
     target.insertBefore(c, ref);
   }
+  // The paragraph's own section boundary, if any, leaves with its mark (#1144).
+  carryHeaderFooterRefsFromRemovedBoundary(p);
   parent.removeChild(p);
 }
 
