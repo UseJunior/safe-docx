@@ -1,5 +1,66 @@
 # Changelog
 
+## 0.24.0
+
+- **New: `docx-markdoc create`** builds a new Word document from Markdoc with
+  no template. Typical uses are consents, resolutions and certificates.
+  - **Outputs:** `<stem>.docx`, `<stem>.txt` (read back from the `.docx`),
+    `<stem>.verification.json`, and `<stem>.pdf` when LibreOffice and
+    `pdftotext` are installed. Without those tools the PDF check is recorded
+    as `not_run`; `--require-pdf` makes that a failure.
+  - **Grammar:** headings, paragraphs, quotes and `**bold**`/`*italic*`;
+    ordered lists with real `1.` / `(a)` / `(i)` numbering, restarting per
+    list; `{% table %}`, `{% center %}`, `{% legend %}`,
+    `{% signer name="…" date="…" /%}`, `{% page-break /%}`, and
+    `{% section footer="…" page-numbers=true /%}` for next-page sections with
+    linked or unlinked footers.
+  - **Fill-ins:** `[…]` is highlighted, nesting allowed; `{% literal %}` opts
+    out. The default house style is Times New Roman 11pt on all four font
+    channels, 8pt after, 1.15 lines and 1" margins; `--style-profile`
+    overrides it.
+  - **Fails closed:** anything outside the grammar, including leftover
+    pseudo-HTML, fails with a line number and the tag to use instead.
+  - **Self-checks:** before anything is written, every build checks that the
+    package is sound, that the text read back from the DOCX and the footers
+    match the source (each with a negative control), that a rebuild is
+    byte-identical, and that the brownfield `import` anchors every paragraph.
+  - **Publishing:** all outputs are published together; a failure restores
+    the previous files or keeps them in a named recovery directory. Runs on
+    the same output stem are serialized by a lock file, and `--replace`
+    rebuilds in place.
+  - The README covers migrating from a per-matter python-docx renderer. A
+    synthetic benchmark against python-docx is in
+    `packages/docx-markdoc/benchmarks/`. (#1175, #1162)
+- `@usejunior/docx-markdoc` now includes the generic Markdoc →
+  `DocumentSpec` engine (`createMarkdocxRenderer`,
+  `renderMarkdocxToDocumentSpec`, `renderMarkdocxToDocx`). Domain conventions
+  plug in through a theme, tag plugins, a field resolver and a block
+  transform hook. Rendering is lenient by default: links keep their text,
+  code renders as plain text, and breaks become spaces, with an opt-in
+  `hardBreaks: 'line'`. Unhandled nodes throw `MarkdocxUnhandledNodeError`.
+  (#1172)
+- `renderPlainPdf` (in `@usejunior/docx-markdoc`) renders a finished DOCX
+  through LibreOffice in a throwaway profile and checks the `pdftotext` text
+  layer for required strings, page by page.
+  - Missing tools report `not_run`, never a pass.
+  - The PDF is published only on a pass, through a staged file renamed over
+    the destination, so it never writes through a symlink or hard link to the
+    input. (#1173)
+- `generateDocx` accepts `DocumentSpec.defaults`, a house font, size and
+  paragraph spacing declared once in `w:docDefaults`.
+  - An explicit run `font` is now written to all four `w:rFonts` channels,
+    including `w:eastAsia`, so every generated package gains that attribute.
+  - Setting `keepNext`, `keepLines` or `pageBreakBefore` to `false` now emits
+    `w:val="0"`, so it can override a true default. (#1163, #786)
+- `SectionSpec.breakPlacement: 'lastParagraph'` binds a non-final section's
+  `w:sectPr` to the section's last paragraph instead of adding an empty
+  break paragraph. The default is unchanged. (#1166, #1165)
+- Comparison now records a section break that is added to or removed from a
+  kept paragraph as a paragraph-mark revision carrying the full `w:sectPr`,
+  as Word does. Reject All restores a removed section's header and footer
+  references, and an added break no longer survives Reject All. Page-setup-only
+  changes still use `w:sectPrChange`. (#1171)
+
 ## 0.23.1
 
 - Comparison no longer marks unchanged text as changed when the two documents
