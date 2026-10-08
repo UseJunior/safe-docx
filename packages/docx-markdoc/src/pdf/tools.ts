@@ -32,7 +32,8 @@ export function defaultPdfRenderTools(): PdfRenderTools {
         return { code: 0, stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') };
       } catch (error) {
         const failure = error as { code?: number; stdout?: unknown; stderr?: unknown; message?: string };
-        return { code: typeof failure.code === 'number' ? failure.code : 1, stdout: String(failure.stdout ?? ''), stderr: String(failure.stderr ?? failure.message ?? '') };
+        // A spawn failure (ENOENT, EACCES) has empty stderr; keep the error message so the reason is not blank.
+        return { code: typeof failure.code === 'number' ? failure.code : 1, stdout: String(failure.stdout ?? ''), stderr: String(failure.stderr || failure.message || '') };
       }
     },
   };

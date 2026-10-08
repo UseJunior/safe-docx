@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-01T19:10:25.732Z",
+  "generated_at": "2026-10-08T17:41:03.136Z",
   "policy": {
     "ratchet_tolerance_percentage_points": 0.1,
     "max_positive_drift_percentage_points": {
@@ -9,10 +9,10 @@
   },
   "packages": {
     "docx-core": {
-      "lines": 90.31,
-      "branches": 78.75,
-      "functions": 92.07,
-      "statements": 88.37,
+      "lines": 90.94,
+      "branches": 79.9,
+      "functions": 92.82,
+      "statements": 88.99,
       "deltas": {
         "lines": null,
         "branches": null,
@@ -21,10 +21,10 @@
       }
     },
     "docx-compare": {
-      "lines": 89.99,
-      "branches": 79.82,
-      "functions": 91.2,
-      "statements": 88.1,
+      "lines": 90.15,
+      "branches": 79.93,
+      "functions": 91.05,
+      "statements": 88.23,
       "deltas": {
         "lines": null,
         "branches": null,
@@ -33,10 +33,10 @@
       }
     },
     "docx-markdoc": {
-      "lines": 90.69,
-      "branches": 77.06,
-      "functions": 95.8,
-      "statements": 86.37,
+      "lines": 92.25,
+      "branches": 79.06,
+      "functions": 95.33,
+      "statements": 88.41,
       "deltas": {
         "lines": null,
         "branches": null,
@@ -45,10 +45,10 @@
       }
     },
     "docx-mcp": {
-      "lines": 88.78,
-      "branches": 78.73,
-      "functions": 94.19,
-      "statements": 86.53,
+      "lines": 89.06,
+      "branches": 79.15,
+      "functions": 94.36,
+      "statements": 86.85,
       "deltas": {
         "lines": null,
         "branches": null,
@@ -58,9 +58,9 @@
     }
   },
   "aggregate": {
-    "lines_mean": 89.94,
-    "branches_mean": 78.59,
-    "functions_mean": 93.31,
-    "statements_mean": 87.34
+    "lines_mean": 90.6,
+    "branches_mean": 79.51,
+    "functions_mean": 93.39,
+    "statements_mean": 88.12
   }
 }

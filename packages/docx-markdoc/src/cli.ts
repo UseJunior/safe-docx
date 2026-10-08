@@ -13,6 +13,7 @@ import { assertDistinctInternalPath, EXTERNAL_FILENAME, formatCliError, parseGre
 import { normalizeAnnotationPresentationProfile } from './presentation.js';
 import type { AnnotationPresentationProfile, ValidationIssue } from './types.js';
 import { compileGreenfieldMarkdoc, type GreenfieldStyleProfile } from './greenfield.js';
+import { runCreateCommand } from './create/cli-create.js';
 
 function usage(): string {
   return [
@@ -25,6 +26,7 @@ function usage(): string {
     '    [--note-profile profile.json | --external-notes MODE --internal-notes MODE --unspecified-notes MODE]',
     '  docx-markdoc verify <anchored.docx> <document.mdoc> [--external-comments|--no-external-comments]',
     '  docx-markdoc compile-greenfield <template.docx> <document.mdoc> <output-dir> [--style-profile profile.json]',
+    '  docx-markdoc create <document.mdoc> <output-dir> [--style-profile profile.json] [--no-pdf] [--require-pdf] [--replace]',
     '  docx-markdoc export-edits <document.mdoc> <output.json>',
     '  docx-markdoc comments-to-footnotes <input.docx> <output.docx> [--prefix TEXT] [--prefix-separator TEXT] [--bold-prefix] [--prefix-color RRGGBB] [--prefix-highlight COLOR] [--body-color RRGGBB] [--body-highlight COLOR] [--flatten-threads]',
   ].join('\n');
@@ -63,6 +65,11 @@ async function main(): Promise<void> {
     if (!sourcePath) throw new Error(usage());
     const records = await inspectMarkdocSource(await readFile(sourcePath), { paragraphIds: ids.length ? ids : undefined });
     process.stdout.write(`${JSON.stringify(records, null, 2)}\n`);
+    return;
+  }
+  if (command === 'create') {
+    const result = await runCreateCommand(args);
+    process.stdout.write(`${result.summary}\n`);
     return;
   }
   if (command === 'compile-greenfield') {

@@ -155,3 +155,36 @@ describeWithLibreOffice('plain PDF render with a real LibreOffice', () => {
     expect(missing).toMatchObject({ status: 'failed', missingText: ['Not in the document'] });
   }, 120_000);
 });
+
+describe('local PDF tool resolver', () => {
+  itAllure('runs a tool and reports success, a non-zero exit and an unresolvable tool honestly', async () => {
+    const previous = process.env.SAFE_DOCX_SOFFICE_BIN;
+    process.env.SAFE_DOCX_SOFFICE_BIN = process.execPath;
+    try {
+      const tools = defaultPdfRenderTools();
+      // The override wins over the usual install paths.
+      expect(tools.resolve('soffice')).toBe(process.execPath);
+      const ok = await tools.run(process.execPath, ['-e', "process.stdout.write('rendered')"]);
+      expect(ok).toEqual({ code: 0, stdout: 'rendered', stderr: '' });
+      const failed = await tools.run(process.execPath, ['-e', "process.stderr.write('bad input'); process.exit(3)"]);
+      expect(failed).toMatchObject({ code: 3, stderr: 'bad input' });
+      const missing = await tools.run('/definitely/not/a/tool', []);
+      expect(missing.code).not.toBe(0);
+      expect(missing.stderr).toMatch(/ENOENT|not found|spawn/);
+    } finally {
+      if (previous === undefined) delete process.env.SAFE_DOCX_SOFFICE_BIN;
+      else process.env.SAFE_DOCX_SOFFICE_BIN = previous;
+    }
+  });
+
+  itAllure('reports a failed LibreOffice render as failed with its message', async () => {
+    const { docx, pdf } = await workspace();
+    const failing: PdfRenderTools = {
+      resolve: (name) => `/fake/${name}`,
+      run: async (command) => (command.endsWith('soffice') ? { code: 1, stdout: '', stderr: 'source file could not be loaded' } : { code: 0, stdout: 'x', stderr: '' }),
+    };
+    const verdict = await renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: [], tools: failing });
+    expect(verdict).toEqual({ status: 'failed', reason: 'LibreOffice render failed: source file could not be loaded' });
+    expect(existsSync(pdf)).toBe(false);
+  });
+});

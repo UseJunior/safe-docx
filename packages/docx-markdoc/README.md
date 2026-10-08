@@ -502,6 +502,149 @@ The engine is deliberately lenient:
 A node or tag no seam handles throws `MarkdocxUnhandledNodeError` rather than
 being dropped.
 
+## Creating a new document
+
+`docx-markdoc create` builds a new Word document from Markdoc, with no
+template:
+
+```bash
+docx-markdoc create consent.mdoc outbound/draft --replace
+# created consent.docx: 26 paragraphs, 2 section(s); readback ok (negative control ok);
+# footers ok (negative control ok); deterministic; brownfield ok (26 anchored); pdf passed (2 pages)
+```
+
+It writes four files:
+
+- `consent.docx`;
+- `consent.txt`, read back from the DOCX and never from the source;
+- `consent.pdf`, when LibreOffice and `pdftotext` are installed;
+- `consent.verification.json`.
+
+Outputs are staged privately and published together only after every check
+passes; any failure while publishing restores what was there before. If an
+original cannot be put back, it is kept, never deleted, in a
+`.<stem>.create-recovery-…` directory that the error names. Only one `create`
+run may publish to the same output directory and stem at a time; a second run
+fails with `CREATION_LOCKED`. If no run is active, delete the
+`.<stem>.create.lock` file the error names. A rollback removes an output only
+if, when checked, it is still the file this run staged. The check and the
+removal are two steps, so the guarantee is complete against other `create`
+runs, which the lock serializes, but not against an unrelated program
+replacing the file in that instant. Without
+`--replace`, the build refuses if any of the four files already exists,
+including a PDF from an earlier build, and it never overwrites a file that
+appears while it runs. With `--replace`, the outputs are swapped in together,
+and a stale artifact this build did not produce (a PDF under `--no-pdf`) is
+removed. An output that would overwrite an input, including through a
+symlinked directory or a hard link, is refused. Use `--no-pdf` to skip the PDF, or
+`--require-pdf` to treat missing tools as a failure. `--style-profile
+house.json` overrides any of `font`, `sizePt`, `spacingAfterPt`,
+`lineSpacing`, `marginsIn`, `titleSizePt`, `signatureTabIn` and `justify`.
+The default is Times New Roman 11pt on all four font channels, 8pt after,
+1.15 lines and 1" margins.
+
+```markdoc
+---
+title: Unanimous Written Consent of the Board of Directors
+page-numbers: true
+---
+
+# ACME WIDGETS INC.
+
+{% center %}**Unanimous Written Consent of the Board of Directors**{% /center %}
+
+The directors of Acme Widgets Inc. (the **"Company"**) adopt these resolutions effective [Effective Date].
+
+## Approval of the Plan
+
+1. RESOLVED, that the Widget Plan is *approved*.
+   1. The Plan reserves [Number] shares.
+
+{% table widths="40,60" %}
+* Holder
+* Shares
+---
+* [Holder One]
+* 1,000
+{% /table %}
+
+> The officers may execute any certificate described in these resolutions.
+
+{% legend %}[Remainder of page intentionally left blank; signature page follows.]{% /legend %}
+
+{% section footer="[Signature Page to Board Consent]" /%}
+
+{% signer name="Jane Roe, Director" date="Date: ____________" /%}
+```
+
+The grammar is closed. Anything else fails with a line number before any
+output is written: links, images, code, `---`, HTML (inline tags too, unless
+wrapped in `{% literal %}`), unknown tags or attributes, Markdoc parse errors
+such as an unclosed tag, and headings below `###`.
+
+- `[...]` anywhere is a highlighted fill-in, with nesting allowed. Wrap
+  literal brackets in `{% literal %}…{% /literal %}`; a legend is never
+  highlighted.
+- Ordered lists get real `1.` / `(a)` / `(i)` numbering. Each top-level list
+  starts at its first marker; nested lists always start at (a) or (i).
+- A line ending in `\` is a line break.
+- `{% page-break /%}` starts the next block on a new page.
+- `{% section %}` starts a next-page section. With no `footer` or
+  `page-numbers` attribute, the section keeps the previous section's footer.
+  `page-numbers=false` alone gives the section its own empty footer.
+
+### Migrating from a per-matter python-docx renderer
+
+Projects that build new instruments (consents, resolutions, certificates)
+with a copied python-docx script can replace it with one command per
+document:
+
+```bash
+npx -y @usejunior/docx-markdoc create authoring/<slug>.mdoc outbound/draft --replace
+```
+
+The command writes these files into `outbound/draft/`:
+
+- `<slug>.docx`;
+- `<slug>.txt`, read back from the `.docx` and written beside it (not in a
+  `text/` subfolder);
+- `<slug>.verification.json`;
+- `<slug>.pdf`, but only when LibreOffice (`soffice`) and `pdftotext` are
+  installed.
+
+Without those tools, no PDF is written, the certificate records the PDF check
+as `not_run`, and the build still succeeds. Add `--require-pdf` to make
+missing tools a failure, or `--no-pdf` to skip the check. Nothing is
+published unless every check that ran passes.
+
+Convert each `.mdoc` once, using the table below. Clause numbers typed by
+hand become Markdown ordered lists, whose real `1.` / `(a)` / `(i)`
+numbering survives later redlines. `[…]` stays a highlighted fill-in. Wrap
+literal brackets in `{% literal %}…{% /literal %}`. Leftover pseudo-HTML
+fails with `LEGACY_MARKUP`, and the error names the tag to use instead.
+Make later edits through `docx-markdoc import` / `compile`, which produce
+tracked changes.
+
+### Moving from per-matter pseudo-HTML `.mdoc`
+
+| Old convention | Markdoc |
+|---|---|
+| `<center>text</center>` | `{% center %}text{% /center %}` |
+| `<legend>text</legend>` | `{% legend %}text{% /legend %}` |
+| `<signer>Name, Title \| Date: ___</signer>` | `{% signer name="Name, Title" date="Date: ___" /%}` |
+| `<!-- pagebreak -->` | `{% page-break /%}` |
+| `<!-- page-numbers -->` | frontmatter `page-numbers: true` |
+| `<!-- section: x footer="…" -->` | `{% section footer="…" /%}` |
+| `## 1. Heading` with a literal number, `(a) text` | `## Heading` plus an ordered list (real numbering) |
+| `document_id:` frontmatter | `title:` / `author:` / `date:` |
+
+Leftover pseudo-HTML fails with `LEGACY_MARKUP`, and the error names the tag
+to use instead.
+
+The `create` command sits on the generic engine above: a closed-grammar
+validator, a house theme, tag plugins and a section driver. The
+template-backed `compile-greenfield` command is unchanged.
+
 ## Plain PDF render for finished documents
 
 `renderPlainPdf` renders a finished, non-tracked DOCX with LibreOffice in a
