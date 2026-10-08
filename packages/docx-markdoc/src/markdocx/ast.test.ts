@@ -48,9 +48,8 @@ describe('markdocx ast helpers', () => {
     expect(titleCaseSnake('company_name')).toBe('Company Name');
   });
 
-  it('keeps acronym segments in their conventional casing (#2279)', () => {
-    // The two labels the design review caught, plus the same-table controls
-    // that were already correct and must not regress.
+  it('keeps acronym segments in their conventional casing', () => {
+    // Acronyms in first and later positions, plus controls that must not regress.
     expect(titleCaseSnake('nda_term')).toBe('NDA Term');
     expect(titleCaseSnake('ai_policy_reference')).toBe('AI Policy Reference');
     expect(titleCaseSnake('ai_provider_covered_claims')).toBe('AI Provider Covered Claims');

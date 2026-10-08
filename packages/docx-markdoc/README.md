@@ -497,7 +497,7 @@ The engine is deliberately lenient:
 - links keep their text and lose the hyperlink;
 - code spans render as plain text;
 - soft and hard breaks render as spaces unless a plugin asks for line breaks;
-- whitespace-only paragraphs render nothing.
+- a paragraph with no runs renders nothing (whitespace text is not trimmed).
 
 A node or tag no seam handles throws `MarkdocxUnhandledNodeError` rather than
 being dropped.

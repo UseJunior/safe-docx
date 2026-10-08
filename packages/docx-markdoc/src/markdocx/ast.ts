@@ -2,16 +2,11 @@ import {type Node} from '@markdoc/markdoc';
 
 /**
  * Acronym segments that keep their conventional casing when a snake_case
- * field name is humanized into a display label (#2279): `nda_term` → "NDA
- * Term", never "Nda Term". Keyed by the lower-cased name segment; the value
- * is the rendered form (which lets `soc2` render as "SOC 2").
- *
- * The list is the union of the acronym segments that actually occur in
- * template/agreement field names (swept across all rendered template pages)
- * and the short future-proofing set the issue pins. Deliberately absent: the
- * Common Paper DPA's `pd_`/`pa_`/`sm_` prefixes — those are abbreviations of
- * "personal data" / "processing activities" / "security measures", and
- * upper-casing them ("PD Contact") would not make the label clearer.
+ * field name is humanized into a display label: `nda_term` → "NDA Term",
+ * never "Nda Term". Keyed by the lower-cased name segment; the value is the
+ * rendered form (which lets `soc2` render as "SOC 2"). Abbreviations that
+ * are not acronyms in ordinary legal usage are deliberately absent, because
+ * upper-casing them would not make the label clearer.
  */
 const FIELD_LABEL_ACRONYMS: ReadonlyMap<string, string> = new Map<string, string>([
   ...[
