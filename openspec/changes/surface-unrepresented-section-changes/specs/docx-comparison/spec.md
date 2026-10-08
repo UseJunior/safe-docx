@@ -12,8 +12,8 @@ statistics SHALL retain their existing meaning.
 
 - **GIVEN** a revised DOCX that adds a section break and a relationship-selected footer while body text remains unchanged
 - **WHEN** the pair is successfully compared
-- **THEN** the result SHALL include section and footer entries in `unrepresentedChanges`
-- **AND** zero text insertions and deletions SHALL not suppress those entries
+- **THEN** the added section break SHALL be represented as an inserted paragraph mark carrying the full `w:sectPr`
+- **AND** the added footer SHALL be represented as a tracked insertion in its story rather than reported in `unrepresentedChanges`
 
 #### Scenario: [SDX-CMP-UNREP-02] Identical package state reports no unrepresented changes
 
