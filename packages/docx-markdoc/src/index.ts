@@ -10,3 +10,5 @@ export * from './presentation.js';
 export * from './greenfield.js';
 export * from './markdocx/index.js';
 export * from './create/index.js';
+export * from './pdf/plain-render.js';
+export * from './pdf/tools.js';

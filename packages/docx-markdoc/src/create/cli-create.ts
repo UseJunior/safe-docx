@@ -1,6 +1,7 @@
 import { link, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { renderPlainPdf, type PlainPdfVerdict, type RendererTools } from '@usejunior/docx-render-verifier';
+import { renderPlainPdf, type PlainPdfVerdict } from '../pdf/plain-render.js';
+import type { PdfRenderTools } from '../pdf/tools.js';
 import { DocxMarkdocError } from '../errors.js';
 import { createDocumentFromMarkdoc, type CreatedDocument } from './create.js';
 import { PAGE_FIELD_TOKEN } from './lower.js';
@@ -134,7 +135,7 @@ async function sameFile(a: string, b: string): Promise<boolean> {
  */
 export async function runCreateCommand(
   args: string[],
-  deps: { renderTools?: RendererTools; fileOps?: Partial<PublishFileOps> } = {},
+  deps: { renderTools?: PdfRenderTools; fileOps?: Partial<PublishFileOps> } = {},
 ): Promise<CreateCliResult> {
   const options = parseCreateCliArgs(args);
   const ops = { ...DEFAULT_FILE_OPS, ...deps.fileOps };

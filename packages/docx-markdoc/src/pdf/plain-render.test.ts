@@ -1,13 +1,13 @@
 import { existsSync } from 'node:fs';
 import JSZip from 'jszip';
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect } from 'vitest';
-import { itAllure } from '../../docx-core/src/testing/allure-test.js';
-import { defaultRendererTools } from './render.js';
+import { itAllure } from '../../../docx-core/src/testing/allure-test.js';
+import { defaultPdfRenderTools } from './tools.js';
 import { renderPlainPdf, splitPdfTextPages } from './plain-render.js';
-import type { RendererTools } from './types.js';
+import type { PdfRenderTools } from './tools.js';
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -25,7 +25,7 @@ async function workspace(): Promise<{ docx: string; pdf: string }> {
 type Call = { command: string; args: string[] };
 
 /** Fake soffice writes `pdfBytes` beside the copied input; fake pdftotext returns `text`. Records every call. */
-function fakeTools(text: string, pdfBytes = '%PDF-fake', calls: Call[] = []): RendererTools {
+function fakeTools(text: string, pdfBytes = '%PDF-fake', calls: Call[] = []): PdfRenderTools {
   return {
     resolve: (name) => (name === 'soffice' || name === 'pdftotext' ? `/fake/${name}` : null),
     async run(command, args) {
@@ -76,7 +76,7 @@ describe('plain PDF render for finished non-tracked documents', () => {
     expect(new Set(inputs).size).toBe(2);
     expect(new Set(profiles).size).toBe(2);
     expect(inputs.some((input) => existsSync(path.dirname(input)))).toBe(false);
-    const thrower: RendererTools = { resolve: (name) => `/fake/${name}`, run: async (_command, args) => { calls.push({ command: 'throw', args }); throw new Error('boom'); } };
+    const thrower: PdfRenderTools = { resolve: (name) => `/fake/${name}`, run: async (_command, args) => { calls.push({ command: 'throw', args }); throw new Error('boom'); } };
     await expect(renderPlainPdf({ docxPath: docx, outputPdfPath: `${pdf}.c`, requiredText: [], tools: thrower })).rejects.toThrow('boom');
     expect(existsSync(path.dirname(calls.at(-1)!.args.at(-1)!))).toBe(false);
   });
@@ -105,6 +105,25 @@ describe('plain PDF render for finished non-tracked documents', () => {
     expect(await readFile(docx, 'utf8')).toBe('not inspected by the fake renderer');
   });
 
+  itAllure('never writes through an output alias that appears while rendering', async () => {
+    for (const makeAlias of [symlink, link] as const) {
+      const { docx, pdf } = await workspace();
+      const before = await readFile(docx);
+      // The destination does not exist when the call starts; it becomes an alias of the input mid-render.
+      const racing = fakeTools('Present\f');
+      const run = racing.run;
+      racing.run = async (command, args) => {
+        if (command.endsWith('soffice')) await makeAlias(docx, pdf);
+        return run(command, args);
+      };
+      const verdict = await renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: ['Present'], tools: racing });
+      expect(verdict.status, makeAlias.name).toBe('passed');
+      expect(await readFile(docx), makeAlias.name).toEqual(before);
+      expect(await readFile(pdf, 'utf8'), makeAlias.name).toBe('%PDF-fake');
+      expect((await readdir(path.dirname(pdf))).filter((name) => name.endsWith('.tmp')), makeAlias.name).toEqual([]);
+    }
+  });
+
   itAllure('fails and names missing text, and fails an empty text layer', async () => {
     const { docx, pdf } = await workspace();
     const missing = await renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: ['Title', 'Footer text'], tools: fakeTools('Title only') });
@@ -117,7 +136,7 @@ describe('plain PDF render for finished non-tracked documents', () => {
 
 });
 
-const realTools = defaultRendererTools();
+const realTools = defaultPdfRenderTools();
 const describeWithLibreOffice = realTools.resolve('soffice') && realTools.resolve('pdftotext') ? describe : describe.skip;
 
 describeWithLibreOffice('plain PDF render with a real LibreOffice', () => {

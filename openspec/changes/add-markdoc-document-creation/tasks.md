@@ -4,7 +4,7 @@
       four-channel fonts in docx-core.
 - [ ] 1.2 `add-generation-section-break-placement` (#1166).
 - [ ] 1.3 `add-markdocx-generic-engine` (#1172): the upstreamed engine.
-- [ ] 1.4 Plain PDF render in docx-render-verifier (#1173).
+- [ ] 1.4 Plain PDF render in docx-markdoc `src/pdf` (#1173).
 
 ## 2. Lowering (library)
 
@@ -20,7 +20,7 @@
       determinism, and certificate (`-08`).
 - [x] 3.2 Brownfield import check (`-09`).
 - [x] 3.3 `create` CLI, `.txt` mirror, `--replace` / `--require-pdf`, and the
-      plain PDF render export in `docx-render-verifier` (`-10`).
+      plain PDF render in docx-markdoc `src/pdf` (`-10`).
 
 ## 4. Benchmark and migration
 

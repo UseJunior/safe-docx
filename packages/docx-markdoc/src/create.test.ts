@@ -9,7 +9,7 @@ import { importDocxToMarkdoc } from './import.js';
 import { link, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { RendererTools } from '@usejunior/docx-render-verifier';
+import type { PdfRenderTools } from './pdf/tools.js';
 import { runCreateCommand } from './create/cli-create.js';
 
 const TEST_FEATURE = 'add-markdoc-document-creation';
@@ -290,7 +290,7 @@ describe('Traceability: Markdoc document creation without a template', () => {
     'Scenario: the CLI writes docx, text mirror and certificate, and the PDF check is honest',
     async () => {
       const dir = await mkdtemp(path.join(os.tmpdir(), 'sdx-create-cli-'));
-      const missingTools: RendererTools = { resolve: () => null, run: async () => ({ code: 1, stdout: '', stderr: 'unused' }) };
+      const missingTools: PdfRenderTools = { resolve: () => null, run: async () => ({ code: 1, stdout: '', stderr: 'unused' }) };
       try {
         const source = path.join(dir, 'consent.mdoc');
         await writeFile(source, '# CONSENT\n\nThe Board approves [the plan].');
@@ -334,7 +334,7 @@ describe('Traceability: Markdoc document creation without a template', () => {
     'Scenario: publication is one transaction and never aliases an input',
     async () => {
       const dir = await mkdtemp(path.join(os.tmpdir(), 'sdx-create-publish-'));
-      const noTools: RendererTools = { resolve: () => null, run: async () => ({ code: 1, stdout: '', stderr: '' }) };
+      const noTools: PdfRenderTools = { resolve: () => null, run: async () => ({ code: 1, stdout: '', stderr: '' }) };
       try {
         const source = path.join(dir, 'consent.mdoc');
         await writeFile(source, '# CONSENT\n\nFirst build.');

@@ -10,7 +10,7 @@
   },
   "scripts": {
     "clean:dist": "node -e \"const { rmSync } = require('node:fs'); rmSync('dist', { recursive: true, force: true });\"",
-    "build": "npm run build -w @usejunior/docx-render-verifier && npm run clean:dist && tsc -p tsconfig.build.json && node -e \"require('node:fs').chmodSync('dist/cli.js', 0o755)\"",
+    "build": "npm run clean:dist && tsc -p tsconfig.build.json && node -e \"require('node:fs').chmodSync('dist/cli.js', 0o755)\"",
     "test": "node ../../node_modules/vitest/vitest.mjs",
     "test:run": "node ../../node_modules/vitest/vitest.mjs run",
     "test:coverage": "npm run build -w @usejunior/docx-compare && node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
@@ -20,7 +20,6 @@
     "@markdoc/markdoc": "^0.5.0",
     "@usejunior/docx-compare": "^0.23.1",
     "@usejunior/docx-core": "^0.23.1",
-    "@usejunior/docx-render-verifier": "^0.23.1",
     "jszip": "^3.10.1"
   },
   "devDependencies": {

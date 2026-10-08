@@ -1,11 +1,12 @@
-import { createHash } from 'node:crypto';
+import { constants as fsConstants } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { copyFile, mkdtemp, readFile, realpath, rm, stat } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, realpath, rename, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { defaultRendererTools } from './render.js';
-import type { RendererTools } from './types.js';
+import { defaultPdfRenderTools } from './tools.js';
+import type { PdfRenderTools } from './tools.js';
 
 export type PlainPdfRequest = {
   /** Finished DOCX to render; never modified. */
@@ -20,7 +21,7 @@ export type PlainPdfRequest = {
    * extracted text must match as written).
    */
   requiredText: readonly string[];
-  tools?: RendererTools;
+  tools?: PdfRenderTools;
 };
 
 export type PlainPdfVerdict = {
@@ -49,12 +50,31 @@ async function sameFile(a: string, b: string): Promise<boolean> {
 }
 
 /**
+ * Publish the rendered PDF without ever writing through whatever sits at the
+ * destination. The bytes go to a uniquely named file created exclusively in
+ * the destination directory, which is then renamed over the destination
+ * entry. A rename replaces the directory entry: if the destination is (or
+ * became, while rendering) a symlink or a hard link to the input DOCX, the
+ * link is replaced and the input's bytes are untouched. Concurrent writers to
+ * the same destination race only on which complete file is left there.
+ */
+async function publishPdf(pdfPath: string, destination: string): Promise<void> {
+  const staged = path.join(path.dirname(destination), `.${path.basename(destination)}.${randomUUID()}.tmp`);
+  try {
+    await copyFile(pdfPath, staged, fsConstants.COPYFILE_EXCL);
+    await rename(staged, destination);
+  } finally {
+    await rm(staged, { force: true });
+  }
+}
+
+/**
  * Render a finished, non-tracked DOCX to PDF with LibreOffice in a disposable
  * profile and check its text layer. Missing tools report `not_run`, never a
  * pass. Independent of how the DOCX was produced.
  */
 export async function renderPlainPdf(request: PlainPdfRequest): Promise<PlainPdfVerdict> {
-  const tools = request.tools ?? defaultRendererTools();
+  const tools = request.tools ?? defaultPdfRenderTools();
   const soffice = tools.resolve('soffice');
   const pdftotext = tools.resolve('pdftotext');
   const missing = [...(soffice ? [] : ['soffice']), ...(pdftotext ? [] : ['pdftotext'])];
@@ -89,7 +109,7 @@ export async function renderPlainPdf(request: PlainPdfRequest): Promise<PlainPdf
     if (missingText.length > 0) {
       return { status: 'failed', reason: 'required text missing from the PDF text layer', pageCount: pages.length, pdfSha256, missingText };
     }
-    await copyFile(pdfPath, request.outputPdfPath);
+    await publishPdf(pdfPath, request.outputPdfPath);
     return { status: 'passed', pageCount: pages.length, pdfSha256 };
   } finally {
     await rm(workspace, { recursive: true, force: true });

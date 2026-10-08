@@ -54,7 +54,7 @@ byte-deterministic, which the renderer's is not. What is missing is:
   - the output imports into the brownfield `docx-markdoc import` flow with
     every body paragraph anchored;
   - the `.txt` mirror is written from the read-back, never from the source.
-- Optional PDF render through `@usejunior/docx-render-verifier` (LibreOffice
+- Optional PDF render through docx-markdoc's own `renderPlainPdf` (LibreOffice
   with a disposable profile, then `pdftotext`). Missing tools report
   `not_run`; `--require-pdf` makes `not_run` a failure.
 - Export library entry points: `lowerCreationMarkdoc(source, profile?)` returns
