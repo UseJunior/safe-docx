@@ -232,18 +232,25 @@ fails:
      from the page head only, then checked after alignment against the
      section of the content aligned on that page, so a missing,
      wrong-section or wrongly numbered footer fails, and a numeric footer
-     text is never mistaken for the page number;
+     text is never mistaken for the page number. Sections run in order and
+     each starts a new page, so a page with no aligned text (a section
+     holding only an empty table) takes every section a consistent order
+     allows, and its footer must be the region of every one of them; a
+     section left with no page fails;
    - **repeated table headers:** a table's header row found at the top of a
      later page is accepted only when the content aligned on both sides of it
-     belongs to that table's body rows; otherwise it is aligned as ordinary
-     text and fails as an extra.
+     belongs to the body rows of a table with that header (every table with
+     an identical header is tried). A header-shaped run that is not accepted
+     must align with its table's own header row (a table starting on that
+     page); otherwise it is reported in `unverifiedTableHeaders` and fails,
+     so generated header text can never stand in for a lost body row.
 
    Any other missing or extra word fails with `CREATION_PDF_WORDS_MISMATCH`;
    texts too different to align within 2,000 edits fail as `over-budget`.
-   The recorded `limitations` string states the remaining ambiguity: a page
-   with no aligned body text is assumed to be in the previous page's section,
-   and body text at a page head equal to another section's footer region can
-   be misread. Both cause false failures, never false passes.
+   The recorded `limitations` string states the remaining ambiguity: a
+   wordless page that could belong to differently footered sections, and
+   body text at a page head equal to another section's footer region. Both
+   cause false failures, never false passes.
 
 `<stem>.verification.json` records the source, profile and output SHA-256 hashes,
 each check's outcome, the block inventory and the section inventory. The PDF

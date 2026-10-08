@@ -330,8 +330,13 @@ export type PdfWordComparison = {
   pdfWords: number;
   missing: WordSpan[];
   unexplainedExtra: WordSpan[];
-  /** Pages whose footer region (text and page number) is not the one their section declares. */
-  footerMismatches: Array<{ page: number; section: number; expected: string; found: string }>;
+  /**
+   * Pages whose footer region (text and page number) is not the one their section declares. When the page
+   * could belong to more than one section, `expected` lists every possible region and `reason` says why.
+   */
+  footerMismatches: Array<{ page: number; section: number | null; expected: string; found: string; reason?: string }>;
+  /** Header-shaped text at a page head that is neither a repetition of a continuing table nor that table's own header row. */
+  unverifiedTableHeaders: Array<{ page: number; words: string }>;
   knownGenerated: {
     /** The footer region removed from the head of each page, as found. */
     footerRegions: string[];
@@ -345,7 +350,8 @@ export const PDF_WORD_NORMALIZATION = 'Unicode NFKC (folds ligatures such as "fi
 export const PDF_WORD_LIMITATIONS =
   'The text layer is read with pdftotext -raw (content-stream order; LibreOffice writes each page\'s footer first, then the body in document order). ' +
   'Generated text is modelled, not guessed: the expected words include each list label the grammar generates; each page must begin with exactly its section\'s footer region (footer text, then the page number, counting pages from 1), checked against the section of the content aligned on that page; and a table\'s header row is accepted again only at the top of a page whose surrounding content belongs to that same table. ' +
-  'Every other missing or extra word fails. A page with no aligned body text is assumed to belong to the previous page\'s section, and a page whose body begins with words equal to another section\'s footer region can be misread; both cause false failures, never false passes.';
+  'A page with no aligned body text takes every section a consistent page order allows (sections run in order, each starting a new page); its footer must be the region of every one of them. Header-shaped text at a page head that is neither a validated repetition nor its table\'s own header row is reported as unverified. ' +
+  'Every other missing or extra word fails. Ambiguity (a wordless page that could belong to differently footered sections, or body text at a page head equal to another section\'s footer region) causes a false failure, never a false pass.';
 
 type ExpectedToken = { word: string; entry: number };
 
@@ -389,84 +395,86 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
   const regions = pages.map((tokens, page) => candidates(page).find((region) => region.length === 0 || startsWith(tokens, region)) ?? []);
 
   // Repeated header candidates: right after the footer region on a later page.
-  type HeaderCandidate = { page: number; table: number; length: number };
+  // Every table whose header row matches right after the footer region; identical headers keep every identity.
+  type HeaderCandidate = { page: number; tables: number[]; length: number };
   const headerCandidates: HeaderCandidate[] = [];
   pages.forEach((tokens, page) => {
     if (page === 0) return;
-    for (const [table, header] of headers) {
-      if (startsWith(tokens, header, regions[page]!.length)) {
-        headerCandidates.push({ page, table, length: header.length });
-        return;
-      }
-    }
+    const matching = [...headers].filter(([, header]) => startsWith(tokens, header, regions[page]!.length));
+    if (matching.length > 0) headerCandidates.push({ page, tables: matching.map(([table]) => table), length: matching[0]![1].length });
   });
 
-  const run = (accepted: readonly HeaderCandidate[]) => {
+  const run = (accepted: ReadonlySet<HeaderCandidate>) => {
     const pdf: Array<{ word: string; page: number }> = [];
-    const insertAt = new Map<HeaderCandidate, number>();
+    /** Where each candidate sits in `pdf`: the insertion point if removed, or its first token if kept. */
+    const at = new Map<HeaderCandidate, number>();
     pages.forEach((tokens, page) => {
       let from = regions[page]!.length;
-      const header = accepted.find((candidate) => candidate.page === page);
-      if (header) {
-        insertAt.set(header, pdf.length);
-        from += header.length;
-      }
+      const candidate = headerCandidates.find((entry) => entry.page === page);
+      if (candidate) at.set(candidate, pdf.length);
+      if (candidate && accepted.has(candidate)) from += candidate.length;
       for (const word of tokens.slice(from)) pdf.push({ word, page });
     });
     const ops = myersDiff(expected, pdf, (x, y) => x.word === y.word);
-    return { pdf, insertAt, ops };
+    const pdfToExpected = new Map<number, number>();
+    for (const op of ops ?? []) if (op.kind === 'equal') pdfToExpected.set(op.bi!, op.ai!);
+    const entryAt = (pdfIndex: number) => {
+      const expectedIndex = pdfToExpected.get(pdfIndex);
+      return expectedIndex === undefined ? undefined : source.body[expected[expectedIndex]!.entry];
+    };
+    return { pdf, at, ops, entryAt };
   };
 
-  let accepted = headerCandidates;
+  // A repeated header is genuine only where a table continues across the page: the content aligned on
+  // both sides of it must be body rows of one table whose header it matches. Drop any that are not and
+  // align again (the accepted set only shrinks, so this ends).
+  const accepted = new Set(headerCandidates);
+  const repeatedTableHeaders: PdfWordComparison['knownGenerated']['repeatedTableHeaders'] = [];
   let result = run(accepted);
-  // A repeated header is genuine only where the table continues across the page: the content aligned on
-  // both sides of it must be body rows of that same table. Drop any that are not and align again.
   for (;;) {
     if (!result.ops) break;
-    const pdfToExpected = new Map<number, number>();
-    for (const op of result.ops) if (op.kind === 'equal') pdfToExpected.set(op.bi!, op.ai!);
-    const inTableBody = (pdfIndex: number | undefined, table: number) => {
-      const expectedIndex = pdfIndex === undefined ? undefined : pdfToExpected.get(pdfIndex);
-      const entry = expectedIndex === undefined ? undefined : source.body[expected[expectedIndex]!.entry];
-      return entry?.table?.id === table && entry.table.row > 0;
-    };
-    const invalid = accepted.filter((candidate) => {
-      const at = result.insertAt.get(candidate)!;
-      return !(inTableBody(at - 1, candidate.table) && inTableBody(at, candidate.table));
+    const { at, entryAt } = result;
+    const continuing = (candidate: HeaderCandidate) => candidate.tables.find((table) => {
+      const isBody = (entry: SourceBodyEntry | undefined) => entry?.table?.id === table && entry.table.row > 0;
+      return isBody(entryAt(at.get(candidate)! - 1)) && isBody(entryAt(at.get(candidate)!));
     });
-    if (invalid.length === 0) break;
-    accepted = accepted.filter((candidate) => !invalid.includes(candidate));
+    const invalid = [...accepted].filter((candidate) => continuing(candidate) === undefined);
+    if (invalid.length === 0) {
+      for (const candidate of accepted) repeatedTableHeaders.push({ page: candidate.page + 1, table: continuing(candidate)! });
+      break;
+    }
+    for (const candidate of invalid) accepted.delete(candidate);
     result = run(accepted);
   }
 
-  const { pdf, ops } = result;
+  const { pdf, ops, at, entryAt } = result;
   const missingIdx: number[] = [];
   const extraIdx: number[] = [];
   const footerMismatches: PdfWordComparison['footerMismatches'] = [];
+  const unverifiedTableHeaders: PdfWordComparison['unverifiedTableHeaders'] = [];
   if (ops) {
-    const pageSection = new Map<number, number>();
     for (const op of ops) {
       if (op.kind === 'delete') missingIdx.push(op.ai!);
       else if (op.kind === 'insert') extraIdx.push(op.bi!);
-      else {
-        const page = pdf[op.bi!]!.page;
-        if (!pageSection.has(page)) pageSection.set(page, source.body[expected[op.ai!]!.entry]!.section ?? 0);
-      }
     }
-    let section = 0;
-    pages.forEach((_, page) => {
-      section = pageSection.get(page) ?? section;
-      const want = regionFor(section, page).join(' ');
-      const found = regions[page]!.join(' ');
-      if (want !== found) footerMismatches.push({ page: page + 1, section, expected: want, found });
-    });
+    // A header-shaped run at a page head that is not a repetition must be the original header row of one of
+    // its tables (a table starting on that page). Otherwise it may be generated text standing in for lost
+    // source words, so it cannot be certified either way.
+    for (const candidate of headerCandidates) {
+      if (accepted.has(candidate)) continue;
+      const start = at.get(candidate)!;
+      const original = Array.from({ length: candidate.length }, (_, offset) => entryAt(start + offset))
+        .every((entry) => entry?.table !== undefined && entry.table.row === 0 && candidate.tables.includes(entry.table.id));
+      if (!original) unverifiedTableHeaders.push({ page: candidate.page + 1, words: pdf.slice(start, start + candidate.length).map((token) => token.word).join(' ') });
+    }
+    footerMismatches.push(...checkPageFooters(pages.length, effective.length, pdf, entryAt, (page) => regions[page]!.join(' '), (section, page) => regionFor(section, page).join(' ')));
   } else {
     expected.forEach((_, i) => missingIdx.push(i));
   }
   const missing = groupSpans(missingIdx, expected.map((token) => token.word));
   const unexplainedExtra = groupSpans(extraIdx, pdf.map((token) => token.word));
   return {
-    passed: ops !== null && missing.length === 0 && unexplainedExtra.length === 0 && footerMismatches.length === 0,
+    passed: ops !== null && missing.length === 0 && unexplainedExtra.length === 0 && footerMismatches.length === 0 && unverifiedTableHeaders.length === 0,
     normalization: PDF_WORD_NORMALIZATION,
     alignment: ops ? 'complete' : 'over-budget',
     expectedWords: expected.length,
@@ -474,11 +482,92 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
     missing,
     unexplainedExtra,
     footerMismatches,
+    unverifiedTableHeaders,
     knownGenerated: {
       footerRegions: regions.map((region) => region.join(' ')),
       listMarkers,
-      repeatedTableHeaders: accepted.map(({ page, table }) => ({ page: page + 1, table })),
+      repeatedTableHeaders,
     },
     limitations: PDF_WORD_LIMITATIONS,
   };
+}
+
+/**
+ * Check each page's footer region against its section. Sections start on a new page and run in order, so
+ * page sections are non-decreasing and every section has at least one page. A page with aligned body text
+ * takes that text's section (all of it must be one section). A page without any takes every section a
+ * consistent assignment allows; its footer must then be the region of every one of them, so a guess is
+ * never certified.
+ */
+function checkPageFooters(
+  pageCount: number,
+  sectionCount: number,
+  pdf: ReadonlyArray<{ page: number }>,
+  entryAt: (pdfIndex: number) => SourceBodyEntry | undefined,
+  found: (page: number) => string,
+  region: (section: number, page: number) => string,
+): PdfWordComparison['footerMismatches'] {
+  const mismatches: PdfWordComparison['footerMismatches'] = [];
+  const sectionsOn = Array.from({ length: pageCount }, () => new Set<number>());
+  pdf.forEach((token, index) => {
+    const entry = entryAt(index);
+    if (entry) sectionsOn[token.page]!.add(entry.section ?? 0);
+  });
+  const fixed: Array<number | undefined> = sectionsOn.map((set) => (set.size === 1 ? [...set][0] : undefined));
+  sectionsOn.forEach((set, page) => {
+    if (set.size > 1) mismatches.push({ page: page + 1, section: null, expected: '', found: found(page), reason: `page holds text from sections ${[...set].join(', ')}` });
+  });
+  // Unaligned pages between two fixed pages (or the document ends) take any section a consistent assignment allows.
+  let page = 0;
+  let previous = -1; // section of the last fixed page; -1 before the first
+  while (page < pageCount) {
+    if (fixed[page] !== undefined) {
+      const section = fixed[page]!;
+      if (section < previous) mismatches.push({ page: page + 1, section, expected: region(section, page), found: found(page), reason: 'sections out of order' });
+      else if (section > previous + 1 && (page === 0 || fixed[page - 1] !== undefined)) {
+        mismatches.push({ page: page + 1, section, expected: region(section, page), found: found(page), reason: `no page for section ${previous + 1}` });
+      }
+      if (region(section, page) !== found(page)) mismatches.push({ page: page + 1, section, expected: region(section, page), found: found(page) });
+      previous = Math.max(previous, section);
+      page += 1;
+      continue;
+    }
+    let end = page;
+    while (end < pageCount && fixed[end] === undefined) end += 1;
+    // Sections strictly between `previous` and `after` must each get a gap page; past the end, `after` is virtual.
+    const after = end < pageCount ? fixed[end]! : sectionCount;
+    const gap = end - page;
+    const low = Math.max(previous, 0);
+    const high = Math.min(after, sectionCount - 1);
+    const mustCover = after - previous - 1;
+    if (mustCover > gap) {
+      mismatches.push({ page: page + 1, section: null, expected: '', found: found(page), reason: `${mustCover - gap} section(s) have no page` });
+    }
+    for (let i = 1; i <= gap; i += 1) {
+      const p = page + i - 1;
+      const possible: number[] = [];
+      for (let s = low; s <= high; s += 1) {
+        const coverBefore = s > previous ? s - previous - 1 : 0; // sections strictly between previous and s
+        const coverAfter = s < after ? after - s - 1 : 0; // sections strictly between s and after
+        if (coverBefore <= i - 1 && coverAfter <= gap - i) possible.push(s);
+      }
+      if (possible.length === 0) continue; // already reported: too few pages for the sections
+      const regions = [...new Set(possible.map((s) => region(s, p)))];
+      if (regions.length !== 1 || regions[0] !== found(p)) {
+        mismatches.push({
+          page: p + 1,
+          section: possible.length === 1 ? possible[0]! : null,
+          expected: regions.join(' | '),
+          found: found(p),
+          ...(possible.length === 1 ? {} : { reason: `page has no aligned text and could belong to section ${possible.join(' or ')}` }),
+        });
+      }
+    }
+    previous = Math.max(previous, high);
+    page = end;
+  }
+  if (pageCount > 0 && fixed[pageCount - 1] !== undefined && previous < sectionCount - 1) {
+    mismatches.push({ page: pageCount, section: previous, expected: '', found: found(pageCount - 1), reason: `no page for section ${previous + 1}` });
+  }
+  return mismatches;
 }

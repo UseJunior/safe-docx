@@ -195,8 +195,8 @@ describe('Traceability: independent round-trip oracle for created documents', ()
     },
   );
 
-  test.openspec('[SDX-MDOC-CREATE-12] each page carries its own section\'s footer, and only a continuing table repeats its header')(
-    'Scenario: each page carries its own section\'s footer, and only a continuing table repeats its header',
+  test.openspec('[SDX-MDOC-CREATE-12] each page carries the footer of its own section, and only a continuing table repeats its header')(
+    'Scenario: each page carries the footer of its own section, and only a continuing table repeats its header',
     async () => {
       // Sections: A, then inherited A, then B. A wrong-section footer fails.
       const sections: SourceProjection = {
@@ -219,6 +219,27 @@ describe('Traceability: independent round-trip oracle for created documents', ()
       expect(comparePdfWords(table, ['Holder Shares\nA 1\n', 'Holder Shares\nB 2\nAfter.\n'])).toMatchObject({ passed: false, missing: [{ words: 'Holder Shares' }] });
       // The header repeated where the table does not continue is an extra.
       expect(comparePdfWords(table, ['Holder Shares\nA 1\nHolder Shares\nB 2\n', 'Holder Shares\nAfter.\n']).unexplainedExtra.map((span) => span.words)).toEqual(['Holder Shares']);
+      // A body row equal to the header, lost just before the page break, is not hidden by the continuation header.
+      const equal: SourceProjection = { body: [{ text: 'TITLE' }, cell('Header', 0), cell('Header', 1), cell('Beta', 2), { text: 'END' }], footers: [null] };
+      expect(comparePdfWords(equal, ['TITLE\nHeader\nHeader\n', 'Header\nBeta\nEND\n'])).toMatchObject({ passed: true, knownGenerated: { repeatedTableHeaders: [{ page: 2, table: 0 }] } });
+      expect(comparePdfWords(equal, ['TITLE\nHeader\n', 'Header\nBeta\nEND\n'])).toMatchObject({ passed: false, unverifiedTableHeaders: [{ page: 2, words: 'Header' }] });
+      // Tables with identical headers: the continuation is matched to the table that actually continues.
+      const same: SourceProjection = { body: [cell('Holder', 0), cell('A', 1), cell('Holder', 0, 1), cell('B', 1, 1), cell('C', 2, 1)], footers: [null] };
+      expect(comparePdfWords(same, ['Holder\nA\nHolder\nB\n', 'Holder\nC\n'])).toMatchObject({ passed: true, knownGenerated: { repeatedTableHeaders: [{ page: 2, table: 1 }] } });
+
+      // A section with no words (an empty table) still owns its page: the page cannot borrow a neighbour's footer.
+      const blank: SourceProjection = {
+        body: [{ text: 'FIRST', section: 0 }, { ...cell('', 0), section: 1 }, { ...cell('', 1), section: 1 }, { text: 'LAST', section: 2 }],
+        footers: [['A'], ['B'], null],
+      };
+      expect(comparePdfWords(blank, ['A\nFIRST\n', 'B\n', 'B\nLAST\n']).passed).toBe(true);
+      expect(comparePdfWords(blank, ['A\nFIRST\n', 'A\n', 'B\nLAST\n']).footerMismatches).toEqual([{ page: 2, section: 1, expected: 'B', found: 'A' }]);
+      expect(comparePdfWords(blank, ['A\nFIRST\n', '', 'B\nLAST\n']).footerMismatches).toEqual([{ page: 2, section: 1, expected: 'B', found: '' }]);
+      // With no page for the empty section, or two wordless pages that could belong to either section, nothing is certified.
+      expect(comparePdfWords(blank, ['A\nFIRST\n', 'B\nLAST\n']).footerMismatches).toMatchObject([{ page: 2, reason: 'no page for section 1' }]);
+      expect(comparePdfWords(blank, ['A\nFIRST\n', 'A\n', 'B\n', 'B\nLAST\n']).footerMismatches).toMatchObject([{ page: 2, section: null, expected: 'A | B', reason: expect.stringMatching(/section 0 or 1/) }]);
+      expect(comparePdfWords({ ...blank, body: blank.body.slice(0, 3) }, ['A\nFIRST\n', 'B\n']).footerMismatches).toMatchObject([{ reason: '1 section(s) have no page' }]);
+
       // List labels follow the grammar's numbering definition.
       expect([listMarker(true, 0, 3), listMarker(true, 1, 2), listMarker(true, 1, 27), listMarker(true, 2, 4), listMarker(true, 2, 14), listMarker(false, 0, 1), listMarker(false, 2, 9)])
         .toEqual(['3.', '(b)', '(aa)', '(iv)', '(xiv)', '•', '▪']);
@@ -379,6 +400,15 @@ describeWithLibreOffice('Traceability: PDF word check with a real LibreOffice', 
           '---', 'footer: First Footer', 'page-numbers: true', '---', '', '# SECTIONS', '', 'First body.', '', '{% page-break /%}', '', 'Still first section.', '',
           '{% section /%}', '', 'Inherited footer.', '', '{% section footer="Last Footer" /%}', '', 'Last body.', '', '{% section page-numbers=false /%}', '', 'No footer here.',
         ]);
+        const identical = await build('identical', [
+          '# TABLES', '', '{% table %}', '* Holder', '* Description', '---', '* First', '* Short.', '{% /table %}', '',
+          'Between the tables.', '', '{% table widths="30,70" %}', '* Holder', '* Description', '---', ...rows, '{% /table %}',
+        ]);
+        expect(identical.pdf).toMatchObject({ status: 'passed', pageCount: 2, words: { passed: true, knownGenerated: { repeatedTableHeaders: [{ page: 2, table: 1 }] } } });
+
+        const blankSection = await build('blank-section', ['---', 'footer: A', '---', '', 'FIRST', '', '{% section footer="B" /%}', '', '{% table %}', '* ', '* ', '---', '* ', '* ', '{% /table %}', '', '{% section /%}', '', 'LAST']);
+        expect(blankSection.pdf).toMatchObject({ status: 'passed', pageCount: 3, words: { passed: true, footerMismatches: [], knownGenerated: { footerRegions: ['A', 'B', 'B'] } } });
+
         expect(sections.pdf).toMatchObject({ status: 'passed', words: { passed: true, knownGenerated: { footerRegions: ['First Footer 1', 'First Footer 2', 'First Footer 3', 'Last Footer', ''] } } });
       } finally {
         await rm(dir, { recursive: true, force: true });
