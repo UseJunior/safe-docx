@@ -501,3 +501,97 @@ The engine is deliberately lenient:
 
 A node or tag no seam handles throws `MarkdocxUnhandledNodeError` rather than
 being dropped.
+
+## Creating a new document
+
+`docx-markdoc create` builds a new Word document from Markdoc, with no
+template:
+
+```bash
+docx-markdoc create consent.mdoc outbound/draft --replace
+# created consent.docx: 26 paragraphs, 2 section(s); readback ok (negative control ok);
+# footers ok (negative control ok); deterministic; brownfield ok (26 anchored); pdf passed (2 pages)
+```
+
+It writes four files:
+
+- `consent.docx`;
+- `consent.txt`, read back from the DOCX and never from the source;
+- `consent.pdf`, when LibreOffice and `pdftotext` are installed;
+- `consent.verification.json`.
+
+Each output must be new unless you pass `--replace`. Outputs are renamed into
+place only after every check passes. Use `--no-pdf` to skip the PDF, or
+`--require-pdf` to treat missing tools as a failure. `--style-profile
+house.json` overrides any of `font`, `sizePt`, `spacingAfterPt`,
+`lineSpacing`, `marginsIn`, `titleSizePt`, `signatureTabIn` and `justify`.
+The default is Times New Roman 11pt on all four font channels, 8pt after,
+1.15 lines and 1" margins.
+
+```markdoc
+---
+title: Unanimous Written Consent of the Board of Directors
+page-numbers: true
+---
+
+# ACME WIDGETS INC.
+
+{% center %}**Unanimous Written Consent of the Board of Directors**{% /center %}
+
+The directors of Acme Widgets Inc. (the **"Company"**) adopt these resolutions effective [Effective Date].
+
+## Approval of the Plan
+
+1. RESOLVED, that the Widget Plan is *approved*.
+   1. The Plan reserves [Number] shares.
+
+{% table widths="40,60" %}
+* Holder
+* Shares
+---
+* [Holder One]
+* 1,000
+{% /table %}
+
+> The officers may execute any certificate described in these resolutions.
+
+{% legend %}[Remainder of page intentionally left blank; signature page follows.]{% /legend %}
+
+{% section footer="[Signature Page to Board Consent]" /%}
+
+{% signer name="Jane Roe, Director" date="Date: ____________" /%}
+```
+
+The grammar is closed. Anything else fails with a line number before any
+output is written: links, images, code, `---`, HTML, unknown tags or
+attributes, and headings below `###`.
+
+- `[...]` anywhere is a highlighted fill-in, with nesting allowed. Wrap
+  literal brackets in `{% literal %}…{% /literal %}`; a legend is never
+  highlighted.
+- Ordered lists get real `1.` / `(a)` / `(i)` numbering, and each list starts
+  at its first marker.
+- A line ending in `\` is a line break.
+- `{% page-break /%}` starts the next block on a new page.
+- `{% section %}` starts a next-page section. With no `footer` or
+  `page-numbers` attribute, the section keeps the previous section's footer.
+
+### Moving from per-matter pseudo-HTML `.mdoc`
+
+| Old convention | Markdoc |
+|---|---|
+| `<center>text</center>` | `{% center %}text{% /center %}` |
+| `<legend>text</legend>` | `{% legend %}text{% /legend %}` |
+| `<signer>Name, Title \| Date: ___</signer>` | `{% signer name="Name, Title" date="Date: ___" /%}` |
+| `<!-- pagebreak -->` | `{% page-break /%}` |
+| `<!-- page-numbers -->` | frontmatter `page-numbers: true` |
+| `<!-- section: x footer="…" -->` | `{% section footer="…" /%}` |
+| `## 1. Heading` with a literal number, `(a) text` | `## Heading` plus an ordered list (real numbering) |
+| `document_id:` frontmatter | `title:` / `author:` / `date:` |
+
+Leftover pseudo-HTML fails with `LEGACY_MARKUP`, and the error names the tag
+to use instead.
+
+The `create` command sits on the generic engine above: a closed-grammar
+validator, a house theme, tag plugins and a section driver. The
+template-backed `compile-greenfield` command is unchanged.

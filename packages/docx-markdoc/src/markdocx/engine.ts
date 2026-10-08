@@ -16,6 +16,8 @@ export type BlockState = {listDepth: number; paragraphIndentTwips?: number};
 /** Per-render closures + recursion the engine exposes back to tag plugins. */
 export interface RenderApi {
   theme: Theme;
+  /** Effective hard-break rendering for this renderer. */
+  hardBreaks: 'space' | 'line';
   resolveField(name: string): {text: string; filled: boolean};
   renderBlocks(nodes: Node[], state: BlockState): BlockSpec[];
   renderInlineChildren(node: Node, style: InlineStyle): InlineSpec[];
@@ -66,6 +68,12 @@ export interface RenderOptions {
    * without patching the engine.
    */
   transformBlock?: (node: Node, state: BlockState) => BlockSpec[] | null;
+  /**
+   * How a Markdoc hard break (a line ending in a backslash) renders. The
+   * default 'space' keeps the lenient contract; 'line' emits a real line
+   * break everywhere, including list items. Soft breaks are unaffected.
+   */
+  hardBreaks?: 'space' | 'line';
 }
 
 type TransformBlock = (node: Node, state: BlockState) => BlockSpec[] | null;
@@ -83,6 +91,7 @@ export function createMarkdocxRenderer(options: RenderOptions): RenderApi {
 
   const api: RenderApi = {
     theme: options.theme,
+    hardBreaks: options.hardBreaks ?? 'space',
     resolveField,
     renderBlocks(nodes, state) {
       return nodes.flatMap((node) => renderBlock(node, api, blockTags, transformBlock, state));
@@ -192,7 +201,7 @@ function renderInline(
     return api.theme.renderText(text, style);
   }
   if (node.type === 'softbreak' || node.type === 'hardbreak') {
-    if (style.breakLines) return [{kind: 'break', breakType: 'line'}];
+    if (style.breakLines || (node.type === 'hardbreak' && api.hardBreaks === 'line')) return [{kind: 'break', breakType: 'line'}];
     return [{kind: 'text', text: ' ', bold: style.bold, italic: style.italic}];
   }
   if (node.type === 'strong') return api.renderInlineChildren(node, {...style, bold: true});

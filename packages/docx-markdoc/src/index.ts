@@ -9,3 +9,4 @@ export * from './export.js';
 export * from './presentation.js';
 export * from './greenfield.js';
 export * from './markdocx/index.js';
+export * from './create/index.js';
