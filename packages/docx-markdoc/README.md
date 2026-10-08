@@ -511,7 +511,7 @@ template:
 docx-markdoc create consent.mdoc outbound/draft --replace
 # created consent.docx: 26 paragraphs, 2 section(s); readback ok (negative control ok);
 # footers ok (negative control ok); deterministic; brownfield ok (26 anchored);
-# round trip ok (26 paragraphs; negative controls ok); pdf passed (2 pages); pdf words ok (196 source words)
+# round trip ok (26 paragraphs; negative controls ok); pdf passed (2 pages); pdf words ok (201 source words)
 ```
 
 It writes four files:
@@ -555,10 +555,12 @@ package, determinism, read-back and brownfield-import checks:
   controls. Each mismatch is recorded with its source line and the missing
   and extra words.
 - **PDF words.** When a PDF is rendered, its text layer (`pdftotext -raw`)
-  must match the source word for word. The only extra text allowed is each
-  page's footer and page number at the start or end of the page, and list
-  numbers. Anything else, missing or extra, fails with
-  `CREATION_PDF_WORDS_MISMATCH`. The certificate's `pdf.words.limitations`
+  must match the source word for word. Generated text is worked out from the
+  source, not guessed from its shape: list labels (`1.`, `(a)`, `(i)`,
+  bullets) are expected words; each page must begin with its own section's
+  footer and page number; and a table's header row may repeat only at the top
+  of a page where that table continues. Anything else, missing or extra,
+  fails with `CREATION_PDF_WORDS_MISMATCH`. The certificate's `pdf.words.limitations`
   states what the comparison cannot catch.
 
 A check that finds a mismatch publishes nothing and leaves existing outputs,

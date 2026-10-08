@@ -7,7 +7,7 @@ import { defaultPdfRenderTools, type PdfRenderTools } from '../pdf/tools.js';
 import { runCreateCommand } from './cli-create.js';
 import { createDocumentFromMarkdoc, type CreationCertificate } from './create.js';
 import type { CreationLowering } from './lower.js';
-import { PAGE_NUMBER_FIELD, comparePdfWords, compareParagraphs, projectSourceText, type SourceProjection } from './oracle.js';
+import { PAGE_NUMBER_FIELD, comparePdfWords, compareParagraphs, listMarker, projectSourceText, type SourceBodyEntry, type SourceProjection } from './oracle.js';
 
 const TEST_FEATURE = 'add-markdoc-document-creation';
 const test = testAllure.epic('DOCX Markdoc').withLabels({
@@ -154,52 +154,40 @@ describe('Traceability: independent round-trip oracle for created documents', ()
     'Scenario: the PDF text layer matches the source word for word',
     async () => {
       const source: SourceProjection = {
-        body: [{ text: 'CONSENT' }, { text: 'Confidential terms apply.' }, { text: 'The the Board approves.' }],
+        body: [{ text: 'CONSENT' }, { text: 'Confidential terms apply.' }, { text: 'The the Board approves.', marker: '1.' }],
         footers: [['Confidential', PAGE_NUMBER_FIELD]],
       };
-      // Footer and page number at the end of each page, list numbers inline: all known generated.
-      const clean = comparePdfWords(source, ['CONSENT\nConfidential terms apply.\nConfidential\n1\n', '1. The the Board approves.\nConfidential\n2\n']);
-      expect(clean).toMatchObject({ passed: true, alignment: 'complete', missing: [], unexplainedExtra: [], knownGenerated: { footerOccurrences: 2, pageNumbers: ['1', '2'], listNumbers: ['1.'] } });
+      const page1 = 'Confidential\n1\nCONSENT\nConfidential terms apply.\n';
+      const page2 = 'Confidential\n2\n1. The the Board approves.\n';
+      // Each page starts with its footer region (text, then its own page number); list labels are expected words.
+      const clean = comparePdfWords(source, [page1, page2]);
+      expect(clean).toMatchObject({ passed: true, alignment: 'complete', missing: [], unexplainedExtra: [], footerMismatches: [], knownGenerated: { footerRegions: ['Confidential 1', 'Confidential 2'], listMarkers: 1, repeatedTableHeaders: [] } });
 
       // A body word that also appears in the footer is still missing when the body drops it.
-      const footerWord = comparePdfWords(source, ['CONSENT\nterms apply.\nConfidential\n1\n', 'The the Board approves.\nConfidential\n2\n']);
-      expect(footerWord).toMatchObject({ passed: false, missing: [{ words: 'Confidential', before: 'CONSENT', after: 'terms apply. The the' }], unexplainedExtra: [] });
-
+      expect(comparePdfWords(source, ['Confidential\n1\nCONSENT\nterms apply.\n', page2])).toMatchObject({ passed: false, missing: [{ words: 'Confidential', before: 'CONSENT', after: 'terms apply. 1. The' }], unexplainedExtra: [] });
       // A repeated word ("The the") dropped once is missing, though the same word survives next to it.
-      const repeated = comparePdfWords(source, ['CONSENT\nConfidential terms apply.\nConfidential\n1\n', 'The Board approves.\nConfidential\n2\n']);
-      expect(repeated.passed).toBe(false);
-      expect(repeated.missing.map((span) => span.words)).toEqual(['the']);
-
-      // Extra text that is not a declared footer, a page number or a list number fails.
-      const extra = comparePdfWords(source, ['CONSENT\nConfidential terms apply.\nUnexpected words\nConfidential\n1\n', 'The the Board approves.\nConfidential\n2\n']);
-      expect(extra).toMatchObject({ passed: false, missing: [], unexplainedExtra: [{ words: 'Unexpected words', before: 'CONSENT Confidential terms apply.', after: 'The the Board approves.' }] });
-
-      // A footer duplicated mid-page is not the page's footer: it is an unexplained extra.
-      const duplicated = comparePdfWords(source, ['CONSENT\nConfidential\nConfidential terms apply.\nConfidential\n1\n', 'The the Board approves.\nConfidential\n2\n']);
-      expect(duplicated.passed).toBe(false);
-      expect(duplicated.unexplainedExtra.map((span) => span.words)).toEqual(['Confidential']);
-
-      // A page number is generated only when the source declares page numbers; without one, the trailing
-      // "7" is not peeled, so the footer before it is no longer at the end of the page either.
-      const noNumbers = comparePdfWords({ ...source, footers: [['Confidential']] }, ['CONSENT\nConfidential terms apply.\nConfidential\n7\n', 'The the Board approves.\nConfidential\n']);
-      expect(noNumbers.unexplainedExtra.map((span) => span.words)).toEqual(['Confidential 7']);
-      expect(noNumbers.knownGenerated).toEqual({ footerOccurrences: 1, pageNumbers: [], listNumbers: [] });
-
-      // pdftotext -raw puts LibreOffice's footer first on the page; a body page that ends in a bare
-      // number keeps it, because the page number is taken only next to the footer.
-      const headFooter = comparePdfWords({ body: [{ text: 'Approved in Section 2' }], footers: [['Confidential', PAGE_NUMBER_FIELD]] }, ['Confidential\n1\nApproved in Section 2\n']);
-      expect(headFooter).toMatchObject({ passed: true, knownGenerated: { footerOccurrences: 1, pageNumbers: ['1'] } });
-
-      // Page-edge footer removal cannot hide body text equal to the footer: when the body's last
-      // paragraph is the footer text and the body copy is dropped, only the footer copy is removed.
+      expect(comparePdfWords(source, [page1, 'Confidential\n2\n1. The Board approves.\n']).missing.map((span) => span.words)).toEqual(['the']);
+      // Extra text fails, including footer text duplicated in the body.
+      expect(comparePdfWords(source, [page1.replace('apply.', 'apply. Unexpected words'), page2]).unexplainedExtra).toEqual([{ words: 'Unexpected words', before: 'CONSENT Confidential terms apply.', after: '1. The the Board' }]);
+      expect(comparePdfWords(source, [page1.replace('CONSENT', 'Confidential CONSENT'), page2]).unexplainedExtra.map((span) => span.words)).toEqual(['Confidential']);
+      // A footer missing from a later page, or showing the wrong page number, fails.
+      expect(comparePdfWords(source, [page1, '1. The the Board approves.\n']).footerMismatches).toEqual([{ page: 2, section: 0, expected: 'Confidential 2', found: '' }]);
+      expect(comparePdfWords(source, [page1, page2.replace('\n2\n', '\n1\n')]).passed).toBe(false);
+      // A generated list label cannot stand in for a deleted literal "1." (review P1).
+      const literal: SourceProjection = { body: [{ text: 'The number is 1.' }, { text: 'Approved.', marker: '1.' }], footers: [null] };
+      expect(comparePdfWords(literal, ['The number is 1.\n1. Approved.\n']).passed).toBe(true);
+      expect(comparePdfWords(literal, ['The number is\n1. Approved.\n'])).toMatchObject({ passed: false, missing: [{ words: '1.' }] });
+      expect(comparePdfWords(literal, ['The number is 1.\nApproved.\n'])).toMatchObject({ passed: false, missing: [{ words: '1.' }] });
+      // A numeric footer is footer text, not the page number, so the PAGE value cannot hide a lost body "1" (review P1).
+      const numeric: SourceProjection = { body: [{ text: '1' }, { text: 'TITLE' }, { text: 'Body final.' }], footers: [['123', PAGE_NUMBER_FIELD]] };
+      expect(comparePdfWords(numeric, ['123\n1\n1\nTITLE\nBody final.\n']).passed).toBe(true);
+      expect(comparePdfWords(numeric, ['123\n1\nTITLE\nBody final.\n'])).toMatchObject({ passed: false, missing: [{ words: '1' }] });
+      expect(comparePdfWords({ ...numeric, body: numeric.body.slice(1) }, ['123\n1\nTITLE\nBody final.\n']).passed).toBe(true);
+      // The footer region is only ever the head of the page: body text equal to the footer stays body text.
       const edge: SourceProjection = { body: [{ text: 'Terms.' }, { text: 'Confidential' }], footers: [['Confidential', PAGE_NUMBER_FIELD]] };
       expect(comparePdfWords(edge, ['Confidential\n1\nTerms.\nConfidential\n']).passed).toBe(true);
-      expect(comparePdfWords(edge, ['Terms.\nConfidential\nConfidential\n1\n']).passed).toBe(true);
-      for (const page of ['Confidential\n1\nTerms.\n', 'Terms.\nConfidential\n1\n']) {
-        expect(comparePdfWords(edge, [page]), page).toMatchObject({ passed: false, missing: [{ words: 'Confidential' }] });
-      }
-      // A footer at both edges is removed once; the second copy is still an extra.
-      expect(comparePdfWords(edge, ['Confidential\n1\nTerms.\nConfidential\nConfidential\n']).unexplainedExtra.map((span) => span.words)).toEqual(['Confidential']);
+      expect(comparePdfWords(edge, ['Confidential\n1\nTerms.\n'])).toMatchObject({ passed: false, missing: [{ words: 'Confidential' }] });
+      expect(comparePdfWords(edge, ['Terms.\nConfidential\n1\n']).passed).toBe(false);
 
       // Ligatures fold under NFKC; nothing else is normalized.
       expect(comparePdfWords({ body: [{ text: 'final' }], footers: [null] }, ['ﬁnal\n']).passed).toBe(true);
@@ -207,6 +195,38 @@ describe('Traceability: independent round-trip oracle for created documents', ()
     },
   );
 
+  test.openspec('[SDX-MDOC-CREATE-12] each page carries its own section\'s footer, and only a continuing table repeats its header')(
+    'Scenario: each page carries its own section\'s footer, and only a continuing table repeats its header',
+    async () => {
+      // Sections: A, then inherited A, then B. A wrong-section footer fails.
+      const sections: SourceProjection = {
+        body: [{ text: 'first', section: 0 }, { text: 'second', section: 1 }, { text: 'third', section: 2 }],
+        footers: [['A'], null, ['B']],
+      };
+      expect(comparePdfWords(sections, ['A\nfirst\n', 'A\nsecond\n', 'B\nthird\n']).passed).toBe(true);
+      expect(comparePdfWords(sections, ['A\nfirst\n', 'A\nsecond\n', 'A\nthird\n']).footerMismatches).toEqual([{ page: 3, section: 2, expected: 'B', found: 'A' }]);
+      expect(comparePdfWords(sections, ['A\nfirst\n', 'B\nsecond\n', 'B\nthird\n']).footerMismatches).toEqual([{ page: 2, section: 1, expected: 'A', found: 'B' }]);
+
+      const cell = (text: string, row: number, id = 0): SourceBodyEntry => ({ text, cell: true, table: { id, row } });
+      const table: SourceProjection = {
+        body: [cell('Holder', 0), cell('Shares', 0), cell('A', 1), cell('1', 1), cell('Holder', 2), cell('Shares', 2), cell('B', 3), cell('2', 3), { text: 'After.' }],
+        footers: [null],
+      };
+      // The header repeats at the top of the continuation page.
+      const split = comparePdfWords(table, ['Holder Shares\nA 1\n', 'Holder Shares\nHolder Shares\nB 2\nAfter.\n']);
+      expect(split).toMatchObject({ passed: true, knownGenerated: { repeatedTableHeaders: [{ page: 2, table: 0 }] } });
+      // A body row with the header's words, omitted on the continuation page, is still missing.
+      expect(comparePdfWords(table, ['Holder Shares\nA 1\n', 'Holder Shares\nB 2\nAfter.\n'])).toMatchObject({ passed: false, missing: [{ words: 'Holder Shares' }] });
+      // The header repeated where the table does not continue is an extra.
+      expect(comparePdfWords(table, ['Holder Shares\nA 1\nHolder Shares\nB 2\n', 'Holder Shares\nAfter.\n']).unexplainedExtra.map((span) => span.words)).toEqual(['Holder Shares']);
+      // List labels follow the grammar's numbering definition.
+      expect([listMarker(true, 0, 3), listMarker(true, 1, 2), listMarker(true, 1, 27), listMarker(true, 2, 4), listMarker(true, 2, 14), listMarker(false, 0, 1), listMarker(false, 2, 9)])
+        .toEqual(['3.', '(b)', '(aa)', '(iv)', '(xiv)', '•', '▪']);
+      // A second table with the same header that starts a page is that table's own header.
+      const two: SourceProjection = { body: [cell('Holder', 0), cell('Shares', 0), cell('A', 1), cell('1', 1), cell('Holder', 0, 1), cell('Shares', 0, 1), cell('C', 1, 1), cell('3', 1, 1)], footers: [null] };
+      expect(comparePdfWords(two, ['Holder Shares\nA 1\n', 'Holder Shares\nC 3\n'])).toMatchObject({ passed: true, knownGenerated: { repeatedTableHeaders: [] } });
+    },
+  );
   test.openspec('[SDX-MDOC-CREATE-12] texts too different to align fail rather than pass')(
     'Scenario: texts too different to align fail rather than pass',
     async () => {
@@ -318,10 +338,8 @@ describeWithLibreOffice('Traceability: PDF word check with a real LibreOffice', 
         await writeFile(source, FULL_SOURCE);
         const result = await runCreateCommand([source, path.join(dir, 'out'), '--require-pdf']);
         expect(result.pdf).toMatchObject({ status: 'passed', words: { passed: true, alignment: 'complete', missing: [], unexplainedExtra: [] } });
-        const words = (result.pdf as { words: { knownGenerated: { footerOccurrences: number; pageNumbers: string[]; listNumbers: string[] } } }).words;
-        expect(words.knownGenerated.footerOccurrences).toBe(2);
-        expect(words.knownGenerated.pageNumbers).toEqual(['1']);
-        expect(words.knownGenerated.listNumbers).toEqual(['1.', '(a)']);
+        const words = (result.pdf as { words: { knownGenerated: { footerRegions: string[]; listMarkers: number } } }).words;
+        expect(words.knownGenerated).toMatchObject({ footerRegions: ['Confidential Draft 1', 'Signature Page'], listMarkers: 2 });
 
         // Table cells that wrap onto several lines still read in document order.
         const wrapped = path.join(dir, 'wrapped.mdoc');
@@ -333,11 +351,39 @@ describeWithLibreOffice('Traceability: PDF word check with a real LibreOffice', 
           '---', '* Two', '* Short.', '{% /table %}', '', 'After the table.',
         ].join('\n'));
         const table = await runCreateCommand([wrapped, path.join(dir, 'out'), '--require-pdf']);
-        expect(table.pdf).toMatchObject({ status: 'passed', words: { passed: true, missing: [], unexplainedExtra: [], knownGenerated: { footerOccurrences: 1, pageNumbers: ['1'] } } });
+        expect(table.pdf).toMatchObject({ status: 'passed', words: { passed: true, missing: [], unexplainedExtra: [], footerMismatches: [], knownGenerated: { footerRegions: ['Draft 1'] } } });
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
     },
     120_000,
+  );
+  test.openspec('[SDX-MDOC-CREATE-12] real multi-page PDFs: repeated table headers, section footers and numeric footers')(
+    'Scenario: real multi-page PDFs: repeated table headers, section footers and numeric footers',
+    async () => {
+      const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'sdx-create-pdf-pages-')));
+      try {
+        const build = async (name: string, lines: string[]) => {
+          const file = path.join(dir, `${name}.mdoc`);
+          await writeFile(file, lines.join('\n'));
+          return runCreateCommand([file, path.join(dir, 'out'), '--require-pdf']);
+        };
+        const rows = Array.from({ length: 65 }, (_, index) => [`* Holder ${index + 1}`, `* Description ${index + 1} ordinary terms apply.`, '---']).flat().slice(0, -1);
+        const longTable = await build('long-table', ['---', 'footer: Draft', 'page-numbers: true', '---', '', '# TABLE', '', '{% table widths="30,70" %}', '* Holder', '* Description', '---', ...rows, '{% /table %}', '', 'After the table.']);
+        expect(longTable.pdf).toMatchObject({ status: 'passed', pageCount: 2, words: { passed: true, footerMismatches: [], knownGenerated: { footerRegions: ['Draft 1', 'Draft 2'], repeatedTableHeaders: [{ page: 2, table: 0 }] } } });
+
+        const numeric = await build('numeric', ['---', 'footer: 123', 'page-numbers: true', '---', '', '# TITLE', '', 'Body final.']);
+        expect(numeric.pdf).toMatchObject({ status: 'passed', words: { passed: true, knownGenerated: { footerRegions: ['123 1'] } } });
+
+        const sections = await build('sections', [
+          '---', 'footer: First Footer', 'page-numbers: true', '---', '', '# SECTIONS', '', 'First body.', '', '{% page-break /%}', '', 'Still first section.', '',
+          '{% section /%}', '', 'Inherited footer.', '', '{% section footer="Last Footer" /%}', '', 'Last body.', '', '{% section page-numbers=false /%}', '', 'No footer here.',
+        ]);
+        expect(sections.pdf).toMatchObject({ status: 'passed', words: { passed: true, knownGenerated: { footerRegions: ['First Footer 1', 'First Footer 2', 'First Footer 3', 'Last Footer', ''] } } });
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    180_000,
   );
 });

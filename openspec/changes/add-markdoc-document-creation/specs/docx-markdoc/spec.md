@@ -112,9 +112,11 @@ any verification fails.
 - **GIVEN** a rendered PDF that passed the required-text check
 - **WHEN** its text layer is aligned word by word with the source text
 - **THEN** a missing source word SHALL fail with `CREATION_PDF_WORDS_MISMATCH`, including a word that also appears in a footer or next to a repeated copy of itself
-- **AND** an extra word SHALL fail unless it is the page's declared footer text or page number at the start or end of the page, or a list number
-- **AND** texts too different to align SHALL fail rather than pass
-- **AND** a real LibreOffice PDF of every construct, including a table whose cells wrap, SHALL pass
+- **AND** generated list labels SHALL be expected words computed from the grammar's numbering, so a generated label cannot stand in for a deleted literal one
+- **AND** each page SHALL begin with exactly its section's effective footer text and its own page number, so a missing, wrong-section or misnumbered footer fails and a numeric footer cannot hide a missing body number
+- **AND** a table header row SHALL be accepted again only at the top of a page where that table continues
+- **AND** any other extra word SHALL fail, and texts too different to align SHALL fail rather than pass
+- **AND** real LibreOffice PDFs of every construct, a table whose cells wrap, a table spanning pages, inherited and unlinked section footers, and a numeric footer SHALL pass
 
 #### Scenario: [SDX-MDOC-CREATE-13] a failed verification leaves a mismatch report and publishes nothing
 - **GIVEN** a build whose verification finds a mismatch

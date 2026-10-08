@@ -217,22 +217,33 @@ fails:
    Missing tools report `not_run`.
 9. **PDF words (#1185):** when the PDF passes check 8, its text layer is
    aligned word by word (NFKC, whitespace split) with the source text. `-raw`
-   is content-stream order, which for LibreOffice is document order: table
-   cells row by row even when they wrap, and a justified line ending in a
-   manual break kept whole; the default reading-order mode reads a table
-   column by column. Generated text is accounted for narrowly:
-   - each page's footer (at most one declared footer text and, when the
-     document declares page numbers, one adjacent page number) is removed
-     only from the start or end of the page, so footer text can never stand in
-     for a missing body word;
-   - an unmatched token shaped like a list number (`1.`, `(a)`, `(iv)`, a
-     bullet) counts as generated.
+   is content-stream order: LibreOffice writes each page's footer first, then
+   the body in document order (table cells row by row even when they wrap, a
+   justified line ending in a manual break kept whole); the default
+   reading-order mode reads a table column by column. Every piece of generated
+   text is modelled from the source, never excused by its shape:
+   - **list labels** are expected words, computed from the grammar's numbering
+     (`1.`, `(a)`, `(i)` by depth; top-level lists start at their first
+     marker; bullets `•`, `◦`, `▪`), so a generated `1.` cannot stand in for a
+     deleted literal `1.`;
+   - **footer regions:** each page must begin with exactly its section's
+     effective footer (inherited when a section declares none): the footer
+     text, then the page number, counting pages from 1. The region is removed
+     from the page head only, then checked after alignment against the
+     section of the content aligned on that page, so a missing,
+     wrong-section or wrongly numbered footer fails, and a numeric footer
+     text is never mistaken for the page number;
+   - **repeated table headers:** a table's header row found at the top of a
+     later page is accepted only when the content aligned on both sides of it
+     belongs to that table's body rows; otherwise it is aligned as ordinary
+     text and fails as an extra.
 
    Any other missing or extra word fails with `CREATION_PDF_WORDS_MISMATCH`;
    texts too different to align within 2,000 edits fail as `over-budget`.
-   The recorded `limitations` string states what this cannot catch (a
-   duplicated list number; and a false failure, never a false pass, when a
-   body paragraph at a page edge equals a footer text).
+   The recorded `limitations` string states the remaining ambiguity: a page
+   with no aligned body text is assumed to be in the previous page's section,
+   and body text at a page head equal to another section's footer region can
+   be misread. Both cause false failures, never false passes.
 
 `<stem>.verification.json` records the source, profile and output SHA-256 hashes,
 each check's outcome, the block inventory and the section inventory. The PDF

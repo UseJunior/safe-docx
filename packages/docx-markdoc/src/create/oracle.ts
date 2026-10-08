@@ -15,8 +15,12 @@ import { parseCreationFrontmatter } from './validate.js';
  * - a signer is a 30-underscore signature line, a line break, the name, then
  *   a tab and the date;
  * - a `{% fill %}` renders its text inside brackets;
- * - list numbers are generated and are not part of the paragraph text;
- * - a footer page number is a PAGE field.
+ * - list numbers are generated and are not part of the paragraph text; an
+ *   ordered list numbers `1.`, then `(a)`, then `(i)` by depth (top-level
+ *   lists start at their first marker, nested lists at 1), and bullets are
+ *   `•`, `◦`, `▪`;
+ * - a table's first row is its header and repeats on continuation pages;
+ * - a footer page number is a PAGE field, and pages number continuously from 1.
  */
 
 /** The only normalization applied before comparing; anything wider could hide an omission. */
@@ -32,12 +36,49 @@ const SIGNATURE_LINE = '_'.repeat(30);
 /** Marker for a footer PAGE field in the expected projection; any decimal page number satisfies it. */
 export const PAGE_NUMBER_FIELD = '\u0000PAGE';
 
+export type SourceBodyEntry = {
+  text: string;
+  /** 1-based source line. */
+  line?: number;
+  cell?: true;
+  /** Section index (0-based); a `{% section %}` tag starts the next one. */
+  section?: number;
+  /** The generated list label shown before this paragraph (`1.`, `(a)`, `(i)`, `•`, …). */
+  marker?: string;
+  /** Table membership: which table (0-based, in order) and which row (0 = the repeating header row). */
+  table?: { id: number; row: number };
+};
+
 export type SourceProjection = {
   /** Body paragraphs in reading order, with the source line they came from; table cells are marked. */
-  body: Array<{ text: string; line?: number; cell?: true }>;
-  /** Per section: the declared footer paragraphs, or null when the section declares none. */
+  body: SourceBodyEntry[];
+  /** Per section: the declared footer paragraphs, or null when the section declares none (it then inherits). */
   footers: Array<string[] | null>;
 };
+
+const BULLETS = ['•', '◦', '▪'] as const;
+
+function letters(n: number): string {
+  // Word's lowerLetter: a…z, then aa…zz, then aaa…
+  const letter = String.fromCharCode(97 + ((n - 1) % 26));
+  return letter.repeat(Math.floor((n - 1) / 26) + 1);
+}
+
+function roman(n: number): string {
+  const table: Array<[number, string]> = [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']];
+  let out = '';
+  for (const [value, symbol] of table) {
+    while (n >= value) { out += symbol; n -= value; }
+  }
+  return out;
+}
+
+/** The label the grammar's numbering definition produces for item `n` at `depth`. */
+export function listMarker(ordered: boolean, depth: number, n: number): string {
+  if (!ordered) return BULLETS[Math.min(depth, 2)]!;
+  if (depth === 0) return `${n}.`;
+  return depth === 1 ? `(${letters(n)})` : `(${roman(n)})`;
+}
 
 function lineOf(node: MarkdocNode): number | undefined {
   const start = node.lines?.[0];
@@ -80,13 +121,19 @@ export function projectSourceText(source: string): SourceProjection {
   const footers: SourceProjection['footers'] = [
     frontmatter.footer || frontmatter.pageNumbers ? footerOf(frontmatter.footer, frontmatter.pageNumbers) : null,
   ];
-  const push = (text: string, node: MarkdocNode, cell = false) => body.push({ text, ...(lineOf(node) === undefined ? {} : { line: lineOf(node)! }), ...(cell ? { cell: true as const } : {}) });
-  const listItems = (list: MarkdocNode) => {
+  let section = 0;
+  let tables = 0;
+  const push = (text: string, node: MarkdocNode, extra: Partial<SourceBodyEntry> = {}) =>
+    body.push({ text, ...(lineOf(node) === undefined ? {} : { line: lineOf(node)! }), section, ...extra });
+  const listItems = (list: MarkdocNode, depth: number) => {
+    const ordered = list.attributes.ordered === true;
+    let n = depth === 0 && ordered && Number.isInteger(list.attributes.start) ? Number(list.attributes.start) : 1;
     for (const item of list.children) {
       for (const child of item.children) {
-        if (child.type === 'list') listItems(child);
-        else push(inlineText(child), item);
+        if (child.type === 'list') listItems(child, depth + 1);
+        else push(inlineText(child), item, { marker: listMarker(ordered, depth, n) });
       }
+      n += 1;
     }
   };
   const tag = (node: MarkdocNode) => {
@@ -103,8 +150,13 @@ export function projectSourceText(source: string): SourceProjection {
       }
       case 'table': {
         const grid = node.children.find((child) => child.type === 'table');
+        const id = tables++;
+        let row = 0;
         for (const group of grid?.children ?? []) {
-          for (const row of group.children) for (const cell of row.children) push(inlineText(cell), cell, true);
+          for (const tr of group.children) {
+            for (const cell of tr.children) push(inlineText(cell), cell, { cell: true, table: { id, row } });
+            row += 1;
+          }
         }
         return;
       }
@@ -112,6 +164,7 @@ export function projectSourceText(source: string): SourceProjection {
         const { footer } = node.attributes;
         const pageNumbers = node.attributes['page-numbers'];
         footers.push(footer !== undefined || pageNumbers !== undefined ? footerOf(footer, pageNumbers) : null);
+        section += 1;
         return;
       }
       default:
@@ -122,7 +175,7 @@ export function projectSourceText(source: string): SourceProjection {
     const sole = node.type === 'paragraph' ? soleTag(node) : undefined;
     if (sole) tag(sole);
     else if (node.type === 'tag') tag(node);
-    else if (node.type === 'list') listItems(node);
+    else if (node.type === 'list') listItems(node, 0);
     else if (node.type === 'blockquote') for (const child of node.children) push(inlineText(child), child);
     else push(inlineText(node), node);
   }
@@ -271,96 +324,161 @@ export type PdfWordComparison = {
   normalization: string;
   /** `over-budget` when the texts were too different to align; every source word is then reported missing. */
   alignment: 'complete' | 'over-budget';
+  /** Source words plus the list labels the grammar generates. */
   expectedWords: number;
+  /** PDF words left after removing each page's footer region and repeated table headers. */
   pdfWords: number;
   missing: WordSpan[];
   unexplainedExtra: WordSpan[];
-  knownGenerated: { footerOccurrences: number; pageNumbers: string[]; listNumbers: string[] };
+  /** Pages whose footer region (text and page number) is not the one their section declares. */
+  footerMismatches: Array<{ page: number; section: number; expected: string; found: string }>;
+  knownGenerated: {
+    /** The footer region removed from the head of each page, as found. */
+    footerRegions: string[];
+    listMarkers: number;
+    repeatedTableHeaders: Array<{ page: number; table: number }>;
+  };
   limitations: string;
 };
 
-const LIST_NUMBER = /^(?:\d+\.|\([a-z]{1,3}\)|\([ivxlcdm]+\)|[•◦▪])$/u;
 export const PDF_WORD_NORMALIZATION = 'Unicode NFKC (folds ligatures such as "fi"), then whitespace runs split words. Nothing else.';
 export const PDF_WORD_LIMITATIONS =
-  'The text layer is read with pdftotext -raw (content-stream order, which for LibreOffice output is document order). Footer text is recognized only at the start or end of a page, where LibreOffice places it: at most one declared footer text and, when the document declares page numbers, one digits-only page number are removed from one end of a page (the footer and its page number must be adjacent) before alignment. A footer text found anywhere else is an unexplained extra. A body paragraph that starts or ends a page with the exact text of a declared footer, on a page whose own footer is not there, is misread as that footer and reported missing (a false failure, never a false pass). Unmatched tokens shaped like list numbers ("1.", "(a)", "(iv)", bullets) count as generated, so a duplicated list number is not detected. Any other duplicated or extra word is an unexplained extra and fails.';
+  'The text layer is read with pdftotext -raw (content-stream order; LibreOffice writes each page\'s footer first, then the body in document order). ' +
+  'Generated text is modelled, not guessed: the expected words include each list label the grammar generates; each page must begin with exactly its section\'s footer region (footer text, then the page number, counting pages from 1), checked against the section of the content aligned on that page; and a table\'s header row is accepted again only at the top of a page whose surrounding content belongs to that same table. ' +
+  'Every other missing or extra word fails. A page with no aligned body text is assumed to belong to the previous page\'s section, and a page whose body begins with words equal to another section\'s footer region can be misread; both cause false failures, never false passes.';
+
+type ExpectedToken = { word: string; entry: number };
 
 /**
- * Word-level alignment of the source text against the PDF text layer.
- * Generated footer text is peeled off the ends of each page first, so a
- * footer can never stand in for a missing body word. Then the source words
- * are aligned with the remaining PDF words: missing source words fail, and
- * unmatched PDF words fail unless they are list numbers.
+ * Word-level alignment of the source text against the PDF text layer, with
+ * every piece of generated text modelled from the source: list labels, each
+ * page's footer region, and repeated table header rows.
  */
 export function comparePdfWords(source: SourceProjection, pageTexts: readonly string[]): PdfWordComparison {
   const words = (text: string) => text.normalize('NFKC').split(/[\s\u00a0]+/u).filter(Boolean);
-  const expected = source.body.flatMap((entry) => words(entry.text));
-  const declared = source.footers.flatMap((footer) => footer ?? []);
-  const hasPageNumbers = declared.includes(PAGE_NUMBER_FIELD);
-  const footerSequences = [...new Set(declared.filter((line) => line !== PAGE_NUMBER_FIELD))].map(words).filter((seq) => seq.length > 0)
+  const expected: ExpectedToken[] = [];
+  let listMarkers = 0;
+  source.body.forEach((entry, index) => {
+    if (entry.marker) {
+      expected.push({ word: entry.marker.normalize('NFKC'), entry: index });
+      listMarkers += 1;
+    }
+    for (const word of words(entry.text)) expected.push({ word, entry: index });
+  });
+
+  // Effective footer per section: a section that declares none inherits the previous one.
+  const effective: Array<{ text: string[]; pageNumbers: boolean }> = [];
+  source.footers.forEach((declared, section) => {
+    const own = declared === null ? undefined : { text: declared.filter((line) => line !== PAGE_NUMBER_FIELD).flatMap(words), pageNumbers: declared.includes(PAGE_NUMBER_FIELD) };
+    effective.push(own ?? effective[section - 1] ?? { text: [], pageNumbers: false });
+  });
+  const regionFor = (section: number, page: number): string[] => {
+    const footer = effective[Math.min(section, effective.length - 1)] ?? { text: [], pageNumbers: false };
+    return [...footer.text, ...(footer.pageNumbers ? [String(page + 1)] : [])];
+  };
+  const headers = new Map<number, string[]>();
+  source.body.forEach((entry) => {
+    if (entry.table?.row === 0) headers.set(entry.table.id, [...(headers.get(entry.table.id) ?? []), ...words(entry.text)]);
+  });
+
+  const pages = pageTexts.map(words);
+  // Footer region at each page head: the longest candidate region that matches; validated after alignment.
+  const candidates = (page: number) => [...new Set(effective.map((_, section) => regionFor(section, page).join('\u0001')))].map((key) => (key ? key.split('\u0001') : []))
     .sort((a, b) => b.length - a.length);
-  let footerOccurrences = 0;
-  const pageNumbers: string[] = [];
-  const pageWords: string[] = [];
-  for (const text of pageTexts) {
-    const tokens = words(text);
-    const matchesAt = (from: number, seq: readonly string[], lo: number, hi: number) =>
-      from >= lo && from + seq.length <= hi && seq.every((word, offset) => tokens[from + offset] === word);
-    // A page has one footer: at most one footer text and one page number, adjacent, at one end of the page.
-    const peel = (fromHead: boolean) => {
-      let lo = 0;
-      let hi = tokens.length;
-      let footer = false;
-      let number: string | undefined;
-      for (let step = 0; step < 2; step += 1) {
-        const edge = fromHead ? tokens[lo] : tokens[hi - 1];
-        if (number === undefined && hasPageNumbers && lo < hi && /^\d+$/u.test(edge!)) {
-          number = edge;
-          if (fromHead) lo += 1;
-          else hi -= 1;
-          continue;
-        }
-        const seq = footer ? undefined : footerSequences.find((candidate) => matchesAt(fromHead ? lo : hi - candidate.length, candidate, lo, hi));
-        if (!seq) break;
-        footer = true;
-        if (fromHead) lo += seq.length;
-        else hi -= seq.length;
-      }
-      return { lo, hi, footer, number };
-    };
-    const head = peel(true);
-    const tail = peel(false);
-    // LibreOffice writes the footer first, so the head wins a tie; a footer text match beats a bare number.
-    const chosen = head.footer || (!tail.footer && head.number !== undefined) ? head : tail;
-    if (chosen.footer) footerOccurrences += 1;
-    if (chosen.number !== undefined) pageNumbers.push(chosen.number);
-    pageWords.push(...tokens.slice(chosen.lo, chosen.hi));
-  }
-  const ops = myersDiff(expected, pageWords, (x, y) => x === y);
-  const missingIdx: number[] = [];
-  const extraIdx: number[] = [];
-  const listNumbers: string[] = [];
-  if (ops) {
-    for (const op of ops) {
-      if (op.kind === 'delete') missingIdx.push(op.ai!);
-      else if (op.kind === 'insert') {
-        if (LIST_NUMBER.test(op.b!)) listNumbers.push(op.b!);
-        else extraIdx.push(op.bi!);
+  const startsWith = (tokens: readonly string[], seq: readonly string[], at = 0) => seq.length > 0 && at + seq.length <= tokens.length && seq.every((word, offset) => tokens[at + offset] === word);
+  const regions = pages.map((tokens, page) => candidates(page).find((region) => region.length === 0 || startsWith(tokens, region)) ?? []);
+
+  // Repeated header candidates: right after the footer region on a later page.
+  type HeaderCandidate = { page: number; table: number; length: number };
+  const headerCandidates: HeaderCandidate[] = [];
+  pages.forEach((tokens, page) => {
+    if (page === 0) return;
+    for (const [table, header] of headers) {
+      if (startsWith(tokens, header, regions[page]!.length)) {
+        headerCandidates.push({ page, table, length: header.length });
+        return;
       }
     }
+  });
+
+  const run = (accepted: readonly HeaderCandidate[]) => {
+    const pdf: Array<{ word: string; page: number }> = [];
+    const insertAt = new Map<HeaderCandidate, number>();
+    pages.forEach((tokens, page) => {
+      let from = regions[page]!.length;
+      const header = accepted.find((candidate) => candidate.page === page);
+      if (header) {
+        insertAt.set(header, pdf.length);
+        from += header.length;
+      }
+      for (const word of tokens.slice(from)) pdf.push({ word, page });
+    });
+    const ops = myersDiff(expected, pdf, (x, y) => x.word === y.word);
+    return { pdf, insertAt, ops };
+  };
+
+  let accepted = headerCandidates;
+  let result = run(accepted);
+  // A repeated header is genuine only where the table continues across the page: the content aligned on
+  // both sides of it must be body rows of that same table. Drop any that are not and align again.
+  for (;;) {
+    if (!result.ops) break;
+    const pdfToExpected = new Map<number, number>();
+    for (const op of result.ops) if (op.kind === 'equal') pdfToExpected.set(op.bi!, op.ai!);
+    const inTableBody = (pdfIndex: number | undefined, table: number) => {
+      const expectedIndex = pdfIndex === undefined ? undefined : pdfToExpected.get(pdfIndex);
+      const entry = expectedIndex === undefined ? undefined : source.body[expected[expectedIndex]!.entry];
+      return entry?.table?.id === table && entry.table.row > 0;
+    };
+    const invalid = accepted.filter((candidate) => {
+      const at = result.insertAt.get(candidate)!;
+      return !(inTableBody(at - 1, candidate.table) && inTableBody(at, candidate.table));
+    });
+    if (invalid.length === 0) break;
+    accepted = accepted.filter((candidate) => !invalid.includes(candidate));
+    result = run(accepted);
+  }
+
+  const { pdf, ops } = result;
+  const missingIdx: number[] = [];
+  const extraIdx: number[] = [];
+  const footerMismatches: PdfWordComparison['footerMismatches'] = [];
+  if (ops) {
+    const pageSection = new Map<number, number>();
+    for (const op of ops) {
+      if (op.kind === 'delete') missingIdx.push(op.ai!);
+      else if (op.kind === 'insert') extraIdx.push(op.bi!);
+      else {
+        const page = pdf[op.bi!]!.page;
+        if (!pageSection.has(page)) pageSection.set(page, source.body[expected[op.ai!]!.entry]!.section ?? 0);
+      }
+    }
+    let section = 0;
+    pages.forEach((_, page) => {
+      section = pageSection.get(page) ?? section;
+      const want = regionFor(section, page).join(' ');
+      const found = regions[page]!.join(' ');
+      if (want !== found) footerMismatches.push({ page: page + 1, section, expected: want, found });
+    });
   } else {
     expected.forEach((_, i) => missingIdx.push(i));
   }
-  const missing = groupSpans(missingIdx, expected);
-  const unexplainedExtra = groupSpans(extraIdx, pageWords);
+  const missing = groupSpans(missingIdx, expected.map((token) => token.word));
+  const unexplainedExtra = groupSpans(extraIdx, pdf.map((token) => token.word));
   return {
-    passed: ops !== null && missing.length === 0 && unexplainedExtra.length === 0,
+    passed: ops !== null && missing.length === 0 && unexplainedExtra.length === 0 && footerMismatches.length === 0,
     normalization: PDF_WORD_NORMALIZATION,
     alignment: ops ? 'complete' : 'over-budget',
     expectedWords: expected.length,
-    pdfWords: pageWords.length,
+    pdfWords: pdf.length,
     missing,
     unexplainedExtra,
-    knownGenerated: { footerOccurrences, pageNumbers, listNumbers },
+    footerMismatches,
+    knownGenerated: {
+      footerRegions: regions.map((region) => region.join(' ')),
+      listMarkers,
+      repeatedTableHeaders: accepted.map(({ page, table }) => ({ page: page + 1, table })),
+    },
     limitations: PDF_WORD_LIMITATIONS,
   };
 }

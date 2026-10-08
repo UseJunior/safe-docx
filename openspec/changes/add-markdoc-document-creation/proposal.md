@@ -61,8 +61,9 @@ byte-deterministic, which the renderer's is not. What is missing is:
 - Optional PDF render through docx-markdoc's own `renderPlainPdf` (LibreOffice
   with a disposable profile, then `pdftotext -raw`). Missing tools report
   `not_run`; `--require-pdf` makes `not_run` a failure. A rendered PDF's text
-  layer must match the source word for word, allowing only each page's
-  footer and page number at a page edge and list numbers (#1185).
+  layer must match the source word for word; list labels, each page's
+  footer and page number, and repeated table headers are modelled from the
+  source, not excused by shape (#1185).
 - A build that fails verification with a mismatch publishes nothing and
   leaves `<stem>.failed-verification.json`, named in the error; the next
   successful build removes it (#1185).

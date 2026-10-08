@@ -378,7 +378,7 @@ async function createLocked(
         const first = words.missing[0] ?? words.unexplainedExtra[0];
         throw new DocxMarkdocError(
           'CREATION_PDF_WORDS_MISMATCH',
-          `PDF text layer does not match the source word for word: ${words.missing.length} missing span(s), ${words.unexplainedExtra.length} unexplained extra span(s)${words.alignment === 'over-budget' ? ' (too different to align)' : ''}${first ? `; first: "${first.words}" after "${first.before}"` : ''}.`,
+          `PDF text layer does not match the source word for word: ${words.missing.length} missing span(s), ${words.unexplainedExtra.length} unexplained extra span(s), ${words.footerMismatches.length} page(s) with the wrong footer${words.alignment === 'over-budget' ? ' (too different to align)' : ''}${first ? `; first: "${first.words}" after "${first.before}"` : ''}.`,
           pdf,
         );
       }
