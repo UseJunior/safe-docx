@@ -53,10 +53,19 @@ byte-deterministic, which the renderer's is not. What is missing is:
   - two compilations are byte-identical;
   - the output imports into the brownfield `docx-markdoc import` flow with
     every body paragraph anchored;
-  - the `.txt` mirror is written from the read-back, never from the source.
+  - the `.txt` mirror is written from the read-back, never from the source;
+  - an independent round trip (#1185): the DOCX re-imported through
+    `docx-markdoc import` equals text read from the original Markdoc alone,
+    never from the lowering or the DocumentSpec, with four negative controls
+    and the mismatches recorded word by word.
 - Optional PDF render through docx-markdoc's own `renderPlainPdf` (LibreOffice
-  with a disposable profile, then `pdftotext`). Missing tools report
-  `not_run`; `--require-pdf` makes `not_run` a failure.
+  with a disposable profile, then `pdftotext -raw`). Missing tools report
+  `not_run`; `--require-pdf` makes `not_run` a failure. A rendered PDF's text
+  layer must match the source word for word, allowing only each page's
+  footer and page number at a page edge and list numbers (#1185).
+- A build that fails verification with a mismatch publishes nothing and
+  leaves `<stem>.failed-verification.json`, named in the error; the next
+  successful build removes it (#1185).
 - Export library entry points: `lowerCreationMarkdoc(source, profile?)` returns
   a `DocumentSpec`, and `createDocumentFromMarkdoc(source, options?)` returns
   the DOCX, the text and the certificate.

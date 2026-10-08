@@ -72,8 +72,8 @@ definitions and SHALL create rectangular tables.
 
 ### Requirement: Verified creation output
 
-Every creation SHALL verify its own output and SHALL write no output when any
-verification fails.
+Every creation SHALL verify its own output and SHALL publish no output when
+any verification fails.
 
 #### Scenario: [SDX-MDOC-CREATE-08] read-back, footer and determinism checks have negative controls
 - **GIVEN** a source that uses every construct in the grammar
@@ -100,3 +100,25 @@ verification fails.
 - **AND** a lock whose initialization fails SHALL be closed and removed, so the stem can be retried at once
 - **AND** a successful run SHALL write `<stem>.docx`, `<stem>.txt` from the read-back, and `<stem>.verification.json`
 - **AND** when LibreOffice or `pdftotext` is unavailable the PDF check SHALL be recorded as `not_run`, and `--require-pdf` SHALL make that a failure
+
+#### Scenario: [SDX-MDOC-CREATE-11] the created DOCX re-imports to the source text, with negative controls
+- **GIVEN** a source that uses every construct in the grammar
+- **WHEN** it is created
+- **THEN** the body and footer paragraphs of the DOCX re-imported through `docx-markdoc import` SHALL equal, after Unicode NFC and whitespace collapsing only, plain text read from the original Markdoc without the lowering or the DocumentSpec
+- **AND** a deleted word, paragraph, table cell and footer text SHALL each be detected as negative controls
+- **AND** a lowering that drops a paragraph, word, table cell or footer text from both the DocumentSpec and its projection SHALL fail this check while the read-back check passes, and the certificate SHALL record each mismatch with its source line and the missing and extra word spans
+
+#### Scenario: [SDX-MDOC-CREATE-12] the PDF text layer matches the source word for word
+- **GIVEN** a rendered PDF that passed the required-text check
+- **WHEN** its text layer is aligned word by word with the source text
+- **THEN** a missing source word SHALL fail with `CREATION_PDF_WORDS_MISMATCH`, including a word that also appears in a footer or next to a repeated copy of itself
+- **AND** an extra word SHALL fail unless it is the page's declared footer text or page number at the start or end of the page, or a list number
+- **AND** texts too different to align SHALL fail rather than pass
+- **AND** a real LibreOffice PDF of every construct, including a table whose cells wrap, SHALL pass
+
+#### Scenario: [SDX-MDOC-CREATE-13] a failed verification leaves a mismatch report and publishes nothing
+- **GIVEN** a build whose verification finds a mismatch
+- **WHEN** it fails
+- **THEN** it SHALL publish nothing and leave every existing output, including `<stem>.verification.json`, byte-identical
+- **AND** it SHALL write `<stem>.failed-verification.json` with the failing checks and mismatches, and the error SHALL name that path or say why it could not be written
+- **AND** the next successful build SHALL remove the report

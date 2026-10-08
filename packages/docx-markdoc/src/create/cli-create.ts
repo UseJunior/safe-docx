@@ -6,6 +6,7 @@ import type { PdfRenderTools } from '../pdf/tools.js';
 import { DocxMarkdocError } from '../errors.js';
 import { createDocumentFromMarkdoc, type CreatedDocument } from './create.js';
 import { PAGE_FIELD_TOKEN } from './lower.js';
+import { comparePdfWords, projectSourceText, type PdfWordComparison } from './oracle.js';
 
 export type CreateCliArgs = {
   markdocPath: string;
@@ -16,12 +17,32 @@ export type CreateCliArgs = {
   replace: boolean;
 };
 
+/** The PDF verdict as recorded: page texts are dropped, and `words` holds the word-level comparison when the PDF rendered. */
+export type RecordedPdfVerdict = Omit<PlainPdfVerdict, 'pageTexts'> & { words?: PdfWordComparison };
+
 export type CreateCliResult = {
   outputs: { docx: string; text: string; certificate: string; pdf?: string };
   created: CreatedDocument;
-  pdf: PlainPdfVerdict | { status: 'skipped' };
+  pdf: RecordedPdfVerdict | { status: 'skipped' };
   summary: string;
 };
+
+/** Verification failures that leave a mismatch report next to the outputs. */
+const REPORTED_FAILURES = new Set(['CREATION_VERIFICATION_FAILED', 'CREATION_PDF_FAILED', 'CREATION_PDF_WORDS_MISMATCH']);
+
+/**
+ * A create run that failed verification. Nothing was published; the mismatch
+ * report (when it could be written) is at `reportPath`.
+ */
+export class CreationFailureReportedError extends DocxMarkdocError {
+  constructor(cause: DocxMarkdocError, readonly reportPath: string | null, reportProblem?: string) {
+    super(
+      cause.code,
+      `${cause.message} Nothing was published. ${reportPath ? `Mismatch report: ${reportPath}` : `The mismatch report could not be written (${reportProblem ?? 'unknown error'})`}.`,
+      cause.details,
+    );
+  }
+}
 
 export function parseCreateCliArgs(args: string[]): CreateCliArgs {
   const positional: string[] = [];
@@ -227,11 +248,67 @@ export async function runCreateCommand(
     certificate: path.join(outputDir, `${stem}.verification.json`),
     pdf: path.join(outputDir, `${stem}.pdf`),
   };
+  const failureReport = path.join(outputDir, `${stem}.failed-verification.json`);
   const releaseLock = await acquireLock(path.join(outputDir, `.${stem}.create.lock`), ops.open);
   try {
-    return await createLocked(options, deps, ops, stem, outputDir, outputs);
+    const result = await createLocked(options, deps, ops, stem, outputDir, outputs, failureReport);
+    // A report from an earlier failed run no longer describes these outputs.
+    if ((await existingKind(failureReport)) === 'file') {
+      await rm(failureReport, { force: true }).catch((error: Error) => {
+        result.summary += `; WARNING: stale ${path.basename(failureReport)} could not be removed (${error.message})`;
+      });
+    }
+    return result;
+  } catch (error) {
+    // Missing PDF tools under --require-pdf is not a mismatch, so it leaves no report.
+    const toolsMissing = error instanceof DocxMarkdocError && (error.details as { status?: string } | undefined)?.status === 'not_run';
+    if (!(error instanceof DocxMarkdocError) || !REPORTED_FAILURES.has(error.code) || toolsMissing) throw error;
+    const written = await writeFailureReport(failureReport, outputDir, stem, options.markdocPath, error);
+    throw new CreationFailureReportedError(error, written.path, written.problem);
   } finally {
     await releaseLock();
+  }
+}
+
+/** Drop the bulky per-page text from a PDF verdict before recording it. */
+function recordedPdf(verdict: PlainPdfVerdict, words?: PdfWordComparison): RecordedPdfVerdict {
+  const { pageTexts: _pageTexts, ...rest } = verdict;
+  return { ...rest, ...(words ? { words } : {}) };
+}
+
+/**
+ * Write `<stem>.failed-verification.json` for a run that failed verification:
+ * the failure, every check result and the mismatches found. It is staged and
+ * renamed into place, so it replaces only an earlier failure report and never
+ * writes through a symlink. It is never one of the published outputs and never
+ * replaces `<stem>.verification.json`.
+ */
+async function writeFailureReport(
+  target: string,
+  outputDir: string,
+  stem: string,
+  markdocPath: string,
+  error: DocxMarkdocError,
+): Promise<{ path: string | null; problem?: string }> {
+  const report = {
+    version: 1,
+    kind: 'markdoc-create-failure',
+    source: path.basename(markdocPath),
+    code: error.code,
+    message: error.message,
+    published: false,
+    note: 'This build failed verification, so nothing was published and existing outputs were left as they were. This file is replaced by the next failed build and removed by the next successful one.',
+    details: error.details && typeof error.details === 'object' && 'pageTexts' in error.details ? recordedPdf(error.details as PlainPdfVerdict) : error.details,
+  };
+  const temporary = path.join(outputDir, `.${stem}.failed-verification-${randomUUID()}.json`);
+  try {
+    if ((await existingKind(target)) === 'other') throw new Error(`${target} exists and is not a file`);
+    await writeFile(temporary, `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx' });
+    await rename(temporary, target);
+    return { path: target };
+  } catch (reportError) {
+    await rm(temporary, { force: true }).catch(() => undefined);
+    return { path: null, problem: reportError instanceof Error ? reportError.message : String(reportError) };
   }
 }
 
@@ -242,10 +319,11 @@ async function createLocked(
   stem: string,
   outputDir: string,
   outputs: { docx: string; text: string; certificate: string; pdf: string },
+  failureReport: string,
 ): Promise<CreateCliResult> {
   // Compare canonical paths (and inodes) so a symlinked directory or file cannot alias an input.
   const inputs = await Promise.all([options.markdocPath, ...(options.profilePath ? [options.profilePath] : [])].map((value) => realpath(value)));
-  for (const output of Object.values(outputs)) {
+  for (const output of [...Object.values(outputs), failureReport]) {
     if (inputs.includes(output) || (await Promise.all(inputs.map((input) => sameFile(input, output)))).some(Boolean)) {
       throw new DocxMarkdocError('CREATION_PATH_COLLISION', `Output ${output} would overwrite an input.`);
     }
@@ -267,7 +345,8 @@ async function createLocked(
       throw new DocxMarkdocError('INVALID_CREATION_PROFILE_JSON', `Style profile is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  const created = await createDocumentFromMarkdoc(await readFile(options.markdocPath, 'utf8'), {
+  const source = await readFile(options.markdocPath, 'utf8');
+  const created = await createDocumentFromMarkdoc(source, {
     ...(profile === undefined ? {} : { profile }),
     ...(profileSource === undefined ? {} : { profileSource }),
     mirrorLabel: path.basename(outputs.docx),
@@ -283,16 +362,27 @@ async function createLocked(
     produced.set(outputs.docx, staged(outputs.docx));
     let pdf: CreateCliResult['pdf'] = { status: 'skipped' };
     if (options.pdf) {
-      pdf = await renderPlainPdf({
+      const verdict = await renderPlainPdf({
         docxPath: staged(outputs.docx),
         outputPdfPath: staged(outputs.pdf),
         requiredText: requiredPdfText(created),
         ...(deps.renderTools ? { tools: deps.renderTools } : {}),
       });
-      if (pdf.status === 'failed' || (pdf.status === 'not_run' && options.requirePdf)) {
-        throw new DocxMarkdocError('CREATION_PDF_FAILED', `PDF check ${pdf.status}: ${pdf.reason ?? 'unknown'}${pdf.missingText ? ` (missing: ${pdf.missingText.join(' | ')})` : ''}.`, pdf);
+      if (verdict.status === 'failed' || (verdict.status === 'not_run' && options.requirePdf)) {
+        throw new DocxMarkdocError('CREATION_PDF_FAILED', `PDF check ${verdict.status}: ${verdict.reason ?? 'unknown'}${verdict.missingText ? ` (missing: ${verdict.missingText.join(' | ')})` : ''}.`, recordedPdf(verdict));
       }
-      if (pdf.status === 'passed') produced.set(outputs.pdf, staged(outputs.pdf));
+      // Every source word must reach the PDF text layer, and the PDF may add only known generated text.
+      const words = verdict.status === 'passed' ? comparePdfWords(projectSourceText(source), verdict.pageTexts ?? []) : undefined;
+      pdf = recordedPdf(verdict, words);
+      if (words && !words.passed) {
+        const first = words.missing[0] ?? words.unexplainedExtra[0];
+        throw new DocxMarkdocError(
+          'CREATION_PDF_WORDS_MISMATCH',
+          `PDF text layer does not match the source word for word: ${words.missing.length} missing span(s), ${words.unexplainedExtra.length} unexplained extra span(s)${words.alignment === 'over-budget' ? ' (too different to align)' : ''}${first ? `; first: "${first.words}" after "${first.before}"` : ''}.`,
+          pdf,
+        );
+      }
+      if (verdict.status === 'passed') produced.set(outputs.pdf, staged(outputs.pdf));
     }
     const certificate = { ...created.certificate, pdf };
     await writeFile(staged(outputs.text), created.text, { flag: 'wx' });
@@ -314,7 +404,8 @@ async function createLocked(
       `footers ok (negative control ok)`,
       'deterministic',
       `brownfield ok (${checks.brownfield.anchoredParagraphs} anchored)`,
-      pdf.status === 'skipped' ? 'pdf skipped' : `pdf ${pdf.status}${'pageCount' in pdf && pdf.pageCount ? ` (${pdf.pageCount} pages)` : ''}${pdf.status === 'not_run' ? ` (${pdf.reason})` : ''}`,
+      `round trip ok (${checks.roundTrip.body.expected} paragraphs; negative controls ok)`,
+      pdf.status === 'skipped' ? 'pdf skipped' : `pdf ${pdf.status}${'pageCount' in pdf && pdf.pageCount ? ` (${pdf.pageCount} pages)` : ''}${pdf.status === 'not_run' ? ` (${pdf.reason})` : ''}${'words' in pdf && pdf.words ? `; pdf words ok (${pdf.words.expectedWords} source words)` : ''}`,
     ].join('; ');
     return {
       outputs: { docx: outputs.docx, text: outputs.text, certificate: outputs.certificate, ...(produced.has(outputs.pdf) ? { pdf: outputs.pdf } : {}) },

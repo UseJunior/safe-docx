@@ -165,7 +165,7 @@ The profile is plain JSON. Every field is optional and merges over the default:
 
 ## Verification certificate
 
-Every `create` build runs these checks and refuses to write outputs if any
+Every `create` build runs these checks and publishes no output if any
 fails:
 
 1. **Package:** `checkGeneratedPackage` reports no issues.
@@ -192,14 +192,67 @@ fails:
    table that ends a section.
 6. **Mirror:** `<stem>.txt` is written from the read-back, re-read and
    compared.
-7. **PDF (optional):** render with LibreOffice in a disposable profile and run
-   `pdftotext`. The PDF must be non-empty and must contain the first and last
-   non-empty paragraphs (the last truncated to 80 characters when longer than
-   120) and every footer text, compared with whitespace collapsed. Missing
-   tools report `not_run`.
+7. **Independent round trip (#1185):** checks 3 and 4 compare the DOCX with
+   the projection of the lowered DocumentSpec, so a lowering bug that drops
+   content from both passes them. This check takes its expected text from
+   the original Markdoc only (`create/oracle.ts`, its own AST walk; it never
+   calls the validator's renderer, the lowering, the theme or the engine) and
+   its actual text from `docx-markdoc import` of the created DOCX. Body
+   paragraphs and each section's footer paragraphs are compared as
+   sequences, with a Myers alignment, after Unicode NFC and whitespace
+   collapsing only (no case, punctuation or duplicate folding); empty
+   paragraphs are dropped on both sides. A footer page-number field matches
+   any decimal number. Each mismatch is recorded as `missing`, `extra` or
+   `changed`, with its source line and, for `changed`, the missing and extra
+   word spans with four words of context. Four negative controls must each
+   be detected: a deleted word, paragraph, table cell and footer text
+   (`not applicable` when the source has none). The oracle encodes the
+   grammar's layout contract (a signer is a 30-underscore line, a break, the
+   name, a tab and the date; a fill renders inside brackets; list numbers are
+   not paragraph text).
+8. **PDF (optional):** render with LibreOffice in a disposable profile and run
+   `pdftotext -raw`. The PDF must be non-empty and must contain the first and
+   last non-empty paragraphs (the last truncated to 80 characters when longer
+   than 120) and every footer text, compared with whitespace collapsed.
+   Missing tools report `not_run`.
+9. **PDF words (#1185):** when the PDF passes check 8, its text layer is
+   aligned word by word (NFKC, whitespace split) with the source text. `-raw`
+   is content-stream order, which for LibreOffice is document order: table
+   cells row by row even when they wrap, and a justified line ending in a
+   manual break kept whole; the default reading-order mode reads a table
+   column by column. Generated text is accounted for narrowly:
+   - each page's footer (at most one declared footer text and, when the
+     document declares page numbers, one adjacent page number) is removed
+     only from the start or end of the page, so footer text can never stand in
+     for a missing body word;
+   - an unmatched token shaped like a list number (`1.`, `(a)`, `(iv)`, a
+     bullet) counts as generated.
+
+   Any other missing or extra word fails with `CREATION_PDF_WORDS_MISMATCH`;
+   texts too different to align within 2,000 edits fail as `over-budget`.
+   The recorded `limitations` string states what this cannot catch (a
+   duplicated list number; and a false failure, never a false pass, when a
+   body paragraph at a page edge equals a footer text).
 
 `<stem>.verification.json` records the source, profile and output SHA-256 hashes,
-each check's outcome, the block inventory and the section inventory.
+each check's outcome, the block inventory and the section inventory. The PDF
+verdict is recorded without its per-page text, with the word comparison
+under `pdf.words`.
+
+### Failure report
+
+A failed check that found a mismatch (`CREATION_VERIFICATION_FAILED`,
+`CREATION_PDF_FAILED` with a rendered PDF, `CREATION_PDF_WORDS_MISMATCH`)
+publishes nothing and leaves existing outputs untouched, including an earlier
+`<stem>.verification.json`. It writes `<stem>.failed-verification.json`
+(kind `markdoc-create-failure`, the error code and message, `published:
+false`, and the failing certificate or PDF verdict with every mismatch),
+staged and renamed into place under the stem lock, so it never writes through
+a symlink. The error message names its path (or says why it could not be
+written). The next failed build replaces it; the next successful build
+removes it. Missing PDF tools under `--require-pdf` are not a mismatch and
+leave no report, and validation errors are reported with their line number
+only.
 
 ## CLI
 

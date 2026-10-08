@@ -29,6 +29,8 @@ export type PlainPdfVerdict = {
   reason?: string;
   /** Pages delimited by form feeds in the pdftotext output, blank pages included. */
   pageCount?: number;
+  /** The pdftotext text of each page, uncollapsed, when extraction ran (for word-level checks). */
+  pageTexts?: string[];
   missingText?: string[];
   pdfSha256?: string;
 };
@@ -99,18 +101,23 @@ export async function renderPlainPdf(request: PlainPdfRequest): Promise<PlainPdf
     }
     const pdf = await readFile(pdfPath);
     if (pdf.length === 0) return { status: 'failed', reason: 'LibreOffice produced an empty PDF' };
-    const extracted = await tools.run(pdftotext!, [pdfPath, '-']);
+    // -raw keeps content-stream order, which for LibreOffice output is document
+    // order: table cells row by row (even when a cell wraps) and a justified
+    // line ending in a manual break kept whole. The default reading-order mode
+    // reads a table column by column and can scatter such a line.
+    const extracted = await tools.run(pdftotext!, ['-raw', pdfPath, '-']);
     if (extracted.code !== 0) return { status: 'failed', reason: `pdftotext failed: ${(extracted.stderr || extracted.stdout).trim()}` };
-    const pages = splitPdfTextPages(extracted.stdout).map(collapse);
+    const pageTexts = splitPdfTextPages(extracted.stdout);
+    const pages = pageTexts.map(collapse);
     const pdfSha256 = createHash('sha256').update(pdf).digest('hex');
-    if (pages.every((page) => page.length === 0)) return { status: 'failed', reason: 'PDF text layer is empty', pageCount: pages.length, pdfSha256 };
+    if (pages.every((page) => page.length === 0)) return { status: 'failed', reason: 'PDF text layer is empty', pageCount: pages.length, pdfSha256, pageTexts };
     // A needle must sit inside one page: matching across a page break could join unrelated text.
     const missingText = request.requiredText.map(collapse).filter((needle) => needle.length > 0 && !pages.some((page) => page.includes(needle)));
     if (missingText.length > 0) {
-      return { status: 'failed', reason: 'required text missing from the PDF text layer', pageCount: pages.length, pdfSha256, missingText };
+      return { status: 'failed', reason: 'required text missing from the PDF text layer', pageCount: pages.length, pdfSha256, missingText, pageTexts };
     }
     await publishPdf(pdfPath, request.outputPdfPath);
-    return { status: 'passed', pageCount: pages.length, pdfSha256 };
+    return { status: 'passed', pageCount: pages.length, pdfSha256, pageTexts };
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
