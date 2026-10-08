@@ -108,10 +108,12 @@ describe('creation edge cases', () => {
     const paragraphs = Array.from(document.getElementsByTagNameNS(W, 'p'));
     const style = (p: Element) => p.getElementsByTagNameNS(W, 'pStyle').item(0)?.getAttribute('w:val');
     expect(paragraphs.map(style)).toEqual(['BodyText', 'Centered', 'Centered', 'BodyText', 'Legend']);
-    expect(paragraphs[3]!.getElementsByTagNameNS(W, 'pageBreakBefore')).toHaveLength(1);
-    expect(paragraphs.filter((p) => p.getElementsByTagNameNS(W, 'pageBreakBefore').length > 0)).toHaveLength(1);
+    // A toggle is on when present without w:val or with a true value; w:val="0" would switch it off.
+    const enabled = (p: Element, name: string) => Array.from(p.getElementsByTagNameNS(W, name))
+      .some((el) => ['', '1', 'true', 'on'].includes(el.getAttribute('w:val') ?? ''));
+    expect(paragraphs.map((p) => enabled(p, 'pageBreakBefore'))).toEqual([false, false, false, true, false]);
     // The legend keeps the paragraph before it with it; its brackets are not highlighted.
-    expect(paragraphs[3]!.getElementsByTagNameNS(W, 'keepNext')).toHaveLength(1);
+    expect(enabled(paragraphs[3]!, 'keepNext')).toBe(true);
     expect(paragraphs[4]!.getElementsByTagNameNS(W, 'highlight')).toHaveLength(0);
     expect(await code(createDocumentFromMarkdoc('{% center %}\nText.\n\n- a list\n{% /center %}'))).toBe('UNSUPPORTED_CREATION_SYNTAX');
   });
