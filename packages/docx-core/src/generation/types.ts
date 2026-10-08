@@ -17,6 +17,12 @@ export type DocumentSpec = {
   meta?: DocumentMetaSpec;
   /** Optional partial override for the emitted package theme. */
   theme?: DocumentThemeSpec;
+  /**
+   * Document-wide run and paragraph defaults (`w:docDefaults`). Every
+   * paragraph and run inherits them unless a style or direct formatting
+   * overrides them, so a house font, size, and spacing are declared once.
+   */
+  defaults?: DocumentDefaultsSpec;
   /** Emitted to word/styles.xml. Document defaults + Normal are always emitted. */
   styles?: StyleSpec[];
   /** Emitted to word/numbering.xml when non-empty. */
@@ -27,6 +33,13 @@ export type DocumentSpec = {
     /** Default true. When false, drafting notes compile to nothing. */
     includeDraftingNotes?: boolean;
   };
+};
+
+export type DocumentDefaultsSpec = {
+  /** Merged over the built-in Calibri 11pt baseline in `w:rPrDefault`. */
+  run?: RunProps;
+  /** Emitted as `w:pPrDefault`; empty when omitted. */
+  paragraph?: StyleSpec['paragraph'];
 };
 
 export type DocumentMetaSpec = {
@@ -188,7 +201,7 @@ export type RunProps = {
   themeShade?: string;
   /** Fixed text highlight color; arbitrary run fill belongs to run shading. */
   highlight?: HighlightColor;
-  /** Applied to ascii + hAnsi + cs so all script ranges agree. */
+  /** Applied to ascii + hAnsi + eastAsia + cs so all script ranges agree. */
   font?: string;
   sizePt?: number;
   caps?: boolean;
