@@ -113,14 +113,11 @@ export function buildParagraphPropsElement(
   if (props.styleId !== undefined) {
     children.set(W.pStyle, createWmlElement(doc, W.pStyle, { 'w:val': props.styleId }));
   }
-  if (props.keepNext) {
-    children.set(W.keepNext, createWmlElement(doc, W.keepNext));
-  }
-  if (props.keepLines) {
-    children.set(W.keepLines, createWmlElement(doc, W.keepLines));
-  }
-  if (props.pageBreakBefore) {
-    children.set(W.pageBreakBefore, createWmlElement(doc, W.pageBreakBefore));
+  // Toggle properties: an explicit false emits w:val="0" so it can override a
+  // true inherited from document defaults or a style (as the run builder does).
+  for (const key of ['keepNext', 'keepLines', 'pageBreakBefore'] as const) {
+    const value = props[key];
+    if (value !== undefined) children.set(W[key], createWmlElement(doc, W[key], value ? undefined : { 'w:val': '0' }));
   }
   if (props.borders) {
     children.set(W.pBdr, buildParagraphBordersElement(doc, props.borders));

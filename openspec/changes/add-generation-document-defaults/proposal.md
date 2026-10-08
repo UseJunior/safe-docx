@@ -27,6 +27,10 @@ renderer because safe-docx could not declare the house style once (#1162).
   to set CJK text falls back as Word always does, and a caller can no longer
   choose a separate East Asian face through `font`.
 - List the document default font first in `word/fontTable.xml`.
+- Emit an explicit `false` for `keepNext`, `keepLines` and `pageBreakBefore`
+  as `w:val="0"`, so a style or paragraph can override a true document
+  default. Before this change an explicit `false` emitted nothing and so
+  inherited.
 - Reject empty typeface names.
 - Add scenario `SDX-GEN-110`.
 

@@ -18,4 +18,5 @@ explicit run font SHALL be written to all four `w:rFonts` channels (`ascii`,
 - **AND** omitting `defaults` SHALL emit the Calibri 11pt baseline on all four channels, and a partial `defaults.run` SHALL merge over that baseline
 - **AND** `word/fontTable.xml` SHALL list the declared default typeface first
 - **AND** an explicitly `undefined` default font or size SHALL fall back to the baseline rather than omit it
+- **AND** a style or paragraph that sets `keepNext`, `keepLines` or `pageBreakBefore` to false SHALL emit the property with `w:val="0"`, overriding a true document default, while an omitted property SHALL emit nothing and inherit
 - **AND** empty typeface names, non-positive sizes and negative before/after spacing SHALL be rejected before emission
