@@ -823,9 +823,9 @@ function normalizeWholeParagraphRevisionBoundaries(
   };
   const carriesParagraphMarkRevision = (paragraph: WmlElement): boolean => {
     const properties = paragraphProperties(paragraph);
-    const markProperties = properties && childElements(properties).find((child) => child.localName === 'rPr');
-    return !!markProperties && childElements(markProperties).some((child) =>
-      child.namespaceURI === W_NS && PARAGRAPH_MARK_REVISION_LOCALS.has(child.localName));
+    return carriesParagraphMarkRevisionMarker(
+      properties && childElements(properties).find((child) => child.localName === 'rPr'),
+    );
   };
 
   const relocate = (paragraph: WmlElement, predecessor: WmlElement | undefined): void => {
@@ -1003,11 +1003,16 @@ const CHANGE_ELEMENT_BY_SCOPE = {
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
  * @see https://github.com/UseJunior/safe-docx/issues/944
  */
-function applyPropertyDelta(node: WmlElement, tagged: TaggedNode, revision: ComparisonRevision): void {
+function applyPropertyDelta(
+  node: WmlElement,
+  tagged: TaggedNode,
+  revision: ComparisonRevision,
+  allocateRevision?: () => ComparisonRevision,
+): void {
   if (tagged.tag !== 'both' || !tagged.propertyDelta) return;
   const delta = tagged.propertyDelta;
   if (delta.scope === 'paragraph') {
-    applyParagraphPropertyDelta(node, delta.original, delta.revised, revision);
+    applyParagraphPropertyDelta(node, delta.original, delta.revised, revision, allocateRevision);
     return;
   }
   if (delta.scope === 'section') {
@@ -1067,17 +1072,105 @@ function appendChangeMetadata(change: WmlElement, revision: ComparisonRevision):
 }
 
 /**
+ * Empty boundary paragraphs that carry the other side of a section-break
+ * revision, keyed by the aligned paragraph they follow. Filled while a
+ * paragraph's property delta is applied and drained by
+ * {@link insertSectionBoundaryParagraphs} once the story is assembled.
+ */
+const sectionBoundaryParagraphs = new WeakMap<WmlElement, WmlElement>();
+
+/** True when paragraph-mark run properties already hold a tracked break revision. */
+function carriesParagraphMarkRevisionMarker(mark: WmlElement | null | undefined): boolean {
+  return !!mark && childElements(mark).some((child) =>
+    child.namespaceURI === W_NS && PARAGRAPH_MARK_REVISION_LOCALS.has(child.localName));
+}
+
+/** The `CT_PPrBase` children of a paragraph's properties, serialized for equality. */
+function paragraphBaseSignature(properties: WmlElement | null | undefined): string {
+  if (!properties) return '';
+  const serializer = new XMLSerializer();
+  return childElements(properties)
+    .filter((child) => !['rPr', 'sectPr', 'pPrChange'].includes(child.localName))
+    .map((child) => serializer.serializeToString(child))
+    .join('');
+}
+
+/**
+ * Build the empty paragraph that owns the original paragraph mark when an
+ * aligned paragraph gains or loses its section break. It keeps the original
+ * base properties and mark formatting, carries a deleted paragraph mark, and,
+ * when the break was removed, the original full `w:sectPr` with its
+ * header/footer references.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.17
+ * @see https://github.com/UseJunior/safe-docx/issues/1144
+ */
+function buildSectionBoundaryParagraph(
+  owner: WmlElement,
+  original: WmlElement | null,
+  originalSection: WmlElement | null | undefined,
+  revision: ComparisonRevision,
+): WmlElement {
+  const document = owner.ownerDocument!;
+  const paragraph = document.createElementNS(W_NS, 'w:p') as WmlElement;
+  const properties = document.createElementNS(W_NS, 'w:pPr') as WmlElement;
+  const originalChildren = original ? childElements(original) : [];
+  for (const child of originalChildren) {
+    if (!['rPr', 'sectPr', 'pPrChange'].includes(child.localName)) properties.appendChild(cloneElement(child));
+  }
+  const mark = document.createElementNS(W_NS, 'w:rPr') as WmlElement;
+  const originalMark = originalChildren.find((child) => child.localName === 'rPr');
+  if (originalMark) {
+    for (const child of childElements(originalMark)) {
+      if (child.localName !== 'rPrChange') mark.appendChild(cloneElement(child));
+    }
+  }
+  const marker = document.createElementNS(W_NS, 'w:del') as WmlElement;
+  appendChangeMetadata(marker, revision);
+  // The break is still one section-property revision in the statistics.
+  marker.removeAttribute(COMPARISON_REVISION_ATTRIBUTE);
+  placeParagraphMarkRevisionMarker(mark, marker, 'w:del');
+  properties.appendChild(mark);
+  if (originalSection) {
+    const section = cloneElement(originalSection);
+    for (const stale of childElements(section).filter((child) => child.localName === 'sectPrChange')) {
+      section.removeChild(stale);
+    }
+    properties.appendChild(section);
+  }
+  paragraph.appendChild(properties);
+  return paragraph;
+}
+
+/**
  * Keep revised paragraph properties live and append the original CT_PPrBase
  * snapshot as the final child required by CT_PPr.
  *
+ * A paragraph that gains or loses its section break is not a section-property
+ * change: `w:sectPrChange` holds `CT_SectPrBase`, so it cannot restore the
+ * removed section's header/footer references, and an added break restored
+ * from an empty snapshot is still a live section. Record the break on the
+ * paragraph mark instead, as Word does: this paragraph keeps the revised mark
+ * (marked inserted, with the revised `w:sectPr` when the break was added) and
+ * an empty boundary paragraph after it keeps the original mark (marked
+ * deleted, with the original `w:sectPr` when the break was removed). Reject
+ * All merges the content into the original mark; Accept All merges the empty
+ * boundary away. `w:sectPrChange` remains for page-setup changes to a section
+ * that exists on both sides.
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
  * @see https://github.com/UseJunior/safe-docx/issues/679
+ * @see https://github.com/UseJunior/safe-docx/issues/1144
  */
 function applyParagraphPropertyDelta(
   paragraph: WmlElement,
   original: WmlElement | null,
   revised: WmlElement | null,
   revision: ComparisonRevision,
+  allocateRevision?: () => ComparisonRevision,
 ): void {
   const live = revised ? cloneElement(revised) : paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
   for (const stale of childElements(live).filter((child) => child.localName === 'pPrChange')) live.removeChild(stale);
@@ -1085,13 +1178,21 @@ function applyParagraphPropertyDelta(
   const originalMark = original && childElements(original).find((child) => child.localName === 'rPr');
   const liveSection = childElements(live).find((child) => child.localName === 'sectPr');
   const originalSection = original && childElements(original).find((child) => child.localName === 'sectPr');
+  // A mark that already carries a tracked break revision cannot take another.
+  const splitsSectionBoundary = !!allocateRevision &&
+    !liveSection !== !originalSection &&
+    !carriesParagraphMarkRevisionMarker(liveMark) &&
+    !carriesParagraphMarkRevisionMarker(originalMark);
+  let mark = liveMark;
+  const ensureMark = (): WmlElement => {
+    if (mark) return mark;
+    mark = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
+    const boundary = childElements(live).find((child) => ['sectPr', 'pPrChange'].includes(child.localName));
+    live.insertBefore(mark, boundary ?? null);
+    return mark;
+  };
   if ((liveMark ? new XMLSerializer().serializeToString(liveMark) : '') !==
       (originalMark ? new XMLSerializer().serializeToString(originalMark) : '')) {
-    const mark = liveMark ?? paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
-    if (!liveMark) {
-      const boundary = childElements(live).find((child) => ['sectPr', 'pPrChange'].includes(child.localName));
-      live.insertBefore(mark, boundary ?? null);
-    }
     const markChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPrChange') as WmlElement;
     appendChangeMetadata(markChange, revision);
     const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
@@ -1101,7 +1202,7 @@ function applyParagraphPropertyDelta(
       }
     }
     markChange.appendChild(snapshot);
-    mark.appendChild(markChange);
+    ensureMark().appendChild(markChange);
   }
   // A prior w:sectPrChange in the revised input is not this comparison's
   // revision; drop it whether or not a new one is recorded below.
@@ -1115,7 +1216,16 @@ function applyParagraphPropertyDelta(
   // `w:sectPrChange` to record (#944, #1100).
   const serialize = (element: WmlElement | null | undefined): string =>
     element ? new XMLSerializer().serializeToString(buildSectPrBaseSnapshot(element, paragraph.ownerDocument!)) : '';
-  if (serialize(liveSection) !== serialize(originalSection)) {
+  if (splitsSectionBoundary) {
+    const marker = paragraph.ownerDocument!.createElementNS(W_NS, 'w:ins') as WmlElement;
+    appendChangeMetadata(marker, allocateRevision!());
+    marker.removeAttribute(COMPARISON_REVISION_ATTRIBUTE);
+    placeParagraphMarkRevisionMarker(ensureMark(), marker, 'w:ins');
+    sectionBoundaryParagraphs.set(
+      paragraph,
+      buildSectionBoundaryParagraph(paragraph, original, originalSection, allocateRevision!()),
+    );
+  } else if (serialize(liveSection) !== serialize(originalSection)) {
     const section = liveSection ?? paragraph.ownerDocument!.createElementNS(W_NS, 'w:sectPr') as WmlElement;
     if (!liveSection) live.appendChild(section);
     const change = paragraph.ownerDocument!.createElementNS(W_NS, 'w:sectPrChange') as WmlElement;
@@ -1123,19 +1233,38 @@ function applyParagraphPropertyDelta(
     change.appendChild(buildSectPrBaseSnapshot(originalSection, paragraph.ownerDocument!));
     section.appendChild(change);
   }
-  const pPrChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPrChange') as WmlElement;
-  appendChangeMetadata(pPrChange, revision);
-  const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
-  if (original) {
-    for (const child of childElements(original)) {
-      if (!['rPr', 'sectPr', 'pPrChange'].includes(child.localName)) snapshot.appendChild(cloneElement(child));
+  // With a split boundary, Reject All restores base formatting from the
+  // original mark, so a pPrChange is needed only for a real base change.
+  if (!splitsSectionBoundary || paragraphBaseSignature(live) !== paragraphBaseSignature(original)) {
+    const pPrChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPrChange') as WmlElement;
+    appendChangeMetadata(pPrChange, revision);
+    const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
+    if (original) {
+      for (const child of childElements(original)) {
+        if (!['rPr', 'sectPr', 'pPrChange'].includes(child.localName)) snapshot.appendChild(cloneElement(child));
+      }
     }
+    pPrChange.appendChild(snapshot);
+    live.appendChild(pPrChange);
   }
-  pPrChange.appendChild(snapshot);
-  live.appendChild(pPrChange);
   const current = childElements(paragraph).find((child) => child.localName === 'pPr');
   if (current) paragraph.replaceChild(live, current);
   else paragraph.insertBefore(live, paragraph.firstChild);
+}
+
+/**
+ * Place each section-break boundary paragraph directly after the aligned
+ * paragraph whose break changed.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1144
+ */
+function insertSectionBoundaryParagraphs(root: WmlElement): void {
+  for (const paragraph of Array.from(root.getElementsByTagNameNS(W_NS, 'p')) as WmlElement[]) {
+    const boundary = sectionBoundaryParagraphs.get(paragraph);
+    if (!boundary || !paragraph.parentNode) continue;
+    sectionBoundaryParagraphs.delete(paragraph);
+    paragraph.parentNode.insertBefore(boundary, paragraph.nextSibling);
+  }
 }
 
 function wrapPreserved(node: WmlElement, stack: readonly RevisionProvenance[]): WmlElement {
@@ -2124,7 +2253,7 @@ function emitNode(
       base.removeChild(stale);
     }
   }
-  applyPropertyDelta(base, node, nodeRevision);
+  applyPropertyDelta(base, node, nodeRevision, allocateRevision);
   const entry = plan.entries.get(node)!;
   if (node.tag === 'original') {
     const relation = moveFor(node, moves);
@@ -2287,6 +2416,7 @@ export function serializeTaggedTree(
     splitBookmarkIds,
     options.revisionGrouping ?? 'token-minimal',
   );
+  insertSectionBoundaryParagraphs(emitted);
   splitCrossParagraphBookmarkCounterparts(emitted, originalBookmarkIds, allocateRevision);
   normalizeTerminalWholeParagraphMoveOwnership(emitted, options.moves ?? [], generatedRevisionIds);
   normalizeWholeParagraphMoveRangeStarts(emitted, options.moves ?? []);
