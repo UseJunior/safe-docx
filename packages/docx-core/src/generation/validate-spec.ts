@@ -121,6 +121,8 @@ export function validateSpec(spec: DocumentSpec): void {
   }
 
   validateTheme(spec);
+  if (spec.defaults?.run) validateRunProps(spec.defaults.run, '/defaults/run');
+  if (spec.defaults?.paragraph) validateParagraphProps(spec.defaults.paragraph, '/defaults/paragraph');
   const declaredStyleIds = validateStyles(spec.styles ?? []);
   const numbering = validateNumbering(spec.numbering ?? []);
 
@@ -577,6 +579,9 @@ function validateInline(run: InlineSpec, path: string): void {
 }
 
 function validateRunProps(props: RunProps, path: string): void {
+  if (props.font !== undefined && (typeof props.font !== 'string' || props.font.trim().length === 0)) {
+    throw new GenerationSpecError('invalid_value', `${path}/font`, 'font must be a non-empty typeface name');
+  }
   if (props.underline !== undefined) {
     requireSupportedSchemaEnum(props.underline, `${path}/underline`, 'ST_Underline', UNDERLINES);
   }
