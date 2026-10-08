@@ -176,4 +176,32 @@ describe('Traceability: document defaults and four-channel fonts', () => {
       }
     },
   );
+
+  test.openspec('[SDX-GEN-110] an explicit false overrides a true paragraph default')(
+    'Scenario: an explicit false overrides a true paragraph default',
+    async () => {
+      const buffer = await generateDocx({
+        defaults: { paragraph: { keepNext: true, keepLines: true, pageBreakBefore: true } },
+        styles: [{ styleId: 'Exception', name: 'Exception', type: 'paragraph', basedOn: 'Normal', paragraph: { keepNext: false, keepLines: false, pageBreakBefore: false } }],
+        sections: [{ blocks: [
+          { kind: 'paragraph', keepNext: false, keepLines: false, pageBreakBefore: false, runs: [{ kind: 'text', text: 'Direct override.' }] },
+          { kind: 'paragraph', runs: [{ kind: 'text', text: 'Inherits the defaults.' }] },
+        ] }],
+      });
+      const stylesXml = (await readZipText(buffer, 'word/styles.xml'))!;
+      const documentXml = (await readZipText(buffer, 'word/document.xml'))!;
+      const toggles = (element: Element) => ['keepNext', 'keepLines', 'pageBreakBefore'].map((name) => {
+        const found = getDirectChildrenByName(getDirectChildrenByName(element, 'pPr')[0] ?? element, name)[0];
+        return found ? (found.getAttribute('w:val') ?? 'on') : null;
+      });
+      const styles = parseXml(stylesXml);
+      expect(toggles(styles.getElementsByTagName('w:pPrDefault').item(0)!)).toEqual(['on', 'on', 'on']);
+      const exception = Array.from(styles.getElementsByTagName('w:style')).find((style) => attr(style, 'styleId') === 'Exception')!;
+      expect(toggles(exception)).toEqual(['0', '0', '0']);
+      const [direct, inherited] = Array.from(parseXml(documentXml).getElementsByTagName('w:p'));
+      expect(toggles(direct!)).toEqual(['0', '0', '0']);
+      expect(inherited!.getElementsByTagName('w:pPr')).toHaveLength(0);
+      validateAgainstSchema({ 'styles.xml': stylesXml, 'document.xml': documentXml });
+    },
+  );
 });
