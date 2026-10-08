@@ -584,6 +584,35 @@ such as an unclosed tag, and headings below `###`.
   `page-numbers` attribute, the section keeps the previous section's footer.
   `page-numbers=false` alone gives the section its own empty footer.
 
+### Migrating from a per-matter python-docx renderer
+
+Projects that build new instruments (consents, resolutions, certificates)
+with a copied python-docx script can replace it with one command per
+document:
+
+```bash
+npx -y @usejunior/docx-markdoc create authoring/<slug>.mdoc outbound/draft --replace
+# add --require-pdf where LibreOffice and pdftotext are installed
+```
+
+The command writes four files into `outbound/draft/`:
+
+- `<slug>.docx`;
+- `<slug>.txt`, read back from the `.docx` and written beside it (not in a
+  `text/` subfolder);
+- `<slug>.pdf`;
+- `<slug>.verification.json`.
+
+Nothing is published unless every check passes.
+
+Convert each `.mdoc` once, using the table below. Clause numbers typed by
+hand become Markdown ordered lists, whose real `1.` / `(a)` / `(i)`
+numbering survives later redlines. `[…]` stays a highlighted fill-in. Wrap
+literal brackets in `{% literal %}…{% /literal %}`. Leftover pseudo-HTML
+fails with `LEGACY_MARKUP`, and the error names the tag to use instead.
+Make later edits through `docx-markdoc import` / `compile`, which produce
+tracked changes.
+
 ### Moving from per-matter pseudo-HTML `.mdoc`
 
 | Old convention | Markdoc |
