@@ -190,6 +190,17 @@ describe('Traceability: independent round-trip oracle for created documents', ()
       const headFooter = comparePdfWords({ body: [{ text: 'Approved in Section 2' }], footers: [['Confidential', PAGE_NUMBER_FIELD]] }, ['Confidential\n1\nApproved in Section 2\n']);
       expect(headFooter).toMatchObject({ passed: true, knownGenerated: { footerOccurrences: 1, pageNumbers: ['1'] } });
 
+      // Page-edge footer removal cannot hide body text equal to the footer: when the body's last
+      // paragraph is the footer text and the body copy is dropped, only the footer copy is removed.
+      const edge: SourceProjection = { body: [{ text: 'Terms.' }, { text: 'Confidential' }], footers: [['Confidential', PAGE_NUMBER_FIELD]] };
+      expect(comparePdfWords(edge, ['Confidential\n1\nTerms.\nConfidential\n']).passed).toBe(true);
+      expect(comparePdfWords(edge, ['Terms.\nConfidential\nConfidential\n1\n']).passed).toBe(true);
+      for (const page of ['Confidential\n1\nTerms.\n', 'Terms.\nConfidential\n1\n']) {
+        expect(comparePdfWords(edge, [page]), page).toMatchObject({ passed: false, missing: [{ words: 'Confidential' }] });
+      }
+      // A footer at both edges is removed once; the second copy is still an extra.
+      expect(comparePdfWords(edge, ['Confidential\n1\nTerms.\nConfidential\nConfidential\n']).unexplainedExtra.map((span) => span.words)).toEqual(['Confidential']);
+
       // Ligatures fold under NFKC; nothing else is normalized.
       expect(comparePdfWords({ body: [{ text: 'final' }], footers: [null] }, ['ﬁnal\n']).passed).toBe(true);
       expect(comparePdfWords({ body: [{ text: 'Final' }], footers: [null] }, ['final\n']).passed).toBe(false);
@@ -254,6 +265,22 @@ describe('Traceability: independent round-trip oracle for created documents', ()
         expect(await snapshot()).toEqual(before);
         expect(await readFile(certificatePath, 'utf8')).toBe(certificate);
         expect((await readdir(out)).filter((name) => name.startsWith('.'))).toEqual([]);
+
+        // The next failed build replaces the report.
+        const extraWord = pdfText('CONSENT\nThe Board approves the whole plan.\nThe officers may act.\n\f');
+        await expect(runCreateCommand([source, out, '--replace'], { renderTools: extraWord })).rejects.toMatchObject({ code: 'CREATION_PDF_WORDS_MISMATCH' });
+        const replaced = JSON.parse(await readFile(report, 'utf8'));
+        expect(replaced.details.words).toMatchObject({ missing: [], unexplainedExtra: [{ words: 'whole' }] });
+        expect(await snapshot()).toEqual(before);
+
+        // While another run holds the stem lock, nothing is written: not even the report.
+        const reportBytes = await readFile(report, 'utf8');
+        await writeFile(path.join(out, '.consent.create.lock'), '1\n');
+        await expect(runCreateCommand([source, out, '--replace'], { renderTools: dropped })).rejects.toMatchObject({ code: 'CREATION_LOCKED' });
+        await expect(runCreateCommand([source, out, '--replace', '--no-pdf'])).rejects.toMatchObject({ code: 'CREATION_LOCKED' });
+        expect(await readFile(report, 'utf8')).toBe(reportBytes);
+        await rm(path.join(out, '.consent.create.lock'));
+        expect(await snapshot()).toEqual(before);
 
         // A verification failure in a new directory leaves only the report.
         const fresh = path.join(dir, 'fresh');
