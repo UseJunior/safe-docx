@@ -592,18 +592,21 @@ document:
 
 ```bash
 npx -y @usejunior/docx-markdoc create authoring/<slug>.mdoc outbound/draft --replace
-# add --require-pdf where LibreOffice and pdftotext are installed
 ```
 
-The command writes four files into `outbound/draft/`:
+The command writes these files into `outbound/draft/`:
 
 - `<slug>.docx`;
 - `<slug>.txt`, read back from the `.docx` and written beside it (not in a
   `text/` subfolder);
-- `<slug>.pdf`;
-- `<slug>.verification.json`.
+- `<slug>.verification.json`;
+- `<slug>.pdf`, but only when LibreOffice (`soffice`) and `pdftotext` are
+  installed.
 
-Nothing is published unless every check passes.
+Without those tools, no PDF is written, the certificate records the PDF check
+as `not_run`, and the build still succeeds. Add `--require-pdf` to make
+missing tools a failure, or `--no-pdf` to skip the check. Nothing is
+published unless every check that ran passes.
 
 Convert each `.mdoc` once, using the table below. Clause numbers typed by
 hand become Markdown ordered lists, whose real `1.` / `(a)` / `(i)`
