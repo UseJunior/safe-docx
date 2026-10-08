@@ -6,7 +6,7 @@ import { compileMarkdoc } from './compile.js';
 import { createDocumentFromMarkdoc, firstParagraphMismatch } from './create/create.js';
 import { lowerCreationMarkdoc } from './create/lower.js';
 import { importDocxToMarkdoc } from './import.js';
-import { link, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { PdfRenderTools } from './pdf/tools.js';
@@ -426,6 +426,105 @@ describe('Traceability: Markdoc document creation without a template', () => {
       const { certificate, readback } = await createDocumentFromMarkdoc('{% table %}\n* Holder\n* Shares\n---\n* [Holder]\n* \n{% /table %}\n\nAfter.');
       expect(readback.paragraphs).toEqual(['Holder', 'Shares', '[Holder]', '', 'After.']);
       expect(certificate.checks.brownfield).toMatchObject({ passed: true, anchoredParagraphs: 5 });
+    },
+  );
+
+  test.openspec('[SDX-MDOC-CREATE-10] overlapping runs, foreign files and failed recovery never lose an output')(
+    'Scenario: overlapping runs, foreign files and failed recovery never lose an output',
+    async () => {
+      const dir = await mkdtemp(path.join(os.tmpdir(), 'sdx-create-recovery-'));
+      try {
+        const source = path.join(dir, 'doc.mdoc');
+        await writeFile(source, '# DOC\n\nFirst build.');
+        const listing = async (target: string) => (await readdir(target)).sort();
+        const bytes = async (target: string) => Object.fromEntries(await Promise.all((await readdir(target)).filter((name) => !name.startsWith('.')).sort().map(async (name) => [name, (await readFile(path.join(target, name))).toString('base64')] as const)));
+
+        // A second run on the same output stem while the first is publishing is refused; the first completes intact.
+        const shared = path.join(dir, 'shared');
+        let second: unknown = 'not run';
+        const overlapping = async (from: string, to: string) => {
+          if (second === 'not run') second = await runCreateCommand([source, shared, '--replace', '--no-pdf']).then(() => 'succeeded', (error: { code?: string }) => error.code);
+          await link(from, to);
+        };
+        await runCreateCommand([source, shared, '--no-pdf'], { fileOps: { link: overlapping } });
+        expect(second).toBe('CREATION_LOCKED');
+        expect(await listing(shared)).toEqual(['doc.docx', 'doc.txt', 'doc.verification.json']);
+
+        // A rollback never removes a file that someone else put at an output path in the meantime.
+        const foreign = path.join(dir, 'foreign');
+        let links = 0;
+        const replacedMeanwhile = async (from: string, to: string) => {
+          links += 1;
+          if (links === 2) {
+            await writeFile(`${to}.other`, 'someone else');
+            await rename(`${to}.other`, path.join(path.dirname(to), 'doc.docx'));
+            throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+          }
+          await link(from, to);
+        };
+        await expect(runCreateCommand([source, foreign, '--no-pdf'], { fileOps: { link: replacedMeanwhile } })).rejects.toThrow('disk full');
+        expect(await readFile(path.join(foreign, 'doc.docx'), 'utf8')).toBe('someone else');
+
+        // If the originals cannot be put back, they are kept in a named recovery directory, never deleted.
+        const kept = path.join(dir, 'kept');
+        await runCreateCommand([source, kept, '--no-pdf']);
+        const originals = await bytes(kept);
+        await writeFile(source, '# DOC\n\nSecond build.');
+        let publishLinks = 0;
+        const failingLink = async (from: string, to: string) => {
+          publishLinks += 1;
+          if (publishLinks === 2) throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+          await link(from, to);
+        };
+        const failingRestore = async (from: string, to: string) => {
+          if (from.includes(`${path.sep}replaced${path.sep}`)) throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
+          await rename(from, to);
+        };
+        const error = await runCreateCommand([source, kept, '--replace', '--no-pdf'], { fileOps: { link: failingLink, rename: failingRestore } })
+          .then(() => null, (caught: { code?: string; message?: string; details?: { recoveryDir?: string } }) => caught);
+        expect(error?.code).toBe('CREATION_PUBLISH_FAILED');
+        expect(error?.message).toMatch(/disk full.*could not restore/);
+        const recoveryDir = error!.details!.recoveryDir!;
+        expect(path.dirname(recoveryDir)).toBe(await realpath(kept));
+        expect(await bytes(recoveryDir)).toEqual(originals);
+        expect((await listing(kept)).filter((name) => name.endsWith('.lock'))).toEqual([]);
+
+        // A target another writer occupies during rollback keeps its original in recovery; the foreign file stays.
+        const occupied = path.join(dir, 'occupied');
+        await runCreateCommand([source, occupied, '--no-pdf']);
+        const occupiedOriginals = await bytes(occupied);
+        let occupiedLinks = 0;
+        const occupyThenFail = async (from: string, to: string) => {
+          occupiedLinks += 1;
+          if (occupiedLinks === 2) {
+            await writeFile(to, 'someone else');
+            throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+          }
+          await link(from, to);
+        };
+        const occupiedError = await runCreateCommand([source, occupied, '--replace', '--no-pdf'], { fileOps: { link: occupyThenFail } })
+          .then(() => null, (caught: { code?: string; message?: string; details?: { recoveryDir?: string } }) => caught);
+        expect(occupiedError?.code).toBe('CREATION_PUBLISH_FAILED');
+        expect(occupiedError?.message).toMatch(/is occupied/);
+        const recovered = await bytes(occupiedError!.details!.recoveryDir!);
+        const restored = await bytes(occupied);
+        // Every original is either back in place or in recovery; the foreign file was not touched.
+        for (const [name, content] of Object.entries(occupiedOriginals)) {
+          expect(restored[name] === content || recovered[name] === content, name).toBe(true);
+        }
+        expect(Object.values(restored)).toContain(Buffer.from('someone else').toString('base64'));
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test.openspec('[SDX-MDOC-CREATE-03] literal markup that looks like legacy pseudo-HTML is kept as text')(
+    'Scenario: literal markup that looks like legacy pseudo-HTML is kept as text',
+    async () => {
+      const centered = await createDocumentFromMarkdoc('{% literal %}<center>text</center>{% /literal %}\n\nType {% literal %}<!-- comment -->{% /literal %} here.');
+      expect(centered.readback.paragraphs).toEqual(['<center>text</center>', 'Type <!-- comment --> here.']);
+      await expectCode('<center>text</center>', 'LEGACY_MARKUP', /\{% center %\}/);
     },
   );
 });

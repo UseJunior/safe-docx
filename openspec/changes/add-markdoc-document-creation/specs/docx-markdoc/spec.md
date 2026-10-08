@@ -21,7 +21,7 @@ come from named paragraph styles over document defaults.
 - **AND** an unbalanced bracket outside those exemptions SHALL fail with a line number
 
 #### Scenario: [SDX-MDOC-CREATE-03] unsupported and legacy syntax fails closed
-- **GIVEN** sources containing a link, an image, a code span, an unknown tag, unknown frontmatter, an unclosed tag, inline HTML outside `{% literal %}`, a nested ordered list that does not start at 1, and whole-paragraph `<center>`, `<signer>` or `<!-- pagebreak -->` markup
+- **GIVEN** sources containing a link, an image, a code span, an unknown tag, unknown frontmatter, an unclosed tag, inline HTML outside `{% literal %}`, a nested ordered list that does not start at 1, and whole-paragraph `<center>`, `<signer>` or `<!-- pagebreak -->` markup outside `{% literal %}`
 - **WHEN** each is created
 - **THEN** creation SHALL fail before writing any output, with a stable error code and the source line, and legacy markup SHALL name the Markdoc tag to use
 
@@ -88,5 +88,7 @@ verification fails.
 - **AND** a failure while publishing SHALL leave every existing output byte-identical, and a file appearing at an output path during the build SHALL never be overwritten without `--replace`
 - **AND** with `--replace` a stale artifact the build does not produce SHALL be removed
 - **AND** an output that aliases an input through a symlinked directory or a hard link SHALL be refused
+- **AND** a second run publishing to the same output directory and stem while one is active SHALL fail with `CREATION_LOCKED`, leaving the first run's outputs intact
+- **AND** a rollback SHALL never remove a file another writer placed at an output path, and an original that cannot be restored SHALL be kept in a named recovery directory rather than deleted
 - **AND** a successful run SHALL write `<stem>.docx`, `<stem>.txt` from the read-back, and `<stem>.verification.json`
 - **AND** when LibreOffice or `pdftotext` is unavailable the PDF check SHALL be recorded as `not_run`, and `--require-pdf` SHALL make that a failure

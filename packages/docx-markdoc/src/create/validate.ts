@@ -97,19 +97,22 @@ function checkAttributes(node: MarkdocNode, allowed: ReadonlySet<string>): void 
   }
 }
 
-function inlineText(node: MarkdocNode): string {
+function inlineText(node: MarkdocNode, skipLiteral = false): string {
   if (node.type === 'text') return String(node.attributes.content ?? '');
   if (node.type === 'softbreak') return ' ';
   if (node.type === 'hardbreak') return '\n';
-  return node.children.map(inlineText).join('');
+  if (skipLiteral && node.type === 'tag' && node.tag === 'literal') return '';
+  return node.children.map((child) => inlineText(child, skipLiteral)).join('');
 }
 
 /** Check one run of inline content: admitted node types, legacy markup, and balanced fill-in brackets. */
 function checkInline(children: MarkdocNode[], line: number | undefined, highlight: boolean): void {
   // Whole-paragraph legacy pseudo-HTML first: it gets a migration hint rather than a generic HTML error.
-  const text = children.map(inlineText).join('').trim();
+  const text = children.map((child) => inlineText(child)).join('').trim();
+  // Legacy detection looks only at text outside {% literal %}: literal markup is content, not a migration leftover.
+  const markupText = children.map((child) => inlineText(child, true)).join('').trim();
   for (const [pattern, hint] of LEGACY_HINTS) {
-    if (pattern.test(text)) creationError('LEGACY_MARKUP', `Legacy markup '${text.slice(0, 40)}' is not supported; use ${hint}.`, undefined, line);
+    if (markupText && pattern.test(markupText)) creationError('LEGACY_MARKUP', `Legacy markup '${markupText.slice(0, 40)}' is not supported; use ${hint}.`, undefined, line);
   }
   let depth = 0;
   const visit = (node: MarkdocNode, literal: boolean): void => {

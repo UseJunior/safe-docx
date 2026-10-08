@@ -1,4 +1,5 @@
-import { link, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { link, lstat, mkdir, mkdtemp, open, readFile, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { renderPlainPdf, type PlainPdfVerdict } from '../pdf/plain-render.js';
 import type { PdfRenderTools } from '../pdf/tools.js';
@@ -88,15 +89,27 @@ async function exists(target: string): Promise<boolean> {
  * restores the backups and removes what was placed, so the directory is left
  * as it was.
  */
+/**
+ * Thrown when publishing failed and some original outputs could not be put
+ * back. Nothing is deleted: the originals that were not restored stay in
+ * `recoveryDir`, and the message names it and every recovery problem.
+ */
+class PublishRecoveryError extends DocxMarkdocError {
+  constructor(message: string, readonly recoveryDir: string, readonly keepStaging: boolean) {
+    super('CREATION_PUBLISH_FAILED', message, { recoveryDir });
+  }
+}
+
 async function publish(
   produced: Map<string, string>,
   retired: string[],
   backupDir: string,
+  recoveryDir: string,
   replace: boolean,
   ops: PublishFileOps,
 ): Promise<void> {
   const backups: Array<{ target: string; backup: string }> = [];
-  const placed: string[] = [];
+  const placed: Array<{ target: string; dev: number; ino: number }> = [];
   try {
     for (const target of [...produced.keys(), ...retired]) {
       if (!(await exists(target))) continue;
@@ -107,15 +120,61 @@ async function publish(
     }
     for (const [target, staged] of produced) {
       await ops.link(staged, target);
-      placed.push(target);
+      const placedStat = await stat(target);
+      placed.push({ target, dev: placedStat.dev, ino: placedStat.ino });
     }
   } catch (error) {
-    await Promise.allSettled(placed.map((target) => ops.unlink(target)));
-    for (const { target, backup } of backups.reverse()) {
-      if (!(await exists(target))) await ops.rename(backup, target).catch(() => undefined);
+    const problems: string[] = [];
+    // Remove only what this run placed: a path whose inode changed belongs to someone else now.
+    for (const { target, dev, ino } of placed) {
+      const current = await stat(target).catch(() => null);
+      if (!current || current.dev !== dev || current.ino !== ino) continue;
+      await ops.unlink(target).catch((unlinkError: Error) => problems.push(`could not remove ${target}: ${unlinkError.message}`));
+    }
+    const unrestored: string[] = [];
+    for (const { target, backup } of [...backups].reverse()) {
+      if (await exists(target)) {
+        unrestored.push(target);
+        problems.push(`${target} is occupied, so its original was not put back`);
+        continue;
+      }
+      await ops.rename(backup, target).catch((restoreError: Error) => {
+        unrestored.push(target);
+        problems.push(`could not restore ${target}: ${restoreError.message}`);
+      });
+    }
+    if (unrestored.length === 0 && problems.length === 0) throw error;
+    // Keep every original that was not restored: move the backups out of the staging directory.
+    let keepStaging = false;
+    let kept = recoveryDir;
+    try {
+      await rename(backupDir, recoveryDir);
+    } catch {
+      keepStaging = true;
+      kept = backupDir;
+    }
+    const cause = error instanceof Error ? error.message : String(error);
+    throw new PublishRecoveryError(
+      `Publishing failed (${cause}) and recovery was incomplete: ${problems.join('; ')}. Originals that were not restored are kept in ${kept}.`,
+      kept,
+      keepStaging,
+    );
+  }
+}
+
+/** One create run per output directory and stem at a time; the lock file is created exclusively. */
+async function acquireLock(lockPath: string): Promise<() => Promise<void>> {
+  try {
+    const handle = await open(lockPath, 'wx');
+    await handle.writeFile(`${process.pid}\n`);
+    await handle.close();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new DocxMarkdocError('CREATION_LOCKED', `Another create run is publishing to this output (lock ${lockPath}). If no run is active, delete the lock file and retry.`);
     }
     throw error;
   }
+  return () => rm(lockPath, { force: true });
 }
 
 async function sameFile(a: string, b: string): Promise<boolean> {
@@ -148,6 +207,22 @@ export async function runCreateCommand(
     certificate: path.join(outputDir, `${stem}.verification.json`),
     pdf: path.join(outputDir, `${stem}.pdf`),
   };
+  const releaseLock = await acquireLock(path.join(outputDir, `.${stem}.create.lock`));
+  try {
+    return await createLocked(options, deps, ops, stem, outputDir, outputs);
+  } finally {
+    await releaseLock();
+  }
+}
+
+async function createLocked(
+  options: CreateCliArgs,
+  deps: { renderTools?: PdfRenderTools },
+  ops: PublishFileOps,
+  stem: string,
+  outputDir: string,
+  outputs: { docx: string; text: string; certificate: string; pdf: string },
+): Promise<CreateCliResult> {
   // Compare canonical paths (and inodes) so a symlinked directory or file cannot alias an input.
   const inputs = await Promise.all([options.markdocPath, ...(options.profilePath ? [options.profilePath] : [])].map((value) => realpath(value)));
   for (const output of Object.values(outputs)) {
@@ -180,6 +255,7 @@ export async function runCreateCommand(
 
   // The staging directory is created exclusively, so everything inside it is ours to remove.
   const staging = await mkdtemp(path.join(outputDir, `.${stem}.create-`));
+  let keepStaging = false;
   try {
     const staged = (target: string): string => path.join(staging, path.basename(target));
     const produced = new Map<string, string>();
@@ -210,7 +286,7 @@ export async function runCreateCommand(
     const backupDir = path.join(staging, 'replaced');
     await mkdir(backupDir);
     const retired = Object.values(outputs).filter((target) => !produced.has(target));
-    await publish(produced, retired, backupDir, options.replace, ops);
+    await publish(produced, retired, backupDir, path.join(outputDir, `.${stem}.create-recovery-${randomUUID()}`), options.replace, ops);
     const { checks } = created.certificate;
     const summary = [
       `created ${path.basename(outputs.docx)}: ${checks.readback.paragraphs} paragraphs, ${checks.footers.sections} section(s)`,
@@ -226,7 +302,10 @@ export async function runCreateCommand(
       pdf,
       summary,
     };
+  } catch (error) {
+    keepStaging = error instanceof PublishRecoveryError && error.keepStaging;
+    throw error;
   } finally {
-    await rm(staging, { recursive: true, force: true });
+    if (!keepStaging) await rm(staging, { recursive: true, force: true });
   }
 }
