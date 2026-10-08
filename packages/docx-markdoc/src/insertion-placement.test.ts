@@ -50,9 +50,11 @@ async function cleanCharacters(buffer: Buffer): Promise<Array<[string, string | 
 
 /** Joined inserted text and deletion count; the comparison engine may split one insertion across several w:ins. */
 async function revisions(buffer: Buffer): Promise<{ inserted: string; deletions: number }> {
-  const xml = await (await JSZip.loadAsync(buffer)).file('word/document.xml')!.async('string');
-  const inserted = [...xml.matchAll(/<w:ins\b[\s\S]*?<\/w:ins>/g)].map((match) => match[0].replace(/<[^>]+>/g, '')).join('');
-  return { inserted, deletions: (xml.match(/<w:del\b/g) ?? []).length };
+  const document = parseXml(await (await JSZip.loadAsync(buffer)).file('word/document.xml')!.async('string'));
+  const inserted = Array.from(document.getElementsByTagNameNS(W, 'ins'))
+    .flatMap((ins) => Array.from(ins.getElementsByTagNameNS(W, 't')).map((t) => t.textContent ?? ''))
+    .join('');
+  return { inserted, deletions: document.getElementsByTagNameNS(W, 'del').length };
 }
 
 function highlightedText(characters: Array<[string, string | null]>): string {
