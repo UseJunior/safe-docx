@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import Markdoc from '@markdoc/markdoc';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, open, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect } from 'vitest';
@@ -96,5 +96,45 @@ describe('creation edge cases', () => {
     const blocks = renderer.renderBlocks([Markdoc.parse('- first\n\n  continued\n\n  ## Heading in item')], { listDepth: 0 });
     expect(blocks.map((block) => (block as ParagraphSpec).styleId)).toEqual(['MdxBody', 'MdxBody', 'MdxHeading2']);
     expect((blocks[1] as ParagraphSpec).indent).toEqual({ leftTwips: 720 });
+  });
+
+  it('renders the multi-line block forms of center and legend and applies a page break to the next block', async () => {
+    const { docx, readback } = await createDocumentFromMarkdoc([
+      'Lead in.', '', '{% center %}', 'Centred one.', '', 'Centred two.', '{% /center %}', '',
+      '{% page-break /%}', '', 'On a new page.', '', '{% legend %}', '[Remainder intentionally blank.]', '{% /legend %}',
+    ].join('\n'));
+    expect(readback.paragraphs).toEqual(['Lead in.', 'Centred one.', 'Centred two.', 'On a new page.', '[Remainder intentionally blank.]']);
+    const document = parseXml(await (await JSZip.loadAsync(docx)).file('word/document.xml')!.async('string'));
+    const paragraphs = Array.from(document.getElementsByTagNameNS(W, 'p'));
+    const style = (p: Element) => p.getElementsByTagNameNS(W, 'pStyle').item(0)?.getAttribute('w:val');
+    expect(paragraphs.map(style)).toEqual(['BodyText', 'Centered', 'Centered', 'BodyText', 'Legend']);
+    expect(paragraphs[3]!.getElementsByTagNameNS(W, 'pageBreakBefore')).toHaveLength(1);
+    expect(paragraphs.filter((p) => p.getElementsByTagNameNS(W, 'pageBreakBefore').length > 0)).toHaveLength(1);
+    // The legend keeps the paragraph before it with it; its brackets are not highlighted.
+    expect(paragraphs[3]!.getElementsByTagNameNS(W, 'keepNext')).toHaveLength(1);
+    expect(paragraphs[4]!.getElementsByTagNameNS(W, 'highlight')).toHaveLength(0);
+    expect(await code(createDocumentFromMarkdoc('{% center %}\nText.\n\n- a list\n{% /center %}'))).toBe('UNSUPPORTED_CREATION_SYNTAX');
+  });
+
+  it('removes a lock whose close fails, leaving the stem retryable', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'sdx-create-lock-close-'));
+    try {
+      const source = path.join(dir, 'doc.mdoc');
+      await writeFile(source, 'Body.');
+      const out = path.join(dir, 'out');
+      const failingClose = (async (file: string, flags: string) => {
+        const handle = await open(file, flags);
+        return Object.assign(Object.create(Object.getPrototypeOf(handle)), handle, {
+          writeFile: (data: string) => handle.writeFile(data),
+          close: async () => { await handle.close(); throw Object.assign(new Error('close failed'), { code: 'EIO' }); },
+        });
+      }) as unknown as typeof open;
+      await expect(runCreateCommand([source, out, '--no-pdf'], { fileOps: { open: failingClose } })).rejects.toThrow('close failed');
+      expect(await readdir(out)).toEqual([]);
+      await runCreateCommand([source, out, '--no-pdf']);
+      expect((await readdir(out)).sort()).toEqual(['doc.docx', 'doc.txt', 'doc.verification.json']);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
