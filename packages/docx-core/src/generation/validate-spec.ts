@@ -128,6 +128,7 @@ export function validateSpec(spec: DocumentSpec): void {
 
   spec.sections.forEach((section, sectionIndex) => {
     validateSection(section, `/sections/${sectionIndex}`, declaredStyleIds, numbering);
+    validateBreakPlacement(section, `/sections/${sectionIndex}`, sectionIndex === spec.sections.length - 1);
   });
 }
 
@@ -291,6 +292,27 @@ function validateSection(section: SectionSpec, path: string, styleIds: Set<strin
   section.blocks.forEach((block, blockIndex) => {
     validateBlock(block, `${path}/blocks/${blockIndex}`, styleIds, numbering, 'body');
   });
+}
+
+/**
+ * A section whose w:sectPr binds to its last paragraph must end with one: a
+ * paragraph-level sectPr cannot sit on a table.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.18
+ */
+function validateBreakPlacement(section: SectionSpec, path: string, isFinal: boolean): void {
+  const placement = section.breakPlacement;
+  if (placement === undefined) return;
+  if (placement !== 'ownParagraph' && placement !== 'lastParagraph') {
+    throw new GenerationSpecError('invalid_value', `${path}/breakPlacement`, `Unsupported section break placement '${String(placement)}'`);
+  }
+  if (placement === 'lastParagraph' && !isFinal && section.blocks.at(-1)?.kind !== 'paragraph') {
+    throw new GenerationSpecError(
+      'invalid_value',
+      `${path}/breakPlacement`,
+      "breakPlacement 'lastParagraph' requires the section to end with a paragraph",
+    );
+  }
 }
 
 /** Story kind: drafting notes may only anchor in the body story. */

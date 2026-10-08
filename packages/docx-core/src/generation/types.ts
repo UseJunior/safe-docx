@@ -90,6 +90,16 @@ export type SectionSpec = {
   };
   /** Section-break type for non-final sections (w:type). */
   breakType?: 'nextPage' | 'continuous' | 'oddPage' | 'evenPage';
+  /**
+   * Where a non-final section's w:sectPr binds. 'ownParagraph' (default) adds
+   * a dedicated empty break paragraph, as Word's Insert → Section Break does.
+   * 'lastParagraph' puts the w:sectPr on the section's final paragraph, so the
+   * break adds no dedicated empty paragraph. Pagination still follows the
+   * break type and paragraph settings (an oddPage break may still need a
+   * blank page). The section must then end with a paragraph. Ignored on the final section,
+   * whose properties always bind at body level.
+   */
+  breakPlacement?: 'ownParagraph' | 'lastParagraph';
   pageNumbering?: {
     start?: number;
     format?: 'decimal' | 'lowerRoman' | 'upperRoman' | 'lowerLetter' | 'upperLetter';
