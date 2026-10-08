@@ -391,10 +391,11 @@ rationale or make the authored row text distinguishable.
 Mixed-format paragraphs are edited surgically: unchanged spans retain their
 source runs, and a replacement inherits the one formatting class occupied by
 the deleted source span. When an insertion lands exactly between incompatible
-formats but the same text can be inserted at an equivalent offset inside one
-run (for example `reserves up to [Number]`, where ` up to` fits before the
-space), that offset is used. Otherwise, and whenever a replacement crosses
-formats, compilation fails closed. The
+formats but the same text can be inserted one space away inside one run (for
+example `reserves up to [Number]`, where ` up to` fits before the space), that
+offset is used, provided every such offset inherits the same formatting and
+no bookmark or comment range is crossed. Otherwise, and whenever a
+replacement crosses formats, compilation fails closed. The
 author may resolve that ambiguity by naming one unique source substring:
 
 ```markdoc

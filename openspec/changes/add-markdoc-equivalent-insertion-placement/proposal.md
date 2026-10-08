@@ -14,21 +14,26 @@ brownfield flow unless the author adds `format-source`.
 ## What Changes
 
 - For body paragraphs whose edit declares no formatting (`format-source`,
-  run-format or run-format spans), a zero-width insertion hunk that lands on an
-  ambiguous formatting boundary is slid across equal characters (left first,
-  then right). The first equivalent offset with an unambiguous template is
-  used.
-- A slide never crosses a neighbouring hunk and never splits a surrogate pair.
-  When no equivalent in-run offset exists, the hunk is unchanged and
-  compilation still fails closed.
+  run-format, run-format spans or retained-format spans), a zero-width
+  insertion hunk that lands on an ambiguous formatting boundary may move
+  across an adjacent U+0020 space when the inserted text starts or ends with
+  one. That is the only kind of slide; letters are never rotated.
+- The first in-run offset in each direction is a candidate. The insertion
+  moves only when every candidate inherits the same formatting, so the rule
+  never chooses between two formats.
+- A move never crosses a neighbouring hunk or any range marker (bookmark,
+  comment range, permission, move range), so marker membership cannot change.
+  Otherwise the hunk is unchanged and compilation still fails closed.
+- Preflight, application and rationale ranges all use the same placement.
 - Rationale ranges use the same placement.
 - Story (header/footer) edits are unchanged.
 - **Policy note for review:** this resolves cases that previously failed
   closed. For example, `Alpha beta.` (with `beta.` bold) becoming
   `Alpha inserted beta.` now inherits the plain run without `format-source`.
   The text is identical either way, but the chosen formatting is the one that
-  admits an equivalent offset. Insertions sharing no edge character with
-  either neighbour (for example `Alpha -beta.`) still fail closed.
+  admits an equivalent offset. Insertions with no space to move across (for
+  example `Alpha -beta.`, `Alpha:bravo beta`), moves that would cross a
+  bookmark, and moves whose candidates disagree all still fail closed.
 
 ## Impact
 
