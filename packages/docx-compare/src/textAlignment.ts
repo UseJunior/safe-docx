@@ -37,12 +37,20 @@ export function tokenizeComparisonText(text: string): string[] {
   return parts;
 }
 
-/** Hardened forward LCS shared by atom and tagged-tree comparison. */
+/**
+ * Hardened forward LCS shared by atom and tagged-tree comparison.
+ *
+ * `prefer` breaks ties between equally long alignments: among alignments with
+ * the most matches, one with the most preferred matches wins. Without it, the
+ * first equal pair in document order is taken.
+ */
 export function alignComparisonSequences<T>(
   original: readonly T[],
   revised: readonly T[],
   equal: (original: T, revised: T) => boolean,
+  prefer?: (original: T, revised: T) => boolean,
 ): SequenceAlignment {
+  if (prefer) return alignWithPreference(original, revised, equal, prefer);
   const dp = Array.from({ length: original.length + 1 }, () =>
     Array<number>(revised.length + 1).fill(0));
   for (let i = original.length - 1; i >= 0; i--) {
@@ -58,6 +66,49 @@ export function alignComparisonSequences<T>(
   while (i < original.length && j < revised.length) {
     if (equal(original[i]!, revised[j]!)) matches.push({ originalIndex: i++, revisedIndex: j++ });
     else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
+    else j++;
+  }
+  const matchedOriginal = new Set(matches.map((match) => match.originalIndex));
+  const matchedRevised = new Set(matches.map((match) => match.revisedIndex));
+  return {
+    matches,
+    deletedIndices: original.map((_, index) => index).filter((index) => !matchedOriginal.has(index)),
+    insertedIndices: revised.map((_, index) => index).filter((index) => !matchedRevised.has(index)),
+  };
+}
+
+function alignWithPreference<T>(
+  original: readonly T[],
+  revised: readonly T[],
+  equal: (original: T, revised: T) => boolean,
+  prefer: (original: T, revised: T) => boolean,
+): SequenceAlignment {
+  // One match outweighs every possible preference bonus, so the alignment
+  // stays a longest common subsequence and preference only orders ties.
+  const matchWeight = Math.min(original.length, revised.length) + 1;
+  const weight = (i: number, j: number): number => equal(original[i]!, revised[j]!)
+    ? matchWeight + (prefer(original[i]!, revised[j]!) ? 1 : 0)
+    : 0;
+  const dp = Array.from({ length: original.length + 1 }, () =>
+    Array<number>(revised.length + 1).fill(0));
+  for (let i = original.length - 1; i >= 0; i--) {
+    for (let j = revised.length - 1; j >= 0; j--) {
+      const pair = weight(i, j);
+      dp[i]![j] = Math.max(
+        pair > 0 ? dp[i + 1]![j + 1]! + pair : 0,
+        dp[i + 1]![j]!,
+        dp[i]![j + 1]!,
+      );
+    }
+  }
+  const matches: SequenceMatch[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < original.length && j < revised.length) {
+    const pair = weight(i, j);
+    if (pair > 0 && dp[i]![j] === dp[i + 1]![j + 1]! + pair) {
+      matches.push({ originalIndex: i++, revisedIndex: j++ });
+    } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
     else j++;
   }
   const matchedOriginal = new Set(matches.map((match) => match.originalIndex));

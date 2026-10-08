@@ -1,7 +1,27 @@
 # Changelog
 
-## Unreleased
+## 0.23.1
 
+- Comparison no longer marks unchanged text as changed when the two documents
+  split the same text into runs differently (as Word does between editing
+  sessions). A short run such as a single space or a repeated word is no
+  longer paired with an unrelated run elsewhere in the paragraph, so the
+  redline loses spurious insertions, deletions and `w:rPrChange` marks on
+  whitespace (for example a bold space between inserted words), and a run
+  that differs only by a redundant `xml:space="preserve"` is treated as
+  unchanged. Paragraphs whose changed spans contain tabs, breaks, fields,
+  hyperlinks or several `w:t` elements keep the previous alignment. (#743)
+- `insert_paragraph`, `batch_edit` and Markdoc compilation now validate
+  where a new paragraph lands in the document's structure and report
+  diagnostics with stable codes and, where one is deterministic, a corrective
+  anchor: a heading that would split a parent section from its children
+  (`PARENT_CHILD_SLICE`, with `suggested_position`), a list level that does
+  not match its neighbours, renumbering mid-list, and a run-in heading
+  inserted without its body paragraph (detected from Word's style separator,
+  as in NVCA `Heading2` + `HeadingPara2` pairs). The editing tools return
+  these as warnings; strict Markdoc compilation fails before writing output.
+  `batch_edit` accepts a run-in heading and its body inserted at the same
+  anchor as one atomic pair. (#970)
 - `extractEffectiveRunFormatting` (and so `read_file` formatting) now reads
   table styles for a run inside a table, per ECMA-376 Part 1 § 17.7.2: the
   table's `w:tblStyle` (or the default table style when it names none) with
