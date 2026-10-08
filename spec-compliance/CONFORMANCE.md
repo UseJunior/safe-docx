@@ -779,7 +779,7 @@ at spec validation, before any XML is built.
 
 `w:docDefaults` carries the document-wide default run and paragraph
 properties that styles and direct formatting layer over. Generation emits
-explicit defaults (font bound across ascii/hAnsi/cs script ranges plus an
+explicit defaults (font bound across ascii/hAnsi/eastAsia/cs channels plus an
 explicit size) rather than relying on reader fallbacks, which diverge
 between Word, LibreOffice, and Google Docs import. Effective run formatting
 reads `w:rPrDefault/w:rPr` as its lowest-precedence layer; for toggle
