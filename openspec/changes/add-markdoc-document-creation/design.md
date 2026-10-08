@@ -115,6 +115,9 @@ unhighlighted blank. Frontmatter `fill-ins: brackets` restores the v0.24 rule
 for sources written that way: every character from a `[` to its matching
 `]` is highlighted, depth carries across bold and italic boundaries, an
 unbalanced bracket is an error, and `{% literal %}` and legends are exempt.
+Raw brackets inside a `{% fill %}` count in that mode as well (the brackets the
+tag adds do not), so a bracketed blank that crosses a tag boundary ends at its
+own `]` in both the validator and the renderer.
 Alternatives rejected: `[[…]]` (collides with the `[[Term]]` defined-term
 convention of the upstream agreement renderer) and `{{…}}` (reads as a
 template variable).

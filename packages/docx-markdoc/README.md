@@ -558,7 +558,7 @@ The directors of Acme Widgets Inc. (the **"Company"**) adopt these resolutions e
 ## Approval of the Plan
 
 1. RESOLVED, that the Widget Plan is *approved*.
-   1. The Plan reserves [Number] shares.
+   1. The Plan reserves {% fill %}Number{% /fill %} shares.
 
 {% table widths="40,60" %}
 * Holder
@@ -592,7 +592,9 @@ such as an unclosed tag, and headings below `###`.
   never highlighted, so `{% fill %}` is not allowed inside it.
 - Frontmatter `fill-ins: brackets` restores the v0.24 behaviour, where every
   `[…]` is a highlighted fill-in and must balance. In that mode,
-  `{% literal %}…{% /literal %}` keeps brackets plain.
+  `{% literal %}…{% /literal %}` keeps brackets plain, and raw brackets inside
+  a `{% fill %}` still count, so a bracketed blank that crosses the tag ends
+  at its own `]`.
 - Ordered lists get real `1.` / `(a)` / `(i)` numbering. Each top-level list
   starts at its first marker; nested lists always start at (a) or (i).
 - A line ending in `\` is a line break.

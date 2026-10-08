@@ -127,7 +127,10 @@ describe('Traceability: Markdoc document creation without a template', () => {
         '---', 'fill-ins: brackets', '---', '',
         'Pay [Amount [in words]] to **[Name] Inc.** by [Date].', '',
         'Statute {% literal %}[sic]{% /literal %} stays plain.', '',
-        '{% legend %}[Remainder of page intentionally left blank.]{% /legend %}',
+        '{% legend %}[Remainder of page intentionally left blank.]{% /legend %}', '',
+        // Bracket fills that cross an explicit fill's boundary end at their own ']'.
+        '[before {% fill %}x]{% /fill %} after', '',
+        '{% fill %}a [b{% /fill %} c] d',
       ].join('\n');
       const { docx } = await createDocumentFromMarkdoc(source);
       const paragraphs = bodyParagraphs(await part(docx, 'word/document.xml'));
@@ -137,6 +140,8 @@ describe('Traceability: Markdoc document creation without a template', () => {
       ]);
       expect(runs(paragraphs[1]!).every((run) => run.highlight === null)).toBe(true);
       expect(runs(paragraphs[2]!).every((run) => run.highlight === null)).toBe(true);
+      expect(runs(paragraphs[3]!).map((run) => [run.text, run.highlight])).toEqual([['[before [x]]', 'yellow'], [' after', null]]);
+      expect(runs(paragraphs[4]!).map((run) => [run.text, run.highlight])).toEqual([['[a [b] c]', 'yellow'], [' d', null]]);
       await expectCode('---\nfill-ins: brackets\n---\n\nFirst line.\n\nA stray ] bracket.', 'UNBALANCED_FILL_IN', /line 7/);
       await expectCode('---\nfill-ins: brackets\n---\n\nAn [open bracket.', 'UNBALANCED_FILL_IN', /line 5/);
       await expectCode('---\nfill-ins: sometimes\n---\n\nBody', 'UNSUPPORTED_CREATION_FRONTMATTER', /markup or brackets/);

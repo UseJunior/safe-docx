@@ -101,8 +101,21 @@ export class CreationTheme implements Theme {
 
   renderText(text: string, style: InlineStyle): InlineSpec[] {
     if (!text) return [];
-    if (this.fillDepth > 0) return [textRun(text, style, true)];
-    if (this.fillIns !== 'brackets' || this.literalDepth > 0 || this.highlightOff > 0) return [textRun(text, style, false)];
+    const countBrackets = this.fillIns === 'brackets' && this.literalDepth === 0 && this.highlightOff === 0;
+    if (this.fillDepth > 0) {
+      // Raw brackets inside an explicit fill still open and close bracket
+      // fill-ins (the validator counts them too), so a bracket fill that
+      // crosses the tag boundary ends where its ']' is. The brackets fill()
+      // adds are not text and are never counted.
+      if (countBrackets) {
+        for (const char of text) {
+          if (char === '[') this.depth += 1;
+          if (char === ']' && this.depth > 0) this.depth -= 1;
+        }
+      }
+      return [textRun(text, style, true)];
+    }
+    if (!countBrackets) return [textRun(text, style, false)];
     const runs: TextRun[] = [];
     let buffer = '';
     let marked = this.depth > 0;
