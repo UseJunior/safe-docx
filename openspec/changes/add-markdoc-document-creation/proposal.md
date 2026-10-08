@@ -32,7 +32,7 @@ byte-deterministic, which the renderer's is not. What is missing is:
     lists bound to real numbering, hard breaks, `**bold**` and `*italic*`.
   - Markdoc tags: `{% table %}`, `{% center %}`, `{% legend %}`,
     `{% signer /%}`, `{% page-break /%}` and `{% section /%}`.
-  - Bracketed fill-ins (`[...]`, nesting allowed), highlighted automatically.
+  - Explicit fill-ins (`{% fill %}…{% /fill %}`, rendered `[…]` and highlighted, nesting allowed); bare brackets are literal text, and frontmatter `fill-ins: brackets` restores automatic bracket highlighting (#1184).
   - Frontmatter: title, author, date, and the first section's footer and page
     numbers.
 - Add an optional JSON house-style profile. The built-in default is Times New

@@ -553,7 +553,7 @@ page-numbers: true
 
 {% center %}**Unanimous Written Consent of the Board of Directors**{% /center %}
 
-The directors of Acme Widgets Inc. (the **"Company"**) adopt these resolutions effective [Effective Date].
+The directors of Acme Widgets Inc. (the **"Company"**) adopt these resolutions effective {% fill %}Effective Date{% /fill %}.
 
 ## Approval of the Plan
 
@@ -564,7 +564,7 @@ The directors of Acme Widgets Inc. (the **"Company"**) adopt these resolutions e
 * Holder
 * Shares
 ---
-* [Holder One]
+* {% fill %}Holder One{% /fill %}
 * 1,000
 {% /table %}
 
@@ -582,9 +582,17 @@ output is written: links, images, code, `---`, HTML (inline tags too, unless
 wrapped in `{% literal %}`), unknown tags or attributes, Markdoc parse errors
 such as an unclosed tag, and headings below `###`.
 
-- `[...]` anywhere is a highlighted fill-in, with nesting allowed. Wrap
-  literal brackets in `{% literal %}…{% /literal %}`; a legend is never
-  highlighted.
+- `{% fill %}Effective Date{% /fill %}` is a fill-in. It renders as
+  `[Effective Date]`, highlighted; the renderer adds the brackets. Fill-ins
+  may nest and may sit inside bold or italic text. A signer's name can hold
+  one when written as content:
+  `{% signer date="Date: ___" %}{% fill %}Name{% /fill %}, Director{% /signer %}`.
+- Bare brackets are ordinary text, never highlighted and never an error, even
+  when unbalanced: `"[t]he Company"`, `[sic]`, `Section 2[(b)]`. A legend is
+  never highlighted, so `{% fill %}` is not allowed inside it.
+- Frontmatter `fill-ins: brackets` restores the v0.24 behaviour, where every
+  `[…]` is a highlighted fill-in and must balance. In that mode,
+  `{% literal %}…{% /literal %}` keeps brackets plain.
 - Ordered lists get real `1.` / `(a)` / `(i)` numbering. Each top-level list
   starts at its first marker; nested lists always start at (a) or (i).
 - A line ending in `\` is a line break.
@@ -619,8 +627,10 @@ published unless every check that ran passes.
 
 Convert each `.mdoc` once, using the table below. Clause numbers typed by
 hand become Markdown ordered lists, whose real `1.` / `(a)` / `(i)`
-numbering survives later redlines. `[…]` stays a highlighted fill-in. Wrap
-literal brackets in `{% literal %}…{% /literal %}`. Leftover pseudo-HTML
+numbering survives later redlines. Fill-ins become `{% fill %}…{% /fill %}`,
+because bare `[…]` is now literal text. To keep a renderer's old
+brackets-are-blanks reading while you convert, add `fill-ins: brackets` to the
+frontmatter. Leftover pseudo-HTML
 fails with `LEGACY_MARKUP`, and the error names the tag to use instead.
 Make later edits through `docx-markdoc import` / `compile`, which produce
 tracked changes.
@@ -636,6 +646,7 @@ tracked changes.
 | `<!-- page-numbers -->` | frontmatter `page-numbers: true` |
 | `<!-- section: x footer="…" -->` | `{% section footer="…" /%}` |
 | `## 1. Heading` with a literal number, `(a) text` | `## Heading` plus an ordered list (real numbering) |
+| `[Effective Date]` as a highlighted blank | `{% fill %}Effective Date{% /fill %}` (or frontmatter `fill-ins: brackets`) |
 | `document_id:` frontmatter | `title:` / `author:` / `date:` |
 
 Leftover pseudo-HTML fails with `LEGACY_MARKUP`, and the error names the tag

@@ -24,8 +24,8 @@ consumers differ only in what they plug in.
 
 | Piece | File | Role |
 |---|---|---|
-| Validator | `create/validate.ts` | closed grammar, line-numbered errors, balanced fill-ins, all before rendering |
-| Theme | `create/theme.ts` `CreationTheme` | named styles over document defaults; fill-in highlighting with nesting; one numbering instance per top-level list |
+| Validator | `create/validate.ts` | closed grammar, line-numbered errors, fill-in markup (and balanced brackets under `fill-ins: brackets`), all before rendering |
+| Theme | `create/theme.ts` `CreationTheme` | named styles over document defaults; `{% fill %}` highlighting (or bracket highlighting when opted in); one numbering instance per top-level list |
 | Plugins | `create/theme.ts` `creationPlugins` | `center`, `legend` (no highlight), `signer`, `table`, inline `literal` |
 | Driver | `create/lower.ts` | splits `{% section %}`; applies `{% page-break %}`; signer, legend and table neighbour rules; footers; meta; projection |
 
@@ -104,11 +104,20 @@ Inline:
 - A nested ordered list must start at 1.
 - A link, image, code span, HTML or unknown inline tag is an error.
 
-Fill-ins: after parsing, every character from a `[` to its matching `]`
-(nesting allowed, the brackets included) gets yellow highlight. Bracket depth
-carries across bold and italic boundaries. An unbalanced bracket is an error,
-except inside `{% legend %}` or the inline `{% literal %}…{% /literal %}` tag,
-where nothing is highlighted.
+Fill-ins (#1184): `{% fill %}Effective Date{% /fill %}` is the only fill-in
+markup. It renders `[Effective Date]` with the renderer-supplied brackets and
+the text highlighted yellow. Fill-ins may nest and may sit inside bold or
+italic text. A signer name can hold one when the name is the tag's content
+rather than `name="…"`. Bare brackets are literal text, balanced or not:
+quoted alterations (`[t]he`), `[sic]` and cross-references are common in
+legal prose, and silently highlighting real text as a blank is worse than an
+unhighlighted blank. Frontmatter `fill-ins: brackets` restores the v0.24 rule
+for sources written that way: every character from a `[` to its matching
+`]` is highlighted, depth carries across bold and italic boundaries, an
+unbalanced bracket is an error, and `{% literal %}` and legends are exempt.
+Alternatives rejected: `[[…]]` (collides with the `[[Term]]` defined-term
+convention of the upstream agreement renderer) and `{{…}}` (reads as a
+template variable).
 
 Signer:
 
@@ -220,10 +229,10 @@ docx-markdoc create <document.mdoc> <output-dir>
 
 ## Risks
 
-- **Literal brackets.** A literal `[` in prose is read as a fill-in. Markdoc
-  unescapes `\[` to plain text, so an escape cannot opt out. The inline
-  `{% literal %}…{% /literal %}` tag opts its content out of fill-in
-  detection, and a legend is never highlighted.
+- **Fill-in markup is verbose.** `{% fill %}…{% /fill %}` costs more
+  characters than `[…]`; that is the price of never misreading literal
+  brackets. `fill-ins: brackets` remains for sources that want the terse
+  form and contain no literal brackets.
 - **Numbering restarts.** Each top-level list gets its own numbering
   definition because docx-core has no `w:lvlOverride`. That is valid OOXML,
   but it multiplies `abstractNum` entries.

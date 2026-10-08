@@ -7,7 +7,7 @@ import { DocxMarkdocError } from '../errors.js';
  * being flattened by the lenient engine.
  */
 
-const FRONTMATTER_KEYS = new Set(['title', 'author', 'date', 'footer', 'page-numbers']);
+const FRONTMATTER_KEYS = new Set(['title', 'author', 'date', 'footer', 'page-numbers', 'fill-ins']);
 
 /** Block tags and the attributes each admits. */
 export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
@@ -18,7 +18,7 @@ export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
   section: new Set(['footer', 'page-numbers']),
   table: new Set(['widths']),
 };
-const INLINE_TAGS: Record<string, ReadonlySet<string>> = { literal: new Set() };
+const INLINE_TAGS: Record<string, ReadonlySet<string>> = { literal: new Set(), fill: new Set() };
 /** Tags that structure the document and may appear only at the top level. */
 const TOP_LEVEL_ONLY = new Set(['page-break', 'section']);
 
@@ -38,6 +38,12 @@ export type CreationFrontmatter = {
   date?: string;
   footer?: string;
   pageNumbers?: boolean;
+  /**
+   * How fill-ins are written. 'markup' (default): only {% fill %}…{% /fill %}
+   * is a fill-in and bare brackets are literal text. 'brackets': the v0.24
+   * behaviour, where every […] is a highlighted fill-in.
+   */
+  fillIns?: 'markup' | 'brackets';
 };
 
 export function lineOf(node: MarkdocNode | undefined): number | undefined {
@@ -63,7 +69,12 @@ export function parseCreationFrontmatter(raw: string | undefined): CreationFront
     const key = match[1]!;
     let value = match[2]!.trim();
     if (/^(["']).*\1$/.test(value)) value = value.slice(1, -1);
-    if (key === 'page-numbers') {
+    if (key === 'fill-ins') {
+      if (value !== 'markup' && value !== 'brackets') {
+        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `fill-ins must be markup or brackets, got '${value}'.`);
+      }
+      result.fillIns = value;
+    } else if (key === 'page-numbers') {
       if (value !== 'true' && value !== 'false') {
         throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `page-numbers must be true or false, got '${value}'.`);
       }
@@ -105,7 +116,15 @@ function inlineText(node: MarkdocNode, skipLiteral = false): string {
   return node.children.map((child) => inlineText(child, skipLiteral)).join('');
 }
 
-/** Check one run of inline content: admitted node types, legacy markup, and balanced fill-in brackets. */
+/** True while validating a document whose frontmatter opts into bracket fill-ins (v0.24 behaviour). */
+let bracketFillIns = false;
+
+/**
+ * Check one run of inline content: admitted node types, legacy markup, and
+ * fill-ins. `highlight` is false where nothing may be highlighted (a legend).
+ * Bare brackets are literal text unless the document opts into bracket
+ * fill-ins, in which case they must balance.
+ */
 function checkInline(children: MarkdocNode[], line: number | undefined, highlight: boolean): void {
   // Whole-paragraph legacy pseudo-HTML first: it gets a migration hint rather than a generic HTML error.
   const text = children.map((child) => inlineText(child)).join('').trim();
@@ -130,11 +149,11 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
         if (!literal && /<\/?[A-Za-z][A-Za-z0-9-]*(\s[^<>]*)?\/?>/.test(content)) {
           creationError('UNSUPPORTED_HTML', `HTML is not supported in created documents ('${content.match(/<[^>]*>/)![0]}'); use Markdoc, or wrap literal text in {% literal %}.`, undefined, line);
         }
-        if (literal || !highlight) return;
+        if (literal || !highlight || !bracketFillIns) return;
         for (const char of String(node.attributes.content ?? '')) {
           if (char === '[') depth += 1;
           if (char === ']') {
-            if (depth === 0) creationError('UNBALANCED_FILL_IN', `Unmatched ']' in fill-in text; wrap literal brackets in {% literal %}.`, undefined, line);
+            if (depth === 0) creationError('UNBALANCED_FILL_IN', `Unmatched ']' in fill-in text (fill-ins: brackets); wrap literal brackets in {% literal %}.`, undefined, line);
             depth -= 1;
           }
         }
@@ -144,6 +163,13 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
         const allowed = INLINE_TAGS[node.tag ?? ''];
         if (!allowed) creationError('UNSUPPORTED_CREATION_SYNTAX', `Tag '{% ${node.tag} %}' cannot appear inside text.`, node, line);
         checkAttributes(node, allowed);
+        if (node.tag === 'fill') {
+          if (literal) creationError('INVALID_FILL_IN', '{% fill %} cannot appear inside {% literal %}.', node, line);
+          if (!highlight) creationError('INVALID_FILL_IN', '{% fill %} cannot appear in a legend, which is never highlighted.', node, line);
+          if (!node.children.map((child) => inlineText(child)).join('').trim()) creationError('INVALID_FILL_IN', '{% fill %} needs text, such as {% fill %}Effective Date{% /fill %}.', node, line);
+          node.children.forEach((child) => visit(child, false));
+          return;
+        }
         node.children.forEach((child) => visit(child, true));
         return;
       }
@@ -153,7 +179,7 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
   };
   children.forEach((child) => visit(child, false));
   if (!text) creationError('EMPTY_CREATION_BLOCK', 'Empty block.', undefined, line);
-  if (depth > 0) creationError('UNBALANCED_FILL_IN', `Unclosed '[' in fill-in text; wrap literal brackets in {% literal %}.`, undefined, line);
+  if (depth > 0) creationError('UNBALANCED_FILL_IN', `Unclosed '[' in fill-in text (fill-ins: brackets); wrap literal brackets in {% literal %}.`, undefined, line);
 }
 
 function checkList(list: MarkdocNode, depth: number): void {
@@ -220,10 +246,18 @@ function checkBlockTag(node: MarkdocNode, topLevel: boolean, line: number | unde
       return;
     }
     case 'signer': {
-      if (node.children.length > 0) creationError('UNSUPPORTED_CREATION_SYNTAX', '{% signer /%} is self-closing; put the name in name="…".', node, line);
+      // The name is either name="…" (plain text) or the tag's inline content, which may hold {% fill %}.
       const { name, date } = node.attributes;
-      if (typeof name !== 'string' || !name.trim()) creationError('INVALID_SIGNER', '{% signer /%} requires a non-empty name="…".', node, line);
+      const content = node.children.flatMap((child) => (child.type === 'paragraph' ? child.children : [child]));
+      if (node.children.some((child) => child.type !== 'paragraph' && child.type !== 'inline' && child.type !== 'text' && child.type !== 'tag' && child.type !== 'strong' && child.type !== 'em')) {
+        creationError('UNSUPPORTED_CREATION_SYNTAX', '{% signer %} content must be one line of text.', node, line);
+      }
+      if (node.children.filter((child) => child.type === 'paragraph').length > 1) creationError('INVALID_SIGNER', '{% signer %} content must be one paragraph.', node, line);
+      if (name !== undefined && content.length > 0) creationError('INVALID_SIGNER', 'Give the signer name either as name="…" or as the tag content, not both.', node, line);
+      if (name === undefined && content.length === 0) creationError('INVALID_SIGNER', '{% signer /%} requires a name: name="…" or {% signer %}Name{% /signer %}.', node, line);
+      if (name !== undefined && (typeof name !== 'string' || !name.trim())) creationError('INVALID_SIGNER', '{% signer /%} requires a non-empty name="…".', node, line);
       if (date !== undefined && (typeof date !== 'string' || !date.trim())) creationError('INVALID_SIGNER', 'signer date="…" must be a non-empty string.', node, line);
+      if (content.length > 0) checkInline(content, line, true);
       for (const value of [name, date]) {
         if (typeof value === 'string') checkInline([{ type: 'text', attributes: { content: value }, children: [] } as unknown as MarkdocNode], line, true);
       }
@@ -254,7 +288,16 @@ function checkParseErrors(node: MarkdocNode): void {
 }
 
 /** Validate every top-level block of a parsed creation document. */
-export function validateCreationAst(children: MarkdocNode[]): void {
+export function validateCreationAst(children: MarkdocNode[], options: { fillIns?: 'markup' | 'brackets' } = {}): void {
+  bracketFillIns = options.fillIns === 'brackets';
+  try {
+    validateBlocks(children);
+  } finally {
+    bracketFillIns = false;
+  }
+}
+
+function validateBlocks(children: MarkdocNode[]): void {
   children.forEach(checkParseErrors);
   for (const node of children) {
     const line = lineOf(node);

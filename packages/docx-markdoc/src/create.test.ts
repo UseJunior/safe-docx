@@ -92,10 +92,39 @@ describe('Traceability: Markdoc document creation without a template', () => {
     },
   );
 
-  test.openspec('[SDX-MDOC-CREATE-02] bracketed fill-ins are highlighted with nesting')(
-    'Scenario: bracketed fill-ins are highlighted with nesting',
+  test.openspec('[SDX-MDOC-CREATE-02] only explicit fill-in markup is highlighted; bare brackets are literal')(
+    'Scenario: only explicit fill-in markup is highlighted; bare brackets are literal',
     async () => {
       const source = [
+        'Pay {% fill %}Amount {% fill %}in words{% /fill %}{% /fill %} to **{% fill %}Name{% /fill %} Inc.** by {% fill %}Date{% /fill %}.', '',
+        'The court held that "[t]he Company shall pay" the amount [sic], citing Section 2[(b)].', '',
+        'A stray ] bracket and an unclosed [ bracket are text too.', '',
+        '{% legend %}[Remainder of page intentionally left blank.]{% /legend %}',
+      ].join('\n');
+      const { docx, readback } = await createDocumentFromMarkdoc(source);
+      const paragraphs = bodyParagraphs(await part(docx, 'word/document.xml'));
+      expect(runs(paragraphs[0]!).map((run) => [run.text, run.bold, run.highlight])).toEqual([
+        ['Pay ', false, null], ['[Amount [in words]]', false, 'yellow'], [' to ', false, null],
+        ['[Name]', true, 'yellow'], [' Inc.', true, null], [' by ', false, null], ['[Date]', false, 'yellow'], ['.', false, null],
+      ]);
+      // Quoted alterations, [sic], cross-reference brackets and unbalanced brackets: literal, never highlighted, never an error.
+      for (const index of [1, 2, 3]) expect(runs(paragraphs[index]!).every((run) => run.highlight === null), String(index)).toBe(true);
+      expect(readback.paragraphs.slice(1, 3)).toEqual([
+        'The court held that "[t]he Company shall pay" the amount [sic], citing Section 2[(b)].',
+        'A stray ] bracket and an unclosed [ bracket are text too.',
+      ]);
+      expect(styleOf(paragraphs[3]!)).toBe('Legend');
+      await expectCode('{% literal %}{% fill %}x{% /fill %}{% /literal %}', 'INVALID_FILL_IN', /literal/);
+      await expectCode('{% legend %}{% fill %}x{% /fill %}{% /legend %}', 'INVALID_FILL_IN', /legend/);
+      await expectCode('Pay {% fill %} {% /fill %}.', 'INVALID_FILL_IN', /needs text/);
+    },
+  );
+
+  test.openspec('[SDX-MDOC-CREATE-02] fill-ins: brackets restores automatic bracket highlighting')(
+    'Scenario: fill-ins: brackets restores automatic bracket highlighting',
+    async () => {
+      const source = [
+        '---', 'fill-ins: brackets', '---', '',
         'Pay [Amount [in words]] to **[Name] Inc.** by [Date].', '',
         'Statute {% literal %}[sic]{% /literal %} stays plain.', '',
         '{% legend %}[Remainder of page intentionally left blank.]{% /legend %}',
@@ -107,11 +136,10 @@ describe('Traceability: Markdoc document creation without a template', () => {
         ['[Name]', true, 'yellow'], [' Inc.', true, null], [' by ', false, null], ['[Date]', false, 'yellow'], ['.', false, null],
       ]);
       expect(runs(paragraphs[1]!).every((run) => run.highlight === null)).toBe(true);
-      // The legend is italic through its style, never highlighted.
-      expect(styleOf(paragraphs[2]!)).toBe('Legend');
       expect(runs(paragraphs[2]!).every((run) => run.highlight === null)).toBe(true);
-      await expectCode('First line.\n\nA stray ] bracket.', 'UNBALANCED_FILL_IN', /line 3/);
-      await expectCode('An [open bracket.', 'UNBALANCED_FILL_IN', /line 1/);
+      await expectCode('---\nfill-ins: brackets\n---\n\nFirst line.\n\nA stray ] bracket.', 'UNBALANCED_FILL_IN', /line 7/);
+      await expectCode('---\nfill-ins: brackets\n---\n\nAn [open bracket.', 'UNBALANCED_FILL_IN', /line 5/);
+      await expectCode('---\nfill-ins: sometimes\n---\n\nBody', 'UNSUPPORTED_CREATION_FRONTMATTER', /markup or brackets/);
     },
   );
 
@@ -140,7 +168,7 @@ describe('Traceability: Markdoc document creation without a template', () => {
       const source = [
         'IN WITNESS WHEREOF, the undersigned have signed.', '',
         '{% signer name="Jane Roe, Director" date="Date: ________" /%}', '',
-        '{% signer name="[Director Name], Director" date="Date: ________" /%}',
+        '{% signer date="Date: ________" %}{% fill %}Director Name{% /fill %}, Director{% /signer %}',
       ].join('\n');
       const { docx } = await createDocumentFromMarkdoc(source);
       const paragraphs = bodyParagraphs(await part(docx, 'word/document.xml'));
@@ -214,7 +242,7 @@ describe('Traceability: Markdoc document creation without a template', () => {
   test.openspec('[SDX-MDOC-CREATE-07] tables lower with a repeated bold header row')(
     'Scenario: tables lower with a repeated bold header row',
     async () => {
-      const source = ['{% table widths="30,70" %}', '* Holder', '* Shares', '---', '* [Holder One]', '* 1,000', '---', '* Holder Two', '* 2,500', '{% /table %}', '', 'After the table.'].join('\n');
+      const source = ['{% table widths="30,70" %}', '* Holder', '* Shares', '---', '* {% fill %}Holder One{% /fill %}', '* 1,000', '---', '* Holder Two', '* 2,500', '{% /table %}', '', 'After the table.'].join('\n');
       const { docx, readback } = await createDocumentFromMarkdoc(source);
       const document = await part(docx, 'word/document.xml');
       const grid = Array.from(document.getElementsByTagNameNS(W, 'gridCol')).map((col) => wAttr(col, 'w'));
@@ -403,7 +431,7 @@ describe('Traceability: Markdoc document creation without a template', () => {
   test.openspec('[SDX-MDOC-CREATE-02] a fill-in that wraps across source lines stays highlighted through the space')(
     'Scenario: a fill-in that wraps across source lines stays highlighted through the space',
     async () => {
-      const { docx } = await createDocumentFromMarkdoc('Pay [Amount in\nwords] now.');
+      const { docx } = await createDocumentFromMarkdoc('Pay {% fill %}Amount in\nwords{% /fill %} now.');
       const paragraph = bodyParagraphs(await part(docx, 'word/document.xml'))[0]!;
       expect(runs(paragraph).map((run) => [run.text, run.highlight])).toEqual([['Pay ', null], ['[Amount in words]', 'yellow'], [' now.', null]]);
     },

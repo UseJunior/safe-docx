@@ -143,10 +143,10 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
   const profile = resolveCreationProfile(profileInput);
   const ast = Markdoc.parse(source);
   const frontmatter = parseCreationFrontmatter(ast.attributes.frontmatter as string | undefined);
-  validateCreationAst(ast.children);
+  validateCreationAst(ast.children, { fillIns: frontmatter.fillIns ?? 'markup' });
   normalizeSoftBreaks(ast);
 
-  const theme = new CreationTheme(profile);
+  const theme = new CreationTheme(profile, frontmatter.fillIns ?? 'markup');
   const plugins = creationPlugins(theme);
   let api!: RenderApi;
   api = createMarkdocxRenderer({

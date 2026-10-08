@@ -54,8 +54,14 @@ export class CreationTheme implements Theme {
   private depth = 0;
   private literalDepth = 0;
   private highlightOff = 0;
+  private fillDepth = 0;
 
-  constructor(readonly profile: CreationProfile) {}
+  /**
+   * @param fillIns 'markup' (default): only {% fill %} content is highlighted
+   * and bare brackets are literal. 'brackets': the v0.24 behaviour, where every
+   * […] is highlighted.
+   */
+  constructor(readonly profile: CreationProfile, readonly fillIns: 'markup' | 'brackets' = 'markup') {}
 
   private paragraph(styleId: string, runs: InlineSpec[], overrides: Partial<Omit<ParagraphSpec, 'kind' | 'runs'>> = {}): ParagraphSpec {
     this.depth = 0;
@@ -94,7 +100,9 @@ export class CreationTheme implements Theme {
   }
 
   renderText(text: string, style: InlineStyle): InlineSpec[] {
-    if (this.literalDepth > 0 || this.highlightOff > 0) return text ? [textRun(text, style, false)] : [];
+    if (!text) return [];
+    if (this.fillDepth > 0) return [textRun(text, style, true)];
+    if (this.fillIns !== 'brackets' || this.literalDepth > 0 || this.highlightOff > 0) return [textRun(text, style, false)];
     const runs: TextRun[] = [];
     let buffer = '';
     let marked = this.depth > 0;
@@ -154,6 +162,16 @@ export class CreationTheme implements Theme {
     }
   }
 
+  /** Render explicit fill-in markup: the content and the brackets the renderer adds are all highlighted. */
+  fill(style: InlineStyle, render: () => InlineSpec[]): InlineSpec[] {
+    this.fillDepth += 1;
+    try {
+      return [textRun('[', style, true), ...render(), textRun(']', style, true)];
+    } finally {
+      this.fillDepth -= 1;
+    }
+  }
+
   withLiteral<T>(render: () => T): T {
     this.literalDepth += 1;
     try {
@@ -195,12 +213,15 @@ export function creationPlugins(theme: CreationTheme): { blockTags: BlockTagPlug
     {
       tag: 'signer',
       renderBlock: (node, api) => {
-        const name = String(node.attributes.name);
         const date = node.attributes.date === undefined ? undefined : String(node.attributes.date);
+        // The name is name="…" or the tag's inline content (which may hold {% fill %}).
+        const nameRuns = node.attributes.name !== undefined
+          ? signerSegment(api, String(node.attributes.name))
+          : contentParagraphs(node).flatMap((paragraph) => api.renderInlineChildren(paragraph, {}));
         const runs: InlineSpec[] = [
           { kind: 'text', text: SIGNATURE_LINE },
           { kind: 'break', breakType: 'line' },
-          ...signerSegment(api, name),
+          ...nameRuns,
           ...(date === undefined ? [] : [{ kind: 'tab' } as InlineSpec, ...signerSegment(api, date)]),
         ];
         return [theme.styledParagraph(CREATION_STYLE.signature, runs)];
@@ -232,6 +253,7 @@ export function creationPlugins(theme: CreationTheme): { blockTags: BlockTagPlug
   ];
   const inlineTags: InlineTagPlugin[] = [
     { tag: 'literal', renderInline: (node, api, style) => theme.withLiteral(() => api.renderInlineChildren(node, style)) },
+    { tag: 'fill', renderInline: (node, api, style) => theme.fill(style, () => api.renderInlineChildren(node, style)) },
   ];
   return { blockTags, inlineTags };
 }
