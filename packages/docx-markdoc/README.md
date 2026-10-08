@@ -501,3 +501,28 @@ The engine is deliberately lenient:
 
 A node or tag no seam handles throws `MarkdocxUnhandledNodeError` rather than
 being dropped.
+
+## Plain PDF render for finished documents
+
+`renderPlainPdf` renders a finished, non-tracked DOCX with LibreOffice in a
+disposable profile, then checks the `pdftotext` text layer. Each
+`requiredText` entry must appear within a single rendered page (anywhere on
+it, headers and footers included), compared with whitespace collapsed and no
+other normalization. An empty PDF or an empty text layer fails. Missing
+tools report `not_run`, never a pass. The input DOCX is copied, never
+modified; an `outputPdfPath` that aliases it is refused. The PDF reaches
+`outputPdfPath` only when every check passes, through a staged file renamed
+over the destination, so a symlink or hard link that appears at the
+destination mid-render is replaced, never written through. `pageCount` counts
+form-feed-delimited pages, blank pages included. It needs LibreOffice
+(`soffice`, or the path in `SAFE_DOCX_SOFFICE_BIN`) and `pdftotext` on the
+machine, and no npm package beyond this one.
+
+```ts
+const verdict = await renderPlainPdf({
+  docxPath: 'consent.docx',
+  outputPdfPath: 'consent.pdf',
+  requiredText: ['ACME WIDGETS INC.', '[Signature Page to Consent]'],
+});
+// verdict.status: 'passed' | 'failed' | 'not_run'
+```
