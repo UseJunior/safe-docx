@@ -612,6 +612,15 @@ function explainPageBreaks(input: BreakModelInput): BreakModelResult {
       result.footerMismatches.push({ page: b.page + 1, section: null, expected: '', found: found(b.page), reason: `page holds text from sections ${sectionOf(expected[a.index]!.entry)} and ${sectionOf(expected[b.index]!.entry)}` });
     }
   }
+  // A page continuing a split row belongs to that row's section: any other text aligned on it is another
+  // section's, which must have started on a page of its own.
+  for (const { index, page } of aligned) {
+    const pin = pinned.get(page);
+    if (pin && sectionOf(expected[index]!.entry) !== pin.section) {
+      result.footerMismatches.push({ page: page + 1, section: pin.section, expected: '', found: found(page), reason: `page continues a table row of section ${pin.section} but also holds text from section ${sectionOf(expected[index]!.entry)}` });
+      break;
+    }
+  }
   const lastEntrySection = source.body.length > 0 ? sectionOf(source.body.length - 1) : 0;
   if (pages === 0) {
     if (input.sectionCount > 0) result.footerMismatches.push({ page: 0, section: null, expected: '', found: '', reason: 'the PDF has no pages' });
@@ -721,7 +730,7 @@ function explainPageBreaks(input: BreakModelInput): BreakModelResult {
       if (k === group.pages.length) {
         if (chosen.length > 0 && !hasContent(chosen.at(-1)!, undefined)) return;
         // Every section change must be a page start, and none may lie after the last start.
-        if (changes.every((pos) => chosen.some((placement) => placement.pos === pos && !placement.spill))) {
+        if (changes.every((pos) => chosen.some((placement) => placement.pos === pos && !placement.spill && !placement.pinned))) {
           solutions.push([...chosen]);
           signatures.add(signature(chosen));
         }
@@ -729,7 +738,7 @@ function explainPageBreaks(input: BreakModelInput): BreakModelResult {
       }
       const page = group.pages[k]!;
       // A page cannot start past a section change it skips; page 0 starts at the very beginning.
-      const firstChange = changes.find((pos) => pos >= from && !chosen.some((placement) => placement.pos === pos && !placement.spill));
+      const firstChange = changes.find((pos) => pos >= from && !chosen.some((placement) => placement.pos === pos && !placement.spill && !placement.pinned));
       const hi = page === 0 && group.before < 0 ? 0 : Math.min(firstChange ?? items.length, items.length);
       const seen = new Set<string>();
       const pin = pinned.get(page);

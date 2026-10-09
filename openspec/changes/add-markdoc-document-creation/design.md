@@ -228,7 +228,9 @@ fails:
    still fails. This applies to header rows too. The pages holding the rest
    of such a row stay pinned to it: each must start inside the row, belong
    to the row's section and carry that section's footer, and shows the
-   repeated header unless the split row is the header itself. The search is
+   repeated header unless the split row is the header itself. A pinned page
+   never starts a section, and any other text aligned on it must belong to
+   the row's section. The search is
    memoized, tries a candidate only when it holds exactly the row's words,
    and runs under a fixed budget whose exhaustion fails the check. Every piece of generated text is modelled from the source,
    never excused by its shape:

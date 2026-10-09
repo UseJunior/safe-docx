@@ -306,6 +306,23 @@ describe('Traceability: independent round-trip oracle for created documents', ()
       expect(comparePdfWords(emptyHeaderSplit, emptyHeaderPages('A'))).toMatchObject({ passed: true, knownGenerated: { splitRows: [{ table: 0, row: 1, pages: [1, 2] }] } });
       expect(comparePdfWords(emptyHeaderSplit, emptyHeaderPages('B'))).toMatchObject({ passed: false, footerMismatches: [{ page: 2, expected: 'A', found: 'B' }] });
 
+      // A continuation page cannot also start the next section (final review 3, P1): section 1's text on the
+      // split row's continuation page fails even though the footer matches the row's section.
+      const pinnedSections: SourceProjection = {
+        body: [{ text: 'T', section: 0 }, { ...cell('L', 0), section: 0 }, { ...cell('R', 0), section: 0 }, { ...cell('l0 l1 l2 l3', 1), section: 0 }, { ...cell('r0 r1 r2 r3', 1), section: 0 }, { text: 'END', section: 1 }],
+        footers: [['A'], ['B']],
+      };
+      expect(comparePdfWords(pinnedSections, ['A\nT L R l0 l1 r0 r1\n', 'A\nL R l2 l3 r2 r3\n', 'B\nEND\n']).passed).toBe(true);
+      expect(comparePdfWords(pinnedSections, ['A\nT L R l0 l1 r0 r1\n', 'A\nL R l2 l3 r2 r3 END\n'])).toMatchObject({ passed: false, footerMismatches: expect.arrayContaining([expect.objectContaining({ page: 2, reason: expect.stringMatching(/also holds text from section 1/) })]) });
+      expect(comparePdfWords({ ...pinnedSections, body: pinnedSections.body.map((entry) => ({ ...entry })) }, ['A\nT L R l0 l1 r0 r1\n', 'B\nL R l2 l3 r2 r3\n', 'B\nEND\n']).passed).toBe(false);
+      // ...nor stand in for the start of a wordless section (an empty table) that then has no page of its own.
+      const wordlessAfterSplit: SourceProjection = {
+        body: [...pinnedSections.body.slice(0, 5), { ...cell('', 0, 1), section: 1 }, { ...cell('', 1, 1), section: 1 }, { text: 'END', section: 2 }],
+        footers: [['A'], ['B'], ['C']],
+      };
+      expect(comparePdfWords(wordlessAfterSplit, ['A\nT L R l0 l1 r0 r1\n', 'A\nL R l2 l3 r2 r3\n', 'B\n', 'C\nEND\n']).passed).toBe(true);
+      expect(comparePdfWords(wordlessAfterSplit, ['A\nT L R l0 l1 r0 r1\n', 'A\nL R l2 l3 r2 r3\n', 'C\nEND\n']).passed).toBe(false);
+
       // A header row that itself splits across pages is source content, read back in cell order (final review 2, P2).
       const hl = Array.from({ length: 10 }, (_, index) => `h${index}`);
       const hr = Array.from({ length: 10 }, (_, index) => `k${index}`);
