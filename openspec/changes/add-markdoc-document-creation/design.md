@@ -226,31 +226,31 @@ fails:
      (`1.`, `(a)`, `(i)` by depth; top-level lists start at their first
      marker; bullets `•`, `◦`, `▪`), so a generated `1.` cannot stand in for a
      deleted literal `1.`;
-   - **footer regions:** each page must begin with exactly its section's
-     effective footer (inherited when a section declares none): the footer
-     text, then the page number, counting pages from 1. The region is removed
-     from the page head only, then checked after alignment against the
-     section of the content aligned on that page, so a missing,
-     wrong-section or wrongly numbered footer fails, and a numeric footer
-     text is never mistaken for the page number. Sections run in order and
-     each starts a new page, so a page with no aligned text (a section
-     holding only an empty table) takes every section a consistent order
-     allows, and its footer must be the region of every one of them; a
-     section left with no page fails;
-   - **repeated table headers:** a table's header row found at the top of a
-     later page is accepted only when the content aligned on both sides of it
-     belongs to the body rows of a table with that header (every table with
-     an identical header is tried). A header-shaped run that is not accepted
-     must align with its table's own header row (a table starting on that
-     page); otherwise it is reported in `unverifiedTableHeaders` and fails,
-     so generated header text can never stand in for a lost body row.
+   - **page breaks are explained, not guessed:** between two consecutive
+     aligned source words, each page that starts there must start at some
+     point in the source between them, including inside wordless content
+     such as empty table rows. A start fixes what the page must show first:
+     the effective footer (inherited when a section declares none) and page
+     number of its section, the table header LibreOffice repeats when a
+     table continues across the break, and the source words at the top of
+     the page. Sections start on new pages, so every section change must be
+     a page start, and a page can hold only one section. Two observed
+     LibreOffice behaviours are assumed: a header row is never left alone
+     at a page bottom, and a table's last row can spill its empty remainder
+     onto the next page, repeating the header there (that page stays in the
+     table's section). The check passes only when every start that fits
+     explains the same source words; if none fits, or fitting starts
+     disagree, it fails (`footerMismatches` or `unverifiedTableHeaders`), so
+     generated header or footer text can never stand in for a missing
+     source word or a wrong footer. A layout the text cannot disambiguate
+     (a table with empty trailing rows followed by a table with the same
+     header; two identically headed tables back to back at a page start)
+     fails even when the PDF is right.
 
    Any other missing or extra word fails with `CREATION_PDF_WORDS_MISMATCH`;
    texts too different to align within 2,000 edits fail as `over-budget`.
-   The recorded `limitations` string states the remaining ambiguity: a
-   wordless page that could belong to differently footered sections, and
-   body text at a page head equal to another section's footer region. Both
-   cause false failures, never false passes.
+   The recorded `limitations` string states these assumptions and the
+   layouts that fail for ambiguity.
 
 `<stem>.verification.json` records the source, profile and output SHA-256 hashes,
 each check's outcome, the block inventory and the section inventory. The PDF

@@ -557,10 +557,12 @@ package, determinism, read-back and brownfield-import checks:
 - **PDF words.** When a PDF is rendered, its text layer (`pdftotext -raw`)
   must match the source word for word. Generated text is worked out from the
   source, not guessed from its shape: list labels (`1.`, `(a)`, `(i)`,
-  bullets) are expected words; each page must begin with its own section's
-  footer and page number; and a table's header row may repeat only at the top
-  of a page where that table continues. Anything else, missing or extra,
-  fails with `CREATION_PDF_WORDS_MISMATCH`. The certificate's `pdf.words.limitations`
+  bullets) are expected words, and every page break must be explained by a
+  place in the source where the page can start, which fixes the page's
+  footer and page number and any table header repeated at its top. Anything
+  else, missing or extra, fails with `CREATION_PDF_WORDS_MISMATCH`, and so
+  does a page break the text cannot pin down, such as a table with empty
+  trailing rows followed by a table with the same header. The certificate's `pdf.words.limitations`
   states what the comparison cannot catch.
 
 A check that finds a mismatch publishes nothing and leaves existing outputs,

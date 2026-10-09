@@ -336,7 +336,7 @@ export type PdfWordComparison = {
    */
   footerMismatches: Array<{ page: number; section: number | null; expected: string; found: string; reason?: string }>;
   /** Header-shaped text at a page head that is neither a repetition of a continuing table nor that table's own header row. */
-  unverifiedTableHeaders: Array<{ page: number; words: string }>;
+  unverifiedTableHeaders: Array<{ page: number; words: string; reason: string }>;
   knownGenerated: {
     /** The footer region removed from the head of each page, as found. */
     footerRegions: string[];
@@ -349,9 +349,9 @@ export type PdfWordComparison = {
 export const PDF_WORD_NORMALIZATION = 'Unicode NFKC (folds ligatures such as "fi"), then whitespace runs split words. Nothing else.';
 export const PDF_WORD_LIMITATIONS =
   'The text layer is read with pdftotext -raw (content-stream order; LibreOffice writes each page\'s footer first, then the body in document order). ' +
-  'Generated text is modelled, not guessed: the expected words include each list label the grammar generates; each page must begin with exactly its section\'s footer region (footer text, then the page number, counting pages from 1), checked against the section of the content aligned on that page; and a table\'s header row is accepted again only at the top of a page whose surrounding content belongs to that same table. ' +
-  'A page with no aligned body text takes every section a consistent page order allows (sections run in order, each starting a new page); its footer must be the region of every one of them. Header-shaped text at a page head that is neither a validated repetition nor its table\'s own header row is reported as unverified. ' +
-  'Every other missing or extra word fails. Ambiguity (a wordless page that could belong to differently footered sections, or body text at a page head equal to another section\'s footer region) causes a false failure, never a false pass.';
+  'List labels are expected words. Every page break is explained from the source: the checker searches for where each page can start between the source words around it (including inside wordless content such as empty table rows), and a start fixes what the page must show first, namely its section\'s footer and page number, the table header LibreOffice repeats when a table continues across the break, and the source words at the top of the page. Sections start on new pages. ' +
+  'Two observed LibreOffice behaviours are assumed: a header row is never left alone at a page bottom (it stays with the first body row), and a table\'s last row can spill its empty remainder onto the next page, repeating the header there. ' +
+  'The check passes only when every start that fits explains the same source words; if none fits, or starts that fit disagree (for example, a table with empty trailing rows followed by a table with the same header, or two such tables back to back at a page start), it fails. The text alone cannot always show layout, so such cases fail even when the PDF is right (a false failure); an ambiguity is never settled by a guess.';
 
 type ExpectedToken = { word: string; entry: number };
 
@@ -388,109 +388,68 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
   });
 
   const pages = pageTexts.map(words);
-  // Footer region at each page head: the longest candidate region that matches; validated after alignment.
+  // Footer region at each page head: the longest candidate region that matches; checked by the break model.
   const candidates = (page: number) => [...new Set(effective.map((_, section) => regionFor(section, page).join('\u0001')))].map((key) => (key ? key.split('\u0001') : []))
     .sort((a, b) => b.length - a.length);
   const startsWith = (tokens: readonly string[], seq: readonly string[], at = 0) => seq.length > 0 && at + seq.length <= tokens.length && seq.every((word, offset) => tokens[at + offset] === word);
   const regions = pages.map((tokens, page) => candidates(page).find((region) => region.length === 0 || startsWith(tokens, region)) ?? []);
-
-  // Repeated header candidates: right after the footer region on a later page.
-  // Every table whose header row matches right after the footer region. Headers of different lengths (one a
-  // prefix of another) are separate options, tried longest first; identical headers share an option.
-  type HeaderOption = { tables: number[]; length: number };
-  type HeaderCandidate = { page: number; options: HeaderOption[] };
-  const headerCandidates: HeaderCandidate[] = [];
-  pages.forEach((tokens, page) => {
-    if (page === 0) return;
-    const byLength = new Map<number, number[]>();
-    for (const [table, header] of headers) {
-      if (startsWith(tokens, header, regions[page]!.length)) byLength.set(header.length, [...(byLength.get(header.length) ?? []), table]);
-    }
-    if (byLength.size > 0) headerCandidates.push({ page, options: [...byLength].sort((a, b) => b[0] - a[0]).map(([length, tables]) => ({ length, tables })) });
+  // Head run: every table-header copy at the top of a later page (longest header first). These words are set
+  // aside and must be explained by the page-break model, as a repeated header or as source words.
+  const headerSeqs = [...new Set([...headers.values()].map((seq) => seq.join('\u0001')))].map((key) => key.split('\u0001')).sort((a, b) => b.length - a.length);
+  const headRuns = pages.map((tokens, page) => {
+    if (page === 0) return [] as string[];
+    let at = regions[page]!.length;
+    for (let seq = headerSeqs.find((h) => startsWith(tokens, h, at)); seq; seq = headerSeqs.find((h) => startsWith(tokens, h, at))) at += seq.length;
+    return tokens.slice(regions[page]!.length, at);
   });
 
-  /** The option each candidate currently removes; a candidate with none left is aligned as ordinary text. */
-  const chosen = new Map<HeaderCandidate, number>(headerCandidates.map((candidate) => [candidate, 0]));
-  const optionOf = (candidate: HeaderCandidate) => candidate.options[chosen.get(candidate) ?? candidate.options.length];
-  const run = () => {
-    const pdf: Array<{ word: string; page: number }> = [];
-    /** Where each candidate sits in `pdf`: the insertion point if removed, or its first token if kept. */
-    const at = new Map<HeaderCandidate, number>();
-    pages.forEach((tokens, page) => {
-      let from = regions[page]!.length;
-      const candidate = headerCandidates.find((entry) => entry.page === page);
-      if (candidate) at.set(candidate, pdf.length);
-      const option = candidate ? optionOf(candidate) : undefined;
-      if (option) from += option.length;
-      for (const word of tokens.slice(from)) pdf.push({ word, page });
-    });
-    const ops = myersDiff(expected, pdf, (x, y) => x.word === y.word);
-    const pdfToExpected = new Map<number, number>();
-    for (const op of ops ?? []) if (op.kind === 'equal') pdfToExpected.set(op.bi!, op.ai!);
-    const entryAt = (pdfIndex: number) => {
-      const expectedIndex = pdfToExpected.get(pdfIndex);
-      return expectedIndex === undefined ? undefined : source.body[expected[expectedIndex]!.entry];
-    };
-    return { pdf, at, ops, entryAt };
-  };
+  const pdf: Array<{ word: string; page: number }> = [];
+  pages.forEach((tokens, page) => {
+    for (const word of tokens.slice(regions[page]!.length + headRuns[page]!.length)) pdf.push({ word, page });
+  });
+  const ops = myersDiff(expected, pdf, (x, y) => x.word === y.word);
 
-  // A repeated header is genuine only where a table continues across the page: the content aligned on
-  // both sides of it must be body rows of one table whose header it matches. A removed option that fails
-  // moves to the candidate's next (shorter) option, or to none, and the texts are aligned again; options
-  // only advance, so this ends.
-  const repeatedTableHeaders: PdfWordComparison['knownGenerated']['repeatedTableHeaders'] = [];
-  let result = run();
-  for (;;) {
-    if (!result.ops) break;
-    const { at, entryAt } = result;
-    const continuing = (candidate: HeaderCandidate) => optionOf(candidate)?.tables.find((table) => {
-      const isBody = (entry: SourceBodyEntry | undefined) => entry?.table?.id === table && entry.table.row > 0;
-      return isBody(entryAt(at.get(candidate)! - 1)) && isBody(entryAt(at.get(candidate)!));
-    });
-    const invalid = headerCandidates.filter((candidate) => optionOf(candidate) && continuing(candidate) === undefined);
-    if (invalid.length === 0) {
-      for (const candidate of headerCandidates) {
-        if (optionOf(candidate)) repeatedTableHeaders.push({ page: candidate.page + 1, table: continuing(candidate)! });
-      }
-      break;
-    }
-    for (const candidate of invalid) chosen.set(candidate, chosen.get(candidate)! + 1);
-    result = run();
-  }
-
-  const { pdf, ops, at, entryAt } = result;
-  const missingIdx: number[] = [];
+  const missing = new Set<number>();
   const extraIdx: number[] = [];
   const footerMismatches: PdfWordComparison['footerMismatches'] = [];
   const unverifiedTableHeaders: PdfWordComparison['unverifiedTableHeaders'] = [];
+  const repeatedTableHeaders: PdfWordComparison['knownGenerated']['repeatedTableHeaders'] = [];
   if (ops) {
+    const firstOnPage: Array<number | undefined> = pages.map(() => undefined);
+    const lastOnPage: Array<number | undefined> = pages.map(() => undefined);
+    const aligned: Array<{ index: number; page: number }> = [];
     for (const op of ops) {
-      if (op.kind === 'delete') missingIdx.push(op.ai!);
+      if (op.kind === 'delete') missing.add(op.ai!);
       else if (op.kind === 'insert') extraIdx.push(op.bi!);
+      else {
+        const page = pdf[op.bi!]!.page;
+        firstOnPage[page] ??= op.ai!;
+        lastOnPage[page] = op.ai!;
+        aligned.push({ index: op.ai!, page });
+      }
     }
-    // A header-shaped run at a page head that is not a repetition must be the original header row of one of
-    // its tables (a table starting on that page). Otherwise it may be generated text standing in for lost
-    // source words, so it cannot be certified either way.
-    for (const candidate of headerCandidates) {
-      if (optionOf(candidate)) continue;
-      const start = at.get(candidate)!;
-      const original = candidate.options.some((option) => Array.from({ length: option.length }, (_, offset) => entryAt(start + offset))
-        .every((entry) => entry?.table !== undefined && entry.table.row === 0 && option.tables.includes(entry.table.id)));
-      if (!original) unverifiedTableHeaders.push({ page: candidate.page + 1, words: pdf.slice(start, start + candidate.options[0]!.length).map((token) => token.word).join(' ') });
-    }
-    footerMismatches.push(...checkPageFooters(pages.length, effective.length, pdf, entryAt, (page) => regions[page]!.join(' '), (section, page) => regionFor(section, page).join(' ')));
+    const model = explainPageBreaks({
+      source, expected, headers, pages: pages.length, firstOnPage, lastOnPage, aligned, headRuns,
+      found: (page) => regions[page]!.join(' '),
+      region: (section, page) => regionFor(section, page).join(' '),
+      sectionCount: effective.length,
+    });
+    for (const index of model.explained) missing.delete(index);
+    footerMismatches.push(...model.footerMismatches);
+    unverifiedTableHeaders.push(...model.unverified);
+    repeatedTableHeaders.push(...model.repeated);
   } else {
-    expected.forEach((_, i) => missingIdx.push(i));
+    expected.forEach((_, i) => missing.add(i));
   }
-  const missing = groupSpans(missingIdx, expected.map((token) => token.word));
+  const missingSpans = groupSpans([...missing].sort((a, b) => a - b), expected.map((token) => token.word));
   const unexplainedExtra = groupSpans(extraIdx, pdf.map((token) => token.word));
   return {
-    passed: ops !== null && missing.length === 0 && unexplainedExtra.length === 0 && footerMismatches.length === 0 && unverifiedTableHeaders.length === 0,
+    passed: ops !== null && missingSpans.length === 0 && unexplainedExtra.length === 0 && footerMismatches.length === 0 && unverifiedTableHeaders.length === 0,
     normalization: PDF_WORD_NORMALIZATION,
     alignment: ops ? 'complete' : 'over-budget',
     expectedWords: expected.length,
     pdfWords: pdf.length,
-    missing,
+    missing: missingSpans,
     unexplainedExtra,
     footerMismatches,
     unverifiedTableHeaders,
@@ -503,83 +462,218 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
   };
 }
 
+type BreakModelInput = {
+  source: SourceProjection;
+  expected: readonly ExpectedToken[];
+  headers: ReadonlyMap<number, string[]>;
+  pages: number;
+  firstOnPage: ReadonlyArray<number | undefined>;
+  lastOnPage: ReadonlyArray<number | undefined>;
+  aligned: ReadonlyArray<{ index: number; page: number }>;
+  headRuns: ReadonlyArray<readonly string[]>;
+  found: (page: number) => string;
+  region: (section: number, page: number) => string;
+  sectionCount: number;
+};
+
+type BreakModelResult = {
+  explained: Set<number>;
+  footerMismatches: PdfWordComparison['footerMismatches'];
+  unverified: PdfWordComparison['unverifiedTableHeaders'];
+  repeated: PdfWordComparison['knownGenerated']['repeatedTableHeaders'];
+};
+
 /**
- * Check each page's footer region against its section. Sections start on a new page and run in order, so
- * page sections are non-decreasing and every section has at least one page. A page with aligned body text
- * takes that text's section (all of it must be one section). A page without any takes every section a
- * consistent assignment allows; its footer must then be the region of every one of them, so a guess is
- * never certified.
+ * Explain every page break from the source alone. Between two consecutive aligned source words, the pages
+ * that start there must each start at some point in the source between them (possibly inside wordless
+ * content such as empty table rows). A placement fixes everything the page head must show: the footer of
+ * the section starting there, the header LibreOffice repeats when a table continues across the break, and
+ * the source words at the top of the page (missing from the alignment because the head run was set aside).
+ * Sections start on a new page, so every section change must be a break. The check accepts only when every
+ * consistent placement explains the same source words; anything else fails, and an ambiguity is never
+ * settled by a guess.
  */
-function checkPageFooters(
-  pageCount: number,
-  sectionCount: number,
-  pdf: ReadonlyArray<{ page: number }>,
-  entryAt: (pdfIndex: number) => SourceBodyEntry | undefined,
-  found: (page: number) => string,
-  region: (section: number, page: number) => string,
-): PdfWordComparison['footerMismatches'] {
-  const mismatches: PdfWordComparison['footerMismatches'] = [];
-  if (pageCount === 0 && sectionCount > 0) return [{ page: 0, section: null, expected: '', found: '', reason: 'the PDF has no pages' }];
-  const sectionsOn = Array.from({ length: pageCount }, () => new Set<number>());
-  pdf.forEach((token, index) => {
-    const entry = entryAt(index);
-    if (entry) sectionsOn[token.page]!.add(entry.section ?? 0);
-  });
-  const fixed: Array<number | undefined> = sectionsOn.map((set) => (set.size === 1 ? [...set][0] : undefined));
-  sectionsOn.forEach((set, page) => {
-    if (set.size > 1) mismatches.push({ page: page + 1, section: null, expected: '', found: found(page), reason: `page holds text from sections ${[...set].join(', ')}` });
-  });
-  // Unaligned pages between two fixed pages (or the document ends) take any section a consistent assignment allows.
-  let page = 0;
-  let previous = -1; // section of the last fixed page; -1 before the first
-  while (page < pageCount) {
-    if (fixed[page] !== undefined) {
-      const section = fixed[page]!;
-      if (section < previous) mismatches.push({ page: page + 1, section, expected: region(section, page), found: found(page), reason: 'sections out of order' });
-      else if (section > previous + 1 && (page === 0 || fixed[page - 1] !== undefined)) {
-        mismatches.push({ page: page + 1, section, expected: region(section, page), found: found(page), reason: `no page for section ${previous + 1}` });
-      }
-      if (region(section, page) !== found(page)) mismatches.push({ page: page + 1, section, expected: region(section, page), found: found(page) });
-      previous = Math.max(previous, section);
-      page += 1;
-      continue;
+function explainPageBreaks(input: BreakModelInput): BreakModelResult {
+  const { source, expected, headers, pages, firstOnPage, lastOnPage, aligned, headRuns, found, region } = input;
+  const result: BreakModelResult = { explained: new Set(), footerMismatches: [], unverified: [], repeated: [] };
+  const sectionOf = (entry: number) => source.body[entry]?.section ?? 0;
+  const tokensOf = new Map<number, number[]>();
+  expected.forEach((token, index) => tokensOf.set(token.entry, [...(tokensOf.get(token.entry) ?? []), index]));
+
+  // Text of two sections on one page, between consecutive aligned words with no page break between them.
+  for (let k = 1; k < aligned.length; k += 1) {
+    const [a, b] = [aligned[k - 1]!, aligned[k]!];
+    if (a.page === b.page && sectionOf(expected[a.index]!.entry) !== sectionOf(expected[b.index]!.entry)) {
+      result.footerMismatches.push({ page: b.page + 1, section: null, expected: '', found: found(b.page), reason: `page holds text from sections ${sectionOf(expected[a.index]!.entry)} and ${sectionOf(expected[b.index]!.entry)}` });
     }
-    let end = page;
-    while (end < pageCount && fixed[end] === undefined) end += 1;
-    // Sections strictly between `previous` and `after` must each get a gap page; past the end, `after` is virtual.
-    const after = end < pageCount ? fixed[end]! : sectionCount;
-    const gap = end - page;
-    const low = Math.max(previous, 0);
-    const high = Math.min(after, sectionCount - 1);
-    const mustCover = after - previous - 1;
-    if (mustCover > gap) {
-      mismatches.push({ page: page + 1, section: null, expected: '', found: found(page), reason: `${mustCover - gap} section(s) have no page` });
+  }
+  const lastEntrySection = source.body.length > 0 ? sectionOf(source.body.length - 1) : 0;
+  if (pages === 0) {
+    if (input.sectionCount > 0) result.footerMismatches.push({ page: 0, section: null, expected: '', found: '', reason: 'the PDF has no pages' });
+    return result;
+  }
+  if (lastEntrySection < input.sectionCount - 1) {
+    result.footerMismatches.push({ page: pages, section: null, expected: '', found: found(pages - 1), reason: `section ${lastEntrySection + 1} has no content to place on a page` });
+  }
+
+  // Group the pages by the aligned words around their start: the last aligned word before, the first at or after.
+  type Group = { before: number; after: number; pages: number[] };
+  const groups: Group[] = [];
+  for (let page = 0; page < pages; page += 1) {
+    let before = -1;
+    for (let p = 0; p < page; p += 1) before = Math.max(before, lastOnPage[p] ?? -1);
+    let after = expected.length;
+    for (let p = pages - 1; p >= page; p -= 1) after = firstOnPage[p] ?? after;
+    const last = groups.at(-1);
+    if (last && last.before === before && last.after === after) last.pages.push(page);
+    else groups.push({ before, after, pages: [page] });
+  }
+  // The source after the last aligned word, past the last page start, is on the last page: no section change there.
+  const tail = aligned.at(-1);
+  if (tail && groups.at(-1)!.after !== expected.length) {
+    const fromEntry = expected[tail.index]!.entry;
+    if (sectionOf(fromEntry) !== lastEntrySection) {
+      result.footerMismatches.push({ page: pages, section: null, expected: '', found: found(pages - 1), reason: `section ${lastEntrySection} has no page of its own` });
     }
-    for (let i = 1; i <= gap; i += 1) {
-      const p = page + i - 1;
-      const possible: number[] = [];
-      for (let s = low; s <= high; s += 1) {
-        const coverBefore = s > previous ? s - previous - 1 : 0; // sections strictly between previous and s
-        const coverAfter = s < after ? after - s - 1 : 0; // sections strictly between s and after
-        if (coverBefore <= i - 1 && coverAfter <= gap - i) possible.push(s);
+  }
+
+  for (const group of groups) explainGroup(group);
+  return result;
+
+  function explainGroup(group: Group) {
+    const firstEntry = group.before >= 0 ? expected[group.before]!.entry : -1;
+    const lastEntry = group.after < expected.length ? expected[group.after]!.entry : source.body.length;
+    // Items between the two aligned words: unaligned source words, and wordless entries (empty cells).
+    type Item = { entry: number; token?: number };
+    const items: Item[] = [];
+    for (let entry = Math.max(firstEntry, 0); entry <= Math.min(lastEntry, source.body.length - 1); entry += 1) {
+      const tokens = tokensOf.get(entry) ?? [];
+      if (tokens.length === 0) {
+        if (entry > firstEntry && entry < lastEntry) items.push({ entry });
+      } else {
+        for (const token of tokens) if (token > group.before && token < group.after) items.push({ entry, token });
       }
-      if (possible.length === 0) continue; // already reported: too few pages for the sections
-      const regions = [...new Set(possible.map((s) => region(s, p)))];
-      if (regions.length !== 1 || regions[0] !== found(p)) {
-        mismatches.push({
-          page: p + 1,
-          section: possible.length === 1 ? possible[0]! : null,
-          expected: regions.join(' | '),
-          found: found(p),
-          ...(possible.length === 1 ? {} : { reason: `page has no aligned text and could belong to section ${possible.join(' or ')}` }),
+    }
+    const beforeEntry = (pos: number) => (pos === 0 ? (firstEntry >= 0 ? firstEntry : undefined) : items[pos - 1]!.entry);
+    const afterEntry = (pos: number) => (pos === items.length ? (lastEntry < source.body.length ? lastEntry : undefined) : items[pos]!.entry);
+    /**
+     * Which repeated header a break at `pos` shows. Between rows of one table, its header always repeats.
+     * Right after a table's body cell with nothing of that table following, either no header (a clean break
+     * after the table) or the header (LibreOffice spills the empty remainder of that last row, as it does
+     * when the row ends exactly at the page bottom). `undefined` means no header.
+     */
+    const headersAt = (pos: number): Array<{ table?: number; spill: boolean }> => {
+      const [b, a] = [beforeEntry(pos), afterEntry(pos)];
+      const [tb, ta] = [b === undefined ? undefined : source.body[b]!.table, a === undefined ? undefined : source.body[a]!.table];
+      // LibreOffice keeps a table's header row with its first body row (observed: a table that starts near the
+      // page bottom moves whole), so no page breaks between the header row and the first body row.
+      if (tb && ta && tb.id === ta.id && tb.row === 0 && ta.row === 1) return [];
+      if (tb && ta && tb.id === ta.id && ta.row > 0) return [{ table: ta.id, spill: false }];
+      if (tb && tb.row > 0) return [{ spill: false }, { table: tb.id, spill: true }];
+      return [{ spill: false }];
+    };
+    const sectionAt = (pos: number) => {
+      const a = afterEntry(pos) ?? beforeEntry(pos);
+      return a === undefined ? 0 : sectionOf(a);
+    };
+    const changeAt = (pos: number) => {
+      const [b, a] = [beforeEntry(pos), afterEntry(pos)];
+      return b !== undefined && a !== undefined && sectionOf(b) !== sectionOf(a);
+    };
+    const changes = Array.from({ length: items.length + 1 }, (_, pos) => pos).filter(changeAt);
+    const tokenItemsFrom = (pos: number) => items.map((item, index) => ({ item, index })).filter(({ item, index }) => index >= pos && item.token !== undefined);
+
+    /** A spill page holds the rest of the row before `pos`, so it belongs to that row's section and starts no new one. */
+    type Placement = { pos: number; explained: number[]; end: number; table?: number; section: number; spill: boolean };
+    // How page `page` can start at `pos` with repeated header `table`: its head run is that header, then source words.
+    const place = (page: number, pos: number, table: number | undefined, spill: boolean): Placement | undefined => {
+      if (page === 0 && table !== undefined) return undefined;
+      const generated = table === undefined ? [] : headers.get(table) ?? [];
+      const head = headRuns[page]!;
+      if (generated.some((word, offset) => head[offset] !== word) || head.length < generated.length) return undefined;
+      const rest = head.slice(generated.length);
+      const next = tokenItemsFrom(pos).slice(0, rest.length);
+      if (next.length < rest.length || next.some(({ item }, offset) => expected[item.token!]!.word !== rest[offset])) return undefined;
+      const end = next.length > 0 ? next.at(-1)!.index + 1 : pos;
+      const section = spill ? sectionOf(beforeEntry(pos)!) : sectionAt(pos);
+      return { pos, explained: next.map(({ item }) => item.token!), end, ...(table === undefined ? {} : { table }), section, spill };
+    };
+
+    const signature = (solution: Placement[]) => solution.flatMap((placement) => placement.explained).sort((a, b) => a - b).join(',');
+    let solutions: Placement[][] = [];
+    let signatures = new Set<string>();
+    // The search stops once two placements disagree (that is already a failure) or after a fixed budget of
+    // steps; running out of budget counts as ambiguous, so it can only fail, never pass.
+    let budget = 200_000;
+    const search = (k: number, from: number, chosen: Placement[], footers: boolean) => {
+      if (signatures.size > 1 || budget <= 0) return;
+      budget -= 1;
+      if (k === group.pages.length) {
+        // Every section change must be a page start, and none may lie after the last start.
+        if (changes.every((pos) => chosen.some((placement) => placement.pos === pos && !placement.spill))) {
+          solutions.push([...chosen]);
+          signatures.add(signature(chosen));
+        }
+        return;
+      }
+      const page = group.pages[k]!;
+      // A page cannot start past a section change it skips; page 0 starts at the very beginning.
+      const firstChange = changes.find((pos) => pos >= from && !chosen.some((placement) => placement.pos === pos && !placement.spill));
+      const hi = page === 0 && group.before < 0 ? 0 : Math.min(firstChange ?? items.length, items.length);
+      const seen = new Set<string>();
+      for (let pos = from; pos <= hi; pos += 1) {
+        for (const { table, spill } of headersAt(pos)) {
+          const placement = place(page, pos, table, spill);
+          if (!placement) continue;
+          if (footers && region(placement.section, page) !== found(page)) continue;
+          // Equivalent starts (same repeated header, same explained words, same section) lead to the same outcomes.
+          const key = `${placement.table}|${placement.spill}|${placement.explained.join(',')}|${placement.section}|${changes.includes(pos)}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          search(k + 1, Math.max(pos, placement.end), [...chosen, placement], footers);
+        }
+      }
+    };
+    search(0, 0, [], true);
+    if (budget <= 0) signatures.add('budget');
+    if (solutions.length > 0) {
+      if (signatures.size === 1) {
+        for (const placement of solutions[0]!) {
+          for (const index of placement.explained) result.explained.add(index);
+        }
+        solutions[0]!.forEach((placement, k) => {
+          if (placement.table !== undefined) result.repeated.push({ page: group.pages[k]! + 1, table: placement.table });
         });
+      } else {
+        for (const page of group.pages) {
+          if (headRuns[page]!.length > 0) result.unverified.push({ page: page + 1, words: headRuns[page]!.join(' '), reason: 'the text fits more than one page break, and they disagree about which source words are present' });
+        }
       }
+      return;
     }
-    previous = Math.max(previous, high);
-    page = end;
+    // No placement fits. Report a footer problem if one exists without footers, otherwise the head of the pages.
+    solutions = [];
+    signatures = new Set();
+    budget = 200_000;
+    search(0, 0, [], false);
+    if (budget <= 0) signatures.add('budget');
+    if (solutions.length > 0) {
+      const relaxed = solutions[0]!;
+      relaxed.forEach((placement, k) => {
+        const page = group.pages[k]!;
+        const want = region(placement.section, page);
+        if (want !== found(page)) result.footerMismatches.push({ page: page + 1, section: placement.section, expected: want, found: found(page) });
+      });
+      if (signatures.size === 1) for (const placement of relaxed) for (const index of placement.explained) result.explained.add(index);
+      return;
+    }
+    const skipped = changes.length - group.pages.length;
+    if (skipped > 0) {
+      result.footerMismatches.push({ page: group.pages[0]! + 1, section: null, expected: '', found: found(group.pages[0]!), reason: `${skipped} section(s) have no page` });
+      return;
+    }
+    for (const page of group.pages) {
+      result.unverified.push({ page: page + 1, words: headRuns[page]!.join(' '), reason: 'no page break fits: a repeated table header or the source words at the top of the page are missing or out of place' });
+    }
   }
-  if (pageCount > 0 && fixed[pageCount - 1] !== undefined && previous < sectionCount - 1) {
-    mismatches.push({ page: pageCount, section: previous, expected: '', found: found(pageCount - 1), reason: `no page for section ${previous + 1}` });
-  }
-  return mismatches;
 }
