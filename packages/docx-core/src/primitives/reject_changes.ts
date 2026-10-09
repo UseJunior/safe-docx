@@ -21,6 +21,7 @@
 import { OOXML } from './namespaces.js';
 import { removeResolvedRowMarker, removeTableRowAndEmptyTable } from './table_rows.js';
 import { RANGE_MARKUP_BLOCK_SIBLING_LOCALS, canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
+import { carryHeaderFooterRefsFromRemovedBoundary } from './section_boundary_references.js';
 import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun, removeEmptyParagraphMarkProperties } from './paragraph_merge_formatting.js';
 import type { RevisionFilter } from './accept_changes.js';
 
@@ -329,6 +330,7 @@ function resolveParagraphMarkRevision(p: Element): void {
   if (!target) {
     removeEmptyParagraphMarkProperties(p);
     if (!paragraphHasContent(p) && canSafelyRemoveEmptyParagraph(p)) {
+      carryHeaderFooterRefsFromRemovedBoundary(p);
       parent.removeChild(p);
     }
     return;
@@ -355,6 +357,8 @@ function resolveParagraphMarkRevision(p: Element): void {
   for (const c of toMove) {
     target.insertBefore(c, ref);
   }
+  // The paragraph's own section boundary, if any, leaves with its mark (#1144).
+  carryHeaderFooterRefsFromRemovedBoundary(p);
   parent.removeChild(p);
 }
 
@@ -714,7 +718,13 @@ export function rejectChanges(
         }
         grandParent.replaceChild(restored, parentProp);
       } else {
-        // Original props were empty — remove the parent property element entirely
+        // Original props were empty — remove the parent property element entirely.
+        // Removing a paragraph-owned w:sectPr removes its section boundary, so
+        // its header/footer references move to the following section (#1144).
+        const paragraph = grandParent.parentNode;
+        if (localName === 'sectPrChange' && isW(grandParent, 'pPr') && paragraph && isW(paragraph, 'p')) {
+          carryHeaderFooterRefsFromRemovedBoundary(paragraph);
+        }
         grandParent.removeChild(parentProp);
       }
       propertyChangesReverted++;
