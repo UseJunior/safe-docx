@@ -43,6 +43,8 @@ describe('creation edge cases', () => {
       ['A\n\n{% page-break /%}\n\n{% section /%}\n\nB', 'PAGE_BREAK_BEFORE_SECTION'],
       ['{% signer name="" /%}', 'INVALID_SIGNER'],
       ['{% signer name="A" date="" /%}', 'INVALID_SIGNER'],
+      ['{% signer name="A" %}B{% /signer %}', 'INVALID_SIGNER'],
+      ['{% signer date="x" /%}', 'INVALID_SIGNER'],
       ['{% center %}\n- list\n{% /center %}', 'UNSUPPORTED_CREATION_SYNTAX'],
       ['> - quoted list', 'UNSUPPORTED_CREATION_SYNTAX'],
       ['1. a\n   1. b\n      1. c\n         1. d', 'LIST_TOO_DEEP'],

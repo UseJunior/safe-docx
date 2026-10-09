@@ -8,13 +8,13 @@ page-numbers: true
 
 {% center %}**Unanimous Written Consent of the Board of Directors**{% /center %}
 
-The undersigned, being all of the directors of Acme Widgets Inc., a Delaware corporation (the **"Company"**), adopt the following resolutions by written consent effective as of [Effective Date].
+The undersigned, being all of the directors of Acme Widgets Inc., a Delaware corporation (the **"Company"**), adopt the following resolutions by written consent effective as of {% fill %}Effective Date{% /fill %}.
 
 ## Approval of the Widget Plan
 
 1. RESOLVED, that the Widget Plan in the form presented to the Board is *approved and adopted*.
-   1. The Widget Plan reserves [Number] shares of Common Stock for issuance.
-   1. The officers may amend the Widget Plan to correct [scrivener's errors [and omissions]].
+   1. The Widget Plan reserves {% fill %}Number{% /fill %} shares of Common Stock for issuance.
+   1. The officers may amend the Widget Plan to correct {% fill %}scrivener's errors {% fill %}and omissions{% /fill %}{% /fill %}.
 
 ## Issuance of Shares
 
@@ -25,11 +25,11 @@ The undersigned, being all of the directors of Acme Widgets Inc., a Delaware cor
 * Shares
 * Price per share
 ---
-* [Holder One]
+* {% fill %}Holder One{% /fill %}
 * 1,000
 * $0.001
 ---
-* [Holder Two]
+* {% fill %}Holder Two{% /fill %}
 * 2,500
 * $0.001
 {% /table %}
@@ -51,4 +51,4 @@ IN WITNESS WHEREOF, the undersigned directors have executed this consent as of t
 
 {% signer name="John Doe, Director" date="Date: ____________" /%}
 
-{% signer name="[Director Name], Director" date="Date: ____________" /%}
+{% signer date="Date: ____________" %}{% fill %}Director Name{% /fill %}, Director{% /signer %}

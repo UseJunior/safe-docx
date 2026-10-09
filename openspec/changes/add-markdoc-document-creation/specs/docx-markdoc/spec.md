@@ -13,12 +13,19 @@ come from named paragraph styles over document defaults.
 - **THEN** the document defaults SHALL pin Times New Roman 11pt on all four font channels with 8pt after and 1.15 line spacing
 - **AND** each block SHALL reference its documented paragraph style, and body runs SHALL carry no direct font or size
 
-#### Scenario: [SDX-MDOC-CREATE-02] bracketed fill-ins are highlighted with nesting
-- **GIVEN** a paragraph containing nested brackets, brackets inside bold text, a legend containing brackets, and a `literal` tag containing brackets
-- **WHEN** it is created
-- **THEN** every character from an opening bracket to its matching closing bracket SHALL be highlighted yellow, including across bold boundaries
+#### Scenario: [SDX-MDOC-CREATE-02] only explicit fill-in markup is highlighted; bare brackets are literal
+- **GIVEN** a paragraph with nested `{% fill %}` markup, a fill-in inside bold text, a quoted alteration `[t]he`, `[sic]`, a bracketed cross-reference, unbalanced brackets, and a legend containing brackets
+- **WHEN** it is created with the default `fill-ins: markup`
+- **THEN** each `{% fill %}` SHALL render as its text wrapped in brackets, with the brackets and text highlighted yellow, including nested and inside bold text
+- **AND** every bare bracket SHALL be literal text, never highlighted and never an error, balanced or not
+- **AND** `{% fill %}` inside `{% literal %}`, inside a legend, or with no text SHALL fail with `INVALID_FILL_IN`
+
+#### Scenario: [SDX-MDOC-CREATE-02] fill-ins: brackets restores automatic bracket highlighting
+- **GIVEN** frontmatter `fill-ins: brackets`
+- **WHEN** a paragraph with nested brackets, brackets inside bold text, a legend and a `literal` tag is created
+- **THEN** every character from an opening bracket to its matching closing bracket SHALL be highlighted, as in v0.24
 - **AND** the legend and `literal` content SHALL carry no highlight
-- **AND** an unbalanced bracket outside those exemptions SHALL fail with a line number
+- **AND** an unbalanced bracket outside those exemptions SHALL fail with `UNBALANCED_FILL_IN` and a line number
 
 #### Scenario: [SDX-MDOC-CREATE-03] unsupported and legacy syntax fails closed
 - **GIVEN** sources containing a link, an image, a code span, an unknown tag, unknown frontmatter, an unclosed tag, inline HTML outside `{% literal %}`, a nested ordered list that does not start at 1, and whole-paragraph `<center>`, `<signer>` or `<!-- pagebreak -->` markup outside `{% literal %}`
