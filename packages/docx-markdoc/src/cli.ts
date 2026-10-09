@@ -26,7 +26,7 @@ function usage(): string {
     '    [--note-profile profile.json | --external-notes MODE --internal-notes MODE --unspecified-notes MODE]',
     '  docx-markdoc verify <anchored.docx> <document.mdoc> [--external-comments|--no-external-comments]',
     '  docx-markdoc compile-greenfield <template.docx> <document.mdoc> <output-dir> [--style-profile profile.json]',
-    '  docx-markdoc create <document.mdoc> <output-dir> [--style-profile profile.json] [--no-pdf] [--require-pdf] [--replace]',
+    '  docx-markdoc create <document.mdoc> <output-dir> [--style-profile profile.json] [--no-pdf] [--require-pdf] [--replace | --dangerously-overwrite-edited-docx]',
     '  docx-markdoc export-edits <document.mdoc> <output.json>',
     '  docx-markdoc comments-to-footnotes <input.docx> <output.docx> [--prefix TEXT] [--prefix-separator TEXT] [--bold-prefix] [--prefix-color RRGGBB] [--prefix-highlight COLOR] [--body-color RRGGBB] [--body-highlight COLOR] [--flatten-threads]',
   ].join('\n');

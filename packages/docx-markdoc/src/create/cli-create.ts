@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { link, lstat, mkdir, mkdtemp, open, readFile, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { renderPlainPdf, type PlainPdfVerdict } from '../pdf/plain-render.js';
@@ -14,7 +14,10 @@ export type CreateCliArgs = {
   profilePath?: string;
   pdf: boolean;
   requirePdf: boolean;
+  /** Rebuild over existing outputs, but only when the DOCX is the one the last build certified. */
   replace: boolean;
+  /** Also rebuild over an edited or uncertified DOCX, keeping its bytes in a named directory. Implies `replace`. */
+  overwriteEditedDocx: boolean;
 };
 
 /** The PDF verdict as recorded: page texts are dropped, and `words` holds the word-level comparison when the PDF rendered. */
@@ -22,6 +25,8 @@ export type RecordedPdfVerdict = Omit<PlainPdfVerdict, 'pageTexts'> & { words?: 
 
 export type CreateCliResult = {
   outputs: { docx: string; text: string; certificate: string; pdf?: string };
+  /** Set when `--dangerously-overwrite-edited-docx` displaced a DOCX that was not the last certified build. */
+  overwritten?: { docx: string; sha256: string; reason: string };
   created: CreatedDocument;
   pdf: RecordedPdfVerdict | { status: 'skipped' };
   summary: string;
@@ -50,6 +55,7 @@ export function parseCreateCliArgs(args: string[]): CreateCliArgs {
   let pdf = true;
   let requirePdf = false;
   let replace = false;
+  let overwriteEditedDocx = false;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
     if (arg === '--style-profile') {
@@ -60,13 +66,14 @@ export function parseCreateCliArgs(args: string[]): CreateCliArgs {
     } else if (arg === '--no-pdf') pdf = false;
     else if (arg === '--require-pdf') requirePdf = true;
     else if (arg === '--replace') replace = true;
+    else if (arg === '--dangerously-overwrite-edited-docx') overwriteEditedDocx = replace = true;
     else if (arg.startsWith('--')) throw new Error(`Unknown option ${arg}.`);
     else positional.push(arg);
   }
   const [markdocPath, outputDir] = positional;
   if (!markdocPath || !outputDir || positional.length !== 2) throw new Error('create requires a Markdoc file and an output directory.');
   if (!pdf && requirePdf) throw new Error('--no-pdf and --require-pdf are mutually exclusive.');
-  return { markdocPath, outputDir, ...(profilePath ? { profilePath } : {}), pdf, requirePdf, replace };
+  return { markdocPath, outputDir, ...(profilePath ? { profilePath } : {}), pdf, requirePdf, replace, overwriteEditedDocx };
 }
 
 async function existingKind(target: string): Promise<'file' | 'symlink' | 'other' | null> {
@@ -88,6 +95,45 @@ export function requiredPdfText(created: CreatedDocument): string[] {
   const lastNeedle = last.length > 120 ? last.slice(0, 80) : last;
   const footers = created.readback.footers.flatMap((footer) => footer ?? []).filter((line) => line !== PAGE_FIELD_TOKEN);
   return [...new Set([title, lastNeedle, ...footers].filter((value): value is string => Boolean(value?.trim())))];
+}
+
+const sha256File = async (target: string): Promise<string> => createHash('sha256').update(await readFile(target)).digest('hex');
+
+/**
+ * What the last successful build certified about the existing DOCX: its
+ * SHA-256 from `<stem>.verification.json`, or why there is no usable record.
+ */
+export type DocxFingerprint = { sha256: string } | { sha256: null; reason: string };
+
+async function certifiedDocxFingerprint(certificatePath: string): Promise<DocxFingerprint> {
+  if ((await existingKind(certificatePath)) !== 'file') return { sha256: null, reason: `${path.basename(certificatePath)} is missing` };
+  let record: unknown;
+  try {
+    record = JSON.parse(await readFile(certificatePath, 'utf8'));
+  } catch (error) {
+    return { sha256: null, reason: `${path.basename(certificatePath)} is unreadable (${error instanceof Error ? error.message : String(error)})` };
+  }
+  const { kind, passed, docxSha256 } = (record ?? {}) as { kind?: unknown; passed?: unknown; docxSha256?: unknown };
+  if (kind !== 'markdoc-create' || passed !== true || typeof docxSha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(docxSha256)) {
+    return { sha256: null, reason: `${path.basename(certificatePath)} is not a passing create certificate with a DOCX fingerprint` };
+  }
+  return { sha256: docxSha256 };
+}
+
+/**
+ * Guard for the existing DOCX. `certified` is the fingerprint the last build
+ * recorded (null: none usable). Publication hashes the bytes it actually moves
+ * aside: unless `force`, anything but the certified bytes is refused; with
+ * `force`, anything but the certified bytes is kept.
+ */
+type DocxGuard = { target: string; certified: string | null; force: boolean; displacedSha256?: string };
+
+function editedDocxError(target: string, reason: string): DocxMarkdocError {
+  return new DocxMarkdocError(
+    'CREATION_OUTPUT_EDITED',
+    `Refusing to replace ${target}: ${reason}. It may hold edits made after the last build. Move it aside, or pass --dangerously-overwrite-edited-docx to replace it (its bytes are kept in a .<stem>.create-overwritten-… directory).`,
+    { target, reason },
+  );
 }
 
 /** Filesystem operations used to publish outputs; injectable so tests can force a mid-publication failure. */
@@ -130,6 +176,7 @@ async function publish(
   recoveryDir: string,
   replace: boolean,
   ops: PublishFileOps,
+  guard: DocxGuard,
 ): Promise<void> {
   const backups: Array<{ target: string; backup: string }> = [];
   const placed: Array<{ target: string; dev: number; ino: number }> = [];
@@ -140,6 +187,14 @@ async function publish(
       const backup = path.join(backupDir, path.basename(target));
       await ops.rename(target, backup);
       backups.push({ target, backup });
+      if (target === guard.target) {
+        // Check the bytes actually moved aside, so an edit made after the
+        // preflight check is caught too; a failure here restores everything.
+        guard.displacedSha256 = await sha256File(backup);
+        if (!guard.force && guard.displacedSha256 !== guard.certified) {
+          throw editedDocxError(target, 'it changed or appeared during the build and is not the DOCX the last build certified');
+        }
+      }
     }
     for (const [target, staged] of produced) {
       // Ownership is the private staged file's inode, read before linking: the
@@ -335,6 +390,16 @@ async function createLocked(
       throw new DocxMarkdocError('CREATION_OUTPUT_EXISTS', `Output already exists: ${target}. Pass --replace to rebuild in place.`);
     }
   }
+  // --replace rebuilds only over the DOCX the last build certified. A DOCX with
+  // no usable certificate, or whose bytes differ from it, may hold edits.
+  const fingerprint = await certifiedDocxFingerprint(outputs.certificate);
+  let docxReason: string | undefined;
+  if ((await existingKind(outputs.docx)) === 'file') {
+    if (fingerprint.sha256 === null) docxReason = `${fingerprint.reason}, so it cannot be shown to be unedited`;
+    else if (fingerprint.sha256 !== (await sha256File(outputs.docx))) docxReason = 'its SHA-256 differs from the one recorded by the last build';
+    if (docxReason && !options.overwriteEditedDocx) throw editedDocxError(outputs.docx, docxReason);
+  }
+  const guard: DocxGuard = { target: outputs.docx, certified: fingerprint.sha256, force: options.overwriteEditedDocx };
 
   const profileSource = options.profilePath ? await readFile(options.profilePath) : undefined;
   let profile: unknown;
@@ -396,7 +461,25 @@ async function createLocked(
     const backupDir = path.join(staging, 'replaced');
     await mkdir(backupDir);
     const retired = Object.values(outputs).filter((target) => !produced.has(target));
-    await publish(produced, retired, backupDir, path.join(outputDir, `.${stem}.create-recovery-${randomUUID()}`), options.replace, ops);
+    await publish(produced, retired, backupDir, path.join(outputDir, `.${stem}.create-recovery-${randomUUID()}`), options.replace, ops, guard);
+    // A forced overwrite keeps the displaced DOCX: the exact bytes that were moved aside.
+    let overwritten: CreateCliResult['overwritten'];
+    if (guard.displacedSha256 !== undefined && guard.displacedSha256 !== guard.certified) {
+      const keptDir = path.join(outputDir, `.${stem}.create-overwritten-${randomUUID()}`);
+      const kept = path.join(keptDir, path.basename(outputs.docx));
+      try {
+        await mkdir(keptDir);
+        await ops.rename(path.join(backupDir, path.basename(outputs.docx)), kept);
+      } catch (error) {
+        keepStaging = true;
+        throw new DocxMarkdocError(
+          'CREATION_OVERWRITE_BACKUP_FAILED',
+          `The new outputs were published, but the replaced DOCX could not be moved to ${kept} (${error instanceof Error ? error.message : String(error)}). Its bytes are kept in ${path.join(backupDir, path.basename(outputs.docx))}.`,
+          { kept: path.join(backupDir, path.basename(outputs.docx)) },
+        );
+      }
+      overwritten = { docx: kept, sha256: guard.displacedSha256, reason: docxReason ?? 'it changed during the build' };
+    }
     const { checks } = created.certificate;
     const summary = [
       `created ${path.basename(outputs.docx)}: ${checks.readback.paragraphs} paragraphs, ${checks.footers.sections} section(s)`,
@@ -406,15 +489,18 @@ async function createLocked(
       `brownfield ok (${checks.brownfield.anchoredParagraphs} anchored)`,
       `round trip ok (${checks.roundTrip.body.expected} paragraphs; negative controls ok)`,
       pdf.status === 'skipped' ? 'pdf skipped' : `pdf ${pdf.status}${'pageCount' in pdf && pdf.pageCount ? ` (${pdf.pageCount} pages)` : ''}${pdf.status === 'not_run' ? ` (${pdf.reason})` : ''}${'words' in pdf && pdf.words ? `; pdf words ok (${pdf.words.expectedWords} source words)` : ''}`,
+      ...(overwritten ? [`WARNING: overwrote an edited ${path.basename(outputs.docx)} (${overwritten.reason}); its previous bytes (sha256 ${overwritten.sha256}) are kept in ${overwritten.docx}`] : []),
     ].join('; ');
     return {
       outputs: { docx: outputs.docx, text: outputs.text, certificate: outputs.certificate, ...(produced.has(outputs.pdf) ? { pdf: outputs.pdf } : {}) },
+      ...(overwritten ? { overwritten } : {}),
       created,
       pdf,
       summary,
     };
   } catch (error) {
-    keepStaging = error instanceof PublishRecoveryError && error.keepStaging;
+    // Keep staging when it holds originals that could not be restored or moved out.
+    keepStaging ||= error instanceof PublishRecoveryError && error.keepStaging;
     throw error;
   } finally {
     if (!keepStaging) await rm(staging, { recursive: true, force: true });

@@ -536,7 +536,22 @@ replacing the file in that instant. Without
 including a PDF from an earlier build, and it never overwrites a file that
 appears while it runs. With `--replace`, the outputs are swapped in together,
 and a stale artifact this build did not produce (a PDF under `--no-pdf`) is
-removed. An output that would overwrite an input, including through a
+removed.
+
+`--replace` rebuilds over `<stem>.docx` only when it is the DOCX the last
+build certified: its SHA-256 must equal `docxSha256` in a passing
+`<stem>.verification.json`. If someone edited the DOCX after the build, or
+the certificate is missing or unreadable, the build fails with
+`CREATION_OUTPUT_EDITED` and changes nothing. The DOCX is checked again when
+it is moved aside at publication, so an edit saved during the build is caught
+too. To rebuild anyway, pass `--dangerously-overwrite-edited-docx`. It keeps
+the displaced DOCX, byte for byte, in
+`.<stem>.create-overwritten-<uuid>/<stem>.docx` and names that path in its
+output. These checks see edits saved before publication moves the DOCX aside;
+a program still writing to the file after that point writes into the kept
+copy.
+
+An output that would overwrite an input, including through a
 symlinked directory or a hard link, is refused. Use `--no-pdf` to skip the PDF, or
 `--require-pdf` to treat missing tools as a failure. `--style-profile
 house.json` overrides any of `font`, `sizePt`, `spacingAfterPt`,
@@ -665,7 +680,9 @@ brackets-are-blanks reading while you convert, add `fill-ins: brackets` to the
 frontmatter. Leftover pseudo-HTML
 fails with `LEGACY_MARKUP`, and the error names the tag to use instead.
 Make later edits through `docx-markdoc import` / `compile`, which produce
-tracked changes.
+tracked changes. Once someone edits the `.docx` itself, `--replace` refuses
+to rebuild over it (`CREATION_OUTPUT_EDITED`), so a rebuild cannot silently
+discard those edits.
 
 ### Moving from per-matter pseudo-HTML `.mdoc`
 

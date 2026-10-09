@@ -24,6 +24,8 @@
 - [x] 3.4 Independent round-trip oracle from the Markdoc source, with
       negative controls and word-level mismatches (`-11`, #1185).
 - [x] 3.5 PDF word-level comparison (`-12`) and the failure report (`-13`).
+- [x] 3.6 Edited-DOCX guard for `--replace` and
+      `--dangerously-overwrite-edited-docx` (`-14`, #1186).
 
 ## 4. Benchmark and migration
 

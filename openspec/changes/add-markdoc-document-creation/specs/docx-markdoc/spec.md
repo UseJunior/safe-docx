@@ -124,3 +124,11 @@ any verification fails.
 - **THEN** it SHALL publish nothing and leave every existing output, including `<stem>.verification.json`, byte-identical
 - **AND** it SHALL write `<stem>.failed-verification.json` with the failing checks and mismatches, and the error SHALL name that path or say why it could not be written
 - **AND** the next successful build SHALL remove the report
+
+#### Scenario: [SDX-MDOC-CREATE-14] --replace rebuilds only the DOCX the last build certified
+- **GIVEN** an output directory whose `<stem>.docx` may have been edited after the last build
+- **WHEN** `create` runs with `--replace`
+- **THEN** it SHALL rebuild only when the DOCX's SHA-256 equals the `docxSha256` of a passing `<stem>.verification.json`
+- **AND** an edited DOCX, or one whose certificate is missing, unreadable, failed or has no fingerprint, SHALL be refused with `CREATION_OUTPUT_EDITED`, leaving every file unchanged
+- **AND** a DOCX edited or appearing during the build SHALL be caught at publication and the publication rolled back
+- **AND** with `--dangerously-overwrite-edited-docx` the build SHALL proceed and keep the exact displaced bytes in a named `.<stem>.create-overwritten-…` directory, and a publication failure SHALL restore the edited DOCX in place

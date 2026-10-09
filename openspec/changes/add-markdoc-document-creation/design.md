@@ -288,12 +288,29 @@ only.
 
 ```text
 docx-markdoc create <document.mdoc> <output-dir>
-  [--style-profile profile.json] [--no-pdf] [--require-pdf] [--replace]
+  [--style-profile profile.json] [--no-pdf] [--require-pdf]
+  [--replace | --dangerously-overwrite-edited-docx]
 ```
 
 - The output directory may already exist.
 - Each output path must be new unless `--replace` is given. `--replace` is
   meant for rebuild loops in a matter's `outbound/draft`.
+- **Edited outputs (#1186).** A person may edit `<stem>.docx` in Word after a
+  build. `--replace` rebuilds over an existing DOCX only when its SHA-256
+  equals the `docxSha256` of a passing `<stem>.verification.json`; otherwise
+  it fails with `CREATION_OUTPUT_EDITED` and changes nothing. A missing,
+  unreadable or failed certificate, or one without a fingerprint, cannot show
+  the DOCX is unedited, so it is refused too. The check runs before the build
+  and again at publication, on the bytes actually moved aside, so an edit made
+  during the build is caught and rolled back.
+  `--dangerously-overwrite-edited-docx` implies `--replace` and accepts such
+  a DOCX. The displaced bytes, exactly as moved aside, are kept in
+  `.<stem>.create-overwritten-<uuid>/<stem>.docx`, and the result and summary
+  name the path and SHA-256. If that move fails, the staging directory that
+  holds them is kept and named. Overwriting the certified DOCX keeps nothing.
+  These checks protect against edits that finish before publication moves
+  the DOCX aside. A program that still holds the file open and writes after
+  that move writes into the kept or backed-up copy, not the new output.
 - Outputs are staged in a private directory inside the output directory and
   published as one transaction after every check passes:
   - each existing target, including a stale artifact this build does not
