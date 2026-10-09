@@ -165,7 +165,7 @@ The profile is plain JSON. Every field is optional and merges over the default:
 
 ## Verification certificate
 
-Every `create` build runs these checks and refuses to write outputs if any
+Every `create` build runs these checks and publishes no output if any
 fails:
 
 1. **Package:** `checkGeneratedPackage` reports no issues.
@@ -192,14 +192,97 @@ fails:
    table that ends a section.
 6. **Mirror:** `<stem>.txt` is written from the read-back, re-read and
    compared.
-7. **PDF (optional):** render with LibreOffice in a disposable profile and run
-   `pdftotext`. The PDF must be non-empty and must contain the first and last
-   non-empty paragraphs (the last truncated to 80 characters when longer than
-   120) and every footer text, compared with whitespace collapsed. Missing
-   tools report `not_run`.
+7. **Independent round trip (#1185):** checks 3 and 4 compare the DOCX with
+   the projection of the lowered DocumentSpec, so a lowering bug that drops
+   content from both passes them. This check takes its expected text from
+   the original Markdoc only (`create/oracle.ts`, its own AST walk; it never
+   calls the validator's renderer, the lowering, the theme or the engine) and
+   its actual text from `docx-markdoc import` of the created DOCX. Body
+   paragraphs and each section's footer paragraphs are compared as
+   sequences, with a Myers alignment, after Unicode NFC and whitespace
+   collapsing only (no case, punctuation or duplicate folding); empty
+   paragraphs are dropped on both sides. A footer page-number field matches
+   any decimal number. Each mismatch is recorded as `missing`, `extra` or
+   `changed`, with its source line and, for `changed`, the missing and extra
+   word spans with four words of context. Four negative controls must each
+   be detected: a deleted word, paragraph, table cell and footer text
+   (`not applicable` when the source has none). The oracle encodes the
+   grammar's layout contract (a signer is a 30-underscore line, a break, the
+   name, a tab and the date; a fill renders inside brackets; list numbers are
+   not paragraph text).
+8. **PDF (optional):** render with LibreOffice in a disposable profile and run
+   `pdftotext -raw`. The PDF must be non-empty and must contain the first and
+   last non-empty paragraphs (the last truncated to 80 characters when longer
+   than 120) and every footer text, compared with whitespace collapsed.
+   Missing tools report `not_run`.
+9. **PDF words (#1185):** when the PDF passes check 8, its text layer is
+   aligned word by word (NFKC, whitespace split) with the source text. `-raw`
+   is content-stream order: LibreOffice writes each page's footer first, then
+   the body in document order (table cells row by row even when they wrap, a
+   justified line ending in a manual break kept whole); the default
+   reading-order mode reads a table column by column. A row split across
+   pages comes out as each cell's fragment on each page; it is read back in
+   cell order only when the end of one page and the start of the next (and
+   any whole pages between) partition exactly into the row's cells, every
+   cell starting on the first page, so a lost or duplicated word in the row
+   still fails. This applies to header rows too. The pages holding the rest
+   of such a row stay pinned to it: each must start inside the row, belong
+   to the row's section and carry that section's footer, and shows the
+   repeated header unless the split row is the header itself. A pinned page
+   never starts a section, and any other text aligned on it must belong to
+   the row's section. The search is
+   memoized, tries a candidate only when it holds exactly the row's words,
+   and runs under a fixed budget whose exhaustion fails the check. Every piece of generated text is modelled from the source,
+   never excused by its shape:
+   - **list labels** are expected words, computed from the grammar's numbering
+     (`1.`, `(a)`, `(i)` by depth; top-level lists start at their first
+     marker; bullets `•`, `◦`, `▪`), so a generated `1.` cannot stand in for a
+     deleted literal `1.`;
+   - **page breaks are explained, not guessed:** between two consecutive
+     aligned source words, each page that starts there must start at some
+     point in the source between them, including inside wordless content
+     such as empty table rows. A start fixes what the page must show first:
+     the effective footer (inherited when a section declares none) and page
+     number of its section, the table header LibreOffice repeats when a
+     table continues across the break, and the source words at the top of
+     the page. Sections start on new pages, so every section change must be
+     a page start, and a page can hold only one section. Two observed
+     LibreOffice behaviours are assumed: a header row is never left alone
+     at a page bottom, and a table's last row can spill its empty remainder
+     onto the next page, repeating the header there (that page stays in the
+     table's section). The check passes only when every start that fits
+     explains the same source words; if none fits, or fitting starts
+     disagree, it fails (`footerMismatches` or `unverifiedTableHeaders`), so
+     generated header or footer text can never stand in for a missing
+     source word or a wrong footer. A layout the text cannot disambiguate
+     (a table with empty trailing rows followed by a table with the same
+     header; two identically headed tables back to back at a page start)
+     fails even when the PDF is right.
+
+   Any other missing or extra word fails with `CREATION_PDF_WORDS_MISMATCH`;
+   texts too different to align within 2,000 edits fail as `over-budget`.
+   The recorded `limitations` string states these assumptions and the
+   layouts that fail for ambiguity.
 
 `<stem>.verification.json` records the source, profile and output SHA-256 hashes,
-each check's outcome, the block inventory and the section inventory.
+each check's outcome, the block inventory and the section inventory. The PDF
+verdict is recorded without its per-page text, with the word comparison
+under `pdf.words`.
+
+### Failure report
+
+A failed check that found a mismatch (`CREATION_VERIFICATION_FAILED`,
+`CREATION_PDF_FAILED` with a rendered PDF, `CREATION_PDF_WORDS_MISMATCH`)
+publishes nothing and leaves existing outputs untouched, including an earlier
+`<stem>.verification.json`. It writes `<stem>.failed-verification.json`
+(kind `markdoc-create-failure`, the error code and message, `published:
+false`, and the failing certificate or PDF verdict with every mismatch),
+staged and renamed into place under the stem lock, so it never writes through
+a symlink. The error message names its path (or says why it could not be
+written). The next failed build replaces it; the next successful build
+removes it. Missing PDF tools under `--require-pdf` are not a mismatch and
+leave no report, and validation errors are reported with their line number
+only.
 
 ## CLI
 

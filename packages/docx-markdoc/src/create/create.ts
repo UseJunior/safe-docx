@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { checkGeneratedPackage, generateDocx } from '@usejunior/docx-core';
 import { DocxMarkdocError } from '../errors.js';
 import { importDocxToMarkdoc } from '../import.js';
+import { requireMarkdoc } from '../markdoc.js';
+import { ORACLE_NORMALIZATION, compareParagraphs, projectSourceText, type SequenceComparison, type SourceProjection } from './oracle.js';
 import { lowerCreationMarkdoc, type CreationLowering, type FooterProjection } from './lower.js';
 import { readCreatedDocx, type CreationReadback } from './readback.js';
 
@@ -21,6 +23,17 @@ export type CreationCertificate = {
     readback: CreationCheck & { paragraphs: number; negativeControlDetected: boolean };
     footers: CreationCheck & { sections: number; negativeControlDetected: boolean };
     brownfield: CreationCheck & { anchoredParagraphs: number };
+    /**
+     * Independent round trip (#1185): the created DOCX re-imported through
+     * `docx-markdoc import`, compared with plain text read straight from the
+     * original Markdoc, never from the lowering or the DocumentSpec.
+     */
+    roundTrip: CreationCheck & {
+      normalization: string;
+      body: SequenceComparison;
+      footers: Array<{ section: number; expected: string[] | null; actual: string[] | null; comparison?: SequenceComparison; passed: boolean }>;
+      negativeControls: Record<'deletedWord' | 'deletedParagraph' | 'deletedTableCell' | 'deletedFooterText', boolean | 'not applicable'>;
+    };
   };
   frontmatter: CreationLowering['frontmatter'];
   profile: CreationLowering['profile'];
@@ -35,6 +48,12 @@ export type CreateDocumentOptions = {
   profileSource?: string | Buffer;
   /** Banner line for the text mirror (for example the output file name). */
   mirrorLabel?: string;
+  /**
+   * Diagnostics and tests only: rewrite the lowering before generation. It
+   * lets a test corrupt the lowering (drop a paragraph from both the spec and
+   * its projection) to prove the round-trip oracle does not depend on it.
+   */
+  transformLowering?: (lowering: CreationLowering) => CreationLowering;
 };
 
 export type CreatedDocument = {
@@ -47,6 +66,66 @@ export type CreatedDocument = {
 };
 
 const sha256 = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
+
+/** Footer paragraphs of each section from re-imported Markdoc: the story bound to `<section>:default`. */
+function importedFooters(ir: ReturnType<typeof requireMarkdoc>, sections: number): Array<string[] | null> {
+  const stories = ir.stories ?? [];
+  const storyParagraphs = ir.storyScaffold ?? [];
+  return Array.from({ length: sections }, (_, section) => {
+    const story = stories.find((entry) => entry.kind === 'footer' && entry.bindings.includes(`${section}:default`));
+    return story ? storyParagraphs.filter((paragraph) => paragraph.story === story.id).map((paragraph) => paragraph.originalText) : null;
+  });
+}
+
+/** Run the independent round-trip comparison, with negative controls that must each be detected. */
+function roundTripCheck(expected: SourceProjection, importedMarkdoc: string, sections: number): CreationCertificate['checks']['roundTrip'] {
+  const ir = requireMarkdoc(importedMarkdoc);
+  const actualBody = ir.scaffold.map((paragraph) => paragraph.originalText);
+  const actualFooters = importedFooters(ir, sections);
+  const body = compareParagraphs(expected.body, actualBody);
+  const footers = Array.from({ length: Math.max(sections, expected.footers.length) }, (_, section) => {
+    const want = expected.footers[section] ?? null;
+    const got = actualFooters[section] ?? null;
+    if (want === null || got === null) {
+      const passed = (want === null || want.every((line) => !normalizeEmpty(line))) && (got === null || got.every((line) => !normalizeEmpty(line)));
+      return { section, expected: want, actual: got, passed };
+    }
+    const comparison = compareParagraphs(want.map((text) => ({ text })), got);
+    return { section, expected: want, actual: got, comparison, passed: comparison.passed };
+  });
+  const detects = (mutated: SourceProjection) => {
+    const mutatedBody = compareParagraphs(mutated.body, actualBody);
+    const mutatedFooters = mutated.footers.some((want, section) => {
+      const got = actualFooters[section] ?? null;
+      return want !== null && got !== null && !compareParagraphs(want.map((text) => ({ text })), got).passed;
+    });
+    return !mutatedBody.passed || mutatedFooters;
+  };
+  const wordIndex = expected.body.findIndex((entry) => entry.text.trim().split(/\s+/u).length >= 2);
+  const cellIndex = expected.body.findIndex((entry) => entry.cell && entry.text.trim());
+  const footerIndex = expected.footers.findIndex((footer) => footer?.some((line) => line.trim() && !line.startsWith('\u0000')));
+  const negativeControls: CreationCertificate['checks']['roundTrip']['negativeControls'] = {
+    deletedWord: wordIndex === -1 ? 'not applicable' : detects({ ...expected, body: expected.body.map((entry, i) => (i === wordIndex ? { ...entry, text: entry.text.trim().split(/\s+/u).slice(1).join(' ') } : entry)) }),
+    deletedParagraph: expected.body.length === 0 ? 'not applicable' : detects({ ...expected, body: expected.body.filter((entry) => entry.text.trim()).slice(1) }),
+    deletedTableCell: cellIndex === -1 ? 'not applicable' : detects({ ...expected, body: expected.body.filter((_, i) => i !== cellIndex) }),
+    deletedFooterText: footerIndex === -1 ? 'not applicable' : detects({ ...expected, footers: expected.footers.map((footer, i) => (i === footerIndex ? footer!.filter((line) => line.startsWith('\u0000')) : footer)) }),
+  };
+  const controlsOk = Object.values(negativeControls).every((value) => value !== false);
+  const footersOk = footers.every((footer) => footer.passed);
+  const mismatchCount = body.mismatches.length + footers.reduce((sum, footer) => sum + (footer.comparison?.mismatches.length ?? (footer.passed ? 0 : 1)), 0);
+  return {
+    passed: body.passed && footersOk && controlsOk,
+    normalization: ORACLE_NORMALIZATION,
+    body,
+    footers,
+    negativeControls,
+    ...(body.passed && footersOk && controlsOk ? {} : { detail: `${mismatchCount} round-trip mismatch(es)${controlsOk ? '' : '; a negative control was not detected'}` }),
+  };
+}
+
+function normalizeEmpty(text: string): string {
+  return text.replace(/[\s\u00a0]+/gu, '');
+}
 
 /** First index where two paragraph lists differ, or -1 when they are equal. */
 export function firstParagraphMismatch(expected: readonly string[], actual: readonly string[]): number {
@@ -91,9 +170,10 @@ export function creationTextMirror(readback: CreationReadback, label = 'document
  * @see https://github.com/UseJunior/safe-docx/issues/1162
  */
 export async function createDocumentFromMarkdoc(source: string, options: CreateDocumentOptions = {}): Promise<CreatedDocument> {
-  const lowering = lowerCreationMarkdoc(source, options.profile);
+  const transform = options.transformLowering ?? ((value: CreationLowering) => value);
+  const lowering = transform(lowerCreationMarkdoc(source, options.profile));
   const docx = await generateDocx(lowering.spec);
-  const again = await generateDocx(lowerCreationMarkdoc(source, options.profile).spec);
+  const again = await generateDocx(transform(lowerCreationMarkdoc(source, options.profile)).spec);
   const structural = await checkGeneratedPackage(docx);
   const readback = await readCreatedDocx(docx);
 
@@ -107,6 +187,8 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
   const imported = await importDocxToMarkdoc(docx);
   const anchored = imported.source.paragraphs;
   const editable = readback.paragraphs.filter((paragraph, index) => paragraph.length > 0 || readback.inTableCell[index]).length;
+
+  const roundTrip = roundTripCheck(projectSourceText(source), imported.markdoc, readback.footers.length);
 
   const text = creationTextMirror(readback, options.mirrorLabel);
   const checks: CreationCertificate['checks'] = {
@@ -129,6 +211,7 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
       negativeControlDetected: footerControl,
       ...(footersPassed ? {} : { detail: `expected ${JSON.stringify(lowering.projection.footers)}, read ${JSON.stringify(readback.footers)}` }),
     },
+    roundTrip,
     brownfield: {
       passed: anchored === editable,
       anchoredParagraphs: anchored,

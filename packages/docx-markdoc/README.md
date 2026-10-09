@@ -510,7 +510,8 @@ template:
 ```bash
 docx-markdoc create consent.mdoc outbound/draft --replace
 # created consent.docx: 26 paragraphs, 2 section(s); readback ok (negative control ok);
-# footers ok (negative control ok); deterministic; brownfield ok (26 anchored); pdf passed (2 pages)
+# footers ok (negative control ok); deterministic; brownfield ok (26 anchored);
+# round trip ok (26 paragraphs; negative controls ok); pdf passed (2 pages); pdf words ok (201 source words)
 ```
 
 It writes four files:
@@ -542,6 +543,34 @@ house.json` overrides any of `font`, `sizePt`, `spacingAfterPt`,
 `lineSpacing`, `marginsIn`, `titleSizePt`, `signatureTabIn` and `justify`.
 The default is Times New Roman 11pt on all four font channels, 8pt after,
 1.15 lines and 1" margins.
+
+Before anything is published, every build checks its own output. Besides the
+package, determinism, read-back and brownfield-import checks:
+
+- **Round trip.** The DOCX is re-imported with `docx-markdoc import`, and its
+  body and footer paragraphs are compared with text read straight from the
+  Markdoc source, not from the document model the build produced. Only
+  Unicode NFC and whitespace collapsing are applied. A deleted word,
+  paragraph, table cell and footer text must each be detected as negative
+  controls. Each mismatch is recorded with its source line and the missing
+  and extra words.
+- **PDF words.** When a PDF is rendered, its text layer (`pdftotext -raw`)
+  must match the source word for word. Generated text is worked out from the
+  source, not guessed from its shape: list labels (`1.`, `(a)`, `(i)`,
+  bullets) are expected words, and every page break must be explained by a
+  place in the source where the page can start, which fixes the page's
+  footer and page number and any table header repeated at its top. Anything
+  else, missing or extra, fails with `CREATION_PDF_WORDS_MISMATCH`, and so
+  does a page break the text cannot pin down, such as a table with empty
+  trailing rows followed by a table with the same header. The certificate's `pdf.words.limitations`
+  states what the comparison cannot catch.
+
+A check that finds a mismatch publishes nothing and leaves existing outputs,
+including an earlier `<stem>.verification.json`, as they were. It writes
+`<stem>.failed-verification.json` with every check result and mismatch, and
+the error names that file. The next failed build replaces the report and the
+next successful build removes it. Missing PDF tools under `--require-pdf` are
+not a mismatch and leave no report.
 
 ```markdoc
 ---
@@ -625,7 +654,8 @@ The command writes these files into `outbound/draft/`:
 Without those tools, no PDF is written, the certificate records the PDF check
 as `not_run`, and the build still succeeds. Add `--require-pdf` to make
 missing tools a failure, or `--no-pdf` to skip the check. Nothing is
-published unless every check that ran passes.
+published unless every check that ran passes; a mismatch leaves
+`<slug>.failed-verification.json` instead.
 
 Convert each `.mdoc` once, using the table below. Clause numbers typed by
 hand become Markdown ordered lists, whose real `1.` / `(a)` / `(i)`
@@ -661,7 +691,10 @@ template-backed `compile-greenfield` command is unchanged.
 ## Plain PDF render for finished documents
 
 `renderPlainPdf` renders a finished, non-tracked DOCX with LibreOffice in a
-disposable profile, then checks the `pdftotext` text layer. Each
+disposable profile, then checks the `pdftotext -raw` text layer
+(content-stream order, which for LibreOffice output is document order page by
+page; a table row split across pages comes out cell fragment by cell
+fragment). Each
 `requiredText` entry must appear within a single rendered page (anywhere on
 it, headers and footers included), compared with whitespace collapsed and no
 other normalization. An empty PDF or an empty text layer fails. Missing
@@ -680,5 +713,5 @@ const verdict = await renderPlainPdf({
   outputPdfPath: 'consent.pdf',
   requiredText: ['ACME WIDGETS INC.', '[Signature Page to Consent]'],
 });
-// verdict.status: 'passed' | 'failed' | 'not_run'
+// verdict.status: 'passed' | 'failed' | 'not_run'; verdict.pageTexts: each page's text, when extraction ran
 ```
