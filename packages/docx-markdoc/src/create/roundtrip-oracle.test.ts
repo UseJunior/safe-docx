@@ -295,6 +295,36 @@ describe('Traceability: independent round-trip oracle for created documents', ()
       expect(comparePdfWords(splitRow, splitPages(left, [...right.slice(0, 3), 'r2', ...right.slice(3)])).passed).toBe(false);
       expect(comparePdfWords(splitRow, splitPages(left, [...right.slice(0, 3), ...right.slice(4), 'r3'])).passed).toBe(false);
 
+      // A split row's continuation page keeps the row's section and footer (final review 2, P1): with an empty
+      // header there is no repeated header to identify the page, yet a footer from the next section still fails.
+      const emptyHeaderSplit: SourceProjection = {
+        body: [{ text: 'T', section: 0 }, { ...cell('', 0), section: 0 }, { ...cell('', 0), section: 0 }, { ...cell(left.join(' '), 1), section: 0 }, { ...cell(right.join(' '), 1), section: 0 },
+          { ...cell('', 0, 1), section: 1 }, { ...cell('', 1, 1), section: 1 }, { text: 'END', section: 1 }],
+        footers: [['A'], ['B']],
+      };
+      const emptyHeaderPages = (footer: string) => [`A\nT ${left.slice(0, 4).join(' ')} ${right.slice(0, 3).join(' ')}\n`, `${footer}\n${left.slice(4).join(' ')} ${right.slice(3).join(' ')}\n`, 'B\nEND\n'];
+      expect(comparePdfWords(emptyHeaderSplit, emptyHeaderPages('A'))).toMatchObject({ passed: true, knownGenerated: { splitRows: [{ table: 0, row: 1, pages: [1, 2] }] } });
+      expect(comparePdfWords(emptyHeaderSplit, emptyHeaderPages('B'))).toMatchObject({ passed: false, footerMismatches: [{ page: 2, expected: 'A', found: 'B' }] });
+
+      // A header row that itself splits across pages is source content, read back in cell order (final review 2, P2).
+      const hl = Array.from({ length: 10 }, (_, index) => `h${index}`);
+      const hr = Array.from({ length: 10 }, (_, index) => `k${index}`);
+      const headerSplit: SourceProjection = { body: [{ text: 'T' }, cell(hl.join(' '), 0), cell(hr.join(' '), 0), cell('x', 1), cell('y', 1), { text: 'END' }], footers: [null] };
+      const headerPages = (l: string[], r: string[]) => [`T ${l.slice(0, 4).join(' ')} ${r.slice(0, 3).join(' ')}\n`, `${l.slice(4).join(' ')} ${r.slice(3).join(' ')} x y END\n`];
+      expect(comparePdfWords(headerSplit, headerPages(hl, hr))).toMatchObject({ passed: true, knownGenerated: { splitRows: [{ table: 0, row: 0, pages: [1, 2] }] } });
+      expect(comparePdfWords(headerSplit, headerPages(hl.filter((word) => word !== 'h5'), hr)).passed).toBe(false);
+      expect(comparePdfWords(headerSplit, headerPages(hl, [...hr.slice(0, 3), 'k2', ...hr.slice(3)])).passed).toBe(false);
+
+      // Repeated words in a split row do not make the search explode (final review 2, P2): 4 cells of 20 "a",
+      // split 5/7/7/1 per cell over four pages, is read back at once; a lost "a" still fails.
+      const repeated: SourceProjection = { body: [{ text: 'T' }, ...['H0', 'H1', 'H2', 'H3'].map((header) => cell(header, 0)), ...Array.from({ length: 4 }, () => cell(Array.from({ length: 20 }, () => 'a').join(' '), 1)), { text: 'END' }], footers: [null] };
+      const fragment = (count: number) => Array.from({ length: 4 }, () => Array.from({ length: count }, () => 'a').join(' ')).join(' ');
+      const repeatedPages = ['T H0 H1 H2 H3 ' + fragment(5), 'H0 H1 H2 H3 ' + fragment(7), 'H0 H1 H2 H3 ' + fragment(7), 'H0 H1 H2 H3 ' + fragment(1) + ' END'];
+      const started = Date.now();
+      expect(comparePdfWords(repeated, repeatedPages)).toMatchObject({ passed: true, knownGenerated: { splitRows: [{ table: 0, row: 1, pages: [1, 2, 3, 4] }] } });
+      expect(comparePdfWords(repeated, [...repeatedPages.slice(0, 3), 'H0 H1 H2 H3 ' + fragment(1).replace(/^a /u, '') + ' END']).passed).toBe(false);
+      expect(Date.now() - started).toBeLessThan(5_000);
+
       // Too many possible placements to check is a failure, even when the page heads are wordless (final review P3).
       const emptyTables: SourceBodyEntry[] = [{ text: 'START' }];
       for (let id = 0; id < 12; id += 1) for (let row = 0; row < 3; row += 1) emptyTables.push(cell('', row, id));
@@ -448,10 +478,15 @@ describeWithLibreOffice('Traceability: PDF word check with a real LibreOffice', 
     async () => {
       const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'sdx-create-pdf-pages-')));
       try {
-        const build = async (name: string, lines: string[]) => {
+        const build = async (name: string, lines: string[], profile?: object) => {
           const file = path.join(dir, `${name}.mdoc`);
           await writeFile(file, lines.join('\n'));
-          return runCreateCommand([file, path.join(dir, 'out'), '--require-pdf']);
+          const profileArgs: string[] = [];
+          if (profile) {
+            await writeFile(path.join(dir, `${name}.json`), JSON.stringify(profile));
+            profileArgs.push('--style-profile', path.join(dir, `${name}.json`));
+          }
+          return runCreateCommand([file, path.join(dir, 'out'), '--require-pdf', ...profileArgs]);
         };
         const rows = Array.from({ length: 65 }, (_, index) => [`* Holder ${index + 1}`, `* Description ${index + 1} ordinary terms apply.`, '---']).flat().slice(0, -1);
         const longTable = await build('long-table', ['---', 'footer: Draft', 'page-numbers: true', '---', '', '# TABLE', '', '{% table widths="30,70" %}', '* Holder', '* Description', '---', ...rows, '{% /table %}', '', 'After the table.']);
@@ -493,6 +528,23 @@ describeWithLibreOffice('Traceability: PDF word check with a real LibreOffice', 
         const fillerLines = Array.from({ length: 22 }, (_, index) => [`Filler ${index + 1}.`, '']).flat();
         const splitRow = await build('split-row', ['# T', '', ...fillerLines, '{% table %}', '* LEFT', '* RIGHT', '---', `* ${leftWords}`, `* ${rightWords}`, '{% /table %}', '', 'END']);
         expect(splitRow.pdf).toMatchObject({ status: 'passed', words: { passed: true, knownGenerated: { splitRows: [{ table: 0, row: 1 }] } } });
+
+        // An empty-header table whose row splits before a new section (final review 2, P1, clean render).
+        const emptyHeaderRow = await build('empty-header-split', ['---', 'footer: A', '---', '', '# TITLE', '', ...fillerLines, '{% table %}', '* ', '* ', '---', `* ${leftWords}`, `* ${rightWords}`, '{% /table %}', '', '{% section footer="B" /%}', '', '{% table %}', '* ', '---', '* ', '{% /table %}', '', 'END']);
+        expect(emptyHeaderRow.pdf).toMatchObject({ status: 'passed', words: { passed: true, knownGenerated: { footerRegions: ['A', 'A', 'B'] } } });
+
+        // A header row that itself spans pages (final review 2, P2).
+        const headerLeft = Array.from({ length: 300 }, (_, index) => `hleft${index}`).join(' ');
+        const headerRight = Array.from({ length: 300 }, (_, index) => `hright${index}`).join(' ');
+        const longHeader = await build('long-header', ['# T', '', '{% table %}', `* ${headerLeft}`, `* ${headerRight}`, '---', '* x', '* y', '{% /table %}', '', 'END']);
+        expect(longHeader.pdf).toMatchObject({ status: 'passed', words: { passed: true, knownGenerated: { splitRows: [expect.objectContaining({ table: 0, row: 0 })] } } });
+
+        // Repeated words in a row split over four pages (final review 2, P2 performance).
+        const repeatedCell = Array.from({ length: 20 }, (_, index) => (index < 19 ? 'a\\' : 'a')).map((line, index) => (index === 0 ? `* ${line}` : `  ${line}`));
+        const started = Date.now();
+        const repeatedRow = await build('repeated-row', ['# T', '', '{% table %}', '* H0', '* H1', '* H2', '* H3', '---', ...repeatedCell, ...repeatedCell, ...repeatedCell, ...repeatedCell, '{% /table %}', '', 'END'], { lineSpacing: 7 });
+        expect(repeatedRow.pdf).toMatchObject({ status: 'passed', words: { passed: true } });
+        expect(Date.now() - started).toBeLessThan(60_000);
 
         // A wordless table continuation in section 0 before a new section (final review P1, clean render).
         const emptyBody = Array.from({ length: 75 }, () => ['---', '* ']).flat();
