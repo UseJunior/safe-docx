@@ -692,7 +692,9 @@ template-backed `compile-greenfield` command is unchanged.
 
 `renderPlainPdf` renders a finished, non-tracked DOCX with LibreOffice in a
 disposable profile, then checks the `pdftotext -raw` text layer
-(content-stream order, which for LibreOffice output is document order). Each
+(content-stream order, which for LibreOffice output is document order page by
+page; a table row split across pages comes out cell fragment by cell
+fragment). Each
 `requiredText` entry must appear within a single rendered page (anywhere on
 it, headers and footers included), compared with whitespace collapsed and no
 other normalization. An empty PDF or an empty text layer fails. Missing

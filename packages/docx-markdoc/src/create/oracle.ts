@@ -342,13 +342,15 @@ export type PdfWordComparison = {
     footerRegions: string[];
     listMarkers: number;
     repeatedTableHeaders: Array<{ page: number; table: number }>;
+    /** Table rows found split across pages (cell fragments page by page) and read back in cell order. */
+    splitRows: Array<{ table: number; row: number; pages: number[] }>;
   };
   limitations: string;
 };
 
 export const PDF_WORD_NORMALIZATION = 'Unicode NFKC (folds ligatures such as "fi"), then whitespace runs split words. Nothing else.';
 export const PDF_WORD_LIMITATIONS =
-  'The text layer is read with pdftotext -raw (content-stream order; LibreOffice writes each page\'s footer first, then the body in document order). ' +
+  'The text layer is read with pdftotext -raw (content-stream order; LibreOffice writes each page\'s footer first, then the body in document order, except that a table row split across pages comes out as each cell\'s fragment on each page; such a row is read back in cell order only when its words partition exactly into those fragments, every cell starting on the first page). ' +
   'List labels are expected words. Every page break is explained from the source: the checker searches for where each page can start between the source words around it (including inside wordless content such as empty table rows), and a start fixes what the page must show first, namely its section\'s footer and page number, the table header LibreOffice repeats when a table continues across the break, and the source words at the top of the page. Sections start on new pages. ' +
   'Two observed LibreOffice behaviours are assumed: a header row is never left alone at a page bottom (it stays with the first body row), and a table\'s last row can spill its empty remainder onto the next page, repeating the header there. ' +
   'The check passes only when every start that fits explains the same source words; if none fits, or starts that fit disagree (for example, a table with empty trailing rows followed by a table with the same header, or two such tables back to back at a page start), it fails. The text alone cannot always show layout, so such cases fail even when the PDF is right (a false failure); an ambiguity is never settled by a guess.';
@@ -403,9 +405,11 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
     return tokens.slice(regions[page]!.length, at);
   });
 
+  const bodies = pages.map((tokens, page) => tokens.slice(regions[page]!.length + headRuns[page]!.length));
+  const splitRows = joinSplitRows(source, words, bodies);
   const pdf: Array<{ word: string; page: number }> = [];
-  pages.forEach((tokens, page) => {
-    for (const word of tokens.slice(regions[page]!.length + headRuns[page]!.length)) pdf.push({ word, page });
+  bodies.forEach((tokens, page) => {
+    for (const word of tokens) pdf.push({ word, page });
   });
   const ops = myersDiff(expected, pdf, (x, y) => x.word === y.word);
 
@@ -457,9 +461,76 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
       footerRegions: regions.map((region) => region.join(' ')),
       listMarkers,
       repeatedTableHeaders,
+      splitRows,
     },
     limitations: PDF_WORD_LIMITATIONS,
   };
+}
+
+/**
+ * A table row that breaks across pages comes out of `pdftotext -raw` page by page: on each page, a fragment
+ * of every cell in cell order (left part, right part; then the rest of each on the next page). Find rows
+ * whose words fill the end of one page and the start of the next (and any whole pages between) exactly in
+ * that shape, and put those words back in cell order on the first page. Words are only reordered, never
+ * added or removed, and only when every word of the row is accounted for exactly once; a row with a lost or
+ * extra word has no such split and is left for the alignment to report.
+ */
+function joinSplitRows(source: SourceProjection, words: (text: string) => string[], bodies: string[][]): PdfWordComparison['knownGenerated']['splitRows'] {
+  const rows = new Map<string, { table: number; row: number; cells: string[][] }>();
+  for (const entry of source.body) {
+    if (!entry.table || entry.table.row === 0) continue;
+    const key = `${entry.table.id}:${entry.table.row}`;
+    const row = rows.get(key) ?? { table: entry.table.id, row: entry.table.row, cells: [] };
+    row.cells.push(words(entry.text));
+    rows.set(key, row);
+  }
+  const candidates = [...rows.values()].filter((row) => row.cells.filter((cell) => cell.length > 0).length >= 2);
+  const found: PdfWordComparison['knownGenerated']['splitRows'] = [];
+  /** Can `parts` be read as fragments of `cells`, every part listing one fragment per cell in cell order? */
+  const partition = (cells: string[][], parts: string[][]): boolean => {
+    const offsets = cells.map(() => 0);
+    const visit = (part: number, cell: number, pos: number): boolean => {
+      if (part === parts.length) return offsets.every((offset, index) => offset === cells[index]!.length);
+      if (cell === cells.length) return pos === parts[part]!.length && visit(part + 1, 0, 0);
+      const words = cells[cell]!;
+      const start = offsets[cell]!;
+      let max = 0;
+      while (start + max < words.length && pos + max < parts[part]!.length && parts[part]![pos + max] === words[start + max]) max += 1;
+      // The row starts on the first page in every cell: each cell with words begins there.
+      const least = part === 0 && words.length > 0 ? 1 : 0;
+      for (let length = max; length >= least; length -= 1) {
+        offsets[cell] = start + length;
+        if (visit(part, cell + 1, pos + length)) return true;
+      }
+      offsets[cell] = start;
+      return false;
+    };
+    return visit(0, 0, 0);
+  };
+  for (let page = 0; page + 1 < bodies.length; page += 1) {
+    for (const row of candidates) {
+      const total = row.cells.reduce((sum, cell) => sum + cell.length, 0);
+      let joined = false;
+      // The row may continue over whole pages before it ends on page `last`.
+      for (let last = page + 1; last < bodies.length && !joined; last += 1) {
+        const middle = bodies.slice(page + 1, last);
+        const middleLength = middle.reduce((sum, body) => sum + body.length, 0);
+        if (middleLength >= total) break;
+        for (let tail = 1; tail < total - middleLength && !joined; tail += 1) {
+          const head = total - middleLength - tail;
+          if (tail > bodies[page]!.length || head > bodies[last]!.length) continue;
+          const parts = [bodies[page]!.slice(-tail), ...middle, bodies[last]!.slice(0, head)];
+          if (!partition(row.cells, parts)) continue;
+          bodies[page] = [...bodies[page]!.slice(0, -tail), ...row.cells.flat()];
+          for (let middlePage = page + 1; middlePage < last; middlePage += 1) bodies[middlePage] = [];
+          bodies[last] = bodies[last]!.slice(head);
+          found.push({ table: row.table, row: row.row, pages: Array.from({ length: last - page + 1 }, (_, index) => page + index + 1) });
+          joined = true;
+        }
+      }
+    }
+  }
+  return found;
 }
 
 type BreakModelInput = {
@@ -605,10 +676,16 @@ function explainPageBreaks(input: BreakModelInput): BreakModelResult {
     // The search stops once two placements disagree (that is already a failure) or after a fixed budget of
     // steps; running out of budget counts as ambiguous, so it can only fail, never pass.
     let budget = 200_000;
+    // Every page holds something: source content between its start and the next page's (wordless rows count),
+    // a spilled row remainder, or, for the last page, the aligned text after the group. No empty page can be
+    // invented to move a section start (and with it a footer) onto a page that belongs to the section before.
+    const hasContent = (placement: Placement, next: number | undefined) =>
+      placement.spill || (next === undefined ? placement.pos < items.length || group.after < expected.length : placement.pos < next);
     const search = (k: number, from: number, chosen: Placement[], footers: boolean) => {
       if (signatures.size > 1 || budget <= 0) return;
       budget -= 1;
       if (k === group.pages.length) {
+        if (chosen.length > 0 && !hasContent(chosen.at(-1)!, undefined)) return;
         // Every section change must be a page start, and none may lie after the last start.
         if (changes.every((pos) => chosen.some((placement) => placement.pos === pos && !placement.spill))) {
           solutions.push([...chosen]);
@@ -627,7 +704,8 @@ function explainPageBreaks(input: BreakModelInput): BreakModelResult {
           if (!placement) continue;
           if (footers && region(placement.section, page) !== found(page)) continue;
           // Equivalent starts (same repeated header, same explained words, same section) lead to the same outcomes.
-          const key = `${placement.table}|${placement.spill}|${placement.explained.join(',')}|${placement.section}|${changes.includes(pos)}`;
+          if (chosen.length > 0 && !hasContent(chosen.at(-1)!, pos)) continue;
+          const key = `${placement.table}|${placement.spill}|${placement.explained.join(',')}|${placement.section}|${changes.includes(pos)}|${pos === from}`;
           if (seen.has(key)) continue;
           seen.add(key);
           search(k + 1, Math.max(pos, placement.end), [...chosen, placement], footers);
@@ -635,7 +713,10 @@ function explainPageBreaks(input: BreakModelInput): BreakModelResult {
       }
     };
     search(0, 0, [], true);
-    if (budget <= 0) signatures.add('budget');
+    if (budget <= 0) {
+      for (const page of group.pages) result.unverified.push({ page: page + 1, words: headRuns[page]!.join(' '), reason: 'the page breaks here have too many possible placements to check' });
+      return;
+    }
     if (solutions.length > 0) {
       if (signatures.size === 1) {
         for (const placement of solutions[0]!) {
@@ -656,7 +737,10 @@ function explainPageBreaks(input: BreakModelInput): BreakModelResult {
     signatures = new Set();
     budget = 200_000;
     search(0, 0, [], false);
-    if (budget <= 0) signatures.add('budget');
+    if (budget <= 0) {
+      for (const page of group.pages) result.unverified.push({ page: page + 1, words: headRuns[page]!.join(' '), reason: 'the page breaks here have too many possible placements to check' });
+      return;
+    }
     if (solutions.length > 0) {
       const relaxed = solutions[0]!;
       relaxed.forEach((placement, k) => {

@@ -220,8 +220,13 @@ fails:
    is content-stream order: LibreOffice writes each page's footer first, then
    the body in document order (table cells row by row even when they wrap, a
    justified line ending in a manual break kept whole); the default
-   reading-order mode reads a table column by column. Every piece of generated
-   text is modelled from the source, never excused by its shape:
+   reading-order mode reads a table column by column. A row split across
+   pages comes out as each cell's fragment on each page; it is read back in
+   cell order only when the end of one page and the start of the next (and
+   any whole pages between) partition exactly into the row's cells, every
+   cell starting on the first page, so a lost or duplicated word in the row
+   still fails. Every piece of generated text is modelled from the source,
+   never excused by its shape:
    - **list labels** are expected words, computed from the grammar's numbering
      (`1.`, `(a)`, `(i)` by depth; top-level lists start at their first
      marker; bullets `•`, `◦`, `▪`), so a generated `1.` cannot stand in for a

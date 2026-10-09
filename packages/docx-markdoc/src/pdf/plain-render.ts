@@ -101,10 +101,12 @@ export async function renderPlainPdf(request: PlainPdfRequest): Promise<PlainPdf
     }
     const pdf = await readFile(pdfPath);
     if (pdf.length === 0) return { status: 'failed', reason: 'LibreOffice produced an empty PDF' };
-    // -raw keeps content-stream order, which for LibreOffice output is document
-    // order: table cells row by row (even when a cell wraps) and a justified
-    // line ending in a manual break kept whole. The default reading-order mode
-    // reads a table column by column and can scatter such a line.
+    // -raw keeps content-stream order, which for LibreOffice output is page by
+    // page document order: table cells row by row (even when a cell wraps) and
+    // a justified line ending in a manual break kept whole. A row split across
+    // pages comes out as each cell's fragment on each page. The default
+    // reading-order mode reads a table column by column and can scatter such a
+    // line.
     const extracted = await tools.run(pdftotext!, ['-raw', pdfPath, '-']);
     if (extracted.code !== 0) return { status: 'failed', reason: `pdftotext failed: ${(extracted.stderr || extracted.stdout).trim()}` };
     const pageTexts = splitPdfTextPages(extracted.stdout);
