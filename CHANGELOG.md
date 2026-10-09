@@ -1,6 +1,47 @@
 # Changelog
 
-## Unreleased
+## 0.25.0
+
+- **Breaking for `docx-markdoc create` sources: bare brackets are now literal
+  text.** `[t]he`, `[sic]`, `Section 2[(b)]` and unbalanced brackets are kept
+  as written, never highlighted and never an error. Mark a fill-in explicitly
+  with `{% fill %}Effective Date{% /fill %}`. It renders as `[Effective Date]`,
+  highlighted, and works inside bold or italic text, nested fills and signer
+  names (`{% signer date="…" %}{% fill %}Name{% /fill %}, Director{% /signer %}`).
+  A source written for 0.24 can opt back into automatic bracket highlighting
+  with frontmatter `fill-ins: brackets`. (#1187, #1184)
+- **`create` verifies its output against the source independently.**
+  - **Round trip:** the created DOCX is re-imported with `docx-markdoc import`,
+    and its body and footer paragraphs are compared with text read straight
+    from the Markdoc, not from the lowered document model. Only NFC and
+    whitespace are normalized. A deleted word, paragraph, table cell and footer
+    text must each be detected as negative controls, and mismatches are
+    recorded with their source line and the missing and extra words.
+  - **PDF words:** a rendered PDF's text layer (`pdftotext -raw`) must match
+    the source word for word. List labels, each page's footer and page number,
+    table headers repeated across pages, and table rows split across pages
+    are worked out from the source, so generated text cannot stand in for a
+    missing word. A page break the
+    text cannot pin down fails rather than being guessed, and the
+    certificate's `pdf.words.limitations` lists those cases. Failures use
+    `CREATION_PDF_WORDS_MISMATCH`.
+  - **Failure report:** a check that finds a mismatch publishes nothing,
+    leaves existing outputs (including the last `<stem>.verification.json`)
+    unchanged, and writes `<stem>.failed-verification.json`, named in the
+    error. The next successful build removes it. (#1189, #1185)
+- **`create --replace` no longer overwrites an edited DOCX.** It rebuilds
+  over `<stem>.docx` only when the file is the one the last build certified
+  (its SHA-256 matches `docxSha256` in a passing `<stem>.verification.json`).
+  An edited DOCX, or one whose certificate is missing, unreadable or failed,
+  is refused with `CREATION_OUTPUT_EDITED` and nothing changes. The check
+  runs again when publication moves the file aside, so an edit saved during
+  the build is caught. `--dangerously-overwrite-edited-docx` rebuilds anyway
+  and keeps the replaced DOCX, byte for byte, in
+  `.<stem>.create-overwritten-<uuid>/`, named in its output. (#1190, #1186)
+- `renderPlainPdf` reads the text layer with `pdftotext -raw` (document order
+  for LibreOffice output: table cells row by row, and justified lines that
+  end in a manual break kept whole), and its verdict now includes each
+  page's text as `pageTexts`. (#1189)
 
 - Accepting or rejecting a tracked section break no longer drops the removed
   section's headers and footers. Word 16 puts the header/footer references on
