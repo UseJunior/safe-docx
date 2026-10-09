@@ -227,6 +227,17 @@ describe('Traceability: independent round-trip oracle for created documents', ()
       const same: SourceProjection = { body: [cell('Holder', 0), cell('A', 1), cell('Holder', 0, 1), cell('B', 1, 1), cell('C', 2, 1)], footers: [null] };
       expect(comparePdfWords(same, ['Holder\nA\nHolder\nB\n', 'Holder\nC\n'])).toMatchObject({ passed: true, knownGenerated: { repeatedTableHeaders: [{ page: 2, table: 1 }] } });
 
+      // One header a prefix of another ("H" and "H X"): the continuation removes the whole longer header, so its
+      // second word cannot stand in for a body word lost before the break.
+      const prefix: SourceProjection = {
+        body: [{ text: 'TITLE' }, cell('H', 0), cell('a', 1), cell('foo', 1), { text: 'BETWEEN' }, cell('H', 0, 1), cell('X', 0, 1), cell('r0', 1, 1), cell('X', 1, 1), cell('r1', 2, 1), cell('X', 2, 1), { text: 'END' }],
+        footers: [null],
+      };
+      expect(comparePdfWords(prefix, ['TITLE H a foo BETWEEN H X r0 X\n', 'H X r1 X END\n'])).toMatchObject({ passed: true, knownGenerated: { repeatedTableHeaders: [{ page: 2, table: 1 }] } });
+      expect(comparePdfWords(prefix, ['TITLE H a foo BETWEEN H X r0\n', 'H X r1 X END\n'])).toMatchObject({ passed: false, missing: [{ words: 'X' }] });
+      // No pages at all cannot satisfy any section.
+      expect(comparePdfWords({ body: [], footers: [null] }, [])).toMatchObject({ passed: false, footerMismatches: [{ reason: 'the PDF has no pages' }] });
+
       // A section with no words (an empty table) still owns its page: the page cannot borrow a neighbour's footer.
       const blank: SourceProjection = {
         body: [{ text: 'FIRST', section: 0 }, { ...cell('', 0), section: 1 }, { ...cell('', 1), section: 1 }, { text: 'LAST', section: 2 }],
@@ -405,6 +416,10 @@ describeWithLibreOffice('Traceability: PDF word check with a real LibreOffice', 
           'Between the tables.', '', '{% table widths="30,70" %}', '* Holder', '* Description', '---', ...rows, '{% /table %}',
         ]);
         expect(identical.pdf).toMatchObject({ status: 'passed', pageCount: 2, words: { passed: true, knownGenerated: { repeatedTableHeaders: [{ page: 2, table: 1 }] } } });
+
+        const prefixRows = Array.from({ length: 65 }, (_, index) => ['---', `* r${index}`, '* X']).flat();
+        const prefixTables = await build('prefix', ['# TITLE', '', '{% table %}', '* H', '* ', '---', '* a', '* foo', '{% /table %}', '', 'BETWEEN', '', '{% table %}', '* H', '* X', ...prefixRows, '{% /table %}', '', 'END']);
+        expect(prefixTables.pdf).toMatchObject({ status: 'passed', pageCount: 2, words: { passed: true, unverifiedTableHeaders: [], knownGenerated: { repeatedTableHeaders: [{ page: 2, table: 1 }] } } });
 
         const blankSection = await build('blank-section', ['---', 'footer: A', '---', '', 'FIRST', '', '{% section footer="B" /%}', '', '{% table %}', '* ', '* ', '---', '* ', '* ', '{% /table %}', '', '{% section /%}', '', 'LAST']);
         expect(blankSection.pdf).toMatchObject({ status: 'passed', pageCount: 3, words: { passed: true, footerMismatches: [], knownGenerated: { footerRegions: ['A', 'B', 'B'] } } });

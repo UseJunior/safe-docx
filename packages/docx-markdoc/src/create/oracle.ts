@@ -395,16 +395,24 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
   const regions = pages.map((tokens, page) => candidates(page).find((region) => region.length === 0 || startsWith(tokens, region)) ?? []);
 
   // Repeated header candidates: right after the footer region on a later page.
-  // Every table whose header row matches right after the footer region; identical headers keep every identity.
-  type HeaderCandidate = { page: number; tables: number[]; length: number };
+  // Every table whose header row matches right after the footer region. Headers of different lengths (one a
+  // prefix of another) are separate options, tried longest first; identical headers share an option.
+  type HeaderOption = { tables: number[]; length: number };
+  type HeaderCandidate = { page: number; options: HeaderOption[] };
   const headerCandidates: HeaderCandidate[] = [];
   pages.forEach((tokens, page) => {
     if (page === 0) return;
-    const matching = [...headers].filter(([, header]) => startsWith(tokens, header, regions[page]!.length));
-    if (matching.length > 0) headerCandidates.push({ page, tables: matching.map(([table]) => table), length: matching[0]![1].length });
+    const byLength = new Map<number, number[]>();
+    for (const [table, header] of headers) {
+      if (startsWith(tokens, header, regions[page]!.length)) byLength.set(header.length, [...(byLength.get(header.length) ?? []), table]);
+    }
+    if (byLength.size > 0) headerCandidates.push({ page, options: [...byLength].sort((a, b) => b[0] - a[0]).map(([length, tables]) => ({ length, tables })) });
   });
 
-  const run = (accepted: ReadonlySet<HeaderCandidate>) => {
+  /** The option each candidate currently removes; a candidate with none left is aligned as ordinary text. */
+  const chosen = new Map<HeaderCandidate, number>(headerCandidates.map((candidate) => [candidate, 0]));
+  const optionOf = (candidate: HeaderCandidate) => candidate.options[chosen.get(candidate) ?? candidate.options.length];
+  const run = () => {
     const pdf: Array<{ word: string; page: number }> = [];
     /** Where each candidate sits in `pdf`: the insertion point if removed, or its first token if kept. */
     const at = new Map<HeaderCandidate, number>();
@@ -412,7 +420,8 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
       let from = regions[page]!.length;
       const candidate = headerCandidates.find((entry) => entry.page === page);
       if (candidate) at.set(candidate, pdf.length);
-      if (candidate && accepted.has(candidate)) from += candidate.length;
+      const option = candidate ? optionOf(candidate) : undefined;
+      if (option) from += option.length;
       for (const word of tokens.slice(from)) pdf.push({ word, page });
     });
     const ops = myersDiff(expected, pdf, (x, y) => x.word === y.word);
@@ -426,25 +435,27 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
   };
 
   // A repeated header is genuine only where a table continues across the page: the content aligned on
-  // both sides of it must be body rows of one table whose header it matches. Drop any that are not and
-  // align again (the accepted set only shrinks, so this ends).
-  const accepted = new Set(headerCandidates);
+  // both sides of it must be body rows of one table whose header it matches. A removed option that fails
+  // moves to the candidate's next (shorter) option, or to none, and the texts are aligned again; options
+  // only advance, so this ends.
   const repeatedTableHeaders: PdfWordComparison['knownGenerated']['repeatedTableHeaders'] = [];
-  let result = run(accepted);
+  let result = run();
   for (;;) {
     if (!result.ops) break;
     const { at, entryAt } = result;
-    const continuing = (candidate: HeaderCandidate) => candidate.tables.find((table) => {
+    const continuing = (candidate: HeaderCandidate) => optionOf(candidate)?.tables.find((table) => {
       const isBody = (entry: SourceBodyEntry | undefined) => entry?.table?.id === table && entry.table.row > 0;
       return isBody(entryAt(at.get(candidate)! - 1)) && isBody(entryAt(at.get(candidate)!));
     });
-    const invalid = [...accepted].filter((candidate) => continuing(candidate) === undefined);
+    const invalid = headerCandidates.filter((candidate) => optionOf(candidate) && continuing(candidate) === undefined);
     if (invalid.length === 0) {
-      for (const candidate of accepted) repeatedTableHeaders.push({ page: candidate.page + 1, table: continuing(candidate)! });
+      for (const candidate of headerCandidates) {
+        if (optionOf(candidate)) repeatedTableHeaders.push({ page: candidate.page + 1, table: continuing(candidate)! });
+      }
       break;
     }
-    for (const candidate of invalid) accepted.delete(candidate);
-    result = run(accepted);
+    for (const candidate of invalid) chosen.set(candidate, chosen.get(candidate)! + 1);
+    result = run();
   }
 
   const { pdf, ops, at, entryAt } = result;
@@ -461,11 +472,11 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
     // its tables (a table starting on that page). Otherwise it may be generated text standing in for lost
     // source words, so it cannot be certified either way.
     for (const candidate of headerCandidates) {
-      if (accepted.has(candidate)) continue;
+      if (optionOf(candidate)) continue;
       const start = at.get(candidate)!;
-      const original = Array.from({ length: candidate.length }, (_, offset) => entryAt(start + offset))
-        .every((entry) => entry?.table !== undefined && entry.table.row === 0 && candidate.tables.includes(entry.table.id));
-      if (!original) unverifiedTableHeaders.push({ page: candidate.page + 1, words: pdf.slice(start, start + candidate.length).map((token) => token.word).join(' ') });
+      const original = candidate.options.some((option) => Array.from({ length: option.length }, (_, offset) => entryAt(start + offset))
+        .every((entry) => entry?.table !== undefined && entry.table.row === 0 && option.tables.includes(entry.table.id)));
+      if (!original) unverifiedTableHeaders.push({ page: candidate.page + 1, words: pdf.slice(start, start + candidate.options[0]!.length).map((token) => token.word).join(' ') });
     }
     footerMismatches.push(...checkPageFooters(pages.length, effective.length, pdf, entryAt, (page) => regions[page]!.join(' '), (section, page) => regionFor(section, page).join(' ')));
   } else {
@@ -508,6 +519,7 @@ function checkPageFooters(
   region: (section: number, page: number) => string,
 ): PdfWordComparison['footerMismatches'] {
   const mismatches: PdfWordComparison['footerMismatches'] = [];
+  if (pageCount === 0 && sectionCount > 0) return [{ page: 0, section: null, expected: '', found: '', reason: 'the PDF has no pages' }];
   const sectionsOn = Array.from({ length: pageCount }, () => new Set<number>());
   pdf.forEach((token, index) => {
     const entry = entryAt(index);
