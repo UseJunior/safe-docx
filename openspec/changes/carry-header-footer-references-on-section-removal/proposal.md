@@ -29,9 +29,10 @@ so the rule has to live in the appliers.
   not a per-type merge: a survivor with only a default header does not receive
   the removed section's first-page, even-page or footer references.
 - Removal paths covered: the paragraph-mark merge and the dropped empty
-  boundary paragraph in all four appliers, and docx-core reject of a
-  paragraph-owned `w:sectPrChange` without a snapshot, which removes the
-  `w:sectPr`. Accepting `acceptedSectionBreakRemovalContainer` removes a
+  boundary paragraph in all four appliers. (docx-core reject of a
+  paragraph-owned `w:sectPrChange` without a snapshot used to remove the
+  `w:sectPr` and was covered too; since #987 it keeps the section, as Word
+  does, so it removes no boundary.) Accepting `acceptedSectionBreakRemovalContainer` removes a
   `w:sectPr` whose only child is the change record, which holds no
   references, so it needs no transfer.
 
