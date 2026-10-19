@@ -1,5 +1,5 @@
 import type { WmlElement } from '@usejunior/docx-core';
-import { childElements } from '@usejunior/docx-core';
+import { childElements, isW } from '@usejunior/docx-core';
 import { alignComparisonSequences, tokenizeComparisonText } from '../textAlignment.js';
 import { revisionProvenance, verifyTaggedTree, type BothNode } from './taggedTree.js';
 
@@ -54,10 +54,6 @@ export interface ParagraphJoinGroup {
   revisedStart: number;
   revisedCount: number;
   parts: BothNode[];
-}
-
-function isW(element: WmlElement, localName: string): boolean {
-  return element.namespaceURI === W_NS && element.localName === localName;
 }
 
 /** Text of a run on the plain path, or undefined when the run carries other content. */
