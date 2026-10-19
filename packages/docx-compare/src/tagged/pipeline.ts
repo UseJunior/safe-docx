@@ -1520,6 +1520,10 @@ async function compareDocumentsTagged(
         combined.formatChangeAtoms + result.stats.formatChangeAtoms,
       insertedTableRows: combined.insertedTableRows + result.stats.insertedTableRows,
       deletedTableRows: combined.deletedTableRows + result.stats.deletedTableRows,
+      moves: combined.moves + result.stats.moves,
+      movedParagraphs: combined.movedParagraphs + result.stats.movedParagraphs,
+      moveFromRanges: combined.moveFromRanges + result.stats.moveFromRanges,
+      moveToRanges: combined.moveToRanges + result.stats.moveToRanges,
     }),
     {
       atomMetricVersion: 'tagged-token-v1',
@@ -1535,6 +1539,10 @@ async function compareDocumentsTagged(
       formatChangeAtoms: 0,
       insertedTableRows: 0,
       deletedTableRows: 0,
+      moves: 0,
+      movedParagraphs: 0,
+      moveFromRanges: 0,
+      moveToRanges: 0,
     },
   );
   const unrepresentedChanges = outerResult.unrepresentedChanges?.filter(

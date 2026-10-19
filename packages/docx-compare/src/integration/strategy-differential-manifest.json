@@ -148,7 +148,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -291,7 +295,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -720,7 +728,11 @@
           "formatChanges": 16,
           "formatChangeAtoms": 16,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 276,
+          "movedParagraphs": 0,
+          "moveFromRanges": 276,
+          "moveToRanges": 278
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -1007,7 +1019,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -1150,7 +1166,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -1303,7 +1323,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -1491,7 +1515,11 @@
           "formatChanges": 1,
           "formatChangeAtoms": 1,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 1,
+          "movedParagraphs": 0,
+          "moveFromRanges": 1,
+          "moveToRanges": 1
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -1634,7 +1662,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -1777,7 +1809,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -1920,7 +1956,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -2114,7 +2154,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -2257,7 +2301,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -2400,7 +2448,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -2793,7 +2845,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -3106,7 +3162,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -3485,7 +3545,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -3711,7 +3775,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -4069,7 +4137,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -4371,7 +4443,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -4708,7 +4784,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -4854,7 +4934,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -4956,7 +5040,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 1,
+          "movedParagraphs": 1,
+          "moveFromRanges": 2,
+          "moveToRanges": 2
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -5058,7 +5146,11 @@
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
-          "deletedTableRows": 0
+          "deletedTableRows": 0,
+          "moves": 0,
+          "movedParagraphs": 0,
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"

@@ -15,6 +15,9 @@ import { COMPARISON_REVISION_ATTRIBUTE } from './taggedTreeSerializer.js';
 const TEST_FEATURE = 'refactor-tagged-tree-redline-construction';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
 const transformationTest = test.openspec('Serialized wrapper transformations determine range totals');
+const PURE_MOVE = 'A pure move is distinguishable from an unchanged document';
+const MOVE_AND_EDIT = 'A move and an edit are reported separately';
+const NO_MOVES = 'Move fields are zero without detected moves';
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const AUTHOR = 'Range Statistics';
 const DATE = new Date('2026-08-23T12:00:00Z');
@@ -80,6 +83,8 @@ function expectRetainedMarkersAndStatsAliasesAgree(
     moveFromRanges: movedFrom.length,
     moveToRanges: movedTo.length,
   });
+  expect(publication.stats.moveFromRanges).toBe(movedFrom.length);
+  expect(publication.stats.moveToRanges).toBe(movedTo.length);
   if (options.assertFormatting !== false) {
     const propertyChanges = generatedElements(publication, 'rPrChange').length
       + generatedElements(publication, 'pPrChange').length;
@@ -301,7 +306,7 @@ describe('tagged publication range statistics', () => {
     )).toHaveLength(2);
   });
 
-  transformationTest('reports balanced move ranges from the serialized move wrappers', () => {
+  transformationTest.openspec(PURE_MOVE)('reports balanced move ranges from the serialized move wrappers', () => {
     const publication = publish(
       paragraph('this complete paragraph moves away') + paragraph('stable paragraph'),
       paragraph('stable paragraph') + paragraph('this complete paragraph moves away'),
@@ -312,9 +317,87 @@ describe('tagged publication range statistics', () => {
     // paragraph marker or a terminal break revision classified to that move.
     expect(publication.serializedRangeStats.moveFromRanges).toBe(2);
     expect(publication.serializedRangeStats.moveToRanges).toBe(2);
-    // CompareStats has no public move fields, so pure moves otherwise report
-    // all-zero public stats (#940).
-    expect(publication.stats.insertedRanges).toBe(0);
-    expect(publication.stats.deletedRanges).toBe(0);
+    // The public stats surface the move without double-counting it as an
+    // insertion or deletion (#940).
+    expect(publication.stats).toMatchObject({
+      moves: 1,
+      movedParagraphs: 1,
+      moveFromRanges: 2,
+      moveToRanges: 2,
+      insertions: 0,
+      deletions: 0,
+      insertedRanges: 0,
+      deletedRanges: 0,
+      insertedAtoms: 0,
+      deletedAtoms: 0,
+      modifiedParagraphs: 0,
+    });
+  });
+
+  transformationTest.openspec(MOVE_AND_EDIT)('reports a move and an unrelated edit separately', () => {
+    const moved = 'this complete paragraph moves away to a new place';
+    const publication = publish(
+      paragraph(moved) + paragraph('stable paragraph one') + paragraph('stable paragraph two'),
+      paragraph('stable paragraph one') + paragraph('stable paragraph two changed') + paragraph(moved),
+    );
+
+    expectRetainedMarkersAndStatsAliasesAgree(publication);
+    expect(publication.stats).toMatchObject({
+      moves: 1,
+      movedParagraphs: 1,
+      moveFromRanges: 2,
+      moveToRanges: 2,
+      insertedRanges: 1,
+      deletedRanges: 0,
+      modifiedParagraphs: 1,
+    });
+    expect(generatedElements(publication, 'ins')[0]!.textContent).toBe(' changed');
+  });
+
+  transformationTest.openspec(MOVE_AND_EDIT)('reports a move alongside a paragraph split', () => {
+    const moved = 'this complete paragraph moves away to a new place';
+    const publication = publish(
+      paragraph(moved) + paragraph('stable first sentence. stable second sentence') + paragraph('stable tail'),
+      paragraph('stable first sentence.') + paragraph('stable second sentence') + paragraph('stable tail')
+        + paragraph(moved),
+    );
+    const emitted = parseXml(publication.xml);
+
+    expectRetainedMarkersAndStatsAliasesAgree(publication);
+    expect(publication.stats).toMatchObject({ moves: 1, movedParagraphs: 1, moveFromRanges: 2, moveToRanges: 2 });
+    // The split's inserted paragraph mark still counts as an insertion and is
+    // not attributed to the move.
+    expect(publication.stats.insertedRanges).toBeGreaterThan(0);
+    expect(emitted.getElementsByTagNameNS(W_NS, 'moveFrom')).toHaveLength(1);
+    expect(emitted.getElementsByTagNameNS(W_NS, 'moveTo')).toHaveLength(1);
+  });
+
+  transformationTest.openspec(NO_MOVES)('does not count a move relation that emits no move markup', () => {
+    // A relocated layout-only w:lastRenderedPageBreak pairs as a move relation
+    // but serializes to nothing, so it is not a visible move.
+    const publication = publish(
+      '<w:p><w:r><w:lastRenderedPageBreak/><w:t>first stable paragraph</w:t></w:r></w:p>'
+        + paragraph('second stable paragraph'),
+      paragraph('first stable paragraph')
+        + '<w:p><w:r><w:lastRenderedPageBreak/><w:t>second stable paragraph</w:t></w:r></w:p>',
+    );
+
+    expect(publication.moves).toHaveLength(1);
+    expectRetainedMarkersAndStatsAliasesAgree(publication);
+    expect(publication.stats).toMatchObject({ moves: 0, movedParagraphs: 0, moveFromRanges: 0, moveToRanges: 0 });
+  });
+
+  transformationTest.openspec(NO_MOVES)('reports zero moves when move detection is disabled', () => {
+    const moved = 'this complete paragraph moves away to a new place';
+    const publication = publish(
+      paragraph(moved) + paragraph('stable paragraph'),
+      paragraph('stable paragraph') + paragraph(moved),
+      { detectMoves: false },
+    );
+
+    expectRetainedMarkersAndStatsAliasesAgree(publication);
+    expect(publication.stats).toMatchObject({ moves: 0, movedParagraphs: 0, moveFromRanges: 0, moveToRanges: 0 });
+    expect(publication.stats.insertedRanges).toBeGreaterThan(0);
+    expect(publication.stats.deletedRanges).toBeGreaterThan(0);
   });
 });

@@ -77,6 +77,23 @@ export interface CompareStats {
   insertedTableRows: number;
   /** Comparison-generated native whole-table-row deletion markers, including nested rows. */
   deletedTableRows: number;
+  /**
+   * Detected moves. Each counts one balanced source/destination pair
+   * (`w:moveFrom`/`w:moveTo`), so moved content is never also counted in
+   * insertions, deletions, or the inserted/deleted atom totals. A pure move
+   * therefore reports `moves > 0` with every insertion/deletion field at zero.
+   */
+  moves: number;
+  /** Detected moves whose source is a whole paragraph (a subset of `moves`). */
+  movedParagraphs: number;
+  /**
+   * Comparison-generated move-source revision ranges, counted like
+   * insertedRanges/deletedRanges: content wrappers plus move-owned paragraph
+   * mark revisions. One whole-paragraph move usually yields more than one.
+   */
+  moveFromRanges: number;
+  /** Comparison-generated move-destination revision ranges; see moveFromRanges. */
+  moveToRanges: number;
 }
 
 /** @deprecated Comparison no longer has reconstruction modes. */
