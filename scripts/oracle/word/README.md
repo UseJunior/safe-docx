@@ -136,8 +136,10 @@ For every case and for both Accept All and Reject All, it compares Word's saved 
 The comparison is a projection, not a byte diff, because Word rewrites everything it saves. It covers the
 number of live sections, each section's page size, margins and `w:titlePg`, each section's default/first/even
 header and footer bindings resolved to the bound part's text (with linked-to-previous inheritance), every
-body paragraph's text, and the number of tracked revisions left. Page setup missing on one side is reported
-as a note, since Word writes defaults on save. The logic lives in
+body paragraph's text, and the number of tracked revisions left, which must be zero on both sides (a Word
+output that still has revisions is an `UNRESOLVED` error and is never cached). Page setup missing on one side
+is only a note when the other side holds what Word writes by default (Letter or A4, portrait, default
+margins); otherwise it is a mismatch. The logic lives in
 `packages/docx-core/src/integration/word-accept-reject-oracle.ts` and is unit-tested without Word.
 
 Built-in suites:
@@ -186,7 +188,8 @@ missing.
 - The runner closes only documents under its own run directory, never quits Word, and leaves other open
   documents alone, so it can run while you (or another tool) have documents open.
 - Concurrent runs are serialized on `~/Library/Containers/com.microsoft.Word/Data/safe-docx-word-oracle.lock`
-  (the same lock protocol as the LibreOffice oracle).
+  (the LibreOffice oracle's lock protocol). A running holder's lock is never reclaimed, however long the run
+  takes, and the run fails rather than proceeding unlocked if the lockfile cannot be created.
 - Word outputs are cached in `safe-docx-oracle/cache/`, keyed by the input's content hash, the mode, the Word
   version and the AppleScript version. A rerun after a change to our appliers reuses Word's results and
   finishes in seconds; a change to the compare output produces a new redline and therefore a new Word run.

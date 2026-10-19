@@ -17,8 +17,10 @@
  * - the text of every body paragraph in document order;
  * - how many tracked revisions are left (both sides should have none after Accept/Reject All).
  *
- * Word fills in page setup on save when a section has none, so a page-size or margin block that is
- * missing on one side is reported as a note, never as a mismatch.
+ * Word fills in page setup on save when a section has none. A page-size or margin block missing on
+ * one side is therefore a note when the other side holds a value Word writes by default (Letter or
+ * A4, portrait, with Word's default margins), and a mismatch otherwise. Accept All and Reject All
+ * must leave no tracked revision, in Word's output or in ours.
  *
  * Deliberately NOT part of the package's public API: the runner imports it from
  * `dist/integration/`.
@@ -30,7 +32,7 @@ import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { parseXml } from '../primitives/xml.js';
-import { withSofficeLock } from './soffice-lock.js';
+import { acquireSofficeLock } from './soffice-lock.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -267,6 +269,21 @@ function same(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/** Page setup Word writes for a section that has none (US Letter and A4 locales). */
+export const WORD_DEFAULT_PAGE_SIZES: readonly PageSize[] = [
+  { w: 12240, h: 15840, orient: 'portrait' },
+  { w: 11906, h: 16838, orient: 'portrait' },
+];
+export const WORD_DEFAULT_PAGE_MARGINS: readonly PageMargins[] = [
+  { top: 1440, right: 1440, bottom: 1440, left: 1440, header: 720, footer: 720, gutter: 0 },
+  { top: 1440, right: 1440, bottom: 1440, left: 1440, header: 708, footer: 708, gutter: 0 },
+];
+
+function isWordDefault(field: 'pageSize' | 'pageMargins', value: PageSize | PageMargins): boolean {
+  const defaults: readonly unknown[] = field === 'pageSize' ? WORD_DEFAULT_PAGE_SIZES : WORD_DEFAULT_PAGE_MARGINS;
+  return defaults.some((d) => same(d, value));
+}
+
 /**
  * Compare a reference projection (Word, or the expected document) with ours. Returns every
  * difference; callers treat `mismatch` entries as failures and `note` entries as context.
@@ -282,9 +299,11 @@ export function diffProjections(expected: DocumentProjection, actual: DocumentPr
       const a = actual.sections[i]!;
       const at = `sections[${i}]`;
       for (const field of ['pageSize', 'pageMargins'] as const) {
-        if (e[field] === null || a[field] === null) {
-          if (!same(e[field], a[field])) out.push({ path: `${at}.${field}`, expected: e[field], actual: a[field], severity: 'note' });
-        } else if (!same(e[field], a[field])) {
+        if (same(e[field], a[field])) continue;
+        const present = e[field] ?? a[field];
+        if ((e[field] === null || a[field] === null) && present && isWordDefault(field, present)) {
+          out.push({ path: `${at}.${field}`, expected: e[field], actual: a[field], severity: 'note' });
+        } else {
           mismatch(`${at}.${field}`, e[field], a[field]);
         }
       }
@@ -310,9 +329,9 @@ export function diffProjections(expected: DocumentProjection, actual: DocumentPr
     }
   }
 
-  if (expected.revisionsRemaining !== actual.revisionsRemaining) {
-    mismatch('revisionsRemaining', expected.revisionsRemaining, actual.revisionsRemaining);
-  }
+  // Accept All and Reject All resolve every revision; equal leftovers on both sides are not a match.
+  if (expected.revisionsRemaining !== 0) mismatch('reference.revisionsRemaining', 0, expected.revisionsRemaining);
+  if (actual.revisionsRemaining !== 0) mismatch('revisionsRemaining', 0, actual.revisionsRemaining);
   return out;
 }
 
@@ -353,7 +372,7 @@ export async function packageContentHash(bytes: Uint8Array): Promise<string> {
   return hash.digest('hex');
 }
 
-export type WordFailureKind = 'PERMISSION' | 'STALL' | 'UNAVAILABLE' | 'NOT_FOUND' | 'OTHER';
+export type WordFailureKind = 'PERMISSION' | 'STALL' | 'UNAVAILABLE' | 'NOT_FOUND' | 'UNRESOLVED' | 'OTHER';
 
 export interface WordFailure { kind: WordFailureKind; message: string }
 
@@ -410,22 +429,29 @@ export function wordOracleLockPath(home = os.homedir()): string {
 }
 
 /**
- * Run `fn` while holding the Word oracle's cross-process lock (the LibreOffice lock protocol from
- * `soffice-lock.ts`, on its own lockfile). A contended lock times out with a Word-specific message.
+ * Run `fn` while holding the Word oracle's cross-process lock: the acquisition protocol from
+ * `soffice-lock.ts` on its own lockfile, with two differences from the LibreOffice launchers.
+ * A live holder is never treated as stale, however long its run takes (only a dead holder's lock
+ * is reclaimed), and a lockfile that cannot be created fails the run instead of running unlocked.
  */
 export async function withWordLock<T>(
   fn: () => Promise<T>,
   { lockPath = wordOracleLockPath(), timeoutMs = 30 * 60_000, pollMs }: { lockPath?: string; timeoutMs?: number; pollMs?: number } = {},
 ): Promise<T> {
-  let entered = false;
+  let release: () => Promise<void>;
   try {
-    return await withSofficeLock('microsoft-word', () => { entered = true; return fn(); }, { lockPath, timeoutMs, pollMs });
+    release = await acquireSofficeLock(lockPath, { timeoutMs, pollMs, staleMs: Number.POSITIVE_INFINITY });
   } catch (err) {
-    if (!entered && /Timed out/.test((err as Error).message)) {
-      throw new Error(`Another Word oracle run holds ${lockPath}; gave up after ${Math.round(timeoutMs / 1000)}s. `
-        + `(${(err as Error).message})`);
+    const message = (err as Error).message;
+    if (/Timed out/.test(message)) {
+      throw new Error(`Another Word oracle run holds ${lockPath}; gave up after ${Math.round(timeoutMs / 1000)}s. (${message})`);
     }
-    throw err;
+    throw new Error(`Cannot take the Word oracle lock ${lockPath}: ${message}`);
+  }
+  try {
+    return await fn();
+  } finally {
+    await release();
   }
 }
 
@@ -517,7 +543,14 @@ export async function runAcceptRejectOracle({
           const run = await word({ suite: oracleCase.suite, caseId: oracleCase.id, mode, input });
           unit.word = { cached: run.cached, seconds: run.seconds };
           wordProjection = await projectDocx(run.output);
+          if (wordProjection.revisionsRemaining > 0) {
+            throw new WordAutomationError({
+              kind: 'UNRESOLVED',
+              message: `Word's ${mode === 'accept' ? 'Accept' : 'Reject'} All left ${wordProjection.revisionsRemaining} tracked revision(s); its output is not a valid reference.`,
+            });
+          }
         } catch (err) {
+          wordProjection = undefined;
           const kind = err instanceof WordAutomationError ? err.kind : 'HARNESS';
           unit.status = 'ERROR';
           unit.word = { error: (err as Error).message, kind };

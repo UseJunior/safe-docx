@@ -5,7 +5,7 @@
  *
  * @see https://github.com/UseJunior/safe-docx/issues/1144
  */
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
@@ -198,12 +198,35 @@ describe('diffProjections', () => {
     });
   });
 
-  test('a page setup missing on one side is a note, because Word writes defaults on save', async ({ then }: AllureBddContext) => {
-    await then('the difference is tolerated', () => {
-      const ours = projection();
-      ours.sections[0] = { ...ours.sections[0]!, pageSize: null, pageMargins: null };
-      const diff = diffProjections(projection(), ours);
-      expect(diff.map((d) => d.severity)).toEqual(['note', 'note']);
+  test('a page setup missing on one side is a note only when the other side holds Word defaults', async ({ then }: AllureBddContext) => {
+    await then('Letter or A4 with default margins is tolerated; a landscape size or custom margins is not', () => {
+      const missing = projection();
+      missing.sections[0] = { ...missing.sections[0]!, pageSize: null, pageMargins: null };
+      expect(diffProjections(projection(), missing).map((d) => d.severity)).toEqual(['note', 'note']);
+      const a4 = projection();
+      a4.sections[0] = {
+        ...a4.sections[0]!,
+        pageSize: { w: 11906, h: 16838, orient: 'portrait' },
+        pageMargins: { top: 1440, right: 1440, bottom: 1440, left: 1440, header: 708, footer: 708, gutter: 0 },
+      };
+      expect(diffProjections(missing, a4).map((d) => d.severity)).toEqual(['note', 'note']);
+      const custom = projection();
+      custom.sections[0] = {
+        ...custom.sections[0]!,
+        pageSize: { w: 15840, h: 12240, orient: 'landscape' },
+        pageMargins: { top: 500, right: 500, bottom: 500, left: 500, header: null, footer: null, gutter: null },
+      };
+      expect(diffProjections(custom, missing).map((d) => `${d.severity}:${d.path}`))
+        .toEqual(['mismatch:sections[0].pageSize', 'mismatch:sections[0].pageMargins']);
+    });
+  });
+
+  test('any revision left on either side is a mismatch, even when the counts are equal', async ({ then }: AllureBddContext) => {
+    await then('both the reference and ours are required to be fully resolved', () => {
+      expect(diffProjections(projection({ revisionsRemaining: 1 }), projection({ revisionsRemaining: 1 }))).toEqual([
+        { path: 'reference.revisionsRemaining', expected: 0, actual: 1, severity: 'mismatch' },
+        { path: 'revisionsRemaining', expected: 0, actual: 1, severity: 'mismatch' },
+      ]);
     });
   });
 
@@ -306,6 +329,40 @@ describe('withWordLock', () => {
       await expect(withWordLock(async () => 1, { lockPath, timeoutMs: 150, pollMs: 20 })).rejects.toThrow(/Another Word oracle run holds/);
       await release();
       await expect(withWordLock(async () => { throw new Error('Timed out inside the work'); }, { lockPath })).rejects.toThrow('Timed out inside the work');
+      expect(existsSync(lockPath)).toBe(false);
+    });
+  });
+
+  test('a live holder is never treated as stale, however old its lock is', async ({ given, then }: AllureBddContext) => {
+    const lockPath = path.join(dir, 'word.lock');
+    let release!: () => Promise<void>;
+    await given('a live holder whose lockfile is a day old', async () => {
+      release = await acquireSofficeLock(lockPath);
+      const dayAgo = new Date(Date.now() - 24 * 3600_000);
+      utimesSync(lockPath, dayAgo, dayAgo);
+    });
+    await then('a second run waits and times out instead of entering', async () => {
+      let entered = false;
+      await expect(withWordLock(async () => { entered = true; }, { lockPath, timeoutMs: 200, pollMs: 20 })).rejects.toThrow(/Another Word oracle run holds/);
+      expect(entered).toBe(false);
+      await release();
+    });
+  });
+
+  test('a lockfile that cannot be created fails the run instead of running unlocked', async ({ given, then }: AllureBddContext) => {
+    const locked = path.join(dir, 'read-only');
+    await given('a lock directory without write permission', () => {
+      mkdirSync(locked);
+      chmodSync(locked, 0o500);
+    });
+    await then('the work never runs and the error names the Word lock', async () => {
+      let entered = false;
+      try {
+        await expect(withWordLock(async () => { entered = true; }, { lockPath: path.join(locked, 'word.lock') })).rejects.toThrow(/Cannot take the Word oracle lock/);
+        expect(entered).toBe(false);
+      } finally {
+        chmodSync(locked, 0o700);
+      }
     });
   });
 });
@@ -394,6 +451,19 @@ describe('runAcceptRejectOracle', () => {
       expect(report).toContain('word: STALL: Word did not answer');
       expect(report).toContain('throwing: ERROR applier crashed');
       expect(formatUnitLine(result.units[1]!, 2, 5)).toBe('[2/5] unit stall accept: word STALL => ERROR');
+    });
+  });
+
+  test('a Word output that still carries revisions is an UNRESOLVED error, not a reference', async ({ then }: AllureBddContext) => {
+    await then('the unit errors and no implementation is compared against it', async () => {
+      const lazyWord: WordDriver = async ({ input }) => ({ output: input, cached: false, seconds: 1 });
+      const result = await runAcceptRejectOracle({
+        cases: [caseOf('lazy', 'x', { modes: ['accept'], input: () => docx(`<w:p><w:ins ${REV}><w:r><w:t>x</w:t></w:r></w:ins></w:p><w:sectPr/>`) })],
+        word: lazyWord,
+        implementations: [faithful],
+      });
+      expect(result.units[0]).toMatchObject({ status: 'ERROR', checks: [], word: { kind: 'UNRESOLVED' } });
+      expect(oracleExitCode(result)).toBe(2);
     });
   });
 

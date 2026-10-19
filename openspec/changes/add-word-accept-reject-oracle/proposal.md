@@ -14,9 +14,11 @@ anyone noticing, because CI cannot run Word.
   (internal, not exported from the package index). It projects a package to what a reader sees and diffs
   two projections: live section count, each section's page size, margins and `w:titlePg`, each section's
   header/footer bindings for default/first/even resolved to the bound part's text with linked-to-previous
-  inheritance, body paragraph text, and the count of tracked revisions left. It also classifies `osascript`
+  inheritance, body paragraph text, and the count of tracked revisions left (which must be zero on both
+  sides). Missing page setup is tolerated only where the other side holds Word's defaults. It also classifies `osascript`
   failures, hashes packages for the cache, runs the case-by-mode orchestration against an injected Word
-  driver, and formats the report. Its Word lock reuses the `soffice-lock.ts` protocol on its own lockfile.
+  driver, and formats the report. Its Word lock reuses the `soffice-lock.ts` acquisition protocol on its
+  own lockfile, never reclaims a live holder's lock, and fails closed when the lockfile cannot be created.
 - Add a runner under `scripts/oracle/word/accept-reject/` and the root script
   `npm run oracle:word:accept-reject`:
   - an AppleScript driver that stages inputs and outputs inside Word's sandbox container

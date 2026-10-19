@@ -11,8 +11,11 @@ The comparison SHALL be a projection of what a reader sees, not a byte diff: the
 (excluding `w:sectPrChange` snapshots); each section's page size, margins and `w:titlePg`; each section's
 header and footer bindings for the default, first and even types, resolved to the bound part's text with
 linked-to-previous inheritance; the text of every body paragraph in order; and the number of tracked
-revisions left. Page setup that is absent on one side SHALL be reported as a note, not a mismatch, because
-Word writes defaults on save.
+revisions left. Page setup that is absent on one side SHALL be reported as a note, not a mismatch, only when
+the other side holds a value Word writes by default for a section without one (Letter or A4, portrait, with
+Word's default margins); any other absent page setup SHALL be a mismatch. Accept All and Reject All SHALL
+leave no tracked revision: a revision left in our output is a mismatch, and a Word output that still carries
+revisions SHALL be reported as an error and SHALL NOT be cached or used as a reference.
 
 The command SHALL ship committed generators for the #1188 section-boundary matrix and the #1144 part A
 round-trip pairs, and SHALL accept external documents. For a round-trip pair it SHALL produce the redline
@@ -21,7 +24,9 @@ Reject All the original.
 
 The command SHALL stage every file it gives Word inside Word's sandbox container, SHALL bound every Word call
 with a timeout and report a stalled call instead of hanging, SHALL close only the documents it opened, SHALL
-never quit Word, and SHALL serialize concurrent runs on a lockfile. It SHALL skip with a clear message and a
+never quit Word, and SHALL serialize concurrent runs on a lockfile. The lock SHALL be reclaimed only from a
+holder that is no longer running, never because a live run is slow, and a lockfile that cannot be created
+SHALL fail the run rather than let it drive Word unlocked. It SHALL skip with a clear message and a
 zero exit status in CI, on platforms other than macOS, and when Word or the Automation permission is missing.
 It SHALL NOT run as part of `npm test` or CI. Word output is behavioral reference evidence, not the normative
 definition of ECMA-376 conformance.

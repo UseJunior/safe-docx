@@ -65,7 +65,7 @@ export async function closeRunDocuments(runDir) {
  * @param {string} o.version     Word version (part of the cache key)
  * @param {boolean} o.refresh    ignore cached outputs
  * @param {number} o.timeoutSeconds per-call bound
- * @param {object} o.oracle      the docx-core oracle module (classifyOsascriptFailure, WordAutomationError, packageContentHash)
+ * @param {object} o.oracle      the docx-core oracle module (classifyOsascriptFailure, WordAutomationError, packageContentHash, projectDocx)
  * @param {(line: string) => void} [o.log]
  */
 export function createWordDriver({ runDir, cacheDir, version, refresh, timeoutSeconds, oracle, log = () => {} }) {
@@ -87,10 +87,13 @@ export function createWordDriver({ runDir, cacheDir, version, refresh, timeoutSe
       const result = await runOsascript([APPLY_SCRIPT, inPath, mode, outPath, String(timeoutSeconds)], timeoutSeconds + 15);
       if (result.code === 0 && result.stdout === 'OK' && existsSync(outPath)) {
         const output = await readFile(outPath);
-        await mkdir(cacheDir, { recursive: true });
-        const partial = `${cached}.partial-${process.pid}`;
-        await copyFile(outPath, partial);
-        await rename(partial, cached);
+        // Never cache an output that still carries revisions: the oracle reports it as UNRESOLVED.
+        if ((await oracle.projectDocx(output)).revisionsRemaining === 0) {
+          await mkdir(cacheDir, { recursive: true });
+          const partial = `${cached}.partial-${process.pid}`;
+          await copyFile(outPath, partial);
+          await rename(partial, cached);
+        }
         return { output, cached: false, seconds: (Date.now() - started) / 1000 };
       }
       lastFailure = oracle.classifyOsascriptFailure({ ...result, timeoutSeconds });
