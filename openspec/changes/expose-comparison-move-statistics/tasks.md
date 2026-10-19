@@ -2,6 +2,7 @@
 
 - [x] 1.1 Add `moves`, `movedParagraphs`, `moveFromRanges`, and `moveToRanges` to `CompareStats` and populate them from the tagged move relations and serialized move wrappers.
 - [x] 1.2 Aggregate the new fields across selected stories.
+- [x] 1.3 Allocate generated move range IDs around every input `w:id`, so a generated range can neither duplicate an input ID nor be confused with a preserved move when counting.
 
 ## 2. Tests
 

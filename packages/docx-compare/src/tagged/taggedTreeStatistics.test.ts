@@ -406,6 +406,35 @@ describe('tagged publication range statistics', () => {
     expect(publication.stats).toMatchObject({ moves: 0, movedParagraphs: 0, moveFromRanges: 0, moveToRanges: 0 });
   });
 
+  transformationTest.openspec(PURE_MOVE)('allocates move range IDs around sparse input IDs', () => {
+    // Input IDs 3/4 (and 8/9) leave 1 as the first free ID; generated range
+    // IDs must still skip 3 and 4 rather than counting up into them.
+    const priorMove = '<w:p><w:moveFromRangeStart w:id="3" w:name="taggedMove2" w:author="Prior" w:date="2026-01-01T00:00:00Z"/>'
+      + '<w:moveFrom w:id="8" w:author="Prior" w:date="2026-01-01T00:00:00Z"><w:r><w:t>prior moved text</w:t></w:r></w:moveFrom>'
+      + '<w:moveFromRangeEnd w:id="3"/></w:p>'
+      + '<w:p><w:moveToRangeStart w:id="4" w:name="taggedMove2" w:author="Prior" w:date="2026-01-01T00:00:00Z"/>'
+      + '<w:moveTo w:id="9" w:author="Prior" w:date="2026-01-01T00:00:00Z"><w:r><w:t>prior moved text</w:t></w:r></w:moveTo>'
+      + '<w:moveToRangeEnd w:id="4"/></w:p>';
+    const moved = 'this complete paragraph moves away to a new place';
+    const publication = publish(
+      priorMove + '<w:p><w:r><w:lastRenderedPageBreak/><w:t>first stable paragraph</w:t></w:r></w:p>'
+        + paragraph(moved) + paragraph('second stable paragraph'),
+      priorMove + paragraph('first stable paragraph')
+        + '<w:p><w:r><w:lastRenderedPageBreak/><w:t>second stable paragraph</w:t></w:r></w:p>' + paragraph(moved),
+    );
+    const emitted = parseXml(publication.xml);
+    const rangeIds = ['moveFromRangeStart', 'moveToRangeStart'].flatMap((localName) =>
+      Array.from(emitted.getElementsByTagNameNS(W_NS, localName)).map((start) => start.getAttributeNS(W_NS, 'id')));
+
+    expect(publication.moves).toHaveLength(2);
+    expect(publication.moves.flatMap((move) => [move.sourceRangeId, move.destinationRangeId]))
+      .not.toEqual(expect.arrayContaining([3]));
+    expect(publication.moves.flatMap((move) => [move.sourceRangeId, move.destinationRangeId]))
+      .not.toEqual(expect.arrayContaining([4]));
+    expect(new Set(rangeIds).size).toBe(rangeIds.length);
+    expect(publication.stats).toMatchObject({ moves: 1, movedParagraphs: 1, moveFromRanges: 2, moveToRanges: 2 });
+  });
+
   transformationTest.openspec(NO_MOVES)('reports zero moves when move detection is disabled', () => {
     const moved = 'this complete paragraph moves away to a new place';
     const publication = publish(
