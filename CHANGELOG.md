@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.25.1
 
 - Comparison stats now report detected moves. A comparison whose only change
   is a moved paragraph used to report zero for every stats field, so it looked
@@ -9,11 +9,11 @@
   `moveFromRanges` and `moveToRanges`. Moved content is still not counted as
   an insertion or deletion, and existing fields keep their meanings.
   TypeScript code that builds a `CompareStats` object literal (for example a
-  test mock) must add the four fields. (#940)
+  test mock) must add the four fields. (#1210, #940)
 - Comparison no longer gives a detected move the same range ID as a tracked
   change already in the input. Move range IDs started at the first unused ID
   and counted up without skipping IDs the input already used, so an input with
-  gaps in its IDs could produce duplicate move range IDs. (#940)
+  gaps in its IDs could produce duplicate move range IDs. (#1210, #940)
 - Rejecting a section-property change that has no recorded prior state no
   longer deletes the section. A `w:sectPrChange` may omit its `w:sectPr`
   snapshot; docx-core `rejectChanges` used to treat that as "no prior
@@ -22,7 +22,7 @@
   0.25.0 then moved those bindings to the next section). Now, as in Word 16's
   Reject All and Accept All, only the record is removed and the section is
   kept unchanged. docx-compare `rejectAllChanges` already behaved this way, so
-  the two reject paths now agree. (#987)
+  the two reject paths now agree. (#1205, #987)
 - Comparing a document in which a paragraph was split in two, or two
   paragraphs were merged, no longer shows a whole sentence deleted and
   re-inserted. The text stays in place, and the redline records only the
@@ -32,7 +32,11 @@
   revised and original documents. This applies to plain paragraphs (runs of
   text, tabs and bookmarks); a split or merge involving section breaks, fields,
   footnotes, endnotes, comments, drawings, hyperlinks or earlier tracked changes
-  keeps the previous delete-and-insert representation. (#873)
+  keeps the previous delete-and-insert representation. (#1207, #873)
+- The Safe Docx MCP server now depends on `@modelcontextprotocol/sdk` 1.32.1
+  (was 1.29.0). (#1177)
+- The conformance explorer data is regenerated, so the `w:docDefaults` claim
+  rationale matches its source. (#1202)
 
 ## 0.25.0
 
