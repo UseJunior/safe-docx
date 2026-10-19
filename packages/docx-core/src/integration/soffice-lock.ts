@@ -85,6 +85,9 @@ export type SofficeLockOptions = {
   timeoutMs?: number;
   pollMs?: number;
   staleMs?: number;
+  /** How long an unparseable lockfile is left alone before it is reclaimed (default 10s).
+   *  `Infinity` never reclaims one: the caller times out instead. */
+  unreadableGraceMs?: number;
 };
 
 /** An idempotent release; resolves once the lockfile is removed (or confirmed not ours). */
@@ -227,6 +230,7 @@ export async function acquireSofficeLock(
     timeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
     pollMs = 200,
     staleMs = DEFAULT_STALE_LOCK_MS,
+    unreadableGraceMs = UNREADABLE_LOCK_GRACE_MS,
   }: Omit<SofficeLockOptions, 'lockPath'> = {},
 ): Promise<SofficeLockRelease> {
   const deadline = Date.now() + timeoutMs;
@@ -250,7 +254,7 @@ export async function acquireSofficeLock(
     const holder = readRecord(lockPath);
     const age = lockAgeMs(lockPath);
     if (age === null) continue; // released between our create and our read — retry the create
-    const stale = holder ? !holderAlive(holder) || age > staleMs : age > UNREADABLE_LOCK_GRACE_MS;
+    const stale = holder ? !holderAlive(holder) || age > staleMs : age > unreadableGraceMs;
     if (stale) {
       // Re-check under the guard: remove only the exact record judged stale. If it changed
       // (released, or replaced by a fresh holder), the next iteration re-evaluates.
@@ -262,7 +266,7 @@ export async function acquireSofficeLock(
         const currentAge = lockAgeMs(lockPath);
         const same = holder
           ? current?.token === holder.token
-          : current === null && currentAge !== null && currentAge > UNREADABLE_LOCK_GRACE_MS;
+          : current === null && currentAge !== null && currentAge > unreadableGraceMs;
         if (same) {
           rmSync(lockPath, { force: true });
           removed = true;
