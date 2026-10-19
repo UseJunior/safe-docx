@@ -38,8 +38,10 @@ not it also has a snapshot-less `w:sectPrChange`.
 - Snapshot-present semantics. Word also treats an empty snapshot
   (`<w:sectPrChange><w:sectPr/></w:sectPrChange>`) as "keep the live
   properties", and treats a partial snapshot as an overlay (properties and
-  attributes the snapshot omits keep their live values). All four appliers
-  restore a present snapshot as a full replacement. That is a separate
+  attributes the snapshot omits keep their live values) on Reject All. Both
+  reject appliers (docx-core `rejectChanges`, docx-compare
+  `rejectAllChanges`) restore a present snapshot as a full replacement.
+  Accept discards the snapshot and already matches Word. That is a separate
   decision.
 
 ## Impact
