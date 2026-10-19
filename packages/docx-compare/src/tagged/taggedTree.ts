@@ -183,12 +183,49 @@ export interface BothNode extends TaggedNodeBase {
 export interface OriginalNode extends TaggedNodeBase {
   tag: 'original';
   node: WmlElement;
+  paragraphJoin?: ParagraphJoin;
 }
 
 /** A node present only in the revised document — an insertion. */
 export interface RevisedNode extends TaggedNodeBase {
   tag: 'revised';
   node: WmlElement;
+  paragraphJoin?: ParagraphJoin;
+}
+
+/**
+ * A paragraph split (one original paragraph becomes several revised ones) or
+ * merge (several original paragraphs become one revised one).
+ *
+ * Like a move, this is a relation over side-only siblings: one paragraph
+ * cannot be a `both` node with several partners without breaking the
+ * projection contract. The members stay in the tree as ordinary opaque
+ * side-only paragraphs, so the P1-P5 proof is unchanged. `parts` aligns each
+ * fragment of the single side with one paragraph of the other side; the
+ * serializer emits the parts in place of the members and records only the
+ * changed paragraph marks (inserted for a split, deleted for a merge).
+ *
+ * For a split, part p is `both(fragment p of the original, revised p)`. For a
+ * merge, part p is `both(original p, fragment p of the revised)`. Every
+ * fragment carries the whole paragraph properties of its source paragraph, so
+ * all parts publish the same live properties for a merge, and the same
+ * original snapshot for a split. Accept and Reject then do not depend on which
+ * paragraph mark a reader keeps when it joins two paragraphs (Word keeps the
+ * following paragraph's properties).
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/873
+ */
+export interface ParagraphJoin {
+  kind: 'split' | 'merge';
+  /** Side-only member paragraphs in tree order; the first one emits the parts. */
+  members: ReadonlyArray<OriginalNode | RevisedNode>;
+  parts: readonly BothNode[];
+}
+
+/** The join parts a node emits: the parts on a join's first member, else none. */
+export function paragraphJoinParts(node: TaggedNode): readonly BothNode[] {
+  if (node.tag === 'both' || !node.paragraphJoin) return [];
+  return node.paragraphJoin.members[0] === node ? node.paragraphJoin.parts : [];
 }
 
 export type TaggedNode = BothNode | OriginalNode | RevisedNode;

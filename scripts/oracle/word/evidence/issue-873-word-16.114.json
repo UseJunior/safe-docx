@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-19",
+  "purpose": "Which paragraph properties survive when Word joins two paragraphs through a tracked paragraph mark, and whether the #873 split/merge redline shape resolves correctly under Word Accept All / Reject All.",
+  "word": {
+    "platform": "Mac",
+    "version": "16.114"
+  },
+  "procedure": "Minimal packages (content types, package rels, document.xml only) were opened in Word and resolved with Accept All or Reject All through AppleScript (accept all revisions / reject all revisions), then saved as .docx. Paragraph jc and text were read from the saved document.xml. Revision attributes: w:author=\"T\" w:date=\"2026-10-19T00:00:00Z\".",
+  "finding": "Removing a paragraph mark (Accept All of a deleted mark, Reject All of an inserted mark) keeps the FOLLOWING paragraph's properties (f1, f2: center, not right). The LibreOffice-derived first-paragraph-survives table in paragraphMergeFormatting.test.ts does not match Word for this case. The #873 shape tracks the changed properties on every part (f3, f4), so the result is the same whichever mark survives.",
+  "fixtures": {
+    "f1_delmark": {
+      "bodyXml": "<w:p><w:pPr><w:jc w:val=\"right\"/><w:rPr><w:del w:id=\"1\" w:author=\"T\" w:date=\"2026-10-19T00:00:00Z\"/></w:rPr></w:pPr><w:r><w:t xml:space=\"preserve\">FIRST</w:t></w:r></w:p><w:p><w:pPr><w:jc w:val=\"center\"/></w:pPr><w:r><w:t xml:space=\"preserve\">SECOND</w:t></w:r></w:p>",
+      "acceptAll": [
+        {
+          "jc": "center",
+          "text": "FIRSTSECOND"
+        }
+      ],
+      "rejectAll": [
+        {
+          "jc": "right",
+          "text": "FIRST"
+        },
+        {
+          "jc": "center",
+          "text": "SECOND"
+        }
+      ]
+    },
+    "f2_insmark": {
+      "bodyXml": "<w:p><w:pPr><w:jc w:val=\"right\"/><w:rPr><w:ins w:id=\"1\" w:author=\"T\" w:date=\"2026-10-19T00:00:00Z\"/></w:rPr></w:pPr><w:r><w:t xml:space=\"preserve\">FIRST</w:t></w:r></w:p><w:p><w:pPr><w:jc w:val=\"center\"/></w:pPr><w:r><w:t xml:space=\"preserve\">SECOND</w:t></w:r></w:p>",
+      "acceptAll": [
+        {
+          "jc": "right",
+          "text": "FIRST"
+        },
+        {
+          "jc": "center",
+          "text": "SECOND"
+        }
+      ],
+      "rejectAll": [
+        {
+          "jc": "center",
+          "text": "FIRSTSECOND"
+        }
+      ]
+    },
+    "f3_merge_shape": {
+      "bodyXml": "<w:p><w:pPr><w:jc w:val=\"both\"/><w:rPr><w:del w:id=\"1\" w:author=\"T\" w:date=\"2026-10-19T00:00:00Z\"/></w:rPr><w:pPrChange w:id=\"100\" w:author=\"T\" w:date=\"2026-10-19T00:00:00Z\"><w:pPr><w:jc w:val=\"right\"/></w:pPr></w:pPrChange></w:pPr><w:r><w:t xml:space=\"preserve\">Alpha one.</w:t></w:r><w:ins w:id=\"2\" w:author=\"T\" w:date=\"2026-10-19T00:00:00Z\"><w:r><w:t xml:space=\"preserve\"> </w:t></w:r></w:ins></w:p><w:p><w:pPr><w:jc w:val=\"both\"/><w:pPrChange w:id=\"101\" w:author=\"T\" w:date=\"2026-10-19T00:00:00Z\"><w:pPr><w:jc w:val=\"center\"/></w:pPr></w:pPrChange></w:pPr><w:r><w:t xml:space=\"preserve\">Beta two.</w:t></w:r></w:p>",
+      "acceptAll": [
+        {
+          "jc": "both",
+          "text": "Alpha one. Beta two."
+        }
+      ],
+      "rejectAll": [
+        {
+          "jc": "right",
+          "text": "Alpha one."
+        },
+        {
+          "jc": "center",
+          "text": "Beta two."
+        }
+      ]
+    },
+    "f4_split_shape": {
+      "bodyXml": "<w:p><w:pPr><w:jc w:val=\"center\"/><w:rPr><w:ins w:id=\"1\" w:author=\"T\" w:date=\"2026-10-19T00:00:00Z\"/></w:rPr><w:pPrChange w:id=\"102\" w:author=\"T\" w:date=\"2026-10-19T00:00:00Z\"><w:pPr><w:jc w:val=\"right\"/></w:pPr></w:pPrChange></w:pPr><w:r><w:t xml:space=\"preserve\">Alpha one.</w:t></w:r><w:del w:id=\"2\" w:author=\"T\" w:date=\"2026-10-19T00:00:00Z\"><w:r><w:delText xml:space=\"preserve\"> </w:delText></w:r></w:del></w:p><w:p><w:pPr><w:jc w:val=\"both\"/><w:pPrChange w:id=\"103\" w:author=\"T\" w:date=\"2026-10-19T00:00:00Z\"><w:pPr><w:jc w:val=\"right\"/></w:pPr></w:pPrChange></w:pPr><w:r><w:t xml:space=\"preserve\">Beta two.</w:t></w:r></w:p>",
+      "acceptAll": [
+        {
+          "jc": "center",
+          "text": "Alpha one."
+        },
+        {
+          "jc": "both",
+          "text": "Beta two."
+        }
+      ],
+      "rejectAll": [
+        {
+          "jc": "right",
+          "text": "Alpha one. Beta two."
+        }
+      ]
+    }
+  },
+  "nvcaSplitMergeSmoke": {
+    "sources": "~/.open-agreements/cache/{nvca-voting-agreement,nvca-investors-rights-agreement,nvca-stock-purchase-agreement}/source.docx",
+    "procedure": "For each form, one body paragraph was split at a sentence boundary (joining space removed) and two adjacent body paragraphs were merged. compareDocuments(source, edited) was resolved in Word with Accept All and Reject All; every body paragraph text was compared with the edited and source documents.",
+    "results": [
+      "nvca-investors-rights-agreement-merge         accept paras=419/419 match=True residual_revs=0 ",
+      "nvca-investors-rights-agreement-merge         reject paras=420/420 match=True residual_revs=0 ",
+      "nvca-investors-rights-agreement-split         accept paras=421/421 match=True residual_revs=0 ",
+      "nvca-investors-rights-agreement-split         reject paras=420/420 match=True residual_revs=0 ",
+      "nvca-stock-purchase-agreement-merge           accept paras=404/404 match=True residual_revs=0 ",
+      "nvca-stock-purchase-agreement-merge           reject paras=405/405 match=True residual_revs=0 ",
+      "nvca-stock-purchase-agreement-split           accept paras=406/406 match=True residual_revs=0 ",
+      "nvca-stock-purchase-agreement-split           reject paras=405/405 match=True residual_revs=0 ",
+      "nvca-voting-agreement-merge                   accept paras=179/179 match=True residual_revs=0 ",
+      "nvca-voting-agreement-merge                   reject paras=180/180 match=True residual_revs=0 ",
+      "nvca-voting-agreement-split                   accept paras=181/181 match=True residual_revs=0 ",
+      "nvca-voting-agreement-split                   reject paras=180/180 match=True residual_revs=0 ",
+      "ALL_OK"
+    ]
+  }
+}

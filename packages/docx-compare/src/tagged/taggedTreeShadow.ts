@@ -22,7 +22,7 @@ import type {
   RevisionGroupingPolicy,
   UnrepresentedChange,
 } from '../compare-types.js';
-import { representative, type TaggedNode } from './taggedTree.js';
+import { paragraphJoinParts, representative, type TaggedNode } from './taggedTree.js';
 import { guardBodyTableTopology } from './tableTopologyGuard.js';
 import { collectContentControlPropertyChanges } from './unrepresentedChanges.js';
 
@@ -284,6 +284,17 @@ function deriveTaggedTreeStats(tree: TaggedNode, movedNodes: ReadonlySet<TaggedN
 
   const atomCounts = (node: TaggedNode, insideMove = false): void => {
     const moved = insideMove || movedNodes.has(node);
+    if (node.tag !== 'both' && node.paragraphJoin) {
+      // A split or merge counts its parts as aligned paragraphs plus one atom
+      // per inserted (split) or deleted (merge) paragraph mark (#873).
+      const parts = paragraphJoinParts(node);
+      parts.forEach((part) => atomCounts(part, moved));
+      if (parts.length > 1) {
+        if (node.paragraphJoin.kind === 'split') insertedAtoms += parts.length - 1;
+        else deletedAtoms += parts.length - 1;
+      }
+      return;
+    }
     const localName = representative(node, node.tag === 'revised' ? 'revised' : 'original')?.localName;
     if (localName === 'p') {
       if (moved) return;
@@ -362,6 +373,7 @@ function deriveTaggedTreeStats(tree: TaggedNode, movedNodes: ReadonlySet<TaggedN
       if (hasOriginal && hasRevised) modifiedParagraphs++;
     }
     node.children.forEach(visit);
+    paragraphJoinParts(node).forEach(visit);
   };
   visit(tree);
   return { insertedAtoms, deletedAtoms, modifiedParagraphs, formatChanges, formatChangeAtoms };
