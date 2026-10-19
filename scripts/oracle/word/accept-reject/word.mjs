@@ -67,14 +67,23 @@ export async function closeRunDocuments(runDir) {
  * @param {number} o.timeoutSeconds per-call bound
  * @param {object} o.oracle      the docx-core oracle module (classifyOsascriptFailure, WordAutomationError, packageContentHash, projectDocx)
  * @param {(line: string) => void} [o.log]
+ * @param {typeof runOsascript} [o.osascript] injectable for tests
+ * @param {number} [o.retryDelayMs]
  */
-export function createWordDriver({ runDir, cacheDir, version, refresh, timeoutSeconds, oracle, log = () => {} }) {
+export function createWordDriver({ runDir, cacheDir, version, refresh, timeoutSeconds, oracle, log = () => {}, osascript = runOsascript, retryDelayMs = 3000 }) {
   let seq = 0;
   return async ({ caseId, mode, input }) => {
     const contentHash = await oracle.packageContentHash(input);
     const key = createHash('sha256').update(`${contentHash}|${mode}|${version}|${SCRIPT_VERSION}`).digest('hex');
     const cached = path.join(cacheDir, `${key}.docx`);
-    if (!refresh && existsSync(cached)) return { output: await readFile(cached), cached: true, seconds: 0 };
+    if (!refresh && existsSync(cached)) {
+      const output = await readFile(cached);
+      // A cached output must be fully resolved; anything else (e.g. written by an older runner) is
+      // discarded and Word runs again.
+      if ((await oracle.projectDocx(output).catch(() => null))?.revisionsRemaining === 0) return { output, cached: true, seconds: 0 };
+      log(`  ${caseId} ${mode}: discarding an unusable cached Word output`);
+      await rm(cached, { force: true });
+    }
 
     const started = Date.now();
     let lastFailure;
@@ -84,7 +93,7 @@ export function createWordDriver({ runDir, cacheDir, version, refresh, timeoutSe
       const inPath = path.join(runDir, `${stem}-in.docx`);
       const outPath = path.join(runDir, `${stem}-word.docx`);
       await writeFile(inPath, input);
-      const result = await runOsascript([APPLY_SCRIPT, inPath, mode, outPath, String(timeoutSeconds)], timeoutSeconds + 15);
+      const result = await osascript([APPLY_SCRIPT, inPath, mode, outPath, String(timeoutSeconds)], timeoutSeconds + 15);
       if (result.code === 0 && result.stdout === 'OK' && existsSync(outPath)) {
         const output = await readFile(outPath);
         // Never cache an output that still carries revisions: the oracle reports it as UNRESOLVED.
@@ -99,8 +108,8 @@ export function createWordDriver({ runDir, cacheDir, version, refresh, timeoutSe
       lastFailure = oracle.classifyOsascriptFailure({ ...result, timeoutSeconds });
       if (lastFailure.kind === 'PERMISSION' || lastFailure.kind === 'UNAVAILABLE' || attempt === 2) break;
       log(`  ${caseId} ${mode}: ${lastFailure.kind} (${lastFailure.message}); closing this run's documents and retrying once`);
-      await closeRunDocuments(runDir);
-      await new Promise((r) => setTimeout(r, 3000));
+      await osascript([CLOSE_SCRIPT, `${runDir}/`], 45);
+      await new Promise((r) => setTimeout(r, retryDelayMs));
     }
     throw new oracle.WordAutomationError(lastFailure);
   };

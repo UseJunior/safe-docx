@@ -432,7 +432,8 @@ export function wordOracleLockPath(home = os.homedir()): string {
  * Run `fn` while holding the Word oracle's cross-process lock: the acquisition protocol from
  * `soffice-lock.ts` on its own lockfile, with two differences from the LibreOffice launchers.
  * A live holder is never treated as stale, however long its run takes (only a dead holder's lock
- * is reclaimed), and a lockfile that cannot be created fails the run instead of running unlocked.
+ * is reclaimed); a lockfile whose holder cannot be read is never reclaimed either (the waiter times
+ * out naming it); and a lockfile that cannot be created fails the run instead of running unlocked.
  */
 export async function withWordLock<T>(
   fn: () => Promise<T>,
@@ -440,7 +441,9 @@ export async function withWordLock<T>(
 ): Promise<T> {
   let release: () => Promise<void>;
   try {
-    release = await acquireSofficeLock(lockPath, { timeoutMs, pollMs, staleMs: Number.POSITIVE_INFINITY });
+    release = await acquireSofficeLock(lockPath, {
+      timeoutMs, pollMs, staleMs: Number.POSITIVE_INFINITY, unreadableGraceMs: Number.POSITIVE_INFINITY,
+    });
   } catch (err) {
     const message = (err as Error).message;
     if (/Timed out/.test(message)) {

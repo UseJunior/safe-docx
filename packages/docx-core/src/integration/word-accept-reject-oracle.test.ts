@@ -5,7 +5,7 @@
  *
  * @see https://github.com/UseJunior/safe-docx/issues/1144
  */
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
@@ -346,6 +346,21 @@ describe('withWordLock', () => {
       await expect(withWordLock(async () => { entered = true; }, { lockPath, timeoutMs: 200, pollMs: 20 })).rejects.toThrow(/Another Word oracle run holds/);
       expect(entered).toBe(false);
       await release();
+    });
+  });
+
+  test('an unreadable lockfile is never reclaimed, however old', async ({ given, then }: AllureBddContext) => {
+    const lockPath = path.join(dir, 'word.lock');
+    await given('a lockfile whose holder record cannot be parsed, a minute old', () => {
+      writeFileSync(lockPath, 'not json');
+      const minuteAgo = new Date(Date.now() - 60_000);
+      utimesSync(lockPath, minuteAgo, minuteAgo);
+    });
+    await then('the waiter times out and leaves the lockfile in place', async () => {
+      let entered = false;
+      await expect(withWordLock(async () => { entered = true; }, { lockPath, timeoutMs: 200, pollMs: 20 })).rejects.toThrow(/Another Word oracle run holds/);
+      expect(entered).toBe(false);
+      expect(existsSync(lockPath)).toBe(true);
     });
   });
 
