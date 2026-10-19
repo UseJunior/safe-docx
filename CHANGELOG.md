@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Rejecting a section-property change that has no recorded prior state no
+  longer deletes the section. A `w:sectPrChange` may omit its `w:sectPr`
+  snapshot; docx-core `rejectChanges` used to treat that as "no prior
+  properties" and removed the whole live `w:sectPr`, so a paragraph-level
+  section lost its section break, page setup and header/footer bindings (and
+  0.25.0 then moved those bindings to the next section). Now, as in Word 16's
+  Reject All and Accept All, only the record is removed and the section is
+  kept unchanged. docx-compare `rejectAllChanges` already behaved this way, so
+  the two reject paths now agree. (#987)
+
 ## 0.25.0
 
 - **Breaking for `docx-markdoc create` sources: bare brackets are now literal

@@ -717,14 +717,19 @@ export function rejectChanges(
           }
         }
         grandParent.replaceChild(restored, parentProp);
+      } else if (localName === 'sectPrChange') {
+        // CT_SectPrChange's w:sectPr snapshot is optional (ECMA-376 Part 1
+        // § 17.13.5.32; wml.xsd minOccurs="0"). An absent snapshot records
+        // no prior page setup, so there is nothing to restore: drop only the
+        // record and keep the live w:sectPr, its page setup, its
+        // header/footer references and (for a paragraph-owned w:sectPr) the
+        // section break. Word 16 Reject All does the same at body and
+        // paragraph level (#987). A break that rejection does remove is one
+        // whose paragraph mark was inserted; the paragraph-mark merge below
+        // removes it and carries its references (#1144).
+        parentProp.removeChild(change);
       } else {
         // Original props were empty — remove the parent property element entirely.
-        // Removing a paragraph-owned w:sectPr removes its section boundary, so
-        // its header/footer references move to the following section (#1144).
-        const paragraph = grandParent.parentNode;
-        if (localName === 'sectPrChange' && isW(grandParent, 'pPr') && paragraph && isW(paragraph, 'p')) {
-          carryHeaderFooterRefsFromRemovedBoundary(paragraph);
-        }
         grandParent.removeChild(parentProp);
       }
       propertyChangesReverted++;

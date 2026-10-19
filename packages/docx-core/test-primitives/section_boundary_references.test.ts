@@ -312,7 +312,11 @@ describe('section boundary reference helpers', () => {
     });
   });
 
-  test('docx-core reject of a snapshot-less paragraph section change carries its references', async ({ given, when, then }: AllureBddContext) => {
+  // Until #987 this case expected the paragraph section to be removed and its
+  // references carried to the body section. Word 16 Reject All keeps the
+  // section: a snapshot-less sectPrChange records no prior state, so only the
+  // record goes and no boundary is removed (see sectpr_change_snapshotless).
+  test('docx-core reject of a snapshot-less paragraph section change keeps the section and carries nothing', async ({ given, when, then }: AllureBddContext) => {
     let doc!: Document;
     await given('a paragraph-owned sectPr with references whose sectPrChange has no snapshot', async () => {
       doc = parseXml(wrap(paragraph('First section',
@@ -322,8 +326,11 @@ describe('section boundary reference helpers', () => {
     await when('all changes are rejected natively', async () => {
       rejectChanges(doc);
     });
-    await then('the paragraph section is removed and the body section receives its references', async () => {
-      expect(summarize(serializeXml(doc))).toEqual([{ references: refs('A', ALL, ALL), titlePg: false, landscape: false }]);
+    await then('the paragraph section keeps its references and the body section stays unbound, as in Word', async () => {
+      expect(summarize(serializeXml(doc))).toEqual([
+        { references: refs('A', ALL, ALL), titlePg: true, landscape: true },
+        { references: [], titlePg: false, landscape: false },
+      ]);
     });
   });
 
