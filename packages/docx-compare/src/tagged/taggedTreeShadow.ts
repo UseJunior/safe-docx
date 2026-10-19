@@ -399,20 +399,26 @@ function consumeSerializedRangeStats(document: Document): TaggedTreePublication[
  * Count detected moves from the serialized story. Each relation pairs one
  * source with one destination, so a move counts once here and never as an
  * insertion or deletion (#940). A relation counts only when both of its named
- * range starts were emitted: a relation whose content serializes to nothing
+ * range starts (matched by allocated id and name) were emitted: a relation
+ * whose content serializes to nothing
  * (for example a layout-only `w:lastRenderedPageBreak`) is not a visible move.
  */
 function deriveMoveStats(
   document: Document,
   moves: readonly TaggedMoveRelation[],
 ): Pick<CompareStats, 'moves' | 'movedParagraphs'> {
-  const emittedNames = (localName: string): Set<string> => new Set(
+  // Key each range start by id and name: a preserved input move may reuse a
+  // generated name such as `taggedMove1`, but not also its allocated id.
+  const emittedStarts = (localName: string): Set<string> => new Set(
     Array.from(document.getElementsByTagNameNS(WORDPROCESSINGML_NAMESPACE, localName))
-      .map((marker) => marker.getAttributeNS(WORDPROCESSINGML_NAMESPACE, 'name') ?? ''),
+      .map((marker) => `${marker.getAttributeNS(WORDPROCESSINGML_NAMESPACE, 'id') ?? ''}\u0000${
+        marker.getAttributeNS(WORDPROCESSINGML_NAMESPACE, 'name') ?? ''}`),
   );
-  const sources = emittedNames('moveFromRangeStart');
-  const destinations = emittedNames('moveToRangeStart');
-  const emitted = moves.filter((move) => sources.has(move.name) && destinations.has(move.name));
+  const sources = emittedStarts('moveFromRangeStart');
+  const destinations = emittedStarts('moveToRangeStart');
+  const emitted = moves.filter((move) =>
+    sources.has(`${move.sourceRangeId}\u0000${move.name}`) &&
+    destinations.has(`${move.destinationRangeId}\u0000${move.name}`));
   return {
     moves: emitted.length,
     movedParagraphs: emitted.filter((move) => move.source.node.localName === 'p').length,

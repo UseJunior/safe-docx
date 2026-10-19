@@ -387,6 +387,25 @@ describe('tagged publication range statistics', () => {
     expect(publication.stats).toMatchObject({ moves: 0, movedParagraphs: 0, moveFromRanges: 0, moveToRanges: 0 });
   });
 
+  transformationTest.openspec(NO_MOVES)('does not credit a preserved input move that reuses a generated move name', () => {
+    // The input already carries a tracked move named like a generated one.
+    const priorMove = '<w:p><w:moveFromRangeStart w:id="1" w:name="taggedMove1" w:author="Prior" w:date="2026-01-01T00:00:00Z"/>'
+      + '<w:moveFrom w:id="2" w:author="Prior" w:date="2026-01-01T00:00:00Z"><w:r><w:t>prior moved text</w:t></w:r></w:moveFrom>'
+      + '<w:moveFromRangeEnd w:id="1"/></w:p>'
+      + '<w:p><w:moveToRangeStart w:id="3" w:name="taggedMove1" w:author="Prior" w:date="2026-01-01T00:00:00Z"/>'
+      + '<w:moveTo w:id="4" w:author="Prior" w:date="2026-01-01T00:00:00Z"><w:r><w:t>prior moved text</w:t></w:r></w:moveTo>'
+      + '<w:moveToRangeEnd w:id="3"/></w:p>';
+    const publication = publish(
+      priorMove + '<w:p><w:r><w:lastRenderedPageBreak/><w:t>first stable paragraph</w:t></w:r></w:p>'
+        + paragraph('second stable paragraph'),
+      priorMove + paragraph('first stable paragraph')
+        + '<w:p><w:r><w:lastRenderedPageBreak/><w:t>second stable paragraph</w:t></w:r></w:p>',
+    );
+
+    expect(publication.moves.map((move) => move.name)).toContain('taggedMove1');
+    expect(publication.stats).toMatchObject({ moves: 0, movedParagraphs: 0, moveFromRanges: 0, moveToRanges: 0 });
+  });
+
   transformationTest.openspec(NO_MOVES)('reports zero moves when move detection is disabled', () => {
     const moved = 'this complete paragraph moves away to a new place';
     const publication = publish(

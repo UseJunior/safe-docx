@@ -7,7 +7,9 @@
   identical to an unchanged document. `CompareStats` (and the MCP
   `compare_documents` response) now include `moves`, `movedParagraphs`,
   `moveFromRanges` and `moveToRanges`. Moved content is still not counted as
-  an insertion or deletion, and existing fields keep their meanings. (#940)
+  an insertion or deletion, and existing fields keep their meanings.
+  TypeScript code that builds a `CompareStats` object literal (for example a
+  test mock) must add the four fields. (#940)
 - Rejecting a section-property change that has no recorded prior state no
   longer deletes the section. A `w:sectPrChange` may omit its `w:sectPr`
   snapshot; docx-core `rejectChanges` used to treat that as "no prior
