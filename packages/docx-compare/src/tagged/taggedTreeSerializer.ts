@@ -2078,7 +2078,7 @@ function emitAtomicSideOnlyField(
  * paragraph properties stay live with a `w:pPrChange` to the original ones,
  * as for any aligned paragraph.
  *
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.16
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
  * @see https://github.com/UseJunior/safe-docx/issues/873
  */

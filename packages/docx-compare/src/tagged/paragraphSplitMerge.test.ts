@@ -12,7 +12,7 @@ import { testAllure } from '../testing/allure-test.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Paragraph split and merge' })
-  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.16' });
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.15' });
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
@@ -185,6 +185,36 @@ describe('paragraph split and merge record only the paragraph mark (#873)', () =
       expect((markers[0]!.parentNode as Element).localName).toBe('p');
     }
     expectRoundTrips(xml, original, revised);
+  });
+
+  test('a bookmark range ending inside a join part keeps its end in all four projections', async () => {
+    const preceding = `<w:p><w:bookmarkStart w:id="5" w:name="RangeA"/>${run('Third portion differs entirely.')}</w:p>`;
+    const end = '<w:bookmarkEnd w:id="5"/>';
+    const joined = preceding + `<w:p>${run('First clause')}${end}${run(` stands alone. ${SECOND}`)}</w:p>`;
+    const split = preceding + `<w:p>${run('First clause')}${end}${run(' stands alone.')}</w:p>` + para(SECOND);
+    const endOffset = (xml: string): number | undefined => {
+      let position = 0;
+      let found: number | undefined;
+      const visit = (element: Element): void => {
+        if (element.localName === 'pPr') return;
+        if (element.localName === 't') position += (element.textContent ?? '').length;
+        if (element.localName === 'bookmarkEnd') found = position;
+        for (const child of Array.from(element.childNodes)) if (child.nodeType === 1) visit(child as Element);
+      };
+      visit(parseXml(xml).documentElement);
+      return found;
+    };
+    const expected = 'Third portion differs entirely.First clause'.length;
+    for (const [original, revised] of [[joined, split], [split, joined]] as const) {
+      const { xml } = await compareBodies(original, revised);
+      expect(endOffset(acceptAllChanges(xml))).toBe(expected);
+      expect(endOffset(rejectAllChanges(xml))).toBe(expected);
+      for (const project of [acceptChanges, rejectChanges]) {
+        const document = parseXml(xml);
+        project(document);
+        expect(endOffset(serializeXml(document))).toBe(expected);
+      }
+    }
   });
 
   test('an unrelated new paragraph is still a whole-paragraph insertion', async () => {
