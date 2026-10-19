@@ -25,6 +25,8 @@
  * Deliberately NOT part of the package's public API: the runner imports it from
  * `dist/integration/`.
  *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
  * @see https://github.com/UseJunior/safe-docx/issues/1144
  */
 import { createHash } from 'node:crypto';
@@ -68,7 +70,11 @@ export interface DocumentProjection {
   revisionsRemaining: number;
 }
 
-/** Elements that record a tracked revision (ECMA-376 Part 1 § 17.13.5). */
+/**
+ * Elements that record a tracked revision.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
+ */
 const REVISION_ELEMENTS = new Set([
   'ins', 'del', 'moveFrom', 'moveTo', 'rPrChange', 'pPrChange', 'sectPrChange', 'tblPrChange',
   'tblPrExChange', 'trPrChange', 'tcPrChange', 'tblGridChange', 'numberingChange', 'cellIns', 'cellDel',
@@ -97,7 +103,7 @@ function intAttr(element: Element | undefined, name: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
-/** ST_OnOff: absent `w:val` or a true value is on (ECMA-376 Part 1 § 17.17.4). */
+/** An on/off property is on when `w:val` is absent or one of `1`, `true`, `on`. */
 function onOff(element: Element | undefined): boolean {
   if (!element) return false;
   const value = wAttr(element, 'val');
