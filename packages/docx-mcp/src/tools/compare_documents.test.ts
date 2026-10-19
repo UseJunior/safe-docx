@@ -81,6 +81,53 @@ describe('compare_documents tool', () => {
   // ── Two-file mode ────────────────────────────────────────────────
 
   test(
+    'Two-file mode: a pure paragraph move reports non-zero move stats (#940)',
+    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
+      const mgr = createTestSessionManager();
+      const dir = await createTrackedTempDir();
+      const moved = 'this complete paragraph moves away to a new place in the document';
+      const originalPath = await writeTestDocx(dir, 'original.docx', [moved, 'stable paragraph one', 'stable paragraph two']);
+      const revisedPath = await writeTestDocx(dir, 'revised.docx', ['stable paragraph one', 'stable paragraph two', moved]);
+      const editedPath = await writeTestDocx(dir, 'edited.docx', ['stable paragraph one', 'stable paragraph two changed', moved]);
+
+      const pure = await when('Compare a pure move', () =>
+        compareDocuments_tool(mgr, {
+          original_file_path: originalPath,
+          revised_file_path: revisedPath,
+          save_to_local_path: path.join(dir, 'pure-redline.docx'),
+        }),
+      );
+      const mixed = await when('Compare a move plus an edit', () =>
+        compareDocuments_tool(mgr, {
+          original_file_path: originalPath,
+          revised_file_path: editedPath,
+          save_to_local_path: path.join(dir, 'mixed-redline.docx'),
+        }),
+      );
+      assertSuccess(pure, 'compare_documents');
+      assertSuccess(mixed, 'compare_documents');
+      await attachPrettyJson('pure move stats', pure.stats);
+
+      await then('the pure move is visible in stats and not counted as insert/delete', () => {
+        expect(pure.stats).toMatchObject({
+          moves: 1,
+          movedParagraphs: 1,
+          moveFromRanges: 2,
+          moveToRanges: 2,
+          insertions: 0,
+          deletions: 0,
+          insertedAtoms: 0,
+          deletedAtoms: 0,
+        });
+      });
+
+      await then('the edit is counted alongside the move', () => {
+        expect(mixed.stats).toMatchObject({ moves: 1, movedParagraphs: 1, insertions: 1, deletions: 0 });
+      });
+    },
+  );
+
+  test(
     'Two-file mode: compares two DOCX files and writes redline',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const mgr = createTestSessionManager();

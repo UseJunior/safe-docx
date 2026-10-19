@@ -19,6 +19,7 @@ import { computeNumberingIdentities } from './numberingIntegration.js';
 import { detectParagraphJoins } from './paragraphJoinDetection.js';
 import {
   nextRevisionId,
+  usedRevisionIds,
   PROPERTY_SCOPE_ELEMENT,
   revisionProvenance,
   subtreeSignature,
@@ -1086,7 +1087,7 @@ export function globallyPairCandidates(
 
 function classifyMoves(
   tree: TaggedNode,
-  firstRevisionId: number,
+  allocateRangeId: () => number,
   settings: Required<Pick<
     TaggedTreeConstructionOptions,
     'moveSimilarityThreshold' | 'moveMinimumWordCount' | 'caseInsensitiveMove'
@@ -1103,7 +1104,6 @@ function classifyMoves(
   }
   const relations: TaggedMoveRelation[] = [];
   const bound = new Set<TaggedNode>();
-  let id = firstRevisionId;
   for (const source of originalCandidates) {
     const bucket = revisedBySignature.get(subtreeSignature(source.node.node));
     const destinationIndex = bucket?.findIndex((candidate) =>
@@ -1116,8 +1116,8 @@ function classifyMoves(
       source: source.node,
       destination: destination.node,
       name: `taggedMove${relations.length + 1}`,
-      sourceRangeId: id++,
-      destinationRangeId: id++,
+      sourceRangeId: allocateRangeId(),
+      destinationRangeId: allocateRangeId(),
     });
     bound.add(source.node);
     bound.add(destination.node);
@@ -1146,8 +1146,8 @@ function classifyMoves(
       source: source.node,
       destination: destination.node,
       name: `taggedMove${relations.length + 1}`,
-      sourceRangeId: id++,
-      destinationRangeId: id++,
+      sourceRangeId: allocateRangeId(),
+      destinationRangeId: allocateRangeId(),
     });
   }
   return relations;
@@ -1200,12 +1200,17 @@ export function constructTaggedTree(
   const violations = verifyTaggedTree(original, revised, tree);
   if (violations.length > 0) throw new Error(`constructed tagged tree violates P1-P5: ${violations[0]!.detail}`);
   carryOperationProvenance(tree, original, revised, settings.revisionAttributionRanges);
+  // Move range IDs share the annotation ID space with every input `w:id`, so
+  // skip IDs already present instead of counting up blindly from the first
+  // gap: sparse input IDs would otherwise yield duplicate range IDs.
+  const usedIds = usedRevisionIds(original, revised);
+  let nextRangeId = Math.max(nextRevisionId(original, revised), options.minimumRevisionId ?? 0);
+  const allocateRangeId = (): number => {
+    while (usedIds.has(String(nextRangeId))) nextRangeId++;
+    return nextRangeId++;
+  };
   const moves = settings.detectMoves
-    ? classifyMoves(
-      tree,
-      Math.max(nextRevisionId(original, revised), options.minimumRevisionId ?? 0),
-      settings,
-    )
+    ? classifyMoves(tree, allocateRangeId, settings)
     : [];
   const moveViolations = verifyMoveRelations(moves, tree);
   if (moveViolations.length > 0) throw new Error(`constructed move relation is invalid: ${moveViolations[0]!.detail}`);

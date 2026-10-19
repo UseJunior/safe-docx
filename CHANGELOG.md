@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Comparison stats now report detected moves. A comparison whose only change
+  is a moved paragraph used to report zero for every stats field, so it looked
+  identical to an unchanged document. `CompareStats` (and the MCP
+  `compare_documents` response) now include `moves`, `movedParagraphs`,
+  `moveFromRanges` and `moveToRanges`. Moved content is still not counted as
+  an insertion or deletion, and existing fields keep their meanings.
+  TypeScript code that builds a `CompareStats` object literal (for example a
+  test mock) must add the four fields. (#940)
+- Comparison no longer gives a detected move the same range ID as a tracked
+  change already in the input. Move range IDs started at the first unused ID
+  and counted up without skipping IDs the input already used, so an input with
+  gaps in its IDs could produce duplicate move range IDs. (#940)
 - Rejecting a section-property change that has no recorded prior state no
   longer deletes the section. A `w:sectPrChange` may omit its `w:sectPr`
   snapshot; docx-core `rejectChanges` used to treat that as "no prior

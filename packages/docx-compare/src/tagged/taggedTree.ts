@@ -128,7 +128,8 @@ export function revisionProvenance(element: WmlElement): RevisionProvenance[] {
  * Existing IDs are never reused, even when the two documents contain different
  * authors or revision kinds with the same decimal identifier.
  */
-export function nextRevisionId(originalRoot: WmlElement, revisedRoot: WmlElement): number {
+/** Every numeric `w:id` in either input, canonicalized as a decimal string. */
+export function usedRevisionIds(originalRoot: WmlElement, revisedRoot: WmlElement): Set<string> {
   const used = new Set<string>();
   for (const root of [originalRoot, revisedRoot]) {
     const elements = [root, ...Array.from(root.getElementsByTagName('*'))];
@@ -142,6 +143,11 @@ export function nextRevisionId(originalRoot: WmlElement, revisedRoot: WmlElement
       }
     }
   }
+  return used;
+}
+
+export function nextRevisionId(originalRoot: WmlElement, revisedRoot: WmlElement): number {
+  const used = usedRevisionIds(originalRoot, revisedRoot);
   let next = 1;
   while (used.has(String(next))) next++;
   return next;

@@ -10,7 +10,8 @@ const USAGE =
   'Comparison always publishes the revised-based tagged package; engine, mode, strategy, premerge, ' +
   'and word-refinement selectors have been removed.\n' +
   'Stats: insertions/deletions count contiguous revision ranges; insertedAtoms/deletedAtoms use the tagged-token-v1 unit; ' +
-  'modifications counts modified paragraphs and formatChanges is separate.';
+  'modifications counts modified paragraphs and formatChanges is separate; moves counts detected moves ' +
+  '(moveFromRanges/moveToRanges count their ranges), never also counted as insertions/deletions.';
 
 export interface ParsedCompareCliArgs {
   originalPath: string;

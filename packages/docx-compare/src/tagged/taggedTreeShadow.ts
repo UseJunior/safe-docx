@@ -22,7 +22,7 @@ import type {
   RevisionGroupingPolicy,
   UnrepresentedChange,
 } from '../compare-types.js';
-import { paragraphJoinParts, representative, type TaggedNode } from './taggedTree.js';
+import { paragraphJoinParts, representative, type TaggedMoveRelation, type TaggedNode } from './taggedTree.js';
 import { guardBodyTableTopology } from './tableTopologyGuard.js';
 import { collectContentControlPropertyChanges } from './unrepresentedChanges.js';
 
@@ -395,11 +395,47 @@ function consumeSerializedRangeStats(document: Document): TaggedTreePublication[
   return stats;
 }
 
+/**
+ * Count detected moves from the serialized story. Each relation pairs one
+ * source with one destination, so a move counts once here and never as an
+ * insertion or deletion (#940). A relation counts only when both of its named
+ * range starts (matched by allocated id and name) were emitted: a relation
+ * whose content serializes to nothing
+ * (for example a layout-only `w:lastRenderedPageBreak`) is not a visible move.
+ */
+function deriveMoveStats(
+  document: Document,
+  moves: readonly TaggedMoveRelation[],
+): Pick<CompareStats, 'moves' | 'movedParagraphs'> {
+  // Key each range start by id and name: a preserved input move may reuse a
+  // generated name such as `taggedMove1`, but not also its allocated id.
+  const emittedStarts = (localName: string): Set<string> => new Set(
+    Array.from(document.getElementsByTagNameNS(WORDPROCESSINGML_NAMESPACE, localName))
+      .map((marker) => `${marker.getAttributeNS(WORDPROCESSINGML_NAMESPACE, 'id') ?? ''}\u0000${
+        marker.getAttributeNS(WORDPROCESSINGML_NAMESPACE, 'name') ?? ''}`),
+  );
+  const sources = emittedStarts('moveFromRangeStart');
+  const destinations = emittedStarts('moveToRangeStart');
+  const emitted = moves.filter((move) =>
+    sources.has(`${move.sourceRangeId}\u0000${move.name}`) &&
+    destinations.has(`${move.destinationRangeId}\u0000${move.name}`));
+  return {
+    moves: emitted.length,
+    movedParagraphs: emitted.filter((move) => move.source.node.localName === 'p').length,
+  };
+}
+
 export function consumeTaggedPublicationStatistics(
   xml: string,
   treeStats: Pick<
     CompareStats,
-    'insertedAtoms' | 'deletedAtoms' | 'modifiedParagraphs' | 'formatChanges' | 'formatChangeAtoms'
+    | 'insertedAtoms'
+    | 'deletedAtoms'
+    | 'modifiedParagraphs'
+    | 'formatChanges'
+    | 'formatChangeAtoms'
+    | 'moves'
+    | 'movedParagraphs'
   >,
 ): { xml: string; stats: CompareStats; serializedRangeStats: TaggedTreePublication['serializedRangeStats'] } {
   const document = parseXml(xml);
@@ -431,6 +467,10 @@ export function consumeTaggedPublicationStatistics(
     formatChangeAtoms: treeStats.formatChangeAtoms,
     insertedTableRows,
     deletedTableRows,
+    moves: treeStats.moves,
+    movedParagraphs: treeStats.movedParagraphs,
+    moveFromRanges: serializedRangeStats.moveFromRanges,
+    moveToRanges: serializedRangeStats.moveToRanges,
   };
   return { xml: new XMLSerializer().serializeToString(document), stats, serializedRangeStats };
 }
@@ -472,6 +512,7 @@ export function buildTaggedTreePublication(
   const movedNodes = new Set<TaggedNode>(constructed.moves.flatMap((move) => [move.source, move.destination]));
   const treeStats = {
     ...deriveTaggedTreeStats(constructed.tree, movedNodes),
+    ...deriveMoveStats(document, constructed.moves),
   };
   const markedXml = new XMLSerializer().serializeToString(document);
   const consumed = consumeTaggedPublicationStatistics(markedXml, treeStats);
