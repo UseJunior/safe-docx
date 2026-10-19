@@ -13,10 +13,12 @@ import { getChangedPropertyNames } from '../propertyNaming.js';
 import { collectMoveContentIssues, placeParagraphMarkRevisionMarker } from './revisionMarkup.js';
 import {
   nextRevisionId,
+  paragraphJoinParts,
   PROPERTY_SCOPE_ELEMENT,
   representative,
   revisionProvenance,
   type RevisionProvenance,
+  type ParagraphJoin,
   type Side,
   type TaggedMoveRelation,
   type TaggedNode,
@@ -112,6 +114,7 @@ export function createPreservePlan(
     if (original) represented.add(original);
     if (revised) represented.add(revised);
     node.children.forEach(indexRepresentatives);
+    paragraphJoinParts(node).forEach(indexRepresentatives);
   };
   indexRepresentatives(tree);
   const externalStack = (element: WmlElement): RevisionProvenance[] => {
@@ -136,6 +139,7 @@ export function createPreservePlan(
       comparisonNesting: 'inside-preserved',
     });
     node.children.forEach(visit);
+    paragraphJoinParts(node).forEach(visit);
   };
   visit(tree);
   return {
@@ -374,6 +378,31 @@ function hoistLiteralInsertionsFromDeletedFieldInstructions(root: WmlElement): v
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
  * @see https://github.com/UseJunior/safe-docx/issues/941
  */
+/** Record a generated revision on a paragraph's mark (`w:pPr/w:rPr`). */
+function markParagraphMarkRevision(
+  paragraph: WmlElement,
+  kind: 'ins' | 'del' | 'moveFrom' | 'moveTo',
+  revision: ComparisonRevision,
+): void {
+  let pPr = childElements(paragraph).find((child) => child.localName === 'pPr');
+  if (!pPr) {
+    pPr = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
+    paragraph.insertBefore(pPr, paragraph.firstChild);
+  }
+  let paraRPr = childElements(pPr).find((child) => child.localName === 'rPr');
+  if (!paraRPr) {
+    paraRPr = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
+    const boundary = childElements(pPr).find((child) => ['sectPr', 'pPrChange'].includes(child.localName));
+    pPr.insertBefore(paraRPr, boundary ?? null);
+  }
+  const marker = paragraph.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
+  marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
+  marker.setAttributeNS(W_NS, 'w:author', revision.author);
+  marker.setAttributeNS(W_NS, 'w:date', revision.date);
+  markComparisonRevision(marker);
+  placeParagraphMarkRevisionMarker(paraRPr, marker, `w:${kind}`);
+}
+
 function markWholeParagraph(
   paragraph: WmlElement,
   kind: 'ins' | 'del' | 'moveFrom' | 'moveTo',
@@ -383,25 +412,8 @@ function markWholeParagraph(
   operationIds: readonly string[] = [],
   markParagraphMark = true,
 ): WmlElement {
-  let pPr = childElements(paragraph).find((child) => child.localName === 'pPr');
-  if (markParagraphMark) {
-    if (!pPr) {
-      pPr = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
-      paragraph.insertBefore(pPr, paragraph.firstChild);
-    }
-    let paraRPr = childElements(pPr).find((child) => child.localName === 'rPr');
-    if (!paraRPr) {
-      paraRPr = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
-      const boundary = childElements(pPr).find((child) => ['sectPr', 'pPrChange'].includes(child.localName));
-      pPr.insertBefore(paraRPr, boundary ?? null);
-    }
-    const marker = paragraph.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
-    marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
-    marker.setAttributeNS(W_NS, 'w:author', revision.author);
-    marker.setAttributeNS(W_NS, 'w:date', revision.date);
-    markComparisonRevision(marker);
-    placeParagraphMarkRevisionMarker(paraRPr, marker, `w:${kind}`);
-  }
+  if (markParagraphMark) markParagraphMarkRevision(paragraph, kind, revision);
+  const pPr = childElements(paragraph).find((child) => child.localName === 'pPr');
 
   const content = childElements(paragraph).filter((child) => child !== pPr);
   for (const child of content) paragraph.removeChild(child);
@@ -2059,6 +2071,31 @@ function emitAtomicSideOnlyField(
   return { emitted: wrapper, end: cursor };
 }
 
+/**
+ * Emit a paragraph split or merge as its aligned parts. Each part is an
+ * ordinary aligned paragraph, so unchanged text stays live; only the marks
+ * between parts change: inserted for a split, deleted for a merge. Revised
+ * paragraph properties stay live with a `w:pPrChange` to the original ones,
+ * as for any aligned paragraph.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @see https://github.com/UseJunior/safe-docx/issues/873
+ */
+function emitParagraphJoin(
+  join: ParagraphJoin,
+  emitPart: (part: TaggedNode) => WmlElement,
+  allocateRevision: () => ComparisonRevision,
+): WmlElement[] {
+  const paragraphs = join.parts.map(emitPart);
+  paragraphs.slice(0, -1).forEach((paragraph) => markParagraphMarkRevision(
+    paragraph,
+    join.kind === 'split' ? 'ins' : 'del',
+    allocateRevision(),
+  ));
+  return paragraphs;
+}
+
 function emitNode(
   node: TaggedNode,
   plan: PreservePlan,
@@ -2090,6 +2127,15 @@ function emitNode(
       const child = node.children[index]!;
       const childElement = representative(child, child.tag === 'original' ? 'original' : 'revised');
       if (propertyTag && childElement?.tagName === propertyTag) {
+        continue;
+      }
+      if (child.tag !== 'both' && child.paragraphJoin) {
+        if (child.paragraphJoin.members[0] === child) {
+          emitted.push(...emitParagraphJoin(child.paragraphJoin, (part) => emitNode(
+            part, plan, 'revised', moves, allocateRevision, allocateBookmarkId,
+            originalBookmarkIds, splitBookmarkIds, revisionGrouping,
+          ), allocateRevision));
+        }
         continue;
       }
       if (childElement?.namespaceURI === W_NS && childElement.localName === 'lastRenderedPageBreak') {
@@ -2403,6 +2449,7 @@ export function serializeTaggedTree(
       }
     }
     node.children.forEach(findSplitBookmarkIds);
+    paragraphJoinParts(node).forEach(findSplitBookmarkIds);
   };
   findSplitBookmarkIds(tree);
   const emitted = emitNode(

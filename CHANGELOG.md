@@ -11,6 +11,16 @@
   Reject All and Accept All, only the record is removed and the section is
   kept unchanged. docx-compare `rejectAllChanges` already behaved this way, so
   the two reject paths now agree. (#987)
+- Comparing a document in which a paragraph was split in two, or two
+  paragraphs were merged, no longer shows a whole sentence deleted and
+  re-inserted. The text stays in place, and the redline records only the
+  paragraph mark (inserted for a split, deleted for a merge) and the joining
+  space, as Word's own Compare does. Changed paragraph formatting is tracked on
+  each resulting paragraph, so Accept All and Reject All in Word give the
+  revised and original documents. This applies to plain paragraphs (runs of
+  text, tabs and bookmarks); a split or merge involving section breaks, fields,
+  footnotes, endnotes, comments, drawings, hyperlinks or earlier tracked changes
+  keeps the previous delete-and-insert representation. (#873)
 
 ## 0.25.0
 

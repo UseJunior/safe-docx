@@ -36,9 +36,17 @@ function isParagraphInsertedOrDeleted(p: Element): boolean {
   // or deleted if there's a w:del in pPr/rPr.
   // Actually, safe-docx marks them in rPr for deletion and pPr for insertion.
   const rPr = findChildByTagName(pPr, 'w:rPr');
-  if (rPr && Array.from(rPr.getElementsByTagName('w:del')).length > 0) return true;
-  if (Array.from(pPr.getElementsByTagName('w:ins')).length > 0) return true;
-  return false;
+  const markRevised = (rPr && Array.from(rPr.getElementsByTagName('w:del')).length > 0) ||
+    Array.from(pPr.getElementsByTagName('w:ins')).length > 0;
+  // A revised mark on a paragraph that keeps live text (a split or merge,
+  // #873) joins or separates paragraphs; the paragraph itself survives both
+  // projections, so its bookmark ranges must stay where they are.
+  return markRevised && !carriesLiveRun(p);
+}
+
+function carriesLiveRun(container: Element): boolean {
+  return childElements(container).some((child) =>
+    child.tagName === 'w:r' || (child.tagName === 'w:hyperlink' && carriesLiveRun(child)));
 }
 
 const BOOKMARK_MARKER_TAGS = ['w:bookmarkStart', 'w:bookmarkEnd'] as const;

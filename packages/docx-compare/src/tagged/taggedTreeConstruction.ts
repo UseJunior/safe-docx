@@ -16,6 +16,7 @@ import {
   wordSetContainmentSimilarity,
 } from '../textSimilarity.js';
 import { computeNumberingIdentities } from './numberingIntegration.js';
+import { detectParagraphJoins } from './paragraphJoinDetection.js';
 import {
   nextRevisionId,
   PROPERTY_SCOPE_ELEMENT,
@@ -25,6 +26,7 @@ import {
   verifyTaggedTree,
   type BothNode,
   type OriginalNode,
+  type ParagraphJoin,
   type PropertyDelta,
   type PropertyScope,
   type RevisedNode,
@@ -670,7 +672,7 @@ function constructBoth(
       revisedNumberingIdentities,
     ));
   };
-  const emitGap = (originalEnd: number, revisedEnd: number): void => {
+  const emitPlainGap = (originalEnd: number, revisedEnd: number): void => {
     // Content-control property elements are singletons under w:sdt, so pair
     // them by name whatever the gap lengths: an added w:sdtEndPr must not turn
     // a changed w:sdtPr into a delete plus insert.
@@ -755,6 +757,34 @@ function constructBoth(
     }
     while (oi < originalEnd) children.push({ tag: 'original', node: originalChildren[oi++]!, children: [], opaque: true });
     while (ri < revisedEnd) children.push({ tag: 'revised', node: revisedChildren[ri++]!, children: [], opaque: true });
+  };
+  const emitGap = (originalEnd: number, revisedEnd: number): void => {
+    // A split or merge pairs one paragraph with several. Record it as a
+    // relation over the side-only members (#873); markdoc attribution ranges
+    // keep the plain path because their provenance is node-based.
+    const joins = options.revisionAttributionRanges.length > 0
+      ? []
+      : detectParagraphJoins(
+        originalChildren.slice(oi, originalEnd),
+        revisedChildren.slice(ri, revisedEnd),
+        (left, right) => constructBoth(left, right, options, originalNumberingIdentities, revisedNumberingIdentities),
+      );
+    const gapOriginalStart = oi;
+    const gapRevisedStart = ri;
+    for (const group of joins) {
+      emitPlainGap(gapOriginalStart + group.originalStart, gapRevisedStart + group.revisedStart);
+      const members: Array<OriginalNode | RevisedNode> = [];
+      for (let count = 0; count < group.originalCount; count++) {
+        members.push({ tag: 'original', node: originalChildren[oi++]!, children: [], opaque: true });
+      }
+      for (let count = 0; count < group.revisedCount; count++) {
+        members.push({ tag: 'revised', node: revisedChildren[ri++]!, children: [], opaque: true });
+      }
+      const join: ParagraphJoin = { kind: group.kind, members, parts: group.parts };
+      for (const member of members) member.paragraphJoin = join;
+      children.push(...members);
+    }
+    emitPlainGap(originalEnd, revisedEnd);
   };
   let oi = 0;
   let ri = 0;
@@ -863,6 +893,8 @@ function collectSideOnly(
   revised: RevisedNode[],
   insideComplexField = false,
 ): void {
+  // Split/merge members are already related to their counterparts (#873).
+  if (node.tag !== 'both' && node.paragraphJoin) return;
   const ownElement = node.tag === 'both' ? node.original : node.node;
   // Range boundaries describe their enclosing content; moving an individual
   // zero-width marker creates a second range vocabulary around the marker and
