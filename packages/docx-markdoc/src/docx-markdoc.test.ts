@@ -596,8 +596,14 @@ describe('brownfield Markdoc authoring', () => {
     paragraph.appendChild(clone);
     const mixedBuffer = (await mixed.toBuffer({ cleanBookmarks: false })).buffer;
     const mixedImported = await importDocxToMarkdoc(mixedBuffer);
+    // Inserting "-" exactly between "Alpha " (plain) and "beta." (bold) shares
+    // no edge character with either side, so the plain/bold choice is
+    // genuinely open and must fail closed. (A space-delimited insertion such
+    // as "Alpha inserted beta." has an equivalent offset inside the plain run;
+    // see insertion-placement.test.ts and #1167.)
+    const ambiguous = withCanonicalChange(mixedImported.markdoc, 'Alpha beta.', 'Alpha -beta.');
+    await expect(compileMarkdoc(mixedImported.anchoredSource, ambiguous)).rejects.toMatchObject({ code: 'MIXED_FORMATTING_REQUIRES_DETAIL' });
     const mixedChange = withCanonicalChange(mixedImported.markdoc, 'Alpha beta.', 'Alpha inserted beta.');
-    await expect(compileMarkdoc(mixedImported.anchoredSource, mixedChange)).rejects.toMatchObject({ code: 'MIXED_FORMATTING_REQUIRES_DETAIL' });
     const resolved = mixedChange.replace(
       'format="inherit-source-paragraph"',
       'format="inherit-source-paragraph" format-source="Alpha "',
