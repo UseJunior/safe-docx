@@ -500,12 +500,24 @@ export type RunFormattingSegment = {
   clearHighlight?: boolean;
 };
 
-function isTrackedInsertionRun(run: TextRun): boolean {
+function revisionAuthor(el: Element): string | null {
+  return el.getAttributeNS(OOXML.W_NS, 'author') || el.getAttribute('w:author');
+}
+
+/** The run's own `w:rPrChange`, when it has one. */
+function runPropertyChange(run: Element): Element | null {
+  const rPr = getDirectChild(run, W.rPr);
+  return rPr ? getDirectChild(rPr, 'rPrChange') : null;
+}
+
+function isTrackedInsertionRun(run: TextRun, author: string): boolean {
   const parent = run.r.parentNode as Element | null;
   if (!parent || parent.nodeType !== 1 || !isW(parent, 'ins')) return false;
   if (run.isFieldResult) return false;
-  const rPr = getDirectChild(run.r, W.rPr);
-  if (rPr && getDirectChild(rPr, 'rPrChange')) return false;
+  // This actor's earlier property change is merged into; another actor's is
+  // not ours to rewrite.
+  const change = runPropertyChange(run.r);
+  if (change && revisionAuthor(change) !== author) return false;
   return Array.from(run.r.childNodes).every((child) =>
     child.nodeType !== 1 || isW(child as Element, W.rPr)
       || ((child as Element).namespaceURI === OOXML.W_NS
@@ -524,8 +536,13 @@ function isTrackedInsertionRun(run: TextRun): boolean {
  * the edit one property change, the shape Word writes for formatting inserted
  * text.
  *
+ * A run that already carries this actor's `w:rPrChange` (an earlier edit in
+ * the same review) keeps that record and its original snapshot, so one
+ * rejection still restores the formatting from before the first edit; the
+ * record is dropped when the formatting returns to that snapshot.
+ *
  * Returns false without touching the DOM when any run in the range is not a
- * plain text run directly inside a `w:ins`, or already carries a
+ * plain text run directly inside a `w:ins`, or carries another actor's
  * `w:rPrChange`; the caller then falls back to the replacement engine.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
@@ -542,8 +559,15 @@ export function formatTrackedInsertionTextRange(
   const doc = p.ownerDocument;
   if (!doc) throw new Error('Paragraph has no ownerDocument');
   const total = segments.reduce((sum, segment) => sum + segment.length, 0);
-  if (start < 0 || end <= start || total !== end - start) {
-    throw new Error(`Formatting segments cover ${total} characters for range [${start}, ${end})`);
+  if (
+    !Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start
+    || segments.some((segment) => !Number.isInteger(segment.length) || segment.length < 0)
+    || total !== end - start
+  ) {
+    throw new SafeDocxError(
+      'INVALID_ARGUMENT',
+      `Formatting segments covering ${total} characters do not tile the range [${start}, ${end}).`,
+    );
   }
 
   let offset = 0;
@@ -551,7 +575,7 @@ export function formatTrackedInsertionTextRange(
     const runStart = offset;
     offset += run.text.length;
     if (offset <= start || runStart >= end) continue;
-    if (!isTrackedInsertionRun(run)) return false;
+    if (!isTrackedInsertionRun(run, ctx.author)) return false;
   }
   if (offset < end) return false;
 
@@ -583,11 +607,15 @@ export function formatTrackedInsertionTextRange(
     const before = rPrComparableSignature(sourceRPr);
     applyRunProps(doc, run.r, segment.addRunProps, segment.clearHighlight);
     const rPr = getDirectChild(run.r, W.rPr);
-    if (rPrComparableSignature(rPr) !== before) {
+    const priorChange = runPropertyChange(run.r);
+    if (priorChange) {
+      // applyRunProps prepends, so the existing record stays last in w:rPr.
+      const original = getDirectChild(priorChange, W.rPr);
+      if (rPrComparableSignature(rPr) === rPrComparableSignature(original)) rPr!.removeChild(priorChange);
+    } else if (rPrComparableSignature(rPr) !== before) {
       rPr!.appendChild(buildRPrChangeElement(snapshot, ctx));
-    } else if (rPr && rPr.childNodes.length === 0) {
-      run.r.removeChild(rPr);
     }
+    if (rPr && rPr.childNodes.length === 0) run.r.removeChild(rPr);
   }
   return true;
 }

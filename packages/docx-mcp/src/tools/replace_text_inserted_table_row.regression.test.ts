@@ -196,6 +196,41 @@ describe('replace_text — formatting text in a tracked-inserted table row (#122
     });
   });
 
+  test('a second formatting edit on the same inserted cell stays one property change that reject_ai_edits undoes', async ({ given, when, then }: AllureBddContext) => {
+    const mgr = new SessionManager({ defaultAiAuthor: AI });
+    const opened = await given('a reviewer-inserted row', () =>
+      openSession([], { mgr, xml: documentXml(REVIEWER_INSERTED_ROW) }));
+    const alphaId = opened.paraIds[3]!;
+
+    await when('batch_edit bolds the cell and then italicizes it in a second step', async () => {
+      assertSuccess(await batchEdit(mgr, {
+        file_path: opened.filePath,
+        steps: [{
+          step_id: 'bold', operation: 'replace_text', target_paragraph_id: alphaId,
+          old_string: 'Alpha', new_string: '<b>Alpha</b>', instruction: 'Bold',
+        }],
+      }), 'batch_edit bold');
+      assertSuccess(await batchEdit(mgr, {
+        file_path: opened.filePath,
+        steps: [{
+          step_id: 'italic', operation: 'replace_text', target_paragraph_id: alphaId,
+          old_string: 'Alpha', new_string: '<b><i>Alpha</i></b>', instruction: 'Italicize',
+        }],
+      }), 'batch_edit italic');
+    });
+
+    await then('no AI content revision exists, and rejecting the AI edits restores the plain reviewer text', async () => {
+      const doc = await readBody(mgr, opened.filePath);
+      expect(xmlOf(contentRevisionsBy(doc, AI))).toEqual([]);
+      expect(byLocal(doc, 'rPrChange')).toHaveLength(1);
+      assertSuccess(await rejectAiEdits(mgr, { file_path: opened.filePath, author: AI }), 'reject_ai_edits');
+      const after = await readBody(mgr, opened.filePath);
+      expect(xmlOf(byLocal(after, 'rPrChange'))).toEqual([]);
+      expect(xmlOf([...byLocal(after, 'b'), ...byLocal(after, 'i')])).toEqual([]);
+      expect(rowRuns(after, 1)[0]).toEqual({ text: 'Alpha', bold: false, inIns: REVIEWER });
+    });
+  });
+
   test('a row inserted in the same session can be bolded and the AI edits accepted', async ({ given, when, then }: AllureBddContext) => {
     const mgr = new SessionManager({ defaultAiAuthor: AI });
     const inserted = await given('a session that inserts a tracked table row', async () => {
