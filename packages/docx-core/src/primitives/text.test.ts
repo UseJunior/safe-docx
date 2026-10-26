@@ -3606,6 +3606,31 @@ describe('formatTrackedInsertionTextRange (#1225)', () => {
     });
   });
 
+  insertionFormatTest('later edits change the live run properties, never the snapshot inside the rPrChange', async ({ given, when, then }: AllureBddContext) => {
+    let boldRun: Element;
+    let highlightRun: Element;
+    await given('two reviewer-inserted runs, one originally bold and one originally highlighted', () => {
+      boldRun = firstParagraph(makeDoc(`<w:p><w:ins w:id="1" ${REVIEWER}><w:r><w:rPr><w:b/></w:rPr><w:t>Bold</w:t></w:r></w:ins></w:p>`));
+      highlightRun = firstParagraph(makeDoc(`<w:p><w:ins w:id="1" ${REVIEWER}><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>Mark</w:t></w:r></w:ins></w:p>`));
+    });
+    await when('the AI removes then restores the bold, and bolds then clears the highlight', () => {
+      formatTrackedInsertionTextRange(boldRun, 0, 4, [{ length: 4, addRunProps: { bold: false } }], ctx());
+      formatTrackedInsertionTextRange(boldRun, 0, 4, [{ length: 4, addRunProps: { bold: true } }], ctx());
+      formatTrackedInsertionTextRange(highlightRun, 0, 4, [{ length: 4, addRunProps: { bold: true } }], ctx());
+      formatTrackedInsertionTextRange(highlightRun, 0, 4, [{ length: 4, clearHighlight: true }], ctx());
+    });
+    await then('the restored bold is live with no leftover revision, and rejection brings the highlight back', () => {
+      expect(bodyXml(boldRun)).toContain('<w:rPr><w:b w:val="1"/></w:rPr>');
+      expect(bodyXml(boldRun)).not.toContain('rPrChange');
+      const live = bodyXml(highlightRun);
+      expect(live).toMatch(/<w:rPrChange [^>]*><w:rPr><w:highlight w:val="yellow"\/><\/w:rPr><\/w:rPrChange>/);
+      expect(live.replace(/<w:rPrChange .*<\/w:rPrChange>/, '')).not.toContain('highlight');
+      rejectChanges(highlightRun.ownerDocument!, { filter: (el) => el.localName === 'rPrChange' });
+      expect(bodyXml(highlightRun)).toContain('<w:highlight w:val="yellow"/>');
+      expect(bodyXml(highlightRun)).not.toContain('<w:b');
+    });
+  });
+
   insertionFormatTest('rejects segments that do not tile the range, before touching the DOM', async ({ given, then }: AllureBddContext) => {
     let p: Element;
     let before = '';

@@ -1,6 +1,5 @@
 import { OOXML, W } from './namespaces.js';
 import { SafeDocxError } from './errors.js';
-import { getFirstChild } from './xml-helpers.js';
 import {
   buildRPrChangeElement,
   createRevisionContainer,
@@ -785,8 +784,11 @@ function ensureRPr(doc: Document, run: Element): Element {
   return rPr;
 }
 
+// Run-property helpers look only at direct children of w:rPr: a nested
+// w:rPrChange holds the historical snapshot, which an edit must not touch
+// (issue #1225).
 function ensureBoolProp(doc: Document, rPr: Element, localName: string, val: boolean): void {
-  let el = getFirstChild(rPr, OOXML.W_NS, localName);
+  let el = getDirectChild(rPr, localName);
   if (val) {
     if (!el) {
       el = doc.createElementNS(OOXML.W_NS, `w:${localName}`);
@@ -816,8 +818,9 @@ function ensureUnderline(doc: Document, rPr: Element, val: boolean | string): vo
 }
 
 function clearHighlightProp(rPr: Element): void {
-  const hs = Array.from(rPr.getElementsByTagNameNS(OOXML.W_NS, W.highlight));
-  for (const h of hs) h.parentNode?.removeChild(h);
+  const hs = Array.from(rPr.childNodes).filter((child): child is Element =>
+    child.nodeType === 1 && isW(child as Element, W.highlight));
+  for (const h of hs) rPr.removeChild(h);
 }
 
 function ensureHighlight(doc: Document, rPr: Element, val: boolean | string): void {
@@ -825,7 +828,7 @@ function ensureHighlight(doc: Document, rPr: Element, val: boolean | string): vo
     clearHighlightProp(rPr);
     return;
   }
-  let el = getFirstChild(rPr, OOXML.W_NS, W.highlight);
+  let el = getDirectChild(rPr, W.highlight);
   if (!el) {
     el = doc.createElementNS(OOXML.W_NS, `w:${W.highlight}`);
     rPr.insertBefore(el, rPr.firstChild);
@@ -835,7 +838,7 @@ function ensureHighlight(doc: Document, rPr: Element, val: boolean | string): vo
 
 function ensureSz(doc: Document, rPr: Element, halfPoints: number): void {
   for (const localName of [W.sz, W.szCs]) {
-    let el = getFirstChild(rPr, OOXML.W_NS, localName);
+    let el = getDirectChild(rPr, localName);
     if (!el) {
       el = doc.createElementNS(OOXML.W_NS, `w:${localName}`);
       rPr.insertBefore(el, rPr.firstChild);
@@ -845,7 +848,7 @@ function ensureSz(doc: Document, rPr: Element, halfPoints: number): void {
 }
 
 function ensureColor(doc: Document, rPr: Element, hex: string): void {
-  let el = getFirstChild(rPr, OOXML.W_NS, W.color);
+  let el = getDirectChild(rPr, W.color);
   if (!el) {
     el = doc.createElementNS(OOXML.W_NS, `w:${W.color}`);
     rPr.insertBefore(el, rPr.firstChild);
@@ -854,7 +857,7 @@ function ensureColor(doc: Document, rPr: Element, hex: string): void {
 }
 
 function ensureFont(doc: Document, rPr: Element, name: string): void {
-  let el = getFirstChild(rPr, OOXML.W_NS, W.rFonts);
+  let el = getDirectChild(rPr, W.rFonts);
   if (!el) {
     el = doc.createElementNS(OOXML.W_NS, `w:${W.rFonts}`);
     rPr.insertBefore(el, rPr.firstChild);
