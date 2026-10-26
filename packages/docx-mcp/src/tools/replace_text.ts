@@ -10,6 +10,7 @@ import {
   DocxDocument,
   SafeDocxError,
   findUniqueSubstringMatch,
+  formatTrackedInsertionTextRange,
   applyDocumentQuoteStyle,
   buildParagraphIndex,
   getParagraphRuns,
@@ -370,7 +371,19 @@ export async function replaceText(
           parts.push({ text: s.text, templateRun: contextTemplateRun ?? undefined, addRunProps: segAddProps, clearHighlight });
         }
         if (activeCtx) {
-          replaceParagraphTextRange(pEl, matchStart, matchEnd, parts, activeCtx);
+          // Formatting-only markup over text that is already a tracked
+          // insertion (e.g. a newly inserted table row) is recorded as a run
+          // property change in place, so it does not nest a delete/re-insert
+          // inside the existing insertion (issue #1225).
+          const formattedInPlace = parts.map((part) => part.text).join('') === matchedOldStr
+            && formatTrackedInsertionTextRange(
+              pEl,
+              matchStart,
+              matchEnd,
+              parts.map((part) => ({ length: part.text.length, addRunProps: part.addRunProps, clearHighlight: part.clearHighlight })),
+              activeCtx,
+            );
+          if (!formattedInPlace) replaceParagraphTextRange(pEl, matchStart, matchEnd, parts, activeCtx);
           invalidateDocumentCaches(doc);
         } else {
           doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText: parts });

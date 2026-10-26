@@ -22,6 +22,7 @@ import {
   replaceParagraphTextRange,
   visibleLengthForEl,
   getDirectContentElements,
+  formatTrackedInsertionTextRange,
 } from './text.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Text Primitives' });
@@ -3519,6 +3520,73 @@ describe('replaceParagraphTextRange — blanking a paragraph that carries a book
       acceptChanges(trackedDoc);
       expect(paragraphs(cleanDoc).map((p) => getParagraphText(p))).toEqual(['Intro paragraph.', 'Closing paragraph.']);
       expect(normalizedBodyXml(trackedDoc)).toBe(normalizedBodyXml(cleanDoc));
+    });
+  });
+});
+
+describe('formatTrackedInsertionTextRange (#1225)', () => {
+  const insertionFormatTest = test.conformance(
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.31' },
+  );
+  const REVIEWER = 'w:author="Reviewer" w:date="2026-01-01T00:00:00Z"';
+  const ctx = () => createRevisionContext({ author: 'AI', date: '2026-02-01T00:00:00Z', idState: createRevisionIdState(500) });
+  const bodyXml = (p: Element) => new XMLSerializer().serializeToString(p);
+
+  insertionFormatTest('bolds part of an inserted run in place with an rPrChange and no new content revision', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+    let applied = false;
+    await given('a paragraph whose only run is a reviewer insertion', () => {
+      p = firstParagraph(makeDoc(`<w:p><w:ins w:id="1" ${REVIEWER}><w:r><w:t>Alpha Beta</w:t></w:r></w:ins></w:p>`));
+    });
+    await when('the first word is bolded', () => {
+      applied = formatTrackedInsertionTextRange(p, 0, 10, [{ length: 5, addRunProps: { bold: true } }, { length: 5 }], ctx());
+    });
+    await then('the run is split inside the insertion and only the bolded half records the change', () => {
+      expect(applied).toBe(true);
+      expect(getParagraphText(p)).toBe('Alpha Beta');
+      const xml = bodyXml(p);
+      expect(xml.match(/<w:ins /g)).toHaveLength(1);
+      expect(xml).not.toContain('<w:del');
+      expect(xml).toContain('<w:ins w:id="1" w:author="Reviewer" w:date="2026-01-01T00:00:00Z"><w:r><w:rPr><w:b');
+      expect(xml.match(/<w:rPrChange /g)).toHaveLength(1);
+      expect(xml).toContain('<w:t xml:space="preserve"> Beta</w:t>');
+      rejectChanges(p.ownerDocument!, { filter: (el) => el.localName === 'rPrChange' });
+      expect(bodyXml(p)).not.toContain('<w:b');
+    });
+  });
+
+  insertionFormatTest('declines without mutating when the range is not inside a tracked insertion', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+    let before = '';
+    let applied = true;
+    await given('a paragraph mixing plain text and inserted text', () => {
+      p = firstParagraph(makeDoc(`<w:p><w:r><w:t>Plain </w:t></w:r><w:ins w:id="1" ${REVIEWER}><w:r><w:t>Added</w:t></w:r></w:ins></w:p>`));
+      before = bodyXml(p);
+    });
+    await when('a range covering the plain run is formatted', () => {
+      applied = formatTrackedInsertionTextRange(p, 0, 11, [{ length: 11, addRunProps: { bold: true } }], ctx());
+    });
+    await then('it returns false and leaves the paragraph untouched', () => {
+      expect(applied).toBe(false);
+      expect(bodyXml(p)).toBe(before);
+    });
+  });
+
+  insertionFormatTest('declines when an inserted run already carries a run-property revision', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+    let applied = true;
+    await given('an inserted run with an existing rPrChange', () => {
+      p = firstParagraph(makeDoc(
+        `<w:p><w:ins w:id="1" ${REVIEWER}><w:r><w:rPr><w:i/><w:rPrChange w:id="2" ${REVIEWER}><w:rPr/></w:rPrChange></w:rPr><w:t>Added</w:t></w:r></w:ins></w:p>`,
+      ));
+    });
+    await when('the run is bolded', () => {
+      applied = formatTrackedInsertionTextRange(p, 0, 5, [{ length: 5, addRunProps: { bold: true } }], ctx());
+    });
+    await then('it returns false so the caller keeps the existing replacement path', () => {
+      expect(applied).toBe(false);
+      expect(bodyXml(p)).not.toContain('<w:b');
     });
   });
 });

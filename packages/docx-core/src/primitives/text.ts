@@ -493,6 +493,105 @@ export function formatParagraphTextRange(
   replaceParagraphTextRange(paragraph, start, end, parts);
 }
 
+/** One stretch of a text-identical formatting edit, in visible characters. */
+export type RunFormattingSegment = {
+  length: number;
+  addRunProps?: AddRunProps;
+  clearHighlight?: boolean;
+};
+
+function isTrackedInsertionRun(run: TextRun): boolean {
+  const parent = run.r.parentNode as Element | null;
+  if (!parent || parent.nodeType !== 1 || !isW(parent, 'ins')) return false;
+  if (run.isFieldResult) return false;
+  const rPr = getDirectChild(run.r, W.rPr);
+  if (rPr && getDirectChild(rPr, 'rPrChange')) return false;
+  return Array.from(run.r.childNodes).every((child) =>
+    child.nodeType !== 1 || isW(child as Element, W.rPr)
+      || ((child as Element).namespaceURI === OOXML.W_NS
+        && FORMAT_RANGE_CONTENT_LOCALS.has((child as Element).localName ?? '')));
+}
+
+/**
+ * Apply a text-identical formatting edit to runs that are already tracked
+ * insertions, recording it as a `w:rPrChange` on each touched run instead of
+ * deleting and re-inserting the text.
+ *
+ * Re-inserting would nest this actor's `w:del`/`w:ins` inside the existing
+ * `w:ins` — every cell of an inserted table row — which selective
+ * accept/reject refuses as an ambiguous cross-actor overlap. Formatting the
+ * inserted runs in place keeps the text in its original insertion and makes
+ * the edit one property change, the shape Word writes for formatting inserted
+ * text.
+ *
+ * Returns false without touching the DOM when any run in the range is not a
+ * plain text run directly inside a `w:ins`, or already carries a
+ * `w:rPrChange`; the caller then falls back to the replacement engine.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @see #1225
+ */
+export function formatTrackedInsertionTextRange(
+  p: Element,
+  start: number,
+  end: number,
+  segments: readonly RunFormattingSegment[],
+  ctx: RevisionContext,
+): boolean {
+  const doc = p.ownerDocument;
+  if (!doc) throw new Error('Paragraph has no ownerDocument');
+  const total = segments.reduce((sum, segment) => sum + segment.length, 0);
+  if (start < 0 || end <= start || total !== end - start) {
+    throw new Error(`Formatting segments cover ${total} characters for range [${start}, ${end})`);
+  }
+
+  let offset = 0;
+  for (const run of getParagraphRuns(p)) {
+    const runStart = offset;
+    offset += run.text.length;
+    if (offset <= start || runStart >= end) continue;
+    if (!isTrackedInsertionRun(run)) return false;
+  }
+  if (offset < end) return false;
+
+  // Split runs so every segment boundary falls between runs.
+  const cuts = [start];
+  for (const segment of segments) cuts.push(cuts[cuts.length - 1]! + segment.length);
+  for (const cut of cuts) {
+    let runStart = 0;
+    for (const run of getParagraphRuns(p)) {
+      const runEnd = runStart + run.text.length;
+      if (runStart < cut && cut < runEnd) {
+        splitRunAtVisibleOffset(run.r, cut - runStart, cut === start ? 'left' : 'right');
+        break;
+      }
+      runStart = runEnd;
+    }
+  }
+
+  let runStart = 0;
+  for (const run of getParagraphRuns(p)) {
+    const runEnd = runStart + run.text.length;
+    const position = runStart;
+    runStart = runEnd;
+    if (runEnd <= start || position >= end) continue;
+    const segment = segments[cuts.findIndex((cut, i) => position >= cut && position < cuts[i + 1]!)];
+    if (!segment || (!segment.addRunProps && !segment.clearHighlight)) continue;
+    const sourceRPr = getDirectChild(run.r, W.rPr);
+    const snapshot = getSnapshotRPr(doc, sourceRPr);
+    const before = rPrComparableSignature(sourceRPr);
+    applyRunProps(doc, run.r, segment.addRunProps, segment.clearHighlight);
+    const rPr = getDirectChild(run.r, W.rPr);
+    if (rPrComparableSignature(rPr) !== before) {
+      rPr!.appendChild(buildRPrChangeElement(snapshot, ctx));
+    } else if (rPr && rPr.childNodes.length === 0) {
+      run.r.removeChild(rPr);
+    }
+  }
+  return true;
+}
+
 function getDirectChild(parent: Element, localName: string): Element | null {
   for (const child of Array.from(parent.childNodes)) {
     if (child.nodeType !== 1) continue;
