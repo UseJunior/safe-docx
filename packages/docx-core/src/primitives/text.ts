@@ -1,6 +1,5 @@
 import { OOXML, W } from './namespaces.js';
 import { SafeDocxError } from './errors.js';
-import { getFirstChild } from './xml-helpers.js';
 import {
   buildRPrChangeElement,
   createRevisionContainer,
@@ -493,6 +492,133 @@ export function formatParagraphTextRange(
   replaceParagraphTextRange(paragraph, start, end, parts);
 }
 
+/** One stretch of a text-identical formatting edit, in visible characters. */
+export type RunFormattingSegment = {
+  length: number;
+  addRunProps?: AddRunProps;
+  clearHighlight?: boolean;
+};
+
+function revisionAuthor(el: Element): string | null {
+  return el.getAttributeNS(OOXML.W_NS, 'author') || el.getAttribute('w:author');
+}
+
+/** The run's own `w:rPrChange`, when it has one. */
+function runPropertyChange(run: Element): Element | null {
+  const rPr = getDirectChild(run, W.rPr);
+  return rPr ? getDirectChild(rPr, 'rPrChange') : null;
+}
+
+function isTrackedInsertionRun(run: TextRun, author: string): boolean {
+  const parent = run.r.parentNode as Element | null;
+  if (!parent || parent.nodeType !== 1 || !isW(parent, 'ins')) return false;
+  if (run.isFieldResult) return false;
+  // This actor's earlier property change is merged into; another actor's is
+  // not ours to rewrite.
+  const change = runPropertyChange(run.r);
+  if (change && revisionAuthor(change) !== author) return false;
+  return Array.from(run.r.childNodes).every((child) =>
+    child.nodeType !== 1 || isW(child as Element, W.rPr)
+      || ((child as Element).namespaceURI === OOXML.W_NS
+        && FORMAT_RANGE_CONTENT_LOCALS.has((child as Element).localName ?? '')));
+}
+
+/**
+ * Apply a text-identical formatting edit to runs that are already tracked
+ * insertions, recording it as a `w:rPrChange` on each touched run instead of
+ * deleting and re-inserting the text.
+ *
+ * Re-inserting would nest this actor's `w:del`/`w:ins` inside the existing
+ * `w:ins` — every cell of an inserted table row — which selective
+ * accept/reject refuses as an ambiguous cross-actor overlap. Formatting the
+ * inserted runs in place keeps the text in its original insertion and makes
+ * the edit one property change, the shape Word writes for formatting inserted
+ * text.
+ *
+ * A run that already carries this actor's `w:rPrChange` (an earlier edit in
+ * the same review) keeps that record and its original snapshot, so one
+ * rejection still restores the formatting from before the first edit; the
+ * record is dropped when the formatting returns to that snapshot.
+ *
+ * Returns false without touching the DOM when any run in the range is not a
+ * plain text run directly inside a `w:ins`, or carries another actor's
+ * `w:rPrChange`; the caller then falls back to the replacement engine.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @see #1225
+ */
+export function formatTrackedInsertionTextRange(
+  p: Element,
+  start: number,
+  end: number,
+  segments: readonly RunFormattingSegment[],
+  ctx: RevisionContext,
+): boolean {
+  const doc = p.ownerDocument;
+  if (!doc) throw new Error('Paragraph has no ownerDocument');
+  const total = segments.reduce((sum, segment) => sum + segment.length, 0);
+  if (
+    !Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start
+    || segments.some((segment) => !Number.isInteger(segment.length) || segment.length < 0)
+    || total !== end - start
+  ) {
+    throw new SafeDocxError(
+      'INVALID_ARGUMENT',
+      `Formatting segments covering ${total} characters do not tile the range [${start}, ${end}).`,
+    );
+  }
+
+  let offset = 0;
+  for (const run of getParagraphRuns(p)) {
+    const runStart = offset;
+    offset += run.text.length;
+    if (offset <= start || runStart >= end) continue;
+    if (!isTrackedInsertionRun(run, ctx.author)) return false;
+  }
+  if (offset < end) return false;
+
+  // Split runs so every segment boundary falls between runs.
+  const cuts = [start];
+  for (const segment of segments) cuts.push(cuts[cuts.length - 1]! + segment.length);
+  for (const cut of cuts) {
+    let runStart = 0;
+    for (const run of getParagraphRuns(p)) {
+      const runEnd = runStart + run.text.length;
+      if (runStart < cut && cut < runEnd) {
+        splitRunAtVisibleOffset(run.r, cut - runStart, cut === start ? 'left' : 'right');
+        break;
+      }
+      runStart = runEnd;
+    }
+  }
+
+  let runStart = 0;
+  for (const run of getParagraphRuns(p)) {
+    const runEnd = runStart + run.text.length;
+    const position = runStart;
+    runStart = runEnd;
+    if (runEnd <= start || position >= end) continue;
+    const segment = segments[cuts.findIndex((cut, i) => position >= cut && position < cuts[i + 1]!)];
+    if (!segment || (!segment.addRunProps && !segment.clearHighlight)) continue;
+    const sourceRPr = getDirectChild(run.r, W.rPr);
+    const snapshot = getSnapshotRPr(doc, sourceRPr);
+    const before = rPrComparableSignature(sourceRPr);
+    applyRunProps(doc, run.r, segment.addRunProps, segment.clearHighlight);
+    const rPr = getDirectChild(run.r, W.rPr);
+    const priorChange = runPropertyChange(run.r);
+    if (priorChange) {
+      // applyRunProps prepends, so the existing record stays last in w:rPr.
+      const original = getDirectChild(priorChange, W.rPr);
+      if (rPrComparableSignature(rPr) === rPrComparableSignature(original)) rPr!.removeChild(priorChange);
+    } else if (rPrComparableSignature(rPr) !== before) {
+      rPr!.appendChild(buildRPrChangeElement(snapshot, ctx));
+    }
+    if (rPr && rPr.childNodes.length === 0) run.r.removeChild(rPr);
+  }
+  return true;
+}
+
 function getDirectChild(parent: Element, localName: string): Element | null {
   for (const child of Array.from(parent.childNodes)) {
     if (child.nodeType !== 1) continue;
@@ -658,8 +784,11 @@ function ensureRPr(doc: Document, run: Element): Element {
   return rPr;
 }
 
+// Run-property helpers look only at direct children of w:rPr: a nested
+// w:rPrChange holds the historical snapshot, which an edit must not touch
+// (issue #1225).
 function ensureBoolProp(doc: Document, rPr: Element, localName: string, val: boolean): void {
-  let el = getFirstChild(rPr, OOXML.W_NS, localName);
+  let el = getDirectChild(rPr, localName);
   if (val) {
     if (!el) {
       el = doc.createElementNS(OOXML.W_NS, `w:${localName}`);
@@ -689,8 +818,9 @@ function ensureUnderline(doc: Document, rPr: Element, val: boolean | string): vo
 }
 
 function clearHighlightProp(rPr: Element): void {
-  const hs = Array.from(rPr.getElementsByTagNameNS(OOXML.W_NS, W.highlight));
-  for (const h of hs) h.parentNode?.removeChild(h);
+  const hs = Array.from(rPr.childNodes).filter((child): child is Element =>
+    child.nodeType === 1 && isW(child as Element, W.highlight));
+  for (const h of hs) rPr.removeChild(h);
 }
 
 function ensureHighlight(doc: Document, rPr: Element, val: boolean | string): void {
@@ -698,7 +828,7 @@ function ensureHighlight(doc: Document, rPr: Element, val: boolean | string): vo
     clearHighlightProp(rPr);
     return;
   }
-  let el = getFirstChild(rPr, OOXML.W_NS, W.highlight);
+  let el = getDirectChild(rPr, W.highlight);
   if (!el) {
     el = doc.createElementNS(OOXML.W_NS, `w:${W.highlight}`);
     rPr.insertBefore(el, rPr.firstChild);
@@ -708,7 +838,7 @@ function ensureHighlight(doc: Document, rPr: Element, val: boolean | string): vo
 
 function ensureSz(doc: Document, rPr: Element, halfPoints: number): void {
   for (const localName of [W.sz, W.szCs]) {
-    let el = getFirstChild(rPr, OOXML.W_NS, localName);
+    let el = getDirectChild(rPr, localName);
     if (!el) {
       el = doc.createElementNS(OOXML.W_NS, `w:${localName}`);
       rPr.insertBefore(el, rPr.firstChild);
@@ -718,7 +848,7 @@ function ensureSz(doc: Document, rPr: Element, halfPoints: number): void {
 }
 
 function ensureColor(doc: Document, rPr: Element, hex: string): void {
-  let el = getFirstChild(rPr, OOXML.W_NS, W.color);
+  let el = getDirectChild(rPr, W.color);
   if (!el) {
     el = doc.createElementNS(OOXML.W_NS, `w:${W.color}`);
     rPr.insertBefore(el, rPr.firstChild);
@@ -727,7 +857,7 @@ function ensureColor(doc: Document, rPr: Element, hex: string): void {
 }
 
 function ensureFont(doc: Document, rPr: Element, name: string): void {
-  let el = getFirstChild(rPr, OOXML.W_NS, W.rFonts);
+  let el = getDirectChild(rPr, W.rFonts);
   if (!el) {
     el = doc.createElementNS(OOXML.W_NS, `w:${W.rFonts}`);
     rPr.insertBefore(el, rPr.firstChild);

@@ -22,6 +22,7 @@ import {
   replaceParagraphTextRange,
   visibleLengthForEl,
   getDirectContentElements,
+  formatTrackedInsertionTextRange,
 } from './text.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Text Primitives' });
@@ -3519,6 +3520,147 @@ describe('replaceParagraphTextRange — blanking a paragraph that carries a book
       acceptChanges(trackedDoc);
       expect(paragraphs(cleanDoc).map((p) => getParagraphText(p))).toEqual(['Intro paragraph.', 'Closing paragraph.']);
       expect(normalizedBodyXml(trackedDoc)).toBe(normalizedBodyXml(cleanDoc));
+    });
+  });
+});
+
+describe('formatTrackedInsertionTextRange (#1225)', () => {
+  const insertionFormatTest = test.conformance(
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.31' },
+  );
+  const REVIEWER = 'w:author="Reviewer" w:date="2026-01-01T00:00:00Z"';
+  const ctx = () => createRevisionContext({ author: 'AI', date: '2026-02-01T00:00:00Z', idState: createRevisionIdState(500) });
+  const bodyXml = (p: Element) => new XMLSerializer().serializeToString(p);
+
+  insertionFormatTest('bolds part of an inserted run in place with an rPrChange and no new content revision', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+    let applied = false;
+    await given('a paragraph whose only run is a reviewer insertion', () => {
+      p = firstParagraph(makeDoc(`<w:p><w:ins w:id="1" ${REVIEWER}><w:r><w:t>Alpha Beta</w:t></w:r></w:ins></w:p>`));
+    });
+    await when('the first word is bolded', () => {
+      applied = formatTrackedInsertionTextRange(p, 0, 10, [{ length: 5, addRunProps: { bold: true } }, { length: 5 }], ctx());
+    });
+    await then('the run is split inside the insertion and only the bolded half records the change', () => {
+      expect(applied).toBe(true);
+      expect(getParagraphText(p)).toBe('Alpha Beta');
+      const xml = bodyXml(p);
+      expect(xml.match(/<w:ins /g)).toHaveLength(1);
+      expect(xml).not.toContain('<w:del');
+      expect(xml).toContain('<w:ins w:id="1" w:author="Reviewer" w:date="2026-01-01T00:00:00Z"><w:r><w:rPr><w:b');
+      expect(xml.match(/<w:rPrChange /g)).toHaveLength(1);
+      expect(xml).toContain('<w:t xml:space="preserve"> Beta</w:t>');
+      rejectChanges(p.ownerDocument!, { filter: (el) => el.localName === 'rPrChange' });
+      expect(bodyXml(p)).not.toContain('<w:b');
+    });
+  });
+
+  insertionFormatTest('declines without mutating when the range is not inside a tracked insertion', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+    let before = '';
+    let applied = true;
+    await given('a paragraph mixing plain text and inserted text', () => {
+      p = firstParagraph(makeDoc(`<w:p><w:r><w:t>Plain </w:t></w:r><w:ins w:id="1" ${REVIEWER}><w:r><w:t>Added</w:t></w:r></w:ins></w:p>`));
+      before = bodyXml(p);
+    });
+    await when('a range covering the plain run is formatted', () => {
+      applied = formatTrackedInsertionTextRange(p, 0, 11, [{ length: 11, addRunProps: { bold: true } }], ctx());
+    });
+    await then('it returns false and leaves the paragraph untouched', () => {
+      expect(applied).toBe(false);
+      expect(bodyXml(p)).toBe(before);
+    });
+  });
+
+  insertionFormatTest('merges a second edit into this actor\'s own rPrChange and keeps the original snapshot', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+    await given('a reviewer-inserted run the AI has already bolded', () => {
+      p = firstParagraph(makeDoc(`<w:p><w:ins w:id="1" ${REVIEWER}><w:r><w:t>Added</w:t></w:r></w:ins></w:p>`));
+      expect(formatTrackedInsertionTextRange(p, 0, 5, [{ length: 5, addRunProps: { bold: true } }], ctx())).toBe(true);
+    });
+    await when('the AI italicizes the same run', () => {
+      expect(formatTrackedInsertionTextRange(p, 0, 5, [{ length: 5, addRunProps: { italic: true } }], ctx())).toBe(true);
+    });
+    await then('one rPrChange remains, still holding the unformatted snapshot', () => {
+      const xml = bodyXml(p);
+      expect(xml.match(/<w:rPrChange /g)).toHaveLength(1);
+      expect(xml).toMatch(/<w:rPrChange [^>]*><w:rPr\/><\/w:rPrChange>/);
+      expect(xml).not.toContain('<w:del');
+      rejectChanges(p.ownerDocument!, { filter: (el) => el.localName === 'rPrChange' });
+      expect(bodyXml(p)).not.toMatch(/<w:[bi] /);
+    });
+  });
+
+  insertionFormatTest('drops this actor\'s rPrChange when a later edit restores the original formatting', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+    await given('a reviewer-inserted run the AI has bolded', () => {
+      p = firstParagraph(makeDoc(`<w:p><w:ins w:id="1" ${REVIEWER}><w:r><w:t>Added</w:t></w:r></w:ins></w:p>`));
+      formatTrackedInsertionTextRange(p, 0, 5, [{ length: 5, addRunProps: { bold: true } }], ctx());
+    });
+    await when('the AI removes the bold again', () => {
+      formatTrackedInsertionTextRange(p, 0, 5, [{ length: 5, addRunProps: { bold: false } }], ctx());
+    });
+    await then('no property revision is left behind', () => {
+      expect(bodyXml(p)).not.toContain('rPrChange');
+    });
+  });
+
+  insertionFormatTest('later edits change the live run properties, never the snapshot inside the rPrChange', async ({ given, when, then }: AllureBddContext) => {
+    let boldRun: Element;
+    let highlightRun: Element;
+    await given('two reviewer-inserted runs, one originally bold and one originally highlighted', () => {
+      boldRun = firstParagraph(makeDoc(`<w:p><w:ins w:id="1" ${REVIEWER}><w:r><w:rPr><w:b/></w:rPr><w:t>Bold</w:t></w:r></w:ins></w:p>`));
+      highlightRun = firstParagraph(makeDoc(`<w:p><w:ins w:id="1" ${REVIEWER}><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>Mark</w:t></w:r></w:ins></w:p>`));
+    });
+    await when('the AI removes then restores the bold, and bolds then clears the highlight', () => {
+      formatTrackedInsertionTextRange(boldRun, 0, 4, [{ length: 4, addRunProps: { bold: false } }], ctx());
+      formatTrackedInsertionTextRange(boldRun, 0, 4, [{ length: 4, addRunProps: { bold: true } }], ctx());
+      formatTrackedInsertionTextRange(highlightRun, 0, 4, [{ length: 4, addRunProps: { bold: true } }], ctx());
+      formatTrackedInsertionTextRange(highlightRun, 0, 4, [{ length: 4, clearHighlight: true }], ctx());
+    });
+    await then('the restored bold is live with no leftover revision, and rejection brings the highlight back', () => {
+      expect(bodyXml(boldRun)).toContain('<w:rPr><w:b w:val="1"/></w:rPr>');
+      expect(bodyXml(boldRun)).not.toContain('rPrChange');
+      const live = bodyXml(highlightRun);
+      expect(live).toMatch(/<w:rPrChange [^>]*><w:rPr><w:highlight w:val="yellow"\/><\/w:rPr><\/w:rPrChange>/);
+      expect(live.replace(/<w:rPrChange .*<\/w:rPrChange>/, '')).not.toContain('highlight');
+      rejectChanges(highlightRun.ownerDocument!, { filter: (el) => el.localName === 'rPrChange' });
+      expect(bodyXml(highlightRun)).toContain('<w:highlight w:val="yellow"/>');
+      expect(bodyXml(highlightRun)).not.toContain('<w:b');
+    });
+  });
+
+  insertionFormatTest('rejects segments that do not tile the range, before touching the DOM', async ({ given, then }: AllureBddContext) => {
+    let p: Element;
+    let before = '';
+    await given('a reviewer-inserted run', () => {
+      p = firstParagraph(makeDoc(`<w:p><w:ins w:id="1" ${REVIEWER}><w:r><w:t>Added</w:t></w:r></w:ins></w:p>`));
+      before = bodyXml(p);
+    });
+    await then('negative, fractional, and short segment lists all throw and leave the paragraph unchanged', () => {
+      for (const segments of [[{ length: 3 }, { length: -1 }, { length: 3 }], [{ length: 2.5 }, { length: 2.5 }], [{ length: 4 }]]) {
+        expect(() => formatTrackedInsertionTextRange(p, 0, 5, segments, ctx())).toThrow(SafeDocxError);
+      }
+      expect(() => formatTrackedInsertionTextRange(p, 0.5, 5.5, [{ length: 5 }], ctx())).toThrow(SafeDocxError);
+      expect(bodyXml(p)).toBe(before);
+    });
+  });
+
+  insertionFormatTest('declines when an inserted run carries another actor\'s run-property revision', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+    let applied = true;
+    await given('an inserted run with an existing rPrChange', () => {
+      p = firstParagraph(makeDoc(
+        `<w:p><w:ins w:id="1" ${REVIEWER}><w:r><w:rPr><w:i/><w:rPrChange w:id="2" ${REVIEWER}><w:rPr/></w:rPrChange></w:rPr><w:t>Added</w:t></w:r></w:ins></w:p>`,
+      ));
+    });
+    await when('the run is bolded', () => {
+      applied = formatTrackedInsertionTextRange(p, 0, 5, [{ length: 5, addRunProps: { bold: true } }], ctx());
+    });
+    await then('it returns false so the caller keeps the existing replacement path', () => {
+      expect(applied).toBe(false);
+      expect(bodyXml(p)).not.toContain('<w:b');
     });
   });
 });
