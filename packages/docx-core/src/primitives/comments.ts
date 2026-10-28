@@ -566,15 +566,26 @@ export async function updateCommentBody(
   }
 
   const body = params.body ?? [{ runs: [{ text: params.text }] }];
+  const paragraphId = getCommentElParaId(commentEl);
   const hyperlinkRelationshipIds = await ensureExternalHyperlinkRelationships(
     zip,
     'word/comments.xml',
     commentBodyDestinations(body),
   );
+  if (paragraphId) ensureCommentPartNamespaceAliases(commentsDoc);
 
   for (let index = 0; index < body.length; index++) {
     const paragraph = paragraphs[index] ?? commentsDoc.createElementNS(OOXML.W_NS, 'w:p');
     if (!paragraph.parentNode) commentEl.appendChild(paragraph);
+    // Keep the identity used by commentsExtended/commentsIds on the final
+    // paragraph as the body grows or shrinks, without rewriting thread links.
+    if (paragraphId) {
+      if (index === body.length - 1) {
+        paragraph.setAttributeNS(OOXML.W14_NS, 'w14:paraId', paragraphId);
+      } else if (getAttributeSafe(paragraph, OOXML.W14_NS, 'paraId', 'w14', { bareFallback: false }) === paragraphId) {
+        paragraph.removeAttributeNS(OOXML.W14_NS, 'paraId');
+      }
+    }
     for (const child of Array.from(paragraph.childNodes)) {
       if (child.nodeType !== 1) continue;
       const element = child as Element;
@@ -604,20 +615,8 @@ function allocateNextCommentId(commentsDoc: Document): number {
 }
 
 function findCommentParaId(commentsDoc: Document, commentId: number): string | null {
-  const commentEls = commentsDoc.getElementsByTagNameNS(OOXML.W_NS, W.comment);
-  for (let i = 0; i < commentEls.length; i++) {
-    const el = commentEls.item(i) as Element;
-    const idStr = getAttributeSafe(el, OOXML.W_NS, 'id', 'w', { bareFallback: false });
-    if (idStr && parseInt(idStr, 10) === commentId) {
-      // paraId is on the w:p child inside the comment
-      const paras = el.getElementsByTagNameNS(OOXML.W_NS, W.p);
-      if (paras.length > 0) {
-        const p = paras.item(0) as Element;
-        return getAttributeSafe(p, OOXML.W14_NS, 'paraId', 'w14', { bareFallback: false });
-      }
-    }
-  }
-  return null;
+  const commentEl = findCommentElementById(commentsDoc, commentId);
+  return commentEl ? getCommentElParaId(commentEl) : null;
 }
 
 /**
@@ -692,9 +691,6 @@ function addCommentElement(
 
   // Comment body: <w:p w14:paraId="..."><w:pPr><w:pStyle w:val="CommentText"/></w:pPr><w:r><w:annotationRef/></w:r><w:r><w:t>text</w:t></w:r></w:p>
   const p = commentsDoc.createElementNS(OOXML.W_NS, 'w:p');
-  // Use setAttributeNS so the attribute carries a real namespace URI — otherwise xmldom
-  // serializes a prefix it cannot resolve and reparse throws NamespaceError (#154).
-  p.setAttributeNS(OOXML.W14_NS, 'w14:paraId', params.paraId);
 
   // Annotation reference run
   const refRun = commentsDoc.createElementNS(OOXML.W_NS, 'w:r');
@@ -706,11 +702,15 @@ function addCommentElement(
   appendCommentBodyRuns(p, body[0]?.runs ?? [], commentsDoc, params.hyperlinkRelationshipIds);
 
   commentEl.appendChild(p);
+  let lastParagraph = p;
   for (const paragraph of body.slice(1)) {
     const bodyParagraph = commentsDoc.createElementNS(OOXML.W_NS, 'w:p');
     appendCommentBodyRuns(bodyParagraph, paragraph.runs, commentsDoc, params.hyperlinkRelationshipIds);
     commentEl.appendChild(bodyParagraph);
+    lastParagraph = bodyParagraph;
   }
+  // Threading uses the final paragraph; annotationRef stays in the first.
+  lastParagraph.setAttributeNS(OOXML.W14_NS, 'w14:paraId', params.paraId);
   root.appendChild(commentEl);
 }
 
@@ -1097,13 +1097,7 @@ export async function getComments(
     const paragraphs = extractCommentParagraphs(el, styles, theme);
     const text = paragraphs.map((paragraph) => paragraph.text).join('\n');
 
-    // Get paraId from first <w:p> child (namespace-aware to handle non-`w` prefixes)
-    const paras = el.getElementsByTagNameNS(OOXML.W_NS, W.p);
-    let paragraphId: string | null = null;
-    if (paras.length > 0) {
-      const p = paras.item(0) as Element;
-      paragraphId = getAttributeSafe(p, OOXML.W14_NS, 'paraId', 'w14', { bareFallback: false });
-    }
+    const paragraphId = getCommentElParaId(el);
 
     const startPoint = rangeMetadata.startById.get(id);
     const endPoint = rangeMetadata.endById.get(id);
@@ -1387,11 +1381,21 @@ function findCommentElementById(commentsDoc: Document, commentId: number): Eleme
   return null;
 }
 
+/**
+ * [MS-DOCX] section 2.5.3.1 keys both commentEx.paraId and paraIdParent by
+ * the associated comment's last paragraph. Older SafeDocX output placed the
+ * ID only on the first paragraph; retain that fallback when the last has none.
+ *
+ * @see https://learn.microsoft.com/en-us/openspecs/office_standards/ms-docx/9660dacc-2ceb-4352-87d2-42ba1184f522
+ * @see https://github.com/UseJunior/safe-docx/issues/1224
+ */
 function getCommentElParaId(commentEl: Element): string | null {
   const paras = commentEl.getElementsByTagNameNS(OOXML.W_NS, W.p);
   if (paras.length === 0) return null;
-  const p = paras.item(0) as Element;
-  return getAttributeSafe(p, OOXML.W14_NS, 'paraId', 'w14', { bareFallback: false });
+  const last = paras.item(paras.length - 1) as Element;
+  const first = paras.item(0) as Element;
+  return getAttributeSafe(last, OOXML.W14_NS, 'paraId', 'w14', { bareFallback: false })
+    || getAttributeSafe(first, OOXML.W14_NS, 'paraId', 'w14', { bareFallback: false });
 }
 
 function removeCommentMarkersFromDocument(
