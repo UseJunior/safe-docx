@@ -92,7 +92,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .boolean()
         .optional()
         .describe(
-          'When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph\'s normalized visible text; NOT an edit anchor. Edit tools accept a `_bk_*` ID, or (DOCX only) any other bookmark name whose w:id-paired range covers exactly that one paragraph. No effect on TOON/simple output. Ignored for Google Docs and ODT.',
+          'When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<16hex>") on each paragraph. Read-only metadata derived from the paragraph\'s normalized visible text; NOT an edit anchor. Edit tools accept a `_bk_*` ID, or (DOCX only) any other bookmark name whose w:id-paired range covers exactly that one paragraph. No effect on TOON/simple output. Ignored for Google Docs and ODT.',
         ),
       include_fingerprint_ordinal: z
         .boolean()

@@ -139,7 +139,8 @@ export class GoogleDocsDocument {
     const unanchored = paragraphs.filter(p => !p.anchorName);
     if (unanchored.length === 0) return { injectedCount: 0 };
 
-    const requests = buildNamedRangeInjectionRequests(unanchored, this.anchorMapping.size);
+    const occupiedNames = new Set(this.reverseAnchorMapping.keys());
+    const requests = buildNamedRangeInjectionRequests(unanchored, this.anchorMapping.size, occupiedNames);
     if (requests.length === 0) return { injectedCount: 0 };
 
     const response = await withRetry(() =>
@@ -156,6 +157,7 @@ export class GoogleDocsDocument {
     const newMappings = mapNamedRangeResponses(
       (response.replies ?? []) as Array<{ createNamedRange?: { namedRangeId?: string } }>,
       startCounter,
+      occupiedNames,
     );
 
     // Update our mappings

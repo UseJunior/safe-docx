@@ -5,7 +5,7 @@ import {
   OOXML,
   W,
   addTrackedRangeComments,
-  computeContentFingerprint,
+  contentFingerprintMatches,
   findParagraphByBookmarkId,
   getParagraphBookmarkId,
   getParagraphRuns,
@@ -1092,7 +1092,7 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
       throw new DocxMarkdocError('SCAFFOLD_ORDER_DRIFT', `Scaffold position ${index} does not match source anchor ${node.id}.`);
     }
     const sourceText = node.raw_text ?? node.text;
-    if (projected.fingerprint !== computeContentFingerprint(sourceText)) {
+    if (!contentFingerprintMatches(sourceText, projected.fingerprint)) {
       throw new DocxMarkdocError('FINGERPRINT_DRIFT', `Paragraph ${node.id} fingerprint does not match source.`);
     }
     const replacement = replacements.get(node.id);
@@ -1318,7 +1318,7 @@ async function validateStoriesAgainstSource(
   for (const [index, { story, paragraph }] of expected.entries()) {
     const claimed = ir.storyScaffold?.[index];
     if (!claimed || claimed.story !== story.id || claimed.id !== paragraph.id
-      || claimed.fingerprint !== computeContentFingerprint(paragraph.text)
+      || !contentFingerprintMatches(paragraph.text, claimed.fingerprint)
       || claimed.style !== paragraph.style || claimed.originalText !== paragraph.text) {
       throw new DocxMarkdocError('STORY_SCAFFOLD_DRIFT', `Story paragraph at position ${index} does not match the pinned source.`);
     }

@@ -3,7 +3,7 @@ import { OOXML, W } from './namespaces.js';
 import { getParagraphText } from './text.js';
 
 export type ParagraphBookmark = {
-  name: string; // _bk_{hex12}
+  name: string; // _bk_{hex10}
   numericId: number; // w:id
 };
 
@@ -14,8 +14,8 @@ export type BookmarkReservation = {
 
 const W14_NS = 'http://schemas.microsoft.com/office/word/2010/wordml';
 
-function sha12(input: string): string {
-  return createHash('sha1').update(input).digest('hex').slice(0, 12);
+function sha10(input: string): string {
+  return createHash('sha1').update(input).digest('hex').slice(0, 10);
 }
 
 function normalizeText(value: string | null | undefined): string {
@@ -76,7 +76,7 @@ function deriveDeterministicJrParaName(params: {
   let attempt = 0;
   while (attempt < 10_000) {
     const salt = attempt === 0 ? '' : `|salt:${attempt}`;
-    const candidate = `_bk_${sha12(`${seed}${salt}`)}`;
+    const candidate = `_bk_${sha10(`${seed}${salt}`)}`;
     if (!params.usedNames.has(candidate)) {
       params.usedNames.add(candidate);
       return candidate;

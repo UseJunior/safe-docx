@@ -8,15 +8,15 @@ import {
 
 describe('Anchor ID parsing', () => {
   it('parses tabId:bookmarkId format', () => {
-    const parsed = parseAnchorId('tab1:_bk_000000000001');
+    const parsed = parseAnchorId('tab1:_bk_0000000001');
     expect(parsed.tabId).toBe('tab1');
-    expect(parsed.bookmarkId).toBe('_bk_000000000001');
+    expect(parsed.bookmarkId).toBe('_bk_0000000001');
   });
 
   it('parses bookmarkId-only format (no tab)', () => {
-    const parsed = parseAnchorId('_bk_000000000001');
+    const parsed = parseAnchorId('_bk_0000000001');
     expect(parsed.tabId).toBeNull();
-    expect(parsed.bookmarkId).toBe('_bk_000000000001');
+    expect(parsed.bookmarkId).toBe('_bk_0000000001');
   });
 
   it('handles empty string', () => {

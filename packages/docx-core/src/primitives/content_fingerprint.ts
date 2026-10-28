@@ -29,7 +29,7 @@ const INVISIBLE_FORMAT_CHARS_RE = /[­​-‏‪-‮︀-️﻿]/g;
 /**
  * Compute a portable content fingerprint for a paragraph's raw visible text.
  *
- * Algorithm: `sha256:nfkc:` + first 32 hex chars of
+ * Algorithm: `sha256:nfkc:` + first 16 hex chars of
  *   `sha256( stripInvisibles(NFKC(text)).replace(/\s+/g, " ").trim() )`.
  *
  * Order matters:
@@ -47,18 +47,33 @@ const INVISIBLE_FORMAT_CHARS_RE = /[­​-‏‪-‮︀-️﻿]/g;
  * The output is read-only metadata, not an edit anchor. Edit tools accept only
  * `_bk_*` paragraph IDs.
  *
- * The 128-bit truncation (32 hex) is collision-safe at any realistic
+ * The 64-bit truncation (16 hex) is collision-safe at realistic single-document
  * citation-corpus scale; the `sha256:nfkc:` prefix reserves space for future
  * algorithm bumps (e.g. `sha256:nfkc-strip:`). Consumers SHOULD store and
  * compare the full prefixed string so an algorithm bump cleanly invalidates
  * old hashes.
  */
 export function computeContentFingerprint(rawVisibleText: string): string {
+  return `sha256:nfkc:${computeContentFingerprintDigest(rawVisibleText).slice(0, 16)}`;
+}
+
+/**
+ * Compare a current or legacy content fingerprint with raw visible text.
+ *
+ * The current representation carries 16 hex characters. The prior 32-hex
+ * representation remains accepted so persisted locators and imported Markdoc
+ * created by older safe-docx releases continue to resolve.
+ */
+export function contentFingerprintMatches(rawVisibleText: string, fingerprint: string): boolean {
+  const match = /^sha256:nfkc:([0-9a-f]{16}|[0-9a-f]{32})$/.exec(fingerprint);
+  return match !== null && computeContentFingerprintDigest(rawVisibleText).startsWith(match[1]!);
+}
+
+function computeContentFingerprintDigest(rawVisibleText: string): string {
   const normalized = rawVisibleText
     .normalize('NFKC')
     .replace(INVISIBLE_FORMAT_CHARS_RE, '')
     .replace(/\s+/g, ' ')
     .trim();
-  const hex = createHash('sha256').update(normalized).digest('hex').slice(0, 32);
-  return `sha256:nfkc:${hex}`;
+  return createHash('sha256').update(normalized).digest('hex');
 }

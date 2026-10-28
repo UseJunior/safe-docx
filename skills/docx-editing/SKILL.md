@@ -204,13 +204,13 @@ For citation, archival, or reconciliation pipelines that want a portable hash of
 
 ```json
 {
-  "id": "_bk_a3f29c10b8e4",
+  "id": "_bk_a3f29c10b8",
   "content_fingerprint": "sha256:nfkc:5d2e8f1a4c5b7d2e8f1a4c5b7d2e8f1a",
   "clean_text": "The Company shall indemnify the Customer."
 }
 ```
 
-Algorithm: `"sha256:nfkc:" + sha256( stripCfInvisibles(NFKC(visibleText)).replace(/\s+/g, " ").trim() )` truncated to 32 hex chars. Case is preserved (so "Section 5" and "section 5" hash differently); curly quotes and dashes are NOT folded to ASCII. Cf-category invisibles (soft hyphen, ZWJ/ZWNJ, LRM/RLM, bidi controls, variation selectors, BOM) are stripped so byte-level round-trip noise does not change the hash.
+Algorithm: `"sha256:nfkc:" + sha256( stripCfInvisibles(NFKC(visibleText)).replace(/\s+/g, " ").trim() )` truncated to 16 hex chars. Case is preserved (so "Section 5" and "section 5" hash differently); curly quotes and dashes are NOT folded to ASCII. Cf-category invisibles (soft hyphen, ZWJ/ZWNJ, LRM/RLM, bidi controls, variation selectors, BOM) are stripped so byte-level round-trip noise does not change the hash.
 
 `content_fingerprint` is a content hash, not a paragraph key. Paragraphs with identical normalized visible text produce identical fingerprints by design — use `_bk_*` IDs whenever you need per-paragraph identity. The fingerprint is **read-only metadata, not an edit anchor** — edit tools continue to accept only `_bk_*` IDs. The flag has no effect on TOON or simple output, and is silently ignored for Google Docs. The `sha256:nfkc:` prefix is intentional version reservation; future algorithm bumps will emit a different prefix, so store and compare the full prefixed string.
 

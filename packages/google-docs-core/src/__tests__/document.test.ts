@@ -232,7 +232,7 @@ describe('GoogleDocsDocument', () => {
 
   describe('insertParagraph AFTER index', () => {
     it('uses endIndex - 1 for AFTER position', async () => {
-      const anchorName = '_bk_000000000000';
+      const anchorName = '_bk_0000000000';
       const namedRanges = {
         [anchorName]: {
           namedRanges: [{
@@ -256,7 +256,7 @@ describe('GoogleDocsDocument', () => {
       ], namedRanges);
 
       // Post-insert doc: both paragraphs with anchors
-      const postInsertAnchor = '_bk_000000000001';
+      const postInsertAnchor = '_bk_0000000001';
       const postInsertNamedRanges = {
         ...namedRanges,
         [postInsertAnchor]: {
@@ -317,7 +317,7 @@ describe('GoogleDocsDocument', () => {
     });
 
     it('uses startIndex for BEFORE position', async () => {
-      const anchorName = '_bk_000000000000';
+      const anchorName = '_bk_0000000000';
       const namedRanges = {
         [anchorName]: {
           namedRanges: [{
@@ -339,7 +339,7 @@ describe('GoogleDocsDocument', () => {
         },
       ], namedRanges);
 
-      const postInsertAnchor = '_bk_000000000001';
+      const postInsertAnchor = '_bk_0000000001';
       const postInsertNamedRanges = {
         [postInsertAnchor]: {
           namedRanges: [{

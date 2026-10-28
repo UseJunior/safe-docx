@@ -90,7 +90,7 @@ describe('Traceability: Persisted Intrinsic Node IDs (under document-paragraph-i
       const mgr = createTestSessionManager();
       const opened = await openSession(['Alpha.', 'Beta.'], { mgr });
       for (const id of opened.paraIds) {
-        expect(id).toMatch(/^_bk_[0-9a-f]{12}$/);
+        expect(id).toMatch(/^_bk_[0-9a-f]{10}$/);
       }
     },
   );
