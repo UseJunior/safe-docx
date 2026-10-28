@@ -46,7 +46,9 @@ The identifier strategy SHALL NOT use absolute sequential indexes as anchor iden
 
 The `read_file` tool SHALL accept an optional `include_fingerprint` boolean parameter. When `include_fingerprint=true` and `format="json"` for a DOCX session, the server SHALL emit a `content_fingerprint` field on each paragraph node.
 
-The fingerprint SHALL be computed as `"sha256:nfkc:" + sha256( stripCfInvisibles(NFKC(rawVisibleText)).replace(/\s+/g, " ").trim() )` truncated to the first 32 hex characters of the SHA-256 digest. The `stripCfInvisibles` step removes Cf-category invisibles that change bytes without changing rendering (soft hyphen U+00AD; ZWSP/ZWNJ/ZWJ U+200B–U+200D; LRM/RLM U+200E/U+200F; bidi controls U+202A–U+202E; variation selectors U+FE00–U+FE0F; BOM U+FEFF). The input `rawVisibleText` is the paragraph's raw visible text (the same surface used by the `_bk_*` fallback seed via `getParagraphText`), NOT the post-processed `clean_text` that has list labels stripped or footnote display markers appended.
+The fingerprint SHALL be computed as `"sha256:nfkc:" + sha256( stripCfInvisibles(NFKC(rawVisibleText)).replace(/\s+/g, " ").trim() )` truncated to the first 16 hex characters of the SHA-256 digest. The `stripCfInvisibles` step removes Cf-category invisibles that change bytes without changing rendering (soft hyphen U+00AD; ZWSP/ZWNJ/ZWJ U+200B–U+200D; LRM/RLM U+200E/U+200F; bidi controls U+202A–U+202E; variation selectors U+FE00–U+FE0F; BOM U+FEFF). The input `rawVisibleText` is the paragraph's raw visible text (the same surface used by the `_bk_*` fallback seed via `getParagraphText`), NOT the post-processed `clean_text` that has list labels stripped or footnote display markers appended.
+
+Previously persisted 32-hex `sha256:nfkc:` fingerprints SHALL remain valid locator and Markdoc inputs by matching the requested digest against the corresponding prefix of the full SHA-256 digest.
 
 The fingerprint is a content hash, not a paragraph key. Two paragraphs with identical normalized visible text SHALL produce identical fingerprints by design — for example, two list items both reading "Reserved." in different sections of the same contract. Consumers needing per-paragraph identity MUST use `_bk_*` IDs.
 
@@ -62,7 +64,7 @@ When `include_fingerprint=true` is passed with `google_doc_id` (Google Docs path
 - **GIVEN** a DOCX session
 - **WHEN** `read_file` is called with `format="json"` and `include_fingerprint=true`
 - **THEN** each paragraph object in the JSON response SHALL include a `content_fingerprint` string
-- **AND** the fingerprint SHALL match the pattern `sha256:nfkc:[0-9a-f]{32}`
+- **AND** the fingerprint SHALL match the pattern `sha256:nfkc:[0-9a-f]{16}`
 
 #### Scenario: default JSON output omits fingerprint
 - **GIVEN** a DOCX session

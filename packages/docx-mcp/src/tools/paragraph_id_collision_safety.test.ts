@@ -41,7 +41,7 @@ describe('open_document: paragraph ID collision safety', () => {
       expect(ids.length).toBe(paragraphs.length);
       expect(new Set(ids).size).toBe(ids.length);
       for (const id of ids) {
-        expect(id).toMatch(/^_bk_[0-9a-f]{12}$/);
+        expect(id).toMatch(/^_bk_[0-9a-f]{10}$/);
       }
     });
   });

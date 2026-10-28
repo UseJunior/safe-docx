@@ -16,12 +16,12 @@ describe('Anchors (Named Ranges)', () => {
   describe('generateAnchorName', () => {
     it('generates _bk_ prefixed names', () => {
       const name = generateAnchorName(0);
-      expect(name).toBe('_bk_000000000000');
+      expect(name).toBe('_bk_0000000000');
     });
 
     it('generates hex-padded names', () => {
       const name = generateAnchorName(255);
-      expect(name).toBe('_bk_0000000000ff');
+      expect(name).toBe('_bk_00000000ff');
     });
 
     it('generates unique names for sequential indices', () => {
@@ -33,6 +33,7 @@ describe('Anchors (Named Ranges)', () => {
 
   describe('isInternalAnchor', () => {
     it('recognizes _bk_ prefixed names', () => {
+      expect(isInternalAnchor('_bk_0000000001')).toBe(true);
       expect(isInternalAnchor('_bk_000000000001')).toBe(true);
     });
 
@@ -44,11 +45,11 @@ describe('Anchors (Named Ranges)', () => {
 
   describe('backward compat re-exports', () => {
     it('generateBookmarkName still works', () => {
-      expect(generateBookmarkName(0)).toBe('_bk_000000000000');
+      expect(generateBookmarkName(0)).toBe('_bk_0000000000');
     });
 
     it('isInternalBookmark still works', () => {
-      expect(isInternalBookmark('_bk_000000000001')).toBe(true);
+      expect(isInternalBookmark('_bk_0000000001')).toBe(true);
       expect(isInternalBookmark('other')).toBe(false);
     });
   });
@@ -68,8 +69,8 @@ describe('Anchors (Named Ranges)', () => {
         },
         {
           paragraphId: 'p2',
-          anchorName: '_bk_000000000000', // already anchored
-          anchorId: 'tab1:_bk_000000000000',
+          anchorName: '_bk_0000000000', // already anchored
+          anchorId: 'tab1:_bk_0000000000',
           startIndex: 13,
           endIndex: 25,
           tabId: 'tab1',
@@ -81,7 +82,7 @@ describe('Anchors (Named Ranges)', () => {
       const requests = buildNamedRangeInjectionRequests(paragraphs, 1);
       expect(requests).toHaveLength(1);
       expect(requests[0].createNamedRange).toBeDefined();
-      expect(requests[0].createNamedRange!.name).toBe('_bk_000000000001');
+      expect(requests[0].createNamedRange!.name).toBe('_bk_0000000001');
       expect(requests[0].createNamedRange!.range).toEqual({
         startIndex: 1,
         endIndex: 2, // startIndex + 1
@@ -93,8 +94,8 @@ describe('Anchors (Named Ranges)', () => {
       const paragraphs: CachedParagraph[] = [
         {
           paragraphId: 'p1',
-          anchorName: '_bk_000000000000',
-          anchorId: 'tab1:_bk_000000000000',
+          anchorName: '_bk_0000000000',
+          anchorId: 'tab1:_bk_0000000000',
           startIndex: 1,
           endIndex: 12,
           tabId: 'tab1',
@@ -127,6 +128,17 @@ describe('Anchors (Named Ranges)', () => {
         endIndex: 6,
       });
     });
+
+    it('skips an occupied compact name deterministically', () => {
+      const paragraphs: CachedParagraph[] = [{
+        paragraphId: 'p1', anchorName: null, anchorId: '', startIndex: 1,
+        endIndex: 2, tabId: '', text: 'Test', inTable: false,
+      }];
+      const occupied = new Set(['_bk_0000000001']);
+
+      const requests = buildNamedRangeInjectionRequests(paragraphs, 1, occupied);
+      expect(requests[0].createNamedRange!.name).toBe('_bk_0000000002');
+    });
   });
 
   describe('mapNamedRangeResponses', () => {
@@ -138,8 +150,8 @@ describe('Anchors (Named Ranges)', () => {
 
       const mapping = mapNamedRangeResponses(responses, 0);
       expect(mapping.size).toBe(2);
-      expect(mapping.get('kix.abc123')).toBe('_bk_000000000000');
-      expect(mapping.get('kix.def456')).toBe('_bk_000000000001');
+      expect(mapping.get('kix.abc123')).toBe('_bk_0000000000');
+      expect(mapping.get('kix.def456')).toBe('_bk_0000000001');
     });
 
     it('skips responses without namedRangeId', () => {
@@ -154,7 +166,14 @@ describe('Anchors (Named Ranges)', () => {
         5,
       );
       expect(mapping.size).toBe(1);
-      expect(mapping.get('kix.abc123')).toBe('_bk_000000000005');
+      expect(mapping.get('kix.abc123')).toBe('_bk_0000000005');
+    });
+
+    it('uses the same deterministic collision fallback as request allocation', () => {
+      const occupied = new Set(['_bk_0000000001']);
+      const responses = [{ createNamedRange: { namedRangeId: 'kix.abc123' } }];
+      expect(mapNamedRangeResponses(responses, 1, occupied).get('kix.abc123'))
+        .toBe('_bk_0000000002');
     });
   });
 
@@ -167,12 +186,12 @@ describe('Anchors (Named Ranges)', () => {
             documentTab: {
               body: { content: [] },
               namedRanges: {
-                '_bk_000000000000': {
-                  name: '_bk_000000000000',
+                '_bk_0000000000': {
+                  name: '_bk_0000000000',
                   namedRanges: [
                     {
                       namedRangeId: 'kix.abc123',
-                      name: '_bk_000000000000',
+                      name: '_bk_0000000000',
                       ranges: [{ startIndex: 1, endIndex: 2 }],
                     },
                   ],
@@ -197,7 +216,7 @@ describe('Anchors (Named Ranges)', () => {
       expect(anchors.size).toBe(1);
       const anchor = anchors.get('kix.abc123');
       expect(anchor).toBeDefined();
-      expect(anchor!.name).toBe('_bk_000000000000');
+      expect(anchor!.name).toBe('_bk_0000000000');
       expect(anchor!.startIndex).toBe(1);
       expect(anchor!.tabId).toBe('tab1');
     });
@@ -213,12 +232,12 @@ describe('Anchors (Named Ranges)', () => {
           },
         ],
         namedRanges: {
-          '_bk_000000000000': {
-            name: '_bk_000000000000',
+          '_bk_0000000000': {
+            name: '_bk_0000000000',
             namedRanges: [
               {
                 namedRangeId: 'kix.doc123',
-                name: '_bk_000000000000',
+                name: '_bk_0000000000',
                 ranges: [{ startIndex: 5, endIndex: 6 }],
               },
             ],
@@ -228,7 +247,7 @@ describe('Anchors (Named Ranges)', () => {
 
       const anchors = extractExistingAnchors(doc as any);
       expect(anchors.size).toBe(1);
-      expect(anchors.get('kix.doc123')!.name).toBe('_bk_000000000000');
+      expect(anchors.get('kix.doc123')!.name).toBe('_bk_0000000000');
     });
 
     it('ignores non-_bk_ named ranges', () => {

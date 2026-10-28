@@ -146,7 +146,7 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
     const ids2 = extractParaIdsFromToon(String(read2.content));
     expect(ids1).toContain('_bk_existing');
     expect(ids1.length).toBe(2);
-    expect(ids1[1]).toMatch(/^_bk_[0-9a-f]{12}$/);
+    expect(ids1[1]).toMatch(/^_bk_[0-9a-f]{10}$/);
     expect(ids2).toEqual(ids1);
   });
 

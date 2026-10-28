@@ -33,7 +33,7 @@ describe('Traceability: docx-primitives — Paragraph Bookmarks', () => {
         for (let i = 0; i < paras.length; i++) {
           const id = getParagraphBookmarkId(paras[i]);
           expect(id).not.toBeNull();
-          expect(id).toMatch(/^_bk_[0-9a-f]{12}$/);
+          expect(id).toMatch(/^_bk_[0-9a-f]{10}$/);
         }
       });
     },
@@ -58,8 +58,20 @@ describe('Traceability: docx-primitives — Paragraph Bookmarks', () => {
 
       await then('the result returns the stable identifier', () => {
         expect(id).not.toBeNull();
-        expect(id).toMatch(/^_bk_[0-9a-f]{12}$/);
+        expect(id).toMatch(/^_bk_[0-9a-f]{10}$/);
       });
     },
   );
+
+  test('preserves and resolves a legacy 12-hex paragraph bookmark', () => {
+    const legacyId = '_bk_a3f29c10b8e4';
+    const doc = makeDoc(
+      `<w:p><w:bookmarkStart w:id="1" w:name="${legacyId}"/><w:r><w:t>Legacy</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>`,
+    );
+
+    insertParagraphBookmarks(doc, 'test-attachment');
+
+    const paragraph = doc.getElementsByTagNameNS(OOXML.W_NS, 'p')[0]!;
+    expect(getParagraphBookmarkId(paragraph)).toBe(legacyId);
+  });
 });

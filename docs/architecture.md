@@ -81,7 +81,7 @@ Reading and searching are useful on their own. An edit changes the in-memory ses
 
 `get_document_outline` is an experimental, lower-cost structural view. Most users should begin with `read_file` or `grep`.
 
-Paragraph IDs look like `_bk_a3f29c10b8e4`. Edit operations use these IDs as anchors. For identical stored DOCX bytes, IDs are deterministic across reopens, processes, and machines. IDs based on Word's intrinsic `w14:paraId` survive text edits; fallback IDs may change when the paragraph or neighboring text changes.
+Paragraph IDs look like `_bk_a3f29c10b8`. Edit operations use these IDs as anchors. For identical stored DOCX bytes, IDs are deterministic across reopens, processes, and machines. IDs based on Word's intrinsic `w14:paraId` survive text edits; fallback IDs may change when the paragraph or neighboring text changes.
 
 Structured reads can optionally include `content_fingerprint`, a normalized-text hash for citation and reconciliation systems. It identifies content, not a unique paragraph, and is not an edit anchor.
 

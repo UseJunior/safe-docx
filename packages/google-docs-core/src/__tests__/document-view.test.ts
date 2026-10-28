@@ -7,8 +7,8 @@ describe('Document View Builder', () => {
     const paragraphs: CachedParagraph[] = [
       {
         paragraphId: 'p1',
-        anchorName: '_bk_000000000001',
-        anchorId: 'tab1:_bk_000000000001',
+        anchorName: '_bk_0000000001',
+        anchorId: 'tab1:_bk_0000000001',
         startIndex: 1,
         endIndex: 12,
         tabId: 'tab1',
@@ -19,7 +19,7 @@ describe('Document View Builder', () => {
 
     const nodes = buildDocumentViewNodes(paragraphs);
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].id).toBe('tab1:_bk_000000000001');
+    expect(nodes[0].id).toBe('tab1:_bk_0000000001');
     expect(nodes[0].text).toBe('Hello World');
     expect(nodes[0].clean_text).toBe('Hello World');
     expect(nodes[0].style).toBe('body');
@@ -30,8 +30,8 @@ describe('Document View Builder', () => {
     const paragraphs: CachedParagraph[] = [
       {
         paragraphId: 'p2',
-        anchorName: '_bk_000000000002',
-        anchorId: 'tab1:_bk_000000000002',
+        anchorName: '_bk_0000000002',
+        anchorId: 'tab1:_bk_0000000002',
         startIndex: 20,
         endIndex: 30,
         tabId: 'tab1',
@@ -66,8 +66,8 @@ describe('Document View Builder', () => {
     const paragraphs: CachedParagraph[] = [
       {
         paragraphId: 'p3',
-        anchorName: '_bk_000000000003',
-        anchorId: '_bk_000000000003',
+        anchorName: '_bk_0000000003',
+        anchorId: '_bk_0000000003',
         startIndex: 40,
         endIndex: 50,
         tabId: 'tab1',
@@ -97,8 +97,8 @@ describe('Document View Builder', () => {
     const paragraphs: CachedParagraph[] = [
       {
         paragraphId: 'p4',
-        anchorName: '_bk_000000000004',
-        anchorId: '_bk_000000000004',
+        anchorName: '_bk_0000000004',
+        anchorId: '_bk_0000000004',
         startIndex: 1,
         endIndex: 5,
         tabId: 'tab1',
