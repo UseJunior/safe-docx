@@ -13,6 +13,12 @@ type OutlineEntry = {
   text: string;
   level: number | null;
   source: HeadingSource;
+  /**
+   * The heading paragraph's list label as the document view computes it
+   * (e.g. "Section 1.01", including numbering inherited from the paragraph
+   * style); omitted when the paragraph has none.
+   */
+  list_label?: string;
 };
 
 /**
@@ -34,6 +40,7 @@ export function projectOutline(
       text: heading.text,
       level: heading.level,
       source: heading.source,
+      ...(node.list_label ? { list_label: node.list_label } : {}),
     });
   }
   return entries;
@@ -42,13 +49,14 @@ export function projectOutline(
 /**
  * Renders outline entries as an indented Markdown ATX outline. The heading depth
  * reflects the outline `level`; heuristic headings without a level render at
- * depth 1. Depth is clamped to the ATX 1..6 range.
+ * depth 1. Depth is clamped to the ATX 1..6 range. A heading's list label,
+ * when it has one, precedes its text.
  */
 export function renderOutlineMarkdown(entries: readonly OutlineEntry[]): string {
   return entries
     .map((entry) => {
       const depth = Math.min(6, Math.max(1, entry.level ?? 1));
-      return `${'#'.repeat(depth)} ${entry.text}`;
+      return `${'#'.repeat(depth)} ${entry.list_label ? `${entry.list_label} ` : ''}${entry.text}`;
     })
     .join('\n');
 }

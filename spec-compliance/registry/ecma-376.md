@@ -1626,7 +1626,7 @@ part: 1
 section: "17.9.15"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num
-verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts
+verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts
 ```
 
 Instances carry sequential numeric `w:numId` values: default instances take
@@ -1634,7 +1634,8 @@ Instances carry sequential numeric `w:numId` values: default instances take
 follow from N+1, so adding an instance never renumbers a default instance.
 Additional instances' ids depend on the instances declared before them, so
 numeric ids are compile-local; the spec-level string handle → numeric id map
-is what paragraph references bind through.
+is what paragraph references bind through. On the read side, every instance of one
+abstract definition continues a single list, as Word displays it.
 
 ## [ECMA-PART1-17-9-18] w:numId numbering instance reference
 
@@ -1691,7 +1692,7 @@ part: 1
 section: "17.9.23"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle
-verifiedBy: packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/emit/styles-part.ts
+verifiedBy: packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/emit/styles-part.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts
 ```
 
 An optional `w:pStyle` on `w:lvl` associates that exact numbering level with
@@ -1701,7 +1702,9 @@ unrelated level or mutates list counters. Generation emits a level's `pStyle`
 only for a declared paragraph style that no other level links, and writes the
 reverse link (`w:numPr` naming the definition's default instance and the
 level) into that style's `w:pPr`, so a paragraph that only applies the style is
-numbered at that level.
+numbered at that level. Label resolution honors a style-derived number only
+when this link agrees with the paragraph's nearest numbered style; a level
+`w:pStyle` without the style's own `w:numPr` numbers nothing.
 
 ## [ECMA-PART1-17-9-22] w:pPr numbering-level paragraph properties
 
@@ -1780,16 +1783,20 @@ part: 1
 section: "17.9.26"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride
-verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts
+verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts
 ```
 
 A level override carries only `w:startOverride`, so an additional instance of
-a definition restarts that level at the given value. Word and LibreOffice keep
-one running sequence per abstract definition: the override restarts it the
-first time a paragraph uses the instance, and paragraphs on any instance then
-continue from there. The read-side label computation starts the overridden
-level at the override value but keeps a counter per instance, so it diverges
-from both readers once two instances interleave.
+a definition restarts that level at the given value. The read-side label
+computation follows Word: it keeps one running sequence per abstract
+definition, shared by every instance at every level; an override restarts the
+shared level the first time a paragraph of its instance uses that level, and
+paragraphs on any instance then continue from there. A deeper level restarted
+by a paragraph resumes at that paragraph's instance's start value (its
+override, if any). LibreOffice 26.2 agrees on the sharing and the first-use
+restart, but restarts deeper levels at the abstract start and ignores
+`w:lvlRestart`. The Word observations are recorded in
+`scripts/oracle/word/evidence/issue-1243-word-16.114.json`.
 
 ## [ECMA-PART1-17-9-17] w:numFmt numbering format
 
@@ -1889,12 +1896,25 @@ part: 1
 section: "17.3.1.19"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr
-verifiedBy: packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts
+verifiedBy: packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts; packages/docx-core/test-primitives/paragraph_list_numbering.test.ts
 ```
 
 List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot.
 Generation binds deterministic handles; paragraph mutation can remove or
 re-point a direct reference while preserving the numbering definitions.
+
+When reading list labels, a paragraph's numbering is resolved per element:
+`w:numId` and `w:ilvl` each come from the nearest layer that sets them — the
+paragraph's own `w:numPr`, then its style chain through `w:basedOn` (the
+default paragraph style when there is no `w:pStyle`). A missing `w:ilvl`
+means level 0, and `w:numId` 0 at the winning layer removes numbering.
+Conformance gap, following Microsoft Word: this clause says a style's
+`w:ilvl` is ignored and the level is found through the numbering level's
+`w:pStyle`; Word instead uses the style's `w:ilvl` and shows style-derived
+numbering only when the resolved level links back to the nearest numbered
+style in the paragraph's chain. LibreOffice follows the clause text. The
+Word 16.114 and LibreOffice 26.2 results are recorded in
+`scripts/oracle/word/evidence/issue-1244-word-16.114.json`.
 
 ## [ECMA-PART1-17-13-4-6] w:comments comment-collection part emission
 

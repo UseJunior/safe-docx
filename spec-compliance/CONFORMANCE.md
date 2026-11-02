@@ -104,23 +104,23 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-9-16` | w:numbering numbering-definitions part emission | 5 | 1 | 17.9.16 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numbering` | packages/docx-core/src/generation/emit/numbering-part.ts |
 | `ECMA-PART1-17-9-1` | w:abstractNum abstract numbering definition | 5 | 1 | 17.9.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:abstractNum` | packages/docx-core/src/generation/emit/numbering-part.ts |
 | `ECMA-PART1-17-9-2` | w:abstractNumId abstract definition reference | 5 | 1 | 17.9.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:abstractNumId` | packages/docx-core/src/generation/emit/numbering-part.ts |
-| `ECMA-PART1-17-9-15` | w:num numbering definition instance | 5 | 1 | 17.9.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num` | packages/docx-core/src/generation/emit/numbering-part.ts |
+| `ECMA-PART1-17-9-15` | w:num numbering definition instance | 5 | 1 | 17.9.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts |
 | `ECMA-PART1-17-9-18` | w:numId numbering instance reference | 5 | 1 | 17.9.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numId` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts |
 | `ECMA-PART1-17-9-3` | w:ilvl numbering level reference | 5 | 1 | 17.9.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ilvl` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts |
 | `ECMA-PART1-17-9-6` | w:lvl numbering level definition | 5 | 1 | 17.9.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvl` | packages/docx-core/src/primitives/numbering.ts; packages/docx-core/src/generation/emit/numbering-part.ts |
-| `ECMA-PART1-17-9-23` | w:pStyle numbering-level paragraph style | 5 | 1 | 17.9.23 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle` | packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/emit/styles-part.ts |
+| `ECMA-PART1-17-9-23` | w:pStyle numbering-level paragraph style | 5 | 1 | 17.9.23 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle` | packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/emit/styles-part.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts |
 | `ECMA-PART1-17-9-22` | w:pPr numbering-level paragraph properties | 5 | 1 | 17.9.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr` | packages/docx-core/src/generation/emit/numbering-part.ts |
 | `ECMA-PART1-17-9-4` | w:isLgl legal numbering | 5 | 1 | 17.9.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:isLgl` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts |
 | `ECMA-PART1-17-9-10` | w:lvlRestart numbering level restart threshold | 5 | 1 | 17.9.10 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlRestart` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts; packages/docx-core/src/primitives/numbering.ts |
 | `ECMA-PART1-17-9-8` | w:lvlOverride numbering level override | 5 | 1 | 17.9.8 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlOverride` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts |
-| `ECMA-PART1-17-9-26` | w:startOverride numbering level start override | 5 | 1 | 17.9.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts |
+| `ECMA-PART1-17-9-26` | w:startOverride numbering level start override | 5 | 1 | 17.9.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts |
 | `ECMA-PART1-17-9-17` | w:numFmt numbering format | 5 | 1 | 17.9.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numFmt` | packages/docx-core/src/generation/schema-enum-domains.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts |
 | `ECMA-PART1-17-9-11` | w:lvlText numbering level text | 5 | 1 | 17.9.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlText` | packages/docx-core/src/generation/emit/numbering-part.ts |
 | `ECMA-PART1-17-9-25` | w:start numbering level starting value | 5 | 1 | 17.9.25 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:start` | packages/docx-core/src/generation/emit/numbering-part.ts |
 | `ECMA-PART1-17-9-28` | w:suff content between numbering symbol and text | 5 | 1 | 17.9.28 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:suff` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts |
 | `ECMA-PART1-17-9-12` | w:multiLevelType abstract definition type | 5 | 1 | 17.9.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:multiLevelType` | packages/docx-core/src/generation/emit/numbering-part.ts |
 | `ECMA-PART1-17-9-7` | w:lvlJc numbering level justification | 5 | 1 | 17.9.7 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlJc` | packages/docx-core/src/generation/emit/numbering-part.ts |
-| `ECMA-PART1-17-3-1-19` | w:numPr paragraph numbering reference | 5 | 1 | 17.3.1.19 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts |
+| `ECMA-PART1-17-3-1-19` | w:numPr paragraph numbering reference | 5 | 1 | 17.3.1.19 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts; packages/docx-core/test-primitives/paragraph_list_numbering.test.ts |
 | `ECMA-PART1-17-13-4-6` | w:comments comment-collection part emission | 5 | 1 | 17.13.4.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comments` | packages/docx-core/src/generation/emit/comments-part.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
 | `ECMA-PART1-17-13-4-2` | w:comment comment content emission | 5 | 1 | 17.13.4.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comment` | packages/docx-core/src/generation/emit/comments-part.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
 | `ECMA-PART1-17-13-4-4` | w:commentRangeStart comment anchor opening | 5 | 1 | 17.13.4.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeStart` | packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
@@ -1481,14 +1481,15 @@ construction, so the reference can never dangle.
 - **Part / Section:** Part 1 § 17.9.15
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num`
-- **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts
+- **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts
 
 Instances carry sequential numeric `w:numId` values: default instances take
 1..N in declaration order, and additional instances (`NumberingSpec.instances`)
 follow from N+1, so adding an instance never renumbers a default instance.
 Additional instances' ids depend on the instances declared before them, so
 numeric ids are compile-local; the spec-level string handle → numeric id map
-is what paragraph references bind through.
+is what paragraph references bind through. On the read side, every instance of one
+abstract definition continues a single list, as Word displays it.
 
 ### ECMA-PART1-17-9-18 — w:numId numbering instance reference
 
@@ -1534,7 +1535,7 @@ shared rPr builder.
 - **Part / Section:** Part 1 § 17.9.23
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle`
-- **Verified by:** packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/emit/styles-part.ts
+- **Verified by:** packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/emit/styles-part.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts
 
 An optional `w:pStyle` on `w:lvl` associates that exact numbering level with
 a paragraph style. The numbering model retains the association and exposes a
@@ -1543,7 +1544,9 @@ unrelated level or mutates list counters. Generation emits a level's `pStyle`
 only for a declared paragraph style that no other level links, and writes the
 reverse link (`w:numPr` naming the definition's default instance and the
 level) into that style's `w:pPr`, so a paragraph that only applies the style is
-numbered at that level.
+numbered at that level. Label resolution honors a style-derived number only
+when this link agrees with the paragraph's nearest numbered style; a level
+`w:pStyle` without the style's own `w:numPr` numbers nothing.
 
 ### ECMA-PART1-17-9-22 — w:pPr numbering-level paragraph properties
 
@@ -1608,15 +1611,19 @@ naming a declared level at most once.
 - **Part / Section:** Part 1 § 17.9.26
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride`
-- **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts
+- **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts
 
 A level override carries only `w:startOverride`, so an additional instance of
-a definition restarts that level at the given value. Word and LibreOffice keep
-one running sequence per abstract definition: the override restarts it the
-first time a paragraph uses the instance, and paragraphs on any instance then
-continue from there. The read-side label computation starts the overridden
-level at the override value but keeps a counter per instance, so it diverges
-from both readers once two instances interleave.
+a definition restarts that level at the given value. The read-side label
+computation follows Word: it keeps one running sequence per abstract
+definition, shared by every instance at every level; an override restarts the
+shared level the first time a paragraph of its instance uses that level, and
+paragraphs on any instance then continue from there. A deeper level restarted
+by a paragraph resumes at that paragraph's instance's start value (its
+override, if any). LibreOffice 26.2 agrees on the sharing and the first-use
+restart, but restarts deeper levels at the abstract start and ignores
+`w:lvlRestart`. The Word observations are recorded in
+`scripts/oracle/word/evidence/issue-1243-word-16.114.json`.
 
 ### ECMA-PART1-17-9-17 — w:numFmt numbering format
 
@@ -1696,11 +1703,24 @@ differing widths on their right edge — the standard legal-outline convention.
 - **Part / Section:** Part 1 § 17.3.1.19
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr`
-- **Verified by:** packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts
+- **Verified by:** packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts; packages/docx-core/test-primitives/paragraph_list_numbering.test.ts
 
 List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot.
 Generation binds deterministic handles; paragraph mutation can remove or
 re-point a direct reference while preserving the numbering definitions.
+
+When reading list labels, a paragraph's numbering is resolved per element:
+`w:numId` and `w:ilvl` each come from the nearest layer that sets them — the
+paragraph's own `w:numPr`, then its style chain through `w:basedOn` (the
+default paragraph style when there is no `w:pStyle`). A missing `w:ilvl`
+means level 0, and `w:numId` 0 at the winning layer removes numbering.
+Conformance gap, following Microsoft Word: this clause says a style's
+`w:ilvl` is ignored and the level is found through the numbering level's
+`w:pStyle`; Word instead uses the style's `w:ilvl` and shows style-derived
+numbering only when the resolved level links back to the nearest numbered
+style in the paragraph's chain. LibreOffice follows the clause text. The
+Word 16.114 and LibreOffice 26.2 results are recorded in
+`scripts/oracle/word/evidence/issue-1244-word-16.114.json`.
 
 ### ECMA-PART1-17-13-4-6 — w:comments comment-collection part emission
 

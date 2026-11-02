@@ -1971,7 +1971,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr",
-      "claimRationale": "List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot.\nGeneration binds deterministic handles; paragraph mutation can remove or\nre-point a direct reference while preserving the numbering definitions.",
+      "claimRationale": "List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot.\nGeneration binds deterministic handles; paragraph mutation can remove or\nre-point a direct reference while preserving the numbering definitions.\n\nWhen reading list labels, a paragraph's numbering is resolved per element:\n`w:numId` and `w:ilvl` each come from the nearest layer that sets them — the\nparagraph's own `w:numPr`, then its style chain through `w:basedOn` (the\ndefault paragraph style when there is no `w:pStyle`). A missing `w:ilvl`\nmeans level 0, and `w:numId` 0 at the winning layer removes numbering.\nConformance gap, following Microsoft Word: this clause says a style's\n`w:ilvl` is ignored and the level is found through the numbering level's\n`w:pStyle`; Word instead uses the style's `w:ilvl` and shows style-derived\nnumbering only when the resolved level links back to the nearest numbered\nstyle in the paragraph's chain. LibreOffice follows the clause text. The\nWord 16.114 and LibreOffice 26.2 results are recorded in\n`scripts/oracle/word/evidence/issue-1244-word-16.114.json`.",
       "evidence": [
         {
           "kind": "source",
@@ -1980,6 +1980,14 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/primitives/paragraph_numbering.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/paragraph_list_numbering.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/paragraph_list_numbering.test.ts"
         }
       ]
     },
@@ -3423,11 +3431,19 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num",
-      "claimRationale": "Instances carry sequential numeric `w:numId` values: default instances take\n1..N in declaration order, and additional instances (`NumberingSpec.instances`)\nfollow from N+1, so adding an instance never renumbers a default instance.\nAdditional instances' ids depend on the instances declared before them, so\nnumeric ids are compile-local; the spec-level string handle → numeric id map\nis what paragraph references bind through.",
+      "claimRationale": "Instances carry sequential numeric `w:numId` values: default instances take\n1..N in declaration order, and additional instances (`NumberingSpec.instances`)\nfollow from N+1, so adding an instance never renumbers a default instance.\nAdditional instances' ids depend on the instances declared before them, so\nnumeric ids are compile-local; the spec-level string handle → numeric id map\nis what paragraph references bind through. On the read side, every instance of one\nabstract definition continues a single list, as Word displays it.",
       "evidence": [
         {
           "kind": "source",
           "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/numbering.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/numbering.test.ts"
         }
       ]
     },
@@ -3555,7 +3571,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle",
-      "claimRationale": "An optional `w:pStyle` on `w:lvl` associates that exact numbering level with\na paragraph style. The numbering model retains the association and exposes a\nread-only active-level lookup so heading classification never consults an\nunrelated level or mutates list counters. Generation emits a level's `pStyle`\nonly for a declared paragraph style that no other level links, and writes the\nreverse link (`w:numPr` naming the definition's default instance and the\nlevel) into that style's `w:pPr`, so a paragraph that only applies the style is\nnumbered at that level.",
+      "claimRationale": "An optional `w:pStyle` on `w:lvl` associates that exact numbering level with\na paragraph style. The numbering model retains the association and exposes a\nread-only active-level lookup so heading classification never consults an\nunrelated level or mutates list counters. Generation emits a level's `pStyle`\nonly for a declared paragraph style that no other level links, and writes the\nreverse link (`w:numPr` naming the definition's default instance and the\nlevel) into that style's `w:pPr`, so a paragraph that only applies the style is\nnumbered at that level. Label resolution honors a style-derived number only\nwhen this link agrees with the paragraph's nearest numbered style; a level\n`w:pStyle` without the style's own `w:numPr` numbers nothing.",
       "evidence": [
         {
           "kind": "source",
@@ -3572,6 +3588,10 @@
         {
           "kind": "source",
           "path": "packages/docx-core/src/generation/emit/styles-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/paragraph_list_numbering.ts"
         }
       ]
     },
@@ -3607,7 +3627,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride",
-      "claimRationale": "A level override carries only `w:startOverride`, so an additional instance of\na definition restarts that level at the given value. Word and LibreOffice keep\none running sequence per abstract definition: the override restarts it the\nfirst time a paragraph uses the instance, and paragraphs on any instance then\ncontinue from there. The read-side label computation starts the overridden\nlevel at the override value but keeps a counter per instance, so it diverges\nfrom both readers once two instances interleave.",
+      "claimRationale": "A level override carries only `w:startOverride`, so an additional instance of\na definition restarts that level at the given value. The read-side label\ncomputation follows Word: it keeps one running sequence per abstract\ndefinition, shared by every instance at every level; an override restarts the\nshared level the first time a paragraph of its instance uses that level, and\nparagraphs on any instance then continue from there. A deeper level restarted\nby a paragraph resumes at that paragraph's instance's start value (its\noverride, if any). LibreOffice 26.2 agrees on the sharing and the first-use\nrestart, but restarts deeper levels at the abstract start and ignores\n`w:lvlRestart`. The Word observations are recorded in\n`scripts/oracle/word/evidence/issue-1243-word-16.114.json`.",
       "evidence": [
         {
           "kind": "source",
@@ -3616,6 +3636,10 @@
         {
           "kind": "source",
           "path": "packages/docx-core/src/primitives/numbering.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/numbering.test.ts"
         }
       ]
     },

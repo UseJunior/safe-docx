@@ -81,6 +81,12 @@ export type StylesModel = {
    */
   defaultTableStyleId?: string | null;
   /**
+   * The `w:styleId` of the default paragraph style (`w:type="paragraph"`
+   * with `w:default="1"`), which applies to a paragraph that names no
+   * `w:pStyle`. Optional so hand-built models remain source-compatible.
+   */
+  defaultParagraphStyleId?: string | null;
+  /**
    * Every `w:rPr` carried by a table style, including the conditional
    * `w:tblStylePr/w:rPr` blocks.
    *
@@ -170,13 +176,16 @@ export function parseThemeXml(themeDoc: Document | null): ThemeModel {
 
 export function parseStylesXml(stylesDoc: Document | null): StylesModel {
   const byId = new Map<string, StyleDef>();
-  if (!stylesDoc) return { byId, docDefaultsRPr: null, defaultTableStyleId: null, tableStyleRPrs: [] };
+  if (!stylesDoc) {
+    return { byId, docDefaultsRPr: null, defaultTableStyleId: null, defaultParagraphStyleId: null, tableStyleRPrs: [] };
+  }
 
   const docDefaults = stylesDoc.getElementsByTagNameNS(OOXML.W_NS, W.docDefaults).item(0);
   const rPrDefault = docDefaults ? getFirstChild(docDefaults, OOXML.W_NS, W.rPrDefault) : null;
   const docDefaultsRPr = rPrDefault ? getFirstChild(rPrDefault, OOXML.W_NS, W.rPr) : null;
   const tableStyleRPrs: Element[] = [];
   let defaultTableStyleId: string | null = null;
+  let defaultParagraphStyleId: string | null = null;
 
   const styles = Array.from(stylesDoc.getElementsByTagNameNS(OOXML.W_NS, W.style));
   for (const st of styles) {
@@ -220,11 +229,15 @@ export function parseStylesXml(stylesDoc: Document | null): StylesModel {
       const isDefault = getWAttr(st, 'default');
       // The last default style of a type wins (§ 17.7.4.17).
       if (isDefault !== null && isOnValue(isDefault)) defaultTableStyleId = id;
+    } else if (styleType === 'paragraph') {
+      const isDefault = getWAttr(st, 'default');
+      // The last default style of a type wins (§ 17.7.4.17).
+      if (isDefault !== null && isOnValue(isDefault)) defaultParagraphStyleId = id;
     }
 
     byId.set(id, def);
   }
-  return { byId, docDefaultsRPr: docDefaultsRPr ?? null, defaultTableStyleId, tableStyleRPrs };
+  return { byId, docDefaultsRPr: docDefaultsRPr ?? null, defaultTableStyleId, defaultParagraphStyleId, tableStyleRPrs };
 }
 
 function resolveStyleChain(model: StylesModel, styleId: string | null): StyleDef[] {
