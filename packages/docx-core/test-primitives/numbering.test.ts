@@ -304,6 +304,38 @@ describe('numbering primitives', () => {
     });
   }
 
+  test('a level the list has never used stays unset in snapshots and labels', async ({ given, when, then, and }: AllureBddContext) => {
+    let model!: ReturnType<typeof parseNumberingXml>;
+    let labels!: string[];
+    let snapshot!: ReturnType<typeof advanceListLabel>;
+    await given('decimal levels starting at 1, 5 and 1', async () => {
+      model = parseNumberingXml(
+        makeNumberingDoc(
+          '<w:abstractNum w:abstractNumId="0">' +
+            '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>' +
+            '<w:lvl w:ilvl="1"><w:start w:val="5"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2"/></w:lvl>' +
+            '<w:lvl w:ilvl="2"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2.%3"/></w:lvl>' +
+            '</w:abstractNum>' +
+            plain(1, 0),
+        ),
+      );
+    });
+    await when('levels 0, 2 and 1 are numbered in that order', async () => {
+      const counters: NumberingCounters = new Map();
+      labels = [computeListLabelForParagraph(model, counters, { numId: '1', ilvl: 0 })];
+      snapshot = advanceListLabel(model, counters, { numId: '1', ilvl: 2 });
+      labels.push(snapshot!.label, computeListLabelForParagraph(model, counters, { numId: '1', ilvl: 1 }));
+    });
+    await then('the skipped level reads NaN in the snapshot rather than a pending restart value', () => {
+      expect(snapshot!.levelValues).toEqual([1, Number.NaN, 1]);
+    });
+    await and('labels are unchanged from the per-instance implementation, and the level later starts at its start value', () => {
+      // A skipped level still renders 0; Word renders it at its start value
+      // (a separate, pre-existing difference: r2/r5 in the #1243 evidence).
+      expect(labels).toEqual(['1.', '1.0.1', '1.5']);
+    });
+  });
+
   test('a label snapshot carries every ancestor level value for full-context rendering', async ({ given, when, then, and }: AllureBddContext) => {
     let model!: ReturnType<typeof parseNumberingXml>;
     let snapshot!: ReturnType<typeof advanceListLabel>;

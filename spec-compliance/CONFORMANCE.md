@@ -1470,8 +1470,9 @@ definition, shared by every instance at every level; an override restarts the
 shared level the first time a paragraph of its instance uses that level, and
 paragraphs on any instance then continue from there. A deeper level restarted
 by a paragraph resumes at that paragraph's instance's start value (its
-override, if any). LibreOffice agrees except that it restarts deeper levels at
-the abstract start. The Word observations are recorded in
+override, if any). LibreOffice 26.2 agrees on the sharing and the first-use
+restart, but restarts deeper levels at the abstract start and ignores
+`w:lvlRestart`. The Word observations are recorded in
 `scripts/oracle/word/evidence/issue-1243-word-16.114.json`.
 
 ### ECMA-PART1-17-9-17 — w:numFmt numbering format

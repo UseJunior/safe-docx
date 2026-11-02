@@ -176,29 +176,59 @@ function formatCounter(numFmt: string, n: number): string {
  * Every `w:num` instance of one abstract definition shares a single running
  * sequence, as Word and LibreOffice display it; create one `new Map()` per
  * document pass and feed paragraphs to it in document order.
+ *
+ * The functions here also keep per-pass state beside the map (which
+ * instance levels have restarted, and the start value a level not yet used
+ * will begin at). That state is tied to the map object: `new Map(counters)`
+ * does not copy it and `counters.clear()` does not reset it, so start each
+ * pass with a fresh map rather than copying or clearing one.
  */
 export type NumberingCounters = Map<string, number[]>; // abstractNumId -> per-level counters
 
-/**
- * The (instance, level) pairs a counters map has already numbered, so a
- * `w:startOverride` restarts the shared sequence only at its instance's
- * first paragraph on that level. Kept beside the map rather than in it so
- * `NumberingCounters` stays a plain map callers create with `new Map()`.
- */
-const usedInstanceLevels = new WeakMap<NumberingCounters, Map<string, Set<number>>>();
+type ListPassState = {
+  /**
+   * The (instance, level) pairs already numbered, so a `w:startOverride`
+   * restarts the shared sequence only at its instance's first paragraph on
+   * that level.
+   */
+  usedInstanceLevels: Map<string, Set<number>>;
+  /**
+   * Per abstract definition, the start value a level the list has never used
+   * will begin at, recorded when a paragraph's restart reaches that level
+   * (the restarting paragraph's instance start, as Word applies it). Kept
+   * apart from the counters so a never-used level still reads NaN.
+   */
+  pendingStarts: Map<string, Map<number, number>>;
+};
 
-function instanceLevelsUsed(counters: NumberingCounters, numId: string): Set<number> {
-  let byNum = usedInstanceLevels.get(counters);
-  if (!byNum) {
-    byNum = new Map();
-    usedInstanceLevels.set(counters, byNum);
+/** Kept beside the map rather than in it, so `NumberingCounters` stays a plain map. */
+const passStates = new WeakMap<NumberingCounters, ListPassState>();
+
+function passState(counters: NumberingCounters): ListPassState {
+  let state = passStates.get(counters);
+  if (!state) {
+    state = { usedInstanceLevels: new Map(), pendingStarts: new Map() };
+    passStates.set(counters, state);
   }
-  let used = byNum.get(numId);
+  return state;
+}
+
+function instanceLevelsUsed(state: ListPassState, numId: string): Set<number> {
+  let used = state.usedInstanceLevels.get(numId);
   if (!used) {
     used = new Set();
-    byNum.set(numId, used);
+    state.usedInstanceLevels.set(numId, used);
   }
   return used;
+}
+
+function pendingStartsFor(state: ListPassState, abstractNumId: string): Map<number, number> {
+  let pending = state.pendingStarts.get(abstractNumId);
+  if (!pending) {
+    pending = new Map();
+    state.pendingStarts.set(abstractNumId, pending);
+  }
+  return pending;
 }
 
 /** The level's start value for an instance: its `startOverride`, else the abstract `w:start`. */
@@ -244,8 +274,9 @@ export type ListLabelSnapshot = {
   /** The paragraph's own level text, rendered and trimmed, e.g. "(b)". */
   label: string;
   /**
-   * Counter values for levels 0..ilvl at this paragraph; a level not yet
-   * used in the list is NaN.
+   * Counter values for levels 0..ilvl at this paragraph. A level the list has
+   * never used is NaN; a level restarted since its last use holds its
+   * restart start value minus one.
    */
   levelValues: readonly number[];
 };
@@ -295,28 +326,35 @@ export function advanceListLabel(
   // The instance's first paragraph on an overridden level restarts the
   // shared sequence at the override value; later paragraphs of the same
   // instance continue it like any other instance.
-  const used = instanceLevelsUsed(counters, numId);
+  const state = passState(counters);
+  const pending = pendingStartsFor(state, abstractNumId);
+  const used = instanceLevelsUsed(state, numId);
   const override = model.nums.get(numId)!.startOverrideByLevel.get(ilvl);
   if (override !== undefined && !used.has(ilvl)) arr[ilvl] = override - 1;
   used.add(ilvl);
 
-  // Initialize this level to start-1 if it hasn't been set yet, then advance.
-  if (Number.isNaN(arr[ilvl]!)) arr[ilvl] = getStartForLevel(model, numId, ilvl) - 1;
+  // A level the list has never used begins at the start a restart recorded
+  // for it, else at this instance's start; then advance.
+  if (Number.isNaN(arr[ilvl]!)) arr[ilvl] = (pending.get(ilvl) ?? getStartForLevel(model, numId, ilvl)) - 1;
+  pending.delete(ilvl);
   arr[ilvl] = arr[ilvl]! + 1;
 
   // Reset deeper levels whose restart threshold this level meets. By default
   // a level restarts whenever any earlier level is used; w:lvlRestart="r"
   // restarts it only when one of the first r levels (one-based) is used, and
   // r = 0 never restarts it (§ 17.9.10). The restart value is this
-  // paragraph's instance's start for that level, as Word applies it — also
-  // for a level the list has not used yet, so an override instance's restart
-  // reaches a level another instance uses first.
-  const deepest = Math.max(...model.abstractNums.get(abstractNumId)!.levels.keys());
-  while (arr.length <= deepest) arr.push(Number.NaN);
-  for (let d = ilvl + 1; d < arr.length; d++) {
-    const restart = getNumberingLevel(model, numId, d)?.lvlRestart ?? null;
+  // paragraph's instance's start for that level, as Word applies it. A level
+  // the list has never used keeps reading NaN; its restart value is recorded
+  // so that an override instance's restart still reaches a level another
+  // instance uses first (Word's r4 case).
+  const levels = model.abstractNums.get(abstractNumId)!.levels;
+  for (const d of levels.keys()) {
+    if (d <= ilvl) continue;
+    const restart = levels.get(d)!.lvlRestart;
     if (restart !== null && ilvl >= restart) continue;
-    arr[d] = getStartForLevel(model, numId, d) - 1;
+    const start = getStartForLevel(model, numId, d);
+    if (d < arr.length && !Number.isNaN(arr[d]!)) arr[d] = start - 1;
+    else pending.set(d, start);
   }
 
   const levelValues = arr.slice(0, ilvl + 1);
