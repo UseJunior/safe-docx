@@ -24,6 +24,7 @@
  * surface never saw.
  */
 
+import { isWordBookmarkName } from './bookmark-names.js';
 import { GenerationSpecError } from './errors.js';
 import { WML_SCHEMA_ENUM_SETS, type WmlSchemaEnumType } from './schema-enum-domains.js';
 import { FOOTNOTE_REFERENCE_STYLE_ID, FOOTNOTE_TEXT_STYLE_ID } from '../primitives/footnote-shapes.js';
@@ -43,6 +44,7 @@ import type {
   TableSpec,
 } from './types.js';
 import {
+  CROSS_REFERENCE_NUMBERS,
   HIGHLIGHT_COLORS,
   NUMBERING_LEVEL_FORMATS,
   NUMBERING_LEVEL_JUSTIFICATIONS,
@@ -68,6 +70,7 @@ const VERTICAL_MERGES = new Set(['restart', 'continue']);
 const STYLE_TYPES = new Set(['paragraph', 'character']);
 const NUMBER_FORMATS: ReadonlySet<string> = new Set(NUMBERING_LEVEL_FORMATS);
 const NUMBER_SUFFIXES = new Set(['tab', 'space', 'nothing']);
+const CROSS_REFERENCE_NUMBER_SET: ReadonlySet<string> = new Set(CROSS_REFERENCE_NUMBERS);
 
 function requireInteger(value: unknown, path: string, description: string, minimum?: number, maximum?: number): void {
   if (
@@ -133,7 +136,7 @@ export function validateSpec(spec: DocumentSpec): void {
   if (spec.defaults?.run) validateRunProps(spec.defaults.run, '/defaults/run');
   if (spec.defaults?.paragraph) validateParagraphProps(spec.defaults.paragraph, '/defaults/paragraph');
   const declaredStyleIds = validateStyles(spec.styles ?? []);
-  if (spec.sections.some((section) => Array.isArray(section.blocks) && section.blocks.some(blockHasFootnote))) {
+  if (specHasFootnotes(spec)) {
     validateFootnoteStyles(spec.styles ?? []);
     declaredStyleIds.add(FOOTNOTE_TEXT_STYLE_ID);
     declaredStyleIds.add(FOOTNOTE_REFERENCE_STYLE_ID);
@@ -143,6 +146,104 @@ export function validateSpec(spec: DocumentSpec): void {
   spec.sections.forEach((section, sectionIndex) => {
     validateSection(section, `/sections/${sectionIndex}`, declaredStyleIds, numbering);
     validateBreakPlacement(section, `/sections/${sectionIndex}`, sectionIndex === spec.sections.length - 1);
+  });
+  validateCrossReferences(spec);
+}
+
+type ParagraphVisitor = (paragraph: ParagraphSpec, path: string, story: StoryContext) => void;
+
+/** Every paragraph of `blocks`, table cells and footnote bodies included, with its path and story. */
+function walkParagraphs(blocks: BlockSpec[], path: string, story: StoryContext, visit: ParagraphVisitor): void {
+  blocks.forEach((block, blockIndex) => {
+    const blockPath = `${path}/${blockIndex}`;
+    if (block.kind === 'table') {
+      block.rows.forEach((row, rowIndex) => row.cells.forEach((cell, cellIndex) => {
+        walkParagraphs(cell.blocks, `${blockPath}/rows/${rowIndex}/cells/${cellIndex}/blocks`, story, visit);
+      }));
+      return;
+    }
+    visit(block, blockPath, story);
+    block.runs.forEach((run, runIndex) => {
+      if (run.kind === 'footnote') walkParagraphs(run.blocks, `${blockPath}/runs/${runIndex}/blocks`, 'footnote', visit);
+    });
+  });
+}
+
+/** Every paragraph of the document: body (with footnotes), then headers and footers. */
+function walkDocumentParagraphs(spec: DocumentSpec, visit: ParagraphVisitor): void {
+  spec.sections.forEach((section, sectionIndex) => {
+    const path = `/sections/${sectionIndex}`;
+    walkParagraphs(section.blocks, `${path}/blocks`, 'body', visit);
+    for (const [kind, set] of [['headers', section.headers], ['footers', section.footers]] as const) {
+      for (const slot of ['default', 'first', 'even'] as const) {
+        const content = set?.[slot];
+        if (content) walkParagraphs(content.blocks, `${path}/${kind}/${slot}/blocks`, 'headerFooter', visit);
+      }
+    }
+  });
+}
+
+/**
+ * The spec path of each body paragraph's bookmark, keyed by name. Run after
+ * {@link validateSpec}, which guarantees names are unique and body-only.
+ */
+export function collectBookmarkPaths(spec: DocumentSpec): Map<string, string> {
+  const paths = new Map<string, string>();
+  walkDocumentParagraphs(spec, (paragraph, path, story) => {
+    if (story === 'body' && paragraph.bookmark !== undefined && !paths.has(paragraph.bookmark)) paths.set(paragraph.bookmark, path);
+  });
+  return paths;
+}
+
+/**
+ * Bookmarks sit only on body paragraphs (table cells included) and follow
+ * Word's Bookmark dialog rules: at most 40 characters, a letter first, then
+ * letters, digits and underscores, so none is hidden. Names are unique
+ * without regard to case. A cross-reference sits in the body or a footnote,
+ * never a header or footer, and names a declared bookmark exactly.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
+ */
+function validateCrossReferences(spec: DocumentSpec): void {
+  const bookmarks = new Set<string>();
+  const folded = new Map<string, string>();
+  walkDocumentParagraphs(spec, (paragraph, path, story) => {
+    if (paragraph.bookmark === undefined) return;
+    const bookmarkPath = `${path}/bookmark`;
+    if (story !== 'body') {
+      throw new GenerationSpecError(
+        'invalid_value',
+        bookmarkPath,
+        story === 'footnote' ? 'Bookmarks may sit only on body paragraphs, not in footnotes' : 'Bookmarks may sit only on body paragraphs, not in headers or footers',
+      );
+    }
+    if (typeof paragraph.bookmark !== 'string' || !isWordBookmarkName(paragraph.bookmark)) {
+      throw new GenerationSpecError(
+        'invalid_value',
+        bookmarkPath,
+        `Bookmark name '${String(paragraph.bookmark)}' must be at most 40 characters, start with a letter and hold only letters, digits and underscores`,
+      );
+    }
+    const key = paragraph.bookmark.toLowerCase();
+    const earlier = folded.get(key);
+    if (earlier !== undefined) {
+      throw new GenerationSpecError('invalid_value', bookmarkPath, `Bookmark name '${paragraph.bookmark}' repeats '${earlier}'; bookmark names are unique regardless of case`);
+    }
+    folded.set(key, paragraph.bookmark);
+    bookmarks.add(paragraph.bookmark);
+  });
+  walkDocumentParagraphs(spec, (paragraph, path, story) => {
+    paragraph.runs.forEach((run, runIndex) => {
+      if (run.kind !== 'crossReference') return;
+      const runPath = `${path}/runs/${runIndex}`;
+      if (story === 'headerFooter') {
+        throw new GenerationSpecError('invalid_value', runPath, 'Cross-references may appear in the body and in footnotes, not in headers or footers');
+      }
+      if (!bookmarks.has(run.bookmark)) {
+        throw new GenerationSpecError('dangling_bookmark_reference', `${runPath}/bookmark`, `Cross-reference names undeclared bookmark '${String(run.bookmark)}'`);
+      }
+    });
   });
 }
 
@@ -474,6 +575,11 @@ function validateBreakPlacement(section: SectionSpec, path: string, isFinal: boo
  * form the 'footnote' story.
  */
 type StoryContext = 'body' | 'headerFooter' | 'footnote';
+
+/** Whether any body block, table cells included, holds a footnote. */
+export function specHasFootnotes(spec: DocumentSpec): boolean {
+  return spec.sections.some((section) => Array.isArray(section.blocks) && section.blocks.some(blockHasFootnote));
+}
 
 function blockHasFootnote(block: BlockSpec): boolean {
   if (block?.kind === 'paragraph') return Array.isArray(block.runs) && block.runs.some((run) => run?.kind === 'footnote');
@@ -830,8 +936,18 @@ function validateInline(
   numbering: Map<string, Set<number>>,
   story: StoryContext,
 ): void {
-  if (run.kind !== 'tab' && run.kind !== 'break' && run.kind !== 'field' && run.kind !== 'text' && run.kind !== 'footnote') {
+  if (run.kind !== 'tab' && run.kind !== 'break' && run.kind !== 'field' && run.kind !== 'text' && run.kind !== 'footnote' && run.kind !== 'crossReference') {
     unsupported(path, `inline kind '${(run as { kind: string }).kind}'`);
+  }
+  if (run.kind === 'crossReference') {
+    if (typeof run.bookmark !== 'string' || run.bookmark.length === 0) {
+      throw new GenerationSpecError('invalid_value', `${path}/bookmark`, 'Cross-references name a bookmark');
+    }
+    if (run.number !== undefined && !CROSS_REFERENCE_NUMBER_SET.has(run.number)) {
+      throw new GenerationSpecError('invalid_value', `${path}/number`, `Cross-reference number must be one of ${CROSS_REFERENCE_NUMBERS.join(', ')}, got '${String(run.number)}'`);
+    }
+    validateRunProps(run, path);
+    return;
   }
   if (run.kind === 'footnote') {
     validateFootnote(run, path, styleIds, numbering, story);

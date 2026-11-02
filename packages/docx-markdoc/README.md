@@ -598,6 +598,15 @@ package, determinism, read-back and brownfield-import checks:
   paragraphs, and where each reference sits (which non-empty body paragraph,
   and the text on either side of it), with the source.
   The text mirror lists the notes after the body.
+- **Cross-references.** The read-back reads each REF field as its cached
+  number. The round trip compares it with the number the source gives its
+  target, counted from the source's own lists. A separate check compares
+  each field's bookmark name, number switch and position with its
+  `{% xref /%}`, and the paragraph each bookmark opens in with the item
+  marked with that id. A field that points at another item showing the same
+  number, or that sits somewhere else, also fails. LibreOffice recalculates REF fields when it renders the
+  PDF and keeps the period that Word drops (`2.(a)(i)`), so the PDF checks
+  expect that form.
 
 A check that finds a mismatch publishes nothing and leaves existing outputs,
 including an earlier `<stem>.verification.json`, as they were. It writes
@@ -673,6 +682,28 @@ such as an unclosed tag, and headings below `###`.
   `DUPLICATE_FOOTNOTE_REFERENCE`, `FOOTNOTE_REFERENCE_WITHOUT_BODY` and
   `FOOTNOTE_BODY_WITHOUT_REFERENCE`, each with its line. Markdown `[^1]`
   footnotes are not part of the grammar.
+- `{% xref to="escrow-release" /%}` is a cross-reference: a Word REF field
+  that shows the number of the list item marked `{% #escrow-release %}` and
+  updates when the document is renumbered. Mark the target by ending a
+  numbered list item (or a heading, which becomes a bookmark only) with
+  `{% #id %}`, where the id is lowercase kebab-case and unique in the
+  document. In the output, each id is a Word bookmark with its hyphens turned
+  into underscores (`escrow_release`). A longer id than Word's 40-character
+  limit keeps 31 characters plus an 8-digit hash. The field shows the full
+  number by default, `2(a)(i)`, as Word writes it (the period of `2.` is
+  dropped before `(`). `number="paragraph"` shows the item's own number,
+  `(i)`. `format="section"` puts `Section ` in front, as plain text. The
+  field is a hyperlink to its target (Ctrl-click in Word) and carries the
+  number as its cached result, so the document reads correctly before
+  anyone updates fields. Created documents number only ordered list items, so
+  an xref must name one. An xref may sit in body text, a list item, a quote, a
+  table cell or a footnote, but not inside `{% fill %}` or `{% literal %}`.
+  Errors are `XREF_UNKNOWN_ID` (naming the missing id),
+  `XREF_TARGET_NOT_NUMBERED`, `INVALID_CROSS_REFERENCE`, `INVALID_ID`,
+  `ID_PLACEMENT`, `DUPLICATE_ID` and `ID_COLLISION`, each with its line.
+- A source holding a control character that a Word document cannot hold
+  (U+0000–U+001F other than tab, line feed and carriage return) fails with
+  `INVALID_CHARACTER` and its line.
 - Bare brackets are ordinary text, never highlighted and never an error, even
   when unbalanced: `"[t]he Company"`, `[sic]`, `Section 2[(b)]`. A legend is
   never highlighted, so `{% fill %}` is not allowed inside it.

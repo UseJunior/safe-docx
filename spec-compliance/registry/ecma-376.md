@@ -226,12 +226,15 @@ part: 1
 section: "17.13.6.1"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkEnd
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/generation/generation-cross-references.test.ts
 ```
 
 `w:bookmarkEnd` closes a bookmark range. safe-docx's advanced-record matrix
 claims only bounded preservation around accept/reject and comparison, not
-bookmark identity or consumer semantics.
+bookmark identity or consumer semantics. Generation (#1236) closes each
+bookmark it emits after the paragraph's content, with the `w:id` of its
+`w:bookmarkStart`, and the generated-package structural check verifies that
+every end follows a start with the same id.
 
 ## [ECMA-PART1-17-13-6-2] Bookmark start
 
@@ -241,11 +244,17 @@ part: 1
 section: "17.13.6.2"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkStart
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/generation/bookmark-names.ts; packages/docx-core/src/generation/generation-cross-references.test.ts; packages/docx-markdoc/src/create/cross-references.test.ts
 ```
 
 `w:bookmarkStart` opens a bookmark range. The matrix records sampled
 preservation only; range identity and bookmark semantics are separate gaps.
+Generation (#1236) opens a bookmark after a body paragraph's properties. Its
+`w:id` comes from the sequence comment ranges use, since the clause calls the
+id unique within the document. Its `w:name` keeps to what Word's Bookmark
+dialog accepts (at most 40 characters, a leading letter, letters, digits and
+underscores), unique without regard to case. The structural check verifies
+unique ids and names and that no bookmark id equals a comment-range id.
 
 ## [ECMA-PART1-17-13-7-1] Permission range end
 
@@ -1172,7 +1181,7 @@ part: 1
 section: "17.16.18"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar
-verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/shared/field-structure.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/pipeline.field-validation.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/shared/field-structure.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/pipeline.field-validation.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/generation/generation-cross-references.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 ```
 
 This claim is bounded to the runtime and test evidence listed above.
@@ -1239,7 +1248,7 @@ part: 1
 section: "17.16.5.51"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
-verifiedBy: packages/docx-core/src/shared/field-semantics.ts; packages/docx-core/src/shared/field-semantics.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
+verifiedBy: packages/docx-core/src/shared/field-semantics.ts; packages/docx-core/src/shared/field-semantics.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts; packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/src/generation/generation-cross-references.test.ts; packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/create/cross-references.test.ts
 ```
 
 Tagged main-document publication classifies a self-contained REF instruction with
@@ -1254,6 +1263,20 @@ declines any projection carrying a tab, a break, or a paragraph transition
 rather than flattening it into literal characters. That separately tested
 capability does not broaden unchanged publication preservation into complete
 field-engine equivalence.
+
+Generation (#1236) emits REF fields with the `\w` (full context) or `\n`
+(paragraph number) switch and `\h`, the instructions Word's own Insert →
+Cross-reference writes. The clause defines what the switches ask for: `\n`
+the paragraph number "without trailing periods", `\w` the number "in full
+context". It does not say how the context is assembled or which periods go
+between its parts, so `renderReferenceNumber` follows Word 16.114 as recorded
+in `scripts/oracle/word/evidence/issue-1236-word-16.114.json`: the target's
+level text is preceded by its ancestors' level texts up to the one naming
+level 0, one final period is removed, and a period before a part that starts
+with `(` is removed (`2.` + `(b)` → `2(b)`, but `2.` + `b.` → `2.b`). The
+cached result equals Word's for all recorded fields. LibreOffice keeps a
+period before `(` that Word removes. `\r`, whose result depends on where the
+field sits, is not emitted.
 
 ## [ECMA-PART1-17-4-37] w:tbl table emission
 
@@ -1827,6 +1850,31 @@ verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts
 The level text pattern (e.g. `%1.` / `%1.%2` / a literal bullet glyph) is
 emitted verbatim from the spec; validation requires a non-empty pattern on
 every level.
+
+The clause says a placeholder naming a level deeper than its own is ignored.
+Word 16.114 instead shows no number for such a level, and a REF field to it
+shows `0` (recorded in `scripts/oracle/word/evidence/issue-1236-word-16.114.json`,
+`deeperLevelPlaceholders`), so generated cross-references to such a level are
+refused (`resolveReferenceNumber` in `packages/docx-core/src/primitives/numbering.ts`).
+
+## [ECMA-PART1-17-18-59] ST_NumberFormat alphabetic list numbers
+
+```yaml
+edition: 5
+part: 1
+section: "17.18.59"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_NumberFormat
+verifiedBy: packages/docx-core/src/primitives/numbering.ts; packages/docx-core/src/generation/generation-cross-references.test.ts
+```
+
+Bounded to the `lowerLetter` and `upperLetter` values as the list-label read
+side formats them: past the size of the alphabet the same letter is written
+once more for each further pass (27 → `aa`, 28 → `bb`, 53 → `aaa`), as the
+clause describes. Word 16.114 shows the same labels and REF results, recorded
+in `scripts/oracle/word/evidence/issue-1236-word-16.114.json`
+(`alphabeticPastZ`). The language-dependent alphabets the clause also
+describes are not implemented; the Latin a–z set is always used.
 
 ## [ECMA-PART1-17-9-25] w:start numbering level starting value
 

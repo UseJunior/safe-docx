@@ -2,7 +2,8 @@
  * Inline-run emitter.
  *
  * Shipped: text runs with full RunProps formatting, tab and break runs,
- * footnote reference runs, and complete five-part complex fields. A FieldSpec compiles to
+ * footnote reference runs, cross-reference (REF) fields, and complete
+ * five-part complex fields. A FieldSpec compiles to
  * begin → instruction text → separate → cached result → end so reading
  * applications always display a value without recomputation prompts — the
  * required `cachedResult` makes the no-recovery-dialog property
@@ -14,7 +15,7 @@ import { createWmlElement, createWmlTextElement } from '../../primitives/dom-hel
 import { buildFootnoteReferenceRun } from '../../primitives/footnote-shapes.js';
 import { W } from '../../primitives/namespaces.js';
 import { GenerationInternalError } from '../errors.js';
-import type { FieldSpec, InlineSpec, RunProps } from '../types.js';
+import type { CrossReferenceSpec, FieldSpec, InlineSpec, RunProps } from '../types.js';
 import type { BlockEmitContext } from './emit-context.js';
 import { buildRunPropsElement } from './properties.js';
 
@@ -57,6 +58,36 @@ function buildFieldRuns(doc: Document, field: FieldSpec, ctx?: BlockEmitContext)
   ];
 }
 
+/**
+ * A cross-reference: the same five-run complex field over a `REF` instruction
+ * naming the target bookmark, `\w` (full-context number) or `\n` (paragraph
+ * number), and `\h` so the result is a hyperlink to the bookmark. The
+ * result run is filled by the resolver with the number Word shows after
+ * updating fields.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ */
+function buildCrossReferenceRuns(doc: Document, reference: CrossReferenceSpec, ctx?: BlockEmitContext): Element[] {
+  if (!ctx?.crossReferences) {
+    throw new GenerationInternalError('A cross-reference reached the run emitter in a story that cannot carry one');
+  }
+  const { kind: _kind, bookmark, number = 'fullContext', ...props } = reference;
+  void _kind;
+  const instr = createWmlElement(doc, W.instrText);
+  instr.setAttribute('xml:space', 'preserve');
+  instr.appendChild(doc.createTextNode(` REF ${bookmark} ${number === 'paragraph' ? '\\n' : '\\w'} \\h `));
+  const result = makeRun(doc, props, ctx);
+  ctx.crossReferences.fill(result, bookmark, number);
+  return [
+    makeRun(doc, props, ctx, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'begin' })),
+    makeRun(doc, props, ctx, instr),
+    makeRun(doc, props, ctx, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'separate' })),
+    result,
+    makeRun(doc, props, ctx, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'end' })),
+  ];
+}
+
 /** Build the w:r element(s) for one inline spec node. */
 export function buildInlineRuns(doc: Document, inline: InlineSpec, ctx?: BlockEmitContext): Element[] {
   switch (inline.kind) {
@@ -69,6 +100,8 @@ export function buildInlineRuns(doc: Document, inline: InlineSpec, ctx?: BlockEm
     }
     case 'field':
       return buildFieldRuns(doc, inline, ctx);
+    case 'crossReference':
+      return buildCrossReferenceRuns(doc, inline, ctx);
     case 'tab':
       return [makeRun(doc, {}, ctx, createWmlElement(doc, W.tab))];
     case 'break': {

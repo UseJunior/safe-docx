@@ -1463,11 +1463,23 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkEnd",
-      "claimRationale": "`w:bookmarkEnd` closes a bookmark range. safe-docx's advanced-record matrix\nclaims only bounded preservation around accept/reject and comparison, not\nbookmark identity or consumer semantics.",
+      "claimRationale": "`w:bookmarkEnd` closes a bookmark range. safe-docx's advanced-record matrix\nclaims only bounded preservation around accept/reject and comparison, not\nbookmark identity or consumer semantics. Generation (#1236) closes each\nbookmark it emits after the paragraph's content, with the `w:id` of its\n`w:bookmarkStart`, and the generated-package structural check verifies that\nevery end follows a start with the same id.",
       "evidence": [
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/paragraph.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/structural-checks.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-cross-references.test.ts"
         }
       ]
     },
@@ -1483,11 +1495,31 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkStart",
-      "claimRationale": "`w:bookmarkStart` opens a bookmark range. The matrix records sampled\npreservation only; range identity and bookmark semantics are separate gaps.",
+      "claimRationale": "`w:bookmarkStart` opens a bookmark range. The matrix records sampled\npreservation only; range identity and bookmark semantics are separate gaps.\nGeneration (#1236) opens a bookmark after a body paragraph's properties. Its\n`w:id` comes from the sequence comment ranges use, since the clause calls the\nid unique within the document. Its `w:name` keeps to what Word's Bookmark\ndialog accepts (at most 40 characters, a leading letter, letters, digits and\nunderscores), unique without regard to case. The structural check verifies\nunique ids and names and that no bookmark id equals a comment-range id.",
       "evidence": [
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/paragraph.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/structural-checks.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/bookmark-names.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-cross-references.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/cross-references.test.ts"
         }
       ]
     },
@@ -1668,6 +1700,10 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/generation/generation-sections-fields.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-cross-references.test.ts"
         },
         {
           "kind": "test",
@@ -1887,7 +1923,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText",
-      "claimRationale": "Tagged main-document publication classifies a self-contained REF instruction with\none bookmark argument and a bounded switch vocabulary; the `\\d` switch requires\nand consumes one separator argument. When the complete field range is unchanged,\ncomparison preserves its ordered XML topology as a SafeDocX metamorphic\ninvariant. The scoped refresh primitive resolves a unique, ID-paired bookmark\nand refreshes the cached result only for the admitted bookmarked-text\nprojection; numbering, position, separator, and unknown projections remain\nunsupported. Because Word writes a REF result structurally, the primitive also\ndeclines any projection carrying a tab, a break, or a paragraph transition\nrather than flattening it into literal characters. That separately tested\ncapability does not broaden unchanged publication preservation into complete\nfield-engine equivalence.",
+      "claimRationale": "Tagged main-document publication classifies a self-contained REF instruction with\none bookmark argument and a bounded switch vocabulary; the `\\d` switch requires\nand consumes one separator argument. When the complete field range is unchanged,\ncomparison preserves its ordered XML topology as a SafeDocX metamorphic\ninvariant. The scoped refresh primitive resolves a unique, ID-paired bookmark\nand refreshes the cached result only for the admitted bookmarked-text\nprojection; numbering, position, separator, and unknown projections remain\nunsupported. Because Word writes a REF result structurally, the primitive also\ndeclines any projection carrying a tab, a break, or a paragraph transition\nrather than flattening it into literal characters. That separately tested\ncapability does not broaden unchanged publication preservation into complete\nfield-engine equivalence.\n\nGeneration (#1236) emits REF fields with the `\\w` (full context) or `\\n`\n(paragraph number) switch and `\\h`, the instructions Word's own Insert →\nCross-reference writes. The clause defines what the switches ask for: `\\n`\nthe paragraph number \"without trailing periods\", `\\w` the number \"in full\ncontext\". It does not say how the context is assembled or which periods go\nbetween its parts, so `renderReferenceNumber` follows Word 16.114 as recorded\nin `scripts/oracle/word/evidence/issue-1236-word-16.114.json`: the target's\nlevel text is preceded by its ancestors' level texts up to the one naming\nlevel 0, one final period is removed, and a period before a part that starts\nwith `(` is removed (`2.` + `(b)` → `2(b)`, but `2.` + `b.` → `2.b`). The\ncached result equals Word's for all recorded fields. LibreOffice keeps a\nperiod before `(` that Word removes. `\\r`, whose result depends on where the\nfield sits, is not emitted.",
       "evidence": [
         {
           "kind": "source",
@@ -1932,6 +1968,50 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/nvca-coi-regression.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/run.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/numbering.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-cross-references.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/import.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/cross-references.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-18-59",
+      "title": "ST_NumberFormat alphabetic list numbers",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.18.59"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_NumberFormat",
+      "claimRationale": "Bounded to the `lowerLetter` and `upperLetter` values as the list-label read\nside formats them: past the size of the alphabet the same letter is written\nonce more for each further pass (27 → `aa`, 28 → `bb`, 53 → `aaa`), as the\nclause describes. Word 16.114 shows the same labels and REF results, recorded\nin `scripts/oracle/word/evidence/issue-1236-word-16.114.json`\n(`alphabeticPastZ`). The language-dependent alphabets the clause also\ndescribes are not implemented; the Latin a–z set is always used.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/numbering.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-cross-references.test.ts"
         }
       ]
     },
@@ -3391,7 +3471,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlText",
-      "claimRationale": "The level text pattern (e.g. `%1.` / `%1.%2` / a literal bullet glyph) is\nemitted verbatim from the spec; validation requires a non-empty pattern on\nevery level.",
+      "claimRationale": "The level text pattern (e.g. `%1.` / `%1.%2` / a literal bullet glyph) is\nemitted verbatim from the spec; validation requires a non-empty pattern on\nevery level.\n\nThe clause says a placeholder naming a level deeper than its own is ignored.\nWord 16.114 instead shows no number for such a level, and a REF field to it\nshows `0` (recorded in `scripts/oracle/word/evidence/issue-1236-word-16.114.json`,\n`deeperLevelPlaceholders`), so generated cross-references to such a level are\nrefused (`resolveReferenceNumber` in `packages/docx-core/src/primitives/numbering.ts`).",
       "evidence": [
         {
           "kind": "source",
@@ -6170,6 +6250,19 @@
       "occurrences": [
         {
           "contextPath": "schema/type:CT_TblStylePr"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_NumberFormat",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "type",
+      "name": "ST_NumberFormat",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:ST_NumberFormat"
         }
       ]
     }

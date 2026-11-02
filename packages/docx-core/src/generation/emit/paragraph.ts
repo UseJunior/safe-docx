@@ -15,6 +15,14 @@ import type { BlockEmitContext } from './emit-context.js';
 import { buildParagraphPropsElement } from './properties.js';
 import { buildInlineRuns } from './run.js';
 
+/** Bookmarks exist only where the resolver does: the body story of a document that has them. */
+function allocateBookmarkId(ctx: BlockEmitContext | undefined): number {
+  if (!ctx?.crossReferences) {
+    throw new GenerationInternalError('A bookmarked paragraph reached the emitter in a story that cannot carry bookmarks');
+  }
+  return ctx.crossReferences.allocateBookmarkId();
+}
+
 /**
  * List paragraphs reference their numbering definition through w:numPr
  * (w:ilvl then w:numId, per CT_NumPr); the numeric id comes from the
@@ -26,6 +34,8 @@ import { buildInlineRuns } from './run.js';
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.4
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.3
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
  * @ooxmlSpec ooxml.ecma376.5ed.part1.comments.range-start
  * @ooxmlSpec ooxml.ecma376.5ed.part1.comments.range-end
  * @ooxmlSpec ooxml.ecma376.5ed.part1.comments.reference
@@ -53,6 +63,10 @@ export function buildParagraph(doc: Document, paragraph: ParagraphSpec, ctx?: Bl
   // (notes disabled, or a story that cannot carry them) the paragraph
   // serializes without any trace of the note.
   const noteId = paragraph.note !== undefined && ctx?.notes ? ctx.notes.allocate(paragraph.note) : undefined;
+  const bookmarkId = paragraph.bookmark === undefined ? undefined : allocateBookmarkId(ctx);
+  if (bookmarkId !== undefined) {
+    p.appendChild(createWmlElement(doc, W.bookmarkStart, { 'w:id': String(bookmarkId), 'w:name': paragraph.bookmark! }));
+  }
   if (noteId !== undefined) {
     p.appendChild(createWmlElement(doc, W.commentRangeStart, { 'w:id': String(noteId) }));
   }
@@ -61,8 +75,9 @@ export function buildParagraph(doc: Document, paragraph: ParagraphSpec, ctx?: Bl
       p.appendChild(run);
     }
   }
+  if (noteId !== undefined) p.appendChild(createWmlElement(doc, W.commentRangeEnd, { 'w:id': String(noteId) }));
+  if (bookmarkId !== undefined) p.appendChild(createWmlElement(doc, W.bookmarkEnd, { 'w:id': String(bookmarkId) }));
   if (noteId !== undefined) {
-    p.appendChild(createWmlElement(doc, W.commentRangeEnd, { 'w:id': String(noteId) }));
     const referenceRun = createWmlElement(doc, W.r);
     referenceRun.appendChild(createWmlElement(doc, W.commentReference, { 'w:id': String(noteId) }));
     p.appendChild(referenceRun);

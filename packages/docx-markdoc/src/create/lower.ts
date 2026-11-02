@@ -1,5 +1,5 @@
 import Markdoc, { type Node as MarkdocNode } from '@markdoc/markdoc';
-import type { BlockSpec, DocumentSpec, HeaderFooterSpec, InlineSpec, ParagraphSpec, SectionSpec } from '@usejunior/docx-core';
+import { bookmarkNameForSlug, type BlockSpec, type DocumentSpec, type HeaderFooterSpec, type InlineSpec, type NumberingSpec, type ParagraphSpec, type SectionSpec } from '@usejunior/docx-core';
 import { createMarkdocxRenderer, type RenderApi } from '../markdocx/engine.js';
 import {
   CREATION_STYLE,
@@ -15,6 +15,7 @@ import {
 } from './profile.js';
 import { CreationTheme, creationPlugins } from './theme.js';
 import {
+  checkCreationSourceCharacters,
   creationError,
   lineOf,
   parseCreationFrontmatter,
@@ -101,14 +102,99 @@ function paragraphsOf(blocks: BlockSpec[]): ParagraphSpec[] {
   return blocks.filter((block): block is ParagraphSpec => block.kind === 'paragraph');
 }
 
-function runText(runs: InlineSpec[]): string {
+/** The text a cross-reference to a bookmark shows, by number form. */
+type ReferenceTexts = ReadonlyMap<string, { full: string; paragraph: string }>;
+
+function runText(runs: InlineSpec[], references: ReferenceTexts = new Map()): string {
   return runs.map((run) => {
     if (run.kind === 'text') return run.text;
     if (run.kind === 'tab') return '\t';
     if (run.kind === 'break') return '\n';
     if (run.kind === 'footnote') return '';
+    if (run.kind === 'crossReference') {
+      const text = references.get(run.bookmark);
+      if (!text) throw new Error(`cross-reference to '${run.bookmark}' has no numbered target in the lowering`);
+      return run.number === 'paragraph' ? text.paragraph : text.full;
+    }
     return PAGE_FIELD_TOKEN;
   }).join('');
+}
+
+function letters(n: number): string {
+  return String.fromCharCode(97 + ((n - 1) % 26)).repeat(Math.floor((n - 1) / 26) + 1);
+}
+
+function roman(n: number): string {
+  const table: Array<[number, string]> = [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']];
+  let out = '';
+  for (const [value, symbol] of table) {
+    while (n >= value) { out += symbol; n -= value; }
+  }
+  return out;
+}
+
+/**
+ * What each bookmarked list item's cross-references show, counted from the
+ * lowering's own lists: each ordered list numbers `1.`, `(a)`, `(i)` and
+ * restarts deeper levels under a new item. Word shows the full number as
+ * "2", "2(b)", "2(b)(ii)" (the period before "(" dropped) and the paragraph
+ * number as "2", "(b)", "(ii)". docx-core computes the cached result from the
+ * OOXML; read-back compares the two.
+ */
+function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSpec[]): Map<string, { full: string; paragraph: string }> {
+  const counters = new Map<string, number[]>();
+  const texts = new Map<string, { full: string; paragraph: string }>();
+  const visit = (blocks: BlockSpec[]) => {
+    for (const block of blocks) {
+      if (block.kind === 'table') {
+        for (const row of block.rows) for (const cell of row.cells) visit(cell.blocks);
+        continue;
+      }
+      if (!block.list) continue;
+      const { numId, ilvl } = block.list;
+      const levels = numbering.find((definition) => definition.numId === numId)!.levels;
+      const values = counters.get(numId) ?? [];
+      values[ilvl] = (values[ilvl] ?? (levels[ilvl]!.start ?? 1) - 1) + 1;
+      values.length = ilvl + 1;
+      counters.set(numId, values);
+      if (block.bookmark === undefined || levels[0]!.numFmt !== 'decimal') continue;
+      const own = [String(values[0]), `(${letters(values[1]!)})`, `(${roman(values[2]!)})`];
+      texts.set(block.bookmark, { full: own.slice(0, ilvl + 1).join(''), paragraph: own[ilvl]! });
+    }
+  };
+  for (const section of sections) visit(section.blocks);
+  return texts;
+}
+
+/** Drop the space a trailing `{% #id %}` annotation leaves at the end of its heading or list item text. */
+function trimAnnotationSpace(node: MarkdocNode): void {
+  if (node.attributes.id !== undefined && (node.type === 'heading' || node.type === 'item')) {
+    const inline = node.children.find((child) => child.type === 'inline' || child.type === 'paragraph');
+    const holder = inline?.type === 'paragraph' ? inline.children.find((child) => child.type === 'inline') : inline;
+    const last = holder?.children.at(-1);
+    if (last?.type === 'text') last.attributes.content = String(last.attributes.content ?? '').replace(/\s+$/u, '');
+  }
+  node.children.forEach(trimAnnotationSpace);
+}
+
+/** Every list item under `list`, depth first: the order in which its paragraphs are rendered. */
+function listItems(list: MarkdocNode): MarkdocNode[] {
+  return list.children.flatMap((item) => [item, ...item.children.filter((child) => child.type === 'list').flatMap(listItems)]);
+}
+
+/** Put each `{% #id %}` on the paragraph its heading or list item rendered to, as a bookmark. */
+function bookmarkTargets(node: MarkdocNode, blocks: BlockSpec[]): void {
+  const mark = (target: MarkdocNode, block: BlockSpec | undefined) => {
+    if (target.attributes.id === undefined) return;
+    if (block?.kind !== 'paragraph') throw new Error(`id '${String(target.attributes.id)}' did not render to a paragraph`);
+    block.bookmark = bookmarkNameForSlug(String(target.attributes.id));
+  };
+  if (node.type === 'heading') mark(node, blocks[0]);
+  if (node.type === 'list') {
+    const items = listItems(node);
+    if (items.length !== blocks.length) throw new Error('a list did not render one paragraph per item');
+    items.forEach((item, index) => mark(item, blocks[index]));
+  }
 }
 
 type BlockProjection = Pick<CreationProjection, 'paragraphs' | 'footnoteReferences' | 'footnotes'>;
@@ -117,21 +203,21 @@ type BlockProjection = Pick<CreationProjection, 'paragraphs' | 'footnoteReferenc
  * Body paragraphs in document order, table cells included, as read-back must
  * find them, with each footnote reference's position and its note's text.
  */
-function projectBlocks(blocks: BlockSpec[], out: BlockProjection = { paragraphs: [], footnoteReferences: [], footnotes: [] }): BlockProjection {
+function projectBlocks(blocks: BlockSpec[], out: BlockProjection = { paragraphs: [], footnoteReferences: [], footnotes: [] }, references: ReferenceTexts = new Map()): BlockProjection {
   for (const block of blocks) {
     if (block.kind === 'table') {
-      for (const row of block.rows) for (const cell of row.cells) projectBlocks(cell.blocks, out);
+      for (const row of block.rows) for (const cell of row.cells) projectBlocks(cell.blocks, out, references);
       continue;
     }
     let offset = 0;
     for (const run of block.runs) {
       if (run.kind === 'footnote') {
         out.footnoteReferences.push({ paragraph: out.paragraphs.length, offset });
-        out.footnotes.push(run.blocks.map((paragraph, index) => (index === 0 ? FOOTNOTE_MARK_SPACE : '') + runText(paragraph.runs)));
+        out.footnotes.push(run.blocks.map((paragraph, index) => (index === 0 ? FOOTNOTE_MARK_SPACE : '') + runText(paragraph.runs, references)));
       }
-      offset += runText([run]).length;
+      offset += runText([run], references).length;
     }
-    out.paragraphs.push(runText(block.runs));
+    out.paragraphs.push(runText(block.runs, references));
   }
   return out;
 }
@@ -177,10 +263,12 @@ function applyNeighbourRules(section: SectionState, profile: CreationProfile): v
  */
 export function lowerCreationMarkdoc(source: string, profileInput?: unknown): CreationLowering {
   const profile = resolveCreationProfile(profileInput);
+  checkCreationSourceCharacters(source);
   const ast = Markdoc.parse(source);
   const frontmatter = parseCreationFrontmatter(ast.attributes.frontmatter as string | undefined);
   validateCreationAst(ast.children, { fillIns: frontmatter.fillIns ?? 'markup' });
   normalizeSoftBreaks(ast);
+  trimAnnotationSpace(ast);
 
   // Footnote bodies render where their {% fnref /%} sits; the blocks
   // themselves add nothing to the body. Validation paired every id.
@@ -213,7 +301,7 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     : undefined;
   const sections: SectionState[] = [{ entries: [], ...(firstFooter ? { footer: firstFooter } : {}) }];
   let pendingPageBreak: MarkdocNode | null = null;
-  let titleText: string | undefined;
+  let titleBlocks: BlockSpec[] | undefined;
   for (const node of ast.children) {
     const tag = node.type === 'tag' ? node : soleInlineTag(node);
     const current = sections.at(-1)!;
@@ -236,8 +324,9 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
       continue;
     }
     const blocks = api.renderBlocks([node], { listDepth: 0 });
+    bookmarkTargets(node, blocks);
     const kind = kindOf(node);
-    if (kind === 'title' && titleText === undefined) titleText = projectBlocks(blocks).paragraphs[0];
+    if (kind === 'title' && titleBlocks === undefined) titleBlocks = blocks;
     current.entries.push({ kind, ...(lineOf(node) === undefined ? {} : { line: lineOf(node)! }), blocks, pageBreakBefore: pendingPageBreak !== null });
     pendingPageBreak = null;
   }
@@ -263,9 +352,11 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
   });
   // A section ending in a table gets one empty paragraph after it from docx-core
   // (the dedicated break paragraph, or the closing paragraph of the body).
+  const references = referenceTexts(specSections, theme.numbering);
+  const titleText = titleBlocks ? projectBlocks(titleBlocks, undefined, references).paragraphs[0] : undefined;
   const projected: BlockProjection = { paragraphs: [], footnoteReferences: [], footnotes: [] };
   for (const section of specSections) {
-    projectBlocks(section.blocks, projected);
+    projectBlocks(section.blocks, projected, references);
     if (section.blocks.at(-1)?.kind === 'table') projected.paragraphs.push('');
   }
   const { paragraphs } = projected;

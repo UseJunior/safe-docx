@@ -15,6 +15,7 @@ export type GenerationSpecErrorCode =
   | 'unsupported_feature'
   | 'dangling_style_reference'
   | 'dangling_numbering_reference'
+  | 'dangling_bookmark_reference'
   | 'invalid_value'
   | 'grid_mismatch';
 

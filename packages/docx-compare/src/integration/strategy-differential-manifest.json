@@ -4221,7 +4221,13 @@
           "word/theme/theme1.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [
+          {
+            "check": "bookmark_pairing",
+            "part": "word/document.xml",
+            "message": "bookmarkEnd 27 closes no earlier bookmarkStart"
+          }
+        ]
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -4454,8 +4460,14 @@
         },
         "unrepresentedChanges": [],
         "schema": {
-          "packageStructural": "passed",
-          "issues": [],
+          "packageStructural": "inherited",
+          "issues": [
+            {
+              "check": "bookmark_pairing",
+              "part": "word/document.xml",
+              "message": "bookmarkEnd 27 closes no earlier bookmarkStart"
+            }
+          ],
           "introducedIssues": []
         },
         "formatting": {

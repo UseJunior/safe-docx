@@ -91,6 +91,13 @@ export {
   checkGeneratedPackage,
   type StructuralCheckResult,
   type StructuralIssue,
+  BOOKMARK_NAME_MAX_LENGTH,
+  BookmarkNameError,
+  bookmarkNameForSlug,
+  bookmarkNamesForSlugs,
+  isWordBookmarkName,
+  type BookmarkNameErrorCode,
+  CROSS_REFERENCE_NUMBERS,
 } from './generation/index.js';
 
 export {
@@ -101,6 +108,8 @@ export type {
   BlockSpec,
   BorderSpec,
   BreakSpec,
+  CrossReferenceNumber,
+  CrossReferenceSpec,
   DocumentDefaultsSpec,
   DocumentMetaSpec,
   DocumentSpec,

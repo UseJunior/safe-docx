@@ -147,12 +147,21 @@ export type ParagraphSpec = {
   /** Keep every line of this paragraph on one page (w:keepLines). */
   keepLines?: boolean;
   tabs?: TabStopSpec[];
+  /**
+   * Bookmark name for this paragraph: a `w:bookmarkStart`/`w:bookmarkEnd`
+   * pair around its content, which a {@link CrossReferenceSpec} names. Word's
+   * Bookmark dialog rules apply: at most 40 characters, a letter first, then
+   * only letters, digits and underscores (`bookmarkNameForSlug` maps a
+   * kebab-case id to one). Names are unique in the document, compared without
+   * regard to case. Body story only, table cells included.
+   */
+  bookmark?: string;
   runs: InlineSpec[];
   /** Drafting-note annotation anchored to this paragraph (separable layer). */
   note?: DraftingNoteSpec;
 };
 
-export type InlineSpec = RunSpec | FieldSpec | TabSpec | BreakSpec | FootnoteSpec;
+export type InlineSpec = RunSpec | FieldSpec | TabSpec | BreakSpec | FootnoteSpec | CrossReferenceSpec;
 
 /**
  * The fixed set of text-highlight values (CT_HighlightColor). Single source of
@@ -216,6 +225,34 @@ export type FieldSpec = {
    */
   cachedResult: string;
 } & RunProps;
+
+/**
+ * A cross-reference to a numbered paragraph: a `REF <bookmark> \w \h`
+ * field (or `\n` for `number: 'paragraph'`) that Word renumbers when fields
+ * are updated and that Ctrl-click follows to the target.
+ *
+ * The compiler sets the cached result to the number Word shows after
+ * updating fields, so the document reads correctly before any update:
+ * `fullContext` gives the number with its context ("Section 2.06(b)",
+ * "2(b)"), `paragraph` the target's own level text ("(b)"), each less a
+ * trailing period. The target must be a numbered paragraph whose number
+ * depends only on levels the list has used; otherwise generation fails.
+ *
+ * Allowed in the body story (table cells included) and in footnotes; not in
+ * headers or footers.
+ */
+export type CrossReferenceSpec = {
+  kind: 'crossReference';
+  /** The `bookmark` of a body paragraph. */
+  bookmark: string;
+  /** Defaults to 'fullContext' (`\w`); 'paragraph' is `\n`. */
+  number?: CrossReferenceNumber;
+} & RunProps;
+
+/** The number a cross-reference shows; see {@link CrossReferenceSpec}. */
+export const CROSS_REFERENCE_NUMBERS = ['fullContext', 'paragraph'] as const;
+
+export type CrossReferenceNumber = (typeof CROSS_REFERENCE_NUMBERS)[number];
 
 export type TabSpec = { kind: 'tab' };
 
@@ -300,7 +337,7 @@ export type StyleSpec = {
   type: 'paragraph' | 'character';
   basedOn?: string;
   next?: string;
-  paragraph?: Omit<ParagraphSpec, 'kind' | 'runs' | 'list' | 'note' | 'styleId'>;
+  paragraph?: Omit<ParagraphSpec, 'kind' | 'runs' | 'list' | 'note' | 'styleId' | 'bookmark'>;
   run?: RunProps;
 };
 

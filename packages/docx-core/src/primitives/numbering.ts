@@ -133,16 +133,17 @@ function toRoman(n: number, upper: boolean): string {
   return upper ? out : out.toLowerCase();
 }
 
+/**
+ * Alphabetic list numbers: a…z, then the letter repeated, aa, bb, …, zz, then
+ * aaa, bbb, … (§ 17.18.59 lowerLetter/upperLetter; Word 16.114 shows 27 as
+ * "aa", 28 as "bb" and 53 as "aaa", recorded in
+ * scripts/oracle/word/evidence/issue-1236-word-16.114.json).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.18.59
+ */
 function toLetters(n: number, upper: boolean): string {
-  // 1 -> a, 2 -> b, ..., 26 -> z, 27 -> aa
   if (n <= 0) return '';
-  let x = n;
-  let out = '';
-  while (x > 0) {
-    x -= 1;
-    out = String.fromCharCode(97 + (x % 26)) + out;
-    x = Math.floor(x / 26);
-  }
+  const out = String.fromCharCode(97 + ((n - 1) % 26)).repeat(Math.floor((n - 1) / 26) + 1);
   return upper ? out.toUpperCase() : out;
 }
 
@@ -383,15 +384,35 @@ export function renderListLevelText(
   ilvl: number,
   levelValues: readonly number[],
 ): string {
+  // For TOON we treat suffix as a display concern; keep label column trimmed.
+  return substituteLevelText(model, numId, ilvl, levelValues)?.text.trim() ?? '';
+}
+
+/**
+ * The level's `w:lvlText` with every placeholder replaced, untrimmed, and
+ * whether a placeholder named a level the list has never used (rendered 0).
+ * Null when the level is undefined.
+ */
+function substituteLevelText(
+  model: NumberingModel,
+  numId: string,
+  ilvl: number,
+  levelValues: readonly number[],
+): { text: string; lvlText: string; usesUnusedLevel: boolean; namesDeeperLevel: boolean } | null {
   const level = getNumberingLevel(model, numId, ilvl);
-  if (!level) return '';
+  if (!level) return null;
   const lvlText = level.lvlText || `%${ilvl + 1}.`;
-  const rendered = lvlText.replace(/%(\d+)/g, (_m, nStr) => {
+  let usesUnusedLevel = false;
+  let namesDeeperLevel = false;
+  const text = lvlText.replace(/%(\d+)/g, (_m, nStr) => {
     const levelNum = Number.parseInt(String(nStr), 10) - 1;
     if (Number.isNaN(levelNum) || levelNum < 0) return '';
+    if (levelNum > ilvl) namesDeeperLevel = true;
     const counter = levelValues[levelNum];
     // A level never used renders as 0, as before the NaN sentinel existed.
-    const v = counter === undefined || Number.isNaN(counter) ? 0 : counter;
+    const unused = counter === undefined || Number.isNaN(counter);
+    if (unused) usesUnusedLevel = true;
+    const v = unused ? 0 : counter;
     const lvlDef = getNumberingLevel(model, numId, levelNum);
     const fmt = lvlDef?.numFmt ?? 'decimal';
     // Legal numbering (w:isLgl) shows every placeholder as an Arabic numeral.
@@ -404,9 +425,111 @@ export function renderListLevelText(
     }
     return formatCounter(fmt, v);
   });
+  return { text, lvlText, usesUnusedLevel, namesDeeperLevel };
+}
 
-  // For TOON we treat suffix as a display concern; keep label column trimmed.
-  return rendered.trim();
+/** The lowest level a level text's placeholders name, or `ilvl` when it names none. */
+function lowestReferencedLevel(lvlText: string, ilvl: number): number {
+  let lowest = ilvl;
+  for (const match of lvlText.matchAll(/%(\d+)/g)) {
+    const levelNum = Number.parseInt(match[1]!, 10) - 1;
+    if (levelNum >= 0 && levelNum < lowest) lowest = levelNum;
+  }
+  return lowest;
+}
+
+/** Remove one trailing period, the only character Word strips from a referenced number. */
+function withoutTrailingPeriod(text: string): string {
+  return text.endsWith('.') ? text.slice(0, -1) : text;
+}
+
+/**
+ * Which paragraph number a `REF` field's number switch asks for: `\w` (the
+ * number in full context) or `\n` (the paragraph's own level text).
+ */
+export type ReferenceNumberForm = 'fullContext' | 'paragraph';
+
+/** Why no reference number is offered for a numbered paragraph. */
+export type ReferenceNumberRefusal =
+  /** The number depends on a level the list has never used: Word shows its start value, safe-docx's counters 0. */
+  | 'unusedLevel'
+  /** A level text in the number names a deeper level: Word then shows no number at all (a REF field shows 0). */
+  | 'deeperLevel'
+  /** The level or numbering instance is not defined. */
+  | 'undefinedLevel';
+
+/**
+ * The number a `REF` field shows for a numbered paragraph, as Word for Mac
+ * 16.114 computes it after updating fields, or why none is offered. A number
+ * Word would show differently from what safe-docx can compute is refused
+ * rather than guessed.
+ *
+ * - `paragraph` (`\n`): the paragraph's level text, untrimmed, less one
+ *   trailing period ("2." → "2", "Article I." → "Article I", "1.." → "1.").
+ * - `fullContext` (`\w`): the level text, preceded by the level text of the
+ *   level above the lowest one it names, and so on until level 0 is named:
+ *   "(b)" under "Section %1.%2" reads "Section 2.06(b)", because that level
+ *   already names level 0; "(b)" under "%1." reads "2(b)". One trailing
+ *   period is dropped from the last part, and from a part followed by a part
+ *   starting with "(" ("2." + "(b)" → "2(b)", but "2." + "b." → "2.b",
+ *   "1." + "[a]" → "1.[a]").
+ *
+ * § 17.16.5.51 defines the switches: `\n` gives the number "without trailing
+ * periods" and `\w` the number "in full context". How Word assembles the
+ * context and which periods it drops between parts is measured, not
+ * specified; the evidence is in
+ * scripts/oracle/word/evidence/issue-1236-word-16.114.json. § 17.9.11 says a
+ * placeholder naming a deeper level is ignored, but Word 16.114 shows no
+ * number for such a level (its REF fields show 0), so that case is refused.
+ * LibreOffice 26.2 recalculates these fields on load and keeps the period
+ * before "(" ("2.(b)").
+ *
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.16.5.51 — follows Word: one trailing period is removed, and a period before "(" inside a full-context number
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.9.11 — follows Word: a level text naming a deeper level shows no number, so no reference number is offered
+ */
+export function resolveReferenceNumber(
+  model: NumberingModel,
+  snapshot: Pick<ListLabelSnapshot, 'numId' | 'ilvl' | 'levelValues'>,
+  form: ReferenceNumberForm,
+): { text: string } | { refused: ReferenceNumberRefusal } {
+  const levelText = (ilvl: number): { text: string; lvlText: string } | { refused: ReferenceNumberRefusal } => {
+    const part = substituteLevelText(model, snapshot.numId, ilvl, snapshot.levelValues);
+    if (!part) return { refused: 'undefinedLevel' };
+    if (part.namesDeeperLevel) return { refused: 'deeperLevel' };
+    if (part.usesUnusedLevel) return { refused: 'unusedLevel' };
+    return part;
+  };
+  const own = levelText(snapshot.ilvl);
+  if ('refused' in own) return own;
+  if (form === 'paragraph') return { text: withoutTrailingPeriod(own.text) };
+
+  const parts = [own.text];
+  let lowest = lowestReferencedLevel(own.lvlText, snapshot.ilvl);
+  while (lowest > 0) {
+    const ilvl = lowest - 1;
+    const part = levelText(ilvl);
+    if ('refused' in part) return part;
+    parts.unshift(part.text);
+    lowest = Math.min(lowestReferencedLevel(part.lvlText, ilvl), ilvl);
+  }
+  return {
+    text: parts
+      .map((part, index) => {
+        const next = parts[index + 1];
+        return next === undefined || next.startsWith('(') ? withoutTrailingPeriod(part) : part;
+      })
+      .join(''),
+  };
+}
+
+/** {@link resolveReferenceNumber}'s text, or null when no number is offered. */
+export function renderReferenceNumber(
+  model: NumberingModel,
+  snapshot: Pick<ListLabelSnapshot, 'numId' | 'ilvl' | 'levelValues'>,
+  form: ReferenceNumberForm,
+): string | null {
+  const result = resolveReferenceNumber(model, snapshot, form);
+  return 'text' in result ? result.text : null;
 }
 
 /**
