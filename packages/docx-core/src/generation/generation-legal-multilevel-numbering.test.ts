@@ -442,6 +442,7 @@ describe('Traceability: legal multilevel numbering', () => {
         expectSpecError(level({ tabs: [{ posTwips: -5, align: 'left' }] }), 'invalid_value', '/numbering/0/levels/0/tabs/0/posTwips');
         expectSpecError(level({ tabs: [{ posTwips: 720, align: 'left', leader: 'hyphen' }] }), 'invalid_value', '/numbering/0/levels/0/tabs/0/leader');
         expectSpecError(level({ tabs: { posTwips: 720 } }), 'invalid_value', '/numbering/0/levels/0/tabs');
+        expectSpecError(level({ tabs: [null] }), 'invalid_value', '/numbering/0/levels/0/tabs/0', /must be objects/);
       });
     },
   );
@@ -533,6 +534,13 @@ describe('Traceability: legal multilevel numbering', () => {
           ]);
         const restart = [{ ilvl: 0, startOverride: 1 }];
         expectSpecError(instances({ numId: 'x' }), 'invalid_value', '/numbering/0/instances');
+        expectSpecError(instances([null]), 'invalid_value', '/numbering/0/instances/0', /must be objects/);
+        expectSpecError(
+          instances([{ numId: 'x', levelOverrides: [null] }]),
+          'invalid_value',
+          '/numbering/0/instances/0/levelOverrides/0',
+          /must be objects/,
+        );
         expectSpecError(instances([{ levelOverrides: restart }]), 'invalid_value', '/numbering/0/instances/0/numId');
         expectSpecError(instances([{ numId: 'n', levelOverrides: restart }]), 'invalid_value', '/numbering/0/instances/0/numId', /Duplicate/);
         expectSpecError(instances([{ numId: 'm', levelOverrides: restart }]), 'invalid_value', '/numbering/0/instances/0/numId', /Duplicate/);
@@ -672,6 +680,52 @@ describe('Traceability: legal multilevel numbering', () => {
       await and('bullet placeholders stay glyphs under isLgl and a startOverride instance starts at its override', async () => {
         expect(labels[10]).toBe('• 1');
         expect(labels[11]).toBe('IV.');
+      });
+
+      await and('lvlRestart 2 restarts its level only when level one or two is used', async () => {
+        const model = parseNumberingXml(
+          parseXml(
+            '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="0">' +
+              '<w:lvl w:ilvl="0"><w:numFmt w:val="upperRoman"/><w:lvlText w:val="%1."/></w:lvl>' +
+              '<w:lvl w:ilvl="1"><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2"/></w:lvl>' +
+              '<w:lvl w:ilvl="2"><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="(%3)"/></w:lvl>' +
+              '<w:lvl w:ilvl="3"><w:numFmt w:val="lowerRoman"/><w:lvlRestart w:val="2"/><w:lvlText w:val="(%4)"/></w:lvl>' +
+              '</w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>',
+          ),
+        );
+        const counters: NumberingCounters = new Map();
+        const at = (ilvl: number) => computeListLabelForParagraph(model, counters, { numId: '1', ilvl });
+        // (i) continues across lettered clauses, restarts at the next Section.
+        expect([at(0), at(1), at(2), at(3), at(2), at(3), at(1), at(2), at(3)]).toEqual([
+          'I.', 'I.1', '(a)', '(i)', '(b)', '(ii)', 'I.2', '(a)', '(i)',
+        ]);
+      });
+
+      await and('levels starting at zero or below count up through zero, and decimalZero pads only one through nine', async () => {
+        const labelsFor = async (numFmt: 'decimal' | 'decimalZero', startOverride: number) => {
+          const buffer = await generateDocx({
+            meta: { createdIso: CREATED },
+            numbering: [
+              {
+                numId: 'n',
+                levels: [
+                  { ilvl: 0, numFmt, lvlText: '%1' },
+                  { ilvl: 1, numFmt: 'lowerLetter', lvlText: '(%2)' },
+                ],
+                instances: [{ numId: 'restart', levelOverrides: [{ ilvl: 0, startOverride }] }],
+              },
+            ],
+            sections: [
+              {
+                blocks: [0, 0, 1, 0, 0].map((ilvl) => ({ kind: 'paragraph' as const, list: { numId: 'restart', ilvl }, runs: text('x') })),
+              },
+            ],
+          });
+          return readSideLabels(buffer);
+        };
+        expect(await labelsFor('decimal', 0)).toEqual(['0', '1', '(a)', '2', '3']);
+        expect(await labelsFor('decimalZero', 0)).toEqual(['0', '01', '(a)', '02', '03']);
+        expect(await labelsFor('decimal', -1)).toEqual(['-1', '0', '(a)', '1', '2']);
       });
     },
   );

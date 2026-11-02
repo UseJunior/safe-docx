@@ -415,6 +415,7 @@ export type NumberingSpec = {
    * Spec-level handle of the definition's default instance; the compiler
    * assigns numeric w:numId / abstractNumId. Default instances take numeric
    * ids 1..N in declaration order; additional `instances` follow from N+1.
+   * Numeric ids are compile-local: reference lists by these string handles.
    */
   numId: string;
   levels: NumberingLevelSpec[];

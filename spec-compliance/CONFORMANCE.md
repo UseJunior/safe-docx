@@ -1337,9 +1337,10 @@ construction, so the reference can never dangle.
 
 Instances carry sequential numeric `w:numId` values: default instances take
 1..N in declaration order, and additional instances (`NumberingSpec.instances`)
-follow from N+1, so adding an instance never renumbers an existing one. The
-spec-level string handle → numeric id map is what paragraph references bind
-through.
+follow from N+1, so adding an instance never renumbers a default instance.
+Additional instances' ids depend on the instances declared before them, so
+numeric ids are compile-local; the spec-level string handle → numeric id map
+is what paragraph references bind through.
 
 ### ECMA-PART1-17-9-18 — w:numId numbering instance reference
 

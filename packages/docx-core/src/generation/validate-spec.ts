@@ -264,6 +264,9 @@ function validateNumbering(definitions: NumberingSpec[], styles: StyleSpec[]): M
     }
     definition.instances.forEach((instance, instanceIndex) => {
       const instancePath = `/numbering/${index}/instances/${instanceIndex}`;
+      if (typeof instance !== 'object' || instance === null) {
+        throw new GenerationSpecError('invalid_value', instancePath, 'Numbering instances must be objects');
+      }
       if (!instance.numId) {
         throw new GenerationSpecError('invalid_value', `${instancePath}/numId`, 'Numbering instances require a numId handle');
       }
@@ -331,9 +334,12 @@ function validateLevelOverrides(overrides: unknown, path: string, levels: Readon
     );
   }
   const seen = new Set<number>();
-  overrides.forEach((override: { ilvl?: unknown; startOverride?: unknown }, overrideIndex) => {
+  overrides.forEach((override: { ilvl?: unknown; startOverride?: unknown } | null, overrideIndex) => {
     const overridePath = `${path}/${overrideIndex}`;
-    const ilvl = override?.ilvl;
+    if (typeof override !== 'object' || override === null) {
+      throw new GenerationSpecError('invalid_value', overridePath, 'Level overrides must be objects');
+    }
+    const ilvl = override.ilvl;
     if (typeof ilvl !== 'number' || !levels.has(ilvl)) {
       throw new GenerationSpecError(
         'dangling_numbering_reference',
@@ -716,6 +722,9 @@ function validateTabStops(tabs: TabStopSpec[], path: string): void {
     throw new GenerationSpecError('invalid_value', path, 'tabs must be an array of tab stops');
   }
   tabs.forEach((stop, i) => {
+    if (typeof stop !== 'object' || stop === null) {
+      throw new GenerationSpecError('invalid_value', `${path}/${i}`, 'Tab stops must be objects');
+    }
     requireInteger(stop.posTwips, `${path}/${i}/posTwips`, 'Tab stop position must be a non-negative safe integer in twips', 0);
     if (!TAB_ALIGNMENTS.has(stop.align)) throw new GenerationSpecError('invalid_value', `${path}/${i}/align`, `Unsupported tab alignment '${stop.align}'`);
     if (stop.leader !== undefined && !TAB_LEADERS.has(stop.leader)) throw new GenerationSpecError('invalid_value', `${path}/${i}/leader`, `Unsupported tab leader '${stop.leader}'`);

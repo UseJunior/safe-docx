@@ -151,8 +151,8 @@ function formatCounter(numFmt: string, n: number): string {
     case 'decimal':
       return String(n);
     case 'decimalZero':
-      // Zero-padded for one through nine (01 … 09); 10 and above unchanged.
-      return n >= 0 && n < 10 ? `0${n}` : String(n);
+      // A leading zero only for one through nine (§ 17.18.59): 0 stays "0".
+      return n >= 1 && n <= 9 ? `0${n}` : String(n);
     case 'lowerLetter':
       return toLetters(n, false);
     case 'upperLetter':
@@ -227,12 +227,14 @@ export function computeListLabelForParagraph(
     counters.set(numId, arr);
   }
 
-  // Ensure array has at least ilvl+1 entries.
-  while (arr.length <= ilvl) arr.push(0);
+  // Ensure array has at least ilvl+1 entries. NaN marks a level not yet
+  // used, so a level whose legitimate value is 0 (start or startOverride 0,
+  // or a negative start counting up through 0) is not re-initialized.
+  while (arr.length <= ilvl) arr.push(Number.NaN);
 
   // Initialize this level to start-1 if it hasn't been set yet.
   const startThis = getStartForLevel(model, numId, ilvl);
-  if (arr[ilvl] === 0) arr[ilvl] = startThis - 1;
+  if (Number.isNaN(arr[ilvl]!)) arr[ilvl] = startThis - 1;
 
   // Increment this level.
   arr[ilvl] = arr[ilvl]! + 1;
@@ -254,11 +256,16 @@ export function computeListLabelForParagraph(
   const rendered = lvlText.replace(/%(\d+)/g, (_m, nStr) => {
     const levelNum = Number.parseInt(String(nStr), 10) - 1;
     if (Number.isNaN(levelNum) || levelNum < 0) return '';
-    const v = arr[levelNum] ?? 0;
+    const counter = arr[levelNum];
+    // A level never used renders as 0, as before the NaN sentinel existed.
+    const v = counter === undefined || Number.isNaN(counter) ? 0 : counter;
     const lvlDef = getNumberingLevel(model, numId, levelNum);
     const fmt = lvlDef?.numFmt ?? 'decimal';
-    // Legal numbering (w:isLgl) shows every placeholder as an Arabic numeral;
-    // zero-padded decimal levels keep their padding ("Section 2.01").
+    // Legal numbering (w:isLgl) shows every placeholder as an Arabic numeral.
+    // Following Word rather than the letter of § 17.9.4: zero-padded decimal
+    // levels keep their padding ("Section 2.01", observed in Word and
+    // LibreOffice), and a `none` level stays empty ([MS-OE376]); bullet glyphs
+    // are not numbers, so they stay glyphs.
     if (level.isLgl && fmt !== 'decimalZero' && fmt !== 'bullet' && fmt !== 'none') {
       return formatCounter('decimal', v);
     }

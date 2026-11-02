@@ -29,7 +29,7 @@ same bytes as before.
 - **WHEN** the document is generated
 - **THEN** the level `w:pPr` SHALL carry `w:tabs` before `w:ind`, and `w:ind` SHALL carry the authored `left` and `firstLine`
 - **AND** tab stops without an indent SHALL emit a `w:pPr` holding only `w:tabs`
-- **AND** `firstLine` together with `hanging`, a negative `firstLine`, or a malformed tab stop SHALL be rejected with a validation error
+- **AND** `firstLine` together with `hanging`, a negative `firstLine`, or a malformed or non-object tab stop SHALL be rejected with a validation error
 
 #### Scenario: [SDX-GEN-115] numbering instances restart a definition
 - **GIVEN** a definition declaring additional `instances` with `levelOverrides`
@@ -37,7 +37,7 @@ same bytes as before.
 - **THEN** default instances SHALL keep numeric ids `1..N` in declaration order and additional instances SHALL follow from `N+1`, each referencing its definition's abstract id
 - **AND** each additional instance SHALL carry one `w:lvlOverride` per override in ascending `ilvl`, each holding only `w:startOverride`
 - **AND** paragraphs naming an instance handle SHALL reference that instance's numeric id
-- **AND** an instance with no overrides, a duplicate handle, an override of an undeclared or repeated level, or a non-integer `startOverride` SHALL be rejected with a validation error
+- **AND** a non-object instance or override, an instance with no overrides, a duplicate handle, an override of an undeclared or repeated level, or a non-integer `startOverride` SHALL be rejected with a validation error
 
 #### Scenario: [SDX-GEN-116] a two-article agreement carries US legal outline numbering
 - **GIVEN** a two-article agreement whose Article and Section headings only apply Heading 1 / Heading 2, linked to an `upperRoman` "ARTICLE %1" level and a legal `decimalZero` "Section %1.%2" level
@@ -53,3 +53,4 @@ same bytes as before.
 - **THEN** an `isLgl` level SHALL print every placeholder as an Arabic numeral, keeping `decimalZero` padding (`1.09`, `1.10`) and bullet glyphs
 - **AND** `lvlRestart` `0` SHALL never restart its level, and `lvlRestart` `r` SHALL restart it only when one of the first `r` levels is used
 - **AND** a `startOverride` instance SHALL start its level at the override value
+- **AND** a level starting at zero or below SHALL count up through zero, and `decimalZero` SHALL pad only one through nine

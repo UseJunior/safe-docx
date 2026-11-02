@@ -3159,7 +3159,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num",
-      "claimRationale": "Instances carry sequential numeric `w:numId` values: default instances take\n1..N in declaration order, and additional instances (`NumberingSpec.instances`)\nfollow from N+1, so adding an instance never renumbers an existing one. The\nspec-level string handle → numeric id map is what paragraph references bind\nthrough.",
+      "claimRationale": "Instances carry sequential numeric `w:numId` values: default instances take\n1..N in declaration order, and additional instances (`NumberingSpec.instances`)\nfollow from N+1, so adding an instance never renumbers a default instance.\nAdditional instances' ids depend on the instances declared before them, so\nnumeric ids are compile-local; the spec-level string handle → numeric id map\nis what paragraph references bind through.",
       "evidence": [
         {
           "kind": "source",

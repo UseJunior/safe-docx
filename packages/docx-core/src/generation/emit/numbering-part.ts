@@ -7,8 +7,10 @@
  * ids. A definition's additional `instances` become further `w:num` elements
  * after every default instance (ids N+1, N+2, … in declaration order), each
  * carrying its `w:lvlOverride`/`w:startOverride` restarts. Appending them
- * after the defaults means adding an instance never renumbers an existing
- * one. The returned map is what lets paragraph `w:numPr` references bind to
+ * after the defaults keeps every default instance's id stable when instances
+ * are added; additional instances' ids depend on the instances declared
+ * before them, so numeric ids are compile-local and callers keep the string
+ * handles. The returned map is what lets paragraph `w:numPr` references bind to
  * the numeric `w:numId` deterministically.
  *
  * Level children follow the CT_Lvl sequence (start, numFmt, lvlRestart,
@@ -60,7 +62,7 @@ export function emitNumberingPartIfNeeded(spec: DocumentSpec, ctx: CompileContex
     ids.set(definition.numId, index + 1);
   });
   // Additional instances take ids after every default instance, so adding one
-  // never shifts the id of an existing default instance.
+  // never shifts a default instance's id.
   const additional: Array<{ instance: NumberingInstanceSpec; abstractId: number; numericId: number }> = [];
   definitions.forEach((definition, index) => {
     for (const instance of definition.instances ?? []) {
