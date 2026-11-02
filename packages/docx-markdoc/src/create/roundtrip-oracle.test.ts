@@ -195,6 +195,44 @@ describe('Traceability: independent round-trip oracle for created documents', ()
     },
   );
 
+  test.openspec('[SDX-MDOC-CREATE-12] a justified line exported without spaces still matches, and a real change on it still fails')(
+    'Scenario: a justified line exported without spaces still matches, and a real change on it still fails',
+    async () => {
+      // LibreOffice exported this justified line of the #1239 purchase agreement without space glyphs, so
+      // pdftotext -raw reads it as one token (#1242).
+      const source: SourceProjection = {
+        body: [{ text: '"Purchase Price") shall be an amount equal to (a) the Base Purchase Price, plus (b) the Closing Cash, less (c) the Closing Debt Amount, less (d) the amount, if any.' }],
+        footers: [null],
+      };
+      const page = (line: string) => `"Purchase Price") shall be\n${line}\nless (d) the amount, if any.\n`;
+      const joined = comparePdfWords(source, [page('anamountequalto(a)theBasePurchasePrice,plus(b)theClosingCash,less(c)theClosingDebtAmount,')]);
+      expect(joined).toMatchObject({ passed: true, missing: [], unexplainedExtra: [] });
+      expect(joined.knownGenerated.joinedLines).toEqual([{ page: 1, words: 'an amount equal to (a) the Base Purchase Price, plus (b) the Closing Cash, less (c) the Closing Debt Amount,' }]);
+      // The same line with spaces is unchanged.
+      expect(comparePdfWords(source, [page('an amount equal to (a) the Base Purchase Price, plus (b) the Closing Cash, less (c) the Closing Debt Amount,')])).toMatchObject({ passed: true, knownGenerated: { joinedLines: [] } });
+
+      // A word really dropped from, added to or moved within the run-together line still fails: the token
+      // spells no run of source words, so it stays whole.
+      for (const line of [
+        'anamountequalto(a)theBasePurchasePrice,plus(b)theClosingCash,less(c)theClosingAmount,',
+        'anamountequalto(a)theBasePurchasePrice,plus(b)theNetClosingCash,less(c)theClosingDebtAmount,',
+        'anamountequalto(a)theBasePurchasePrice,plus(b)theClosingCash,less(c)theDebtClosingAmount,',
+      ]) {
+        const changed = comparePdfWords(source, [page(line)]);
+        expect(changed.passed).toBe(false);
+        expect(changed.knownGenerated.joinedLines).toEqual([]);
+        expect(changed.unexplainedExtra.map((span) => span.words)).toEqual([line]);
+      }
+      // So does a run-together line that skips a whole source word at its edge.
+      const skipped = comparePdfWords(source, [page('amountequalto(a)theBasePurchasePrice,plus(b)theClosingCash,less(c)theClosingDebtAmount,')]);
+      expect(skipped).toMatchObject({ passed: false, missing: [{ words: 'an' }] });
+      // A space lost between two adjacent source words is accepted as a joined line (a stated limitation);
+      // a join that spells anything else is not.
+      expect(comparePdfWords({ body: [{ text: 'The Seller shall deliver.' }], footers: [null] }, ['The Sellershall deliver.\n'])).toMatchObject({ passed: true, knownGenerated: { joinedLines: [{ page: 1, words: 'Seller shall' }] } });
+      expect(comparePdfWords({ body: [{ text: 'The Seller shall deliver.' }], footers: [null] }, ['The Sellersshall deliver.\n']).passed).toBe(false);
+    },
+  );
+
   test.openspec('[SDX-MDOC-CREATE-12] each page carries the footer of its own section, and only a continuing table repeats its header')(
     'Scenario: each page carries the footer of its own section, and only a continuing table repeats its header',
     async () => {

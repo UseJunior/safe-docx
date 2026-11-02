@@ -394,6 +394,8 @@ export type PdfWordComparison = {
     repeatedTableHeaders: Array<{ page: number; table: number }>;
     /** Table rows found split across pages (cell fragments page by page) and read back in cell order. */
     splitRows: Array<{ table: number; row: number; pages: number[] }>;
+    /** Lines LibreOffice exported without space glyphs (one PDF token) that spell a run of consecutive source words exactly, and were split back into those words. */
+    joinedLines: Array<{ page: number; words: string }>;
   };
   limitations: string;
 };
@@ -466,6 +468,7 @@ export const PDF_WORD_LIMITATIONS =
   'The text layer is read with pdftotext -raw (content-stream order; LibreOffice writes each page\'s footer first, then the body in document order, except that a table row split across pages comes out as each cell\'s fragment on each page; such a row is read back in cell order only when its words partition exactly into those fragments, every cell starting on the first page, and the pages after the first stay pinned to that row and its section). ' +
   'List labels are expected words, and so is each footnote number, joined to the text around its reference (LibreOffice sets it as a superscript with no space). Footnote text is read from the foot of each page, after the body: the rest of a note continued from the page before, then each note that starts there (its number, then its text); read in page order these areas must spell every note exactly once and in order, and each note must start on the page holding its reference (for a table row split across pages, the page where the mark is printed). A page holding nothing but the rest of a continued note belongs to the content before it and must show that section\'s footer. A repeated table header is expected without its footnote numbers, as LibreOffice draws it. ' +
   'Every page break is explained from the source: the checker searches for where each page can start between the source words around it (including inside wordless content such as empty table rows), and a start fixes what the page must show first, namely its section\'s footer and page number, the table header LibreOffice repeats when a table continues across the break, and the source words at the top of the page. Sections start on new pages. ' +
+  'A justified line that LibreOffice exported without space glyphs reads back as one token; it is split back into words only when it spells, character for character, a run of two or more consecutive source words, so a word missing from, added to or moved within that line still fails, but a space lost between two adjacent source words on such a line cannot be seen. ' +
   'Two observed LibreOffice behaviours are assumed: a header row is never left alone at a page bottom (it stays with the first body row), and a table\'s last row can spill its empty remainder onto the next page, repeating the header there. ' +
   'The check passes only when every start that fits explains the same source words; if none fits, or starts that fit disagree (for example, a table with empty trailing rows followed by a table with the same header, or two such tables back to back at a page start), it fails. The text alone cannot always show layout, so such cases fail even when the PDF is right (a false failure); an ambiguity is never settled by a guess.';
 
@@ -537,7 +540,8 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
     return tokens.slice(regions[page]!.length, at);
   });
 
-  const bodies = pages.map((tokens, page) => tokens.slice(regions[page]!.length + headRuns[page]!.length));
+  const joined = splitJoinedLines(pages.map((tokens, page) => tokens.slice(regions[page]!.length + headRuns[page]!.length)), expected.map((token) => token.word));
+  const bodies = joined.bodies;
   // A page whose only text, besides its footer region, is the rest of a note continued from the page before.
   const noteOnly = new Set(bodies.flatMap((tokens, page) => (page > 0 && tokens.length === 0 && headRuns[page]!.length === 0 && footnoteAreas.continues[page] ? [page] : [])));
   // Where each body word physically sits, kept through the split-row rejoin (a reference's page is where its mark is printed).
@@ -628,9 +632,50 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
       listMarkers,
       repeatedTableHeaders,
       splitRows: split.rows.map(({ table, row, pages: spanned }) => ({ table, row, pages: spanned.map((page) => page + 1) })),
+      joinedLines: joined.lines.map(({ page, words }) => ({ page: page + 1, words })),
     },
     limitations: PDF_WORD_LIMITATIONS,
   };
+}
+
+/**
+ * A justified line that LibreOffice exported without space glyphs (observed with an underlined word on the
+ * line) reads back from `pdftotext -raw` as one token: "anamountequalto(a)the…". A body token that is not itself
+ * a source word is split back into words only where it equals, character for character, a run of two or more
+ * consecutive source words; when several runs match, the one nearest the token's own position is taken. A word
+ * missing from, added to or moved within that line leaves no such run, so the token stays whole and the
+ * alignment reports it.
+ */
+function splitJoinedLines(pages: readonly string[][], expected: readonly string[]): { bodies: string[][]; lines: Array<{ page: number; words: string }> } {
+  const known = new Set(expected);
+  const lines: Array<{ page: number; words: string }> = [];
+  let position = 0;
+  const bodies = pages.map((tokens, page) => tokens.flatMap((token) => {
+    const here = position;
+    position += 1;
+    if (known.has(token)) return [token];
+    let best: string[] | undefined;
+    let bestStart = -1;
+    for (let start = 0; start < expected.length; start += 1) {
+      if (!token.startsWith(expected[start]!)) continue;
+      let at = 0;
+      let end = start;
+      while (end < expected.length && at < token.length && token.startsWith(expected[end]!, at)) {
+        at += expected[end]!.length;
+        end += 1;
+      }
+      if (at !== token.length || end - start < 2) continue;
+      if (!best || Math.abs(start - here) < Math.abs(bestStart - here)) {
+        best = expected.slice(start, end);
+        bestStart = start;
+      }
+    }
+    if (!best) return [token];
+    position += best.length - 1;
+    lines.push({ page, words: best.join(' ') });
+    return best;
+  }));
+  return { bodies, lines };
 }
 
 /** A table row found split over `pages` (0-based, first to last). */

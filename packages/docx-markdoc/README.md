@@ -580,9 +580,13 @@ package, determinism, read-back and brownfield-import checks:
   trailing rows followed by a table with the same header. Each footnote
   number is expected where its reference sits, and each note's text is read
   from the foot of the page (a long note may continue at the foot of the
-  next); a note must start on the page that holds its reference. The
-  certificate's `pdf.words.limitations` states what the comparison cannot
-  catch.
+  next); a note must start on the page that holds its reference. LibreOffice
+  sometimes exports a justified line without spaces, so the text layer reads
+  it as one long token; such a token is split back into words only when it
+  spells a run of consecutive source words exactly, and the certificate lists
+  it under `knownGenerated.joinedLines`. A word dropped from, added to or moved
+  within that line still fails. The certificate's `pdf.words.limitations`
+  states what the comparison cannot catch.
 - **Footnotes.** Each note read back from `word/footnotes.xml`, and where
   its reference sits, must match the source, with a negative control. The
   round trip re-imports the notes as footnote annotations and compares their
