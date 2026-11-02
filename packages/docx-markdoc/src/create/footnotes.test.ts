@@ -61,6 +61,15 @@ async function part(docx: Buffer, name: string): Promise<Document> {
   return parseXml(await (await JSZip.loadAsync(docx)).file(name)!.async('string'));
 }
 
+/** Move the footnote reference out of `from` and into `to`, splitting `to`'s first text run at `offset`. */
+function moveReference(from: ParagraphSpec, to: ParagraphSpec, offset: number): void {
+  const reference = from.runs.find((run) => run.kind === 'footnote')!;
+  from.runs = from.runs.filter((run) => run !== reference);
+  const [first, ...rest] = to.runs;
+  if (first?.kind !== 'text') throw new Error('expected a text run first');
+  to.runs = [{ ...first, text: first.text.slice(0, offset) }, reference, { ...first, text: first.text.slice(offset) }, ...rest];
+}
+
 async function verificationFailure(promise: Promise<unknown>): Promise<CreationCertificate> {
   const error = await promise.then(() => undefined, (caught: unknown) => caught as { code?: string; details?: unknown });
   expect(error?.code).toBe('CREATION_VERIFICATION_FAILED');
@@ -299,7 +308,7 @@ describe('Traceability: footnotes in created documents', () => {
       }));
       expect(moved.checks.readback.passed).toBe(true);
       expect(moved.checks.footnotes.passed).toBe(true);
-      expect(moved.checks.roundTrip.footnotes?.references.mismatches).toEqual([{ note: 1, expected: 'Alpha beta‸ gamma.', actual: '‸Alpha beta gamma.' }]);
+      expect(moved.checks.roundTrip.footnotes?.references.mismatches).toEqual([{ note: 1, expected: 'paragraph 1: Alpha beta‸ gamma.', actual: 'paragraph 1: ‸Alpha beta gamma.' }]);
 
       // Two notes with the same text: swapping where they are referenced is still caught.
       const twins = 'One{% fnref id="a" /%} two{% fnref id="b" /%}.\n\n{% footnote id="a" %}Same.{% /footnote %}\n\n{% footnote id="b" %}Same.{% /footnote %}';
@@ -314,7 +323,49 @@ describe('Traceability: footnotes in created documents', () => {
           return lowering;
         },
       }));
-      expect(bunched.checks.roundTrip.footnotes?.references.mismatches).toEqual([{ note: 2, expected: 'One two‸.', actual: 'One‸ two.' }]);
+      expect(bunched.checks.roundTrip.footnotes?.references.mismatches).toEqual([{ note: 2, expected: 'paragraph 1: One two‸.', actual: 'paragraph 1: One‸ two.' }]);
+
+      // Moving a reference into another paragraph with the same text, at the same offset, is caught: the
+      // paragraph occurrence is part of the place. Likewise between table cells with the same text.
+      const note = '\n\n{% footnote id="a" %}Note words.{% /footnote %}';
+      const twinParagraphs = `Alpha{% fnref id="a" /%} beta.\n\nAlpha beta.${note}`;
+      expect((await createDocumentFromMarkdoc(twinParagraphs)).certificate.passed).toBe(true);
+      const elsewhere = await verificationFailure(createDocumentFromMarkdoc(twinParagraphs, {
+        transformLowering(lowering) {
+          const blocks = lowering.spec.sections[0]!.blocks as ParagraphSpec[];
+          moveReference(blocks[0]!, blocks[1]!, 5);
+          lowering.projection.footnoteReferences[0]!.paragraph = 1;
+          return lowering;
+        },
+      }));
+      expect(elsewhere.checks.readback.passed).toBe(true);
+      expect(elsewhere.checks.roundTrip.footnotes?.references.mismatches).toEqual([{ note: 1, expected: 'paragraph 1: Alpha‸ beta.', actual: 'paragraph 2: Alpha‸ beta.' }]);
+      const twinCells = `{% table %}\n* Heading\n---\n* Alpha{% fnref id="a" /%} beta.\n---\n* Alpha beta.\n{% /table %}${note}`;
+      expect((await createDocumentFromMarkdoc(twinCells)).certificate.passed).toBe(true);
+      const otherCell = await verificationFailure(createDocumentFromMarkdoc(twinCells, {
+        transformLowering(lowering) {
+          const table = lowering.spec.sections[0]!.blocks.find((block) => block.kind === 'table')!;
+          const cell = (row: number) => table.rows[row]!.cells[0]!.blocks[0] as ParagraphSpec;
+          moveReference(cell(1), cell(2), 5);
+          lowering.projection.footnoteReferences[0]!.paragraph += 1;
+          return lowering;
+        },
+      }));
+      expect(otherCell.checks.readback.passed).toBe(true);
+      expect(otherCell.checks.roundTrip.footnotes?.references.mismatches).toEqual([{ note: 1, expected: 'paragraph 2: Alpha‸ beta.', actual: 'paragraph 3: Alpha‸ beta.' }]);
+
+      // A literal caret in the source does not let a moved reference compare equal: places are compared field by field.
+      const caret = `Alpha‸{% fnref id="a" /%} beta.${note}`;
+      expect((await createDocumentFromMarkdoc(caret)).certificate.passed).toBe(true);
+      const acrossCaret = await verificationFailure(createDocumentFromMarkdoc(caret, {
+        transformLowering(lowering) {
+          const paragraph = lowering.spec.sections[0]!.blocks[0] as ParagraphSpec;
+          moveReference(paragraph, paragraph, 5);
+          lowering.projection.footnoteReferences[0]!.offset = 5;
+          return lowering;
+        },
+      }));
+      expect(acrossCaret.checks.roundTrip.footnotes?.references.passed).toBe(false);
     },
   );
 

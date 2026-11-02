@@ -586,7 +586,8 @@ package, determinism, read-back and brownfield-import checks:
 - **Footnotes.** Each note read back from `word/footnotes.xml`, and where
   its reference sits, must match the source, with a negative control. The
   round trip re-imports the notes as footnote annotations and compares their
-  paragraphs, and the text on either side of each reference, with the source.
+  paragraphs, and where each reference sits (which non-empty body paragraph,
+  and the text on either side of it), with the source.
   The text mirror lists the notes after the body.
 
 A check that finds a mismatch publishes nothing and leaves existing outputs,

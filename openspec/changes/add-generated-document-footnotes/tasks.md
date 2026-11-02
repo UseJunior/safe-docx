@@ -45,6 +45,6 @@
 - [x] 6.2 A generated document with a multi-paragraph note and a note that
       continues onto the next page renders in LibreOffice with each note at
       the foot of its page and the right numbers.
-- [ ] 6.3 The same document opens in Word for Mac without a repair prompt.
+- [x] 6.3 The same document opens in Word for Mac without a repair prompt.
 - [x] 6.4 Workspace build, lint, tests, spec coverage and conformance checks
       pass.

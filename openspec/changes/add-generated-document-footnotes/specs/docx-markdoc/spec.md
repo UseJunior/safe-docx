@@ -44,7 +44,7 @@ its read-back, round-trip and PDF checks.
 - **AND** import SHALL admit the `w:bCs` and `w:iCs` twins on text without complex-script characters, and SHALL fail closed with `ANNOTATION_IMPORT_UNSUPPORTED` when the text holds Hebrew, Arabic, Indic, Thai or other complex-script characters
 
 #### Scenario: [SDX-MDOC-FOOTNOTE-06] the round trip checks where each reference sits against the source
-- **GIVEN** a created document, and the same source built through a lowering that moves a reference and projects the moved place consistently, and two notes with the same text whose references are moved together
+- **GIVEN** a created document, and the same source built through a lowering that moves a reference and projects the moved place consistently: within its paragraph, into another paragraph or table cell with the same text, or across a literal `‸` in the text; and two notes with the same text whose references are moved together
 - **WHEN** each is verified
-- **THEN** the round trip SHALL compare, in reference order, the text before and after each reference in its paragraph, taken from the source, with the same text around each imported footnote anchor, with a negative control that moves one reference
+- **THEN** the round trip SHALL compare, in reference order and field by field, the place of each reference taken from the source (which non-empty body paragraph holds it, counted independently on each side, and the text before and after it) with the place of each imported footnote anchor, with negative controls that move one reference within its paragraph and to a neighbouring paragraph
 - **AND** the moved references SHALL fail the build even though the read-back check, which compares with the lowering's own projection, passes
