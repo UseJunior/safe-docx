@@ -2,6 +2,8 @@ import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { parseXml, type ParagraphSpec } from '@usejunior/docx-core';
 import { testAllure } from '../../../docx-core/src/testing/allure-test.js';
+import { defaultPreset } from '../markdocx/default-theme.js';
+import type { InlineStyle, Theme } from '../markdocx/engine.js';
 import { renderMarkdocxToDocumentSpec } from '../markdocx/render.js';
 import { createDocumentFromMarkdoc } from './create.js';
 import { lowerCreationMarkdoc } from './lower.js';
@@ -142,6 +144,28 @@ describe('Traceability: inline underline in created documents', () => {
       expect(cell).toEqual([{ text: 'Cash', u: 'single' }]);
       expect(signer!.filter((run) => run.u)).toEqual([{ text: 'Jane Roe', u: 'single' }]);
 
+      // {% u %} keeps its surroundings: a bracket fill-in crossing its boundary stays highlighted, a legend stays
+      // unhighlighted, and a {% u %} inside another adds nothing. (Validating u like literal would break all three.)
+      const brackets = await createDocumentFromMarkdoc([
+        '---', 'fill-ins: brackets', '---', '',
+        'Pay {% u %}[the{% /u %} Price] and [the {% u %}Fee]{% /u %} now.', '',
+        '{% u %}outer {% u %}inner{% /u %} outer{% /u %}.', '',
+        '{% legend %}The {% u %}[term]{% /u %}.{% /legend %}',
+      ].join('\n'));
+      expect(brackets.certificate.passed).toBe(true);
+      const [crossing, nested, legend] = await bodyRuns(brackets.docx);
+      expect(crossing).toEqual([
+        { text: 'Pay ' },
+        { text: '[the', u: 'single', highlight: 'yellow' },
+        { text: ' Price]', highlight: 'yellow' },
+        { text: ' and ' },
+        { text: '[the ', highlight: 'yellow' },
+        { text: 'Fee]', u: 'single', highlight: 'yellow' },
+        { text: ' now.' },
+      ]);
+      expect(nested).toEqual([{ text: 'outer inner outer', u: 'single' }, { text: '.' }]);
+      expect(legend).toEqual([{ text: 'The ' }, { text: '[term]', u: 'single' }, { text: '.' }]);
+
       // A paragraph holding only {% u %} is a body paragraph, both when lowered and in the oracle's own reading of the source.
       expect(created.lowering.blocks.map((block) => block.kind)).toEqual(['heading', 'body', 'body', 'body', 'list', 'table', 'signer']);
       expect(projectSourceText(source).body.map((entry) => entry.text)).toContain('Defined Term');
@@ -168,8 +192,8 @@ describe('Traceability: inline underline in created documents', () => {
     },
   );
 
-  test.openspec('[SDX-MDOC-UNDERLINE-04] the generic engine underlines for any theme')(
-    'Scenario: the generic engine underlines for any theme',
+  test.openspec('[SDX-MDOC-UNDERLINE-04] the generic engine passes underline to the theme and the default preset underlines')(
+    'Scenario: the generic engine passes underline to the theme and the default preset underlines',
     () => {
       const spec = renderMarkdocxToDocumentSpec('Pay {% u %}**the**\n`Price`{% /u %} now.');
       const runs = (spec.sections[0]!.blocks[0] as ParagraphSpec).runs;
@@ -184,6 +208,11 @@ describe('Traceability: inline underline in created documents', () => {
       // A field inside {% u %} is underlined by the default preset as well.
       const field = renderMarkdocxToDocumentSpec('{% u %}{% field name="price" /%}{% /u %}', { resolveField: () => ({ text: 'Price', filled: false }) });
       expect((field.sections[0]!.blocks[0] as ParagraphSpec).runs).toEqual([{ kind: 'text', text: '[Price]', bold: true, italic: undefined, underline: 'single' }]);
+      // A custom theme receives underline in the inline style; turning it into run formatting is the theme's job.
+      const seen: Array<[string, InlineStyle['underline']]> = [];
+      const recording: Theme = { ...defaultPreset.theme, renderText: (text, style) => { seen.push([text, style.underline]); return [{ kind: 'text', text }]; } };
+      renderMarkdocxToDocumentSpec('The {% u %}*term*{% /u %}.', { preset: { ...defaultPreset, theme: recording } });
+      expect(seen).toEqual([['The ', undefined], ['term', 'single'], ['.', undefined]]);
     },
   );
 });

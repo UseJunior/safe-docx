@@ -5,11 +5,16 @@ import {throwUnhandledBlock, throwUnhandledTag} from './ast.js';
 
 /**
  * Inline formatting carried down the inline tree. `underline` is set by the
- * built-in `{% u %}…{% /u %}` tag; a theme copies it onto the runs it emits.
+ * built-in `{% u %}…{% /u %}` tag. Text and field runs are built by the
+ * theme, so a theme's `renderText` and `fieldRuns` must copy `underline` onto
+ * the runs they emit; a theme that copies only bold and italic drops it.
  */
 export type InlineStyle = {bold?: boolean; italic?: boolean; underline?: 'single'; breakLines?: boolean};
 
-/** The built-in underline tag; the engine renders it itself, so every consumer gets it without a plugin. */
+/**
+ * The built-in underline tag. Like `field`, it is reserved: the engine renders
+ * it itself, before inline plugins, so every consumer gets it without one.
+ */
 const UNDERLINE_TAG = 'u';
 
 /** The direct run formatting an engine-built text run carries for `style`. */
