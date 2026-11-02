@@ -631,6 +631,14 @@ such as an unclosed tag, and headings below `###`.
   may nest and may sit inside bold or italic text. A signer's name can hold
   one when written as content:
   `{% signer date="Date: ___" %}{% fill %}Name{% /fill %}, Director{% /signer %}`.
+- `{% u %}Purchase Price{% /u %}` underlines its content (single underline)
+  and nothing outside it, so `{% u %}Purchase Price{% /u %}.` leaves the
+  period plain. Use it for defined terms where they are defined, run-in
+  headings (`Section 2.04` then a tab, then
+  `{% u %}Closing Deliveries and Payments{% /u %}.`) and operator words
+  (`{% u %}less{% /u %} the Closing Debt Amount`). It nests with bold,
+  italic, fill-ins and `{% literal %}`, and takes no attributes. An empty
+  `{% u %}` fails with `INVALID_UNDERLINE`; `<u>…</u>` fails as HTML.
 - Bare brackets are ordinary text, never highlighted and never an error, even
   when unbalanced: `"[t]he Company"`, `[sic]`, `Section 2[(b)]`. A legend is
   never highlighted, so `{% fill %}` is not allowed inside it.
@@ -695,6 +703,7 @@ discard those edits.
 | `<!-- page-numbers -->` | frontmatter `page-numbers: true` |
 | `<!-- section: x footer="…" -->` | `{% section footer="…" /%}` |
 | `## 1. Heading` with a literal number, `(a) text` | `## Heading` plus an ordered list (real numbering) |
+| `<u>Purchase Price</u>` | `{% u %}Purchase Price{% /u %}` |
 | `[Effective Date]` as a highlighted blank | `{% fill %}Effective Date{% /fill %}` (or frontmatter `fill-ins: brackets`) |
 | `document_id:` frontmatter | `title:` / `author:` / `date:` |
 

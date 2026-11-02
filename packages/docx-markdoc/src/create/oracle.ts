@@ -97,13 +97,20 @@ function inlineText(node: MarkdocNode): string {
   }
 }
 
-/** The one tag a paragraph stands for when that tag is its only content. */
+/**
+ * Tags that stand for a whole block when they are a paragraph's only content.
+ * Inline tags (`fill`, `literal`, `u`) are never blocks: a paragraph holding
+ * only `{% u %}Defined Term{% /u %}` is still a body paragraph with that text.
+ */
+const BLOCK_TAGS: ReadonlySet<string> = new Set(['center', 'legend', 'signer', 'table', 'section', 'page-break']);
+
+/** The one block tag a paragraph stands for when that tag is its only content. */
 function soleTag(paragraph: MarkdocNode): MarkdocNode | undefined {
   if (paragraph.type !== 'paragraph') return undefined;
   const inline = paragraph.children.length === 1 && paragraph.children[0]!.type === 'inline' ? paragraph.children[0]! : undefined;
   const meaningful = inline?.children.filter((child) => !(child.type === 'text' && !String(child.attributes.content ?? '').trim())) ?? [];
   const only = meaningful.length === 1 ? meaningful[0]! : undefined;
-  return only?.type === 'tag' && only.tag !== 'fill' && only.tag !== 'literal' ? only : undefined;
+  return only?.type === 'tag' && BLOCK_TAGS.has(only.tag ?? '') ? only : undefined;
 }
 
 function paragraphsOfTag(node: MarkdocNode): MarkdocNode[] {
