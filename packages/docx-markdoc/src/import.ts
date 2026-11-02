@@ -149,6 +149,52 @@ function bodyFromParagraphs(
   });
 }
 
+/**
+ * Complex-script twins of admitted run properties (`w:szCs`, `w:bCs`,
+ * `w:iCs`). They format only complex-script text, so on a run without any they
+ * change nothing and are admitted; the generator writes `w:bCs`/`w:iCs` beside
+ * every `w:b`/`w:i`.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.39
+ */
+const COMPLEX_SCRIPT_TWINS: ReadonlySet<string> = new Set(['szCs', 'bCs', 'iCs']);
+
+/**
+ * Characters that may be laid out as complex script, where a complex-script
+ * twin would apply: right-to-left scripts (Hebrew, Arabic, Syriac, Thaana, NKo
+ * and the supplementary right-to-left blocks), the Indic scripts, and the
+ * Southeast and Central Asian scripts (Thai, Lao, Tibetan, Myanmar, Khmer,
+ * Mongolian, Tai, Balinese and their neighbours). Deliberately broad: a run
+ * holding any of them keeps the twin unadmitted, so import fails closed rather
+ * than dropping formatting that would show.
+ */
+const COMPLEX_SCRIPT_TEXT = /[\u0590-\u08FF\u0900-\u0DFF\u0E00-\u0FFF\u1000-\u109F\u1780-\u18AF\u1900-\u1AAF\u1B00-\u1C4F\uA800-\uABFF\uFB1D-\uFDFF\uFE70-\uFEFF\u{10800}-\u{10FFF}\u{11000}-\u{11FFF}\u{1E800}-\u{1EFFF}]/u;
+
+/**
+ * Drop the space run that Word, `add_footnote`, and generation put between a
+ * note's number and its text. It is part of the note's presentation, not of
+ * its body: compile writes it again when it re-emits the note, so keeping it
+ * in the body would double it on every round trip. Only a run holding exactly
+ * one space, the first text after the `w:footnoteRef` mark, is that separator.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.13
+ */
+function withoutMarkSeparatorSpace(body: AnnotationParagraph[], footnoteElement: Element): AnnotationParagraph[] {
+  const firstParagraph = footnoteElement.getElementsByTagNameNS(OOXML.W_NS, W.p).item(0);
+  if (!firstParagraph) return body;
+  const runs = Array.from(firstParagraph.getElementsByTagNameNS(OOXML.W_NS, W.r)) as Element[];
+  const markIndex = runs.findIndex((run) => run.getElementsByTagNameNS(OOXML.W_NS, W.footnoteRef).length > 0);
+  const firstText = runs.slice(markIndex + 1).find((run) => run.getElementsByTagNameNS(OOXML.W_NS, W.t).length > 0);
+  const separatorText = firstText ? Array.from(firstText.getElementsByTagNameNS(OOXML.W_NS, W.t)).map((t) => (t as Element).textContent ?? '').join('') : '';
+  const leading = body[0]?.runs[0];
+  if (markIndex === -1 || separatorText !== ' ' || !leading?.text.startsWith(' ')) return body;
+  const rest = leading.text.slice(1);
+  const runsAfter = rest ? [{ ...leading, text: rest }, ...body[0]!.runs.slice(1)] : body[0]!.runs.slice(1);
+  return [{ ...body[0]!, runs: runsAfter }, ...body.slice(1)];
+}
+
 function assertNamedStyle(styles: StylesModel, styleId: string, annotationId: string): void {
   const seen = new Set<string>();
   let current: string | null = styleId;
@@ -187,9 +233,9 @@ function assertAdmittedAnnotationElement(
     while (formattingOwner && formattingOwner !== container && formattingOwner.localName !== W.r && formattingOwner.localName !== W.p) {
       formattingOwner = formattingOwner.parentNode as Element | null;
     }
-    const harmlessComplexScriptFallback = element.localName === 'szCs'
+    const harmlessComplexScriptFallback = COMPLEX_SCRIPT_TWINS.has(element.localName)
       && (formattingOwner?.localName === W.r || formattingOwner?.localName === W.p)
-      && !/[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/u.test(formattingOwner.textContent ?? '');
+      && !COMPLEX_SCRIPT_TEXT.test(formattingOwner.textContent ?? '');
     if (!admitted.has(element.localName) && !harmlessComplexScriptFallback) {
       throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} contains unsupported w:${element.localName}.`, { annotationId, element: `w:${element.localName}` });
     }
@@ -220,8 +266,8 @@ function assertAdmittedAnnotationElement(
       const markerRun = Boolean(run?.getElementsByTagNameNS(OOXML.W_NS, marker).length);
       for (const property of Array.from(element.childNodes).filter((child) => child.nodeType === 1) as Element[]) {
         const allowed = ['b', 'i', 'u', 'color', 'highlight', 'sz'];
-        const nonApplicableFallback = property.localName === 'szCs'
-          && !/[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/u.test(run?.textContent ?? '');
+        const nonApplicableFallback = COMPLEX_SCRIPT_TWINS.has(property.localName)
+          && !COMPLEX_SCRIPT_TEXT.test(run?.textContent ?? '');
         if (property.localName === W.rStyle && !markerRun) {
           const styleId = property.getAttributeNS(OOXML.W_NS, W.val) ?? property.getAttribute('w:val');
           if (!styleId) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} has an empty run style reference.`, { annotationId, reason: 'missing-style-id' });
@@ -406,7 +452,7 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
     const reference = footnote.referencePoints[0]!;
     const anchor: AnnotationAnchor = { kind: 'point', point: { paragraphId: reference.paragraphId, offset: reference.textOffset } };
     annotations.push({
-      id, body: bodyFromParagraphs(footnote.paragraphs, footnoteElement, id, 'footnoteRef', hyperlinks), audience: 'unspecified', semanticRole: 'substantive-footnote',
+      id, body: withoutMarkSeparatorSpace(bodyFromParagraphs(footnote.paragraphs, footnoteElement, id, 'footnoteRef', hyperlinks), footnoteElement), audience: 'unspecified', semanticRole: 'substantive-footnote',
       sourcePresentation: 'footnote', sourceAnchor: anchor, anchor,
     });
   }

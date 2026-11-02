@@ -91,7 +91,7 @@ describe('Traceability: from-scratch generation skeleton', () => {
           '{"sections":[{"blocks":[{"kind":"contentControl","runs":[]}]}]}',
         ) as DocumentSpec;
         unknownInlineSpec = JSON.parse(
-          '{"sections":[{"blocks":[{"kind":"paragraph","runs":[{"kind":"footnote","text":"x"}]}]}]}',
+          '{"sections":[{"blocks":[{"kind":"paragraph","runs":[{"kind":"symbol","char":"F0E0"}]}]}]}',
         ) as DocumentSpec;
       });
 

@@ -106,6 +106,7 @@ export type {
   DocumentSpec,
   DraftingNoteSpec,
   FieldSpec,
+  FootnoteSpec,
   HeaderFooterSet,
   HeaderFooterSpec,
   InlineSpec,

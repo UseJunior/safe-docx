@@ -1,8 +1,8 @@
 /**
  * Inline-run emitter.
  *
- * Shipped: text runs with full RunProps formatting, tab and break runs, and
- * complete five-part complex fields. A FieldSpec compiles to
+ * Shipped: text runs with full RunProps formatting, tab and break runs,
+ * footnote reference runs, and complete five-part complex fields. A FieldSpec compiles to
  * begin → instruction text → separate → cached result → end so reading
  * applications always display a value without recomputation prompts — the
  * required `cachedResult` makes the no-recovery-dialog property
@@ -11,6 +11,7 @@
  */
 
 import { createWmlElement, createWmlTextElement } from '../../primitives/dom-helpers.js';
+import { buildFootnoteReferenceRun } from '../../primitives/footnote-shapes.js';
 import { W } from '../../primitives/namespaces.js';
 import { GenerationInternalError } from '../errors.js';
 import type { FieldSpec, InlineSpec, RunProps } from '../types.js';
@@ -73,6 +74,14 @@ export function buildInlineRuns(doc: Document, inline: InlineSpec, ctx?: BlockEm
     case 'break': {
       const attrs = inline.breakType === 'page' ? { 'w:type': 'page' } : undefined;
       return [makeRun(doc, {}, ctx, createWmlElement(doc, W.br, attrs))];
+    }
+    case 'footnote': {
+      // The note body is collected here and emitted to word/footnotes.xml
+      // once the body story is complete; the reference mark stays inline.
+      if (!ctx?.footnotes) {
+        throw new GenerationInternalError('A footnote reached the run emitter in a story that cannot carry footnotes');
+      }
+      return [buildFootnoteReferenceRun(doc, ctx.footnotes.allocate(inline))];
     }
     default:
       throw new GenerationInternalError(

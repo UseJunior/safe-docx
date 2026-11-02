@@ -136,6 +136,9 @@ export const W = {
   clrSchemeMapping: 'clrSchemeMapping',
   compat: 'compat',
   compatSetting: 'compatSetting',
+  uiPriority: 'uiPriority',
+  semiHidden: 'semiHidden',
+  unhideWhenUsed: 'unhideWhenUsed',
 
   // Styles part + paragraph/run formatting (generation emitters)
   docDefaults: 'docDefaults',
@@ -176,6 +179,7 @@ export const W = {
   footnoteRef: 'footnoteRef',
   separator: 'separator',
   continuationSeparator: 'continuationSeparator',
+  footnotePr: 'footnotePr',
 
   // Endnotes
   endnoteReference: 'endnoteReference',

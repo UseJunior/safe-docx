@@ -17,17 +17,20 @@ export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
   'page-break': new Set(),
   section: new Set(['footer', 'page-numbers']),
   table: new Set(['widths']),
+  footnote: new Set(['id']),
 };
 /**
  * Inline tags and the attributes each admits. `literal` makes its content
  * literal text and `fill` marks a fill-in (both checked below); `u` underlines
- * its content and, like `**` and `*`, keeps the context it sits in. A new inline
- * tag needs an entry here, a renderer (an engine branch or a creation theme
- * plugin) and, when it changes the text, a case in the round-trip oracle.
+ * its content and, like `**` and `*`, keeps the context it sits in; `fnref`
+ * places the reference mark of the `{% footnote %}` block with the same id. A
+ * new inline tag needs an entry here, a branch in `visit()` below, a renderer
+ * (an engine branch or a creation theme plugin) and, when it changes the text,
+ * a case in the round-trip oracle.
  */
-const INLINE_TAGS: Record<string, ReadonlySet<string>> = { literal: new Set(), fill: new Set(), u: new Set() };
+const INLINE_TAGS: Record<string, ReadonlySet<string>> = { literal: new Set(), fill: new Set(), u: new Set(), fnref: new Set(['id']) };
 /** Tags that structure the document and may appear only at the top level. */
-const TOP_LEVEL_ONLY = new Set(['page-break', 'section']);
+const TOP_LEVEL_ONLY = new Set(['page-break', 'section', 'footnote']);
 
 const LEGACY_HINTS: Array<[RegExp, string]> = [
   [/^<center\b/i, '{% center %}…{% /center %}'],
@@ -125,6 +128,17 @@ function inlineText(node: MarkdocNode, skipLiteral = false): string {
 
 /** True while validating a document whose frontmatter opts into bracket fill-ins (v0.24 behaviour). */
 let bracketFillIns = false;
+/** True while validating the paragraphs of a `{% footnote %}` body. */
+let inFootnoteBody = false;
+
+/** The id of a `{% fnref %}` or `{% footnote %}`: a non-empty string, else INVALID_FOOTNOTE. */
+function footnoteId(node: MarkdocNode, line: number | undefined): string {
+  const id = node.attributes.id;
+  if (typeof id !== 'string' || !id.trim()) {
+    creationError('INVALID_FOOTNOTE', `{% ${node.tag} %} requires a non-empty id="…", such as id="1".`, node, line);
+  }
+  return id;
+}
 
 /**
  * Check one run of inline content: admitted node types, legacy markup, and
@@ -141,6 +155,7 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
     if (markupText && pattern.test(markupText)) creationError('LEGACY_MARKUP', `Legacy markup '${markupText.slice(0, 40)}' is not supported; use ${hint}.`, undefined, line);
   }
   let depth = 0;
+  let fillDepth = 0;
   const visit = (node: MarkdocNode, literal: boolean): void => {
     switch (node.type) {
       case 'inline':
@@ -149,7 +164,9 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
         node.children.forEach((child) => visit(child, literal));
         return;
       case 'softbreak':
+        return;
       case 'hardbreak':
+        if (inFootnoteBody) creationError('INVALID_FOOTNOTE', 'A footnote cannot contain a line break; start a new paragraph instead.', node, line);
         return;
       case 'text': {
         const content = String(node.attributes.content ?? '');
@@ -169,14 +186,25 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
         return;
       }
       case 'tag': {
+        if (inFootnoteBody && (node.tag === 'fnref' || node.tag === 'footnote')) {
+          creationError('NESTED_FOOTNOTE', 'A footnote cannot contain another footnote or a footnote reference.', node, line);
+        }
         const allowed = INLINE_TAGS[node.tag ?? ''];
         if (!allowed) creationError('UNSUPPORTED_CREATION_SYNTAX', `Tag '{% ${node.tag} %}' cannot appear inside text.`, node, line);
         checkAttributes(node, allowed);
+        if (node.tag === 'fnref') {
+          footnoteId(node, line);
+          if (node.children.length > 0) creationError('INVALID_FOOTNOTE', '{% fnref /%} is self-closing; put the note text in a {% footnote %} block.', node, line);
+          if (literal || fillDepth > 0) creationError('INVALID_FOOTNOTE', `{% fnref /%} cannot appear inside {% ${literal ? 'literal' : 'fill'} %}.`, node, line);
+          return;
+        }
         if (node.tag === 'fill') {
           if (literal) creationError('INVALID_FILL_IN', '{% fill %} cannot appear inside {% literal %}.', node, line);
           if (!highlight) creationError('INVALID_FILL_IN', '{% fill %} cannot appear in a legend, which is never highlighted.', node, line);
           if (!node.children.map((child) => inlineText(child)).join('').trim()) creationError('INVALID_FILL_IN', '{% fill %} needs text, such as {% fill %}Effective Date{% /fill %}.', node, line);
+          fillDepth += 1;
           node.children.forEach((child) => visit(child, false));
+          fillDepth -= 1;
           return;
         }
         if (node.tag === 'u') {
@@ -291,6 +319,80 @@ function checkBlockTag(node: MarkdocNode, topLevel: boolean, line: number | unde
     case 'table':
       checkTable(node);
       return;
+    case 'footnote':
+      checkFootnoteBlock(node, line);
+      return;
+  }
+}
+
+/**
+ * A footnote body: one line of text, or paragraphs of text. Each paragraph
+ * may hold inline formatting, `{% u %}`, `{% fill %}` and `{% literal %}`,
+ * but not a list, table, heading, line break, or another footnote.
+ */
+function checkFootnoteBlock(node: MarkdocNode, line: number | undefined): void {
+  footnoteId(node, line);
+  if (node.children.length === 0) creationError('INVALID_FOOTNOTE', '{% footnote %} needs text, such as {% footnote id="1" %}See Section 2.{% /footnote %}.', node, line);
+  const blockForm = node.children.some((child) => child.type !== 'inline' && child.type !== 'text' && child.type !== 'tag' && child.type !== 'strong' && child.type !== 'em' && child.type !== 'softbreak' && child.type !== 'hardbreak');
+  inFootnoteBody = true;
+  try {
+    if (!blockForm) {
+      checkInline(node.children, line, true);
+      return;
+    }
+    for (const child of node.children) {
+      if (child.type === 'tag' && child.tag === 'footnote') creationError('NESTED_FOOTNOTE', 'A footnote cannot contain another footnote.', child);
+      if (child.type !== 'paragraph') creationError('INVALID_FOOTNOTE', `A footnote may contain only paragraphs of text, not '${child.type === 'tag' ? `{% ${child.tag} %}` : child.type}'.`, child);
+      if (soleInlineTag(child)?.tag === 'footnote') creationError('NESTED_FOOTNOTE', 'A footnote cannot contain another footnote.', child);
+      checkInline(child.children, lineOf(child), true);
+    }
+  } finally {
+    inFootnoteBody = false;
+  }
+}
+
+type FootnoteSite = { id: string; line?: number };
+
+/** Every `{% fnref %}` under `node`, in document order, with the line of its nearest block. */
+function collectReferences(node: MarkdocNode, line: number | undefined, out: FootnoteSite[]): void {
+  const here = lineOf(node) ?? line;
+  if (node.type === 'tag' && node.tag === 'fnref') out.push({ id: String(node.attributes.id), ...(here === undefined ? {} : { line: here }) });
+  for (const child of node.children) collectReferences(child, here, out);
+}
+
+/**
+ * Pair every reference with exactly one body: each id has one `{% footnote %}`
+ * block and one `{% fnref /%}`. Word gives every reference its own note, so a
+ * reference reused for a second mark is an error, as is an unused body.
+ */
+function checkFootnotePairs(children: MarkdocNode[]): void {
+  const bodies = new Map<string, FootnoteSite>();
+  const references: FootnoteSite[] = [];
+  for (const node of children) {
+    const tag = node.type === 'tag' ? node : soleInlineTag(node);
+    if (tag?.tag === 'footnote') {
+      const id = String(tag.attributes.id);
+      const at = lineOf(node);
+      if (bodies.has(id)) creationError('DUPLICATE_FOOTNOTE_ID', `Footnote id="${id}" is defined twice (first at line ${bodies.get(id)!.line ?? '?'}).`, undefined, at);
+      bodies.set(id, { id, ...(at === undefined ? {} : { line: at }) });
+    } else {
+      collectReferences(node, undefined, references);
+    }
+  }
+  const referenced = new Map<string, FootnoteSite>();
+  for (const reference of references) {
+    if (referenced.has(reference.id)) {
+      creationError('DUPLICATE_FOOTNOTE_REFERENCE', `Footnote id="${reference.id}" is referenced twice (first at line ${referenced.get(reference.id)!.line ?? '?'}); each reference needs its own footnote.`, undefined, reference.line);
+    }
+    referenced.set(reference.id, reference);
+    if (!bodies.has(reference.id)) {
+      creationError('FOOTNOTE_REFERENCE_WITHOUT_BODY', `{% fnref id="${reference.id}" /%} has no {% footnote id="${reference.id}" %} body.`, undefined, reference.line);
+    }
+  }
+  for (const body of bodies.values()) {
+    if (!referenced.has(body.id)) {
+      creationError('FOOTNOTE_BODY_WITHOUT_REFERENCE', `{% footnote id="${body.id}" %} is never referenced; add {% fnref id="${body.id}" /%} where its mark belongs.`, undefined, body.line);
+    }
   }
 }
 
@@ -306,8 +408,10 @@ export function validateCreationAst(children: MarkdocNode[], options: { fillIns?
   bracketFillIns = options.fillIns === 'brackets';
   try {
     validateBlocks(children);
+    checkFootnotePairs(children);
   } finally {
     bracketFillIns = false;
+    inFootnoteBody = false;
   }
 }
 

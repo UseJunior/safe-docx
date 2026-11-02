@@ -17,9 +17,10 @@ import { createZipBuffer, ZIP_EPOCH } from '../primitives/zip.js';
 import { maybeCaptureEmittedDocumentXml } from '../primitives/schema-corpus-capture.js';
 import { CompileContext } from './context.js';
 import { emitCommentsPartsIfNeeded } from './emit/comments-part.js';
-import { DraftingNoteCollector } from './emit/emit-context.js';
+import { DraftingNoteCollector, FootnoteCollector } from './emit/emit-context.js';
 import { emitDocumentPart } from './emit/document-part.js';
 import { emitFontTablePart } from './emit/font-table-part.js';
+import { emitFootnotesPartIfNeeded } from './emit/footnotes-part.js';
 import { emitHeaderFooterParts } from './emit/header-footer-part.js';
 import { emitNumberingPartIfNeeded } from './emit/numbering-part.js';
 import { emitPackageParts } from './emit/package-parts.js';
@@ -46,12 +47,17 @@ export async function generateDocx(spec: DocumentSpec, opts?: GenerateDocxOption
   const numberingIds = emitNumberingPartIfNeeded(spec, ctx);
   const headerFooterRefs = emitHeaderFooterParts(spec, ctx, { numberingIds, themeColorValues });
   const notes = notesEnabled ? new DraftingNoteCollector() : undefined;
-  const documentPartXml = emitDocumentPart(spec, headerFooterRefs, { numberingIds, notes, themeColorValues });
+  const footnotes = new FootnoteCollector();
+  const documentPartXml = emitDocumentPart(spec, headerFooterRefs, { numberingIds, notes, footnotes, themeColorValues });
   maybeCaptureEmittedDocumentXml(documentPartXml);
   ctx.setFileContent('word/document.xml', documentPartXml);
   if (notes) emitCommentsPartsIfNeeded(spec, ctx, notes);
-  emitStylesPart(spec, ctx, numberingIds);
-  emitSettingsPart(spec, ctx);
+  // Footnotes register after comments and only when the body holds one, so
+  // a document without footnotes keeps its relationship ids and bytes.
+  emitFootnotesPartIfNeeded(ctx, footnotes, { numberingIds, themeColorValues });
+  const hasFootnotes = footnotes.collected.length > 0;
+  emitStylesPart(spec, ctx, numberingIds, { footnotes: hasFootnotes });
+  emitSettingsPart(spec, ctx, { footnotes: hasFootnotes });
   // Standard ancillary parts every Word-authored package carries (issue #482):
   // theme → fontTable → webSettings, ordered for stable rId allocation. Package
   // plumbing must stay last — it assembles [Content_Types].xml from the registry.

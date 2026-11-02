@@ -87,9 +87,29 @@ async function existingKind(target: string): Promise<'file' | 'symlink' | 'other
   }
 }
 
+/**
+ * Body paragraphs as a PDF shows them: each footnote reference's number
+ * sits where the reference is, joined to the text around it.
+ */
+function paragraphsWithFootnoteNumbers(readback: CreatedDocument['readback']): string[] {
+  const marks = new Map<number, Array<{ offset: number; number: number }>>();
+  readback.footnoteReferences.forEach(({ paragraph, offset }, index) => {
+    marks.set(paragraph, [...(marks.get(paragraph) ?? []), { offset, number: index + 1 }]);
+  });
+  return readback.paragraphs.map((text, index) => {
+    let out = '';
+    let at = 0;
+    for (const { offset, number } of marks.get(index) ?? []) {
+      out += `${text.slice(at, offset)}${number}`;
+      at = offset;
+    }
+    return out + text.slice(at);
+  });
+}
+
 /** Text a rendered PDF must contain: the first and last paragraphs and every footer text. */
 export function requiredPdfText(created: CreatedDocument): string[] {
-  const paragraphs = created.readback.paragraphs.filter((paragraph) => paragraph.trim());
+  const paragraphs = paragraphsWithFootnoteNumbers(created.readback).filter((paragraph) => paragraph.trim());
   const title = paragraphs[0];
   const last = paragraphs.at(-1) ?? '';
   const lastNeedle = last.length > 120 ? last.slice(0, 80) : last;
@@ -485,6 +505,7 @@ async function createLocked(
       `created ${path.basename(outputs.docx)}: ${checks.readback.paragraphs} paragraphs, ${checks.footers.sections} section(s)`,
       `readback ok (negative control ok)`,
       `footers ok (negative control ok)`,
+      ...(checks.footnotes.notes > 0 ? [`footnotes ok (${checks.footnotes.notes} note${checks.footnotes.notes === 1 ? '' : 's'}; negative control ok)`] : []),
       'deterministic',
       `brownfield ok (${checks.brownfield.anchoredParagraphs} anchored)`,
       `round trip ok (${checks.roundTrip.body.expected} paragraphs; negative controls ok)`,

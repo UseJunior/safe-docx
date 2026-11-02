@@ -577,8 +577,18 @@ package, determinism, read-back and brownfield-import checks:
   footer and page number and any table header repeated at its top. Anything
   else, missing or extra, fails with `CREATION_PDF_WORDS_MISMATCH`, and so
   does a page break the text cannot pin down, such as a table with empty
-  trailing rows followed by a table with the same header. The certificate's `pdf.words.limitations`
-  states what the comparison cannot catch.
+  trailing rows followed by a table with the same header. Each footnote
+  number is expected where its reference sits, and each note's text is read
+  from the foot of the page (a long note may continue at the foot of the
+  next); a note must start on the page that holds its reference. The
+  certificate's `pdf.words.limitations` states what the comparison cannot
+  catch.
+- **Footnotes.** Each note read back from `word/footnotes.xml`, and where
+  its reference sits, must match the source, with a negative control. The
+  round trip re-imports the notes as footnote annotations and compares their
+  paragraphs, and where each reference sits (which non-empty body paragraph,
+  and the text on either side of it), with the source.
+  The text mirror lists the notes after the body.
 
 A check that finds a mismatch publishes nothing and leaves existing outputs,
 including an earlier `<stem>.verification.json`, as they were. It writes
@@ -639,6 +649,21 @@ such as an unclosed tag, and headings below `###`.
   (`{% u %}less{% /u %} the Closing Debt Amount`). It nests with bold,
   italic, fill-ins and `{% literal %}`, and takes no attributes. An empty
   `{% u %}` fails with `INVALID_UNDERLINE`; `<u>…</u>` fails as HTML.
+- `{% fnref id="price" /%}` places a footnote reference, and a top-level
+  `{% footnote id="price" %}See Schedule A.{% /footnote %}` block holds its
+  text. Put each block anywhere at the top level, such as after the paragraph
+  that references it. A note with several paragraphs puts the tags on their
+  own lines and the paragraphs, separated by blank lines, between them. The id
+  only pairs a reference with its block: notes are numbered 1, 2, 3 in the
+  order of their references. A note may hold bold, italic, `{% u %}`,
+  `{% fill %}` and `{% literal %}` text, but no line break, list, table,
+  heading or other footnote. Each reference needs exactly one block and each
+  block exactly one reference; a reference may sit in a heading, list item,
+  quote or table cell, but not inside `{% fill %}` or `{% literal %}`. Errors
+  are `INVALID_FOOTNOTE`, `NESTED_FOOTNOTE`, `DUPLICATE_FOOTNOTE_ID`,
+  `DUPLICATE_FOOTNOTE_REFERENCE`, `FOOTNOTE_REFERENCE_WITHOUT_BODY` and
+  `FOOTNOTE_BODY_WITHOUT_REFERENCE`, each with its line. Markdown `[^1]`
+  footnotes are not part of the grammar.
 - Bare brackets are ordinary text, never highlighted and never an error, even
   when unbalanced: `"[t]he Company"`, `[sic]`, `Section 2[(b)]`. A legend is
   never highlighted, so `{% fill %}` is not allowed inside it.

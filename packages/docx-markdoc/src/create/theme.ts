@@ -187,6 +187,31 @@ export class CreationTheme implements Theme {
     }
   }
 
+  /**
+   * Render a footnote body as its own story: fill-in, literal and highlight
+   * state start fresh inside the note and the surrounding paragraph's state is
+   * restored afterwards, so a note never changes how the text around its mark
+   * is highlighted.
+   */
+  footnote<T>(render: () => T): T {
+    const saved = { depth: this.depth, literalDepth: this.literalDepth, highlightOff: this.highlightOff, fillDepth: this.fillDepth };
+    this.depth = 0;
+    this.literalDepth = 0;
+    this.highlightOff = 0;
+    this.fillDepth = 0;
+    try {
+      return render();
+    } finally {
+      ({ depth: this.depth, literalDepth: this.literalDepth, highlightOff: this.highlightOff, fillDepth: this.fillDepth } = saved);
+    }
+  }
+
+  /** A footnote paragraph: no styleId, so docx-core applies FootnoteText. */
+  footnoteParagraph(runs: InlineSpec[]): ParagraphSpec {
+    this.depth = 0;
+    return { kind: 'paragraph', runs: coalesce(runs) };
+  }
+
   withLiteral<T>(render: () => T): T {
     this.literalDepth += 1;
     try {
@@ -210,8 +235,15 @@ function columnWidths(raw: unknown, columns: number, total: number): number[] {
   return widths;
 }
 
-/** Block and inline tag plugins for the creation grammar, closed over one theme instance. */
-export function creationPlugins(theme: CreationTheme): { blockTags: BlockTagPlugin[]; inlineTags: InlineTagPlugin[] } {
+/**
+ * Block and inline tag plugins for the creation grammar, closed over one theme
+ * instance. `footnotes` maps each `{% footnote %}` id to its block, for the
+ * `{% fnref /%}` plugin; validation has already paired every id.
+ */
+export function creationPlugins(
+  theme: CreationTheme,
+  footnotes: ReadonlyMap<string, MarkdocNode> = new Map(),
+): { blockTags: BlockTagPlugin[]; inlineTags: InlineTagPlugin[] } {
   const signerSegment = (api: RenderApi, value: string): InlineSpec[] =>
     api.renderInlineChildren({ type: 'inline', attributes: {}, children: [{ type: 'text', attributes: { content: value }, children: [] }] } as unknown as MarkdocNode, {});
   const blockTags: BlockTagPlugin[] = [
@@ -269,6 +301,18 @@ export function creationPlugins(theme: CreationTheme): { blockTags: BlockTagPlug
   const inlineTags: InlineTagPlugin[] = [
     { tag: 'literal', renderInline: (node, api, style) => theme.withLiteral(() => api.renderInlineChildren(node, style)) },
     { tag: 'fill', renderInline: (node, api, style) => theme.fill(style, () => api.renderInlineChildren(node, style)) },
+    {
+      // The mark carries no run formatting of its own: it takes the
+      // FootnoteReference style whatever bold or underline surrounds it.
+      tag: 'fnref',
+      renderInline: (node, api) => {
+        const body = footnotes.get(String(node.attributes.id));
+        if (!body) throw new Error(`footnote id="${String(node.attributes.id)}" reached rendering without a body`);
+        const blocks = theme.footnote(() => contentParagraphs(body).map((paragraph) =>
+          theme.footnoteParagraph(api.renderInlineChildren(paragraph, {}))));
+        return [{ kind: 'footnote', blocks }];
+      },
+    },
   ];
   return { blockTags, inlineTags };
 }
