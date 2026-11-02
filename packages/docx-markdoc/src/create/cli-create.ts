@@ -505,6 +505,7 @@ async function createLocked(
       `created ${path.basename(outputs.docx)}: ${checks.readback.paragraphs} paragraphs, ${checks.footers.sections} section(s)`,
       `readback ok (negative control ok)`,
       `footers ok (negative control ok)`,
+      ...(checks.footnotes.notes > 0 ? [`footnotes ok (${checks.footnotes.notes} note${checks.footnotes.notes === 1 ? '' : 's'}; negative control ok)`] : []),
       'deterministic',
       `brownfield ok (${checks.brownfield.anchoredParagraphs} anchored)`,
       `round trip ok (${checks.roundTrip.body.expected} paragraphs; negative controls ok)`,

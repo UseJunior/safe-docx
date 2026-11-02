@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
@@ -137,6 +137,17 @@ describe('Traceability: footnotes in created documents', () => {
         [1, ' Referenced first.'],
         [2, ' Body declared first, referenced second.'],
       ]);
+      // The CLI summary reports the footnote check, and the text mirror lists the notes.
+      const dir = await mkdtemp(path.join(os.tmpdir(), 'sdx-create-footnote-cli-'));
+      try {
+        const file = path.join(dir, 'notes.mdoc');
+        await writeFile(file, 'Only{% fnref id="1" /%} one.\n\n{% footnote id="1" %}The note.{% /footnote %}\n');
+        const result = await runCreateCommand([file, path.join(dir, 'out'), '--no-pdf']);
+        expect(result.summary).toContain('footnotes ok (1 note; negative control ok)');
+        expect(await readFile(result.outputs.text, 'utf8')).toContain('Footnotes:\n\n[1] The note.\n');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
       // A footnote-free source certifies the footnote check as not applicable and adds no footnote part.
       const plain = await createDocumentFromMarkdoc('No notes.');
       expect(plain.certificate.checks.footnotes).toEqual({ passed: true, notes: 0, negativeControlDetected: 'not applicable' });
@@ -251,6 +262,7 @@ describeWithLibreOffice('Traceability: footnotes in a real LibreOffice PDF', () 
           '{% footnote id="deliver" %}', 'A **short** note.', '', 'Its *second* paragraph.', '{% /footnote %}',
         ].join('\n'));
         const result = await runCreateCommand([file, path.join(dir, 'out'), '--require-pdf']);
+        expect(result.summary).toContain('footnotes ok (2 notes; negative control ok)');
         expect(result.pdf).toMatchObject({ status: 'passed', words: { passed: true, missing: [], unexplainedExtra: [], footnoteMismatches: [] } });
         const areas = (result.pdf as { pageCount: number; words: { knownGenerated: { footnoteAreas: string[] } } });
         expect(areas.pageCount).toBeGreaterThanOrEqual(2);
