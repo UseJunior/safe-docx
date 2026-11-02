@@ -3,14 +3,14 @@ import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
-import { DocxDocument, parseXml } from '@usejunior/docx-core';
+import { DocxDocument, parseXml, type ParagraphSpec } from '@usejunior/docx-core';
 import { testAllure } from '../../../docx-core/src/testing/allure-test.js';
 import { compileMarkdoc } from '../compile.js';
 import { importDocxToMarkdoc } from '../import.js';
 import { defaultPdfRenderTools } from '../pdf/tools.js';
 import { runCreateCommand } from './cli-create.js';
-import { createDocumentFromMarkdoc } from './create.js';
-import { comparePdfWords, projectSourceText } from './oracle.js';
+import { createDocumentFromMarkdoc, type CreationCertificate } from './create.js';
+import { PAGE_NUMBER_FIELD, comparePdfWords, projectSourceText, type SourceProjection } from './oracle.js';
 
 const TEST_FEATURE = 'add-generated-document-footnotes';
 const test = testAllure.epic('DOCX Markdoc').withLabels({
@@ -59,6 +59,12 @@ function wChildren(parent: Element, localName: string): Element[] {
 
 async function part(docx: Buffer, name: string): Promise<Document> {
   return parseXml(await (await JSZip.loadAsync(docx)).file(name)!.async('string'));
+}
+
+async function verificationFailure(promise: Promise<unknown>): Promise<CreationCertificate> {
+  const error = await promise.then(() => undefined, (caught: unknown) => caught as { code?: string; details?: unknown });
+  expect(error?.code).toBe('CREATION_VERIFICATION_FAILED');
+  return error!.details as CreationCertificate;
 }
 
 async function failure(source: string): Promise<{ code?: string; message: string; details?: { line?: number } } | undefined> {
@@ -223,6 +229,95 @@ describe('Traceability: footnotes in created documents', () => {
     },
   );
 
+  test.openspec('[SDX-MDOC-FOOTNOTE-04] footnote numbers in split table rows, repeated headers and pages holding only a continued note')(
+    'Scenario: footnote numbers in split table rows, repeated headers and pages holding only a continued note',
+    async () => {
+      const note = [{ id: 'a', paragraphs: ['Note text.'] }];
+      // A row whose cells split across two pages: "Alpha beta" and "Gamma delta", printed as "Alpha Gamma" then "beta delta".
+      const row = (marks: Partial<Record<2 | 3, number[]>>): SourceProjection => ({
+        footers: [null],
+        footnotes: note,
+        body: [
+          { text: 'Left', table: { id: 0, row: 0 } },
+          { text: 'Right', table: { id: 0, row: 0 } },
+          { text: 'Alpha beta', table: { id: 0, row: 1 }, ...(marks[2] ? { footnoteMarks: marks[2] } : {}) },
+          { text: 'Gamma delta', table: { id: 0, row: 1 }, ...(marks[3] ? { footnoteMarks: marks[3] } : {}) },
+        ],
+      });
+      // The mark is printed in the second fragment, so the note starts on page 2; on page 1 it is a wrong page.
+      const late = row({ 3: [11] });
+      expect(comparePdfWords(late, ['Left Right Alpha Gamma', 'Left Right beta delta1 1 Note text.'])).toMatchObject({ passed: true, footnoteMismatches: [], knownGenerated: { splitRows: [{ table: 0, row: 1, pages: [1, 2] }] } });
+      expect(comparePdfWords(late, ['Left Right Alpha Gamma 1 Note text.', 'Left Right beta delta1']).footnoteMismatches)
+        .toEqual([expect.objectContaining({ note: 1, page: 1, reason: 'the note starts on page 1 but its reference is on page 2' })]);
+      const early = row({ 2: [5] });
+      expect(comparePdfWords(early, ['Left Right Alpha1 Gamma 1 Note text.', 'Left Right beta delta']).passed).toBe(true);
+      expect(comparePdfWords(early, ['Left Right Alpha1 Gamma', 'Left Right beta delta 1 Note text.']).footnoteMismatches)
+        .toEqual([expect.objectContaining({ note: 1, page: 2, reason: 'the note starts on page 2 but its reference is on page 1' })]);
+
+      // LibreOffice repeats a header row without its footnote number.
+      const header: SourceProjection = {
+        footers: [null],
+        footnotes: note,
+        body: [{ text: 'Term', footnoteMarks: [4], table: { id: 0, row: 0 } }, { text: 'First', table: { id: 0, row: 1 } }, { text: 'Second', table: { id: 0, row: 2 } }],
+      };
+      expect(comparePdfWords(header, ['Term1 First 1 Note text.', 'Term Second'])).toMatchObject({ passed: true, knownGenerated: { repeatedTableHeaders: [{ page: 2, table: 0 }] } });
+      expect(comparePdfWords(header, ['Term1 First 1 Note text.', 'Term1 Second']).passed).toBe(false);
+
+      // Pages that hold only the rest of a note: they keep the footer of the content before them.
+      const anchored: SourceProjection = { body: [{ text: 'Anchor', footnoteMarks: [6] }], footers: [['Draft', PAGE_NUMBER_FIELD]], footnotes: [{ id: 'a', paragraphs: ['First second third fourth five six.'] }] };
+      expect(comparePdfWords(anchored, ['Draft 1 Anchor1 1 First second', 'Draft 2 third fourth five six.'])).toMatchObject({ passed: true, knownGenerated: { footnoteAreas: ['1 First second', 'third fourth five six.'] } });
+      expect(comparePdfWords(anchored, ['Draft 1 Anchor1 1 First second', 'Draft 2 third fourth', 'Draft 3 five six.']).passed).toBe(true);
+      // Negative controls: an empty page, and a continuation page under another footer.
+      expect(comparePdfWords(anchored, ['Draft 1 Anchor1 1 First second third fourth five six.', 'Draft 2']).passed).toBe(false);
+      expect(comparePdfWords(anchored, ['Draft 1 Anchor1 1 First second', 'Other 2 third fourth five six.']).passed).toBe(false);
+      const sections: SourceProjection = {
+        body: [{ text: 'Anchor', footnoteMarks: [6], section: 0 }, { text: 'Next', section: 1 }],
+        footers: [['A'], ['B']],
+        footnotes: [{ id: 'a', paragraphs: ['First second third.'] }],
+      };
+      expect(comparePdfWords(sections, ['A Anchor1 1 First second', 'A third.', 'B Next']).passed).toBe(true);
+      // The continuation belongs to the section before: under the next section's footer it fails.
+      expect(comparePdfWords(sections, ['A Anchor1 1 First second', 'B third.', 'B Next']).passed).toBe(false);
+    },
+  );
+
+  test.openspec('[SDX-MDOC-FOOTNOTE-06] the round trip checks where each reference sits against the source')(
+    'Scenario: the round trip checks where each reference sits against the source',
+    async () => {
+      const source = 'Alpha beta{% fnref id="a" /%} gamma.\n\n{% footnote id="a" %}Note words.{% /footnote %}';
+      const clean = await createDocumentFromMarkdoc(source);
+      expect(clean.certificate.checks.roundTrip.footnotes?.references).toEqual({ passed: true, mismatches: [], negativeControlDetected: true });
+
+      // A lowering defect that moves the reference and projects the moved place consistently still fails.
+      const moved = await verificationFailure(createDocumentFromMarkdoc(source, {
+        transformLowering(lowering) {
+          const paragraph = lowering.spec.sections[0]!.blocks[0] as ParagraphSpec;
+          paragraph.runs = [...paragraph.runs.filter((run) => run.kind === 'footnote'), ...paragraph.runs.filter((run) => run.kind !== 'footnote')];
+          lowering.projection.footnoteReferences[0]!.offset = 0;
+          return lowering;
+        },
+      }));
+      expect(moved.checks.readback.passed).toBe(true);
+      expect(moved.checks.footnotes.passed).toBe(true);
+      expect(moved.checks.roundTrip.footnotes?.references.mismatches).toEqual([{ note: 1, expected: 'Alpha beta‸ gamma.', actual: '‸Alpha beta gamma.' }]);
+
+      // Two notes with the same text: swapping where they are referenced is still caught.
+      const twins = 'One{% fnref id="a" /%} two{% fnref id="b" /%}.\n\n{% footnote id="a" %}Same.{% /footnote %}\n\n{% footnote id="b" %}Same.{% /footnote %}';
+      expect((await createDocumentFromMarkdoc(twins)).certificate.passed).toBe(true);
+      const bunched = await verificationFailure(createDocumentFromMarkdoc(twins, {
+        transformLowering(lowering) {
+          const paragraph = lowering.spec.sections[0]!.blocks[0] as ParagraphSpec;
+          const notes = paragraph.runs.filter((run) => run.kind === 'footnote');
+          const text = paragraph.runs.filter((run) => run.kind !== 'footnote');
+          paragraph.runs = [text[0]!, ...notes, ...text.slice(1)];
+          lowering.projection.footnoteReferences[1]!.offset = 3;
+          return lowering;
+        },
+      }));
+      expect(bunched.checks.roundTrip.footnotes?.references.mismatches).toEqual([{ note: 2, expected: 'One two‸.', actual: 'One‸ two.' }]);
+    },
+  );
+
   conforming.openspec('[SDX-MDOC-FOOTNOTE-05] created footnotes survive import and compile')(
     'Scenario: created footnotes survive import and compile',
     async () => {
@@ -236,6 +331,19 @@ describe('Traceability: footnotes in created documents', () => {
       const before = await view(created.docx);
       expect(before.map((note) => note.paragraphs.map(([style]) => style))).toEqual([['FootnoteText', 'FootnoteText'], ['FootnoteText'], ['FootnoteText']]);
       expect(await view(compiled.tracked)).toEqual(before);
+
+      // Complex-script bold and italic twins are admitted only where they change nothing: on complex-script
+      // text (Devanagari, Thai) import fails closed rather than dropping them.
+      for (const [text, twin, admitted] of [['Hello', 'bCs', true], ['Hello', 'iCs', true], ['नमस्ते', 'bCs', false], ['สวัสดี', 'iCs', false], ['مرحبا', 'bCs', false]] as const) {
+        const plain = await createDocumentFromMarkdoc(`Body{% fnref id="a" /%}.\n\n{% footnote id="a" %}${text}{% /footnote %}`);
+        const zip = await JSZip.loadAsync(plain.docx);
+        const xml = await zip.file('word/footnotes.xml')!.async('string');
+        const run = `<w:t xml:space="preserve">${text}</w:t>`;
+        expect(xml).toContain(run);
+        zip.file('word/footnotes.xml', xml.replace(run, `<w:rPr><w:${twin}/></w:rPr>${run}`));
+        const result = await importDocxToMarkdoc(await zip.generateAsync({ type: 'nodebuffer' })).then(() => 'imported', (error: { code?: string }) => error.code);
+        expect(result, `${twin} on ${text}`).toBe(admitted ? 'imported' : 'ANNOTATION_IMPORT_UNSUPPORTED');
+      }
     },
   );
 });
@@ -270,6 +378,35 @@ describeWithLibreOffice('Traceability: footnotes in a real LibreOffice PDF', () 
         expect(areas.words.knownGenerated.footnoteAreas[0]).toMatch(/^1 Guidance sentence 1 /u);
         expect(areas.words.knownGenerated.footnoteAreas[1]).toMatch(/^\S/u);
         expect(areas.words.knownGenerated.footnoteAreas[1]).not.toMatch(/^1 /u);
+
+        // A note referenced from the last paragraph runs on to a page with no body text; a note in a repeated
+        // header row (LibreOffice repeats the row without the number) and one in a row split across pages.
+        const tail = path.join(dir, 'tail.mdoc');
+        await writeFile(tail, [
+          '---', 'footer: Draft', 'page-numbers: true', '---', '',
+          ...filler.slice(0, 8),
+          'The final clause{% fnref id="tail" /%} ends the body.', '',
+          `{% footnote id="tail" %}${guidance} ${guidance}{% /footnote %}`,
+        ].join('\n'));
+        const continued = await runCreateCommand([tail, path.join(dir, 'out'), '--require-pdf']);
+        expect(continued.pdf).toMatchObject({ status: 'passed', words: { passed: true, footnoteMismatches: [] } });
+        const continuedAreas = (continued.pdf as { words: { knownGenerated: { footnoteAreas: string[] } } }).words.knownGenerated.footnoteAreas;
+        expect(continuedAreas.length).toBeGreaterThanOrEqual(2);
+        expect(continuedAreas.at(-1)).toMatch(/^[^1]/u);
+
+        const rows = Array.from({ length: 70 }, (_, index) => ['---', `* Holder ${index + 1}`, `* Description ${index + 1} ordinary terms apply.`]).flat();
+        const words = (prefix: string) => Array.from({ length: 150 }, (_, index) => `${prefix}${index}`).join(' ');
+        const tables = path.join(dir, 'tables.mdoc');
+        await writeFile(tables, [
+          '---', 'footer: Draft', 'page-numbers: true', '---', '', '# TABLE', '',
+          '{% table widths="30,70" %}', '* Holder{% fnref id="holder" /%}', '* Description', ...rows, '{% /table %}', '',
+          '{% footnote id="holder" %}Holders as of the record date.{% /footnote %}', '',
+          'A row split across pages:', '',
+          '{% table %}', '* L', '* R', '---', `* ${words('left')}{% fnref id="split" /%}`, `* ${words('right')}`, '{% /table %}', '',
+          '{% footnote id="split" %}Split row note.{% /footnote %}', '', 'After.',
+        ].join('\n'));
+        const table = await runCreateCommand([tables, path.join(dir, 'out'), '--require-pdf']);
+        expect(table.pdf).toMatchObject({ status: 'passed', words: { passed: true, footnoteMismatches: [], knownGenerated: { repeatedTableHeaders: expect.arrayContaining([{ page: 2, table: 0 }]) } } });
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

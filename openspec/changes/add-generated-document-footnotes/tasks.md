@@ -3,7 +3,7 @@
 - [x] 1.1 Add the `Footnotes in generated documents` requirement with
       scenarios `SDX-GEN-118`–`SDX-GEN-121` to the `docx-generation` delta.
 - [x] 1.2 Add the `Footnotes in created documents` requirement with scenarios
-      `SDX-MDOC-FOOTNOTE-01`–`SDX-MDOC-FOOTNOTE-05` to the `docx-markdoc` delta.
+      `SDX-MDOC-FOOTNOTE-01`–`SDX-MDOC-FOOTNOTE-06` to the `docx-markdoc` delta.
 
 ## 2. docx-core
 
@@ -37,7 +37,7 @@
 - [x] 5.1 `packages/docx-core/src/generation/generation-footnotes.test.ts`
       (`SDX-GEN-118`–`SDX-GEN-121`).
 - [x] 5.2 `packages/docx-markdoc/src/create/footnotes.test.ts`
-      (`SDX-MDOC-FOOTNOTE-01`–`SDX-MDOC-FOOTNOTE-05`).
+      (`SDX-MDOC-FOOTNOTE-01`–`SDX-MDOC-FOOTNOTE-06`).
 
 ## 6. Verify
 

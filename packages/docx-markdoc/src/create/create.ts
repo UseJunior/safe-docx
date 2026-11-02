@@ -44,7 +44,21 @@ export type CreationCertificate = {
        * paragraphs, in reference order, against the imported footnote
        * annotations, with a negative control that deletes a word of a note.
        */
-      footnotes?: { comparison: SequenceComparison; notes: { expected: number; actual: number }; negativeControlDetected: boolean | 'not applicable' };
+      footnotes?: {
+        comparison: SequenceComparison;
+        notes: { expected: number; actual: number };
+        negativeControlDetected: boolean | 'not applicable';
+        /**
+         * Where each reference sits, in reference order: the text before and after it in its paragraph,
+         * from the source against the imported annotation's anchor. The negative control moves one
+         * reference to the other end of its paragraph and must be detected.
+         */
+        references: {
+          passed: boolean;
+          mismatches: Array<{ note: number; expected: string | null; actual: string | null }>;
+          negativeControlDetected: boolean | 'not applicable';
+        };
+      };
     };
   };
   frontmatter: CreationLowering['frontmatter'];
@@ -94,12 +108,43 @@ function footnoteParagraphSequence(notes: ReadonlyArray<readonly string[]>): Arr
   return notes.flatMap((paragraphs, index) => [...paragraphs.map((text) => ({ text })), { text: `\u0000end of note ${index + 1}` }]);
 }
 
-/** Compare the source's footnotes with the footnote annotations re-imported from the DOCX. */
+/**
+ * A reference's place in its paragraph: the text before and after it, whitespace runs collapsed (the
+ * boundary space is kept, so "Alpha¹ beta" and "Alpha ¹beta" differ).
+ */
+function referencePlace(text: string, offset: number): string {
+  const collapse = (value: string) => value.normalize('NFC').replace(/[\s\u00a0]+/gu, ' ');
+  return `${collapse(text.slice(0, offset)).trimStart()}\u2038${collapse(text.slice(offset)).trimEnd()}`;
+}
+
+function compareReferencePlaces(expected: readonly string[], actual: ReadonlyArray<string | null>): Array<{ note: number; expected: string | null; actual: string | null }> {
+  return Array.from({ length: Math.max(expected.length, actual.length) }, (_, index) => ({ note: index + 1, expected: expected[index] ?? null, actual: actual[index] ?? null }))
+    .filter((entry) => entry.expected !== entry.actual);
+}
+
+/** Compare the source's footnotes, and where they are referenced, with the footnote annotations re-imported from the DOCX. */
 function footnoteRoundTrip(expected: SourceProjection, ir: ReturnType<typeof requireMarkdoc>): NonNullable<CreationCertificate['checks']['roundTrip']['footnotes']> | undefined {
   const want = (expected.footnotes ?? []).map((note) => note.paragraphs);
-  const got = ir.annotations
-    .filter((annotation) => annotation.sourcePresentation === 'footnote')
-    .map((annotation) => annotation.body.map((paragraph) => paragraph.runs.map((run) => run.text).join('')));
+  const imported = ir.annotations.filter((annotation) => annotation.sourcePresentation === 'footnote');
+  const got = imported.map((annotation) => annotation.body.map((paragraph) => paragraph.runs.map((run) => run.text).join('')));
+  // Reference places straight from the source text, and from each imported anchor's paragraph and offset.
+  const sourceReferences = expected.body.flatMap((entry) => (entry.footnoteMarks ?? []).map((offset) => ({ text: entry.text, offset })));
+  const wantPlaces = sourceReferences.map(({ text, offset }) => referencePlace(text, offset));
+  const gotPlaces = imported.map((annotation) => {
+    if (annotation.anchor.kind !== 'point') return null;
+    const { paragraphId, offset } = annotation.anchor.point;
+    const paragraph = ir.scaffold.find((candidate) => candidate.id === paragraphId);
+    return paragraph ? referencePlace(paragraph.originalText, offset) : null;
+  });
+  const referenceMismatches = compareReferencePlaces(wantPlaces, gotPlaces);
+  const movable = sourceReferences.findIndex(({ text }) => text.trim().length > 0);
+  const moved = wantPlaces.map((place, index) => {
+    if (index !== movable) return place;
+    const { text, offset } = sourceReferences[index]!;
+    const other = referencePlace(text, offset === 0 ? text.length : 0);
+    return other === place ? referencePlace(text, offset === text.length ? 0 : text.length) : other;
+  });
+  const referenceControl = movable === -1 ? 'not applicable' as const : compareReferencePlaces(moved, gotPlaces).length > 0;
   if (want.length === 0 && got.length === 0) return undefined;
   const actual = footnoteParagraphSequence(got).map((entry) => entry.text);
   const comparison = compareParagraphs(footnoteParagraphSequence(want), actual);
@@ -108,14 +153,20 @@ function footnoteRoundTrip(expected: SourceProjection, ir: ReturnType<typeof req
     ? note.map((paragraph, p) => (p === note.findIndex((text) => text.trim().split(/\s+/u).length >= 2) ? paragraph.trim().split(/\s+/u).slice(1).join(' ') : paragraph))
     : note));
   const negativeControlDetected = wordNote === -1 ? 'not applicable' as const : !compareParagraphs(footnoteParagraphSequence(mutated), actual).passed;
-  return { comparison, notes: { expected: want.length, actual: got.length }, negativeControlDetected };
+  return {
+    comparison,
+    notes: { expected: want.length, actual: got.length },
+    negativeControlDetected,
+    references: { passed: referenceMismatches.length === 0, mismatches: referenceMismatches, negativeControlDetected: referenceControl },
+  };
 }
 
 /** Run the independent round-trip comparison, with negative controls that must each be detected. */
 function roundTripCheck(expected: SourceProjection, importedMarkdoc: string, sections: number): CreationCertificate['checks']['roundTrip'] {
   const ir = requireMarkdoc(importedMarkdoc);
   const footnotes = footnoteRoundTrip(expected, ir);
-  const footnotesOk = !footnotes || (footnotes.comparison.passed && footnotes.notes.expected === footnotes.notes.actual && footnotes.negativeControlDetected !== false);
+  const footnotesOk = !footnotes || (footnotes.comparison.passed && footnotes.notes.expected === footnotes.notes.actual && footnotes.negativeControlDetected !== false
+    && footnotes.references.passed && footnotes.references.negativeControlDetected !== false);
   const actualBody = ir.scaffold.map((paragraph) => paragraph.originalText);
   const actualFooters = importedFooters(ir, sections);
   const body = compareParagraphs(expected.body, actualBody);
@@ -149,7 +200,7 @@ function roundTripCheck(expected: SourceProjection, importedMarkdoc: string, sec
   const controlsOk = Object.values(negativeControls).every((value) => value !== false);
   const footersOk = footers.every((footer) => footer.passed);
   const mismatchCount = body.mismatches.length + footers.reduce((sum, footer) => sum + (footer.comparison?.mismatches.length ?? (footer.passed ? 0 : 1)), 0)
-    + (footnotes?.comparison.mismatches.length ?? 0);
+    + (footnotes?.comparison.mismatches.length ?? 0) + (footnotes?.references.mismatches.length ?? 0);
   const passed = body.passed && footersOk && controlsOk && footnotesOk;
   return {
     passed,
@@ -158,7 +209,7 @@ function roundTripCheck(expected: SourceProjection, importedMarkdoc: string, sec
     footers,
     negativeControls,
     ...(footnotes ? { footnotes } : {}),
-    ...(passed ? {} : { detail: `${mismatchCount} round-trip mismatch(es)${controlsOk && footnotes?.negativeControlDetected !== false ? '' : '; a negative control was not detected'}${footnotes && footnotes.notes.expected !== footnotes.notes.actual ? `; expected ${footnotes.notes.expected} footnote(s), imported ${footnotes.notes.actual}` : ''}` }),
+    ...(passed ? {} : { detail: `${mismatchCount} round-trip mismatch(es)${controlsOk && footnotes?.negativeControlDetected !== false && footnotes?.references.negativeControlDetected !== false ? '' : '; a negative control was not detected'}${footnotes && footnotes.notes.expected !== footnotes.notes.actual ? `; expected ${footnotes.notes.expected} footnote(s), imported ${footnotes.notes.actual}` : ''}` }),
   };
 }
 

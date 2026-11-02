@@ -13,7 +13,7 @@ its read-back, round-trip and PDF checks.
 - **WHEN** the source is created
 - **THEN** the DOCX SHALL hold `w:footnoteReference` ids 1, 2 and 3 in reference order, and the footnote blocks SHALL leave no body paragraph
 - **AND** each note paragraph SHALL carry `FootnoteText`, and its runs SHALL carry the authored bold, italic, underline and fill highlight
-- **AND** the certificate SHALL pass, with a footnote read-back check and a footnote round-trip comparison whose negative controls are detected
+- **AND** the certificate SHALL pass, with a footnote read-back check and a footnote round-trip comparison of note text and reference places whose negative controls are detected
 - **AND** the text mirror SHALL list each note after the body, opening with its number
 
 #### Scenario: [SDX-MDOC-FOOTNOTE-02] notes are numbered by reference order, wherever their bodies sit
@@ -32,10 +32,19 @@ its read-back, round-trip and PDF checks.
 - **WHEN** the PDF words are compared with the source
 - **THEN** the comparison SHALL pass and report each page's footnote area
 - **AND** it SHALL fail when a note loses a word, a note starts on a different page from its reference, notes appear out of order, or a reference number is missing
-- **AND** a real LibreOffice PDF of a source whose long note continues onto the next page SHALL pass with the note's continuation at the foot of the second page
+- **AND** a reference printed in the later fragment of a table row split across pages SHALL require its note on that later page, a repeated table header SHALL be expected without its footnote number, and a page holding only the rest of a continued note SHALL pass under the footer of the content before it
+- **AND** an inserted empty page, or a continuation page under another section's footer, SHALL fail
+- **AND** real LibreOffice PDFs of a long note that continues onto the next page, a note that continues onto a page with no body text, a note in a repeated header row and a note in a row split across pages SHALL pass
 
 #### Scenario: [SDX-MDOC-FOOTNOTE-05] created footnotes survive import and compile
 - **GIVEN** a created document with footnotes
 - **WHEN** it is imported to Markdoc and compiled back, preserving annotations
 - **THEN** the import SHALL hold one footnote annotation per note
 - **AND** the compiled document's footnotes SHALL have the same numbers, paragraph text, formatting and `FootnoteText` styles as the created document's
+- **AND** import SHALL admit the `w:bCs` and `w:iCs` twins on text without complex-script characters, and SHALL fail closed with `ANNOTATION_IMPORT_UNSUPPORTED` when the text holds Hebrew, Arabic, Indic, Thai or other complex-script characters
+
+#### Scenario: [SDX-MDOC-FOOTNOTE-06] the round trip checks where each reference sits against the source
+- **GIVEN** a created document, and the same source built through a lowering that moves a reference and projects the moved place consistently, and two notes with the same text whose references are moved together
+- **WHEN** each is verified
+- **THEN** the round trip SHALL compare, in reference order, the text before and after each reference in its paragraph, taken from the source, with the same text around each imported footnote anchor, with a negative control that moves one reference
+- **AND** the moved references SHALL fail the build even though the read-back check, which compares with the lowering's own projection, passes

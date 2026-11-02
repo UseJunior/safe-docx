@@ -44,12 +44,16 @@ plain text only (#1237).
 - Create's verification covers footnotes. The read-back check compares each
   note and where its reference sits with the source projection, with a
   negative control. The round trip re-imports the notes as footnote
-  annotations. The PDF word check reads each note from the foot of the page
+  annotations and compares their text, and the text around each anchor,
+  with text read straight from the source. The PDF word check reads each note from the foot of the page
   (a note may continue onto the next page). It requires each note to start on
   the page that holds its reference. The text mirror lists the notes after
   the body.
 - `docx-markdoc import` accepts the `w:bCs`/`w:iCs` complex-script twins that
-  generation writes beside bold and italic. It also drops the single-space
+  generation writes beside bold and italic, on text without complex-script
+  characters. The complex-script test that decides this (and already decided
+  it for `w:szCs`) now covers Indic and Southeast Asian scripts as well as
+  Hebrew and Arabic. It also drops the single-space
   run after a note's number mark, so import then compile keeps a note's text
   unchanged.
 

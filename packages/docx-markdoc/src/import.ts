@@ -162,6 +162,17 @@ function bodyFromParagraphs(
 const COMPLEX_SCRIPT_TWINS: ReadonlySet<string> = new Set(['szCs', 'bCs', 'iCs']);
 
 /**
+ * Characters that may be laid out as complex script, where a complex-script
+ * twin would apply: right-to-left scripts (Hebrew, Arabic, Syriac, Thaana, NKo
+ * and the supplementary right-to-left blocks), the Indic scripts, and the
+ * Southeast and Central Asian scripts (Thai, Lao, Tibetan, Myanmar, Khmer,
+ * Mongolian, Tai, Balinese and their neighbours). Deliberately broad: a run
+ * holding any of them keeps the twin unadmitted, so import fails closed rather
+ * than dropping formatting that would show.
+ */
+const COMPLEX_SCRIPT_TEXT = /[\u0590-\u08FF\u0900-\u0DFF\u0E00-\u0FFF\u1000-\u109F\u1780-\u18AF\u1900-\u1AAF\u1B00-\u1C4F\uA800-\uABFF\uFB1D-\uFDFF\uFE70-\uFEFF\u{10800}-\u{10FFF}\u{11000}-\u{11FFF}\u{1E800}-\u{1EFFF}]/u;
+
+/**
  * Drop the space run that Word, `add_footnote`, and generation put between a
  * note's number and its text. It is part of the note's presentation, not of
  * its body: compile writes it again when it re-emits the note, so keeping it
@@ -224,7 +235,7 @@ function assertAdmittedAnnotationElement(
     }
     const harmlessComplexScriptFallback = COMPLEX_SCRIPT_TWINS.has(element.localName)
       && (formattingOwner?.localName === W.r || formattingOwner?.localName === W.p)
-      && !/[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/u.test(formattingOwner.textContent ?? '');
+      && !COMPLEX_SCRIPT_TEXT.test(formattingOwner.textContent ?? '');
     if (!admitted.has(element.localName) && !harmlessComplexScriptFallback) {
       throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} contains unsupported w:${element.localName}.`, { annotationId, element: `w:${element.localName}` });
     }
@@ -256,7 +267,7 @@ function assertAdmittedAnnotationElement(
       for (const property of Array.from(element.childNodes).filter((child) => child.nodeType === 1) as Element[]) {
         const allowed = ['b', 'i', 'u', 'color', 'highlight', 'sz'];
         const nonApplicableFallback = COMPLEX_SCRIPT_TWINS.has(property.localName)
-          && !/[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/u.test(run?.textContent ?? '');
+          && !COMPLEX_SCRIPT_TEXT.test(run?.textContent ?? '');
         if (property.localName === W.rStyle && !markerRun) {
           const styleId = property.getAttributeNS(OOXML.W_NS, W.val) ?? property.getAttribute('w:val');
           if (!styleId) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} has an empty run style reference.`, { annotationId, reason: 'missing-style-id' });
