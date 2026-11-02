@@ -294,6 +294,17 @@ describe('Traceability: independent round-trip oracle for created documents', ()
       const changedAside = comparePdfWords(asideSource, [asideRaw(asideLayout).replace('start350 aside end350', 'start350 asided end350')], [`${asideChanged}\n`]);
       expect(changedAside).toMatchObject({ passed: false, unexplainedExtra: [{ words: 'asided' }] });
       expect(changedAside.knownGenerated.joinedLines).toHaveLength(699);
+      // A neighbour that is itself a run-together token counts as split once its own claim is certified.
+      const adjacent = Array.from({ length: 700 }, (_, index) => `start${index} a side next word end${index}`).join(' ');
+      const adjacentSource: SourceProjection = { body: [{ text: `${adjacent} Literal aside tail.` }], footers: [null] };
+      const adjacentLayout = `${adjacent} Literal aside tail.`;
+      const adjacentRaw = adjacentLayout.replace(/ a side next word /gu, ' aside nextword ');
+      const adjacentRecovered = comparePdfWords(adjacentSource, [`${adjacentRaw}\n`], [`${adjacentLayout}\n`]);
+      expect(adjacentRecovered).toMatchObject({ passed: true, alignment: 'complete' });
+      expect(adjacentRecovered.knownGenerated.joinedLines).toHaveLength(1400);
+      const adjacentChangedLayout = adjacentLayout.replace('start350 a side next word', 'start350 a side next wrd');
+      const adjacentChanged = comparePdfWords(adjacentSource, [`${adjacentRaw.replace('start350 aside nextword', 'start350 aside nextwrd')}\n`], [`${adjacentChangedLayout}\n`]);
+      expect(adjacentChanged.passed).toBe(false);
 
       // Stated limitation (pinned so the advertised guarantee is not strengthened by accident): evidence is counted
       // per page, so a source reading the layout shows where the raw text placed a single source word can vouch

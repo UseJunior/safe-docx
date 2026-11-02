@@ -678,8 +678,9 @@ type PdfToken = { word: string; page: number; physicalPage: number; origin: numb
  * text of its page shows, spaced, more often than the raw text does. Every spaced occurrence in the raw text is
  * also in the layout text, so each split must account for an occurrence of its own: the tokens split into a
  * reading on a page may not outnumber the layout text's surplus occurrences of it. When they do, only the tokens
- * whose raw neighbours also stand around the reading in the layout text remain, and if those still outnumber the
- * surplus, none is split. Returns the split words by `page:index` in the page bodies as read.
+ * whose neighbours (split where a claim within its surplus split them) also stand around the reading in the
+ * layout text remain, and if those still outnumber the surplus, none is split. Returns the split words by
+ * `page:index` in the page bodies as read.
  */
 function splitJoinedTokens(
   candidates: ReadonlyArray<{ word: string; page: number; origin: number }>,
@@ -703,12 +704,19 @@ function splitJoinedTokens(
     }
     return value;
   };
-  // Where each source word starts a run: looked up by the token's prefixes, so a candidate costs its length, not the source's.
+  // Where each source word starts a run, looked up by the token's prefixes. The distinct runs that spell a
+  // spelling are found once per spelling; a spelling that recurs in the source still visits each of its runs.
   const starts = new Map<string, number[]>();
-  expected.forEach((word, index) => starts.set(word, [...(starts.get(word) ?? []), index]));
-  const proposals = new Map<string, string[]>();
-  for (const { word: token, page, origin } of candidates) {
-    const readings = new Map<string, string[]>();
+  expected.forEach((word, index) => {
+    const list = starts.get(word);
+    if (list) list.push(index);
+    else starts.set(word, [index]);
+  });
+  const runsMemo = new Map<string, string[][]>();
+  const runsSpelling = (token: string): string[][] => {
+    let runs = runsMemo.get(token);
+    if (runs) return runs;
+    const distinct = new Map<string, string[]>();
     for (let length = 1; length < token.length; length += 1) {
       for (const start of starts.get(token.slice(0, length)) ?? []) {
         let at = 0;
@@ -717,35 +725,53 @@ function splitJoinedTokens(
           at += expected[end]!.length;
           end += 1;
         }
-        if (at !== token.length || end - start < 2) continue;
-        const reading = expected.slice(start, end);
-        if (surplus(page, reading) > 0) readings.set(reading.join(' '), reading);
+        if (at === token.length && end - start >= 2) distinct.set(expected.slice(start, end).join(' '), expected.slice(start, end));
       }
     }
-    if (readings.size === 1) proposals.set(`${page}:${origin}`, [...readings.values()][0]!);
+    runs = [...distinct.values()];
+    runsMemo.set(token, runs);
+    return runs;
+  };
+  const proposals = new Map<string, string[]>();
+  for (const { word: token, page, origin } of candidates) {
+    const readings = runsSpelling(token).filter((reading) => surplus(page, reading) > 0);
+    if (readings.length === 1) proposals.set(`${page}:${origin}`, readings[0]!);
   }
-  // Each split needs its own surplus occurrence. Where a page's claims on a reading outnumber them, keep only the
-  // tokens whose raw neighbours stand around the reading in the layout text; if those still outnumber them, none.
+  // Each split needs its own surplus occurrence. Claims on a reading within a page's surplus are accepted first.
+  // Where the claims outnumber the surplus, keep only the tokens whose neighbours (as split by the accepted claims)
+  // stand around the reading in the layout text; if those still outnumber it, none.
   const claims = new Map<string, string[]>();
   for (const [key, reading] of proposals) {
     const group = `${key.split(':')[0]}\u0001${reading.join(' ')}`;
-    claims.set(group, [...(claims.get(group) ?? []), key]);
+    const list = claims.get(group);
+    if (list) list.push(key);
+    else claims.set(group, [key]);
   }
+  const accepted = new Map<string, string[]>();
+  const oversubscribed: Array<{ page: number; reading: string[]; keys: string[]; available: number }> = [];
   for (const [group, keys] of claims) {
     const page = Number(group.split('\u0001')[0]);
     const reading = proposals.get(keys[0]!)!;
     const available = surplus(page, reading);
-    if (keys.length <= available) continue;
+    if (keys.length <= available) for (const key of keys) accepted.set(key, reading);
+    else oversubscribed.push({ page, reading, keys, available });
+  }
+  const resolved = new Map<string, string[]>();
+  for (const { page, reading, keys, available } of oversubscribed) {
+    const body = bodies[page] ?? [];
+    const neighbour = (index: number, side: 'before' | 'after'): string[] => {
+      if (index < 0 || index >= body.length) return [];
+      const split = accepted.get(`${page}:${index}`);
+      return split ? [side === 'before' ? split.at(-1)! : split[0]!] : [body[index]!];
+    };
     const inContext = keys.filter((key) => {
       const origin = Number(key.split(':')[1]);
-      const body = bodies[page] ?? [];
-      const context = [...(origin > 0 ? [body[origin - 1]!] : []), ...reading, ...(origin + 1 < body.length ? [body[origin + 1]!] : [])];
-      return occurrences(layoutPages[page] ?? [], context) > 0;
+      return occurrences(layoutPages[page] ?? [], [...neighbour(origin - 1, 'before'), ...reading, ...neighbour(origin + 1, 'after')]) > 0;
     });
-    const kept = new Set(inContext.length <= available ? inContext : []);
-    for (const key of keys) if (!kept.has(key)) proposals.delete(key);
+    if (inContext.length <= available) for (const key of inContext) resolved.set(key, reading);
   }
-  return proposals;
+  for (const [key, reading] of resolved) accepted.set(key, reading);
+  return accepted;
 }
 
 /** A table row found split over `pages` (0-based, first to last). */
