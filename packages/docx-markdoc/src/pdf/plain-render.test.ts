@@ -62,6 +62,25 @@ describe('plain PDF render for finished non-tracked documents', () => {
     expect(await readFile(pdf, 'utf8')).toBe('%PDF-fake');
   });
 
+  itAllure('reads -layout text too, so required text on a line exported without spaces is still found', async () => {
+    const { docx, pdf } = await workspace();
+    const raw = 'Title\nanamountequalto(a)thePrice,\n\f';
+    const layout = 'Title\n    an amount equal to (a) the Price,\n\f';
+    const calls: Call[] = [];
+    const tools = fakeTools(raw, '%PDF-fake', calls);
+    const byMode: PdfRenderTools = { ...tools, run: async (command, args) => (args.includes('-layout') ? { code: 0, stdout: layout, stderr: '' } : tools.run(command, args)) };
+    const verdict = await renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: ['Title', 'an amount equal to'], tools: byMode });
+    expect(verdict).toMatchObject({ status: 'passed', pageCount: 1, pageTexts: ['Title\nanamountequalto(a)thePrice,\n'], layoutPageTexts: ['Title\n    an amount equal to (a) the Price,\n'] });
+    // Text on neither reading of the page is still missing.
+    const missing = await renderPlainPdf({ docxPath: docx, outputPdfPath: `${pdf}.b`, requiredText: ['an amount equal to (b)'], tools: byMode });
+    expect(missing).toMatchObject({ status: 'failed', missingText: ['an amount equal to (b)'] });
+    // A failed layout extraction is not a failure; the raw text alone decides.
+    const noLayout: PdfRenderTools = { ...tools, run: async (command, args) => (args.includes('-layout') ? { code: 1, stdout: '', stderr: 'bad' } : tools.run(command, args)) };
+    const rawOnly = await renderPlainPdf({ docxPath: docx, outputPdfPath: `${pdf}.c`, requiredText: ['Title'], tools: noLayout });
+    expect(rawOnly.status).toBe('passed');
+    expect(rawOnly.layoutPageTexts).toBeUndefined();
+  });
+
   itAllure('renders a private copy in a fresh profile and removes the workspace afterwards', async () => {
     const { docx, pdf } = await workspace();
     const calls: Call[] = [];

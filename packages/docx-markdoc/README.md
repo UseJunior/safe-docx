@@ -581,12 +581,14 @@ package, determinism, read-back and brownfield-import checks:
   number is expected where its reference sits, and each note's text is read
   from the foot of the page (a long note may continue at the foot of the
   next); a note must start on the page that holds its reference. LibreOffice
-  sometimes exports a justified line without spaces, so the text layer reads
-  it as one long token; such a token is split back into words only when it
-  spells a run of consecutive source words exactly, and the certificate lists
-  it under `knownGenerated.joinedLines`. A word dropped from, added to or moved
-  within that line still fails. The certificate's `pdf.words.limitations`
-  states what the comparison cannot catch.
+  sometimes exports a justified line without spaces, so the raw text layer
+  reads it as one long token. Such a token is split back into words only when
+  it spells a run of consecutive source words exactly and the page's
+  `pdftotext -layout` text, which places words by glyph position, shows those
+  words spaced; the certificate lists it under `knownGenerated.joinedLines`.
+  A word dropped from, added to or moved within that line still fails. The
+  certificate's `pdf.words.limitations` states what the comparison cannot
+  catch.
 - **Footnotes.** Each note read back from `word/footnotes.xml`, and where
   its reference sits, must match the source, with a negative control. The
   round trip re-imports the notes as footnote annotations and compares their
@@ -749,10 +751,12 @@ template-backed `compile-greenfield` command is unchanged.
 disposable profile, then checks the `pdftotext -raw` text layer
 (content-stream order, which for LibreOffice output is document order page by
 page; a table row split across pages comes out cell fragment by cell
-fragment). Each
+fragment). It also extracts the `pdftotext -layout` text of each page
+(`layoutPageTexts`), which keeps word boundaries that the raw text can lose
+when LibreOffice exports a justified line without space glyphs. Each
 `requiredText` entry must appear within a single rendered page (anywhere on
-it, headers and footers included), compared with whitespace collapsed and no
-other normalization. An empty PDF or an empty text layer fails. Missing
+it, headers and footers included, in either its raw or its layout text),
+compared with whitespace collapsed and no other normalization. An empty PDF or an empty text layer fails. Missing
 tools report `not_run`, never a pass. The input DOCX is copied, never
 modified; an `outputPdfPath` that aliases it is refused. The PDF reaches
 `outputPdfPath` only when every check passes, through a staged file renamed
