@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `docx-markdoc create` no longer fails its PDF word check when LibreOffice
+  exports a justified line without spaces, which it can do when the line
+  holds an underlined word. The raw text layer reads such a line as one
+  token. The PDF render now also extracts `pdftotext -layout` text, which
+  keeps the spaces, and the check splits the token back into words only when
+  it spells a run of consecutive source words exactly and the page's layout
+  text shows that one reading in a place the raw text does not. It lists the
+  line under `knownGenerated.joinedLines`. A word dropped from, added to or
+  moved within the line still fails, unless the page's layout text shows the
+  source reading in another place where the raw text does not. Required text
+  may match a page's layout text. (#1242)
 - Generated documents can have footnotes. In docx-core, `generateDocx`
   accepts a `{ kind: 'footnote', blocks: ParagraphSpec[] }` inline in body
   paragraphs and table cells. It writes `word/footnotes.xml` with Word's

@@ -394,6 +394,8 @@ export type PdfWordComparison = {
     repeatedTableHeaders: Array<{ page: number; table: number }>;
     /** Table rows found split across pages (cell fragments page by page) and read back in cell order. */
     splitRows: Array<{ table: number; row: number; pages: number[] }>;
+    /** Lines LibreOffice exported without space glyphs (one PDF token), split back into source words on the evidence of the page's layout text. */
+    joinedLines: Array<{ page: number; words: string }>;
   };
   limitations: string;
 };
@@ -466,6 +468,7 @@ export const PDF_WORD_LIMITATIONS =
   'The text layer is read with pdftotext -raw (content-stream order; LibreOffice writes each page\'s footer first, then the body in document order, except that a table row split across pages comes out as each cell\'s fragment on each page; such a row is read back in cell order only when its words partition exactly into those fragments, every cell starting on the first page, and the pages after the first stay pinned to that row and its section). ' +
   'List labels are expected words, and so is each footnote number, joined to the text around its reference (LibreOffice sets it as a superscript with no space). Footnote text is read from the foot of each page, after the body: the rest of a note continued from the page before, then each note that starts there (its number, then its text); read in page order these areas must spell every note exactly once and in order, and each note must start on the page holding its reference (for a table row split across pages, the page where the mark is printed). A page holding nothing but the rest of a continued note belongs to the content before it and must show that section\'s footer. A repeated table header is expected without its footnote numbers, as LibreOffice draws it. ' +
   'Every page break is explained from the source: the checker searches for where each page can start between the source words around it (including inside wordless content such as empty table rows), and a start fixes what the page must show first, namely its section\'s footer and page number, the table header LibreOffice repeats when a table continues across the break, and the source words at the top of the page. Sections start on new pages. ' +
+  'A justified line that LibreOffice exported without space glyphs reads back as one token. Such a token is split back into words only when it spells, character for character, a run of two or more consecutive source words and that is its one reading which the pdftotext -layout text of the same page (word boundaries by glyph position) shows more often than the raw text does, each split needing an occurrence of its own; without layout text, or with a different page count, nothing is split. The evidence is counted per page rather than tied to the line\'s position, so a changed run-together line passes only if the page\'s layout text shows the source reading in a place the raw text does not, which another run-together line that alignment placed as a single source word could supply. ' +
   'Two observed LibreOffice behaviours are assumed: a header row is never left alone at a page bottom (it stays with the first body row), and a table\'s last row can spill its empty remainder onto the next page, repeating the header there. ' +
   'The check passes only when every start that fits explains the same source words; if none fits, or starts that fit disagree (for example, a table with empty trailing rows followed by a table with the same header, or two such tables back to back at a page start), it fails. The text alone cannot always show layout, so such cases fail even when the PDF is right (a false failure); an ambiguity is never settled by a guess.';
 
@@ -476,7 +479,7 @@ type ExpectedToken = { word: string; entry: number };
  * every piece of generated text modelled from the source: list labels, each
  * page's footer region, and repeated table header rows.
  */
-export function comparePdfWords(source: SourceProjection, pageTexts: readonly string[]): PdfWordComparison {
+export function comparePdfWords(source: SourceProjection, pageTexts: readonly string[], layoutTexts?: readonly string[]): PdfWordComparison {
   const words = (text: string) => text.normalize('NFKC').split(/[\s\u00a0]+/u).filter(Boolean);
   const expected: ExpectedToken[] = [];
   let listMarkers = 0;
@@ -540,97 +543,235 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
   const bodies = pages.map((tokens, page) => tokens.slice(regions[page]!.length + headRuns[page]!.length));
   // A page whose only text, besides its footer region, is the rest of a note continued from the page before.
   const noteOnly = new Set(bodies.flatMap((tokens, page) => (page > 0 && tokens.length === 0 && headRuns[page]!.length === 0 && footnoteAreas.continues[page] ? [page] : [])));
-  // Where each body word physically sits, kept through the split-row rejoin (a reference's page is where its mark is printed).
-  const physical = bodies.map((tokens, page) => tokens.map(() => page));
-  const split = joinSplitRows(source, plainWords, bodies, physical);
-  const pdf: Array<{ word: string; page: number; physicalPage: number }> = [];
-  bodies.forEach((tokens, page) => {
-    tokens.forEach((word, index) => pdf.push({ word, page, physicalPage: physical[page]![index]! }));
-  });
-  const ops = myersDiff(expected, pdf, (x, y) => x.word === y.word);
+  // The body words in reading order, split rows rejoined. Each word keeps the page it is printed on (a reference's
+  // page is where its mark is printed) and, outside rejoined rows, its index in its page's body.
+  const readBodies = (pageBodies: readonly string[][]): { read: PdfToken[]; split: ReturnType<typeof joinSplitRows> } => {
+    const rejoined = pageBodies.map((tokens) => [...tokens]);
+    const physical = rejoined.map((tokens, page) => tokens.map(() => page));
+    const origin = rejoined.map((tokens) => tokens.map((_, index) => index));
+    const split = joinSplitRows(source, plainWords, rejoined, physical, origin);
+    const read: PdfToken[] = [];
+    rejoined.forEach((tokens, page) => {
+      tokens.forEach((word, index) => read.push({ word, page, physicalPage: physical[page]![index]!, origin: origin[page]![index]! }));
+    });
+    return { read, split };
+  };
 
-  const missing = new Set<number>();
-  const extraIdx: number[] = [];
-  const footerMismatches: PdfWordComparison['footerMismatches'] = [];
-  const unverifiedTableHeaders: PdfWordComparison['unverifiedTableHeaders'] = [];
-  const repeatedTableHeaders: PdfWordComparison['knownGenerated']['repeatedTableHeaders'] = [];
-  if (ops) {
-    const firstOnPage: Array<number | undefined> = pages.map(() => undefined);
-    const lastOnPage: Array<number | undefined> = pages.map(() => undefined);
-    const aligned: Array<{ index: number; page: number }> = [];
-    for (const op of ops) {
-      if (op.kind === 'delete') missing.add(op.ai!);
-      else if (op.kind === 'insert') extraIdx.push(op.bi!);
-      else {
-        const page = pdf[op.bi!]!.page;
-        firstOnPage[page] ??= op.ai!;
-        lastOnPage[page] = op.ai!;
-        aligned.push({ index: op.ai!, page });
+  // Align the PDF words with the source, then explain page breaks and footnote placement.
+  const evaluate = (pdf: readonly PdfToken[], split: ReturnType<typeof joinSplitRows>, joinedLines: PdfWordComparison['knownGenerated']['joinedLines']): { result: PdfWordComparison; extraIdx: number[] } => {
+    const ops = myersDiff(expected, pdf, (x, y) => x.word === y.word);
+
+    const missing = new Set<number>();
+    const extraIdx: number[] = [];
+    const footerMismatches: PdfWordComparison['footerMismatches'] = [];
+    const unverifiedTableHeaders: PdfWordComparison['unverifiedTableHeaders'] = [];
+    const repeatedTableHeaders: PdfWordComparison['knownGenerated']['repeatedTableHeaders'] = [];
+    if (ops) {
+      const firstOnPage: Array<number | undefined> = pages.map(() => undefined);
+      const lastOnPage: Array<number | undefined> = pages.map(() => undefined);
+      const aligned: Array<{ index: number; page: number }> = [];
+      for (const op of ops) {
+        if (op.kind === 'delete') missing.add(op.ai!);
+        else if (op.kind === 'insert') extraIdx.push(op.bi!);
+        else {
+          const page = pdf[op.bi!]!.page;
+          firstOnPage[page] ??= op.ai!;
+          lastOnPage[page] = op.ai!;
+          aligned.push({ index: op.ai!, page });
+        }
+      }
+      // Pages that hold the continuation of a split row belong to that row: its section, and its place in the source.
+      const pinned = new Map<number, SplitRow>();
+      for (const row of split.rows) for (const page of row.pages.slice(1)) pinned.set(page, row);
+      if (split.exhausted) unverifiedTableHeaders.push({ page: 0, words: '', reason: 'table rows split across pages have too many possible readings to check' });
+      const model = explainPageBreaks({
+        source, expected, headers, pages: pages.length, firstOnPage, lastOnPage, aligned, headRuns, pinned,
+        noteOnly,
+        found: (page) => regions[page]!.join(' '),
+        region: (section, page) => regionFor(section, page).join(' '),
+        sectionCount: effective.length,
+      });
+      for (const index of model.explained) missing.delete(index);
+      footerMismatches.push(...model.footerMismatches);
+      unverifiedTableHeaders.push(...model.unverified);
+      repeatedTableHeaders.push(...model.repeated);
+    } else {
+      expected.forEach((_, i) => missing.add(i));
+    }
+    const footnoteMismatches: PdfWordComparison['footnoteMismatches'] = [];
+    const { consumed, sequence, notePages, areas } = footnoteAreas;
+    if (consumed < sequence.length) {
+      const stuck = sequence[consumed]!;
+      const lastPage = areas.reduce((found, area, page) => (area.length > 0 ? page : found), -1);
+      footnoteMismatches.push({
+        note: stuck.note + 1,
+        page: Math.max(lastPage, 0) + 1,
+        reason: consumed === 0 ? 'no page ends with the first footnote' : 'the footnote text stops matching the page foot areas here',
+        words: sequence.slice(consumed, consumed + 8).map((token) => token.word).join(' '),
+      });
+    }
+    if (ops) {
+      const markPage = new Map<number, number>();
+      for (const op of ops) if (op.kind === 'equal') markPage.set(op.ai!, pdf[op.bi!]!.physicalPage);
+      notes.forEach((_, note) => {
+        const token = markTokens.get(note);
+        const referencePage = token === undefined ? undefined : markPage.get(token);
+        // A reference mark that did not align is already reported as missing.
+        if (referencePage === undefined || notePages[note] === -1 || notePages[note] === referencePage) return;
+        footnoteMismatches.push({ note: note + 1, page: notePages[note]! + 1, reason: `the note starts on page ${notePages[note]! + 1} but its reference is on page ${referencePage + 1}` });
+      });
+    }
+    const missingSpans = groupSpans([...missing].sort((a, b) => a - b), expected.map((token) => token.word));
+    const unexplainedExtra = groupSpans(extraIdx, pdf.map((token) => token.word));
+    const result: PdfWordComparison = {
+      passed: ops !== null && missingSpans.length === 0 && unexplainedExtra.length === 0 && footerMismatches.length === 0 && unverifiedTableHeaders.length === 0 && footnoteMismatches.length === 0,
+      normalization: PDF_WORD_NORMALIZATION,
+      alignment: ops ? 'complete' : 'over-budget',
+      expectedWords: expected.length,
+      pdfWords: pdf.length,
+      missing: missingSpans,
+      unexplainedExtra,
+      footerMismatches,
+      unverifiedTableHeaders,
+      footnoteMismatches,
+      knownGenerated: {
+        footnoteAreas: areas.map((area) => area.join(' ')),
+        footerRegions: regions.map((region) => region.join(' ')),
+        listMarkers,
+        repeatedTableHeaders,
+        splitRows: split.rows.map(({ table, row, pages: spanned }) => ({ table, row, pages: spanned.map((page) => page + 1) })),
+        joinedLines,
+      },
+      limitations: PDF_WORD_LIMITATIONS,
+    };
+    return { result, extraIdx };
+  };
+
+  const first = readBodies(bodies);
+  const unsplit = evaluate(first.read, first.split, []);
+  // Layout text is evidence only page for page; with a different page count it is not used at all.
+  const layout = layoutTexts?.length === pageTexts.length ? layoutTexts : undefined;
+  if (unsplit.result.passed || !layout) return unsplit.result;
+  // A justified line LibreOffice exported without space glyphs reads back as one token. The candidates are the
+  // tokens the first alignment could not place or, when it was over budget, every token; never a word of a
+  // rejoined row, which matched the source exactly.
+  const joinable = (unsplit.result.alignment === 'complete' ? unsplit.extraIdx.map((index) => first.read[index]!) : first.read)
+    .filter((token) => token.origin >= 0);
+  const splits = splitJoinedTokens(joinable, expected.map((token) => token.word), bodies, pageTexts.map(words), layout.map(words));
+  if (splits.size === 0) return unsplit.result;
+  // Split the page bodies as read, then rebuild everything from them: split rows, alignment, page model, footnotes.
+  const resplit = bodies.map((tokens, page) => tokens.flatMap((word, index) => splits.get(`${page}:${index}`) ?? [word]));
+  const second = readBodies(resplit);
+  const joinedLines = [...splits].map(([key, split]) => ({ page: Number(key.split(':')[0]) + 1, words: split.join(' ') }));
+  return evaluate(second.read, second.split, joinedLines).result;
+}
+
+/** A body word as read: its page in the reading (after split rows are rejoined), where it is printed, and its index in its page's body (-1 in a rejoined row). */
+type PdfToken = { word: string; page: number; physicalPage: number; origin: number };
+
+/**
+ * A justified line that LibreOffice exported without space glyphs (observed with an underlined word on the
+ * line) reads back from `pdftotext -raw` as one token: "anamountequalto(a)the…". The raw text cannot show where
+ * the words of such a token break, so a split needs independent evidence: `pdftotext -layout`, which places words
+ * by glyph position, prints the same line with its spaces. A candidate token is split only into a run of two or
+ * more consecutive source words that spells it exactly, and only when that is its one reading that the layout
+ * text of its page shows, spaced, more often than the raw text does. Every spaced occurrence in the raw text is
+ * also in the layout text, so each split must account for an occurrence of its own: the tokens split into a
+ * reading on a page may not outnumber the layout text's surplus occurrences of it. When they do, only the tokens
+ * whose neighbours (split where a claim within its surplus split them) also stand around the reading in the
+ * layout text remain, and if those still outnumber the surplus, none is split. Returns the split words by
+ * `page:index` in the page bodies as read.
+ */
+function splitJoinedTokens(
+  candidates: ReadonlyArray<{ word: string; page: number; origin: number }>,
+  expected: readonly string[],
+  bodies: readonly string[][],
+  rawPages: readonly string[][],
+  layoutPages: readonly string[][],
+): Map<string, string[]> {
+  const occurrences = (tokens: readonly string[], sequence: readonly string[]) => {
+    let count = 0;
+    for (let at = 0; at + sequence.length <= tokens.length; at += 1) if (sequence.every((word, offset) => tokens[at + offset] === word)) count += 1;
+    return count;
+  };
+  const surplusMemo = new Map<string, number>();
+  const surplus = (page: number, reading: readonly string[]) => {
+    const key = `${page}\u0001${reading.join(' ')}`;
+    let value = surplusMemo.get(key);
+    if (value === undefined) {
+      value = occurrences(layoutPages[page] ?? [], reading) - occurrences(rawPages[page] ?? [], reading);
+      surplusMemo.set(key, value);
+    }
+    return value;
+  };
+  // Where each source word starts a run, looked up by the token's prefixes. The distinct runs that spell a
+  // spelling are found once per spelling; a spelling that recurs in the source still visits each of its runs.
+  const starts = new Map<string, number[]>();
+  expected.forEach((word, index) => {
+    const list = starts.get(word);
+    if (list) list.push(index);
+    else starts.set(word, [index]);
+  });
+  const runsMemo = new Map<string, string[][]>();
+  const runsSpelling = (token: string): string[][] => {
+    let runs = runsMemo.get(token);
+    if (runs) return runs;
+    const distinct = new Map<string, string[]>();
+    for (let length = 1; length < token.length; length += 1) {
+      for (const start of starts.get(token.slice(0, length)) ?? []) {
+        let at = 0;
+        let end = start;
+        while (end < expected.length && at < token.length && token.startsWith(expected[end]!, at)) {
+          at += expected[end]!.length;
+          end += 1;
+        }
+        if (at === token.length && end - start >= 2) distinct.set(expected.slice(start, end).join(' '), expected.slice(start, end));
       }
     }
-    // Pages that hold the continuation of a split row belong to that row: its section, and its place in the source.
-    const pinned = new Map<number, SplitRow>();
-    for (const row of split.rows) for (const page of row.pages.slice(1)) pinned.set(page, row);
-    if (split.exhausted) unverifiedTableHeaders.push({ page: 0, words: '', reason: 'table rows split across pages have too many possible readings to check' });
-    const model = explainPageBreaks({
-      source, expected, headers, pages: pages.length, firstOnPage, lastOnPage, aligned, headRuns, pinned,
-      noteOnly,
-      found: (page) => regions[page]!.join(' '),
-      region: (section, page) => regionFor(section, page).join(' '),
-      sectionCount: effective.length,
-    });
-    for (const index of model.explained) missing.delete(index);
-    footerMismatches.push(...model.footerMismatches);
-    unverifiedTableHeaders.push(...model.unverified);
-    repeatedTableHeaders.push(...model.repeated);
-  } else {
-    expected.forEach((_, i) => missing.add(i));
-  }
-  const footnoteMismatches: PdfWordComparison['footnoteMismatches'] = [];
-  const { consumed, sequence, notePages, areas } = footnoteAreas;
-  if (consumed < sequence.length) {
-    const stuck = sequence[consumed]!;
-    const lastPage = areas.reduce((found, area, page) => (area.length > 0 ? page : found), -1);
-    footnoteMismatches.push({
-      note: stuck.note + 1,
-      page: Math.max(lastPage, 0) + 1,
-      reason: consumed === 0 ? 'no page ends with the first footnote' : 'the footnote text stops matching the page foot areas here',
-      words: sequence.slice(consumed, consumed + 8).map((token) => token.word).join(' '),
-    });
-  }
-  if (ops) {
-    const markPage = new Map<number, number>();
-    for (const op of ops) if (op.kind === 'equal') markPage.set(op.ai!, pdf[op.bi!]!.physicalPage);
-    notes.forEach((_, note) => {
-      const token = markTokens.get(note);
-      const referencePage = token === undefined ? undefined : markPage.get(token);
-      // A reference mark that did not align is already reported as missing.
-      if (referencePage === undefined || notePages[note] === -1 || notePages[note] === referencePage) return;
-      footnoteMismatches.push({ note: note + 1, page: notePages[note]! + 1, reason: `the note starts on page ${notePages[note]! + 1} but its reference is on page ${referencePage + 1}` });
-    });
-  }
-  const missingSpans = groupSpans([...missing].sort((a, b) => a - b), expected.map((token) => token.word));
-  const unexplainedExtra = groupSpans(extraIdx, pdf.map((token) => token.word));
-  return {
-    passed: ops !== null && missingSpans.length === 0 && unexplainedExtra.length === 0 && footerMismatches.length === 0 && unverifiedTableHeaders.length === 0 && footnoteMismatches.length === 0,
-    normalization: PDF_WORD_NORMALIZATION,
-    alignment: ops ? 'complete' : 'over-budget',
-    expectedWords: expected.length,
-    pdfWords: pdf.length,
-    missing: missingSpans,
-    unexplainedExtra,
-    footerMismatches,
-    unverifiedTableHeaders,
-    footnoteMismatches,
-    knownGenerated: {
-      footnoteAreas: areas.map((area) => area.join(' ')),
-      footerRegions: regions.map((region) => region.join(' ')),
-      listMarkers,
-      repeatedTableHeaders,
-      splitRows: split.rows.map(({ table, row, pages: spanned }) => ({ table, row, pages: spanned.map((page) => page + 1) })),
-    },
-    limitations: PDF_WORD_LIMITATIONS,
+    runs = [...distinct.values()];
+    runsMemo.set(token, runs);
+    return runs;
   };
+  const proposals = new Map<string, string[]>();
+  for (const { word: token, page, origin } of candidates) {
+    const readings = runsSpelling(token).filter((reading) => surplus(page, reading) > 0);
+    if (readings.length === 1) proposals.set(`${page}:${origin}`, readings[0]!);
+  }
+  // Each split needs its own surplus occurrence. Claims on a reading within a page's surplus are accepted first.
+  // Where the claims outnumber the surplus, keep only the tokens whose neighbours (as split by the accepted claims)
+  // stand around the reading in the layout text; if those still outnumber it, none.
+  const claims = new Map<string, string[]>();
+  for (const [key, reading] of proposals) {
+    const group = `${key.split(':')[0]}\u0001${reading.join(' ')}`;
+    const list = claims.get(group);
+    if (list) list.push(key);
+    else claims.set(group, [key]);
+  }
+  const accepted = new Map<string, string[]>();
+  const oversubscribed: Array<{ page: number; reading: string[]; keys: string[]; available: number }> = [];
+  for (const [group, keys] of claims) {
+    const page = Number(group.split('\u0001')[0]);
+    const reading = proposals.get(keys[0]!)!;
+    const available = surplus(page, reading);
+    if (keys.length <= available) for (const key of keys) accepted.set(key, reading);
+    else oversubscribed.push({ page, reading, keys, available });
+  }
+  const resolved = new Map<string, string[]>();
+  for (const { page, reading, keys, available } of oversubscribed) {
+    const body = bodies[page] ?? [];
+    const neighbour = (index: number, side: 'before' | 'after'): string[] => {
+      if (index < 0 || index >= body.length) return [];
+      const split = accepted.get(`${page}:${index}`);
+      return split ? [side === 'before' ? split.at(-1)! : split[0]!] : [body[index]!];
+    };
+    const inContext = keys.filter((key) => {
+      const origin = Number(key.split(':')[1]);
+      return occurrences(layoutPages[page] ?? [], [...neighbour(origin - 1, 'before'), ...reading, ...neighbour(origin + 1, 'after')]) > 0;
+    });
+    if (inContext.length <= available) for (const key of inContext) resolved.set(key, reading);
+  }
+  for (const [key, reading] of resolved) accepted.set(key, reading);
+  return accepted;
 }
 
 /** A table row found split over `pages` (0-based, first to last). */
@@ -644,7 +785,7 @@ type SplitRow = { table: number; row: number; section: number; pages: number[] }
  * added or removed, and only when every word of the row is accounted for exactly once; a row with a lost or
  * extra word has no such split and is left for the alignment to report.
  */
-function joinSplitRows(source: SourceProjection, entryWords: readonly string[][], bodies: string[][], physical: number[][]): { rows: SplitRow[]; exhausted: boolean } {
+function joinSplitRows(source: SourceProjection, entryWords: readonly string[][], bodies: string[][], physical: number[][], origin: number[][]): { rows: SplitRow[]; exhausted: boolean } {
   const rows = new Map<string, { table: number; row: number; section: number; cells: string[][] }>();
   source.body.forEach((entry, index) => {
     if (!entry.table) return;
@@ -724,12 +865,15 @@ function joinSplitRows(source: SourceProjection, entryWords: readonly string[][]
           const rowPages = row.cells.flatMap((_, cell) => lengths.flatMap((fragment, part) => Array<number>(fragment[cell]!).fill(page + part)));
           bodies[page] = [...bodies[page]!.slice(0, -tail), ...row.cells.flat()];
           physical[page] = [...physical[page]!.slice(0, -tail), ...rowPages];
+          origin[page] = [...origin[page]!.slice(0, -tail), ...rowPages.map(() => -1)];
           for (let middlePage = page + 1; middlePage < last; middlePage += 1) {
             bodies[middlePage] = [];
             physical[middlePage] = [];
+            origin[middlePage] = [];
           }
           bodies[last] = bodies[last]!.slice(head);
           physical[last] = physical[last]!.slice(head);
+          origin[last] = origin[last]!.slice(head);
           found.push({ table: row.table, row: row.row, section: row.section, pages: Array.from({ length: last - page + 1 }, (_, index) => page + index) });
           joined = true;
         }

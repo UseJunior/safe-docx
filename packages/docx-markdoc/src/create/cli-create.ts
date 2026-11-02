@@ -21,7 +21,7 @@ export type CreateCliArgs = {
 };
 
 /** The PDF verdict as recorded: page texts are dropped, and `words` holds the word-level comparison when the PDF rendered. */
-export type RecordedPdfVerdict = Omit<PlainPdfVerdict, 'pageTexts'> & { words?: PdfWordComparison };
+export type RecordedPdfVerdict = Omit<PlainPdfVerdict, 'pageTexts' | 'layoutPageTexts'> & { words?: PdfWordComparison };
 
 export type CreateCliResult = {
   outputs: { docx: string; text: string; certificate: string; pdf?: string };
@@ -347,7 +347,7 @@ export async function runCreateCommand(
 
 /** Drop the bulky per-page text from a PDF verdict before recording it. */
 function recordedPdf(verdict: PlainPdfVerdict, words?: PdfWordComparison): RecordedPdfVerdict {
-  const { pageTexts: _pageTexts, ...rest } = verdict;
+  const { pageTexts: _pageTexts, layoutPageTexts: _layoutPageTexts, ...rest } = verdict;
   return { ...rest, ...(words ? { words } : {}) };
 }
 
@@ -457,7 +457,7 @@ async function createLocked(
         throw new DocxMarkdocError('CREATION_PDF_FAILED', `PDF check ${verdict.status}: ${verdict.reason ?? 'unknown'}${verdict.missingText ? ` (missing: ${verdict.missingText.join(' | ')})` : ''}.`, recordedPdf(verdict));
       }
       // Every source word must reach the PDF text layer, and the PDF may add only known generated text.
-      const words = verdict.status === 'passed' ? comparePdfWords(projectSourceText(source), verdict.pageTexts ?? []) : undefined;
+      const words = verdict.status === 'passed' ? comparePdfWords(projectSourceText(source), verdict.pageTexts ?? [], verdict.layoutPageTexts) : undefined;
       pdf = recordedPdf(verdict, words);
       if (words && !words.passed) {
         const first = words.missing[0] ?? words.unexplainedExtra[0];
