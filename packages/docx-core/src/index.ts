@@ -109,6 +109,10 @@ export type {
   HeaderFooterSet,
   HeaderFooterSpec,
   InlineSpec,
+  NumberingInstanceSpec,
+  NumberingLevelFormat,
+  NumberingLevelOverrideSpec,
+  NumberingLevelSpec,
   NumberingSpec,
   ParagraphSpec,
   RunProps,
@@ -120,4 +124,5 @@ export type {
   TableRowSpec,
   TableSpec,
   TabSpec,
+  TabStopSpec,
 } from './generation/index.js';

@@ -21,7 +21,7 @@ const outlineTest = test.conformance({
 });
 const numberingTest = test
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.6' })
-  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.22' });
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.23' });
 
 function wrapDocument(bodyXml: string): Document {
   return parseXml(

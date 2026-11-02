@@ -12,6 +12,13 @@ export type NumberingLevel = {
   lvlText: string; // e.g. "%1.%2."
   suff: string; // tab, space, nothing
   pStyle: string | null;
+  /** w:isLgl: placeholders in lvlText render as Arabic numerals. */
+  isLgl: boolean;
+  /**
+   * w:lvlRestart: one-based restart threshold (0 = never restart); null when
+   * absent, meaning the level restarts after the previous level.
+   */
+  lvlRestart: number | null;
 };
 
 export type AbstractNum = {
@@ -49,14 +56,19 @@ export function parseNumberingXml(numberingDoc: Document | null): NumberingModel
       const lvlTextEl = lvl.getElementsByTagNameNS(OOXML.W_NS, W.lvlText).item(0);
       const suffEl = lvl.getElementsByTagNameNS(OOXML.W_NS, W.suff).item(0);
       const pStyleEl = getFirstChild(lvl, OOXML.W_NS, W.pStyle);
+      const isLglEl = getFirstChild(lvl, OOXML.W_NS, W.isLgl);
+      const lvlRestartEl = getFirstChild(lvl, OOXML.W_NS, W.lvlRestart);
 
       const startVal = startEl ? Number.parseInt(getWAttr(startEl, 'val') ?? '1', 10) : 1;
       const numFmt = numFmtEl ? (getWAttr(numFmtEl, 'val') ?? 'decimal') : 'decimal';
       const lvlText = lvlTextEl ? (getWAttr(lvlTextEl, 'val') ?? `%${ilvl + 1}.`) : `%${ilvl + 1}.`;
       const suff = suffEl ? (getWAttr(suffEl, 'val') ?? 'tab') : 'tab';
       const pStyle = pStyleEl ? (getWAttr(pStyleEl, 'val') ?? null) : null;
+      const isLgl = isLglEl ? isOnOffTrue(getWAttr(isLglEl, 'val')) : false;
+      const lvlRestartVal = lvlRestartEl ? Number.parseInt(getWAttr(lvlRestartEl, 'val') ?? '', 10) : NaN;
+      const lvlRestart = Number.isNaN(lvlRestartVal) ? null : lvlRestartVal;
 
-      levels.set(ilvl, { ilvl, start: startVal, numFmt, lvlText, suff, pStyle });
+      levels.set(ilvl, { ilvl, start: startVal, numFmt, lvlText, suff, pStyle, isLgl, lvlRestart });
     }
     model.abstractNums.set(id, { abstractNumId: id, levels });
   }
@@ -85,6 +97,11 @@ export function parseNumberingXml(numberingDoc: Document | null): NumberingModel
   }
 
   return model;
+}
+
+/** CT_OnOff: a bare element (no val) is true; '0'/'false'/'off' are false. */
+function isOnOffTrue(val: string | null): boolean {
+  return val === null || !['0', 'false', 'off'].includes(val);
 }
 
 function toRoman(n: number, upper: boolean): string {
@@ -133,6 +150,9 @@ function formatCounter(numFmt: string, n: number): string {
   switch (numFmt) {
     case 'decimal':
       return String(n);
+    case 'decimalZero':
+      // A leading zero only for one through nine (§ 17.18.59): 0 stays "0".
+      return n >= 1 && n <= 9 ? `0${n}` : String(n);
     case 'lowerLetter':
       return toLetters(n, false);
     case 'upperLetter':
@@ -168,7 +188,7 @@ function getStartForLevel(model: NumberingModel, numId: string, ilvl: number): n
  * advancing or otherwise mutating list counters.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.6
- * @conformance ECMA-376 edition 5, Part 1 § 17.9.22
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.23
  */
 export function getNumberingLevel(
   model: NumberingModel,
@@ -181,6 +201,18 @@ export function getNumberingLevel(
   return abs?.levels.get(ilvl) ?? null;
 }
 
+/**
+ * Advance the paragraph's list counters and render its label. Deeper levels
+ * restart per their `w:lvlRestart` threshold; a `w:isLgl` level renders every
+ * placeholder as an Arabic numeral, except that `decimalZero` levels keep
+ * their padding and `none` levels stay empty, as Word displays them;
+ * `decimalZero` pads one through nine.
+ *
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.9.4 — follows Word: decimalZero padding and none/bullet levels survive isLgl
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.10
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.11
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.26
+ */
 export function computeListLabelForParagraph(
   model: NumberingModel,
   counters: NumberingCounters,
@@ -197,19 +229,26 @@ export function computeListLabelForParagraph(
     counters.set(numId, arr);
   }
 
-  // Ensure array has at least ilvl+1 entries.
-  while (arr.length <= ilvl) arr.push(0);
+  // Ensure array has at least ilvl+1 entries. NaN marks a level not yet
+  // used, so a level whose legitimate value is 0 (start or startOverride 0,
+  // or a negative start counting up through 0) is not re-initialized.
+  while (arr.length <= ilvl) arr.push(Number.NaN);
 
   // Initialize this level to start-1 if it hasn't been set yet.
   const startThis = getStartForLevel(model, numId, ilvl);
-  if (arr[ilvl] === 0) arr[ilvl] = startThis - 1;
+  if (Number.isNaN(arr[ilvl]!)) arr[ilvl] = startThis - 1;
 
   // Increment this level.
   arr[ilvl] = arr[ilvl]! + 1;
   if (arr[ilvl] < startThis) arr[ilvl] = startThis;
 
-  // Reset deeper levels.
+  // Reset deeper levels whose restart threshold this level meets. By default
+  // a level restarts whenever any earlier level is used; w:lvlRestart="r"
+  // restarts it only when one of the first r levels (one-based) is used, and
+  // r = 0 never restarts it (§ 17.9.10).
   for (let d = ilvl + 1; d < arr.length; d++) {
+    const restart = getNumberingLevel(model, numId, d)?.lvlRestart ?? null;
+    if (restart !== null && ilvl >= restart) continue;
     const startD = getStartForLevel(model, numId, d);
     arr[d] = startD - 1;
   }
@@ -219,9 +258,19 @@ export function computeListLabelForParagraph(
   const rendered = lvlText.replace(/%(\d+)/g, (_m, nStr) => {
     const levelNum = Number.parseInt(String(nStr), 10) - 1;
     if (Number.isNaN(levelNum) || levelNum < 0) return '';
-    const v = arr[levelNum] ?? 0;
+    const counter = arr[levelNum];
+    // A level never used renders as 0, as before the NaN sentinel existed.
+    const v = counter === undefined || Number.isNaN(counter) ? 0 : counter;
     const lvlDef = getNumberingLevel(model, numId, levelNum);
     const fmt = lvlDef?.numFmt ?? 'decimal';
+    // Legal numbering (w:isLgl) shows every placeholder as an Arabic numeral.
+    // Following Word rather than the letter of § 17.9.4: zero-padded decimal
+    // levels keep their padding ("Section 2.01", observed in Word and
+    // LibreOffice), and a `none` level stays empty ([MS-OE376]); bullet glyphs
+    // are not numbers, so they stay glyphs.
+    if (level.isLgl && fmt !== 'decimalZero' && fmt !== 'bullet' && fmt !== 'none') {
+      return formatCounter('decimal', v);
+    }
     return formatCounter(fmt, v);
   });
 
