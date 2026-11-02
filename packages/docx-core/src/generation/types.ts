@@ -152,7 +152,7 @@ export type ParagraphSpec = {
   note?: DraftingNoteSpec;
 };
 
-export type InlineSpec = RunSpec | FieldSpec | TabSpec | BreakSpec;
+export type InlineSpec = RunSpec | FieldSpec | TabSpec | BreakSpec | FootnoteSpec;
 
 /**
  * The fixed set of text-highlight values (CT_HighlightColor). Single source of
@@ -220,6 +220,24 @@ export type FieldSpec = {
 export type TabSpec = { kind: 'tab' };
 
 export type BreakSpec = { kind: 'break'; breakType?: 'line' | 'page' };
+
+/**
+ * A footnote: a reference mark at this point of the paragraph and a note body
+ * at the foot of the page. Word numbers notes 1, 2, 3, … in document order;
+ * the compiler assigns the note ids. The reference mark is a run in the
+ * FootnoteReference character style, and each body paragraph without a
+ * `styleId` takes the FootnoteText paragraph style. Both styles are emitted
+ * when the document has a footnote and does not declare them itself.
+ *
+ * Footnotes are allowed only in the body story (table cells included): not in
+ * headers or footers, and not inside another footnote. Body paragraphs may not
+ * carry a drafting note, `pageBreakBefore`, or a page break.
+ */
+export type FootnoteSpec = {
+  kind: 'footnote';
+  /** The note's paragraphs, at least one. */
+  blocks: ParagraphSpec[];
+};
 
 export type TableSpec = {
   kind: 'table';

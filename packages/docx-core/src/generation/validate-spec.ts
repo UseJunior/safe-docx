@@ -14,8 +14,9 @@
  * documents with per-section page setup, page numbering, break types,
  * default/first/even headers and footers, tables (grid, spans, vertical
  * merges, cell decoration, nesting), multi-level numbering with w:numPr
- * list references, and drafting notes compiled to anchored comments (body
- * story only — header/footer paragraphs cannot carry notes).
+ * list references, drafting notes compiled to anchored comments (body
+ * story only — header/footer paragraphs cannot carry notes), and footnotes
+ * (body story only, table cells included; paragraphs only, never nested).
  *
  * Every declared feature now has an emitter; the loud-rejection contract
  * (SDX-GEN-003) lives on as runtime guards against unrecognized block and
@@ -25,10 +26,12 @@
 
 import { GenerationSpecError } from './errors.js';
 import { WML_SCHEMA_ENUM_SETS, type WmlSchemaEnumType } from './schema-enum-domains.js';
+import { FOOTNOTE_REFERENCE_STYLE_ID, FOOTNOTE_TEXT_STYLE_ID } from '../primitives/footnote-shapes.js';
 import type {
   BlockSpec,
   BorderSpec,
   DocumentSpec,
+  FootnoteSpec,
   InlineSpec,
   NumberingSpec,
   ParagraphSpec,
@@ -130,6 +133,11 @@ export function validateSpec(spec: DocumentSpec): void {
   if (spec.defaults?.run) validateRunProps(spec.defaults.run, '/defaults/run');
   if (spec.defaults?.paragraph) validateParagraphProps(spec.defaults.paragraph, '/defaults/paragraph');
   const declaredStyleIds = validateStyles(spec.styles ?? []);
+  if (spec.sections.some((section) => Array.isArray(section.blocks) && section.blocks.some(blockHasFootnote))) {
+    validateFootnoteStyles(spec.styles ?? []);
+    declaredStyleIds.add(FOOTNOTE_TEXT_STYLE_ID);
+    declaredStyleIds.add(FOOTNOTE_REFERENCE_STYLE_ID);
+  }
   const numbering = validateNumbering(spec.numbering ?? [], spec.styles ?? []);
 
   spec.sections.forEach((section, sectionIndex) => {
@@ -460,8 +468,90 @@ function validateBreakPlacement(section: SectionSpec, path: string, isFinal: boo
   }
 }
 
-/** Story kind: drafting notes may only anchor in the body story. */
-type StoryContext = 'body' | 'headerFooter';
+/**
+ * Story kind: drafting notes may only anchor in the body story, footnote
+ * references may only sit in the body story, and a footnote's own paragraphs
+ * form the 'footnote' story.
+ */
+type StoryContext = 'body' | 'headerFooter' | 'footnote';
+
+function blockHasFootnote(block: BlockSpec): boolean {
+  if (block?.kind === 'paragraph') return Array.isArray(block.runs) && block.runs.some((run) => run?.kind === 'footnote');
+  if (block?.kind === 'table') {
+    return Array.isArray(block.rows) && block.rows.some((row) => Array.isArray(row?.cells)
+      && row.cells.some((cell) => Array.isArray(cell?.blocks) && cell.blocks.some(blockHasFootnote)));
+  }
+  return false;
+}
+
+/**
+ * A document with footnotes gets the FootnoteText paragraph style and the
+ * FootnoteReference character style unless it declares them; a declaration
+ * under either id must then have that style type, because the compiler
+ * applies it as one.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.4.17
+ */
+function validateFootnoteStyles(styles: StyleSpec[]): void {
+  const expected: Array<[string, StyleSpec['type']]> = [
+    [FOOTNOTE_TEXT_STYLE_ID, 'paragraph'],
+    [FOOTNOTE_REFERENCE_STYLE_ID, 'character'],
+  ];
+  for (const [styleId, type] of expected) {
+    const index = styles.findIndex((style) => style.styleId === styleId);
+    if (index !== -1 && styles[index]!.type !== type) {
+      throw new GenerationSpecError(
+        'invalid_value',
+        `/styles/${index}/type`,
+        `Style '${styleId}' is applied to footnotes as a ${type} style, so it must be declared with type '${type}'`,
+      );
+    }
+  }
+}
+
+/**
+ * A footnote's body: one or more paragraphs, validated as their own story.
+ * A footnote reference may not appear inside a footnote (§ 17.11.14), and the
+ * body cannot carry a drafting note or force a page break.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.10
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ */
+function validateFootnote(
+  footnote: FootnoteSpec,
+  path: string,
+  styleIds: Set<string>,
+  numbering: Map<string, Set<number>>,
+  story: StoryContext,
+): void {
+  if (story === 'headerFooter') {
+    throw new GenerationSpecError(
+      'invalid_value',
+      path,
+      'Footnote references may appear only in the body story, not in headers or footers',
+    );
+  }
+  if (story === 'footnote') {
+    throw new GenerationSpecError('invalid_value', path, 'A footnote cannot contain another footnote');
+  }
+  if (!Array.isArray(footnote.blocks) || footnote.blocks.length === 0) {
+    throw new GenerationSpecError('invalid_value', `${path}/blocks`, 'A footnote needs at least one paragraph');
+  }
+  footnote.blocks.forEach((block, blockIndex) => {
+    const blockPath = `${path}/blocks/${blockIndex}`;
+    if (block?.kind !== 'paragraph') {
+      throw new GenerationSpecError(
+        'unsupported_feature',
+        blockPath,
+        `Footnote blocks must be paragraphs; block kind '${String((block as { kind?: unknown } | undefined)?.kind)}' is not supported in a footnote`,
+      );
+    }
+    if (block.pageBreakBefore) {
+      throw new GenerationSpecError('invalid_value', `${blockPath}/pageBreakBefore`, 'A footnote paragraph cannot start a new page');
+    }
+    validateParagraph(block, blockPath, styleIds, numbering, 'footnote');
+  });
+}
 
 function validateBlock(
   block: BlockSpec,
@@ -635,11 +725,13 @@ function validateParagraph(
   story: StoryContext,
 ): void {
   if (paragraph.note !== undefined) {
-    if (story === 'headerFooter') {
+    if (story !== 'body') {
       throw new GenerationSpecError(
         'invalid_value',
         `${path}/note`,
-        'Drafting notes anchor as document-story comments and cannot live in headers or footers',
+        story === 'footnote'
+          ? 'Drafting notes anchor as document-story comments and cannot live in footnotes'
+          : 'Drafting notes anchor as document-story comments and cannot live in headers or footers',
       );
     }
     if (typeof paragraph.note.text !== 'string' || paragraph.note.text.length === 0) {
@@ -678,7 +770,7 @@ function validateParagraph(
     throw new GenerationSpecError('invalid_value', `${path}/runs`, 'Paragraph runs must be an array');
   }
   paragraph.runs.forEach((run, runIndex) => {
-    validateInline(run, `${path}/runs/${runIndex}`);
+    validateInline(run, `${path}/runs/${runIndex}`, styleIds, numbering, story);
   });
 }
 
@@ -731,9 +823,22 @@ function validateTabStops(tabs: TabStopSpec[], path: string): void {
   });
 }
 
-function validateInline(run: InlineSpec, path: string): void {
-  if (run.kind !== 'tab' && run.kind !== 'break' && run.kind !== 'field' && run.kind !== 'text') {
+function validateInline(
+  run: InlineSpec,
+  path: string,
+  styleIds: Set<string>,
+  numbering: Map<string, Set<number>>,
+  story: StoryContext,
+): void {
+  if (run.kind !== 'tab' && run.kind !== 'break' && run.kind !== 'field' && run.kind !== 'text' && run.kind !== 'footnote') {
     unsupported(path, `inline kind '${(run as { kind: string }).kind}'`);
+  }
+  if (run.kind === 'footnote') {
+    validateFootnote(run, path, styleIds, numbering, story);
+    return;
+  }
+  if (run.kind === 'break' && run.breakType === 'page' && story === 'footnote') {
+    throw new GenerationSpecError('invalid_value', `${path}/breakType`, 'A footnote cannot contain a page break');
   }
   if (run.kind === 'tab' || run.kind === 'break') return;
   if (run.kind === 'field') {

@@ -23,6 +23,15 @@ import {
 import { emitFormattingTags, mergeAdjacentTags, type AnnotatedRun } from './formatting_tags.js';
 import { ensureExternalHyperlinkRelationships } from './relationships.js';
 import {
+  buildFootnoteMarkSpaceRun,
+  buildFootnoteRefMarkRun,
+  buildFootnoteReferenceRun,
+  FOOTNOTE_TEXT_STYLE_ID,
+  FOOTNOTES_CONTENT_TYPE,
+  FOOTNOTES_REL_TYPE,
+  FOOTNOTES_XML_TEMPLATE,
+} from './footnote-shapes.js';
+import {
   createRevisionContainer,
   prepareElementForDeletion,
   type RevisionContext,
@@ -30,23 +39,9 @@ import {
 
 // ── Relationship & content types ────────────────────────────────────────
 
-const REL_TYPE_FOOTNOTES = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes';
-const CT_FOOTNOTES = 'application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml';
+const REL_TYPE_FOOTNOTES = FOOTNOTES_REL_TYPE;
+const CT_FOOTNOTES = FOOTNOTES_CONTENT_TYPE;
 const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
-
-// ── Minimal XML template ────────────────────────────────────────────────
-
-const FOOTNOTES_XML_TEMPLATE =
-  `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-  `<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
-  ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">` +
-  `<w:footnote w:type="separator" w:id="-1">` +
-  `<w:p><w:r><w:separator/></w:r></w:p>` +
-  `</w:footnote>` +
-  `<w:footnote w:type="continuationSeparator" w:id="0">` +
-  `<w:p><w:r><w:continuationSeparator/></w:r></w:p>` +
-  `</w:footnote>` +
-  `</w:footnotes>`;
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -558,22 +553,7 @@ function insertFootnoteReference(
   requestedVisibleOffset?: number,
   ctx?: RevisionContext,
 ): void {
-  // Create the reference run
-  const refRun = documentXml.createElementNS(OOXML.W_NS, 'w:r');
-  const rPr = documentXml.createElementNS(OOXML.W_NS, 'w:rPr');
-  const rStyle = documentXml.createElementNS(OOXML.W_NS, 'w:rStyle');
-  rStyle.setAttributeNS(OOXML.W_NS, 'w:val', 'FootnoteReference');
-  rPr.appendChild(rStyle);
-  // Some source documents omit or redefine the FootnoteReference character
-  // style. Keep the semantic style and make the required visual elevation
-  // explicit so the marker remains superscript across those documents.
-  const vertAlign = documentXml.createElementNS(OOXML.W_NS, 'w:vertAlign');
-  vertAlign.setAttributeNS(OOXML.W_NS, 'w:val', 'superscript');
-  rPr.appendChild(vertAlign);
-  refRun.appendChild(rPr);
-  const fnRef = documentXml.createElementNS(OOXML.W_NS, 'w:footnoteReference');
-  fnRef.setAttributeNS(OOXML.W_NS, 'w:id', String(noteId));
-  refRun.appendChild(fnRef);
+  const refRun = buildFootnoteReferenceRun(documentXml, noteId);
   const refAnchor = ctx ? createRevisionContainer(documentXml, 'ins', ctx) : refRun;
   if (ctx) {
     refAnchor.appendChild(refRun);
@@ -761,31 +741,14 @@ function addFootnoteElement(
   // Paragraph properties with FootnoteText style
   const pPr = footnotesDoc.createElementNS(OOXML.W_NS, 'w:pPr');
   const pStyle = footnotesDoc.createElementNS(OOXML.W_NS, 'w:pStyle');
-  pStyle.setAttributeNS(OOXML.W_NS, 'w:val', 'FootnoteText');
+  pStyle.setAttributeNS(OOXML.W_NS, 'w:val', FOOTNOTE_TEXT_STYLE_ID);
   pPr.appendChild(pStyle);
   p.appendChild(pPr);
 
-  // footnoteRef run (required by Word to display the footnote number)
-  const refRun = footnotesDoc.createElementNS(OOXML.W_NS, 'w:r');
-  const refRPr = footnotesDoc.createElementNS(OOXML.W_NS, 'w:rPr');
-  const refRStyle = footnotesDoc.createElementNS(OOXML.W_NS, 'w:rStyle');
-  refRStyle.setAttributeNS(OOXML.W_NS, 'w:val', 'FootnoteReference');
-  refRPr.appendChild(refRStyle);
-  const refVertAlign = footnotesDoc.createElementNS(OOXML.W_NS, 'w:vertAlign');
-  refVertAlign.setAttributeNS(OOXML.W_NS, 'w:val', 'superscript');
-  refRPr.appendChild(refVertAlign);
-  refRun.appendChild(refRPr);
-  const fnRefEl = footnotesDoc.createElementNS(OOXML.W_NS, 'w:footnoteRef');
-  refRun.appendChild(fnRefEl);
-  p.appendChild(refRun);
-
-  // Space separator run
-  const spaceRun = footnotesDoc.createElementNS(OOXML.W_NS, 'w:r');
-  const spaceT = footnotesDoc.createElementNS(OOXML.W_NS, 'w:t');
-  spaceT.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
-  spaceT.appendChild(footnotesDoc.createTextNode(' '));
-  spaceRun.appendChild(spaceT);
-  p.appendChild(spaceRun);
+  // footnoteRef run (required by Word to display the footnote number), then
+  // the space Word puts between the number and the text.
+  p.appendChild(buildFootnoteRefMarkRun(footnotesDoc));
+  p.appendChild(buildFootnoteMarkSpaceRun(footnotesDoc));
 
   const prefixRuns = presentation?.prefixRuns
     ?? (presentation?.prefix ? [{ text: presentation.prefix, style: presentation.prefixStyle }] : []);
@@ -798,7 +761,14 @@ function addFootnoteElement(
 
   footnoteEl.appendChild(p);
   for (const paragraph of body.slice(1)) {
+    // Every paragraph of a note is footnote text, as in Word; without the
+    // style a continuation paragraph would fall back to Normal.
     const bodyParagraph = footnotesDoc.createElementNS(OOXML.W_NS, 'w:p');
+    const bodyPPr = footnotesDoc.createElementNS(OOXML.W_NS, 'w:pPr');
+    const bodyPStyle = footnotesDoc.createElementNS(OOXML.W_NS, 'w:pStyle');
+    bodyPStyle.setAttributeNS(OOXML.W_NS, 'w:val', FOOTNOTE_TEXT_STYLE_ID);
+    bodyPPr.appendChild(bodyPStyle);
+    bodyParagraph.appendChild(bodyPPr);
     appendFootnoteRuns(bodyParagraph, paragraph.runs, footnotesDoc, hyperlinkRelationshipIds);
     footnoteEl.appendChild(bodyParagraph);
   }
@@ -1019,11 +989,7 @@ function getFirstFootnoteParagraph(footnoteEl: Element): Element {
 }
 
 function buildFootnoteTextRuns(doc: Document, text: string): [Element, Element] {
-  const spaceRun = doc.createElementNS(OOXML.W_NS, 'w:r');
-  const spaceT = doc.createElementNS(OOXML.W_NS, 'w:t');
-  spaceT.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
-  spaceT.appendChild(doc.createTextNode(' '));
-  spaceRun.appendChild(spaceT);
+  const spaceRun = buildFootnoteMarkSpaceRun(doc);
 
   const textRun = doc.createElementNS(OOXML.W_NS, 'w:r');
   const t = doc.createElementNS(OOXML.W_NS, 'w:t');

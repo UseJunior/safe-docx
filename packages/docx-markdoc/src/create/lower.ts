@@ -37,8 +37,25 @@ export const PAGE_FIELD_TOKEN = '<PAGE>';
  */
 export type FooterProjection = string[] | null;
 
-/** Plain-text projection of the lowered document, compared against read-back from the DOCX bytes. */
-export type CreationProjection = { paragraphs: string[]; footers: FooterProjection[] };
+/** Where a footnote reference sits: its body paragraph (index into `paragraphs`) and character offset. */
+export type FootnoteReferencePosition = { paragraph: number; offset: number };
+
+/**
+ * Plain-text projection of the lowered document, compared against read-back
+ * from the DOCX bytes. A footnote reference adds no text to its paragraph;
+ * `footnoteReferences` records where each one sits, in document order, and
+ * `footnotes` holds the matching notes' paragraph texts, the first starting
+ * with the space between the note number and its text.
+ */
+export type CreationProjection = {
+  paragraphs: string[];
+  footers: FooterProjection[];
+  footnoteReferences: FootnoteReferencePosition[];
+  footnotes: string[][];
+};
+
+/** The space docx-core writes between a note's number and its text. */
+export const FOOTNOTE_MARK_SPACE = ' ';
 
 export type CreationBlockKind =
   | 'title' | 'heading' | 'body' | 'quote' | 'centered' | 'legend' | 'signer' | 'list' | 'table';
@@ -89,15 +106,34 @@ function runText(runs: InlineSpec[]): string {
     if (run.kind === 'text') return run.text;
     if (run.kind === 'tab') return '\t';
     if (run.kind === 'break') return '\n';
+    if (run.kind === 'footnote') return '';
     return PAGE_FIELD_TOKEN;
   }).join('');
 }
 
-/** Body paragraphs in document order, table cells included, as read-back must find them. */
-function projectBlocks(blocks: BlockSpec[]): string[] {
-  return blocks.flatMap((block) => (block.kind === 'paragraph'
-    ? [runText(block.runs)]
-    : block.rows.flatMap((row) => row.cells.flatMap((cell) => projectBlocks(cell.blocks)))));
+type BlockProjection = Pick<CreationProjection, 'paragraphs' | 'footnoteReferences' | 'footnotes'>;
+
+/**
+ * Body paragraphs in document order, table cells included, as read-back must
+ * find them, with each footnote reference's position and its note's text.
+ */
+function projectBlocks(blocks: BlockSpec[], out: BlockProjection = { paragraphs: [], footnoteReferences: [], footnotes: [] }): BlockProjection {
+  for (const block of blocks) {
+    if (block.kind === 'table') {
+      for (const row of block.rows) for (const cell of row.cells) projectBlocks(cell.blocks, out);
+      continue;
+    }
+    let offset = 0;
+    for (const run of block.runs) {
+      if (run.kind === 'footnote') {
+        out.footnoteReferences.push({ paragraph: out.paragraphs.length, offset });
+        out.footnotes.push(run.blocks.map((paragraph, index) => (index === 0 ? FOOTNOTE_MARK_SPACE : '') + runText(paragraph.runs)));
+      }
+      offset += runText([run]).length;
+    }
+    out.paragraphs.push(runText(block.runs));
+  }
+  return out;
 }
 
 function footerSpec(footer: FooterDeclaration): HeaderFooterSpec {
@@ -146,8 +182,16 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
   validateCreationAst(ast.children, { fillIns: frontmatter.fillIns ?? 'markup' });
   normalizeSoftBreaks(ast);
 
+  // Footnote bodies render where their {% fnref /%} sits; the blocks
+  // themselves add nothing to the body. Validation paired every id.
+  const footnoteBodies = new Map<string, MarkdocNode>();
+  for (const node of ast.children) {
+    const tag = node.type === 'tag' ? node : soleInlineTag(node);
+    if (tag?.tag === 'footnote') footnoteBodies.set(String(tag.attributes.id), tag);
+  }
+
   const theme = new CreationTheme(profile, frontmatter.fillIns ?? 'markup');
-  const plugins = creationPlugins(theme);
+  const plugins = creationPlugins(theme, footnoteBodies);
   let api!: RenderApi;
   api = createMarkdocxRenderer({
     theme,
@@ -173,6 +217,9 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
   for (const node of ast.children) {
     const tag = node.type === 'tag' ? node : soleInlineTag(node);
     const current = sections.at(-1)!;
+    // A footnote body is not a block of the body: a pending page break
+    // carries over it to the next block.
+    if (tag?.tag === 'footnote') continue;
     if (tag?.tag === 'page-break') {
       if (pendingPageBreak) creationError('DUPLICATE_PAGE_BREAK', 'Two consecutive {% page-break /%} tags.', node);
       pendingPageBreak = node;
@@ -190,7 +237,7 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     }
     const blocks = api.renderBlocks([node], { listDepth: 0 });
     const kind = kindOf(node);
-    if (kind === 'title' && titleText === undefined) titleText = projectBlocks(blocks)[0];
+    if (kind === 'title' && titleText === undefined) titleText = projectBlocks(blocks).paragraphs[0];
     current.entries.push({ kind, ...(lineOf(node) === undefined ? {} : { line: lineOf(node)! }), blocks, pageBreakBefore: pendingPageBreak !== null });
     pendingPageBreak = null;
   }
@@ -216,7 +263,12 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
   });
   // A section ending in a table gets one empty paragraph after it from docx-core
   // (the dedicated break paragraph, or the closing paragraph of the body).
-  const paragraphs = specSections.flatMap((section) => [...projectBlocks(section.blocks), ...(section.blocks.at(-1)?.kind === 'table' ? [''] : [])]);
+  const projected: BlockProjection = { paragraphs: [], footnoteReferences: [], footnotes: [] };
+  for (const section of specSections) {
+    projectBlocks(section.blocks, projected);
+    if (section.blocks.at(-1)?.kind === 'table') projected.paragraphs.push('');
+  }
+  const { paragraphs } = projected;
   const title = frontmatter.title ?? titleText;
   const spec: DocumentSpec = {
     meta: {
@@ -233,6 +285,8 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     spec,
     projection: {
       paragraphs,
+      footnoteReferences: projected.footnoteReferences,
+      footnotes: projected.footnotes,
       footers: sections.map((section) => (section.footer
         ? (section.footer.text || section.footer.pageNumbers
           ? [...(section.footer.text ? [section.footer.text] : []), ...(section.footer.pageNumbers ? [PAGE_FIELD_TOKEN] : [])]

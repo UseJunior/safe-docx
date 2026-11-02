@@ -213,6 +213,122 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-11-1",
+      "title": "w:continuationSeparator continuation separator note",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.1"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:continuationSeparator",
+      "claimRationale": "Part 1 §17.11.1 defines `w:continuationSeparator` as the mark that\nseparates the main story from a footnote continued from the previous page.\nThe footnotes part that `add_footnote` bootstraps and that generation emits\nholds a `w:type=\"continuationSeparator\"` note (id 0) whose run is this\nmark, as Word writes it.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/footnote-shapes.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-11-10",
+      "title": "w:footnote footnote content",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.10"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnote",
+      "claimRationale": "Part 1 §17.11.10 defines `w:footnote` as one footnote's content, which can\nbe any block-level content. Generation emits one `w:footnote` per\n`FootnoteSpec`, with ids 1, 2, 3, … in document order. The supported\ncontent is a subset: one or more paragraphs, with tables and other block\ncontent rejected at validation. Each paragraph without a `styleId` takes the\n`FootnoteText` style.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/footnotes-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/validate-spec.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-footnotes.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-11-12",
+      "title": "w:footnotePr document-wide footnote properties",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.12"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotePr",
+      "claimRationale": "Part 1 §17.11.12 defines the document-wide `w:footnotePr` in the settings\npart. Generation writes it only when the document has a footnote, holding\nthe special-note list of §17.11.9 and no other property, in its `CT_Settings`\nslot after `w:evenAndOddHeaders` and before `w:compat`. Numbering format,\nposition and restart are left at their defaults.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/settings-part.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-11-13",
+      "title": "w:footnoteRef footnote reference mark",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.13"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteRef",
+      "claimRationale": "Part 1 §17.11.13 defines `w:footnoteRef` as the automatically numbered mark\ninside a footnote. Generated and added notes open their first paragraph with\na `FootnoteReference` run holding this mark, then a run holding one space,\nas Word writes them. `docx-markdoc import` treats that space run as part of\nthe mark's presentation and leaves it out of the imported note body, so\ncompile, which writes it again, does not double it.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/footnote-shapes.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/footnotes-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/import.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-footnotes.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/footnotes.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-11-14",
       "title": "w:footnoteReference identifier vs display number",
       "classification": "targeted",
@@ -233,6 +349,82 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-11-15",
+      "title": "w:footnotes footnotes part root",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.15"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotes",
+      "claimRationale": "Part 1 §17.11.15 defines `w:footnotes` as the root of the footnotes part,\nholding every footnote including the separator and continuation notices.\nGeneration emits `word/footnotes.xml` only when the document has a footnote,\nwith its content type and a footnotes relationship from the main document\npart. The part starts from the same separator and continuation-separator\ntemplate that `add_footnote` bootstraps.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/footnote-shapes.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/footnotes-part.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-11-23",
+      "title": "w:separator footnote separator note",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.23"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:separator",
+      "claimRationale": "Part 1 §17.11.23 defines `w:separator` as the mark that separates the main\nstory from the footnotes on a page. The footnotes part template holds a\n`w:type=\"separator\"` note (id -1) whose run is this mark, as Word writes it.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/footnote-shapes.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-11-9",
+      "title": "w:footnote special footnote list in document settings",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.9"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnote",
+      "claimRationale": "Part 1 §17.11.9 requires every footnote that is not of type normal to be\nlisted under the document-wide `w:footnotePr`, or it shall not be loaded.\nWhen a generated document has footnotes, `settings.xml` lists the separator\n(id -1) and continuation-separator (id 0) notes there. Documents edited with\n`add_footnote` keep whatever settings they already had; this claim covers\ngenerated documents.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/settings-part.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-footnotes.test.ts"
         }
       ]
     },
@@ -1896,6 +2088,54 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-3-2-17",
+      "title": "w:iCs complex script italics in imported annotation bodies",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.2.17"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:iCs",
+      "claimRationale": "Part 1 §17.3.2.17 defines `w:iCs` as italics for complex-script characters\nonly. Generation writes it beside every `w:i`. `docx-markdoc import` admits\nit in an annotation body under the same rule as `w:bCs` (§17.3.2.2).",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/import.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-2-2",
+      "title": "w:bCs complex script bold in imported annotation bodies",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.2.2"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bCs",
+      "claimRationale": "Part 1 §17.3.2.2 defines `w:bCs` as bold for complex-script characters only.\nGeneration writes it beside every `w:b`. `docx-markdoc import` admits it in\nan annotation body when the run or paragraph holds no complex-script text,\nwhere it changes nothing; with complex-script text it still fails closed.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/import.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/footnotes.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-3-2-26",
       "title": "Run fonts and theme-font references",
       "classification": "targeted",
@@ -2024,6 +2264,30 @@
         {
           "kind": "source",
           "path": "packages/docx-core/src/primitives/footnotes.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/annotation-roundtrip.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-2-39",
+      "title": "w:szCs complex script font size in imported annotation bodies",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.2.39"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:szCs",
+      "claimRationale": "Part 1 §17.3.2.39 defines `w:szCs` as the font size for complex-script\ncharacters only. `docx-markdoc import` admits it in an annotation body when\nthe run or paragraph holds no complex-script text, where it changes\nnothing.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/import.ts"
         },
         {
           "kind": "test",
@@ -3723,6 +3987,20 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bCs",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "bCs",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RPrBase/choice/element:bCs",
+          "declaredType": "CT_OnOff"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:body",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -3896,6 +4174,21 @@
           "declaredType": "CT_CompatSetting",
           "minOccurs": "0",
           "maxOccurs": "unbounded"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:continuationSeparator",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "continuationSeparator",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RunInnerContent/choice/element:continuationSeparator",
+          "declaredType": "CT_Empty",
+          "minOccurs": "0"
         }
       ]
     },
@@ -4119,6 +4412,62 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnote",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "footnote",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Footnotes/sequence/element:footnote",
+          "declaredType": "CT_FtnEdn",
+          "minOccurs": "0"
+        },
+        {
+          "contextPath": "schema/type:CT_FtnDocProps/complexContent/extension/sequence/element:footnote",
+          "declaredType": "CT_FtnEdnSepRef",
+          "minOccurs": "0",
+          "maxOccurs": "3"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotePr",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "footnotePr",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_SectPrContents/sequence/element:footnotePr",
+          "declaredType": "CT_FtnProps",
+          "minOccurs": "0"
+        },
+        {
+          "contextPath": "schema/type:CT_Settings/sequence/element:footnotePr",
+          "declaredType": "CT_FtnDocProps",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteRef",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "footnoteRef",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RunInnerContent/choice/element:footnoteRef",
+          "declaredType": "CT_Empty",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteReference",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -4129,6 +4478,20 @@
         {
           "contextPath": "schema/group:EG_RunInnerContent/choice/element:footnoteReference",
           "declaredType": "CT_FtnEdnRef"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotes",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "footnotes",
+      "occurrences": [
+        {
+          "contextPath": "schema/element:footnotes",
+          "declaredType": "CT_Footnotes"
         }
       ]
     },
@@ -4236,6 +4599,20 @@
         {
           "contextPath": "schema/group:EG_PContentBase/choice/element:hyperlink",
           "declaredType": "CT_Hyperlink"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:iCs",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "iCs",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RPrBase/choice/element:iCs",
+          "declaredType": "CT_OnOff"
         }
       ]
     },
@@ -4942,6 +5319,21 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:separator",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "separator",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RunInnerContent/choice/element:separator",
+          "declaredType": "CT_Empty",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:settings",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -5114,6 +5506,20 @@
           "contextPath": "schema/type:CT_Frameset/sequence/element:sz",
           "declaredType": "CT_String",
           "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:szCs",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "szCs",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RPrBase/choice/element:szCs",
+          "declaredType": "CT_HpsMeasure"
         }
       ]
     },

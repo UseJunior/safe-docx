@@ -319,6 +319,174 @@ semantics are outside the present numbering claim.
 
 This claim is bounded to the runtime and test evidence listed above.
 
+## [ECMA-PART1-17-11-1] w:continuationSeparator continuation separator note
+
+```yaml
+edition: 5
+part: 1
+section: "17.11.1"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:continuationSeparator
+verifiedBy: packages/docx-core/src/primitives/footnote-shapes.ts; packages/docx-core/src/generation/generation-footnotes.test.ts
+```
+
+Part 1 §17.11.1 defines `w:continuationSeparator` as the mark that
+separates the main story from a footnote continued from the previous page.
+The footnotes part that `add_footnote` bootstraps and that generation emits
+holds a `w:type="continuationSeparator"` note (id 0) whose run is this
+mark, as Word writes it.
+
+## [ECMA-PART1-17-11-9] w:footnote special footnote list in document settings
+
+```yaml
+edition: 5
+part: 1
+section: "17.11.9"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnote
+verifiedBy: packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-footnotes.test.ts
+```
+
+Part 1 §17.11.9 requires every footnote that is not of type normal to be
+listed under the document-wide `w:footnotePr`, or it shall not be loaded.
+When a generated document has footnotes, `settings.xml` lists the separator
+(id -1) and continuation-separator (id 0) notes there. Documents edited with
+`add_footnote` keep whatever settings they already had; this claim covers
+generated documents.
+
+## [ECMA-PART1-17-11-10] w:footnote footnote content
+
+```yaml
+edition: 5
+part: 1
+section: "17.11.10"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnote
+verifiedBy: packages/docx-core/src/generation/emit/footnotes-part.ts; packages/docx-core/src/generation/validate-spec.ts; packages/docx-core/src/generation/generation-footnotes.test.ts; packages/docx-markdoc/src/create/footnotes.test.ts
+```
+
+Part 1 §17.11.10 defines `w:footnote` as one footnote's content, which can
+be any block-level content. Generation emits one `w:footnote` per
+`FootnoteSpec`, with ids 1, 2, 3, … in document order. The supported
+content is a subset: one or more paragraphs, with tables and other block
+content rejected at validation. Each paragraph without a `styleId` takes the
+`FootnoteText` style.
+
+## [ECMA-PART1-17-11-12] w:footnotePr document-wide footnote properties
+
+```yaml
+edition: 5
+part: 1
+section: "17.11.12"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotePr
+verifiedBy: packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-footnotes.test.ts
+```
+
+Part 1 §17.11.12 defines the document-wide `w:footnotePr` in the settings
+part. Generation writes it only when the document has a footnote, holding
+the special-note list of §17.11.9 and no other property, in its `CT_Settings`
+slot after `w:evenAndOddHeaders` and before `w:compat`. Numbering format,
+position and restart are left at their defaults.
+
+## [ECMA-PART1-17-11-13] w:footnoteRef footnote reference mark
+
+```yaml
+edition: 5
+part: 1
+section: "17.11.13"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteRef
+verifiedBy: packages/docx-core/src/primitives/footnote-shapes.ts; packages/docx-core/src/generation/emit/footnotes-part.ts; packages/docx-markdoc/src/import.ts; packages/docx-core/src/generation/generation-footnotes.test.ts; packages/docx-markdoc/src/create/footnotes.test.ts
+```
+
+Part 1 §17.11.13 defines `w:footnoteRef` as the automatically numbered mark
+inside a footnote. Generated and added notes open their first paragraph with
+a `FootnoteReference` run holding this mark, then a run holding one space,
+as Word writes them. `docx-markdoc import` treats that space run as part of
+the mark's presentation and leaves it out of the imported note body, so
+compile, which writes it again, does not double it.
+
+## [ECMA-PART1-17-11-15] w:footnotes footnotes part root
+
+```yaml
+edition: 5
+part: 1
+section: "17.11.15"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotes
+verifiedBy: packages/docx-core/src/primitives/footnote-shapes.ts; packages/docx-core/src/generation/emit/footnotes-part.ts; packages/docx-core/src/generation/generation-footnotes.test.ts
+```
+
+Part 1 §17.11.15 defines `w:footnotes` as the root of the footnotes part,
+holding every footnote including the separator and continuation notices.
+Generation emits `word/footnotes.xml` only when the document has a footnote,
+with its content type and a footnotes relationship from the main document
+part. The part starts from the same separator and continuation-separator
+template that `add_footnote` bootstraps.
+
+## [ECMA-PART1-17-11-23] w:separator footnote separator note
+
+```yaml
+edition: 5
+part: 1
+section: "17.11.23"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:separator
+verifiedBy: packages/docx-core/src/primitives/footnote-shapes.ts; packages/docx-core/src/generation/generation-footnotes.test.ts
+```
+
+Part 1 §17.11.23 defines `w:separator` as the mark that separates the main
+story from the footnotes on a page. The footnotes part template holds a
+`w:type="separator"` note (id -1) whose run is this mark, as Word writes it.
+
+## [ECMA-PART1-17-3-2-2] w:bCs complex script bold in imported annotation bodies
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.2.2"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bCs
+verifiedBy: packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/create/footnotes.test.ts
+```
+
+Part 1 §17.3.2.2 defines `w:bCs` as bold for complex-script characters only.
+Generation writes it beside every `w:b`. `docx-markdoc import` admits it in
+an annotation body when the run or paragraph holds no complex-script text,
+where it changes nothing; with complex-script text it still fails closed.
+
+## [ECMA-PART1-17-3-2-17] w:iCs complex script italics in imported annotation bodies
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.2.17"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:iCs
+verifiedBy: packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/create/footnotes.test.ts
+```
+
+Part 1 §17.3.2.17 defines `w:iCs` as italics for complex-script characters
+only. Generation writes it beside every `w:i`. `docx-markdoc import` admits
+it in an annotation body under the same rule as `w:bCs` (§17.3.2.2).
+
+## [ECMA-PART1-17-3-2-39] w:szCs complex script font size in imported annotation bodies
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.2.39"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:szCs
+verifiedBy: packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts
+```
+
+Part 1 §17.3.2.39 defines `w:szCs` as the font size for complex-script
+characters only. `docx-markdoc import` admits it in an annotation body when
+the run or paragraph holds no complex-script text, where it changes
+nothing.
+
 ## [ECMA-PART1-17-16-22] w:hyperlink container preservation under tracked changes
 
 ```yaml

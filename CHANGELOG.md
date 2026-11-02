@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Generated documents can have footnotes. In docx-core, `generateDocx`
+  accepts a `{ kind: 'footnote', blocks: ParagraphSpec[] }` inline in body
+  paragraphs and table cells. It writes `word/footnotes.xml` with Word's
+  separator notes, `FootnoteReference` reference marks, `FootnoteText` note
+  paragraphs and the `footnotePr` list in settings, so the notes number,
+  continue across pages and read back through `get_footnotes`. In
+  `docx-markdoc create`, `{% fnref id="1" /%}` places a reference and a
+  top-level `{% footnote id="1" %}…{% /footnote %}` block holds a one-line
+  or multi-paragraph note. Notes are numbered by reference order, and the
+  build checks them in its read-back, round-trip and PDF word checks.
+  Annotated model forms and memos that cite authority used to need
+  `add_footnote` on the finished file, one plain-text note at a time.
+  `add_footnote` now also gives every paragraph of a multi-paragraph note the
+  `FootnoteText` style; before, only the first paragraph had it. When
+  `docx-markdoc import` reads a footnote, it no longer keeps the space after
+  the note's number as body text, so import then compile no longer adds a
+  second space. (#1237)
 - `docx-markdoc create` can underline. Wrap inline text in
   `{% u %}…{% /u %}` to give it a single underline (`w:u w:val="single"`);
   text outside the tag, such as the period after a defined term or a run-in

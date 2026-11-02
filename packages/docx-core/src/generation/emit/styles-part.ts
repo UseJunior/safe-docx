@@ -10,6 +10,7 @@
  */
 
 import { createWmlElement } from '../../primitives/dom-helpers.js';
+import { FOOTNOTE_REFERENCE_STYLE_ID, FOOTNOTE_TEXT_STYLE_ID } from '../../primitives/footnote-shapes.js';
 import { OOXML, W } from '../../primitives/namespaces.js';
 import { parseXml, serializeXml, XML_DECL } from '../../primitives/xml.js';
 import type { CompileContext } from '../context.js';
@@ -38,7 +39,12 @@ export function documentDefaultFont(spec: DocumentSpec): string {
  * Emit word/styles.xml. `numberingIds` (from the numbering emitter) resolves
  * the numeric instance id a numbering-linked style's `w:numPr` names.
  */
-export function emitStylesPart(spec: DocumentSpec, ctx: CompileContext, numberingIds?: NumberingIdMap): void {
+export function emitStylesPart(
+  spec: DocumentSpec,
+  ctx: CompileContext,
+  numberingIds?: NumberingIdMap,
+  opts: { footnotes?: boolean } = {},
+): void {
   ctx.registerPart('word/styles.xml', STYLES_CONTENT_TYPE, STYLES_REL_TYPE);
 
   const doc = parseXml(STYLES_SKELETON);
@@ -50,6 +56,12 @@ export function emitStylesPart(spec: DocumentSpec, ctx: CompileContext, numberin
   const numberingLinks = resolveNumberingStyleLinks(spec, numberingIds);
   for (const style of spec.styles ?? []) {
     root.appendChild(buildStyle(doc, style, themeColorValues, numberingLinks.get(style.styleId)));
+  }
+  if (opts.footnotes) {
+    // A declared style under either id wins; validation checked its type.
+    const declared = new Set((spec.styles ?? []).map((style) => style.styleId));
+    if (!declared.has(FOOTNOTE_TEXT_STYLE_ID)) root.appendChild(buildFootnoteTextStyle(doc));
+    if (!declared.has(FOOTNOTE_REFERENCE_STYLE_ID)) root.appendChild(buildFootnoteReferenceStyle(doc));
   }
 
   ctx.setFileContent('word/styles.xml', XML_DECL + serializeXml(doc));
@@ -94,6 +106,48 @@ function buildNormalStyle(doc: Document): Element {
   const style = createWmlElement(doc, W.style, { 'w:type': 'paragraph', 'w:styleId': 'Normal', 'w:default': '1' });
   style.appendChild(createWmlElement(doc, W.name, { 'w:val': 'Normal' }));
   style.appendChild(createWmlElement(doc, W.qFormat));
+  return style;
+}
+
+/** The latent-style flags Word writes on its built-in footnote styles. */
+function appendBuiltInStyleFlags(doc: Document, style: Element): void {
+  style.appendChild(createWmlElement(doc, W.uiPriority, { 'w:val': '99' }));
+  style.appendChild(createWmlElement(doc, W.semiHidden));
+  style.appendChild(createWmlElement(doc, W.unhideWhenUsed));
+}
+
+/**
+ * Word's built-in "footnote text" style: Normal at 10 pt, single-spaced with
+ * no space after.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.4.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.10
+ */
+function buildFootnoteTextStyle(doc: Document): Element {
+  const style = createWmlElement(doc, W.style, { 'w:type': 'paragraph', 'w:styleId': FOOTNOTE_TEXT_STYLE_ID });
+  style.appendChild(createWmlElement(doc, W.name, { 'w:val': 'footnote text' }));
+  style.appendChild(createWmlElement(doc, W.basedOn, { 'w:val': 'Normal' }));
+  appendBuiltInStyleFlags(doc, style);
+  const pPr = buildParagraphPropsElement(doc, { spacing: { afterTwips: 0, lineTwips: 240, lineRule: 'auto' } });
+  if (pPr) style.appendChild(pPr);
+  const rPr = buildRunPropsElement(doc, { sizePt: 10 });
+  if (rPr) style.appendChild(rPr);
+  return style;
+}
+
+/**
+ * Word's built-in "footnote reference" character style: superscript.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.4.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ */
+function buildFootnoteReferenceStyle(doc: Document): Element {
+  const style = createWmlElement(doc, W.style, { 'w:type': 'character', 'w:styleId': FOOTNOTE_REFERENCE_STYLE_ID });
+  style.appendChild(createWmlElement(doc, W.name, { 'w:val': 'footnote reference' }));
+  appendBuiltInStyleFlags(doc, style);
+  const rPr = createWmlElement(doc, W.rPr);
+  rPr.appendChild(createWmlElement(doc, W.vertAlign, { 'w:val': 'superscript' }));
+  style.appendChild(rPr);
   return style;
 }
 
