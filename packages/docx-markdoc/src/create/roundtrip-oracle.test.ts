@@ -245,11 +245,42 @@ describe('Traceability: independent round-trip oracle for created documents', ()
       // The reading comes from the token's own page, not its position: a table header set aside at the top of
       // page 2 does not make the paragraph on page 1 ("a bc") the reading of the cell on page 2 ("ab c").
       const header = 'H0 H1 H2 H3 H4 H5 H6 H7 H8 H9';
-      const twoPage: SourceProjection = { body: [{ text: 'a bc gap' }, { text: header, table: { id: 0, row: 0 } }, { text: 'ab c', table: { id: 0, row: 1 } }], footers: [null] };
+      const twoPage: SourceProjection = { body: [{ text: 'a bc gap' }, { text: header, cell: true, table: { id: 0, row: 0 } }, { text: 'ab c', cell: true, table: { id: 0, row: 1 } }], footers: [null] };
       expect(comparePdfWords(twoPage, ['a bc gap\n', `${header}\nab c\n`], ['a bc gap\n', `${header}\nab c\n`]).passed).toBe(true);
       expect(comparePdfWords(twoPage, ['a bc gap\n', `${header}\nabc\n`], ['a bc gap\n', `${header}\nab c\n`])).toMatchObject({ passed: true, knownGenerated: { joinedLines: [{ page: 2, words: 'ab c' }] } });
       // Two readings shown on the token's page leave it whole.
       expect(comparePdfWords(twoPage, ['a bc gap\n', `${header}\nabc\n`], ['a bc gap\n', `${header}\nab c a bc\n`]).knownGenerated.joinedLines).toEqual([]);
+
+      // Evidence is counted, not just found: the source reading shown elsewhere on the page, where the raw text
+      // shows it too, cannot vouch for a reordered run-together line.
+      const twice: SourceProjection = { body: [{ text: 'Put in to into place. Copy in to into again.' }], footers: [null] };
+      expect(comparePdfWords(twice, ['Put\nintointo\nplace. Copy in to into again.\n'], ['Put into in to place. Copy in to into again.\n'])).toMatchObject({ passed: false, knownGenerated: { joinedLines: [] } });
+      expect(comparePdfWords(twice, ['Put\nintointo\nplace. Copy in to into again.\n'], ['Put in to into place. Copy in to into again.\n'])).toMatchObject({ passed: true, knownGenerated: { joinedLines: [{ page: 1, words: 'in to into' }] } });
+      // Two run-together lines on one page need two surplus occurrences.
+      expect(comparePdfWords(twice, ['Put\nintointo\nplace. Copy\nintointo\nagain.\n'], ['Put in to into place. Copy into in to again.\n']).passed).toBe(false);
+      expect(comparePdfWords(twice, ['Put\nintointo\nplace. Copy\nintointo\nagain.\n'], ['Put in to into place. Copy in to into again.\n']).passed).toBe(true);
+      // Layout text with a different page count is not evidence.
+      expect(comparePdfWords(twice, ['Put\nintointo\nplace. Copy in to into again.\n'], ['Put in to into place. Copy in to into again.\n', 'extra\n']).passed).toBe(false);
+
+      // A run-together line inside a table row split across pages: the row is rebuilt from the split words.
+      const leftWords = Array.from({ length: 10 }, (_, index) => `l${index}`);
+      const rightWords = Array.from({ length: 10 }, (_, index) => `r${index}`);
+      const rowCell = (text: string, row: number): SourceBodyEntry => ({ text, cell: true, table: { id: 0, row } });
+      const rowSource: SourceProjection = { body: [{ text: 'T' }, rowCell('LEFT', 0), rowCell('RIGHT', 0), rowCell(leftWords.join(' '), 1), rowCell(rightWords.join(' '), 1), { text: 'END' }], footers: [null] };
+      const rowPages = (left: string) => [`T LEFT RIGHT ${left} ${rightWords.slice(0, 3).join(' ')}\n`, `LEFT RIGHT ${leftWords.slice(4).join(' ')} ${rightWords.slice(3).join(' ')} END\n`];
+      expect(comparePdfWords(rowSource, rowPages('l0 l1l2 l3'), rowPages('l0 l1 l2 l3'))).toMatchObject({ passed: true, knownGenerated: { joinedLines: [{ page: 1, words: 'l1 l2' }], splitRows: [{ table: 0, row: 1, pages: [1, 2] }] } });
+      expect(comparePdfWords(rowSource, rowPages('l0 l1l2'), rowPages('l0 l1 l2')).passed).toBe(false);
+
+      // A long document whose run-together lines put the first alignment over budget is still recovered, and a
+      // real change among them still fails.
+      const long = Array.from({ length: 10000 }, (_, index) => `w${index}`);
+      const joinedLong = (change: boolean) => long.map((word, index) => (index % 10 === 0 ? `${word}${change && index === 5000 ? 'x' : ''}` : index % 10 === 1 ? `\u0001${word}` : word)).join(' ').replace(/ \u0001/gu, '');
+      const longSource: SourceProjection = { body: [{ text: long.join(' ') }], footers: [null] };
+      const recovered = comparePdfWords(longSource, [`${joinedLong(false)}\n`], [`${long.join(' ')}\n`]);
+      expect(recovered).toMatchObject({ passed: true, alignment: 'complete' });
+      expect(recovered.knownGenerated.joinedLines).toHaveLength(1000);
+      const changedLong = comparePdfWords(longSource, [`${joinedLong(true)}\n`], [`${long.join(' ').replace('w5000 ', 'w5000x ')}\n`]);
+      expect(changedLong).toMatchObject({ passed: false, unexplainedExtra: [{ words: 'w5000xw5001' }] });
     },
   );
 

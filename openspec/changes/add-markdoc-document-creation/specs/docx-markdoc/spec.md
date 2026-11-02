@@ -116,7 +116,7 @@ any verification fails.
 - **AND** each page SHALL begin with exactly its section's effective footer text and its own page number, so a missing, wrong-section or misnumbered footer fails and a numeric footer cannot hide a missing body number
 - **AND** a table header row SHALL be accepted again only at the top of a page where that table continues
 - **AND** any other extra word SHALL fail, and texts too different to align SHALL fail rather than pass
-- **AND** a justified line that LibreOffice exported without space glyphs (read back as one token) SHALL match only when that token spells, character for character, a run of two or more consecutive source words and the `pdftotext -layout` text of the same page shows that one reading with its spaces; a word dropped from, added to or moved within that line SHALL still fail
+- **AND** a justified line that LibreOffice exported without space glyphs (read back as one token) SHALL match only when that token spells, character for character, a run of two or more consecutive source words and that is its one reading which the `pdftotext -layout` text of the same page shows, spaced, more often than the raw text does, with one such surplus occurrence for each token split into it; a word dropped from, added to or moved within that line SHALL still fail unless the page's layout text shows the source reading in a place the raw text does not
 - **AND** real LibreOffice PDFs of every construct, a table whose cells wrap, a table spanning pages, inherited and unlinked section footers, and a numeric footer SHALL pass
 
 #### Scenario: [SDX-MDOC-CREATE-13] a failed verification leaves a mismatch report and publishes nothing

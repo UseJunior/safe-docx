@@ -584,9 +584,10 @@ package, determinism, read-back and brownfield-import checks:
   sometimes exports a justified line without spaces, so the raw text layer
   reads it as one long token. Such a token is split back into words only when
   it spells a run of consecutive source words exactly and the page's
-  `pdftotext -layout` text, which places words by glyph position, shows those
-  words spaced; the certificate lists it under `knownGenerated.joinedLines`.
-  A word dropped from, added to or moved within that line still fails. The
+  `pdftotext -layout` text, which places words by glyph position, shows that
+  reading spaced in a place the raw text does not (one such place per split
+  token); the certificate lists it under `knownGenerated.joinedLines`. A word
+  dropped from, added to or moved within that line still fails. The
   certificate's `pdf.words.limitations` states what the comparison cannot
   catch.
 - **Footnotes.** Each note read back from `word/footnotes.xml`, and where

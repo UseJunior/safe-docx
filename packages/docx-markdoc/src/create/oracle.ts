@@ -468,7 +468,7 @@ export const PDF_WORD_LIMITATIONS =
   'The text layer is read with pdftotext -raw (content-stream order; LibreOffice writes each page\'s footer first, then the body in document order, except that a table row split across pages comes out as each cell\'s fragment on each page; such a row is read back in cell order only when its words partition exactly into those fragments, every cell starting on the first page, and the pages after the first stay pinned to that row and its section). ' +
   'List labels are expected words, and so is each footnote number, joined to the text around its reference (LibreOffice sets it as a superscript with no space). Footnote text is read from the foot of each page, after the body: the rest of a note continued from the page before, then each note that starts there (its number, then its text); read in page order these areas must spell every note exactly once and in order, and each note must start on the page holding its reference (for a table row split across pages, the page where the mark is printed). A page holding nothing but the rest of a continued note belongs to the content before it and must show that section\'s footer. A repeated table header is expected without its footnote numbers, as LibreOffice draws it. ' +
   'Every page break is explained from the source: the checker searches for where each page can start between the source words around it (including inside wordless content such as empty table rows), and a start fixes what the page must show first, namely its section\'s footer and page number, the table header LibreOffice repeats when a table continues across the break, and the source words at the top of the page. Sections start on new pages. ' +
-  'A justified line that LibreOffice exported without space glyphs reads back as one token. Such a token is split back into words only when it spells, character for character, a run of two or more consecutive source words, the pdftotext -layout text of the same page shows those words spaced, and no other such reading exists; without layout text nothing is split. A word dropped from, added to or moved within that line therefore still fails, unless the page\'s layout text happens to show the changed reading elsewhere. ' +
+  'A justified line that LibreOffice exported without space glyphs reads back as one token. Such a token is split back into words only when it spells, character for character, a run of two or more consecutive source words and that is its one reading which the pdftotext -layout text of the same page (word boundaries by glyph position) shows more often than the raw text does, each split needing an occurrence of its own; without layout text, or with a different page count, nothing is split. The evidence is counted per page rather than tied to the line\'s position, so a changed run-together line passes only if the page\'s layout text shows the source reading in a place the raw text does not, which another run-together line that alignment placed as a single source word could supply. ' +
   'Two observed LibreOffice behaviours are assumed: a header row is never left alone at a page bottom (it stays with the first body row), and a table\'s last row can spill its empty remainder onto the next page, repeating the header there. ' +
   'The check passes only when every start that fits explains the same source words; if none fits, or starts that fit disagree (for example, a table with empty trailing rows followed by a table with the same header, or two such tables back to back at a page start), it fails. The text alone cannot always show layout, so such cases fail even when the PDF is right (a false failure); an ambiguity is never settled by a guess.';
 
@@ -543,16 +543,22 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
   const bodies = pages.map((tokens, page) => tokens.slice(regions[page]!.length + headRuns[page]!.length));
   // A page whose only text, besides its footer region, is the rest of a note continued from the page before.
   const noteOnly = new Set(bodies.flatMap((tokens, page) => (page > 0 && tokens.length === 0 && headRuns[page]!.length === 0 && footnoteAreas.continues[page] ? [page] : [])));
-  // Where each body word physically sits, kept through the split-row rejoin (a reference's page is where its mark is printed).
-  const physical = bodies.map((tokens, page) => tokens.map(() => page));
-  const split = joinSplitRows(source, plainWords, bodies, physical);
-  const read: PdfToken[] = [];
-  bodies.forEach((tokens, page) => {
-    tokens.forEach((word, index) => read.push({ word, page, physicalPage: physical[page]![index]! }));
-  });
+  // The body words in reading order, split rows rejoined. Each word keeps the page it is printed on (a reference's
+  // page is where its mark is printed) and, outside rejoined rows, its index in its page's body.
+  const readBodies = (pageBodies: readonly string[][]): { read: PdfToken[]; split: ReturnType<typeof joinSplitRows> } => {
+    const rejoined = pageBodies.map((tokens) => [...tokens]);
+    const physical = rejoined.map((tokens, page) => tokens.map(() => page));
+    const origin = rejoined.map((tokens) => tokens.map((_, index) => index));
+    const split = joinSplitRows(source, plainWords, rejoined, physical, origin);
+    const read: PdfToken[] = [];
+    rejoined.forEach((tokens, page) => {
+      tokens.forEach((word, index) => read.push({ word, page, physicalPage: physical[page]![index]!, origin: origin[page]![index]! }));
+    });
+    return { read, split };
+  };
 
   // Align the PDF words with the source, then explain page breaks and footnote placement.
-  const evaluate = (pdf: readonly PdfToken[], joinedLines: PdfWordComparison['knownGenerated']['joinedLines']): { result: PdfWordComparison; extraIdx: number[] } => {
+  const evaluate = (pdf: readonly PdfToken[], split: ReturnType<typeof joinSplitRows>, joinedLines: PdfWordComparison['knownGenerated']['joinedLines']): { result: PdfWordComparison; extraIdx: number[] } => {
     const ops = myersDiff(expected, pdf, (x, y) => x.word === y.word);
 
     const missing = new Set<number>();
@@ -641,39 +647,65 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
     return { result, extraIdx };
   };
 
-  const first = evaluate(read, []);
-  if (first.result.passed || !layoutTexts) return first.result;
-  // A justified line LibreOffice exported without space glyphs reads back as one token: split such tokens, among
-  // the words the first alignment could not place, where the page's layout text confirms the word boundaries.
-  const splits = splitJoinedTokens(first.extraIdx.map((index) => ({ index, ...read[index]! })), expected.map((token) => token.word), layoutTexts, words);
-  if (splits.size === 0) return first.result;
-  const resplit = read.flatMap((token, index) => splits.get(index)?.map((word) => ({ ...token, word })) ?? [token]);
-  return evaluate(resplit, [...splits].map(([index, split]) => ({ page: read[index]!.physicalPage + 1, words: split.join(' ') }))).result;
+  const first = readBodies(bodies);
+  const unsplit = evaluate(first.read, first.split, []);
+  // Layout text is evidence only page for page; with a different page count it is not used at all.
+  const layout = layoutTexts?.length === pageTexts.length ? layoutTexts : undefined;
+  if (unsplit.result.passed || !layout) return unsplit.result;
+  // A justified line LibreOffice exported without space glyphs reads back as one token. The candidates are the
+  // tokens the first alignment could not place or, when it was over budget, every token that is no source word;
+  // never a word of a rejoined row, which matched the source exactly.
+  const sourceWords = expected.map((token) => token.word);
+  const known = new Set(sourceWords);
+  const joinable = (unsplit.result.alignment === 'complete' ? unsplit.extraIdx.map((index) => first.read[index]!) : first.read.filter((token) => !known.has(token.word)))
+    .filter((token) => token.origin >= 0);
+  const splits = splitJoinedTokens(joinable, sourceWords, pageTexts.map(words), layout.map(words));
+  if (splits.size === 0) return unsplit.result;
+  // Split the page bodies as read, then rebuild everything from them: split rows, alignment, page model, footnotes.
+  const resplit = bodies.map((tokens, page) => tokens.flatMap((word, index) => splits.get(`${page}:${index}`) ?? [word]));
+  const second = readBodies(resplit);
+  const joinedLines = [...splits].map(([key, split]) => ({ page: Number(key.split(':')[0]) + 1, words: split.join(' ') }));
+  return evaluate(second.read, second.split, joinedLines).result;
 }
 
-type PdfToken = { word: string; page: number; physicalPage: number };
+/** A body word as read: its page in the reading (after split rows are rejoined), where it is printed, and its index in its page's body (-1 in a rejoined row). */
+type PdfToken = { word: string; page: number; physicalPage: number; origin: number };
 
 /**
  * A justified line that LibreOffice exported without space glyphs (observed with an underlined word on the
  * line) reads back from `pdftotext -raw` as one token: "anamountequalto(a)the…". The raw text cannot show where
- * the words of such a token break, so the split needs independent evidence: `pdftotext -layout`, which places
- * words by glyph position, prints the same line with its spaces. A token the first alignment could not place is
- * split only into a run of two or more consecutive source words that spells it exactly and that the layout text
- * of the same page shows, spaced, as whole words; and only when exactly one such reading exists. Otherwise it
- * stays whole and is reported.
+ * the words of such a token break, so a split needs independent evidence: `pdftotext -layout`, which places words
+ * by glyph position, prints the same line with its spaces. A candidate token is split only into a run of two or
+ * more consecutive source words that spells it exactly, and only when that is its one reading that the layout
+ * text of its page shows, spaced, more often than the raw text does. Every spaced occurrence in the raw text is
+ * also in the layout text, so each split must account for an occurrence of its own: the readings split into on a
+ * page may not outnumber the layout text's surplus occurrences of them. Otherwise the token stays whole.
+ * Returns the split words by `page:index` in the page bodies as read.
  */
 function splitJoinedTokens(
-  extras: ReadonlyArray<{ index: number; word: string; physicalPage: number }>,
+  candidates: ReadonlyArray<{ word: string; page: number; origin: number }>,
   expected: readonly string[],
-  layoutTexts: readonly string[],
-  words: (text: string) => string[],
-): Map<number, string[]> {
-  const layoutPages = layoutTexts.map((text) => ` ${words(text).join(' ')} `);
-  const splits = new Map<number, string[]>();
-  for (const { index, word: token, physicalPage } of extras) {
-    const layout = layoutPages[physicalPage];
-    if (!layout) continue;
-    const readings = new Set<string>();
+  rawPages: readonly string[][],
+  layoutPages: readonly string[][],
+): Map<string, string[]> {
+  const occurrences = (tokens: readonly string[], reading: readonly string[]) => {
+    let count = 0;
+    for (let at = 0; at + reading.length <= tokens.length; at += 1) if (reading.every((word, offset) => tokens[at + offset] === word)) count += 1;
+    return count;
+  };
+  const surplusMemo = new Map<string, number>();
+  const surplus = (page: number, reading: readonly string[]) => {
+    const key = `${page}\u0001${reading.join(' ')}`;
+    let value = surplusMemo.get(key);
+    if (value === undefined) {
+      value = occurrences(layoutPages[page] ?? [], reading) - occurrences(rawPages[page] ?? [], reading);
+      surplusMemo.set(key, value);
+    }
+    return value;
+  };
+  const proposals = new Map<string, string[]>();
+  for (const { word: token, page, origin } of candidates) {
+    const readings = new Map<string, string[]>();
     for (let start = 0; start < expected.length; start += 1) {
       if (!token.startsWith(expected[start]!)) continue;
       let at = 0;
@@ -683,12 +715,22 @@ function splitJoinedTokens(
         end += 1;
       }
       if (at !== token.length || end - start < 2) continue;
-      const reading = expected.slice(start, end).join(' ');
-      if (layout.includes(` ${reading} `)) readings.add(reading);
+      const reading = expected.slice(start, end);
+      if (surplus(page, reading) > 0) readings.set(reading.join(' '), reading);
     }
-    if (readings.size === 1) splits.set(index, [...readings][0]!.split(' '));
+    if (readings.size === 1) proposals.set(`${page}:${origin}`, [...readings.values()][0]!);
   }
-  return splits;
+  // Each split needs its own surplus occurrence; where a page's readings outnumber them, none of those splits holds.
+  const claims = new Map<string, string[]>();
+  for (const [key, reading] of proposals) {
+    const group = `${key.split(':')[0]}\u0001${reading.join(' ')}`;
+    claims.set(group, [...(claims.get(group) ?? []), key]);
+  }
+  for (const [group, keys] of claims) {
+    const [page, reading] = group.split('\u0001') as [string, string];
+    if (surplus(Number(page), reading.split(' ')) < keys.length) for (const key of keys) proposals.delete(key);
+  }
+  return proposals;
 }
 
 /** A table row found split over `pages` (0-based, first to last). */
@@ -702,7 +744,7 @@ type SplitRow = { table: number; row: number; section: number; pages: number[] }
  * added or removed, and only when every word of the row is accounted for exactly once; a row with a lost or
  * extra word has no such split and is left for the alignment to report.
  */
-function joinSplitRows(source: SourceProjection, entryWords: readonly string[][], bodies: string[][], physical: number[][]): { rows: SplitRow[]; exhausted: boolean } {
+function joinSplitRows(source: SourceProjection, entryWords: readonly string[][], bodies: string[][], physical: number[][], origin: number[][]): { rows: SplitRow[]; exhausted: boolean } {
   const rows = new Map<string, { table: number; row: number; section: number; cells: string[][] }>();
   source.body.forEach((entry, index) => {
     if (!entry.table) return;
@@ -782,12 +824,15 @@ function joinSplitRows(source: SourceProjection, entryWords: readonly string[][]
           const rowPages = row.cells.flatMap((_, cell) => lengths.flatMap((fragment, part) => Array<number>(fragment[cell]!).fill(page + part)));
           bodies[page] = [...bodies[page]!.slice(0, -tail), ...row.cells.flat()];
           physical[page] = [...physical[page]!.slice(0, -tail), ...rowPages];
+          origin[page] = [...origin[page]!.slice(0, -tail), ...rowPages.map(() => -1)];
           for (let middlePage = page + 1; middlePage < last; middlePage += 1) {
             bodies[middlePage] = [];
             physical[middlePage] = [];
+            origin[middlePage] = [];
           }
           bodies[last] = bodies[last]!.slice(head);
           physical[last] = physical[last]!.slice(head);
+          origin[last] = origin[last]!.slice(head);
           found.push({ table: row.table, row: row.row, section: row.section, pages: Array.from({ length: last - page + 1 }, (_, index) => page + index) });
           joined = true;
         }
