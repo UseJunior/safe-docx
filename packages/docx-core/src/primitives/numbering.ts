@@ -204,9 +204,11 @@ export function getNumberingLevel(
 /**
  * Advance the paragraph's list counters and render its label. Deeper levels
  * restart per their `w:lvlRestart` threshold; a `w:isLgl` level renders every
- * placeholder as an Arabic numeral; `decimalZero` pads one through nine.
+ * placeholder as an Arabic numeral, except that `decimalZero` levels keep
+ * their padding and `none` levels stay empty, as Word displays them;
+ * `decimalZero` pads one through nine.
  *
- * @conformance ECMA-376 edition 5, Part 1 § 17.9.4
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.9.4 — follows Word: decimalZero padding and none/bullet levels survive isLgl
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.10
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.11
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.26
