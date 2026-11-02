@@ -9,6 +9,7 @@ export * from './matching.js';
 export * from './namespaces.js';
 export * from './numbering.js';
 export * from './paragraph_numbering.js';
+export * from './paragraph_list_numbering.js';
 export * from './semantic_tags.js';
 export * from './serialize_markdown.js';
 export * from './serialize_html.js';

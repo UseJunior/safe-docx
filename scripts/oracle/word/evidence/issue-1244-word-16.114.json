@@ -1,0 +1,356 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-02",
+  "issue": 1244,
+  "purpose": "Which numbering Word shows for a paragraph that gets w:numPr from its paragraph style chain, and how a direct w:numPr combines with it (#1244).",
+  "word": {
+    "platform": "Mac",
+    "version": "16.114.3"
+  },
+  "libreOffice": {
+    "version": "26.2.5.2"
+  },
+  "procedure": "Minimal packages (content types, package and document rels, document.xml, numbering.xml, styles.xml) were opened in Word and each paragraph's `list string of list format` was read through AppleScript; the same packages were converted to PDF with headless LibreOffice and read with `pdftotext -layout`. Paragraph text names the w:num and w:ilvl it uses (e.g. \"p3 n4L1\"). ",
+  "finding": "A paragraph's w:numId and w:ilvl each come from the nearest layer that sets them: the paragraph's own w:numPr first, then the style chain (w:pStyle, following w:basedOn; the default paragraph style when the paragraph names no style or an undefined one, t4, s_e). A missing w:ilvl means level 0. w:numId 0 at the winning layer turns numbering off (s_b, s_e). Word does NOT ignore a style's w:ilvl in favour of the level whose w:pStyle names the style, as ECMA-376 Part 1 17.3.1.19 / 17.9.23 say: it uses the style's w:ilvl (0 when absent), and shows NO number when that level's w:pStyle does not name the nearest style in the paragraph's chain that some level links to (or names a style while no style in the chain is linked): H3NoIlvl, H2IlvlOnly, X0, X2explicit, XNumIdOnlyU, Q1, Q1b, Q1c and QU show nothing, while Heading1, Heading2, MyClause (basedOn Heading2), XU, XIlvlOnlyU and Q0 are numbered. A level w:pStyle link with no w:numPr on the style numbers nothing (s_c). The link check applies to style-derived numbering only: a direct w:numPr naming only w:ilvl or only w:numId merges with a valid style numPr (s_b: 'H2 ilvl2-only direct' shows (a), 'H2 direct numId10 no-ilvl' shows Section 1.03), and a direct w:numPr over an invalid style numbering gets nothing from it ('QU direct ilvl1 only'). Style-numbered and directly numbered paragraphs advance the same shared counters (s_d). LibreOffice 26.2 follows the spec instead: no link check (H3NoIlvl shows ARTICLE II, H2IlvlOnly shows Section 1.03, X0 shows ARTICLE I, XNumIdOnlyU continues the decimal list); safe-docx follows Word. Unrelated to style resolution: in s_b Word shows 'Section 1.02' for the first level-1 paragraph after an (a) at level 2, because Word counts a skipped level as used at its start value; safe-docx renders the skipped-level case separately (follow-up to #1243).",
+  "numberingXml": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:numbering xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\n<w:abstractNum w:abstractNumId=\"0\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:lvlText w:val=\"%1(%2)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerRoman\"/><w:lvlText w:val=\"%1(%2)(%3)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"1\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlRestart w:val=\"0\"/><w:lvlText w:val=\"%1.%2\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"2\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"upperRoman\"/><w:pStyle w:val=\"Heading1\"/><w:lvlText w:val=\"ARTICLE %1\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimalZero\"/><w:pStyle w:val=\"Heading2\"/><w:isLgl/><w:lvlText w:val=\"Section %1.%2\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:pStyle w:val=\"H3NoIlvl\"/><w:lvlText w:val=\"(%3)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"3\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"upperLetter\"/><w:pStyle w:val=\"LinkedOnly\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"4\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:pStyle w:val=\"Q0\"/><w:lvlText w:val=\"Q%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:pStyle w:val=\"Q1\"/><w:lvlText w:val=\"Q%1(%2)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num>\n<w:num w:numId=\"21\"><w:abstractNumId w:val=\"1\"/><w:lvlOverride w:ilvl=\"1\"><w:startOverride w:val=\"5\"/></w:lvlOverride></w:num>\n<w:num w:numId=\"20\"><w:abstractNumId w:val=\"4\"/></w:num>\n<w:num w:numId=\"2\"><w:abstractNumId w:val=\"0\"/></w:num>\n<w:num w:numId=\"3\"><w:abstractNumId w:val=\"0\"/><w:lvlOverride w:ilvl=\"0\"><w:startOverride w:val=\"5\"/></w:lvlOverride></w:num>\n<w:num w:numId=\"4\"><w:abstractNumId w:val=\"0\"/><w:lvlOverride w:ilvl=\"1\"><w:startOverride w:val=\"5\"/></w:lvlOverride></w:num>\n<w:num w:numId=\"6\"><w:abstractNumId w:val=\"0\"/><w:lvlOverride w:ilvl=\"0\"><w:startOverride w:val=\"1\"/></w:lvlOverride></w:num>\n<w:num w:numId=\"7\"><w:abstractNumId w:val=\"1\"/></w:num>\n<w:num w:numId=\"8\"><w:abstractNumId w:val=\"1\"/></w:num>\n<w:num w:numId=\"10\"><w:abstractNumId w:val=\"2\"/></w:num>\n<w:num w:numId=\"11\"><w:abstractNumId w:val=\"2\"/></w:num>\n<w:num w:numId=\"12\"><w:abstractNumId w:val=\"0\"/><w:lvlOverride w:ilvl=\"0\"><w:startOverride w:val=\"5\"/></w:lvlOverride></w:num>\n<w:num w:numId=\"13\"><w:abstractNumId w:val=\"3\"/></w:num>\n<w:num w:numId=\"14\"><w:abstractNumId w:val=\"2\"/><w:lvlOverride w:ilvl=\"1\"><w:startOverride w:val=\"1\"/></w:lvlOverride></w:num>\n</w:numbering>",
+  "stylesXml": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\n<w:style w:type=\"paragraph\" w:styleId=\"Normal\" w:default=\"1\"><w:name w:val=\"Normal\"/></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Heading1\"><w:name w:val=\"Heading1\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"10\"/></w:numPr><w:outlineLvl w:val=\"0\"/></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Heading2\"><w:name w:val=\"Heading2\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"10\"/></w:numPr><w:outlineLvl w:val=\"1\"/></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"H3NoIlvl\"><w:name w:val=\"H3NoIlvl\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"10\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"MyClause\"><w:name w:val=\"MyClause\"/><w:basedOn w:val=\"Heading2\"/></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"NoNum\"><w:name w:val=\"NoNum\"/><w:basedOn w:val=\"Heading2\"/><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"H2IlvlOnly\"><w:name w:val=\"H2IlvlOnly\"/><w:basedOn w:val=\"Heading1\"/><w:pPr><w:numPr><w:ilvl w:val=\"1\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"LinkedOnly\"><w:name w:val=\"LinkedOnly\"/><w:basedOn w:val=\"Normal\"/></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Plain\"><w:name w:val=\"Plain\"/><w:basedOn w:val=\"Normal\"/></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"X0\"><w:name w:val=\"X0\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"10\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"X2explicit\"><w:name w:val=\"X2explicit\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"2\"/><w:numId w:val=\"10\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"XU\"><w:name w:val=\"XU\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"XIlvlOnlyU\"><w:name w:val=\"XIlvlOnlyU\"/><w:basedOn w:val=\"XU\"/><w:pPr><w:numPr><w:ilvl w:val=\"1\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Q0\"><w:name w:val=\"Q0\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"20\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Q1\"><w:name w:val=\"Q1\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"20\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Q1b\"><w:name w:val=\"Q1b\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"20\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Q1c\"><w:name w:val=\"Q1c\"/><w:basedOn w:val=\"Q1b\"/></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"QU\"><w:name w:val=\"QU\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"20\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"XNumIdOnlyU\"><w:name w:val=\"XNumIdOnlyU\"/><w:basedOn w:val=\"Heading2\"/><w:pPr><w:numPr><w:numId w:val=\"1\"/></w:numPr></w:pPr></w:style>\n</w:styles>",
+  "stylesXmlWithNumberedNormal": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\n<w:style w:type=\"paragraph\" w:styleId=\"Normal\" w:default=\"1\"><w:name w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"1\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Heading1\"><w:name w:val=\"Heading1\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"10\"/></w:numPr><w:outlineLvl w:val=\"0\"/></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Heading2\"><w:name w:val=\"Heading2\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"10\"/></w:numPr><w:outlineLvl w:val=\"1\"/></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"H3NoIlvl\"><w:name w:val=\"H3NoIlvl\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"10\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"MyClause\"><w:name w:val=\"MyClause\"/><w:basedOn w:val=\"Heading2\"/></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"NoNum\"><w:name w:val=\"NoNum\"/><w:basedOn w:val=\"Heading2\"/><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"H2IlvlOnly\"><w:name w:val=\"H2IlvlOnly\"/><w:basedOn w:val=\"Heading1\"/><w:pPr><w:numPr><w:ilvl w:val=\"1\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"LinkedOnly\"><w:name w:val=\"LinkedOnly\"/><w:basedOn w:val=\"Normal\"/></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Plain\"><w:name w:val=\"Plain\"/><w:basedOn w:val=\"Normal\"/></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"X0\"><w:name w:val=\"X0\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"10\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"X2explicit\"><w:name w:val=\"X2explicit\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"2\"/><w:numId w:val=\"10\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"XU\"><w:name w:val=\"XU\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"XIlvlOnlyU\"><w:name w:val=\"XIlvlOnlyU\"/><w:basedOn w:val=\"XU\"/><w:pPr><w:numPr><w:ilvl w:val=\"1\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Q0\"><w:name w:val=\"Q0\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"20\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Q1\"><w:name w:val=\"Q1\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"20\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Q1b\"><w:name w:val=\"Q1b\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"20\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Q1c\"><w:name w:val=\"Q1c\"/><w:basedOn w:val=\"Q1b\"/></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"QU\"><w:name w:val=\"QU\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"20\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"XNumIdOnlyU\"><w:name w:val=\"XNumIdOnlyU\"/><w:basedOn w:val=\"Heading2\"/><w:pPr><w:numPr><w:numId w:val=\"1\"/></w:numPr></w:pPr></w:style>\n</w:styles>",
+  "stylesXmlWithNumberedNormalUsedBy": [
+    "s_e_normal_numbered",
+    "t4_unknown_pstyle_default_numbered"
+  ],
+  "fixtures": {
+    "s_a_heading_styles": {
+      "paragraphs": [
+        {
+          "text": "H1 Definitions",
+          "word": "ARTICLE I"
+        },
+        {
+          "text": "H2 one",
+          "word": "Section 1.01"
+        },
+        {
+          "text": "H2 two",
+          "word": "Section 1.02"
+        },
+        {
+          "text": "H3NoIlvl one",
+          "word": ""
+        },
+        {
+          "text": "H3NoIlvl two",
+          "word": ""
+        },
+        {
+          "text": "H1 Purchase",
+          "word": "ARTICLE II"
+        },
+        {
+          "text": "H2 three",
+          "word": "Section 2.01"
+        }
+      ],
+      "libreOfficeRendered": [
+        "ARTICLE I H1 Definitions",
+        "Section 1.01 H2 one",
+        "Section 1.02 H2 two",
+        "ARTICLE II H3NoIlvl one",
+        "ARTICLE III H3NoIlvl two",
+        "ARTICLE IV H1 Purchase",
+        "Section 4.01 H2 three"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t xml:space=\"preserve\">H1 Definitions</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr><w:r><w:t xml:space=\"preserve\">H2 one</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr><w:r><w:t xml:space=\"preserve\">H2 two</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"H3NoIlvl\"/></w:pPr><w:r><w:t xml:space=\"preserve\">H3NoIlvl one</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"H3NoIlvl\"/></w:pPr><w:r><w:t xml:space=\"preserve\">H3NoIlvl two</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t xml:space=\"preserve\">H1 Purchase</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr><w:r><w:t xml:space=\"preserve\">H2 three</w:t></w:r></w:p>"
+    },
+    "s_b_precedence": {
+      "paragraphs": [
+        {
+          "text": "H1 first",
+          "word": "ARTICLE I"
+        },
+        {
+          "text": "H2 numId0 direct",
+          "word": ""
+        },
+        {
+          "text": "H2 ilvl2-only direct",
+          "word": "(a)"
+        },
+        {
+          "text": "H2 direct n1L0",
+          "word": "1."
+        },
+        {
+          "text": "MyClause basedOn H2",
+          "word": "Section 1.02"
+        },
+        {
+          "text": "NoNum basedOn H2 numId0",
+          "word": ""
+        },
+        {
+          "text": "H2IlvlOnly basedOn H1",
+          "word": ""
+        },
+        {
+          "text": "Plain direct numId1 no-ilvl",
+          "word": "2."
+        },
+        {
+          "text": "Plain direct ilvl1 no-numId",
+          "word": ""
+        },
+        {
+          "text": "H2 direct numId10 no-ilvl",
+          "word": "Section 1.03"
+        },
+        {
+          "text": "H2 plain",
+          "word": "Section 1.04"
+        },
+        {
+          "text": "H2 direct numId11 (same abstract) no-ilvl",
+          "word": "Section 1.05"
+        },
+        {
+          "text": "H2 after numId11",
+          "word": "Section 1.06"
+        },
+        {
+          "text": "H1 direct numId14 (override L1=1)",
+          "word": "ARTICLE II"
+        },
+        {
+          "text": "H2 after numId14",
+          "word": "Section 2.01"
+        }
+      ],
+      "libreOfficeRendered": [
+        "ARTICLE I H1 first",
+        "H2 numId0 direct",
+        "(a) H2 ilvl2-only direct",
+        "1. H2 direct n1L0",
+        "Section 1.02 MyClause basedOn H2",
+        "NoNum basedOn H2 numId0",
+        "Section 1.03 H2IlvlOnly basedOn H1",
+        "2. Plain direct numId1 no-ilvl",
+        "Plain direct ilvl1 no-numId",
+        "Section 1.04 H2 direct numId10 no-ilvl",
+        "Section 1.05 H2 plain",
+        "Section 1.06 H2 direct numId11 (same abstract) no-ilvl",
+        "Section 1.07 H2 after numId11",
+        "ARTICLE II H1 direct numId14 (override L1=1)",
+        "Section 2.01 H2 after numId14"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t xml:space=\"preserve\">H1 first</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">H2 numId0 direct</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/><w:numPr><w:ilvl w:val=\"2\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">H2 ilvl2-only direct</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">H2 direct n1L0</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"MyClause\"/></w:pPr><w:r><w:t xml:space=\"preserve\">MyClause basedOn H2</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"NoNum\"/></w:pPr><w:r><w:t xml:space=\"preserve\">NoNum basedOn H2 numId0</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"H2IlvlOnly\"/></w:pPr><w:r><w:t xml:space=\"preserve\">H2IlvlOnly basedOn H1</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Plain\"/><w:numPr><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">Plain direct numId1 no-ilvl</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Plain\"/><w:numPr><w:ilvl w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">Plain direct ilvl1 no-numId</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/><w:numPr><w:numId w:val=\"10\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">H2 direct numId10 no-ilvl</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr><w:r><w:t xml:space=\"preserve\">H2 plain</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/><w:numPr><w:numId w:val=\"11\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">H2 direct numId11 (same abstract) no-ilvl</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr><w:r><w:t xml:space=\"preserve\">H2 after numId11</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading1\"/><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"14\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">H1 direct numId14 (override L1=1)</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr><w:r><w:t xml:space=\"preserve\">H2 after numId14</w:t></w:r></w:p>"
+    },
+    "s_c_linked_only": {
+      "paragraphs": [
+        {
+          "text": "LinkedOnly one",
+          "word": ""
+        },
+        {
+          "text": "LinkedOnly two",
+          "word": ""
+        },
+        {
+          "text": "direct n13L0",
+          "word": "A."
+        }
+      ],
+      "libreOfficeRendered": [
+        "LinkedOnly one",
+        "LinkedOnly two",
+        "A. direct n13L0"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:pStyle w:val=\"LinkedOnly\"/></w:pPr><w:r><w:t xml:space=\"preserve\">LinkedOnly one</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"LinkedOnly\"/></w:pPr><w:r><w:t xml:space=\"preserve\">LinkedOnly two</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"13\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">direct n13L0</w:t></w:r></w:p>"
+    },
+    "s_d_mixed_style_direct": {
+      "paragraphs": [
+        {
+          "text": "H1 style",
+          "word": "ARTICLE I"
+        },
+        {
+          "text": "direct n10L1",
+          "word": "Section 1.01"
+        },
+        {
+          "text": "H2 style",
+          "word": "Section 1.02"
+        },
+        {
+          "text": "direct n11L0",
+          "word": "ARTICLE II"
+        },
+        {
+          "text": "H2 style again",
+          "word": "Section 2.01"
+        }
+      ],
+      "libreOfficeRendered": [
+        "ARTICLE I H1 style",
+        "Section 1.01 direct n10L1",
+        "Section 1.02 H2 style",
+        "ARTICLE II direct n11L0",
+        "Section 2.01 H2 style again"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t xml:space=\"preserve\">H1 style</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"10\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">direct n10L1</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr><w:r><w:t xml:space=\"preserve\">H2 style</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"11\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">direct n11L0</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr><w:r><w:t xml:space=\"preserve\">H2 style again</w:t></w:r></w:p>"
+    },
+    "s_e_normal_numbered": {
+      "paragraphs": [
+        {
+          "text": "normal one",
+          "word": "1."
+        },
+        {
+          "text": "normal two",
+          "word": "2."
+        },
+        {
+          "text": "Plain basedOn Normal",
+          "word": "3."
+        },
+        {
+          "text": "normal off",
+          "word": ""
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. normal one",
+        "2. normal two",
+        "3. Plain basedOn Normal",
+        "normal off"
+      ],
+      "bodyXml": "<w:p><w:r><w:t xml:space=\"preserve\">normal one</w:t></w:r></w:p><w:p><w:r><w:t xml:space=\"preserve\">normal two</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Plain\"/></w:pPr><w:r><w:t xml:space=\"preserve\">Plain basedOn Normal</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">normal off</w:t></w:r></w:p>"
+    },
+    "r1_style_rules": {
+      "paragraphs": [
+        {
+          "text": "X0 numId10 no-ilvl unlinked",
+          "word": ""
+        },
+        {
+          "text": "X2explicit numId10 ilvl2 unlinked",
+          "word": ""
+        },
+        {
+          "text": "XU numId1 ilvl0",
+          "word": "1."
+        },
+        {
+          "text": "XIlvlOnlyU basedOn XU ilvl1 only",
+          "word": "1(a)"
+        },
+        {
+          "text": "XNumIdOnlyU basedOn H2 numId1 only",
+          "word": ""
+        },
+        {
+          "text": "Q0 numId20 no-ilvl",
+          "word": "Q1."
+        },
+        {
+          "text": "Q1 numId20 no-ilvl linked L1",
+          "word": ""
+        },
+        {
+          "text": "Q1b numId20 ilvl1 unlinked",
+          "word": ""
+        },
+        {
+          "text": "Q1c basedOn Q1b",
+          "word": ""
+        },
+        {
+          "text": "QU numId20 ilvl0 unlinked",
+          "word": ""
+        },
+        {
+          "text": "QU direct ilvl1 only",
+          "word": ""
+        },
+        {
+          "text": "Q0 again",
+          "word": "Q2."
+        }
+      ],
+      "libreOfficeRendered": [
+        "ARTICLE I X0 numId10 no-ilvl unlinked",
+        "X2explicit numId10 ilvl2 unlinked",
+        "1. XU numId1 ilvl0",
+        "1(a)XIlvlOnlyU basedOn XU ilvl1 only",
+        "1(b) XNumIdOnlyU basedOn H2 numId1 only",
+        "Q1. Q0 numId20 no-ilvl",
+        "Q2. Q1 numId20 no-ilvl linked L1",
+        "Q1b numId20 ilvl1 unlinked",
+        "Q1c basedOn Q1b",
+        "QU numId20 ilvl0 unlinked",
+        "Q2(a) QU direct ilvl1 only",
+        "Q3. Q0 again"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:pStyle w:val=\"X0\"/></w:pPr><w:r><w:t xml:space=\"preserve\">X0 numId10 no-ilvl unlinked</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"X2explicit\"/></w:pPr><w:r><w:t xml:space=\"preserve\">X2explicit numId10 ilvl2 unlinked</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"XU\"/></w:pPr><w:r><w:t xml:space=\"preserve\">XU numId1 ilvl0</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"XIlvlOnlyU\"/></w:pPr><w:r><w:t xml:space=\"preserve\">XIlvlOnlyU basedOn XU ilvl1 only</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"XNumIdOnlyU\"/></w:pPr><w:r><w:t xml:space=\"preserve\">XNumIdOnlyU basedOn H2 numId1 only</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Q0\"/></w:pPr><w:r><w:t xml:space=\"preserve\">Q0 numId20 no-ilvl</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Q1\"/></w:pPr><w:r><w:t xml:space=\"preserve\">Q1 numId20 no-ilvl linked L1</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Q1b\"/></w:pPr><w:r><w:t xml:space=\"preserve\">Q1b numId20 ilvl1 unlinked</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Q1c\"/></w:pPr><w:r><w:t xml:space=\"preserve\">Q1c basedOn Q1b</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"QU\"/></w:pPr><w:r><w:t xml:space=\"preserve\">QU numId20 ilvl0 unlinked</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"QU\"/><w:numPr><w:ilvl w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">QU direct ilvl1 only</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Q0\"/></w:pPr><w:r><w:t xml:space=\"preserve\">Q0 again</w:t></w:r></w:p>"
+    },
+    "t4_unknown_pstyle_default_numbered": {
+      "paragraphs": [
+        {
+          "text": "normal one",
+          "word": "1."
+        },
+        {
+          "text": "unknown style",
+          "word": "2."
+        },
+        {
+          "text": "normal three",
+          "word": "3."
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. normal one",
+        "2. unknown style",
+        "3. normal three"
+      ],
+      "bodyXml": "<w:p><w:r><w:t xml:space=\"preserve\">normal one</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"DoesNotExist\"/></w:pPr><w:r><w:t xml:space=\"preserve\">unknown style</w:t></w:r></w:p><w:p><w:r><w:t xml:space=\"preserve\">normal three</w:t></w:r></w:p>"
+    },
+    "e1_empty_numbered": {
+      "note": "Empty list paragraphs (no text) still show a number and advance the counters in both Word and LibreOffice; the empty paragraphs here are text-less, so the oracle line shows only the label.",
+      "paragraphs": [
+        {
+          "text": "",
+          "word": "ARTICLE I"
+        },
+        {
+          "text": "Title",
+          "word": "ARTICLE II"
+        },
+        {
+          "text": "",
+          "word": "Section 2.01"
+        },
+        {
+          "text": "Sub",
+          "word": "Section 2.02"
+        },
+        {
+          "text": "",
+          "word": "1."
+        },
+        {
+          "text": "Item",
+          "word": "2."
+        }
+      ],
+      "libreOfficeRendered": [
+        "ARTICLE I",
+        "ARTICLE II Title",
+        "Section 2.01",
+        "Section 2.02 Sub",
+        "1.",
+        "2. Item"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t xml:space=\"preserve\"></w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t xml:space=\"preserve\">Title</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr><w:r><w:t xml:space=\"preserve\"></w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr><w:r><w:t xml:space=\"preserve\">Sub</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\"></w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">Item</w:t></w:r></w:p>"
+    }
+  }
+}

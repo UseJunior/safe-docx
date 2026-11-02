@@ -535,6 +535,18 @@ describe('brownfield Markdoc authoring', () => {
       .rejects.toMatchObject({ code: 'MISSING_STYLE_SOURCE' });
   });
 
+  itAllure('[SDX-MDOC-06] treats a heading numbered through its paragraph style as a numbered insertion anchor', async () => {
+    // The heading carries no direct numPr; its numbering comes from the
+    // Heading2 style. Cloning its pPr would still create a numbered heading,
+    // so the insertion must name its style source just as for direct numbering.
+    const imported = await importDocxToMarkdoc(await styleNumberedHeadingFixture());
+    const [heading, body] = requireMarkdoc(imported.markdoc).scaffold;
+    const insertion = (styleSource = '') => `${imported.markdoc}\n{% insert-after anchor="${heading!.id}" edit="insert"${styleSource} %}\n{% after %}\nInserted.\n{% /after %}\n{% /insert-after %}\n`;
+    await expect(compileMarkdoc(imported.anchoredSource, insertion()))
+      .rejects.toMatchObject({ code: 'NUMBERED_INSERT_REQUIRES_STYLE_SOURCE' });
+    await expect(compileMarkdoc(imported.anchoredSource, insertion(` style-source="${body!.id}"`))).resolves.toBeDefined();
+  });
+
   itAllure('[SDX-MDOC-16] compares adjacent revisions while retaining only supplied labels', async () => {
     const original = await buildSyntheticDocx({ paragraphs: ['The Old Name.'] });
     const imported = await importDocxToMarkdoc(original);
@@ -855,6 +867,14 @@ async function numberedFixture(): Promise<Buffer> {
   return buildDocxFromParts({
     bodyXml: [paragraph('First item.'), paragraph('Second item.'), paragraph('Third item.')].join(''),
     numberingXml: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum><w:num w:numId="7"><w:abstractNumId w:val="3"/></w:num></w:numbering>',
+  });
+}
+
+async function styleNumberedHeadingFixture(): Promise<Buffer> {
+  return buildDocxFromParts({
+    bodyXml: '<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Definitions.</w:t></w:r></w:p><w:p><w:r><w:t>Body text.</w:t></w:r></w:p>',
+    stylesXml: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:pPr><w:numPr><w:numId w:val="7"/></w:numPr><w:outlineLvl w:val="1"/></w:pPr></w:style></w:styles>',
+    numberingXml: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:pStyle w:val="Heading2"/><w:lvlText w:val="Section %1."/></w:lvl></w:abstractNum><w:num w:numId="7"><w:abstractNumId w:val="3"/></w:num></w:numbering>',
   });
 }
 

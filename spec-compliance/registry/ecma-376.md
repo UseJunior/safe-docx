@@ -1692,7 +1692,7 @@ part: 1
 section: "17.9.23"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle
-verifiedBy: packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/emit/styles-part.ts
+verifiedBy: packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/emit/styles-part.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts
 ```
 
 An optional `w:pStyle` on `w:lvl` associates that exact numbering level with
@@ -1702,7 +1702,9 @@ unrelated level or mutates list counters. Generation emits a level's `pStyle`
 only for a declared paragraph style that no other level links, and writes the
 reverse link (`w:numPr` naming the definition's default instance and the
 level) into that style's `w:pPr`, so a paragraph that only applies the style is
-numbered at that level.
+numbered at that level. Label resolution honors a style-derived number only
+when this link agrees with the paragraph's nearest numbered style; a level
+`w:pStyle` without the style's own `w:numPr` numbers nothing.
 
 ## [ECMA-PART1-17-9-22] w:pPr numbering-level paragraph properties
 
@@ -1894,12 +1896,25 @@ part: 1
 section: "17.3.1.19"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr
-verifiedBy: packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts
+verifiedBy: packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts; packages/docx-core/test-primitives/paragraph_list_numbering.test.ts
 ```
 
 List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot.
 Generation binds deterministic handles; paragraph mutation can remove or
 re-point a direct reference while preserving the numbering definitions.
+
+When reading list labels, a paragraph's numbering is resolved per element:
+`w:numId` and `w:ilvl` each come from the nearest layer that sets them — the
+paragraph's own `w:numPr`, then its style chain through `w:basedOn` (the
+default paragraph style when there is no `w:pStyle`). A missing `w:ilvl`
+means level 0, and `w:numId` 0 at the winning layer removes numbering.
+Conformance gap, following Microsoft Word: this clause says a style's
+`w:ilvl` is ignored and the level is found through the numbering level's
+`w:pStyle`; Word instead uses the style's `w:ilvl` and shows style-derived
+numbering only when the resolved level links back to the nearest numbered
+style in the paragraph's chain. LibreOffice follows the clause text. The
+Word 16.114 and LibreOffice 26.2 results are recorded in
+`scripts/oracle/word/evidence/issue-1244-word-16.114.json`.
 
 ## [ECMA-PART1-17-13-4-6] w:comments comment-collection part emission
 
