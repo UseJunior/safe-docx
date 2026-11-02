@@ -1458,7 +1458,7 @@ part: 1
 section: "17.9.15"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num
-verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts
+verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts
 ```
 
 Instances carry sequential numeric `w:numId` values: default instances take
@@ -1466,7 +1466,8 @@ Instances carry sequential numeric `w:numId` values: default instances take
 follow from N+1, so adding an instance never renumbers a default instance.
 Additional instances' ids depend on the instances declared before them, so
 numeric ids are compile-local; the spec-level string handle → numeric id map
-is what paragraph references bind through.
+is what paragraph references bind through. On the read side, every instance of one
+abstract definition continues a single list, as Word displays it.
 
 ## [ECMA-PART1-17-9-18] w:numId numbering instance reference
 
@@ -1612,16 +1613,19 @@ part: 1
 section: "17.9.26"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride
-verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts
+verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts
 ```
 
 A level override carries only `w:startOverride`, so an additional instance of
-a definition restarts that level at the given value. Word and LibreOffice keep
-one running sequence per abstract definition: the override restarts it the
-first time a paragraph uses the instance, and paragraphs on any instance then
-continue from there. The read-side label computation starts the overridden
-level at the override value but keeps a counter per instance, so it diverges
-from both readers once two instances interleave.
+a definition restarts that level at the given value. The read-side label
+computation follows Word: it keeps one running sequence per abstract
+definition, shared by every instance at every level; an override restarts the
+shared level the first time a paragraph of its instance uses that level, and
+paragraphs on any instance then continue from there. A deeper level restarted
+by a paragraph resumes at that paragraph's instance's start value (its
+override, if any). LibreOffice agrees except that it restarts deeper levels at
+the abstract start. The Word observations are recorded in
+`scripts/oracle/word/evidence/issue-1243-word-16.114.json`.
 
 ## [ECMA-PART1-17-9-17] w:numFmt numbering format
 
