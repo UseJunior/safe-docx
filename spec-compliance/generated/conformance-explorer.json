@@ -3423,11 +3423,19 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num",
-      "claimRationale": "Instances carry sequential numeric `w:numId` values: default instances take\n1..N in declaration order, and additional instances (`NumberingSpec.instances`)\nfollow from N+1, so adding an instance never renumbers a default instance.\nAdditional instances' ids depend on the instances declared before them, so\nnumeric ids are compile-local; the spec-level string handle → numeric id map\nis what paragraph references bind through.",
+      "claimRationale": "Instances carry sequential numeric `w:numId` values: default instances take\n1..N in declaration order, and additional instances (`NumberingSpec.instances`)\nfollow from N+1, so adding an instance never renumbers a default instance.\nAdditional instances' ids depend on the instances declared before them, so\nnumeric ids are compile-local; the spec-level string handle → numeric id map\nis what paragraph references bind through. On the read side, every instance of one\nabstract definition continues a single list, as Word displays it.",
       "evidence": [
         {
           "kind": "source",
           "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/numbering.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/numbering.test.ts"
         }
       ]
     },
@@ -3607,7 +3615,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride",
-      "claimRationale": "A level override carries only `w:startOverride`, so an additional instance of\na definition restarts that level at the given value. Word and LibreOffice keep\none running sequence per abstract definition: the override restarts it the\nfirst time a paragraph uses the instance, and paragraphs on any instance then\ncontinue from there. The read-side label computation starts the overridden\nlevel at the override value but keeps a counter per instance, so it diverges\nfrom both readers once two instances interleave.",
+      "claimRationale": "A level override carries only `w:startOverride`, so an additional instance of\na definition restarts that level at the given value. The read-side label\ncomputation follows Word: it keeps one running sequence per abstract\ndefinition, shared by every instance at every level; an override restarts the\nshared level the first time a paragraph of its instance uses that level, and\nparagraphs on any instance then continue from there. A deeper level restarted\nby a paragraph resumes at that paragraph's instance's start value (its\noverride, if any). LibreOffice 26.2 agrees on the sharing and the first-use\nrestart, but restarts deeper levels at the abstract start and ignores\n`w:lvlRestart`. The Word observations are recorded in\n`scripts/oracle/word/evidence/issue-1243-word-16.114.json`.",
       "evidence": [
         {
           "kind": "source",
@@ -3616,6 +3624,10 @@
         {
           "kind": "source",
           "path": "packages/docx-core/src/primitives/numbering.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/numbering.test.ts"
         }
       ]
     },

@@ -104,7 +104,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-9-16` | w:numbering numbering-definitions part emission | 5 | 1 | 17.9.16 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numbering` | packages/docx-core/src/generation/emit/numbering-part.ts |
 | `ECMA-PART1-17-9-1` | w:abstractNum abstract numbering definition | 5 | 1 | 17.9.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:abstractNum` | packages/docx-core/src/generation/emit/numbering-part.ts |
 | `ECMA-PART1-17-9-2` | w:abstractNumId abstract definition reference | 5 | 1 | 17.9.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:abstractNumId` | packages/docx-core/src/generation/emit/numbering-part.ts |
-| `ECMA-PART1-17-9-15` | w:num numbering definition instance | 5 | 1 | 17.9.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num` | packages/docx-core/src/generation/emit/numbering-part.ts |
+| `ECMA-PART1-17-9-15` | w:num numbering definition instance | 5 | 1 | 17.9.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts |
 | `ECMA-PART1-17-9-18` | w:numId numbering instance reference | 5 | 1 | 17.9.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numId` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts |
 | `ECMA-PART1-17-9-3` | w:ilvl numbering level reference | 5 | 1 | 17.9.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ilvl` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts |
 | `ECMA-PART1-17-9-6` | w:lvl numbering level definition | 5 | 1 | 17.9.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvl` | packages/docx-core/src/primitives/numbering.ts; packages/docx-core/src/generation/emit/numbering-part.ts |
@@ -113,7 +113,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-9-4` | w:isLgl legal numbering | 5 | 1 | 17.9.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:isLgl` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts |
 | `ECMA-PART1-17-9-10` | w:lvlRestart numbering level restart threshold | 5 | 1 | 17.9.10 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlRestart` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts; packages/docx-core/src/primitives/numbering.ts |
 | `ECMA-PART1-17-9-8` | w:lvlOverride numbering level override | 5 | 1 | 17.9.8 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlOverride` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts |
-| `ECMA-PART1-17-9-26` | w:startOverride numbering level start override | 5 | 1 | 17.9.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts |
+| `ECMA-PART1-17-9-26` | w:startOverride numbering level start override | 5 | 1 | 17.9.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts |
 | `ECMA-PART1-17-9-17` | w:numFmt numbering format | 5 | 1 | 17.9.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numFmt` | packages/docx-core/src/generation/schema-enum-domains.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts |
 | `ECMA-PART1-17-9-11` | w:lvlText numbering level text | 5 | 1 | 17.9.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlText` | packages/docx-core/src/generation/emit/numbering-part.ts |
 | `ECMA-PART1-17-9-25` | w:start numbering level starting value | 5 | 1 | 17.9.25 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:start` | packages/docx-core/src/generation/emit/numbering-part.ts |
@@ -1481,14 +1481,15 @@ construction, so the reference can never dangle.
 - **Part / Section:** Part 1 § 17.9.15
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num`
-- **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts
+- **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts
 
 Instances carry sequential numeric `w:numId` values: default instances take
 1..N in declaration order, and additional instances (`NumberingSpec.instances`)
 follow from N+1, so adding an instance never renumbers a default instance.
 Additional instances' ids depend on the instances declared before them, so
 numeric ids are compile-local; the spec-level string handle → numeric id map
-is what paragraph references bind through.
+is what paragraph references bind through. On the read side, every instance of one
+abstract definition continues a single list, as Word displays it.
 
 ### ECMA-PART1-17-9-18 — w:numId numbering instance reference
 
@@ -1608,15 +1609,19 @@ naming a declared level at most once.
 - **Part / Section:** Part 1 § 17.9.26
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride`
-- **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts
+- **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts
 
 A level override carries only `w:startOverride`, so an additional instance of
-a definition restarts that level at the given value. Word and LibreOffice keep
-one running sequence per abstract definition: the override restarts it the
-first time a paragraph uses the instance, and paragraphs on any instance then
-continue from there. The read-side label computation starts the overridden
-level at the override value but keeps a counter per instance, so it diverges
-from both readers once two instances interleave.
+a definition restarts that level at the given value. The read-side label
+computation follows Word: it keeps one running sequence per abstract
+definition, shared by every instance at every level; an override restarts the
+shared level the first time a paragraph of its instance uses that level, and
+paragraphs on any instance then continue from there. A deeper level restarted
+by a paragraph resumes at that paragraph's instance's start value (its
+override, if any). LibreOffice 26.2 agrees on the sharing and the first-use
+restart, but restarts deeper levels at the abstract start and ignores
+`w:lvlRestart`. The Word observations are recorded in
+`scripts/oracle/word/evidence/issue-1243-word-16.114.json`.
 
 ### ECMA-PART1-17-9-17 — w:numFmt numbering format
 

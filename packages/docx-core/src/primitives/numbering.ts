@@ -171,8 +171,67 @@ function formatCounter(numFmt: string, n: number): string {
   }
 }
 
-export type NumberingCounters = Map<string, number[]>; // numId -> per-level counters
+/**
+ * Running list counters for one document pass, keyed by `abstractNumId`.
+ * Every `w:num` instance of one abstract definition shares a single running
+ * sequence, as Word and LibreOffice display it; create one `new Map()` per
+ * document pass and feed paragraphs to it in document order.
+ *
+ * The functions here also keep per-pass state beside the map (which
+ * instance levels have restarted, and the start value a level not yet used
+ * will begin at). That state is tied to the map object: `new Map(counters)`
+ * does not copy it and `counters.clear()` does not reset it, so start each
+ * pass with a fresh map rather than copying or clearing one.
+ */
+export type NumberingCounters = Map<string, number[]>; // abstractNumId -> per-level counters
 
+type ListPassState = {
+  /**
+   * The (instance, level) pairs already numbered, so a `w:startOverride`
+   * restarts the shared sequence only at its instance's first paragraph on
+   * that level.
+   */
+  usedInstanceLevels: Map<string, Set<number>>;
+  /**
+   * Per abstract definition, the start value a level the list has never used
+   * will begin at, recorded when a paragraph's restart reaches that level
+   * (the restarting paragraph's instance start, as Word applies it). Kept
+   * apart from the counters so a never-used level still reads NaN.
+   */
+  pendingStarts: Map<string, Map<number, number>>;
+};
+
+/** Kept beside the map rather than in it, so `NumberingCounters` stays a plain map. */
+const passStates = new WeakMap<NumberingCounters, ListPassState>();
+
+function passState(counters: NumberingCounters): ListPassState {
+  let state = passStates.get(counters);
+  if (!state) {
+    state = { usedInstanceLevels: new Map(), pendingStarts: new Map() };
+    passStates.set(counters, state);
+  }
+  return state;
+}
+
+function instanceLevelsUsed(state: ListPassState, numId: string): Set<number> {
+  let used = state.usedInstanceLevels.get(numId);
+  if (!used) {
+    used = new Set();
+    state.usedInstanceLevels.set(numId, used);
+  }
+  return used;
+}
+
+function pendingStartsFor(state: ListPassState, abstractNumId: string): Map<number, number> {
+  let pending = state.pendingStarts.get(abstractNumId);
+  if (!pending) {
+    pending = new Map();
+    state.pendingStarts.set(abstractNumId, pending);
+  }
+  return pending;
+}
+
+/** The level's start value for an instance: its `startOverride`, else the abstract `w:start`. */
 function getStartForLevel(model: NumberingModel, numId: string, ilvl: number): number {
   const num = model.nums.get(numId);
   if (!num) return 1;
@@ -202,31 +261,61 @@ export function getNumberingLevel(
 }
 
 /**
- * Advance the paragraph's list counters and render its label. Deeper levels
- * restart per their `w:lvlRestart` threshold; a `w:isLgl` level renders every
- * placeholder as an Arabic numeral, except that `decimalZero` levels keep
- * their padding and `none` levels stay empty, as Word displays them;
- * `decimalZero` pads one through nine.
+ * One numbered paragraph's place in its list, captured when its counters
+ * advance: the rendered label plus the counter value of every level from 0
+ * through `ilvl`, so a caller can render any ancestor level's text (for
+ * example a full-context number such as "2.06(b)") with
+ * {@link renderListLevelText} without re-walking the document.
+ */
+export type ListLabelSnapshot = {
+  numId: string;
+  abstractNumId: string;
+  ilvl: number;
+  /** The paragraph's own level text, rendered and trimmed, e.g. "(b)". */
+  label: string;
+  /**
+   * Counter values for levels 0..ilvl at this paragraph. A level the list has
+   * never used is NaN; a level restarted since its last use holds its
+   * restart start value minus one.
+   */
+  levelValues: readonly number[];
+};
+
+/**
+ * Advance the paragraph's list counters and render its label. Counters are
+ * shared by every `w:num` instance of one `w:abstractNum`; an instance's
+ * `w:startOverride` restarts the shared level at its override value the
+ * first time a paragraph uses that instance on that level, and never again.
+ * Deeper levels restart per their `w:lvlRestart` threshold, at the start
+ * value of the instance whose paragraph caused the restart. A `w:isLgl`
+ * level renders every placeholder as an Arabic numeral, except that
+ * `decimalZero` levels keep their padding and `none` levels stay empty, as
+ * Word displays them; `decimalZero` pads one through nine. Returns null, and
+ * leaves the counters untouched, when the instance or level is undefined.
+ *
+ * The sharing and restart rules follow Word for Mac 16.114 (oracle evidence
+ * in scripts/oracle/word/evidence/issue-1243-word-16.114.json).
  *
  * @conformance-gap ECMA-376 edition 5, Part 1 § 17.9.4 — follows Word: decimalZero padding and none/bullet levels survive isLgl
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.10
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.11
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.15
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.26
  */
-export function computeListLabelForParagraph(
+export function advanceListLabel(
   model: NumberingModel,
   counters: NumberingCounters,
   params: { numId: string; ilvl: number },
-): string {
+): ListLabelSnapshot | null {
   const { numId, ilvl } = params;
   const level = getNumberingLevel(model, numId, ilvl);
-  if (!level) return '';
+  if (!level) return null;
+  const abstractNumId = model.nums.get(numId)!.abstractNumId;
 
-  let arr = counters.get(numId);
+  let arr = counters.get(abstractNumId);
   if (!arr) {
-    // Initialize with "start-1" for each level we might see.
     arr = [];
-    counters.set(numId, arr);
+    counters.set(abstractNumId, arr);
   }
 
   // Ensure array has at least ilvl+1 entries. NaN marks a level not yet
@@ -234,31 +323,73 @@ export function computeListLabelForParagraph(
   // or a negative start counting up through 0) is not re-initialized.
   while (arr.length <= ilvl) arr.push(Number.NaN);
 
-  // Initialize this level to start-1 if it hasn't been set yet.
-  const startThis = getStartForLevel(model, numId, ilvl);
-  if (Number.isNaN(arr[ilvl]!)) arr[ilvl] = startThis - 1;
+  // The instance's first paragraph on an overridden level restarts the
+  // shared sequence at the override value; later paragraphs of the same
+  // instance continue it like any other instance.
+  const state = passState(counters);
+  const pending = pendingStartsFor(state, abstractNumId);
+  const used = instanceLevelsUsed(state, numId);
+  const override = model.nums.get(numId)!.startOverrideByLevel.get(ilvl);
+  if (override !== undefined && !used.has(ilvl)) arr[ilvl] = override - 1;
+  used.add(ilvl);
 
-  // Increment this level.
+  // A level the list has never used begins at the start a restart recorded
+  // for it, else at this instance's start; then advance.
+  if (Number.isNaN(arr[ilvl]!)) arr[ilvl] = (pending.get(ilvl) ?? getStartForLevel(model, numId, ilvl)) - 1;
+  pending.delete(ilvl);
   arr[ilvl] = arr[ilvl]! + 1;
-  if (arr[ilvl] < startThis) arr[ilvl] = startThis;
 
   // Reset deeper levels whose restart threshold this level meets. By default
   // a level restarts whenever any earlier level is used; w:lvlRestart="r"
   // restarts it only when one of the first r levels (one-based) is used, and
-  // r = 0 never restarts it (§ 17.9.10).
-  for (let d = ilvl + 1; d < arr.length; d++) {
-    const restart = getNumberingLevel(model, numId, d)?.lvlRestart ?? null;
+  // r = 0 never restarts it (§ 17.9.10). The restart value is this
+  // paragraph's instance's start for that level, as Word applies it. A level
+  // the list has never used keeps reading NaN; its restart value is recorded
+  // so that an override instance's restart still reaches a level another
+  // instance uses first (Word's r4 case).
+  const levels = model.abstractNums.get(abstractNumId)!.levels;
+  for (const d of levels.keys()) {
+    if (d <= ilvl) continue;
+    const restart = levels.get(d)!.lvlRestart;
     if (restart !== null && ilvl >= restart) continue;
-    const startD = getStartForLevel(model, numId, d);
-    arr[d] = startD - 1;
+    const start = getStartForLevel(model, numId, d);
+    if (d < arr.length && !Number.isNaN(arr[d]!)) arr[d] = start - 1;
+    else pending.set(d, start);
   }
 
-  // Render lvlText by substituting counters.
+  const levelValues = arr.slice(0, ilvl + 1);
+  return {
+    numId,
+    abstractNumId,
+    ilvl,
+    label: renderListLevelText(model, numId, ilvl, levelValues),
+    levelValues,
+  };
+}
+
+/**
+ * Render one level's `w:lvlText` from the given per-level counter values
+ * without touching any counters, e.g. an ancestor level of a
+ * {@link ListLabelSnapshot}: `renderListLevelText(model, s.numId, 1,
+ * s.levelValues)` gives the "Section 2.06" above a "(b)" clause. Returns ''
+ * when the level is undefined.
+ *
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.9.4 — follows Word: decimalZero padding and none/bullet levels survive isLgl
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.11
+ */
+export function renderListLevelText(
+  model: NumberingModel,
+  numId: string,
+  ilvl: number,
+  levelValues: readonly number[],
+): string {
+  const level = getNumberingLevel(model, numId, ilvl);
+  if (!level) return '';
   const lvlText = level.lvlText || `%${ilvl + 1}.`;
   const rendered = lvlText.replace(/%(\d+)/g, (_m, nStr) => {
     const levelNum = Number.parseInt(String(nStr), 10) - 1;
     if (Number.isNaN(levelNum) || levelNum < 0) return '';
-    const counter = arr[levelNum];
+    const counter = levelValues[levelNum];
     // A level never used renders as 0, as before the NaN sentinel existed.
     const v = counter === undefined || Number.isNaN(counter) ? 0 : counter;
     const lvlDef = getNumberingLevel(model, numId, levelNum);
@@ -276,4 +407,20 @@ export function computeListLabelForParagraph(
 
   // For TOON we treat suffix as a display concern; keep label column trimmed.
   return rendered.trim();
+}
+
+/**
+ * Advance the paragraph's list counters and return its rendered label, or ''
+ * when the instance or level is undefined. See {@link advanceListLabel} for
+ * the counting rules.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.15
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.26
+ */
+export function computeListLabelForParagraph(
+  model: NumberingModel,
+  counters: NumberingCounters,
+  params: { numId: string; ilvl: number },
+): string {
+  return advanceListLabel(model, counters, params)?.label ?? '';
 }
