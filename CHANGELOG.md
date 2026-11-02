@@ -10,8 +10,9 @@
   it spells a run of consecutive source words exactly and the page's layout
   text shows that one reading in a place the raw text does not. It lists the
   line under `knownGenerated.joinedLines`. A word dropped from, added to or
-  moved within the line still fails. Required text may match a page's layout
-  text. (#1242)
+  moved within the line still fails, unless the page's layout text shows the
+  source reading in another place where the raw text does not. Required text
+  may match a page's layout text. (#1242)
 - Generated documents can have footnotes. In docx-core, `generateDocx`
   accepts a `{ kind: 'footnote', blocks: ParagraphSpec[] }` inline in body
   paragraphs and table cells. It writes `word/footnotes.xml` with Word's

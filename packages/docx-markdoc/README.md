@@ -587,7 +587,9 @@ package, determinism, read-back and brownfield-import checks:
   `pdftotext -layout` text, which places words by glyph position, shows that
   reading spaced in a place the raw text does not (one such place per split
   token); the certificate lists it under `knownGenerated.joinedLines`. A word
-  dropped from, added to or moved within that line still fails. The
+  dropped from, added to or moved within that line still fails, unless the
+  page's layout text shows the source reading in another place where the raw
+  text does not (the evidence is counted per page, not tied to the line). The
   certificate's `pdf.words.limitations` states what the comparison cannot
   catch.
 - **Footnotes.** Each note read back from `word/footnotes.xml`, and where

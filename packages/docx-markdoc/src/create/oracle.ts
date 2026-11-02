@@ -653,13 +653,11 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
   const layout = layoutTexts?.length === pageTexts.length ? layoutTexts : undefined;
   if (unsplit.result.passed || !layout) return unsplit.result;
   // A justified line LibreOffice exported without space glyphs reads back as one token. The candidates are the
-  // tokens the first alignment could not place or, when it was over budget, every token that is no source word;
-  // never a word of a rejoined row, which matched the source exactly.
-  const sourceWords = expected.map((token) => token.word);
-  const known = new Set(sourceWords);
-  const joinable = (unsplit.result.alignment === 'complete' ? unsplit.extraIdx.map((index) => first.read[index]!) : first.read.filter((token) => !known.has(token.word)))
+  // tokens the first alignment could not place or, when it was over budget, every token; never a word of a
+  // rejoined row, which matched the source exactly.
+  const joinable = (unsplit.result.alignment === 'complete' ? unsplit.extraIdx.map((index) => first.read[index]!) : first.read)
     .filter((token) => token.origin >= 0);
-  const splits = splitJoinedTokens(joinable, sourceWords, pageTexts.map(words), layout.map(words));
+  const splits = splitJoinedTokens(joinable, expected.map((token) => token.word), bodies, pageTexts.map(words), layout.map(words));
   if (splits.size === 0) return unsplit.result;
   // Split the page bodies as read, then rebuild everything from them: split rows, alignment, page model, footnotes.
   const resplit = bodies.map((tokens, page) => tokens.flatMap((word, index) => splits.get(`${page}:${index}`) ?? [word]));
@@ -678,19 +676,21 @@ type PdfToken = { word: string; page: number; physicalPage: number; origin: numb
  * by glyph position, prints the same line with its spaces. A candidate token is split only into a run of two or
  * more consecutive source words that spells it exactly, and only when that is its one reading that the layout
  * text of its page shows, spaced, more often than the raw text does. Every spaced occurrence in the raw text is
- * also in the layout text, so each split must account for an occurrence of its own: the readings split into on a
- * page may not outnumber the layout text's surplus occurrences of them. Otherwise the token stays whole.
- * Returns the split words by `page:index` in the page bodies as read.
+ * also in the layout text, so each split must account for an occurrence of its own: the tokens split into a
+ * reading on a page may not outnumber the layout text's surplus occurrences of it. When they do, only the tokens
+ * whose raw neighbours also stand around the reading in the layout text remain, and if those still outnumber the
+ * surplus, none is split. Returns the split words by `page:index` in the page bodies as read.
  */
 function splitJoinedTokens(
   candidates: ReadonlyArray<{ word: string; page: number; origin: number }>,
   expected: readonly string[],
+  bodies: readonly string[][],
   rawPages: readonly string[][],
   layoutPages: readonly string[][],
 ): Map<string, string[]> {
-  const occurrences = (tokens: readonly string[], reading: readonly string[]) => {
+  const occurrences = (tokens: readonly string[], sequence: readonly string[]) => {
     let count = 0;
-    for (let at = 0; at + reading.length <= tokens.length; at += 1) if (reading.every((word, offset) => tokens[at + offset] === word)) count += 1;
+    for (let at = 0; at + sequence.length <= tokens.length; at += 1) if (sequence.every((word, offset) => tokens[at + offset] === word)) count += 1;
     return count;
   };
   const surplusMemo = new Map<string, number>();
@@ -703,32 +703,47 @@ function splitJoinedTokens(
     }
     return value;
   };
+  // Where each source word starts a run: looked up by the token's prefixes, so a candidate costs its length, not the source's.
+  const starts = new Map<string, number[]>();
+  expected.forEach((word, index) => starts.set(word, [...(starts.get(word) ?? []), index]));
   const proposals = new Map<string, string[]>();
   for (const { word: token, page, origin } of candidates) {
     const readings = new Map<string, string[]>();
-    for (let start = 0; start < expected.length; start += 1) {
-      if (!token.startsWith(expected[start]!)) continue;
-      let at = 0;
-      let end = start;
-      while (end < expected.length && at < token.length && token.startsWith(expected[end]!, at)) {
-        at += expected[end]!.length;
-        end += 1;
+    for (let length = 1; length < token.length; length += 1) {
+      for (const start of starts.get(token.slice(0, length)) ?? []) {
+        let at = 0;
+        let end = start;
+        while (end < expected.length && at < token.length && token.startsWith(expected[end]!, at)) {
+          at += expected[end]!.length;
+          end += 1;
+        }
+        if (at !== token.length || end - start < 2) continue;
+        const reading = expected.slice(start, end);
+        if (surplus(page, reading) > 0) readings.set(reading.join(' '), reading);
       }
-      if (at !== token.length || end - start < 2) continue;
-      const reading = expected.slice(start, end);
-      if (surplus(page, reading) > 0) readings.set(reading.join(' '), reading);
     }
     if (readings.size === 1) proposals.set(`${page}:${origin}`, [...readings.values()][0]!);
   }
-  // Each split needs its own surplus occurrence; where a page's readings outnumber them, none of those splits holds.
+  // Each split needs its own surplus occurrence. Where a page's claims on a reading outnumber them, keep only the
+  // tokens whose raw neighbours stand around the reading in the layout text; if those still outnumber them, none.
   const claims = new Map<string, string[]>();
   for (const [key, reading] of proposals) {
     const group = `${key.split(':')[0]}\u0001${reading.join(' ')}`;
     claims.set(group, [...(claims.get(group) ?? []), key]);
   }
   for (const [group, keys] of claims) {
-    const [page, reading] = group.split('\u0001') as [string, string];
-    if (surplus(Number(page), reading.split(' ')) < keys.length) for (const key of keys) proposals.delete(key);
+    const page = Number(group.split('\u0001')[0]);
+    const reading = proposals.get(keys[0]!)!;
+    const available = surplus(page, reading);
+    if (keys.length <= available) continue;
+    const inContext = keys.filter((key) => {
+      const origin = Number(key.split(':')[1]);
+      const body = bodies[page] ?? [];
+      const context = [...(origin > 0 ? [body[origin - 1]!] : []), ...reading, ...(origin + 1 < body.length ? [body[origin + 1]!] : [])];
+      return occurrences(layoutPages[page] ?? [], context) > 0;
+    });
+    const kept = new Set(inContext.length <= available ? inContext : []);
+    for (const key of keys) if (!kept.has(key)) proposals.delete(key);
   }
   return proposals;
 }

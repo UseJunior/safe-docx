@@ -281,6 +281,25 @@ describe('Traceability: independent round-trip oracle for created documents', ()
       expect(recovered.knownGenerated.joinedLines).toHaveLength(1000);
       const changedLong = comparePdfWords(longSource, [`${joinedLong(true)}\n`], [`${long.join(' ').replace('w5000 ', 'w5000x ')}\n`]);
       expect(changedLong).toMatchObject({ passed: false, unexplainedExtra: [{ words: 'w5000xw5001' }] });
+      // Over budget, a run-together token that is also a source word elsewhere is still recovered; the literal
+      // word keeps its place, because only tokens whose neighbours stand around the reading in the layout split.
+      const phrases = Array.from({ length: 700 }, (_, index) => `start${index} a side end${index}`).join(' ');
+      const asideSource: SourceProjection = { body: [{ text: `${phrases} Literal aside tail.` }], footers: [null] };
+      const asideRaw = (layout: string) => `${layout.replace(/ a side /gu, ' aside ')}\n`;
+      const asideLayout = `${phrases} Literal aside tail.`;
+      const asideRecovered = comparePdfWords(asideSource, [asideRaw(asideLayout)], [`${asideLayout}\n`]);
+      expect(asideRecovered).toMatchObject({ passed: true, alignment: 'complete' });
+      expect(asideRecovered.knownGenerated.joinedLines).toHaveLength(700);
+      const asideChanged = asideLayout.replace('start350 a side end350', 'start350 a sided end350');
+      const changedAside = comparePdfWords(asideSource, [asideRaw(asideLayout).replace('start350 aside end350', 'start350 asided end350')], [`${asideChanged}\n`]);
+      expect(changedAside).toMatchObject({ passed: false, unexplainedExtra: [{ words: 'asided' }] });
+      expect(changedAside.knownGenerated.joinedLines).toHaveLength(699);
+
+      // Stated limitation (pinned so the advertised guarantee is not strengthened by accident): evidence is counted
+      // per page, so a source reading the layout shows where the raw text placed a single source word can vouch
+      // for a reordered run-together line elsewhere on the page.
+      const residual: SourceProjection = { body: [{ text: 'Put in to into place. Copy into into again.' }], footers: [null] };
+      expect(comparePdfWords(residual, ['Put\nintointo\nplace. Copy into into again.\n'], ['Put into in to place. Copy in to into again.\n'])).toMatchObject({ passed: true, knownGenerated: { joinedLines: [{ page: 1, words: 'in to into' }] } });
     },
   );
 
