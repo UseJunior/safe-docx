@@ -146,11 +146,7 @@ export type ParagraphSpec = {
   keepNext?: boolean;
   /** Keep every line of this paragraph on one page (w:keepLines). */
   keepLines?: boolean;
-  tabs?: Array<{
-    posTwips: number;
-    align: 'left' | 'center' | 'right';
-    leader?: 'none' | 'dot' | 'underscore';
-  }>;
+  tabs?: TabStopSpec[];
   runs: InlineSpec[];
   /** Drafting-note annotation anchored to this paragraph (separable layer). */
   note?: DraftingNoteSpec;
@@ -302,24 +298,132 @@ export const NUMBERING_LEVEL_JUSTIFICATIONS = ['left', 'center', 'right'] as con
 
 export type NumberingLevelJustification = (typeof NUMBERING_LEVEL_JUSTIFICATIONS)[number];
 
-export type NumberingSpec = {
-  /** Spec-level handle; the compiler assigns numeric w:numId / abstractNumId. */
+/**
+ * The level number formats we author for `w:numFmt` — the ST_NumberFormat
+ * subset the numbering generator emits. Single source of truth: the
+ * {@link NumberingLevelFormat} union is derived from this array, and
+ * validation reuses it as a runtime whitelist. `decimalZero` pads one through
+ * nine with a leading zero (`01`, `02`, … `10`), the format of the "Section
+ * 1.01" level in US legal outlines.
+ */
+export const NUMBERING_LEVEL_FORMATS = [
+  'decimal',
+  'decimalZero',
+  'lowerLetter',
+  'upperLetter',
+  'lowerRoman',
+  'upperRoman',
+  'bullet',
+  'none',
+] as const;
+
+export type NumberingLevelFormat = (typeof NUMBERING_LEVEL_FORMATS)[number];
+
+/** A tab stop, as authored on a paragraph, a style, or a numbering level. */
+export type TabStopSpec = {
+  posTwips: number;
+  align: 'left' | 'center' | 'right';
+  leader?: 'none' | 'dot' | 'underscore';
+};
+
+/** One level (`w:lvl`) of an abstract numbering definition. */
+export type NumberingLevelSpec = {
+  ilvl: number;
+  start?: number;
+  numFmt: NumberingLevelFormat;
+  /**
+   * One-based restart threshold (`w:lvlRestart`): this level restarts only
+   * when level `lvlRestart` (one-based, so `1` is `ilvl` 0) or an earlier
+   * level is used; `0` never restarts it. Omitted, the level restarts after
+   * any earlier level, which is already what "(a) restarts in each Section"
+   * needs. Must be `0` or below `ilvl`: the value `ilvl` names the previous
+   * level (the default), and Word drops the level's numbering when it is
+   * written explicitly. LibreOffice (26.2) ignores `w:lvlRestart` and always
+   * applies the default, so a non-default threshold renders differently there.
+   */
+  lvlRestart?: number;
+  /**
+   * Paragraph style linked to this level (`w:pStyle`), e.g. `Heading2` for
+   * the "Section 1.01" level. Must name a declared paragraph style, and each
+   * style links to at most one level. The compiler also emits the reverse
+   * link — a `w:numPr` naming this definition's default instance and this
+   * level — in the style's `w:pPr`, so a paragraph that only sets
+   * `styleId` is numbered at this level.
+   */
+  pStyle?: string;
+  /**
+   * Legal numbering (`w:isLgl`): every level placeholder in `lvlText` shows
+   * as an Arabic numeral, so `'Section %1.%2'` under an `upperRoman` article
+   * level prints "Section 2.01", not "Section II.01".
+   */
+  isLgl?: boolean;
+  /** Level text pattern, e.g. '%1.' or '%1.%2' or a bullet glyph. */
+  lvlText: string;
+  suff?: 'tab' | 'space' | 'nothing';
+  /**
+   * Level number justification against the text indent (`w:lvlJc`); defaults
+   * to `left`. `right` aligns labels of differing widths on their right edge.
+   */
+  lvlJc?: NumberingLevelJustification;
+  /**
+   * Level indentation (`w:pPr/w:ind`). `firstLine` and `hanging` are
+   * mutually exclusive: `{ left: 0, firstLine: 720 }` puts the label at
+   * 0.5" and wraps lines back to the margin.
+   */
+  indentTwips?: { left?: number; hanging?: number; firstLine?: number };
+  /**
+   * Level tab stops (`w:pPr/w:tabs`). With `suff: 'tab'` (the default) the
+   * text after the label starts at the first stop past the label, e.g. a
+   * left stop at 1440 puts the text at 1".
+   */
+  tabs?: TabStopSpec[];
+  runProps?: RunProps;
+};
+
+/**
+ * Per-level override inside a numbering instance (`w:lvlOverride`). Only
+ * `startOverride` is supported: the level restarts at that value when a
+ * paragraph first uses the instance.
+ */
+export type NumberingLevelOverrideSpec = {
+  ilvl: number;
+  startOverride: number;
+};
+
+/**
+ * An additional numbering instance (`w:num`) of a definition's abstract
+ * numbering. Paragraphs reference it through `list.numId` exactly like the
+ * definition's own handle.
+ *
+ * Every instance of one definition shares a single running sequence in Word
+ * and LibreOffice: an instance's `startOverride` restarts that sequence at
+ * the given value the first time a paragraph uses the instance, and later
+ * paragraphs on any instance of the definition continue from there. So an
+ * instance is the way to restart a list ("1, 2" then "1, 2" again), not to
+ * interleave two lists that count separately. Each additional instance needs
+ * at least one level override; without one it would simply continue the
+ * shared sequence, exactly like the definition's own handle.
+ */
+export type NumberingInstanceSpec = {
+  /** Spec-level handle, unique across every definition and instance handle. */
   numId: string;
-  levels: Array<{
-    ilvl: number;
-    start?: number;
-    numFmt: 'decimal' | 'lowerLetter' | 'upperLetter' | 'lowerRoman' | 'upperRoman' | 'bullet' | 'none';
-    /** Level text pattern, e.g. '%1.' or '%1.%2' or a bullet glyph. */
-    lvlText: string;
-    suff?: 'tab' | 'space' | 'nothing';
-    /**
-     * Level number justification against the text indent (`w:lvlJc`); defaults
-     * to `left`. `right` aligns labels of differing widths on their right edge.
-     */
-    lvlJc?: NumberingLevelJustification;
-    indentTwips?: { left?: number; hanging?: number };
-    runProps?: RunProps;
-  }>;
+  levelOverrides: NumberingLevelOverrideSpec[];
+};
+
+export type NumberingSpec = {
+  /**
+   * Spec-level handle of the definition's default instance; the compiler
+   * assigns numeric w:numId / abstractNumId. Default instances take numeric
+   * ids 1..N in declaration order; additional `instances` follow from N+1.
+   */
+  numId: string;
+  levels: NumberingLevelSpec[];
+  /**
+   * Additional instances of the same abstract definition, each restarting
+   * the definition's shared sequence (e.g. a second list that starts again
+   * at 1). Emitted after every default instance, in declaration order.
+   */
+  instances?: NumberingInstanceSpec[];
 };
 
 export type DraftingNoteSpec = {

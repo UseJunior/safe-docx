@@ -1446,8 +1446,9 @@ verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts
 ```
 
 Every emitted instance references its abstract definition through
-`w:abstractNumId`; the pairing is 1:1 by construction so the reference can
-never dangle.
+`w:abstractNumId`. A definition's default instance and each of its
+additional instances name the definition's own id, which exists by
+construction, so the reference can never dangle.
 
 ## [ECMA-PART1-17-9-15] w:num numbering definition instance
 
@@ -1460,9 +1461,11 @@ schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num
 verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts
 ```
 
-Instances carry sequential numeric `w:numId` values (starting at 1) in
-declaration order; the spec-level string handle → numeric id map is what
-paragraph references bind through.
+Instances carry sequential numeric `w:numId` values: default instances take
+1..N in declaration order, and additional instances (`NumberingSpec.instances`)
+follow from N+1, so adding an instance never renumbers an existing one. The
+spec-level string handle → numeric id map is what paragraph references bind
+through.
 
 ## [ECMA-PART1-17-9-18] w:numId numbering instance reference
 
@@ -1505,25 +1508,119 @@ schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvl
 verifiedBy: packages/docx-core/src/primitives/numbering.ts; packages/docx-core/src/generation/emit/numbering-part.ts
 ```
 
-Level definitions follow the CT_Lvl child sequence (start, numFmt, suff,
-lvlText, lvlJc, pPr, rPr); level indents emit through `w:pPr`/`w:ind` and
-level run properties reuse the shared rPr builder.
+Level definitions follow the CT_Lvl child sequence (start, numFmt,
+lvlRestart, pStyle, isLgl, suff, lvlText, lvlJc, pPr, rPr) through the
+`LVL_ORDER` table, which a test checks against the vendored schema; level
+indents and tab stops emit through `w:pPr` and level run properties reuse the
+shared rPr builder.
 
-## [ECMA-PART1-17-9-22] w:pStyle numbering-level paragraph style
+## [ECMA-PART1-17-9-23] w:pStyle numbering-level paragraph style
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.23"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle
+verifiedBy: packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/emit/styles-part.ts
+```
+
+An optional `w:pStyle` on `w:lvl` associates that exact numbering level with
+a paragraph style. The numbering model retains the association and exposes a
+read-only active-level lookup so heading classification never consults an
+unrelated level or mutates list counters. Generation emits a level's `pStyle`
+only for a declared paragraph style that no other level links, and writes the
+reverse link (`w:numPr` naming the definition's default instance and the
+level) into that style's `w:pPr`, so a paragraph that only applies the style is
+numbered at that level.
+
+## [ECMA-PART1-17-9-22] w:pPr numbering-level paragraph properties
 
 ```yaml
 edition: 5
 part: 1
 section: "17.9.22"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
-schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle
-verifiedBy: packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr
+verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts
 ```
 
-An optional `w:pStyle` on `w:lvl` associates that exact numbering level with
-a paragraph style. The numbering model retains the association and exposes a
-read-only active-level lookup so heading classification never consults an
-unrelated level or mutates list counters.
+A level's paragraph properties carry its tab stops (`w:tabs`) and indentation
+(`w:ind` with `left` plus either `hanging` or `firstLine`) in CT_PPrBase
+order, through the shared paragraph-property builder. They apply to every
+paragraph numbered at that level unless the paragraph overrides them.
+
+## [ECMA-PART1-17-9-4] w:isLgl legal numbering
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.4"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:isLgl
+verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts
+```
+
+A level authored with `isLgl: true` emits a bare `w:isLgl`, so every level
+placeholder in its level text displays as an Arabic numeral: "Section %1.%2"
+under an `upperRoman` article level reads "Section 2.01", not "Section II.01".
+The read-side label computation applies the same conversion and keeps a
+`decimalZero` level's zero padding, as Word and LibreOffice display it.
+
+## [ECMA-PART1-17-9-10] w:lvlRestart numbering level restart threshold
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.10"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlRestart
+verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts; packages/docx-core/src/primitives/numbering.ts
+```
+
+A level's one-based restart threshold emits as `w:lvlRestart`. Validation
+accepts 0 (never restart) or a value below the level's own `ilvl`: the value
+`ilvl` restates the default (restart after the previous level), and Word for
+Mac drops the level's numbering when it is written explicitly; larger values
+name the level itself or a later one, which readers ignore. The read-side
+label computation follows Word: it restarts a deeper level only when a level
+within its threshold is used. LibreOffice 26.2 ignores `w:lvlRestart`, so a
+non-default threshold renders differently there.
+
+## [ECMA-PART1-17-9-8] w:lvlOverride numbering level override
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.8"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlOverride
+verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts
+```
+
+Each additional numbering instance emits one `w:lvlOverride` per overridden
+level, in ascending `ilvl` after `w:abstractNumId` per the CT_Num sequence.
+Validation requires at least one override per additional instance, each
+naming a declared level at most once.
+
+## [ECMA-PART1-17-9-26] w:startOverride numbering level start override
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.26"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride
+verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts
+```
+
+A level override carries only `w:startOverride`, so an additional instance of
+a definition restarts that level at the given value. Word and LibreOffice keep
+one running sequence per abstract definition: the override restarts it the
+first time a paragraph uses the instance, and paragraphs on any instance then
+continue from there. The read-side label computation starts the overridden
+level at the override value but keeps a counter per instance, so it diverges
+from both readers once two instances interleave.
 
 ## [ECMA-PART1-17-9-17] w:numFmt numbering format
 
@@ -1536,8 +1633,8 @@ schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numFmt
 verifiedBy: packages/docx-core/src/generation/schema-enum-domains.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts
 ```
 
-Each level carries its declared format verbatim (decimal, letter, roman,
-bullet, none); the generated formats round-trip through the read-side
+Each level carries its declared format verbatim (decimal, decimalZero,
+letter, roman, bullet, none); the generated formats round-trip through the read-side
 label computation in `packages/docx-core/src/primitives/numbering.ts`.
 
 ## [ECMA-PART1-17-9-11] w:lvlText numbering level text

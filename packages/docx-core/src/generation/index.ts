@@ -21,6 +21,10 @@ export type {
   HeaderFooterSet,
   HeaderFooterSpec,
   InlineSpec,
+  NumberingInstanceSpec,
+  NumberingLevelFormat,
+  NumberingLevelOverrideSpec,
+  NumberingLevelSpec,
   NumberingSpec,
   ParagraphBorders,
   ParagraphSpec,
@@ -33,4 +37,5 @@ export type {
   TableRowSpec,
   TableSpec,
   TabSpec,
+  TabStopSpec,
 } from './types.js';

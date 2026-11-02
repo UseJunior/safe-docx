@@ -76,6 +76,8 @@ export const W = {
   lvl: 'lvl',
   start: 'start',
   numFmt: 'numFmt',
+  lvlRestart: 'lvlRestart',
+  isLgl: 'isLgl',
   lvlText: 'lvlText',
   suff: 'suff',
   num: 'num',

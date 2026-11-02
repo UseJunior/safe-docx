@@ -39,7 +39,13 @@ import type {
   TableBorders,
   TableSpec,
 } from './types.js';
-import { HIGHLIGHT_COLORS, NUMBERING_LEVEL_JUSTIFICATIONS, THEME_COLOR_SLOTS } from './types.js';
+import {
+  HIGHLIGHT_COLORS,
+  NUMBERING_LEVEL_FORMATS,
+  NUMBERING_LEVEL_JUSTIFICATIONS,
+  THEME_COLOR_SLOTS,
+  type TabStopSpec,
+} from './types.js';
 
 const COLOR_HEX_RE = /^[0-9A-Fa-f]{6}$/;
 const TWO_HEX_RE = /^[0-9A-Fa-f]{2}$/;
@@ -57,7 +63,7 @@ const ROW_HEIGHT_RULES = new Set(['atLeast', 'exact']);
 const CELL_VERTICAL_ALIGNMENTS = new Set(['top', 'center', 'bottom']);
 const VERTICAL_MERGES = new Set(['restart', 'continue']);
 const STYLE_TYPES = new Set(['paragraph', 'character']);
-const NUMBER_FORMATS = new Set(['decimal', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman', 'bullet', 'none']);
+const NUMBER_FORMATS: ReadonlySet<string> = new Set(NUMBERING_LEVEL_FORMATS);
 const NUMBER_SUFFIXES = new Set(['tab', 'space', 'nothing']);
 
 function requireInteger(value: unknown, path: string, description: string, minimum?: number, maximum?: number): void {
@@ -124,7 +130,7 @@ export function validateSpec(spec: DocumentSpec): void {
   if (spec.defaults?.run) validateRunProps(spec.defaults.run, '/defaults/run');
   if (spec.defaults?.paragraph) validateParagraphProps(spec.defaults.paragraph, '/defaults/paragraph');
   const declaredStyleIds = validateStyles(spec.styles ?? []);
-  const numbering = validateNumbering(spec.numbering ?? []);
+  const numbering = validateNumbering(spec.numbering ?? [], spec.styles ?? []);
 
   spec.sections.forEach((section, sectionIndex) => {
     validateSection(section, `/sections/${sectionIndex}`, declaredStyleIds, numbering);
@@ -146,12 +152,19 @@ function validateTheme(spec: DocumentSpec): void {
 
 /**
  * Returns numId handle -> set of declared levels, for list-reference checks.
+ * Every instance handle (a definition's own and each additional instance's)
+ * maps to its definition's level set.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.28
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.10
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.23
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.8
  */
-function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number>> {
+function validateNumbering(definitions: NumberingSpec[], styles: StyleSpec[]): Map<string, Set<number>> {
   const declared = new Map<string, Set<number>>();
+  const styleTypes = new Map(styles.map((style) => [style.styleId, style.type]));
+  const linkedStyles = new Map<string, string>();
   definitions.forEach((definition, index) => {
     const path = `/numbering/${index}`;
     if (!definition.numId) {
@@ -187,10 +200,34 @@ function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number
           'Level start must be a signed safe integer in the API-representable subset of ST_DecimalNumber',
         );
       }
+      if (level.lvlRestart !== undefined) {
+        // One-based threshold (§ 17.9.10): 0 (never restart) or a level
+        // above this one's predecessor. A value of ilvl restates the default
+        // and Word drops the level's numbering when it sees it; larger values
+        // name this level or a later one, which readers ignore.
+        const maxRestart = Math.max(level.ilvl - 1, 0);
+        requireInteger(
+          level.lvlRestart,
+          `${levelPath}/lvlRestart`,
+          (maxRestart === 0
+            ? 'lvlRestart must be 0 (never restart) at this level'
+            : `lvlRestart must be 0 (never restart) or an integer from 1 to ${maxRestart}`) +
+            `; omit it to restart after the previous level`,
+          0,
+          maxRestart,
+        );
+      }
+      if (level.isLgl !== undefined && typeof level.isLgl !== 'boolean') {
+        throw new GenerationSpecError('invalid_value', `${levelPath}/isLgl`, 'isLgl must be a boolean');
+      }
+      if (level.pStyle !== undefined) {
+        validateLevelStyleLink(level.pStyle, `${levelPath}/pStyle`, styleTypes, linkedStyles, `${definition.numId}/${level.ilvl}`);
+      }
       if (level.lvlJc !== undefined) {
         requireSupportedSchemaEnum(level.lvlJc, `${levelPath}/lvlJc`, 'ST_Jc', LVL_JC_SET);
       }
       if (level.runProps) validateRunProps(level.runProps, `${levelPath}/runProps`);
+      if (level.tabs !== undefined) validateTabStops(level.tabs, `${levelPath}/tabs`);
       if (level.indentTwips) {
         if (level.indentTwips.left !== undefined) {
           requireInteger(
@@ -199,19 +236,121 @@ function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number
             'Numbering left indentation must be a signed safe integer in the API-representable subset of ST_SignedTwipsMeasure',
           );
         }
-        if (level.indentTwips.hanging !== undefined) {
-          requireInteger(
-            level.indentTwips.hanging,
-            `${levelPath}/indentTwips/hanging`,
-            'Numbering hanging indentation must be a non-negative safe integer in the API-representable subset of ST_TwipsMeasure',
-            0,
-          );
+        for (const key of ['hanging', 'firstLine'] as const) {
+          const value = level.indentTwips[key];
+          if (value !== undefined) {
+            requireInteger(
+              value,
+              `${levelPath}/indentTwips/${key}`,
+              `Numbering ${key} indentation must be a non-negative safe integer in the API-representable subset of ST_TwipsMeasure`,
+              0,
+            );
+          }
+        }
+        if (level.indentTwips.hanging !== undefined && level.indentTwips.firstLine !== undefined) {
+          throw new GenerationSpecError('invalid_value', `${levelPath}/indentTwips`, 'firstLine and hanging are mutually exclusive');
         }
       }
     });
     declared.set(definition.numId, levels);
   });
+  // Additional instances: checked after every definition handle is known, so
+  // an instance cannot reuse a later definition's handle either.
+  definitions.forEach((definition, index) => {
+    const levels = declared.get(definition.numId)!;
+    if (definition.instances === undefined) return;
+    if (!Array.isArray(definition.instances)) {
+      throw new GenerationSpecError('invalid_value', `/numbering/${index}/instances`, 'instances must be an array');
+    }
+    definition.instances.forEach((instance, instanceIndex) => {
+      const instancePath = `/numbering/${index}/instances/${instanceIndex}`;
+      if (!instance.numId) {
+        throw new GenerationSpecError('invalid_value', `${instancePath}/numId`, 'Numbering instances require a numId handle');
+      }
+      if (declared.has(instance.numId)) {
+        throw new GenerationSpecError('invalid_value', `${instancePath}/numId`, `Duplicate numbering handle '${instance.numId}'`);
+      }
+      validateLevelOverrides(instance.levelOverrides, `${instancePath}/levelOverrides`, levels, definition.numId);
+      declared.set(instance.numId, levels);
+    });
+  });
   return declared;
+}
+
+/**
+ * A level's linked style must be a declared paragraph style, linked by no
+ * other level: one style cannot start two numbering levels.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.23
+ */
+function validateLevelStyleLink(
+  styleId: unknown,
+  path: string,
+  styleTypes: ReadonlyMap<string, StyleSpec['type']>,
+  linkedStyles: Map<string, string>,
+  levelKey: string,
+): void {
+  if (typeof styleId !== 'string' || styleId.length === 0) {
+    throw new GenerationSpecError('invalid_value', path, 'pStyle must be a non-empty styleId');
+  }
+  const type = styleTypes.get(styleId);
+  if (type === undefined) {
+    throw new GenerationSpecError(
+      'dangling_style_reference',
+      path,
+      `Numbering level links undeclared style '${styleId}'; pStyle must name a style declared in DocumentSpec.styles`,
+    );
+  }
+  if (type !== 'paragraph') {
+    throw new GenerationSpecError('invalid_value', path, `Numbering level links '${styleId}', which is not a paragraph style`);
+  }
+  const previous = linkedStyles.get(styleId);
+  if (previous !== undefined) {
+    throw new GenerationSpecError(
+      'invalid_value',
+      path,
+      `Style '${styleId}' is already linked to numbering level ${previous}; a style links to at most one level`,
+    );
+  }
+  linkedStyles.set(styleId, levelKey);
+}
+
+/**
+ * An additional instance restarts at least one declared level, each at most
+ * once (CT_Num allows at most nine overrides, one per level).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.8
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.26
+ */
+function validateLevelOverrides(overrides: unknown, path: string, levels: ReadonlySet<number>, definitionId: string): void {
+  if (!Array.isArray(overrides) || overrides.length === 0) {
+    throw new GenerationSpecError(
+      'invalid_value',
+      path,
+      "Numbering instances require at least one level override; without one an instance only continues the definition's shared sequence",
+    );
+  }
+  const seen = new Set<number>();
+  overrides.forEach((override: { ilvl?: unknown; startOverride?: unknown }, overrideIndex) => {
+    const overridePath = `${path}/${overrideIndex}`;
+    const ilvl = override?.ilvl;
+    if (typeof ilvl !== 'number' || !levels.has(ilvl)) {
+      throw new GenerationSpecError(
+        'dangling_numbering_reference',
+        `${overridePath}/ilvl`,
+        `Level override names ilvl ${String(ilvl)}, which numbering '${definitionId}' does not declare`,
+      );
+    }
+    if (seen.has(ilvl)) {
+      throw new GenerationSpecError('invalid_value', `${overridePath}/ilvl`, `Duplicate level override for ilvl ${ilvl}`);
+    }
+    seen.add(ilvl);
+    requireInteger(
+      override.startOverride,
+      `${overridePath}/startOverride`,
+      'startOverride must be a signed safe integer in the API-representable subset of ST_DecimalNumber',
+    );
+  });
 }
 
 /**
@@ -542,13 +681,7 @@ type ParagraphProperties = NonNullable<StyleSpec['paragraph']>;
 /** Validate the paragraph-property subset shared by body paragraphs and styles. */
 function validateParagraphProps(props: ParagraphProperties, path: string): void {
   if (props.borders) validateBorders(props.borders, `${path}/borders`);
-  if (props.tabs) {
-    props.tabs.forEach((stop, i) => {
-      requireInteger(stop.posTwips, `${path}/tabs/${i}/posTwips`, 'Tab stop position must be a non-negative safe integer in twips', 0);
-      if (!TAB_ALIGNMENTS.has(stop.align)) throw new GenerationSpecError('invalid_value', `${path}/tabs/${i}/align`, `Unsupported tab alignment '${stop.align}'`);
-      if (stop.leader !== undefined && !TAB_LEADERS.has(stop.leader)) throw new GenerationSpecError('invalid_value', `${path}/tabs/${i}/leader`, `Unsupported tab leader '${stop.leader}'`);
-    });
-  }
+  if (props.tabs) validateTabStops(props.tabs, `${path}/tabs`);
   if (props.alignment !== undefined && !ALIGNMENTS.has(props.alignment)) {
     throw new GenerationSpecError('invalid_value', `${path}/alignment`, `Unsupported paragraph alignment '${props.alignment}'`);
   }
@@ -575,6 +708,18 @@ function validateParagraphProps(props: ParagraphProperties, path: string): void 
       throw new GenerationSpecError('invalid_value', `${path}/indent`, 'firstLineTwips and hangingTwips are mutually exclusive');
     }
   }
+}
+
+/** Tab stops shared by paragraphs, styles, and numbering levels. */
+function validateTabStops(tabs: TabStopSpec[], path: string): void {
+  if (!Array.isArray(tabs)) {
+    throw new GenerationSpecError('invalid_value', path, 'tabs must be an array of tab stops');
+  }
+  tabs.forEach((stop, i) => {
+    requireInteger(stop.posTwips, `${path}/${i}/posTwips`, 'Tab stop position must be a non-negative safe integer in twips', 0);
+    if (!TAB_ALIGNMENTS.has(stop.align)) throw new GenerationSpecError('invalid_value', `${path}/${i}/align`, `Unsupported tab alignment '${stop.align}'`);
+    if (stop.leader !== undefined && !TAB_LEADERS.has(stop.leader)) throw new GenerationSpecError('invalid_value', `${path}/${i}/leader`, `Unsupported tab leader '${stop.leader}'`);
+  });
 }
 
 function validateInline(run: InlineSpec, path: string): void {

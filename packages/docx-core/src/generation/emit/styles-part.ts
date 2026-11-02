@@ -13,8 +13,11 @@ import { createWmlElement } from '../../primitives/dom-helpers.js';
 import { OOXML, W } from '../../primitives/namespaces.js';
 import { parseXml, serializeXml, XML_DECL } from '../../primitives/xml.js';
 import type { CompileContext } from '../context.js';
+import { GenerationInternalError } from '../errors.js';
 import type { DocumentSpec, StyleSpec, ThemeColorSlot } from '../types.js';
 import { resolveThemeColorValues } from '../theme-colors.js';
+import type { NumberingIdMap } from './emit-context.js';
+import { collectNumberingStyleLinks } from './numbering-part.js';
 import { buildParagraphPropsElement, buildRunPropsElement, styleParagraphProps } from './properties.js';
 
 export const STYLES_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml';
@@ -31,7 +34,11 @@ export function documentDefaultFont(spec: DocumentSpec): string {
   return spec.defaults?.run?.font ?? DEFAULT_FONT;
 }
 
-export function emitStylesPart(spec: DocumentSpec, ctx: CompileContext): void {
+/**
+ * Emit word/styles.xml. `numberingIds` (from the numbering emitter) resolves
+ * the numeric instance id a numbering-linked style's `w:numPr` names.
+ */
+export function emitStylesPart(spec: DocumentSpec, ctx: CompileContext, numberingIds?: NumberingIdMap): void {
   ctx.registerPart('word/styles.xml', STYLES_CONTENT_TYPE, STYLES_REL_TYPE);
 
   const doc = parseXml(STYLES_SKELETON);
@@ -40,8 +47,9 @@ export function emitStylesPart(spec: DocumentSpec, ctx: CompileContext): void {
   const themeColorValues = resolveThemeColorValues(spec.theme);
   root.appendChild(buildDocDefaults(doc, spec, themeColorValues));
   root.appendChild(buildNormalStyle(doc));
+  const numberingLinks = resolveNumberingStyleLinks(spec, numberingIds);
   for (const style of spec.styles ?? []) {
-    root.appendChild(buildStyle(doc, style, themeColorValues));
+    root.appendChild(buildStyle(doc, style, themeColorValues, numberingLinks.get(style.styleId)));
   }
 
   ctx.setFileContent('word/styles.xml', XML_DECL + serializeXml(doc));
@@ -89,11 +97,44 @@ function buildNormalStyle(doc: Document): Element {
   return style;
 }
 
-/** @conformance ECMA-376 edition 5, Part 1 § 17.7.4.17 */
+type StyleNumberingLink = { numericId: number; ilvl: number };
+
+/**
+ * Bind each numbering-linked style to the numeric id of its definition's
+ * default instance. Validation guarantees the definition exists, so a missing
+ * id here is an internal ordering bug.
+ */
+function resolveNumberingStyleLinks(
+  spec: DocumentSpec,
+  numberingIds: NumberingIdMap | undefined,
+): Map<string, StyleNumberingLink> {
+  const resolved = new Map<string, StyleNumberingLink>();
+  for (const [styleId, link] of collectNumberingStyleLinks(spec)) {
+    const numericId = numberingIds?.get(link.numId);
+    if (numericId === undefined) {
+      throw new GenerationInternalError(
+        `Style '${styleId}' is linked to numbering handle '${link.numId}' with no allocated numeric id`,
+      );
+    }
+    resolved.set(styleId, { numericId, ilvl: link.ilvl });
+  }
+  return resolved;
+}
+
+/**
+ * A style linked to a numbering level carries the reverse link as `w:numPr`
+ * in its `w:pPr`: the level's own `w:pStyle` decides the level in Word, and
+ * the explicit `w:ilvl` keeps readers that read only the style in step.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.4.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.23
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.19
+ */
 function buildStyle(
   doc: Document,
   spec: StyleSpec,
   themeColorValues: ReadonlyMap<ThemeColorSlot, string>,
+  numberingLink?: StyleNumberingLink,
 ): Element {
   const style = createWmlElement(doc, W.style, { 'w:type': spec.type, 'w:styleId': spec.styleId });
   style.appendChild(createWmlElement(doc, W.name, { 'w:val': spec.name }));
@@ -106,8 +147,15 @@ function buildStyle(
   style.appendChild(createWmlElement(doc, W.qFormat));
 
   // CT_Style declares pPr before rPr.
-  if (spec.paragraph) {
-    const pPr = buildParagraphPropsElement(doc, styleParagraphProps(spec));
+  if (spec.paragraph || numberingLink) {
+    let extras: Map<string, Element> | undefined;
+    if (numberingLink) {
+      const numPr = createWmlElement(doc, W.numPr);
+      numPr.appendChild(createWmlElement(doc, W.ilvl, { 'w:val': String(numberingLink.ilvl) }));
+      numPr.appendChild(createWmlElement(doc, W.numId, { 'w:val': String(numberingLink.numericId) }));
+      extras = new Map([[W.numPr, numPr]]);
+    }
+    const pPr = buildParagraphPropsElement(doc, styleParagraphProps(spec), extras);
     if (pPr) style.appendChild(pPr);
   }
   if (spec.run) {

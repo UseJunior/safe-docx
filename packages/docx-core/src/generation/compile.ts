@@ -50,7 +50,7 @@ export async function generateDocx(spec: DocumentSpec, opts?: GenerateDocxOption
   maybeCaptureEmittedDocumentXml(documentPartXml);
   ctx.setFileContent('word/document.xml', documentPartXml);
   if (notes) emitCommentsPartsIfNeeded(spec, ctx, notes);
-  emitStylesPart(spec, ctx);
+  emitStylesPart(spec, ctx, numberingIds);
   emitSettingsPart(spec, ctx);
   // Standard ancillary parts every Word-authored package carries (issue #482):
   // theme → fontTable → webSettings, ordered for stable rId allocation. Package

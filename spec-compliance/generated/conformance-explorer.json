@@ -3080,6 +3080,34 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-9-10",
+      "title": "w:lvlRestart numbering level restart threshold",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.9.10"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlRestart",
+      "claimRationale": "A level's one-based restart threshold emits as `w:lvlRestart`. Validation\naccepts 0 (never restart) or a value below the level's own `ilvl`: the value\n`ilvl` restates the default (restart after the previous level), and Word for\nMac drops the level's numbering when it is written explicitly; larger values\nname the level itself or a later one, which readers ignore. The read-side\nlabel computation follows Word: it restarts a deeper level only when a level\nwithin its threshold is used. LibreOffice 26.2 ignores `w:lvlRestart`, so a\nnon-default threshold renders differently there.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/validate-spec.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/numbering.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-9-11",
       "title": "w:lvlText numbering level text",
       "classification": "targeted",
@@ -3131,7 +3159,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num",
-      "claimRationale": "Instances carry sequential numeric `w:numId` values (starting at 1) in\ndeclaration order; the spec-level string handle → numeric id map is what\nparagraph references bind through.",
+      "claimRationale": "Instances carry sequential numeric `w:numId` values: default instances take\n1..N in declaration order, and additional instances (`NumberingSpec.instances`)\nfollow from N+1, so adding an instance never renumbers an existing one. The\nspec-level string handle → numeric id map is what paragraph references bind\nthrough.",
       "evidence": [
         {
           "kind": "source",
@@ -3171,7 +3199,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numFmt",
-      "claimRationale": "Each level carries its declared format verbatim (decimal, letter, roman,\nbullet, none); the generated formats round-trip through the read-side\nlabel computation in `packages/docx-core/src/primitives/numbering.ts`.",
+      "claimRationale": "Each level carries its declared format verbatim (decimal, decimalZero,\nletter, roman, bullet, none); the generated formats round-trip through the read-side\nlabel computation in `packages/docx-core/src/primitives/numbering.ts`.",
       "evidence": [
         {
           "kind": "source",
@@ -3223,7 +3251,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:abstractNumId",
-      "claimRationale": "Every emitted instance references its abstract definition through\n`w:abstractNumId`; the pairing is 1:1 by construction so the reference can\nnever dangle.",
+      "claimRationale": "Every emitted instance references its abstract definition through\n`w:abstractNumId`. A definition's default instance and each of its\nadditional instances name the definition's own id, which exists by\nconstruction, so the reference can never dangle.",
       "evidence": [
         {
           "kind": "source",
@@ -3233,7 +3261,7 @@
     },
     {
       "id": "ECMA-PART1-17-9-22",
-      "title": "w:pStyle numbering-level paragraph style",
+      "title": "w:pPr numbering-level paragraph properties",
       "classification": "targeted",
       "citation": {
         "standard": "ECMA-376",
@@ -3242,8 +3270,28 @@
         "section": "17.9.22"
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr",
+      "claimRationale": "A level's paragraph properties carry its tab stops (`w:tabs`) and indentation\n(`w:ind` with `left` plus either `hanging` or `firstLine`) in CT_PPrBase\norder, through the shared paragraph-property builder. They apply to every\nparagraph numbered at that level unless the paragraph overrides them.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-9-23",
+      "title": "w:pStyle numbering-level paragraph style",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.9.23"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle",
-      "claimRationale": "An optional `w:pStyle` on `w:lvl` associates that exact numbering level with\na paragraph style. The numbering model retains the association and exposes a\nread-only active-level lookup so heading classification never consults an\nunrelated level or mutates list counters.",
+      "claimRationale": "An optional `w:pStyle` on `w:lvl` associates that exact numbering level with\na paragraph style. The numbering model retains the association and exposes a\nread-only active-level lookup so heading classification never consults an\nunrelated level or mutates list counters. Generation emits a level's `pStyle`\nonly for a declared paragraph style that no other level links, and writes the\nreverse link (`w:numPr` naming the definition's default instance and the\nlevel) into that style's `w:pPr`, so a paragraph that only applies the style is\nnumbered at that level.",
       "evidence": [
         {
           "kind": "source",
@@ -3252,6 +3300,14 @@
         {
           "kind": "test",
           "path": "packages/docx-core/test-primitives/heading_provenance.traceability.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/styles-part.ts"
         }
       ]
     },
@@ -3272,6 +3328,30 @@
         {
           "kind": "source",
           "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-9-26",
+      "title": "w:startOverride numbering level start override",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.9.26"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride",
+      "claimRationale": "A level override carries only `w:startOverride`, so an additional instance of\na definition restarts that level at the given value. Word and LibreOffice keep\none running sequence per abstract definition: the override restarts it the\nfirst time a paragraph uses the instance, and paragraphs on any instance then\ncontinue from there. The read-side label computation starts the overridden\nlevel at the override value but keeps a counter per instance, so it diverges\nfrom both readers once two instances interleave.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/numbering.ts"
         }
       ]
     },
@@ -3324,6 +3404,30 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-9-4",
+      "title": "w:isLgl legal numbering",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.9.4"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:isLgl",
+      "claimRationale": "A level authored with `isLgl: true` emits a bare `w:isLgl`, so every level\nplaceholder in its level text displays as an Arabic numeral: \"Section %1.%2\"\nunder an `upperRoman` article level reads \"Section 2.01\", not \"Section II.01\".\nThe read-side label computation applies the same conversion and keeps a\n`decimalZero` level's zero padding, as Word and LibreOffice display it.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/numbering.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-9-6",
       "title": "w:lvl numbering level definition",
       "classification": "targeted",
@@ -3335,7 +3439,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvl",
-      "claimRationale": "Level definitions follow the CT_Lvl child sequence (start, numFmt, suff,\nlvlText, lvlJc, pPr, rPr); level indents emit through `w:pPr`/`w:ind` and\nlevel run properties reuse the shared rPr builder.",
+      "claimRationale": "Level definitions follow the CT_Lvl child sequence (start, numFmt,\nlvlRestart, pStyle, isLgl, suff, lvlText, lvlJc, pPr, rPr) through the\n`LVL_ORDER` table, which a test checks against the vendored schema; level\nindents and tab stops emit through `w:pPr` and level run properties reuse the\nshared rPr builder.",
       "evidence": [
         {
           "kind": "source",
@@ -3364,6 +3468,30 @@
         {
           "kind": "source",
           "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-9-8",
+      "title": "w:lvlOverride numbering level override",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.9.8"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlOverride",
+      "claimRationale": "Each additional numbering instance emits one `w:lvlOverride` per overridden\nlevel, in ascending `ilvl` after `w:abstractNumId` per the CT_Num sequence.\nValidation requires at least one override per additional instance, each\nnaming a declared level at most once.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/validate-spec.ts"
         }
       ]
     },
@@ -4175,6 +4303,21 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:isLgl",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "isLgl",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Lvl/sequence/element:isLgl",
+          "declaredType": "CT_OnOff",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvl",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -4207,6 +4350,37 @@
         {
           "contextPath": "schema/type:CT_Lvl/sequence/element:lvlJc",
           "declaredType": "CT_Jc",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlOverride",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "lvlOverride",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Num/sequence/element:lvlOverride",
+          "declaredType": "CT_NumLvl",
+          "minOccurs": "0",
+          "maxOccurs": "9"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlRestart",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "lvlRestart",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Lvl/sequence/element:lvlRestart",
+          "declaredType": "CT_DecimalNumber",
           "minOccurs": "0"
         }
       ]
@@ -4851,6 +5025,21 @@
           "declaredType": "CT_TblWidth",
           "minOccurs": "0",
           "maxOccurs": "1"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "startOverride",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_NumLvl/sequence/element:startOverride",
+          "declaredType": "CT_DecimalNumber",
+          "minOccurs": "0"
         }
       ]
     },
