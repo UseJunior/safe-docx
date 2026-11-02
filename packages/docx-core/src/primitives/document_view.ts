@@ -555,13 +555,6 @@ export function buildNodesForDocumentView(params: {
     // that survive only inside a tracked deletion don't count, and paragraphs
     // that are empty for spacing only are still skipped.
     // @see #185, #383
-    if (
-      !fullText &&
-      !tableContext &&
-      fnMarkers.length === 0 &&
-      !paragraphHasAnchoringContent(p)
-    ) continue;
-
     // Numbering (auto-numbered) info: the paragraph's own w:numPr, else the
     // one its paragraph style chain gives it, so style-numbered headings
     // ("ARTICLE I", "Section 1.01") are labelled and advance the shared
@@ -569,6 +562,20 @@ export function buildNodesForDocumentView(params: {
     const resolvedNumbering = resolveParagraphNumbering(p, stylesModel, numberingModel, numberingLinkedStyles);
     const numId: string | null = resolvedNumbering?.numId ?? null;
     const ilvl: number | null = resolvedNumbering?.ilvl ?? null;
+
+    if (
+      !fullText &&
+      !tableContext &&
+      fnMarkers.length === 0 &&
+      !paragraphHasAnchoringContent(p)
+    ) {
+      // Word shows a number on an empty list paragraph, so the counters
+      // still step even though the view omits the node; otherwise the next
+      // paragraph would repeat its number, and labels here would disagree
+      // with computeParagraphListLabels.
+      if (numId && ilvl != null) computeListLabelForParagraph(numberingModel, counters, { numId, ilvl });
+      continue;
+    }
 
     let labelString = '';
     let labelType: LabelType | null = null;

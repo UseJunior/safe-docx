@@ -133,4 +133,24 @@ describe('style-inherited list numbering', () => {
       expect(labels).toEqual(fixture.paragraphs.map((p) => p.word));
     });
   });
+
+  test('document_view counts empty numbered paragraphs it omits', async ({ given, when, then }: AllureBddContext) => {
+    let viewLabels!: Array<[string, string]>;
+    const fixture = evidence.fixtures['e1_empty_numbered']!;
+    await given('empty paragraphs numbered by style and directly, each followed by a numbered paragraph with text', async () => {});
+    await when('the document view is built', async () => {
+      const paragraphs = bodyParagraphs(fixture.bodyXml).map((p, i) => ({ id: `_bk_${i + 1}`, p }));
+      viewLabels = buildNodesForDocumentView({
+        paragraphs,
+        stylesXml: parseXml(evidence.stylesXml),
+        numberingXml: parseXml(evidence.numberingXml),
+        include_semantic_tags: false,
+      }).nodes.map((n) => [n.clean_text, n.list_label]);
+    });
+    await then('the empty paragraphs are omitted but still advance the counters, as in Word', () => {
+      const expected = fixture.paragraphs.filter((p) => p.text !== '').map((p): [string, string] => [p.text, p.word]);
+      expect(viewLabels).toEqual(expected);
+      expect(expected).toEqual([['Title', 'ARTICLE II'], ['Sub', 'Section 2.02'], ['Item', '2.']]);
+    });
+  });
 });

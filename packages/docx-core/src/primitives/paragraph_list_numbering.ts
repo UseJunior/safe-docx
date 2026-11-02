@@ -130,6 +130,9 @@ function resolveStyleNumbering(
  * ignore a style's `w:ilvl` in favour of the level that links to the style,
  * as § 17.3.1.19 and § 17.9.23 say: it uses the style's `w:ilvl` (0 when
  * absent) and shows no number when that level links to another style.
+ * A style chain that sets `w:ilvl` but no `w:numId` contributes nothing, so
+ * it does not supply the level for a direct `w:numId`; the recorded
+ * evidence does not cover that case.
  *
  * @conformance-gap ECMA-376 edition 5, Part 1 § 17.3.1.19 — follows Word: a style's w:ilvl (default 0) is used, not ignored, and must agree with the level's w:pStyle link
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.23

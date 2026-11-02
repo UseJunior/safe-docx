@@ -313,6 +313,44 @@
         "3. normal three"
       ],
       "bodyXml": "<w:p><w:r><w:t xml:space=\"preserve\">normal one</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"DoesNotExist\"/></w:pPr><w:r><w:t xml:space=\"preserve\">unknown style</w:t></w:r></w:p><w:p><w:r><w:t xml:space=\"preserve\">normal three</w:t></w:r></w:p>"
+    },
+    "e1_empty_numbered": {
+      "note": "Empty list paragraphs (no text) still show a number and advance the counters in both Word and LibreOffice; the empty paragraphs here are text-less, so the oracle line shows only the label.",
+      "paragraphs": [
+        {
+          "text": "",
+          "word": "ARTICLE I"
+        },
+        {
+          "text": "Title",
+          "word": "ARTICLE II"
+        },
+        {
+          "text": "",
+          "word": "Section 2.01"
+        },
+        {
+          "text": "Sub",
+          "word": "Section 2.02"
+        },
+        {
+          "text": "",
+          "word": "1."
+        },
+        {
+          "text": "Item",
+          "word": "2."
+        }
+      ],
+      "libreOfficeRendered": [
+        "ARTICLE I",
+        "ARTICLE II Title",
+        "Section 2.01",
+        "Section 2.02 Sub",
+        "1.",
+        "2. Item"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t xml:space=\"preserve\"></w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t xml:space=\"preserve\">Title</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr><w:r><w:t xml:space=\"preserve\"></w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr><w:r><w:t xml:space=\"preserve\">Sub</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\"></w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">Item</w:t></w:r></w:p>"
     }
   }
 }
