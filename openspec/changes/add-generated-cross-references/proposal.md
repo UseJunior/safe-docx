@@ -62,8 +62,8 @@ above it. Agreements carry hundreds of these references (#1236).
   field as its cached result. The source projection numbers the targets
   itself, so the round trip catches a reference that shows the wrong number.
   A new cross-reference check compares each REF instruction (bookmark name
-  and switch) with its `{% xref /%}`, and each named bookmark's paragraph
-  with the item marked with that id. It catches a field that points at
+  and switch) and where it sits with its `{% xref /%}`, and each named
+  bookmark's paragraph with the item marked with that id. It catches a field that points at
   another item showing the same number. LibreOffice recalculates REF fields when it loads a document and keeps
   the period of `1.` before `(` (`2.(b)`), so the PDF checks expect that form.
 - `docx-markdoc import` admits REF fields in footnotes and reads them as

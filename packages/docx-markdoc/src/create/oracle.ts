@@ -71,25 +71,60 @@ export type SourceProjection = {
   /** Footnotes in the order of their references in `body`; the note numbered n is entry n - 1. */
   footnotes?: SourceFootnote[];
   /**
-   * Every `{% xref /%}` as written: body references in reading order, then
-   * those in footnotes, note by note in the order of the notes. Absent when
-   * the source has none.
+   * Every `{% xref /%}` as written and where its number sits: body
+   * references in reading order, then those in footnotes, note by note in
+   * the order of the notes. Absent when the source has none.
    */
   crossReferences?: SourceCrossReference[];
   /** The text of each list item marked `{% #id %}`, by id: what its bookmark must hold. */
   crossReferenceTargets?: Record<string, string>;
 }
 
-/** A cross-reference as written in the source. */
-export type SourceCrossReference = { to: string; number: 'full' | 'paragraph'; story: 'body' | 'footnote' };
+/**
+ * A cross-reference as written in the source, and where its number sits: in
+ * `body[entry].text`, or in paragraph `paragraph` of the note numbered
+ * `note`, at `offset`, `length` characters long.
+ */
+export type SourceCrossReference = { to: string; number: 'full' | 'paragraph'; offset: number; length: number } & (
+  | { story: 'body'; entry: number }
+  | { story: 'footnote'; note: number; paragraph: number }
+);
 
-/** The `{% xref /%}` tags under `node`, in reading order. */
-function xrefTags(node: MarkdocNode): SourceCrossReference[] {
-  if (node.type === 'tag' && node.tag === 'xref') {
-    return [{ to: String(node.attributes.to), number: node.attributes.number === 'paragraph' ? 'paragraph' : 'full', story: 'body' }];
-  }
-  return node.children.flatMap(xrefTags);
+/** Stands in for an `{% xref /%}`'s number inside walker text until it is scanned: target, form, then the number. */
+const XREF_OPEN = '\u0004';
+const XREF_NUMBER = '\u0005';
+const XREF_CLOSE = '\u0006';
+
+type ScannedText = {
+  text: string;
+  footnotes: Array<{ offset: number; id: string }>;
+  xrefs: Array<{ to: string; number: 'full' | 'paragraph'; offset: number; length: number }>;
 };
+
+/** Remove the footnote and cross-reference stand-ins from walker text, recording where each sat. */
+function scanMarks(raw: string): ScannedText {
+  const out: ScannedText = { text: '', footnotes: [], xrefs: [] };
+  for (let at = 0; at < raw.length;) {
+    const char = raw[at]!;
+    if (char === REFERENCE_OPEN) {
+      const close = raw.indexOf(REFERENCE_CLOSE, at);
+      out.footnotes.push({ offset: out.text.length, id: raw.slice(at + 1, close) });
+      at = close + 1;
+    } else if (char === XREF_OPEN) {
+      const middle = raw.indexOf(XREF_NUMBER, at);
+      const close = raw.indexOf(XREF_CLOSE, middle);
+      const [to = '', number = 'full'] = raw.slice(at + 1, middle).split('|');
+      const shown = raw.slice(middle + 1, close);
+      out.xrefs.push({ to, number: number === 'paragraph' ? 'paragraph' : 'full', offset: out.text.length, length: shown.length });
+      out.text += shown;
+      at = close + 1;
+    } else {
+      out.text += char;
+      at += 1;
+    }
+  }
+  return out;
+}
 
 /** Stands in for a `{% fnref /%}` inside walker text until `push` turns it into an offset. */
 const REFERENCE_OPEN = '\u0002';
@@ -166,7 +201,7 @@ function inlineText(node: MarkdocNode, references: CrossReferenceTexts = new Map
         const number = node.attributes.number === 'paragraph' ? target?.paragraph : target?.full;
         // Validation rejects a dangling target before the oracle runs; an empty
         // expectation here would only make the comparison fail, never pass.
-        return `${node.attributes.format === 'section' ? 'Section ' : ''}${number ?? ''}`;
+        return `${node.attributes.format === 'section' ? 'Section ' : ''}${XREF_OPEN}${String(node.attributes.to)}|${node.attributes.number === 'paragraph' ? 'paragraph' : 'full'}${XREF_NUMBER}${number ?? ''}${XREF_CLOSE}`;
       }
       return children();
     default: return children();
@@ -216,23 +251,13 @@ export function projectSourceText(source: string, options: { reader?: Projection
   let section = 0;
   let tables = 0;
   const references: string[] = [];
-  const notes = new Map<string, string[]>();
+  const notes = new Map<string, ScannedText[]>();
+  const bodyXrefs: SourceCrossReference[] = [];
   const push = (raw: string, node: MarkdocNode, extra: Partial<SourceBodyEntry> = {}) => {
-    const marks: number[] = [];
-    let text = '';
-    for (let at = 0; at < raw.length;) {
-      const open = raw.indexOf(REFERENCE_OPEN, at);
-      if (open === -1) {
-        text += raw.slice(at);
-        break;
-      }
-      const close = raw.indexOf(REFERENCE_CLOSE, open);
-      text += raw.slice(at, open);
-      marks.push(text.length);
-      references.push(raw.slice(open + 1, close));
-      at = close + 1;
-    }
-    body.push({ text, ...(lineOf(node) === undefined ? {} : { line: lineOf(node)! }), section, ...extra, ...(marks.length ? { footnoteMarks: marks } : {}) });
+    const { text, footnotes: marks, xrefs } = scanMarks(raw);
+    references.push(...marks.map((mark) => mark.id));
+    bodyXrefs.push(...xrefs.map((xref) => ({ ...xref, story: 'body' as const, entry: body.length })));
+    body.push({ text, ...(lineOf(node) === undefined ? {} : { line: lineOf(node)! }), section, ...extra, ...(marks.length ? { footnoteMarks: marks.map((mark) => mark.offset) } : {}) });
   };
   const targets: Record<string, string> = {};
   const listItems = (list: MarkdocNode, depth: number) => {
@@ -243,7 +268,7 @@ export function projectSourceText(source: string, options: { reader?: Projection
         if (child.type === 'list') listItems(child, depth + 1);
         else {
           const itemText = textOf(child);
-          if (ordered && item.attributes.id !== undefined) targets[String(item.attributes.id)] = itemText;
+          if (ordered && item.attributes.id !== undefined) targets[String(item.attributes.id)] = scanMarks(itemText).text;
           push(itemText, item, { marker: listMarker(ordered, depth, n) });
         }
       }
@@ -275,7 +300,7 @@ export function projectSourceText(source: string, options: { reader?: Projection
         return;
       }
       case 'footnote':
-        notes.set(String(node.attributes.id), paragraphsOfTag(node).map((paragraph) => (paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph))));
+        notes.set(String(node.attributes.id), paragraphsOfTag(node).map((paragraph) => scanMarks(paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph))));
         return;
       case 'section': {
         const { footer } = node.attributes;
@@ -296,15 +321,9 @@ export function projectSourceText(source: string, options: { reader?: Projection
     else if (node.type === 'blockquote') for (const child of node.children) push(textOf(child), child);
     else push(textOf(node), node);
   }
-  const footnotes = references.map((id) => ({ id, paragraphs: notes.get(id) ?? [] }));
-  const noteTags = new Map<string, MarkdocNode>();
-  const bodyXrefs: SourceCrossReference[] = [];
-  for (const node of ast.children) {
-    const sole = node.type === 'paragraph' ? soleTag(node) : node.type === 'tag' ? node : undefined;
-    if (sole?.tag === 'footnote') noteTags.set(String(sole.attributes.id), sole);
-    else bodyXrefs.push(...xrefTags(node));
-  }
-  const noteXrefs = references.flatMap((id) => (noteTags.has(id) ? xrefTags(noteTags.get(id)!) : []).map((xref) => ({ ...xref, story: 'footnote' as const })));
+  const footnotes = references.map((id) => ({ id, paragraphs: (notes.get(id) ?? []).map((paragraph) => paragraph.text) }));
+  const noteXrefs = references.flatMap((id, index) => (notes.get(id) ?? []).flatMap((paragraph, paragraphIndex) =>
+    paragraph.xrefs.map((xref): SourceCrossReference => ({ ...xref, story: 'footnote', note: index + 1, paragraph: paragraphIndex }))));
   const xrefs = [...bodyXrefs, ...noteXrefs];
   return {
     body,

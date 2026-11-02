@@ -113,7 +113,7 @@ describe('Traceability: cross-references in created documents', () => {
         passed: true,
         references: { expected: 6, actual: 6 },
         mismatches: [],
-        negativeControls: { switchChanged: true, retargeted: true },
+        negativeControls: { switchChanged: true, retargeted: true, moved: true },
       });
       expect(created.readback.footnotes).toEqual([[' Compare Section 2(a).']]);
       expect(created.text).toContain('Purchase Price. The price is set out in Section 2(b).');
@@ -235,6 +235,29 @@ describe('Traceability: cross-references in created documents', () => {
         },
       }));
       expect(moved.checks.crossReferences?.mismatches).toEqual([{ reference: 1, expected: 'bookmark on "Beta"', actual: 'bookmark on "Alpha"' }]);
+
+      // A field moved onto an equal literal number keeps every paragraph's text, its instruction and its
+      // target: only where it sits differs.
+      const literal = '# T\n\n1. Target {% #target %}\n\nLiteral 1.\n\nSee {% xref to="target" /%}.\n';
+      expect((await createDocumentFromMarkdoc(literal)).certificate.passed).toBe(true);
+      const relocated = await verificationFailure(createDocumentFromMarkdoc(literal, {
+        transformLowering(lowering) {
+          const blocks = lowering.spec.sections[0]!.blocks as ParagraphSpec[];
+          const [literalParagraph, see] = blocks.slice(-2) as [ParagraphSpec, ParagraphSpec];
+          const field = see.runs.find((run) => run.kind === 'crossReference')!;
+          see.runs = [{ kind: 'text', text: 'See 1.' }];
+          literalParagraph.runs = [{ kind: 'text', text: 'Literal ' }, field, { kind: 'text', text: '.' }];
+          return lowering;
+        },
+      }));
+      expect(relocated.checks.readback.passed).toBe(true);
+      expect(relocated.checks.roundTrip.passed).toBe(true);
+      expect(relocated.checks.crossReferences?.mismatches).toEqual([{ reference: 1, expected: 'body paragraph 4: See‸.', actual: 'body paragraph 3: Literal‸.' }]);
+
+      // A target that holds a footnote reference compares by its text without the note.
+      const noted = await createDocumentFromMarkdoc('# T\n\n1. One{% fnref id="n" /%} {% #one %}\n\nSee {% xref to="one" /%}.\n\n{% footnote id="n" %}A note.{% /footnote %}\n');
+      expect(noted.certificate.checks.crossReferences?.passed).toBe(true);
+      expect(noted.readback.footnotes).toEqual([[' A note.']]);
     },
   );
 

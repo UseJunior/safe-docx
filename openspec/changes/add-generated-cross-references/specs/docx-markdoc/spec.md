@@ -26,11 +26,12 @@ reference's number in its read-back, round-trip and PDF checks.
 - **AND** the message for an unknown id SHALL name the id
 
 #### Scenario: [SDX-MDOC-XREF-03] verification checks each cross-reference's number and destination against the source
-- **GIVEN** a created document, and the same source built through lowerings that point a reference at the wrong item, at another item showing the same number, change its number switch where both forms show the same number, or move a bookmark to another paragraph
+- **GIVEN** a created document, and the same source built through lowerings that point a reference at the wrong item, at another item showing the same number, change its number switch where both forms show the same number, move a bookmark to another paragraph, or move the field onto an equal literal number elsewhere
 - **WHEN** each is verified
 - **THEN** the first SHALL pass
 - **AND** a wrong number SHALL pass the read-back check but fail the round trip, which numbers the targets from the source
-- **AND** each of the others SHALL fail the cross-reference check, which compares every REF instruction with the `{% xref /%}` it came from and every named bookmark's paragraph with the item marked with that id, although its text is unchanged
+- **AND** each of the others SHALL fail the cross-reference check, which compares every REF instruction and where it sits (story, paragraph and the text either side) with the `{% xref /%}` it came from, and every named bookmark's paragraph with the item marked with that id, although the document's text is unchanged
+- **AND** a target item that holds a footnote reference SHALL compare by its text without the note
 
 #### Scenario: [SDX-MDOC-XREF-04] the PDF checks expect the number as LibreOffice renders it
 - **GIVEN** a source with full-context references to nested list items
