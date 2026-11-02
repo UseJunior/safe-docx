@@ -15,6 +15,7 @@ import {
 } from './profile.js';
 import { CreationTheme, creationPlugins } from './theme.js';
 import {
+  checkCreationSourceCharacters,
   creationError,
   lineOf,
   parseCreationFrontmatter,
@@ -262,6 +263,7 @@ function applyNeighbourRules(section: SectionState, profile: CreationProfile): v
  */
 export function lowerCreationMarkdoc(source: string, profileInput?: unknown): CreationLowering {
   const profile = resolveCreationProfile(profileInput);
+  checkCreationSourceCharacters(source);
   const ast = Markdoc.parse(source);
   const frontmatter = parseCreationFrontmatter(ast.attributes.frontmatter as string | undefined);
   validateCreationAst(ast.children, { fillIns: frontmatter.fillIns ?? 'markup' });

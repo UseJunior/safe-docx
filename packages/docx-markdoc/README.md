@@ -701,6 +701,9 @@ such as an unclosed tag, and headings below `###`.
   Errors are `XREF_UNKNOWN_ID` (naming the missing id),
   `XREF_TARGET_NOT_NUMBERED`, `INVALID_CROSS_REFERENCE`, `INVALID_ID`,
   `ID_PLACEMENT`, `DUPLICATE_ID` and `ID_COLLISION`, each with its line.
+- A source holding a control character that a Word document cannot hold
+  (U+0000–U+001F other than tab, line feed and carriage return) fails with
+  `INVALID_CHARACTER` and its line.
 - Bare brackets are ordinary text, never highlighted and never an error, even
   when unbalanced: `"[t]he Company"`, `[sic]`, `Section 2[(b)]`. A legend is
   never highlighted, so `{% fill %}` is not allowed inside it.

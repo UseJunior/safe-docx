@@ -162,10 +162,17 @@ function crossReferenceMismatches(
 
 function crossReferenceCheck(expected: SourceProjection, readback: CreationReadback): CrossReferenceCheck | undefined {
   const xrefs = expected.crossReferences ?? [];
+  const inventory = expected.crossReferenceInventory ?? [];
   const sites = (readback.crossReferences?.length ?? 0) + (readback.footnoteCrossReferences?.length ?? 0);
-  if (xrefs.length === 0 && sites === 0) return undefined;
+  if (xrefs.length === 0 && sites === 0 && inventory.length === 0) return undefined;
   const targets = expected.crossReferenceTargets ?? {};
   const mismatches = crossReferenceMismatches(xrefs, expected, readback);
+  // Every tag in the source must have been placed: a tag the text walker never reached would otherwise drop
+  // out of the expectation and the document together.
+  const placed = xrefs.map((xref) => `${xref.to}|${xref.number}`).sort();
+  if (JSON.stringify(placed) !== JSON.stringify(inventory)) {
+    mismatches.push({ reference: 0, expected: `source tags ${inventory.join(', ')}`, actual: `placed ${placed.join(', ') || 'none'}` });
+  }
   const detects = (mutated: SourceCrossReference[], shiftFirst = 0) => crossReferenceMismatches(mutated, expected, readback, shiftFirst).length > 0;
   const first = xrefs[0];
   const other = first ? Object.keys(targets).find((id) => id !== first.to && normalizeOracleText(targets[id]!) !== normalizeOracleText(targets[first.to] ?? '')) : undefined;
@@ -178,7 +185,7 @@ function crossReferenceCheck(expected: SourceProjection, readback: CreationReadb
   const passed = mismatches.length === 0 && controlsOk;
   return {
     passed,
-    references: { expected: xrefs.length, actual: sites },
+    references: { expected: inventory.length, actual: sites },
     mismatches,
     negativeControls,
     ...(passed ? {} : { detail: `${mismatches.length} cross-reference mismatch(es)${controlsOk ? '' : '; a negative control was not detected'}` }),

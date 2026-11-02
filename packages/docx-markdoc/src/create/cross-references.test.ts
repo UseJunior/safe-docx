@@ -171,6 +171,10 @@ describe('Traceability: cross-references in created documents', () => {
       expect(await failure(`${item}{% fill %}{% xref to="one" /%}{% /fill %}\n`)).toEqual({ code: 'INVALID_CROSS_REFERENCE', line: 5 });
       expect(await failure(`${item}{% literal %}{% xref to="one" /%}{% /literal %}\n`)).toEqual({ code: 'INVALID_CROSS_REFERENCE', line: 5 });
 
+      // XML cannot hold C0 control characters (the verification walker also uses some as stand-ins).
+      expect(await failure('# T\n\nHello\u0004world.\n')).toEqual({ code: 'INVALID_CHARACTER', line: 3 });
+      expect(await failure('# T\n\n1. One {% #one %}\n\nSee \u0004one|full\u0005 1\u0006.\n')).toEqual({ code: 'INVALID_CHARACTER', line: 5 });
+
       // The message names the missing id and where the reference is.
       const unknown = await createDocumentFromMarkdoc(`${item}See {% xref to="tow" /%}.\n`).then(() => undefined, (error: Error) => error.message);
       expect(unknown).toContain('{% #tow %}');
@@ -253,6 +257,13 @@ describe('Traceability: cross-references in created documents', () => {
       expect(relocated.checks.readback.passed).toBe(true);
       expect(relocated.checks.roundTrip.passed).toBe(true);
       expect(relocated.checks.crossReferences?.mismatches).toEqual([{ reference: 1, expected: 'body paragraph 4: See‸.', actual: 'body paragraph 3: Literal‸.' }]);
+
+      // An xref the text walker never reaches (a tag after a signer's paragraph, which the signer does not
+      // render) is still in the source's tag inventory, so its loss fails the build instead of passing silently.
+      const signer = await verificationFailure(createDocumentFromMarkdoc('# T\n\n1. One {% #one %}\n2. Two {% #two %}\n\n{% signer %}\nSee  \n{% xref to="two" /%}\n{% /signer %}\n'));
+      expect(signer.checks.readback.passed).toBe(true);
+      expect(signer.checks.roundTrip.passed).toBe(true);
+      expect(signer.checks.crossReferences?.mismatches).toEqual([{ reference: 0, expected: 'source tags two|full', actual: 'placed none' }]);
 
       // A target that holds a footnote reference compares by its text without the note.
       const noted = await createDocumentFromMarkdoc('# T\n\n1. One{% fnref id="n" /%} {% #one %}\n\nSee {% xref to="one" /%}.\n\n{% footnote id="n" %}A note.{% /footnote %}\n');

@@ -442,6 +442,22 @@ function checkParseErrors(node: MarkdocNode): void {
 }
 
 /** Validate every top-level block of a parsed creation document. */
+/**
+ * Characters XML 1.0 cannot hold: the C0 controls other than tab, line feed
+ * and carriage return. A source holding one would produce a document Word
+ * refuses, and the verification walker uses some of them as private
+ * stand-ins, so they are refused before anything else.
+ */
+const XML_INVALID_CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/u;
+
+export function checkCreationSourceCharacters(source: string): void {
+  const match = XML_INVALID_CONTROL.exec(source);
+  if (!match) return;
+  const line = source.slice(0, match.index).split('\n').length;
+  const code = match[0].codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0');
+  creationError('INVALID_CHARACTER', `The source holds control character U+${code}, which a Word document cannot hold.`, undefined, line);
+}
+
 export function validateCreationAst(children: MarkdocNode[], options: { fillIns?: 'markup' | 'brackets' } = {}): void {
   bracketFillIns = options.fillIns === 'brackets';
   try {

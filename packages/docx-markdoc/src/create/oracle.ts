@@ -78,6 +78,18 @@ export type SourceProjection = {
   crossReferences?: SourceCrossReference[];
   /** The text of each list item marked `{% #id %}`, by id: what its bookmark must hold. */
   crossReferenceTargets?: Record<string, string>;
+  /**
+   * Every `{% xref /%}` tag in the source, found by walking the whole syntax
+   * tree rather than the text walker, as `to|number`, sorted. A tag the text
+   * walker never reaches is missing from `crossReferences` but not from here.
+   */
+  crossReferenceInventory?: string[];
+}
+
+/** Every `{% xref /%}` tag under `node`, as `to|number`. */
+function xrefInventory(node: MarkdocNode): string[] {
+  const own = node.type === 'tag' && node.tag === 'xref' ? [`${String(node.attributes.to)}|${node.attributes.number === 'paragraph' ? 'paragraph' : 'full'}`] : [];
+  return [...own, ...node.children.flatMap(xrefInventory)];
 }
 
 /**
@@ -106,13 +118,17 @@ function scanMarks(raw: string): ScannedText {
   const out: ScannedText = { text: '', footnotes: [], xrefs: [] };
   for (let at = 0; at < raw.length;) {
     const char = raw[at]!;
-    if (char === REFERENCE_OPEN) {
-      const close = raw.indexOf(REFERENCE_CLOSE, at);
+    // Creation refuses sources holding these control characters, so a stand-in is always complete; an
+    // unterminated one is kept as text rather than scanned, so the cursor always advances.
+    const referenceClose = char === REFERENCE_OPEN ? raw.indexOf(REFERENCE_CLOSE, at) : -1;
+    const middle = char === XREF_OPEN ? raw.indexOf(XREF_NUMBER, at) : -1;
+    const xrefClose = middle === -1 ? -1 : raw.indexOf(XREF_CLOSE, middle);
+    if (referenceClose !== -1) {
+      const close = referenceClose;
       out.footnotes.push({ offset: out.text.length, id: raw.slice(at + 1, close) });
       at = close + 1;
-    } else if (char === XREF_OPEN) {
-      const middle = raw.indexOf(XREF_NUMBER, at);
-      const close = raw.indexOf(XREF_CLOSE, middle);
+    } else if (xrefClose !== -1) {
+      const close = xrefClose;
       const [to = '', number = 'full'] = raw.slice(at + 1, middle).split('|');
       const shown = raw.slice(middle + 1, close);
       out.xrefs.push({ to, number: number === 'paragraph' ? 'paragraph' : 'full', offset: out.text.length, length: shown.length });
@@ -325,11 +341,12 @@ export function projectSourceText(source: string, options: { reader?: Projection
   const noteXrefs = references.flatMap((id, index) => (notes.get(id) ?? []).flatMap((paragraph, paragraphIndex) =>
     paragraph.xrefs.map((xref): SourceCrossReference => ({ ...xref, story: 'footnote', note: index + 1, paragraph: paragraphIndex }))));
   const xrefs = [...bodyXrefs, ...noteXrefs];
+  const inventory = xrefInventory(ast).sort();
   return {
     body,
     footers,
     ...(footnotes.length ? { footnotes } : {}),
-    ...(xrefs.length ? { crossReferences: xrefs, crossReferenceTargets: targets } : {}),
+    ...(xrefs.length || inventory.length ? { crossReferences: xrefs, crossReferenceTargets: targets, crossReferenceInventory: inventory } : {}),
   };
 }
 

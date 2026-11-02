@@ -63,7 +63,10 @@ above it. Agreements carry hundreds of these references (#1236).
   itself, so the round trip catches a reference that shows the wrong number.
   A new cross-reference check compares each REF instruction (bookmark name
   and switch) and where it sits with its `{% xref /%}`, and each named
-  bookmark's paragraph with the item marked with that id. It catches a field that points at
+  bookmark's paragraph with the item marked with that id. Every xref tag in
+  the source's syntax tree must be placed, so one the text walker never
+  reaches fails the build. A source holding a C0 control character that XML
+  cannot carry now fails with `INVALID_CHARACTER`. It catches a field that points at
   another item showing the same number. LibreOffice recalculates REF fields when it loads a document and keeps
   the period of `1.` before `(` (`2.(b)`), so the PDF checks expect that form.
 - `docx-markdoc import` admits REF fields in footnotes and reads them as
