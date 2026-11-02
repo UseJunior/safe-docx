@@ -113,7 +113,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'get_document_outline',
     surface: 'internal',
     description:
-      'Get a compact structural map of a document\'s headings (DOCX only). Each entry is `{paragraph_id, text, level, source}`. Deterministic sources are `word_style`, `list_metadata`, and `outline_level`, selected in that precedence order and included by default. Heuristic sources are `run_in_header`, `title_with_period`, `title_with_colon`, `title_caps_centered`, and `title_bare`; set include_heuristic_headings=true to include them. JSON preserves levels 1-9; Markdown clamps visual ATX depth to 6. Read-only.',
+      'Get a compact structural map of a document\'s headings (DOCX only). Each entry is `{paragraph_id, text, level, source}`, plus `list_label` (e.g. "Section 1.01") when the heading is numbered; Markdown puts the label before the text. Deterministic sources are `word_style`, `list_metadata`, and `outline_level`, selected in that precedence order and included by default. Heuristic sources are `run_in_header`, `title_with_period`, `title_with_colon`, `title_caps_centered`, and `title_bare`; set include_heuristic_headings=true to include them. JSON preserves levels 1-9; Markdown clamps visual ATX depth to 6. Read-only.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL_DOCX_ONLY,
       format: z

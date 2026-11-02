@@ -1,0 +1,136 @@
+import { describe, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
+import { parseXml } from '../src/primitives/xml.js';
+import { parseNumberingXml } from '../src/primitives/numbering.js';
+import { parseStylesXml } from '../src/primitives/styles.js';
+import {
+  computeParagraphListLabels,
+  resolveParagraphNumbering,
+} from '../src/primitives/paragraph_list_numbering.js';
+import { buildNodesForDocumentView } from '../src/primitives/document_view.js';
+
+const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Numbering' });
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+/**
+ * Word for Mac 16.114 list strings for paragraphs numbered through their
+ * paragraph style, recorded with the AppleScript oracle (see the evidence
+ * file's `procedure`). Every fixture is replayed here, so the expected
+ * labels are Word's, not ours.
+ */
+const EVIDENCE_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../../scripts/oracle/word/evidence/issue-1244-word-16.114.json',
+);
+type Evidence = {
+  numberingXml: string;
+  stylesXml: string;
+  stylesXmlWithNumberedNormal: string;
+  stylesXmlWithNumberedNormalUsedBy: string[];
+  fixtures: Record<string, { bodyXml: string; paragraphs: Array<{ text: string; word: string }> }>;
+};
+const evidence = JSON.parse(readFileSync(EVIDENCE_PATH, 'utf8')) as Evidence;
+
+/**
+ * Labels where safe-docx still differs from Word for a reason unrelated to
+ * style resolution, keyed by fixture and paragraph text. In s_b_precedence an
+ * "(a)" at level 2 comes before any level-1 paragraph; Word counts the skipped
+ * level 1 as used at its start value, so every later Section is one higher
+ * than safe-docx's count (the skipped-level difference recorded with #1243,
+ * fixtures r2/r5). Every numbered-or-not decision in the fixture matches Word.
+ */
+const SKIPPED_LEVEL_DIFFERENCES: Record<string, Record<string, string>> = {
+  s_b_precedence: {
+    'MyClause basedOn H2': 'Section 1.01',
+    'H2 direct numId10 no-ilvl': 'Section 1.02',
+    'H2 plain': 'Section 1.03',
+    'H2 direct numId11 (same abstract) no-ilvl': 'Section 1.04',
+    'H2 after numId11': 'Section 1.05',
+  },
+};
+
+function bodyParagraphs(bodyXml: string): Element[] {
+  const doc = parseXml(`<w:document xmlns:w="${W_NS}"><w:body>${bodyXml}</w:body></w:document>`);
+  return Array.from(doc.getElementsByTagNameNS(W_NS, 'p'));
+}
+
+describe('style-inherited list numbering', () => {
+  const styleNumberingTest = test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.1.19' });
+
+  for (const [name, fixture] of Object.entries(evidence.fixtures)) {
+    styleNumberingTest(`labels match the Word oracle: ${name}`, async ({ given, when, then }: AllureBddContext) => {
+      let paragraphs!: Element[];
+      let labels!: string[];
+      await given(`the ${name} fixture: ${fixture.paragraphs.map((p) => p.text).join(' / ')}`, async () => {
+        paragraphs = bodyParagraphs(fixture.bodyXml);
+      });
+      await when('every paragraph is numbered in document order', async () => {
+        const stylesXml = evidence.stylesXmlWithNumberedNormalUsedBy.includes(name)
+          ? evidence.stylesXmlWithNumberedNormal
+          : evidence.stylesXml;
+        const byParagraph = computeParagraphListLabels(
+          paragraphs,
+          parseNumberingXml(parseXml(evidence.numberingXml)),
+          parseStylesXml(parseXml(stylesXml)),
+        );
+        labels = paragraphs.map((p) => byParagraph.get(p)?.label ?? '');
+      });
+      const known = SKIPPED_LEVEL_DIFFERENCES[name] ?? {};
+      await then(`the labels are Word's: ${fixture.paragraphs.map((p) => p.word || '∅').join(' ')}`, () => {
+        expect(labels).toEqual(fixture.paragraphs.map((p) => known[p.text] ?? p.word));
+        // A known difference must never hide a numbered/unnumbered mismatch.
+        for (const [i, p] of fixture.paragraphs.entries()) expect(labels[i] === '').toBe(p.word === '');
+      });
+    });
+  }
+
+  test('reports where the numbering came from and ignores a w:pPrChange numPr', async ({ given, then, and }: AllureBddContext) => {
+    let numbering!: ReturnType<typeof parseNumberingXml>;
+    let styles!: ReturnType<typeof parseStylesXml>;
+    const para = (pPr: string) => bodyParagraphs(`<w:p><w:pPr>${pPr}</w:pPr></w:p>`)[0]!;
+    await given('the oracle numbering part and heading styles', async () => {
+      numbering = parseNumberingXml(parseXml(evidence.numberingXml));
+      styles = parseStylesXml(parseXml(evidence.stylesXml));
+    });
+    await then('style, direct, and mixed sources are distinguished', () => {
+      expect(resolveParagraphNumbering(para('<w:pStyle w:val="Heading2"/>'), styles, numbering)).toEqual({ numId: '10', ilvl: 1, source: 'style' });
+      expect(
+        resolveParagraphNumbering(para('<w:pStyle w:val="Heading2"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>'), styles, numbering),
+      ).toEqual({ numId: '1', ilvl: 0, source: 'direct' });
+      expect(
+        resolveParagraphNumbering(para('<w:pStyle w:val="Heading2"/><w:numPr><w:ilvl w:val="2"/></w:numPr>'), styles, numbering),
+      ).toEqual({ numId: '10', ilvl: 2, source: 'direct+style' });
+      expect(resolveParagraphNumbering(para('<w:numPr><w:numId w:val="1"/></w:numPr>'), styles, numbering)).toEqual({ numId: '1', ilvl: 0, source: 'direct' });
+    });
+    await and('a numPr that only the tracked prior properties carry does not number the paragraph', () => {
+      const tracked = para(
+        '<w:pPrChange w:id="1" w:author="A" w:date="2026-11-02T00:00:00Z"><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr></w:pPrChange>',
+      );
+      expect(resolveParagraphNumbering(tracked, styles, numbering)).toBeNull();
+    });
+    await and('a paragraph without styles or numbering resolves to nothing', () => {
+      expect(resolveParagraphNumbering(bodyParagraphs('<w:p/>')[0]!, parseStylesXml(null), numbering)).toBeNull();
+    });
+  });
+
+  test('document_view labels heading paragraphs numbered through their style', async ({ given, when, then }: AllureBddContext) => {
+    let labels!: string[];
+    const fixture = evidence.fixtures['s_d_mixed_style_direct']!;
+    await given('headings numbered by style interleaved with directly numbered paragraphs', async () => {});
+    await when('the document view is built', async () => {
+      const paragraphs = bodyParagraphs(fixture.bodyXml).map((p, i) => ({ id: `_bk_${i + 1}`, p }));
+      labels = buildNodesForDocumentView({
+        paragraphs,
+        stylesXml: parseXml(evidence.stylesXml),
+        numberingXml: parseXml(evidence.numberingXml),
+        include_semantic_tags: false,
+      }).nodes.map((n) => n.list_label);
+    });
+    await then('each node carries the label Word shows', () => {
+      expect(labels).toEqual(fixture.paragraphs.map((p) => p.word));
+    });
+  });
+});

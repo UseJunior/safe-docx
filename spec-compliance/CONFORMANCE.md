@@ -108,7 +108,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-9-18` | w:numId numbering instance reference | 5 | 1 | 17.9.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numId` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts |
 | `ECMA-PART1-17-9-3` | w:ilvl numbering level reference | 5 | 1 | 17.9.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ilvl` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts |
 | `ECMA-PART1-17-9-6` | w:lvl numbering level definition | 5 | 1 | 17.9.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvl` | packages/docx-core/src/primitives/numbering.ts; packages/docx-core/src/generation/emit/numbering-part.ts |
-| `ECMA-PART1-17-9-23` | w:pStyle numbering-level paragraph style | 5 | 1 | 17.9.23 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle` | packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/emit/styles-part.ts |
+| `ECMA-PART1-17-9-23` | w:pStyle numbering-level paragraph style | 5 | 1 | 17.9.23 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle` | packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/emit/styles-part.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts |
 | `ECMA-PART1-17-9-22` | w:pPr numbering-level paragraph properties | 5 | 1 | 17.9.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr` | packages/docx-core/src/generation/emit/numbering-part.ts |
 | `ECMA-PART1-17-9-4` | w:isLgl legal numbering | 5 | 1 | 17.9.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:isLgl` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts |
 | `ECMA-PART1-17-9-10` | w:lvlRestart numbering level restart threshold | 5 | 1 | 17.9.10 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlRestart` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts; packages/docx-core/src/primitives/numbering.ts |
@@ -120,7 +120,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-9-28` | w:suff content between numbering symbol and text | 5 | 1 | 17.9.28 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:suff` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts |
 | `ECMA-PART1-17-9-12` | w:multiLevelType abstract definition type | 5 | 1 | 17.9.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:multiLevelType` | packages/docx-core/src/generation/emit/numbering-part.ts |
 | `ECMA-PART1-17-9-7` | w:lvlJc numbering level justification | 5 | 1 | 17.9.7 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlJc` | packages/docx-core/src/generation/emit/numbering-part.ts |
-| `ECMA-PART1-17-3-1-19` | w:numPr paragraph numbering reference | 5 | 1 | 17.3.1.19 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts |
+| `ECMA-PART1-17-3-1-19` | w:numPr paragraph numbering reference | 5 | 1 | 17.3.1.19 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts; packages/docx-core/test-primitives/paragraph_list_numbering.test.ts |
 | `ECMA-PART1-17-13-4-6` | w:comments comment-collection part emission | 5 | 1 | 17.13.4.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comments` | packages/docx-core/src/generation/emit/comments-part.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
 | `ECMA-PART1-17-13-4-2` | w:comment comment content emission | 5 | 1 | 17.13.4.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comment` | packages/docx-core/src/generation/emit/comments-part.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
 | `ECMA-PART1-17-13-4-4` | w:commentRangeStart comment anchor opening | 5 | 1 | 17.13.4.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeStart` | packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
@@ -1535,7 +1535,7 @@ shared rPr builder.
 - **Part / Section:** Part 1 § 17.9.23
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle`
-- **Verified by:** packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/emit/styles-part.ts
+- **Verified by:** packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/emit/styles-part.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts
 
 An optional `w:pStyle` on `w:lvl` associates that exact numbering level with
 a paragraph style. The numbering model retains the association and exposes a
@@ -1544,7 +1544,9 @@ unrelated level or mutates list counters. Generation emits a level's `pStyle`
 only for a declared paragraph style that no other level links, and writes the
 reverse link (`w:numPr` naming the definition's default instance and the
 level) into that style's `w:pPr`, so a paragraph that only applies the style is
-numbered at that level.
+numbered at that level. Label resolution honors a style-derived number only
+when this link agrees with the paragraph's nearest numbered style; a level
+`w:pStyle` without the style's own `w:numPr` numbers nothing.
 
 ### ECMA-PART1-17-9-22 — w:pPr numbering-level paragraph properties
 
@@ -1701,11 +1703,24 @@ differing widths on their right edge — the standard legal-outline convention.
 - **Part / Section:** Part 1 § 17.3.1.19
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr`
-- **Verified by:** packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts
+- **Verified by:** packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts; packages/docx-core/test-primitives/paragraph_list_numbering.test.ts
 
 List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot.
 Generation binds deterministic handles; paragraph mutation can remove or
 re-point a direct reference while preserving the numbering definitions.
+
+When reading list labels, a paragraph's numbering is resolved per element:
+`w:numId` and `w:ilvl` each come from the nearest layer that sets them — the
+paragraph's own `w:numPr`, then its style chain through `w:basedOn` (the
+default paragraph style when there is no `w:pStyle`). A missing `w:ilvl`
+means level 0, and `w:numId` 0 at the winning layer removes numbering.
+Conformance gap, following Microsoft Word: this clause says a style's
+`w:ilvl` is ignored and the level is found through the numbering level's
+`w:pStyle`; Word instead uses the style's `w:ilvl` and shows style-derived
+numbering only when the resolved level links back to the nearest numbered
+style in the paragraph's chain. LibreOffice follows the clause text. The
+Word 16.114 and LibreOffice 26.2 results are recorded in
+`scripts/oracle/word/evidence/issue-1244-word-16.114.json`.
 
 ### ECMA-PART1-17-13-4-6 — w:comments comment-collection part emission
 

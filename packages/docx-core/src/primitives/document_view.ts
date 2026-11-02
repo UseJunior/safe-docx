@@ -10,6 +10,7 @@ import {
   computeListLabelForParagraph,
   getNumberingLevel,
 } from './numbering.js';
+import { collectNumberingLinkedStyleIds, resolveParagraphNumbering } from './paragraph_list_numbering.js';
 import {
   parseStylesXml,
   parseThemeXml,
@@ -465,6 +466,7 @@ export function buildNodesForDocumentView(params: {
   const themeModel = parseThemeXml(params.themeXml ?? null);
   const numberingModel = parseNumberingXml(numberingXml);
   const counters: NumberingCounters = new Map();
+  const numberingLinkedStyles = collectNumberingLinkedStyleIds(numberingModel);
 
   // ── Pass 1 (formatting mode): pre-compute annotated runs per paragraph ──
   // We also collect all non-header, non-heading-style body runs for a
@@ -560,21 +562,13 @@ export function buildNodesForDocumentView(params: {
       !paragraphHasAnchoringContent(p)
     ) continue;
 
-    // Numbering (auto-numbered) info from numPr.
-    let numId: string | null = null;
-    let ilvl: number | null = null;
-    const numPr = paraPPr ? getFirstChild(paraPPr, OOXML.W_NS, W.numPr) : null;
-    if (numPr) {
-      const numIdEl = getFirstChild(numPr, OOXML.W_NS, W.numId);
-      const ilvlEl = getFirstChild(numPr, OOXML.W_NS, W.ilvl);
-      const numIdVal = numIdEl ? getWAttr(numIdEl, 'val') : null;
-      const ilvlVal = ilvlEl ? getWAttr(ilvlEl, 'val') : null;
-      if (numIdVal) numId = numIdVal;
-      if (ilvlVal != null) {
-        const v = Number.parseInt(ilvlVal, 10);
-        if (!Number.isNaN(v)) ilvl = v;
-      }
-    }
+    // Numbering (auto-numbered) info: the paragraph's own w:numPr, else the
+    // one its paragraph style chain gives it, so style-numbered headings
+    // ("ARTICLE I", "Section 1.01") are labelled and advance the shared
+    // counters in document order (#1244).
+    const resolvedNumbering = resolveParagraphNumbering(p, stylesModel, numberingModel, numberingLinkedStyles);
+    const numId: string | null = resolvedNumbering?.numId ?? null;
+    const ilvl: number | null = resolvedNumbering?.ilvl ?? null;
 
     let labelString = '';
     let labelType: LabelType | null = null;
