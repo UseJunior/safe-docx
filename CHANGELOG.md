@@ -20,7 +20,8 @@
   Section 2.06(b)" used to be literal text that went stale when a section was
   inserted; after Word updates fields, every reference shows the new number.
   `docx-markdoc import` now admits REF fields in footnotes and keeps their
-  numbers as text. (#1236)
+  numbers as text. List labels past `z` now read `aa`, `bb`, …, `zz`, `aaa`,
+  as Word shows them; 28 used to read `ab`. (#1236)
 - `docx-markdoc create` no longer fails its PDF word check when LibreOffice
   exports a justified line without spaces, which it can do when the line
   holds an underlined word. The raw text layer reads such a line as one

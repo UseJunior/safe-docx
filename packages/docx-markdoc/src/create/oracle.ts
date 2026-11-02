@@ -70,6 +70,25 @@ export type SourceProjection = {
   footers: Array<string[] | null>;
   /** Footnotes in the order of their references in `body`; the note numbered n is entry n - 1. */
   footnotes?: SourceFootnote[];
+  /**
+   * Every `{% xref /%}` as written: body references in reading order, then
+   * those in footnotes, note by note in the order of the notes. Absent when
+   * the source has none.
+   */
+  crossReferences?: SourceCrossReference[];
+  /** The text of each list item marked `{% #id %}`, by id: what its bookmark must hold. */
+  crossReferenceTargets?: Record<string, string>;
+}
+
+/** A cross-reference as written in the source. */
+export type SourceCrossReference = { to: string; number: 'full' | 'paragraph'; story: 'body' | 'footnote' };
+
+/** The `{% xref /%}` tags under `node`, in reading order. */
+function xrefTags(node: MarkdocNode): SourceCrossReference[] {
+  if (node.type === 'tag' && node.tag === 'xref') {
+    return [{ to: String(node.attributes.to), number: node.attributes.number === 'paragraph' ? 'paragraph' : 'full', story: 'body' }];
+  }
+  return node.children.flatMap(xrefTags);
 };
 
 /** Stands in for a `{% fnref /%}` inside walker text until `push` turns it into an offset. */
@@ -215,13 +234,18 @@ export function projectSourceText(source: string, options: { reader?: Projection
     }
     body.push({ text, ...(lineOf(node) === undefined ? {} : { line: lineOf(node)! }), section, ...extra, ...(marks.length ? { footnoteMarks: marks } : {}) });
   };
+  const targets: Record<string, string> = {};
   const listItems = (list: MarkdocNode, depth: number) => {
     const ordered = list.attributes.ordered === true;
     let n = depth === 0 && ordered && Number.isInteger(list.attributes.start) ? Number(list.attributes.start) : 1;
     for (const item of list.children) {
       for (const child of item.children) {
         if (child.type === 'list') listItems(child, depth + 1);
-        else push(textOf(child), item, { marker: listMarker(ordered, depth, n) });
+        else {
+          const itemText = textOf(child);
+          if (ordered && item.attributes.id !== undefined) targets[String(item.attributes.id)] = itemText;
+          push(itemText, item, { marker: listMarker(ordered, depth, n) });
+        }
       }
       n += 1;
     }
@@ -273,7 +297,21 @@ export function projectSourceText(source: string, options: { reader?: Projection
     else push(textOf(node), node);
   }
   const footnotes = references.map((id) => ({ id, paragraphs: notes.get(id) ?? [] }));
-  return { body, footers, ...(footnotes.length ? { footnotes } : {}) };
+  const noteTags = new Map<string, MarkdocNode>();
+  const bodyXrefs: SourceCrossReference[] = [];
+  for (const node of ast.children) {
+    const sole = node.type === 'paragraph' ? soleTag(node) : node.type === 'tag' ? node : undefined;
+    if (sole?.tag === 'footnote') noteTags.set(String(sole.attributes.id), sole);
+    else bodyXrefs.push(...xrefTags(node));
+  }
+  const noteXrefs = references.flatMap((id) => (noteTags.has(id) ? xrefTags(noteTags.get(id)!) : []).map((xref) => ({ ...xref, story: 'footnote' as const })));
+  const xrefs = [...bodyXrefs, ...noteXrefs];
+  return {
+    body,
+    footers,
+    ...(footnotes.length ? { footnotes } : {}),
+    ...(xrefs.length ? { crossReferences: xrefs, crossReferenceTargets: targets } : {}),
+  };
 }
 
 // ---------------------------------------------------------------- diffing

@@ -4234,5 +4234,194 @@
         "s206bii": "Section 2.06(b)(ii)"
       }
     }
+  },
+  "alphabeticPastZ": {
+    "purpose": "lowerLetter and upperLetter numbers past 26 (review finding on #1248): Word repeats the letter.",
+    "numbering": [
+      {
+        "numId": "alpha",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1."
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%2)"
+          }
+        ]
+      },
+      {
+        "numId": "upper",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1."
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "upperLetter",
+            "lvlText": "%2."
+          }
+        ]
+      }
+    ],
+    "layout": "One level-0 item, then 53 level-1 items; bookmarks loN/upN on items 26, 27, 28, 52 and 53.",
+    "listStrings": {
+      "lower": {
+        "26": "(z)",
+        "27": "(aa)",
+        "28": "(bb)",
+        "52": "(zz)",
+        "53": "(aaa)"
+      },
+      "upper": {
+        "26": "Z.",
+        "27": "AA.",
+        "28": "BB.",
+        "52": "ZZ.",
+        "53": "AAA."
+      }
+    },
+    "references": [
+      {
+        "instruction": " REF lo26 \\w \\h ",
+        "word": "1(z)"
+      },
+      {
+        "instruction": " REF lo26 \\n \\h ",
+        "word": "(z)"
+      },
+      {
+        "instruction": " REF lo27 \\w \\h ",
+        "word": "1(aa)"
+      },
+      {
+        "instruction": " REF lo27 \\n \\h ",
+        "word": "(aa)"
+      },
+      {
+        "instruction": " REF lo28 \\w \\h ",
+        "word": "1(bb)"
+      },
+      {
+        "instruction": " REF lo28 \\n \\h ",
+        "word": "(bb)"
+      },
+      {
+        "instruction": " REF lo52 \\w \\h ",
+        "word": "1(zz)"
+      },
+      {
+        "instruction": " REF lo52 \\n \\h ",
+        "word": "(zz)"
+      },
+      {
+        "instruction": " REF lo53 \\w \\h ",
+        "word": "1(aaa)"
+      },
+      {
+        "instruction": " REF lo53 \\n \\h ",
+        "word": "(aaa)"
+      },
+      {
+        "instruction": " REF up26 \\w \\h ",
+        "word": "1.Z"
+      },
+      {
+        "instruction": " REF up26 \\n \\h ",
+        "word": "Z"
+      },
+      {
+        "instruction": " REF up27 \\w \\h ",
+        "word": "1.AA"
+      },
+      {
+        "instruction": " REF up27 \\n \\h ",
+        "word": "AA"
+      },
+      {
+        "instruction": " REF up28 \\w \\h ",
+        "word": "1.BB"
+      },
+      {
+        "instruction": " REF up28 \\n \\h ",
+        "word": "BB"
+      },
+      {
+        "instruction": " REF up52 \\w \\h ",
+        "word": "1.ZZ"
+      },
+      {
+        "instruction": " REF up52 \\n \\h ",
+        "word": "ZZ"
+      },
+      {
+        "instruction": " REF up53 \\w \\h ",
+        "word": "1.AAA"
+      },
+      {
+        "instruction": " REF up53 \\n \\h ",
+        "word": "AAA"
+      }
+    ]
+  },
+  "deeperLevelPlaceholders": {
+    "purpose": "A level text naming a deeper level (review finding on #1248). ECMA-376 § 17.9.11 says such a placeholder is ignored; Word 16.114 instead shows no list number for the paragraph, and REF fields to it show 0.",
+    "numbering": {
+      "numId": "deep",
+      "levels": [
+        {
+          "ilvl": 0,
+          "numFmt": "decimal",
+          "lvlText": "%1 %2"
+        },
+        {
+          "ilvl": 1,
+          "numFmt": "decimal",
+          "lvlText": "%1.%2.%3"
+        },
+        {
+          "ilvl": 2,
+          "numFmt": "lowerLetter",
+          "lvlText": "(%3)"
+        }
+      ]
+    },
+    "listStrings": {
+      "deep0": "",
+      "deep1": "",
+      "deep2": "(a)"
+    },
+    "references": [
+      {
+        "instruction": " REF deep0 \\w \\h ",
+        "word": "0"
+      },
+      {
+        "instruction": " REF deep0 \\n \\h ",
+        "word": "0"
+      },
+      {
+        "instruction": " REF deep1 \\w \\h ",
+        "word": "0"
+      },
+      {
+        "instruction": " REF deep1 \\n \\h ",
+        "word": "0"
+      },
+      {
+        "instruction": " REF deep2 \\w \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF deep2 \\n \\h ",
+        "word": "(a)"
+      }
+    ],
+    "generation": "refused: every level text a reference number uses must name only its own level and levels above it"
   }
 }

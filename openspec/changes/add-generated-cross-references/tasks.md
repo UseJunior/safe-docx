@@ -13,7 +13,8 @@
       `isLgl` level texts, in the body, a table cell and a footnote, with
       LibreOffice's result alongside. Also record the instructions Word's
       own Insert → Cross-reference writes, and the results after a section is
-      inserted above the targets.
+      inserted above the targets. Record letter numbers past `z` and a level
+      text naming a deeper level.
 
 ## 3. docx-core
 

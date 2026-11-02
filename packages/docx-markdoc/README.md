@@ -600,8 +600,10 @@ package, determinism, read-back and brownfield-import checks:
   The text mirror lists the notes after the body.
 - **Cross-references.** The read-back reads each REF field as its cached
   number. The round trip compares it with the number the source gives its
-  target, counted from the source's own lists, so a field that points at the
-  wrong item fails. LibreOffice recalculates REF fields when it renders the
+  target, counted from the source's own lists. A separate check compares
+  each field's bookmark name and number switch with its `{% xref /%}`, and
+  the paragraph each bookmark opens in with the item marked with that id, so
+  a field that points at another item showing the same number also fails. LibreOffice recalculates REF fields when it renders the
   PDF and keeps the period that Word drops (`2.(a)(i)`), so the PDF checks
   expect that form.
 

@@ -1266,13 +1266,17 @@ field-engine equivalence.
 
 Generation (#1236) emits REF fields with the `\w` (full context) or `\n`
 (paragraph number) switch and `\h`, the instructions Word's own Insert →
-Cross-reference writes. It caches the number Word shows after updating
-fields. The clause specifies neither the `\w` context rule nor the removal of
-trailing periods, so `renderReferenceNumber` follows Word 16.114 as recorded
-for 97 fields in `scripts/oracle/word/evidence/issue-1236-word-16.114.json`
-(a recorded gap, not a spec claim). LibreOffice keeps a period before `(`
-that Word removes. `\r`, whose result depends on where the field sits, is
-not emitted.
+Cross-reference writes. The clause defines what the switches ask for: `\n`
+the paragraph number "without trailing periods", `\w` the number "in full
+context". It does not say how the context is assembled or which periods go
+between its parts, so `renderReferenceNumber` follows Word 16.114 as recorded
+in `scripts/oracle/word/evidence/issue-1236-word-16.114.json`: the target's
+level text is preceded by its ancestors' level texts up to the one naming
+level 0, one final period is removed, and a period before a part that starts
+with `(` is removed (`2.` + `(b)` → `2(b)`, but `2.` + `b.` → `2.b`). The
+cached result equals Word's for all recorded fields. LibreOffice keeps a
+period before `(` that Word removes. `\r`, whose result depends on where the
+field sits, is not emitted.
 
 ## [ECMA-PART1-17-4-37] w:tbl table emission
 
@@ -1846,6 +1850,31 @@ verifiedBy: packages/docx-core/src/generation/emit/numbering-part.ts
 The level text pattern (e.g. `%1.` / `%1.%2` / a literal bullet glyph) is
 emitted verbatim from the spec; validation requires a non-empty pattern on
 every level.
+
+The clause says a placeholder naming a level deeper than its own is ignored.
+Word 16.114 instead shows no number for such a level, and a REF field to it
+shows `0` (recorded in `scripts/oracle/word/evidence/issue-1236-word-16.114.json`,
+`deeperLevelPlaceholders`), so generated cross-references to such a level are
+refused (`resolveReferenceNumber` in `packages/docx-core/src/primitives/numbering.ts`).
+
+## [ECMA-PART1-17-18-59] ST_NumberFormat alphabetic list numbers
+
+```yaml
+edition: 5
+part: 1
+section: "17.18.59"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_NumberFormat
+verifiedBy: packages/docx-core/src/primitives/numbering.ts; packages/docx-core/src/generation/generation-cross-references.test.ts
+```
+
+Bounded to the `lowerLetter` and `upperLetter` values as the list-label read
+side formats them: past the size of the alphabet the same letter is written
+once more for each further pass (27 → `aa`, 28 → `bb`, 53 → `aaa`), as the
+clause describes. Word 16.114 shows the same labels and REF results, recorded
+in `scripts/oracle/word/evidence/issue-1236-word-16.114.json`
+(`alphabeticPastZ`). The language-dependent alphabets the clause also
+describes are not implemented; the Latin a–z set is always used.
 
 ## [ECMA-PART1-17-9-25] w:start numbering level starting value
 

@@ -211,35 +211,46 @@ function assertNamedStyle(styles: StylesModel, styleId: string, annotationId: st
 /**
  * The only complex fields an annotation body may hold are REF fields (a
  * generated cross-reference in a footnote); they import as their cached
- * result text. Any other field, or a field left open, stays unsupported.
+ * result text. Any other field, a nested field, a second separator,
+ * instruction text in a result, or a field left open stays unsupported.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
  * @see https://github.com/UseJunior/safe-docx/issues/1236
  */
 function assertOnlyReferenceFields(container: Element, annotationId: string): void {
-  let instruction: string | null = null;
+  // The field's phase: its instruction (begin → separate), then its result (separate → end).
+  let field: { instruction: string; phase: 'instruction' | 'result' } | null = null;
   const unsupported = (element: string, detail: string) => new DocxMarkdocError(
     'ANNOTATION_IMPORT_UNSUPPORTED',
     `Annotation ${annotationId} contains unsupported ${element} (${detail}).`,
     { annotationId, element, reason: 'unsupported-field' },
   );
+  const assertReference = (instruction: string) => {
+    if (instruction.trim().split(/\s+/u)[0] !== 'REF') throw unsupported('w:fldChar', `a field other than REF: ${instruction.trim()}`);
+  };
   for (const node of Array.from(container.getElementsByTagNameNS(OOXML.W_NS, '*'))) {
     const element = node as Element;
     if (element.localName === 'instrText') {
-      if (instruction === null) throw unsupported('w:instrText', 'outside a field');
-      instruction += element.textContent ?? '';
+      // Instruction text outside a field's instruction is ordinary text to Word (§ 17.16.23), which the
+      // annotation reader would drop, so it is refused rather than lost.
+      if (field?.phase !== 'instruction') throw unsupported('w:instrText', 'outside a field instruction');
+      field.instruction += element.textContent ?? '';
     } else if (element.localName === 'fldChar') {
       const type = element.getAttributeNS(OOXML.W_NS, 'fldCharType') ?? element.getAttribute('w:fldCharType');
-      if (type === 'begin' && instruction === null) instruction = '';
-      else if ((type === 'separate' || type === 'end') && instruction !== null) {
-        if (instruction.trim().split(/\s+/u)[0] !== 'REF') throw unsupported('w:fldChar', `a field other than REF: ${instruction.trim()}`);
-        if (type === 'end') instruction = null;
+      if (type === 'begin' && field === null) {
+        field = { instruction: '', phase: 'instruction' };
+      } else if (type === 'separate' && field?.phase === 'instruction') {
+        assertReference(field.instruction);
+        field.phase = 'result';
+      } else if (type === 'end' && field !== null) {
+        if (field.phase === 'instruction') assertReference(field.instruction);
+        field = null;
       } else {
         throw unsupported('w:fldChar', `an unbalanced field character ${type ?? ''}`.trim());
       }
     }
   }
-  if (instruction !== null) throw unsupported('w:fldChar', 'a field without an end');
+  if (field !== null) throw unsupported('w:fldChar', 'a field without an end');
 }
 
 /**

@@ -101,12 +101,20 @@ describe('Traceability: cross-references in created documents', () => {
         '',
       ]);
       expect(created.readback.crossReferences).toEqual([
-        { paragraph: 2, offset: 48, text: '2(b)' },
-        { paragraph: 8, offset: 4, text: '2(a)(i)' },
-        { paragraph: 8, offset: 20, text: '(i)' },
-        { paragraph: 8, offset: 36, text: '2' },
-        { paragraph: 10, offset: 22, text: '2(a)(i)' },
+        { paragraph: 2, offset: 48, text: '2(b)', instruction: ' REF price_adjustment \\w \\h ' },
+        { paragraph: 8, offset: 4, text: '2(a)(i)', instruction: ' REF escrow_release \\w \\h ' },
+        { paragraph: 8, offset: 20, text: '(i)', instruction: ' REF escrow_release \\n \\h ' },
+        { paragraph: 8, offset: 36, text: '2', instruction: ' REF closing \\w \\h ' },
+        { paragraph: 10, offset: 22, text: '2(a)(i)', instruction: ' REF escrow_release \\w \\h ' },
       ]);
+      expect(created.readback.footnoteCrossReferences).toEqual([{ note: 1, paragraph: 0, offset: 17, text: '2(a)', instruction: ' REF deliveries \\w \\h ' }]);
+      // Each field points at the bookmark on the item its xref names.
+      expect(created.certificate.checks.crossReferences).toEqual({
+        passed: true,
+        references: { expected: 6, actual: 6 },
+        mismatches: [],
+        negativeControls: { switchChanged: true, retargeted: true },
+      });
       expect(created.readback.footnotes).toEqual([[' Compare Section 2(a).']]);
       expect(created.text).toContain('Purchase Price. The price is set out in Section 2(b).');
 
@@ -133,10 +141,15 @@ describe('Traceability: cross-references in created documents', () => {
       const runTexts = wChildren(fieldParagraph, 'r').map((run) => wChildren(run, 't').map((t) => t.textContent).join('')).filter(Boolean);
       expect(runTexts.slice(-3)).toEqual(['Purchase Price. The price is set out in Section ', '2(b)', '.']);
 
-      // A source without ids or xrefs has no bookmarks and no cross-reference sites.
+      // A source without ids or xrefs has no bookmarks, no cross-reference sites and no cross-reference check.
       const plain = await createDocumentFromMarkdoc('# T\n\n1. One\n2. Two\n');
       expect((await part(plain.docx, 'word/document.xml')).getElementsByTagNameNS(W, 'bookmarkStart')).toHaveLength(0);
       expect(plain.readback.crossReferences).toBeUndefined();
+      expect(plain.certificate.checks.crossReferences).toBeUndefined();
+
+      // Letters past z repeat, as Word numbers them: the 28th nested item is (bb).
+      const long = ['# T', '', '1. Parent', ...Array.from({ length: 28 }, (_, index) => `   1. Item ${index + 1}${index === 27 ? ' {% #last %}' : ''}`), '', 'See {% xref to="last" /%} and {% xref to="last" number="paragraph" /%}.', ''].join('\n');
+      expect((await createDocumentFromMarkdoc(long)).readback.paragraphs.at(-1)).toBe('See 1(bb) and (bb).');
     },
   );
 
@@ -165,8 +178,8 @@ describe('Traceability: cross-references in created documents', () => {
     },
   );
 
-  test.openspec('[SDX-MDOC-XREF-03] the round trip checks each cross-reference number against the source')(
-    'Scenario: the round trip checks each cross-reference number against the source',
+  test.openspec("[SDX-MDOC-XREF-03] verification checks each cross-reference's number and destination against the source")(
+    "Scenario: verification checks each cross-reference's number and destination against the source",
     async () => {
       const source = '# T\n\n1. One {% #one %}\n2. Two {% #two %}\n\nSee {% xref to="two" /%}.\n';
       expect((await createDocumentFromMarkdoc(source)).certificate.passed).toBe(true);
@@ -182,6 +195,46 @@ describe('Traceability: cross-references in created documents', () => {
       }));
       expect(retargeted.checks.readback.passed).toBe(true);
       expect(retargeted.checks.roundTrip.body.mismatches).toMatchObject([{ kind: 'changed', expected: 'See 2.', actual: 'See 1.' }]);
+      expect(retargeted.checks.crossReferences?.mismatches).toEqual([{ reference: 1, expected: ' REF two \\w \\h ', actual: ' REF one \\w \\h ' }]);
+
+      // Two separate lists each number their item 1, so pointing the field at the other one keeps its text:
+      // the read-back and the round trip pass, and the cross-reference check, which reads where the field
+      // points, fails.
+      const twins = '# T\n\n1. Alpha {% #alpha %}\n\nBetween.\n\n1. Beta {% #beta %}\n\nSee {% xref to="beta" /%}.\n';
+      expect((await createDocumentFromMarkdoc(twins)).certificate.passed).toBe(true);
+      const sameNumber = await verificationFailure(createDocumentFromMarkdoc(twins, {
+        transformLowering(lowering) {
+          const paragraph = lowering.spec.sections[0]!.blocks.at(-1) as ParagraphSpec;
+          paragraph.runs = paragraph.runs.map((run): InlineSpec => (run.kind === 'crossReference' ? { ...run, bookmark: 'alpha' } : run));
+          return lowering;
+        },
+      }));
+      expect(sameNumber.checks.readback.passed).toBe(true);
+      expect(sameNumber.checks.roundTrip.passed).toBe(true);
+      expect(sameNumber.checks.crossReferences?.mismatches).toEqual([{ reference: 1, expected: ' REF beta \\w \\h ', actual: ' REF alpha \\w \\h ' }]);
+
+      // A top-level item shows "1" in both number forms, so changing the switch keeps its text too.
+      const switched = await verificationFailure(createDocumentFromMarkdoc(twins, {
+        transformLowering(lowering) {
+          const paragraph = lowering.spec.sections[0]!.blocks.at(-1) as ParagraphSpec;
+          paragraph.runs = paragraph.runs.map((run): InlineSpec => (run.kind === 'crossReference' ? { ...run, number: 'paragraph' } : run));
+          return lowering;
+        },
+      }));
+      expect(switched.checks.roundTrip.passed).toBe(true);
+      expect(switched.checks.crossReferences?.mismatches).toEqual([{ reference: 1, expected: ' REF beta \\w \\h ', actual: ' REF beta \\n \\h ' }]);
+
+      // A bookmark moved to another paragraph fails even though every field instruction is right.
+      const moved = await verificationFailure(createDocumentFromMarkdoc(twins, {
+        transformLowering(lowering) {
+          const blocks = lowering.spec.sections[0]!.blocks as ParagraphSpec[];
+          const beta = blocks.find((block) => block.bookmark === 'beta')!;
+          delete beta.bookmark;
+          blocks.find((block) => block.bookmark === 'alpha')!.bookmark = 'beta';
+          return lowering;
+        },
+      }));
+      expect(moved.checks.crossReferences?.mismatches).toEqual([{ reference: 1, expected: 'bookmark on "Beta"', actual: 'bookmark on "Alpha"' }]);
     },
   );
 
@@ -230,6 +283,12 @@ describe('Traceability: cross-references in created documents', () => {
       expect(await rewritten(footnoteXml.replace(instruction, '> PAGE </w:instrText>'))).toBe('ANNOTATION_IMPORT_UNSUPPORTED:unsupported-field');
       expect(await rewritten(footnoteXml.replace(/<w:fldChar w:fldCharType="begin"\/>/u, ''))).toBe('ANNOTATION_IMPORT_UNSUPPORTED:unsupported-field');
       expect(await rewritten(footnoteXml.replace(/<w:fldChar w:fldCharType="end"\/>/u, ''))).toBe('ANNOTATION_IMPORT_UNSUPPORTED:unsupported-field');
+      // Instruction text in a field's result is ordinary text to Word, which import would drop; a second
+      // separator is malformed. Both are refused rather than imported with text missing.
+      const separator = '<w:fldChar w:fldCharType="separate"/></w:r>';
+      expect(footnoteXml).toContain(separator);
+      expect(await rewritten(footnoteXml.replace(separator, `${separator}<w:r><w:instrText>IMPORTANT</w:instrText></w:r>`))).toBe('ANNOTATION_IMPORT_UNSUPPORTED:unsupported-field');
+      expect(await rewritten(footnoteXml.replace(separator, `${separator}<w:r>${separator}`))).toBe('ANNOTATION_IMPORT_UNSUPPORTED:unsupported-field');
     },
   );
 });

@@ -36,8 +36,12 @@ above it. Agreements carry hundreds of these references (#1236).
   number is the target level's text with one trailing period removed.
   Generation refuses a target whose result Word would not show as a number:
   an unnumbered paragraph (Word shows `0`), a number that depends on a level
-  no earlier paragraph uses (Word shows the level's start value), or an empty
-  rendering.
+  no earlier paragraph uses (Word shows the level's start value), a level
+  text that names a deeper level (Word shows no number; § 17.9.11 says to
+  ignore the placeholder), or an empty rendering.
+- The list-label read side numbers letters past `z` as Word and § 17.18.59
+  do (`aa`, `bb`, …, `zz`, `aaa`). It used to give `ab` for 28, which would
+  have been cached in a REF result.
 - `bookmarkNameForSlug` and `bookmarkNamesForSlugs` map readable kebab-case
   ids to bookmark names. Hyphens become underscores. An id longer than 40
   characters keeps 31 characters plus `_` and 8 hex digits of its SHA-256.
@@ -56,12 +60,15 @@ above it. Agreements carry hundreds of these references (#1236).
   `XREF_TARGET_NOT_NUMBERED`.
 - Create's verification covers cross-references. The read-back reads a REF
   field as its cached result. The source projection numbers the targets
-  itself, so the round trip catches a reference that points at the wrong
-  item. LibreOffice recalculates REF fields when it loads a document and keeps
+  itself, so the round trip catches a reference that shows the wrong number.
+  A new cross-reference check compares each REF instruction (bookmark name
+  and switch) with its `{% xref /%}`, and each named bookmark's paragraph
+  with the item marked with that id. It catches a field that points at
+  another item showing the same number. LibreOffice recalculates REF fields when it loads a document and keeps
   the period of `1.` before `(` (`2.(b)`), so the PDF checks expect that form.
 - `docx-markdoc import` admits REF fields in footnotes and reads them as
-  their cached result text. Any other field in an annotation still fails
-  closed.
+  their cached result text. Any other field, a second separator or
+  instruction text in a field's result still fails closed.
 
 Not included:
 

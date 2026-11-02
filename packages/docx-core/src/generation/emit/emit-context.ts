@@ -9,7 +9,7 @@
 
 import { createWmlTextElement } from '../../primitives/dom-helpers.js';
 import { OOXML, W } from '../../primitives/namespaces.js';
-import { renderReferenceNumber, type NumberingModel } from '../../primitives/numbering.js';
+import { resolveReferenceNumber, type NumberingModel } from '../../primitives/numbering.js';
 import { computeParagraphListLabels, type ParagraphListLabel } from '../../primitives/paragraph_list_numbering.js';
 import type { StylesModel } from '../../primitives/styles.js';
 import { GenerationInternalError, GenerationSpecError } from '../errors.js';
@@ -127,15 +127,20 @@ export class CrossReferenceResolver {
         `Bookmark '${bookmark}' is on a paragraph without a list number, so a cross-reference to it would show 0 in Word`,
       );
     }
-    const text = renderReferenceNumber(this.numbering, label, number === 'paragraph' ? 'paragraph' : 'fullContext');
-    if (text === null) {
-      throw new GenerationSpecError(
-        'invalid_value',
-        path,
-        `The number of bookmark '${bookmark}' depends on a list level no earlier paragraph uses; ` +
+    const result = resolveReferenceNumber(this.numbering, label, number === 'paragraph' ? 'paragraph' : 'fullContext');
+    if ('refused' in result) {
+      const reasons: Record<typeof result.refused, string> = {
+        unusedLevel:
+          `The number of bookmark '${bookmark}' depends on a list level no earlier paragraph uses; ` +
           'Word shows that level at its start value, which generation does not compute, so number that level first',
-      );
+        deeperLevel:
+          `The number of bookmark '${bookmark}' uses a level text that names a deeper list level; ` +
+          'Word shows no number for such a level, so a cross-reference to it would show 0',
+        undefinedLevel: `The list level of bookmark '${bookmark}' is not defined`,
+      };
+      throw new GenerationSpecError('invalid_value', path, reasons[result.refused]);
     }
+    const { text } = result;
     if (text.trim().length === 0) {
       throw new GenerationSpecError('invalid_value', path, `The number of bookmark '${bookmark}' renders as empty text`);
     }

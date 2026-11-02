@@ -30,6 +30,8 @@ type Evidence = {
   spec: DocumentSpec;
   references: Array<{ instruction: string; word: string; libreOffice?: string }>;
   wordNativeCrossReferenceInstructions: string[];
+  alphabeticPastZ: { numbering: NumberingSpec[]; references: Array<{ instruction: string; word: string }> };
+  deeperLevelPlaceholders: { numbering: NumberingSpec };
 };
 
 const text = (value: string, extra: Partial<Extract<InlineSpec, { kind: 'text' }>> = {}): InlineSpec => ({ kind: 'text', text: value, ...extra });
@@ -233,6 +235,23 @@ describe('Traceability: generated cross-references', () => {
           expect(fields.map((field) => field.instruction)).toContain(instruction);
         }
       });
+      await and('letter numbers past z repeat the letter (aa, bb, zz, aaa), as Word shows them', async () => {
+        const { numbering, references } = evidence.alphabeticPastZ;
+        const marks = [26, 27, 28, 52, 53];
+        const blocks: BlockSpec[] = [];
+        const runs: InlineSpec[] = [];
+        for (const [numId, prefix] of [['alpha', 'lo'], ['upper', 'up']] as const) {
+          blocks.push(para([text('Parent')], { list: { numId, ilvl: 0 } }));
+          for (let index = 1; index <= 53; index += 1) {
+            blocks.push(para([text(`item ${index}`)], { list: { numId, ilvl: 1 }, ...(marks.includes(index) ? { bookmark: `${prefix}${index}` } : {}) }));
+          }
+          for (const mark of marks) runs.push(ref(`${prefix}${mark}`), ref(`${prefix}${mark}`, { number: 'paragraph' }));
+        }
+        const { document } = await parts(await generateDocx(doc([...blocks, para(runs)], { numbering })));
+        const generated = readFields(document).map((field) => ({ instruction: field.instruction, word: field.result }));
+        expect(generated).toEqual(references);
+        expect(generated.map((field) => field.word)).toContain('1(bb)');
+      });
     },
   );
 
@@ -275,6 +294,18 @@ describe('Traceability: generated cross-references', () => {
         expect(unused.message).toMatch(/no earlier paragraph uses/);
         const ancestor = await specError(doc([para([text('Section')], { styleId: 'Heading2' }), item(2, 'clause', { bookmark: 'clause' }), para([ref('clause')])]));
         expect(ancestor.message).toMatch(/no earlier paragraph uses/);
+        // A level text naming a deeper level: Word shows no number (REF shows 0), so both forms are refused.
+        const { numbering: deep } = JSON.parse(readFileSync(EVIDENCE_PATH, 'utf8')).deeperLevelPlaceholders as Evidence['deeperLevelPlaceholders'];
+        for (const [ilvl, number] of [[0, 'paragraph'], [0, 'fullContext'], [2, 'fullContext']] as const) {
+          const deeper = await specError(doc([
+            para([text('zero')], { list: { numId: 'deep', ilvl: 0 }, ...(ilvl === 0 ? { bookmark: 'deep' } : {}) }),
+            para([text('one')], { list: { numId: 'deep', ilvl: 1 } }),
+            para([text('two')], { list: { numId: 'deep', ilvl: 2 }, ...(ilvl === 2 ? { bookmark: 'deep' } : {}) }),
+            para([ref('deep', { number })]),
+          ], { numbering: [LEGAL, deep] }));
+          expect(deeper.path).toBe(`/sections/0/blocks/${ilvl}/bookmark`);
+          expect(deeper.message).toMatch(/names a deeper list level/);
+        }
         const silent: NumberingSpec = { numId: 'silent', levels: [{ ilvl: 0, numFmt: 'none', lvlText: '%1' }] };
         const empty = await specError(doc([para([text('x')], { list: { numId: 'silent', ilvl: 0 }, bookmark: 'silent' }), para([ref('silent')])], { numbering: [LEGAL, silent] }));
         expect(empty.message).toMatch(/renders as empty text/);
