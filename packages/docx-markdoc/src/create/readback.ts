@@ -18,7 +18,12 @@ export type CreationReadback = {
   footnoteReferences: FootnoteReferencePosition[];
   /** The note each reference names, in the same order: its paragraph texts (the number mark reads as nothing). */
   footnotes: string[][];
+  /** Every body REF field (a cross-reference), in document order: its paragraph, offset and cached result. Absent when there are none. */
+  crossReferences?: CrossReferenceSite[];
 };
+
+/** Where a cross-reference's cached result sits in the read-back body text. */
+export type CrossReferenceSite = { paragraph: number; offset: number; text: string };
 
 function isW(node: Node, localName: string): node is Element {
   return node.nodeType === 1 && (node as Element).namespaceURI === W && (node as Element).localName === localName;
@@ -31,11 +36,17 @@ function elementChildren(node: Node): Element[] {
 /**
  * Paragraph text with `w:tab` as \t and `w:br` as \n. A complex field reads
  * as its instruction token (PAGE → `<PAGE>`), never its cached result, so a
- * footer projection does not depend on the page a reader rendered.
+ * footer projection does not depend on the page a reader rendered. A REF
+ * field (a cross-reference) reads as its cached result: the number generation
+ * computed for its target, which the projection predicts independently.
  */
-export function paragraphReadbackText(paragraph: Element, onFootnoteReference?: (offset: number, id: string) => void): string {
+export function paragraphReadbackText(
+  paragraph: Element,
+  onFootnoteReference?: (offset: number, id: string) => void,
+  onCrossReference?: (offset: number, text: string) => void,
+): string {
   let text = '';
-  let field: { instruction: string; inResult: boolean } | null = null;
+  let field: { instruction: string; inResult: boolean; result: string } | null = null;
   const visit = (node: Element): void => {
     for (const child of elementChildren(node)) {
       if (child.namespaceURI !== W) continue;
@@ -45,11 +56,12 @@ export function paragraphReadbackText(paragraph: Element, onFootnoteReference?: 
           break;
         case 'fldChar': {
           const type = child.getAttributeNS(W, 'fldCharType') || child.getAttribute('w:fldCharType');
-          if (type === 'begin') field = { instruction: '', inResult: false };
+          if (type === 'begin') field = { instruction: '', inResult: false, result: '' };
           else if (type === 'separate' && field) field.inResult = true;
           else if (type === 'end' && field) {
             const name = field.instruction.trim().split(/\s+/)[0] ?? '';
-            text += name === 'PAGE' ? PAGE_FIELD_TOKEN : `<${name}>`;
+            if (name === 'REF') onCrossReference?.(text.length, field.result);
+            text += name === 'PAGE' ? PAGE_FIELD_TOKEN : name === 'REF' ? field.result : `<${name}>`;
             field = null;
           }
           break;
@@ -59,6 +71,7 @@ export function paragraphReadbackText(paragraph: Element, onFootnoteReference?: 
           break;
         case 't':
           if (!field) text += child.textContent ?? '';
+          else if (field.inResult) field.result += child.textContent ?? '';
           break;
         case 'tab':
           if (!field) text += '\t';
@@ -80,15 +93,26 @@ export function paragraphReadbackText(paragraph: Element, onFootnoteReference?: 
 
 type FootnoteReferenceSite = FootnoteReferencePosition & { id: string };
 
-function blockParagraphs(container: Element, out: string[], cells: boolean[] = [], inCell = false, references: FootnoteReferenceSite[] = []): void {
+function blockParagraphs(
+  container: Element,
+  out: string[],
+  cells: boolean[] = [],
+  inCell = false,
+  references: FootnoteReferenceSite[] = [],
+  crossReferences: CrossReferenceSite[] = [],
+): void {
   for (const child of elementChildren(container)) {
     if (isW(child, 'p')) {
       const paragraph = out.length;
-      out.push(paragraphReadbackText(child, (offset, id) => references.push({ paragraph, offset, id })));
+      out.push(paragraphReadbackText(
+        child,
+        (offset, id) => references.push({ paragraph, offset, id }),
+        (offset, text) => crossReferences.push({ paragraph, offset, text }),
+      ));
       cells.push(inCell);
     } else if (isW(child, 'tbl')) {
       for (const row of elementChildren(child).filter((node) => isW(node, 'tr'))) {
-        for (const cell of elementChildren(row).filter((node) => isW(node, 'tc'))) blockParagraphs(cell, out, cells, true, references);
+        for (const cell of elementChildren(row).filter((node) => isW(node, 'tc'))) blockParagraphs(cell, out, cells, true, references, crossReferences);
       }
     }
   }
@@ -125,7 +149,8 @@ export async function readCreatedDocx(buffer: Buffer): Promise<CreationReadback>
   const paragraphs: string[] = [];
   const inTableCell: boolean[] = [];
   const references: FootnoteReferenceSite[] = [];
-  blockParagraphs(body, paragraphs, inTableCell, false, references);
+  const crossReferences: CrossReferenceSite[] = [];
+  blockParagraphs(body, paragraphs, inTableCell, false, references, crossReferences);
   const footnotes = await readFootnotes(read, zip.file('word/footnotes.xml') !== null, references);
 
   const rels = parseXml(await read('word/_rels/document.xml.rels'));
@@ -146,5 +171,12 @@ export async function readCreatedDocx(buffer: Buffer): Promise<CreationReadback>
     blockParagraphs(footer.documentElement!, lines);
     footers.push(lines);
   }
-  return { paragraphs, inTableCell, footers, footnoteReferences: references.map(({ paragraph, offset }) => ({ paragraph, offset })), footnotes };
+  return {
+    paragraphs,
+    inTableCell,
+    footers,
+    footnoteReferences: references.map(({ paragraph, offset }) => ({ paragraph, offset })),
+    footnotes,
+    ...(crossReferences.length ? { crossReferences } : {}),
+  };
 }

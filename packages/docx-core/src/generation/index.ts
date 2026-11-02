@@ -9,10 +9,21 @@
 export { generateDocx, type GenerateDocxOptions } from './compile.js';
 export { GenerationSpecError, GenerationInternalError, type GenerationSpecErrorCode } from './errors.js';
 export { checkGeneratedPackage, type StructuralCheckResult, type StructuralIssue } from './structural-checks.js';
+export {
+  BOOKMARK_NAME_MAX_LENGTH,
+  BookmarkNameError,
+  bookmarkNameForSlug,
+  bookmarkNamesForSlugs,
+  isWordBookmarkName,
+  type BookmarkNameErrorCode,
+} from './bookmark-names.js';
+export { CROSS_REFERENCE_NUMBERS } from './types.js';
 export type {
   BlockSpec,
   BorderSpec,
   BreakSpec,
+  CrossReferenceNumber,
+  CrossReferenceSpec,
   DocumentDefaultsSpec,
   DocumentMetaSpec,
   DocumentSpec,

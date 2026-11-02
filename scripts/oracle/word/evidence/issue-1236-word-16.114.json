@@ -1,0 +1,4238 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-02",
+  "issue": 1236,
+  "purpose": "What Microsoft Word shows for REF fields with the \\w (full context) and \\n (paragraph number) switches on numbered paragraphs, so generated cross-references can carry the same cached result (#1236).",
+  "word": {
+    "platform": "Mac",
+    "version": "16.114.3"
+  },
+  "libreOffice": {
+    "version": "26.2.5.2"
+  },
+  "procedure": "`spec` was compiled with generateDocx (bookmarks on targets, crossReference inlines in the body, a footnote and a table). Word opened the DOCX, `update field` ran on every field of the document and of each footnote through AppleScript, and each field's code and result range were read back. The same DOCX was converted to PDF with headless LibreOffice and read with pdftotext. The generator's cached results equalled Word's after-update results for all 97 fields before this file was written; `references` lists Word's results in field order (document part, then footnotes). Earlier probe documents (cached result \"?\") established the rules and the refused cases below.",
+  "finding": "\\w: the target level text, preceded by the level text of the level above the lowest level it names, repeated until level 0 is named (\"(b)\" under \"Section %1.%2\" -> \"Section 2.06(b)\", not \"ARTICLE IISection 2.06(b)\"; \"%2.%3\" under \"%1.%2\" still pulls in \"%1.\"). One trailing period is dropped from the last part and from any part followed by a part starting with \"(\" (\"2.\"+\"(b)\" -> \"2(b)\"; \"2.\"+\"b.\" -> \"2.b\"; \"1.\"+\"[a]\" -> \"1.[a]\"; \"1..\"+\"(a)\" -> \"1.(a)\"). \\n: the level text less one trailing period (\"1..\" -> \"1.\"). Spaces in lvlText are kept. Both are independent of where the field sits (body, footnote, table cell). \\r is position-dependent (see relativeContext) and is not generated. A paragraph without a number gives \"0\"; a never-used ancestor level shows at its start value in Word (\"1(a)\"), which safe-docx counters do not reproduce, so generation refuses both. LibreOffice 26.2 recalculates REF on load and differs: it keeps the period before \"(\" (\"2.(b)\") and shows bullet levels as empty. Word's own Insert Cross-reference (bookmark, number full context / no context, as hyperlink) writes the same instruction text as the generator. After a Heading 2 section is inserted above the target and fields are updated, every reference shows the new number.",
+  "spec": {
+    "meta": {
+      "title": "Cross-reference oracle (#1236)",
+      "createdIso": "2026-11-02T00:00:00Z"
+    },
+    "styles": [
+      {
+        "styleId": "Heading1",
+        "name": "heading 1",
+        "type": "paragraph",
+        "basedOn": "Normal",
+        "next": "Normal",
+        "paragraph": {
+          "alignment": "center",
+          "keepNext": true
+        },
+        "run": {
+          "bold": true
+        }
+      },
+      {
+        "styleId": "Heading2",
+        "name": "heading 2",
+        "type": "paragraph",
+        "basedOn": "Normal",
+        "next": "Normal",
+        "paragraph": {
+          "keepNext": true
+        },
+        "run": {
+          "bold": true
+        }
+      }
+    ],
+    "numbering": [
+      {
+        "numId": "legal",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "upperRoman",
+            "lvlText": "ARTICLE %1",
+            "pStyle": "Heading1",
+            "suff": "nothing",
+            "lvlJc": "center",
+            "indentTwips": {
+              "left": 0,
+              "firstLine": 0
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "decimalZero",
+            "lvlText": "Section %1.%2",
+            "isLgl": true,
+            "pStyle": "Heading2",
+            "indentTwips": {
+              "left": 0,
+              "firstLine": 720
+            }
+          },
+          {
+            "ilvl": 2,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%3)",
+            "indentTwips": {
+              "left": 2160,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 3,
+            "numFmt": "lowerRoman",
+            "lvlText": "(%4)",
+            "indentTwips": {
+              "left": 2880,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "create",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%2)",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 2,
+            "numFmt": "lowerRoman",
+            "lvlText": "(%3)",
+            "indentTwips": {
+              "left": 2160,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "create2",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            },
+            "start": 3
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%2)",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 2,
+            "numFmt": "lowerRoman",
+            "lvlText": "(%3)",
+            "indentTwips": {
+              "left": 2160,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "plain",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "decimal",
+            "lvlText": "%1.%2.",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 2,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%3)",
+            "indentTwips": {
+              "left": 2160,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "B",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1)",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "%2)",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "C",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "upperRoman",
+            "lvlText": "Article %1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "decimal",
+            "lvlText": "%1.%2.",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            },
+            "isLgl": true
+          },
+          {
+            "ilvl": 2,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%3)",
+            "indentTwips": {
+              "left": 2160,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "D",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "decimal",
+            "lvlText": "%1.%2",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 2,
+            "numFmt": "decimal",
+            "lvlText": "%2.%3",
+            "indentTwips": {
+              "left": 2160,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "E",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "%2.",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "F",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": " %1. ",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": " (%2) ",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "G",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "Section %2",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "H",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "-%2",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "I",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1:",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%2)",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "J",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1..",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%2)",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "K",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "(%1).",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "%2.",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "L",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "%2.",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 2,
+            "numFmt": "lowerRoman",
+            "lvlText": "(%3)",
+            "indentTwips": {
+              "left": 2160,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "M",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": " %2",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "N",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "none",
+            "lvlText": "%1",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "%2.",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "O",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "bullet",
+            "lvlText": "•",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%2)",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "P",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "bullet",
+            "lvlText": "•",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "bullet",
+            "lvlText": "◦",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "Q",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "upperRoman",
+            "lvlText": "Article %1",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%2)",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "S",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            },
+            "start": 5
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%2)",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "T",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%2)",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ],
+        "instances": [
+          {
+            "numId": "T2",
+            "levelOverrides": [
+              {
+                "ilvl": 0,
+                "startOverride": 7
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "numId": "U",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1..",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%2)",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "V",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "[%2]",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "W",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "%2)",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "Y",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.)",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%2)",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "Z",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "{%2}",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "AB",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%2)",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 2,
+            "numFmt": "lowerRoman",
+            "lvlText": "%3.",
+            "indentTwips": {
+              "left": 2160,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "AC",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "Step %1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          }
+        ]
+      },
+      {
+        "numId": "AD",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "upperLetter",
+            "lvlText": "%1.",
+            "indentTwips": {
+              "left": 720,
+              "hanging": 360
+            }
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "decimal",
+            "lvlText": "(%2).",
+            "indentTwips": {
+              "left": 1440,
+              "hanging": 360
+            }
+          }
+        ]
+      }
+    ],
+    "sections": [
+      {
+        "blocks": [
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Forward: see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "legal_s206b"
+              },
+              {
+                "kind": "text",
+                "text": "."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "styleId": "Heading1",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "DEFINITIONS"
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "styleId": "Heading2",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Defined Terms."
+              }
+            ],
+            "bookmark": "legal_s101"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "legal",
+              "ilvl": 2
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "clause under 1.01."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "styleId": "Heading1",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "PURCHASE AND SALE"
+              }
+            ],
+            "bookmark": "legal_art2"
+          },
+          {
+            "kind": "paragraph",
+            "styleId": "Heading2",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Purchase."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "styleId": "Heading2",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Price."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "styleId": "Heading2",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Escrow."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "styleId": "Heading2",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Deposit."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "styleId": "Heading2",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Adjustment Mechanics."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "styleId": "Heading2",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Purchase Price Adjustment."
+              }
+            ],
+            "bookmark": "legal_s206"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "legal",
+              "ilvl": 2
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "first clause of 2.06."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "legal",
+              "ilvl": 2
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "second clause of 2.06."
+              }
+            ],
+            "bookmark": "legal_s206b"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "legal",
+              "ilvl": 3
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "first sub-clause."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "legal",
+              "ilvl": 3
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "second sub-clause."
+              }
+            ],
+            "bookmark": "legal_s206bii"
+          },
+          {
+            "kind": "paragraph",
+            "styleId": "Heading2",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Closing."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "create",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "create",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "two."
+              }
+            ],
+            "bookmark": "create_2"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "create",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "two (a)."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "create",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "two (b)."
+              }
+            ],
+            "bookmark": "create_2b"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "create",
+              "ilvl": 2
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "two (b)(i)."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "create",
+              "ilvl": 2
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "two (b)(ii)."
+              }
+            ],
+            "bookmark": "create_2bii"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "create",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "three."
+              }
+            ],
+            "bookmark": "create_3"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "create2",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "second list three."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "create2",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "second list (a)."
+              }
+            ],
+            "bookmark": "create2_3a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "plain",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "p one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "plain",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "p two."
+              }
+            ],
+            "bookmark": "plain_2"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "plain",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "p two one."
+              }
+            ],
+            "bookmark": "plain_21"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "plain",
+              "ilvl": 2
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "p two one a."
+              }
+            ],
+            "bookmark": "plain_21a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "B",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "B one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "B",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "B one a."
+              }
+            ],
+            "bookmark": "B_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "C",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "C one."
+              }
+            ],
+            "bookmark": "C_1"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "C",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "C one one."
+              }
+            ],
+            "bookmark": "C_11"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "C",
+              "ilvl": 2
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "C one one a."
+              }
+            ],
+            "bookmark": "C_11a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "D",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "D one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "D",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "D one one."
+              }
+            ],
+            "bookmark": "D_11"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "D",
+              "ilvl": 2
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "D one one one."
+              }
+            ],
+            "bookmark": "D_111"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "E",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "E one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "E",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "E two."
+              }
+            ],
+            "bookmark": "E_2"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "E",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "E two a."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "E",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "E two b."
+              }
+            ],
+            "bookmark": "E_2b"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "F",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "F one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "F",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "F two."
+              }
+            ],
+            "bookmark": "F_2"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "F",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "F two a."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "F",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "F two b."
+              }
+            ],
+            "bookmark": "F_2b"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "G",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "G one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "G",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "G one a."
+              }
+            ],
+            "bookmark": "G_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "H",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "H one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "H",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "H one a."
+              }
+            ],
+            "bookmark": "H_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "I",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "I one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "I",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "I one a."
+              }
+            ],
+            "bookmark": "I_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "J",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "J one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "J",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "J one a."
+              }
+            ],
+            "bookmark": "J_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "K",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "K one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "K",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "K one a."
+              }
+            ],
+            "bookmark": "K_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "L",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "L one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "L",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "L one a."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "L",
+              "ilvl": 2
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "L one a i."
+              }
+            ],
+            "bookmark": "L_1ai"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "M",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "M one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "M",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "M one a."
+              }
+            ],
+            "bookmark": "M_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "N",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "N one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "N",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "N one a."
+              }
+            ],
+            "bookmark": "N_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "O",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "O one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "O",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "O one a."
+              }
+            ],
+            "bookmark": "O_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "P",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "P one."
+              }
+            ],
+            "bookmark": "P_1"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "P",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "P one a."
+              }
+            ],
+            "bookmark": "P_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "Q",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Q one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "Q",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Q one a."
+              }
+            ],
+            "bookmark": "Q_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "S",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "S five."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "S",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "S six."
+              }
+            ],
+            "bookmark": "S_2"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "T2",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "T seven."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "T2",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "T seven a."
+              }
+            ],
+            "bookmark": "T_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "U",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "U one."
+              }
+            ],
+            "bookmark": "U_1"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "U",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "U one a."
+              }
+            ],
+            "bookmark": "U_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "V",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "V one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "V",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "V one a."
+              }
+            ],
+            "bookmark": "V_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "W",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "W one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "W",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "W one a."
+              }
+            ],
+            "bookmark": "W_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "Y",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Y one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "Y",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Y one a."
+              }
+            ],
+            "bookmark": "Y_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "Z",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Z one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "Z",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Z one a."
+              }
+            ],
+            "bookmark": "Z_1a"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "AB",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "AB one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "AB",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "AB one a."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "AB",
+              "ilvl": 2
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "AB one a i."
+              }
+            ],
+            "bookmark": "AB_1ai"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "AC",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "AC one."
+              }
+            ],
+            "bookmark": "AC_1"
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "AD",
+              "ilvl": 0
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "AD one."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "list": {
+              "numId": "AD",
+              "ilvl": 1
+            },
+            "runs": [
+              {
+                "kind": "text",
+                "text": "AD one a."
+              }
+            ],
+            "bookmark": "AD_1a"
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": " legal_s101/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "legal_s101",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " legal_s101/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "legal_s101",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " legal_art2/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "legal_art2",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " legal_art2/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "legal_art2",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " legal_s206/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "legal_s206",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " legal_s206/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "legal_s206",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " legal_s206b/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "legal_s206b",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " legal_s206b/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "legal_s206b",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " legal_s206bii/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "legal_s206bii",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " legal_s206bii/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "legal_s206bii",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " create_2/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "create_2",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " create_2/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "create_2",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " create_2b/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "create_2b",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " create_2b/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "create_2b",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " create_2bii/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "create_2bii",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " create_2bii/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "create_2bii",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " create_3/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "create_3",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " create_3/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "create_3",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " create2_3a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "create2_3a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " create2_3a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "create2_3a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " plain_2/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "plain_2",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " plain_2/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "plain_2",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " plain_21/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "plain_21",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " plain_21/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "plain_21",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " plain_21a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "plain_21a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " plain_21a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "plain_21a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " B_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "B_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " B_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "B_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " C_1/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "C_1",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " C_1/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "C_1",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " C_11/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "C_11",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " C_11/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "C_11",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " C_11a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "C_11a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " C_11a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "C_11a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " D_11/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "D_11",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " D_11/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "D_11",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " D_111/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "D_111",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " D_111/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "D_111",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " E_2/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "E_2",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " E_2/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "E_2",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " E_2b/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "E_2b",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " E_2b/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "E_2b",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " F_2/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "F_2",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " F_2/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "F_2",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " F_2b/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "F_2b",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " F_2b/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "F_2b",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " G_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "G_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " G_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "G_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " H_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "H_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " H_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "H_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " I_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "I_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " I_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "I_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " J_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "J_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " J_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "J_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " K_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "K_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " K_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "K_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " L_1ai/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "L_1ai",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " L_1ai/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "L_1ai",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " M_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "M_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " M_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "M_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " N_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "N_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " N_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "N_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " O_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "O_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " O_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "O_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " P_1/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "P_1",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " P_1/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "P_1",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " P_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "P_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " P_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "P_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " Q_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "Q_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " Q_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "Q_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " S_2/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "S_2",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " S_2/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "S_2",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " T_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "T_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " T_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "T_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " U_1/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "U_1",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " U_1/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "U_1",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " U_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "U_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " U_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "U_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " V_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "V_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " V_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "V_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " W_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "W_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " W_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "W_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " Y_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "Y_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " Y_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "Y_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " Z_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "Z_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " Z_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "Z_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " AB_1ai/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "AB_1ai",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " AB_1ai/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "AB_1ai",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " AC_1/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "AC_1",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " AC_1/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "AC_1",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " AD_1a/fullContext=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "AD_1a",
+                "number": "fullContext"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              },
+              {
+                "kind": "text",
+                "text": " AD_1a/paragraph=["
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "AD_1a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": "]"
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Footnoted"
+              },
+              {
+                "kind": "footnote",
+                "blocks": [
+                  {
+                    "kind": "paragraph",
+                    "runs": [
+                      {
+                        "kind": "text",
+                        "text": "As provided in "
+                      },
+                      {
+                        "kind": "crossReference",
+                        "bookmark": "legal_s206bii",
+                        "bold": true
+                      },
+                      {
+                        "kind": "text",
+                        "text": " and "
+                      },
+                      {
+                        "kind": "crossReference",
+                        "bookmark": "create_2b",
+                        "number": "paragraph"
+                      },
+                      {
+                        "kind": "text",
+                        "text": "."
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "table",
+            "columnWidthsTwips": [
+              4000,
+              4000
+            ],
+            "rows": [
+              {
+                "cells": [
+                  {
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Cell: "
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "C_11a"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Cell: "
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "legal_art2",
+                            "number": "paragraph"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "instruction": " REF legal_s206b \\w \\h ",
+      "word": "Section 2.06(b)",
+      "libreOffice": "Section 2.06(b)"
+    },
+    {
+      "instruction": " REF legal_s101 \\w \\h ",
+      "word": "Section 1.01",
+      "libreOffice": "Section 1.01"
+    },
+    {
+      "instruction": " REF legal_s101 \\n \\h ",
+      "word": "Section 1.01",
+      "libreOffice": "Section 1.01"
+    },
+    {
+      "instruction": " REF legal_art2 \\w \\h ",
+      "word": "ARTICLE II",
+      "libreOffice": "ARTICLE II"
+    },
+    {
+      "instruction": " REF legal_art2 \\n \\h ",
+      "word": "ARTICLE II",
+      "libreOffice": "ARTICLE II"
+    },
+    {
+      "instruction": " REF legal_s206 \\w \\h ",
+      "word": "Section 2.06",
+      "libreOffice": "Section 2.06"
+    },
+    {
+      "instruction": " REF legal_s206 \\n \\h ",
+      "word": "Section 2.06",
+      "libreOffice": "Section 2.06"
+    },
+    {
+      "instruction": " REF legal_s206b \\w \\h ",
+      "word": "Section 2.06(b)",
+      "libreOffice": "Section 2.06(b)"
+    },
+    {
+      "instruction": " REF legal_s206b \\n \\h ",
+      "word": "(b)",
+      "libreOffice": "(b)"
+    },
+    {
+      "instruction": " REF legal_s206bii \\w \\h ",
+      "word": "Section 2.06(b)(ii)",
+      "libreOffice": "Section 2.06(b)(ii)"
+    },
+    {
+      "instruction": " REF legal_s206bii \\n \\h ",
+      "word": "(ii)",
+      "libreOffice": "(ii)"
+    },
+    {
+      "instruction": " REF create_2 \\w \\h ",
+      "word": "2",
+      "libreOffice": "2"
+    },
+    {
+      "instruction": " REF create_2 \\n \\h ",
+      "word": "2",
+      "libreOffice": "2"
+    },
+    {
+      "instruction": " REF create_2b \\w \\h ",
+      "word": "2(b)",
+      "libreOffice": "2.(b)"
+    },
+    {
+      "instruction": " REF create_2b \\n \\h ",
+      "word": "(b)",
+      "libreOffice": "(b)"
+    },
+    {
+      "instruction": " REF create_2bii \\w \\h ",
+      "word": "2(b)(ii)",
+      "libreOffice": "2.(b)(ii)"
+    },
+    {
+      "instruction": " REF create_2bii \\n \\h ",
+      "word": "(ii)",
+      "libreOffice": "(ii)"
+    },
+    {
+      "instruction": " REF create_3 \\w \\h ",
+      "word": "3",
+      "libreOffice": "3"
+    },
+    {
+      "instruction": " REF create_3 \\n \\h ",
+      "word": "3",
+      "libreOffice": "3"
+    },
+    {
+      "instruction": " REF create2_3a \\w \\h ",
+      "word": "3(a)",
+      "libreOffice": "3.(a)"
+    },
+    {
+      "instruction": " REF create2_3a \\n \\h ",
+      "word": "(a)",
+      "libreOffice": "(a)"
+    },
+    {
+      "instruction": " REF plain_2 \\w \\h ",
+      "word": "2",
+      "libreOffice": "2"
+    },
+    {
+      "instruction": " REF plain_2 \\n \\h ",
+      "word": "2",
+      "libreOffice": "2"
+    },
+    {
+      "instruction": " REF plain_21 \\w \\h ",
+      "word": "2.1",
+      "libreOffice": "2.1"
+    },
+    {
+      "instruction": " REF plain_21 \\n \\h ",
+      "word": "2.1",
+      "libreOffice": "2.1"
+    },
+    {
+      "instruction": " REF plain_21a \\w \\h ",
+      "word": "2.1(a)",
+      "libreOffice": "2.1. (a)"
+    },
+    {
+      "instruction": " REF plain_21a \\n \\h ",
+      "word": "(a)",
+      "libreOffice": "(a)"
+    },
+    {
+      "instruction": " REF B_1a \\w \\h ",
+      "word": "1)a)",
+      "libreOffice": "1)a)"
+    },
+    {
+      "instruction": " REF B_1a \\n \\h ",
+      "word": "a)",
+      "libreOffice": "a)"
+    },
+    {
+      "instruction": " REF C_1 \\w \\h ",
+      "word": "Article I",
+      "libreOffice": "Article I"
+    },
+    {
+      "instruction": " REF C_1 \\n \\h ",
+      "word": "Article I",
+      "libreOffice": "Article I"
+    },
+    {
+      "instruction": " REF C_11 \\w \\h ",
+      "word": "1.1",
+      "libreOffice": "1.1"
+    },
+    {
+      "instruction": " REF C_11 \\n \\h ",
+      "word": "1.1",
+      "libreOffice": "1.1"
+    },
+    {
+      "instruction": " REF C_11a \\w \\h ",
+      "word": "1.1(a)",
+      "libreOffice": "1.1.(a)"
+    },
+    {
+      "instruction": " REF C_11a \\n \\h ",
+      "word": "(a)",
+      "libreOffice": "(a)"
+    },
+    {
+      "instruction": " REF D_11 \\w \\h ",
+      "word": "1.1",
+      "libreOffice": "1.1"
+    },
+    {
+      "instruction": " REF D_11 \\n \\h ",
+      "word": "1.1",
+      "libreOffice": "1.1"
+    },
+    {
+      "instruction": " REF D_111 \\w \\h ",
+      "word": "1.1.1",
+      "libreOffice": "1.1.1"
+    },
+    {
+      "instruction": " REF D_111 \\n \\h ",
+      "word": "1.1",
+      "libreOffice": "1.1"
+    },
+    {
+      "instruction": " REF E_2 \\w \\h ",
+      "word": "2",
+      "libreOffice": "2"
+    },
+    {
+      "instruction": " REF E_2 \\n \\h ",
+      "word": "2",
+      "libreOffice": "2"
+    },
+    {
+      "instruction": " REF E_2b \\w \\h ",
+      "word": "2.b",
+      "libreOffice": "2.b"
+    },
+    {
+      "instruction": " REF E_2b \\n \\h ",
+      "word": "b",
+      "libreOffice": "b"
+    },
+    {
+      "instruction": " REF F_2 \\w \\h ",
+      "word": " 2. ",
+      "libreOffice": " 2. "
+    },
+    {
+      "instruction": " REF F_2 \\n \\h ",
+      "word": " 2. ",
+      "libreOffice": " 2. "
+    },
+    {
+      "instruction": " REF F_2b \\w \\h ",
+      "word": " 2.  (b) ",
+      "libreOffice": " 2. (b) "
+    },
+    {
+      "instruction": " REF F_2b \\n \\h ",
+      "word": " (b) ",
+      "libreOffice": " (b) "
+    },
+    {
+      "instruction": " REF G_1a \\w \\h ",
+      "word": "1.Section a",
+      "libreOffice": "1.Section a"
+    },
+    {
+      "instruction": " REF G_1a \\n \\h ",
+      "word": "Section a",
+      "libreOffice": "Section a"
+    },
+    {
+      "instruction": " REF H_1a \\w \\h ",
+      "word": "1.-a",
+      "libreOffice": "1.-a"
+    },
+    {
+      "instruction": " REF H_1a \\n \\h ",
+      "word": "-a",
+      "libreOffice": "-a"
+    },
+    {
+      "instruction": " REF I_1a \\w \\h ",
+      "word": "1:(a)",
+      "libreOffice": "1:(a)"
+    },
+    {
+      "instruction": " REF I_1a \\n \\h ",
+      "word": "(a)",
+      "libreOffice": "(a)"
+    },
+    {
+      "instruction": " REF J_1a \\w \\h ",
+      "word": "1.(a)",
+      "libreOffice": "1..(a)"
+    },
+    {
+      "instruction": " REF J_1a \\n \\h ",
+      "word": "(a)",
+      "libreOffice": "(a)"
+    },
+    {
+      "instruction": " REF K_1a \\w \\h ",
+      "word": "(1).a",
+      "libreOffice": "(1).a"
+    },
+    {
+      "instruction": " REF K_1a \\n \\h ",
+      "word": "a",
+      "libreOffice": "a"
+    },
+    {
+      "instruction": " REF L_1ai \\w \\h ",
+      "word": "1.a(i)",
+      "libreOffice": "1.a.(i)"
+    },
+    {
+      "instruction": " REF L_1ai \\n \\h ",
+      "word": "(i)",
+      "libreOffice": "(i)"
+    },
+    {
+      "instruction": " REF M_1a \\w \\h ",
+      "word": "1. a",
+      "libreOffice": "1. a"
+    },
+    {
+      "instruction": " REF M_1a \\n \\h ",
+      "word": " a",
+      "libreOffice": " a"
+    },
+    {
+      "instruction": " REF N_1a \\w \\h ",
+      "word": "a",
+      "libreOffice": "a"
+    },
+    {
+      "instruction": " REF N_1a \\n \\h ",
+      "word": "a",
+      "libreOffice": "a"
+    },
+    {
+      "instruction": " REF O_1a \\w \\h ",
+      "word": "•(a)",
+      "libreOffice": "(a)"
+    },
+    {
+      "instruction": " REF O_1a \\n \\h ",
+      "word": "(a)",
+      "libreOffice": "(a)"
+    },
+    {
+      "instruction": " REF P_1 \\w \\h ",
+      "word": "•",
+      "libreOffice": ""
+    },
+    {
+      "instruction": " REF P_1 \\n \\h ",
+      "word": "•",
+      "libreOffice": ""
+    },
+    {
+      "instruction": " REF P_1a \\w \\h ",
+      "word": "•◦",
+      "libreOffice": ""
+    },
+    {
+      "instruction": " REF P_1a \\n \\h ",
+      "word": "◦",
+      "libreOffice": ""
+    },
+    {
+      "instruction": " REF Q_1a \\w \\h ",
+      "word": "Article I(a)",
+      "libreOffice": "Article I(a)"
+    },
+    {
+      "instruction": " REF Q_1a \\n \\h ",
+      "word": "(a)",
+      "libreOffice": "(a)"
+    },
+    {
+      "instruction": " REF S_2 \\w \\h ",
+      "word": "6",
+      "libreOffice": "6"
+    },
+    {
+      "instruction": " REF S_2 \\n \\h ",
+      "word": "6",
+      "libreOffice": "6"
+    },
+    {
+      "instruction": " REF T_1a \\w \\h ",
+      "word": "7(a)",
+      "libreOffice": "7.(a)"
+    },
+    {
+      "instruction": " REF T_1a \\n \\h ",
+      "word": "(a)",
+      "libreOffice": "(a)"
+    },
+    {
+      "instruction": " REF U_1 \\w \\h ",
+      "word": "1.",
+      "libreOffice": "1."
+    },
+    {
+      "instruction": " REF U_1 \\n \\h ",
+      "word": "1.",
+      "libreOffice": "1."
+    },
+    {
+      "instruction": " REF U_1a \\w \\h ",
+      "word": "1.(a)",
+      "libreOffice": "1..(a)"
+    },
+    {
+      "instruction": " REF U_1a \\n \\h ",
+      "word": "(a)",
+      "libreOffice": "(a)"
+    },
+    {
+      "instruction": " REF V_1a \\w \\h ",
+      "word": "1.[a]",
+      "libreOffice": "1.[a"
+    },
+    {
+      "instruction": " REF V_1a \\n \\h ",
+      "word": "[a]",
+      "libreOffice": "[a"
+    },
+    {
+      "instruction": " REF W_1a \\w \\h ",
+      "word": "1.a)",
+      "libreOffice": "1.a)"
+    },
+    {
+      "instruction": " REF W_1a \\n \\h ",
+      "word": "a)",
+      "libreOffice": "a)"
+    },
+    {
+      "instruction": " REF Y_1a \\w \\h ",
+      "word": "1.)(a)",
+      "libreOffice": "1.)(a)"
+    },
+    {
+      "instruction": " REF Y_1a \\n \\h ",
+      "word": "(a)",
+      "libreOffice": "(a)"
+    },
+    {
+      "instruction": " REF Z_1a \\w \\h ",
+      "word": "1.{a}",
+      "libreOffice": "1.{a}"
+    },
+    {
+      "instruction": " REF Z_1a \\n \\h ",
+      "word": "{a}",
+      "libreOffice": "{a}"
+    },
+    {
+      "instruction": " REF AB_1ai \\w \\h ",
+      "word": "1(a)i",
+      "libreOffice": "1.(a)i"
+    },
+    {
+      "instruction": " REF AB_1ai \\n \\h ",
+      "word": "i",
+      "libreOffice": "i"
+    },
+    {
+      "instruction": " REF AC_1 \\w \\h ",
+      "word": "Step 1",
+      "libreOffice": "Step 1"
+    },
+    {
+      "instruction": " REF AC_1 \\n \\h ",
+      "word": "Step 1",
+      "libreOffice": "Step 1"
+    },
+    {
+      "instruction": " REF AD_1a \\w \\h ",
+      "word": "A(1)",
+      "libreOffice": "A.(1)"
+    },
+    {
+      "instruction": " REF AD_1a \\n \\h ",
+      "word": "(1)",
+      "libreOffice": "(1)"
+    },
+    {
+      "instruction": " REF C_11a \\w \\h ",
+      "word": "1.1(a)",
+      "libreOffice": "1.1.(a)"
+    },
+    {
+      "instruction": " REF legal_art2 \\n \\h ",
+      "word": "ARTICLE II",
+      "libreOffice": "ARTICLE II"
+    },
+    {
+      "instruction": " REF legal_s206bii \\w \\h ",
+      "word": "Section 2.06(b)(ii)",
+      "libreOffice": "Section 2.06(b)(ii)"
+    },
+    {
+      "instruction": " REF create_2b \\n \\h ",
+      "word": "(b)",
+      "libreOffice": "(b)"
+    }
+  ],
+  "wordNativeCrossReferenceInstructions": [
+    " REF legal_s206b \\w \\h ",
+    " REF legal_s206b \\n \\h "
+  ],
+  "afterInsertingSectionAbove": {
+    "insertedAfterParagraph": "Adjustment Mechanics.",
+    "insertedText": "Inserted Section.",
+    "style": "Heading 2",
+    "references": [
+      {
+        "instruction": " REF legal_s206b \\w \\h ",
+        "word": "Section 2.07(b)"
+      },
+      {
+        "instruction": " REF legal_s101 \\w \\h ",
+        "word": "Section 1.01"
+      },
+      {
+        "instruction": " REF legal_s101 \\n \\h ",
+        "word": "Section 1.01"
+      },
+      {
+        "instruction": " REF legal_art2 \\w \\h ",
+        "word": "ARTICLE II"
+      },
+      {
+        "instruction": " REF legal_art2 \\n \\h ",
+        "word": "ARTICLE II"
+      },
+      {
+        "instruction": " REF legal_s206 \\w \\h ",
+        "word": "Section 2.07"
+      },
+      {
+        "instruction": " REF legal_s206 \\n \\h ",
+        "word": "Section 2.07"
+      },
+      {
+        "instruction": " REF legal_s206b \\w \\h ",
+        "word": "Section 2.07(b)"
+      },
+      {
+        "instruction": " REF legal_s206b \\n \\h ",
+        "word": "(b)"
+      },
+      {
+        "instruction": " REF legal_s206bii \\w \\h ",
+        "word": "Section 2.07(b)(ii)"
+      },
+      {
+        "instruction": " REF legal_s206bii \\n \\h ",
+        "word": "(ii)"
+      },
+      {
+        "instruction": " REF create_2 \\w \\h ",
+        "word": "2"
+      },
+      {
+        "instruction": " REF create_2 \\n \\h ",
+        "word": "2"
+      },
+      {
+        "instruction": " REF create_2b \\w \\h ",
+        "word": "2(b)"
+      },
+      {
+        "instruction": " REF create_2b \\n \\h ",
+        "word": "(b)"
+      },
+      {
+        "instruction": " REF create_2bii \\w \\h ",
+        "word": "2(b)(ii)"
+      },
+      {
+        "instruction": " REF create_2bii \\n \\h ",
+        "word": "(ii)"
+      },
+      {
+        "instruction": " REF create_3 \\w \\h ",
+        "word": "3"
+      },
+      {
+        "instruction": " REF create_3 \\n \\h ",
+        "word": "3"
+      },
+      {
+        "instruction": " REF create2_3a \\w \\h ",
+        "word": "3(a)"
+      },
+      {
+        "instruction": " REF create2_3a \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF plain_2 \\w \\h ",
+        "word": "2"
+      },
+      {
+        "instruction": " REF plain_2 \\n \\h ",
+        "word": "2"
+      },
+      {
+        "instruction": " REF plain_21 \\w \\h ",
+        "word": "2.1"
+      },
+      {
+        "instruction": " REF plain_21 \\n \\h ",
+        "word": "2.1"
+      },
+      {
+        "instruction": " REF plain_21a \\w \\h ",
+        "word": "2.1(a)"
+      },
+      {
+        "instruction": " REF plain_21a \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF B_1a \\w \\h ",
+        "word": "1)a)"
+      },
+      {
+        "instruction": " REF B_1a \\n \\h ",
+        "word": "a)"
+      },
+      {
+        "instruction": " REF C_1 \\w \\h ",
+        "word": "Article I"
+      },
+      {
+        "instruction": " REF C_1 \\n \\h ",
+        "word": "Article I"
+      },
+      {
+        "instruction": " REF C_11 \\w \\h ",
+        "word": "1.1"
+      },
+      {
+        "instruction": " REF C_11 \\n \\h ",
+        "word": "1.1"
+      },
+      {
+        "instruction": " REF C_11a \\w \\h ",
+        "word": "1.1(a)"
+      },
+      {
+        "instruction": " REF C_11a \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF D_11 \\w \\h ",
+        "word": "1.1"
+      },
+      {
+        "instruction": " REF D_11 \\n \\h ",
+        "word": "1.1"
+      },
+      {
+        "instruction": " REF D_111 \\w \\h ",
+        "word": "1.1.1"
+      },
+      {
+        "instruction": " REF D_111 \\n \\h ",
+        "word": "1.1"
+      },
+      {
+        "instruction": " REF E_2 \\w \\h ",
+        "word": "2"
+      },
+      {
+        "instruction": " REF E_2 \\n \\h ",
+        "word": "2"
+      },
+      {
+        "instruction": " REF E_2b \\w \\h ",
+        "word": "2.b"
+      },
+      {
+        "instruction": " REF E_2b \\n \\h ",
+        "word": "b"
+      },
+      {
+        "instruction": " REF F_2 \\w \\h ",
+        "word": " 2. "
+      },
+      {
+        "instruction": " REF F_2 \\n \\h ",
+        "word": " 2. "
+      },
+      {
+        "instruction": " REF F_2b \\w \\h ",
+        "word": " 2.  (b) "
+      },
+      {
+        "instruction": " REF F_2b \\n \\h ",
+        "word": " (b) "
+      },
+      {
+        "instruction": " REF G_1a \\w \\h ",
+        "word": "1.Section a"
+      },
+      {
+        "instruction": " REF G_1a \\n \\h ",
+        "word": "Section a"
+      },
+      {
+        "instruction": " REF H_1a \\w \\h ",
+        "word": "1.-a"
+      },
+      {
+        "instruction": " REF H_1a \\n \\h ",
+        "word": "-a"
+      },
+      {
+        "instruction": " REF I_1a \\w \\h ",
+        "word": "1:(a)"
+      },
+      {
+        "instruction": " REF I_1a \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF J_1a \\w \\h ",
+        "word": "1.(a)"
+      },
+      {
+        "instruction": " REF J_1a \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF K_1a \\w \\h ",
+        "word": "(1).a"
+      },
+      {
+        "instruction": " REF K_1a \\n \\h ",
+        "word": "a"
+      },
+      {
+        "instruction": " REF L_1ai \\w \\h ",
+        "word": "1.a(i)"
+      },
+      {
+        "instruction": " REF L_1ai \\n \\h ",
+        "word": "(i)"
+      },
+      {
+        "instruction": " REF M_1a \\w \\h ",
+        "word": "1. a"
+      },
+      {
+        "instruction": " REF M_1a \\n \\h ",
+        "word": " a"
+      },
+      {
+        "instruction": " REF N_1a \\w \\h ",
+        "word": "a"
+      },
+      {
+        "instruction": " REF N_1a \\n \\h ",
+        "word": "a"
+      },
+      {
+        "instruction": " REF O_1a \\w \\h ",
+        "word": "•(a)"
+      },
+      {
+        "instruction": " REF O_1a \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF P_1 \\w \\h ",
+        "word": "•"
+      },
+      {
+        "instruction": " REF P_1 \\n \\h ",
+        "word": "•"
+      },
+      {
+        "instruction": " REF P_1a \\w \\h ",
+        "word": "•◦"
+      },
+      {
+        "instruction": " REF P_1a \\n \\h ",
+        "word": "◦"
+      },
+      {
+        "instruction": " REF Q_1a \\w \\h ",
+        "word": "Article I(a)"
+      },
+      {
+        "instruction": " REF Q_1a \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF S_2 \\w \\h ",
+        "word": "6"
+      },
+      {
+        "instruction": " REF S_2 \\n \\h ",
+        "word": "6"
+      },
+      {
+        "instruction": " REF T_1a \\w \\h ",
+        "word": "7(a)"
+      },
+      {
+        "instruction": " REF T_1a \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF U_1 \\w \\h ",
+        "word": "1."
+      },
+      {
+        "instruction": " REF U_1 \\n \\h ",
+        "word": "1."
+      },
+      {
+        "instruction": " REF U_1a \\w \\h ",
+        "word": "1.(a)"
+      },
+      {
+        "instruction": " REF U_1a \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF V_1a \\w \\h ",
+        "word": "1.[a]"
+      },
+      {
+        "instruction": " REF V_1a \\n \\h ",
+        "word": "[a]"
+      },
+      {
+        "instruction": " REF W_1a \\w \\h ",
+        "word": "1.a)"
+      },
+      {
+        "instruction": " REF W_1a \\n \\h ",
+        "word": "a)"
+      },
+      {
+        "instruction": " REF Y_1a \\w \\h ",
+        "word": "1.)(a)"
+      },
+      {
+        "instruction": " REF Y_1a \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF Z_1a \\w \\h ",
+        "word": "1.{a}"
+      },
+      {
+        "instruction": " REF Z_1a \\n \\h ",
+        "word": "{a}"
+      },
+      {
+        "instruction": " REF AB_1ai \\w \\h ",
+        "word": "1(a)i"
+      },
+      {
+        "instruction": " REF AB_1ai \\n \\h ",
+        "word": "i"
+      },
+      {
+        "instruction": " REF AC_1 \\w \\h ",
+        "word": "Step 1"
+      },
+      {
+        "instruction": " REF AC_1 \\n \\h ",
+        "word": "Step 1"
+      },
+      {
+        "instruction": " REF AD_1a \\w \\h ",
+        "word": "A(1)"
+      },
+      {
+        "instruction": " REF AD_1a \\n \\h ",
+        "word": "(1)"
+      },
+      {
+        "instruction": " REF C_11a \\w \\h ",
+        "word": "1.1(a)"
+      },
+      {
+        "instruction": " REF legal_art2 \\n \\h ",
+        "word": "ARTICLE II"
+      },
+      {
+        "instruction": " REF legal_s206bii \\w \\h ",
+        "word": "Section 2.07(b)(ii)"
+      },
+      {
+        "instruction": " REF create_2b \\n \\h ",
+        "word": "(b)"
+      }
+    ]
+  },
+  "refused": [
+    {
+      "case": "never-used ancestor level",
+      "numbering": [
+        "%1. decimal",
+        "(%2) lowerLetter"
+      ],
+      "paragraphs": "one level-1 paragraph, no level-0 paragraph",
+      "instruction": " REF r1a \\w \\h ",
+      "word": "1(a)"
+    },
+    {
+      "case": "unnumbered target paragraph",
+      "instruction": " REF u1 \\w \\h ",
+      "word": "0",
+      "note": "\\n and \\r also give 0; REF without a number switch gives the paragraph text"
+    }
+  ],
+  "relativeContext": {
+    "note": "REF \\r results in probe 1 (legal numbering ARTICLE %1 / Section %1.%2 / (%3) / (%4)) by the location of the field; the result drops leading levels the field's own paragraph shares with the target, so it depends on where the reference sits.",
+    "byLocation": {
+      "L1-start": {
+        "s206b": "Section 2.06(b)",
+        "s206bii": "Section 2.06(b)(ii)"
+      },
+      "L2-art1-s101-a": {
+        "s206b": "Section 2.06(b)",
+        "s206bii": "Section 2.06(b)(ii)"
+      },
+      "L4-s205-a": {
+        "s206b": "Section 2.06(b)",
+        "s206bii": "Section 2.06(b)(ii)"
+      },
+      "L3-s206-a": {
+        "s206b": "(b)",
+        "s206bii": "(b)(ii)"
+      },
+      "L8-s206b-iii": {
+        "s206b": "(b)",
+        "s206bii": "(ii)"
+      },
+      "L6-s207-a": {
+        "s206b": "Section 2.06(b)",
+        "s206bii": "Section 2.06(b)(ii)"
+      },
+      "L5-after-art2-unnumbered": {
+        "s206b": "Section 2.06(b)",
+        "s206bii": "Section 2.06(b)(ii)"
+      },
+      "L7-plain-2.2": {
+        "s206b": "Section 2.06(b)",
+        "s206bii": "Section 2.06(b)(ii)"
+      },
+      "L9-end": {
+        "s206b": "Section 2.06(b)",
+        "s206bii": "Section 2.06(b)(ii)"
+      }
+    }
+  }
+}

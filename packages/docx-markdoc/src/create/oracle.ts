@@ -23,7 +23,13 @@ import { parseCreationFrontmatter } from './validate.js';
  * - a footer page number is a PAGE field, and pages number continuously from 1;
  * - a `{% fnref /%}` adds no text to its paragraph; its `{% footnote %}` body
  *   becomes a note numbered 1, 2, 3, … in the order of the references, and
- *   the body blocks themselves are not body paragraphs.
+ *   the body blocks themselves are not body paragraphs;
+ * - a `{% xref to="id" /%}` shows the list number of the item marked
+ *   `{% #id %}` as Word shows a REF field with `\w` (full context): the
+ *   numbers of the item and its ancestors joined, with the period of `1.`
+ *   dropped (`2`, `2(b)`, `2(b)(ii)`); `number="paragraph"` shows the item's
+ *   own number (`\n`: `2`, `(b)`, `(ii)`); `format="section"` puts
+ *   `Section ` before it.
  */
 
 /** The only normalization applied before comparing; anything wider could hide an omission. */
@@ -99,16 +105,52 @@ function lineOf(node: MarkdocNode): number | undefined {
   return start === undefined ? undefined : start + 1;
 }
 
-function inlineText(node: MarkdocNode): string {
+/** What a cross-reference to each `{% #id %}` list item shows, by number form. */
+type CrossReferenceTexts = ReadonlyMap<string, { full: string; paragraph: string }>;
+
+/**
+ * Number every ordered list item that carries an id, by the same contract as
+ * the markers: each top-level list counts on its own from its first marker,
+ * nested lists from 1.
+ */
+function crossReferenceTexts(ast: MarkdocNode, reader: ProjectionReader): Map<string, { full: string; paragraph: string }> {
+  const texts = new Map<string, { full: string; paragraph: string }>();
+  const visit = (list: MarkdocNode, ancestors: readonly number[]) => {
+    if (list.attributes.ordered !== true) return;
+    const depth = ancestors.length;
+    let n = depth === 0 && Number.isInteger(list.attributes.start) ? Number(list.attributes.start) : 1;
+    for (const item of list.children) {
+      const values = [...ancestors, n];
+      const own = values.map((value, level) => (level === 0 ? String(value) : level === 1 ? `(${letters(value)})` : `(${roman(value)})`));
+      // LibreOffice keeps the period of `1.` before `(`; Word drops it.
+      const full = reader === 'libreoffice' && depth > 0 ? `${own[0]}.${own.slice(1).join('')}` : own.join('');
+      if (item.attributes.id !== undefined) texts.set(String(item.attributes.id), { full, paragraph: own[depth]! });
+      for (const child of item.children) if (child.type === 'list') visit(child, values);
+      n += 1;
+    }
+  };
+  for (const node of ast.children) if (node.type === 'list') visit(node, []);
+  return texts;
+}
+
+function inlineText(node: MarkdocNode, references: CrossReferenceTexts = new Map()): string {
+  const children = () => node.children.map((child) => inlineText(child, references)).join('');
   switch (node.type) {
     case 'text': return String(node.attributes.content ?? '');
     case 'softbreak': return ' ';
     case 'hardbreak': return '\n';
     case 'tag':
-      if (node.tag === 'fill') return `[${node.children.map(inlineText).join('')}]`;
+      if (node.tag === 'fill') return `[${children()}]`;
       if (node.tag === 'fnref') return `${REFERENCE_OPEN}${String(node.attributes.id ?? '')}${REFERENCE_CLOSE}`;
-      return node.children.map(inlineText).join('');
-    default: return node.children.map(inlineText).join('');
+      if (node.tag === 'xref') {
+        const target = references.get(String(node.attributes.to));
+        const number = node.attributes.number === 'paragraph' ? target?.paragraph : target?.full;
+        // Validation rejects a dangling target before the oracle runs; an empty
+        // expectation here would only make the comparison fail, never pass.
+        return `${node.attributes.format === 'section' ? 'Section ' : ''}${number ?? ''}`;
+      }
+      return children();
+    default: return children();
   }
 }
 
@@ -133,9 +175,18 @@ function paragraphsOfTag(node: MarkdocNode): MarkdocNode[] {
   return paragraphs.length > 0 ? paragraphs : [node];
 }
 
+/**
+ * Whose rendering of a cross-reference number to expect: Word's cached
+ * result (the DOCX and its re-import), or LibreOffice's, which recalculates
+ * REF fields on load (the PDF check).
+ */
+export type ProjectionReader = 'word' | 'libreoffice';
+
 /** Read the expected plain text straight from the Markdoc source. */
-export function projectSourceText(source: string): SourceProjection {
+export function projectSourceText(source: string, options: { reader?: ProjectionReader } = {}): SourceProjection {
   const ast = Markdoc.parse(source);
+  const crossReferences = crossReferenceTexts(ast, options.reader ?? 'word');
+  const textOf = (node: MarkdocNode) => inlineText(node, crossReferences);
   const frontmatter = parseCreationFrontmatter(ast.attributes.frontmatter as string | undefined);
   const footerOf = (text: unknown, pageNumbers: unknown): string[] =>
     [...(typeof text === 'string' && text ? [text] : []), ...(pageNumbers === true ? [PAGE_NUMBER_FIELD] : [])];
@@ -170,7 +221,7 @@ export function projectSourceText(source: string): SourceProjection {
     for (const item of list.children) {
       for (const child of item.children) {
         if (child.type === 'list') listItems(child, depth + 1);
-        else push(inlineText(child), item, { marker: listMarker(ordered, depth, n) });
+        else push(textOf(child), item, { marker: listMarker(ordered, depth, n) });
       }
       n += 1;
     }
@@ -179,10 +230,10 @@ export function projectSourceText(source: string): SourceProjection {
     switch (node.tag) {
       case 'center':
       case 'legend':
-        for (const paragraph of paragraphsOfTag(node)) push(paragraph === node ? node.children.map(inlineText).join('') : inlineText(paragraph), paragraph);
+        for (const paragraph of paragraphsOfTag(node)) push(paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph), paragraph);
         return;
       case 'signer': {
-        const name = node.attributes.name !== undefined ? String(node.attributes.name) : paragraphsOfTag(node).map((paragraph) => (paragraph === node ? node.children.map(inlineText).join('') : inlineText(paragraph))).join('');
+        const name = node.attributes.name !== undefined ? String(node.attributes.name) : paragraphsOfTag(node).map((paragraph) => (paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph))).join('');
         const date = node.attributes.date === undefined ? '' : `\t${String(node.attributes.date)}`;
         push(`${SIGNATURE_LINE}\n${name}${date}`, node);
         return;
@@ -193,14 +244,14 @@ export function projectSourceText(source: string): SourceProjection {
         let row = 0;
         for (const group of grid?.children ?? []) {
           for (const tr of group.children) {
-            for (const cell of tr.children) push(inlineText(cell), cell, { cell: true, table: { id, row } });
+            for (const cell of tr.children) push(textOf(cell), cell, { cell: true, table: { id, row } });
             row += 1;
           }
         }
         return;
       }
       case 'footnote':
-        notes.set(String(node.attributes.id), paragraphsOfTag(node).map((paragraph) => (paragraph === node ? node.children.map(inlineText).join('') : inlineText(paragraph))));
+        notes.set(String(node.attributes.id), paragraphsOfTag(node).map((paragraph) => (paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph))));
         return;
       case 'section': {
         const { footer } = node.attributes;
@@ -218,8 +269,8 @@ export function projectSourceText(source: string): SourceProjection {
     if (sole) tag(sole);
     else if (node.type === 'tag') tag(node);
     else if (node.type === 'list') listItems(node, 0);
-    else if (node.type === 'blockquote') for (const child of node.children) push(inlineText(child), child);
-    else push(inlineText(node), node);
+    else if (node.type === 'blockquote') for (const child of node.children) push(textOf(child), child);
+    else push(textOf(node), node);
   }
   const footnotes = references.map((id) => ({ id, paragraphs: notes.get(id) ?? [] }));
   return { body, footers, ...(footnotes.length ? { footnotes } : {}) };

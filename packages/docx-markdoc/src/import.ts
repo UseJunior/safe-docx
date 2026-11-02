@@ -209,6 +209,40 @@ function assertNamedStyle(styles: StylesModel, styleId: string, annotationId: st
 }
 
 /**
+ * The only complex fields an annotation body may hold are REF fields (a
+ * generated cross-reference in a footnote); they import as their cached
+ * result text. Any other field, or a field left open, stays unsupported.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
+ * @see https://github.com/UseJunior/safe-docx/issues/1236
+ */
+function assertOnlyReferenceFields(container: Element, annotationId: string): void {
+  let instruction: string | null = null;
+  const unsupported = (element: string, detail: string) => new DocxMarkdocError(
+    'ANNOTATION_IMPORT_UNSUPPORTED',
+    `Annotation ${annotationId} contains unsupported ${element} (${detail}).`,
+    { annotationId, element, reason: 'unsupported-field' },
+  );
+  for (const node of Array.from(container.getElementsByTagNameNS(OOXML.W_NS, '*'))) {
+    const element = node as Element;
+    if (element.localName === 'instrText') {
+      if (instruction === null) throw unsupported('w:instrText', 'outside a field');
+      instruction += element.textContent ?? '';
+    } else if (element.localName === 'fldChar') {
+      const type = element.getAttributeNS(OOXML.W_NS, 'fldCharType') ?? element.getAttribute('w:fldCharType');
+      if (type === 'begin' && instruction === null) instruction = '';
+      else if ((type === 'separate' || type === 'end') && instruction !== null) {
+        if (instruction.trim().split(/\s+/u)[0] !== 'REF') throw unsupported('w:fldChar', `a field other than REF: ${instruction.trim()}`);
+        if (type === 'end') instruction = null;
+      } else {
+        throw unsupported('w:fldChar', `an unbalanced field character ${type ?? ''}`.trim());
+      }
+    }
+  }
+  if (instruction !== null) throw unsupported('w:fldChar', 'a field without an end');
+}
+
+/**
  * Validate the admitted annotation-body subset and resolve each external link
  * against the relationship part owned by the annotation source part.
  *
@@ -224,7 +258,8 @@ function assertAdmittedAnnotationElement(
   styles: StylesModel,
   relationshipsDocument: Document | null,
 ): Map<Element, string> {
-  const admitted = new Set(['p', 'pPr', 'pStyle', 'r', 'rPr', 't', marker, 'b', 'i', 'u', 'color', 'highlight', 'rStyle', 'vertAlign', 'sz', 'hyperlink']);
+  const admitted = new Set(['p', 'pPr', 'pStyle', 'r', 'rPr', 't', marker, 'b', 'i', 'u', 'color', 'highlight', 'rStyle', 'vertAlign', 'sz', 'hyperlink', 'fldChar', 'instrText']);
+  assertOnlyReferenceFields(container, annotationId);
   const relationships = parseRelationshipEntries(relationshipsDocument);
   const resolvedHyperlinks = new Map<Element, string>();
   for (const node of Array.from(container.getElementsByTagNameNS(OOXML.W_NS, '*'))) {

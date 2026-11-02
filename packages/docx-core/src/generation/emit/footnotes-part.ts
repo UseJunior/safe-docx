@@ -36,7 +36,7 @@ import { buildParagraph } from './paragraph.js';
 export function emitFootnotesPartIfNeeded(
   ctx: CompileContext,
   collector: FootnoteCollector,
-  blockCtx: Pick<BlockEmitContext, 'numberingIds' | 'themeColorValues'>,
+  blockCtx: Pick<BlockEmitContext, 'numberingIds' | 'crossReferences' | 'themeColorValues'>,
 ): void {
   if (collector.collected.length === 0) return;
 
@@ -44,8 +44,13 @@ export function emitFootnotesPartIfNeeded(
   const doc = parseXml(FOOTNOTES_XML_TEMPLATE);
   const root = doc.documentElement!;
   // A note body is its own story: no drafting notes and no nested footnotes
-  // (validation rejects both, so neither collector is passed on).
-  const noteCtx: BlockEmitContext = { numberingIds: blockCtx.numberingIds, themeColorValues: blockCtx.themeColorValues };
+  // (validation rejects both, so neither collector is passed on). It may hold
+  // cross-references, resolved by now because the body is complete.
+  const noteCtx: BlockEmitContext = {
+    numberingIds: blockCtx.numberingIds,
+    themeColorValues: blockCtx.themeColorValues,
+    ...(blockCtx.crossReferences ? { crossReferences: blockCtx.crossReferences } : {}),
+  };
   for (const { id, footnote } of collector.collected) {
     const note = createWmlElement(doc, W.footnote, { 'w:id': String(id) });
     footnote.blocks.forEach((paragraph, index) => {

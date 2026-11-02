@@ -1,4 +1,5 @@
 import type { Node as MarkdocNode } from '@markdoc/markdoc';
+import { BookmarkNameError, bookmarkNamesForSlugs } from '@usejunior/docx-core';
 import { DocxMarkdocError } from '../errors.js';
 
 /**
@@ -23,12 +24,27 @@ export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
  * Inline tags and the attributes each admits. `literal` makes its content
  * literal text and `fill` marks a fill-in (both checked below); `u` underlines
  * its content and, like `**` and `*`, keeps the context it sits in; `fnref`
- * places the reference mark of the `{% footnote %}` block with the same id. A
- * new inline tag needs an entry here, a branch in `visit()` below, a renderer
+ * places the reference mark of the `{% footnote %}` block with the same id;
+ * `xref` places a cross-reference to the heading or list item whose `{% #id %}`
+ * it names (`to`), as its full number (`number="full"`, the default) or its
+ * own level's number (`number="paragraph"`), optionally preceded by the word
+ * "Section " (`format="section"`). A new inline tag needs an entry here, a branch in `visit()` below, a renderer
  * (an engine branch or a creation theme plugin) and, when it changes the text,
  * a case in the round-trip oracle.
  */
-const INLINE_TAGS: Record<string, ReadonlySet<string>> = { literal: new Set(), fill: new Set(), u: new Set(), fnref: new Set(['id']) };
+const INLINE_TAGS: Record<string, ReadonlySet<string>> = {
+  literal: new Set(),
+  fill: new Set(),
+  u: new Set(),
+  fnref: new Set(['id']),
+  xref: new Set(['to', 'number', 'format']),
+};
+/** `{% xref number="…" %}` values: the full number ("2(b)") or the target level's own ("(b)"). */
+export const XREF_NUMBERS: ReadonlySet<string> = new Set(['full', 'paragraph']);
+/** `{% xref format="…" %}` values: "section" puts the word "Section " before the number. */
+export const XREF_FORMATS: ReadonlySet<string> = new Set(['section']);
+/** A target id: lowercase kebab-case starting with a letter, such as `purchase-price-adjustment`. */
+const TARGET_ID_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 /** Tags that structure the document and may appear only at the top level. */
 const TOP_LEVEL_ONLY = new Set(['page-break', 'section', 'footnote']);
 
@@ -123,6 +139,8 @@ function inlineText(node: MarkdocNode, skipLiteral = false): string {
   if (node.type === 'softbreak') return ' ';
   if (node.type === 'hardbreak') return '\n';
   if (skipLiteral && node.type === 'tag' && node.tag === 'literal') return '';
+  // A cross-reference renders as its target's number: it is text, not an empty block.
+  if (node.type === 'tag' && node.tag === 'xref') return '[xref]';
   return node.children.map((child) => inlineText(child, skipLiteral)).join('');
 }
 
@@ -198,6 +216,10 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
           if (literal || fillDepth > 0) creationError('INVALID_FOOTNOTE', `{% fnref /%} cannot appear inside {% ${literal ? 'literal' : 'fill'} %}.`, node, line);
           return;
         }
+        if (node.tag === 'xref') {
+          checkCrossReferenceTag(node, line, literal ? 'literal' : fillDepth > 0 ? 'fill' : null);
+          return;
+        }
         if (node.tag === 'fill') {
           if (literal) creationError('INVALID_FILL_IN', '{% fill %} cannot appear inside {% literal %}.', node, line);
           if (!highlight) creationError('INVALID_FILL_IN', '{% fill %} cannot appear in a legend, which is never highlighted.', node, line);
@@ -222,6 +244,22 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
   children.forEach((child) => visit(child, false));
   if (!text) creationError('EMPTY_CREATION_BLOCK', 'Empty block.', undefined, line);
   if (depth > 0) creationError('UNBALANCED_FILL_IN', `Unclosed '[' in fill-in text (fill-ins: brackets); wrap literal brackets in {% literal %}.`, undefined, line);
+}
+
+/** One `{% xref /%}`: self-closing, outside literal text and fill-ins, with a well-formed id and options. */
+function checkCrossReferenceTag(node: MarkdocNode, line: number | undefined, inside: 'literal' | 'fill' | null): void {
+  if (node.children.length > 0) creationError('INVALID_CROSS_REFERENCE', '{% xref /%} is self-closing; its text is the target\'s number.', node, line);
+  if (inside) creationError('INVALID_CROSS_REFERENCE', `{% xref /%} cannot appear inside {% ${inside} %}.`, node, line);
+  const { to, number, format } = node.attributes;
+  if (typeof to !== 'string' || !TARGET_ID_RE.test(to)) {
+    creationError('INVALID_CROSS_REFERENCE', `{% xref /%} needs to="…" naming a kebab-case id, such as to="purchase-price-adjustment"; got ${JSON.stringify(to ?? null)}.`, node, line);
+  }
+  if (number !== undefined && (typeof number !== 'string' || !XREF_NUMBERS.has(number))) {
+    creationError('INVALID_CROSS_REFERENCE', `{% xref /%} number must be "full" or "paragraph", got ${JSON.stringify(number)}.`, node, line);
+  }
+  if (format !== undefined && (typeof format !== 'string' || !XREF_FORMATS.has(format))) {
+    creationError('INVALID_CROSS_REFERENCE', `{% xref /%} format must be "section", got ${JSON.stringify(format)}.`, node, line);
+  }
 }
 
 function checkList(list: MarkdocNode, depth: number): void {
@@ -409,6 +447,7 @@ export function validateCreationAst(children: MarkdocNode[], options: { fillIns?
   try {
     validateBlocks(children);
     checkFootnotePairs(children);
+    checkCrossReferenceTargets(children);
   } finally {
     bracketFillIns = false;
     inFootnoteBody = false;
@@ -446,6 +485,73 @@ function validateBlocks(children: MarkdocNode[]): void {
         break;
       default:
         creationError('UNSUPPORTED_CREATION_SYNTAX', `Unsupported block syntax '${node.type}'.`, node);
+    }
+  }
+}
+
+type TargetSite = { kind: 'heading' | 'numbered' | 'bullet'; line?: number };
+
+/**
+ * Every `{% #id %}` target, keyed by id: a heading, or a list item of an
+ * ordered (numbered) or bullet list. An id anywhere else fails with
+ * ID_PLACEMENT; tag attributes named `id` (`fnref`, `footnote`) are not
+ * targets.
+ */
+function collectTargets(node: MarkdocNode, ordered: boolean, line: number | undefined, out: Map<string, TargetSite>): void {
+  const here = lineOf(node) ?? line;
+  const id = node.type === 'tag' || node.type === 'document' ? undefined : node.attributes.id;
+  if (id !== undefined) {
+    if (node.type !== 'heading' && node.type !== 'item') {
+      creationError('ID_PLACEMENT', `An id ({% #${String(id)} %}) may mark only a heading or a list item, not '${node.type}'.`, undefined, here);
+    }
+    if (typeof id !== 'string' || !TARGET_ID_RE.test(id)) {
+      creationError('INVALID_ID', `Id '${String(id)}' must be lowercase kebab-case starting with a letter, such as purchase-price-adjustment.`, undefined, here);
+    }
+    const earlier = out.get(id);
+    if (earlier) creationError('DUPLICATE_ID', `Id '${id}' is used twice (first at line ${earlier.line ?? '?'}).`, undefined, here);
+    const kind = node.type === 'heading' ? 'heading' : ordered ? 'numbered' : 'bullet';
+    out.set(id, { kind, ...(here === undefined ? {} : { line: here }) });
+  }
+  const childOrdered = node.type === 'list' ? node.attributes.ordered === true : ordered;
+  for (const child of node.children) collectTargets(child, childOrdered, here, out);
+}
+
+/** Every `{% xref /%}` under `node`, in document order, with the line of its nearest block. */
+function collectCrossReferences(node: MarkdocNode, line: number | undefined, out: Array<{ to: string; line?: number }>): void {
+  const here = lineOf(node) ?? line;
+  if (node.type === 'tag' && node.tag === 'xref') out.push({ to: String(node.attributes.to), ...(here === undefined ? {} : { line: here }) });
+  for (const child of node.children) collectCrossReferences(child, here, out);
+}
+
+/**
+ * Ids are unique and map to distinct Word bookmark names; every
+ * `{% xref /%}` names an id that marks a numbered list item. Headings and
+ * bullets carry no number in a created document, so Word would show "0" or a
+ * bullet glyph for them.
+ */
+function checkCrossReferenceTargets(children: MarkdocNode[]): void {
+  const targets = new Map<string, TargetSite>();
+  for (const node of children) collectTargets(node, false, undefined, targets);
+  try {
+    bookmarkNamesForSlugs(targets.keys());
+  } catch (error) {
+    if (!(error instanceof BookmarkNameError)) throw error;
+    creationError('ID_COLLISION', `${error.message}.`, undefined, targets.get(error.slugs.at(-1)!)?.line);
+  }
+  const references: Array<{ to: string; line?: number }> = [];
+  for (const node of children) collectCrossReferences(node, undefined, references);
+  for (const reference of references) {
+    const target = targets.get(reference.to);
+    if (!target) {
+      creationError('XREF_UNKNOWN_ID', `{% xref to="${reference.to}" /%} names no {% #${reference.to} %} target.`, undefined, reference.line);
+    }
+    if (target.kind !== 'numbered') {
+      creationError(
+        'XREF_TARGET_NOT_NUMBERED',
+        `{% xref to="${reference.to}" /%} names a ${target.kind === 'heading' ? 'heading' : 'bullet item'} (line ${target.line ?? '?'}), which has no number in a created document; point it at a numbered list item.`,
+        undefined,
+        reference.line,
+      );
     }
   }
 }

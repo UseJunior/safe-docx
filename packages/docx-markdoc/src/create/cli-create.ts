@@ -88,19 +88,26 @@ async function existingKind(target: string): Promise<'file' | 'symlink' | 'other
 }
 
 /**
- * Body paragraphs as a PDF shows them: each footnote reference's number
- * sits where the reference is, joined to the text around it.
+ * Body paragraphs as a LibreOffice PDF shows them: each footnote reference's
+ * number sits where the reference is, joined to the text around it, and each
+ * cross-reference shows LibreOffice's form of its number. LibreOffice
+ * recalculates REF fields on load and keeps the period of `1.` before `(`, so
+ * Word's cached `2(b)` renders as `2.(b)` (see
+ * scripts/oracle/word/evidence/issue-1236-word-16.114.json).
  */
-function paragraphsWithFootnoteNumbers(readback: CreatedDocument['readback']): string[] {
-  const marks = new Map<number, Array<{ offset: number; number: number }>>();
-  readback.footnoteReferences.forEach(({ paragraph, offset }, index) => {
-    marks.set(paragraph, [...(marks.get(paragraph) ?? []), { offset, number: index + 1 }]);
-  });
+function paragraphsAsLibreOfficeRenders(readback: CreatedDocument['readback']): string[] {
+  const inserts = new Map<number, Array<{ offset: number; text: string }>>();
+  const add = (paragraph: number, offset: number, text: string) => inserts.set(paragraph, [...(inserts.get(paragraph) ?? []), { offset, text }]);
+  readback.footnoteReferences.forEach(({ paragraph, offset }, index) => add(paragraph, offset, String(index + 1)));
+  for (const { paragraph, offset, text } of readback.crossReferences ?? []) {
+    const leadingNumber = /^\d+(?=\()/u.exec(text);
+    if (leadingNumber) add(paragraph, offset + leadingNumber[0].length, '.');
+  }
   return readback.paragraphs.map((text, index) => {
     let out = '';
     let at = 0;
-    for (const { offset, number } of marks.get(index) ?? []) {
-      out += `${text.slice(at, offset)}${number}`;
+    for (const { offset, text: inserted } of (inserts.get(index) ?? []).sort((a, b) => a.offset - b.offset)) {
+      out += `${text.slice(at, offset)}${inserted}`;
       at = offset;
     }
     return out + text.slice(at);
@@ -109,7 +116,7 @@ function paragraphsWithFootnoteNumbers(readback: CreatedDocument['readback']): s
 
 /** Text a rendered PDF must contain: the first and last paragraphs and every footer text. */
 export function requiredPdfText(created: CreatedDocument): string[] {
-  const paragraphs = paragraphsWithFootnoteNumbers(created.readback).filter((paragraph) => paragraph.trim());
+  const paragraphs = paragraphsAsLibreOfficeRenders(created.readback).filter((paragraph) => paragraph.trim());
   const title = paragraphs[0];
   const last = paragraphs.at(-1) ?? '';
   const lastNeedle = last.length > 120 ? last.slice(0, 80) : last;
@@ -457,7 +464,7 @@ async function createLocked(
         throw new DocxMarkdocError('CREATION_PDF_FAILED', `PDF check ${verdict.status}: ${verdict.reason ?? 'unknown'}${verdict.missingText ? ` (missing: ${verdict.missingText.join(' | ')})` : ''}.`, recordedPdf(verdict));
       }
       // Every source word must reach the PDF text layer, and the PDF may add only known generated text.
-      const words = verdict.status === 'passed' ? comparePdfWords(projectSourceText(source), verdict.pageTexts ?? [], verdict.layoutPageTexts) : undefined;
+      const words = verdict.status === 'passed' ? comparePdfWords(projectSourceText(source, { reader: 'libreoffice' }), verdict.pageTexts ?? [], verdict.layoutPageTexts) : undefined;
       pdf = recordedPdf(verdict, words);
       if (words && !words.passed) {
         const first = words.missing[0] ?? words.unexplainedExtra[0];

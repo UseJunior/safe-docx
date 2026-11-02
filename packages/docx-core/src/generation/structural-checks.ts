@@ -25,6 +25,7 @@ export type StructuralIssue = {
     | 'rid_resolution'
     | 'sectpr'
     | 'field_pairing'
+    | 'bookmark_pairing'
     | 'table';
   part: string;
   message: string;
@@ -51,6 +52,7 @@ export async function checkGeneratedPackage(buffer: Buffer): Promise<StructuralC
     ...checkRidResolution(contents),
     ...checkSectPr(contents),
     ...checkFieldPairing(contents),
+    ...checkBookmarks(contents),
     ...checkTables(contents),
   ];
   return { ok: issues.length === 0, issues };
@@ -283,6 +285,45 @@ function checkFieldPairing(contents: Map<string, string>): StructuralIssue[] {
     if (doc.documentElement) visit(doc.documentElement);
     if (state !== 'idle') {
       issues.push({ check: 'field_pairing', part: name, message: 'Unclosed field at end of story part' });
+    }
+  }
+  return issues;
+}
+
+/**
+ * Bookmarks pair up in each story part: every `w:bookmarkStart` has a unique
+ * id and name (names compared without regard to case) and a later
+ * `w:bookmarkEnd` with the same id, every end closes an earlier start, and no
+ * bookmark id repeats a comment range id of the same part.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
+ */
+function checkBookmarks(contents: Map<string, string>): StructuralIssue[] {
+  const issues: StructuralIssue[] = [];
+  for (const [name, text] of contents) {
+    if (!isStoryPart(name) || !text.includes('bookmark')) continue;
+    const doc = parseXml(text);
+    const open = new Set<string>();
+    const ids = new Set<string>();
+    const names = new Set<string>();
+    const fail = (message: string) => issues.push({ check: 'bookmark_pairing', part: name, message });
+    for (const el of Array.from(doc.getElementsByTagName('*'))) {
+      const id = el.getAttribute('w:id') ?? '';
+      if (el.tagName === 'w:bookmarkStart') {
+        const bookmarkName = (el.getAttribute('w:name') ?? '').toLowerCase();
+        if (ids.has(id)) fail(`Bookmark id ${id} is used twice`);
+        if (names.has(bookmarkName)) fail(`Bookmark name '${el.getAttribute('w:name')}' is used twice`);
+        ids.add(id);
+        names.add(bookmarkName);
+        open.add(id);
+      } else if (el.tagName === 'w:bookmarkEnd') {
+        if (!open.delete(id)) fail(`bookmarkEnd ${id} closes no earlier bookmarkStart`);
+      }
+    }
+    for (const id of open) fail(`bookmarkStart ${id} has no later bookmarkEnd`);
+    for (const el of Array.from(doc.getElementsByTagName('w:commentRangeStart'))) {
+      if (ids.has(el.getAttribute('w:id') ?? '')) fail(`Bookmark id ${el.getAttribute('w:id')} repeats a comment range id`);
     }
   }
   return issues;

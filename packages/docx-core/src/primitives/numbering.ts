@@ -383,15 +383,33 @@ export function renderListLevelText(
   ilvl: number,
   levelValues: readonly number[],
 ): string {
+  // For TOON we treat suffix as a display concern; keep label column trimmed.
+  return substituteLevelText(model, numId, ilvl, levelValues)?.text.trim() ?? '';
+}
+
+/**
+ * The level's `w:lvlText` with every placeholder replaced, untrimmed, and
+ * whether a placeholder named a level the list has never used (rendered 0).
+ * Null when the level is undefined.
+ */
+function substituteLevelText(
+  model: NumberingModel,
+  numId: string,
+  ilvl: number,
+  levelValues: readonly number[],
+): { text: string; lvlText: string; usesUnusedLevel: boolean } | null {
   const level = getNumberingLevel(model, numId, ilvl);
-  if (!level) return '';
+  if (!level) return null;
   const lvlText = level.lvlText || `%${ilvl + 1}.`;
-  const rendered = lvlText.replace(/%(\d+)/g, (_m, nStr) => {
+  let usesUnusedLevel = false;
+  const text = lvlText.replace(/%(\d+)/g, (_m, nStr) => {
     const levelNum = Number.parseInt(String(nStr), 10) - 1;
     if (Number.isNaN(levelNum) || levelNum < 0) return '';
     const counter = levelValues[levelNum];
     // A level never used renders as 0, as before the NaN sentinel existed.
-    const v = counter === undefined || Number.isNaN(counter) ? 0 : counter;
+    const unused = counter === undefined || Number.isNaN(counter);
+    if (unused) usesUnusedLevel = true;
+    const v = unused ? 0 : counter;
     const lvlDef = getNumberingLevel(model, numId, levelNum);
     const fmt = lvlDef?.numFmt ?? 'decimal';
     // Legal numbering (w:isLgl) shows every placeholder as an Arabic numeral.
@@ -404,9 +422,79 @@ export function renderListLevelText(
     }
     return formatCounter(fmt, v);
   });
+  return { text, lvlText, usesUnusedLevel };
+}
 
-  // For TOON we treat suffix as a display concern; keep label column trimmed.
-  return rendered.trim();
+/** The lowest level a level text's placeholders name, or `ilvl` when it names none. */
+function lowestReferencedLevel(lvlText: string, ilvl: number): number {
+  let lowest = ilvl;
+  for (const match of lvlText.matchAll(/%(\d+)/g)) {
+    const levelNum = Number.parseInt(match[1]!, 10) - 1;
+    if (levelNum >= 0 && levelNum < lowest) lowest = levelNum;
+  }
+  return lowest;
+}
+
+/** Remove one trailing period, the only character Word strips from a referenced number. */
+function withoutTrailingPeriod(text: string): string {
+  return text.endsWith('.') ? text.slice(0, -1) : text;
+}
+
+/**
+ * Which paragraph number a `REF` field's number switch asks for: `\w` (the
+ * number in full context) or `\n` (the paragraph's own level text).
+ */
+export type ReferenceNumberForm = 'fullContext' | 'paragraph';
+
+/**
+ * The number a `REF` field shows for a numbered paragraph, as Word for Mac
+ * 16.114 computes it after updating fields. Null when the number would
+ * depend on a level the list has never used: Word shows such a level at its
+ * start value and safe-docx's counters show 0, so no result is offered
+ * rather than a wrong one.
+ *
+ * - `paragraph` (`\n`): the paragraph's level text, untrimmed, less one
+ *   trailing period ("2." → "2", "Article I." → "Article I", "1.." → "1.").
+ * - `fullContext` (`\w`): the level text, preceded by the level text of the
+ *   level above the lowest one it names, and so on until level 0 is named:
+ *   "(b)" under "Section %1.%2" reads "Section 2.06(b)", because that level
+ *   already names level 0; "(b)" under "%1." reads "2(b)". One trailing
+ *   period is dropped from the last part, and from a part followed by a part
+ *   starting with "(" ("2." + "(b)" → "2(b)", but "2." + "b." → "2.b",
+ *   "1." + "[a]" → "1.[a]").
+ *
+ * These rules are measured, not specified: § 17.16.5.51 says only "without
+ * trailing periods" and "in full context". The evidence is in
+ * scripts/oracle/word/evidence/issue-1236-word-16.114.json. LibreOffice
+ * 26.2 recalculates these fields on load and keeps the period before "("
+ * ("2.(b)").
+ *
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.16.5.51 — follows Word: one trailing period is removed, and a period before "(" inside a full-context number
+ */
+export function renderReferenceNumber(
+  model: NumberingModel,
+  snapshot: Pick<ListLabelSnapshot, 'numId' | 'ilvl' | 'levelValues'>,
+  form: ReferenceNumberForm,
+): string | null {
+  const own = substituteLevelText(model, snapshot.numId, snapshot.ilvl, snapshot.levelValues);
+  if (!own || own.usesUnusedLevel) return null;
+  if (form === 'paragraph') return withoutTrailingPeriod(own.text);
+
+  const parts = [own.text];
+  let lowest = lowestReferencedLevel(own.lvlText, snapshot.ilvl);
+  while (lowest > 0) {
+    const ilvl = lowest - 1;
+    const part = substituteLevelText(model, snapshot.numId, ilvl, snapshot.levelValues);
+    if (!part || part.usesUnusedLevel) return null;
+    parts.unshift(part.text);
+    lowest = Math.min(lowestReferencedLevel(part.lvlText, ilvl), ilvl);
+  }
+  return parts
+    .map((part, index) => {
+      const next = parts[index + 1];
+      return next === undefined || next.startsWith('(') ? withoutTrailingPeriod(part) : part;
+    })
+    .join('');
 }
 
 /**

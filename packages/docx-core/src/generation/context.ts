@@ -53,6 +53,10 @@ export class CompileContext {
     this.fileContents.set(name, content);
   }
 
+  getFileContent(name: string): string | undefined {
+    return this.fileContents.get(name);
+  }
+
   registeredParts(): RegisteredPart[] {
     return Array.from(this.partsByName.values());
   }

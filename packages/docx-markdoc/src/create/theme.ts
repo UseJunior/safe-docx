@@ -1,5 +1,5 @@
 import type { Node as MarkdocNode } from '@markdoc/markdoc';
-import type { InlineSpec, NumberingSpec, ParagraphSpec, TableSpec } from '@usejunior/docx-core';
+import { bookmarkNameForSlug, type InlineSpec, type NumberingSpec, type ParagraphSpec, type TableSpec } from '@usejunior/docx-core';
 import type { BlockTagPlugin, InlineStyle, InlineTagPlugin, RenderApi, Theme } from '../markdocx/engine.js';
 import {
   CREATION_STYLE,
@@ -312,6 +312,23 @@ export function creationPlugins(
           theme.footnoteParagraph(api.renderInlineChildren(paragraph, {}))));
         return [{ kind: 'footnote', blocks }];
       },
+    },
+    {
+      // A REF field to the target's bookmark; docx-core sets its cached
+      // result. "Section " is plain text before the field, so updating the
+      // field never removes it.
+      tag: 'xref',
+      renderInline: (node, _api, style) => [
+        ...(node.attributes.format === 'section' ? theme.renderText('Section ', style) : []),
+        {
+          kind: 'crossReference',
+          bookmark: bookmarkNameForSlug(String(node.attributes.to)),
+          number: node.attributes.number === 'paragraph' ? 'paragraph' : 'fullContext',
+          ...(style.bold ? { bold: true } : {}),
+          ...(style.italic ? { italic: true } : {}),
+          ...(style.underline ? { underline: style.underline } : {}),
+        },
+      ],
     },
   ];
   return { blockTags, inlineTags };
