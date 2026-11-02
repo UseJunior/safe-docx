@@ -3,7 +3,19 @@ import type {BlockSpec, InlineSpec, ParagraphSpec} from '@usejunior/docx-core';
 
 import {throwUnhandledBlock, throwUnhandledTag} from './ast.js';
 
-export type InlineStyle = {bold?: boolean; italic?: boolean; breakLines?: boolean};
+/**
+ * Inline formatting carried down the inline tree. `underline` is set by the
+ * built-in `{% u %}…{% /u %}` tag; a theme copies it onto the runs it emits.
+ */
+export type InlineStyle = {bold?: boolean; italic?: boolean; underline?: 'single'; breakLines?: boolean};
+
+/** The built-in underline tag; the engine renders it itself, so every consumer gets it without a plugin. */
+const UNDERLINE_TAG = 'u';
+
+/** The direct run formatting an engine-built text run carries for `style`. */
+function styleRunProps(style: InlineStyle): {bold?: boolean; italic?: boolean; underline?: 'single'} {
+  return {bold: style.bold, italic: style.italic, ...(style.underline ? {underline: style.underline} : {})};
+}
 
 /**
  * Generic per-render block context threaded through recursion. `listDepth` is the
@@ -202,13 +214,13 @@ function renderInline(
   }
   if (node.type === 'softbreak' || node.type === 'hardbreak') {
     if (style.breakLines || (node.type === 'hardbreak' && api.hardBreaks === 'line')) return [{kind: 'break', breakType: 'line'}];
-    return [{kind: 'text', text: ' ', bold: style.bold, italic: style.italic}];
+    return [{kind: 'text', text: ' ', ...styleRunProps(style)}];
   }
   if (node.type === 'strong') return api.renderInlineChildren(node, {...style, bold: true});
   if (node.type === 'em') return api.renderInlineChildren(node, {...style, italic: true});
   if (node.type === 'code') {
     const text = typeof node.attributes.content === 'string' ? node.attributes.content : '';
-    return text ? [{kind: 'text', text, bold: style.bold, italic: style.italic}] : [];
+    return text ? [{kind: 'text', text, ...styleRunProps(style)}] : [];
   }
   if (node.type === 'link') return api.renderInlineChildren(node, style);
   if (node.type === 'inline' || node.type === 'heading' || node.type === 'paragraph') {
@@ -220,6 +232,8 @@ function renderInline(
       const {text, filled} = api.resolveField(name);
       return api.theme.fieldRuns(text, filled, style);
     }
+    // `{% u %}` underlines its content (single) and nests freely with strong, em and other inline tags.
+    if (node.tag === UNDERLINE_TAG) return api.renderInlineChildren(node, {...style, underline: 'single'});
     const plugin = inlineTags.get(String(node.tag ?? ''));
     if (plugin) return plugin.renderInline(node, api, style);
     throwUnhandledTag(node);

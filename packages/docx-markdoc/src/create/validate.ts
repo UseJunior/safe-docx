@@ -18,7 +18,14 @@ export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
   section: new Set(['footer', 'page-numbers']),
   table: new Set(['widths']),
 };
-const INLINE_TAGS: Record<string, ReadonlySet<string>> = { literal: new Set(), fill: new Set() };
+/**
+ * Inline tags and the attributes each admits. `literal` makes its content
+ * literal text and `fill` marks a fill-in (both checked below); `u` underlines
+ * its content and, like `**` and `*`, keeps the context it sits in. A new inline
+ * tag needs an entry here, a renderer (an engine branch or a creation theme
+ * plugin) and, when it changes the text, a case in the round-trip oracle.
+ */
+const INLINE_TAGS: Record<string, ReadonlySet<string>> = { literal: new Set(), fill: new Set(), u: new Set() };
 /** Tags that structure the document and may appear only at the top level. */
 const TOP_LEVEL_ONLY = new Set(['page-break', 'section']);
 
@@ -147,7 +154,9 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
       case 'text': {
         const content = String(node.attributes.content ?? '');
         if (!literal && /<\/?[A-Za-z][A-Za-z0-9-]*(\s[^<>]*)?\/?>/.test(content)) {
-          creationError('UNSUPPORTED_HTML', `HTML is not supported in created documents ('${content.match(/<[^>]*>/)![0]}'); use Markdoc, or wrap literal text in {% literal %}.`, undefined, line);
+          const html = content.match(/<[^>]*>/)![0];
+          const hint = /^<\/?u\s*>$/i.test(html) ? 'use {% u %}…{% /u %} to underline' : 'use Markdoc';
+          creationError('UNSUPPORTED_HTML', `HTML is not supported in created documents ('${html}'); ${hint}, or wrap literal text in {% literal %}.`, undefined, line);
         }
         if (literal || !highlight || !bracketFillIns) return;
         for (const char of String(node.attributes.content ?? '')) {
@@ -168,6 +177,11 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
           if (!highlight) creationError('INVALID_FILL_IN', '{% fill %} cannot appear in a legend, which is never highlighted.', node, line);
           if (!node.children.map((child) => inlineText(child)).join('').trim()) creationError('INVALID_FILL_IN', '{% fill %} needs text, such as {% fill %}Effective Date{% /fill %}.', node, line);
           node.children.forEach((child) => visit(child, false));
+          return;
+        }
+        if (node.tag === 'u') {
+          if (!node.children.map((child) => inlineText(child)).join('')) creationError('INVALID_UNDERLINE', '{% u %} needs text, such as {% u %}Purchase Price{% /u %}.', node, line);
+          node.children.forEach((child) => visit(child, literal));
           return;
         }
         node.children.forEach((child) => visit(child, true));

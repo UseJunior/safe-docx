@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `docx-markdoc create` can underline. Wrap inline text in
+  `{% u %}…{% /u %}` to give it a single underline (`w:u w:val="single"`);
+  text outside the tag, such as the period after a defined term or a run-in
+  heading, stays plain. It nests with bold, italic and fill-ins. The generic
+  markdocx engine renders the same tag for any theme. Agreements underline
+  defined terms, run-in headings and operator words such as "less"; until now
+  a created document had to use bold for them. (#1238)
 - Comparison stats now report detected moves. A comparison whose only change
   is a moved paragraph used to report zero for every stats field, so it looked
   identical to an unchanged document. `CompareStats` (and the MCP

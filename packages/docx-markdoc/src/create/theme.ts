@@ -19,6 +19,7 @@ function coalesce(runs: InlineSpec[]): InlineSpec[] {
     if (run.kind === 'text' && previous?.kind === 'text'
       && Boolean(previous.bold) === Boolean(run.bold)
       && Boolean(previous.italic) === Boolean(run.italic)
+      && previous.underline === run.underline
       && previous.highlight === run.highlight) {
       previous.text += run.text;
       continue;
@@ -34,6 +35,7 @@ function textRun(text: string, style: InlineStyle, highlighted: boolean): TextRu
     text,
     ...(style.bold ? { bold: true } : {}),
     ...(style.italic ? { italic: true } : {}),
+    ...(style.underline ? { underline: style.underline } : {}),
     ...(highlighted ? { highlight: 'yellow' as const } : {}),
   };
 }
