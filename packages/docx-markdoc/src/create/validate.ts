@@ -1,6 +1,7 @@
 import type { Node as MarkdocNode } from '@markdoc/markdoc';
 import { BookmarkNameError, bookmarkNamesForSlugs } from '@usejunior/docx-core';
 import { DocxMarkdocError } from '../errors.js';
+import { HEADING_NUMBER_SCHEMES, type HeadingNumberScheme } from './list-numbering.js';
 
 /**
  * The closed creation grammar, checked before any rendering so every
@@ -8,7 +9,7 @@ import { DocxMarkdocError } from '../errors.js';
  * being flattened by the lenient engine.
  */
 
-const FRONTMATTER_KEYS = new Set(['title', 'author', 'date', 'footer', 'page-numbers', 'fill-ins']);
+const FRONTMATTER_KEYS = new Set(['title', 'author', 'date', 'footer', 'page-numbers', 'fill-ins', 'heading-numbers']);
 
 /** Block tags and the attributes each admits. */
 export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
@@ -70,6 +71,12 @@ export type CreationFrontmatter = {
    * behaviour, where every […] is a highlighted fill-in.
    */
   fillIns?: 'markup' | 'brackets';
+  /**
+   * How `##` and `###` headings are numbered. 'legal': `##` is "ARTICLE I",
+   * `###` is "Section 1.01", and ordered lists under them are `(a)`, `(i)`,
+   * `(A)`. Absent, headings are not numbered.
+   */
+  headingNumbers?: HeadingNumberScheme;
 };
 
 export function lineOf(node: MarkdocNode | undefined): number | undefined {
@@ -100,6 +107,11 @@ export function parseCreationFrontmatter(raw: string | undefined): CreationFront
         throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `fill-ins must be markup or brackets, got '${value}'.`);
       }
       result.fillIns = value;
+    } else if (key === 'heading-numbers') {
+      if (!(HEADING_NUMBER_SCHEMES as readonly string[]).includes(value)) {
+        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `heading-numbers must be ${HEADING_NUMBER_SCHEMES.join(' or ')}, got '${value}'.`);
+      }
+      result.headingNumbers = value as HeadingNumberScheme;
     } else if (key === 'page-numbers') {
       if (value !== 'true' && value !== 'false') {
         throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `page-numbers must be true or false, got '${value}'.`);
@@ -470,12 +482,13 @@ export function checkCreationSourceCharacters(source: string): void {
   creationError('INVALID_CHARACTER', `The source holds control character U+${code}, which a Word document cannot hold.`, undefined, line);
 }
 
-export function validateCreationAst(children: MarkdocNode[], options: { fillIns?: 'markup' | 'brackets' } = {}): void {
+export function validateCreationAst(children: MarkdocNode[], options: { fillIns?: 'markup' | 'brackets'; headingNumbers?: HeadingNumberScheme } = {}): void {
   bracketFillIns = options.fillIns === 'brackets';
   try {
     validateBlocks(children);
+    if (options.headingNumbers) checkHeadingNumbering(children);
     checkFootnotePairs(children);
-    checkCrossReferenceTargets(children);
+    checkCrossReferenceTargets(children, options.headingNumbers !== undefined);
   } finally {
     bracketFillIns = false;
     inFootnoteBody = false;
@@ -517,7 +530,95 @@ function validateBlocks(children: MarkdocNode[]): void {
   }
 }
 
-type TargetSite = { kind: 'heading' | 'numbered' | 'bullet'; line?: number };
+/**
+ * A canonical upper-case Roman numeral (I to MMMCMXCIX), as `upperRoman`
+ * writes it, that ends a word: no letter, combining mark or digit of any
+ * script follows it, so "Légal" and "Même" are words, not "L" and "M".
+ */
+const ROMAN_NUMERAL = '(?=[IVXLCDM])M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})(?![\\p{L}\\p{M}\\p{N}])';
+/**
+ * Heading text that already starts with the number the heading definition
+ * generates ("ARTICLE IV", "Article IV", "Section 2.04": an Article
+ * number, a period and two digits ending the number). Ordinary words after
+ * "Article" ("Article Civil Rights", "Article Integrity") and statutory
+ * references ("Section 409A", "Section 1.409A", "Section 1.409") are not.
+ */
+const GENERATED_HEADING_NUMBER: Record<number, RegExp> = {
+  2: new RegExp(`^(?:ARTICLE|Article|article)\\s+${ROMAN_NUMERAL}`, 'u'),
+  3: /^Section\s+\d+\.\d{2}(?![\p{L}\p{M}\p{N}]|\.\p{N})/iu,
+};
+
+/**
+ * With `heading-numbers` on, `##` and `###` headings are numbered and the
+ * ordered lists under them are their clauses. A `###` needs a `##` before it
+ * (a Section number names its Article). A heading must not repeat the
+ * number it is given. The clauses restart at `(a)` under each heading, so
+ * the first ordered list under a heading starts at `1.` and a later one
+ * continues the previous list under the same heading: the numbers Word
+ * shows then equal the markers (`3.` is `(c)`).
+ *
+ * Clauses may sit directly under an Article only when no Section of that
+ * Article follows them. Word counts a clause paragraph that skips the
+ * Section level as if the Section level were at its start value, so the
+ * next Section would read "Section 1.02" with no 1.01 (evidence:
+ * scripts/oracle/word/evidence/issue-1254-word-16.114.json, levels 0, 2, 1;
+ * and issue-1250-word-16.114.json).
+ */
+function checkHeadingNumbering(children: MarkdocNode[]): void {
+  let articles = 0;
+  let next: number | null = null;
+  // Line of an ordered list placed directly under the current Article, before any of its Sections.
+  let articleClauses: number | undefined | null = null;
+  // Whether the current heading is an Article (`##`) rather than a Section.
+  let inArticleScope = false;
+  for (const node of children) {
+    if (node.type === 'heading') {
+      const level = Number(node.attributes.level);
+      if (level < 2) continue;
+      if (level === 3 && articles === 0) {
+        creationError('HEADING_NUMBER_SKIPS_LEVEL', 'A ### heading is a Section of the ## Article before it (heading-numbers: legal); put a ## heading first.', node);
+      }
+      if (level === 3 && articleClauses !== null) {
+        creationError(
+          'SECTION_AFTER_ARTICLE_CLAUSES',
+          `This Section follows clauses placed directly under its Article (line ${articleClauses ?? '?'}); Word counts those clauses as the Article's first Section, so this heading would read Section N.02, not N.01. Put the clauses under a ### Section.`,
+          node,
+        );
+      }
+      if (level === 2) articles += 1;
+      articleClauses = null;
+      inArticleScope = level === 2;
+      const text = node.children.map((child) => inlineText(child)).join('').trim();
+      if (GENERATED_HEADING_NUMBER[level]!.test(text)) {
+        creationError('DUPLICATE_HEADING_NUMBER', `Heading '${text.slice(0, 40)}' repeats the number heading-numbers gives it; write only the heading text.`, node);
+      }
+      next = 1;
+      continue;
+    }
+    if (node.type !== 'list' || node.attributes.ordered !== true || next === null) continue;
+    if (inArticleScope && articleClauses === null) articleClauses = lineOf(node);
+    const start = Number.isInteger(node.attributes.start) ? Number(node.attributes.start) : 1;
+    if (start !== next) {
+      creationError(
+        'HEADING_LIST_START',
+        `Under a numbered heading, clauses number (a), (b), … and restart at each heading, so this list must start at ${next}. (${next === 1 ? 'the first list under the heading' : 'continuing the list before it under the same heading'}), not ${start}.`,
+        node,
+      );
+    }
+    next = start + node.children.length;
+  }
+}
+
+/**
+ * Where a target's number comes from: `headingNumbered` marks a numbered
+ * heading, or an ordered list item under one, numbered by the heading
+ * definition ("Section 1.01", "Section 1.01(a)"); `articleClause` marks such
+ * an item directly under an Article, before any Section.
+ */
+type TargetSite = { kind: 'heading' | 'numbered' | 'bullet'; line?: number; headingNumbered?: true; articleClause?: true };
+
+/** Which numbered heading a top-level block sits under, with `heading-numbers` on. */
+type HeadingScope = 'none' | 'article' | 'section';
 
 /**
  * Every `{% #id %}` target, keyed by id: a heading, or a list item of an
@@ -525,7 +626,7 @@ type TargetSite = { kind: 'heading' | 'numbered' | 'bullet'; line?: number };
  * ID_PLACEMENT; tag attributes named `id` (`fnref`, `footnote`) are not
  * targets.
  */
-function collectTargets(node: MarkdocNode, ordered: boolean, line: number | undefined, out: Map<string, TargetSite>): void {
+function collectTargets(node: MarkdocNode, ordered: boolean, line: number | undefined, out: Map<string, TargetSite>, scope: HeadingScope = 'none'): void {
   const here = lineOf(node) ?? line;
   const id = node.type === 'tag' || node.type === 'document' ? undefined : node.attributes.id;
   if (id !== undefined) {
@@ -538,45 +639,91 @@ function collectTargets(node: MarkdocNode, ordered: boolean, line: number | unde
     const earlier = out.get(id);
     if (earlier) creationError('DUPLICATE_ID', `Id '${id}' is used twice (first at line ${earlier.line ?? '?'}).`, undefined, here);
     const kind = node.type === 'heading' ? 'heading' : ordered ? 'numbered' : 'bullet';
-    out.set(id, { kind, ...(here === undefined ? {} : { line: here }) });
+    const numberedByHeading = scope !== 'none' && (kind === 'numbered' || (kind === 'heading' && Number(node.attributes.level) >= 2));
+    out.set(id, {
+      kind,
+      ...(here === undefined ? {} : { line: here }),
+      ...(numberedByHeading ? { headingNumbered: true as const } : {}),
+      ...(numberedByHeading && kind === 'numbered' && scope === 'article' ? { articleClause: true as const } : {}),
+    });
   }
   const childOrdered = node.type === 'list' ? node.attributes.ordered === true : ordered;
-  for (const child of node.children) collectTargets(child, childOrdered, here, out);
+  for (const child of node.children) collectTargets(child, childOrdered, here, out, scope);
 }
 
 /** Every `{% xref /%}` under `node`, in document order, with the line of its nearest block. */
-function collectCrossReferences(node: MarkdocNode, line: number | undefined, out: Array<{ to: string; line?: number }>): void {
+type CrossReferenceSite = { to: string; number?: string; format?: string; line?: number };
+
+function collectCrossReferences(node: MarkdocNode, line: number | undefined, out: CrossReferenceSite[]): void {
   const here = lineOf(node) ?? line;
-  if (node.type === 'tag' && node.tag === 'xref') out.push({ to: String(node.attributes.to), ...(here === undefined ? {} : { line: here }) });
+  if (node.type === 'tag' && node.tag === 'xref') {
+    const { number, format } = node.attributes;
+    out.push({
+      to: String(node.attributes.to),
+      ...(number === undefined ? {} : { number: String(number) }),
+      ...(format === undefined ? {} : { format: String(format) }),
+      ...(here === undefined ? {} : { line: here }),
+    });
+  }
   for (const child of node.children) collectCrossReferences(child, here, out);
 }
 
 /**
  * Ids are unique and map to distinct Word bookmark names; every
- * `{% xref /%}` names an id that marks a numbered list item. Headings and
- * bullets carry no number in a created document, so Word would show "0" or a
- * bullet glyph for them.
+ * `{% xref /%}` names an id that marks a numbered list item or, with
+ * `heading-numbers`, a numbered heading. The title, unnumbered headings and
+ * bullets carry no number, so Word would show "0" or a bullet glyph for
+ * them. A number the heading definition gives already reads "Section 1.01"
+ * or "ARTICLE I", so `format="section"` does not apply to it.
+ *
+ * A clause directly under an Article (no Section of the Article before it)
+ * may be referenced only by its own number: its full number is
+ * "ARTICLE III(a)" in Word but "Section 3.01(a)" in LibreOffice, which
+ * recalculates the field and shows the Section level at its start value.
  */
-function checkCrossReferenceTargets(children: MarkdocNode[]): void {
+function checkCrossReferenceTargets(children: MarkdocNode[], headingNumbers = false): void {
   const targets = new Map<string, TargetSite>();
-  for (const node of children) collectTargets(node, false, undefined, targets);
+  let scope: HeadingScope = 'none';
+  for (const node of children) {
+    if (headingNumbers && node.type === 'heading' && node.attributes.level === 2) scope = 'article';
+    if (headingNumbers && node.type === 'heading' && node.attributes.level === 3) scope = 'section';
+    collectTargets(node, false, undefined, targets, headingNumbers && node.type === 'heading' && Number(node.attributes.level) >= 2 ? 'section' : scope);
+  }
   try {
     bookmarkNamesForSlugs(targets.keys());
   } catch (error) {
     if (!(error instanceof BookmarkNameError)) throw error;
     creationError('ID_COLLISION', `${error.message}.`, undefined, targets.get(error.slugs.at(-1)!)?.line);
   }
-  const references: Array<{ to: string; line?: number }> = [];
+  const references: CrossReferenceSite[] = [];
   for (const node of children) collectCrossReferences(node, undefined, references);
   for (const reference of references) {
     const target = targets.get(reference.to);
     if (!target) {
       creationError('XREF_UNKNOWN_ID', `{% xref to="${reference.to}" /%} names no {% #${reference.to} %} target.`, undefined, reference.line);
     }
-    if (target.kind !== 'numbered') {
+    if (target.kind !== 'numbered' && !target.headingNumbered) {
       creationError(
         'XREF_TARGET_NOT_NUMBERED',
-        `{% xref to="${reference.to}" /%} names a ${target.kind === 'heading' ? 'heading' : 'bullet item'} (line ${target.line ?? '?'}), which has no number in a created document; point it at a numbered list item.`,
+        target.kind === 'heading'
+          ? `{% xref to="${reference.to}" /%} names an unnumbered heading (line ${target.line ?? '?'}); number ## and ### headings with frontmatter heading-numbers: legal, or point it at a numbered list item.`
+          : `{% xref to="${reference.to}" /%} names a bullet item (line ${target.line ?? '?'}), which has no number in a created document; point it at a numbered list item.`,
+        undefined,
+        reference.line,
+      );
+    }
+    if (target.headingNumbered && reference.format === 'section') {
+      creationError(
+        'INVALID_CROSS_REFERENCE',
+        `{% xref to="${reference.to}" format="section" /%} names a target numbered by heading-numbers, whose number already reads "Section 1.01" or "ARTICLE I"; drop format="section".`,
+        undefined,
+        reference.line,
+      );
+    }
+    if (target.articleClause && reference.number !== 'paragraph') {
+      creationError(
+        'XREF_FULL_NUMBER_UNDER_ARTICLE',
+        `{% xref to="${reference.to}" /%} names a clause directly under an Article (line ${target.line ?? '?'}), whose full number Word shows as "ARTICLE I(a)" and LibreOffice as "Section 1.01(a)"; use number="paragraph", or put the clause under a ### Section.`,
         undefined,
         reference.line,
       );
