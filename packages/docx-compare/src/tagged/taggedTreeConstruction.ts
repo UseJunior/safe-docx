@@ -15,7 +15,7 @@ import {
   normalizedWordSet,
   wordSetContainmentSimilarity,
 } from '../textSimilarity.js';
-import { computeNumberingIdentities } from './numberingIntegration.js';
+import { computeNumberingIdentities, numberingListMembership } from './numberingIntegration.js';
 import { detectParagraphJoins } from './paragraphJoinDetection.js';
 import {
   nextRevisionId,
@@ -161,7 +161,12 @@ function alignmentKey(
       : [],
     runControlSignature,
     semanticAttributeSignature(element),
-    numberingIdentities.get(element) ?? '',
+    // The list and level a paragraph is numbered in, not its rendered label:
+    // inserting or deleting a numbered clause renumbers every later sibling,
+    // and a renumbered paragraph is still the same paragraph. On the NVCA and
+    // ILPA fixtures, keying on Word's labels turned renumbered paragraphs into
+    // delete-plus-insert pairs (#1253).
+    numberingListMembership(numberingIdentities.get(element)),
   ]);
 }
 
@@ -549,8 +554,9 @@ function paragraphSimilarity(
   if (sameBlockContentControl(left, right)) return 1;
   if (left.localName !== right.localName || !['p', 'r'].includes(left.localName)) return 0;
   if (semanticAttributeSignature(left) !== semanticAttributeSignature(right)) return 0;
-  if ((originalNumberingIdentities.get(left) ?? '') !==
-      (revisedNumberingIdentities.get(right) ?? '')) return 0;
+  // List and level, not the rendered label, as in `alignmentKey` (#1253).
+  if (numberingListMembership(originalNumberingIdentities.get(left)) !==
+      numberingListMembership(revisedNumberingIdentities.get(right))) return 0;
   const words = (value: string): Set<string> => new Set(value.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? []);
   const a = words(left.textContent ?? '');
   const b = words(right.textContent ?? '');
@@ -608,6 +614,10 @@ export interface TaggedTreeConstructionOptions {
   originalNumberingXml?: string;
   /** Revised package numbering definitions used only for virtual alignment identity. */
   revisedNumberingXml?: string;
+  /** Original package styles, for numbering paragraphs inherit from their style (virtual alignment identity only). */
+  originalStylesXml?: string;
+  /** Revised package styles, for numbering paragraphs inherit from their style (virtual alignment identity only). */
+  revisedStylesXml?: string;
   /** @internal Markdoc operation ranges to retain as tagged-node provenance. */
   revisionAttributionRanges?: readonly RevisionAttributionRange[];
   /** @internal First package-wide ID available to generated comparison revisions. */
@@ -1182,12 +1192,12 @@ export function constructTaggedTree(
   const numberingEnabled = options.numberingEnabled ?? true;
   const originalNumberingIdentities = computeNumberingIdentities(
     original,
-    options.originalNumberingXml,
+    { numberingXml: options.originalNumberingXml, stylesXml: options.originalStylesXml },
     { enabled: numberingEnabled },
   );
   const revisedNumberingIdentities = computeNumberingIdentities(
     revised,
-    options.revisedNumberingXml,
+    { numberingXml: options.revisedNumberingXml, stylesXml: options.revisedStylesXml },
     { enabled: numberingEnabled },
   );
   const tree = constructBoth(
