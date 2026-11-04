@@ -80,14 +80,13 @@ test('CI real-corpus job runs the same commands with the same REQUIRED variables
   const ci = readFileSync(join(PROJECT_ROOT, '.github/workflows/ci.yml'), 'utf8');
   const start = ci.indexOf('\n  real-corpus-comparison:');
   assert.ok(start >= 0, 'ci.yml has a real-corpus-comparison job');
-  const nextJob = ci.slice(start + 1).search(/\n {2}[a-z][\w-]*:\n/);
+  // The job ends where the next two-space-indented mapping key (the next job) begins.
+  const nextJob = ci.slice(start + 1).search(/\n {2}["']?[\w-]+["']?:[ \t]*(?:#.*)?\n/);
   const job = nextJob < 0 ? ci.slice(start) : ci.slice(start, start + 1 + nextJob);
-  assert.match(job, new RegExp(`node ${PREPARE_SCRIPT.replace(/\./g, '\\.')} "\\$${CORPUS_DIR_ENV}"`));
+  assert.ok(job.includes(`node ${PREPARE_SCRIPT} "$${CORPUS_DIR_ENV}"`), 'prepare command matches');
   assert.ok(job.includes(`npm ${GATE_NPM_ARGS.join(' ')}`), 'gate command matches');
-  for (const name of REQUIRED_ENV_VARS) {
-    assert.match(job, new RegExp(`${name}: "1"`), `${name} is required in CI`);
-  }
-  const ciRequired = [...job.matchAll(/(SAFE_DOCX_[A-Z_]+_REQUIRED): "1"/g)].map((m) => m[1]);
+  // YAML spells "1" several equivalent ways; accept quoted and bare values.
+  const ciRequired = [...job.matchAll(/(SAFE_DOCX_[A-Z_]+_REQUIRED):\s*(["']?)1\2\s*(?:#.*)?$/gm)].map((m) => m[1]);
   assert.deepEqual([...new Set(ciRequired)].sort(), [...REQUIRED_ENV_VARS].sort());
 });
 
