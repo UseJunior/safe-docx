@@ -518,9 +518,16 @@ function validateBlocks(children: MarkdocNode[]): void {
   }
 }
 
-/** Heading text that already starts with the number the heading definition generates ("ARTICLE IV", "Section 2.04"). */
+/** A canonical upper-case Roman numeral (I to MMMCMXCIX), as `upperRoman` writes it, not followed by a letter. */
+const ROMAN_NUMERAL = '(?=[IVXLCDM])M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})(?![A-Za-z])';
+/**
+ * Heading text that already starts with the number the heading definition
+ * generates ("ARTICLE IV", "Article IV", "Section 2.04"). Ordinary words
+ * after "Article" ("Article Civil Rights", "Article Integrity") and
+ * statutory references ("Section 409A") are not numbers.
+ */
 const GENERATED_HEADING_NUMBER: Record<number, RegExp> = {
-  2: /^ARTICLE\s+[IVXLCDM]+\b/iu,
+  2: new RegExp(`^(?:ARTICLE|Article|article)\\s+${ROMAN_NUMERAL}`, 'u'),
   3: /^Section\s+\d+\.\d+/iu,
 };
 

@@ -286,6 +286,10 @@ describe('Traceability: numbered headings in created documents', () => {
       expect(await failure(`${LEGAL}# T\n\n### Orphan\n`)).toEqual({ code: 'HEADING_NUMBER_SKIPS_LEVEL', line: 6 });
       expect(await failure(`${LEGAL}## ARTICLE IV Definitions\n`)).toEqual({ code: 'DUPLICATE_HEADING_NUMBER', line: 4 });
       expect(await failure(`${LEGAL}## Definitions\n\n### Section 1.01 Terms\n`)).toEqual({ code: 'DUPLICATE_HEADING_NUMBER', line: 6 });
+      // Ordinary words after "Article", and statutory section references, are heading text, not a number.
+      const admitted = await createDocumentFromMarkdoc(`${LEGAL}## Article Civil Rights\n\n## Article Integrity\n\n### Section 409A Matters\n\n## Articles of Incorporation\n`);
+      expect(admitted.readback.paragraphs).toEqual(['Article Civil Rights', 'Article Integrity', 'Section 409A Matters', 'Articles of Incorporation']);
+      expect(await failure(`${LEGAL}## Article XIV. Notices\n`)).toEqual({ code: 'DUPLICATE_HEADING_NUMBER', line: 4 });
       // Clauses restart at (a) under each heading; a list continues only the list before it under the same heading.
       expect(await failure(`${LEGAL}## A\n\n### S\n\n2. Two.\n`)).toEqual({ code: 'HEADING_LIST_START', line: 8 });
       expect(await failure(`${LEGAL}## A\n\n### S\n\n1. One.\n\nText.\n\n3. Three.\n`)).toEqual({ code: 'HEADING_LIST_START', line: 12 });
