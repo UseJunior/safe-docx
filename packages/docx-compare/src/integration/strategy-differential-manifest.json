@@ -4175,9 +4175,9 @@
     {
       "fixture": {
         "id": "real/nvca-stock-purchase-agreement/paragraph-deletion",
-        "pairSha256": "b8a10adfb5b79a88fd19cad31a2e5a4476bd6bd970b7cd13bf87d53032dc3411",
+        "pairSha256": "3c3ac82963096839fd4c8c726a8615fdf9bb8ac211f7ac160c4f1e9ee3e9d2e7",
         "originalSha256": "4f3aecc698a5e11600739df48efdae548ad21c64c7cbca6dedbc9fd100631ee7",
-        "revisedSha256": "98a11e59ec0eb3b2efb411ac1c3269d02e8fee8615d5aa7befb6edd327bf526f",
+        "revisedSha256": "0b00f9338b35596e98059ddc2b597b3b3a6aafa3385b6948e0f8c6b5d5620043",
         "capabilityTags": [
           "bookmarks",
           "contract",
@@ -4221,27 +4221,21 @@
           "word/theme/theme1.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": [
-          {
-            "check": "bookmark_pairing",
-            "part": "word/document.xml",
-            "message": "bookmarkEnd 27 closes no earlier bookmarkStart"
-          }
-        ]
+        "sourceStructuralIssues": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
         "strategy": "tagged-tree",
         "projections": {
           "accept": {
-            "xmlSha256": "179423a3feb19ff06ec60cf15206fe69d2c73e119dc680d9e11e825452658c1d",
+            "xmlSha256": "65fd659ce5117e87e9794e9fdb1567dca122cc7ddae1bce15d5faab452073d90",
             "textSha256": "717f95238c38c63ff13ed1158d897d7f6c2aa3d7da9190a6f19203a140fd00f7",
             "sourceTextSha256": "717f95238c38c63ff13ed1158d897d7f6c2aa3d7da9190a6f19203a140fd00f7",
             "matchesSourceText": true,
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "a64cf26da534cbda28d5bab5aee3c79c2429b0a03089af39846ba89cd7bf75e0",
+            "xmlSha256": "852dc0a114c3b7198252a58e9e3a93d71bc27a7964cbf62e63bac82fcdf9becf",
             "textSha256": "fc797aa399edd9b2d49a37283f709a368da07074fe4f525e4ca893c086cb694a",
             "sourceTextSha256": "fc797aa399edd9b2d49a37283f709a368da07074fe4f525e4ca893c086cb694a",
             "matchesSourceText": true,
@@ -4299,8 +4293,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 387513,
-            "sha256": "44362c56d68248e6b7881cd3aefa4700cbb99153a4be1cb6b5360ba84ad92c68",
+            "bytes": 387669,
+            "sha256": "50090a9d1b9e8c129781955140c292a488a18b72d24b8a2ab63d5fbcafb4c26f",
             "kind": "xml"
           },
           {
@@ -4438,10 +4432,10 @@
         ],
         "stats": {
           "atomMetricVersion": "tagged-token-v1",
-          "insertions": 1,
+          "insertions": 2,
           "deletions": 4,
           "modifications": 1,
-          "insertedRanges": 1,
+          "insertedRanges": 2,
           "deletedRanges": 4,
           "insertedAtoms": 0,
           "deletedAtoms": 290,
@@ -4460,14 +4454,8 @@
         },
         "unrepresentedChanges": [],
         "schema": {
-          "packageStructural": "inherited",
-          "issues": [
-            {
-              "check": "bookmark_pairing",
-              "part": "word/document.xml",
-              "message": "bookmarkEnd 27 closes no earlier bookmarkStart"
-            }
-          ],
+          "packageStructural": "passed",
+          "issues": [],
           "introducedIssues": []
         },
         "formatting": {
