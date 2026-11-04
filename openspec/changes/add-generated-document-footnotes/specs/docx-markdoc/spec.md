@@ -36,6 +36,15 @@ its read-back, round-trip and PDF checks.
 - **AND** an inserted empty page, or a continuation page under another section's footer, SHALL fail
 - **AND** real LibreOffice PDFs of a long note that continues onto the next page, a note that continues onto a page with no body text, a note in a repeated header row and a note in a row split across pages SHALL pass
 
+#### Scenario: [SDX-MDOC-FOOTNOTE-07] the PDF word check accepts punctuation that pdftotext splits from a footnote number
+- **GIVEN** a reference directly followed by `.`, `,`, `;`, `:` or `)` in body text and in a list item, and a footnote holding a cross-reference followed by punctuation, with PDF page texts where `pdftotext -raw` sets the punctuation after a footnote number apart as its own token (`Closing1 .`)
+- **WHEN** the PDF words are compared with the source
+- **THEN** the comparison SHALL pass, accepting a word that holds a footnote number broken only right after its numbers into consecutive tokens on one page, and SHALL report each such word
+- **AND** the word read whole SHALL pass as before, and so SHALL a justified line exported without space glyphs that ends in such a broken word, when the layout text shows its spaces
+- **AND** source text or footer text that merely looks like a split reference (`Closing1 .` written out, before or after the reference) SHALL be compared as written: it SHALL pass printed as written and SHALL fail printed joined, and a written-out `Closing1.` printed apart SHALL fail
+- **AND** it SHALL fail when the punctuation after a reference is dropped, changed, doubled or moved before the number, when the break is not right after a footnote number, when the number is lost, or when the punctuation after a cross-reference in a footnote is dropped
+- **AND** a real LibreOffice PDF of references followed by each of those marks SHALL pass
+
 #### Scenario: [SDX-MDOC-FOOTNOTE-05] created footnotes survive import and compile
 - **GIVEN** a created document with footnotes
 - **WHEN** it is imported to Markdoc and compiled back, preserving annotations
