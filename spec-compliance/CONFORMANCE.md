@@ -367,8 +367,8 @@ unique ids and names and that no bookmark id equals a comment-range id.
 Unique names are a safe-docx policy stricter than the clause, which lets a
 document repeat a name and keeps the first range; Word 16.114 keeps the last
 (#1264). The comparison harness therefore records a repeat in an input, or
-one an output keeps from an input, as a warning, and fails only a repeat
-the comparison introduces.
+one an output keeps from an input no more often than that input has it, as
+a warning, and fails a repeat the comparison introduces or multiplies.
 
 ### ECMA-PART1-17-13-7-1 — Permission range end
 

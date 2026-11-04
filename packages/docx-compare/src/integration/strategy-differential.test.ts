@@ -352,7 +352,7 @@ describe('strategy differential manifest evidence', () => {
 
     const sources = await checkGeneratedPackage(unique, { duplicateBookmarkNames: 'warning' });
     expect(sources.warnings).toEqual([]);
-    const introduced = classifyOutputStructure(output, sources.issues, sources.warnings);
+    const introduced = classifyOutputStructure(output, sources.issues, [sources.warnings]);
     expect(introduced).toEqual({
       packageStructural: 'failed',
       issues: [repeatedTarget],
@@ -366,9 +366,9 @@ describe('strategy differential manifest evidence', () => {
       { ...repeatedTarget, message: "Bookmark name 'Other' is used twice", bookmarkName: 'other' },
       { ...repeatedTarget, part: 'word/header1.xml' },
     ]) {
-      expect(classifyOutputStructure(output, [], [sourceWarning]).packageStructural).toBe('failed');
+      expect(classifyOutputStructure(output, [], [[sourceWarning]]).packageStructural).toBe('failed');
     }
-    expect(classifyOutputStructure(output, [], [repeatedTarget]).packageStructural).toBe('inherited');
+    expect(classifyOutputStructure(output, [], [[repeatedTarget]]).packageStructural).toBe('inherited');
 
     const [original, revised] = await Promise.all([
       buildDocxFromBodyXml('<w:p><w:r><w:t>old</w:t></w:r></w:p>'),
@@ -383,6 +383,32 @@ describe('strategy differential manifest evidence', () => {
     row.taggedTree.schema = introduced;
     expect(() => assertCharacterizationSafety(row))
       .toThrow(/introduced package structural failures: bookmark_name_uniqueness:word\/document\.xml/u);
+  });
+
+  test('fails a comparison that adds a further range under a name an input already repeats', async () => {
+    // Two original "Target" ranges against one wholly rewritten revised range:
+    // the comparison keeps both deleted ranges and adds the inserted one, so
+    // the output holds three "Target" ranges although no input has more than
+    // two. That extra collision is the comparison's, in either direction.
+    const twice = bookmarkedParagraph(1, 'Target', 'First original target.') +
+      bookmarkedParagraph(2, 'Target', 'Second original target.');
+    const once = bookmarkedParagraph(1, 'Target', 'Completely revised target.');
+    for (const [id, originalBody, revisedBody] of [
+      ['synthetic-added-repeat-original-twice', twice, once],
+      ['synthetic-added-repeat-revised-twice', once, twice],
+    ] as const) {
+      const [original, revised] = await Promise.all([
+        buildDocxFromBodyXml(originalBody),
+        buildDocxFromBodyXml(revisedBody),
+      ]);
+      const row = await characterizeStrategyDifferential({ id, original, revised, capabilityTags: ['bookmarks'] });
+      expect(row.fixture.sourceStructuralWarnings).toEqual([repeatedTarget]);
+      expect(row.taggedTree.schema.issues).toEqual([repeatedTarget, repeatedTarget]);
+      expect(row.taggedTree.schema.packageStructural, id).toBe('failed');
+      expect(row.taggedTree.schema.warnings).toEqual([]);
+      expect(() => assertCharacterizationSafety(row))
+        .toThrow(/introduced package structural failures: bookmark_name_uniqueness:word\/document\.xml/u);
+    }
   });
 
   test('rejects active divergences that did not suppress an observed assertion', () => {

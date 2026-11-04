@@ -87,9 +87,10 @@ export interface StrategyEvidence {
     introducedIssues: StructuralIssueSummary[];
     /**
      * Repeated bookmark names the output keeps from an input that already
-     * repeats them in the same part. The bookmark clause permits a repeat, so
-     * these are recorded without failing; a repeat the comparison introduces
-     * stays in `introducedIssues`.
+     * repeats them in the same part, no more often than that input does. The
+     * bookmark clause permits a repeat, so these are recorded without
+     * failing; a repeat the comparison introduces or multiplies stays in
+     * `introducedIssues`.
      */
     warnings: StructuralIssueSummary[];
   };
@@ -259,24 +260,52 @@ function uniqueStructuralIssues(issues: readonly StructuralIssueSummary[]): Stru
 }
 
 /**
+ * Occurrences of each repeated bookmark name, keyed by part and case-folded
+ * name. The checker reports one finding per occurrence after the first.
+ */
+function bookmarkNameOccurrences(
+  findings: readonly StructuralIssueSummary[],
+): Map<string, number> {
+  const occurrences = new Map<string, number>();
+  for (const finding of findings) {
+    if (finding.check !== 'bookmark_name_uniqueness') continue;
+    const key = duplicateBookmarkNameKey(finding);
+    occurrences.set(key, (occurrences.get(key) ?? 1) + 1);
+  }
+  return occurrences;
+}
+
+/**
  * Classifies a comparison output's strict structural findings against its
- * inputs' findings. A repeated bookmark name is only a warning when an input
- * already repeats that name in the same part; any other finding is inherited
- * when an input carries the identical finding. Everything else is introduced
- * by the comparison and fails the row.
+ * inputs' findings. A repeated bookmark name is only a warning when one input
+ * already repeats that name in the same part at least as many times as the
+ * output does; a comparison that adds a further range with that name (for
+ * example a deleted and an inserted copy beside the inherited ones) has
+ * introduced a collision. Any other finding is inherited when an input
+ * carries the identical finding. Everything else is introduced by the
+ * comparison and fails the row.
+ *
+ * `inputWarnings` holds each input's own warning-mode findings, one array per
+ * input and not deduplicated, so occurrence counts survive.
  */
 export function classifyOutputStructure(
   structural: StructuralCheckResult,
   sourceIssues: readonly StructuralIssueSummary[],
-  sourceWarnings: readonly StructuralIssueSummary[],
+  inputWarnings: ReadonlyArray<readonly StructuralIssueSummary[]>,
 ): StrategyEvidence['schema'] {
   const inheritedIssueKeys = new Set(sourceIssues.map(structuralIssueKey));
-  const inheritedNameKeys = new Set(sourceWarnings.map(duplicateBookmarkNameKey));
-  const warnings = structural.issues.filter(
-    (issue) =>
-      issue.check === 'bookmark_name_uniqueness'
-      && inheritedNameKeys.has(duplicateBookmarkNameKey(issue)),
-  );
+  const inheritedOccurrences = new Map<string, number>();
+  for (const warnings of inputWarnings) {
+    for (const [key, count] of bookmarkNameOccurrences(warnings)) {
+      inheritedOccurrences.set(key, Math.max(count, inheritedOccurrences.get(key) ?? 0));
+    }
+  }
+  const outputOccurrences = bookmarkNameOccurrences(structural.issues);
+  const warnings = structural.issues.filter((issue) => {
+    if (issue.check !== 'bookmark_name_uniqueness') return false;
+    const key = duplicateBookmarkNameKey(issue);
+    return (outputOccurrences.get(key) ?? 0) <= (inheritedOccurrences.get(key) ?? 0);
+  });
   const introducedIssues = structural.issues.filter(
     (issue) => !warnings.includes(issue) && !inheritedIssueKeys.has(structuralIssueKey(issue)),
   );
@@ -532,7 +561,7 @@ async function characterizeStrategy(
   originalXml: string,
   revisedXml: string,
   sourceStructuralIssues: readonly StructuralIssueSummary[],
-  sourceStructuralWarnings: readonly StructuralIssueSummary[],
+  inputStructuralWarnings: ReadonlyArray<readonly StructuralIssueSummary[]>,
 ): Promise<StrategyEvidence> {
   const result = await compareDocumentsAtomizer(fixture.original, fixture.revised, {
     author: AUTHOR,
@@ -572,7 +601,7 @@ async function characterizeStrategy(
       comparisonStrategyUsed: result.engine,
     },
     unrepresentedChanges: result.unrepresentedChanges ?? [],
-    schema: classifyOutputStructure(structural, sourceStructuralIssues, sourceStructuralWarnings),
+    schema: classifyOutputStructure(structural, sourceStructuralIssues, inputStructuralWarnings),
     formatting: {
       score: formatting.score,
       acceptScore: formatting.accept.score,
@@ -637,7 +666,7 @@ export async function characterizeStrategyDifferential(
     originalXml,
     revisedXml,
     sourceStructuralIssues,
-    sourceStructuralWarnings,
+    [originalStructural.warnings, revisedStructural.warnings],
   );
   // Hash normalized package contents rather than ZIP container bytes. JSZip's
   // entry timestamps are not comparison evidence and may vary when a fixture
