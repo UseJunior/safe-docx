@@ -283,7 +283,9 @@ function anchorPairs(
   originalLength: number,
   revisedLength: number,
   anchors: (i: number, j: number) => boolean,
+  preferred?: (i: number, j: number) => boolean,
 ): Array<[number, number]> {
+  if (preferred) return preferredAnchorPairs(originalLength, revisedLength, anchors, preferred);
   const dp = Array.from({ length: originalLength + 1 }, () => Array<number>(revisedLength + 1).fill(0));
   for (let i = originalLength - 1; i >= 0; i--) {
     for (let j = revisedLength - 1; j >= 0; j--) {
@@ -297,6 +299,39 @@ function anchorPairs(
   let j = 0;
   while (i < originalLength && j < revisedLength) {
     if (anchors(i, j)) {
+      pairs.push([i++, j++]);
+    } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
+    else j++;
+  }
+  return pairs;
+}
+
+/**
+ * The longest anchor alignment, as {@link anchorPairs}, that among the
+ * alignments of that length keeps the most `preferred` pairs. With no
+ * preferred pair it is the alignment `anchorPairs` returns.
+ */
+function preferredAnchorPairs(
+  originalLength: number,
+  revisedLength: number,
+  anchors: (i: number, j: number) => boolean,
+  preferred: (i: number, j: number) => boolean,
+): Array<[number, number]> {
+  // A pair outweighs every preference: score = pairs * scale + preferred pairs.
+  const scale = Math.min(originalLength, revisedLength) + 1;
+  const dp = Array.from({ length: originalLength + 1 }, () => Array<number>(revisedLength + 1).fill(0));
+  const take = (i: number, j: number): number =>
+    anchors(i, j) ? scale + (preferred(i, j) ? 1 : 0) + dp[i + 1]![j + 1]! : -1;
+  for (let i = originalLength - 1; i >= 0; i--) {
+    for (let j = revisedLength - 1; j >= 0; j--) {
+      dp[i]![j] = Math.max(take(i, j), dp[i + 1]![j]!, dp[i]![j + 1]!);
+    }
+  }
+  const pairs: Array<[number, number]> = [];
+  let i = 0;
+  let j = 0;
+  while (i < originalLength && j < revisedLength) {
+    if (take(i, j) === dp[i]![j]!) {
       pairs.push([i++, j++]);
     } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
     else j++;
@@ -470,12 +505,22 @@ function lcsPairs(
   const revisedKeys = revised.map((element, index) =>
     key(element, revisedFields.get(index), revisedNumberingIdentities));
   const keyed = (i: number, j: number): boolean => originalKeys[i] === revisedKeys[j];
-  const textOnly = anchorPairs(original.length, revised.length, keyed);
+  // Keys hold only a paragraph's list and level. Among equally long
+  // alignments, prefer pairing paragraphs that show the same list label, so
+  // duplicate clauses ("[Reserved]") pair by number (#1253).
+  const preferred = originalNumberingIdentities.size > 0 && revisedNumberingIdentities.size > 0
+    ? (i: number, j: number): boolean => {
+      const identity = originalNumberingIdentities.get(original[i]!);
+      return identity !== undefined && identity === revisedNumberingIdentities.get(revised[j]!);
+    }
+    : undefined;
+  const textOnly = anchorPairs(original.length, revised.length, keyed, preferred);
   const consistentAnchor = textConsistentRunAnchors(original, revised);
   const consistent = anchorPairs(
     original.length,
     revised.length,
     (i, j) => keyed(i, j) && consistentAnchor(i, j),
+    preferred,
   );
   // Use the text-consistent anchors only when every gap they change can be
   // re-aligned by gap refinement; otherwise a rejected anchor would turn

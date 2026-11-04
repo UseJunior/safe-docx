@@ -143,4 +143,28 @@ describe('comparison numbering identities follow Word list numbering', () => {
         .toBe('The Company shall give notice in writing.');
     });
   });
+  test('pairs duplicate clauses by their list label', async ({ given, when, then }: AllureBddContext) => {
+    const numberingStartingAt = (start: number) => `<w:numbering xmlns:w="${W_NS}">`
+      + '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0">'
+      + `<w:start w:val="${start}"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>`
+      + '</w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>';
+    const clause = '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>'
+      + '<w:r><w:t>[Reserved]</w:t></w:r></w:p>';
+    const original = documentBody(clause + clause);
+    const revised = documentBody(clause);
+    const [, secondOriginal] = Array.from(original.getElementsByTagNameNS(W_NS, 'p'));
+    let children: ReturnType<typeof constructTaggedTree>['tree']['children'] = [];
+    await given('clauses 1. and 2. with the same text, and a revision keeping one clause that its list numbers 2.', () => {});
+    await when('the tagged tree is constructed', () => {
+      children = constructTaggedTree(original, revised, {
+        detectMoves: false,
+        originalNumberingXml: numberingStartingAt(1),
+        revisedNumberingXml: numberingStartingAt(2),
+      }).tree.children;
+    });
+    await then('the kept clause pairs with the original clause 2., and clause 1. is the deletion', () => {
+      expect(children.map((child) => child.tag)).toEqual(['original', 'both']);
+      expect(children[1]?.tag === 'both' ? children[1].original : undefined).toBe(secondOriginal);
+    });
+  });
 });
