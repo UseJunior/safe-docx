@@ -521,7 +521,7 @@ export type PdfWordComparison = {
     splitRows: Array<{ table: number; row: number; pages: number[] }>;
     /** Lines LibreOffice exported without space glyphs (one PDF token), split back into source words on the evidence of the page's layout text. */
     joinedLines: Array<{ page: number; words: string }>;
-    /** Source words holding a footnote number that pdftotext broke right after the number ("Closing1 ."), joined back; the pieces as read. */
+    /** Source words holding a footnote number read in pieces broken right after the number ("Closing1 ."), joined back; the pieces as read. */
     markSplits: Array<{ page: number; words: string }>;
   };
   limitations: string;
@@ -541,57 +541,6 @@ function withFootnoteMarks(text: string, offsets: readonly number[] | undefined,
     at = offset;
   });
   return out + text.slice(at);
-}
-
-/**
- * Join back the source words holding a footnote number that `pdftotext -raw` broke after the number. The
- * number is a superscript, and the text after it on the baseline ("Closing1." in the source, a period after
- * the reference) can come out as its own token ("Closing1 ."). A run of tokens is joined only when it spells,
- * character for character, a source word holding a mark (`marked`, with the mark sentinels), and every break
- * in the run falls right after one of that word's own footnote numbers. Any other split, and any changed or
- * missing text after the number, is left as read and fails the alignment. `report` gets each joined run.
- */
-function joinMarkSplits(tokens: readonly string[], marked: readonly string[], report: (pieces: string[]) => void): string[] {
-  // The pieces a marked word may break into start at the word's start or right after one of its numbers.
-  const byFirstPiece = new Map<string, Array<{ word: string; cuts: Set<number> }>>();
-  for (const word of new Set(marked)) {
-    const cuts = new Set<number>();
-    let plain = '';
-    for (const char of word) {
-      if (char === MARK_OPEN) continue;
-      if (char === MARK_CLOSE) cuts.add(plain.length);
-      else plain += char;
-    }
-    cuts.delete(plain.length);
-    if (cuts.size === 0) continue;
-    for (const cut of cuts) {
-      const first = plain.slice(0, cut);
-      byFirstPiece.set(first, [...(byFirstPiece.get(first) ?? []), { word: plain, cuts }]);
-    }
-  }
-  if (byFirstPiece.size === 0) return [...tokens];
-  const out: string[] = [];
-  for (let at = 0; at < tokens.length;) {
-    let best: { word: string; end: number } | undefined;
-    for (const { word, cuts } of byFirstPiece.get(tokens[at]!) ?? []) {
-      let length = tokens[at]!.length;
-      let end = at;
-      while (length < word.length && cuts.has(length) && end + 1 < tokens.length && word.startsWith(tokens[end + 1]!, length)) {
-        end += 1;
-        length += tokens[end]!.length;
-      }
-      if (length === word.length && end > at && (!best || end > best.end)) best = { word, end };
-    }
-    if (best) {
-      report(tokens.slice(at, best.end + 1));
-      out.push(best.word);
-      at = best.end + 1;
-    } else {
-      out.push(tokens[at]!);
-      at += 1;
-    }
-  }
-  return out;
 }
 
 /**
@@ -644,13 +593,14 @@ function stripFootnoteAreas(pages: string[][], notes: readonly SourceFootnote[],
 export const PDF_WORD_NORMALIZATION = 'Unicode NFKC (folds ligatures such as "fi"), then whitespace runs split words. Nothing else.';
 export const PDF_WORD_LIMITATIONS =
   'The text layer is read with pdftotext -raw (content-stream order; LibreOffice writes each page\'s footer first, then the body in document order, except that a table row split across pages comes out as each cell\'s fragment on each page; such a row is read back in cell order only when its words partition exactly into those fragments, every cell starting on the first page, and the pages after the first stay pinned to that row and its section). ' +
-  'List labels are expected words, and so is each footnote number, joined to the text around its reference (LibreOffice sets it as a superscript with no space). pdftotext can break such a word right after the number when text follows it on the baseline ("Closing1 ." for "Closing1."); tokens are joined back only when they spell a source word holding a footnote number exactly, every break falling right after one of that word\'s numbers. Footnote text is read from the foot of each page, after the body: the rest of a note continued from the page before, then each note that starts there (its number, then its text); read in page order these areas must spell every note exactly once and in order, and each note must start on the page holding its reference (for a table row split across pages, the page where the mark is printed). A page holding nothing but the rest of a continued note belongs to the content before it and must show that section\'s footer. A repeated table header is expected without its footnote numbers, as LibreOffice draws it. ' +
+  'List labels are expected words, and so is each footnote number, joined to the text around its reference (LibreOffice sets it as a superscript with no space). pdftotext can break such a word right after the number when text follows it on the baseline ("Closing1 ." for "Closing1."); tokens are joined back only where the alignment leaves that source word unmatched among unmatched tokens, consecutive on one page, that spell it exactly with every break right after one of its numbers. Footnote text is read from the foot of each page, after the body: the rest of a note continued from the page before, then each note that starts there (its number, then its text); read in page order these areas must spell every note exactly once and in order, and each note must start on the page holding its reference (for a table row split across pages, the page where the mark is printed). A page holding nothing but the rest of a continued note belongs to the content before it and must show that section\'s footer. A repeated table header is expected without its footnote numbers, as LibreOffice draws it. ' +
   'Every page break is explained from the source: the checker searches for where each page can start between the source words around it (including inside wordless content such as empty table rows), and a start fixes what the page must show first, namely its section\'s footer and page number, the table header LibreOffice repeats when a table continues across the break, and the source words at the top of the page. Sections start on new pages. ' +
   'A justified line that LibreOffice exported without space glyphs reads back as one token. Such a token is split back into words only when it spells, character for character, a run of two or more consecutive source words and that is its one reading which the pdftotext -layout text of the same page (word boundaries by glyph position) shows more often than the raw text does, each split needing an occurrence of its own; without layout text, or with a different page count, nothing is split. The evidence is counted per page rather than tied to the line\'s position, so a changed run-together line passes only if the page\'s layout text shows the source reading in a place the raw text does not, which another run-together line that alignment placed as a single source word could supply. ' +
   'Two observed LibreOffice behaviours are assumed: a header row is never left alone at a page bottom (it stays with the first body row), and a table\'s last row can spill its empty remainder onto the next page, repeating the header there. ' +
   'The check passes only when every start that fits explains the same source words; if none fits, or starts that fit disagree (for example, a table with empty trailing rows followed by a table with the same header, or two such tables back to back at a page start), it fails. The text alone cannot always show layout, so such cases fail even when the PDF is right (a false failure); an ambiguity is never settled by a guess.';
 
-type ExpectedToken = { word: string; entry: number };
+/** A source word as the PDF shows it; `cuts` are the offsets right after its footnote numbers that text follows. */
+type ExpectedToken = { word: string; entry: number; cuts?: number[] };
 
 /**
  * Word-level alignment of the source text against the PDF text layer, with
@@ -678,11 +628,11 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
     }
     for (const word of entryWords[index]!) {
       for (const match of word.matchAll(/\uE000(\d+)\uE001/gu)) markTokens.set(Number(match[1]) - 1, expected.length);
-      expected.push({ word: word.replace(/[\uE000\uE001]/gu, ''), entry: index });
+      const { plain, cuts } = markCuts(word);
+      expected.push({ word: plain, entry: index, ...(cuts.length ? { cuts } : {}) });
     }
   });
   const plainWords = entryWords.map((tokens) => tokens.map((word) => word.replace(/[\uE000\uE001]/gu, '')));
-  const markWords = entryWords.flat().filter((word) => word.includes(MARK_OPEN));
 
   // Effective footer per section: a section that declares none inherits the previous one.
   const effective: Array<{ text: string[]; pageNumbers: boolean }> = [];
@@ -703,8 +653,7 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
 
   const notes = source.footnotes ?? [];
   const footnoteAreas = stripFootnoteAreas(pageTexts.map(words), notes, words);
-  const markSplits: PdfWordComparison['knownGenerated']['markSplits'] = [];
-  const pages = footnoteAreas.bodies.map((tokens, page) => joinMarkSplits(tokens, markWords, (pieces) => markSplits.push({ page: page + 1, words: pieces.join(' ') })));
+  const pages = footnoteAreas.bodies;
   // Footer region at each page head: the longest candidate region that matches; checked by the break model.
   const candidates = (page: number) => [...new Set(effective.map((_, section) => regionFor(section, page).join('\u0001')))].map((key) => (key ? key.split('\u0001') : []))
     .sort((a, b) => b.length - a.length);
@@ -738,7 +687,13 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
   };
 
   // Align the PDF words with the source, then explain page breaks and footnote placement.
-  const evaluate = (pdf: readonly PdfToken[], split: ReturnType<typeof joinSplitRows>, joinedLines: PdfWordComparison['knownGenerated']['joinedLines']): { result: PdfWordComparison; extraIdx: number[] } => {
+  type Evaluation = { result: PdfWordComparison; extraIdx: number[]; ops: Array<Op<ExpectedToken, PdfToken>> | null };
+  const evaluate = (
+    pdf: readonly PdfToken[],
+    split: ReturnType<typeof joinSplitRows>,
+    joinedLines: PdfWordComparison['knownGenerated']['joinedLines'],
+    markSplits: PdfWordComparison['knownGenerated']['markSplits'],
+  ): Evaluation => {
     const ops = myersDiff(expected, pdf, (x, y) => x.word === y.word);
 
     const missing = new Set<number>();
@@ -825,30 +780,122 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
       },
       limitations: PDF_WORD_LIMITATIONS,
     };
-    return { result, extraIdx };
+    return { result, extraIdx, ops };
   };
 
-  const first = readBodies(bodies);
-  const unsplit = evaluate(first.read, first.split, []);
+  // Read and align `pageBodies`; where the alignment leaves a source word holding a footnote number against tokens
+  // that spell it broken right after a number, join those tokens and align again.
+  const settle = (
+    pageBodies: readonly string[][],
+    joinedLines: PdfWordComparison['knownGenerated']['joinedLines'],
+    earlierSplits: PdfWordComparison['knownGenerated']['markSplits'],
+  ): Evaluation & { read: PdfToken[]; bodies: string[][]; markSplits: PdfWordComparison['knownGenerated']['markSplits'] } => {
+    const plain = readBodies(pageBodies);
+    const unjoined = evaluate(plain.read, plain.split, joinedLines, earlierSplits);
+    const joins = unjoined.result.passed || !unjoined.ops ? new Map<string, number>() : markJoins(unjoined.ops, expected, plain.read);
+    if (joins.size === 0) return { ...unjoined, read: plain.read, bodies: pageBodies.map((tokens) => [...tokens]), markSplits: earlierSplits };
+    const markSplits = [...earlierSplits];
+    const joined = pageBodies.map((tokens, page) => {
+      const out: string[] = [];
+      for (let index = 0; index < tokens.length;) {
+        const count = joins.get(`${page}:${index}`) ?? 1;
+        if (count > 1) markSplits.push({ page: page + 1, words: tokens.slice(index, index + count).join(' ') });
+        out.push(tokens.slice(index, index + count).join(''));
+        index += count;
+      }
+      return out;
+    });
+    const again = readBodies(joined);
+    return { ...evaluate(again.read, again.split, joinedLines, markSplits), read: again.read, bodies: joined, markSplits };
+  };
+
+  const first = settle(bodies, [], []);
   // Layout text is evidence only page for page; with a different page count it is not used at all.
   const layout = layoutTexts?.length === pageTexts.length ? layoutTexts : undefined;
-  if (unsplit.result.passed || !layout) return unsplit.result;
+  if (first.result.passed || !layout) return first.result;
   // A justified line LibreOffice exported without space glyphs reads back as one token. The candidates are the
   // tokens the first alignment could not place or, when it was over budget, every token; never a word of a
-  // rejoined row, which matched the source exactly.
-  const joinable = (unsplit.result.alignment === 'complete' ? unsplit.extraIdx.map((index) => first.read[index]!) : first.read)
+  // rejoined row, which matched the source exactly. A run-together line can end in a word that pdftotext also
+  // broke after its footnote number ("TheClosing1" then "."), so the readings, and the raw and layout text they
+  // are counted in, break each source word holding a footnote number after its numbers; the next alignment
+  // joins those pieces back as above.
+  const joinable = (first.result.alignment === 'complete' ? first.extraIdx.map((index) => first.read[index]!) : first.read)
     .filter((token) => token.origin >= 0);
-  const splits = splitJoinedTokens(joinable, expected.map((token) => token.word), bodies, pageTexts.map(words), layout.map(words));
-  if (splits.size === 0) return unsplit.result;
+  const pieces = new Map<string, string[]>();
+  for (const token of expected) {
+    if (!token.cuts) continue;
+    const bounds = [0, ...token.cuts, token.word.length];
+    pieces.set(token.word, bounds.slice(1).map((end, index) => token.word.slice(bounds[index], end)));
+  }
+  const broken = (tokens: readonly string[]) => tokens.flatMap((word) => pieces.get(word) ?? [word]);
+  const splits = splitJoinedTokens(joinable, broken(expected.map((token) => token.word)), first.bodies, pageTexts.map((text) => broken(words(text))), layout.map((text) => broken(words(text))));
+  if (splits.size === 0) return first.result;
   // Split the page bodies as read, then rebuild everything from them: split rows, alignment, page model, footnotes.
-  const resplit = bodies.map((tokens, page) => tokens.flatMap((word, index) => splits.get(`${page}:${index}`) ?? [word]));
-  const second = readBodies(resplit);
+  const resplit = first.bodies.map((tokens, page) => tokens.flatMap((word, index) => splits.get(`${page}:${index}`) ?? [word]));
   const joinedLines = [...splits].map(([key, split]) => ({ page: Number(key.split(':')[0]) + 1, words: split.join(' ') }));
-  return evaluate(second.read, second.split, joinedLines).result;
+  return settle(resplit, joinedLines, first.markSplits).result;
 }
 
 /** A body word as read: its page in the reading (after split rows are rejoined), where it is printed, and its index in its page's body (-1 in a rejoined row). */
 type PdfToken = { word: string; page: number; physicalPage: number; origin: number };
+
+/** `word` (with mark sentinels) without them, and the offsets right after each footnote number that text follows. */
+function markCuts(word: string): { plain: string; cuts: number[] } {
+  const cuts: number[] = [];
+  let plain = '';
+  for (const char of word) {
+    if (char === MARK_CLOSE) cuts.push(plain.length);
+    else if (char !== MARK_OPEN) plain += char;
+  }
+  return { plain, cuts: cuts.filter((cut) => cut > 0 && cut < plain.length) };
+}
+
+/**
+ * pdftotext -raw can break a word holding a footnote number right after the number, when text follows it on
+ * the baseline ("Closing1" then "." for "Closing1."). Find each such break the alignment left: within one run
+ * of unaligned words, a source word holding a footnote number left unmatched, and unmatched PDF tokens of the
+ * same run, consecutive in one page body, that spell it exactly with every break right after one of its
+ * numbers. Source words without a footnote number, and tokens anywhere else, are never joined. Returns the
+ * joins as `page:origin` of the first token, with the number of tokens.
+ */
+function markJoins(ops: ReadonlyArray<Op<ExpectedToken, PdfToken>>, expected: readonly ExpectedToken[], pdf: readonly PdfToken[]): Map<string, number> {
+  const joins = new Map<string, number>();
+  let deletes: number[] = [];
+  let inserts: number[] = [];
+  const flush = () => {
+    let from = 0;
+    for (const ai of deletes) {
+      const { word, cuts } = expected[ai]!;
+      if (!cuts?.length) continue;
+      for (let start = from; start < inserts.length; start += 1) {
+        const first = pdf[inserts[start]!]!;
+        if (first.origin < 0 || !cuts.includes(first.word.length) || !word.startsWith(first.word)) continue;
+        let length = first.word.length;
+        let end = start;
+        while (length < word.length && cuts.includes(length) && end + 1 < inserts.length) {
+          const next = pdf[inserts[end + 1]!]!;
+          if (inserts[end + 1] !== inserts[end]! + 1 || next.page !== first.page || next.origin !== first.origin + (end + 1 - start) || !word.startsWith(next.word, length)) break;
+          end += 1;
+          length += next.word.length;
+        }
+        if (length === word.length && end > start) {
+          joins.set(`${first.page}:${first.origin}`, end - start + 1);
+          from = end + 1;
+          break;
+        }
+      }
+    }
+    deletes = [];
+    inserts = [];
+  };
+  for (const op of ops) {
+    if (op.kind === 'equal') flush();
+    else if (op.kind === 'delete') deletes.push(op.ai!);
+    else inserts.push(op.bi!);
+  }
+  flush();
+  return joins;
+}
 
 /**
  * A justified line that LibreOffice exported without space glyphs (observed with an underlined word on the

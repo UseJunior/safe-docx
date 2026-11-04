@@ -333,6 +333,30 @@ describe('Traceability: footnotes in created documents', () => {
       expect(comparePdfWords(source, [body(split, 'The Price6')]).passed).toBe(false);
       // A footnote that holds a cross-reference followed by punctuation must keep it.
       expect(comparePdfWords(source, [body(split).replace('Section 1; nothing', 'Section 1 nothing')]).passed).toBe(false);
+
+      // Only the occurrence the alignment places on the reference is joined: text that merely looks like a split
+      // reference, in the body or the footer, is read as it is.
+      const note = '{% footnote id="a" %}Note.{% /footnote %}';
+      const literalSpaced = projectSourceText(['Closing1 . Closing{% fnref id="a" /%}.', '', note].join('\n'));
+      expect(comparePdfWords(literalSpaced, ['Closing1 . Closing1. 1 Note.'])).toMatchObject({ passed: true, knownGenerated: { markSplits: [] } });
+      expect(comparePdfWords(literalSpaced, ['Closing1 . Closing1 . 1 Note.'])).toMatchObject({ passed: true, knownGenerated: { markSplits: [{ page: 1, words: 'Closing1 .' }] } });
+      const literalWhole = projectSourceText(['Closing1. Closing{% fnref id="a" /%}.', '', note].join('\n'));
+      expect(comparePdfWords(literalWhole, ['Closing1. Closing1 . 1 Note.']).passed).toBe(true);
+      expect(comparePdfWords(literalWhole, ['Closing1 . Closing1. 1 Note.']).passed).toBe(false);
+      const footer = projectSourceText(['---', 'footer: Closing1 .', '---', '', 'The Closing{% fnref id="a" /%}.', '', note].join('\n'));
+      expect(comparePdfWords(footer, ['Closing1 . The Closing1 . 1 Note.'])).toMatchObject({ passed: true, knownGenerated: { footerRegions: ['Closing1 .'] } });
+      expect(comparePdfWords(footer, ['Closing1. The Closing1 . 1 Note.']).passed).toBe(false);
+
+      // A justified line exported without space glyphs can also end in a word broken after its footnote number;
+      // the layout text supplies the spaces, and the number's break is joined as above.
+      const justified = projectSourceText(['The Closing{% fnref id="a" /%}. applies.', '', note].join('\n'));
+      expect(comparePdfWords(justified, ['TheClosing1 . applies. 1 Note.'], ['The Closing1. applies. 1 Note.'])).toMatchObject({
+        passed: true,
+        knownGenerated: { joinedLines: [{ page: 1, words: 'The Closing1' }], markSplits: [{ page: 1, words: 'Closing1 .' }] },
+      });
+      expect(comparePdfWords(justified, ['TheClosing1. applies. 1 Note.'], ['The Closing1. applies. 1 Note.']).passed).toBe(true);
+      expect(comparePdfWords(justified, ['TheClosing1 , applies. 1 Note.'], ['The Closing1, applies. 1 Note.']).passed).toBe(false);
+      expect(comparePdfWords(justified, ['TheClosing1 . applies. 1 Note.']).passed).toBe(false);
     },
   );
 
