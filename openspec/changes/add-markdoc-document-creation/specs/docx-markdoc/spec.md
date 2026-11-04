@@ -46,6 +46,12 @@ unlinked with declared content.
 - **AND** the first signer SHALL have 42pt before and the second 30pt, both SHALL keep lines together, and the lead-in SHALL keep with next
 - **AND** the document SHALL contain no empty paragraphs
 
+#### Scenario: [SDX-MDOC-CREATE-15] signer content is one line of text
+- **GIVEN** signers whose content is a name followed, on its own line, by a `{% fnref /%}`, an `{% xref /%}`, a block `{% fill %}`, a second line of text or a line break (in block or inline form), or whose content is a list, a heading, or only a tag on its own line
+- **WHEN** each is created
+- **THEN** creation SHALL fail before writing any output with `INVALID_SIGNER` and the source line, because the signature block renders only one line of name and anything else would be dropped silently
+- **AND** one line of content, in block or inline form and holding a footnote reference, a fill or formatting, SHALL still create its signature block
+
 #### Scenario: [SDX-MDOC-CREATE-05] sections carry linked or unlinked footers and page numbers
 - **GIVEN** frontmatter `page-numbers: true`, a `section` tag with a footer, and a later `section` tag with no footer attributes
 - **WHEN** it is created
