@@ -25,13 +25,19 @@ const refConforming = test
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_PATH = path.resolve(__dirname, '../../../../scripts/oracle/word/evidence/issue-1236-word-16.114.json');
+const START_VALUE_EVIDENCE_PATH = path.resolve(__dirname, '../../../../scripts/oracle/word/evidence/issue-1254-word-16.114.json');
 
 type Evidence = {
   spec: DocumentSpec;
   references: Array<{ instruction: string; word: string; libreOffice?: string }>;
   wordNativeCrossReferenceInstructions: string[];
   alphabeticPastZ: { numbering: NumberingSpec[]; references: Array<{ instruction: string; word: string }> };
-  deeperLevelPlaceholders: { numbering: NumberingSpec };
+  deeperLevelPlaceholders: { numbering: NumberingSpec; references: Array<{ instruction: string; word: string }> };
+};
+
+/** Word's list strings and REF results for paragraphs after skipped levels (#1254); legal probes use LEGAL's levels. */
+type StartValueEvidence = {
+  fixtures: Record<string, { paragraphs: Array<{ ilvl: number; bookmark: string; word: { listString: string; fullContext: string; paragraph: string } }> }>;
 };
 
 const text = (value: string, extra: Partial<Extract<InlineSpec, { kind: 'text' }>> = {}): InlineSpec => ({ kind: 'text', text: value, ...extra });
@@ -252,6 +258,27 @@ describe('Traceability: generated cross-references', () => {
         expect(generated).toEqual(references);
         expect(generated.map((field) => field.word)).toContain('1(bb)');
       });
+      await and('targets after skipped levels carry Word\'s results, ancestors at their start values (#1254 evidence)', async () => {
+        const { fixtures } = JSON.parse(readFileSync(START_VALUE_EVIDENCE_PATH, 'utf8')) as StartValueEvidence;
+        for (const name of ['legal_orphan_clause', 'legal_section_first', 'legal_l3_after_section', 'legal_l3_first']) {
+          const { paragraphs } = fixtures[name]!;
+          const blocks = paragraphs.map((p) => item(p.ilvl, p.bookmark, { bookmark: p.bookmark }));
+          const runs = paragraphs.flatMap((p) => [ref(p.bookmark), ref(p.bookmark, { number: 'paragraph' })]);
+          const { document } = await parts(await generateDocx(doc([...blocks, para(runs)])));
+          expect(readFields(document).map((field) => field.result), name).toEqual(paragraphs.flatMap((p) => [p.word.fullContext, p.word.paragraph]));
+        }
+      });
+      await and('a full-context number passes over a silent parent level: deep2 reads "(a)" in both forms, as Word shows it', async () => {
+        const { numbering: deep, references } = evidence.deeperLevelPlaceholders;
+        const { document } = await parts(await generateDocx(doc([
+          para([text('zero')], { list: { numId: 'deep', ilvl: 0 } }),
+          para([text('one')], { list: { numId: 'deep', ilvl: 1 } }),
+          para([text('two')], { list: { numId: 'deep', ilvl: 2 }, bookmark: 'deep2' }),
+          para([ref('deep2'), ref('deep2', { number: 'paragraph' })]),
+        ], { numbering: [LEGAL, deep] })));
+        const generated = readFields(document).map((field) => ({ instruction: field.instruction, word: field.result }));
+        expect(generated).toEqual(references.filter((reference) => reference.instruction.includes('deep2')));
+      });
     },
   );
 
@@ -284,28 +311,26 @@ describe('Traceability: generated cross-references', () => {
         expect(relative.path).toBe('/sections/0/blocks/1/runs/0/number');
         expect((await specError(doc([para([ref('' as string)])]))).path).toBe('/sections/0/blocks/0/runs/0/bookmark');
       });
-      await and('a target without a list number, or whose number depends on an unused or empty level, fails at its bookmark', async () => {
+      await and('a target without a list number, whose own level text names a deeper level or no level, or that renders empty fails at its bookmark', async () => {
         const unnumbered = await specError(doc([para([text('Plain.')], { bookmark: 'plain' }), para([ref('plain')])]));
         expect(unnumbered.path).toBe('/sections/0/blocks/0/bookmark');
         expect(unnumbered.message).toMatch(/without a list number/);
-        // A clause under no Section: Word shows the unused level at its start value.
-        const unused = await specError(doc([item(2, 'orphan clause', { bookmark: 'orphan' }), para([ref('orphan')])]));
-        expect(unused.path).toBe('/sections/0/blocks/0/bookmark');
-        expect(unused.message).toMatch(/no earlier paragraph uses/);
-        const ancestor = await specError(doc([para([text('Section')], { styleId: 'Heading2' }), item(2, 'clause', { bookmark: 'clause' }), para([ref('clause')])]));
-        expect(ancestor.message).toMatch(/no earlier paragraph uses/);
         // A level text naming a deeper level: Word shows no number (REF shows 0), so both forms are refused.
         const { numbering: deep } = JSON.parse(readFileSync(EVIDENCE_PATH, 'utf8')).deeperLevelPlaceholders as Evidence['deeperLevelPlaceholders'];
-        for (const [ilvl, number] of [[0, 'paragraph'], [0, 'fullContext'], [2, 'fullContext']] as const) {
+        for (const [ilvl, number] of [[0, 'paragraph'], [0, 'fullContext'], [1, 'paragraph'], [1, 'fullContext']] as const) {
           const deeper = await specError(doc([
             para([text('zero')], { list: { numId: 'deep', ilvl: 0 }, ...(ilvl === 0 ? { bookmark: 'deep' } : {}) }),
-            para([text('one')], { list: { numId: 'deep', ilvl: 1 } }),
-            para([text('two')], { list: { numId: 'deep', ilvl: 2 }, ...(ilvl === 2 ? { bookmark: 'deep' } : {}) }),
+            para([text('one')], { list: { numId: 'deep', ilvl: 1 }, ...(ilvl === 1 ? { bookmark: 'deep' } : {}) }),
+            para([text('two')], { list: { numId: 'deep', ilvl: 2 } }),
             para([ref('deep', { number })]),
           ], { numbering: [LEGAL, deep] }));
           expect(deeper.path).toBe(`/sections/0/blocks/${ilvl}/bookmark`);
           expect(deeper.message).toMatch(/names a deeper list level/);
         }
+        // A placeholder past %9 names no list level; Word's result for it is not measured.
+        const pastNine: NumberingSpec = { numId: 'past', levels: [{ ilvl: 0, numFmt: 'decimal', lvlText: '%1.%10' }] };
+        const past = await specError(doc([para([text('x')], { list: { numId: 'past', ilvl: 0 }, bookmark: 'past' }), para([ref('past')])], { numbering: [LEGAL, pastNine] }));
+        expect(past.message).toMatch(/names no list level/);
         const silent: NumberingSpec = { numId: 'silent', levels: [{ ilvl: 0, numFmt: 'none', lvlText: '%1' }] };
         const empty = await specError(doc([para([text('x')], { list: { numId: 'silent', ilvl: 0 }, bookmark: 'silent' }), para([ref('silent')])], { numbering: [LEGAL, silent] }));
         expect(empty.message).toMatch(/renders as empty text/);

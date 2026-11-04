@@ -79,6 +79,8 @@ jobs:
         run: npm run test:release-isolation
       - name: Test formatting-loss detectors (unit tests + known-bad self-test)
         run: npm run test:docx-formatting-loss
+      - name: Test real-corpus gate wrapper (mirrors the real-corpus-comparison job)
+        run: npm run test:check-real-corpus
 
   spec-coverage:
     runs-on: ubuntu-latest

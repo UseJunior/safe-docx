@@ -131,8 +131,8 @@ export class CrossReferenceResolver {
     if ('refused' in result) {
       const reasons: Record<typeof result.refused, string> = {
         unusedLevel:
-          `The number of bookmark '${bookmark}' depends on a list level no earlier paragraph uses; ` +
-          'Word shows that level at its start value, which generation does not compute, so number that level first',
+          `The number of bookmark '${bookmark}' uses a placeholder that names no list level (past %9); ` +
+          'what Word shows for it is not measured',
         deeperLevel:
           `The number of bookmark '${bookmark}' uses a level text that names a deeper list level; ` +
           'Word shows no number for such a level, so a cross-reference to it would show 0',
