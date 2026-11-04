@@ -140,9 +140,22 @@ function roman(n: number): string {
  * "2", "2(b)", "2(b)(ii)" (the period before "(" dropped) and the paragraph
  * number as "2", "(b)", "(ii)". docx-core computes the cached result from the
  * OOXML; read-back compares the two.
+ *
+ * Counting follows Word's list model, as the numbering decisions in
+ * `list-numbering.ts` rely on: every instance of one definition shares a
+ * running count, and an instance's `startOverride` restarts it at that
+ * instance's first paragraph on the level.
  */
 function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSpec[]): Map<string, { full: string; paragraph: string }> {
+  const instances = new Map<string, { definition: NumberingSpec; overrides: ReadonlyMap<number, number> }>();
+  for (const definition of numbering) {
+    instances.set(definition.numId, { definition, overrides: new Map() });
+    for (const instance of definition.instances ?? []) {
+      instances.set(instance.numId, { definition, overrides: new Map(instance.levelOverrides.map((override) => [override.ilvl, override.startOverride])) });
+    }
+  }
   const counters = new Map<string, number[]>();
+  const usedLevels = new Map<string, Set<number>>();
   const texts = new Map<string, { full: string; paragraph: string }>();
   const visit = (blocks: BlockSpec[]) => {
     for (const block of blocks) {
@@ -152,11 +165,17 @@ function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSp
       }
       if (!block.list) continue;
       const { numId, ilvl } = block.list;
-      const levels = numbering.find((definition) => definition.numId === numId)!.levels;
-      const values = counters.get(numId) ?? [];
+      const { definition, overrides } = instances.get(numId)!;
+      const { levels } = definition;
+      const values = counters.get(definition.numId) ?? [];
+      const used = usedLevels.get(numId) ?? new Set<number>();
+      const override = overrides.get(ilvl);
+      if (override !== undefined && !used.has(ilvl)) values[ilvl] = override - 1;
+      used.add(ilvl);
+      usedLevels.set(numId, used);
       values[ilvl] = (values[ilvl] ?? (levels[ilvl]!.start ?? 1) - 1) + 1;
       values.length = ilvl + 1;
-      counters.set(numId, values);
+      counters.set(definition.numId, values);
       if (block.bookmark === undefined || levels[0]!.numFmt !== 'decimal') continue;
       const own = [String(values[0]), `(${letters(values[1]!)})`, `(${roman(values[2]!)})`];
       texts.set(block.bookmark, { full: own.slice(0, ilvl + 1).join(''), paragraph: own[ilvl]! });
@@ -369,7 +388,7 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     },
     defaults: creationDefaults(profile),
     styles: creationStyles(profile),
-    ...(theme.numbering.length > 0 ? { numbering: theme.numbering } : {}),
+    ...(theme.numbering.length > 0 ? { numbering: [...theme.numbering] } : {}),
     sections: specSections,
   };
   return {

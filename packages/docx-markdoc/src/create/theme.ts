@@ -8,6 +8,7 @@ import {
   twipsFromPt,
   type CreationProfile,
 } from './profile.js';
+import { CreationListNumbering } from './list-numbering.js';
 
 type TextRun = Extract<InlineSpec, { kind: 'text' }>;
 
@@ -50,8 +51,12 @@ function textRun(text: string, style: InlineStyle, highlighted: boolean): TextRu
  * legends switch highlighting off.
  */
 export class CreationTheme implements Theme {
-  readonly numbering: NumberingSpec[] = [];
-  /** Numbering instance for the top-level list being rendered (one per list, so each list restarts). */
+  private readonly lists = new CreationListNumbering();
+  /** Numbering definitions the rendered lists use, for `DocumentSpec.numbering`. */
+  get numbering(): readonly NumberingSpec[] {
+    return this.lists.definitions;
+  }
+  /** Numbering instance for the top-level list being rendered. */
   private currentList: { numId: string } | null = null;
   private depth = 0;
   private literalDepth = 0;
@@ -146,25 +151,15 @@ export class CreationTheme implements Theme {
     return { numId: this.currentList.numId, ilvl: Math.min(level, 2), continuationIndentTwips: 720 * (level + 1), itemAfterTwips: twipsFromPt(this.profile.spacingAfterPt) };
   }
 
-  /** Allocate the numbering instance for a top-level list: legal 1./(a)/(i) or bullets, starting at its first marker. */
+  /**
+   * Bind a top-level list to its numbering instance: legal 1./(a)/(i) or
+   * bullets. Whether an ordered list continues the previous one or restarts
+   * is decided by {@link CreationListNumbering}.
+   */
   beginList(list: MarkdocNode): void {
     const ordered = list.attributes.ordered === true;
-    const numId = `${ordered ? 'ol' : 'ul'}-${this.numbering.length + 1}`;
     const start = ordered && Number.isInteger(list.attributes.start) ? Number(list.attributes.start) : 1;
-    const formats = ordered
-      ? ([['decimal', '%1.'], ['lowerLetter', '(%2)'], ['lowerRoman', '(%3)']] as const)
-      : ([['bullet', '•'], ['bullet', '◦'], ['bullet', '▪']] as const);
-    this.numbering.push({
-      numId,
-      levels: formats.map(([numFmt, lvlText], ilvl) => ({
-        ilvl,
-        start: ilvl === 0 ? start : 1,
-        numFmt,
-        lvlText,
-        suff: 'tab' as const,
-        indentTwips: { left: 720 * (ilvl + 1), hanging: ordered ? 720 : 360 },
-      })),
-    });
+    const { numId } = this.lists.placeTopLevelList(ordered, start, list.children.length);
     this.currentList = { numId };
   }
 
