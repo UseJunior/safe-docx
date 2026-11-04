@@ -358,6 +358,12 @@ describe('Traceability: footnotes in created documents', () => {
       const parenthesis = projectSourceText(['((see Closing{% fnref id="a" /%}) ) applies.', '', note].join('\n'));
       expect(comparePdfWords(parenthesis, ['((see Closing1 ) ) applies. 1 Note.']).passed).toBe(true);
       expect(comparePdfWords(parenthesis, ['((see Closing1 ) applies. 1 Note.']).passed).toBe(false);
+      // A list label spelled like a run of a reference word's pieces ("2." in "Escrow12.") is compared like any other word.
+      const labels = projectSourceText(['Escrow{% fnref id="a" /%}{% fnref id="b" /%}.', '', '1. First', '2. Second', '', note, '', '{% footnote id="b" %}Other.{% /footnote %}'].join('\n'));
+      expect(comparePdfWords(labels, ['Escrow12. 1. First 2. Second 1 Note. 2 Other.']).passed).toBe(true);
+      expect(comparePdfWords(labels, ['Escrow12 . 1. First 2. Second 1 Note. 2 Other.']).passed).toBe(true);
+      expect(comparePdfWords(labels, ['Escrow1 2. 1. First 2. Second 1 Note. 2 Other.']).passed).toBe(true);
+      expect(comparePdfWords(labels, ['Escrow12. 1. First 2 . Second 1 Note. 2 Other.']).passed).toBe(false);
       // The report shows a missing reference word as written and the tokens read as printed.
       expect(comparePdfWords(literalSpaced, ['Closing1 . Closing1 , 1 Note.'])).toMatchObject({ passed: false, missing: [{ words: 'Closing1.' }], unexplainedExtra: [{ words: 'Closing1 ,' }] });
 

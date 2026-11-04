@@ -647,11 +647,19 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
   }
   const asPieces = (tokens: readonly string[]) => tokens.flatMap((word) => spellings.get(word) ?? [word]);
   let sourceWords = 0;
+  // One source word, list labels included, as its pieces.
+  const pushWord = (pieces: readonly string[], entry: number, mark: boolean) => {
+    const id = sourceWords;
+    sourceWords += 1;
+    pieces.forEach((piece, at) => {
+      expected.push({ word: piece, entry, ...(pieces.length > 1 ? { piece: { word: id, at, of: pieces.length, mark } } : {}) });
+    });
+  };
   source.body.forEach((entry, index) => {
     if (entry.marker) {
-      expected.push({ word: entry.marker.normalize('NFKC'), entry: index });
+      const marker = entry.marker.normalize('NFKC');
+      pushWord(spellings.get(marker) ?? [marker], index, false);
       listMarkers += 1;
-      sourceWords += 1;
     }
     for (const word of entryWords[index]!) {
       const { plain, cuts, numbers } = markCuts(word);
@@ -660,11 +668,7 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
       // Each footnote number belongs to the piece that holds its last digit.
       const ends = pieces.map((_, at) => pieces.slice(0, at + 1).join('').length);
       numbers.forEach((end, k) => markTokens.set(notesHere[k]!, expected.length + ends.findIndex((pieceEnd) => end <= pieceEnd)));
-      const id = sourceWords;
-      sourceWords += 1;
-      pieces.forEach((piece, at) => {
-        expected.push({ word: piece, entry: index, ...(pieces.length > 1 ? { piece: { word: id, at, of: pieces.length, mark: cuts.length > 0 } } : {}) });
-      });
+      pushWord(pieces, index, cuts.length > 0);
     }
   });
   const expectedGlued = expected.map((token) => (token.piece?.at ?? 0) > 0);
