@@ -220,6 +220,12 @@ export function spanningBookmarkBoundaries(paragraph: XmlElement): XmlElement[] 
  * Bookmarks wholly inside the paragraph are deleted with it, which removes
  * both boundaries and so keeps the rest of the document paired.
  *
+ * This preserves valid pairs; it does not repair malformed input (missing or
+ * duplicate ids, an end before its own start). A moved boundary also leaves
+ * any wrapper it sat in (w:hyperlink, w:ins, w:sdt, ...), so the helper suits
+ * the pinned NVCA fixtures, whose spanning boundaries are direct w:p children,
+ * rather than revision-bearing documents.
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
  * @see https://github.com/UseJunior/safe-docx/issues/1255

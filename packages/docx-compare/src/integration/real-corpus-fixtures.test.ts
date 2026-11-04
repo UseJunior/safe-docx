@@ -108,11 +108,27 @@ const deletionTest = testAllure.epic('Document Comparison').withLabels({
 // bookmark with text after it. It also closes _Before (opened in the first
 // paragraph) and opens _Spanning (closed in the third), the NVCA SPA shape
 // that left bookmarkEnd 27 orphaned (#1255).
+const openingParagraph =
+  `<w:p>${run('Opening paragraph that stays in place.')}<w:bookmarkStart w:id="5" w:name="_Before"/>${run(' Before range text.')}</w:p>`;
+const deletedParagraph =
+  `<w:p>${run('Deleted clause opens with ')}<w:bookmarkStart w:id="10" w:name="_RefTarget"/>${run('the targeted words')}<w:bookmarkEnd w:id="10"/>${run(' and continues')}<w:bookmarkEnd w:id="5"/>${run(' until ')}<w:bookmarkStart w:id="27" w:name="_Spanning"/>${run('the spanning range opens.')}</w:p>`;
+const followingParagraphContent =
+  `${run('The following paragraph closes it')}<w:bookmarkEnd w:id="27"/>${run(' and keeps going.')}`;
+const referenceParagraph =
+  `<w:p>${run('See ')}<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> REF _RefTarget \\h </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>${run('the targeted words')}<w:r><w:fldChar w:fldCharType="end"/></w:r>${run(' for the closing reference.')}</w:p>`;
 const spanningBody = [
-  `<w:p>${run('Opening paragraph that stays in place.')}<w:bookmarkStart w:id="5" w:name="_Before"/>${run(' Before range text.')}</w:p>`,
-  `<w:p>${run('Deleted clause opens with ')}<w:bookmarkStart w:id="10" w:name="_RefTarget"/>${run('the targeted words')}<w:bookmarkEnd w:id="10"/>${run(' and continues')}<w:bookmarkEnd w:id="5"/>${run(' until ')}<w:bookmarkStart w:id="27" w:name="_Spanning"/>${run('the spanning range opens.')}</w:p>`,
-  `<w:p><w:pPr><w:jc w:val="both"/></w:pPr>${run('The following paragraph closes it')}<w:bookmarkEnd w:id="27"/>${run(' and keeps going.')}</w:p>`,
-  `<w:p>${run('See ')}<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> REF _RefTarget \\h </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>${run('the targeted words')}<w:r><w:fldChar w:fldCharType="end"/></w:r>${run(' for the closing reference.')}</w:p>`,
+  openingParagraph,
+  deletedParagraph,
+  `<w:p><w:pPr><w:jc w:val="both"/></w:pPr>${followingParagraphContent}</w:p>`,
+  referenceParagraph,
+].join('');
+// Same document with the paragraph after the deletion replaced by a table
+// whose cell closes _Spanning, so a w:tbl follows the deleted paragraph.
+const tableFollowsBody = [
+  openingParagraph,
+  deletedParagraph,
+  `<w:tbl><w:tr><w:tc><w:p>${followingParagraphContent}</w:p></w:tc></w:tr></w:tbl>`,
+  referenceParagraph,
 ].join('');
 
 async function bodyDocument(document: Buffer) {
@@ -160,10 +176,11 @@ describe('real-corpus paragraph-deletion fixture', () => {
   deletionTest('keeps spanning boundaries at body level when a table follows the deletion', async () => {
     // Body-level bookmark boundaries are valid block-level content, so they stay
     // in w:body at the deletion point rather than moving into the table.
-    const source = await buildDocxFromBodyXml(spanningBody.replace(/<w:p><w:pPr>.*?<\/w:p>/, '<w:tbl/>'));
-    const deleted = (await bodyDocument(source)).getElementsByTagNameNS(W_NS, 'p')[1]!;
-    expect(deleted.textContent).toContain('Deleted clause');
+    const source = await buildDocxFromBodyXml(tableFollowsBody);
+    expect(bookmarkPairingIssues((await checkGeneratedPackage(source)).issues)).toEqual([]);
     const fixture = await deleteOneRealParagraph(source);
+    expect(fixture.targetedBookmarkNames).toEqual(['_RefTarget']);
+    expect(bookmarkPairingIssues((await checkGeneratedPackage(fixture.revised)).issues)).toEqual([]);
     const body = (await bodyDocument(fixture.revised)).getElementsByTagNameNS(W_NS, 'body')[0]!;
     const children = Array.from(body.childNodes)
       .filter((node) => node.nodeType === 1)
