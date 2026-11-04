@@ -10,7 +10,7 @@ import { importDocxToMarkdoc } from '../import.js';
 import { defaultPdfRenderTools } from '../pdf/tools.js';
 import { runCreateCommand } from './cli-create.js';
 import { createDocumentFromMarkdoc, type CreationCertificate } from './create.js';
-import { PAGE_NUMBER_FIELD, comparePdfWords, projectSourceText, type SourceProjection } from './oracle.js';
+import { PAGE_NUMBER_FIELD, comparePdfWords, projectSourceText, type PdfWordComparison, type SourceProjection } from './oracle.js';
 
 const TEST_FEATURE = 'add-generated-document-footnotes';
 const test = testAllure.epic('DOCX Markdoc').withLabels({
@@ -290,6 +290,52 @@ describe('Traceability: footnotes in created documents', () => {
     },
   );
 
+  test.openspec('[SDX-MDOC-FOOTNOTE-07] the PDF word check accepts punctuation that pdftotext splits from a footnote number')(
+    'Scenario: the PDF word check accepts punctuation that pdftotext splits from a footnote number',
+    async () => {
+      const source = projectSourceText([
+        '---', 'footer: Draft', '---', '',
+        'The Closing{% fnref id="a" /%}. Costs{% fnref id="b" /%}, fees{% fnref id="c" /%}; taxes{% fnref id="d" /%}: (as defined{% fnref id="e" /%}) apply.', '',
+        '1. The Price{% fnref id="f" /%}. {% #price %}', '',
+        '{% footnote id="a" %}Closing note.{% /footnote %}', '',
+        '{% footnote id="b" %}Costs note.{% /footnote %}', '',
+        '{% footnote id="c" %}Fees as in Section {% xref to="price" /%}; nothing else.{% /footnote %}', '',
+        '{% footnote id="d" %}Taxes note.{% /footnote %}', '',
+        '{% footnote id="e" %}Defined note.{% /footnote %}', '',
+        '{% footnote id="f" %}See Section {% xref to="price" /%}.{% /footnote %}',
+      ].join('\n'), { reader: 'libreoffice' });
+      const notes = '1\nClosing note.\n2\nCosts note.\n3\nFees as in Section 1; nothing else.\n4\nTaxes note.\n5\nDefined note.\n6\nSee Section 1.\n';
+      const body = (clause: string, item = 'The Price6 .') => `Draft\n${clause}\n1.\n${item}\n${notes}`;
+      // pdftotext -raw breaks the word after the superscript number when punctuation follows on the baseline.
+      const split = 'The Closing1 . Costs2 , fees3 ; taxes4 : (as defined5 ) apply.';
+      const result = comparePdfWords(source, [body(split)]);
+      expect(result).toMatchObject({ passed: true, missing: [], unexplainedExtra: [], footnoteMismatches: [] });
+      expect(result.knownGenerated.markSplits).toEqual(['Closing1 .', 'Costs2 ,', 'fees3 ;', 'taxes4 :', 'defined5 )', 'Price6 .'].map((words) => ({ page: 1, words })));
+      // The word read whole still passes, and so does a mix of the two forms.
+      expect(comparePdfWords(source, [body('The Closing1. Costs2, fees3; taxes4: (as defined5) apply.', 'The Price6.')])).toMatchObject({ passed: true, knownGenerated: { markSplits: [] } });
+      expect(comparePdfWords(source, [body('The Closing1. Costs2 , fees3; taxes4 : (as defined5) apply.')]).passed).toBe(true);
+
+      // Negative controls: punctuation dropped, changed, doubled, or moved before the number; a split that is not
+      // right after a footnote number; the number lost with the punctuation kept.
+      for (const wrong of [
+        'The Closing1 Costs2 , fees3 ; taxes4 : (as defined5 ) apply.',
+        'The Closing1 , Costs2 , fees3 ; taxes4 : (as defined5 ) apply.',
+        'The Closing1 . Costs2 , fees3 : taxes4 : (as defined5 ) apply.',
+        'The Closing1 . . Costs2 , fees3 ; taxes4 : (as defined5 ) apply.',
+        'The Closing.1 Costs2 , fees3 ; taxes4 : (as defined5 ) apply.',
+        'The Closing1 . Costs2 , fees3 ; taxes4 : (as defined5 apply.',
+        'The Clos ing1. Costs2 , fees3 ; taxes4 : (as defined5 ) apply.',
+        'The Closing . Costs2 , fees3 ; taxes4 : (as defined5 ) apply.',
+      ]) {
+        expect(comparePdfWords(source, [body(wrong)]).passed, wrong).toBe(false);
+      }
+      expect(comparePdfWords(source, [body(split, 'The Price6 ,')]).passed).toBe(false);
+      expect(comparePdfWords(source, [body(split, 'The Price6')]).passed).toBe(false);
+      // A footnote that holds a cross-reference followed by punctuation must keep it.
+      expect(comparePdfWords(source, [body(split).replace('Section 1; nothing', 'Section 1 nothing')]).passed).toBe(false);
+    },
+  );
+
   test.openspec('[SDX-MDOC-FOOTNOTE-06] the round trip checks where each reference sits against the source')(
     'Scenario: the round trip checks where each reference sits against the source',
     async () => {
@@ -458,6 +504,39 @@ describeWithLibreOffice('Traceability: footnotes in a real LibreOffice PDF', () 
         ].join('\n'));
         const table = await runCreateCommand([tables, path.join(dir, 'out'), '--require-pdf']);
         expect(table.pdf).toMatchObject({ status: 'passed', words: { passed: true, footnoteMismatches: [], knownGenerated: { repeatedTableHeaders: expect.arrayContaining([{ page: 2, table: 0 }]) } } });
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    120_000,
+  );
+
+  test.openspec('[SDX-MDOC-FOOTNOTE-07] a real LibreOffice PDF of references followed by punctuation passes the word check')(
+    'Scenario: a real LibreOffice PDF of references followed by punctuation passes the word check',
+    async () => {
+      const dir = await mkdtemp(path.join(os.tmpdir(), 'sdx-create-fnref-punctuation-'));
+      try {
+        const file = path.join(dir, 'punctuation.mdoc');
+        await writeFile(file, [
+          '---', 'title: Footnote Punctuation', 'footer: Draft', 'page-numbers: true', '---', '',
+          'The parties will complete the Closing{% fnref id="a" /%}. Each party bears its own costs{% fnref id="b" /%}, except as stated; the Buyer pays the fees{% fnref id="c" /%}; the Seller pays the taxes{% fnref id="d" /%}: transfer taxes only (as defined{% fnref id="e" /%}) apply.', '',
+          '1. The Purchase Price{% fnref id="f" /%}. {% #price %}', '2. The Escrow{% fnref id="g" /%}, held by the agent.', '',
+          '{% table %}', '* Term', '* Meaning', '---', '* Cap{% fnref id="h" /%}.', '* The limit (see note{% fnref id="i" /%}).', '{% /table %}', '',
+          '{% footnote id="a" %}The Closing occurs on the Closing Date (see Section {% xref to="price" /%}).{% /footnote %}', '',
+          '{% footnote id="b" %}Including counsel fees.{% /footnote %}', '',
+          '{% footnote id="c" %}Fees as in Section {% xref to="price" /%}; nothing else.{% /footnote %}', '',
+          '{% footnote id="d" %}Taxes: as in Section {% xref to="price" /%}: only these.{% /footnote %}', '',
+          '{% footnote id="e" %}Defined below.{% /footnote %}', '',
+          '{% footnote id="f" %}Subject to adjustment.{% /footnote %}', '',
+          '{% footnote id="g" %}Escrow terms, see Section {% xref to="price" /%}, apply.{% /footnote %}', '',
+          '{% footnote id="h" %}The cap.{% /footnote %}', '',
+          '{% footnote id="i" %}The limit note.{% /footnote %}',
+        ].join('\n'));
+        const result = await runCreateCommand([file, path.join(dir, 'out'), '--require-pdf']);
+        expect(result.pdf).toMatchObject({ status: 'passed', words: { passed: true, missing: [], unexplainedExtra: [], footnoteMismatches: [] } });
+        // Whatever this LibreOffice and pdftotext split, every split joined back is a reference followed by punctuation.
+        const splits = (result.pdf as { words: PdfWordComparison }).words.knownGenerated.markSplits;
+        for (const { words } of splits) expect(words).toMatch(/^\S*\d [.,;:)]+$/u);
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

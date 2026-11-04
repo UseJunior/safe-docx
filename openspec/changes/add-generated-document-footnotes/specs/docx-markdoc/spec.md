@@ -36,6 +36,14 @@ its read-back, round-trip and PDF checks.
 - **AND** an inserted empty page, or a continuation page under another section's footer, SHALL fail
 - **AND** real LibreOffice PDFs of a long note that continues onto the next page, a note that continues onto a page with no body text, a note in a repeated header row and a note in a row split across pages SHALL pass
 
+#### Scenario: [SDX-MDOC-FOOTNOTE-07] the PDF word check accepts punctuation that pdftotext splits from a footnote number
+- **GIVEN** a reference directly followed by `.`, `,`, `;`, `:` or `)` in body text and in a list item, and a footnote holding a cross-reference followed by punctuation, with PDF page texts where `pdftotext -raw` sets the punctuation after a footnote number apart as its own token (`Closing1 .`)
+- **WHEN** the PDF words are compared with the source
+- **THEN** the comparison SHALL pass, joining such tokens back only when they spell a source word holding a footnote number exactly and every break falls right after one of that word's numbers, and SHALL report each joined word
+- **AND** the word read whole SHALL pass as before
+- **AND** it SHALL fail when the punctuation after a reference is dropped, changed, doubled or moved before the number, when the break is not right after a footnote number, when the number is lost, or when the punctuation after a cross-reference in a footnote is dropped
+- **AND** a real LibreOffice PDF of references followed by each of those marks SHALL pass
+
 #### Scenario: [SDX-MDOC-FOOTNOTE-05] created footnotes survive import and compile
 - **GIVEN** a created document with footnotes
 - **WHEN** it is imported to Markdoc and compiled back, preserving annotations

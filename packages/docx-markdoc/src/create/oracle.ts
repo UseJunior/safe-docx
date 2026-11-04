@@ -521,6 +521,8 @@ export type PdfWordComparison = {
     splitRows: Array<{ table: number; row: number; pages: number[] }>;
     /** Lines LibreOffice exported without space glyphs (one PDF token), split back into source words on the evidence of the page's layout text. */
     joinedLines: Array<{ page: number; words: string }>;
+    /** Source words holding a footnote number that pdftotext broke right after the number ("Closing1 ."), joined back; the pieces as read. */
+    markSplits: Array<{ page: number; words: string }>;
   };
   limitations: string;
 };
@@ -539,6 +541,57 @@ function withFootnoteMarks(text: string, offsets: readonly number[] | undefined,
     at = offset;
   });
   return out + text.slice(at);
+}
+
+/**
+ * Join back the source words holding a footnote number that `pdftotext -raw` broke after the number. The
+ * number is a superscript, and the text after it on the baseline ("Closing1." in the source, a period after
+ * the reference) can come out as its own token ("Closing1 ."). A run of tokens is joined only when it spells,
+ * character for character, a source word holding a mark (`marked`, with the mark sentinels), and every break
+ * in the run falls right after one of that word's own footnote numbers. Any other split, and any changed or
+ * missing text after the number, is left as read and fails the alignment. `report` gets each joined run.
+ */
+function joinMarkSplits(tokens: readonly string[], marked: readonly string[], report: (pieces: string[]) => void): string[] {
+  // The pieces a marked word may break into start at the word's start or right after one of its numbers.
+  const byFirstPiece = new Map<string, Array<{ word: string; cuts: Set<number> }>>();
+  for (const word of new Set(marked)) {
+    const cuts = new Set<number>();
+    let plain = '';
+    for (const char of word) {
+      if (char === MARK_OPEN) continue;
+      if (char === MARK_CLOSE) cuts.add(plain.length);
+      else plain += char;
+    }
+    cuts.delete(plain.length);
+    if (cuts.size === 0) continue;
+    for (const cut of cuts) {
+      const first = plain.slice(0, cut);
+      byFirstPiece.set(first, [...(byFirstPiece.get(first) ?? []), { word: plain, cuts }]);
+    }
+  }
+  if (byFirstPiece.size === 0) return [...tokens];
+  const out: string[] = [];
+  for (let at = 0; at < tokens.length;) {
+    let best: { word: string; end: number } | undefined;
+    for (const { word, cuts } of byFirstPiece.get(tokens[at]!) ?? []) {
+      let length = tokens[at]!.length;
+      let end = at;
+      while (length < word.length && cuts.has(length) && end + 1 < tokens.length && word.startsWith(tokens[end + 1]!, length)) {
+        end += 1;
+        length += tokens[end]!.length;
+      }
+      if (length === word.length && end > at && (!best || end > best.end)) best = { word, end };
+    }
+    if (best) {
+      report(tokens.slice(at, best.end + 1));
+      out.push(best.word);
+      at = best.end + 1;
+    } else {
+      out.push(tokens[at]!);
+      at += 1;
+    }
+  }
+  return out;
 }
 
 /**
@@ -591,7 +644,7 @@ function stripFootnoteAreas(pages: string[][], notes: readonly SourceFootnote[],
 export const PDF_WORD_NORMALIZATION = 'Unicode NFKC (folds ligatures such as "fi"), then whitespace runs split words. Nothing else.';
 export const PDF_WORD_LIMITATIONS =
   'The text layer is read with pdftotext -raw (content-stream order; LibreOffice writes each page\'s footer first, then the body in document order, except that a table row split across pages comes out as each cell\'s fragment on each page; such a row is read back in cell order only when its words partition exactly into those fragments, every cell starting on the first page, and the pages after the first stay pinned to that row and its section). ' +
-  'List labels are expected words, and so is each footnote number, joined to the text around its reference (LibreOffice sets it as a superscript with no space). Footnote text is read from the foot of each page, after the body: the rest of a note continued from the page before, then each note that starts there (its number, then its text); read in page order these areas must spell every note exactly once and in order, and each note must start on the page holding its reference (for a table row split across pages, the page where the mark is printed). A page holding nothing but the rest of a continued note belongs to the content before it and must show that section\'s footer. A repeated table header is expected without its footnote numbers, as LibreOffice draws it. ' +
+  'List labels are expected words, and so is each footnote number, joined to the text around its reference (LibreOffice sets it as a superscript with no space). pdftotext can break such a word right after the number when text follows it on the baseline ("Closing1 ." for "Closing1."); tokens are joined back only when they spell a source word holding a footnote number exactly, every break falling right after one of that word\'s numbers. Footnote text is read from the foot of each page, after the body: the rest of a note continued from the page before, then each note that starts there (its number, then its text); read in page order these areas must spell every note exactly once and in order, and each note must start on the page holding its reference (for a table row split across pages, the page where the mark is printed). A page holding nothing but the rest of a continued note belongs to the content before it and must show that section\'s footer. A repeated table header is expected without its footnote numbers, as LibreOffice draws it. ' +
   'Every page break is explained from the source: the checker searches for where each page can start between the source words around it (including inside wordless content such as empty table rows), and a start fixes what the page must show first, namely its section\'s footer and page number, the table header LibreOffice repeats when a table continues across the break, and the source words at the top of the page. Sections start on new pages. ' +
   'A justified line that LibreOffice exported without space glyphs reads back as one token. Such a token is split back into words only when it spells, character for character, a run of two or more consecutive source words and that is its one reading which the pdftotext -layout text of the same page (word boundaries by glyph position) shows more often than the raw text does, each split needing an occurrence of its own; without layout text, or with a different page count, nothing is split. The evidence is counted per page rather than tied to the line\'s position, so a changed run-together line passes only if the page\'s layout text shows the source reading in a place the raw text does not, which another run-together line that alignment placed as a single source word could supply. ' +
   'Two observed LibreOffice behaviours are assumed: a header row is never left alone at a page bottom (it stays with the first body row), and a table\'s last row can spill its empty remainder onto the next page, repeating the header there. ' +
@@ -629,6 +682,7 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
     }
   });
   const plainWords = entryWords.map((tokens) => tokens.map((word) => word.replace(/[\uE000\uE001]/gu, '')));
+  const markWords = entryWords.flat().filter((word) => word.includes(MARK_OPEN));
 
   // Effective footer per section: a section that declares none inherits the previous one.
   const effective: Array<{ text: string[]; pageNumbers: boolean }> = [];
@@ -649,7 +703,8 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
 
   const notes = source.footnotes ?? [];
   const footnoteAreas = stripFootnoteAreas(pageTexts.map(words), notes, words);
-  const pages = footnoteAreas.bodies;
+  const markSplits: PdfWordComparison['knownGenerated']['markSplits'] = [];
+  const pages = footnoteAreas.bodies.map((tokens, page) => joinMarkSplits(tokens, markWords, (pieces) => markSplits.push({ page: page + 1, words: pieces.join(' ') })));
   // Footer region at each page head: the longest candidate region that matches; checked by the break model.
   const candidates = (page: number) => [...new Set(effective.map((_, section) => regionFor(section, page).join('\u0001')))].map((key) => (key ? key.split('\u0001') : []))
     .sort((a, b) => b.length - a.length);
@@ -766,6 +821,7 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
         repeatedTableHeaders,
         splitRows: split.rows.map(({ table, row, pages: spanned }) => ({ table, row, pages: spanned.map((page) => page + 1) })),
         joinedLines,
+        markSplits,
       },
       limitations: PDF_WORD_LIMITATIONS,
     };
