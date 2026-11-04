@@ -84,12 +84,24 @@ export type SourceProjection = {
    * walker never reaches is missing from `crossReferences` but not from here.
    */
   crossReferenceInventory?: string[];
+  /**
+   * Every `{% fnref /%}` tag in the source, found by walking the whole syntax tree rather than the text walker,
+   * as its id, sorted. A reference the text walker never reaches is missing from `footnotes` but not from here.
+   * Absent when the source has none.
+   */
+  footnoteReferenceInventory?: string[];
 }
 
 /** Every `{% xref /%}` tag under `node`, as `to|number`. */
 function xrefInventory(node: MarkdocNode): string[] {
   const own = node.type === 'tag' && node.tag === 'xref' ? [`${String(node.attributes.to)}|${node.attributes.number === 'paragraph' ? 'paragraph' : 'full'}`] : [];
   return [...own, ...node.children.flatMap(xrefInventory)];
+}
+
+/** Every `{% fnref /%}` tag under `node`, as its id. */
+function fnrefInventory(node: MarkdocNode): string[] {
+  const own = node.type === 'tag' && node.tag === 'fnref' ? [String(node.attributes.id)] : [];
+  return [...own, ...node.children.flatMap(fnrefInventory)];
 }
 
 /**
@@ -342,10 +354,12 @@ export function projectSourceText(source: string, options: { reader?: Projection
     paragraph.xrefs.map((xref): SourceCrossReference => ({ ...xref, story: 'footnote', note: index + 1, paragraph: paragraphIndex }))));
   const xrefs = [...bodyXrefs, ...noteXrefs];
   const inventory = xrefInventory(ast).sort();
+  const footnoteInventory = fnrefInventory(ast).sort();
   return {
     body,
     footers,
     ...(footnotes.length ? { footnotes } : {}),
+    ...(footnoteInventory.length ? { footnoteReferenceInventory: footnoteInventory } : {}),
     ...(xrefs.length || inventory.length ? { crossReferences: xrefs, crossReferenceTargets: targets, crossReferenceInventory: inventory } : {}),
   };
 }

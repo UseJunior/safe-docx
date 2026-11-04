@@ -258,12 +258,11 @@ describe('Traceability: cross-references in created documents', () => {
       expect(relocated.checks.roundTrip.passed).toBe(true);
       expect(relocated.checks.crossReferences?.mismatches).toEqual([{ reference: 1, expected: 'body paragraph 4: See‸.', actual: 'body paragraph 3: Literal‸.' }]);
 
-      // An xref the text walker never reaches (a tag after a signer's paragraph, which the signer does not
-      // render) is still in the source's tag inventory, so its loss fails the build instead of passing silently.
-      const signer = await verificationFailure(createDocumentFromMarkdoc('# T\n\n1. One {% #one %}\n2. Two {% #two %}\n\n{% signer %}\nSee  \n{% xref to="two" /%}\n{% /signer %}\n'));
-      expect(signer.checks.readback.passed).toBe(true);
-      expect(signer.checks.roundTrip.passed).toBe(true);
-      expect(signer.checks.crossReferences?.mismatches).toEqual([{ reference: 0, expected: 'source tags two|full', actual: 'placed none' }]);
+      // Every xref tag in the source's syntax tree is counted, whether or not the text walker reaches it, so a
+      // tag the walker skipped would fail the build. A tag after a signer's name, the one shape that used to
+      // be skipped (the signature block renders only the name's line), is now refused before anything is built.
+      expect((await createDocumentFromMarkdoc(SOURCE)).certificate.checks.crossReferences?.references).toEqual({ expected: 6, actual: 6 });
+      expect(await failure('# T\n\n1. One {% #one %}\n2. Two {% #two %}\n\n{% signer %}\nSee  \n{% xref to="two" /%}\n{% /signer %}\n')).toEqual({ code: 'INVALID_SIGNER', line: 8 });
 
       // A target that holds a footnote reference compares by its text without the note.
       const noted = await createDocumentFromMarkdoc('# T\n\n1. One{% fnref id="n" /%} {% #one %}\n\nSee {% xref to="one" /%}.\n\n{% footnote id="n" %}A note.{% /footnote %}\n');
@@ -323,6 +322,31 @@ describe('Traceability: cross-references in created documents', () => {
       expect(footnoteXml).toContain(separator);
       expect(await rewritten(footnoteXml.replace(separator, `${separator}<w:r><w:instrText>IMPORTANT</w:instrText></w:r>`))).toBe('ANNOTATION_IMPORT_UNSUPPORTED:unsupported-field');
       expect(await rewritten(footnoteXml.replace(separator, `${separator}<w:r>${separator}`))).toBe('ANNOTATION_IMPORT_UNSUPPORTED:unsupported-field');
+    },
+  );
+
+  test.openspec('[SDX-MDOC-XREF-06] the CLI summary reports the cross-reference check')(
+    'Scenario: the CLI summary reports the cross-reference check',
+    async () => {
+      const dir = await mkdtemp(path.join(os.tmpdir(), 'sdx-create-xref-summary-'));
+      const summary = async (name: string, source: string) => {
+        const file = path.join(dir, `${name}.mdoc`);
+        await writeFile(file, source);
+        return (await runCreateCommand([file, path.join(dir, name), '--no-pdf'])).summary;
+      };
+      try {
+        const full = await summary('full', SOURCE);
+        expect(full).toContain('cross-references ok (6 references; negative controls ok)');
+        // The entry follows the footnotes entry.
+        expect(full.indexOf('cross-references ok')).toBeGreaterThan(full.indexOf('footnotes ok'));
+        // With one target there is no other item to point a reference at: that control is not applicable, and
+        // the summary says so rather than counting it as ok.
+        const single = await summary('single', '1. Price {% #price %}\n\nSee {% xref to="price" format="section" /%}.\n');
+        expect(single).toContain('cross-references ok (1 reference; negative controls ok, except retargeted: not applicable)');
+        expect(await summary('none', 'No references.\n')).not.toContain('cross-references');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
     },
   );
 });

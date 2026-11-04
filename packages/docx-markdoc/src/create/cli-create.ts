@@ -315,6 +315,20 @@ async function sameFile(a: string, b: string): Promise<boolean> {
  * this build does not produce (for example a PDF under --no-pdf) is retired so
  * the directory reflects this build only.
  */
+const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+/**
+ * The negative controls of a passing check, for the summary line. A passing check has no undetected control,
+ * so each is detected or 'not applicable'; the ones that are not applicable are named rather than counted as ok.
+ */
+export function controlsSummary(controls: Record<string, boolean | 'not applicable'>): string {
+  const names = Object.keys(controls);
+  const notApplicable = names.filter((name) => controls[name] === 'not applicable');
+  if (notApplicable.length === 0) return names.length === 1 ? 'negative control ok' : 'negative controls ok';
+  if (notApplicable.length === names.length) return names.length === 1 ? 'negative control not applicable' : 'negative controls not applicable';
+  return `negative controls ok, except ${notApplicable.join(', ')}: not applicable`;
+}
+
 export async function runCreateCommand(
   args: string[],
   deps: { renderTools?: PdfRenderTools; fileOps?: Partial<PublishFileOps> } = {},
@@ -512,7 +526,12 @@ async function createLocked(
       `created ${path.basename(outputs.docx)}: ${checks.readback.paragraphs} paragraphs, ${checks.footers.sections} section(s)`,
       `readback ok (negative control ok)`,
       `footers ok (negative control ok)`,
-      ...(checks.footnotes.notes > 0 ? [`footnotes ok (${checks.footnotes.notes} note${checks.footnotes.notes === 1 ? '' : 's'}; negative control ok)`] : []),
+      ...(checks.footnotes.notes > 0 || checks.footnotes.references.expected > 0
+        ? [`footnotes ok (${plural(checks.footnotes.notes, 'note')}, ${plural(checks.footnotes.references.actual, 'reference')}; ${controlsSummary({ 'note text': checks.footnotes.negativeControlDetected, 'dropped reference': checks.footnotes.references.negativeControlDetected })})`]
+        : []),
+      ...(checks.crossReferences
+        ? [`cross-references ok (${plural(checks.crossReferences.references.actual, 'reference')}; ${controlsSummary({ 'changed switch': checks.crossReferences.negativeControls.switchChanged, retargeted: checks.crossReferences.negativeControls.retargeted, moved: checks.crossReferences.negativeControls.moved })})`]
+        : []),
       'deterministic',
       `brownfield ok (${checks.brownfield.anchoredParagraphs} anchored)`,
       `round trip ok (${checks.roundTrip.body.expected} paragraphs; negative controls ok)`,

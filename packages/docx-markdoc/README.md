@@ -659,6 +659,8 @@ such as an unclosed tag, and headings below `###`.
   may nest and may sit inside bold or italic text. A signer's name can hold
   one when written as content:
   `{% signer date="Date: ___" %}{% fill %}Name{% /fill %}, Director{% /signer %}`.
+  Signer content is one line of text. A second line, a line break, or a tag
+  on its own line after the name fails with `INVALID_SIGNER`.
 - `{% u %}Purchase Price{% /u %}` underlines its content (single underline)
   and nothing outside it, so `{% u %}Purchase Price{% /u %}.` leaves the
   period plain. Use it for defined terms where they are defined, run-in
