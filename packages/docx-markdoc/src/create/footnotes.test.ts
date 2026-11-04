@@ -347,6 +347,20 @@ describe('Traceability: footnotes in created documents', () => {
       expect(comparePdfWords(footer, ['Closing1 . The Closing1 . 1 Note.'])).toMatchObject({ passed: true, knownGenerated: { footerRegions: ['Closing1 .'] } });
       expect(comparePdfWords(footer, ['Closing1. The Closing1 . 1 Note.']).passed).toBe(false);
 
+      // The reference may come first, and a standalone piece may match nearby source text.
+      const referenceFirst = projectSourceText(['Closing{% fnref id="a" /%}. Closing1 .', '', note].join('\n'));
+      expect(comparePdfWords(referenceFirst, ['Closing1 . Closing1 . 1 Note.'])).toMatchObject({ passed: true, knownGenerated: { markSplits: [{ page: 1, words: 'Closing1 .' }] } });
+      expect(comparePdfWords(referenceFirst, ['Closing1. Closing1 . 1 Note.']).passed).toBe(true);
+      expect(comparePdfWords(referenceFirst, ['Closing1 . Closing1. 1 Note.']).passed).toBe(false);
+      const referenceThenWhole = projectSourceText(['Closing{% fnref id="a" /%}. Closing1.', '', note].join('\n'));
+      expect(comparePdfWords(referenceThenWhole, ['Closing1 . Closing1. 1 Note.']).passed).toBe(true);
+      expect(comparePdfWords(referenceThenWhole, ['Closing1 . Closing1 . 1 Note.']).passed).toBe(false);
+      const parenthesis = projectSourceText(['((see Closing{% fnref id="a" /%}) ) applies.', '', note].join('\n'));
+      expect(comparePdfWords(parenthesis, ['((see Closing1 ) ) applies. 1 Note.']).passed).toBe(true);
+      expect(comparePdfWords(parenthesis, ['((see Closing1 ) applies. 1 Note.']).passed).toBe(false);
+      // The report shows a missing reference word as written and the tokens read as printed.
+      expect(comparePdfWords(literalSpaced, ['Closing1 . Closing1 , 1 Note.'])).toMatchObject({ passed: false, missing: [{ words: 'Closing1.' }], unexplainedExtra: [{ words: 'Closing1 ,' }] });
+
       // A justified line exported without space glyphs can also end in a word broken after its footnote number;
       // the layout text supplies the spaces, and the number's break is joined as above.
       const justified = projectSourceText(['The Closing{% fnref id="a" /%}. applies.', '', note].join('\n'));
