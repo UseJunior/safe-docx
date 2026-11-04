@@ -29,7 +29,15 @@ import { parseCreationFrontmatter } from './validate.js';
  *   numbers of the item and its ancestors joined, with the period of `1.`
  *   dropped (`2`, `2(b)`, `2(b)(ii)`); `number="paragraph"` shows the item's
  *   own number (`\n`: `2`, `(b)`, `(ii)`); `format="section"` puts
- *   `Section ` before it.
+ *   `Section ` before it;
+ * - with frontmatter `heading-numbers: legal`, each `##` heading is labelled
+ *   `ARTICLE I`, `ARTICLE II`, … and each `###` `Section <article>.<nn>`
+ *   (`Section 2.04`), restarting under each Article; an ordered list under
+ *   a numbered heading numbers `(a)`, `(i)`, `(A)` by depth, its markers
+ *   counted from 1 under each heading; an xref to a numbered heading shows
+ *   its label in both forms, and to such a clause its label after the
+ *   Section it is in (`Section 2.04(b)(i)`), or after the Article when no
+ *   Section of that Article precedes it (`ARTICLE II(a)`).
  */
 
 /** The only normalization applied before comparing; anything wider could hide an omission. */
@@ -52,7 +60,7 @@ export type SourceBodyEntry = {
   cell?: true;
   /** Section index (0-based); a `{% section %}` tag starts the next one. */
   section?: number;
-  /** The generated list label shown before this paragraph (`1.`, `(a)`, `(i)`, `•`, …). */
+  /** The generated label shown before this paragraph (`1.`, `(a)`, `(i)`, `•`, `ARTICLE II`, `Section 2.04`, …). */
   marker?: string;
   /** Table membership: which table (0-based, in order) and which row (0 = the repeating header row). */
   table?: { id: number; row: number };
@@ -76,7 +84,7 @@ export type SourceProjection = {
    * the order of the notes. Absent when the source has none.
    */
   crossReferences?: SourceCrossReference[];
-  /** The text of each list item marked `{% #id %}`, by id: what its bookmark must hold. */
+  /** The text of each numbered list item or numbered heading marked `{% #id %}`, by id: what its bookmark must hold. */
   crossReferenceTargets?: Record<string, string>;
   /**
    * Every `{% xref /%}` tag in the source, found by walking the whole syntax
@@ -170,6 +178,43 @@ export function listMarker(ordered: boolean, depth: number, n: number): string {
   return depth === 1 ? `(${letters(n)})` : `(${roman(n)})`;
 }
 
+/** The label of clause `n` at `depth` of an ordered list under a numbered heading: `(a)`, `(i)`, `(A)`. */
+export function clauseMarker(depth: number, n: number): string {
+  if (depth === 0) return `(${letters(n)})`;
+  return depth === 1 ? `(${roman(n)})` : `(${letters(n).toUpperCase()})`;
+}
+
+/**
+ * The labels `heading-numbers: legal` gives, read from the source alone:
+ * each `##` and `###` heading node's label, and for each ordered list under
+ * a numbered heading the heading label its clauses' full numbers start with
+ * (the Section, or the Article when no Section of it precedes the list).
+ * Empty without heading numbering.
+ */
+function headingLabels(ast: MarkdocNode): { headings: Map<MarkdocNode, string>; clauseContext: Map<MarkdocNode, string> } {
+  const headings = new Map<MarkdocNode, string>();
+  const clauseContext = new Map<MarkdocNode, string>();
+  if (parseCreationFrontmatter(ast.attributes.frontmatter as string | undefined).headingNumbers !== 'legal') return { headings, clauseContext };
+  let article = 0;
+  let section = 0;
+  let context: string | null = null;
+  for (const node of ast.children) {
+    if (node.type === 'heading' && node.attributes.level === 2) {
+      article += 1;
+      section = 0;
+      context = `ARTICLE ${roman(article).toUpperCase()}`;
+      headings.set(node, context);
+    } else if (node.type === 'heading' && node.attributes.level === 3) {
+      section += 1;
+      context = `Section ${article}.${String(section).padStart(2, '0')}`;
+      headings.set(node, context);
+    } else if (node.type === 'list' && node.attributes.ordered === true && context !== null) {
+      clauseContext.set(node, context);
+    }
+  }
+  return { headings, clauseContext };
+}
+
 function lineOf(node: MarkdocNode): number | undefined {
   const start = node.lines?.[0];
   return start === undefined ? undefined : start + 1;
@@ -179,27 +224,42 @@ function lineOf(node: MarkdocNode): number | undefined {
 type CrossReferenceTexts = ReadonlyMap<string, { full: string; paragraph: string }>;
 
 /**
- * Number every ordered list item that carries an id, by the same contract as
- * the markers: each top-level list counts on its own from its first marker,
- * nested lists from 1.
+ * Number every ordered list item and numbered heading that carries an id, by
+ * the same contract as the markers: each top-level list counts on its own
+ * from its first marker, nested lists from 1, and a list under a numbered
+ * heading numbers its clauses after that heading's label.
  */
 function crossReferenceTexts(ast: MarkdocNode, reader: ProjectionReader): Map<string, { full: string; paragraph: string }> {
   const texts = new Map<string, { full: string; paragraph: string }>();
-  const visit = (list: MarkdocNode, ancestors: readonly number[]) => {
+  const { headings, clauseContext } = headingLabels(ast);
+  const visit = (list: MarkdocNode, ancestors: readonly number[], context: string | undefined) => {
     if (list.attributes.ordered !== true) return;
     const depth = ancestors.length;
     let n = depth === 0 && Number.isInteger(list.attributes.start) ? Number(list.attributes.start) : 1;
     for (const item of list.children) {
       const values = [...ancestors, n];
-      const own = values.map((value, level) => (level === 0 ? String(value) : level === 1 ? `(${letters(value)})` : `(${roman(value)})`));
-      // LibreOffice keeps the period of `1.` before `(`; Word drops it.
-      const full = reader === 'libreoffice' && depth > 0 ? `${own[0]}.${own.slice(1).join('')}` : own.join('');
-      if (item.attributes.id !== undefined) texts.set(String(item.attributes.id), { full, paragraph: own[depth]! });
-      for (const child of item.children) if (child.type === 'list') visit(child, values);
+      let full: string;
+      let paragraph: string;
+      if (context !== undefined) {
+        const own = values.map((value, level) => clauseMarker(level, value));
+        full = `${context}${own.join('')}`;
+        paragraph = own[depth]!;
+      } else {
+        const own = values.map((value, level) => (level === 0 ? String(value) : level === 1 ? `(${letters(value)})` : `(${roman(value)})`));
+        // LibreOffice keeps the period of `1.` before `(`; Word drops it.
+        full = reader === 'libreoffice' && depth > 0 ? `${own[0]}.${own.slice(1).join('')}` : own.join('');
+        paragraph = own[depth]!;
+      }
+      if (item.attributes.id !== undefined) texts.set(String(item.attributes.id), { full, paragraph });
+      for (const child of item.children) if (child.type === 'list') visit(child, values, context);
       n += 1;
     }
   };
-  for (const node of ast.children) if (node.type === 'list') visit(node, []);
+  for (const node of ast.children) {
+    if (node.type === 'list') visit(node, [], clauseContext.get(node));
+    const label = headings.get(node);
+    if (label !== undefined && node.attributes.id !== undefined) texts.set(String(node.attributes.id), { full: label, paragraph: label });
+  }
   return texts;
 }
 
@@ -276,16 +336,17 @@ export function projectSourceText(source: string, options: { reader?: Projection
     body.push({ text, ...(lineOf(node) === undefined ? {} : { line: lineOf(node)! }), section, ...extra, ...(marks.length ? { footnoteMarks: marks.map((mark) => mark.offset) } : {}) });
   };
   const targets: Record<string, string> = {};
-  const listItems = (list: MarkdocNode, depth: number) => {
+  const { headings, clauseContext } = headingLabels(ast);
+  const listItems = (list: MarkdocNode, depth: number, clauses: boolean) => {
     const ordered = list.attributes.ordered === true;
     let n = depth === 0 && ordered && Number.isInteger(list.attributes.start) ? Number(list.attributes.start) : 1;
     for (const item of list.children) {
       for (const child of item.children) {
-        if (child.type === 'list') listItems(child, depth + 1);
+        if (child.type === 'list') listItems(child, depth + 1, clauses);
         else {
           const itemText = textOf(child);
           if (ordered && item.attributes.id !== undefined) targets[String(item.attributes.id)] = scanMarks(itemText).text;
-          push(itemText, item, { marker: listMarker(ordered, depth, n) });
+          push(itemText, item, { marker: clauses && ordered ? clauseMarker(depth, n) : listMarker(ordered, depth, n) });
         }
       }
       n += 1;
@@ -333,9 +394,14 @@ export function projectSourceText(source: string, options: { reader?: Projection
     const sole = node.type === 'paragraph' ? soleTag(node) : undefined;
     if (sole) tag(sole);
     else if (node.type === 'tag') tag(node);
-    else if (node.type === 'list') listItems(node, 0);
+    else if (node.type === 'list') listItems(node, 0, clauseContext.has(node));
     else if (node.type === 'blockquote') for (const child of node.children) push(textOf(child), child);
-    else push(textOf(node), node);
+    else {
+      const label = headings.get(node);
+      const text = textOf(node);
+      if (label !== undefined && node.attributes.id !== undefined) targets[String(node.attributes.id)] = scanMarks(text).text;
+      push(text, node, label === undefined ? {} : { marker: label });
+    }
   }
   const footnotes = references.map((id) => ({ id, paragraphs: (notes.get(id) ?? []).map((paragraph) => paragraph.text) }));
   const noteXrefs = references.flatMap((id, index) => (notes.get(id) ?? []).flatMap((paragraph, paragraphIndex) =>
@@ -657,8 +723,8 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
   };
   source.body.forEach((entry, index) => {
     if (entry.marker) {
-      const marker = entry.marker.normalize('NFKC');
-      pushWord(spellings.get(marker) ?? [marker], index, false);
+      // A heading label is two words ("ARTICLE II", "Section 2.04").
+      for (const marker of words(entry.marker)) pushWord(spellings.get(marker) ?? [marker], index, false);
       listMarkers += 1;
     }
     for (const word of entryWords[index]!) {

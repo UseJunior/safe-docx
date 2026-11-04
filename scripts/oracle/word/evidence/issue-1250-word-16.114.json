@@ -1,0 +1,848 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-04",
+  "issue": 1250,
+  "purpose": "What Microsoft Word shows for headings numbered by `docx-markdoc create` with frontmatter `heading-numbers: legal` (ARTICLE I / Section 1.01, linked to the Heading 1 and Heading 2 styles) and the (a)/(i)/(A) clause lists under them, for REF fields to Articles, Sections and clauses, before and after a Word user inserts a Section or an Article (#1250).",
+  "word": {
+    "platform": "Mac",
+    "version": "16.114.3"
+  },
+  "libreOffice": {
+    "version": "26.2.5.2"
+  },
+  "procedure": "`source` was built with `docx-markdoc create --require-pdf` (every check passed, the LibreOffice PDF word check included). The DOCX was staged in Word's sandbox container, opened in the background and bound by name. Through AppleScript, for the insertion runs, a paragraph break and text were typed at the end of the named body paragraph and the new paragraph was set to the Heading 2 (Section) or Heading 1 (Article) style, as a Word user adds a Section; then `update field` ran on every field, and each numbered paragraph's `list string of list format` and each field's code and result were read. The document was closed without saving and reopened for each run. The two controls were compiled with generateDocx from create lowerings edited by hand (create refuses both sources): `articleClauseFullContext` adds full-context REF fields to clauses directly under an Article; `skippedSectionLevel` moves a Section heading below two clauses of its Article. Both were also converted to PDF with headless LibreOffice and read with pdftotext.",
+  "finding": "With the heading levels linked to the heading styles and the clause lists as levels 2-4 of the same abstract definition, Word labels the headings ARTICLE I-III and Section 1.01-2.03 and the clauses (a), (i), (A), restarting the clauses under every heading. Before any edit, Word's after-update REF results equal the cached results create wrote, for \\w and \\n alike: a heading shows its whole label in both forms (\"Section 1.01\"), a clause shows \"Section 1.01(b)(i)(A)\" in full and \"(A)\" as a paragraph number. After a paragraph set to Heading 2 is inserted in Article II, every later Section of that Article and every REF to it and its clauses is one higher (2.02 -> 2.03, 2.03(b) -> 2.04(b)), while Article I and Article III keep their numbers; a Section inserted in Article I renumbers only Article I (1.02 -> 1.03). An inserted Heading 1 paragraph becomes ARTICLE III, the Sections after it restart (3.01, 3.02) and Miscellaneous becomes ARTICLE IV. Controls: a full-context REF to a clause directly under an Article shows \"ARTICLE II(a)\" in Word but \"Section 2.01(a)\" in LibreOffice; clauses placed directly under an Article make the Article's next Section \"Section 1.02\" in both readers. create therefore refuses a full-context xref to a clause directly under an Article and a Section that follows such clauses.",
+  "decision": "Lists under a numbered heading become levels 2-4 of the heading definition (option (a) in PR #1271), not lists on the separate ordered definition (option (b)). Under (a) the clauses restart under each Section by the default w:lvlRestart, a full-context REF names its Section (\"Section 1.01(b)(i)(A)\"), Word and LibreOffice agree on it because no level text ends with a period, and inserting a Section renumbers its clauses' references. Under (b) the clauses would keep one running count across Sections (#1252), and a reference would read \"2(b)\" without its Section, which LibreOffice shows as \"2.(b)\" (issue-1236-word-16.114.json, REF create_2b).",
+  "source": "---\nheading-numbers: legal\n---\n# ASSET PURCHASE AGREEMENT\n\nThis Asset Purchase Agreement is entered into by the parties named below.\n\n## Definitions {% #definitions %}\n\n### Defined Terms {% #defined-terms %}\n\n1. \"Business Day\" means a weekday. {% #business-day %}\n2. \"Closing\" has the meaning in {% xref to=\"closing\" /%}.\n   1. as extended under {% xref to=\"extension\" /%} {% #as-extended %}\n      1. by written notice {% #written-notice %}\n\nThis Section applies throughout this Agreement.\n\n### Interpretation {% #interpretation %}\n\n1. Headings are for convenience only. {% #headings %}\n2. The words \"include\" and \"including\" are not limiting.\n\n## Purchase and Sale {% #purchase-and-sale %}\n\n### Purchase Price {% #purchase-price %}\n\n1. The price is set out in {% xref to=\"price-adjustment\" /%}.\n2. Payment is due as provided in {% xref to=\"interpretation\" /%} and {% xref to=\"headings\" /%}.\n\nThe Purchase Price is payable in cash.\n\n### Price Adjustment {% #price-adjustment %}\n\n1. The price adjusts under clause {% xref to=\"adjustment-method\" number=\"paragraph\" /%}. {% #adjustment %}\n2. Adjustment method. {% #adjustment-method %}\n\n### Closing {% #closing %}\n\n1. The Closing takes place on the date in {% xref to=\"extension\" /%}.\n2. Extension. The parties may extend the Closing. {% #extension %}\n\n## Miscellaneous {% #miscellaneous %}\n\n1. Notices are in writing. {% #notices %}\n2. This Agreement is governed by the laws of {% fill %}State{% /fill %}.\n\nReferences: {% xref to=\"definitions\" /%}, {% xref to=\"definitions\" number=\"paragraph\" /%}, {% xref to=\"defined-terms\" /%}, {% xref to=\"defined-terms\" number=\"paragraph\" /%}, {% xref to=\"business-day\" /%}, {% xref to=\"business-day\" number=\"paragraph\" /%}, {% xref to=\"as-extended\" /%}, {% xref to=\"written-notice\" /%}, {% xref to=\"written-notice\" number=\"paragraph\" /%}, {% xref to=\"purchase-and-sale\" /%}, {% xref to=\"adjustment\" /%}, {% xref to=\"notices\" number=\"paragraph\" /%} and {% xref to=\"miscellaneous\" /%}.\n",
+  "cachedResults": [
+    "Section 2.03",
+    "Section 2.03(b)",
+    "Section 2.02",
+    "Section 1.02",
+    "Section 1.02(a)",
+    "(b)",
+    "Section 2.03(b)",
+    "ARTICLE I",
+    "ARTICLE I",
+    "Section 1.01",
+    "Section 1.01",
+    "Section 1.01(a)",
+    "(a)",
+    "Section 1.01(b)(i)",
+    "Section 1.01(b)(i)(A)",
+    "(A)",
+    "ARTICLE II",
+    "Section 2.02(a)",
+    "(a)",
+    "ARTICLE III"
+  ],
+  "before": {
+    "listStrings": [
+      {
+        "listString": "ARTICLE I",
+        "text": "Definitions"
+      },
+      {
+        "listString": "Section 1.01",
+        "text": "Defined Terms"
+      },
+      {
+        "listString": "(a)",
+        "text": "\"Business Day\" means a weekday."
+      },
+      {
+        "listString": "(b)",
+        "text": "\"Closing\" has the meaning in Section 2.03."
+      },
+      {
+        "listString": "(i)",
+        "text": "as extended under Section 2.03(b)"
+      },
+      {
+        "listString": "(A)",
+        "text": "by written notice"
+      },
+      {
+        "listString": "Section 1.02",
+        "text": "Interpretation"
+      },
+      {
+        "listString": "(a)",
+        "text": "Headings are for convenience only."
+      },
+      {
+        "listString": "(b)",
+        "text": "The words \"include\" and \"including\" are not limiting."
+      },
+      {
+        "listString": "ARTICLE II",
+        "text": "Purchase and Sale"
+      },
+      {
+        "listString": "Section 2.01",
+        "text": "Purchase Price"
+      },
+      {
+        "listString": "(a)",
+        "text": "The price is set out in Section 2.02."
+      },
+      {
+        "listString": "(b)",
+        "text": "Payment is due as provided in Section 1.02 and Section 1.02(a)."
+      },
+      {
+        "listString": "Section 2.02",
+        "text": "Price Adjustment"
+      },
+      {
+        "listString": "(a)",
+        "text": "The price adjusts under clause (b)."
+      },
+      {
+        "listString": "(b)",
+        "text": "Adjustment method."
+      },
+      {
+        "listString": "Section 2.03",
+        "text": "Closing"
+      },
+      {
+        "listString": "(a)",
+        "text": "The Closing takes place on the date in Section 2.03(b)."
+      },
+      {
+        "listString": "(b)",
+        "text": "Extension. The parties may extend the Closing."
+      },
+      {
+        "listString": "ARTICLE III",
+        "text": "Miscellaneous"
+      },
+      {
+        "listString": "(a)",
+        "text": "Notices are in writing."
+      },
+      {
+        "listString": "(b)",
+        "text": "This Agreement is governed by the laws of [State]."
+      }
+    ],
+    "references": [
+      {
+        "instruction": " REF closing \\w \\h ",
+        "word": "Section 2.03"
+      },
+      {
+        "instruction": " REF extension \\w \\h ",
+        "word": "Section 2.03(b)"
+      },
+      {
+        "instruction": " REF price_adjustment \\w \\h ",
+        "word": "Section 2.02"
+      },
+      {
+        "instruction": " REF interpretation \\w \\h ",
+        "word": "Section 1.02"
+      },
+      {
+        "instruction": " REF headings \\w \\h ",
+        "word": "Section 1.02(a)"
+      },
+      {
+        "instruction": " REF adjustment_method \\n \\h ",
+        "word": "(b)"
+      },
+      {
+        "instruction": " REF extension \\w \\h ",
+        "word": "Section 2.03(b)"
+      },
+      {
+        "instruction": " REF definitions \\w \\h ",
+        "word": "ARTICLE I"
+      },
+      {
+        "instruction": " REF definitions \\n \\h ",
+        "word": "ARTICLE I"
+      },
+      {
+        "instruction": " REF defined_terms \\w \\h ",
+        "word": "Section 1.01"
+      },
+      {
+        "instruction": " REF defined_terms \\n \\h ",
+        "word": "Section 1.01"
+      },
+      {
+        "instruction": " REF business_day \\w \\h ",
+        "word": "Section 1.01(a)"
+      },
+      {
+        "instruction": " REF business_day \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF as_extended \\w \\h ",
+        "word": "Section 1.01(b)(i)"
+      },
+      {
+        "instruction": " REF written_notice \\w \\h ",
+        "word": "Section 1.01(b)(i)(A)"
+      },
+      {
+        "instruction": " REF written_notice \\n \\h ",
+        "word": "(A)"
+      },
+      {
+        "instruction": " REF purchase_and_sale \\w \\h ",
+        "word": "ARTICLE II"
+      },
+      {
+        "instruction": " REF adjustment \\w \\h ",
+        "word": "Section 2.02(a)"
+      },
+      {
+        "instruction": " REF notices \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF miscellaneous \\w \\h ",
+        "word": "ARTICLE III"
+      }
+    ]
+  },
+  "afterInsertingSection": {
+    "insertedAfter": "The Purchase Price is payable in cash.",
+    "insertedText": "Inserted Section.",
+    "style": "Heading 2",
+    "listStrings": [
+      {
+        "listString": "ARTICLE I",
+        "text": "Definitions"
+      },
+      {
+        "listString": "Section 1.01",
+        "text": "Defined Terms"
+      },
+      {
+        "listString": "(a)",
+        "text": "\"Business Day\" means a weekday."
+      },
+      {
+        "listString": "(b)",
+        "text": "\"Closing\" has the meaning in Section 2.04."
+      },
+      {
+        "listString": "(i)",
+        "text": "as extended under Section 2.04(b)"
+      },
+      {
+        "listString": "(A)",
+        "text": "by written notice"
+      },
+      {
+        "listString": "Section 1.02",
+        "text": "Interpretation"
+      },
+      {
+        "listString": "(a)",
+        "text": "Headings are for convenience only."
+      },
+      {
+        "listString": "(b)",
+        "text": "The words \"include\" and \"including\" are not limiting."
+      },
+      {
+        "listString": "ARTICLE II",
+        "text": "Purchase and Sale"
+      },
+      {
+        "listString": "Section 2.01",
+        "text": "Purchase Price"
+      },
+      {
+        "listString": "(a)",
+        "text": "The price is set out in Section 2.03."
+      },
+      {
+        "listString": "(b)",
+        "text": "Payment is due as provided in Section 1.02 and Section 1.02(a)."
+      },
+      {
+        "listString": "Section 2.02",
+        "text": "Inserted Section."
+      },
+      {
+        "listString": "Section 2.03",
+        "text": "Price Adjustment"
+      },
+      {
+        "listString": "(a)",
+        "text": "The price adjusts under clause (b)."
+      },
+      {
+        "listString": "(b)",
+        "text": "Adjustment method."
+      },
+      {
+        "listString": "Section 2.04",
+        "text": "Closing"
+      },
+      {
+        "listString": "(a)",
+        "text": "The Closing takes place on the date in Section 2.04(b)."
+      },
+      {
+        "listString": "(b)",
+        "text": "Extension. The parties may extend the Closing."
+      },
+      {
+        "listString": "ARTICLE III",
+        "text": "Miscellaneous"
+      },
+      {
+        "listString": "(a)",
+        "text": "Notices are in writing."
+      },
+      {
+        "listString": "(b)",
+        "text": "This Agreement is governed by the laws of [State]."
+      }
+    ],
+    "references": [
+      {
+        "instruction": " REF closing \\w \\h ",
+        "word": "Section 2.04"
+      },
+      {
+        "instruction": " REF extension \\w \\h ",
+        "word": "Section 2.04(b)"
+      },
+      {
+        "instruction": " REF price_adjustment \\w \\h ",
+        "word": "Section 2.03"
+      },
+      {
+        "instruction": " REF interpretation \\w \\h ",
+        "word": "Section 1.02"
+      },
+      {
+        "instruction": " REF headings \\w \\h ",
+        "word": "Section 1.02(a)"
+      },
+      {
+        "instruction": " REF adjustment_method \\n \\h ",
+        "word": "(b)"
+      },
+      {
+        "instruction": " REF extension \\w \\h ",
+        "word": "Section 2.04(b)"
+      },
+      {
+        "instruction": " REF definitions \\w \\h ",
+        "word": "ARTICLE I"
+      },
+      {
+        "instruction": " REF definitions \\n \\h ",
+        "word": "ARTICLE I"
+      },
+      {
+        "instruction": " REF defined_terms \\w \\h ",
+        "word": "Section 1.01"
+      },
+      {
+        "instruction": " REF defined_terms \\n \\h ",
+        "word": "Section 1.01"
+      },
+      {
+        "instruction": " REF business_day \\w \\h ",
+        "word": "Section 1.01(a)"
+      },
+      {
+        "instruction": " REF business_day \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF as_extended \\w \\h ",
+        "word": "Section 1.01(b)(i)"
+      },
+      {
+        "instruction": " REF written_notice \\w \\h ",
+        "word": "Section 1.01(b)(i)(A)"
+      },
+      {
+        "instruction": " REF written_notice \\n \\h ",
+        "word": "(A)"
+      },
+      {
+        "instruction": " REF purchase_and_sale \\w \\h ",
+        "word": "ARTICLE II"
+      },
+      {
+        "instruction": " REF adjustment \\w \\h ",
+        "word": "Section 2.03(a)"
+      },
+      {
+        "instruction": " REF notices \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF miscellaneous \\w \\h ",
+        "word": "ARTICLE III"
+      }
+    ]
+  },
+  "afterInsertingSectionInArticleOne": {
+    "insertedAfter": "This Section applies throughout this Agreement.",
+    "insertedText": "Inserted Section in Article I.",
+    "style": "Heading 2",
+    "listStrings": [
+      {
+        "listString": "ARTICLE I",
+        "text": "Definitions"
+      },
+      {
+        "listString": "Section 1.01",
+        "text": "Defined Terms"
+      },
+      {
+        "listString": "(a)",
+        "text": "\"Business Day\" means a weekday."
+      },
+      {
+        "listString": "(b)",
+        "text": "\"Closing\" has the meaning in Section 2.03."
+      },
+      {
+        "listString": "(i)",
+        "text": "as extended under Section 2.03(b)"
+      },
+      {
+        "listString": "(A)",
+        "text": "by written notice"
+      },
+      {
+        "listString": "Section 1.02",
+        "text": "Inserted Section in Article I."
+      },
+      {
+        "listString": "Section 1.03",
+        "text": "Interpretation"
+      },
+      {
+        "listString": "(a)",
+        "text": "Headings are for convenience only."
+      },
+      {
+        "listString": "(b)",
+        "text": "The words \"include\" and \"including\" are not limiting."
+      },
+      {
+        "listString": "ARTICLE II",
+        "text": "Purchase and Sale"
+      },
+      {
+        "listString": "Section 2.01",
+        "text": "Purchase Price"
+      },
+      {
+        "listString": "(a)",
+        "text": "The price is set out in Section 2.02."
+      },
+      {
+        "listString": "(b)",
+        "text": "Payment is due as provided in Section 1.03 and Section 1.03(a)."
+      },
+      {
+        "listString": "Section 2.02",
+        "text": "Price Adjustment"
+      },
+      {
+        "listString": "(a)",
+        "text": "The price adjusts under clause (b)."
+      },
+      {
+        "listString": "(b)",
+        "text": "Adjustment method."
+      },
+      {
+        "listString": "Section 2.03",
+        "text": "Closing"
+      },
+      {
+        "listString": "(a)",
+        "text": "The Closing takes place on the date in Section 2.03(b)."
+      },
+      {
+        "listString": "(b)",
+        "text": "Extension. The parties may extend the Closing."
+      },
+      {
+        "listString": "ARTICLE III",
+        "text": "Miscellaneous"
+      },
+      {
+        "listString": "(a)",
+        "text": "Notices are in writing."
+      },
+      {
+        "listString": "(b)",
+        "text": "This Agreement is governed by the laws of [State]."
+      }
+    ],
+    "references": [
+      {
+        "instruction": " REF closing \\w \\h ",
+        "word": "Section 2.03"
+      },
+      {
+        "instruction": " REF extension \\w \\h ",
+        "word": "Section 2.03(b)"
+      },
+      {
+        "instruction": " REF price_adjustment \\w \\h ",
+        "word": "Section 2.02"
+      },
+      {
+        "instruction": " REF interpretation \\w \\h ",
+        "word": "Section 1.03"
+      },
+      {
+        "instruction": " REF headings \\w \\h ",
+        "word": "Section 1.03(a)"
+      },
+      {
+        "instruction": " REF adjustment_method \\n \\h ",
+        "word": "(b)"
+      },
+      {
+        "instruction": " REF extension \\w \\h ",
+        "word": "Section 2.03(b)"
+      },
+      {
+        "instruction": " REF definitions \\w \\h ",
+        "word": "ARTICLE I"
+      },
+      {
+        "instruction": " REF definitions \\n \\h ",
+        "word": "ARTICLE I"
+      },
+      {
+        "instruction": " REF defined_terms \\w \\h ",
+        "word": "Section 1.01"
+      },
+      {
+        "instruction": " REF defined_terms \\n \\h ",
+        "word": "Section 1.01"
+      },
+      {
+        "instruction": " REF business_day \\w \\h ",
+        "word": "Section 1.01(a)"
+      },
+      {
+        "instruction": " REF business_day \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF as_extended \\w \\h ",
+        "word": "Section 1.01(b)(i)"
+      },
+      {
+        "instruction": " REF written_notice \\w \\h ",
+        "word": "Section 1.01(b)(i)(A)"
+      },
+      {
+        "instruction": " REF written_notice \\n \\h ",
+        "word": "(A)"
+      },
+      {
+        "instruction": " REF purchase_and_sale \\w \\h ",
+        "word": "ARTICLE II"
+      },
+      {
+        "instruction": " REF adjustment \\w \\h ",
+        "word": "Section 2.02(a)"
+      },
+      {
+        "instruction": " REF notices \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF miscellaneous \\w \\h ",
+        "word": "ARTICLE III"
+      }
+    ]
+  },
+  "afterInsertingArticle": {
+    "insertedAfter": "The Purchase Price is payable in cash.",
+    "insertedText": "Inserted Article.",
+    "style": "Heading 1",
+    "listStrings": [
+      {
+        "listString": "ARTICLE I",
+        "text": "Definitions"
+      },
+      {
+        "listString": "Section 1.01",
+        "text": "Defined Terms"
+      },
+      {
+        "listString": "(a)",
+        "text": "\"Business Day\" means a weekday."
+      },
+      {
+        "listString": "(b)",
+        "text": "\"Closing\" has the meaning in Section 3.02."
+      },
+      {
+        "listString": "(i)",
+        "text": "as extended under Section 3.02(b)"
+      },
+      {
+        "listString": "(A)",
+        "text": "by written notice"
+      },
+      {
+        "listString": "Section 1.02",
+        "text": "Interpretation"
+      },
+      {
+        "listString": "(a)",
+        "text": "Headings are for convenience only."
+      },
+      {
+        "listString": "(b)",
+        "text": "The words \"include\" and \"including\" are not limiting."
+      },
+      {
+        "listString": "ARTICLE II",
+        "text": "Purchase and Sale"
+      },
+      {
+        "listString": "Section 2.01",
+        "text": "Purchase Price"
+      },
+      {
+        "listString": "(a)",
+        "text": "The price is set out in Section 3.01."
+      },
+      {
+        "listString": "(b)",
+        "text": "Payment is due as provided in Section 1.02 and Section 1.02(a)."
+      },
+      {
+        "listString": "ARTICLE III",
+        "text": "Inserted Article."
+      },
+      {
+        "listString": "Section 3.01",
+        "text": "Price Adjustment"
+      },
+      {
+        "listString": "(a)",
+        "text": "The price adjusts under clause (b)."
+      },
+      {
+        "listString": "(b)",
+        "text": "Adjustment method."
+      },
+      {
+        "listString": "Section 3.02",
+        "text": "Closing"
+      },
+      {
+        "listString": "(a)",
+        "text": "The Closing takes place on the date in Section 3.02(b)."
+      },
+      {
+        "listString": "(b)",
+        "text": "Extension. The parties may extend the Closing."
+      },
+      {
+        "listString": "ARTICLE IV",
+        "text": "Miscellaneous"
+      },
+      {
+        "listString": "(a)",
+        "text": "Notices are in writing."
+      },
+      {
+        "listString": "(b)",
+        "text": "This Agreement is governed by the laws of [State]."
+      }
+    ],
+    "references": [
+      {
+        "instruction": " REF closing \\w \\h ",
+        "word": "Section 3.02"
+      },
+      {
+        "instruction": " REF extension \\w \\h ",
+        "word": "Section 3.02(b)"
+      },
+      {
+        "instruction": " REF price_adjustment \\w \\h ",
+        "word": "Section 3.01"
+      },
+      {
+        "instruction": " REF interpretation \\w \\h ",
+        "word": "Section 1.02"
+      },
+      {
+        "instruction": " REF headings \\w \\h ",
+        "word": "Section 1.02(a)"
+      },
+      {
+        "instruction": " REF adjustment_method \\n \\h ",
+        "word": "(b)"
+      },
+      {
+        "instruction": " REF extension \\w \\h ",
+        "word": "Section 3.02(b)"
+      },
+      {
+        "instruction": " REF definitions \\w \\h ",
+        "word": "ARTICLE I"
+      },
+      {
+        "instruction": " REF definitions \\n \\h ",
+        "word": "ARTICLE I"
+      },
+      {
+        "instruction": " REF defined_terms \\w \\h ",
+        "word": "Section 1.01"
+      },
+      {
+        "instruction": " REF defined_terms \\n \\h ",
+        "word": "Section 1.01"
+      },
+      {
+        "instruction": " REF business_day \\w \\h ",
+        "word": "Section 1.01(a)"
+      },
+      {
+        "instruction": " REF business_day \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF as_extended \\w \\h ",
+        "word": "Section 1.01(b)(i)"
+      },
+      {
+        "instruction": " REF written_notice \\w \\h ",
+        "word": "Section 1.01(b)(i)(A)"
+      },
+      {
+        "instruction": " REF written_notice \\n \\h ",
+        "word": "(A)"
+      },
+      {
+        "instruction": " REF purchase_and_sale \\w \\h ",
+        "word": "ARTICLE II"
+      },
+      {
+        "instruction": " REF adjustment \\w \\h ",
+        "word": "Section 3.01(a)"
+      },
+      {
+        "instruction": " REF notices \\n \\h ",
+        "word": "(a)"
+      },
+      {
+        "instruction": " REF miscellaneous \\w \\h ",
+        "word": "ARTICLE IV"
+      }
+    ]
+  },
+  "controls": {
+    "articleClauseFullContext": {
+      "listStrings": [
+        {
+          "listString": "ARTICLE I",
+          "text": "Definitions"
+        },
+        {
+          "listString": "Section 1.01",
+          "text": "Terms"
+        },
+        {
+          "listString": "(a)",
+          "text": "A term."
+        },
+        {
+          "listString": "ARTICLE II",
+          "text": "Miscellaneous"
+        },
+        {
+          "listString": "(a)",
+          "text": "Notices are in writing."
+        },
+        {
+          "listString": "(i)",
+          "text": "By email"
+        },
+        {
+          "listString": "(b)",
+          "text": "Governing law."
+        }
+      ],
+      "references": [
+        {
+          "instruction": " REF notices \\n \\h ",
+          "word": "(a)"
+        },
+        {
+          "instruction": " REF notices \\w \\h ",
+          "word": "ARTICLE II(a)"
+        },
+        {
+          "instruction": " REF by_email \\n \\h ",
+          "word": "(i)"
+        },
+        {
+          "instruction": " REF by_email \\w \\h ",
+          "word": "ARTICLE II(a)(i)"
+        }
+      ],
+      "libreOffice": {
+        "pdfText": "See (a) / Section 2.01(a) and (i) / Section 2.01(a)(i)."
+      }
+    },
+    "skippedSectionLevel": {
+      "listStrings": [
+        {
+          "listString": "ARTICLE I",
+          "text": "Definitions"
+        },
+        {
+          "listString": "(a)",
+          "text": "A clause under the Article."
+        },
+        {
+          "listString": "(b)",
+          "text": "Another clause."
+        },
+        {
+          "listString": "Section 1.02",
+          "text": "First"
+        },
+        {
+          "listString": "Section 1.03",
+          "text": "Second"
+        }
+      ],
+      "references": [
+        {
+          "instruction": " REF first \\w \\h ",
+          "word": "Section 1.02"
+        },
+        {
+          "instruction": " REF second \\w \\h ",
+          "word": "Section 1.03"
+        }
+      ],
+      "libreOffice": {
+        "pdfText": "Section 1.02 First / Section 1.03 Second; See Section 1.02 and Section 1.03."
+      }
+    }
+  }
+}

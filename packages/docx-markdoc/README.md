@@ -695,12 +695,36 @@ such as an unclosed tag, and headings below `###`.
   `(i)`. `format="section"` puts `Section ` in front, as plain text. The
   field is a hyperlink to its target (Ctrl-click in Word) and carries the
   number as its cached result, so the document reads correctly before
-  anyone updates fields. Created documents number only ordered list items, so
-  an xref must name one. An xref may sit in body text, a list item, a quote, a
+  anyone updates fields. An xref must name a numbered list item or, with
+  `heading-numbers: legal` (below), a numbered heading. An xref may sit in body text, a list item, a quote, a
   table cell or a footnote, but not inside `{% fill %}` or `{% literal %}`.
   Errors are `XREF_UNKNOWN_ID` (naming the missing id),
   `XREF_TARGET_NOT_NUMBERED`, `INVALID_CROSS_REFERENCE`, `INVALID_ID`,
   `ID_PLACEMENT`, `DUPLICATE_ID` and `ID_COLLISION`, each with its line.
+- Frontmatter `heading-numbers: legal` numbers the headings. Each `##` is
+  `ARTICLE I`, `ARTICLE II`, …, and each `###` is `Section 1.01`,
+  `Section 1.02`, …, restarting under each Article. The title (`#`) is not
+  numbered. Write only the heading text: `## ARTICLE IV Definitions` fails
+  with `DUPLICATE_HEADING_NUMBER`. The numbers come from the Heading 1 and
+  Heading 2 styles, so a paragraph set to Heading 2 in Word becomes the next
+  Section, and every later number and cross-reference follows when fields
+  are updated. Ordered lists under a numbered heading are its clauses:
+  `1.` is `(a)`, a nested list `(i)`, then `(A)`. They start again at `(a)`
+  under each heading. The first list under a heading starts at `1.`, and a
+  later list under the same heading continues the one before it
+  (`HEADING_LIST_START` otherwise). An xref to a heading shows its label in
+  both forms (`Section 2.04`). An xref to a clause shows `Section 2.04(b)(i)`,
+  or `(i)` with `number="paragraph"`. `format="section"` is refused for these
+  targets, because their number already includes the word. A `###` needs a
+  `##` before it (`HEADING_NUMBER_SKIPS_LEVEL`). Clauses may sit directly
+  under an Article only when no Section of it follows
+  (`SECTION_AFTER_ARTICLE_CLAUSES`: Word would number that Section N.02).
+  An xref to such a clause must use `number="paragraph"`
+  (`XREF_FULL_NUMBER_UNDER_ARTICLE`), because Word shows its full number as
+  `ARTICLE II(a)` and LibreOffice as `Section 2.01(a)`. Use
+  `{% center %}**EXHIBIT A**{% /center %}` for a heading that should not be
+  numbered. Without the key, headings are unnumbered and a literal number
+  (`## 2.04 Purchase Price`) is plain text.
 - A source holding a control character that a Word document cannot hold
   (U+0000–U+001F other than tab, line feed and carriage return) fails with
   `INVALID_CHARACTER` and its line.
