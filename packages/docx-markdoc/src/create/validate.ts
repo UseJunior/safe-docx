@@ -518,8 +518,12 @@ function validateBlocks(children: MarkdocNode[]): void {
   }
 }
 
-/** A canonical upper-case Roman numeral (I to MMMCMXCIX), as `upperRoman` writes it, not followed by a letter. */
-const ROMAN_NUMERAL = '(?=[IVXLCDM])M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})(?![A-Za-z])';
+/**
+ * A canonical upper-case Roman numeral (I to MMMCMXCIX), as `upperRoman`
+ * writes it, that ends a word: no letter, combining mark or digit of any
+ * script follows it, so "Légal" and "Même" are words, not "L" and "M".
+ */
+const ROMAN_NUMERAL = '(?=[IVXLCDM])M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})(?![\\p{L}\\p{M}\\p{N}])';
 /**
  * Heading text that already starts with the number the heading definition
  * generates ("ARTICLE IV", "Article IV", "Section 2.04"). Ordinary words
