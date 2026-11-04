@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   checkGeneratedPackage,
+  type StructuralCheckResult,
   collectFieldStructureIssues,
   parseXml,
   REVISION_ID_ELEMENT_NAMES,
@@ -61,6 +62,13 @@ export interface ProjectionSummary {
   } | null;
 }
 
+export interface StructuralIssueSummary {
+  check: string;
+  part: string;
+  message: string;
+  bookmarkName?: string;
+}
+
 export interface StrategyEvidence {
   strategy: TaggedStrategy;
   projections: {
@@ -75,8 +83,15 @@ export interface StrategyEvidence {
   unrepresentedChanges: UnrepresentedChange[];
   schema: {
     packageStructural: 'passed' | 'inherited' | 'failed';
-    issues: Array<{ check: string; part: string; message: string }>;
-    introducedIssues: Array<{ check: string; part: string; message: string }>;
+    issues: StructuralIssueSummary[];
+    introducedIssues: StructuralIssueSummary[];
+    /**
+     * Repeated bookmark names the output keeps from an input that already
+     * repeats them in the same part. The bookmark clause permits a repeat, so
+     * these are recorded without failing; a repeat the comparison introduces
+     * stays in `introducedIssues`.
+     */
+    warnings: StructuralIssueSummary[];
   };
   formatting: {
     score: number;
@@ -107,7 +122,9 @@ export interface StrategyDifferentialRow {
     revisedSha256: string;
     capabilityTags: string[];
     sourcePackageParts: string[];
-    sourceStructuralIssues: Array<{ check: string; part: string; message: string }>;
+    sourceStructuralIssues: StructuralIssueSummary[];
+    /** Repeated bookmark names in either input: legal, so recorded but not failed. */
+    sourceStructuralWarnings: StructuralIssueSummary[];
   };
   approvedDivergenceIds: string[];
   taggedTree: StrategyEvidence;
@@ -225,8 +242,52 @@ async function auxiliaryDefinitionIssues(buffer: Buffer): Promise<string[]> {
   return issues.sort();
 }
 
-function structuralIssueKey(issue: { check: string; part: string; message: string }): string {
+function structuralIssueKey(issue: StructuralIssueSummary): string {
   return `${issue.check}\u0000${issue.part}\u0000${issue.message}`;
+}
+
+/** Identifies a repeated bookmark name by story part and case-folded name. */
+function duplicateBookmarkNameKey(issue: StructuralIssueSummary): string {
+  return `${issue.part}\u0000${issue.bookmarkName ?? ''}`;
+}
+
+function uniqueStructuralIssues(issues: readonly StructuralIssueSummary[]): StructuralIssueSummary[] {
+  return issues.filter((issue, index) =>
+    issues.findIndex((candidate) => structuralIssueKey(candidate) === structuralIssueKey(issue))
+      === index,
+  );
+}
+
+/**
+ * Classifies a comparison output's strict structural findings against its
+ * inputs' findings. A repeated bookmark name is only a warning when an input
+ * already repeats that name in the same part; any other finding is inherited
+ * when an input carries the identical finding. Everything else is introduced
+ * by the comparison and fails the row.
+ */
+export function classifyOutputStructure(
+  structural: StructuralCheckResult,
+  sourceIssues: readonly StructuralIssueSummary[],
+  sourceWarnings: readonly StructuralIssueSummary[],
+): StrategyEvidence['schema'] {
+  const inheritedIssueKeys = new Set(sourceIssues.map(structuralIssueKey));
+  const inheritedNameKeys = new Set(sourceWarnings.map(duplicateBookmarkNameKey));
+  const warnings = structural.issues.filter(
+    (issue) =>
+      issue.check === 'bookmark_name_uniqueness'
+      && inheritedNameKeys.has(duplicateBookmarkNameKey(issue)),
+  );
+  const introducedIssues = structural.issues.filter(
+    (issue) => !warnings.includes(issue) && !inheritedIssueKeys.has(structuralIssueKey(issue)),
+  );
+  return {
+    packageStructural: structural.ok
+      ? 'passed'
+      : introducedIssues.length === 0 ? 'inherited' : 'failed',
+    issues: structural.issues,
+    introducedIssues,
+    warnings: uniqueStructuralIssues(warnings),
+  };
 }
 
 function duplicateValues(values: readonly string[]): string[] {
@@ -470,7 +531,8 @@ async function characterizeStrategy(
   fixture: StrategyDifferentialFixture,
   originalXml: string,
   revisedXml: string,
-  inheritedStructuralIssueKeys: ReadonlySet<string>,
+  sourceStructuralIssues: readonly StructuralIssueSummary[],
+  sourceStructuralWarnings: readonly StructuralIssueSummary[],
 ): Promise<StrategyEvidence> {
   const result = await compareDocumentsAtomizer(fixture.original, fixture.revised, {
     author: AUTHOR,
@@ -484,10 +546,8 @@ async function characterizeStrategy(
     revisedXml,
     candidateXml,
   );
+  // The output is checked strictly, then classified against its inputs.
   const structural = await checkGeneratedPackage(result.document);
-  const introducedStructuralIssues = structural.issues.filter(
-    (issue) => !inheritedStructuralIssueKeys.has(structuralIssueKey(issue)),
-  );
   const relationshipIssues = structural.issues
     .filter((issue) =>
       ['content_type_coverage', 'relationship_target', 'rid_resolution'].includes(issue.check),
@@ -512,13 +572,7 @@ async function characterizeStrategy(
       comparisonStrategyUsed: result.engine,
     },
     unrepresentedChanges: result.unrepresentedChanges ?? [],
-    schema: {
-      packageStructural: structural.ok
-        ? 'passed'
-        : introducedStructuralIssues.length === 0 ? 'inherited' : 'failed',
-      issues: structural.issues,
-      introducedIssues: introducedStructuralIssues,
-    },
+    schema: classifyOutputStructure(structural, sourceStructuralIssues, sourceStructuralWarnings),
     formatting: {
       score: formatting.score,
       acceptScore: formatting.accept.score,
@@ -565,22 +619,25 @@ export async function characterizeStrategyDifferential(
     documentXml(fixture.revised),
     packagePartSummaries(fixture.original),
     packagePartSummaries(fixture.revised),
-    checkGeneratedPackage(fixture.original),
-    checkGeneratedPackage(fixture.revised),
+    // Inputs are third-party packages: a repeated bookmark name is legal
+    // there (ECMA-376 Part 1 § 17.13.6.2), so it is a warning, not an issue.
+    checkGeneratedPackage(fixture.original, { duplicateBookmarkNames: 'warning' }),
+    checkGeneratedPackage(fixture.revised, { duplicateBookmarkNames: 'warning' }),
   ]);
-  const sourceStructuralIssues = [
+  const sourceStructuralIssues = uniqueStructuralIssues([
     ...originalStructural.issues,
     ...revisedStructural.issues,
-  ].filter((issue, index, issues) =>
-    issues.findIndex((candidate) => structuralIssueKey(candidate) === structuralIssueKey(issue))
-      === index,
-  );
-  const inheritedStructuralIssueKeys = new Set(sourceStructuralIssues.map(structuralIssueKey));
+  ]);
+  const sourceStructuralWarnings = uniqueStructuralIssues([
+    ...originalStructural.warnings,
+    ...revisedStructural.warnings,
+  ]);
   const taggedTree = await characterizeStrategy(
     fixture,
     originalXml,
     revisedXml,
-    inheritedStructuralIssueKeys,
+    sourceStructuralIssues,
+    sourceStructuralWarnings,
   );
   // Hash normalized package contents rather than ZIP container bytes. JSZip's
   // entry timestamps are not comparison evidence and may vary when a fixture
@@ -601,6 +658,7 @@ export async function characterizeStrategyDifferential(
         ]),
       ].sort(),
       sourceStructuralIssues,
+      sourceStructuralWarnings,
     },
     approvedDivergenceIds: [...new Set(fixture.approvedDivergenceIds ?? [])].sort(),
     taggedTree,

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { childElements } from '../primitives/dom-helpers.js';
 import { parseNumberingXml, renderReferenceNumber } from '../primitives/numbering.js';
@@ -382,4 +383,41 @@ describe('Traceability: generated cross-references', () => {
       });
     },
   );
+
+  // A repeated bookmark name is legal, though readers disagree on which range
+  // it names, so the check is a policy for packages safe-docx writes; a caller
+  // checking a package it did not write can ask for a warning instead (#1264).
+  test('a repeated bookmark name fails a generated package and is only a warning in a package safe-docx did not write', async () => {
+    const generated = await generateDocx(agreement([]));
+    const zip = await JSZip.loadAsync(generated);
+    const documentXml = await zip.file('word/document.xml')!.async('string');
+    expect(documentXml).toContain('w:name="purchase_and_sale"');
+    // A case variant of an earlier name still counts as the same name.
+    zip.file('word/document.xml', documentXml.replace('w:name="purchase_price_adjustment"', 'w:name="Purchase_And_Sale"'));
+    const repeated = (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+    const expected = {
+      check: 'bookmark_name_uniqueness',
+      part: 'word/document.xml',
+      message: "Bookmark name 'Purchase_And_Sale' is used twice",
+      bookmarkName: 'purchase_and_sale',
+    };
+
+    const strict = await checkGeneratedPackage(repeated);
+    expect(strict.ok).toBe(false);
+    expect(strict.issues).toEqual([expected]);
+    expect(strict.warnings).toEqual([]);
+
+    const lenient = await checkGeneratedPackage(repeated, { duplicateBookmarkNames: 'warning' });
+    expect(lenient.ok).toBe(true);
+    expect(lenient.issues).toEqual([]);
+    expect(lenient.warnings).toEqual([expected]);
+
+    // Warning mode relaxes names only: an unpaired bookmark still fails.
+    const unpaired = documentXml.replace(/<w:bookmarkEnd w:id="\d+"\/>/u, '');
+    expect(unpaired).not.toBe(documentXml);
+    zip.file('word/document.xml', unpaired);
+    const broken = await checkGeneratedPackage((await zip.generateAsync({ type: 'nodebuffer' })) as Buffer, { duplicateBookmarkNames: 'warning' });
+    expect(broken.ok).toBe(false);
+    expect(broken.issues.map((issue) => issue.check)).toEqual(['bookmark_pairing']);
+  });
 });

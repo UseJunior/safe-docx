@@ -9,7 +9,7 @@
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.45
  */
 
-import { DocxArchive, childElements, parseXml } from '@usejunior/docx-core';
+import { DocxArchive, checkGeneratedPackage, childElements, parseXml } from '@usejunior/docx-core';
 import { describe, expect } from 'vitest';
 import {
   buildDocxFromBodyXml,
@@ -30,6 +30,7 @@ import {
   assertCharacterizationSafety,
   assertExpectedPackageParts,
   characterizeStrategyDifferential,
+  classifyOutputStructure,
   collectRevisionIdIssues,
   collectRevisionTopologyIssues,
   type StrategyDifferentialFixture,
@@ -297,6 +298,92 @@ describe('strategy differential manifest evidence', () => {
         .toThrow(/failed moveBalanceIssues/u);
     },
   );
+
+  // ECMA-376 Part 1 § 17.13.6.2 lets a document repeat a bookmark name, so a
+  // repeat in an input is a recorded warning. A repeat the comparison itself
+  // introduces still fails (#1264).
+  const bookmarkedParagraph = (id: number, name: string, text: string): string =>
+    `<w:p><w:bookmarkStart w:id="${id}" w:name="${name}"/>` +
+    `<w:r><w:t>${text}</w:t></w:r><w:bookmarkEnd w:id="${id}"/></w:p>`;
+  const repeatedTargetBody = (tail: string): string =>
+    bookmarkedParagraph(1, 'Target', 'First target.') +
+    bookmarkedParagraph(2, 'Target', 'Second target.') +
+    `<w:p><w:r><w:t>${tail}</w:t></w:r></w:p>`;
+  const repeatedTarget = {
+    check: 'bookmark_name_uniqueness',
+    part: 'word/document.xml',
+    message: "Bookmark name 'Target' is used twice",
+    bookmarkName: 'target',
+  };
+
+  test('records a bookmark name both inputs repeat as a warning and passes the row', async () => {
+    const [original, revised] = await Promise.all([
+      buildDocxFromBodyXml(repeatedTargetBody('Old tail.')),
+      buildDocxFromBodyXml(repeatedTargetBody('New tail.')),
+    ]);
+    const row = await characterizeStrategyDifferential({
+      id: 'synthetic-repeated-bookmark-name',
+      original,
+      revised,
+      capabilityTags: ['bookmarks'],
+    });
+    expect(row.fixture.sourceStructuralIssues).toEqual([]);
+    expect(row.fixture.sourceStructuralWarnings).toEqual([repeatedTarget]);
+    expect(row.taggedTree.schema).toEqual({
+      packageStructural: 'inherited',
+      issues: [repeatedTarget],
+      introducedIssues: [],
+      warnings: [repeatedTarget],
+    });
+    expect(row.taggedTree.integrity.bookmarkIssues).toEqual([]);
+    expect(() => assertCharacterizationSafety(row)).not.toThrow();
+  });
+
+  test('fails a bookmark name the comparison repeats when no input repeats it in that part', async () => {
+    const [unique, repeated] = await Promise.all([
+      buildDocxFromBodyXml(
+        bookmarkedParagraph(1, 'Target', 'First target.') +
+        bookmarkedParagraph(2, 'Other', 'Second target.'),
+      ),
+      buildDocxFromBodyXml(repeatedTargetBody('Tail.')),
+    ]);
+    const output = await checkGeneratedPackage(repeated);
+    expect(output.issues).toEqual([repeatedTarget]);
+
+    const sources = await checkGeneratedPackage(unique, { duplicateBookmarkNames: 'warning' });
+    expect(sources.warnings).toEqual([]);
+    const introduced = classifyOutputStructure(output, sources.issues, sources.warnings);
+    expect(introduced).toEqual({
+      packageStructural: 'failed',
+      issues: [repeatedTarget],
+      introducedIssues: [repeatedTarget],
+      warnings: [],
+    });
+
+    // An input repeating a different name, or the same name in another
+    // story part, does not excuse this repeat.
+    for (const sourceWarning of [
+      { ...repeatedTarget, message: "Bookmark name 'Other' is used twice", bookmarkName: 'other' },
+      { ...repeatedTarget, part: 'word/header1.xml' },
+    ]) {
+      expect(classifyOutputStructure(output, [], [sourceWarning]).packageStructural).toBe('failed');
+    }
+    expect(classifyOutputStructure(output, [], [repeatedTarget]).packageStructural).toBe('inherited');
+
+    const [original, revised] = await Promise.all([
+      buildDocxFromBodyXml('<w:p><w:r><w:t>old</w:t></w:r></w:p>'),
+      buildDocxFromBodyXml('<w:p><w:r><w:t>new</w:t></w:r></w:p>'),
+    ]);
+    const row = await characterizeStrategyDifferential({
+      id: 'synthetic-introduced-bookmark-name',
+      original,
+      revised,
+      capabilityTags: ['bookmarks'],
+    });
+    row.taggedTree.schema = introduced;
+    expect(() => assertCharacterizationSafety(row))
+      .toThrow(/introduced package structural failures: bookmark_name_uniqueness:word\/document\.xml/u);
+  });
 
   test('rejects active divergences that did not suppress an observed assertion', () => {
     expect(() => assertActiveDivergencesConsumed(
