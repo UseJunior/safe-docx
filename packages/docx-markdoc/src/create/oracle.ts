@@ -769,6 +769,7 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
         found: (page) => regions[page]!.join(' '),
         region: (section, page) => regionFor(section, page).join(' '),
         sectionCount: effective.length,
+        spell: (word) => spellings.get(word),
       });
       for (const index of model.explained) missing.delete(index);
       footerMismatches.push(...model.footerMismatches);
@@ -1178,6 +1179,8 @@ type BreakModelInput = {
   found: (page: number) => string;
   region: (section: number, page: number) => string;
   sectionCount: number;
+  /** The pieces a word is compared as (see `ExpectedToken`), or undefined for a word compared whole. */
+  spell: (word: string) => readonly string[] | undefined;
 };
 
 type BreakModelResult = {
@@ -1304,9 +1307,22 @@ function explainPageBreaks(input: BreakModelInput): BreakModelResult {
       const generated = table === undefined ? [] : headers.get(table) ?? [];
       const head = headRuns[page]!;
       if (generated.some((word, offset) => head[offset] !== word) || head.length < generated.length) return undefined;
-      const rest = head.slice(generated.length);
+      // The source words in the head run, compared as pieces like the body (see `piecesFit`): each token's pieces lie
+      // inside one source word, and a word other than a reference word is one whole token.
+      const rest = head.slice(generated.length).flatMap((word, token) => (input.spell(word) ?? [word]).map((piece, _at, all) => ({ piece, token, of: all.length })));
       const next = tokenItemsFrom(pos).slice(0, rest.length);
-      if (next.length < rest.length || next.some(({ item }, offset) => expected[item.token!]!.word !== rest[offset])) return undefined;
+      if (next.length < rest.length || next.some(({ item }, offset) => expected[item.token!]!.word !== rest[offset]!.piece)) return undefined;
+      const fits = next.every(({ item }, offset) => {
+        const own = expected[item.token!]!.piece;
+        const { token, of } = rest[offset]!;
+        const sameToken = next.filter((_, other) => rest[other]!.token === token);
+        if (of > 1 && (!own || sameToken.some(({ item: other }) => expected[other.token!]!.piece?.word !== own.word))) return false;
+        if (!own || own.mark) return true;
+        // A literal word compared as pieces must be exactly one token's pieces, all in this head run.
+        const ofWord = next.filter(({ item: other }) => expected[other.token!]!.piece?.word === own.word);
+        return ofWord.length === own.of && of === own.of && sameToken.length === own.of;
+      });
+      if (!fits) return undefined;
       const end = next.length > 0 ? next.at(-1)!.index + 1 : pos;
       const section = spill ? sectionOf(beforeEntry(pos)!) : sectionAt(pos);
       return { pos, explained: next.map(({ item }) => item.token!), end, ...(table === undefined ? {} : { table }), section, spill };

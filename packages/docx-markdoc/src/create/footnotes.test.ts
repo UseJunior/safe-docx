@@ -364,6 +364,10 @@ describe('Traceability: footnotes in created documents', () => {
       expect(comparePdfWords(labels, ['Escrow12 . 1. First 2. Second 1 Note. 2 Other.']).passed).toBe(true);
       expect(comparePdfWords(labels, ['Escrow1 2. 1. First 2. Second 1 Note. 2 Other.']).passed).toBe(true);
       expect(comparePdfWords(labels, ['Escrow12. 1. First 2 . Second 1 Note. 2 Other.']).passed).toBe(false);
+      // Literal text at the head of a page, taken first for a repeated table header, is compared the same way.
+      const headed = projectSourceText(['Closing{% fnref id="a" /%}.', '', '{% table %}', '* Closing1.', '---', '* Row', '{% /table %}', '', 'After', '', 'Closing1. tail', '', note].join('\n'));
+      expect(comparePdfWords(headed, ['Closing1 . Closing1. Row After 1 Note.', 'Closing1. tail']).passed).toBe(true);
+      expect(comparePdfWords(headed, ['Closing1 . Closing1. Row After 1 Note.', 'Closing1 . tail']).passed).toBe(false);
       // The report shows a missing reference word as written and the tokens read as printed.
       expect(comparePdfWords(literalSpaced, ['Closing1 . Closing1 , 1 Note.'])).toMatchObject({ passed: false, missing: [{ words: 'Closing1.' }], unexplainedExtra: [{ words: 'Closing1 ,' }] });
 
