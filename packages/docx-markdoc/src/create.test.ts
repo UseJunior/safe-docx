@@ -197,7 +197,7 @@ describe('Traceability: Markdoc document creation without a template', () => {
     async () => {
       const note = '\n\n{% footnote id="a" %}Signs as Chief Executive Officer.{% /footnote %}';
       // Content the signature block would never render (#1261): a tag or text after the name's line, a block fill,
-      // a line break, or a lone tag in place of the name.
+      // a line break (block or inline form), a lone tag in place of the name, or a list or heading.
       for (const [source, line] of [
         ['{% signer %}\nJane Doe\n{% fnref id="a" /%}\n{% /signer %}' + note, 3],
         ['1. Price. {% #price %}\n\n{% signer %}\nJane Doe\n{% xref to="price" /%}\n{% /signer %}', 5],
@@ -206,6 +206,10 @@ describe('Traceability: Markdoc document creation without a template', () => {
         ['{% signer %}\nJane Doe\nChief Executive Officer\n{% /signer %}', 1],
         ['{% signer %}\nJane Doe  \nChief Executive Officer\n{% /signer %}', 1],
         ['{% signer %}\n{% fnref id="a" /%}\n{% /signer %}' + note, 2],
+        ['{% signer %}Jane\nDoe{% /signer %}', 1],
+        ['{% signer %}Jane  \nDoe{% /signer %}', 1],
+        ['{% signer %}\n- Jane Doe\n{% /signer %}', 2],
+        ['{% signer %}\n# Jane Doe\n{% /signer %}', 2],
       ] as const) {
         const error = await createDocumentFromMarkdoc(source).then(() => null, (caught: unknown) => caught as { code?: string; details?: { line?: number } });
         expect(error?.code, source).toBe('INVALID_SIGNER');

@@ -329,21 +329,22 @@ function checkBlockTag(node: MarkdocNode, topLevel: boolean, line: number | unde
       // The name is either name="…" (plain text) or the tag's inline content, which may hold {% fill %}.
       const { name, date } = node.attributes;
       const content = node.children.flatMap((child) => (child.type === 'paragraph' ? child.children : [child]));
-      if (node.children.some((child) => child.type !== 'paragraph' && child.type !== 'inline' && child.type !== 'text' && child.type !== 'tag' && child.type !== 'strong' && child.type !== 'em')) {
-        creationError('UNSUPPORTED_CREATION_SYNTAX', '{% signer %} content must be one line of text.', node, line);
-      }
-      if (node.children.filter((child) => child.type === 'paragraph').length > 1) creationError('INVALID_SIGNER', '{% signer %} content must be one paragraph.', node, line);
-      // The signature block renders one line of name (#1261): in block form exactly one paragraph and nothing
-      // beside it, and no line break in it. Anything else (a tag on its own line after the name, a block fill)
-      // would never reach the page.
-      if (!node.inline && (node.children.length > 1 || (node.children.length === 1 && node.children[0]!.type !== 'paragraph'))) {
-        const stray = node.children.find((child) => child.type !== 'paragraph') ?? node.children[1]!;
-        creationError('INVALID_SIGNER', `{% signer %} content must be one line of text, with nothing after it but {% /signer %}; found ${stray.type === 'tag' ? `{% ${stray.tag} %}` : `'${stray.type}'`} on its own line.`, stray, lineOf(stray) ?? line);
-      }
+      // The signature block renders one line of name (#1261): no line break in it, inline or block form, and in
+      // block form exactly one paragraph with nothing beside it. Anything else (a tag on its own line after the
+      // name, a block fill, a list) would never reach the page. These run before the generic syntax guard, so
+      // every multi-line shape fails as INVALID_SIGNER.
       const lineBreak = (child: MarkdocNode): MarkdocNode | undefined =>
         child.type === 'softbreak' || child.type === 'hardbreak' ? child : child.children.map(lineBreak).find(Boolean);
       const broken = content.map(lineBreak).find(Boolean);
       if (broken) creationError('INVALID_SIGNER', '{% signer %} content must be one line of text; put the whole name on one line.', broken, line);
+      if (node.children.filter((child) => child.type === 'paragraph').length > 1) creationError('INVALID_SIGNER', '{% signer %} content must be one paragraph.', node, line);
+      if (!node.inline && (node.children.length > 1 || (node.children.length === 1 && node.children[0]!.type !== 'paragraph'))) {
+        const stray = node.children.find((child) => child.type !== 'paragraph') ?? node.children[1]!;
+        creationError('INVALID_SIGNER', `{% signer %} content must be one line of text, with nothing after it but {% /signer %}; found ${stray.type === 'tag' ? `{% ${stray.tag} %}` : `'${stray.type}'`} on its own line.`, stray, lineOf(stray) ?? line);
+      }
+      if (node.children.some((child) => child.type !== 'paragraph' && child.type !== 'inline' && child.type !== 'text' && child.type !== 'tag' && child.type !== 'strong' && child.type !== 'em')) {
+        creationError('UNSUPPORTED_CREATION_SYNTAX', '{% signer %} content must be one line of text.', node, line);
+      }
       if (name !== undefined && content.length > 0) creationError('INVALID_SIGNER', 'Give the signer name either as name="…" or as the tag content, not both.', node, line);
       if (name === undefined && content.length === 0) creationError('INVALID_SIGNER', '{% signer /%} requires a name: name="…" or {% signer %}Name{% /signer %}.', node, line);
       if (name !== undefined && (typeof name !== 'string' || !name.trim())) creationError('INVALID_SIGNER', '{% signer /%} requires a non-empty name="…".', node, line);

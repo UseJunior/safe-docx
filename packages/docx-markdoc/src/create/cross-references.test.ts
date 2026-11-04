@@ -8,7 +8,7 @@ import { testAllure } from '../../../docx-core/src/testing/allure-test.js';
 import { compileMarkdoc } from '../compile.js';
 import { importDocxToMarkdoc } from '../import.js';
 import { defaultPdfRenderTools } from '../pdf/tools.js';
-import { requiredPdfText, runCreateCommand } from './cli-create.js';
+import { controlsSummary, requiredPdfText, runCreateCommand } from './cli-create.js';
 import { createDocumentFromMarkdoc, type CreationCertificate } from './create.js';
 import { projectSourceText } from './oracle.js';
 
@@ -344,6 +344,12 @@ describe('Traceability: cross-references in created documents', () => {
         const single = await summary('single', '1. Price {% #price %}\n\nSee {% xref to="price" format="section" /%}.\n');
         expect(single).toContain('cross-references ok (1 reference; negative controls ok, except retargeted: not applicable)');
         expect(await summary('none', 'No references.\n')).not.toContain('cross-references');
+        // A control that went undetected is named as failed, never counted as ok.
+        expect(controlsSummary({ a: true, b: false })).toBe('negative controls ok, except b: failed');
+        expect(controlsSummary({ a: true, b: false, c: 'not applicable' })).toBe('negative controls ok, except b: failed, c: not applicable');
+        expect(controlsSummary({ a: false })).toBe('negative control failed');
+        expect(controlsSummary({ a: false, b: 'not applicable' })).toBe('negative controls: a: failed, b: not applicable');
+        expect(controlsSummary({ a: 'not applicable', b: 'not applicable' })).toBe('negative controls not applicable');
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

@@ -318,15 +318,20 @@ async function sameFile(a: string, b: string): Promise<boolean> {
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 /**
- * The negative controls of a passing check, for the summary line. A passing check has no undetected control,
- * so each is detected or 'not applicable'; the ones that are not applicable are named rather than counted as ok.
+ * The negative controls of a check, for the summary line. A control that is not applicable, or (should a caller
+ * summarize a failed check) one that went undetected, is named with its status rather than counted as ok.
  */
 export function controlsSummary(controls: Record<string, boolean | 'not applicable'>): string {
   const names = Object.keys(controls);
-  const notApplicable = names.filter((name) => controls[name] === 'not applicable');
-  if (notApplicable.length === 0) return names.length === 1 ? 'negative control ok' : 'negative controls ok';
-  if (notApplicable.length === names.length) return names.length === 1 ? 'negative control not applicable' : 'negative controls not applicable';
-  return `negative controls ok, except ${notApplicable.join(', ')}: not applicable`;
+  const noun = names.length === 1 ? 'negative control' : 'negative controls';
+  const ok = names.filter((name) => controls[name] === true);
+  if (ok.length === names.length) return `${noun} ok`;
+  const groups = ([[false, 'failed'], ['not applicable', 'not applicable']] as const)
+    .map(([value, status]) => ({ status, named: names.filter((name) => controls[name] === value) }))
+    .filter(({ named }) => named.length > 0);
+  if (ok.length === 0 && groups.length === 1) return `${noun} ${groups[0]!.status}`;
+  const exceptions = groups.map(({ status, named }) => `${named.join(', ')}: ${status}`).join(', ');
+  return ok.length === 0 ? `${noun}: ${exceptions}` : `${noun} ok, except ${exceptions}`;
 }
 
 export async function runCreateCommand(
