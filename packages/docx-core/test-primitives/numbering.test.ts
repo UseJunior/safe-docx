@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 import { parseXml } from '../src/primitives/xml.js';
@@ -6,10 +9,20 @@ import {
   computeListLabelForParagraph,
   parseNumberingXml,
   renderListLevelText,
+  resolveReferenceNumber,
   type NumberingCounters,
 } from '../src/primitives/numbering.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const EVIDENCE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../scripts/oracle/word/evidence');
+
+/** Word for Mac 16.114 list strings and REF results for start-value and silent levels (#1254, #1262, #1263). */
+type StartValueEvidence = {
+  numberingXml: string;
+  fixtures: Record<string, {
+    paragraphs: Array<{ text: string; numId: string; ilvl: number; word: { listString: string; fullContext: string; paragraph: string } }>;
+  }>;
+};
 
 const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Numbering' });
 
@@ -285,6 +298,12 @@ describe('numbering primitives', () => {
       word: ['1.', '1.1', '2.', '2.2', '2.5', '2.6'],
     },
     { name: 'lvlRestart 0 levels continue across instances', seq: [[7, 0], [7, 1], [8, 0], [8, 1], [7, 0], [7, 1]], word: ['1.', '1.1', '2.', '2.2', '3.', '3.3'] },
+    {
+      name: 'a skipped intermediate level shows its start value and counts as used',
+      seq: [[1, 0], [1, 2], [1, 1], [1, 1], [1, 0], [1, 2]],
+      word: ['1.', '1(a)(i)', '1(b)', '1(c)', '2.', '2(a)(i)'],
+    },
+    { name: 'a list opening at level 1 shows level 0 at its start value and counts it', seq: [[1, 1], [1, 1], [1, 0], [1, 1]], word: ['1(a)', '1(b)', '2.', '2(a)'] },
   ];
 
   for (const { name, seq, word } of WORD_ORACLE) {
@@ -304,7 +323,7 @@ describe('numbering primitives', () => {
     });
   }
 
-  test('a level the list has never used stays unset in snapshots and labels', async ({ given, when, then, and }: AllureBddContext) => {
+  test('an ancestor level no paragraph has used shows its start value in snapshots and labels', async ({ given, when, then, and }: AllureBddContext) => {
     let model!: ReturnType<typeof parseNumberingXml>;
     let labels!: string[];
     let snapshot!: ReturnType<typeof advanceListLabel>;
@@ -326,13 +345,74 @@ describe('numbering primitives', () => {
       snapshot = advanceListLabel(model, counters, { numId: '1', ilvl: 2 });
       labels.push(snapshot!.label, computeListLabelForParagraph(model, counters, { numId: '1', ilvl: 1 }));
     });
-    await then('the skipped level reads NaN in the snapshot rather than a pending restart value', () => {
-      expect(snapshot!.levelValues).toEqual([1, Number.NaN, 1]);
+    await then('the skipped level carries its start value and is named as shown at its start value', () => {
+      expect(snapshot!.levelValues).toEqual([1, 5, 1]);
+      expect(snapshot!.levelsAtStartValue).toEqual([1]);
     });
-    await and('labels are unchanged from the per-instance implementation, and the level later starts at its start value', () => {
-      // A skipped level still renders 0; Word renders it at its start value
-      // (a separate, pre-existing difference: r2/r5 in the #1243 evidence).
-      expect(labels).toEqual(['1.', '1.0.1', '1.5']);
+    await and('the skipped level counts as used, so its own next paragraph continues from it, as Word shows', () => {
+      expect(labels).toEqual(['1.', '1.5.1', '1.6']);
+    });
+  });
+
+  /**
+   * Word's list strings and REF \w / \n results for every probe in
+   * scripts/oracle/word/evidence/issue-1254-word-16.114.json: ancestors shown
+   * at a start value, silent levels (a level text naming a deeper level), and
+   * their combinations. A reference Word shows as "0" must be refused.
+   */
+  const startValueTest = test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.11' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.5.51' });
+  const startValueEvidence = JSON.parse(readFileSync(path.join(EVIDENCE_DIR, 'issue-1254-word-16.114.json'), 'utf8')) as StartValueEvidence;
+  for (const [name, fixture] of Object.entries(startValueEvidence.fixtures)) {
+    startValueTest(`start-value and silent levels (Word oracle): ${name}`, async ({ given, when, then }: AllureBddContext) => {
+      let model!: ReturnType<typeof parseNumberingXml>;
+      let measured!: Array<{ listString: string; fullContext: string; paragraph: string }>;
+      await given(`the probe's numbering part and paragraph sequence ${fixture.paragraphs.map((p) => p.text).join(', ')}`, async () => {
+        model = parseNumberingXml(parseXml(startValueEvidence.numberingXml));
+      });
+      await when('each paragraph is numbered in document order and its reference numbers resolved', async () => {
+        const counters: NumberingCounters = new Map();
+        const refText = (result: ReturnType<typeof resolveReferenceNumber>) => ('text' in result ? result.text : '0');
+        measured = fixture.paragraphs.map(({ numId, ilvl }) => {
+          const snapshot = advanceListLabel(model, counters, { numId, ilvl })!;
+          return {
+            listString: snapshot.label,
+            fullContext: refText(resolveReferenceNumber(model, snapshot, 'fullContext')),
+            paragraph: refText(resolveReferenceNumber(model, snapshot, 'paragraph')),
+          };
+        });
+      });
+      await then('labels and REF results match Word, and only references Word shows as 0 are refused', () => {
+        expect(measured).toEqual(fixture.paragraphs.map((p) => p.word));
+      });
+    });
+  }
+
+  test('a level whose text names a deeper level gets no label while its counters advance (Word: issue-1236 deep0/deep1)', async ({ given, when, then, and }: AllureBddContext) => {
+    let model!: ReturnType<typeof parseNumberingXml>;
+    let labels!: string[];
+    let deeper!: ReturnType<typeof resolveReferenceNumber>[];
+    await given('the issue-1236 deeperLevelPlaceholders levels "%1 %2", "%1.%2.%3" and "(%3)"', async () => {
+      const deep = (JSON.parse(readFileSync(path.join(EVIDENCE_DIR, 'issue-1236-word-16.114.json'), 'utf8')) as {
+        deeperLevelPlaceholders: { numbering: { levels: Array<{ ilvl: number; numFmt: string; lvlText: string }> } };
+      }).deeperLevelPlaceholders.numbering.levels;
+      model = parseNumberingXml(
+        makeNumberingDoc(`<w:abstractNum w:abstractNumId="0">${deep.map((l) => lvl(l.ilvl, l.numFmt, l.lvlText)).join('')}</w:abstractNum>${plain(1, 0)}`),
+      );
+    });
+    await when('levels 0, 1, 2, then 0 and 1 again are numbered', async () => {
+      const counters: NumberingCounters = new Map();
+      const snapshots = [0, 1, 2, 0, 1].map((ilvl) => advanceListLabel(model, counters, { numId: '1', ilvl })!);
+      labels = snapshots.map((s) => s.label);
+      deeper = [snapshots[0]!, snapshots[1]!].flatMap((s) => [resolveReferenceNumber(model, s, 'fullContext'), resolveReferenceNumber(model, s, 'paragraph')]);
+      expect(snapshots.map((s) => s.levelValues)).toEqual([[1], [1, 1], [1, 1, 1], [2], [2, 1]]);
+    });
+    await then('the silent levels show no label, as Word does, and the clause under them shows "(a)"', () => {
+      expect(labels).toEqual(['', '', '(a)', '', '']);
+    });
+    await and('references to the silent paragraphs stay refused: Word shows 0 for them', () => {
+      expect(deeper).toEqual(Array(4).fill({ refused: 'deeperLevel' }));
     });
   });
 

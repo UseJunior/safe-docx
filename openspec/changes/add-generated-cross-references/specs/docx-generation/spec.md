@@ -31,9 +31,11 @@ the same bytes as before.
 - **THEN** every field SHALL have the recorded instruction and a cached result equal to Word's
 - **AND** the instructions SHALL include the ones Word itself writes for a hyperlinked full-context and no-context cross-reference
 - **AND** letter numbers past `z` SHALL repeat the letter (`aa`, `bb`, `zz`, `aaa`) in both cases and both number forms, as Word shows them
+- **AND** targets after skipped list levels SHALL carry the results recorded in the #1254 oracle evidence: an ancestor no paragraph has numbered shows its start value (`Section 1.01(a)` for a list that opens with a clause) and is passed over when a level above it has a paragraph (`ARTICLE II(a)`)
+- **AND** a full-context number SHALL pass over a parent level whose level text names a deeper level, so the #1236 `deep2` target reads `(a)` in both number forms, as Word shows it
 
 #### Scenario: [SDX-GEN-125] invalid bookmarks and cross-references are rejected
-- **GIVEN** bookmark names that Word's Bookmark dialog refuses, names repeated without regard to case, bookmarks outside the body, references to undeclared bookmarks, references in a footer, unknown number forms, and targets that are unnumbered, depend on a level no earlier paragraph uses, use a level text naming a deeper level (Word shows no number for it), or render as empty text
+- **GIVEN** bookmark names that Word's Bookmark dialog refuses, names repeated without regard to case, bookmarks outside the body, references to undeclared bookmarks, references in a footer, unknown number forms, and targets that are unnumbered, whose own level text names a deeper level (Word shows no number for it), whose number uses a placeholder past `%9`, or that render as empty text
 - **WHEN** each is generated
 - **THEN** generation SHALL fail with a `GenerationSpecError` whose path names the bookmark or the reference
 - **AND** a reference to an undeclared bookmark SHALL fail with `dangling_bookmark_reference`
