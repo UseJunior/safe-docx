@@ -86,7 +86,7 @@ describe('Traceability: footnotes in created documents', () => {
     async () => {
       const created = await createDocumentFromMarkdoc(ANNOTATED_SOURCE);
       expect(created.certificate.passed).toBe(true);
-      expect(created.certificate.checks.footnotes).toEqual({ passed: true, notes: 3, negativeControlDetected: true });
+      expect(created.certificate.checks.footnotes).toEqual({ passed: true, notes: 3, negativeControlDetected: true, references: { expected: 3, actual: 3, mismatches: [], negativeControlDetected: true } });
       expect(created.certificate.checks.roundTrip.footnotes).toMatchObject({ comparison: { passed: true }, notes: { expected: 3, actual: 3 }, negativeControlDetected: true });
 
       // Body references, in order, as FootnoteReference runs; the footnote blocks leave no body paragraph behind.
@@ -158,14 +158,14 @@ describe('Traceability: footnotes in created documents', () => {
         const file = path.join(dir, 'notes.mdoc');
         await writeFile(file, 'Only{% fnref id="1" /%} one.\n\n{% footnote id="1" %}The note.{% /footnote %}\n');
         const result = await runCreateCommand([file, path.join(dir, 'out'), '--no-pdf']);
-        expect(result.summary).toContain('footnotes ok (1 note; negative control ok)');
+        expect(result.summary).toContain('footnotes ok (1 note, 1 reference; negative controls ok)');
         expect(await readFile(result.outputs.text, 'utf8')).toContain('Footnotes:\n\n[1] The note.\n');
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
       // A footnote-free source certifies the footnote check as not applicable and adds no footnote part.
       const plain = await createDocumentFromMarkdoc('No notes.');
-      expect(plain.certificate.checks.footnotes).toEqual({ passed: true, notes: 0, negativeControlDetected: 'not applicable' });
+      expect(plain.certificate.checks.footnotes).toEqual({ passed: true, notes: 0, negativeControlDetected: 'not applicable', references: { expected: 0, actual: 0, mismatches: [], negativeControlDetected: 'not applicable' } });
       expect(plain.certificate.checks.roundTrip.footnotes).toBeUndefined();
       expect((await JSZip.loadAsync(plain.docx)).file('word/footnotes.xml')).toBeNull();
     },
@@ -463,6 +463,34 @@ describe('Traceability: footnotes in created documents', () => {
     },
   );
 
+  test.openspec('[SDX-MDOC-FOOTNOTE-08] every footnote reference in the source is placed in the DOCX')(
+    'Scenario: every footnote reference in the source is placed in the DOCX',
+    async () => {
+      const source = 'Alpha{% fnref id="a" /%} beta{% fnref id="b" /%}.\n\n{% footnote id="a" %}First.{% /footnote %}\n\n{% footnote id="b" %}Second.{% /footnote %}';
+      const clean = await createDocumentFromMarkdoc(source);
+      expect(clean.certificate.checks.footnotes).toMatchObject({ passed: true, notes: 2, references: { expected: 2, actual: 2, mismatches: [], negativeControlDetected: true } });
+      expect((await createDocumentFromMarkdoc('No notes.')).certificate.checks.footnotes.references).toEqual({ expected: 0, actual: 0, mismatches: [], negativeControlDetected: 'not applicable' });
+
+      // A lowering that drops a reference and its note, and projects the loss consistently, passes the read-back
+      // comparison with its own projection; the source's tag inventory still fails the build.
+      const dropped = await verificationFailure(createDocumentFromMarkdoc(source, {
+        transformLowering(lowering) {
+          const paragraph = lowering.spec.sections[0]!.blocks[0] as ParagraphSpec;
+          const last = paragraph.runs.map((run) => run.kind).lastIndexOf('footnote');
+          paragraph.runs = paragraph.runs.filter((_, index) => index !== last);
+          lowering.projection.footnoteReferences.pop();
+          lowering.projection.footnotes.pop();
+          return lowering;
+        },
+      }));
+      expect(dropped.checks.readback.passed).toBe(true);
+      expect(dropped.checks.footnotes).toMatchObject({
+        passed: false,
+        references: { expected: 2, actual: 1, mismatches: ['source tags 2 footnote reference(s); the DOCX places 1 w:footnoteReference element(s)'], negativeControlDetected: true },
+      });
+    },
+  );
+
   conforming.openspec('[SDX-MDOC-FOOTNOTE-05] created footnotes survive import and compile')(
     'Scenario: created footnotes survive import and compile',
     async () => {
@@ -515,7 +543,7 @@ describeWithLibreOffice('Traceability: footnotes in a real LibreOffice PDF', () 
           '{% footnote id="deliver" %}', 'A **short** note.', '', 'Its *second* paragraph.', '{% /footnote %}',
         ].join('\n'));
         const result = await runCreateCommand([file, path.join(dir, 'out'), '--require-pdf']);
-        expect(result.summary).toContain('footnotes ok (2 notes; negative control ok)');
+        expect(result.summary).toContain('footnotes ok (2 notes, 2 references; negative controls ok)');
         expect(result.pdf).toMatchObject({ status: 'passed', words: { passed: true, missing: [], unexplainedExtra: [], footnoteMismatches: [] } });
         const areas = (result.pdf as { pageCount: number; words: { knownGenerated: { footnoteAreas: string[] } } });
         expect(areas.pageCount).toBeGreaterThanOrEqual(2);

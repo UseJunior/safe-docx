@@ -33,7 +33,7 @@ reference's number in its read-back, round-trip and PDF checks.
 - **AND** a wrong number SHALL pass the read-back check but fail the round trip, which numbers the targets from the source
 - **AND** each of the others SHALL fail the cross-reference check, which compares every REF instruction and where it sits (story, paragraph and the text either side) with the `{% xref /%}` it came from, and every named bookmark's paragraph with the item marked with that id, although the document's text is unchanged
 - **AND** a target item that holds a footnote reference SHALL compare by its text without the note
-- **AND** an xref tag the source text walker never reaches SHALL fail the build, because every tag in the source's syntax tree must be placed
+- **AND** every xref tag in the source's syntax tree SHALL be counted, so a tag the source text walker never reached would fail the build; a tag after a signer's name, which the signature block never rendered, SHALL be refused with `INVALID_SIGNER` before anything is built
 
 #### Scenario: [SDX-MDOC-XREF-04] the PDF checks expect the number as LibreOffice renders it
 - **GIVEN** a source with full-context references to nested list items
@@ -46,3 +46,10 @@ reference's number in its read-back, round-trip and PDF checks.
 - **WHEN** it is imported to Markdoc and compiled back, preserving annotations
 - **THEN** each reference SHALL import as its number text, and the footnote SHALL keep its text
 - **AND** a footnote holding a field other than REF, an unbalanced field, a second separator or instruction text in a field's result SHALL fail closed with `ANNOTATION_IMPORT_UNSUPPORTED`
+
+#### Scenario: [SDX-MDOC-XREF-06] the CLI summary reports the cross-reference check
+- **GIVEN** sources with several cross-references, with a single cross-reference target, and with none
+- **WHEN** each is created through the CLI
+- **THEN** the summary SHALL report `cross-references ok (N references; negative controls ok)` after the footnotes entry
+- **AND** a negative control that is not applicable (no other target to point a reference at) SHALL be named as not applicable, never counted as ok
+- **AND** a source without cross-references SHALL have no cross-references entry
