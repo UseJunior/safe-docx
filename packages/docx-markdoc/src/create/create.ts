@@ -27,7 +27,19 @@ export type CreationCertificate = {
      * where each reference sits, against the lowering's projection. The
      * negative control is 'not applicable' for a document without footnotes.
      */
-    footnotes: CreationCheck & { notes: number; negativeControlDetected: boolean | 'not applicable' };
+    footnotes: CreationCheck & {
+      notes: number;
+      negativeControlDetected: boolean | 'not applicable';
+      /**
+       * Every `{% fnref /%}` in the source's syntax tree, found without the
+       * text walker or the lowering, against the references the text walker
+       * pairs with notes and the `w:footnoteReference` elements placed in the
+       * body (#1261): a reference dropped on the way fails the build. The
+       * negative control drops one placed reference; it is 'not applicable'
+       * for a source without references.
+       */
+      references: { expected: number; actual: number; mismatches: string[]; negativeControlDetected: boolean | 'not applicable' };
+    };
     brownfield: CreationCheck & { anchoredParagraphs: number };
     /**
      * Present when the source or the DOCX has a cross-reference: each REF
@@ -157,6 +169,16 @@ function crossReferenceMismatches(
     const got = paragraph === undefined ? null : normalizeOracleText(readback.paragraphs[paragraph] ?? '');
     if (want !== got) mismatches.push({ reference: index + 1, expected: `bookmark on "${want}"`, actual: got === null ? null : `bookmark on "${got}"` });
   }
+  return mismatches;
+}
+
+/** Where the source's `{% fnref /%}` tags and the references placed in the DOCX (`placed` of them) disagree. */
+function footnoteReferenceMismatches(expected: SourceProjection, placed: number): string[] {
+  const inventory = expected.footnoteReferenceInventory ?? [];
+  const walked = (expected.footnotes ?? []).map((note) => note.id).sort();
+  const mismatches: string[] = [];
+  if (JSON.stringify(walked) !== JSON.stringify(inventory)) mismatches.push(`source tags ${inventory.join(', ') || 'none'}; text walker reached ${walked.join(', ') || 'none'}`);
+  if (placed !== inventory.length) mismatches.push(`source tags ${inventory.length} footnote reference(s); the DOCX places ${placed} w:footnoteReference element(s)`);
   return mismatches;
 }
 
@@ -452,6 +474,16 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
   const sourceProjection = projectSourceText(source);
   const roundTrip = roundTripCheck(sourceProjection, imported.markdoc, readback.footers.length);
   const crossReferences = crossReferenceCheck(sourceProjection, readback);
+  const placedReferences = readback.footnoteReferences.length;
+  const referenceMismatches = footnoteReferenceMismatches(sourceProjection, placedReferences);
+  const referenceControl = (sourceProjection.footnoteReferenceInventory?.length ?? 0) === 0
+    ? 'not applicable' as const
+    : footnoteReferenceMismatches(sourceProjection, placedReferences - 1).length > 0;
+  const footnoteDetail = [
+    ...(footnotesPassed ? [] : [`expected ${JSON.stringify({ footnotes: lowering.projection.footnotes, references: lowering.projection.footnoteReferences })}, read ${JSON.stringify({ footnotes: readback.footnotes, references: readback.footnoteReferences })}`]),
+    ...referenceMismatches,
+    ...(footnoteControl === false || referenceControl === false ? ['a negative control was not detected'] : []),
+  ];
 
   const text = creationTextMirror(readback, options.mirrorLabel);
   const checks: CreationCertificate['checks'] = {
@@ -475,10 +507,16 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
       ...(footersPassed ? {} : { detail: `expected ${JSON.stringify(lowering.projection.footers)}, read ${JSON.stringify(readback.footers)}` }),
     },
     footnotes: {
-      passed: footnotesPassed && footnoteControl !== false,
+      passed: footnoteDetail.length === 0,
       notes: readback.footnotes.length,
       negativeControlDetected: footnoteControl,
-      ...(footnotesPassed ? {} : { detail: `expected ${JSON.stringify({ footnotes: lowering.projection.footnotes, references: lowering.projection.footnoteReferences })}, read ${JSON.stringify({ footnotes: readback.footnotes, references: readback.footnoteReferences })}` }),
+      references: {
+        expected: sourceProjection.footnoteReferenceInventory?.length ?? 0,
+        actual: placedReferences,
+        mismatches: referenceMismatches,
+        negativeControlDetected: referenceControl,
+      },
+      ...(footnoteDetail.length === 0 ? {} : { detail: footnoteDetail.join('; ') }),
     },
     roundTrip,
     brownfield: {

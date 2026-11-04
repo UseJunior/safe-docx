@@ -315,6 +315,25 @@ async function sameFile(a: string, b: string): Promise<boolean> {
  * this build does not produce (for example a PDF under --no-pdf) is retired so
  * the directory reflects this build only.
  */
+const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+/**
+ * The negative controls of a check, for the summary line. A control that is not applicable, or (should a caller
+ * summarize a failed check) one that went undetected, is named with its status rather than counted as ok.
+ */
+export function controlsSummary(controls: Record<string, boolean | 'not applicable'>): string {
+  const names = Object.keys(controls);
+  const noun = names.length === 1 ? 'negative control' : 'negative controls';
+  const ok = names.filter((name) => controls[name] === true);
+  if (ok.length === names.length) return `${noun} ok`;
+  const groups = ([[false, 'failed'], ['not applicable', 'not applicable']] as const)
+    .map(([value, status]) => ({ status, named: names.filter((name) => controls[name] === value) }))
+    .filter(({ named }) => named.length > 0);
+  if (ok.length === 0 && groups.length === 1) return `${noun} ${groups[0]!.status}`;
+  const exceptions = groups.map(({ status, named }) => `${named.join(', ')}: ${status}`).join(', ');
+  return ok.length === 0 ? `${noun}: ${exceptions}` : `${noun} ok, except ${exceptions}`;
+}
+
 export async function runCreateCommand(
   args: string[],
   deps: { renderTools?: PdfRenderTools; fileOps?: Partial<PublishFileOps> } = {},
@@ -512,7 +531,12 @@ async function createLocked(
       `created ${path.basename(outputs.docx)}: ${checks.readback.paragraphs} paragraphs, ${checks.footers.sections} section(s)`,
       `readback ok (negative control ok)`,
       `footers ok (negative control ok)`,
-      ...(checks.footnotes.notes > 0 ? [`footnotes ok (${checks.footnotes.notes} note${checks.footnotes.notes === 1 ? '' : 's'}; negative control ok)`] : []),
+      ...(checks.footnotes.notes > 0 || checks.footnotes.references.expected > 0
+        ? [`footnotes ok (${plural(checks.footnotes.notes, 'note')}, ${plural(checks.footnotes.references.actual, 'reference')}; ${controlsSummary({ 'note text': checks.footnotes.negativeControlDetected, 'dropped reference': checks.footnotes.references.negativeControlDetected })})`]
+        : []),
+      ...(checks.crossReferences
+        ? [`cross-references ok (${plural(checks.crossReferences.references.actual, 'reference')}; ${controlsSummary({ 'changed switch': checks.crossReferences.negativeControls.switchChanged, retargeted: checks.crossReferences.negativeControls.retargeted, moved: checks.crossReferences.negativeControls.moved })})`]
+        : []),
       'deterministic',
       `brownfield ok (${checks.brownfield.anchoredParagraphs} anchored)`,
       `round trip ok (${checks.roundTrip.body.expected} paragraphs; negative controls ok)`,
