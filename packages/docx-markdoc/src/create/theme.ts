@@ -8,7 +8,7 @@ import {
   twipsFromPt,
   type CreationProfile,
 } from './profile.js';
-import { CreationListNumbering } from './list-numbering.js';
+import { CreationListNumbering, type HeadingNumberScheme } from './list-numbering.js';
 
 type TextRun = Extract<InlineSpec, { kind: 'text' }>;
 
@@ -51,13 +51,13 @@ function textRun(text: string, style: InlineStyle, highlighted: boolean): TextRu
  * legends switch highlighting off.
  */
 export class CreationTheme implements Theme {
-  private readonly lists = new CreationListNumbering();
-  /** Numbering definitions the rendered lists use, for `DocumentSpec.numbering`. */
+  private readonly lists: CreationListNumbering;
+  /** Numbering definitions the rendered lists and numbered headings use, for `DocumentSpec.numbering`. */
   get numbering(): readonly NumberingSpec[] {
     return this.lists.definitions;
   }
-  /** Numbering instance for the top-level list being rendered. */
-  private currentList: { numId: string } | null = null;
+  /** Numbering instance for the top-level list being rendered, and the level its top items take. */
+  private currentList: { numId: string; ilvl: number } | null = null;
   private depth = 0;
   private literalDepth = 0;
   private highlightOff = 0;
@@ -67,8 +67,12 @@ export class CreationTheme implements Theme {
    * @param fillIns 'markup' (default): only {% fill %} content is highlighted
    * and bare brackets are literal. 'brackets': the v0.24 behaviour, where every
    * […] is highlighted.
+   * @param headingNumbers frontmatter `heading-numbers`: how `##` and `###`
+   * headings are numbered, or undefined for unnumbered headings.
    */
-  constructor(readonly profile: CreationProfile, readonly fillIns: 'markup' | 'brackets' = 'markup') {}
+  constructor(readonly profile: CreationProfile, readonly fillIns: 'markup' | 'brackets' = 'markup', headingNumbers?: HeadingNumberScheme) {
+    this.lists = new CreationListNumbering(headingNumbers);
+  }
 
   private paragraph(styleId: string, runs: InlineSpec[], overrides: Partial<Omit<ParagraphSpec, 'kind' | 'runs'>> = {}): ParagraphSpec {
     this.depth = 0;
@@ -89,11 +93,15 @@ export class CreationTheme implements Theme {
     return this.paragraph(CREATION_STYLE.title, runs);
   }
 
+  /** A `##` heading; with heading numbering, its style numbers it ("ARTICLE I"). */
   sectionHeadingParagraph(runs: InlineSpec[]): ParagraphSpec {
+    this.lists.placeHeading();
     return this.paragraph(CREATION_STYLE.heading1, runs);
   }
 
+  /** A `###` heading; with heading numbering, its style numbers it ("Section 1.01"). */
   subHeadingParagraph(runs: InlineSpec[]): ParagraphSpec {
+    this.lists.placeHeading();
     return this.paragraph(CREATION_STYLE.heading2, runs);
   }
 
@@ -148,19 +156,20 @@ export class CreationTheme implements Theme {
 
   listLevel(level: number, _ordered: boolean): { numId: string; ilvl: number; continuationIndentTwips: number; itemAfterTwips: number } {
     if (!this.currentList) throw new Error('list rendered outside a top-level list');
-    return { numId: this.currentList.numId, ilvl: Math.min(level, 2), continuationIndentTwips: 720 * (level + 1), itemAfterTwips: twipsFromPt(this.profile.spacingAfterPt) };
+    return { numId: this.currentList.numId, ilvl: this.currentList.ilvl + Math.min(level, 2), continuationIndentTwips: 720 * (level + 1), itemAfterTwips: twipsFromPt(this.profile.spacingAfterPt) };
   }
 
   /**
-   * Bind a top-level list to its numbering instance: legal 1./(a)/(i) or
-   * bullets. Whether an ordered list continues the previous one or restarts
-   * is decided by {@link CreationListNumbering}.
+   * Bind a top-level list to its numbering instance: legal 1./(a)/(i),
+   * bullets, or the clause levels of the heading definition under a
+   * numbered heading. Whether an ordered list continues the previous one or
+   * restarts is decided by {@link CreationListNumbering}.
    */
   beginList(list: MarkdocNode): void {
     const ordered = list.attributes.ordered === true;
     const start = ordered && Number.isInteger(list.attributes.start) ? Number(list.attributes.start) : 1;
-    const { numId } = this.lists.placeTopLevelList(ordered, start, list.children.length);
-    this.currentList = { numId };
+    const decision = this.lists.placeTopLevelList(ordered, start, list.children.length);
+    this.currentList = { numId: decision.numId, ilvl: decision.kind === 'heading-level' ? decision.ilvl : 0 };
   }
 
   withoutHighlight<T>(render: () => T): T {

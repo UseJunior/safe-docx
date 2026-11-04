@@ -13,6 +13,7 @@ import {
   twipsFromPt,
   type CreationProfile,
 } from './profile.js';
+import { HEADING_CLAUSE_ILVL } from './list-numbering.js';
 import { CreationTheme, creationPlugins } from './theme.js';
 import {
   checkCreationSourceCharacters,
@@ -134,28 +135,55 @@ function roman(n: number): string {
 }
 
 /**
- * What each bookmarked list item's cross-references show, counted from the
- * lowering's own lists: each ordered list numbers `1.`, `(a)`, `(i)` and
- * restarts deeper levels under a new item. Word shows the full number as
- * "2", "2(b)", "2(b)(ii)" (the period before "(" dropped) and the paragraph
- * number as "2", "(b)", "(ii)". docx-core computes the cached result from the
- * OOXML; read-back compares the two.
+ * What a cross-reference to a paragraph of the heading definition shows:
+ * "ARTICLE II", "Section 2.06", and a clause in full as "Section 2.06(b)(ii)",
+ * or as "ARTICLE II(b)" when no Section has been numbered under the Article
+ * since it began (Word passes over a level shown at its start value). The
+ * paragraph form of a heading is its whole label; of a clause, its own "(b)".
+ */
+function headingReferenceText(values: readonly number[], ilvl: number, sectionNumbered: boolean): { full: string; paragraph: string } {
+  const own = [
+    `ARTICLE ${roman(values[0]!).toUpperCase()}`,
+    `Section ${values[0]}.${String(values[1]).padStart(2, '0')}`,
+    `(${letters(values[2]!)})`,
+    `(${roman(values[3]!)})`,
+    `(${letters(values[4]!).toUpperCase()})`,
+  ];
+  if (ilvl < HEADING_CLAUSE_ILVL) return { full: own[ilvl]!, paragraph: own[ilvl]! };
+  return { full: own[sectionNumbered ? 1 : 0] + own.slice(HEADING_CLAUSE_ILVL, ilvl + 1).join(''), paragraph: own[ilvl]! };
+}
+
+/**
+ * What each bookmarked numbered paragraph's cross-references show, counted
+ * from the lowering's own lists and numbered headings. Each ordered list
+ * numbers `1.`, `(a)`, `(i)` and restarts deeper levels under a new item.
+ * Word shows the full number as "2", "2(b)", "2(b)(ii)" (the period before
+ * "(" dropped) and the paragraph number as "2", "(b)", "(ii)". Numbered
+ * headings and the clauses under them follow {@link headingReferenceText}.
+ * docx-core computes the cached result from the OOXML; read-back compares
+ * the two.
  *
  * Counting follows Word's list model, as the numbering decisions in
  * `list-numbering.ts` rely on: every instance of one definition shares a
  * running count, and an instance's `startOverride` restarts it at that
- * instance's first paragraph on the level.
+ * instance's first paragraph on the level. A heading is numbered through its
+ * paragraph style's link to a level (`w:pStyle`), so it counts on that level
+ * although it carries no `list` of its own.
  */
 function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSpec[]): Map<string, { full: string; paragraph: string }> {
   const instances = new Map<string, { definition: NumberingSpec; overrides: ReadonlyMap<number, number> }>();
+  const styleLinks = new Map<string, { numId: string; ilvl: number }>();
   for (const definition of numbering) {
     instances.set(definition.numId, { definition, overrides: new Map() });
     for (const instance of definition.instances ?? []) {
       instances.set(instance.numId, { definition, overrides: new Map(instance.levelOverrides.map((override) => [override.ilvl, override.startOverride])) });
     }
+    for (const level of definition.levels) if (level.pStyle) styleLinks.set(level.pStyle, { numId: definition.numId, ilvl: level.ilvl });
   }
   const counters = new Map<string, number[]>();
   const usedLevels = new Map<string, Set<number>>();
+  // Per heading definition: whether a Section has been numbered since the current Article began.
+  const sectionSinceArticle = new Map<string, boolean>();
   const texts = new Map<string, { full: string; paragraph: string }>();
   const visit = (blocks: BlockSpec[]) => {
     for (const block of blocks) {
@@ -163,8 +191,9 @@ function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSp
         for (const row of block.rows) for (const cell of row.cells) visit(cell.blocks);
         continue;
       }
-      if (!block.list) continue;
-      const { numId, ilvl } = block.list;
+      const list = block.list ?? (block.styleId === undefined ? undefined : styleLinks.get(block.styleId));
+      if (!list) continue;
+      const { numId, ilvl } = list;
       const { definition, overrides } = instances.get(numId)!;
       const { levels } = definition;
       const values = counters.get(definition.numId) ?? [];
@@ -176,7 +205,13 @@ function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSp
       values[ilvl] = (values[ilvl] ?? (levels[ilvl]!.start ?? 1) - 1) + 1;
       values.length = ilvl + 1;
       counters.set(definition.numId, values);
-      if (block.bookmark === undefined || levels[0]!.numFmt !== 'decimal') continue;
+      if (ilvl < HEADING_CLAUSE_ILVL) sectionSinceArticle.set(definition.numId, ilvl === 1);
+      if (block.bookmark === undefined) continue;
+      if (levels[0]!.pStyle !== undefined) {
+        texts.set(block.bookmark, headingReferenceText(values, ilvl, sectionSinceArticle.get(definition.numId) === true));
+        continue;
+      }
+      if (levels[0]!.numFmt !== 'decimal') continue;
       const own = [String(values[0]), `(${letters(values[1]!)})`, `(${roman(values[2]!)})`];
       texts.set(block.bookmark, { full: own.slice(0, ilvl + 1).join(''), paragraph: own[ilvl]! });
     }
@@ -285,7 +320,7 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
   checkCreationSourceCharacters(source);
   const ast = Markdoc.parse(source);
   const frontmatter = parseCreationFrontmatter(ast.attributes.frontmatter as string | undefined);
-  validateCreationAst(ast.children, { fillIns: frontmatter.fillIns ?? 'markup' });
+  validateCreationAst(ast.children, { fillIns: frontmatter.fillIns ?? 'markup', ...(frontmatter.headingNumbers ? { headingNumbers: frontmatter.headingNumbers } : {}) });
   normalizeSoftBreaks(ast);
   trimAnnotationSpace(ast);
 
@@ -297,7 +332,7 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     if (tag?.tag === 'footnote') footnoteBodies.set(String(tag.attributes.id), tag);
   }
 
-  const theme = new CreationTheme(profile, frontmatter.fillIns ?? 'markup');
+  const theme = new CreationTheme(profile, frontmatter.fillIns ?? 'markup', frontmatter.headingNumbers);
   const plugins = creationPlugins(theme, footnoteBodies);
   let api!: RenderApi;
   api = createMarkdocxRenderer({

@@ -89,6 +89,7 @@ export {
   GenerationInternalError,
   type GenerationSpecErrorCode,
   checkGeneratedPackage,
+  type StructuralCheckOptions,
   type StructuralCheckResult,
   type StructuralIssue,
   BOOKMARK_NAME_MAX_LENGTH,
