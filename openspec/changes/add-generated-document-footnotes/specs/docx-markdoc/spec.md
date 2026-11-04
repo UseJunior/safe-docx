@@ -45,6 +45,14 @@ its read-back, round-trip and PDF checks.
 - **AND** it SHALL fail when the punctuation after a reference is dropped, changed, doubled or moved before the number, when the break is not right after a footnote number, when the number is lost, or when the punctuation after a cross-reference in a footnote is dropped
 - **AND** a real LibreOffice PDF of references followed by each of those marks SHALL pass
 
+#### Scenario: [SDX-MDOC-FOOTNOTE-08] every footnote reference in the source is placed in the DOCX
+- **GIVEN** a source with footnote references, and the same source built through a lowering that drops a reference and its note and projects the loss consistently
+- **WHEN** each is verified
+- **THEN** the footnote check SHALL count every `{% fnref /%}` in the source's syntax tree, found without the text walker or the lowering, and SHALL require the text walker to reach each of them and the DOCX body to place one `w:footnoteReference` for each
+- **AND** the first SHALL pass, with a negative control that drops one placed reference and is detected; a source without references SHALL report that control as not applicable
+- **AND** the dropped reference SHALL fail the build although the read-back comparison with the lowering's own projection passes
+- **AND** the CLI summary SHALL report the notes and references, `footnotes ok (N notes, M references; negative controls ok)`
+
 #### Scenario: [SDX-MDOC-FOOTNOTE-05] created footnotes survive import and compile
 - **GIVEN** a created document with footnotes
 - **WHEN** it is imported to Markdoc and compiled back, preserving annotations
