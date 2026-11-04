@@ -1,0 +1,1865 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-04",
+  "issue": 1254,
+  "relatedIssues": [
+    1262,
+    1263
+  ],
+  "purpose": "What Word shows, as list strings and as REF \\w / \\n results, for list paragraphs whose ancestor levels no paragraph has numbered since they last restarted, for levels whose level text names a deeper level, and for the combinations of the two (#1254, #1262, #1263).",
+  "word": {
+    "platform": "Mac",
+    "version": "16.114.3"
+  },
+  "procedure": "Minimal packages (content types, package and document rels, document.xml, numbering.xml, styles.xml) were opened in Word. Each numbered paragraph is bookmarked b1..bN, and a final unnumbered paragraph holds complex REF fields `REF bN \\w \\h` and `REF bN \\n \\h` for every bookmark. Through AppleScript, `update field` ran on every field, each field's code and result range were read back, and each paragraph's `list string of list format` was read. Paragraph text names the w:num and w:ilvl it uses: \"p3 stdO1L2\" is the third paragraph, numId of the stdO1 instance, ilvl 2 (see numIds). LibreOffice was not measured.",
+  "finding": [
+    "An ancestor level that no paragraph has numbered since it last restarted (or ever) is shown at a start value: the value the restart recorded for it (the restarting paragraph's instance start), else the abstract w:start. An instance w:startOverride is not shown that way (override_l0_skipped \"1(a)\", legal_override_orphan \"Section 1.01(a)\").",
+    "Such a level stays at that shown value until a paragraph of its own numbers it (u_double_fill \"1(a)(i)\" \"1(a)(ii)\"; override_l0_skipped \"1(a)\" \"1(b)\"). That paragraph continues from the start of the instance whose paragraph first showed the level (x_fill_by_override_then_plain \"1(f)\"; z_fill_after_override_restart \"2(b)\" though \"(e)\" was shown), unless it is its instance's first paragraph on an overridden level, which applies the override (override_l1_skipped \"1(e)\").",
+    "Unnamed ancestors are shown too: a level the paragraph's level text does not name still counts as numbered from its start (unnamed_ancestors \"(i)\" then \"(b)\").",
+    "A level whose own level text names a deeper level is silent: its list string is empty, its counter still advances (silent_top_unused_beneath \".2\"/\".1\"; deep_own_level \"2.\"), a placeholder naming it from a deeper level renders as empty text (silent_ref_mid \"1..i\", silent_ref_top \"[-1]\"), and REF fields to it show 0.",
+    "REF \\n gives the paragraph's own level text less one trailing period, with ancestors at their shown values (r2 \"1(a)(i)\").",
+    "REF \\w walks up from the lowest level the own text names, as in issue-1236. On the way up it passes over a silent level and continues with the level directly above it (deep_own_level \"1(i)\", silent_mid \"1(a)\", issue-1236 deep2 \"(a)\"); and it passes over a level shown at a start value when some level above it has a paragraph (unnamed_ancestors \"1(i)\", legal_orphan_clause \"ARTICLE II(a)\", legal_l3_after_section \"Section 1.01(i)\"). A silent level with a paragraph counts as such a level (silent_top_used_then_deep \"(a)\", silent_ref_top_fresh_mid \"(a)\" and \"[-2](a)\"). When no level above has one, the shown level is kept (legal_orphan_clause \"Section 1.01(a)\", legal_l3_first \"Section 1.01(a)(i)\", unnamed_first_deep \"1(a)(i)\")."
+  ],
+  "numIds": {
+    "std": "1",
+    "legal": "2",
+    "starts": "3",
+    "unnamed": "4",
+    "silentTop": "5",
+    "silentMid": "6",
+    "silentMid2": "7",
+    "restart0": "8",
+    "deep": "9",
+    "deepOwn": "10",
+    "silentRef": "11",
+    "silentRef0": "12",
+    "stdO0": "50",
+    "stdO1": "51",
+    "legalO1": "52"
+  },
+  "numberingXml": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:numbering xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\n<w:abstractNum w:abstractNumId=\"0\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:lvlText w:val=\"%1(%2)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerRoman\"/><w:lvlText w:val=\"%1(%2)(%3)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"1\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"upperRoman\"/><w:lvlText w:val=\"ARTICLE %1\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimalZero\"/><w:isLgl/><w:lvlText w:val=\"Section %1.%2\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:lvlText w:val=\"(%3)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"3\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerRoman\"/><w:lvlText w:val=\"(%4)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2880\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"2\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"3\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"4\"/><w:numFmt w:val=\"lowerLetter\"/><w:lvlText w:val=\"%1(%2)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"2\"/><w:numFmt w:val=\"lowerRoman\"/><w:lvlText w:val=\"%1(%2)(%3)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"3\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:lvlText w:val=\"(%2)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerRoman\"/><w:lvlText w:val=\"(%3)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"4\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.%2\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.%2\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:lvlText w:val=\"(%3)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"5\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.%3\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:lvlText w:val=\"(%3)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"6\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2%3\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:lvlText w:val=\"(%3)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"7\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:lvlText w:val=\"%1(%2)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerRoman\"/><w:lvlRestart w:val=\"0\"/><w:lvlText w:val=\"%1(%2)(%3)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"8\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1 %2\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.%2.%3\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:lvlText w:val=\"(%3)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"9\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:lvlText w:val=\"%1(%2)%3\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerRoman\"/><w:lvlText w:val=\"(%3)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"10\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"upperLetter\"/><w:lvlText w:val=\"%2-%3\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerRoman\"/><w:lvlText w:val=\"%1.%2.%3\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"11\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"upperRoman\"/><w:lvlText w:val=\"%1%2\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"[%1-%2]\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:lvlText w:val=\"(%3)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num>\n<w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num>\n<w:num w:numId=\"3\"><w:abstractNumId w:val=\"2\"/></w:num>\n<w:num w:numId=\"4\"><w:abstractNumId w:val=\"3\"/></w:num>\n<w:num w:numId=\"5\"><w:abstractNumId w:val=\"4\"/></w:num>\n<w:num w:numId=\"6\"><w:abstractNumId w:val=\"5\"/></w:num>\n<w:num w:numId=\"7\"><w:abstractNumId w:val=\"6\"/></w:num>\n<w:num w:numId=\"8\"><w:abstractNumId w:val=\"7\"/></w:num>\n<w:num w:numId=\"9\"><w:abstractNumId w:val=\"8\"/></w:num>\n<w:num w:numId=\"10\"><w:abstractNumId w:val=\"9\"/></w:num>\n<w:num w:numId=\"11\"><w:abstractNumId w:val=\"10\"/></w:num>\n<w:num w:numId=\"12\"><w:abstractNumId w:val=\"11\"/></w:num>\n<w:num w:numId=\"50\"><w:abstractNumId w:val=\"0\"/><w:lvlOverride w:ilvl=\"0\"><w:startOverride w:val=\"5\"/></w:lvlOverride></w:num>\n<w:num w:numId=\"51\"><w:abstractNumId w:val=\"0\"/><w:lvlOverride w:ilvl=\"1\"><w:startOverride w:val=\"5\"/></w:lvlOverride></w:num>\n<w:num w:numId=\"52\"><w:abstractNumId w:val=\"1\"/><w:lvlOverride w:ilvl=\"1\"><w:startOverride w:val=\"5\"/></w:lvlOverride></w:num>\n</w:numbering>",
+  "stylesXml": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/></w:style></w:styles>",
+  "fixtures": {
+    "r2_skipped_level_refs": {
+      "paragraphs": [
+        {
+          "text": "p1 stdL0",
+          "numId": "1",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1.",
+            "fullContext": "1",
+            "paragraph": "1"
+          }
+        },
+        {
+          "text": "p2 stdL2",
+          "numId": "1",
+          "ilvl": 2,
+          "bookmark": "b2",
+          "word": {
+            "listString": "1(a)(i)",
+            "fullContext": "1(a)(i)",
+            "paragraph": "1(a)(i)"
+          }
+        },
+        {
+          "text": "p3 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b3",
+          "word": {
+            "listString": "1(b)",
+            "fullContext": "1(b)",
+            "paragraph": "1(b)"
+          }
+        },
+        {
+          "text": "p4 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b4",
+          "word": {
+            "listString": "1(c)",
+            "fullContext": "1(c)",
+            "paragraph": "1(c)"
+          }
+        },
+        {
+          "text": "p5 stdL0",
+          "numId": "1",
+          "ilvl": 0,
+          "bookmark": "b5",
+          "word": {
+            "listString": "2.",
+            "fullContext": "2",
+            "paragraph": "2"
+          }
+        },
+        {
+          "text": "p6 stdL2",
+          "numId": "1",
+          "ilvl": 2,
+          "bookmark": "b6",
+          "word": {
+            "listString": "2(a)(i)",
+            "fullContext": "2(a)(i)",
+            "paragraph": "2(a)(i)"
+          }
+        }
+      ]
+    },
+    "r5_skip_first_level_refs": {
+      "paragraphs": [
+        {
+          "text": "p1 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1(a)",
+            "fullContext": "1(a)",
+            "paragraph": "1(a)"
+          }
+        },
+        {
+          "text": "p2 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": "1(b)",
+            "fullContext": "1(b)",
+            "paragraph": "1(b)"
+          }
+        },
+        {
+          "text": "p3 stdL0",
+          "numId": "1",
+          "ilvl": 0,
+          "bookmark": "b3",
+          "word": {
+            "listString": "2.",
+            "fullContext": "2",
+            "paragraph": "2"
+          }
+        },
+        {
+          "text": "p4 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b4",
+          "word": {
+            "listString": "2(a)",
+            "fullContext": "2(a)",
+            "paragraph": "2(a)"
+          }
+        }
+      ]
+    },
+    "unnamed_ancestors": {
+      "paragraphs": [
+        {
+          "text": "p1 unnamedL0",
+          "numId": "4",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1.",
+            "fullContext": "1",
+            "paragraph": "1"
+          }
+        },
+        {
+          "text": "p2 unnamedL2",
+          "numId": "4",
+          "ilvl": 2,
+          "bookmark": "b2",
+          "word": {
+            "listString": "(i)",
+            "fullContext": "1(i)",
+            "paragraph": "(i)"
+          }
+        },
+        {
+          "text": "p3 unnamedL1",
+          "numId": "4",
+          "ilvl": 1,
+          "bookmark": "b3",
+          "word": {
+            "listString": "(b)",
+            "fullContext": "1(b)",
+            "paragraph": "(b)"
+          }
+        },
+        {
+          "text": "p4 unnamedL1",
+          "numId": "4",
+          "ilvl": 1,
+          "bookmark": "b4",
+          "word": {
+            "listString": "(c)",
+            "fullContext": "1(c)",
+            "paragraph": "(c)"
+          }
+        },
+        {
+          "text": "p5 unnamedL0",
+          "numId": "4",
+          "ilvl": 0,
+          "bookmark": "b5",
+          "word": {
+            "listString": "2.",
+            "fullContext": "2",
+            "paragraph": "2"
+          }
+        },
+        {
+          "text": "p6 unnamedL2",
+          "numId": "4",
+          "ilvl": 2,
+          "bookmark": "b6",
+          "word": {
+            "listString": "(i)",
+            "fullContext": "2(i)",
+            "paragraph": "(i)"
+          }
+        },
+        {
+          "text": "p7 unnamedL1",
+          "numId": "4",
+          "ilvl": 1,
+          "bookmark": "b7",
+          "word": {
+            "listString": "(b)",
+            "fullContext": "2(b)",
+            "paragraph": "(b)"
+          }
+        }
+      ]
+    },
+    "legal_orphan_clause": {
+      "paragraphs": [
+        {
+          "text": "p1 legalL2",
+          "numId": "2",
+          "ilvl": 2,
+          "bookmark": "b1",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "Section 1.01(a)",
+            "paragraph": "(a)"
+          }
+        },
+        {
+          "text": "p2 legalL2",
+          "numId": "2",
+          "ilvl": 2,
+          "bookmark": "b2",
+          "word": {
+            "listString": "(b)",
+            "fullContext": "Section 1.01(b)",
+            "paragraph": "(b)"
+          }
+        },
+        {
+          "text": "p3 legalL1",
+          "numId": "2",
+          "ilvl": 1,
+          "bookmark": "b3",
+          "word": {
+            "listString": "Section 1.02",
+            "fullContext": "Section 1.02",
+            "paragraph": "Section 1.02"
+          }
+        },
+        {
+          "text": "p4 legalL0",
+          "numId": "2",
+          "ilvl": 0,
+          "bookmark": "b4",
+          "word": {
+            "listString": "ARTICLE II",
+            "fullContext": "ARTICLE II",
+            "paragraph": "ARTICLE II"
+          }
+        },
+        {
+          "text": "p5 legalL2",
+          "numId": "2",
+          "ilvl": 2,
+          "bookmark": "b5",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "ARTICLE II(a)",
+            "paragraph": "(a)"
+          }
+        },
+        {
+          "text": "p6 legalL1",
+          "numId": "2",
+          "ilvl": 1,
+          "bookmark": "b6",
+          "word": {
+            "listString": "Section 2.02",
+            "fullContext": "Section 2.02",
+            "paragraph": "Section 2.02"
+          }
+        }
+      ]
+    },
+    "legal_section_first": {
+      "paragraphs": [
+        {
+          "text": "p1 legalL1",
+          "numId": "2",
+          "ilvl": 1,
+          "bookmark": "b1",
+          "word": {
+            "listString": "Section 1.01",
+            "fullContext": "Section 1.01",
+            "paragraph": "Section 1.01"
+          }
+        },
+        {
+          "text": "p2 legalL2",
+          "numId": "2",
+          "ilvl": 2,
+          "bookmark": "b2",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "Section 1.01(a)",
+            "paragraph": "(a)"
+          }
+        },
+        {
+          "text": "p3 legalL0",
+          "numId": "2",
+          "ilvl": 0,
+          "bookmark": "b3",
+          "word": {
+            "listString": "ARTICLE II",
+            "fullContext": "ARTICLE II",
+            "paragraph": "ARTICLE II"
+          }
+        },
+        {
+          "text": "p4 legalL1",
+          "numId": "2",
+          "ilvl": 1,
+          "bookmark": "b4",
+          "word": {
+            "listString": "Section 2.01",
+            "fullContext": "Section 2.01",
+            "paragraph": "Section 2.01"
+          }
+        },
+        {
+          "text": "p5 legalL3",
+          "numId": "2",
+          "ilvl": 3,
+          "bookmark": "b5",
+          "word": {
+            "listString": "(i)",
+            "fullContext": "Section 2.01(i)",
+            "paragraph": "(i)"
+          }
+        },
+        {
+          "text": "p6 legalL2",
+          "numId": "2",
+          "ilvl": 2,
+          "bookmark": "b6",
+          "word": {
+            "listString": "(b)",
+            "fullContext": "Section 2.01(b)",
+            "paragraph": "(b)"
+          }
+        }
+      ]
+    },
+    "start_values": {
+      "paragraphs": [
+        {
+          "text": "p1 startsL2",
+          "numId": "3",
+          "ilvl": 2,
+          "bookmark": "b1",
+          "word": {
+            "listString": "3(d)(ii)",
+            "fullContext": "3(d)(ii)",
+            "paragraph": "3(d)(ii)"
+          }
+        },
+        {
+          "text": "p2 startsL1",
+          "numId": "3",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": "3(e)",
+            "fullContext": "3(e)",
+            "paragraph": "3(e)"
+          }
+        },
+        {
+          "text": "p3 startsL0",
+          "numId": "3",
+          "ilvl": 0,
+          "bookmark": "b3",
+          "word": {
+            "listString": "4.",
+            "fullContext": "4",
+            "paragraph": "4"
+          }
+        },
+        {
+          "text": "p4 startsL2",
+          "numId": "3",
+          "ilvl": 2,
+          "bookmark": "b4",
+          "word": {
+            "listString": "4(d)(ii)",
+            "fullContext": "4(d)(ii)",
+            "paragraph": "4(d)(ii)"
+          }
+        },
+        {
+          "text": "p5 startsL1",
+          "numId": "3",
+          "ilvl": 1,
+          "bookmark": "b5",
+          "word": {
+            "listString": "4(e)",
+            "fullContext": "4(e)",
+            "paragraph": "4(e)"
+          }
+        }
+      ]
+    },
+    "override_l0_skipped": {
+      "paragraphs": [
+        {
+          "text": "p1 stdO0L1",
+          "numId": "50",
+          "ilvl": 1,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1(a)",
+            "fullContext": "1(a)",
+            "paragraph": "1(a)"
+          }
+        },
+        {
+          "text": "p2 stdO0L1",
+          "numId": "50",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": "1(b)",
+            "fullContext": "1(b)",
+            "paragraph": "1(b)"
+          }
+        },
+        {
+          "text": "p3 stdO0L0",
+          "numId": "50",
+          "ilvl": 0,
+          "bookmark": "b3",
+          "word": {
+            "listString": "5.",
+            "fullContext": "5",
+            "paragraph": "5"
+          }
+        },
+        {
+          "text": "p4 stdL0",
+          "numId": "1",
+          "ilvl": 0,
+          "bookmark": "b4",
+          "word": {
+            "listString": "6.",
+            "fullContext": "6",
+            "paragraph": "6"
+          }
+        },
+        {
+          "text": "p5 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b5",
+          "word": {
+            "listString": "6(a)",
+            "fullContext": "6(a)",
+            "paragraph": "6(a)"
+          }
+        }
+      ]
+    },
+    "override_l1_skipped": {
+      "paragraphs": [
+        {
+          "text": "p1 stdL0",
+          "numId": "1",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1.",
+            "fullContext": "1",
+            "paragraph": "1"
+          }
+        },
+        {
+          "text": "p2 stdO1L2",
+          "numId": "51",
+          "ilvl": 2,
+          "bookmark": "b2",
+          "word": {
+            "listString": "1(a)(i)",
+            "fullContext": "1(a)(i)",
+            "paragraph": "1(a)(i)"
+          }
+        },
+        {
+          "text": "p3 stdO1L1",
+          "numId": "51",
+          "ilvl": 1,
+          "bookmark": "b3",
+          "word": {
+            "listString": "1(e)",
+            "fullContext": "1(e)",
+            "paragraph": "1(e)"
+          }
+        },
+        {
+          "text": "p4 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b4",
+          "word": {
+            "listString": "1(f)",
+            "fullContext": "1(f)",
+            "paragraph": "1(f)"
+          }
+        },
+        {
+          "text": "p5 stdO1L1",
+          "numId": "51",
+          "ilvl": 1,
+          "bookmark": "b5",
+          "word": {
+            "listString": "1(g)",
+            "fullContext": "1(g)",
+            "paragraph": "1(g)"
+          }
+        }
+      ]
+    },
+    "override_l1_skipped_other_instance": {
+      "paragraphs": [
+        {
+          "text": "p1 stdL0",
+          "numId": "1",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1.",
+            "fullContext": "1",
+            "paragraph": "1"
+          }
+        },
+        {
+          "text": "p2 stdL2",
+          "numId": "1",
+          "ilvl": 2,
+          "bookmark": "b2",
+          "word": {
+            "listString": "1(a)(i)",
+            "fullContext": "1(a)(i)",
+            "paragraph": "1(a)(i)"
+          }
+        },
+        {
+          "text": "p3 stdO1L1",
+          "numId": "51",
+          "ilvl": 1,
+          "bookmark": "b3",
+          "word": {
+            "listString": "1(e)",
+            "fullContext": "1(e)",
+            "paragraph": "1(e)"
+          }
+        },
+        {
+          "text": "p4 stdO1L1",
+          "numId": "51",
+          "ilvl": 1,
+          "bookmark": "b4",
+          "word": {
+            "listString": "1(f)",
+            "fullContext": "1(f)",
+            "paragraph": "1(f)"
+          }
+        },
+        {
+          "text": "p5 stdL0",
+          "numId": "1",
+          "ilvl": 0,
+          "bookmark": "b5",
+          "word": {
+            "listString": "2.",
+            "fullContext": "2",
+            "paragraph": "2"
+          }
+        },
+        {
+          "text": "p6 stdO1L2",
+          "numId": "51",
+          "ilvl": 2,
+          "bookmark": "b6",
+          "word": {
+            "listString": "2(a)(i)",
+            "fullContext": "2(a)(i)",
+            "paragraph": "2(a)(i)"
+          }
+        },
+        {
+          "text": "p7 stdO1L1",
+          "numId": "51",
+          "ilvl": 1,
+          "bookmark": "b7",
+          "word": {
+            "listString": "2(f)",
+            "fullContext": "2(f)",
+            "paragraph": "2(f)"
+          }
+        }
+      ]
+    },
+    "legal_override_orphan": {
+      "paragraphs": [
+        {
+          "text": "p1 legalO1L2",
+          "numId": "52",
+          "ilvl": 2,
+          "bookmark": "b1",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "Section 1.01(a)",
+            "paragraph": "(a)"
+          }
+        },
+        {
+          "text": "p2 legalO1L1",
+          "numId": "52",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": "Section 1.05",
+            "fullContext": "Section 1.05",
+            "paragraph": "Section 1.05"
+          }
+        },
+        {
+          "text": "p3 legalL1",
+          "numId": "2",
+          "ilvl": 1,
+          "bookmark": "b3",
+          "word": {
+            "listString": "Section 1.06",
+            "fullContext": "Section 1.06",
+            "paragraph": "Section 1.06"
+          }
+        }
+      ]
+    },
+    "silent_top_unused_beneath": {
+      "paragraphs": [
+        {
+          "text": "p1 silentTopL2",
+          "numId": "5",
+          "ilvl": 2,
+          "bookmark": "b1",
+          "word": {
+            "listString": "(a)",
+            "fullContext": ".1(a)",
+            "paragraph": "(a)"
+          }
+        },
+        {
+          "text": "p2 silentTopL1",
+          "numId": "5",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": ".2",
+            "fullContext": ".2",
+            "paragraph": ".2"
+          }
+        },
+        {
+          "text": "p3 silentTopL0",
+          "numId": "5",
+          "ilvl": 0,
+          "bookmark": "b3",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p4 silentTopL1",
+          "numId": "5",
+          "ilvl": 1,
+          "bookmark": "b4",
+          "word": {
+            "listString": ".1",
+            "fullContext": ".1",
+            "paragraph": ".1"
+          }
+        },
+        {
+          "text": "p5 silentTopL2",
+          "numId": "5",
+          "ilvl": 2,
+          "bookmark": "b5",
+          "word": {
+            "listString": "(a)",
+            "fullContext": ".1(a)",
+            "paragraph": "(a)"
+          }
+        },
+        {
+          "text": "p6 silentTopL0",
+          "numId": "5",
+          "ilvl": 0,
+          "bookmark": "b6",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p7 silentTopL0",
+          "numId": "5",
+          "ilvl": 0,
+          "bookmark": "b7",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p8 silentTopL1",
+          "numId": "5",
+          "ilvl": 1,
+          "bookmark": "b8",
+          "word": {
+            "listString": ".1",
+            "fullContext": ".1",
+            "paragraph": ".1"
+          }
+        }
+      ]
+    },
+    "silent_mid": {
+      "paragraphs": [
+        {
+          "text": "p1 silentMidL0",
+          "numId": "6",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1.",
+            "fullContext": "1",
+            "paragraph": "1"
+          }
+        },
+        {
+          "text": "p2 silentMidL1",
+          "numId": "6",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p3 silentMidL2",
+          "numId": "6",
+          "ilvl": 2,
+          "bookmark": "b3",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "1(a)",
+            "paragraph": "(a)"
+          }
+        },
+        {
+          "text": "p4 silentMidL2",
+          "numId": "6",
+          "ilvl": 2,
+          "bookmark": "b4",
+          "word": {
+            "listString": "(b)",
+            "fullContext": "1(b)",
+            "paragraph": "(b)"
+          }
+        },
+        {
+          "text": "p5 silentMidL1",
+          "numId": "6",
+          "ilvl": 1,
+          "bookmark": "b5",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p6 silentMidL2",
+          "numId": "6",
+          "ilvl": 2,
+          "bookmark": "b6",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "1(a)",
+            "paragraph": "(a)"
+          }
+        },
+        {
+          "text": "p7 silentMidL0",
+          "numId": "6",
+          "ilvl": 0,
+          "bookmark": "b7",
+          "word": {
+            "listString": "2.",
+            "fullContext": "2",
+            "paragraph": "2"
+          }
+        },
+        {
+          "text": "p8 silentMidL2",
+          "numId": "6",
+          "ilvl": 2,
+          "bookmark": "b8",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "2(a)",
+            "paragraph": "(a)"
+          }
+        }
+      ]
+    },
+    "silent_mid_lowest_self": {
+      "paragraphs": [
+        {
+          "text": "p1 silentMid2L0",
+          "numId": "7",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1.",
+            "fullContext": "1",
+            "paragraph": "1"
+          }
+        },
+        {
+          "text": "p2 silentMid2L1",
+          "numId": "7",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p3 silentMid2L2",
+          "numId": "7",
+          "ilvl": 2,
+          "bookmark": "b3",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "1(a)",
+            "paragraph": "(a)"
+          }
+        },
+        {
+          "text": "p4 silentMid2L0",
+          "numId": "7",
+          "ilvl": 0,
+          "bookmark": "b4",
+          "word": {
+            "listString": "2.",
+            "fullContext": "2",
+            "paragraph": "2"
+          }
+        },
+        {
+          "text": "p5 silentMid2L2",
+          "numId": "7",
+          "ilvl": 2,
+          "bookmark": "b5",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "2(a)",
+            "paragraph": "(a)"
+          }
+        }
+      ]
+    },
+    "restart0_fill": {
+      "paragraphs": [
+        {
+          "text": "p1 restart0L0",
+          "numId": "8",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1.",
+            "fullContext": "1",
+            "paragraph": "1"
+          }
+        },
+        {
+          "text": "p2 restart0L1",
+          "numId": "8",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": "1(a)",
+            "fullContext": "1(a)",
+            "paragraph": "1(a)"
+          }
+        },
+        {
+          "text": "p3 restart0L2",
+          "numId": "8",
+          "ilvl": 2,
+          "bookmark": "b3",
+          "word": {
+            "listString": "1(a)(i)",
+            "fullContext": "1(a)(i)",
+            "paragraph": "1(a)(i)"
+          }
+        },
+        {
+          "text": "p4 restart0L0",
+          "numId": "8",
+          "ilvl": 0,
+          "bookmark": "b4",
+          "word": {
+            "listString": "2.",
+            "fullContext": "2",
+            "paragraph": "2"
+          }
+        },
+        {
+          "text": "p5 restart0L2",
+          "numId": "8",
+          "ilvl": 2,
+          "bookmark": "b5",
+          "word": {
+            "listString": "2(a)(ii)",
+            "fullContext": "2(a)(ii)",
+            "paragraph": "2(a)(ii)"
+          }
+        },
+        {
+          "text": "p6 restart0L1",
+          "numId": "8",
+          "ilvl": 1,
+          "bookmark": "b6",
+          "word": {
+            "listString": "2(b)",
+            "fullContext": "2(b)",
+            "paragraph": "2(b)"
+          }
+        },
+        {
+          "text": "p7 restart0L2",
+          "numId": "8",
+          "ilvl": 2,
+          "bookmark": "b7",
+          "word": {
+            "listString": "2(b)(iii)",
+            "fullContext": "2(b)(iii)",
+            "paragraph": "2(b)(iii)"
+          }
+        }
+      ]
+    },
+    "deep_unused_beneath_silent": {
+      "paragraphs": [
+        {
+          "text": "p1 deepL2",
+          "numId": "9",
+          "ilvl": 2,
+          "bookmark": "b1",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "(a)",
+            "paragraph": "(a)"
+          }
+        },
+        {
+          "text": "p2 deepL1",
+          "numId": "9",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p3 deepL0",
+          "numId": "9",
+          "ilvl": 0,
+          "bookmark": "b3",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p4 deepL2",
+          "numId": "9",
+          "ilvl": 2,
+          "bookmark": "b4",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "(a)",
+            "paragraph": "(a)"
+          }
+        },
+        {
+          "text": "p5 deepL1",
+          "numId": "9",
+          "ilvl": 1,
+          "bookmark": "b5",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p6 deepL2",
+          "numId": "9",
+          "ilvl": 2,
+          "bookmark": "b6",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "(a)",
+            "paragraph": "(a)"
+          }
+        }
+      ]
+    },
+    "x_fill_by_override_then_plain": {
+      "paragraphs": [
+        {
+          "text": "p1 stdL0",
+          "numId": "1",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1.",
+            "fullContext": "1",
+            "paragraph": "1"
+          }
+        },
+        {
+          "text": "p2 stdO1L2",
+          "numId": "51",
+          "ilvl": 2,
+          "bookmark": "b2",
+          "word": {
+            "listString": "1(a)(i)",
+            "fullContext": "1(a)(i)",
+            "paragraph": "1(a)(i)"
+          }
+        },
+        {
+          "text": "p3 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b3",
+          "word": {
+            "listString": "1(f)",
+            "fullContext": "1(f)",
+            "paragraph": "1(f)"
+          }
+        },
+        {
+          "text": "p4 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b4",
+          "word": {
+            "listString": "1(g)",
+            "fullContext": "1(g)",
+            "paragraph": "1(g)"
+          }
+        }
+      ]
+    },
+    "w_first_para_override_deep": {
+      "paragraphs": [
+        {
+          "text": "p1 stdO1L2",
+          "numId": "51",
+          "ilvl": 2,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1(a)(i)",
+            "fullContext": "1(a)(i)",
+            "paragraph": "1(a)(i)"
+          }
+        },
+        {
+          "text": "p2 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": "1(f)",
+            "fullContext": "1(f)",
+            "paragraph": "1(f)"
+          }
+        },
+        {
+          "text": "p3 stdO1L1",
+          "numId": "51",
+          "ilvl": 1,
+          "bookmark": "b3",
+          "word": {
+            "listString": "1(e)",
+            "fullContext": "1(e)",
+            "paragraph": "1(e)"
+          }
+        }
+      ]
+    },
+    "z_fill_after_override_restart": {
+      "paragraphs": [
+        {
+          "text": "p1 stdL0",
+          "numId": "1",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1.",
+            "fullContext": "1",
+            "paragraph": "1"
+          }
+        },
+        {
+          "text": "p2 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": "1(a)",
+            "fullContext": "1(a)",
+            "paragraph": "1(a)"
+          }
+        },
+        {
+          "text": "p3 stdO1L0",
+          "numId": "51",
+          "ilvl": 0,
+          "bookmark": "b3",
+          "word": {
+            "listString": "2.",
+            "fullContext": "2",
+            "paragraph": "2"
+          }
+        },
+        {
+          "text": "p4 stdL2",
+          "numId": "1",
+          "ilvl": 2,
+          "bookmark": "b4",
+          "word": {
+            "listString": "2(e)(i)",
+            "fullContext": "2(e)(i)",
+            "paragraph": "2(e)(i)"
+          }
+        },
+        {
+          "text": "p5 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b5",
+          "word": {
+            "listString": "2(b)",
+            "fullContext": "2(b)",
+            "paragraph": "2(b)"
+          }
+        }
+      ]
+    },
+    "z2_override_restart_no_fill": {
+      "paragraphs": [
+        {
+          "text": "p1 stdL0",
+          "numId": "1",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1.",
+            "fullContext": "1",
+            "paragraph": "1"
+          }
+        },
+        {
+          "text": "p2 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": "1(a)",
+            "fullContext": "1(a)",
+            "paragraph": "1(a)"
+          }
+        },
+        {
+          "text": "p3 stdO1L0",
+          "numId": "51",
+          "ilvl": 0,
+          "bookmark": "b3",
+          "word": {
+            "listString": "2.",
+            "fullContext": "2",
+            "paragraph": "2"
+          }
+        },
+        {
+          "text": "p4 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b4",
+          "word": {
+            "listString": "2(e)",
+            "fullContext": "2(e)",
+            "paragraph": "2(e)"
+          }
+        }
+      ]
+    },
+    "u_double_fill": {
+      "paragraphs": [
+        {
+          "text": "p1 stdL0",
+          "numId": "1",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1.",
+            "fullContext": "1",
+            "paragraph": "1"
+          }
+        },
+        {
+          "text": "p2 stdO1L2",
+          "numId": "51",
+          "ilvl": 2,
+          "bookmark": "b2",
+          "word": {
+            "listString": "1(a)(i)",
+            "fullContext": "1(a)(i)",
+            "paragraph": "1(a)(i)"
+          }
+        },
+        {
+          "text": "p3 stdO1L2",
+          "numId": "51",
+          "ilvl": 2,
+          "bookmark": "b3",
+          "word": {
+            "listString": "1(a)(ii)",
+            "fullContext": "1(a)(ii)",
+            "paragraph": "1(a)(ii)"
+          }
+        },
+        {
+          "text": "p4 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b4",
+          "word": {
+            "listString": "1(f)",
+            "fullContext": "1(f)",
+            "paragraph": "1(f)"
+          }
+        }
+      ]
+    },
+    "v_fill_by_plain_then_override": {
+      "paragraphs": [
+        {
+          "text": "p1 stdL0",
+          "numId": "1",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1.",
+            "fullContext": "1",
+            "paragraph": "1"
+          }
+        },
+        {
+          "text": "p2 stdL1",
+          "numId": "1",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": "1(a)",
+            "fullContext": "1(a)",
+            "paragraph": "1(a)"
+          }
+        },
+        {
+          "text": "p3 stdL0",
+          "numId": "1",
+          "ilvl": 0,
+          "bookmark": "b3",
+          "word": {
+            "listString": "2.",
+            "fullContext": "2",
+            "paragraph": "2"
+          }
+        },
+        {
+          "text": "p4 stdL2",
+          "numId": "1",
+          "ilvl": 2,
+          "bookmark": "b4",
+          "word": {
+            "listString": "2(a)(i)",
+            "fullContext": "2(a)(i)",
+            "paragraph": "2(a)(i)"
+          }
+        },
+        {
+          "text": "p5 stdO1L1",
+          "numId": "51",
+          "ilvl": 1,
+          "bookmark": "b5",
+          "word": {
+            "listString": "2(e)",
+            "fullContext": "2(e)",
+            "paragraph": "2(e)"
+          }
+        },
+        {
+          "text": "p6 stdO1L1",
+          "numId": "51",
+          "ilvl": 1,
+          "bookmark": "b6",
+          "word": {
+            "listString": "2(f)",
+            "fullContext": "2(f)",
+            "paragraph": "2(f)"
+          }
+        }
+      ]
+    },
+    "unnamed_first_deep": {
+      "paragraphs": [
+        {
+          "text": "p1 unnamedL2",
+          "numId": "4",
+          "ilvl": 2,
+          "bookmark": "b1",
+          "word": {
+            "listString": "(i)",
+            "fullContext": "1(a)(i)",
+            "paragraph": "(i)"
+          }
+        },
+        {
+          "text": "p2 unnamedL2",
+          "numId": "4",
+          "ilvl": 2,
+          "bookmark": "b2",
+          "word": {
+            "listString": "(ii)",
+            "fullContext": "1(a)(ii)",
+            "paragraph": "(ii)"
+          }
+        },
+        {
+          "text": "p3 unnamedL1",
+          "numId": "4",
+          "ilvl": 1,
+          "bookmark": "b3",
+          "word": {
+            "listString": "(b)",
+            "fullContext": "1(b)",
+            "paragraph": "(b)"
+          }
+        },
+        {
+          "text": "p4 unnamedL2",
+          "numId": "4",
+          "ilvl": 2,
+          "bookmark": "b4",
+          "word": {
+            "listString": "(i)",
+            "fullContext": "1(b)(i)",
+            "paragraph": "(i)"
+          }
+        }
+      ]
+    },
+    "legal_l3_after_section": {
+      "paragraphs": [
+        {
+          "text": "p1 legalL1",
+          "numId": "2",
+          "ilvl": 1,
+          "bookmark": "b1",
+          "word": {
+            "listString": "Section 1.01",
+            "fullContext": "Section 1.01",
+            "paragraph": "Section 1.01"
+          }
+        },
+        {
+          "text": "p2 legalL3",
+          "numId": "2",
+          "ilvl": 3,
+          "bookmark": "b2",
+          "word": {
+            "listString": "(i)",
+            "fullContext": "Section 1.01(i)",
+            "paragraph": "(i)"
+          }
+        },
+        {
+          "text": "p3 legalL2",
+          "numId": "2",
+          "ilvl": 2,
+          "bookmark": "b3",
+          "word": {
+            "listString": "(b)",
+            "fullContext": "Section 1.01(b)",
+            "paragraph": "(b)"
+          }
+        },
+        {
+          "text": "p4 legalL0",
+          "numId": "2",
+          "ilvl": 0,
+          "bookmark": "b4",
+          "word": {
+            "listString": "ARTICLE II",
+            "fullContext": "ARTICLE II",
+            "paragraph": "ARTICLE II"
+          }
+        },
+        {
+          "text": "p5 legalL3",
+          "numId": "2",
+          "ilvl": 3,
+          "bookmark": "b5",
+          "word": {
+            "listString": "(i)",
+            "fullContext": "ARTICLE II(i)",
+            "paragraph": "(i)"
+          }
+        }
+      ]
+    },
+    "legal_l3_first": {
+      "paragraphs": [
+        {
+          "text": "p1 legalL3",
+          "numId": "2",
+          "ilvl": 3,
+          "bookmark": "b1",
+          "word": {
+            "listString": "(i)",
+            "fullContext": "Section 1.01(a)(i)",
+            "paragraph": "(i)"
+          }
+        },
+        {
+          "text": "p2 legalL3",
+          "numId": "2",
+          "ilvl": 3,
+          "bookmark": "b2",
+          "word": {
+            "listString": "(ii)",
+            "fullContext": "Section 1.01(a)(ii)",
+            "paragraph": "(ii)"
+          }
+        },
+        {
+          "text": "p3 legalL2",
+          "numId": "2",
+          "ilvl": 2,
+          "bookmark": "b3",
+          "word": {
+            "listString": "(b)",
+            "fullContext": "Section 1.01(b)",
+            "paragraph": "(b)"
+          }
+        },
+        {
+          "text": "p4 legalL1",
+          "numId": "2",
+          "ilvl": 1,
+          "bookmark": "b4",
+          "word": {
+            "listString": "Section 1.02",
+            "fullContext": "Section 1.02",
+            "paragraph": "Section 1.02"
+          }
+        }
+      ]
+    },
+    "silent_ref_mid": {
+      "paragraphs": [
+        {
+          "text": "p1 silentRefL0",
+          "numId": "11",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1.",
+            "fullContext": "1",
+            "paragraph": "1"
+          }
+        },
+        {
+          "text": "p2 silentRefL1",
+          "numId": "11",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p3 silentRefL2",
+          "numId": "11",
+          "ilvl": 2,
+          "bookmark": "b3",
+          "word": {
+            "listString": "1..i",
+            "fullContext": "1..i",
+            "paragraph": "1..i"
+          }
+        },
+        {
+          "text": "p4 silentRefL2",
+          "numId": "11",
+          "ilvl": 2,
+          "bookmark": "b4",
+          "word": {
+            "listString": "1..ii",
+            "fullContext": "1..ii",
+            "paragraph": "1..ii"
+          }
+        },
+        {
+          "text": "p5 silentRefL0",
+          "numId": "11",
+          "ilvl": 0,
+          "bookmark": "b5",
+          "word": {
+            "listString": "2.",
+            "fullContext": "2",
+            "paragraph": "2"
+          }
+        },
+        {
+          "text": "p6 silentRefL2",
+          "numId": "11",
+          "ilvl": 2,
+          "bookmark": "b6",
+          "word": {
+            "listString": "2..i",
+            "fullContext": "2..i",
+            "paragraph": "2..i"
+          }
+        }
+      ]
+    },
+    "silent_ref_top": {
+      "paragraphs": [
+        {
+          "text": "p1 silentRef0L0",
+          "numId": "12",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p2 silentRef0L1",
+          "numId": "12",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": "[-1]",
+            "fullContext": "[-1]",
+            "paragraph": "[-1]"
+          }
+        },
+        {
+          "text": "p3 silentRef0L2",
+          "numId": "12",
+          "ilvl": 2,
+          "bookmark": "b3",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "[-1](a)",
+            "paragraph": "(a)"
+          }
+        },
+        {
+          "text": "p4 silentRef0L0",
+          "numId": "12",
+          "ilvl": 0,
+          "bookmark": "b4",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p5 silentRef0L1",
+          "numId": "12",
+          "ilvl": 1,
+          "bookmark": "b5",
+          "word": {
+            "listString": "[-1]",
+            "fullContext": "[-1]",
+            "paragraph": "[-1]"
+          }
+        }
+      ]
+    },
+    "silent_top_used_then_deep": {
+      "paragraphs": [
+        {
+          "text": "p1 silentTopL0",
+          "numId": "5",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p2 silentTopL2",
+          "numId": "5",
+          "ilvl": 2,
+          "bookmark": "b2",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "(a)",
+            "paragraph": "(a)"
+          }
+        },
+        {
+          "text": "p3 silentTopL1",
+          "numId": "5",
+          "ilvl": 1,
+          "bookmark": "b3",
+          "word": {
+            "listString": ".2",
+            "fullContext": ".2",
+            "paragraph": ".2"
+          }
+        },
+        {
+          "text": "p4 silentTopL0",
+          "numId": "5",
+          "ilvl": 0,
+          "bookmark": "b4",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p5 silentTopL2",
+          "numId": "5",
+          "ilvl": 2,
+          "bookmark": "b5",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "(a)",
+            "paragraph": "(a)"
+          }
+        },
+        {
+          "text": "p6 silentTopL1",
+          "numId": "5",
+          "ilvl": 1,
+          "bookmark": "b6",
+          "word": {
+            "listString": ".2",
+            "fullContext": ".2",
+            "paragraph": ".2"
+          }
+        }
+      ]
+    },
+    "silent_ref_top_fresh_mid": {
+      "paragraphs": [
+        {
+          "text": "p1 silentRef0L0",
+          "numId": "12",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p2 silentRef0L2",
+          "numId": "12",
+          "ilvl": 2,
+          "bookmark": "b2",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "(a)",
+            "paragraph": "(a)"
+          }
+        },
+        {
+          "text": "p3 silentRef0L1",
+          "numId": "12",
+          "ilvl": 1,
+          "bookmark": "b3",
+          "word": {
+            "listString": "[-2]",
+            "fullContext": "[-2]",
+            "paragraph": "[-2]"
+          }
+        },
+        {
+          "text": "p4 silentRef0L2",
+          "numId": "12",
+          "ilvl": 2,
+          "bookmark": "b4",
+          "word": {
+            "listString": "(a)",
+            "fullContext": "[-2](a)",
+            "paragraph": "(a)"
+          }
+        }
+      ]
+    },
+    "deep_own_level": {
+      "paragraphs": [
+        {
+          "text": "p1 deepOwnL0",
+          "numId": "10",
+          "ilvl": 0,
+          "bookmark": "b1",
+          "word": {
+            "listString": "1.",
+            "fullContext": "1",
+            "paragraph": "1"
+          }
+        },
+        {
+          "text": "p2 deepOwnL1",
+          "numId": "10",
+          "ilvl": 1,
+          "bookmark": "b2",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p3 deepOwnL1",
+          "numId": "10",
+          "ilvl": 1,
+          "bookmark": "b3",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p4 deepOwnL2",
+          "numId": "10",
+          "ilvl": 2,
+          "bookmark": "b4",
+          "word": {
+            "listString": "(i)",
+            "fullContext": "1(i)",
+            "paragraph": "(i)"
+          }
+        },
+        {
+          "text": "p5 deepOwnL1",
+          "numId": "10",
+          "ilvl": 1,
+          "bookmark": "b5",
+          "word": {
+            "listString": "",
+            "fullContext": "0",
+            "paragraph": "0"
+          }
+        },
+        {
+          "text": "p6 deepOwnL0",
+          "numId": "10",
+          "ilvl": 0,
+          "bookmark": "b6",
+          "word": {
+            "listString": "2.",
+            "fullContext": "2",
+            "paragraph": "2"
+          }
+        },
+        {
+          "text": "p7 deepOwnL2",
+          "numId": "10",
+          "ilvl": 2,
+          "bookmark": "b7",
+          "word": {
+            "listString": "(i)",
+            "fullContext": "2(i)",
+            "paragraph": "(i)"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -194,12 +194,21 @@ type ListPassState = {
    */
   usedInstanceLevels: Map<string, Set<number>>;
   /**
-   * Per abstract definition, the start value a level the list has never used
-   * will begin at, recorded when a paragraph's restart reaches that level
-   * (the restarting paragraph's instance start, as Word applies it). Kept
-   * apart from the counters so a never-used level still reads NaN.
+   * Per abstract definition, the start value a level with no paragraph since
+   * it was last restarted (or ever) will begin at, recorded when a
+   * paragraph's restart reaches that level (the restarting paragraph's
+   * instance start, as Word applies it). Kept apart from the counters so
+   * such a level still reads NaN.
    */
   pendingStarts: Map<string, Map<number, number>>;
+  /**
+   * Per abstract definition, the ancestor levels shown at a start value
+   * because a deeper paragraph needed them before any paragraph of their
+   * own (since they last restarted), mapped to the value shown. The counter
+   * of such a level holds the start of the instance that first showed it,
+   * which its own next paragraph continues from.
+   */
+  levelsShownAtStart: Map<string, Map<number, number>>;
 };
 
 /** Kept beside the map rather than in it, so `NumberingCounters` stays a plain map. */
@@ -208,7 +217,7 @@ const passStates = new WeakMap<NumberingCounters, ListPassState>();
 function passState(counters: NumberingCounters): ListPassState {
   let state = passStates.get(counters);
   if (!state) {
-    state = { usedInstanceLevels: new Map(), pendingStarts: new Map() };
+    state = { usedInstanceLevels: new Map(), pendingStarts: new Map(), levelsShownAtStart: new Map() };
     passStates.set(counters, state);
   }
   return state;
@@ -223,13 +232,13 @@ function instanceLevelsUsed(state: ListPassState, numId: string): Set<number> {
   return used;
 }
 
-function pendingStartsFor(state: ListPassState, abstractNumId: string): Map<number, number> {
-  let pending = state.pendingStarts.get(abstractNumId);
-  if (!pending) {
-    pending = new Map();
-    state.pendingStarts.set(abstractNumId, pending);
+function perAbstract(map: Map<string, Map<number, number>>, abstractNumId: string): Map<number, number> {
+  let levels = map.get(abstractNumId);
+  if (!levels) {
+    levels = new Map();
+    map.set(abstractNumId, levels);
   }
-  return pending;
+  return levels;
 }
 
 /** The level's start value for an instance: its `startOverride`, else the abstract `w:start`. */
@@ -241,6 +250,11 @@ function getStartForLevel(model: NumberingModel, numId: string, ilvl: number): n
   const abs = model.abstractNums.get(num.abstractNumId);
   const lvl = abs?.levels.get(ilvl);
   return lvl?.start ?? 1;
+}
+
+/** The level's `w:start` in the abstract definition, ignoring any instance `startOverride`. */
+function getAbstractStartForLevel(model: NumberingModel, numId: string, ilvl: number): number {
+  return getNumberingLevel(model, numId, ilvl)?.start ?? 1;
 }
 
 /**
@@ -275,11 +289,19 @@ export type ListLabelSnapshot = {
   /** The paragraph's own level text, rendered and trimmed, e.g. "(b)". */
   label: string;
   /**
-   * Counter values for levels 0..ilvl at this paragraph. A level the list has
-   * never used is NaN; a level restarted since its last use holds its
-   * restart start value minus one.
+   * The value each level 0..ilvl shows at this paragraph. An ancestor level
+   * with no paragraph of its own since it last restarted shows a start value
+   * (see {@link ListLabelSnapshot.levelsAtStartValue}); every value is a
+   * number.
    */
   levelValues: readonly number[];
+  /**
+   * The ancestor levels (ascending) that no paragraph has numbered since
+   * they last restarted, so that this paragraph shows them at a start value.
+   * A full-context reference number passes over such a level when a level
+   * above it has a paragraph. Absent means none.
+   */
+  levelsAtStartValue?: readonly number[];
 };
 
 /**
@@ -294,12 +316,26 @@ export type ListLabelSnapshot = {
  * Word displays them; `decimalZero` pads one through nine. Returns null, and
  * leaves the counters untouched, when the instance or level is undefined.
  *
- * The sharing and restart rules follow Word for Mac 16.114 (oracle evidence
- * in scripts/oracle/word/evidence/issue-1243-word-16.114.json).
+ * An ancestor level with no paragraph of its own since it last restarted (or
+ * ever) shows a start value: the value a restart recorded for it, else the
+ * abstract `w:start` (an instance's `w:startOverride` is not shown). Its
+ * counter then holds the start of the instance whose paragraph first showed
+ * it, so the level's next paragraph continues from there ("1." "1(a)(i)"
+ * "1(b)", and "1(a)" "1(b)" "2." when the list opens at level 1), unless
+ * that paragraph is its instance's first on an overridden level.
+ *
+ * A level whose own level text names a deeper level is silent: its
+ * paragraphs get an empty label (their counters still advance), and a
+ * placeholder naming it renders as empty text.
+ *
+ * The sharing, restart, start-value and silent-level rules follow Word for
+ * Mac 16.114 (oracle evidence in
+ * scripts/oracle/word/evidence/issue-1243-word-16.114.json and
+ * issue-1254-word-16.114.json).
  *
  * @conformance-gap ECMA-376 edition 5, Part 1 § 17.9.4 — follows Word: decimalZero padding and none/bullet levels survive isLgl
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.9.11 — follows Word: a level text naming a deeper level shows no label, and a placeholder naming such a level shows nothing
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.10
- * @conformance ECMA-376 edition 5, Part 1 § 17.9.11
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.15
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.26
  */
@@ -328,7 +364,8 @@ export function advanceListLabel(
   // shared sequence at the override value; later paragraphs of the same
   // instance continue it like any other instance.
   const state = passState(counters);
-  const pending = pendingStartsFor(state, abstractNumId);
+  const pending = perAbstract(state.pendingStarts, abstractNumId);
+  const shownAtStart = perAbstract(state.levelsShownAtStart, abstractNumId);
   const used = instanceLevelsUsed(state, numId);
   const override = model.nums.get(numId)!.startOverrideByLevel.get(ilvl);
   if (override !== undefined && !used.has(ilvl)) arr[ilvl] = override - 1;
@@ -338,33 +375,46 @@ export function advanceListLabel(
   // for it, else at this instance's start; then advance.
   if (Number.isNaN(arr[ilvl]!)) arr[ilvl] = (pending.get(ilvl) ?? getStartForLevel(model, numId, ilvl)) - 1;
   pending.delete(ilvl);
+  shownAtStart.delete(ilvl);
   arr[ilvl] = arr[ilvl]! + 1;
 
   // Reset deeper levels whose restart threshold this level meets. By default
   // a level restarts whenever any earlier level is used; w:lvlRestart="r"
   // restarts it only when one of the first r levels (one-based) is used, and
   // r = 0 never restarts it (§ 17.9.10). The restart value is this
-  // paragraph's instance's start for that level, as Word applies it. A level
-  // the list has never used keeps reading NaN; its restart value is recorded
-  // so that an override instance's restart still reaches a level another
-  // instance uses first (Word's r4 case).
+  // paragraph's instance's start for that level, as Word applies it. A
+  // restarted level reads NaN until it is next used or shown, and its
+  // restart value is recorded, so an override instance's restart also
+  // reaches a level another instance uses first (Word's r4 case).
   const levels = model.abstractNums.get(abstractNumId)!.levels;
   for (const d of levels.keys()) {
     if (d <= ilvl) continue;
     const restart = levels.get(d)!.lvlRestart;
     if (restart !== null && ilvl >= restart) continue;
-    const start = getStartForLevel(model, numId, d);
-    if (d < arr.length && !Number.isNaN(arr[d]!)) arr[d] = start - 1;
-    else pending.set(d, start);
+    if (d < arr.length) arr[d] = Number.NaN;
+    pending.set(d, getStartForLevel(model, numId, d));
+    shownAtStart.delete(d);
   }
 
-  const levelValues = arr.slice(0, ilvl + 1);
+  // An ancestor with no paragraph since it last restarted is shown at the
+  // value its restart recorded, else the abstract start, and counts as used
+  // from this instance's start (Word's r2/r5 and override probes).
+  for (let k = 0; k < ilvl; k++) {
+    if (!Number.isNaN(arr[k]!)) continue;
+    shownAtStart.set(k, pending.get(k) ?? getAbstractStartForLevel(model, numId, k));
+    pending.delete(k);
+    arr[k] = getStartForLevel(model, numId, k);
+  }
+
+  const levelValues = arr.slice(0, ilvl + 1).map((value, k) => shownAtStart.get(k) ?? value);
+  const levelsAtStartValue = [...shownAtStart.keys()].filter((k) => k < ilvl).sort((a, b) => a - b);
   return {
     numId,
     abstractNumId,
     ilvl,
     label: renderListLevelText(model, numId, ilvl, levelValues),
     levelValues,
+    ...(levelsAtStartValue.length > 0 ? { levelsAtStartValue } : {}),
   };
 }
 
@@ -373,10 +423,12 @@ export function advanceListLabel(
  * without touching any counters, e.g. an ancestor level of a
  * {@link ListLabelSnapshot}: `renderListLevelText(model, s.numId, 1,
  * s.levelValues)` gives the "Section 2.06" above a "(b)" clause. Returns ''
- * when the level is undefined.
+ * when the level is undefined, and when its level text names a deeper level
+ * (Word shows no label for such a level); a placeholder naming such a level
+ * renders as empty text ("%1." over a silent level 0 reads ".").
  *
  * @conformance-gap ECMA-376 edition 5, Part 1 § 17.9.4 — follows Word: decimalZero padding and none/bullet levels survive isLgl
- * @conformance ECMA-376 edition 5, Part 1 § 17.9.11
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.9.11 — follows Word: a level text naming a deeper level shows no label, and a placeholder naming such a level shows nothing
  */
 export function renderListLevelText(
   model: NumberingModel,
@@ -385,13 +437,41 @@ export function renderListLevelText(
   levelValues: readonly number[],
 ): string {
   // For TOON we treat suffix as a display concern; keep label column trimmed.
-  return substituteLevelText(model, numId, ilvl, levelValues)?.text.trim() ?? '';
+  const part = substituteLevelText(model, numId, ilvl, levelValues);
+  return part && !part.namesDeeperLevel ? part.text.trim() : '';
+}
+
+/** The deepest level a list can define (`w:ilvl` 0 through 8). */
+const DEEPEST_LIST_LEVEL = 8;
+
+/**
+ * Whether a placeholder's level is deeper than `ilvl` but still a level a
+ * list can define. A placeholder past level 8 (such as `%10`) names no level
+ * and keeps rendering as 0.
+ */
+function isDeeperListLevel(levelNum: number, ilvl: number): boolean {
+  return levelNum > ilvl && levelNum <= DEEPEST_LIST_LEVEL;
+}
+
+/** Whether a level text names a level deeper than its own (Word then shows nothing for the level). */
+function levelTextNamesDeeperLevel(lvlText: string, ilvl: number): boolean {
+  for (const match of lvlText.matchAll(/%(\d+)/g)) {
+    if (isDeeperListLevel(Number.parseInt(match[1]!, 10) - 1, ilvl)) return true;
+  }
+  return false;
+}
+
+/** The level's `w:lvlText`, or the `%N.` Word assumes when it is absent. */
+function effectiveLevelText(level: Readonly<NumberingLevel>, ilvl: number): string {
+  return level.lvlText || `%${ilvl + 1}.`;
 }
 
 /**
  * The level's `w:lvlText` with every placeholder replaced, untrimmed, and
- * whether a placeholder named a level the list has never used (rendered 0).
- * Null when the level is undefined.
+ * whether a placeholder named a level without a counter value (rendered 0)
+ * or a level deeper than its own. A placeholder naming a shallower level
+ * whose own text names a deeper level renders as empty text, as Word shows
+ * it. Null when the level is undefined.
  */
 function substituteLevelText(
   model: NumberingModel,
@@ -401,19 +481,22 @@ function substituteLevelText(
 ): { text: string; lvlText: string; usesUnusedLevel: boolean; namesDeeperLevel: boolean } | null {
   const level = getNumberingLevel(model, numId, ilvl);
   if (!level) return null;
-  const lvlText = level.lvlText || `%${ilvl + 1}.`;
+  const lvlText = effectiveLevelText(level, ilvl);
   let usesUnusedLevel = false;
   let namesDeeperLevel = false;
   const text = lvlText.replace(/%(\d+)/g, (_m, nStr) => {
     const levelNum = Number.parseInt(String(nStr), 10) - 1;
     if (Number.isNaN(levelNum) || levelNum < 0) return '';
-    if (levelNum > ilvl) namesDeeperLevel = true;
+    if (isDeeperListLevel(levelNum, ilvl)) namesDeeperLevel = true;
+    const lvlDef = getNumberingLevel(model, numId, levelNum);
+    // A silent shallower level (its own text names a deeper level) shows nothing here either.
+    if (levelNum < ilvl && lvlDef && levelTextNamesDeeperLevel(effectiveLevelText(lvlDef, levelNum), levelNum)) return '';
     const counter = levelValues[levelNum];
-    // A level never used renders as 0, as before the NaN sentinel existed.
+    // A level without a counter value (a deeper level, a placeholder past
+    // level 8, or a caller's snapshot) renders as 0.
     const unused = counter === undefined || Number.isNaN(counter);
     if (unused) usesUnusedLevel = true;
     const v = unused ? 0 : counter;
-    const lvlDef = getNumberingLevel(model, numId, levelNum);
     const fmt = lvlDef?.numFmt ?? 'decimal';
     // Legal numbering (w:isLgl) shows every placeholder as an Arabic numeral.
     // Following Word rather than the letter of § 17.9.4: zero-padded decimal
@@ -451,9 +534,15 @@ export type ReferenceNumberForm = 'fullContext' | 'paragraph';
 
 /** Why no reference number is offered for a numbered paragraph. */
 export type ReferenceNumberRefusal =
-  /** The number depends on a level the list has never used: Word shows its start value, safe-docx's counters 0. */
+  /**
+   * The number depends on a level without a counter value: a placeholder
+   * past `%9`, which names no list level, or a level a caller-built snapshot
+   * leaves out. Snapshots from {@link advanceListLabel} carry a value for
+   * every level through their own (an ancestor no paragraph has numbered
+   * shows its start value, as Word does).
+   */
   | 'unusedLevel'
-  /** A level text in the number names a deeper level: Word then shows no number at all (a REF field shows 0). */
+  /** The paragraph's own level text names a deeper level: Word then shows no number at all (a REF field shows 0). */
   | 'deeperLevel'
   /** The level or numbering instance is not defined. */
   | 'undefinedLevel';
@@ -474,43 +563,61 @@ export type ReferenceNumberRefusal =
  *   starting with "(" ("2." + "(b)" → "2(b)", but "2." + "b." → "2.b",
  *   "1." + "[a]" → "1.[a]").
  *
+ * Two kinds of level are passed over on the way up, and the walk continues
+ * with the level directly above them:
+ *
+ * - a silent level, whose own level text names a deeper level (Word shows
+ *   no label for it): "(a)" under a silent "%1.%2.%3" under "%1." reads
+ *   "1(a)";
+ * - a level shown at its start value because no paragraph has numbered it
+ *   since it last restarted ({@link ListLabelSnapshot.levelsAtStartValue}),
+ *   when a level above it has a paragraph: "(i)" right after "ARTICLE II"
+ *   reads "ARTICLE II(i)". When no level above has one either, the level is
+ *   kept at its start value: a list that opens with a "(a)" clause reads
+ *   "Section 1.01(a)".
+ *
  * § 17.16.5.51 defines the switches: `\n` gives the number "without trailing
  * periods" and `\w` the number "in full context". How Word assembles the
  * context and which periods it drops between parts is measured, not
  * specified; the evidence is in
- * scripts/oracle/word/evidence/issue-1236-word-16.114.json. § 17.9.11 says a
- * placeholder naming a deeper level is ignored, but Word 16.114 shows no
- * number for such a level (its REF fields show 0), so that case is refused.
- * LibreOffice 26.2 recalculates these fields on load and keeps the period
- * before "(" ("2.(b)").
+ * scripts/oracle/word/evidence/issue-1236-word-16.114.json and
+ * issue-1254-word-16.114.json. § 17.9.11 says a placeholder naming a deeper
+ * level is ignored, but Word 16.114 shows no number for such a level (its REF
+ * fields show 0), so a reference to it is refused. LibreOffice 26.2
+ * recalculates these fields on load and keeps the period before "(" ("2.(b)").
  *
- * @conformance-gap ECMA-376 edition 5, Part 1 § 17.16.5.51 — follows Word: one trailing period is removed, and a period before "(" inside a full-context number
- * @conformance-gap ECMA-376 edition 5, Part 1 § 17.9.11 — follows Word: a level text naming a deeper level shows no number, so no reference number is offered
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.16.5.51 — follows Word: one trailing period is removed, a period before "(" inside a full-context number, and silent or unnumbered ancestor levels are passed over
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.9.11 — follows Word: a level text naming a deeper level shows no number, so no reference number to it is offered
  */
 export function resolveReferenceNumber(
   model: NumberingModel,
-  snapshot: Pick<ListLabelSnapshot, 'numId' | 'ilvl' | 'levelValues'>,
+  snapshot: Pick<ListLabelSnapshot, 'numId' | 'ilvl' | 'levelValues' | 'levelsAtStartValue'>,
   form: ReferenceNumberForm,
 ): { text: string } | { refused: ReferenceNumberRefusal } {
-  const levelText = (ilvl: number): { text: string; lvlText: string } | { refused: ReferenceNumberRefusal } => {
-    const part = substituteLevelText(model, snapshot.numId, ilvl, snapshot.levelValues);
-    if (!part) return { refused: 'undefinedLevel' };
-    if (part.namesDeeperLevel) return { refused: 'deeperLevel' };
-    if (part.usesUnusedLevel) return { refused: 'unusedLevel' };
-    return part;
-  };
-  const own = levelText(snapshot.ilvl);
-  if ('refused' in own) return own;
+  const own = substituteLevelText(model, snapshot.numId, snapshot.ilvl, snapshot.levelValues);
+  if (!own) return { refused: 'undefinedLevel' };
+  if (own.namesDeeperLevel) return { refused: 'deeperLevel' };
+  if (own.usesUnusedLevel) return { refused: 'unusedLevel' };
   if (form === 'paragraph') return { text: withoutTrailingPeriod(own.text) };
 
+  const atStartValue = new Set(snapshot.levelsAtStartValue ?? []);
+  // Whether some level above `ilvl` has a paragraph since it last restarted.
+  const numberedAbove = (ilvl: number): boolean => {
+    for (let k = 0; k < ilvl; k++) if (!atStartValue.has(k)) return true;
+    return false;
+  };
   const parts = [own.text];
-  let lowest = lowestReferencedLevel(own.lvlText, snapshot.ilvl);
-  while (lowest > 0) {
-    const ilvl = lowest - 1;
-    const part = levelText(ilvl);
-    if ('refused' in part) return part;
+  let ilvl = lowestReferencedLevel(own.lvlText, snapshot.ilvl) - 1;
+  while (ilvl >= 0) {
+    const part = substituteLevelText(model, snapshot.numId, ilvl, snapshot.levelValues);
+    if (!part) return { refused: 'undefinedLevel' };
+    if (part.namesDeeperLevel || (atStartValue.has(ilvl) && numberedAbove(ilvl))) {
+      ilvl -= 1;
+      continue;
+    }
+    if (part.usesUnusedLevel) return { refused: 'unusedLevel' };
     parts.unshift(part.text);
-    lowest = Math.min(lowestReferencedLevel(part.lvlText, ilvl), ilvl);
+    ilvl = Math.min(lowestReferencedLevel(part.lvlText, ilvl), ilvl) - 1;
   }
   return {
     text: parts
@@ -525,7 +632,7 @@ export function resolveReferenceNumber(
 /** {@link resolveReferenceNumber}'s text, or null when no number is offered. */
 export function renderReferenceNumber(
   model: NumberingModel,
-  snapshot: Pick<ListLabelSnapshot, 'numId' | 'ilvl' | 'levelValues'>,
+  snapshot: Pick<ListLabelSnapshot, 'numId' | 'ilvl' | 'levelValues' | 'levelsAtStartValue'>,
   form: ReferenceNumberForm,
 ): string | null {
   const result = resolveReferenceNumber(model, snapshot, form);
