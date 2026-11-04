@@ -86,7 +86,7 @@ describe('Traceability: footnotes in created documents', () => {
     async () => {
       const created = await createDocumentFromMarkdoc(ANNOTATED_SOURCE);
       expect(created.certificate.passed).toBe(true);
-      expect(created.certificate.checks.footnotes).toEqual({ passed: true, notes: 3, negativeControlDetected: true });
+      expect(created.certificate.checks.footnotes).toEqual({ passed: true, notes: 3, negativeControlDetected: true, references: { expected: 3, actual: 3, mismatches: [], negativeControlDetected: true } });
       expect(created.certificate.checks.roundTrip.footnotes).toMatchObject({ comparison: { passed: true }, notes: { expected: 3, actual: 3 }, negativeControlDetected: true });
 
       // Body references, in order, as FootnoteReference runs; the footnote blocks leave no body paragraph behind.
