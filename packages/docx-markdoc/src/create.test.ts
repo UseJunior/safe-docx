@@ -231,15 +231,18 @@ describe('Traceability: Markdoc document creation without a template', () => {
       expect(listed.map((paragraph) => wAttr(paragraph.getElementsByTagNameNS(W, 'ilvl').item(0), 'val'))).toEqual(['0', '1', '2', '0', '0']);
       const numbering = await part(docx, 'word/numbering.xml');
       const abstracts = Array.from(numbering.getElementsByTagNameNS(W, 'abstractNum'));
-      expect(abstracts).toHaveLength(3);
+      // Every ordered list shares one definition (#1252); `3.` does not continue the
+      // one-item list before it, so it restarts through a start override.
+      expect(abstracts).toHaveLength(2);
       const levels = (abstract: Element) => Array.from(abstract.getElementsByTagNameNS(W, 'lvl')).map((lvl) => [
         wAttr(lvl.getElementsByTagNameNS(W, 'start').item(0), 'val'),
         wAttr(lvl.getElementsByTagNameNS(W, 'numFmt').item(0), 'val'),
         wAttr(lvl.getElementsByTagNameNS(W, 'lvlText').item(0), 'val'),
       ]);
       expect(levels(abstracts[0]!)).toEqual([['1', 'decimal', '%1.'], ['1', 'lowerLetter', '(%2)'], ['1', 'lowerRoman', '(%3)']]);
-      expect(levels(abstracts[1]!)[0]).toEqual(['3', 'decimal', '%1.']);
-      expect(levels(abstracts[2]!)[0]![1]).toBe('bullet');
+      const overrides = Array.from(numbering.getElementsByTagNameNS(W, 'startOverride')).map((override) => wAttr(override, 'val'));
+      expect(overrides).toEqual(['3']);
+      expect(levels(abstracts[1]!)[0]![1]).toBe('bullet');
       await expectCode('1. A\n   - b', 'MIXED_LIST_NESTING');
     },
   );
