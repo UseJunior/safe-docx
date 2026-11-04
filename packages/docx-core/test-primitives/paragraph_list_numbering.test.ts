@@ -34,24 +34,6 @@ type Evidence = {
 };
 const evidence = JSON.parse(readFileSync(EVIDENCE_PATH, 'utf8')) as Evidence;
 
-/**
- * Labels where safe-docx still differs from Word for a reason unrelated to
- * style resolution, keyed by fixture and paragraph text. In s_b_precedence an
- * "(a)" at level 2 comes before any level-1 paragraph; Word counts the skipped
- * level 1 as used at its start value, so every later Section is one higher
- * than safe-docx's count (the skipped-level difference recorded with #1243,
- * fixtures r2/r5). Every numbered-or-not decision in the fixture matches Word.
- */
-const SKIPPED_LEVEL_DIFFERENCES: Record<string, Record<string, string>> = {
-  s_b_precedence: {
-    'MyClause basedOn H2': 'Section 1.01',
-    'H2 direct numId10 no-ilvl': 'Section 1.02',
-    'H2 plain': 'Section 1.03',
-    'H2 direct numId11 (same abstract) no-ilvl': 'Section 1.04',
-    'H2 after numId11': 'Section 1.05',
-  },
-};
-
 function bodyParagraphs(bodyXml: string): Element[] {
   const doc = parseXml(`<w:document xmlns:w="${W_NS}"><w:body>${bodyXml}</w:body></w:document>`);
   return Array.from(doc.getElementsByTagNameNS(W_NS, 'p'));
@@ -78,11 +60,8 @@ describe('style-inherited list numbering', () => {
         );
         labels = paragraphs.map((p) => byParagraph.get(p)?.label ?? '');
       });
-      const known = SKIPPED_LEVEL_DIFFERENCES[name] ?? {};
       await then(`the labels are Word's: ${fixture.paragraphs.map((p) => p.word || '∅').join(' ')}`, () => {
-        expect(labels).toEqual(fixture.paragraphs.map((p) => known[p.text] ?? p.word));
-        // A known difference must never hide a numbered/unnumbered mismatch.
-        for (const [i, p] of fixture.paragraphs.entries()) expect(labels[i] === '').toBe(p.word === '');
+        expect(labels).toEqual(fixture.paragraphs.map((p) => p.word));
       });
     });
   }

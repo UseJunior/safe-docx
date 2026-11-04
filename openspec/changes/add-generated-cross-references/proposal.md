@@ -35,10 +35,13 @@ above it. Agreements carry hundreds of these references (#1236).
   `2(b)` and `Section %1.%2` + `(%3)` gives `Section 2.06(b)`. A paragraph
   number is the target level's text with one trailing period removed.
   Generation refuses a target whose result Word would not show as a number:
-  an unnumbered paragraph (Word shows `0`), a number that depends on a level
-  no earlier paragraph uses (Word shows the level's start value), a level
-  text that names a deeper level (Word shows no number; § 17.9.11 says to
-  ignore the placeholder), or an empty rendering.
+  an unnumbered paragraph (Word shows `0`), a target whose own level text
+  names a deeper level (Word shows no number; § 17.9.11 says to ignore the
+  placeholder), or an empty rendering. A number that depends on a level no
+  earlier paragraph uses carries the start value Word shows for that level,
+  and a full-context number passes over silent and never-numbered parent
+  levels as Word does (#1254, #1263); a placeholder past `%9` is refused
+  because Word's result for it is not measured.
 - The list-label read side numbers letters past `z` as Word and § 17.18.59
   do (`aa`, `bb`, …, `zz`, `aaa`). It used to give `ab` for 28, which would
   have been cached in a REF result.

@@ -4422,6 +4422,6 @@
         "word": "(a)"
       }
     ],
-    "generation": "refused: every level text a reference number uses must name only its own level and levels above it"
+    "generation": "deep0 and deep1 are refused in both forms (their own level text names a deeper level; Word shows 0). deep2 gives (a) in both forms: a full-context number passes over a parent level whose level text names a deeper level and continues with the level directly above it (#1263; more shapes in issue-1254-word-16.114.json)"
   }
 }
