@@ -526,13 +526,14 @@ function validateBlocks(children: MarkdocNode[]): void {
 const ROMAN_NUMERAL = '(?=[IVXLCDM])M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})(?![\\p{L}\\p{M}\\p{N}])';
 /**
  * Heading text that already starts with the number the heading definition
- * generates ("ARTICLE IV", "Article IV", "Section 2.04"). Ordinary words
- * after "Article" ("Article Civil Rights", "Article Integrity") and
- * statutory references ("Section 409A") are not numbers.
+ * generates ("ARTICLE IV", "Article IV", "Section 2.04": an Article
+ * number, a period and two digits ending the number). Ordinary words after
+ * "Article" ("Article Civil Rights", "Article Integrity") and statutory
+ * references ("Section 409A", "Section 1.409A", "Section 1.409") are not.
  */
 const GENERATED_HEADING_NUMBER: Record<number, RegExp> = {
   2: new RegExp(`^(?:ARTICLE|Article|article)\\s+${ROMAN_NUMERAL}`, 'u'),
-  3: /^Section\s+\d+\.\d+/iu,
+  3: /^Section\s+\d+\.\d{2}(?![\p{L}\p{M}\p{N}]|\.\p{N})/iu,
 };
 
 /**
