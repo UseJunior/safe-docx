@@ -214,8 +214,9 @@ function validateCrossReferences(spec: DocumentSpec): void {
   // The first numbered footnote paragraph: a relative reference in a footnote is then refused.
   let numberedFootnoteParagraph: string | undefined;
   walkDocumentParagraphs(spec, (paragraph, path, story) => {
+    // A footnote paragraph without a styleId is emitted with FootnoteText, so that style counts too.
     if (story === 'footnote' && numberedFootnoteParagraph === undefined
-      && (paragraph.list !== undefined || (paragraph.styleId !== undefined && numberedStyles.has(paragraph.styleId)))) {
+      && (paragraph.list !== undefined || numberedStyles.has(paragraph.styleId ?? FOOTNOTE_TEXT_STYLE_ID))) {
       numberedFootnoteParagraph = path;
     }
     if (paragraph.bookmark === undefined) return;

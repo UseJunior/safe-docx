@@ -221,6 +221,12 @@ describe('Traceability: generated relative cross-references', () => {
       const styled = base(para([text('Styled note.')], { styleId: 'NoteHeading' }));
       styled.styles = [...HEADING_STYLES, { styleId: 'NoteHeading', name: 'note heading', type: 'paragraph', basedOn: 'Heading2' }];
       expect((await specError(styled)).path).toBe('/sections/0/blocks/2/runs/1/blocks/1/runs/1/number');
+      // A footnote paragraph without a styleId takes FootnoteText, so a numbered FootnoteText counts too.
+      const implicit = base(para([text('Implicit note.')]));
+      implicit.styles = [...HEADING_STYLES, { styleId: 'FootnoteText', name: 'footnote text', type: 'paragraph', basedOn: 'Heading2' }];
+      const implicitError = await specError(implicit);
+      expect(implicitError.path).toBe('/sections/0/blocks/2/runs/1/blocks/1/runs/1/number');
+      expect(implicitError.message).toContain('/sections/0/blocks/2/runs/1/blocks/0');
       // Without a numbered footnote paragraph the same reference generates, in full.
       const plain = await generatedFields(base(para([text('Plain note.')])));
       expect(plain).toEqual([{ instruction: ' REF target \\r \\h ', result: 'Section 1.01(a)' }]);
