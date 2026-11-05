@@ -59,11 +59,25 @@ function buildFieldRuns(doc: Document, field: FieldSpec, ctx?: BlockEmitContext)
 }
 
 /**
- * A cross-reference: the same five-run complex field over a `REF` instruction
- * naming the target bookmark, `\w` (full-context number) or `\n` (paragraph
- * number), and `\h` so the result is a hyperlink to the bookmark. The
- * result run is filled by the resolver with the number Word shows after
- * updating fields.
+ * The REF instruction of a cross-reference, with canonical surrounding
+ * spaces. A number reference carries its number switch, `\w` (full context)
+ * or `\n` (paragraph number); a text reference carries none, so its result
+ * is the bookmarked text. Every form ends with `\h`, a hyperlink to the
+ * bookmark. Each shape names one {@link CrossReferenceSpec} form, so the
+ * instruction alone tells a reader which was written.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
+ */
+export function crossReferenceInstruction(reference: Pick<CrossReferenceSpec, 'bookmark' | 'show' | 'number'>): string {
+  if (reference.show === 'text') return ` REF ${reference.bookmark} \\h `;
+  return ` REF ${reference.bookmark} ${reference.number === 'paragraph' ? '\\n' : '\\w'} \\h `;
+}
+
+/**
+ * A cross-reference: the same complex field over the REF instruction of
+ * {@link crossReferenceInstruction}. The resolver supplies the result with
+ * what Word shows after updating fields: one run holding the target's
+ * number, or a copy of each text run the target's bookmark encloses.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
@@ -72,18 +86,17 @@ function buildCrossReferenceRuns(doc: Document, reference: CrossReferenceSpec, c
   if (!ctx?.crossReferences) {
     throw new GenerationInternalError('A cross-reference reached the run emitter in a story that cannot carry one');
   }
-  const { kind: _kind, bookmark, number = 'fullContext', ...props } = reference;
+  const { kind: _kind, bookmark, show, number, ...props } = reference;
   void _kind;
+  const target = { bookmark, ...(show === undefined ? {} : { show }), ...(number === undefined ? {} : { number }) };
   const instr = createWmlElement(doc, W.instrText);
   instr.setAttribute('xml:space', 'preserve');
-  instr.appendChild(doc.createTextNode(` REF ${bookmark} ${number === 'paragraph' ? '\\n' : '\\w'} \\h `));
-  const result = makeRun(doc, props, ctx);
-  ctx.crossReferences.fill(result, bookmark, number);
+  instr.appendChild(doc.createTextNode(crossReferenceInstruction(target)));
   return [
     makeRun(doc, props, ctx, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'begin' })),
     makeRun(doc, props, ctx, instr),
     makeRun(doc, props, ctx, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'separate' })),
-    result,
+    ...ctx.crossReferences.result(makeRun(doc, props, ctx), target),
     makeRun(doc, props, ctx, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'end' })),
   ];
 }

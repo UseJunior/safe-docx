@@ -27,9 +27,11 @@ export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
  * its content and, like `**` and `*`, keeps the context it sits in; `fnref`
  * places the reference mark of the `{% footnote %}` block with the same id;
  * `xref` places a cross-reference to the heading or list item whose `{% #id %}`
- * it names (`to`), as its full number (`number="full"`, the default) or its
- * own level's number (`number="paragraph"`), optionally preceded by the word
- * "Section " (`format="section"`). A new inline tag needs an entry here, a branch in `visit()` below, a renderer
+ * it names (`to`). It shows the target's number (`show="number"`, the
+ * default): its full number (`number="full"`, the default) or its own level's
+ * number (`number="paragraph"`), optionally preceded by the word "Section "
+ * (`format="section"`). Or it shows the target's text (`show="text"`), which
+ * takes neither `number` nor `format`. A new inline tag needs an entry here, a branch in `visit()` below, a renderer
  * (an engine branch or a creation theme plugin) and, when it changes the text,
  * a case in the round-trip oracle.
  */
@@ -38,8 +40,15 @@ const INLINE_TAGS: Record<string, ReadonlySet<string>> = {
   fill: new Set(),
   u: new Set(),
   fnref: new Set(['id']),
-  xref: new Set(['to', 'number', 'format']),
+  xref: new Set(['to', 'show', 'number', 'format']),
 };
+/**
+ * `{% xref show="…" %}` values: the target's number (a REF field with a number
+ * switch) or its text (a REF field without one). A new form needs an entry
+ * here and its own REF instruction shape, so an import can tell the forms
+ * apart from the instruction alone.
+ */
+export const XREF_SHOWS: ReadonlySet<string> = new Set(['number', 'text']);
 /** `{% xref number="…" %}` values: the full number ("2(b)") or the target level's own ("(b)"). */
 export const XREF_NUMBERS: ReadonlySet<string> = new Set(['full', 'paragraph']);
 /** `{% xref format="…" %}` values: "section" puts the word "Section " before the number. */
@@ -186,12 +195,18 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
   }
   let depth = 0;
   let fillDepth = 0;
+  // Bold, italic or underline around the current node.
+  let formatted = 0;
   const visit = (node: MarkdocNode, literal: boolean): void => {
     switch (node.type) {
       case 'inline':
+        node.children.forEach((child) => visit(child, literal));
+        return;
       case 'strong':
       case 'em':
+        formatted += 1;
         node.children.forEach((child) => visit(child, literal));
+        formatted -= 1;
         return;
       case 'softbreak':
         return;
@@ -229,7 +244,7 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
           return;
         }
         if (node.tag === 'xref') {
-          checkCrossReferenceTag(node, line, literal ? 'literal' : fillDepth > 0 ? 'fill' : null);
+          checkCrossReferenceTag(node, line, literal ? 'literal' : fillDepth > 0 ? 'fill' : null, formatted > 0);
           return;
         }
         if (node.tag === 'fill') {
@@ -243,7 +258,9 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
         }
         if (node.tag === 'u') {
           if (!node.children.map((child) => inlineText(child)).join('')) creationError('INVALID_UNDERLINE', '{% u %} needs text, such as {% u %}Purchase Price{% /u %}.', node, line);
+          formatted += 1;
           node.children.forEach((child) => visit(child, literal));
+          formatted -= 1;
           return;
         }
         node.children.forEach((child) => visit(child, true));
@@ -259,12 +276,22 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
 }
 
 /** One `{% xref /%}`: self-closing, outside literal text and fill-ins, with a well-formed id and options. */
-function checkCrossReferenceTag(node: MarkdocNode, line: number | undefined, inside: 'literal' | 'fill' | null): void {
+function checkCrossReferenceTag(node: MarkdocNode, line: number | undefined, inside: 'literal' | 'fill' | null, formatted = false): void {
   if (node.children.length > 0) creationError('INVALID_CROSS_REFERENCE', '{% xref /%} is self-closing; its text is the target\'s number.', node, line);
   if (inside) creationError('INVALID_CROSS_REFERENCE', `{% xref /%} cannot appear inside {% ${inside} %}.`, node, line);
-  const { to, number, format } = node.attributes;
+  const { to, show, number, format } = node.attributes;
   if (typeof to !== 'string' || !TARGET_ID_RE.test(to)) {
     creationError('INVALID_CROSS_REFERENCE', `{% xref /%} needs to="…" naming a kebab-case id, such as to="purchase-price-adjustment"; got ${JSON.stringify(to ?? null)}.`, node, line);
+  }
+  if (show !== undefined && (typeof show !== 'string' || !XREF_SHOWS.has(show))) {
+    creationError('INVALID_CROSS_REFERENCE', `{% xref /%} show must be "number" or "text", got ${JSON.stringify(show)}.`, node, line);
+  }
+  if (show === 'text' && (number !== undefined || format !== undefined)) {
+    creationError('INVALID_CROSS_REFERENCE', `{% xref show="text" /%} shows the target's text, so it takes no ${number !== undefined ? 'number' : 'format'}; drop it, or use show="number".`, node, line);
+  }
+  if (show === 'text' && formatted) {
+    // Word writes the result as the target's runs with their own formatting when it updates the field.
+    creationError('INVALID_CROSS_REFERENCE', '{% xref show="text" /%} shows the target\'s text with the target\'s formatting, and Word drops bold, italic or underline around it when fields update; move it outside the emphasis.', node, line);
   }
   if (number !== undefined && (typeof number !== 'string' || !XREF_NUMBERS.has(number))) {
     creationError('INVALID_CROSS_REFERENCE', `{% xref /%} number must be "full" or "paragraph", got ${JSON.stringify(number)}.`, node, line);
@@ -615,7 +642,7 @@ function checkHeadingNumbering(children: MarkdocNode[]): void {
  * definition ("Section 1.01", "Section 1.01(a)"); `articleClause` marks such
  * an item directly under an Article, before any Section.
  */
-type TargetSite = { kind: 'heading' | 'numbered' | 'bullet'; line?: number; headingNumbered?: true; articleClause?: true };
+type TargetSite = { kind: 'heading' | 'numbered' | 'bullet'; line?: number; headingNumbered?: true; articleClause?: true; node: MarkdocNode };
 
 /** Which numbered heading a top-level block sits under, with `heading-numbers` on. */
 type HeadingScope = 'none' | 'article' | 'section';
@@ -642,6 +669,7 @@ function collectTargets(node: MarkdocNode, ordered: boolean, line: number | unde
     const numberedByHeading = scope !== 'none' && (kind === 'numbered' || (kind === 'heading' && Number(node.attributes.level) >= 2));
     out.set(id, {
       kind,
+      node,
       ...(here === undefined ? {} : { line: here }),
       ...(numberedByHeading ? { headingNumbered: true as const } : {}),
       ...(numberedByHeading && kind === 'numbered' && scope === 'article' ? { articleClause: true as const } : {}),
@@ -652,14 +680,15 @@ function collectTargets(node: MarkdocNode, ordered: boolean, line: number | unde
 }
 
 /** Every `{% xref /%}` under `node`, in document order, with the line of its nearest block. */
-type CrossReferenceSite = { to: string; number?: string; format?: string; line?: number };
+type CrossReferenceSite = { to: string; show?: string; number?: string; format?: string; line?: number };
 
 function collectCrossReferences(node: MarkdocNode, line: number | undefined, out: CrossReferenceSite[]): void {
   const here = lineOf(node) ?? line;
   if (node.type === 'tag' && node.tag === 'xref') {
-    const { number, format } = node.attributes;
+    const { show, number, format } = node.attributes;
     out.push({
       to: String(node.attributes.to),
+      ...(show === undefined ? {} : { show: String(show) }),
       ...(number === undefined ? {} : { number: String(number) }),
       ...(format === undefined ? {} : { format: String(format) }),
       ...(here === undefined ? {} : { line: here }),
@@ -681,6 +710,44 @@ function collectCrossReferences(node: MarkdocNode, line: number | undefined, out
  * "ARTICLE III(a)" in Word but "Section 3.01(a)" in LibreOffice, which
  * recalculates the field and shows the Section level at its start value.
  */
+/**
+ * The content of a heading or list item that a text reference shows: the
+ * item's own paragraph, without its nested lists.
+ */
+function targetContent(target: MarkdocNode): MarkdocNode[] {
+  return target.type === 'item' ? target.children.filter((child) => child.type !== 'list') : target.children;
+}
+
+function holdsTag(node: MarkdocNode, tag: string): boolean {
+  return (node.type === 'tag' && node.tag === tag) || node.children.some((child) => holdsTag(child, tag));
+}
+
+function holdsType(node: MarkdocNode, type: string): boolean {
+  return node.type === type || node.children.some((child) => holdsType(child, type));
+}
+
+/**
+ * A text reference shows its target's text, so any heading or list item may
+ * be its target, numbered or not. The target may hold text, emphasis, fills
+ * and footnote references (Word leaves the reference mark out of the
+ * result); a cross-reference or a line break in it is refused, because what
+ * Word shows for one inside a REF result is not measured, and a target
+ * without text would show nothing.
+ */
+function checkTextReferenceTarget(reference: CrossReferenceSite, target: TargetSite): void {
+  const content = targetContent(target.node);
+  const fail = (why: string) => creationError(
+    'XREF_TEXT_TARGET_UNSUPPORTED',
+    `{% xref to="${reference.to}" show="text" /%} names a target (line ${target.line ?? '?'}) that ${why}.`,
+    undefined,
+    reference.line,
+  );
+  if (content.some((node) => holdsTag(node, 'xref'))) fail('holds a cross-reference; a text reference shows text only, so point it at a target without one');
+  if (content.some((node) => holdsType(node, 'hardbreak'))) fail('holds a line break; a text reference shows one line of text');
+  const text = content.map((node) => inlineText(node).replace(/\[xref\]/gu, '')).join('');
+  if (!text.trim()) fail('has no text to show');
+}
+
 function checkCrossReferenceTargets(children: MarkdocNode[], headingNumbers = false): void {
   const targets = new Map<string, TargetSite>();
   let scope: HeadingScope = 'none';
@@ -701,6 +768,10 @@ function checkCrossReferenceTargets(children: MarkdocNode[], headingNumbers = fa
     const target = targets.get(reference.to);
     if (!target) {
       creationError('XREF_UNKNOWN_ID', `{% xref to="${reference.to}" /%} names no {% #${reference.to} %} target.`, undefined, reference.line);
+    }
+    if (reference.show === 'text') {
+      checkTextReferenceTarget(reference, target);
+      continue;
     }
     if (target.kind !== 'numbered' && !target.headingNumbered) {
       creationError(

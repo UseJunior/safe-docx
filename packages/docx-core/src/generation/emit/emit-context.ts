@@ -13,7 +13,7 @@ import { resolveReferenceNumber, type NumberingModel } from '../../primitives/nu
 import { computeParagraphListLabels, type ParagraphListLabel } from '../../primitives/paragraph_list_numbering.js';
 import type { StylesModel } from '../../primitives/styles.js';
 import { GenerationInternalError, GenerationSpecError } from '../errors.js';
-import type { CrossReferenceNumber, DraftingNoteSpec, FootnoteSpec, ThemeColorSlot } from '../types.js';
+import type { CrossReferenceSpec, DraftingNoteSpec, FootnoteSpec, ThemeColorSlot } from '../types.js';
 
 /** Spec-level numbering handle → numeric w:numId value. */
 export type NumberingIdMap = ReadonlyMap<string, number>;
@@ -60,6 +60,15 @@ export class FootnoteCollector {
   }
 }
 
+/** What a cross-reference's cached result depends on: its bookmark, what it shows and its number form. */
+export type CrossReferenceTarget = Pick<CrossReferenceSpec, 'bookmark' | 'show' | 'number'>;
+
+/**
+ * What the resolver knows of each bookmark's paragraph once the body is
+ * built: its list label, and the text runs the bookmark encloses.
+ */
+type BookmarkTarget = { label: ParagraphListLabel | null; textRuns: Element[] };
+
 /**
  * Bookmarks and cross-reference results for one compile.
  *
@@ -71,8 +80,8 @@ export class FootnoteCollector {
  * resolved numbers directly.
  */
 export class CrossReferenceResolver {
-  private readonly pending: Array<{ run: Element; bookmark: string; number: CrossReferenceNumber }> = [];
-  private targets: Map<string, ParagraphListLabel | null> | null = null;
+  private readonly pending: Array<{ placeholder: Element; reference: CrossReferenceTarget }> = [];
+  private targets: Map<string, BookmarkTarget> | null = null;
 
   constructor(
     readonly ids: AnnotationIdAllocator,
@@ -87,18 +96,24 @@ export class CrossReferenceResolver {
   }
 
   /**
-   * Put the cached result into `run` (an empty result run of a REF field):
-   * now if the body has been resolved, else when it is.
+   * The result runs of a REF field. `run` is an empty run carrying the
+   * reference's formatting. A number reference's result is that run holding
+   * the number. A text reference's result is a copy of each text run its
+   * target's bookmark encloses, with that run's own formatting, which is the
+   * result Word writes when it updates the field. Before the body is
+   * resolved, `run` stands in and is filled or replaced once it is.
    */
-  fill(run: Element, bookmark: string, number: CrossReferenceNumber): void {
-    if (this.targets) run.appendChild(createWmlTextElement(run.ownerDocument!, this.resultFor(bookmark, number)));
-    else this.pending.push({ run, bookmark, number });
+  result(run: Element, reference: CrossReferenceTarget): Element[] {
+    if (this.targets) return this.resultRuns(run, reference);
+    this.pending.push({ placeholder: run, reference });
+    return [run];
   }
 
   /**
    * Number the finished body (every paragraph, table cells included, in
    * document order, so each list advances as Word counts it), find each
-   * bookmark's paragraph, and fill the recorded body results.
+   * bookmark's paragraph and the text it encloses, and fill the recorded body
+   * results.
    */
   resolveBody(body: Element): void {
     const paragraphs = Array.from(body.getElementsByTagNameNS(OOXML.W_NS, W.p));
@@ -109,16 +124,44 @@ export class CrossReferenceResolver {
       if (!paragraph || paragraph.localName !== W.p) {
         throw new GenerationInternalError('A generated bookmark does not sit directly in its paragraph');
       }
-      this.targets.set(start.getAttributeNS(OOXML.W_NS, 'name') ?? '', labels.get(paragraph) ?? null);
+      this.targets.set(start.getAttributeNS(OOXML.W_NS, 'name') ?? '', { label: labels.get(paragraph) ?? null, textRuns: bookmarkedTextRuns(start) });
     }
-    for (const { run, bookmark, number } of this.pending.splice(0)) this.fill(run, bookmark, number);
+    for (const { placeholder, reference } of this.pending.splice(0)) {
+      const runs = this.resultRuns(placeholder, reference);
+      if (runs.length === 1 && runs[0] === placeholder) continue;
+      const parent = placeholder.parentNode;
+      if (!parent) throw new GenerationInternalError('A cross-reference result run is not in the body');
+      for (const run of runs) parent.insertBefore(run, placeholder);
+      parent.removeChild(placeholder);
+    }
   }
 
-  private resultFor(bookmark: string, number: CrossReferenceNumber): string {
-    const label = this.targets!.get(bookmark);
-    if (label === undefined) {
+  private target(bookmark: string): BookmarkTarget {
+    const target = this.targets!.get(bookmark);
+    if (target === undefined) {
       throw new GenerationInternalError(`Cross-reference to bookmark '${bookmark}' reached resolution without a target`);
     }
+    return target;
+  }
+
+  /**
+   * Validation admits only text runs and footnote references in a text
+   * reference's target and refuses a blank one, and refuses run formatting
+   * on the reference itself: Word replaces the result with the target's
+   * runs, each keeping its own formatting.
+   */
+  private resultRuns(run: Element, reference: CrossReferenceTarget): Element[] {
+    if (reference.show === 'text') {
+      const doc = run.ownerDocument!;
+      return this.target(reference.bookmark).textRuns.map((source) => doc.importNode(source, true) as Element);
+    }
+    run.appendChild(createWmlTextElement(run.ownerDocument!, this.numberFor(reference)));
+    return [run];
+  }
+
+  private numberFor(reference: CrossReferenceTarget): string {
+    const { bookmark } = reference;
+    const { label } = this.target(bookmark);
     const path = `${this.bookmarkPaths.get(bookmark) ?? ''}/bookmark`;
     if (label === null) {
       throw new GenerationSpecError(
@@ -127,7 +170,7 @@ export class CrossReferenceResolver {
         `Bookmark '${bookmark}' is on a paragraph without a list number, so a cross-reference to it would show 0 in Word`,
       );
     }
-    const result = resolveReferenceNumber(this.numbering, label, number === 'paragraph' ? 'paragraph' : 'fullContext');
+    const result = resolveReferenceNumber(this.numbering, label, reference.number === 'paragraph' ? 'paragraph' : 'fullContext');
     if ('refused' in result) {
       const reasons: Record<typeof result.refused, string> = {
         unusedLevel:
@@ -146,6 +189,24 @@ export class CrossReferenceResolver {
     }
     return text;
   }
+}
+
+/**
+ * The text runs a generated bookmark encloses: the runs holding a `w:t`
+ * between its start and its end, which sit in one paragraph. A list label is
+ * not paragraph content, and a footnote reference run holds no `w:t`, so
+ * neither is part of a text reference's result, as Word leaves both out.
+ */
+function bookmarkedTextRuns(start: Element): Element[] {
+  const id = start.getAttributeNS(OOXML.W_NS, 'id');
+  const runs: Element[] = [];
+  for (let node = start.nextSibling; node; node = node.nextSibling) {
+    if (node.nodeType !== 1) continue;
+    const element = node as Element;
+    if (element.localName === W.bookmarkEnd && element.getAttributeNS(OOXML.W_NS, 'id') === id) return runs;
+    if (element.localName === W.r && element.getElementsByTagNameNS(OOXML.W_NS, W.t).length > 0) runs.push(element);
+  }
+  throw new GenerationInternalError('A generated bookmark does not end in its paragraph');
 }
 
 export type BlockEmitContext = {

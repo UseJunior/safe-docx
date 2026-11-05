@@ -30,6 +30,11 @@ import { parseCreationFrontmatter } from './validate.js';
  *   dropped (`2`, `2(b)`, `2(b)(ii)`); `number="paragraph"` shows the item's
  *   own number (`\n`: `2`, `(b)`, `(ii)`); `format="section"` puts
  *   `Section ` before it;
+ * - a `{% xref to="id" show="text" /%}` shows the text of the heading or
+ *   list item marked `{% #id %}` (a REF field with no number switch): its
+ *   inline text as this walker reads it, a fill in its brackets, without its
+ *   number, without its footnote reference marks, and without the
+ *   whitespace the `{% #id %}` annotation leaves at its end;
  * - with frontmatter `heading-numbers: legal`, each `##` heading is labelled
  *   `ARTICLE I`, `ARTICLE II`, … and each `###` `Section <article>.<nn>`
  *   (`Section 2.04`), restarting under each Article; an ordered list under
@@ -84,11 +89,11 @@ export type SourceProjection = {
    * the order of the notes. Absent when the source has none.
    */
   crossReferences?: SourceCrossReference[];
-  /** The text of each numbered list item or numbered heading marked `{% #id %}`, by id: what its bookmark must hold. */
+  /** The text of each list item or heading marked `{% #id %}`, by id: what its bookmark must hold. */
   crossReferenceTargets?: Record<string, string>;
   /**
    * Every `{% xref /%}` tag in the source, found by walking the whole syntax
-   * tree rather than the text walker, as `to|number`, sorted. A tag the text
+   * tree rather than the text walker, as `to|full`, `to|paragraph` or `to|text`, sorted. A tag the text
    * walker never reaches is missing from `crossReferences` but not from here.
    */
   crossReferenceInventory?: string[];
@@ -100,9 +105,22 @@ export type SourceProjection = {
   footnoteReferenceInventory?: string[];
 }
 
-/** Every `{% xref /%}` tag under `node`, as `to|number`. */
+/** What an `{% xref /%}` tag shows, as one word: its number in full, its paragraph number, or its target's text. */
+export type CrossReferenceForm = 'full' | 'paragraph' | 'text';
+
+function xrefForm(node: MarkdocNode): CrossReferenceForm {
+  if (node.attributes.show === 'text') return 'text';
+  return node.attributes.number === 'paragraph' ? 'paragraph' : 'full';
+}
+
+/** The form of a cross-reference as written in the source. */
+export function sourceCrossReferenceForm(xref: Pick<SourceCrossReference, 'show' | 'number'>): CrossReferenceForm {
+  return xref.show === 'text' ? 'text' : xref.number;
+}
+
+/** Every `{% xref /%}` tag under `node`, as `to|form`. */
 function xrefInventory(node: MarkdocNode): string[] {
-  const own = node.type === 'tag' && node.tag === 'xref' ? [`${String(node.attributes.to)}|${node.attributes.number === 'paragraph' ? 'paragraph' : 'full'}`] : [];
+  const own = node.type === 'tag' && node.tag === 'xref' ? [`${String(node.attributes.to)}|${xrefForm(node)}`] : [];
   return [...own, ...node.children.flatMap(xrefInventory)];
 }
 
@@ -113,16 +131,17 @@ function fnrefInventory(node: MarkdocNode): string[] {
 }
 
 /**
- * A cross-reference as written in the source, and where its number sits: in
- * `body[entry].text`, or in paragraph `paragraph` of the note numbered
- * `note`, at `offset`, `length` characters long.
+ * A cross-reference as written in the source, and where what it shows sits:
+ * in `body[entry].text`, or in paragraph `paragraph` of the note numbered
+ * `note`, at `offset`, `length` characters long. `show` is what it shows;
+ * `number` is the number form, and stays `'full'` for a text reference.
  */
-export type SourceCrossReference = { to: string; number: 'full' | 'paragraph'; offset: number; length: number } & (
+export type SourceCrossReference = { to: string; show: 'number' | 'text'; number: 'full' | 'paragraph'; offset: number; length: number } & (
   | { story: 'body'; entry: number }
   | { story: 'footnote'; note: number; paragraph: number }
 );
 
-/** Stands in for an `{% xref /%}`'s number inside walker text until it is scanned: target, form, then the number. */
+/** Stands in for an `{% xref /%}`'s result inside walker text until it is scanned: target, form, then what it shows. */
 const XREF_OPEN = '\u0004';
 const XREF_NUMBER = '\u0005';
 const XREF_CLOSE = '\u0006';
@@ -130,7 +149,7 @@ const XREF_CLOSE = '\u0006';
 type ScannedText = {
   text: string;
   footnotes: Array<{ offset: number; id: string }>;
-  xrefs: Array<{ to: string; number: 'full' | 'paragraph'; offset: number; length: number }>;
+  xrefs: Array<{ to: string; show: 'number' | 'text'; number: 'full' | 'paragraph'; offset: number; length: number }>;
 };
 
 /** Remove the footnote and cross-reference stand-ins from walker text, recording where each sat. */
@@ -149,9 +168,9 @@ function scanMarks(raw: string): ScannedText {
       at = close + 1;
     } else if (xrefClose !== -1) {
       const close = xrefClose;
-      const [to = '', number = 'full'] = raw.slice(at + 1, middle).split('|');
+      const [to = '', form = 'full'] = raw.slice(at + 1, middle).split('|');
       const shown = raw.slice(middle + 1, close);
-      out.xrefs.push({ to, number: number === 'paragraph' ? 'paragraph' : 'full', offset: out.text.length, length: shown.length });
+      out.xrefs.push({ to, show: form === 'text' ? 'text' : 'number', number: form === 'paragraph' ? 'paragraph' : 'full', offset: out.text.length, length: shown.length });
       out.text += shown;
       at = close + 1;
     } else {
@@ -232,20 +251,41 @@ function lineOf(node: MarkdocNode): number | undefined {
   return start === undefined ? undefined : start + 1;
 }
 
-/** What a cross-reference to each `{% #id %}` list item shows, by number form. */
-type CrossReferenceTexts = ReadonlyMap<string, { full: string; paragraph: string }>;
+/** What a cross-reference to each `{% #id %}` target shows: its number in each form when it has one, and its text. */
+type CrossReferenceText = { full?: string; paragraph?: string; text: string };
+type CrossReferenceTexts = ReadonlyMap<string, CrossReferenceText>;
+
+/**
+ * The text a text reference to a heading or list item shows: the node's own
+ * inline content (an item's, without its nested lists) read by this walker,
+ * less footnote reference marks and the whitespace an `{% #id %}` annotation
+ * leaves at the end. Validation refuses a text target holding an xref, so the
+ * walker needs no reference texts here.
+ */
+function targetText(node: MarkdocNode): string {
+  const content = node.type === 'item' ? node.children.filter((child) => child.type !== 'list') : [node];
+  return scanMarks(content.map((child) => inlineText(child)).join('').replace(/\s+$/u, '')).text;
+}
 
 /**
  * Number every ordered list item and numbered heading that carries an id, by
  * the same contract as the markers: each top-level list counts on its own
  * from its first marker, nested lists from 1, and a list under a numbered
- * heading numbers its clauses after that heading's label.
+ * heading numbers its clauses after that heading's label. Every heading and
+ * list item with an id, numbered or not, also gets its text.
  */
-function crossReferenceTexts(ast: MarkdocNode, reader: ProjectionReader): Map<string, { full: string; paragraph: string }> {
-  const texts = new Map<string, { full: string; paragraph: string }>();
+function crossReferenceTexts(ast: MarkdocNode, reader: ProjectionReader): Map<string, CrossReferenceText> {
+  const texts = new Map<string, CrossReferenceText>();
   const { headings, clauseContext } = headingLabels(ast);
   const visit = (list: MarkdocNode, ancestors: readonly number[], context: string | undefined) => {
-    if (list.attributes.ordered !== true) return;
+    if (list.attributes.ordered !== true) {
+      // Bullets show no number; a text reference may still name one.
+      for (const item of list.children) {
+        if (item.attributes.id !== undefined) texts.set(String(item.attributes.id), { text: targetText(item) });
+        for (const child of item.children) if (child.type === 'list') visit(child, [], undefined);
+      }
+      return;
+    }
     const depth = ancestors.length;
     let n = depth === 0 && Number.isInteger(list.attributes.start) ? Number(list.attributes.start) : 1;
     for (const item of list.children) {
@@ -262,15 +302,17 @@ function crossReferenceTexts(ast: MarkdocNode, reader: ProjectionReader): Map<st
         full = reader === 'libreoffice' && depth > 0 ? `${own[0]}.${own.slice(1).join('')}` : own.join('');
         paragraph = own[depth]!;
       }
-      if (item.attributes.id !== undefined) texts.set(String(item.attributes.id), { full, paragraph });
+      if (item.attributes.id !== undefined) texts.set(String(item.attributes.id), { full, paragraph, text: targetText(item) });
       for (const child of item.children) if (child.type === 'list') visit(child, values, context);
       n += 1;
     }
   };
   for (const node of ast.children) {
     if (node.type === 'list') visit(node, [], clauseContext.get(node));
-    const label = headings.get(node);
-    if (label !== undefined && node.attributes.id !== undefined) texts.set(String(node.attributes.id), { full: label, paragraph: label });
+    if (node.type === 'heading' && node.attributes.id !== undefined) {
+      const label = headings.get(node);
+      texts.set(String(node.attributes.id), { ...(label === undefined ? {} : { full: label, paragraph: label }), text: targetText(node) });
+    }
   }
   return texts;
 }
@@ -286,10 +328,11 @@ function inlineText(node: MarkdocNode, references: CrossReferenceTexts = new Map
       if (node.tag === 'fnref') return `${REFERENCE_OPEN}${String(node.attributes.id ?? '')}${REFERENCE_CLOSE}`;
       if (node.tag === 'xref') {
         const target = references.get(String(node.attributes.to));
-        const number = node.attributes.number === 'paragraph' ? target?.paragraph : target?.full;
+        const form = xrefForm(node);
+        const shown = form === 'text' ? target?.text : form === 'paragraph' ? target?.paragraph : target?.full;
         // Validation rejects a dangling target before the oracle runs; an empty
         // expectation here would only make the comparison fail, never pass.
-        return `${node.attributes.format === 'section' ? 'Section ' : ''}${XREF_OPEN}${String(node.attributes.to)}|${node.attributes.number === 'paragraph' ? 'paragraph' : 'full'}${XREF_NUMBER}${number ?? ''}${XREF_CLOSE}`;
+        return `${form !== 'text' && node.attributes.format === 'section' ? 'Section ' : ''}${XREF_OPEN}${String(node.attributes.to)}|${form}${XREF_NUMBER}${shown ?? ''}${XREF_CLOSE}`;
       }
       return children();
     default: return children();
@@ -357,7 +400,7 @@ export function projectSourceText(source: string, options: { reader?: Projection
         if (child.type === 'list') listItems(child, depth + 1, clauses);
         else {
           const itemText = textOf(child);
-          if (ordered && item.attributes.id !== undefined) targets[String(item.attributes.id)] = scanMarks(itemText).text;
+          if (item.attributes.id !== undefined) targets[String(item.attributes.id)] = scanMarks(itemText).text;
           push(itemText, item, { marker: clauses && ordered ? clauseMarker(depth, n) : listMarker(ordered, depth, n) });
         }
       }
@@ -411,7 +454,7 @@ export function projectSourceText(source: string, options: { reader?: Projection
     else {
       const label = headings.get(node);
       const text = textOf(node);
-      if (label !== undefined && node.attributes.id !== undefined) targets[String(node.attributes.id)] = scanMarks(text).text;
+      if (node.type === 'heading' && node.attributes.id !== undefined) targets[String(node.attributes.id)] = scanMarks(text).text;
       push(text, node, label === undefined ? {} : { marker: label });
     }
   }

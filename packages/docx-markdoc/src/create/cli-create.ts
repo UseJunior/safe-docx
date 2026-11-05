@@ -4,7 +4,7 @@ import path from 'node:path';
 import { renderPlainPdf, type PlainPdfVerdict } from '../pdf/plain-render.js';
 import type { PdfRenderTools } from '../pdf/tools.js';
 import { DocxMarkdocError } from '../errors.js';
-import { createDocumentFromMarkdoc, type CreatedDocument } from './create.js';
+import { createDocumentFromMarkdoc, type CreatedDocument, type CrossReferenceCheck } from './create.js';
 import { PAGE_FIELD_TOKEN } from './lower.js';
 import { comparePdfWords, projectSourceText, type PdfWordComparison } from './oracle.js';
 
@@ -99,7 +99,10 @@ function paragraphsAsLibreOfficeRenders(readback: CreatedDocument['readback']): 
   const inserts = new Map<number, Array<{ offset: number; text: string }>>();
   const add = (paragraph: number, offset: number, text: string) => inserts.set(paragraph, [...(inserts.get(paragraph) ?? []), { offset, text }]);
   readback.footnoteReferences.forEach(({ paragraph, offset }, index) => add(paragraph, offset, String(index + 1)));
-  for (const { paragraph, offset, text } of readback.crossReferences ?? []) {
+  for (const { paragraph, offset, text, instruction } of readback.crossReferences ?? []) {
+    // Only a full-context number has the period; a text reference shows its
+    // target's text, which may itself start with "401(k)".
+    if (!/\\w\b/u.test(instruction)) continue;
     const leadingNumber = /^\d+(?=\()/u.exec(text);
     if (leadingNumber) add(paragraph, offset + leadingNumber[0].length, '.');
   }
@@ -321,6 +324,26 @@ const plural = (count: number, noun: string): string => `${count} ${noun}${count
  * The negative controls of a check, for the summary line. A control that is not applicable, or (should a caller
  * summarize a failed check) one that went undetected, is named with its status rather than counted as ok.
  */
+/**
+ * The cross-references entry of the CLI summary. With text references it
+ * counts them apart from number references and names the text-extent
+ * control; without, it reads as before.
+ */
+export function crossReferenceSummary(check: CrossReferenceCheck): string {
+  const { references, negativeControls } = check;
+  const text = references.text;
+  const counts = text > 0
+    ? `${plural(references.actual, 'reference')}: ${references.actual - text} number, ${text} text`
+    : plural(references.actual, 'reference');
+  const controls = {
+    'changed switch': negativeControls.switchChanged,
+    retargeted: negativeControls.retargeted,
+    moved: negativeControls.moved,
+    ...(text > 0 ? { 'text extent': negativeControls.textExtent } : {}),
+  };
+  return `cross-references ok (${counts}; ${controlsSummary(controls)})`;
+}
+
 export function controlsSummary(controls: Record<string, boolean | 'not applicable'>): string {
   const names = Object.keys(controls);
   const noun = names.length === 1 ? 'negative control' : 'negative controls';
@@ -534,9 +557,7 @@ async function createLocked(
       ...(checks.footnotes.notes > 0 || checks.footnotes.references.expected > 0
         ? [`footnotes ok (${plural(checks.footnotes.notes, 'note')}, ${plural(checks.footnotes.references.actual, 'reference')}; ${controlsSummary({ 'note text': checks.footnotes.negativeControlDetected, 'dropped reference': checks.footnotes.references.negativeControlDetected })})`]
         : []),
-      ...(checks.crossReferences
-        ? [`cross-references ok (${plural(checks.crossReferences.references.actual, 'reference')}; ${controlsSummary({ 'changed switch': checks.crossReferences.negativeControls.switchChanged, retargeted: checks.crossReferences.negativeControls.retargeted, moved: checks.crossReferences.negativeControls.moved })})`]
-        : []),
+      ...(checks.crossReferences ? [crossReferenceSummary(checks.crossReferences)] : []),
       'deterministic',
       `brownfield ok (${checks.brownfield.anchoredParagraphs} anchored)`,
       `round trip ok (${checks.roundTrip.body.expected} paragraphs; negative controls ok)`,

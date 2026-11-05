@@ -154,6 +154,20 @@ export type ParagraphSpec = {
    * only letters, digits and underscores (`bookmarkNameForSlug` maps a
    * kebab-case id to one). Names are unique in the document, compared without
    * regard to case. Body story only, table cells included.
+   *
+   * The bookmark encloses every run of the paragraph and stops before its
+   * paragraph mark: the extent Word gives a heading's own bookmark (Word's
+   * Insert > Cross-reference to that heading's text reuses it). What a Word
+   * user's edit does to it, measured in Word 16.114 (#1259): text typed at
+   * the start of the paragraph, or inside it, stays inside the bookmark, so
+   * a text reference follows it. Text typed at the very end of the
+   * paragraph lands after the bookmark, and so does a word typed over the
+   * paragraph's last word, so a text reference keeps showing the old text
+   * (or loses the replaced word). Selecting the whole text and typing over it deletes the
+   * bookmark, and every reference to it then shows "Error! Reference source
+   * not found." when fields update. Ending the bookmark after the paragraph
+   * mark would not help: a text reference would then carry the mark and
+   * restyle its own paragraph (§ 17.16.5.51).
    */
   bookmark?: string;
   runs: InlineSpec[];
@@ -227,16 +241,27 @@ export type FieldSpec = {
 } & RunProps;
 
 /**
- * A cross-reference to a numbered paragraph: a `REF <bookmark> \w \h`
- * field (or `\n` for `number: 'paragraph'`) that Word renumbers when fields
- * are updated and that Ctrl-click follows to the target.
+ * A cross-reference to a bookmarked paragraph: a REF field that Word
+ * recomputes when fields are updated and that Ctrl-click follows to the
+ * target. It shows one of two things ({@link CrossReferenceShow}):
  *
- * The compiler sets the cached result to the number Word shows after
- * updating fields, so the document reads correctly before any update:
- * `fullContext` gives the number with its context ("Section 2.06(b)",
- * "2(b)"), `paragraph` the target's own level text ("(b)"), each less a
- * trailing period. The target must be a numbered paragraph whose number
- * depends only on levels the list has used; otherwise generation fails.
+ * - `show: 'number'` (the default): the target's list number, as
+ *   `REF <bookmark> \w \h` (or `\n` for `number: 'paragraph'`). The cached
+ *   result is the number Word shows after updating fields: `fullContext`
+ *   gives the number with its context ("Section 2.06(b)", "2(b)"),
+ *   `paragraph` the target's own level text ("(b)"), each less a trailing
+ *   period. The target must be a numbered paragraph whose number depends
+ *   only on levels the list has used; otherwise generation fails.
+ * - `show: 'text'`: the target's bookmarked text, as `REF <bookmark> \h`
+ *   with no number switch, the instruction Word's Insert > Cross-reference
+ *   writes for "Bookmark text". The cached result is a copy of the target
+ *   paragraph's text runs, each with its own formatting, which is what Word
+ *   writes when it updates the field. The list label is not part of it, nor
+ *   is a footnote reference mark, so a reference to "Section 1.01 Purchase
+ *   Price." shows "Purchase Price.". `number` does not apply, and the
+ *   reference carries no run formatting of its own (Word would replace it
+ *   with the target's). The target paragraph may hold text runs and
+ *   footnote references only, and its text may not be blank.
  *
  * Allowed in the body story (table cells included) and in footnotes; not in
  * headers or footers.
@@ -245,11 +270,22 @@ export type CrossReferenceSpec = {
   kind: 'crossReference';
   /** The `bookmark` of a body paragraph. */
   bookmark: string;
-  /** Defaults to 'fullContext' (`\w`); 'paragraph' is `\n`. */
+  /** Defaults to 'number'. */
+  show?: CrossReferenceShow;
+  /** For `show: 'number'`: defaults to 'fullContext' (`\w`); 'paragraph' is `\n`. */
   number?: CrossReferenceNumber;
 } & RunProps;
 
-/** The number a cross-reference shows; see {@link CrossReferenceSpec}. */
+/**
+ * What a cross-reference shows; see {@link CrossReferenceSpec}. Each value is
+ * one REF instruction shape, so a reader can tell them apart: a number switch
+ * (`\w`, `\n`) for 'number', none for 'text'.
+ */
+export const CROSS_REFERENCE_SHOWS = ['number', 'text'] as const;
+
+export type CrossReferenceShow = (typeof CROSS_REFERENCE_SHOWS)[number];
+
+/** The number a number cross-reference shows; see {@link CrossReferenceSpec}. */
 export const CROSS_REFERENCE_NUMBERS = ['fullContext', 'paragraph'] as const;
 
 export type CrossReferenceNumber = (typeof CROSS_REFERENCE_NUMBERS)[number];

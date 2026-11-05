@@ -103,8 +103,12 @@ function paragraphsOf(blocks: BlockSpec[]): ParagraphSpec[] {
   return blocks.filter((block): block is ParagraphSpec => block.kind === 'paragraph');
 }
 
-/** The text a cross-reference to a bookmark shows, by number form. */
-type ReferenceTexts = ReadonlyMap<string, { full: string; paragraph: string }>;
+/**
+ * What a cross-reference to a bookmark shows: its number in each form (for a
+ * numbered target) and its text (for every target).
+ */
+type ReferenceText = { full?: string; paragraph?: string; text: string };
+type ReferenceTexts = ReadonlyMap<string, ReferenceText>;
 
 function runText(runs: InlineSpec[], references: ReferenceTexts = new Map()): string {
   return runs.map((run) => {
@@ -113,9 +117,10 @@ function runText(runs: InlineSpec[], references: ReferenceTexts = new Map()): st
     if (run.kind === 'break') return '\n';
     if (run.kind === 'footnote') return '';
     if (run.kind === 'crossReference') {
-      const text = references.get(run.bookmark);
-      if (!text) throw new Error(`cross-reference to '${run.bookmark}' has no numbered target in the lowering`);
-      return run.number === 'paragraph' ? text.paragraph : text.full;
+      const target = references.get(run.bookmark);
+      const shown = run.show === 'text' ? target?.text : run.number === 'paragraph' ? target?.paragraph : target?.full;
+      if (shown === undefined) throw new Error(`cross-reference to '${run.bookmark}' has no ${run.show === 'text' ? 'target' : 'numbered target'} in the lowering`);
+      return shown;
     }
     return PAGE_FIELD_TOKEN;
   }).join('');
@@ -154,7 +159,7 @@ function headingReferenceText(values: readonly number[], ilvl: number, sectionNu
 }
 
 /**
- * What each bookmarked numbered paragraph's cross-references show, counted
+ * What each bookmarked paragraph's cross-references show: its text runs, and for a numbered paragraph its number, counted
  * from the lowering's own lists and numbered headings. Each ordered list
  * numbers `1.`, `(a)`, `(i)` and restarts deeper levels under a new item.
  * Word shows the full number as "2", "2(b)", "2(b)(ii)" (the period before
@@ -170,7 +175,7 @@ function headingReferenceText(values: readonly number[], ilvl: number, sectionNu
  * paragraph style's link to a level (`w:pStyle`), so it counts on that level
  * although it carries no `list` of its own.
  */
-function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSpec[]): Map<string, { full: string; paragraph: string }> {
+function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSpec[]): Map<string, ReferenceText> {
   const instances = new Map<string, { definition: NumberingSpec; overrides: ReadonlyMap<number, number> }>();
   const styleLinks = new Map<string, { numId: string; ilvl: number }>();
   for (const definition of numbering) {
@@ -184,13 +189,16 @@ function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSp
   const usedLevels = new Map<string, Set<number>>();
   // Per heading definition: whether a Section has been numbered since the current Article began.
   const sectionSinceArticle = new Map<string, boolean>();
-  const texts = new Map<string, { full: string; paragraph: string }>();
+  const texts = new Map<string, ReferenceText>();
   const visit = (blocks: BlockSpec[]) => {
     for (const block of blocks) {
       if (block.kind === 'table') {
         for (const row of block.rows) for (const cell of row.cells) visit(cell.blocks);
         continue;
       }
+      // A text reference shows the paragraph's text runs; the list label and
+      // any footnote reference mark are not part of it.
+      if (block.bookmark !== undefined) texts.set(block.bookmark, { text: runText(block.runs.filter((run) => run.kind === 'text')) });
       const list = block.list ?? (block.styleId === undefined ? undefined : styleLinks.get(block.styleId));
       if (!list) continue;
       const { numId, ilvl } = list;
@@ -208,12 +216,12 @@ function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSp
       if (ilvl < HEADING_CLAUSE_ILVL) sectionSinceArticle.set(definition.numId, ilvl === 1);
       if (block.bookmark === undefined) continue;
       if (levels[0]!.pStyle !== undefined) {
-        texts.set(block.bookmark, headingReferenceText(values, ilvl, sectionSinceArticle.get(definition.numId) === true));
+        texts.set(block.bookmark, { ...texts.get(block.bookmark)!, ...headingReferenceText(values, ilvl, sectionSinceArticle.get(definition.numId) === true) });
         continue;
       }
       if (levels[0]!.numFmt !== 'decimal') continue;
       const own = [String(values[0]), `(${letters(values[1]!)})`, `(${roman(values[2]!)})`];
-      texts.set(block.bookmark, { full: own.slice(0, ilvl + 1).join(''), paragraph: own[ilvl]! });
+      texts.set(block.bookmark, { ...texts.get(block.bookmark)!, full: own.slice(0, ilvl + 1).join(''), paragraph: own[ilvl]! });
     }
   };
   for (const section of sections) visit(section.blocks);

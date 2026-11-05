@@ -17,12 +17,13 @@ export {
   isWordBookmarkName,
   type BookmarkNameErrorCode,
 } from './bookmark-names.js';
-export { CROSS_REFERENCE_NUMBERS } from './types.js';
+export { CROSS_REFERENCE_NUMBERS, CROSS_REFERENCE_SHOWS } from './types.js';
 export type {
   BlockSpec,
   BorderSpec,
   BreakSpec,
   CrossReferenceNumber,
+  CrossReferenceShow,
   CrossReferenceSpec,
   DocumentDefaultsSpec,
   DocumentMetaSpec,

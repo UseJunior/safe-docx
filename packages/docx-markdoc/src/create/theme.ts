@@ -319,20 +319,25 @@ export function creationPlugins(
     },
     {
       // A REF field to the target's bookmark; docx-core sets its cached
-      // result. "Section " is plain text before the field, so updating the
-      // field never removes it.
+      // result: the target's number, or with show="text" its text runs.
+      // "Section " is plain text before the field, so updating the field
+      // never removes it. A text reference carries no formatting of its own:
+      // Word writes its result with the target's formatting (validation
+      // refuses emphasis around one; a bold table header row does not bold it).
       tag: 'xref',
-      renderInline: (node, _api, style) => [
-        ...(node.attributes.format === 'section' ? theme.renderText('Section ', style) : []),
-        {
-          kind: 'crossReference',
-          bookmark: bookmarkNameForSlug(String(node.attributes.to)),
-          number: node.attributes.number === 'paragraph' ? 'paragraph' : 'fullContext',
+      renderInline: (node, _api, style) => {
+        const bookmark = bookmarkNameForSlug(String(node.attributes.to));
+        if (node.attributes.show === 'text') return [{ kind: 'crossReference', bookmark, show: 'text' }];
+        const formatting = {
           ...(style.bold ? { bold: true } : {}),
           ...(style.italic ? { italic: true } : {}),
           ...(style.underline ? { underline: style.underline } : {}),
-        },
-      ],
+        };
+        return [
+          ...(node.attributes.format === 'section' ? theme.renderText('Section ', style) : []),
+          { kind: 'crossReference', bookmark, number: node.attributes.number === 'paragraph' ? 'paragraph' : 'fullContext', ...formatting },
+        ];
+      },
     },
   ];
   return { blockTags, inlineTags };

@@ -99,6 +99,7 @@ export {
   isWordBookmarkName,
   type BookmarkNameErrorCode,
   CROSS_REFERENCE_NUMBERS,
+  CROSS_REFERENCE_SHOWS,
 } from './generation/index.js';
 
 export {
@@ -110,6 +111,7 @@ export type {
   BorderSpec,
   BreakSpec,
   CrossReferenceNumber,
+  CrossReferenceShow,
   CrossReferenceSpec,
   DocumentDefaultsSpec,
   DocumentMetaSpec,

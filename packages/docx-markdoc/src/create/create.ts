@@ -3,7 +3,7 @@ import { bookmarkNameForSlug, checkGeneratedPackage, generateDocx } from '@useju
 import { DocxMarkdocError } from '../errors.js';
 import { importDocxToMarkdoc } from '../import.js';
 import { requireMarkdoc } from '../markdoc.js';
-import { ORACLE_NORMALIZATION, compareParagraphs, normalizeOracleText, projectSourceText, type SequenceComparison, type SourceCrossReference, type SourceProjection } from './oracle.js';
+import { ORACLE_NORMALIZATION, compareParagraphs, normalizeOracleText, projectSourceText, sourceCrossReferenceForm, type SequenceComparison, type SourceCrossReference, type SourceProjection } from './oracle.js';
 import { lowerCreationMarkdoc, type CreationLowering, type CreationProjection, type FooterProjection } from './lower.js';
 import { readCreatedDocx, type CreationReadback } from './readback.js';
 
@@ -43,14 +43,18 @@ export type CreationCertificate = {
     brownfield: CreationCheck & { anchoredParagraphs: number };
     /**
      * Present when the source or the DOCX has a cross-reference: each REF
-     * field's instruction (bookmark name and number switch), in reading order,
-     * against the `{% xref /%}` it came from, and each named bookmark's
-     * paragraph text against the source text of the item marked with that id,
-     * and where each field sits (story, paragraph, and the text either side)
-     * against where its xref is. The text a field shows is checked by the
-     * read-back and round trip; this checks where it is and where it points.
-     * Negative controls change one expected switch, point one expected
-     * reference at another target, and move one to the next paragraph.
+     * field's instruction (bookmark name and number switch, or none for a
+     * text reference), in reading order, against the `{% xref /%}` it came
+     * from, and each named bookmark's paragraph text against the source text
+     * of the item marked with that id, and where each field sits (story,
+     * paragraph, and the text either side) against where its xref is. For a
+     * text reference, the text the bookmark encloses (what Word shows after
+     * updating the field) must also equal the target's source text, and the
+     * field's cached result must equal it. The text a field shows is checked
+     * by the read-back and round trip; this checks where it is and where it
+     * points. Negative controls change one expected switch, point one
+     * expected reference at another target, move one to the next paragraph,
+     * and, with a text reference, shorten its bookmark by one character.
      */
     crossReferences?: CrossReferenceCheck;
     /**
@@ -92,14 +96,18 @@ export type CreationCertificate = {
 };
 
 export type CrossReferenceCheck = CreationCheck & {
-  references: { expected: number; actual: number };
+  /** Tags in the source, fields placed in the DOCX, and how many of the tags are text references. */
+  references: { expected: number; actual: number; text: number };
   mismatches: Array<{ reference: number; expected: string | null; actual: string | null }>;
-  negativeControls: Record<'switchChanged' | 'retargeted' | 'moved', boolean | 'not applicable'>;
+  /** `textExtent` is 'not applicable' for a source without text references. */
+  negativeControls: Record<'switchChanged' | 'retargeted' | 'moved' | 'textExtent', boolean | 'not applicable'>;
 };
 
-/** The REF instruction an `{% xref /%}` must become. */
+/** The REF instruction an `{% xref /%}` must become: a number switch for a number, none for text. */
 function expectedInstruction(xref: SourceCrossReference): string {
-  return ` REF ${bookmarkNameForSlug(xref.to)} ${xref.number === 'paragraph' ? '\\n' : '\\w'} \\h `;
+  const name = bookmarkNameForSlug(xref.to);
+  if (xref.show === 'text') return ` REF ${name} \\h `;
+  return ` REF ${name} ${xref.number === 'paragraph' ? '\\n' : '\\w'} \\h `;
 }
 
 /** Index of `index` among the paragraphs that are not empty after normalization, or -1 for an empty one. */
@@ -122,15 +130,17 @@ function expectedSiteKey(xref: SourceCrossReference, expected: SourceProjection,
   return siteKey(`note ${xref.note}`, xref.paragraph + shift, text, xref.offset, xref.length);
 }
 
-/** Every REF field read back, body first and then the notes, with its place. */
-function readbackSites(readback: CreationReadback): Array<{ instruction: string; key: string }> {
+/** Every REF field read back, body first and then the notes, with its place and cached result. */
+function readbackSites(readback: CreationReadback): Array<{ instruction: string; key: string; result: string }> {
   return [
     ...(readback.crossReferences ?? []).map((site) => ({
       instruction: site.instruction,
+      result: site.text,
       key: siteKey('body', nonEmptyOrdinal(readback.paragraphs, site.paragraph), readback.paragraphs[site.paragraph] ?? '', site.offset, site.text.length),
     })),
     ...(readback.footnoteCrossReferences ?? []).map((site) => ({
       instruction: site.instruction,
+      result: site.text,
       key: siteKey(`note ${site.note}`, site.paragraph, readback.footnotes[site.note - 1]?.[site.paragraph] ?? '', site.offset, site.text.length),
     })),
   ];
@@ -149,7 +159,7 @@ function crossReferenceMismatches(
 ): CrossReferenceCheck['mismatches'] {
   const sites = readbackSites(readback);
   const targets = expected.crossReferenceTargets ?? {};
-  const bookmarks = new Map((readback.bookmarks ?? []).map(({ name, paragraph }) => [name, paragraph]));
+  const bookmarks = new Map((readback.bookmarks ?? []).map((bookmark) => [bookmark.name, bookmark]));
   const mismatches: CrossReferenceCheck['mismatches'] = [];
   for (let index = 0; index < Math.max(xrefs.length, sites.length); index += 1) {
     const xref = xrefs[index];
@@ -164,10 +174,23 @@ function crossReferenceMismatches(
       mismatches.push({ reference: index + 1, expected: key, actual: site.key });
       continue;
     }
-    const paragraph = bookmarks.get(bookmarkNameForSlug(xref.to));
+    const bookmark = bookmarks.get(bookmarkNameForSlug(xref.to));
     const want = normalizeOracleText(targets[xref.to] ?? '');
-    const got = paragraph === undefined ? null : normalizeOracleText(readback.paragraphs[paragraph] ?? '');
-    if (want !== got) mismatches.push({ reference: index + 1, expected: `bookmark on "${want}"`, actual: got === null ? null : `bookmark on "${got}"` });
+    const got = bookmark === undefined ? null : normalizeOracleText(readback.paragraphs[bookmark.paragraph] ?? '');
+    if (want !== got) {
+      mismatches.push({ reference: index + 1, expected: `bookmark on "${want}"`, actual: got === null ? null : `bookmark on "${got}"` });
+      continue;
+    }
+    if (xref.show !== 'text') continue;
+    // Word shows the text between the bookmark's start and end, so the
+    // bookmark must enclose the whole target text and the cached result must
+    // be that text.
+    const enclosed = bookmark?.text;
+    if (enclosed === undefined || normalizeOracleText(enclosed) !== want) {
+      mismatches.push({ reference: index + 1, expected: `bookmark enclosing "${want}"`, actual: enclosed === undefined ? 'bookmark ending outside its paragraph' : `bookmark enclosing "${normalizeOracleText(enclosed)}"` });
+    } else if (site.result !== enclosed) {
+      mismatches.push({ reference: index + 1, expected: `cached result "${enclosed}"`, actual: `cached result "${site.result}"` });
+    }
   }
   return mismatches;
 }
@@ -182,6 +205,14 @@ function footnoteReferenceMismatches(expected: SourceProjection, placed: number)
   return mismatches;
 }
 
+/** The read-back with bookmark `name` ending one character early: a bookmark that misses the last character of its target. */
+function shortenBookmark(readback: CreationReadback, name: string): CreationReadback {
+  return {
+    ...readback,
+    bookmarks: (readback.bookmarks ?? []).map((bookmark) => (bookmark.name === name && bookmark.text !== undefined ? { ...bookmark, text: bookmark.text.slice(0, -1) } : bookmark)),
+  };
+}
+
 function crossReferenceCheck(expected: SourceProjection, readback: CreationReadback): CrossReferenceCheck | undefined {
   const xrefs = expected.crossReferences ?? [];
   const inventory = expected.crossReferenceInventory ?? [];
@@ -191,23 +222,28 @@ function crossReferenceCheck(expected: SourceProjection, readback: CreationReadb
   const mismatches = crossReferenceMismatches(xrefs, expected, readback);
   // Every tag in the source must have been placed: a tag the text walker never reached would otherwise drop
   // out of the expectation and the document together.
-  const placed = xrefs.map((xref) => `${xref.to}|${xref.number}`).sort();
+  const placed = xrefs.map((xref) => `${xref.to}|${sourceCrossReferenceForm(xref)}`).sort();
   if (JSON.stringify(placed) !== JSON.stringify(inventory)) {
     mismatches.push({ reference: 0, expected: `source tags ${inventory.join(', ')}`, actual: `placed ${placed.join(', ') || 'none'}` });
   }
-  const detects = (mutated: SourceCrossReference[], shiftFirst = 0) => crossReferenceMismatches(mutated, expected, readback, shiftFirst).length > 0;
+  const detects = (mutated: SourceCrossReference[], shiftFirst = 0, against = readback) => crossReferenceMismatches(mutated, expected, against, shiftFirst).length > 0;
   const first = xrefs[0];
   const other = first ? Object.keys(targets).find((id) => id !== first.to && normalizeOracleText(targets[id]!) !== normalizeOracleText(targets[first.to] ?? '')) : undefined;
+  // A number reference changes its number switch; a text reference gains one.
+  const switched = (xref: SourceCrossReference): SourceCrossReference =>
+    xref.show === 'text' ? { ...xref, show: 'number', number: 'full' } : { ...xref, number: xref.number === 'paragraph' ? 'full' : 'paragraph' };
+  const textReference = xrefs.find((xref) => xref.show === 'text');
   const negativeControls: CrossReferenceCheck['negativeControls'] = {
-    switchChanged: first ? detects([{ ...first, number: first.number === 'paragraph' ? 'full' : 'paragraph' }, ...xrefs.slice(1)]) : 'not applicable',
+    switchChanged: first ? detects([switched(first), ...xrefs.slice(1)]) : 'not applicable',
     retargeted: first && other ? detects([{ ...first, to: other }, ...xrefs.slice(1)]) : 'not applicable',
     moved: first ? detects([...xrefs], 1) : 'not applicable',
+    textExtent: textReference ? detects(xrefs, 0, shortenBookmark(readback, bookmarkNameForSlug(textReference.to))) : 'not applicable',
   };
   const controlsOk = Object.values(negativeControls).every((value) => value !== false);
   const passed = mismatches.length === 0 && controlsOk;
   return {
     passed,
-    references: { expected: inventory.length, actual: sites },
+    references: { expected: inventory.length, actual: sites, text: inventory.filter((entry) => entry.endsWith('|text')).length },
     mismatches,
     negativeControls,
     ...(passed ? {} : { detail: `${mismatches.length} cross-reference mismatch(es)${controlsOk ? '' : '; a negative control was not detected'}` }),
