@@ -20,7 +20,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DocxArchive, OOXML, parseXml } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
-import { testAllure } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
 import {
   acceptAllChanges,
@@ -124,7 +124,7 @@ function expectSchemaValid(variants: Array<[string, string]>): void {
 
 describe('text sharing a run with a field character (#1283)', () => {
   for (const { name, revised } of CASES) {
-    test(`${name}: splits the run instead of nesting a revision in w:r`, async ({ given, when, then, and }) => {
+    test(`${name}: splits the run instead of nesting a revision in w:r`, async ({ given, when, then, and }: AllureBddContext) => {
       const originalDocx = await given('a REF field whose begin, separate and end markers share runs with text', () =>
         buildDocxFromBodyXml(sharedMarkerParagraph(BASE)));
       const revisedDocx = await given('the same field with the neighbouring text edited', () =>
