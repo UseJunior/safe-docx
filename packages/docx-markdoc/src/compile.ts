@@ -1205,6 +1205,31 @@ function enclosingRun(element: Element): Element {
 }
 
 /**
+ * The run holding a field's `begin` (side `before`) or `end` (side `after`)
+ * marker, split so that nothing outside the field shares it: content before
+ * a `begin` marker, or after an `end` marker, in the same run moves to a run
+ * of its own with the same properties. A run placed next to the returned run
+ * then sits exactly at the field's edge.
+ */
+function isolatedMarkerRun(marker: Element, side: 'after' | 'before'): Element {
+  const run = enclosingRun(marker);
+  let child: Node = marker;
+  while (child.parentNode !== run) child = child.parentNode!;
+  const isProperties = (node: Node) => node.nodeType === 1 && (node as Element).namespaceURI === OOXML.W_NS && (node as Element).localName === W.rPr;
+  const outside: Node[] = [];
+  for (let node = side === 'before' ? child.previousSibling : child.nextSibling; node; node = side === 'before' ? node.previousSibling : node.nextSibling) {
+    if (!isProperties(node)) outside.push(node);
+  }
+  if (outside.length === 0) return run;
+  const split = run.cloneNode(false) as Element;
+  const properties = Array.from(run.childNodes).find(isProperties);
+  if (properties) split.appendChild(properties.cloneNode(true));
+  for (const node of side === 'before' ? outside.reverse() : outside) split.appendChild(node);
+  run.parentNode!.insertBefore(split, side === 'before' ? run : run.nextSibling);
+  return run;
+}
+
+/**
  * Apply an edit to a paragraph that holds cross-references without touching
  * any field: hunks stay between fields, and an insertion that touches a field
  * goes in a run placed just outside the field's `begin` or `end` marker
@@ -1222,6 +1247,7 @@ function replaceAroundCrossReferences(
   references: readonly CrossReferenceSpan[],
   revisedReferences: readonly CrossReferenceSpan[],
   before: string,
+  revised: string,
   formatSource: string | undefined,
 ): void {
   const paragraph = document.getParagraphElementById(id);
@@ -1251,14 +1277,14 @@ function replaceAroundCrossReferences(
     const text = ownerDocument.createElementNS(OOXML.W_NS, 'w:t');
     text.appendChild(ownerDocument.createTextNode('\u2060'));
     placeholder.appendChild(text);
-    const marker = enclosingRun(hunk.boundary.side === 'after' ? field.end.element : field.begin.element);
+    const marker = isolatedMarkerRun(hunk.boundary.side === 'after' ? field.end.element : field.begin.element, hunk.boundary.side);
     marker.parentNode!.insertBefore(placeholder, hunk.boundary.side === 'after' ? marker.nextSibling : marker);
     document.replaceTextAtRange({ targetParagraphId: id, start: hunk.start, end: hunk.start + 1, replaceText: replacement });
   }
   const bookmarks = documentBookmarkTargets(paragraph.ownerDocument!);
   const reread = paragraphCrossReferences(paragraph, { bookmarks });
   const after = reread.unsupported.length > 0 ? [] : reread.references;
-  if (!sameSpans(after.map(({ start, end, text, reference }) => ({ start, end, text, reference })), revisedReferences, true)) {
+  if (reread.index.text !== revised || !sameSpans(after.map(({ start, end, text, reference }) => ({ start, end, text, reference })), revisedReferences, true)) {
     throw new DocxMarkdocError(
       'XREF_EDIT_UNSUPPORTED',
       `Editing paragraph ${id} would change one of its REF fields; the edit was refused.`,
@@ -1319,8 +1345,10 @@ async function referenceInventory(document: DocxDocument): Promise<ReferenceInve
 }
 
 /**
- * The compiled document keeps every cross-reference live: the body holds the
- * source's REF fields, the notes and comments hold one REF field per
+ * The compiled document keeps every cross-reference live: with every change
+ * accepted, and again with every change rejected, the body holds the REF
+ * fields of the same projection of the source, the notes and comments (with
+ * every change accepted) hold one REF field per
  * projected `{% xref %}`, and every REF names a bookmark that still marks one
  * paragraph, unless it already did not in the source (a deleted target
  * paragraph, for one, fails with XREF_TARGET_MISSING).
@@ -1330,25 +1358,37 @@ async function referenceInventory(document: DocxDocument): Promise<ReferenceInve
  * @see https://github.com/UseJunior/safe-docx/issues/1260
  */
 async function verifyCrossReferenceOutput(
-  source: DocxDocument,
-  accepted: DocxDocument,
+  source: { accepted: DocxDocument; rejected: DocxDocument },
+  output: { accepted: DocxDocument; rejected: DocxDocument },
   ir: MarkdocEditIR,
   dispositions: ReadonlyArray<{ id: string; as: string }>,
 ): Promise<void> {
-  const [before, after] = await Promise.all([referenceInventory(source), referenceInventory(accepted)]);
+  const [before, after, rejectedBefore, rejectedAfter] = await Promise.all([
+    referenceInventory(source.accepted),
+    referenceInventory(output.accepted),
+    referenceInventory(source.rejected),
+    referenceInventory(output.rejected),
+  ]);
   const omitted = new Set(dispositions.filter((disposition) => disposition.as === 'omit').map((disposition) => disposition.id));
   const expectedNotes = ir.annotations
     .filter((annotation) => !omitted.has(annotation.id))
     .reduce((count, annotation) => count + annotation.body.reduce((paragraphCount, paragraph) =>
       paragraphCount + new Set(paragraph.runs.flatMap((run) => (run.crossReference ? [run.crossReference.field] : []))).size, 0), 0);
-  if (after.body !== before.body || after.notes !== expectedNotes) {
+  if (after.body !== before.body || rejectedAfter.body !== rejectedBefore.body || after.notes !== expectedNotes) {
     throw new DocxMarkdocError(
       'XREF_PROJECTION_FAILED',
-      `The compiled document holds ${after.body} body and ${after.notes} note and comment REF fields; expected ${before.body} and ${expectedNotes}.`,
-      { body: { source: before.body, compiled: after.body }, notes: { expected: expectedNotes, compiled: after.notes } },
+      `The compiled document holds ${after.body} body and ${after.notes} note and comment REF fields with every change accepted (${rejectedAfter.body} body with every change rejected); expected ${before.body} and ${expectedNotes} (${rejectedBefore.body}).`,
+      {
+        body: { source: before.body, compiled: after.body },
+        rejectedBody: { source: rejectedBefore.body, compiled: rejectedAfter.body },
+        notes: { expected: expectedNotes, compiled: after.notes },
+      },
     );
   }
-  const lost = [...after.unresolved].filter((bookmark) => !before.unresolved.has(bookmark));
+  const lost = [
+    ...[...after.unresolved].filter((bookmark) => !before.unresolved.has(bookmark)),
+    ...[...rejectedAfter.unresolved].filter((bookmark) => !rejectedBefore.unresolved.has(bookmark)),
+  ].filter((bookmark, index, all) => all.indexOf(bookmark) === index);
   if (lost.length > 0) {
     throw new DocxMarkdocError(
       'XREF_TARGET_MISSING',
@@ -2004,6 +2044,7 @@ async function applyOperations(
         references,
         operation.revisedCrossReferences ?? [],
         original,
+        operation.revisedText,
         operation.kind === 'replace-source' ? operation.formatSource : undefined,
       );
     } else {
@@ -2334,7 +2375,15 @@ export async function compileMarkdoc(
   const acceptedDoc = await DocxDocument.load(tracked);
   const rejectedDoc = await DocxDocument.load(tracked);
   const [acceptResult, rejectResult] = await Promise.all([acceptedDoc.acceptChanges(), rejectedDoc.rejectChanges()]);
-  await verifyCrossReferenceOutput(sourceDocument, acceptedDoc, ir, annotationProjection.dispositions);
+  // A source's own tracked changes take REF fields in and out with them, so each output projection is compared
+  // with the same projection of the source.
+  const sourceProjections = sourceContainsRevisions
+    ? await Promise.all([DocxDocument.load(sourceBuffer), DocxDocument.load(sourceBuffer)]).then(async ([accepted, rejected]) => {
+      await Promise.all([accepted.acceptChanges(), rejected.rejectChanges()]);
+      return { accepted, rejected };
+    })
+    : { accepted: sourceDocument, rejected: sourceDocument };
+  await verifyCrossReferenceOutput(sourceProjections, { accepted: acceptedDoc, rejected: rejectedDoc }, ir, annotationProjection.dispositions);
   const cleanDoc = await DocxDocument.load(clean);
   let sourceProjectionDocument = sourceDocument;
   let cleanProjectionDocument = cleanDoc;

@@ -257,6 +257,24 @@ describe('Traceability: cross-references survive import and compile', () => {
       expect(await acceptedText(compiled.tracked, 'reject')).toBe(await acceptedText(imported.anchoredSource, 'reject'));
       expect(await acceptedText(compiled.tracked, 'accept')).toContain('Subject to Section 1.01(b), as adjusted, sets the price.');
 
+      // A field marker may share its run with the text beside it (Word merges runs on save): an insertion at that
+      // edge still lands outside the field, and the paragraph's text is exactly the after state.
+      const shared = await rewrite(created.docx, 'word/document.xml', (xml) => xml
+        .replace('Deliveries follow </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r>', 'Deliveries follow </w:t><w:fldChar w:fldCharType="begin"/></w:r>')
+        .replace('<w:fldChar w:fldCharType="end"/></w:r><w:r><w:t xml:space="preserve"> and clause </w:t></w:r>', '<w:fldChar w:fldCharType="end"/><w:t xml:space="preserve"> and clause </w:t></w:r>'));
+      const sharedImport = await importDocxToMarkdoc(shared);
+      const sharedEdit = change(sharedImport.markdoc, 'Deliveries follow', (body) => replaceOnce(
+        replaceOnce(body, '&#32;{% xref to="defined-terms" %}', '&#32;NEW{% xref to="defined-terms" %}'),
+        'Section 1.01{% /xref %}&#32;and clause', 'Section 1.01{% /xref %}NEW&#32;and clause',
+      ));
+      const sharedCompiled = await compileMarkdoc(sharedImport.anchoredSource, sharedEdit, PRESERVE);
+      expect(sharedCompiled.certificate.passed).toBe(true);
+      const sharedFields = await fieldsOf(sharedCompiled.clean);
+      expect(sharedFields.slice(0, 2).map(({ instruction, result, paragraph }) => [instruction, result, paragraph])).toEqual([
+        ['REF defined_terms \\w \\h', 'Section 1.01', 'Deliveries follow NEWSection 1.01NEW and clause (i) of it.'],
+        ['REF price_adjustment \\n \\h', '(i)', 'Deliveries follow NEWSection 1.01NEW and clause (i) of it.'],
+      ]);
+
       // The edited document imports again with the same references in the edited paragraphs.
       const again = await importDocxToMarkdoc(compiled.clean);
       expect(block(again.markdoc, 'as adjusted').body).toBe('Subject to&#32;{% xref to="price" %}Section 1.01(b){% /xref %}, as adjusted, sets the price.');
@@ -360,6 +378,15 @@ describe('Traceability: cross-references survive import and compile', () => {
       // Other fields in a footnote still fail import as before.
       const page = await rewrite(created.docx, 'word/footnotes.xml', (xml) => xml.replace(' REF products \\h ', ' PAGE '));
       expect(await failure(importDocxToMarkdoc(page))).toBe('ANNOTATION_IMPORT_UNSUPPORTED:unsupported-field');
+      // A source whose REF field sits in its own tracked deletion compiles unedited: the field leaves the accepted
+      // projection of the source and of the output alike.
+      const deletedField = await rewrite(created.docx, 'word/document.xml', (xml) => xml.replace(
+        /(<w:r><w:fldChar w:fldCharType="begin"\/>(?:(?!<w:fldChar w:fldCharType="end"\/>).)*<w:fldChar w:fldCharType="end"\/><\/w:r>)/u,
+        (fieldXml) => `<w:del w:id="901" w:author="Prior" w:date="2026-11-04T00:00:00Z">${fieldXml.replaceAll('<w:t ', '<w:delText ').replaceAll('<w:t>', '<w:delText>').replaceAll('</w:t>', '</w:delText>')}</w:del>`,
+      ));
+      const deletedImport = await importDocxToMarkdoc(deletedField);
+      expect(await failure(compileMarkdoc(deletedImport.anchoredSource, deletedImport.markdoc, PRESERVE))).toBe('succeeded');
+
       // A REF unlinked into plain text (Ctrl+Shift+F9) is ordinary text and imports as text.
       const unlinked = await rewrite(created.docx, 'word/document.xml', (xml) => xml.replace(
         /<w:r>(?:<w:rPr>(?:(?!<\/w:rPr>).)*<\/w:rPr>)?<w:fldChar w:fldCharType="begin"\/><\/w:r><w:r>(?:<w:rPr>(?:(?!<\/w:rPr>).)*<\/w:rPr>)?<w:instrText[^>]*> REF price \\w \\h <\/w:instrText><\/w:r><w:r>(?:<w:rPr>(?:(?!<\/w:rPr>).)*<\/w:rPr>)?<w:fldChar w:fldCharType="separate"\/><\/w:r>(<w:r>(?:(?!<\/w:r>).)*<\/w:r>)<w:r>(?:<w:rPr>(?:(?!<\/w:rPr>).)*<\/w:rPr>)?<w:fldChar w:fldCharType="end"\/><\/w:r>/u,
