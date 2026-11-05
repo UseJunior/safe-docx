@@ -83,7 +83,9 @@ type BookmarkTarget = { label: ParagraphListLabel | null; textRuns: Element[] };
  * paragraph of its target's list (`w:numId`) at or before the paragraph
  * holding the field, table cells included, in document order. A reference in
  * a footnote has no such position and shows the full number, as Word shows
- * it (scripts/oracle/word/evidence/issue-1258-word-16.114.json).
+ * it (scripts/oracle/word/evidence/issue-1258-word-16.114.json), also when
+ * a footnote paragraph of another list is numbered (issue-1284); validation
+ * refuses one whose target's list numbers a footnote paragraph.
  */
 export class CrossReferenceResolver {
   private readonly pending: Array<{ placeholder: Element; reference: CrossReferenceTarget }> = [];
@@ -226,9 +228,6 @@ export class CrossReferenceResolver {
           `The number of bookmark '${bookmark}' uses a level text that names a deeper list level; ` +
           'Word shows no number for such a level, so a cross-reference to it would show 0',
         undefinedLevel: `The list level of bookmark '${bookmark}' is not defined`,
-        relativeStartValue:
-          `The relative number of bookmark '${bookmark}' depends on a list level shown at its start value ` +
-          '(no paragraph has numbered it since it restarted); what Word shows for it is not measured',
       };
       throw new GenerationSpecError('invalid_value', path, reasons[result.refused]);
     }

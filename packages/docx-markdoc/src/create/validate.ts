@@ -779,18 +779,21 @@ type RelativeSites = {
   chainAt: Map<MarkdocNode, number | undefined>;
   /** Relative xrefs in a footnote. */
   inFootnote: Set<MarkdocNode>;
-  /** Per relative xref sitting in or after clauses directly under an Article (before the next heading): those clauses' line. */
-  afterArticleClauses: Map<MarkdocNode, number | undefined>;
+  /** Per relative xref sitting in or after clauses directly under an Article (before the next heading): that run of clauses, counted from 0. */
+  articleClauseRunAt: Map<MarkdocNode, number>;
+  /** Per id of a clause directly under an Article: its run of clauses. */
+  articleClauseRunOf: Map<string, number>;
 };
 
 function relativeSites(children: MarkdocNode[], headingNumbers: boolean): RelativeSites {
-  const sites: RelativeSites = { targetChain: new Map(), chainAt: new Map(), inFootnote: new Set(), afterArticleClauses: new Map() };
+  const sites: RelativeSites = { targetChain: new Map(), chainAt: new Map(), inFootnote: new Set(), articleClauseRunAt: new Map(), articleClauseRunOf: new Map() };
   let headingsBegun = false;
   let chain: number | undefined;
   let chains = 0;
   let next: number | null = null;
   let articleScope = false;
-  let articleClauses: number | undefined | null = null;
+  let articleClauses: number | null = null;
+  let articleClauseRuns = 0;
   const ids = (node: MarkdocNode, out: string[] = []): string[] => {
     if (node.type !== 'tag' && node.type !== 'document' && typeof node.attributes.id === 'string') out.push(node.attributes.id);
     for (const child of node.children) ids(child, out);
@@ -814,8 +817,9 @@ function relativeSites(children: MarkdocNode[], headingNumbers: boolean): Relati
         if (next === null || start !== next) chain = chains++;
         next = start + node.children.length;
         for (const id of ids(node)) sites.targetChain.set(id, chain!);
-      } else if (articleScope && articleClauses === null) {
-        articleClauses = lineOf(node);
+      } else if (articleScope) {
+        if (articleClauses === null) articleClauses = articleClauseRuns++;
+        for (const id of ids(node)) sites.articleClauseRunOf.set(id, articleClauses);
       }
     }
     for (const xref of relativeXrefs(node)) {
@@ -824,7 +828,7 @@ function relativeSites(children: MarkdocNode[], headingNumbers: boolean): Relati
         continue;
       }
       sites.chainAt.set(xref, chain);
-      if (articleClauses !== null) sites.afterArticleClauses.set(xref, articleClauses);
+      if (articleClauses !== null) sites.articleClauseRunAt.set(xref, articleClauses);
     }
   }
   return sites;
@@ -839,26 +843,25 @@ function relativeSites(children: MarkdocNode[], headingNumbers: boolean): Relati
  *   no other such list starting in between. Elsewhere Word numbers it
  *   relative to the target's list ("2(b)") and LibreOffice relative to the
  *   latest list ("(b)");
- * - to a numbered heading or a clause under one, it must not sit in or after
- *   clauses placed directly under an Article (before the next heading):
- *   those clauses show the Section level at its start value, and what Word
- *   shows relative to them is not measured.
+ * - to a clause directly under an Article, it must sit in or after that
+ *   Article's clauses (before the next heading), where both drop the
+ *   Article and the start-value Section level they share ("(b)"); elsewhere
+ *   Word shows "ARTICLE II(b)" and LibreOffice "Section 2.01(b)", as for the
+ *   full number (`XREF_FULL_NUMBER_UNDER_ARTICLE`).
+ *
+ * A reference to any other numbered heading or clause may sit anywhere in
+ * the body, also in or after clauses directly under an Article: Word
+ * compares the Section level there at its start value
+ * (scripts/oracle/word/evidence/issue-1284-word-16.114.json), and from such
+ * a position every other target either shares no level but its Article
+ * (the Article heading itself) or sits in another Article, so both readers
+ * show the same number.
  *
  * In a footnote a relative reference shows the full number, in both.
  */
 function checkRelativeReference(reference: CrossReferenceSite, target: TargetSite, sites: RelativeSites): void {
   if (reference.number !== 'relative' || sites.inFootnote.has(reference.node)) return;
-  if (target.headingNumbered) {
-    if (sites.afterArticleClauses.has(reference.node)) {
-      creationError(
-        'XREF_RELATIVE_AFTER_ARTICLE_CLAUSES',
-        `{% xref to="${reference.to}" number="relative" /%} sits in or after clauses placed directly under an Article (line ${sites.afterArticleClauses.get(reference.node) ?? '?'}), which number the Section level at its start value; what Word shows relative to them is not measured. Use number="full", or put the clauses under a ### Section.`,
-        undefined,
-        reference.line,
-      );
-    }
-    return;
-  }
+  if (target.headingNumbered) return;
   const own = sites.targetChain.get(reference.to);
   const at = sites.chainAt.get(reference.node);
   if (at !== undefined && at !== own) {
@@ -915,10 +918,13 @@ function checkCrossReferenceTargets(children: MarkdocNode[], headingNumbers = fa
         reference.line,
       );
     }
-    if (target.articleClause && reference.number !== 'paragraph') {
+    const sameArticleClauses = reference.number === 'relative' && !sites.inFootnote.has(reference.node)
+      && sites.articleClauseRunAt.get(reference.node) !== undefined
+      && sites.articleClauseRunAt.get(reference.node) === sites.articleClauseRunOf.get(reference.to);
+    if (target.articleClause && reference.number !== 'paragraph' && !sameArticleClauses) {
       creationError(
         'XREF_FULL_NUMBER_UNDER_ARTICLE',
-        `{% xref to="${reference.to}"${reference.number === 'relative' ? ' number="relative"' : ''} /%} names a clause directly under an Article (line ${target.line ?? '?'}), whose full number Word shows as "ARTICLE I(a)" and LibreOffice as "Section 1.01(a)"; use number="paragraph", or put the clause under a ### Section.`,
+        `{% xref to="${reference.to}"${reference.number === 'relative' ? ' number="relative"' : ''} /%} names a clause directly under an Article (line ${target.line ?? '?'}), whose full number Word shows as "ARTICLE I(a)" and LibreOffice as "Section 1.01(a)"; use number="paragraph"${reference.number === 'relative' ? ', or place the reference in or after that Article\'s clauses' : ''}, or put the clause under a ### Section.`,
         undefined,
         reference.line,
       );

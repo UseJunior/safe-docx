@@ -179,9 +179,11 @@ describe('Traceability: generated relative cross-references', () => {
       expect(relative({ ...at([2, 2, 1]), numId: '2' })).toEqual({ text: '2(b)(ii)' });
       // The target's own level is always kept, with its trailing period dropped.
       expect(resolveReferenceNumber(numbering, { numId: '1', ilvl: 0, levelValues: [2] }, 'relative', at([2, 2, 1]))).toEqual({ text: '2' });
-      // A level shown at its start value, in the target or at the position: what Word shows is not measured.
-      expect(relative(at([2, 1], { levelsAtStartValue: [0] }))).toEqual({ refused: 'relativeStartValue' });
-      expect(resolveReferenceNumber(numbering, { ...target, levelsAtStartValue: [1] }, 'relative', at([2, 1]))).toEqual({ refused: 'relativeStartValue' });
+      // A level shown at its start value, in the target or at the position, is compared at that value.
+      expect(relative(at([2, 1], { levelsAtStartValue: [0] }))).toEqual({ text: '(b)(ii)' });
+      const atStart = { numId: '1', ilvl: 2, levelValues: [2, 1, 1], levelsAtStartValue: [1] };
+      expect(resolveReferenceNumber(numbering, atStart, 'relative', at([2, 1, 2], { levelsAtStartValue: [1] }))).toEqual({ text: '(i)' });
+      expect(resolveReferenceNumber(numbering, atStart, 'relative', at([3]))).toEqual({ text: '2(i)' });
 
       // Generated: a reference in the body numbers relative to where it sits, in a footnote in full.
       const spec = doc([
@@ -231,25 +233,63 @@ describe('Traceability: generated relative cross-references', () => {
       const plain = await generatedFields(base(para([text('Plain note.')])));
       expect(plain).toEqual([{ instruction: ' REF target \\r \\h ', result: 'Section 1.01(a)' }]);
 
-      // A clause right after an Article shows the Section level at its start value: refused as target and as position.
-      const afterArticle = await specError(doc([
-        para([text('ARTICLE')], { styleId: 'Heading1' }),
-        clause(2, [text('clause.')], 'clause'),
-        para([text('See '), rref('clause')]),
-      ]));
-      expect(afterArticle.path).toBe('/sections/0/blocks/1/bookmark');
-      expect(afterArticle.message).toContain('start value');
-      const fromArticleClause = await specError(doc([
-        para([text('ARTICLE')], { styleId: 'Heading1' }),
-        para([text('Section')], { styleId: 'Heading2' }),
-        clause(2, [text('target.')], 'target'),
-        para([text('ARTICLE')], { styleId: 'Heading1' }),
-        clause(2, [text('See '), rref('target')]),
-      ]));
-      expect(fromArticleClause.path).toBe('/sections/0/blocks/2/bookmark');
+      // A footnote paragraph numbered by another numbering definition leaves the reference in full.
+      const otherList = base(para([text('Numbered note.')], { list: { numId: 'notes', ilvl: 0 } }));
+      otherList.numbering = [LEGAL, { numId: 'notes', levels: [{ ilvl: 0, numFmt: 'decimal', lvlText: '%1.' }] }];
+      expect(await generatedFields(otherList)).toEqual([{ instruction: ' REF target \\r \\h ', result: 'Section 1.01(a)' }]);
+      // An additional instance of the target's definition is that definition.
+      const instance = base(para([text('Numbered note.')], { list: { numId: 'legal-again', ilvl: 2 } }));
+      instance.numbering = [{ ...LEGAL, instances: [{ numId: 'legal-again', levelOverrides: [{ ilvl: 2, startOverride: 1 }] }] }];
+      expect((await specError(instance)).path).toBe('/sections/0/blocks/2/runs/1/blocks/1/runs/1/number');
       // A relative number is a number form: a text reference takes none.
       expect((await specError(doc([clause(2, [text('t')], 't'), para([{ kind: 'crossReference', bookmark: 't', show: 'text', number: 'relative' }])]))).path)
         .toBe('/sections/0/blocks/1/runs/0/number');
+    },
+  );
+  refConforming.openspec("[SDX-GEN-133] a relative number compares a level shown at its start value at that value, as Word does")(
+    "Scenario: a relative number compares a level shown at its start value at that value, as Word does",
+    async () => {
+      const evidence = JSON.parse(readFileSync(path.join(EVIDENCE_DIR, 'issue-1284-word-16.114.json'), 'utf8')) as Evidence;
+      const probe = evidence.probes.find((entry) => entry.name === 'probe1-start-value')!;
+      expect(probe.references).toHaveLength(47);
+      const buffer = await generateDocx(probe.spec);
+      expect((await checkGeneratedPackage(buffer)).ok).toBe(true);
+      expect(await generatedFields(probe.spec)).toEqual(probe.references.map(({ instruction, word }) => ({ instruction, result: word })));
+      const word = (site: string, to: string) => probe.references.find((reference) => reference.site.startsWith(site) && reference.instruction === ` REF ${to} \\r \\h `)!;
+      // From the same run of clauses under an Article the shared start-value Section level drops; from elsewhere the full number.
+      expect([word('(b) Second clause under Article I', 'a1a').word, word('(ii) Second sub-clause under Article III', 'a3i').word, word('(ii) Second sub-clause under 2.02', 'a1a').word])
+        .toEqual(['(a)', '(i)', 'ARTICLE II(a)']);
+      // A position at a start value: from "Section 4.02(a)" to "ARTICLE IV(i)", and to a Section of another Article.
+      expect([word('(a) In 3.01(a)', 'a3i').word, word('(ii) Second sub-clause under Article III', 's201b').word]).toEqual(['(i)', 'Section 3.01(b)']);
+      // LibreOffice shows the start-value level instead.
+      expect(word('(ii) Second sub-clause under 2.02', 'a1a').libreOffice).toBe('Section 2.01(a)');
+
+      // Generated directly: a clause right after an Article, as target and as position.
+      expect((await generatedFields(doc([
+        para([text('ARTICLE')], { styleId: 'Heading1' }),
+        clause(2, [text('clause.')], 'clause'),
+        clause(2, [text('See '), rref('clause')]),
+        para([text('ARTICLE')], { styleId: 'Heading1' }),
+        para([text('Section')], { styleId: 'Heading2' }),
+        para([text('See '), rref('clause')]),
+      ]))).map((field) => field.result)).toEqual(['(a)', 'ARTICLE I(a)']);
+    },
+  );
+
+  refConforming.openspec("[SDX-GEN-134] a relative reference in a footnote shows the full number unless a footnote paragraph is numbered by its target's list")(
+    "Scenario: a relative reference in a footnote shows the full number unless a footnote paragraph is numbered by its target's list",
+    async () => {
+      const evidence = JSON.parse(readFileSync(path.join(EVIDENCE_DIR, 'issue-1284-word-16.114.json'), 'utf8')) as Evidence;
+      const other = evidence.probes.find((entry) => entry.name === 'probe2-footnote-other-list')!;
+      expect(other.references.filter((reference) => reference.story === 'footnote')).toHaveLength(30);
+      expect(await generatedFields(other.spec)).toEqual(other.references.map(({ instruction, word }) => ({ instruction, result: word })));
+      // With footnote paragraphs of the target's own list, Word counts from them: refused.
+      const same = evidence.probes.find((entry) => entry.name === 'probe3-footnote-same-list')!;
+      expect(same.references.filter((reference) => reference.instruction === ' REF s101a \\r \\h ').map((reference) => reference.word))
+        .toEqual(['Section 1.01(a)', '(a)', '(a)', '(a)', '(a)']);
+      const refused = await specError(same.spec);
+      expect(refused.path).toMatch(/^\/sections\/0\/blocks\/6\/runs\/1\/blocks\/0\/runs\/\d+\/number$/u);
+      expect(refused.message).toContain('/sections/0/blocks/7/runs/1/blocks/0');
     },
   );
 });

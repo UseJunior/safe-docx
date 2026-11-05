@@ -15,7 +15,8 @@ be computed from the target alone.
   ` REF <name> \r \h `. `show` stays `number | text` (the #1277 design): a
   relative number is a number form. `docx-core`'s `resolveReferenceNumber`
   takes the position as a new `context` argument
-  (`RelativeReferenceContext`), and gains the refusal `relativeStartValue`.
+  (`RelativeReferenceContext`). (#1258 also added a `relativeStartValue`
+  refusal; #1284 removed it after measuring Word.)
 - What Word 16.114 does, measured on 106 probe fields and two created
   documents (`scripts/oracle/word/evidence/issue-1258-word-16.114.json`):
   - `\r` shows the `\w` number less the leading levels whose values the
@@ -35,10 +36,13 @@ be computed from the target alone.
     from inside it "Section 2.03"; a table cell, numbered or not, as a body
     paragraph in its place.
 - Generation refuses a relative reference, at its path:
-  - in a footnote when any footnote paragraph is numbered (directly, or by a
-    style linked to a list level or based on one): unmeasured;
-  - whose target or position shows a level at its start value
-    (`relativeStartValue`): unmeasured.
+  - in a footnote when a footnote paragraph is numbered by the target's
+    numbering definition (directly, by an instance, or by a style linked to
+    a list level or based on one): Word then counts from the footnotes' own
+    paragraphs of that list (#1284 evidence), which is not modelled.
+  - A level shown at its start value, in the target or at the position, is
+    compared at that value (#1284 evidence, 47 fields equal to Word); the
+    earlier `relativeStartValue` refusal is removed.
 - The creation grammar admits `number="relative"` on `{% xref /%}`. It takes
   no `format`. `create` fails closed where LibreOffice, which renders the
   PDF, numbers the field differently from Word, or Word is unmeasured:
@@ -47,11 +51,11 @@ be computed from the target alone.
     item of its target's own list (a chain of continuing lists) with no
     other such list starting in between. LibreOffice numbers relative to
     the last paragraph of any list of the definition;
-  - `XREF_RELATIVE_AFTER_ARTICLE_CLAUSES`: a reference to a numbered heading
-    or its clause must not sit in or after clauses directly under an
-    Article, before the next heading;
   - a relative reference to a clause directly under an Article fails with
-    `XREF_FULL_NUMBER_UNDER_ARTICLE`, as a full one does.
+    `XREF_FULL_NUMBER_UNDER_ARTICLE`, as a full one does, unless it sits in
+    or after that Article's clauses (before the next heading), where Word
+    and LibreOffice both show `(a)`. The earlier
+    `XREF_RELATIVE_AFTER_ARTICLE_CLAUSES` refusal is removed (#1284).
 - Create verification: the lowering and the independent oracle each compute
   relative numbers from the position, the oracle from the source alone (its
   walker keeps each list's last numbered item). The cross-reference check

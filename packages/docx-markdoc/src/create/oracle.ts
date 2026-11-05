@@ -322,7 +322,9 @@ function relativeNumber(target: CrossReferenceText, position: WalkPosition | und
   if (!at) return target.full;
   const own = target.place.values.length - 1;
   let shared = 0;
-  while (shared < Math.min(at.length, own + 1) && at[shared] === target.place.values[shared]) shared += 1;
+  // A level shown at its start value (NaN: the Section level of a clause directly under an Article) is compared at that value, so two such levels match.
+  const same = (a: number | undefined, b: number | undefined) => a === b || (Number.isNaN(a) && Number.isNaN(b));
+  while (shared < Math.min(at.length, own + 1) && same(at[shared], target.place.values[shared])) shared += 1;
   const keepFrom = Math.min(shared, own);
   return joinParts(target.parts.filter((part) => part.level >= keepFrom), reader, target.plainList === true);
 }
