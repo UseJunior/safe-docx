@@ -9,7 +9,7 @@
 
 import { createWmlTextElement } from '../../primitives/dom-helpers.js';
 import { OOXML, W } from '../../primitives/namespaces.js';
-import { resolveReferenceNumber, type NumberingModel } from '../../primitives/numbering.js';
+import { resolveReferenceNumber, type NumberingModel, type RelativeReferenceContext } from '../../primitives/numbering.js';
 import { computeParagraphListLabels, type ParagraphListLabel } from '../../primitives/paragraph_list_numbering.js';
 import type { StylesModel } from '../../primitives/styles.js';
 import { GenerationInternalError, GenerationSpecError } from '../errors.js';
@@ -78,10 +78,20 @@ type BookmarkTarget = { label: ParagraphListLabel | null; textRuns: Element[] };
  * {@link resolveBody} once the body is built, before it is serialized.
  * Footnotes are emitted after the body, so their references read the
  * resolved numbers directly.
+ *
+ * A relative reference's number also depends on where it sits: the last
+ * paragraph of its target's list (`w:numId`) at or before the paragraph
+ * holding the field, table cells included, in document order. A reference in
+ * a footnote has no such position and shows the full number, as Word shows
+ * it (scripts/oracle/word/evidence/issue-1258-word-16.114.json).
  */
 export class CrossReferenceResolver {
   private readonly pending: Array<{ placeholder: Element; reference: CrossReferenceTarget }> = [];
   private targets: Map<string, BookmarkTarget> | null = null;
+  /** Each list's numbered body paragraphs, by `w:numId`, as (document position, label) in document order. */
+  private listPositions = new Map<string, Array<{ index: number; label: ParagraphListLabel }>>();
+  /** Each body paragraph's document position. */
+  private paragraphIndex = new Map<Element, number>();
 
   constructor(
     readonly ids: AnnotationIdAllocator,
@@ -118,6 +128,14 @@ export class CrossReferenceResolver {
   resolveBody(body: Element): void {
     const paragraphs = Array.from(body.getElementsByTagNameNS(OOXML.W_NS, W.p));
     const labels = computeParagraphListLabels(paragraphs, this.numbering, this.styles);
+    paragraphs.forEach((paragraph, index) => {
+      this.paragraphIndex.set(paragraph, index);
+      const label = labels.get(paragraph);
+      if (!label) return;
+      const positions = this.listPositions.get(label.numId) ?? [];
+      positions.push({ index, label });
+      this.listPositions.set(label.numId, positions);
+    });
     this.targets = new Map();
     for (const start of Array.from(body.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkStart))) {
       const paragraph = start.parentNode as Element | null;
@@ -127,13 +145,38 @@ export class CrossReferenceResolver {
       this.targets.set(start.getAttributeNS(OOXML.W_NS, 'name') ?? '', { label: labels.get(paragraph) ?? null, textRuns: bookmarkedTextRuns(start) });
     }
     for (const { placeholder, reference } of this.pending.splice(0)) {
-      const runs = this.resultRuns(placeholder, reference);
+      const runs = this.resultRuns(placeholder, reference, this.fieldParagraph(placeholder));
       if (runs.length === 1 && runs[0] === placeholder) continue;
       const parent = placeholder.parentNode;
       if (!parent) throw new GenerationInternalError('A cross-reference result run is not in the body');
       for (const run of runs) parent.insertBefore(run, placeholder);
       parent.removeChild(placeholder);
     }
+  }
+
+  /** The body paragraph holding a field's result run. */
+  private fieldParagraph(run: Element): Element {
+    for (let node: Node | null = run.parentNode; node; node = node.parentNode) {
+      if (node.nodeType === 1 && (node as Element).localName === W.p && (node as Element).namespaceURI === OOXML.W_NS) return node as Element;
+    }
+    throw new GenerationInternalError('A cross-reference result run is not in a body paragraph');
+  }
+
+  /**
+   * Where a relative reference in `paragraph` sits for a target of list
+   * `numId`: that list's last paragraph at or before it, or null when none
+   * comes before it (and for a reference outside the body).
+   */
+  private relativeContext(numId: string, paragraph: Element | null): RelativeReferenceContext {
+    const at = paragraph === null ? undefined : this.paragraphIndex.get(paragraph);
+    if (at === undefined) return null;
+    const positions = this.listPositions.get(numId) ?? [];
+    let found: ParagraphListLabel | null = null;
+    for (const position of positions) {
+      if (position.index > at) break;
+      found = position.label;
+    }
+    return found;
   }
 
   private target(bookmark: string): BookmarkTarget {
@@ -150,16 +193,17 @@ export class CrossReferenceResolver {
    * on the reference itself: Word replaces the result with the target's
    * runs, each keeping its own formatting.
    */
-  private resultRuns(run: Element, reference: CrossReferenceTarget): Element[] {
+  private resultRuns(run: Element, reference: CrossReferenceTarget, paragraph: Element | null = null): Element[] {
     if (reference.show === 'text') {
       const doc = run.ownerDocument!;
       return this.target(reference.bookmark).textRuns.map((source) => doc.importNode(source, true) as Element);
     }
-    run.appendChild(createWmlTextElement(run.ownerDocument!, this.numberFor(reference)));
+    run.appendChild(createWmlTextElement(run.ownerDocument!, this.numberFor(reference, paragraph)));
     return [run];
   }
 
-  private numberFor(reference: CrossReferenceTarget): string {
+  /** `paragraph` is the body paragraph holding the field, or null in a footnote. */
+  private numberFor(reference: CrossReferenceTarget, paragraph: Element | null): string {
     const { bookmark } = reference;
     const { label } = this.target(bookmark);
     const path = `${this.bookmarkPaths.get(bookmark) ?? ''}/bookmark`;
@@ -170,7 +214,9 @@ export class CrossReferenceResolver {
         `Bookmark '${bookmark}' is on a paragraph without a list number, so a cross-reference to it would show 0 in Word`,
       );
     }
-    const result = resolveReferenceNumber(this.numbering, label, reference.number === 'paragraph' ? 'paragraph' : 'fullContext');
+    const form = reference.number === 'paragraph' ? 'paragraph' : reference.number === 'relative' ? 'relative' : 'fullContext';
+    const context = form === 'relative' ? this.relativeContext(label.numId, paragraph) : null;
+    const result = resolveReferenceNumber(this.numbering, label, form, context);
     if ('refused' in result) {
       const reasons: Record<typeof result.refused, string> = {
         unusedLevel:
@@ -180,6 +226,9 @@ export class CrossReferenceResolver {
           `The number of bookmark '${bookmark}' uses a level text that names a deeper list level; ` +
           'Word shows no number for such a level, so a cross-reference to it would show 0',
         undefinedLevel: `The list level of bookmark '${bookmark}' is not defined`,
+        relativeStartValue:
+          `The relative number of bookmark '${bookmark}' depends on a list level shown at its start value ` +
+          '(no paragraph has numbered it since it restarted); what Word shows for it is not measured',
       };
       throw new GenerationSpecError('invalid_value', path, reasons[result.refused]);
     }

@@ -308,8 +308,8 @@ describe('Traceability: generated cross-references', () => {
         const footer = doc([item(2, 'x', { bookmark: 'target' })]);
         footer.sections[0]!.footers = { default: { blocks: [para([ref('target')])] } };
         expect((await specError(footer)).path).toBe('/sections/0/footers/default/blocks/0/runs/0');
-        const relative = await specError(doc([item(2, 'x', { bookmark: 'target' }), para([ref('target', { number: 'relative' as never })])]));
-        expect(relative.path).toBe('/sections/0/blocks/1/runs/0/number');
+        const unknownForm = await specError(doc([item(2, 'x', { bookmark: 'target' }), para([ref('target', { number: 'page' as never })])]));
+        expect(unknownForm.path).toBe('/sections/0/blocks/1/runs/0/number');
         expect((await specError(doc([para([ref('' as string)])]))).path).toBe('/sections/0/blocks/0/runs/0/bookmark');
       });
       await and('a target without a list number, whose own level text names a deeper level or no level, or that renders empty fails at its bookmark', async () => {

@@ -105,20 +105,55 @@ function paragraphsOf(blocks: BlockSpec[]): ParagraphSpec[] {
 
 /**
  * What a cross-reference to a bookmark shows: its number in each form (for a
- * numbered target) and its text (for every target).
+ * numbered target) and its text (for every target). A numbered target also
+ * has its list (`numId`), the value of each of its levels, and the parts of
+ * its full number with the level each stands for, so a relative number can
+ * drop the leading parts it shares with where the reference sits.
  */
-type ReferenceText = { full?: string; paragraph?: string; text: string };
-type ReferenceTexts = ReadonlyMap<string, ReferenceText>;
+type ReferenceText = {
+  full?: string;
+  paragraph?: string;
+  text: string;
+  numId?: string;
+  values?: number[];
+  parts?: Array<{ level: number; text: string }>;
+};
+/**
+ * Every bookmark's reference texts, and for each paragraph holding a
+ * relative reference the values of each list's (`numId`'s) last numbered
+ * paragraph at or before it.
+ */
+type ReferenceTexts = { texts: ReadonlyMap<string, ReferenceText>; positions: ReadonlyMap<ParagraphSpec, ReadonlyMap<string, readonly number[]>> };
+const NO_REFERENCES: ReferenceTexts = { texts: new Map(), positions: new Map() };
 
-function runText(runs: InlineSpec[], references: ReferenceTexts = new Map()): string {
+/**
+ * A relative number as Word shows it (`\r`): the full number less the
+ * leading levels the target shares with its list's last paragraph at or
+ * before the reference, always keeping the target's own level; the full
+ * number when its list has no paragraph there yet, and in a footnote.
+ */
+function relativeText(target: ReferenceText, position: ReadonlyMap<string, readonly number[]> | undefined): string | undefined {
+  const at = target.numId === undefined ? undefined : position?.get(target.numId);
+  if (!at || !target.values || !target.parts) return target.full;
+  const own = target.values.length - 1;
+  let shared = 0;
+  while (shared < Math.min(at.length, own + 1) && at[shared] === target.values[shared]) shared += 1;
+  return target.parts.filter((part) => part.level >= Math.min(shared, own)).map((part) => part.text).join('');
+}
+
+/** `position` is the list positions at the paragraph holding `runs`: absent in a footnote. */
+function runText(runs: InlineSpec[], references: ReferenceTexts = NO_REFERENCES, position?: ReadonlyMap<string, readonly number[]>): string {
   return runs.map((run) => {
     if (run.kind === 'text') return run.text;
     if (run.kind === 'tab') return '\t';
     if (run.kind === 'break') return '\n';
     if (run.kind === 'footnote') return '';
     if (run.kind === 'crossReference') {
-      const target = references.get(run.bookmark);
-      const shown = run.show === 'text' ? target?.text : run.number === 'paragraph' ? target?.paragraph : target?.full;
+      const target = references.texts.get(run.bookmark);
+      const shown = run.show === 'text' ? target?.text
+        : run.number === 'paragraph' ? target?.paragraph
+        : run.number === 'relative' ? (target ? relativeText(target, position) : undefined)
+        : target?.full;
       if (shown === undefined) throw new Error(`cross-reference to '${run.bookmark}' has no ${run.show === 'text' ? 'target' : 'numbered target'} in the lowering`);
       return shown;
     }
@@ -146,7 +181,7 @@ function roman(n: number): string {
  * since it began (Word passes over a level shown at its start value). The
  * paragraph form of a heading is its whole label; of a clause, its own "(b)".
  */
-function headingReferenceText(values: readonly number[], ilvl: number, sectionNumbered: boolean): { full: string; paragraph: string } {
+function headingReferenceText(values: readonly number[], ilvl: number, sectionNumbered: boolean): { full: string; paragraph: string; parts: Array<{ level: number; text: string }> } {
   const own = [
     `ARTICLE ${roman(values[0]!).toUpperCase()}`,
     `Section ${values[0]}.${String(values[1]).padStart(2, '0')}`,
@@ -154,8 +189,10 @@ function headingReferenceText(values: readonly number[], ilvl: number, sectionNu
     `(${roman(values[3]!)})`,
     `(${letters(values[4]!).toUpperCase()})`,
   ];
-  if (ilvl < HEADING_CLAUSE_ILVL) return { full: own[ilvl]!, paragraph: own[ilvl]! };
-  return { full: own[sectionNumbered ? 1 : 0] + own.slice(HEADING_CLAUSE_ILVL, ilvl + 1).join(''), paragraph: own[ilvl]! };
+  if (ilvl < HEADING_CLAUSE_ILVL) return { full: own[ilvl]!, paragraph: own[ilvl]!, parts: [{ level: ilvl, text: own[ilvl]! }] };
+  const context = sectionNumbered ? 1 : 0;
+  const parts = [{ level: context, text: own[context]! }, ...own.slice(HEADING_CLAUSE_ILVL, ilvl + 1).map((text, index) => ({ level: HEADING_CLAUSE_ILVL + index, text }))];
+  return { full: parts.map((part) => part.text).join(''), paragraph: own[ilvl]!, parts };
 }
 
 /**
@@ -175,7 +212,7 @@ function headingReferenceText(values: readonly number[], ilvl: number, sectionNu
  * paragraph style's link to a level (`w:pStyle`), so it counts on that level
  * although it carries no `list` of its own.
  */
-function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSpec[]): Map<string, ReferenceText> {
+function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSpec[]): ReferenceTexts {
   const instances = new Map<string, { definition: NumberingSpec; overrides: ReadonlyMap<number, number> }>();
   const styleLinks = new Map<string, { numId: string; ilvl: number }>();
   for (const definition of numbering) {
@@ -190,17 +227,24 @@ function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSp
   // Per heading definition: whether a Section has been numbered since the current Article began.
   const sectionSinceArticle = new Map<string, boolean>();
   const texts = new Map<string, ReferenceText>();
+  // Each list's (numId's) last numbered paragraph so far, and the copy each paragraph holding a relative reference sees.
+  const lists = new Map<string, number[]>();
+  const positions = new Map<ParagraphSpec, ReadonlyMap<string, readonly number[]>>();
   const visit = (blocks: BlockSpec[]) => {
     for (const block of blocks) {
       if (block.kind === 'table') {
         for (const row of block.rows) for (const cell of row.cells) visit(cell.blocks);
         continue;
       }
+      const relative = block.runs.some((run) => run.kind === 'crossReference' && run.number === 'relative');
       // A text reference shows the paragraph's text runs; the list label and
       // any footnote reference mark are not part of it.
       if (block.bookmark !== undefined) texts.set(block.bookmark, { text: runText(block.runs.filter((run) => run.kind === 'text')) });
       const list = block.list ?? (block.styleId === undefined ? undefined : styleLinks.get(block.styleId));
-      if (!list) continue;
+      if (!list) {
+        if (relative) positions.set(block, new Map(lists));
+        continue;
+      }
       const { numId, ilvl } = list;
       const { definition, overrides } = instances.get(numId)!;
       const { levels } = definition;
@@ -213,19 +257,23 @@ function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSp
       values[ilvl] = (values[ilvl] ?? (levels[ilvl]!.start ?? 1) - 1) + 1;
       values.length = ilvl + 1;
       counters.set(definition.numId, values);
+      lists.set(numId, [...values]);
+      if (relative) positions.set(block, new Map(lists));
       if (ilvl < HEADING_CLAUSE_ILVL) sectionSinceArticle.set(definition.numId, ilvl === 1);
       if (block.bookmark === undefined) continue;
+      const place = { numId, values: [...values] };
       if (levels[0]!.pStyle !== undefined) {
-        texts.set(block.bookmark, { ...texts.get(block.bookmark)!, ...headingReferenceText(values, ilvl, sectionSinceArticle.get(definition.numId) === true) });
+        texts.set(block.bookmark, { ...texts.get(block.bookmark)!, ...place, ...headingReferenceText(values, ilvl, sectionSinceArticle.get(definition.numId) === true) });
         continue;
       }
       if (levels[0]!.numFmt !== 'decimal') continue;
       const own = [String(values[0]), `(${letters(values[1]!)})`, `(${roman(values[2]!)})`];
-      texts.set(block.bookmark, { ...texts.get(block.bookmark)!, full: own.slice(0, ilvl + 1).join(''), paragraph: own[ilvl]! });
+      const parts = own.slice(0, ilvl + 1).map((text, level) => ({ level, text }));
+      texts.set(block.bookmark, { ...texts.get(block.bookmark)!, ...place, parts, full: own.slice(0, ilvl + 1).join(''), paragraph: own[ilvl]! });
     }
   };
   for (const section of sections) visit(section.blocks);
-  return texts;
+  return { texts, positions };
 }
 
 /** Drop the space a trailing `{% #id %}` annotation leaves at the end of its heading or list item text. */
@@ -265,21 +313,23 @@ type BlockProjection = Pick<CreationProjection, 'paragraphs' | 'footnoteReferenc
  * Body paragraphs in document order, table cells included, as read-back must
  * find them, with each footnote reference's position and its note's text.
  */
-function projectBlocks(blocks: BlockSpec[], out: BlockProjection = { paragraphs: [], footnoteReferences: [], footnotes: [] }, references: ReferenceTexts = new Map()): BlockProjection {
+function projectBlocks(blocks: BlockSpec[], out: BlockProjection = { paragraphs: [], footnoteReferences: [], footnotes: [] }, references: ReferenceTexts = NO_REFERENCES): BlockProjection {
   for (const block of blocks) {
     if (block.kind === 'table') {
       for (const row of block.rows) for (const cell of row.cells) projectBlocks(cell.blocks, out, references);
       continue;
     }
+    const position = references.positions.get(block);
     let offset = 0;
     for (const run of block.runs) {
       if (run.kind === 'footnote') {
         out.footnoteReferences.push({ paragraph: out.paragraphs.length, offset });
+        // A footnote has no list position: a relative reference in it shows the full number.
         out.footnotes.push(run.blocks.map((paragraph, index) => (index === 0 ? FOOTNOTE_MARK_SPACE : '') + runText(paragraph.runs, references)));
       }
-      offset += runText([run], references).length;
+      offset += runText([run], references, position).length;
     }
-    out.paragraphs.push(runText(block.runs, references));
+    out.paragraphs.push(runText(block.runs, references, position));
   }
   return out;
 }
