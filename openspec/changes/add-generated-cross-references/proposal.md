@@ -82,8 +82,8 @@ Not included:
   differs between a reference in clause 2.06(a) and one in 2.06(b)(iii).
 - Numbered headings in `create`. Its headings are unnumbered, so an id on a
   heading is a bookmark that no xref can name yet.
-- Text references (`REF` without a number switch) and page references
-  (`PAGEREF`).
+- Text references (`REF` without a number switch), since added by
+  `add-text-cross-references` (#1259), and page references (`PAGEREF`).
 - Re-importing a REF field as `{% xref %}`. Import keeps its number as text.
 
 ## Impact

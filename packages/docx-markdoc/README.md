@@ -599,8 +599,12 @@ package, determinism, read-back and brownfield-import checks:
   and the text on either side of it), with the source.
   The text mirror lists the notes after the body.
 - **Cross-references.** The read-back reads each REF field as its cached
-  number. The round trip compares it with the number the source gives its
-  target, counted from the source's own lists. A separate check compares
+  number or text. The round trip compares it with the number the source gives its
+  target, counted from the source's own lists, or with the target's text as
+  the source has it. For a text reference, the check also compares the text
+  the bookmark encloses with the target's source text, and the field's cached
+  result with that text; its negative control shortens one bookmark by a
+  character. A separate check compares
   each field's bookmark name, number switch and position with its
   `{% xref /%}`, and the paragraph each bookmark opens in with the item
   marked with that id. A field that points at another item showing the same
@@ -703,6 +707,38 @@ such as an unclosed tag, and headings below `###`.
   Errors are `XREF_UNKNOWN_ID` (naming the missing id),
   `XREF_TARGET_NOT_NUMBERED`, `INVALID_CROSS_REFERENCE`, `INVALID_ID`,
   `ID_PLACEMENT`, `DUPLICATE_ID` and `ID_COLLISION`, each with its line.
+- `{% xref to="purchase-price-adjustment" show="text" /%}` shows the target's
+  text instead of its number. This is a REF field with no number switch
+  (` REF purchase_price_adjustment \h `), the field Word's Insert >
+  Cross-reference writes for "Bookmark text". It shows the text of the heading
+  or list item without its number, so a text reference to
+  `Section 1.01 Purchase Price Adjustment` shows `Purchase Price Adjustment`.
+  Footnote reference marks are left out too, and a fill keeps its brackets.
+  The target may be any heading or list item with an id, numbered or not.
+  Word copies the target's own formatting into the result, keeping an
+  italic word italic and a fill highlighted, so the cached result does the
+  same. `show="text"` takes no `number` or `format`. It cannot sit inside
+  bold, italic or `{% u %}`, because Word drops that formatting when it
+  updates the field (`INVALID_CROSS_REFERENCE`). In a bold table header row
+  it is not bolded. A text target that holds an xref or a line break, or has
+  no text, fails with `XREF_TEXT_TARGET_UNSUPPORTED`. When the heading is
+  reworded in Word, the reference follows once fields are updated, with two
+  exceptions measured in Word 16.114
+  (`scripts/oracle/word/evidence/issue-1259-word-16.114.json`). The bookmark
+  covers the heading's text but stops before its paragraph mark, the same
+  extent Word gives a heading of its own:
+  - Text typed at the start of the heading, or anywhere inside it, stays in
+    the bookmark.
+  - Text typed at the very end of the heading lands after the bookmark, so
+    the reference keeps the old text. Replacing the heading's last word
+    does the same: "Purchase Price Adjustment" edited to "Purchase Price
+    True-Up" leaves the reference showing "Purchase Price". Type new words
+    before the heading's last character, and delete old ones afterwards.
+    Word's own heading-text cross-reference uses a bookmark of the same
+    extent and behaves the same way.
+  - Selecting the whole heading text and typing over it deletes the
+    bookmark. Every reference to the heading, number or text, then shows
+    "Error! Reference source not found." Edit inside the text instead.
 - Frontmatter `heading-numbers: legal` numbers the headings. Each `##` is
   `ARTICLE I`, `ARTICLE II`, …, and each `###` is `Section 1.01`,
   `Section 1.02`, …, restarting under each Article. The title (`#`) is not

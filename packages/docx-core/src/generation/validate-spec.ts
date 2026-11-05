@@ -45,6 +45,7 @@ import type {
 } from './types.js';
 import {
   CROSS_REFERENCE_NUMBERS,
+  CROSS_REFERENCE_SHOWS,
   HIGHLIGHT_COLORS,
   NUMBERING_LEVEL_FORMATS,
   NUMBERING_LEVEL_JUSTIFICATIONS,
@@ -71,6 +72,7 @@ const STYLE_TYPES = new Set(['paragraph', 'character']);
 const NUMBER_FORMATS: ReadonlySet<string> = new Set(NUMBERING_LEVEL_FORMATS);
 const NUMBER_SUFFIXES = new Set(['tab', 'space', 'nothing']);
 const CROSS_REFERENCE_NUMBER_SET: ReadonlySet<string> = new Set(CROSS_REFERENCE_NUMBERS);
+const CROSS_REFERENCE_SHOW_SET: ReadonlySet<string> = new Set(CROSS_REFERENCE_SHOWS);
 
 function requireInteger(value: unknown, path: string, description: string, minimum?: number, maximum?: number): void {
   if (
@@ -206,7 +208,7 @@ export function collectBookmarkPaths(spec: DocumentSpec): Map<string, string> {
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
  */
 function validateCrossReferences(spec: DocumentSpec): void {
-  const bookmarks = new Set<string>();
+  const bookmarks = new Map<string, ParagraphSpec>();
   const folded = new Map<string, string>();
   walkDocumentParagraphs(spec, (paragraph, path, story) => {
     if (paragraph.bookmark === undefined) return;
@@ -231,7 +233,7 @@ function validateCrossReferences(spec: DocumentSpec): void {
       throw new GenerationSpecError('invalid_value', bookmarkPath, `Bookmark name '${paragraph.bookmark}' repeats '${earlier}'; bookmark names are unique regardless of case`);
     }
     folded.set(key, paragraph.bookmark);
-    bookmarks.add(paragraph.bookmark);
+    bookmarks.set(paragraph.bookmark, paragraph);
   });
   walkDocumentParagraphs(spec, (paragraph, path, story) => {
     paragraph.runs.forEach((run, runIndex) => {
@@ -240,11 +242,39 @@ function validateCrossReferences(spec: DocumentSpec): void {
       if (story === 'headerFooter') {
         throw new GenerationSpecError('invalid_value', runPath, 'Cross-references may appear in the body and in footnotes, not in headers or footers');
       }
-      if (!bookmarks.has(run.bookmark)) {
+      const target = bookmarks.get(run.bookmark);
+      if (!target) {
         throw new GenerationSpecError('dangling_bookmark_reference', `${runPath}/bookmark`, `Cross-reference names undeclared bookmark '${String(run.bookmark)}'`);
       }
+      if (run.show === 'text') validateTextReferenceTarget(run.bookmark, target, `${runPath}/show`);
     });
   });
+}
+
+/**
+ * A text cross-reference shows its target paragraph's text: REF "inserts the
+ * text or graphics represented by the bookmark" (§ 17.16.5.51). The result
+ * is the target's text runs; Word leaves a footnote reference mark out of it
+ * (without the `\f` switch) and the list label is not bookmarked content
+ * (#1259 Word evidence). A tab, break, field or nested cross-reference in the
+ * target is refused: what Word shows for it in a REF result is not
+ * measured. A blank target would show nothing.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
+ */
+function validateTextReferenceTarget(bookmark: string, target: ParagraphSpec, path: string): void {
+  const unsupportedRun = target.runs.find((inline) => inline.kind !== 'text' && inline.kind !== 'footnote');
+  if (unsupportedRun) {
+    throw new GenerationSpecError(
+      'invalid_value',
+      path,
+      `A text cross-reference to bookmark '${bookmark}' needs a target holding only text and footnote references; its paragraph holds a ${unsupportedRun.kind}`,
+    );
+  }
+  const shown = target.runs.map((inline) => (inline.kind === 'text' ? inline.text : '')).join('');
+  if (shown.trim().length === 0) {
+    throw new GenerationSpecError('invalid_value', path, `A text cross-reference to bookmark '${bookmark}' would show empty text`);
+  }
 }
 
 function validateTheme(spec: DocumentSpec): void {
@@ -942,6 +972,25 @@ function validateInline(
   if (run.kind === 'crossReference') {
     if (typeof run.bookmark !== 'string' || run.bookmark.length === 0) {
       throw new GenerationSpecError('invalid_value', `${path}/bookmark`, 'Cross-references name a bookmark');
+    }
+    if (run.show !== undefined && !CROSS_REFERENCE_SHOW_SET.has(run.show)) {
+      throw new GenerationSpecError('invalid_value', `${path}/show`, `Cross-reference show must be one of ${CROSS_REFERENCE_SHOWS.join(', ')}, got '${String(run.show)}'`);
+    }
+    if (run.show === 'text' && run.number !== undefined) {
+      throw new GenerationSpecError('invalid_value', `${path}/number`, 'A text cross-reference shows no number; drop number or show the number');
+    }
+    if (run.show === 'text') {
+      // Word writes a text reference's result as the target's runs with their
+      // own formatting, whatever formatting the field carries (#1259 Word
+      // evidence), so formatting on the reference would vanish on update.
+      const formatting = Object.keys(run).filter((key) => key !== 'kind' && key !== 'bookmark' && key !== 'show' && key !== 'number');
+      if (formatting.length > 0) {
+        throw new GenerationSpecError(
+          'invalid_value',
+          `${path}/${formatting[0]}`,
+          'A text cross-reference takes its target\'s formatting: Word replaces its result with the target\'s runs when fields update, so it carries no run formatting of its own',
+        );
+      }
     }
     if (run.number !== undefined && !CROSS_REFERENCE_NUMBER_SET.has(run.number)) {
       throw new GenerationSpecError('invalid_value', `${path}/number`, `Cross-reference number must be one of ${CROSS_REFERENCE_NUMBERS.join(', ')}, got '${String(run.number)}'`);

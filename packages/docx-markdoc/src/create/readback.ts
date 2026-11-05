@@ -23,8 +23,15 @@ export type CreationReadback = {
   /** Every REF field in the notes, note by note in reference order; `paragraph` counts within its note. Absent when there are none. */
   footnoteCrossReferences?: Array<CrossReferenceSite & { note: number }>;
   /** Every body bookmark start, in document order, with the paragraph (index into `paragraphs`) it opens in. Absent when there are none. */
-  bookmarks?: Array<{ name: string; paragraph: number }>;
+  bookmarks?: BookmarkSite[];
 };
+
+/**
+ * A bookmark and the paragraph it opens in. `text` is the read-back text
+ * between its start and its end, which is what a text cross-reference to it
+ * shows; it is absent when the bookmark does not end in that paragraph.
+ */
+export type BookmarkSite = { name: string; paragraph: number; text?: string };
 
 /** Where a cross-reference's cached result sits in the read-back text, and the field's instruction. */
 export type CrossReferenceSite = { paragraph: number; offset: number; text: string; instruction: string };
@@ -48,7 +55,8 @@ export function paragraphReadbackText(
   paragraph: Element,
   onFootnoteReference?: (offset: number, id: string) => void,
   onCrossReference?: (offset: number, text: string, instruction: string) => void,
-  onBookmark?: (name: string) => void,
+  onBookmark?: (name: string, id: string, offset: number) => void,
+  onBookmarkEnd?: (id: string, offset: number) => void,
 ): string {
   let text = '';
   let field: { instruction: string; inResult: boolean; result: string } | null = null;
@@ -85,7 +93,10 @@ export function paragraphReadbackText(
           if (!field) text += '\n';
           break;
         case 'bookmarkStart':
-          onBookmark?.(child.getAttributeNS(W, 'name') || child.getAttribute('w:name') || '');
+          onBookmark?.(child.getAttributeNS(W, 'name') || child.getAttribute('w:name') || '', child.getAttributeNS(W, 'id') || child.getAttribute('w:id') || '', text.length);
+          break;
+        case 'bookmarkEnd':
+          onBookmarkEnd?.(child.getAttributeNS(W, 'id') || child.getAttribute('w:id') || '', text.length);
           break;
         case 'footnoteReference':
           onFootnoteReference?.(text.length, child.getAttributeNS(W, 'id') || child.getAttribute('w:id') || '');
@@ -108,17 +119,30 @@ function blockParagraphs(
   inCell = false,
   references: FootnoteReferenceSite[] = [],
   crossReferences: CrossReferenceSite[] = [],
-  bookmarks: Array<{ name: string; paragraph: number }> = [],
+  bookmarks: BookmarkSite[] = [],
 ): void {
   for (const child of elementChildren(container)) {
     if (isW(child, 'p')) {
       const paragraph = out.length;
-      out.push(paragraphReadbackText(
+      const opened = new Map<string, { site: BookmarkSite; start: number }>();
+      const closed: Array<{ site: BookmarkSite; start: number; end: number }> = [];
+      const text = paragraphReadbackText(
         child,
         (offset, id) => references.push({ paragraph, offset, id }),
-        (offset, text, instruction) => crossReferences.push({ paragraph, offset, text, instruction }),
-        (name) => bookmarks.push({ name, paragraph }),
-      ));
+        (offset, result, instruction) => crossReferences.push({ paragraph, offset, text: result, instruction }),
+        (name, id, offset) => {
+          const site: BookmarkSite = { name, paragraph };
+          bookmarks.push(site);
+          opened.set(id, { site, start: offset });
+        },
+        (id, offset) => {
+          const start = opened.get(id);
+          if (start) closed.push({ ...start, end: offset });
+          opened.delete(id);
+        },
+      );
+      for (const { site, start, end } of closed) site.text = text.slice(start, end);
+      out.push(text);
       cells.push(inCell);
     } else if (isW(child, 'tbl')) {
       for (const row of elementChildren(child).filter((node) => isW(node, 'tr'))) {
@@ -167,7 +191,7 @@ export async function readCreatedDocx(buffer: Buffer): Promise<CreationReadback>
   const inTableCell: boolean[] = [];
   const references: FootnoteReferenceSite[] = [];
   const crossReferences: CrossReferenceSite[] = [];
-  const bookmarks: Array<{ name: string; paragraph: number }> = [];
+  const bookmarks: BookmarkSite[] = [];
   blockParagraphs(body, paragraphs, inTableCell, false, references, crossReferences, bookmarks);
   const footnoteCrossReferences: Array<CrossReferenceSite & { note: number }> = [];
   const footnotes = await readFootnotes(read, zip.file('word/footnotes.xml') !== null, references, footnoteCrossReferences);
