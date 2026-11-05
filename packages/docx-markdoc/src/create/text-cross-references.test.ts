@@ -163,9 +163,9 @@ describe('Traceability: text cross-references in created documents', () => {
       // and its text-extent control (a bookmark one character short) is detected.
       expect(created.certificate.checks.crossReferences).toEqual({
         passed: true,
-        references: { expected: 12, actual: 12, text: 8 },
+        references: { expected: 12, actual: 12, text: 8, relative: 0 },
         mismatches: [],
-        negativeControls: { switchChanged: true, retargeted: true, moved: true, textExtent: true },
+        negativeControls: { switchChanged: true, retargeted: true, moved: true, textExtent: true, relativeContext: 'not applicable' },
       });
       expect(created.readback.bookmarks?.find((bookmark) => bookmark.name === 'escrow_release')?.text).toBe('Escrow Release by [Outside Date]');
     },
@@ -245,7 +245,7 @@ describe('Traceability: text cross-references in created documents', () => {
       // With only same-text targets there is no other text to point at, so retargeted is not applicable;
       // the text-extent control still runs.
       expect((await createDocumentFromMarkdoc(twins)).certificate.checks.crossReferences?.negativeControls)
-        .toEqual({ switchChanged: true, retargeted: 'not applicable', moved: true, textExtent: true });
+        .toEqual({ switchChanged: true, retargeted: 'not applicable', moved: true, textExtent: true, relativeContext: 'not applicable' });
     },
   );
 

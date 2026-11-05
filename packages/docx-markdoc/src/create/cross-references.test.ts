@@ -111,9 +111,9 @@ describe('Traceability: cross-references in created documents', () => {
       // Each field points at the bookmark on the item its xref names.
       expect(created.certificate.checks.crossReferences).toEqual({
         passed: true,
-        references: { expected: 6, actual: 6, text: 0 },
+        references: { expected: 6, actual: 6, text: 0, relative: 0 },
         mismatches: [],
-        negativeControls: { switchChanged: true, retargeted: true, moved: true, textExtent: 'not applicable' },
+        negativeControls: { switchChanged: true, retargeted: true, moved: true, textExtent: 'not applicable', relativeContext: 'not applicable' },
       });
       expect(created.readback.footnotes).toEqual([[' Compare Section 2(a).']]);
       expect(created.text).toContain('Purchase Price. The price is set out in Section 2(b).');
@@ -163,7 +163,7 @@ describe('Traceability: cross-references in created documents', () => {
       expect(await failure('# T\n\n1. One {% #one %}\n2. Two {% #one %}\n')).toEqual({ code: 'DUPLICATE_ID', line: 4 });
       expect(await failure('# T\n\n1. One {% #a_b %}\n')).toEqual({ code: 'INVALID_ID', line: 3 });
       expect(await failure('# T\n\nPara {% #p %}\n')).toEqual({ code: 'ID_PLACEMENT', line: 3 });
-      expect(await failure(`${item}See {% xref to="one" number="relative" /%}.\n`)).toEqual({ code: 'INVALID_CROSS_REFERENCE', line: 5 });
+      expect(await failure(`${item}See {% xref to="one" number="page" /%}.\n`)).toEqual({ code: 'INVALID_CROSS_REFERENCE', line: 5 });
       expect(await failure(`${item}See {% xref to="one" format="article" /%}.\n`)).toEqual({ code: 'INVALID_CROSS_REFERENCE', line: 5 });
       expect(await failure(`${item}See {% xref to="one" %}x{% /xref %}.\n`)).toEqual({ code: 'INVALID_CROSS_REFERENCE', line: 5 });
       expect(await failure(`${item}See {% xref /%}.\n`)).toEqual({ code: 'INVALID_CROSS_REFERENCE', line: 5 });
@@ -261,7 +261,7 @@ describe('Traceability: cross-references in created documents', () => {
       // Every xref tag in the source's syntax tree is counted, whether or not the text walker reaches it, so a
       // tag the walker skipped would fail the build. A tag after a signer's name, the one shape that used to
       // be skipped (the signature block renders only the name's line), is now refused before anything is built.
-      expect((await createDocumentFromMarkdoc(SOURCE)).certificate.checks.crossReferences?.references).toEqual({ expected: 6, actual: 6, text: 0 });
+      expect((await createDocumentFromMarkdoc(SOURCE)).certificate.checks.crossReferences?.references).toEqual({ expected: 6, actual: 6, text: 0, relative: 0 });
       expect(await failure('# T\n\n1. One {% #one %}\n2. Two {% #two %}\n\n{% signer %}\nSee  \n{% xref to="two" /%}\n{% /signer %}\n')).toEqual({ code: 'INVALID_SIGNER', line: 8 });
 
       // A target that holds a footnote reference compares by its text without the note.

@@ -29,7 +29,16 @@ import { parseCreationFrontmatter } from './validate.js';
  *   numbers of the item and its ancestors joined, with the period of `1.`
  *   dropped (`2`, `2(b)`, `2(b)(ii)`); `number="paragraph"` shows the item's
  *   own number (`\n`: `2`, `(b)`, `(ii)`); `format="section"` puts
- *   `Section ` before it;
+ *   `Section ` before it; `number="relative"` shows the full number less
+ *   the leading levels the target shares with where the xref sits (Word's
+ *   `\r`): its position is the last numbered paragraph of the target's own
+ *   list at or before the xref's paragraph, the target's own number is
+ *   always kept, and in a footnote the number is shown in full (`(b)` from
+ *   inside `2(a)`, `(ii)` from `2(b)(i)` or from the target itself, `2(b)`
+ *   from `3(a)` or after a restarted list). An ordered list continues the
+ *   ordered list before it as one Word list when its first marker is that
+ *   list's next number; under numbered headings the headings and their
+ *   clauses are one list;
  * - a `{% xref to="id" show="text" /%}` shows the text of the heading or
  *   list item marked `{% #id %}` (a REF field with no number switch): its
  *   inline text as this walker reads it, a fill in its brackets, without its
@@ -93,7 +102,7 @@ export type SourceProjection = {
   crossReferenceTargets?: Record<string, string>;
   /**
    * Every `{% xref /%}` tag in the source, found by walking the whole syntax
-   * tree rather than the text walker, as `to|full`, `to|paragraph` or `to|text`, sorted. A tag the text
+   * tree rather than the text walker, as `to|full`, `to|paragraph`, `to|relative` or `to|text`, sorted. A tag the text
    * walker never reaches is missing from `crossReferences` but not from here.
    */
   crossReferenceInventory?: string[];
@@ -105,12 +114,15 @@ export type SourceProjection = {
   footnoteReferenceInventory?: string[];
 }
 
-/** What an `{% xref /%}` tag shows, as one word: its number in full, its paragraph number, or its target's text. */
-export type CrossReferenceForm = 'full' | 'paragraph' | 'text';
+/** What an `{% xref /%}` tag shows, as one word: its number in full, its paragraph number, its relative number, or its target's text. */
+export type CrossReferenceForm = 'full' | 'paragraph' | 'relative' | 'text';
+
+/** The number forms of a number reference. */
+type NumberForm = 'full' | 'paragraph' | 'relative';
 
 function xrefForm(node: MarkdocNode): CrossReferenceForm {
   if (node.attributes.show === 'text') return 'text';
-  return node.attributes.number === 'paragraph' ? 'paragraph' : 'full';
+  return node.attributes.number === 'paragraph' || node.attributes.number === 'relative' ? node.attributes.number : 'full';
 }
 
 /** The form of a cross-reference as written in the source. */
@@ -135,8 +147,11 @@ function fnrefInventory(node: MarkdocNode): string[] {
  * in `body[entry].text`, or in paragraph `paragraph` of the note numbered
  * `note`, at `offset`, `length` characters long. `show` is what it shows;
  * `number` is the number form, and stays `'full'` for a text reference.
+ * `shown` is the text it shows; a relative reference also carries its
+ * target's full number (`fullNumber`), which it shows only where it shares
+ * no level with its target.
  */
-export type SourceCrossReference = { to: string; show: 'number' | 'text'; number: 'full' | 'paragraph'; offset: number; length: number } & (
+export type SourceCrossReference = { to: string; show: 'number' | 'text'; number: NumberForm; offset: number; length: number; shown: string; fullNumber?: string } & (
   | { story: 'body'; entry: number }
   | { story: 'footnote'; note: number; paragraph: number }
 );
@@ -149,7 +164,7 @@ const XREF_CLOSE = '\u0006';
 type ScannedText = {
   text: string;
   footnotes: Array<{ offset: number; id: string }>;
-  xrefs: Array<{ to: string; show: 'number' | 'text'; number: 'full' | 'paragraph'; offset: number; length: number }>;
+  xrefs: Array<{ to: string; show: 'number' | 'text'; number: NumberForm; offset: number; length: number; shown: string; fullNumber?: string }>;
 };
 
 /** Remove the footnote and cross-reference stand-ins from walker text, recording where each sat. */
@@ -168,9 +183,17 @@ function scanMarks(raw: string): ScannedText {
       at = close + 1;
     } else if (xrefClose !== -1) {
       const close = xrefClose;
-      const [to = '', form = 'full'] = raw.slice(at + 1, middle).split('|');
+      const [to = '', form = 'full', fullNumber] = raw.slice(at + 1, middle).split('|');
       const shown = raw.slice(middle + 1, close);
-      out.xrefs.push({ to, show: form === 'text' ? 'text' : 'number', number: form === 'paragraph' ? 'paragraph' : 'full', offset: out.text.length, length: shown.length });
+      out.xrefs.push({
+        to,
+        show: form === 'text' ? 'text' : 'number',
+        number: form === 'paragraph' || form === 'relative' ? form : 'full',
+        offset: out.text.length,
+        length: shown.length,
+        shown,
+        ...(form === 'relative' ? { fullNumber: fullNumber ?? '' } : {}),
+      });
       out.text += shown;
       at = close + 1;
     } else {
@@ -222,22 +245,29 @@ export function clauseMarker(depth: number, n: number): string {
  * (the Section, or the Article when no Section of it precedes the list).
  * Empty without heading numbering.
  */
-function headingLabels(ast: MarkdocNode): { headings: Map<MarkdocNode, string>; clauseContext: Map<MarkdocNode, string> } {
-  const headings = new Map<MarkdocNode, string>();
-  const clauseContext = new Map<MarkdocNode, string>();
+/**
+ * Where a numbered heading or a clause list under one sits: its label, the
+ * level that label stands for (0 for an Article, 1 for a Section), and the
+ * Article and Section numbers (the Section is NaN directly under an Article).
+ */
+type HeadingPlace = { label: string; level: number; values: number[] };
+
+function headingLabels(ast: MarkdocNode): { headings: Map<MarkdocNode, HeadingPlace>; clauseContext: Map<MarkdocNode, HeadingPlace> } {
+  const headings = new Map<MarkdocNode, HeadingPlace>();
+  const clauseContext = new Map<MarkdocNode, HeadingPlace>();
   if (parseCreationFrontmatter(ast.attributes.frontmatter as string | undefined).headingNumbers !== 'legal') return { headings, clauseContext };
   let article = 0;
   let section = 0;
-  let context: string | null = null;
+  let context: HeadingPlace | null = null;
   for (const node of ast.children) {
     if (node.type === 'heading' && node.attributes.level === 2) {
       article += 1;
       section = 0;
-      context = `ARTICLE ${roman(article).toUpperCase()}`;
+      context = { label: `ARTICLE ${roman(article).toUpperCase()}`, level: 0, values: [article] };
       headings.set(node, context);
     } else if (node.type === 'heading' && node.attributes.level === 3) {
       section += 1;
-      context = `Section ${article}.${String(section).padStart(2, '0')}`;
+      context = { label: `Section ${article}.${String(section).padStart(2, '0')}`, level: 1, values: [article, section] };
       headings.set(node, context);
     } else if (node.type === 'list' && node.attributes.ordered === true && context !== null) {
       clauseContext.set(node, context);
@@ -251,9 +281,51 @@ function lineOf(node: MarkdocNode): number | undefined {
   return start === undefined ? undefined : start + 1;
 }
 
-/** What a cross-reference to each `{% #id %}` target shows: its number in each form when it has one, and its text. */
-type CrossReferenceText = { full?: string; paragraph?: string; text: string };
+/**
+ * A numbered paragraph's place in its Word list: the list (`headings`, or
+ * `list <n>` for the n-th chain of continuing ordered lists) and the value
+ * of each level from 0 through its own.
+ */
+type ListPlace = { list: string; values: number[] };
+
+/**
+ * What a cross-reference to each `{% #id %}` target shows: its number in
+ * each form when it has one, and its text. A numbered target also has its
+ * place and the parts of its full number, each with the level it stands for
+ * ("Section 2.03" for level 1, "(b)" for 2), so a relative number can drop
+ * the leading ones.
+ */
+type CrossReferenceText = { full?: string; paragraph?: string; text: string; place?: ListPlace; parts?: Array<{ level: number; text: string }>; plainList?: boolean };
 type CrossReferenceTexts = ReadonlyMap<string, CrossReferenceText>;
+
+/**
+ * Where the walker is: the place of each Word list's last numbered
+ * paragraph so far (the current paragraph included), and whether it is in
+ * a footnote, where a relative number shows in full.
+ */
+type WalkPosition = { lists: Map<string, number[]>; footnote: boolean };
+
+/** Join the parts of a number as `reader` shows it: LibreOffice keeps the period of `1.` before `(`. */
+function joinParts(parts: ReadonlyArray<{ level: number; text: string }>, reader: ProjectionReader, plainList: boolean): string {
+  return parts.map((part, index) => (reader === 'libreoffice' && plainList && part.level === 0 && index < parts.length - 1 ? `${part.text}.` : part.text)).join('');
+}
+
+/**
+ * A relative number (Word's `\r`): the target's full number less the
+ * leading levels whose values it shares with the last paragraph of its list
+ * at the xref, keeping at least its own level; the full number when no
+ * paragraph of its list comes before the xref, or in a footnote.
+ */
+function relativeNumber(target: CrossReferenceText, position: WalkPosition | undefined, reader: ProjectionReader): string | undefined {
+  if (!target.place || !target.parts) return target.full;
+  const at = position && !position.footnote ? position.lists.get(target.place.list) : undefined;
+  if (!at) return target.full;
+  const own = target.place.values.length - 1;
+  let shared = 0;
+  while (shared < Math.min(at.length, own + 1) && at[shared] === target.place.values[shared]) shared += 1;
+  const keepFrom = Math.min(shared, own);
+  return joinParts(target.parts.filter((part) => part.level >= keepFrom), reader, target.plainList === true);
+}
 
 /**
  * The text a text reference to a heading or list item shows: the node's own
@@ -274,15 +346,17 @@ function targetText(node: MarkdocNode): string {
  * heading numbers its clauses after that heading's label. Every heading and
  * list item with an id, numbered or not, also gets its text.
  */
-function crossReferenceTexts(ast: MarkdocNode, reader: ProjectionReader): Map<string, CrossReferenceText> {
+function crossReferenceTexts(ast: MarkdocNode, reader: ProjectionReader): { texts: Map<string, CrossReferenceText>; places: Map<MarkdocNode, ListPlace> } {
   const texts = new Map<string, CrossReferenceText>();
+  // The place of every numbered heading and ordered list item, keyed by its node, for the walker's position.
+  const places = new Map<MarkdocNode, ListPlace>();
   const { headings, clauseContext } = headingLabels(ast);
-  const visit = (list: MarkdocNode, ancestors: readonly number[], context: string | undefined) => {
+  const visit = (list: MarkdocNode, ancestors: readonly number[], context: HeadingPlace | undefined, chain: string) => {
     if (list.attributes.ordered !== true) {
       // Bullets show no number; a text reference may still name one.
       for (const item of list.children) {
         if (item.attributes.id !== undefined) texts.set(String(item.attributes.id), { text: targetText(item) });
-        for (const child of item.children) if (child.type === 'list') visit(child, [], undefined);
+        for (const child of item.children) if (child.type === 'list') visit(child, [], undefined, chain);
       }
       return;
     }
@@ -290,35 +364,54 @@ function crossReferenceTexts(ast: MarkdocNode, reader: ProjectionReader): Map<st
     let n = depth === 0 && Number.isInteger(list.attributes.start) ? Number(list.attributes.start) : 1;
     for (const item of list.children) {
       const values = [...ancestors, n];
-      let full: string;
-      let paragraph: string;
+      let parts: Array<{ level: number; text: string }>;
+      let place: ListPlace;
       if (context !== undefined) {
-        const own = values.map((value, level) => clauseMarker(level, value));
-        full = `${context}${own.join('')}`;
-        paragraph = own[depth]!;
+        // Clauses are levels 2 and deeper of the heading list, under the Section (or Article) they sit in.
+        parts = [{ level: context.level, text: context.label }, ...values.map((value, level) => ({ level: level + 2, text: clauseMarker(level, value) }))];
+        place = { list: 'headings', values: [context.values[0]!, context.values[1] ?? Number.NaN, ...values] };
       } else {
-        const own = values.map((value, level) => (level === 0 ? String(value) : level === 1 ? `(${letters(value)})` : `(${roman(value)})`));
-        // LibreOffice keeps the period of `1.` before `(`; Word drops it.
-        full = reader === 'libreoffice' && depth > 0 ? `${own[0]}.${own.slice(1).join('')}` : own.join('');
-        paragraph = own[depth]!;
+        parts = values.map((value, level) => ({ level, text: level === 0 ? String(value) : level === 1 ? `(${letters(value)})` : `(${roman(value)})` }));
+        place = { list: chain, values };
       }
-      if (item.attributes.id !== undefined) texts.set(String(item.attributes.id), { full, paragraph, text: targetText(item) });
-      for (const child of item.children) if (child.type === 'list') visit(child, values, context);
+      places.set(item, place);
+      // LibreOffice keeps the period of `1.` before `(`; Word drops it.
+      const full = joinParts(parts, reader, context === undefined);
+      const paragraph = parts.at(-1)!.text;
+      if (item.attributes.id !== undefined) texts.set(String(item.attributes.id), { full, paragraph, text: targetText(item), place, parts, plainList: context === undefined });
+      for (const child of item.children) if (child.type === 'list') visit(child, values, context, chain);
       n += 1;
     }
   };
+  // Chains of continuing ordered lists outside numbered headings: a list whose first marker is the previous one's next number continues it.
+  let chains = 0;
+  let next: number | null = null;
   for (const node of ast.children) {
-    if (node.type === 'list') visit(node, [], clauseContext.get(node));
+    if (node.type === 'list') {
+      const context = clauseContext.get(node);
+      let chain = `list ${chains}`;
+      if (node.attributes.ordered === true && context === undefined) {
+        const start = Number.isInteger(node.attributes.start) ? Number(node.attributes.start) : 1;
+        if (next === null || start !== next) chains += 1;
+        chain = `list ${chains}`;
+        next = start + node.children.length;
+      }
+      visit(node, [], context, chain);
+    }
+    const heading = node.type === 'heading' ? headings.get(node) : undefined;
+    if (heading) places.set(node, { list: 'headings', values: heading.values });
     if (node.type === 'heading' && node.attributes.id !== undefined) {
-      const label = headings.get(node);
-      texts.set(String(node.attributes.id), { ...(label === undefined ? {} : { full: label, paragraph: label }), text: targetText(node) });
+      texts.set(String(node.attributes.id), {
+        ...(heading === undefined ? {} : { full: heading.label, paragraph: heading.label, place: { list: 'headings', values: heading.values }, parts: [{ level: heading.level, text: heading.label }] }),
+        text: targetText(node),
+      });
     }
   }
-  return texts;
+  return { texts, places };
 }
 
-function inlineText(node: MarkdocNode, references: CrossReferenceTexts = new Map()): string {
-  const children = () => node.children.map((child) => inlineText(child, references)).join('');
+function inlineText(node: MarkdocNode, references: CrossReferenceTexts = new Map(), position?: WalkPosition, reader: ProjectionReader = 'word'): string {
+  const children = () => node.children.map((child) => inlineText(child, references, position, reader)).join('');
   switch (node.type) {
     case 'text': return String(node.attributes.content ?? '');
     case 'softbreak': return ' ';
@@ -329,10 +422,14 @@ function inlineText(node: MarkdocNode, references: CrossReferenceTexts = new Map
       if (node.tag === 'xref') {
         const target = references.get(String(node.attributes.to));
         const form = xrefForm(node);
-        const shown = form === 'text' ? target?.text : form === 'paragraph' ? target?.paragraph : target?.full;
+        const shown = form === 'text' ? target?.text
+          : form === 'paragraph' ? target?.paragraph
+          : form === 'relative' ? (target ? relativeNumber(target, position, reader) : undefined)
+          : target?.full;
         // Validation rejects a dangling target before the oracle runs; an empty
         // expectation here would only make the comparison fail, never pass.
-        return `${form !== 'text' && node.attributes.format === 'section' ? 'Section ' : ''}${XREF_OPEN}${String(node.attributes.to)}|${form}${XREF_NUMBER}${shown ?? ''}${XREF_CLOSE}`;
+        const fullNumber = form === 'relative' ? `|${target?.full ?? ''}` : '';
+        return `${form !== 'text' && node.attributes.format === 'section' ? 'Section ' : ''}${XREF_OPEN}${String(node.attributes.to)}|${form}${fullNumber}${XREF_NUMBER}${shown ?? ''}${XREF_CLOSE}`;
       }
       return children();
     default: return children();
@@ -370,8 +467,15 @@ export type ProjectionReader = 'word' | 'libreoffice';
 /** Read the expected plain text straight from the Markdoc source. */
 export function projectSourceText(source: string, options: { reader?: ProjectionReader } = {}): SourceProjection {
   const ast = Markdoc.parse(source);
-  const crossReferences = crossReferenceTexts(ast, options.reader ?? 'word');
-  const textOf = (node: MarkdocNode) => inlineText(node, crossReferences);
+  const reader = options.reader ?? 'word';
+  const { texts: crossReferences, places } = crossReferenceTexts(ast, reader);
+  const position: WalkPosition = { lists: new Map(), footnote: false };
+  const textOf = (node: MarkdocNode) => inlineText(node, crossReferences, position, reader);
+  // A numbered paragraph becomes its list's position before its own text is read.
+  const reach = (node: MarkdocNode) => {
+    const place = places.get(node);
+    if (place) position.lists.set(place.list, place.values);
+  };
   const frontmatter = parseCreationFrontmatter(ast.attributes.frontmatter as string | undefined);
   const footerOf = (text: unknown, pageNumbers: unknown): string[] =>
     [...(typeof text === 'string' && text ? [text] : []), ...(pageNumbers === true ? [PAGE_NUMBER_FIELD] : [])];
@@ -399,6 +503,7 @@ export function projectSourceText(source: string, options: { reader?: Projection
       for (const child of item.children) {
         if (child.type === 'list') listItems(child, depth + 1, clauses);
         else {
+          reach(item);
           const itemText = textOf(child);
           if (item.attributes.id !== undefined) targets[String(item.attributes.id)] = scanMarks(itemText).text;
           push(itemText, item, { marker: clauses && ordered ? clauseMarker(depth, n) : listMarker(ordered, depth, n) });
@@ -432,7 +537,9 @@ export function projectSourceText(source: string, options: { reader?: Projection
         return;
       }
       case 'footnote':
+        position.footnote = true;
         notes.set(String(node.attributes.id), paragraphsOfTag(node).map((paragraph) => scanMarks(paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph))));
+        position.footnote = false;
         return;
       case 'section': {
         const { footer } = node.attributes;
@@ -452,7 +559,8 @@ export function projectSourceText(source: string, options: { reader?: Projection
     else if (node.type === 'list') listItems(node, 0, clauseContext.has(node));
     else if (node.type === 'blockquote') for (const child of node.children) push(textOf(child), child);
     else {
-      const label = headings.get(node);
+      const label = headings.get(node)?.label;
+      reach(node);
       const text = textOf(node);
       if (node.type === 'heading' && node.attributes.id !== undefined) targets[String(node.attributes.id)] = scanMarks(text).text;
       push(text, node, label === undefined ? {} : { marker: label });

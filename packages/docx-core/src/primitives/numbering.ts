@@ -528,9 +528,22 @@ function withoutTrailingPeriod(text: string): string {
 
 /**
  * Which paragraph number a `REF` field's number switch asks for: `\w` (the
- * number in full context) or `\n` (the paragraph's own level text).
+ * number in full context), `\n` (the paragraph's own level text) or `\r`
+ * (the number in relative context, which depends on where the field sits;
+ * see {@link resolveReferenceNumber}).
  */
-export type ReferenceNumberForm = 'fullContext' | 'paragraph';
+export type ReferenceNumberForm = 'fullContext' | 'paragraph' | 'relative';
+
+/**
+ * Where a `\r` (relative) reference sits, as its number depends on it: the
+ * snapshot of the last paragraph of the target's own list (its `w:numId`)
+ * at or before the paragraph holding the field, or null when no paragraph
+ * of that list comes before the field (the field then shows the full
+ * number). The paragraph holding the field need not be numbered or be in
+ * that list: Word numbers it relative to the target list's position there
+ * (an unnumbered paragraph after "2.03(c)" shows "(b)" for "2.03(b)").
+ */
+export type RelativeReferenceContext = Pick<ListLabelSnapshot, 'numId' | 'ilvl' | 'levelValues' | 'levelsAtStartValue'> | null;
 
 /** Why no reference number is offered for a numbered paragraph. */
 export type ReferenceNumberRefusal =
@@ -545,7 +558,13 @@ export type ReferenceNumberRefusal =
   /** The paragraph's own level text names a deeper level: Word then shows no number at all (a REF field shows 0). */
   | 'deeperLevel'
   /** The level or numbering instance is not defined. */
-  | 'undefinedLevel';
+  | 'undefinedLevel'
+  /**
+   * A relative (`\r`) number whose target or position shows a level at its
+   * start value ({@link ListLabelSnapshot.levelsAtStartValue}): what Word
+   * shows for it is not measured.
+   */
+  | 'relativeStartValue';
 
 /**
  * The number a `REF` field shows for a numbered paragraph, as Word for Mac
@@ -562,9 +581,19 @@ export type ReferenceNumberRefusal =
  *   period is dropped from the last part, and from a part followed by a part
  *   starting with "(" ("2." + "(b)" → "2(b)", but "2." + "b." → "2.b",
  *   "1." + "[a]" → "1.[a]").
+ * - `relative` (`\r`): the full-context number less the leading levels the
+ *   target shares with where the field sits. `context` is that position
+ *   ({@link RelativeReferenceContext}): the levels, from level 0, whose
+ *   values the context and the target share are dropped, but never the
+ *   target's own level. From inside "Section 2.03(a)", "2.03(b)(ii)" reads
+ *   "(b)(ii)"; from "2.03(b)(i)", "(ii)"; from its own paragraph, "(ii)";
+ *   from "Section 2.04(a)", "Section 2.03(b)(ii)" (the Section part names
+ *   level 0, so it is kept whole); and from another Article in full. A
+ *   reference to "Section 2.03" from inside it reads "Section 2.03". With no
+ *   context, the number is the full-context one, as in a footnote.
  *
- * Two kinds of level are passed over on the way up, and the walk continues
- * with the level directly above them:
+ * On the way up (in both context forms), two kinds of level are passed
+ * over, and the walk continues with the level directly above them:
  *
  * - a silent level, whose own level text names a deeper level (Word shows
  *   no label for it): "(a)" under a silent "%1.%2.%3" under "%1." reads
@@ -577,28 +606,47 @@ export type ReferenceNumberRefusal =
  *   "Section 1.01(a)".
  *
  * § 17.16.5.51 defines the switches: `\n` gives the number "without trailing
- * periods" and `\w` the number "in full context". How Word assembles the
- * context and which periods it drops between parts is measured, not
+ * periods", `\w` the number "in full context", and `\r` "the entire
+ * paragraph number of the bookmarked paragraph in relative context—or
+ * relative to its position in the numbering scheme—without trailing
+ * periods". How Word assembles the context, which periods it drops between
+ * parts, and what a relative number is relative to are measured, not
  * specified; the evidence is in
  * scripts/oracle/word/evidence/issue-1236-word-16.114.json and
- * issue-1254-word-16.114.json. § 17.9.11 says a placeholder naming a deeper
+ * issue-1254-word-16.114.json; for `\r`, issue-1258-word-16.114.json, whose
+ * probes show the position is the target list's (`w:numId`) last paragraph
+ * before the field, not the field's own paragraph, and that a field in a
+ * footnote shows the full number. § 17.9.11 says a placeholder naming a deeper
  * level is ignored, but Word 16.114 shows no number for such a level (its REF
  * fields show 0), so a reference to it is refused. LibreOffice 26.2
  * recalculates these fields on load and keeps the period before "(" ("2.(b)").
  *
- * @conformance-gap ECMA-376 edition 5, Part 1 § 17.16.5.51 — follows Word: one trailing period is removed, a period before "(" inside a full-context number, and silent or unnumbered ancestor levels are passed over
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.16.5.51 — follows Word: one trailing period is removed, a period before "(" inside a full-context number, and silent or unnumbered ancestor levels are passed over; a relative number is measured against the target list's last paragraph before the field
  * @conformance-gap ECMA-376 edition 5, Part 1 § 17.9.11 — follows Word: a level text naming a deeper level shows no number, so no reference number to it is offered
  */
 export function resolveReferenceNumber(
   model: NumberingModel,
   snapshot: Pick<ListLabelSnapshot, 'numId' | 'ilvl' | 'levelValues' | 'levelsAtStartValue'>,
   form: ReferenceNumberForm,
+  context: RelativeReferenceContext = null,
 ): { text: string } | { refused: ReferenceNumberRefusal } {
   const own = substituteLevelText(model, snapshot.numId, snapshot.ilvl, snapshot.levelValues);
   if (!own) return { refused: 'undefinedLevel' };
   if (own.namesDeeperLevel) return { refused: 'deeperLevel' };
   if (own.usesUnusedLevel) return { refused: 'unusedLevel' };
   if (form === 'paragraph') return { text: withoutTrailingPeriod(own.text) };
+
+  // A relative number keeps the levels from the first one the position does
+  // not share with the target, and always the target's own level.
+  let keepFrom = 0;
+  if (form === 'relative' && context !== null && context.numId === snapshot.numId) {
+    if ((snapshot.levelsAtStartValue?.length ?? 0) > 0 || (context.levelsAtStartValue?.length ?? 0) > 0) {
+      return { refused: 'relativeStartValue' };
+    }
+    const shared = Math.min(context.ilvl, snapshot.ilvl) + 1;
+    while (keepFrom < shared && context.levelValues[keepFrom] === snapshot.levelValues[keepFrom]) keepFrom += 1;
+    keepFrom = Math.min(keepFrom, snapshot.ilvl);
+  }
 
   const atStartValue = new Set(snapshot.levelsAtStartValue ?? []);
   // Whether some level above `ilvl` has a paragraph since it last restarted.
@@ -608,7 +656,7 @@ export function resolveReferenceNumber(
   };
   const parts = [own.text];
   let ilvl = lowestReferencedLevel(own.lvlText, snapshot.ilvl) - 1;
-  while (ilvl >= 0) {
+  while (ilvl >= keepFrom) {
     const part = substituteLevelText(model, snapshot.numId, ilvl, snapshot.levelValues);
     if (!part) return { refused: 'undefinedLevel' };
     if (part.namesDeeperLevel || (atStartValue.has(ilvl) && numberedAbove(ilvl))) {
@@ -634,8 +682,9 @@ export function renderReferenceNumber(
   model: NumberingModel,
   snapshot: Pick<ListLabelSnapshot, 'numId' | 'ilvl' | 'levelValues' | 'levelsAtStartValue'>,
   form: ReferenceNumberForm,
+  context: RelativeReferenceContext = null,
 ): string | null {
-  const result = resolveReferenceNumber(model, snapshot, form);
+  const result = resolveReferenceNumber(model, snapshot, form, context);
   return 'text' in result ? result.text : null;
 }
 

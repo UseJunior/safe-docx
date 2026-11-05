@@ -760,6 +760,29 @@ such as an unclosed tag, and headings below `###`.
   Errors are `XREF_UNKNOWN_ID` (naming the missing id),
   `XREF_TARGET_NOT_NUMBERED`, `INVALID_CROSS_REFERENCE`, `INVALID_ID`,
   `ID_PLACEMENT`, `DUPLICATE_ID` and `ID_COLLISION`, each with its line.
+- `{% xref to="adjustment-b-ii" number="relative" /%}` shows the number
+  relative to where the xref sits: Word's `\r` switch
+  (` REF adjustment_b_ii \r \h `). It is the full number less the leading
+  levels the target shares with that place, and the target's own level is
+  always kept. From inside `Section 2.02(a)` it reads `(b)(ii)`, from
+  `2.02(b)(i)` or the target itself `(ii)`, and from `Section 2.03(a)` or
+  another Article `Section 2.02(b)(ii)`. Word measures the place from the
+  last numbered paragraph of the target's own list at or before the xref's
+  paragraph, not from the xref's paragraph. So a plain paragraph or table
+  cell under `Section 2.02` reads `(b)`, and an xref under the headings to
+  an item of a list before them reads `(b)` when that list last numbered
+  `2(b)`. In a footnote the number is full. When the document is
+  renumbered, the field follows once fields are updated (measured in Word
+  16.114, `scripts/oracle/word/evidence/issue-1258-word-16.114.json`).
+  `number="relative"` takes no `format`. LibreOffice, which renders the PDF,
+  numbers some places differently, so these fail with their line:
+  - `XREF_RELATIVE_ACROSS_LISTS`: to an item of an ordered list outside
+    numbered headings, the xref must sit before every such list, or after an
+    item of its target's own list (lists that continue each other count as
+    one), with no other list starting in between;
+  - `XREF_RELATIVE_AFTER_ARTICLE_CLAUSES`: to a numbered heading or its
+    clause, the xref must not sit in or after clauses placed directly under
+    an Article, before the next heading.
 - `{% xref to="purchase-price-adjustment" show="text" /%}` shows the target's
   text instead of its number. This is a REF field with no number switch
   (` REF purchase_price_adjustment \h `), the field Word's Insert >

@@ -1253,7 +1253,7 @@ part: 1
 section: "17.16.5.51"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
-verifiedBy: packages/docx-core/src/shared/field-semantics.ts; packages/docx-core/src/shared/field-semantics.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts; packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/src/generation/generation-cross-references.test.ts; packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/create/cross-references.test.ts
+verifiedBy: packages/docx-core/src/shared/field-semantics.ts; packages/docx-core/src/shared/field-semantics.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts; packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/src/generation/generation-cross-references.test.ts; packages/docx-core/src/generation/generation-relative-cross-references.test.ts; packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/create/cross-references.test.ts; packages/docx-markdoc/src/create/relative-cross-references.test.ts
 ```
 
 Tagged main-document publication classifies a self-contained REF instruction with
@@ -1280,8 +1280,17 @@ level text is preceded by its ancestors' level texts up to the one naming
 level 0, one final period is removed, and a period before a part that starts
 with `(` is removed (`2.` + `(b)` → `2(b)`, but `2.` + `b.` → `2.b`). The
 cached result equals Word's for all recorded fields. LibreOffice keeps a
-period before `(` that Word removes. `\r`, whose result depends on where the
-field sits, is not emitted.
+period before `(` that Word removes.
+
+Generation (#1258) also emits `\r`, which the clause describes as "the entire
+paragraph number of the bookmarked paragraph in relative context—or relative
+to its position in the numbering scheme". It does not say what the position
+is. `resolveReferenceNumber` follows Word 16.114 as recorded in
+`scripts/oracle/word/evidence/issue-1258-word-16.114.json`: the `\w` number
+less the leading levels whose values the target shares with the last
+paragraph of the target's list (`w:numId`) at or before the field's
+paragraph, keeping the target's own level, and the full number in a
+footnote.
 
 ## [ECMA-PART1-17-4-37] w:tbl table emission
 

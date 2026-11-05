@@ -50,11 +50,14 @@ export type CreationCertificate = {
      * paragraph, and the text either side) against where its xref is. For a
      * text reference, the text the bookmark encloses (what Word shows after
      * updating the field) must also equal the target's source text, and the
-     * field's cached result must equal it. The text a field shows is checked
-     * by the read-back and round trip; this checks where it is and where it
-     * points. Negative controls change one expected switch, point one
-     * expected reference at another target, move one to the next paragraph,
-     * and, with a text reference, shorten its bookmark by one character.
+     * field's cached result must equal it. A number reference's cached
+     * result must equal the number the oracle reads from the source; for a
+     * relative reference that number depends on where the xref sits. The
+     * read-back and round trip also check the text each field shows.
+     * Negative controls change one expected switch, point one expected
+     * reference at another target, move one to the next paragraph, with a
+     * text reference shorten its bookmark by one character, and with a
+     * relative reference expect its full number instead.
      */
     crossReferences?: CrossReferenceCheck;
     /**
@@ -96,18 +99,25 @@ export type CreationCertificate = {
 };
 
 export type CrossReferenceCheck = CreationCheck & {
-  /** Tags in the source, fields placed in the DOCX, and how many of the tags are text references. */
-  references: { expected: number; actual: number; text: number };
+  /** Tags in the source, fields placed in the DOCX, and how many of the tags are text and relative references. */
+  references: { expected: number; actual: number; text: number; relative: number };
   mismatches: Array<{ reference: number; expected: string | null; actual: string | null }>;
-  /** `textExtent` is 'not applicable' for a source without text references. */
-  negativeControls: Record<'switchChanged' | 'retargeted' | 'moved' | 'textExtent', boolean | 'not applicable'>;
+  /**
+   * `textExtent` is 'not applicable' for a source without text references;
+   * `relativeContext` for a source without a relative reference whose
+   * number differs from its full number.
+   */
+  negativeControls: Record<'switchChanged' | 'retargeted' | 'moved' | 'textExtent' | 'relativeContext', boolean | 'not applicable'>;
 };
+
+/** The number switch of each `{% xref number="…" %}` form. */
+const NUMBER_SWITCHES: Record<SourceCrossReference['number'], string> = { full: '\\w', paragraph: '\\n', relative: '\\r' };
 
 /** The REF instruction an `{% xref /%}` must become: a number switch for a number, none for text. */
 function expectedInstruction(xref: SourceCrossReference): string {
   const name = bookmarkNameForSlug(xref.to);
   if (xref.show === 'text') return ` REF ${name} \\h `;
-  return ` REF ${name} ${xref.number === 'paragraph' ? '\\n' : '\\w'} \\h `;
+  return ` REF ${name} ${NUMBER_SWITCHES[xref.number]} \\h `;
 }
 
 /** Index of `index` among the paragraphs that are not empty after normalization, or -1 for an empty one. */
@@ -181,7 +191,11 @@ function crossReferenceMismatches(
       mismatches.push({ reference: index + 1, expected: `bookmark on "${want}"`, actual: got === null ? null : `bookmark on "${got}"` });
       continue;
     }
-    if (xref.show !== 'text') continue;
+    if (xref.show !== 'text') {
+      // The number the oracle reads from the source, for a relative reference from where the xref sits.
+      if (site.result !== xref.shown) mismatches.push({ reference: index + 1, expected: `cached result "${xref.shown}"`, actual: `cached result "${site.result}"` });
+      continue;
+    }
     // Word shows the text between the bookmark's start and end, so the
     // bookmark must enclose the whole target text and the cached result must
     // be that text.
@@ -231,19 +245,28 @@ function crossReferenceCheck(expected: SourceProjection, readback: CreationReadb
   const other = first ? Object.keys(targets).find((id) => id !== first.to && normalizeOracleText(targets[id]!) !== normalizeOracleText(targets[first.to] ?? '')) : undefined;
   // A number reference changes its number switch; a text reference gains one.
   const switched = (xref: SourceCrossReference): SourceCrossReference =>
-    xref.show === 'text' ? { ...xref, show: 'number', number: 'full' } : { ...xref, number: xref.number === 'paragraph' ? 'full' : 'paragraph' };
+    xref.show === 'text' ? { ...xref, show: 'number', number: 'full' } : { ...xref, number: xref.number === 'full' ? 'paragraph' : 'full' };
   const textReference = xrefs.find((xref) => xref.show === 'text');
+  // A relative reference that shows less than its full number: expecting the full number must fail.
+  const relativeIndex = xrefs.findIndex((xref) => xref.number === 'relative' && xref.show === 'number' && xref.fullNumber !== undefined && xref.fullNumber !== xref.shown);
   const negativeControls: CrossReferenceCheck['negativeControls'] = {
     switchChanged: first ? detects([switched(first), ...xrefs.slice(1)]) : 'not applicable',
     retargeted: first && other ? detects([{ ...first, to: other }, ...xrefs.slice(1)]) : 'not applicable',
     moved: first ? detects([...xrefs], 1) : 'not applicable',
     textExtent: textReference ? detects(xrefs, 0, shortenBookmark(readback, bookmarkNameForSlug(textReference.to))) : 'not applicable',
+    relativeContext: relativeIndex === -1 ? 'not applicable'
+      : detects(xrefs.map((xref, index) => (index === relativeIndex ? { ...xref, shown: xref.fullNumber! } : xref))),
   };
   const controlsOk = Object.values(negativeControls).every((value) => value !== false);
   const passed = mismatches.length === 0 && controlsOk;
   return {
     passed,
-    references: { expected: inventory.length, actual: sites, text: inventory.filter((entry) => entry.endsWith('|text')).length },
+    references: {
+      expected: inventory.length,
+      actual: sites,
+      text: inventory.filter((entry) => entry.endsWith('|text')).length,
+      relative: inventory.filter((entry) => entry.endsWith('|relative')).length,
+    },
     mismatches,
     negativeControls,
     ...(passed ? {} : { detail: `${mismatches.length} cross-reference mismatch(es)${controlsOk ? '' : '; a negative control was not detected'}` }),

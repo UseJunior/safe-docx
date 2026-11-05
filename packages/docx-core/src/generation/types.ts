@@ -246,12 +246,21 @@ export type FieldSpec = {
  * target. It shows one of two things ({@link CrossReferenceShow}):
  *
  * - `show: 'number'` (the default): the target's list number, as
- *   `REF <bookmark> \w \h` (or `\n` for `number: 'paragraph'`). The cached
- *   result is the number Word shows after updating fields: `fullContext`
- *   gives the number with its context ("Section 2.06(b)", "2(b)"),
- *   `paragraph` the target's own level text ("(b)"), each less a trailing
- *   period. The target must be a numbered paragraph whose number depends
- *   only on levels the list has used; otherwise generation fails.
+ *   `REF <bookmark> \w \h` (`\n` for `number: 'paragraph'`, `\r` for
+ *   `number: 'relative'`). The cached result is the number Word shows after
+ *   updating fields: `fullContext` gives the number with its context
+ *   ("Section 2.06(b)", "2(b)"), `paragraph` the target's own level text
+ *   ("(b)"), each less a trailing period. `relative` gives the full number
+ *   less the leading levels the target shares with where the reference
+ *   sits: the last paragraph of the target's list at or before the
+ *   reference's paragraph ("(ii)" from inside "Section 2.06(b)(i)",
+ *   "(b)(ii)" from "Section 2.06(a)", "Section 2.06(b)(ii)" from "Section
+ *   2.07"), and the full number in a footnote. The target must be a numbered
+ *   paragraph whose number depends only on levels the list has used;
+ *   otherwise generation fails. A relative reference is refused in a
+ *   footnote when any footnote paragraph is numbered, and when its number
+ *   depends on a level shown at its start value: what Word shows there is
+ *   not measured.
  * - `show: 'text'`: the target's bookmarked text, as `REF <bookmark> \h`
  *   with no number switch, the instruction Word's Insert > Cross-reference
  *   writes for "Bookmark text". The cached result is a copy of the target
@@ -272,21 +281,21 @@ export type CrossReferenceSpec = {
   bookmark: string;
   /** Defaults to 'number'. */
   show?: CrossReferenceShow;
-  /** For `show: 'number'`: defaults to 'fullContext' (`\w`); 'paragraph' is `\n`. */
+  /** For `show: 'number'`: defaults to 'fullContext' (`\w`); 'paragraph' is `\n`, 'relative' is `\r`. */
   number?: CrossReferenceNumber;
 } & RunProps;
 
 /**
  * What a cross-reference shows; see {@link CrossReferenceSpec}. Each value is
  * one REF instruction shape, so a reader can tell them apart: a number switch
- * (`\w`, `\n`) for 'number', none for 'text'.
+ * (`\w`, `\n`, `\r`) for 'number', none for 'text'.
  */
 export const CROSS_REFERENCE_SHOWS = ['number', 'text'] as const;
 
 export type CrossReferenceShow = (typeof CROSS_REFERENCE_SHOWS)[number];
 
 /** The number a number cross-reference shows; see {@link CrossReferenceSpec}. */
-export const CROSS_REFERENCE_NUMBERS = ['fullContext', 'paragraph'] as const;
+export const CROSS_REFERENCE_NUMBERS = ['fullContext', 'paragraph', 'relative'] as const;
 
 export type CrossReferenceNumber = (typeof CROSS_REFERENCE_NUMBERS)[number];
 

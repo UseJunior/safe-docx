@@ -1,5 +1,5 @@
 import type { Node as MarkdocNode } from '@markdoc/markdoc';
-import { bookmarkNameForSlug, type InlineSpec, type NumberingSpec, type ParagraphSpec, type TableSpec } from '@usejunior/docx-core';
+import { bookmarkNameForSlug, type CrossReferenceNumber, type InlineSpec, type NumberingSpec, type ParagraphSpec, type TableSpec } from '@usejunior/docx-core';
 import type { BlockTagPlugin, InlineStyle, InlineTagPlugin, RenderApi, Theme } from '../markdocx/engine.js';
 import {
   CREATION_STYLE,
@@ -11,6 +11,9 @@ import {
 import { CreationListNumbering, type HeadingNumberScheme } from './list-numbering.js';
 
 type TextRun = Extract<InlineSpec, { kind: 'text' }>;
+
+/** The generation number form of each `{% xref number="…" %}` value (`XREF_NUMBERS`). */
+const XREF_NUMBER_FORMS: Readonly<Record<string, CrossReferenceNumber>> = { full: 'fullContext', paragraph: 'paragraph', relative: 'relative' };
 
 /** Merge adjacent text runs with identical formatting. */
 function coalesce(runs: InlineSpec[]): InlineSpec[] {
@@ -319,7 +322,8 @@ export function creationPlugins(
     },
     {
       // A REF field to the target's bookmark; docx-core sets its cached
-      // result: the target's number, or with show="text" its text runs.
+      // result: the target's number (with number="relative", relative to
+      // where the field sits), or with show="text" its text runs.
       // "Section " is plain text before the field, so updating the field
       // never removes it. A text reference carries no formatting of its own:
       // Word writes its result with the target's formatting (validation
@@ -335,7 +339,7 @@ export function creationPlugins(
         };
         return [
           ...(node.attributes.format === 'section' ? theme.renderText('Section ', style) : []),
-          { kind: 'crossReference', bookmark, number: node.attributes.number === 'paragraph' ? 'paragraph' : 'fullContext', ...formatting },
+          { kind: 'crossReference', bookmark, number: XREF_NUMBER_FORMS[String(node.attributes.number ?? 'full')] ?? 'fullContext', ...formatting },
         ];
       },
     },
