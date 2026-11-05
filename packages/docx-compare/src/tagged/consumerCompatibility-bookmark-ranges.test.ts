@@ -501,6 +501,27 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
     });
   }
 
+  test('keeps the split when the revised bookmark changes its table columns', async () => {
+    const start = (column: number): string =>
+      `<w:bookmarkStart w:id="1" w:name="Column" w:colFirst="${column}" w:colLast="${column}"/>`;
+    const survivor = '<w:r><w:t>survivor</w:t></w:r>';
+    const table = (firstCell: string): string =>
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>' +
+      `<w:tr><w:tc><w:tcPr/>${firstCell}</w:tc>` +
+      '<w:tc><w:tcPr/><w:p><w:r><w:t>second cell</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p></w:tc>' +
+      '</w:tr></w:tbl>';
+    const documentXml = await compare(
+      table(`<w:p><w:r><w:t xml:space="preserve">doomed </w:t></w:r>${start(0)}<w:r><w:t>gone</w:t></w:r></w:p><w:p>${survivor}</w:p>`),
+      table(`<w:p>${start(1)}${survivor}</w:p>`),
+    );
+    const columns = (xml: string): Array<string | null> =>
+      Array.from(parseXml(xml).getElementsByTagName('w:bookmarkStart'))
+        .map((marker) => marker.getAttribute('w:colFirst'));
+    // Collapsing onto the original markers would drop the revised w:colFirst.
+    expect(columns(acceptAllChanges(documentXml))).toContain('1');
+    expect(columns(rejectAllChanges(documentXml))).toEqual(['0']);
+  });
+
   test('a deleted bookmark retains its exact source span in the reject projection', async (
     { given, when, then, and }: AllureBddContext
   ) => {

@@ -60,6 +60,24 @@ function markersWithId(root: Element, id: string): Element[] {
     .filter((marker) => wAttr(marker, 'id') === id);
 }
 
+/** Marker attributes other than its id, e.g. `w:name`, `w:colFirst`, `w:colLast`. */
+function semanticAttributes(marker: Element): string {
+  return Array.from(marker.attributes)
+    .filter((attribute) => !(attribute.namespaceURI === W_NS && attribute.localName === 'id') && attribute.name !== 'w:id')
+    .map((attribute) => `${attribute.namespaceURI ?? ''}|${attribute.localName}=${attribute.value}`)
+    .sort()
+    .join('\n');
+}
+
+/** Whether the two ranges' start and end markers carry the same non-id attributes. */
+function sameMarkerSemantics(original: readonly Element[], revised: readonly Element[]): boolean {
+  return MARKER_TAGS.every((tag) => {
+    const left = original.find((marker) => marker.localName === tag);
+    const right = revised.find((marker) => marker.localName === tag);
+    return left !== undefined && right !== undefined && semanticAttributes(left) === semanticAttributes(right);
+  });
+}
+
 function isRevisionWrapper(node: Node | null, localName: 'ins' | 'del'): node is Element {
   return node?.nodeType === 1 &&
     (node as Element).namespaceURI === W_NS &&
@@ -144,6 +162,9 @@ export function coalesceProjectionEquivalentBookmarkSplits(documentXml: string):
       const originalMarkers = markersWithId(root, originalId);
       const revisedMarkers = markersWithId(root, revisedId);
       if (originalMarkers.length !== 2 || revisedMarkers.length !== 2) return undefined;
+      // Keeping the original markers must not drop revised marker semantics
+      // (for example a table bookmark's w:colFirst/w:colLast).
+      if (!sameMarkerSemantics(originalMarkers, revisedMarkers)) return undefined;
       revisedMarkers.forEach(removeMarker);
       originalMarkers.forEach(unwrapMarker);
     }
