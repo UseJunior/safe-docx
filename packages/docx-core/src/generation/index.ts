@@ -8,7 +8,7 @@
 
 export { generateDocx, type GenerateDocxOptions } from './compile.js';
 export { GenerationSpecError, GenerationInternalError, type GenerationSpecErrorCode } from './errors.js';
-export { checkGeneratedPackage, type StructuralCheckResult, type StructuralIssue } from './structural-checks.js';
+export { checkGeneratedPackage, type StructuralCheckOptions, type StructuralCheckResult, type StructuralIssue } from './structural-checks.js';
 export {
   BOOKMARK_NAME_MAX_LENGTH,
   BookmarkNameError,

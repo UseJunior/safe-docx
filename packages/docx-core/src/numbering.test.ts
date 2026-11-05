@@ -304,11 +304,15 @@ describe('formatNumber', () => {
     });
 
     test('formats double letters', async ({ given, when, then }: AllureBddContext) => {
-      await given('numbers 27 and 28', () => {});
+      await given('numbers 27, 28, 52 and 53', () => {});
       await when('formatNumber is called with lowerLetter', () => {});
-      await then('aa and ab are returned', () => {
+      await then('aa and bb are returned, as Word numbers them', () => {
+        testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.18.59' });
         expect(formatNumber(27, 'lowerLetter')).toBe('aa');
-        expect(formatNumber(28, 'lowerLetter')).toBe('ab');
+        expect(formatNumber(28, 'lowerLetter')).toBe('bb');
+        expect(formatNumber(52, 'lowerLetter')).toBe('zz');
+        expect(formatNumber(53, 'lowerLetter')).toBe('aaa');
+        expect(formatNumber(28, 'upperLetter')).toBe('BB');
       });
     });
   });
@@ -596,7 +600,9 @@ describe('additional numbering branches', () => {
       expect(formatNumber(12, 'ordinalText')).toBe('twelfth');
       expect(formatNumber(32, 'ordinalText')).toBe('32nd');
       expect(formatNumber(7, 'unknown-format')).toBe('7');
-      expect(formatNumber(9, 'decimalZero')).toBe('9');
+      expect(formatNumber(9, 'decimalZero')).toBe('09');
+      expect(formatNumber(10, 'decimalZero')).toBe('10');
+      expect(formatNumber(0, 'decimalZero')).toBe('0');
     });
   });
 

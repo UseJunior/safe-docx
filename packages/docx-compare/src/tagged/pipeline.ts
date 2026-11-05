@@ -363,12 +363,15 @@ export async function buildStandaloneTaggedPackage(
   await restampCollidingCommentParaIds(originalArchive, revisedArchive);
   await renumberCollidingRelationshipIds(originalArchive, revisedArchive);
 
-  let [originalXml, revisedXml, originalNumberingXml, revisedNumberingXml] = await Promise.all([
-    originalArchive.getDocumentXml(),
-    revisedArchive.getDocumentXml(),
-    originalArchive.getNumberingXml(),
-    revisedArchive.getNumberingXml(),
-  ]);
+  let [originalXml, revisedXml, originalNumberingXml, revisedNumberingXml, originalStylesXml, revisedStylesXml] =
+    await Promise.all([
+      originalArchive.getDocumentXml(),
+      revisedArchive.getDocumentXml(),
+      originalArchive.getNumberingXml(),
+      revisedArchive.getNumberingXml(),
+      originalArchive.getStylesXml(),
+      revisedArchive.getStylesXml(),
+    ]);
   const disambiguatedBookmarks = disambiguateOriginalBookmarkIds(originalXml, revisedXml);
   if (disambiguatedBookmarks.remappedRanges > 0) {
     originalXml = disambiguatedBookmarks.xml;
@@ -408,6 +411,8 @@ export async function buildStandaloneTaggedPackage(
       numberingEnabled: options.numbering.enabled,
       originalNumberingXml: originalNumberingXml ?? undefined,
       revisedNumberingXml: revisedNumberingXml ?? undefined,
+      originalStylesXml: originalStylesXml ?? undefined,
+      revisedStylesXml: revisedStylesXml ?? undefined,
       revisionAttributionRanges: options.revisionAttributionRanges,
       revisionGrouping: options.revisionGrouping,
       retainStatisticsMarkers: true,
