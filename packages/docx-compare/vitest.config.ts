@@ -59,6 +59,7 @@ export default defineConfig({
       'src/integration/real-corpus-paragraph-deletion.test.ts',
       'src/integration/strategy-differential-manifest.corpus.test.ts',
       'src/integration/taggedTreeMinimality.corpus.test.ts',
+      'src/integration/real-corpus-bookmark-inventory.corpus.test.ts',
     ],
     coverage: {
       provider: 'v8',
