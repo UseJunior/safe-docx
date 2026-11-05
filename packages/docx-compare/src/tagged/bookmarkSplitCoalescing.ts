@@ -13,48 +13,34 @@ function wAttr(element: Element, name: string): string | null {
 }
 
 /**
- * Linearize a projected story as visible text plus one separator per paragraph
- * and record where each paired bookmark starts and ends in it. Two bookmark
- * placements that differ only by zero-width position (a body-level start
- * immediately before a paragraph versus inside it before its first run) get the
- * same signature, which is what a reader of the projection observes.
+ * Record where each paired bookmark starts and ends in a projected story, as a
+ * position in a post-order walk: every element other than a bookmark marker
+ * counts one when it closes (property subtrees such as `w:pPr`/`w:rPr` are
+ * skipped), and `w:t` additionally counts its characters. Placements that
+ * differ only by zero-width position (a body-level start immediately before a
+ * paragraph versus inside it before its first run) get the same signature,
+ * while any content element between two placements, even an empty
+ * `w:fldSimple`, a `w:cr` or a drawing, separates them.
  */
 function rangeSignatures(documentXml: string): Map<string, RangeSignature> {
   const document = parseXml(documentXml);
   const starts = new Map<string, number>();
   const ends = new Map<string, number>();
   let offset = 0;
-  const visit = (node: Node): void => {
-    if (node.nodeType !== 1) return;
-    const element = node as Element;
+  const visit = (element: Element): void => {
     if (element.namespaceURI === W_NS) {
-      if (element.localName === 'bookmarkStart') {
+      if (element.localName === 'bookmarkStart' || element.localName === 'bookmarkEnd') {
         const id = wAttr(element, 'id');
-        if (id) starts.set(id, offset);
+        if (id) (element.localName === 'bookmarkStart' ? starts : ends).set(id, offset);
         return;
       }
-      if (element.localName === 'bookmarkEnd') {
-        const id = wAttr(element, 'id');
-        if (id) ends.set(id, offset);
-        return;
-      }
-      if (element.localName === 'r') {
-        // Conservative width: text counts per character and every other run
-        // child (w:tab, w:br, w:cr, w:fldChar, w:drawing, ...) counts as one, so
-        // no visible or structural run content can be skipped over unnoticed.
-        for (const child of Array.from(element.childNodes)) {
-          if (child.nodeType !== 1) continue;
-          const runChild = child as Element;
-          if (runChild.namespaceURI === W_NS && runChild.localName === 'rPr') continue;
-          offset += runChild.namespaceURI === W_NS && runChild.localName === 't'
-            ? (runChild.textContent ?? '').length
-            : 1;
-        }
-        return;
-      }
+      if (/Pr$/.test(element.localName)) return;
+      if (element.localName === 't') offset += (element.textContent ?? '').length;
     }
-    for (const child of Array.from(element.childNodes)) visit(child);
-    if (element.namespaceURI === W_NS && element.localName === 'p') offset += 1;
+    for (const child of Array.from(element.childNodes)) {
+      if (child.nodeType === 1) visit(child as Element);
+    }
+    offset += 1;
   };
   visit(document.documentElement);
   const signatures = new Map<string, RangeSignature>();
