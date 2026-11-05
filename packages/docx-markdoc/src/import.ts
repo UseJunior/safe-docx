@@ -1,6 +1,7 @@
 import {
   DocxDocument,
   OOXML,
+  buildParagraphIndex,
   W,
   ZIP_EPOCH,
   computeContentFingerprint,
@@ -11,6 +12,8 @@ import { sha256 } from './hash.js';
 import { DocxMarkdocError } from './errors.js';
 import { anchorSelectedStories, selectedStories } from './story-inventory.js';
 import type { AnnotationAnchor, AnnotationParagraph, AnnotationRun, AnnotationRunStyle, CanonicalAnnotation, ImportResult } from './types.js';
+import { crossReferenceAttributes, documentBookmarkTargets, paragraphCrossReferences, type BookmarkTarget, type ParagraphCrossReference } from './xref.js';
+import type { ImportedCrossReferences } from './types.js';
 
 function escapeText(text: string): string {
   const escaped = text
@@ -32,6 +35,26 @@ function escapeText(text: string): string {
   return escaped
     .replace(/^ +/, (spaces) => '&#32;'.repeat(spaces.length))
     .replace(/ +$/, (spaces) => '&#32;'.repeat(spaces.length));
+}
+
+/**
+ * A paragraph's text with each REF field's cached result wrapped in an
+ * `{% xref %}` tag. The text projection of the result is the paragraph's
+ * text unchanged, so its fingerprint and offsets stay those of the source.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1260
+ */
+function textWithCrossReferences(text: string, references: readonly ParagraphCrossReference[]): string {
+  if (references.length === 0) return escapeText(text);
+  const parts: string[] = [];
+  let offset = 0;
+  for (const reference of references) {
+    if (reference.start > offset) parts.push(escapeText(text.slice(offset, reference.start)));
+    parts.push(`{% xref ${crossReferenceAttributes(reference.reference)} %}${escapeText(reference.text)}{% /xref %}`);
+    offset = reference.end;
+  }
+  if (offset < text.length) parts.push(escapeText(text.slice(offset)));
+  return parts.join('');
 }
 
 /**
@@ -85,12 +108,45 @@ function parseTaggedRuns(tagged: string, annotationId: string): AnnotationRun[] 
   return runs;
 }
 
+/**
+ * Mark the runs that make up each REF field's cached result, splitting a run
+ * at a field boundary, so the note or comment body keeps its cross-references.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1260
+ */
+function withCrossReferences(runs: AnnotationRun[], references: readonly ParagraphCrossReference[]): AnnotationRun[] {
+  if (references.length === 0) return runs;
+  const result: AnnotationRun[] = [];
+  let offset = 0;
+  for (const run of runs) {
+    const runStart = offset;
+    const runEnd = offset + run.text.length;
+    const cuts = [...new Set([runStart, runEnd, ...references.flatMap((reference) => [reference.start, reference.end])
+      .filter((cut) => cut > runStart && cut < runEnd)])].sort((left, right) => left - right);
+    for (let index = 0; index + 1 < cuts.length; index += 1) {
+      const start = cuts[index]!;
+      const end = cuts[index + 1]!;
+      const ordinal = references.findIndex((reference) => reference.start <= start && end <= reference.end);
+      const reference = ordinal === -1 ? undefined : references[ordinal]!;
+      result.push({
+        ...run,
+        text: run.text.slice(start - runStart, end - runStart),
+        ...(reference ? { crossReference: { ...reference.reference, field: ordinal } } : {}),
+      });
+    }
+    offset = runEnd;
+  }
+  return result;
+}
+
 function bodyFromParagraphs(
   paragraphs: Array<{ tagged_text: string }>,
   container: Element,
   annotationId: string,
   marker: 'annotationRef' | 'footnoteRef',
   hyperlinks: ReadonlyMap<Element, string>,
+  bookmarks: ReadonlyMap<string, BookmarkTarget>,
+  report: ImportedCrossReferences,
 ): AnnotationParagraph[] {
   if (paragraphs.length === 0) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} has no admitted paragraphs.`, { annotationId });
   const sourceParagraphs = Array.from(container.getElementsByTagNameNS(OOXML.W_NS, W.p)) as Element[];
@@ -98,6 +154,8 @@ function bodyFromParagraphs(
     const parsed = parseTaggedRuns(paragraph.tagged_text, annotationId);
     const sourceParagraph = sourceParagraphs[paragraphIndex];
     if (!sourceParagraph) return { runs: parsed };
+    const { references, unsupported } = paragraphCrossReferences(sourceParagraph, { bookmarks });
+    for (const item of unsupported) report.keptAsText.push({ location: annotationId, instruction: item.instruction, reason: item.reason });
     const spans: Array<{ start: number; end: number; styleId?: string; fontSizeHalfPoints?: number; hyperlinkDestination?: string }> = [];
     let offset = 0;
     for (const run of Array.from(sourceParagraph.getElementsByTagNameNS(OOXML.W_NS, W.r)) as Element[]) {
@@ -145,7 +203,13 @@ function bodyFromParagraphs(
       }
       parsedOffset += run.text.length;
     }
-    return { runs };
+    if (references.length > 0 && runs.map((run) => run.text).join('') !== buildParagraphIndex(sourceParagraph).text) {
+      // The note's text does not line up with its fields: keep them as text, which compile then refuses to rewrite.
+      for (const reference of references) report.keptAsText.push({ location: annotationId, instruction: reference.instruction, reason: 'unaligned-text' });
+      return { runs };
+    }
+    report.restored += references.length;
+    return { runs: withCrossReferences(runs, references) };
   });
 }
 
@@ -210,9 +274,10 @@ function assertNamedStyle(styles: StylesModel, styleId: string, annotationId: st
 
 /**
  * The only complex fields an annotation body may hold are REF fields (a
- * generated cross-reference in a footnote); they import as their cached
- * result text. Any other field, a nested field, a second separator,
- * instruction text in a result, or a field left open stays unsupported.
+ * generated cross-reference in a footnote); they import as `{% xref %}` tags
+ * over their cached result text (#1260). Any other field, a nested field, a
+ * second separator, instruction text in a result, or a field left open stays
+ * unsupported.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
  * @see https://github.com/UseJunior/safe-docx/issues/1236
@@ -364,7 +429,11 @@ function annotationMarkdoc(annotation: CanonicalAnnotation): string[] {
   const lines = [`{% annotation ${attributes.join(' ')} %}`];
   for (const paragraph of annotation.body) {
     const content: string[] = [];
-    for (const run of paragraph.runs) {
+    paragraph.runs.forEach((run, index) => {
+      const reference = run.crossReference;
+      const previous = paragraph.runs[index - 1]?.crossReference;
+      const next = paragraph.runs[index + 1]?.crossReference;
+      if (reference && previous?.field !== reference.field) content.push(`{% xref ${crossReferenceAttributes(reference)} %}`);
       const style = run.style ?? {};
       if (Object.keys(style).length === 0 && !run.hyperlink) content.push(escapeText(run.text));
       else {
@@ -377,7 +446,8 @@ function annotationMarkdoc(annotation: CanonicalAnnotation): string[] {
         ];
         content.push(`{% annotation-run ${styleAttributes.join(' ')} %}${escapeText(run.text)}{% /annotation-run %}`);
       }
-    }
+      if (reference && next?.field !== reference.field) content.push('{% /xref %}');
+    });
     lines.push('{% annotation-p %}', content.join(''), '{% /annotation-p %}');
   }
   lines.push('{% /annotation %}', '');
@@ -397,11 +467,23 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
   const { nodes } = anchored.buildDocumentView({ includeSemanticTags: false, showFormatting: false });
   const descriptor = { sha256: sha256(anchoredSource), paragraphs: nodes.length };
   const lines = [`{% source sha256="${descriptor.sha256}" paragraphs=${nodes.length} /%}`, ''];
+  const bookmarks = documentBookmarkTargets(anchored.getDocumentXmlClone());
+  const report: ImportedCrossReferences = { restored: 0, keptAsText: [] };
   for (const node of nodes) {
     const text = node.raw_text ?? node.text;
+    const element = anchored.getParagraphElementById(node.id);
+    const found = element ? paragraphCrossReferences(element, { bookmarks }) : undefined;
+    for (const item of found?.unsupported ?? []) report.keptAsText.push({ location: node.id, instruction: item.instruction, reason: item.reason });
+    let references = found?.references ?? [];
+    if (references.length > 0 && found?.index.text !== text) {
+      // Fields that do not line up with the view's text stay text; compile then refuses to edit the paragraph.
+      for (const reference of references) report.keptAsText.push({ location: node.id, instruction: reference.instruction, reason: 'unaligned-text' });
+      references = [];
+    }
+    report.restored += references.length;
     lines.push(
       `{% para id="${escapeAttribute(node.id)}" fingerprint="${computeContentFingerprint(text)}" style="${escapeAttribute(node.paragraph_style_id ?? node.style)}" %}`,
-      escapeText(text),
+      textWithCrossReferences(text, references),
       '{% /para %}',
       '',
     );
@@ -463,7 +545,7 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
     }
     const annotation: CanonicalAnnotation = {
       id,
-      body: bodyFromParagraphs(comment.paragraphs, commentElement, id, 'annotationRef', hyperlinks),
+      body: bodyFromParagraphs(comment.paragraphs, commentElement, id, 'annotationRef', hyperlinks, bookmarks, report),
       author: comment.author || undefined,
       initials: comment.initials || undefined,
       date: comment.date || undefined,
@@ -498,10 +580,10 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
     const reference = footnote.referencePoints[0]!;
     const anchor: AnnotationAnchor = { kind: 'point', point: { paragraphId: reference.paragraphId, offset: reference.textOffset } };
     annotations.push({
-      id, body: withoutMarkSeparatorSpace(bodyFromParagraphs(footnote.paragraphs, footnoteElement, id, 'footnoteRef', hyperlinks), footnoteElement), audience: 'unspecified', semanticRole: 'substantive-footnote',
+      id, body: withoutMarkSeparatorSpace(bodyFromParagraphs(footnote.paragraphs, footnoteElement, id, 'footnoteRef', hyperlinks, bookmarks, report), footnoteElement), audience: 'unspecified', semanticRole: 'substantive-footnote',
       sourcePresentation: 'footnote', sourceAnchor: anchor, anchor,
     });
   }
   for (const annotation of annotations) lines.push(...annotationMarkdoc(annotation));
-  return { anchoredSource, markdoc: `${lines.join('\n').trimEnd()}\n`, source: descriptor, annotations };
+  return { anchoredSource, markdoc: `${lines.join('\n').trimEnd()}\n`, source: descriptor, annotations, crossReferences: report };
 }

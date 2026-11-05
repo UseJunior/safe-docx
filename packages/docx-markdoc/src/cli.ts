@@ -48,6 +48,10 @@ async function main(): Promise<void> {
     if (!sourcePath || !anchoredPath || !markdocPath) throw new Error(usage());
     const result = await importDocxToMarkdoc(await readFile(sourcePath));
     await writeNewFiles([[anchoredPath, result.anchoredSource], [markdocPath, result.markdoc]]);
+    // REF fields that stay text cannot be edited around; say which and why (#1260).
+    for (const kept of result.crossReferences.keptAsText) {
+      process.stderr.write(`warning XREF_KEPT_AS_TEXT: ${kept.location}: REF field "${kept.instruction}" imported as its cached text (${kept.reason}); compile leaves it untouched and refuses edits that would rewrite it.\n`);
+    }
     return;
   }
   if (command === 'validate') {

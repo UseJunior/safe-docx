@@ -1708,6 +1708,14 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/nvca-coi-regression.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/body_fields.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/body_fields.test.ts"
         }
       ]
     },

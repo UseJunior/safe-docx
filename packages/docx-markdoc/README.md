@@ -126,6 +126,59 @@ those boundaries are preserved in the DOCX. Rationale, requirement, and waiver
 bodies likewise use one plain-text block; multiple Markdown blocks are rejected
 rather than concatenated.
 
+### Cross-references in imported documents
+
+Import restores a Word cross-reference (a REF field to a bookmarked
+paragraph) as an inline tag over the result Word last showed, in body
+paragraphs, table cells, footnotes and comments:
+
+```markdoc
+See {% xref to="price-adjustment" %}Section 1.01(b)(i){% /xref %}.
+The {% xref to="delivery-terms" show="text" %}Delivery Terms{% /xref %} section governs.
+Under {% xref bookmark="_Ref201812345" number="paragraph" hyperlink=false %}(i){% /xref %}, …
+```
+
+` REF <name> \w \h ` is the full number, ` \n ` is `number="paragraph"`, and
+no number switch is `show="text"`. A field without `\h` adds
+`hyperlink=false`. The tag names its target with `to="id"` when the bookmark
+is the one `create` writes for that id (hyphens turned into underscores),
+and keeps the bookmark name with `bookmark="name"` otherwise, as for Word's
+hidden `_Ref…` bookmarks. Both name the same field.
+
+Compile writes each tag back as the source's field, with the same
+instruction, bookmark and target. An edit may change the text around a
+reference, including words typed right before or after it, but not the
+reference itself, and compile does not refresh the field's result: Word does
+that when it updates fields. Compile fails before writing anything with:
+
+- `XREF_DRIFT`: a `{% para %}` or `before` state whose tags disagree with the
+  source's fields (another target, another form, or a tag removed);
+- `XREF_EDIT_UNSUPPORTED`: an `after` state that changes, adds or drops a
+  reference, or uses `run-format` in a paragraph holding one;
+- `XREF_SOURCE_UNSUPPORTED`: an edit of a paragraph, or any rewrite of a
+  footnote or comment, holding a REF field that import kept as text;
+- `XREF_TARGET_MISSING`: a note's reference to no bookmarked paragraph, or an
+  edit that deletes a paragraph a reference points at;
+- `XREF_PROJECTION_FAILED`: output whose REF fields do not match the
+  source's;
+- `INVALID_MARKDOC` with `XREF_UNSUPPORTED_LOCATION`, for a tag in an
+  inserted paragraph or a header or footer paragraph, or with
+  `INVALID_CROSS_REFERENCE`, for a malformed tag.
+
+A REF field the tag cannot carry stays text, as before:
+
+- a switch other than one `\w` or `\n` and `\h`, such as `\r`, `\p` or
+  `\* MERGEFORMAT`;
+- a bookmark that is missing, repeated, or marks no paragraph;
+- a nested or unterminated field, or one with no result;
+- a result that is empty or holds a tab, a tracked change or other
+  non-text content.
+
+`ImportResult.crossReferences` counts the restored fields and lists those
+kept as text, with a reason, and the CLI prints a
+`warning XREF_KEPT_AS_TEXT` line for each. An edit of a paragraph that holds
+one fails with `XREF_SOURCE_UNSUPPORTED` rather than flattening the field.
+
 `anchored.docx` differs from `source.docx` in content only where Safe DOCX had
 to add stable `_bk_*` paragraph bookmarks; its ZIP entries also all carry one
 fixed date, so importing the same `source.docx` again reproduces the same

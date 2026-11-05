@@ -290,15 +290,20 @@ describe('Traceability: cross-references in created documents', () => {
     },
   );
 
-  conforming.openspec('[SDX-MDOC-XREF-05] cross-references survive import and compile as their numbers')(
-    'Scenario: cross-references survive import and compile as their numbers',
+  conforming.openspec('[SDX-MDOC-XREF-05] cross-references survive import and compile as REF fields')(
+    'Scenario: cross-references survive import and compile as REF fields',
     async () => {
       const created = await createDocumentFromMarkdoc(SOURCE);
       const imported = await importDocxToMarkdoc(created.docx);
-      expect(imported.markdoc).toContain('See 2(a)(i), clause (i) and Section 2.');
+      // Each reference imports as an xref tag over its number text (#1260); format="section" stays literal text.
+      expect(imported.markdoc).toContain('See&#32;{% xref to="escrow-release" %}2(a)(i){% /xref %}, clause&#32;{% xref to="escrow-release" number="paragraph" %}(i){% /xref %}&#32;and Section&#32;{% xref to="closing" %}2{% /xref %}.');
+      expect(imported.markdoc).toContain('{% annotation-run size=20 %}Compare Section&#32;{% /annotation-run %}{% xref to="deliveries" %}{% annotation-run size=20 %}2(a){% /annotation-run %}{% /xref %}');
       const compiled = await compileMarkdoc(imported.anchoredSource, imported.markdoc, { annotationPresentation: { unspecified: { as: 'preserve' } } });
       const notes = await (await DocxDocument.load(compiled.tracked)).getFootnotes();
       expect(notes.map((note) => note.paragraphs.map((paragraph) => paragraph.text))).toEqual([[' Compare Section 2(a).']]);
+      // The footnote, which compile writes again, keeps its REF field, and the body keeps every field.
+      expect(instructions(await part(compiled.tracked, 'word/footnotes.xml'))).toEqual([' REF deliveries \\w \\h ']);
+      expect(instructions(await part(compiled.tracked, 'word/document.xml'))).toEqual(instructions(await part(created.docx, 'word/document.xml')));
 
       // A footnote may hold REF fields only: another field, a stray instruction or an unbalanced field fails closed.
       const footnoteXml = await (await JSZip.loadAsync(created.docx)).file('word/footnotes.xml')!.async('string');
