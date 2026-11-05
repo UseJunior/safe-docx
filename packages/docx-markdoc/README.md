@@ -782,9 +782,12 @@ such as an unclosed tag, and headings below `###`.
     numbered headings, the xref must sit before every such list, or after an
     item of its target's own list (lists that continue each other count as
     one), with no other list starting in between;
-  - `XREF_RELATIVE_AFTER_ARTICLE_CLAUSES`: to a numbered heading or its
-    clause, the xref must not sit in or after clauses placed directly under
-    an Article, before the next heading.
+  - `XREF_FULL_NUMBER_UNDER_ARTICLE`: to a clause placed directly under an
+    Article, the xref must sit in or after that Article's clauses, before
+    the next heading, where both show `(a)`; elsewhere Word shows
+    `ARTICLE II(a)` and LibreOffice `Section 2.01(a)`. Relative xrefs to
+    other targets may sit among such clauses (measured in
+    `scripts/oracle/word/evidence/issue-1284-word-16.114.json`).
 - `{% xref to="purchase-price-adjustment" show="text" /%}` shows the target's
   text instead of its number. This is a REF field with no number switch
   (` REF purchase_price_adjustment \h `), the field Word's Insert >

@@ -1,0 +1,3293 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-05",
+  "issue": 1284,
+  "purpose": "What Microsoft Word shows for REF fields with the \\r (relative context) switch when the target or the position has a list level shown at its start value, and in a footnote while a footnote paragraph is numbered, the two cases #1258 refused unmeasured (#1284).",
+  "word": {
+    "platform": "Mac",
+    "version": "16.114.3"
+  },
+  "libreOffice": {
+    "version": "26.2.5.2"
+  },
+  "procedure": "Each probe `spec` was compiled with generateDocx using the full-context form and every \\w instruction rewritten to \\r (generation then refused both cases). Word opened each DOCX bound by its name only (staged under a unique name in Word's container, opened with open -g); `update field` ran on every field of the document and of each footnote's text object through AppleScript, and each field's code and result and every paragraph's list label were read back; the document was closed by name without saving. The same DOCX was converted to PDF with headless LibreOffice and read with pdftotext.",
+  "finding": "Start value: a level shown at its start value takes part in the \\r comparison at that value, and the shown number then passes over it as the full number does. From the next clause directly under an Article, 'ARTICLE II(a)' shows '(a)'; from 'Section 4.02(a)', 'ARTICLE IV(i)' shows '(i)' (the start-value Section level equals 1 and Word counts it, so the next Section heading is 4.02); from another Article the full number. A position at a start value compares the same way ('Section 3.01(b)' from 'ARTICLE IV(ii)'). Footnotes: a footnote paragraph numbered by another list leaves every relative field in footnotes at the full number. A footnote paragraph numbered by the target's own list starts that list's count afresh within the footnotes (its label reads '(a)', unaffected by the body) and later footnote fields, the numbered paragraph's own included, are relative to it: 'Section 1.01(a)' shows '(a)' after a footnote '(a)' (levels shown at start value 1.01), while fields before it show the full number. LibreOffice 26.2 differs on both: it shows a start-value level ('Section 2.01(a)' for Word's 'ARTICLE II(a)', '(a)(i)' for '(i)') and shows the full number in every footnote.",
+  "generation": "With the relativeStartValue refusal removed, generateDocx's cached results equal Word's after-update results for all 47 fields of probe1 and all 30 fields of probe2. probe3 is refused: a relative reference in a footnote to a paragraph of a numbering definition that also numbers a footnote paragraph, because Word measures it from the footnotes' own count of the list, which generation does not model (nor whether that count continues from one footnote to the next).",
+  "spec": {
+    "section": "17.16.5.51",
+    "switch": "\\r",
+    "text": "Inserts the entire paragraph number of the bookmarked paragraph in relative context—or relative to its position in the numbering scheme—without trailing periods."
+  },
+  "probes": [
+    {
+      "name": "probe1-start-value",
+      "layout": "The heading definition (ARTICLE %1 / Section %1.%2 / (%3) / (%4), headings numbered by style) with levels shown at their start value: two (a)/(b) clauses before any Article (the Article and Section levels at start value; Word then counts the first Article heading as ARTICLE II), clauses directly under an Article (Section level at start value), sub-clauses directly under a Section (clause level at start value), and sub-clauses directly under an Article (Section and clause levels at start value), with fields to them from the same run of clauses, a heading, plain paragraphs, other Sections and other Articles, and from them to ordinary targets.",
+      "spec": {
+        "meta": {
+          "title": "Relative xref start-value probe (#1284)",
+          "createdIso": "2026-11-05T00:00:00Z"
+        },
+        "styles": [
+          {
+            "styleId": "Heading1",
+            "name": "heading 1",
+            "type": "paragraph",
+            "basedOn": "Normal",
+            "next": "Normal",
+            "paragraph": {
+              "alignment": "center",
+              "keepNext": true
+            },
+            "run": {
+              "bold": true
+            }
+          },
+          {
+            "styleId": "Heading2",
+            "name": "heading 2",
+            "type": "paragraph",
+            "basedOn": "Normal",
+            "next": "Normal",
+            "paragraph": {
+              "keepNext": true
+            },
+            "run": {
+              "bold": true
+            }
+          }
+        ],
+        "numbering": [
+          {
+            "numId": "ol",
+            "levels": [
+              {
+                "ilvl": 0,
+                "numFmt": "decimal",
+                "lvlText": "%1.",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 720,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 1,
+                "numFmt": "lowerLetter",
+                "lvlText": "(%2)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 1440,
+                  "hanging": 720
+                }
+              }
+            ]
+          },
+          {
+            "numId": "headings",
+            "levels": [
+              {
+                "ilvl": 0,
+                "numFmt": "upperRoman",
+                "lvlText": "ARTICLE %1",
+                "pStyle": "Heading1",
+                "suff": "space",
+                "indentTwips": {
+                  "left": 0,
+                  "firstLine": 0
+                }
+              },
+              {
+                "ilvl": 1,
+                "numFmt": "decimalZero",
+                "lvlText": "Section %1.%2",
+                "pStyle": "Heading2",
+                "isLgl": true,
+                "suff": "space",
+                "indentTwips": {
+                  "left": 0,
+                  "firstLine": 0
+                }
+              },
+              {
+                "ilvl": 2,
+                "numFmt": "lowerLetter",
+                "lvlText": "(%3)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 2160,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 3,
+                "numFmt": "lowerRoman",
+                "lvlText": "(%4)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 2880,
+                  "hanging": 720
+                }
+              }
+            ]
+          }
+        ],
+        "sections": [
+          {
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Opening clause before any Article."
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "pa"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Opening clause two:"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " pa=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "pa",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a1a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a1a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202i=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202i",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a3i=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a3i",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "pb"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "DEFINITIONS"
+                  }
+                ],
+                "styleId": "Heading1",
+                "bookmark": "art1"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Clause directly under Article I."
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "a1a"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Second clause under Article I:"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a1a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a1a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " art1=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "art1",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " pa=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "pa",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s201b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s201b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202i=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202i",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "a1b"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Plain after 1(b):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a1a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a1a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a1b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a1b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ]
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "PURCHASE AND SALE"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a1a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a1a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202i=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202i",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "styleId": "Heading1",
+                "bookmark": "art2"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Purchase."
+                  }
+                ],
+                "styleId": "Heading2",
+                "bookmark": "s201"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.01(a)."
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s201a"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.01(b):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a1a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a1a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a1b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a1b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s201a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s201a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s201b"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Price."
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202i=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202i",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s201b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s201b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "styleId": "Heading2",
+                "bookmark": "s202"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Sub-clause directly under Section 2.02."
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 3
+                },
+                "bookmark": "s202i"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Second sub-clause under 2.02:"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202i=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202i",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s201b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s201b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s201a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s201a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a1a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a1a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " art2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "art2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 3
+                },
+                "bookmark": "s202ii"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Plain after 2.02(ii):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202i=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202i",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202ii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202ii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s201b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s201b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ]
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Clause after the sub-clauses:"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202i=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202i",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202ii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202ii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s202a"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Under 2.02(a):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202i=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202i",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202ii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202ii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 3
+                },
+                "bookmark": "s202ai"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "CLOSING"
+                  }
+                ],
+                "styleId": "Heading1",
+                "bookmark": "art3"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Sub-clause directly under Article III."
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 3
+                },
+                "bookmark": "a3i"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Second sub-clause under Article III:"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a3i=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a3i",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " art3=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "art3",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202i=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202i",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202ii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202ii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a1a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a1a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s201b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s201b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 3
+                },
+                "bookmark": "a3ii"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Closing Date."
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a3i=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a3i",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a3ii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a3ii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "styleId": "Heading2",
+                "bookmark": "s301"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 3.01(a):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a3i=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a3i",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a3ii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a3ii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202i=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202i",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a1b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a1b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s301a"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 3.01(a)(i):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a3i=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a3i",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s301a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s301a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s202ii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s202ii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 3
+                },
+                "bookmark": "s301ai"
+              }
+            ]
+          }
+        ]
+      },
+      "references": [
+        {
+          "site": "(b) Opening clause two",
+          "story": "body",
+          "instruction": " REF pa \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "(a)"
+        },
+        {
+          "site": "(b) Opening clause two",
+          "story": "body",
+          "instruction": " REF a1a \\r \\h ",
+          "word": "ARTICLE II(a)",
+          "libreOffice": "Section 2.01(a)"
+        },
+        {
+          "site": "(b) Opening clause two",
+          "story": "body",
+          "instruction": " REF s202i \\r \\h ",
+          "word": "Section 3.02(i)",
+          "libreOffice": "Section 3.02(a)(i)"
+        },
+        {
+          "site": "(b) Opening clause two",
+          "story": "body",
+          "instruction": " REF a3i \\r \\h ",
+          "word": "ARTICLE IV(i)",
+          "libreOffice": "Section 4.01(a)(i)"
+        },
+        {
+          "site": "(b) Second clause under Article I",
+          "story": "body",
+          "instruction": " REF a1a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "(a)"
+        },
+        {
+          "site": "(b) Second clause under Article I",
+          "story": "body",
+          "instruction": " REF art1 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "(b) Second clause under Article I",
+          "story": "body",
+          "instruction": " REF pa \\r \\h ",
+          "word": "Section 1.01(a)",
+          "libreOffice": "Section 1.01(a)"
+        },
+        {
+          "site": "(b) Second clause under Article I",
+          "story": "body",
+          "instruction": " REF s201b \\r \\h ",
+          "word": "Section 3.01(b)",
+          "libreOffice": "Section 3.01(b)"
+        },
+        {
+          "site": "(b) Second clause under Article I",
+          "story": "body",
+          "instruction": " REF s202i \\r \\h ",
+          "word": "Section 3.02(i)",
+          "libreOffice": "Section 3.02(a)(i)"
+        },
+        {
+          "site": "Plain after 1(b)",
+          "story": "body",
+          "instruction": " REF a1a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "(a)"
+        },
+        {
+          "site": "Plain after 1(b)",
+          "story": "body",
+          "instruction": " REF a1b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "ARTICLE III PURCHASE AND SALE a1a=[ARTICLE II(a)] s202i=[Section 3.02(i)]",
+          "story": "body",
+          "instruction": " REF a1a \\r \\h ",
+          "word": "ARTICLE II(a)",
+          "libreOffice": "Section 2.01(a)"
+        },
+        {
+          "site": "ARTICLE III PURCHASE AND SALE a1a=[ARTICLE II(a)] s202i=[Section 3.02(i)]",
+          "story": "body",
+          "instruction": " REF s202i \\r \\h ",
+          "word": "Section 3.02(i)",
+          "libreOffice": "Section 3.02(a)(i)"
+        },
+        {
+          "site": "(b) In 2.01(b)",
+          "story": "body",
+          "instruction": " REF a1a \\r \\h ",
+          "word": "ARTICLE II(a)",
+          "libreOffice": "Section 2.01(a)"
+        },
+        {
+          "site": "(b) In 2.01(b)",
+          "story": "body",
+          "instruction": " REF a1b \\r \\h ",
+          "word": "ARTICLE II(b)",
+          "libreOffice": "Section 2.01(b)"
+        },
+        {
+          "site": "(b) In 2.01(b)",
+          "story": "body",
+          "instruction": " REF s201a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "(a)"
+        },
+        {
+          "site": "Section 3.02 Price. s202i=[(i)] s201b=[Section 3.01(b)]",
+          "story": "body",
+          "instruction": " REF s202i \\r \\h ",
+          "word": "(i)",
+          "libreOffice": "(a)(i)"
+        },
+        {
+          "site": "Section 3.02 Price. s202i=[(i)] s201b=[Section 3.01(b)]",
+          "story": "body",
+          "instruction": " REF s201b \\r \\h ",
+          "word": "Section 3.01(b)",
+          "libreOffice": "Section 3.01(b)"
+        },
+        {
+          "site": "(ii) Second sub-clause under 2.02",
+          "story": "body",
+          "instruction": " REF s202i \\r \\h ",
+          "word": "(i)",
+          "libreOffice": "(i)"
+        },
+        {
+          "site": "(ii) Second sub-clause under 2.02",
+          "story": "body",
+          "instruction": " REF s201b \\r \\h ",
+          "word": "Section 3.01(b)",
+          "libreOffice": "Section 3.01(b)"
+        },
+        {
+          "site": "(ii) Second sub-clause under 2.02",
+          "story": "body",
+          "instruction": " REF s201a \\r \\h ",
+          "word": "Section 3.01(a)",
+          "libreOffice": "Section 3.01(a)"
+        },
+        {
+          "site": "(ii) Second sub-clause under 2.02",
+          "story": "body",
+          "instruction": " REF a1a \\r \\h ",
+          "word": "ARTICLE II(a)",
+          "libreOffice": "Section 2.01(a)"
+        },
+        {
+          "site": "(ii) Second sub-clause under 2.02",
+          "story": "body",
+          "instruction": " REF s202 \\r \\h ",
+          "word": "Section 3.02",
+          "libreOffice": "Section 3.02"
+        },
+        {
+          "site": "(ii) Second sub-clause under 2.02",
+          "story": "body",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE III",
+          "libreOffice": "ARTICLE III"
+        },
+        {
+          "site": "Plain after 2.02(ii)",
+          "story": "body",
+          "instruction": " REF s202i \\r \\h ",
+          "word": "(i)",
+          "libreOffice": "(i)"
+        },
+        {
+          "site": "Plain after 2.02(ii)",
+          "story": "body",
+          "instruction": " REF s202ii \\r \\h ",
+          "word": "(ii)",
+          "libreOffice": "(ii)"
+        },
+        {
+          "site": "Plain after 2.02(ii)",
+          "story": "body",
+          "instruction": " REF s201b \\r \\h ",
+          "word": "Section 3.01(b)",
+          "libreOffice": "Section 3.01(b)"
+        },
+        {
+          "site": "(b) Clause after the sub-clauses",
+          "story": "body",
+          "instruction": " REF s202i \\r \\h ",
+          "word": "(i)",
+          "libreOffice": "(a)(i)"
+        },
+        {
+          "site": "(b) Clause after the sub-clauses",
+          "story": "body",
+          "instruction": " REF s202ii \\r \\h ",
+          "word": "(ii)",
+          "libreOffice": "(a)(ii)"
+        },
+        {
+          "site": "(i) Under 2.02(a)",
+          "story": "body",
+          "instruction": " REF s202i \\r \\h ",
+          "word": "(i)",
+          "libreOffice": "(a)(i)"
+        },
+        {
+          "site": "(i) Under 2.02(a)",
+          "story": "body",
+          "instruction": " REF s202ii \\r \\h ",
+          "word": "(ii)",
+          "libreOffice": "(a)(ii)"
+        },
+        {
+          "site": "(i) Under 2.02(a)",
+          "story": "body",
+          "instruction": " REF s202a \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "(ii) Second sub-clause under Article III",
+          "story": "body",
+          "instruction": " REF a3i \\r \\h ",
+          "word": "(i)",
+          "libreOffice": "(i)"
+        },
+        {
+          "site": "(ii) Second sub-clause under Article III",
+          "story": "body",
+          "instruction": " REF art3 \\r \\h ",
+          "word": "ARTICLE IV",
+          "libreOffice": "ARTICLE IV"
+        },
+        {
+          "site": "(ii) Second sub-clause under Article III",
+          "story": "body",
+          "instruction": " REF s202i \\r \\h ",
+          "word": "Section 3.02(i)",
+          "libreOffice": "Section 3.02(a)(i)"
+        },
+        {
+          "site": "(ii) Second sub-clause under Article III",
+          "story": "body",
+          "instruction": " REF s202ii \\r \\h ",
+          "word": "Section 3.02(ii)",
+          "libreOffice": "Section 3.02(a)(ii)"
+        },
+        {
+          "site": "(ii) Second sub-clause under Article III",
+          "story": "body",
+          "instruction": " REF a1a \\r \\h ",
+          "word": "ARTICLE II(a)",
+          "libreOffice": "Section 2.01(a)"
+        },
+        {
+          "site": "(ii) Second sub-clause under Article III",
+          "story": "body",
+          "instruction": " REF s201b \\r \\h ",
+          "word": "Section 3.01(b)",
+          "libreOffice": "Section 3.01(b)"
+        },
+        {
+          "site": "Section 4.02 Closing Date. a3i=[(i)] a3ii=[(ii)]",
+          "story": "body",
+          "instruction": " REF a3i \\r \\h ",
+          "word": "(i)",
+          "libreOffice": "Section 4.01(a)(i)"
+        },
+        {
+          "site": "Section 4.02 Closing Date. a3i=[(i)] a3ii=[(ii)]",
+          "story": "body",
+          "instruction": " REF a3ii \\r \\h ",
+          "word": "(ii)",
+          "libreOffice": "Section 4.01(a)(ii)"
+        },
+        {
+          "site": "(a) In 3.01(a)",
+          "story": "body",
+          "instruction": " REF a3i \\r \\h ",
+          "word": "(i)",
+          "libreOffice": "Section 4.01(a)(i)"
+        },
+        {
+          "site": "(a) In 3.01(a)",
+          "story": "body",
+          "instruction": " REF a3ii \\r \\h ",
+          "word": "(ii)",
+          "libreOffice": "Section 4.01(a)(ii)"
+        },
+        {
+          "site": "(a) In 3.01(a)",
+          "story": "body",
+          "instruction": " REF s202i \\r \\h ",
+          "word": "Section 3.02(i)",
+          "libreOffice": "Section 3.02(a)(i)"
+        },
+        {
+          "site": "(a) In 3.01(a)",
+          "story": "body",
+          "instruction": " REF a1b \\r \\h ",
+          "word": "ARTICLE II(b)",
+          "libreOffice": "Section 2.01(b)"
+        },
+        {
+          "site": "(i) In 3.01(a)(i)",
+          "story": "body",
+          "instruction": " REF a3i \\r \\h ",
+          "word": "(i)",
+          "libreOffice": "Section 4.01(a)(i)"
+        },
+        {
+          "site": "(i) In 3.01(a)(i)",
+          "story": "body",
+          "instruction": " REF s301a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "(a)"
+        },
+        {
+          "site": "(i) In 3.01(a)(i)",
+          "story": "body",
+          "instruction": " REF s202ii \\r \\h ",
+          "word": "Section 3.02(ii)",
+          "libreOffice": "Section 3.02(a) (ii)"
+        }
+      ],
+      "wordParagraphs": [
+        "(a)\tOpening clause before any Article.",
+        "(b)\tOpening clause two: pa=[(a)] a1a=[ARTICLE II(a)] s202i=[Section 3.02(i)] a3i=[ARTICLE IV(i)]",
+        "ARTICLE II\tDEFINITIONS",
+        "(a)\tClause directly under Article I.",
+        "(b)\tSecond clause under Article I: a1a=[(a)] art1=[ARTICLE II] pa=[Section 1.01(a)] s201b=[Section 3.01(b)] s202i=[Section 3.02(i)]",
+        "\tPlain after 1(b): a1a=[(a)] a1b=[(b)]",
+        "ARTICLE III\tPURCHASE AND SALE a1a=[ARTICLE II(a)] s202i=[Section 3.02(i)]",
+        "Section 3.01\tPurchase.",
+        "(a)\tIn 2.01(a).",
+        "(b)\tIn 2.01(b): a1a=[ARTICLE II(a)] a1b=[ARTICLE II(b)] s201a=[(a)]",
+        "Section 3.02\tPrice. s202i=[(i)] s201b=[Section 3.01(b)]",
+        "(i)\tSub-clause directly under Section 2.02.",
+        "(ii)\tSecond sub-clause under 2.02: s202i=[(i)] s201b=[Section 3.01(b)] s201a=[Section 3.01(a)] a1a=[ARTICLE II(a)] s202=[Section 3.02] art2=[ARTICLE III]",
+        "\tPlain after 2.02(ii): s202i=[(i)] s202ii=[(ii)] s201b=[Section 3.01(b)]",
+        "(b)\tClause after the sub-clauses: s202i=[(i)] s202ii=[(ii)]",
+        "(i)\tUnder 2.02(a): s202i=[(i)] s202ii=[(ii)] s202a=[(b)]",
+        "ARTICLE IV\tCLOSING",
+        "(i)\tSub-clause directly under Article III.",
+        "(ii)\tSecond sub-clause under Article III: a3i=[(i)] art3=[ARTICLE IV] s202i=[Section 3.02(i)] s202ii=[Section 3.02(ii)] a1a=[ARTICLE II(a)] s201b=[Section 3.01(b)]",
+        "Section 4.02\tClosing Date. a3i=[(i)] a3ii=[(ii)]",
+        "(a)\tIn 3.01(a): a3i=[(i)] a3ii=[(ii)] s202i=[Section 3.02(i)] a1b=[ARTICLE II(b)]",
+        "(i)\tIn 3.01(a)(i): a3i=[(i)] s301a=[(a)] s202ii=[Section 3.02(ii)]"
+      ]
+    },
+    {
+      "name": "probe2-footnote-other-list",
+      "layout": "Ordinary legal headings and clauses; four footnotes holding relative fields to body targets: a plain note, a note whose paragraph is numbered by another definition (%1.), a plain note, and a note whose first paragraph is numbered by that other definition at level 1 with a plain second paragraph.",
+      "spec": {
+        "meta": {
+          "title": "Footnote relative probe, other list (#1284)",
+          "createdIso": "2026-11-05T00:00:00Z"
+        },
+        "styles": [
+          {
+            "styleId": "Heading1",
+            "name": "heading 1",
+            "type": "paragraph",
+            "basedOn": "Normal",
+            "next": "Normal",
+            "paragraph": {
+              "alignment": "center",
+              "keepNext": true
+            },
+            "run": {
+              "bold": true
+            }
+          },
+          {
+            "styleId": "Heading2",
+            "name": "heading 2",
+            "type": "paragraph",
+            "basedOn": "Normal",
+            "next": "Normal",
+            "paragraph": {
+              "keepNext": true
+            },
+            "run": {
+              "bold": true
+            }
+          }
+        ],
+        "numbering": [
+          {
+            "numId": "ol",
+            "levels": [
+              {
+                "ilvl": 0,
+                "numFmt": "decimal",
+                "lvlText": "%1.",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 720,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 1,
+                "numFmt": "lowerLetter",
+                "lvlText": "(%2)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 1440,
+                  "hanging": 720
+                }
+              }
+            ]
+          },
+          {
+            "numId": "headings",
+            "levels": [
+              {
+                "ilvl": 0,
+                "numFmt": "upperRoman",
+                "lvlText": "ARTICLE %1",
+                "pStyle": "Heading1",
+                "suff": "space",
+                "indentTwips": {
+                  "left": 0,
+                  "firstLine": 0
+                }
+              },
+              {
+                "ilvl": 1,
+                "numFmt": "decimalZero",
+                "lvlText": "Section %1.%2",
+                "pStyle": "Heading2",
+                "isLgl": true,
+                "suff": "space",
+                "indentTwips": {
+                  "left": 0,
+                  "firstLine": 0
+                }
+              },
+              {
+                "ilvl": 2,
+                "numFmt": "lowerLetter",
+                "lvlText": "(%3)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 2160,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 3,
+                "numFmt": "lowerRoman",
+                "lvlText": "(%4)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 2880,
+                  "hanging": 720
+                }
+              }
+            ]
+          }
+        ],
+        "sections": [
+          {
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "DEFINITIONS"
+                  }
+                ],
+                "styleId": "Heading1",
+                "bookmark": "art1"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Terms."
+                  }
+                ],
+                "styleId": "Heading2",
+                "bookmark": "s101"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 1.01(a)."
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s101a"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "PURCHASE AND SALE"
+                  }
+                ],
+                "styleId": "Heading1",
+                "bookmark": "art2"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Purchase."
+                  }
+                ],
+                "styleId": "Heading2",
+                "bookmark": "s201"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.01(a)."
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s201a"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.01(b), noted"
+                  },
+                  {
+                    "kind": "footnote",
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Plain note in 2.01(b):"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201bi=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201bi",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201b=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201b",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " art2=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "art2",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s101a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s101a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s202a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s202a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s201b"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.01(b)(i), noted"
+                  },
+                  {
+                    "kind": "footnote",
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Note numbered by another list:"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201bi=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201bi",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201b=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201b",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " art2=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "art2",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s101a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s101a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s202a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s202a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          }
+                        ],
+                        "list": {
+                          "numId": "ol",
+                          "ilvl": 0
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 3
+                },
+                "bookmark": "s201bi"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.01(b)(ii), noted"
+                  },
+                  {
+                    "kind": "footnote",
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Plain note in 2.01(b)(ii):"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201bi=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201bi",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201b=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201b",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " art2=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "art2",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s101a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s101a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s202a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s202a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 3
+                },
+                "bookmark": "s201bii"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Price."
+                  }
+                ],
+                "styleId": "Heading2",
+                "bookmark": "s202"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.02(a), noted"
+                  },
+                  {
+                    "kind": "footnote",
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Second note of another list:"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201bi=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201bi",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201b=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201b",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " art2=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "art2",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s101a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s101a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s202a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s202a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          }
+                        ],
+                        "list": {
+                          "numId": "ol",
+                          "ilvl": 1
+                        }
+                      },
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Its unnumbered paragraph:"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201bi=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201bi",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201b=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201b",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " art2=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "art2",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s101a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s101a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s202a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s202a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s202a"
+              }
+            ]
+          }
+        ]
+      },
+      "references": [
+        {
+          "site": "footnote 1: \u0002 Plain note in 2.01(b)",
+          "story": "footnote",
+          "instruction": " REF s201bi \\r \\h ",
+          "word": "Section 2.01(b)(i)",
+          "libreOffice": "Section 2.01(b)(i)"
+        },
+        {
+          "site": "footnote 1: \u0002 Plain note in 2.01(b)",
+          "story": "footnote",
+          "instruction": " REF s201b \\r \\h ",
+          "word": "Section 2.01(b)",
+          "libreOffice": "Section 2.01(b)"
+        },
+        {
+          "site": "footnote 1: \u0002 Plain note in 2.01(b)",
+          "story": "footnote",
+          "instruction": " REF s201 \\r \\h ",
+          "word": "Section 2.01",
+          "libreOffice": "Section 2.01"
+        },
+        {
+          "site": "footnote 1: \u0002 Plain note in 2.01(b)",
+          "story": "footnote",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "footnote 1: \u0002 Plain note in 2.01(b)",
+          "story": "footnote",
+          "instruction": " REF s101a \\r \\h ",
+          "word": "Section 1.01(a)",
+          "libreOffice": "Section 1.01(a)"
+        },
+        {
+          "site": "footnote 1: \u0002 Plain note in 2.01(b)",
+          "story": "footnote",
+          "instruction": " REF s202a \\r \\h ",
+          "word": "Section 2.02(a)",
+          "libreOffice": "Section 2.02(a)"
+        },
+        {
+          "site": "footnote 2: 1. \u0002 Note numbered by another list",
+          "story": "footnote",
+          "instruction": " REF s201bi \\r \\h ",
+          "word": "Section 2.01(b)(i)",
+          "libreOffice": "Section 2.01(b)(i)"
+        },
+        {
+          "site": "footnote 2: 1. \u0002 Note numbered by another list",
+          "story": "footnote",
+          "instruction": " REF s201b \\r \\h ",
+          "word": "Section 2.01(b)",
+          "libreOffice": "Section 2.01(b)"
+        },
+        {
+          "site": "footnote 2: 1. \u0002 Note numbered by another list",
+          "story": "footnote",
+          "instruction": " REF s201 \\r \\h ",
+          "word": "Section 2.01",
+          "libreOffice": "Section 2.01"
+        },
+        {
+          "site": "footnote 2: 1. \u0002 Note numbered by another list",
+          "story": "footnote",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "footnote 2: 1. \u0002 Note numbered by another list",
+          "story": "footnote",
+          "instruction": " REF s101a \\r \\h ",
+          "word": "Section 1.01(a)",
+          "libreOffice": "Section 1.01(a)"
+        },
+        {
+          "site": "footnote 2: 1. \u0002 Note numbered by another list",
+          "story": "footnote",
+          "instruction": " REF s202a \\r \\h ",
+          "word": "Section 2.02(a)",
+          "libreOffice": "Section 2.02(a)"
+        },
+        {
+          "site": "footnote 3: \u0002 Plain note in 2.01(b)(ii)",
+          "story": "footnote",
+          "instruction": " REF s201bi \\r \\h ",
+          "word": "Section 2.01(b)(i)",
+          "libreOffice": "Section 2.01(b)(i)"
+        },
+        {
+          "site": "footnote 3: \u0002 Plain note in 2.01(b)(ii)",
+          "story": "footnote",
+          "instruction": " REF s201b \\r \\h ",
+          "word": "Section 2.01(b)",
+          "libreOffice": "Section 2.01(b)"
+        },
+        {
+          "site": "footnote 3: \u0002 Plain note in 2.01(b)(ii)",
+          "story": "footnote",
+          "instruction": " REF s201 \\r \\h ",
+          "word": "Section 2.01",
+          "libreOffice": "Section 2.01"
+        },
+        {
+          "site": "footnote 3: \u0002 Plain note in 2.01(b)(ii)",
+          "story": "footnote",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "footnote 3: \u0002 Plain note in 2.01(b)(ii)",
+          "story": "footnote",
+          "instruction": " REF s101a \\r \\h ",
+          "word": "Section 1.01(a)",
+          "libreOffice": "Section 1.01(a)"
+        },
+        {
+          "site": "footnote 3: \u0002 Plain note in 2.01(b)(ii)",
+          "story": "footnote",
+          "instruction": " REF s202a \\r \\h ",
+          "word": "Section 2.02(a)",
+          "libreOffice": "Section 2.02(a)"
+        },
+        {
+          "site": "footnote 4: (a) \u0002 Second note of another list",
+          "story": "footnote",
+          "instruction": " REF s201bi \\r \\h ",
+          "word": "Section 2.01(b)(i)",
+          "libreOffice": "Section 2.01(b)(i)"
+        },
+        {
+          "site": "footnote 4: (a) \u0002 Second note of another list",
+          "story": "footnote",
+          "instruction": " REF s201b \\r \\h ",
+          "word": "Section 2.01(b)",
+          "libreOffice": "Section 2.01(b)"
+        },
+        {
+          "site": "footnote 4: (a) \u0002 Second note of another list",
+          "story": "footnote",
+          "instruction": " REF s201 \\r \\h ",
+          "word": "Section 2.01",
+          "libreOffice": "Section 2.01"
+        },
+        {
+          "site": "footnote 4: (a) \u0002 Second note of another list",
+          "story": "footnote",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "footnote 4: (a) \u0002 Second note of another list",
+          "story": "footnote",
+          "instruction": " REF s101a \\r \\h ",
+          "word": "Section 1.01(a)",
+          "libreOffice": "Section 1.01(a)"
+        },
+        {
+          "site": "footnote 4: (a) \u0002 Second note of another list",
+          "story": "footnote",
+          "instruction": " REF s202a \\r \\h ",
+          "word": "Section 2.02(a)",
+          "libreOffice": "Section 2.02(a)"
+        },
+        {
+          "site": "footnote 4: Its unnumbered paragraph",
+          "story": "footnote",
+          "instruction": " REF s201bi \\r \\h ",
+          "word": "Section 2.01(b)(i)",
+          "libreOffice": "Section 2.01(b)(i)"
+        },
+        {
+          "site": "footnote 4: Its unnumbered paragraph",
+          "story": "footnote",
+          "instruction": " REF s201b \\r \\h ",
+          "word": "Section 2.01(b)",
+          "libreOffice": "Section 2.01(b)"
+        },
+        {
+          "site": "footnote 4: Its unnumbered paragraph",
+          "story": "footnote",
+          "instruction": " REF s201 \\r \\h ",
+          "word": "Section 2.01",
+          "libreOffice": "Section 2.01"
+        },
+        {
+          "site": "footnote 4: Its unnumbered paragraph",
+          "story": "footnote",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "footnote 4: Its unnumbered paragraph",
+          "story": "footnote",
+          "instruction": " REF s101a \\r \\h ",
+          "word": "Section 1.01(a)",
+          "libreOffice": "Section 1.01(a)"
+        },
+        {
+          "site": "footnote 4: Its unnumbered paragraph",
+          "story": "footnote",
+          "instruction": " REF s202a \\r \\h ",
+          "word": "Section 2.02(a)",
+          "libreOffice": "Section 2.02(a)"
+        }
+      ],
+      "wordParagraphs": [
+        "ARTICLE I\tDEFINITIONS",
+        "Section 1.01\tTerms.",
+        "(a)\tIn 1.01(a).",
+        "ARTICLE II\tPURCHASE AND SALE",
+        "Section 2.01\tPurchase.",
+        "(a)\tIn 2.01(a).",
+        "(b)\tIn 2.01(b), noted\u0002",
+        "(i)\tIn 2.01(b)(i), noted\u0002",
+        "(ii)\tIn 2.01(b)(ii), noted\u0002",
+        "Section 2.02\tPrice.",
+        "(a)\tIn 2.02(a), noted\u0002",
+        "\t\u0002 Plain note in 2.01(b): s201bi=[Section 2.01(b)(i)] s201b=[Section 2.01(b)] s201=[Section 2.01] art2=[ARTICLE II] s101a=[Section 1.01(a)] s202a=[Section 2.02(a)]",
+        "1.\t\u0002 Note numbered by another list: s201bi=[Section 2.01(b)(i)] s201b=[Section 2.01(b)] s201=[Section 2.01] art2=[ARTICLE II] s101a=[Section 1.01(a)] s202a=[Section 2.02(a)]",
+        "\t\u0002 Plain note in 2.01(b)(ii): s201bi=[Section 2.01(b)(i)] s201b=[Section 2.01(b)] s201=[Section 2.01] art2=[ARTICLE II] s101a=[Section 1.01(a)] s202a=[Section 2.02(a)]",
+        "(a)\t\u0002 Second note of another list: s201bi=[Section 2.01(b)(i)] s201b=[Section 2.01(b)] s201=[Section 2.01] art2=[ARTICLE II] s101a=[Section 1.01(a)] s202a=[Section 2.02(a)]",
+        "\tIts unnumbered paragraph: s201bi=[Section 2.01(b)(i)] s201b=[Section 2.01(b)] s201=[Section 2.01] art2=[ARTICLE II] s101a=[Section 1.01(a)] s202a=[Section 2.02(a)]"
+      ]
+    },
+    {
+      "name": "probe3-footnote-same-list",
+      "layout": "As probe2, but the numbered footnote paragraphs are numbered by the heading list itself, at level 2 ((a)) in the second note and level 3 ((i)) in the fourth.",
+      "spec": {
+        "meta": {
+          "title": "Footnote relative probe, target list (#1284)",
+          "createdIso": "2026-11-05T00:00:00Z"
+        },
+        "styles": [
+          {
+            "styleId": "Heading1",
+            "name": "heading 1",
+            "type": "paragraph",
+            "basedOn": "Normal",
+            "next": "Normal",
+            "paragraph": {
+              "alignment": "center",
+              "keepNext": true
+            },
+            "run": {
+              "bold": true
+            }
+          },
+          {
+            "styleId": "Heading2",
+            "name": "heading 2",
+            "type": "paragraph",
+            "basedOn": "Normal",
+            "next": "Normal",
+            "paragraph": {
+              "keepNext": true
+            },
+            "run": {
+              "bold": true
+            }
+          }
+        ],
+        "numbering": [
+          {
+            "numId": "ol",
+            "levels": [
+              {
+                "ilvl": 0,
+                "numFmt": "decimal",
+                "lvlText": "%1.",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 720,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 1,
+                "numFmt": "lowerLetter",
+                "lvlText": "(%2)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 1440,
+                  "hanging": 720
+                }
+              }
+            ]
+          },
+          {
+            "numId": "headings",
+            "levels": [
+              {
+                "ilvl": 0,
+                "numFmt": "upperRoman",
+                "lvlText": "ARTICLE %1",
+                "pStyle": "Heading1",
+                "suff": "space",
+                "indentTwips": {
+                  "left": 0,
+                  "firstLine": 0
+                }
+              },
+              {
+                "ilvl": 1,
+                "numFmt": "decimalZero",
+                "lvlText": "Section %1.%2",
+                "pStyle": "Heading2",
+                "isLgl": true,
+                "suff": "space",
+                "indentTwips": {
+                  "left": 0,
+                  "firstLine": 0
+                }
+              },
+              {
+                "ilvl": 2,
+                "numFmt": "lowerLetter",
+                "lvlText": "(%3)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 2160,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 3,
+                "numFmt": "lowerRoman",
+                "lvlText": "(%4)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 2880,
+                  "hanging": 720
+                }
+              }
+            ]
+          }
+        ],
+        "sections": [
+          {
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "DEFINITIONS"
+                  }
+                ],
+                "styleId": "Heading1",
+                "bookmark": "art1"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Terms."
+                  }
+                ],
+                "styleId": "Heading2",
+                "bookmark": "s101"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 1.01(a)."
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s101a"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "PURCHASE AND SALE"
+                  }
+                ],
+                "styleId": "Heading1",
+                "bookmark": "art2"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Purchase."
+                  }
+                ],
+                "styleId": "Heading2",
+                "bookmark": "s201"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.01(a)."
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s201a"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.01(b), noted"
+                  },
+                  {
+                    "kind": "footnote",
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Plain note in 2.01(b):"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201bi=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201bi",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201b=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201b",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " art2=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "art2",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s101a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s101a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s202a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s202a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s201b"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.01(b)(i), noted"
+                  },
+                  {
+                    "kind": "footnote",
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Note numbered by the heading list (a):"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201bi=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201bi",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201b=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201b",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " art2=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "art2",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s101a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s101a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s202a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s202a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          }
+                        ],
+                        "list": {
+                          "numId": "headings",
+                          "ilvl": 2
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 3
+                },
+                "bookmark": "s201bi"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.01(b)(ii), noted"
+                  },
+                  {
+                    "kind": "footnote",
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Plain note in 2.01(b)(ii):"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201bi=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201bi",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201b=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201b",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " art2=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "art2",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s101a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s101a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s202a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s202a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 3
+                },
+                "bookmark": "s201bii"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Price."
+                  }
+                ],
+                "styleId": "Heading2",
+                "bookmark": "s202"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.02(a), noted"
+                  },
+                  {
+                    "kind": "footnote",
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Note numbered by the heading list (i):"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201bi=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201bi",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201b=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201b",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " art2=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "art2",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s101a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s101a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s202a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s202a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          }
+                        ],
+                        "list": {
+                          "numId": "headings",
+                          "ilvl": 3
+                        }
+                      },
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Its unnumbered paragraph:"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201bi=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201bi",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201b=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201b",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s201=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s201",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " art2=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "art2",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s101a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s101a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s202a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s202a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s202a"
+              }
+            ]
+          }
+        ]
+      },
+      "references": [
+        {
+          "site": "footnote 1: \u0002 Plain note in 2.01(b)",
+          "story": "footnote",
+          "instruction": " REF s201bi \\r \\h ",
+          "word": "Section 2.01(b)(i)",
+          "libreOffice": "Section 2.01(b)(i)"
+        },
+        {
+          "site": "footnote 1: \u0002 Plain note in 2.01(b)",
+          "story": "footnote",
+          "instruction": " REF s201b \\r \\h ",
+          "word": "Section 2.01(b)",
+          "libreOffice": "Section 2.01(b)"
+        },
+        {
+          "site": "footnote 1: \u0002 Plain note in 2.01(b)",
+          "story": "footnote",
+          "instruction": " REF s201 \\r \\h ",
+          "word": "Section 2.01",
+          "libreOffice": "Section 2.01"
+        },
+        {
+          "site": "footnote 1: \u0002 Plain note in 2.01(b)",
+          "story": "footnote",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "footnote 1: \u0002 Plain note in 2.01(b)",
+          "story": "footnote",
+          "instruction": " REF s101a \\r \\h ",
+          "word": "Section 1.01(a)",
+          "libreOffice": "Section 1.01(a)"
+        },
+        {
+          "site": "footnote 1: \u0002 Plain note in 2.01(b)",
+          "story": "footnote",
+          "instruction": " REF s202a \\r \\h ",
+          "word": "Section 2.02(a)",
+          "libreOffice": "Section 2.02(a)"
+        },
+        {
+          "site": "footnote 2: (a) \u0002 Note numbered by the heading list (a)",
+          "story": "footnote",
+          "instruction": " REF s201bi \\r \\h ",
+          "word": "Section 2.01(b)(i)",
+          "libreOffice": "Section 2.01(b)(i)"
+        },
+        {
+          "site": "footnote 2: (a) \u0002 Note numbered by the heading list (a)",
+          "story": "footnote",
+          "instruction": " REF s201b \\r \\h ",
+          "word": "Section 2.01(b)",
+          "libreOffice": "Section 2.01(b)"
+        },
+        {
+          "site": "footnote 2: (a) \u0002 Note numbered by the heading list (a)",
+          "story": "footnote",
+          "instruction": " REF s201 \\r \\h ",
+          "word": "Section 2.01",
+          "libreOffice": "Section 2.01"
+        },
+        {
+          "site": "footnote 2: (a) \u0002 Note numbered by the heading list (a)",
+          "story": "footnote",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "footnote 2: (a) \u0002 Note numbered by the heading list (a)",
+          "story": "footnote",
+          "instruction": " REF s101a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "Section 1.01(a)"
+        },
+        {
+          "site": "footnote 2: (a) \u0002 Note numbered by the heading list (a)",
+          "story": "footnote",
+          "instruction": " REF s202a \\r \\h ",
+          "word": "Section 2.02(a)",
+          "libreOffice": "Section 2.02(a)"
+        },
+        {
+          "site": "footnote 3: \u0002 Plain note in 2.01(b)(ii)",
+          "story": "footnote",
+          "instruction": " REF s201bi \\r \\h ",
+          "word": "Section 2.01(b)(i)",
+          "libreOffice": "Section 2.01(b)(i)"
+        },
+        {
+          "site": "footnote 3: \u0002 Plain note in 2.01(b)(ii)",
+          "story": "footnote",
+          "instruction": " REF s201b \\r \\h ",
+          "word": "Section 2.01(b)",
+          "libreOffice": "Section 2.01(b)"
+        },
+        {
+          "site": "footnote 3: \u0002 Plain note in 2.01(b)(ii)",
+          "story": "footnote",
+          "instruction": " REF s201 \\r \\h ",
+          "word": "Section 2.01",
+          "libreOffice": "Section 2.01"
+        },
+        {
+          "site": "footnote 3: \u0002 Plain note in 2.01(b)(ii)",
+          "story": "footnote",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "footnote 3: \u0002 Plain note in 2.01(b)(ii)",
+          "story": "footnote",
+          "instruction": " REF s101a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "Section 1.01(a)"
+        },
+        {
+          "site": "footnote 3: \u0002 Plain note in 2.01(b)(ii)",
+          "story": "footnote",
+          "instruction": " REF s202a \\r \\h ",
+          "word": "Section 2.02(a)",
+          "libreOffice": "Section 2.02(a)"
+        },
+        {
+          "site": "footnote 4: (i) \u0002 Note numbered by the heading list (i)",
+          "story": "footnote",
+          "instruction": " REF s201bi \\r \\h ",
+          "word": "Section 2.01(b)(i)",
+          "libreOffice": "Section 2.01(b)(i)"
+        },
+        {
+          "site": "footnote 4: (i) \u0002 Note numbered by the heading list (i)",
+          "story": "footnote",
+          "instruction": " REF s201b \\r \\h ",
+          "word": "Section 2.01(b)",
+          "libreOffice": "Section 2.01(b)"
+        },
+        {
+          "site": "footnote 4: (i) \u0002 Note numbered by the heading list (i)",
+          "story": "footnote",
+          "instruction": " REF s201 \\r \\h ",
+          "word": "Section 2.01",
+          "libreOffice": "Section 2.01"
+        },
+        {
+          "site": "footnote 4: (i) \u0002 Note numbered by the heading list (i)",
+          "story": "footnote",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "footnote 4: (i) \u0002 Note numbered by the heading list (i)",
+          "story": "footnote",
+          "instruction": " REF s101a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "Section 1.01(a)"
+        },
+        {
+          "site": "footnote 4: (i) \u0002 Note numbered by the heading list (i)",
+          "story": "footnote",
+          "instruction": " REF s202a \\r \\h ",
+          "word": "Section 2.02(a)",
+          "libreOffice": "Section 2.02(a)"
+        },
+        {
+          "site": "footnote 4: Its unnumbered paragraph",
+          "story": "footnote",
+          "instruction": " REF s201bi \\r \\h ",
+          "word": "Section 2.01(b)(i)",
+          "libreOffice": "Section 2.01(b)(i)"
+        },
+        {
+          "site": "footnote 4: Its unnumbered paragraph",
+          "story": "footnote",
+          "instruction": " REF s201b \\r \\h ",
+          "word": "Section 2.01(b)",
+          "libreOffice": "Section 2.01(b)"
+        },
+        {
+          "site": "footnote 4: Its unnumbered paragraph",
+          "story": "footnote",
+          "instruction": " REF s201 \\r \\h ",
+          "word": "Section 2.01",
+          "libreOffice": "Section 2.01"
+        },
+        {
+          "site": "footnote 4: Its unnumbered paragraph",
+          "story": "footnote",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "footnote 4: Its unnumbered paragraph",
+          "story": "footnote",
+          "instruction": " REF s101a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "Section 1.01(a)"
+        },
+        {
+          "site": "footnote 4: Its unnumbered paragraph",
+          "story": "footnote",
+          "instruction": " REF s202a \\r \\h ",
+          "word": "Section 2.02(a)",
+          "libreOffice": "Section 2.02(a)"
+        }
+      ],
+      "wordParagraphs": [
+        "ARTICLE I\tDEFINITIONS",
+        "Section 1.01\tTerms.",
+        "(a)\tIn 1.01(a).",
+        "ARTICLE II\tPURCHASE AND SALE",
+        "Section 2.01\tPurchase.",
+        "(a)\tIn 2.01(a).",
+        "(b)\tIn 2.01(b), noted\u0002",
+        "(i)\tIn 2.01(b)(i), noted\u0002",
+        "(ii)\tIn 2.01(b)(ii), noted\u0002",
+        "Section 2.02\tPrice.",
+        "(a)\tIn 2.02(a), noted\u0002",
+        "\t\u0002 Plain note in 2.01(b): s201bi=[Section 2.01(b)(i)] s201b=[Section 2.01(b)] s201=[Section 2.01] art2=[ARTICLE II] s101a=[Section 1.01(a)] s202a=[Section 2.02(a)]",
+        "(a)\t\u0002 Note numbered by the heading list (a): s201bi=[Section 2.01(b)(i)] s201b=[Section 2.01(b)] s201=[Section 2.01] art2=[ARTICLE II] s101a=[(a)] s202a=[Section 2.02(a)]",
+        "\t\u0002 Plain note in 2.01(b)(ii): s201bi=[Section 2.01(b)(i)] s201b=[Section 2.01(b)] s201=[Section 2.01] art2=[ARTICLE II] s101a=[(a)] s202a=[Section 2.02(a)]",
+        "(i)\t\u0002 Note numbered by the heading list (i): s201bi=[Section 2.01(b)(i)] s201b=[Section 2.01(b)] s201=[Section 2.01] art2=[ARTICLE II] s101a=[(a)] s202a=[Section 2.02(a)]",
+        "\tIts unnumbered paragraph: s201bi=[Section 2.01(b)(i)] s201b=[Section 2.01(b)] s201=[Section 2.01] art2=[ARTICLE II] s101a=[(a)] s202a=[Section 2.02(a)]"
+      ]
+    }
+  ]
+}

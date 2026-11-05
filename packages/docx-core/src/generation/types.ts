@@ -257,10 +257,12 @@ export type FieldSpec = {
  *   "(b)(ii)" from "Section 2.06(a)", "Section 2.06(b)(ii)" from "Section
  *   2.07"), and the full number in a footnote. The target must be a numbered
  *   paragraph whose number depends only on levels the list has used;
- *   otherwise generation fails. A relative reference is refused in a
- *   footnote when any footnote paragraph is numbered, and when its number
- *   depends on a level shown at its start value: what Word shows there is
- *   not measured.
+ *   otherwise generation fails. A level shown at its start value (a clause
+ *   directly under an Article) is compared at that value: "(a)" from the
+ *   Article's next clause. A relative reference in a footnote is refused
+ *   when a footnote paragraph is numbered by its target's list: Word then
+ *   counts from the footnotes' own paragraphs of that list, which is not
+ *   modelled.
  * - `show: 'text'`: the target's bookmarked text, as `REF <bookmark> \h`
  *   with no number switch, the instruction Word's Insert > Cross-reference
  *   writes for "Bookmark text". The cached result is a copy of the target

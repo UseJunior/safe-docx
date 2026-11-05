@@ -202,23 +202,31 @@ export function collectBookmarkPaths(spec: DocumentSpec): Map<string, string> {
  * Word's Bookmark dialog rules: at most 40 characters, a letter first, then
  * letters, digits and underscores, so none is hidden. Names are unique
  * without regard to case. A cross-reference sits in the body or a footnote,
- * never a header or footer, and names a declared bookmark exactly.
+ * never a header or footer, and names a declared bookmark exactly. A
+ * relative reference in a footnote is refused while a footnote paragraph is
+ * numbered by its target's numbering definition (scripts/oracle/word/evidence/issue-1284-word-16.114.json:
+ * Word then shows "(a)" for "Section 1.01(a)" after a footnote "(a)" of the
+ * heading list, and the full number before it or beside another list).
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.16.5.51 — follows Word: a relative reference in a footnote counts from the footnotes' own paragraphs of the target's list, not the body, so it is refused while such a paragraph exists
  */
 function validateCrossReferences(spec: DocumentSpec): void {
   const bookmarks = new Map<string, ParagraphSpec>();
   const folded = new Map<string, string>();
-  const numberedStyles = numberLinkedStyleIds(spec);
-  // The first numbered footnote paragraph: a relative reference in a footnote is then refused.
-  let numberedFootnoteParagraph: string | undefined;
+  const definitions = numberingDefinitions(spec);
+  // The first footnote paragraph each numbering definition numbers: a relative reference in a
+  // footnote to a paragraph of that definition is then refused.
+  const numberedFootnoteParagraphs = new Map<string, string>();
   walkDocumentParagraphs(spec, (paragraph, path, story) => {
     // A footnote paragraph without a styleId is emitted with FootnoteText, so that style counts too.
-    if (story === 'footnote' && numberedFootnoteParagraph === undefined
-      && (paragraph.list !== undefined || numberedStyles.has(paragraph.styleId ?? FOOTNOTE_TEXT_STYLE_ID))) {
-      numberedFootnoteParagraph = path;
+    if (story !== 'footnote') return;
+    for (const definition of definitions.of(paragraph, FOOTNOTE_TEXT_STYLE_ID)) {
+      if (!numberedFootnoteParagraphs.has(definition)) numberedFootnoteParagraphs.set(definition, path);
     }
+  });
+  walkDocumentParagraphs(spec, (paragraph, path, story) => {
     if (paragraph.bookmark === undefined) return;
     const bookmarkPath = `${path}/bookmark`;
     if (story !== 'body') {
@@ -255,43 +263,66 @@ function validateCrossReferences(spec: DocumentSpec): void {
         throw new GenerationSpecError('dangling_bookmark_reference', `${runPath}/bookmark`, `Cross-reference names undeclared bookmark '${String(run.bookmark)}'`);
       }
       if (run.show === 'text') validateTextReferenceTarget(run.bookmark, target, `${runPath}/show`);
-      if (run.number === 'relative' && story === 'footnote' && numberedFootnoteParagraph !== undefined) {
-        // Word shows a relative reference in a footnote in full when no footnote paragraph is numbered
-        // (issue-1258 evidence); what a numbered footnote paragraph changes is not measured.
-        throw new GenerationSpecError(
-          'invalid_value',
-          `${runPath}/number`,
-          `A relative cross-reference in a footnote shows the full number only while no footnote paragraph is numbered; ${numberedFootnoteParagraph} is, and what Word shows then is not measured`,
-        );
+      if (run.number === 'relative' && story === 'footnote') {
+        // Word shows a relative reference in a footnote in full while no footnote paragraph is
+        // numbered by the target's list; a footnote paragraph of another list changes nothing
+        // (issue-1258 and issue-1284 evidence). Footnote paragraphs of the target's list number in a
+        // sequence of their own, from which Word then measures, and that sequence is not modelled.
+        for (const definition of definitions.of(target, undefined)) {
+          const numbered = numberedFootnoteParagraphs.get(definition);
+          if (numbered === undefined) continue;
+          throw new GenerationSpecError(
+            'invalid_value',
+            `${runPath}/number`,
+            `A relative cross-reference in a footnote to a paragraph of list '${definition}' is refused while a footnote paragraph is numbered by that list (${numbered}): Word then numbers it relative to the footnotes' own count of the list, which is not modelled`,
+          );
+        }
       }
     });
   });
 }
 
 /**
- * The paragraph styles that number their paragraphs: each style a numbering
- * level links (`pStyle`), and every style based on one of them, which
- * inherits its numbering through `w:basedOn` (§ 17.7.4.3).
- *
- * @conformance ECMA-376 edition 5, Part 1 § 17.9.23
+ * The numbering definitions that number a paragraph, each named by its
+ * default instance's `numId`: its own `list` (an additional instance counts
+ * as its definition), or else the definitions whose levels link its
+ * paragraph style (`pStyle`) or a style it is based on, which it inherits
+ * through `w:basedOn` (§ 17.7.4.3). A paragraph without a `styleId` takes
+ * `defaultStyleId`.
  */
-function numberLinkedStyleIds(spec: DocumentSpec): Set<string> {
-  const linked = new Set<string>();
-  for (const definition of spec.numbering ?? []) for (const level of definition.levels ?? []) if (level.pStyle) linked.add(level.pStyle);
+function numberingDefinitions(spec: DocumentSpec): { of(paragraph: ParagraphSpec, defaultStyleId: string | undefined): string[] } {
+  const byNumId = new Map<string, string>();
+  const linked = new Map<string, Set<string>>();
+  for (const definition of spec.numbering ?? []) {
+    byNumId.set(definition.numId, definition.numId);
+    for (const instance of definition.instances ?? []) byNumId.set(instance.numId, definition.numId);
+    for (const level of definition.levels ?? []) {
+      if (!level.pStyle) continue;
+      const set = linked.get(level.pStyle) ?? new Set<string>();
+      set.add(definition.numId);
+      linked.set(level.pStyle, set);
+    }
+  }
   const basedOn = new Map((spec.styles ?? []).map((style) => [style.styleId, style.basedOn]));
-  const numbered = new Set<string>();
-  for (const styleId of basedOn.keys()) {
+  const ofStyle = (styleId: string): string[] => {
     const seen = new Set<string>();
     for (let id: string | undefined = styleId; id !== undefined && !seen.has(id); id = basedOn.get(id)) {
       seen.add(id);
-      if (linked.has(id)) {
-        numbered.add(styleId);
-        break;
-      }
+      const set = linked.get(id);
+      if (set) return [...set];
     }
-  }
-  for (const id of linked) numbered.add(id);
-  return numbered;
+    return [];
+  };
+  return {
+    of(paragraph, defaultStyleId) {
+      if (paragraph.list !== undefined) {
+        const definition = byNumId.get(paragraph.list.numId);
+        return definition === undefined ? [] : [definition];
+      }
+      const styleId = paragraph.styleId ?? defaultStyleId;
+      return styleId === undefined ? [] : ofStyle(styleId);
+    },
+  };
 }
 
 /**

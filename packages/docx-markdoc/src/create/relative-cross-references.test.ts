@@ -139,8 +139,6 @@ describe('Traceability: relative cross-references in created documents', () => {
       ]) expect((await createDocumentFromMarkdoc(source)).certificate.passed, source).toBe(true);
 
       const legal = '---\nheading-numbers: legal\n---\n\n# T\n\n## Sale\n\n### Price {% #price %}\n\n1. Paid. {% #paid %}\n\n## Misc\n\n1. Clause under the Article. {% #article-clause %}\n';
-      expect(await failure(`${legal}\nSee {% xref to="price" number="relative" /%}.\n`)).toEqual({ code: 'XREF_RELATIVE_AFTER_ARTICLE_CLAUSES', line: 17 });
-      expect(await failure(`${legal}2. Per {% xref to="paid" number="relative" /%}.\n`)).toEqual({ code: 'XREF_RELATIVE_AFTER_ARTICLE_CLAUSES', line: 16 });
       expect(await failure(`${legal}\n## Last\n\nSee {% xref to="article-clause" number="relative" /%}.\n`)).toEqual({ code: 'XREF_FULL_NUMBER_UNDER_ARTICLE', line: 19 });
       // After the next heading the position is that heading again.
       expect((await createDocumentFromMarkdoc(`${legal}\n## Last\n\nSee {% xref to="paid" number="relative" /%}.\n`)).certificate.passed).toBe(true);
@@ -149,6 +147,21 @@ describe('Traceability: relative cross-references in created documents', () => {
       expect(await failure(`${item}See {% xref to="one" number="relative" format="section" /%}.\n`)).toEqual({ code: 'INVALID_CROSS_REFERENCE', line: 5 });
       expect(await failure(`${item}See {% xref to="one" show="text" number="relative" /%}.\n`)).toEqual({ code: 'INVALID_CROSS_REFERENCE', line: 5 });
       expect(await failure('# T\n\n- One {% #one %}\n\nSee {% xref to="one" number="relative" /%}.\n')).toEqual({ code: 'XREF_TARGET_NOT_NUMBERED', line: 5 });
+    },
+  );
+
+  test.openspec('[SDX-MDOC-XREFREL-07] relative cross-references in or after clauses directly under an Article show the numbers Word shows')(
+    'Scenario: relative cross-references in or after clauses directly under an Article show the numbers Word shows',
+    async () => {
+      const legal = '---\nheading-numbers: legal\n---\n\n# T\n\n## Sale\n\n### Price {% #price %}\n\n1. Paid. {% #paid %}\n\n## Misc {% #misc %}\n\n1. Clause under the Article. {% #article-clause %}\n   1. Its first part. {% #article-clause-i %}\n';
+      const source = `${legal}2. Per {% xref to="paid" number="relative" /%}, {% xref to="misc" number="relative" /%}, {% xref to="article-clause" number="relative" /%} and {% xref to="article-clause-i" number="relative" /%}.\n\nSee {% xref to="price" number="relative" /%} and {% xref to="article-clause-i" number="relative" /%}.\n`;
+      const created = await createDocumentFromMarkdoc(source);
+      expect(created.certificate.passed).toBe(true);
+      // Word compares the start-value Section level at its value (issue-1284 evidence): the Article's clauses share it.
+      expect((await cachedFields(created.docx)).map((field) => field.result))
+        .toEqual(['Section 1.01(a)', 'ARTICLE II', '(a)', '(a)(i)', 'Section 1.01', '(a)(i)']);
+      // From another Article a clause directly under an Article is still refused.
+      expect(await failure(`${legal}\n## Last\n\nSee {% xref to="article-clause" number="relative" /%}.\n`)).toEqual({ code: 'XREF_FULL_NUMBER_UNDER_ARTICLE', line: 20 });
     },
   );
 
