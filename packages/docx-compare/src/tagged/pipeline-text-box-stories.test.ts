@@ -324,24 +324,30 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
     const original = await buildDocxFromBodyXml(
       '<w:p><w:bookmarkStart w:id="1" w:name="OuterRange"/>' +
         '<w:r><w:t>outer doomed</w:t></w:r></w:p>' +
-        '<w:p><w:r><w:t>outer survivor</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>' +
+        '<w:p><w:r><w:t xml:space="preserve">outer </w:t></w:r><w:r><w:t>survivor</w:t></w:r>' +
+          '<w:bookmarkEnd w:id="1"/></w:p>' +
         paragraphWithTextBoxParagraphs(
           '<w:p w14:paraId="21000001" w14:textId="21000001">' +
             '<w:bookmarkStart w:id="2" w:name="BoxRange"/>' +
             '<w:r><w:t>box doomed</w:t></w:r></w:p>' +
           '<w:p w14:paraId="21000002" w14:textId="21000002">' +
-            '<w:r><w:t>box survivor</w:t></w:r><w:bookmarkEnd w:id="2"/></w:p>',
+            '<w:r><w:t xml:space="preserve">box </w:t></w:r><w:r><w:t>survivor</w:t></w:r>' +
+            '<w:bookmarkEnd w:id="2"/></w:p>',
         ),
       [],
       { namespaces: TEXT_BOX_NAMESPACES },
     );
     const revised = await buildDocxFromBodyXml(
-      '<w:p><w:bookmarkStart w:id="1" w:name="OuterRange"/>' +
-        '<w:r><w:t>outer survivor</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>' +
+      // Revised starts sit after the first word, a position Accept All cannot
+      // reach from the original starts, so both splits (and names) stand.
+      '<w:p><w:r><w:t xml:space="preserve">outer </w:t></w:r>' +
+        '<w:bookmarkStart w:id="1" w:name="OuterRange"/>' +
+        '<w:r><w:t>survivor</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>' +
         paragraphWithTextBoxParagraphs(
           '<w:p w14:paraId="21000002" w14:textId="21000002">' +
+            '<w:r><w:t xml:space="preserve">box </w:t></w:r>' +
             '<w:bookmarkStart w:id="2" w:name="BoxRange"/>' +
-            '<w:r><w:t>box survivor</w:t></w:r><w:bookmarkEnd w:id="2"/></w:p>',
+            '<w:r><w:t>survivor</w:t></w:r><w:bookmarkEnd w:id="2"/></w:p>',
         ),
       [],
       { namespaces: TEXT_BOX_NAMESPACES },

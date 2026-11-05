@@ -35,6 +35,8 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
+import { emptyRevisionWrapperIds } from '../testing/revisionWrapperShape.js';
+import { XMLSerializer } from '@xmldom/xmldom';
 
 const TEST_FEATURE = 'Consumer Compatibility Bookmark Ranges';
 
@@ -78,7 +80,10 @@ async function compare(
     author: AUTHOR,
     date: DATE,
   });
-  return (await DocxArchive.load(result.document)).getDocumentXml();
+  const documentXml = await (await DocxArchive.load(result.document)).getDocumentXml();
+  // Every fixture in this file doubles as a no-empty-revision-wrapper check (#1281).
+  expect(emptyRevisionWrapperIds(documentXml)).toEqual([]);
+  return documentXml;
 }
 
 function bodyOf(documentXml: string): Element {
@@ -387,11 +392,16 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
         '<w:p><w:r><w:t xml:space="preserve">doomed paragraph </w:t></w:r>' +
           '<w:bookmarkStart w:id="1" w:name="StraddlingRange"/>' +
           '<w:r><w:t>more doomed</w:t></w:r></w:p>' +
-          '<w:p><w:r><w:t xml:space="preserve">surviving text </w:t></w:r>' +
+          '<w:p><w:r><w:t xml:space="preserve">surviving </w:t></w:r>' +
+          '<w:r><w:t xml:space="preserve">text </w:t></w:r>' +
           '<w:bookmarkEnd w:id="1"/><w:r><w:t>tail</w:t></w:r></w:p>' +
           originalReference,
-        '<w:p><w:bookmarkStart w:id="1" w:name="StraddlingRange"/>' +
-          '<w:r><w:t xml:space="preserve">surviving text </w:t></w:r>' +
+        // The revised start sits after "surviving ", a position Accept All
+        // cannot reach from the original start, so one range cannot serve both
+        // projections and the split stands.
+        '<w:p><w:r><w:t xml:space="preserve">surviving </w:t></w:r>' +
+          '<w:bookmarkStart w:id="1" w:name="StraddlingRange"/>' +
+          '<w:r><w:t xml:space="preserve">text </w:t></w:r>' +
           '<w:bookmarkEnd w:id="1"/><w:r><w:t>tail</w:t></w:r></w:p>' +
           revisedReference,
       );
@@ -418,6 +428,54 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
       expect(accepted).not.toContain('_safe_docx_original_');
       expect(rejected).toMatch(/REF _safe_docx_original_\d+ \\h/u);
       expect(rejected).not.toContain('REF StraddlingRange \\h');
+    });
+  });
+
+  test.openspec("A split bookmark that one range satisfies in both projections keeps its source name")(
+    'keeps one source-named range when the original start collapses onto the revised start under Accept All', async (
+    { given, when, then, and }: AllureBddContext
+  ) => {
+    let documentXml: string;
+    const reference =
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> REF StraddlingRange \\h </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>clause</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>';
+
+    await given('an original bookmark starting inside a paragraph the revision deletes', () => {});
+
+    await when('the revision re-anchors the start at the opening of the next paragraph', async () => {
+      documentXml = await compare(
+        '<w:p><w:r><w:t xml:space="preserve">doomed paragraph </w:t></w:r>' +
+          '<w:bookmarkStart w:id="1" w:name="StraddlingRange"/>' +
+          '<w:r><w:t>more doomed</w:t></w:r></w:p>' +
+          '<w:p><w:r><w:t xml:space="preserve">surviving text </w:t></w:r>' +
+          '<w:bookmarkEnd w:id="1"/><w:r><w:t>tail</w:t></w:r></w:p>' +
+          reference,
+        '<w:p><w:bookmarkStart w:id="1" w:name="StraddlingRange"/>' +
+          '<w:r><w:t xml:space="preserve">surviving text </w:t></w:r>' +
+          '<w:bookmarkEnd w:id="1"/><w:r><w:t>tail</w:t></w:r></w:p>' +
+          reference,
+      );
+    });
+
+    await then('the redline carries one range under the source name and no generated name', () => {
+      expectUniqueBookmarkNames(documentXml);
+      expect(documentXml).not.toContain('_safe_docx_original_');
+      const starts = Array.from(parseXml(documentXml).getElementsByTagName('w:bookmarkStart'))
+        .filter((start) => start.getAttribute('w:name') === 'StraddlingRange');
+      expect(starts).toHaveLength(1);
+    });
+
+    await and('Accept All and Reject All each reproduce their source range and reference', () => {
+      const id = Array.from(parseXml(documentXml).getElementsByTagName('w:bookmarkStart'))
+        .find((start) => start.getAttribute('w:name') === 'StraddlingRange')!.getAttribute('w:id')!;
+      expect(rangeText(acceptAllChanges(documentXml), id)).toBe('surviving text ');
+      expect(rangeText(rejectAllChanges(documentXml), id)).toBe(
+        'doomed paragraph more doomedsurviving text ',
+      );
+      expect(fieldInstructions(acceptAllChanges(documentXml))).toContain('REF StraddlingRange \\h');
+      expect(fieldInstructions(rejectAllChanges(documentXml))).toContain('REF StraddlingRange \\h');
     });
   });
 
@@ -813,6 +871,22 @@ describe('Bookmark boundaries relative to an inline revision wrapper', () => {
         'w:del',
       ]);
     });
+  });
+
+  test('a wrapper holding only lifted boundaries is removed, self-closing or paired (#1281)', () => {
+    for (const repairBookmarkInventory of [true, false]) {
+      const layout = markerLayout(
+        '<w:p><w:bookmarkStart w:id="66" w:name="Lone"/>' +
+          '<w:r><w:t>kept</w:t></w:r>' +
+          '<w:del w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z">' +
+          '<w:bookmarkEnd w:id="66"/></w:del></w:p>',
+        repairBookmarkInventory,
+      );
+      expect(layout.paragraph).toEqual(['w:bookmarkStart#66', 'w:r', 'w:bookmarkEnd#66']);
+      expect(emptyRevisionWrapperIds(
+        new XMLSerializer().serializeToString(layout.paragraphEl),
+      )).toEqual([]);
+    }
   });
 
   test('a bookmark inside nested revision wrappers lands outside the outermost one', async (

@@ -93,6 +93,7 @@ import {
 } from './formattingFidelity.js';
 import { resolveTaggedRevisionAttributions } from './taggedTreeSerializer.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
+import { coalesceProjectionEquivalentBookmarkSplits } from './bookmarkSplitCoalescing.js';
 import { canonicalizeNoteArchiveIds, copiedParagraphNoteIds, separateRepeatedNoteReferences } from './noteReferenceIdentity.js';
 import { alignedInlineFootnoteAnchorPair } from './inlineFootnoteAnchorPair.js';
 import {
@@ -328,7 +329,9 @@ function finalizeTaggedDocumentXml(documentXml: string): string {
     () => allocateRevisionId(revisionIds),
     { repairBookmarkInventory: false },
   );
-  const serialized = new XMLSerializer().serializeToString(document);
+  const serialized = coalesceProjectionEquivalentBookmarkSplits(
+    new XMLSerializer().serializeToString(document),
+  );
   return suppressVolatileTocPagerefCacheRevisions(
     serialized.startsWith('<?xml') ? serialized : XML_DECLARATION + serialized,
   );

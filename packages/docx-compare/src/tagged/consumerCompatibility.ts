@@ -232,6 +232,11 @@ function liftMarkersAroundWrapper(
       tail.parentNode.removeChild(tail);
     }
   }
+  // The same holds for the wrapper itself once every marker it held has
+  // stepped out of it, written self-closing or not (#1281).
+  if (markers.length > 0 && !childElements(wrapper).length && wrapper.parentNode) {
+    wrapper.parentNode.removeChild(wrapper);
+  }
 }
 
 /**
