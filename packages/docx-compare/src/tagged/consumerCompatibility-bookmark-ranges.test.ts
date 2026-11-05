@@ -479,6 +479,23 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
     });
   });
 
+  test('keeps the split when a carriage return separates the collapsed start from the revised start', async () => {
+    const documentXml = await compare(
+      '<w:p><w:r><w:t xml:space="preserve">doomed </w:t></w:r>' +
+        '<w:bookmarkStart w:id="1" w:name="BreakRange"/>' +
+        '<w:r><w:t>gone</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:cr/></w:r><w:r><w:t>tail</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>',
+      '<w:p><w:r><w:cr/></w:r><w:bookmarkStart w:id="1" w:name="BreakRange"/>' +
+        '<w:r><w:t>tail</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>',
+    );
+    // Accept All must keep the revised start after the surviving w:cr.
+    const ordered = Array.from(parseXml(acceptAllChanges(documentXml)).getElementsByTagName('*'));
+    const start = ordered.findIndex((element) =>
+      element.tagName === 'w:bookmarkStart' && element.getAttribute('w:name') === 'BreakRange');
+    const carriageReturn = ordered.findIndex((element) => element.tagName === 'w:cr');
+    expect(start).toBeGreaterThan(carriageReturn);
+  });
+
   test('a deleted bookmark retains its exact source span in the reject projection', async (
     { given, when, then, and }: AllureBddContext
   ) => {

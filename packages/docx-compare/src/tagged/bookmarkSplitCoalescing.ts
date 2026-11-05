@@ -38,12 +38,18 @@ function rangeSignatures(documentXml: string): Map<string, RangeSignature> {
         if (id) ends.set(id, offset);
         return;
       }
-      if (element.localName === 't') {
-        offset += (element.textContent ?? '').length;
-        return;
-      }
-      if (element.localName === 'tab' || element.localName === 'br') {
-        offset += 1;
+      if (element.localName === 'r') {
+        // Conservative width: text counts per character and every other run
+        // child (w:tab, w:br, w:cr, w:fldChar, w:drawing, ...) counts as one, so
+        // no visible or structural run content can be skipped over unnoticed.
+        for (const child of Array.from(element.childNodes)) {
+          if (child.nodeType !== 1) continue;
+          const runChild = child as Element;
+          if (runChild.namespaceURI === W_NS && runChild.localName === 'rPr') continue;
+          offset += runChild.namespaceURI === W_NS && runChild.localName === 't'
+            ? (runChild.textContent ?? '').length
+            : 1;
+        }
         return;
       }
     }
@@ -116,7 +122,7 @@ function unwrapMarker(marker: Element): void {
  * @see https://github.com/UseJunior/safe-docx/issues/1280
  */
 export function coalesceProjectionEquivalentBookmarkSplits(documentXml: string): string {
-  let document = parseXml(documentXml);
+  const document = parseXml(documentXml);
   const startsByName = new Map<string, Element[]>();
   for (const start of Array.from(document.getElementsByTagNameNS(W_NS, 'bookmarkStart'))) {
     const name = wAttr(start, 'name');
@@ -129,34 +135,55 @@ export function coalesceProjectionEquivalentBookmarkSplits(documentXml: string):
     .filter((ids): ids is [string, string] => ids.every((id) => id !== null) && ids[0] !== ids[1]);
   if (candidates.length === 0) return documentXml;
 
-  let xml = documentXml;
-  for (const [firstId, secondId] of candidates) {
-    const accepted = rangeSignatures(acceptAllChanges(xml));
-    const rejected = rangeSignatures(rejectAllChanges(xml));
+  interface Pair { originalId: string; revisedId: string }
+  const classify = (
+    accepted: Map<string, RangeSignature>,
+    rejected: Map<string, RangeSignature>,
+    [firstId, secondId]: [string, string],
+  ): Pair | undefined => {
     // The original-side alternative survives Reject only; the revised side survives Accept.
     const originalId = rejected.has(firstId) && !rejected.has(secondId) ? firstId
       : rejected.has(secondId) && !rejected.has(firstId) ? secondId : undefined;
-    if (!originalId) continue;
+    if (!originalId) return undefined;
     const revisedId = originalId === firstId ? secondId : firstId;
-    if (!accepted.has(revisedId)) continue;
-
+    return accepted.has(revisedId) ? { originalId, revisedId } : undefined;
+  };
+  /** Merge `pairs` into a copy of `xml`; the merged XML when every pair verifies. */
+  const tryMerge = (xml: string, pairs: readonly Pair[]): { xml: string } | undefined => {
+    const accepted = rangeSignatures(acceptAllChanges(xml));
+    const rejected = rangeSignatures(rejectAllChanges(xml));
     const candidate = parseXml(xml);
     const root = candidate.documentElement;
-    const originalMarkers = markersWithId(root, originalId);
-    const revisedMarkers = markersWithId(root, revisedId);
-    if (originalMarkers.length !== 2 || revisedMarkers.length !== 2) continue;
-    revisedMarkers.forEach(removeMarker);
-    originalMarkers.forEach(unwrapMarker);
+    for (const { originalId, revisedId } of pairs) {
+      const originalMarkers = markersWithId(root, originalId);
+      const revisedMarkers = markersWithId(root, revisedId);
+      if (originalMarkers.length !== 2 || revisedMarkers.length !== 2) return undefined;
+      revisedMarkers.forEach(removeMarker);
+      originalMarkers.forEach(unwrapMarker);
+    }
     const candidateXml = new XMLSerializer().serializeToString(candidate);
     const candidateAccepted = rangeSignatures(acceptAllChanges(candidateXml));
     const candidateRejected = rangeSignatures(rejectAllChanges(candidateXml));
-    if (
+    const verified = pairs.every(({ originalId, revisedId }) =>
       sameSignature(candidateRejected.get(originalId), rejected.get(originalId)) &&
-      sameSignature(candidateAccepted.get(originalId), accepted.get(revisedId))
-    ) {
-      xml = candidateXml;
-      document = candidate;
-    }
+      sameSignature(candidateAccepted.get(originalId), accepted.get(revisedId)));
+    return verified ? { xml: candidateXml } : undefined;
+  };
+
+  const initialAccepted = rangeSignatures(acceptAllChanges(documentXml));
+  const initialRejected = rangeSignatures(rejectAllChanges(documentXml));
+  const pairs = candidates
+    .map((ids) => classify(initialAccepted, initialRejected, ids))
+    .filter((pair): pair is Pair => pair !== undefined);
+  if (pairs.length === 0) return documentXml;
+  // One verification pass for the common case where every candidate collapses;
+  // fall back to verifying each pair alone only when the batch fails.
+  const batch = tryMerge(documentXml, pairs);
+  if (batch) return batch.xml;
+  let xml = documentXml;
+  for (const pair of pairs) {
+    const merged = tryMerge(xml, [pair]);
+    if (merged) xml = merged.xml;
   }
-  return xml === documentXml ? documentXml : new XMLSerializer().serializeToString(document);
+  return xml;
 }
