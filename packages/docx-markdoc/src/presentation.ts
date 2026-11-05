@@ -1,5 +1,6 @@
 import { DocxDocument, buildParagraphIndex, createRevisionContext, findParagraphByBookmarkId } from '@usejunior/docx-core';
 import { DocxMarkdocError } from './errors.js';
+import { referenceInstruction } from './xref.js';
 import { sha256 } from './hash.js';
 import type {
   AnnotationAnchor,
@@ -99,6 +100,8 @@ function mergedBody(annotation: CanonicalAnnotation, overlay?: AnnotationRunStyl
       text: run.text,
       style: { ...(run.style ?? {}), ...(overlay ?? {}) },
       ...(run.hyperlink ? { hyperlink: { destination: run.hyperlink.destination } } : {}),
+      // A cross-reference goes back as the REF field it was imported from (#1260).
+      ...(run.crossReference ? { field: { instruction: referenceInstruction(run.crossReference), key: String(run.crossReference.field) } } : {}),
     })),
   }));
 }

@@ -1708,6 +1708,14 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/nvca-coi-regression.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/body_fields.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/body_fields.test.ts"
         }
       ]
     },
@@ -2807,11 +2815,19 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tr",
-      "claimRationale": "Rows emit as `w:tr` with optional row properties followed by cells. Cell\ngrid offsets are tracked during emission so unspecified cell widths can be\nderived from the columns each cell actually spans.",
+      "claimRationale": "Rows emit as `w:tr` with optional row properties followed by cells. Cell\ngrid offsets are tracked during emission so unspecified cell widths can be\nderived from the columns each cell actually spans. The comparison\nserializer keeps a row's `w:tblPrEx` ahead of its `w:trPr`, as `CT_Row`\norders them, when it keeps, adds or creates row properties.",
       "evidence": [
         {
           "kind": "source",
           "path": "packages/docx-core/src/generation/emit/table.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts"
         }
       ]
     },

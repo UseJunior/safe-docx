@@ -5,6 +5,7 @@
  * and supports reading, updating, and deleting footnotes.
  */
 
+import { buildBodyFieldRuns, groupBodyFieldRuns, type BodyRunField } from './body_fields.js';
 import { OOXML, W } from './namespaces.js';
 import { parseXml, serializeXml } from './xml.js';
 import { DocxZip } from './zip.js';
@@ -131,7 +132,11 @@ export type FootnoteNotePresentation = {
   body?: FootnoteBodyParagraph[];
 };
 
-export type FootnoteStyledRun = { text: string; style?: FootnoteRunStyle; hyperlink?: { destination: string } };
+/**
+ * One run of a footnote body. With `field`, the run is (part of) the cached
+ * result of a complex field; consecutive runs with the same field form one.
+ */
+export type FootnoteStyledRun = { text: string; style?: FootnoteRunStyle; hyperlink?: { destination: string }; field?: BodyRunField };
 export type FootnoteBodyParagraph = { runs: FootnoteStyledRun[] };
 
 export type AddFootnoteResult = {
@@ -790,7 +795,15 @@ function appendFootnoteRuns(
 ): void {
   let activeDestination: string | undefined;
   let activeHyperlink: Element | undefined;
-  for (const styledRun of runs) {
+  for (const group of groupBodyFieldRuns(runs)) {
+    if (group.field) {
+      activeDestination = undefined;
+      activeHyperlink = undefined;
+      const results = group.runs.map((run) => buildStyledTextRun(doc, run.text, run.style));
+      for (const run of buildBodyFieldRuns(doc, group.field.instruction, results)) paragraph.appendChild(run);
+      continue;
+    }
+    const styledRun = group.runs[0]!;
     const destination = styledRun.hyperlink?.destination;
     if (!destination) {
       activeDestination = undefined;

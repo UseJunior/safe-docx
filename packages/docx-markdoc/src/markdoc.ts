@@ -1,6 +1,7 @@
 import Markdoc, { type Config, type Node } from '@markdoc/markdoc';
 import { DocxMarkdocError } from './errors.js';
-import { IR_VERSION, type AnnotationAnchor, type AnnotationParagraph, type AnnotationRunStyle, type AtomicChangeSet, type CanonicalAnnotation, type CompilationProfile, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type ReadOnlyStoryParagraph, type RequirementWaiver, type RetainedFormat, type RetainedFormatSpan, type RunFormat, type RunFormatSpan, type SourceParagraph, type StoryDeclaration, type ValidationIssue, type ValidationResult } from './types.js';
+import { crossReferenceFromAttributes } from './xref.js';
+import { IR_VERSION, type AnnotationAnchor, type AnnotationParagraph, type AnnotationRunStyle, type AtomicChangeSet, type CrossReferenceSpan, type CanonicalAnnotation, type CompilationProfile, type DraftAssertion, type DraftRequirement, type MarkdocEditIR, type Rationale, type ReadOnlyStoryParagraph, type RequirementWaiver, type RetainedFormat, type RetainedFormatSpan, type RunFormat, type RunFormatSpan, type SourceParagraph, type StoryDeclaration, type ValidationIssue, type ValidationResult } from './types.js';
 
 const stringRequired = { type: String, required: true } as const;
 /** Attribute type for the removed `operation=`/`operations=` spellings. Declaring them with
@@ -78,6 +79,17 @@ export const markdocConfig: Config = {
     },
     ins: { inline: true },
     del: { inline: true },
+    // A REF field to a bookmarked paragraph; its content is the field's cached result (#1260).
+    xref: {
+      inline: true,
+      attributes: {
+        to: { type: String },
+        bookmark: { type: String },
+        show: { type: String, matches: ['number', 'text'] },
+        number: { type: String, matches: ['full', 'paragraph', 'relative'] },
+        hyperlink: { type: Boolean },
+      },
+    },
     'run-format': {
       inline: true,
       attributes: runFormatAttributes,
@@ -249,6 +261,55 @@ function textProjection(node: Node, side: 'original' | 'revised', revisionDepth 
   return node.children.map((child) => textProjection(child, side, revisionDepth)).join('');
 }
 
+/**
+ * The `{% xref %}` tags of an operative body, each with the range its content
+ * (the field's cached result) occupies in the body's text projection. An
+ * xref holds plain text only, sits outside run-format and retain-format, and
+ * names one admitted reference form.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1260
+ */
+function crossReferenceSpans(node: Node, side: 'original' | 'revised', issues: ValidationIssue[]): CrossReferenceSpan[] {
+  const spans: CrossReferenceSpan[] = [];
+  let offset = 0;
+  const visit = (current: Node, formatted: boolean, inReference: boolean): void => {
+    if (current.type === 'text') {
+      offset += String(current.attributes.content ?? '').length;
+      return;
+    }
+    if (current.type === 'softbreak' || current.type === 'hardbreak') {
+      if (inReference) issues.push(issue('INVALID_CROSS_REFERENCE', 'An xref holds its cached result on one line.', current));
+      offset += 1;
+      return;
+    }
+    if (current.type === 'tag' && (current.tag === 'ins' || current.tag === 'del')) {
+      if ((current.tag === 'ins' && side === 'original') || (current.tag === 'del' && side === 'revised')) return;
+    }
+    if (current.type === 'tag' && current.tag === 'xref') {
+      if (inReference) issues.push(issue('INVALID_CROSS_REFERENCE', 'An xref may not hold another xref.', current));
+      if (formatted) issues.push(issue('INVALID_CROSS_REFERENCE', 'An xref may not sit inside run-format or retain-format; Word formats a field by its result runs.', current));
+      const reference = crossReferenceFromAttributes(current.attributes);
+      if (typeof reference === 'string') issues.push(issue('INVALID_CROSS_REFERENCE', reference, current));
+      for (const child of current.walk()) {
+        if (child.type === 'tag') issues.push(issue('INVALID_CROSS_REFERENCE', 'An xref holds plain text (its cached result) only.', child));
+      }
+      const start = offset;
+      for (const child of current.children) visit(child, formatted, true);
+      if (offset === start) issues.push(issue('INVALID_CROSS_REFERENCE', 'An xref holds its cached result as text; it may not be empty.', current));
+      if (typeof reference !== 'string') spans.push({ start, end: offset, text: textProjection(current, side), reference });
+      return;
+    }
+    const nowFormatted = formatted || (current.type === 'tag' && (current.tag === 'run-format' || current.tag === 'retain-format'));
+    for (const child of current.children) visit(child, nowFormatted, inReference);
+  };
+  visit(node, false, false);
+  return spans;
+}
+
+function hasCrossReference(node: Node): boolean {
+  return [...node.walk()].some((child) => child.type === 'tag' && child.tag === 'xref');
+}
+
 function hasRevision(node: Node): boolean {
   return [...node.walk()].some((child) => child.type === 'tag' && (child.tag === 'ins' || child.tag === 'del'));
 }
@@ -264,7 +325,7 @@ function hasRetainedFormat(node: Node): boolean {
 function assertOnlyInlineRevisions(node: Node, issues: ValidationIssue[]): void {
   for (const child of node.walk()) {
     if (child === node || child.type !== 'tag') continue;
-    if (child.tag !== 'ins' && child.tag !== 'del' && child.tag !== 'run-format' && child.tag !== 'retain-format') {
+    if (child.tag !== 'ins' && child.tag !== 'del' && child.tag !== 'run-format' && child.tag !== 'retain-format' && child.tag !== 'xref') {
       issues.push(issue('UNSUPPORTED_NESTED_TAG', `Unsupported nested tag ${child.tag ?? '<unknown>'}.`, child));
     }
   }
@@ -273,6 +334,8 @@ function assertOnlyInlineRevisions(node: Node, issues: ValidationIssue[]): void 
 /** These bodies are plain text, with only the declared run-format escape hatch.
  * Flattening arbitrary Markdown would silently lose links, formatting or blocks.
  */
+const CROSS_REFERENCE_BODIES = new Set(['para', 'before', 'after', 'replace-source']);
+
 function validateTextBodies(ast: Node, issues: ValidationIssue[]): void {
   const bodies = new Set(['para', 'readonly', 'before', 'after', 'replace-source', 'rationale', 'requirement', 'waiver']);
   const plainNodes = new Set(['paragraph', 'inline', 'text', 'softbreak', 'hardbreak']);
@@ -289,7 +352,8 @@ function validateTextBodies(ast: Node, issues: ValidationIssue[]): void {
         if (child === node) continue;
         const allowedFormat = child.type === 'tag' && (child.tag === 'run-format' || child.tag === 'retain-format')
           && (node.tag === 'after' || node.tag === 'replace-source');
-        if (!plainNodes.has(child.type) && !allowedFormat) {
+        const allowedReference = child.type === 'tag' && child.tag === 'xref' && CROSS_REFERENCE_BODIES.has(node.tag);
+        if (!plainNodes.has(child.type) && !allowedFormat && !allowedReference) {
           issues.push(issue('UNSUPPORTED_TEXT_SYNTAX', 'Text bodies admit plain text and declared after-state run formatting only.', child));
         }
       }
@@ -364,22 +428,39 @@ function annotationBody(node: Node, issues: ValidationIssue[]): AnnotationParagr
       continue;
     }
     const runs = [] as AnnotationParagraph['runs'];
-    const visit = (inline: Node, inherited?: AnnotationRunStyle, inheritedDestination?: string): void => {
+    let fieldOrdinal = 0;
+    type InheritedReference = NonNullable<AnnotationParagraph['runs'][number]['crossReference']>;
+    const visit = (inline: Node, inherited?: AnnotationRunStyle, inheritedDestination?: string, inheritedReference?: InheritedReference): void => {
       if (inline.type === 'text') {
         const text = String(inline.attributes.content ?? '');
         if (text) runs.push({
           text,
           ...(inherited && Object.keys(inherited).length ? { style: inherited } : {}),
           ...(inheritedDestination ? { hyperlink: { destination: inheritedDestination } } : {}),
+          ...(inheritedReference ? { crossReference: inheritedReference } : {}),
         });
         return;
       }
       if (inline.type === 'softbreak' || inline.type === 'hardbreak' || inline.type === 'paragraph' || inline.type === 'inline') {
-        for (const nested of inline.children) visit(nested, inherited, inheritedDestination);
+        if (inheritedReference && inline.type !== 'inline') issues.push(issue('INVALID_CROSS_REFERENCE', 'An xref holds its cached result on one line.', inline));
+        for (const nested of inline.children) visit(nested, inherited, inheritedDestination, inheritedReference);
+        return;
+      }
+      if (inline.type === 'tag' && inline.tag === 'xref') {
+        // A REF field in a note or comment body: compile writes it back as a field (#1260).
+        const reference = crossReferenceFromAttributes(inline.attributes);
+        if (typeof reference === 'string') issues.push(issue('INVALID_CROSS_REFERENCE', reference, inline));
+        if (inheritedReference) issues.push(issue('INVALID_CROSS_REFERENCE', 'An xref may not hold another xref.', inline));
+        if (inheritedDestination) issues.push(issue('INVALID_CROSS_REFERENCE', 'An xref may not sit inside a hyperlinked annotation-run.', inline));
+        const before = runs.length;
+        const field = typeof reference === 'string' ? undefined : { ...reference, field: fieldOrdinal++ };
+        for (const nested of inline.children) visit(nested, inherited, inheritedDestination, field);
+        if (runs.length === before) issues.push(issue('INVALID_CROSS_REFERENCE', 'An xref holds its cached result as text; it may not be empty.', inline));
+        if (runs.slice(before).some((run) => run.hyperlink)) issues.push(issue('INVALID_CROSS_REFERENCE', 'An xref may not hold a hyperlinked annotation-run.', inline));
         return;
       }
       if (inline.type !== 'tag' || inline.tag !== 'annotation-run') {
-        issues.push(issue('UNSUPPORTED_ANNOTATION_BODY', 'Annotation paragraphs admit text and annotation-run tags only.', inline));
+        issues.push(issue('UNSUPPORTED_ANNOTATION_BODY', 'Annotation paragraphs admit text, annotation-run and xref tags only.', inline));
         return;
       }
       const style: AnnotationRunStyle = {
@@ -397,7 +478,8 @@ function annotationBody(node: Node, issues: ValidationIssue[]): AnnotationParagr
       if (style.highlight && !HIGHLIGHTS.has(style.highlight)) issues.push(issue('INVALID_ANNOTATION_HIGHLIGHT', `Unsupported Word highlight ${style.highlight}.`, inline));
       const destination = inline.attributes.href === undefined ? undefined : String(inline.attributes.href);
       if (destination !== undefined && destination.length === 0) issues.push(issue('INVALID_ANNOTATION_HYPERLINK', 'Annotation hyperlink destinations must be non-empty.', inline));
-      for (const nested of inline.children) visit(nested, style, destination);
+      if (destination !== undefined && inheritedReference) issues.push(issue('INVALID_CROSS_REFERENCE', 'An xref may not hold a hyperlinked annotation-run.', inline));
+      for (const nested of inline.children) visit(nested, style, destination, inheritedReference);
     };
     for (const inline of child.children) visit(inline);
     paragraphs.push({ runs });
@@ -723,6 +805,7 @@ export function parseMarkdoc(source: string): ValidationResult {
         issues.push(issue('INVALID_INSERT_STATES', 'An insertion requires exactly one clean after block; its before state is empty.', node));
       }
       if (afterNodes.some(hasRevision)) issues.push(issue('REVISION_TAGS_NONCANONICAL', 'The after state contains clean text; inline ins/del belongs only in generated views.', node));
+      if (afterNodes.some(hasCrossReference)) issues.push(issue('XREF_UNSUPPORTED_LOCATION', 'An inserted paragraph cannot hold an xref yet; insert the text, then reference it from an existing paragraph.', node));
       const operationId = editName(node, issues, true) ?? '';
       const runFormat = runFormatFromAttributes(a, node, issues);
       const afterProjection = afterNodes[0]
@@ -768,6 +851,9 @@ export function parseMarkdoc(source: string): ValidationResult {
         ? revisedProjectionWithRunFormats(afterNodes[0], issues)
         : { text: '', spans: [], retainedSpans: [] };
       const afterText = afterProjection.text;
+      if (a.story !== undefined && children.some(hasCrossReference)) issues.push(issue('XREF_UNSUPPORTED_LOCATION', 'Header and footer paragraphs cannot hold an xref.', node));
+      const beforeReferences = beforeNodes[0] ? crossReferenceSpans(beforeNodes[0], 'original', issues) : [];
+      const afterReferences = afterNodes[0] ? crossReferenceSpans(afterNodes[0], 'revised', issues) : [];
       if (beforeNodes.some(hasRunFormat)) issues.push(issue('RUN_FORMAT_OUTSIDE_AFTER', 'Inline run-format declarations are permitted only in the clean after state.', node));
       if (beforeNodes.some(hasRetainedFormat)) issues.push(issue('RETAINED_FORMAT_OUTSIDE_AFTER', 'Inline retain-format declarations are permitted only in the clean after state.', node));
       if (children.some(hasRevision)) issues.push(issue('REVISION_TAGS_NONCANONICAL', 'Before/after states contain clean text; inline ins/del belongs only in generated views.', node));
@@ -783,6 +869,8 @@ export function parseMarkdoc(source: string): ValidationResult {
         style: String(a.style ?? ''),
         originalText: beforeText,
         revisedText: afterText,
+        ...(beforeReferences.length ? { originalCrossReferences: beforeReferences } : {}),
+        ...(afterReferences.length ? { revisedCrossReferences: afterReferences } : {}),
       };
       (paragraph.story === undefined ? scaffold : storyScaffold).push(paragraph);
       operations.push(afterText === ''
@@ -815,6 +903,8 @@ export function parseMarkdoc(source: string): ValidationResult {
       ? { text: '', spans: [] as RunFormatSpan[], retainedSpans: [] as RetainedFormatSpan[] }
       : revisedProjectionWithRunFormats(node, issues);
     const revisedText = revisedProjection.text;
+    if (a.story !== undefined && hasCrossReference(node)) issues.push(issue('XREF_UNSUPPORTED_LOCATION', 'Header and footer paragraphs cannot hold an xref.', node));
+    const references = node.tag === 'delete-source' ? [] : crossReferenceSpans(node, 'revised', issues);
     const paragraph: SourceParagraph = {
       ...(a.story === undefined ? {} : { story: String(a.story) }),
       id,
@@ -823,6 +913,9 @@ export function parseMarkdoc(source: string): ValidationResult {
       originalText,
       ...((node.tag === 'replace-source' || node.tag === 'delete-source') ? { originalTextFromSource: true as const } : {}),
       revisedText,
+      // A para's one body is both states; a replace-source's before state is the source's (resolved at compile).
+      ...(node.tag === 'para' && references.length ? { originalCrossReferences: references } : {}),
+      ...(references.length ? { revisedCrossReferences: references } : {}),
     };
     (paragraph.story === undefined ? scaffold : storyScaffold).push(paragraph);
     const operationId = editName(node, issues, node.tag !== 'para');

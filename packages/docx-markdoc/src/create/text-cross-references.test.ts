@@ -5,6 +5,7 @@ import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { parseXml, type InlineSpec, type ParagraphSpec } from '@usejunior/docx-core';
 import { testAllure } from '../../../docx-core/src/testing/allure-test.js';
+import { compileMarkdoc } from '../compile.js';
 import { importDocxToMarkdoc } from '../import.js';
 import { defaultPdfRenderTools } from '../pdf/tools.js';
 import { requiredPdfText, runCreateCommand } from './cli-create.js';
@@ -270,12 +271,22 @@ describe('Traceability: text cross-references in created documents', () => {
     },
   );
 
-  test.openspec('[SDX-MDOC-XREFTEXT-05] text cross-references import as their text and the PDF checks expect the same text')(
-    'Scenario: text cross-references import as their text and the PDF checks expect the same text',
+  test.openspec('[SDX-MDOC-XREFTEXT-05] text cross-references import as xref tags and the PDF checks expect the same text')(
+    'Scenario: text cross-references import as xref tags and the PDF checks expect the same text',
     async () => {
       const created = await createDocumentFromMarkdoc(SOURCE);
       const imported = await importDocxToMarkdoc(created.docx);
-      expect(imported.markdoc).toContain('Section 1.01, Purchase Price Adjustment) follows Purchase and Sale.');
+      // Each text reference imports as an xref tag over its text (#1260), and compiles back to the same field.
+      expect(imported.markdoc).toContain('{% xref to="price-adjustment" show="text" %}Purchase Price Adjustment{% /xref %}) follows&#32;{% xref to="purchase-and-sale" show="text" %}Purchase and Sale{% /xref %}.');
+      expect(imported.markdoc).toContain('{% xref to="escrow-release" show="text" %}Escrow Release by \\[Outside Date\\]{% /xref %}');
+      const compiled = await compileMarkdoc(imported.anchoredSource, imported.markdoc, { annotationPresentation: { unspecified: { as: 'preserve' } } });
+      expect(compiled.certificate.passed).toBe(true);
+      const instructionsOf = async (docx: Buffer) => {
+        const zip = await JSZip.loadAsync(docx);
+        const texts = await Promise.all(['word/document.xml', 'word/footnotes.xml'].map((name) => zip.file(name)!.async('string')));
+        return texts.flatMap((xml) => [...xml.matchAll(/<w:instrText[^>]*>([^<]*)<\/w:instrText>/gu)].map((match) => match[1]));
+      };
+      expect(await instructionsOf(compiled.tracked)).toEqual(await instructionsOf(created.docx));
       // LibreOffice recalculates a REF field with no number switch to the bookmarked text, as Word does, so the
       // PDF projection expects the same text; only full-context numbers take LibreOffice's period.
       const libreOffice = projectSourceText(SOURCE, { reader: 'libreoffice' });

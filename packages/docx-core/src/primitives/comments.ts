@@ -5,6 +5,7 @@
  * and supports threaded replies via commentsExtended.xml.
  */
 
+import { buildBodyFieldRuns, groupBodyFieldRuns, type BodyRunField } from './body_fields.js';
 import { createHash } from 'node:crypto';
 import { OOXML, W } from './namespaces.js';
 import { parseXml, serializeXml } from './xml.js';
@@ -229,6 +230,8 @@ export type CommentBodyRun = {
   text: string;
   style?: { styleId?: string; fontSizeHalfPoints?: number; bold?: boolean; italic?: boolean; underline?: boolean; color?: string; highlight?: string };
   hyperlink?: { destination: string };
+  /** The run is (part of) the cached result of a complex field; consecutive runs with the same field form one. */
+  field?: BodyRunField;
 };
 export type CommentBodyParagraph = { runs: CommentBodyRun[] };
 
@@ -728,7 +731,15 @@ function appendCommentBodyRuns(
 ): void {
   let activeDestination: string | undefined;
   let activeHyperlink: Element | undefined;
-  for (const bodyRun of runs) {
+  for (const group of groupBodyFieldRuns(runs)) {
+    if (group.field) {
+      activeDestination = undefined;
+      activeHyperlink = undefined;
+      const results = group.runs.map((run) => buildCommentBodyRun(doc, run));
+      for (const run of buildBodyFieldRuns(doc, group.field.instruction, results)) paragraph.appendChild(run);
+      continue;
+    }
+    const bodyRun = group.runs[0]!;
     const destination = bodyRun.hyperlink?.destination;
     if (!destination) {
       activeDestination = undefined;
