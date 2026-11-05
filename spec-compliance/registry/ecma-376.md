@@ -1397,12 +1397,14 @@ part: 1
 section: "17.4.78"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tr
-verifiedBy: packages/docx-core/src/generation/emit/table.ts
+verifiedBy: packages/docx-core/src/generation/emit/table.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts
 ```
 
 Rows emit as `w:tr` with optional row properties followed by cells. Cell
 grid offsets are tracked during emission so unspecified cell widths can be
-derived from the columns each cell actually spans.
+derived from the columns each cell actually spans. The comparison
+serializer keeps a row's `w:tblPrEx` ahead of its `w:trPr`, as `CT_Row`
+orders them, when it keeps, adds or creates row properties.
 
 ## [ECMA-PART1-17-4-81] w:trPr row-properties ordering
 

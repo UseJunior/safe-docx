@@ -160,6 +160,31 @@ function replaceElementChildren(target: WmlElement, children: readonly WmlElemen
   for (const child of children) target.appendChild(child);
 }
 
+/**
+ * A table row's content model opens with `w:tblPrEx`, then `w:trPr`, then its
+ * cells, so the row properties go after the property exceptions rather than
+ * first. Other containers take their properties first.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.78
+ */
+function propertyInsertionPoint(container: WmlElement): Node | null {
+  if (container.localName !== 'tr') return container.firstChild;
+  const exceptions = childElements(container).find((child) => child.namespaceURI === W_NS && child.localName === 'tblPrEx');
+  return exceptions ? exceptions.nextSibling : container.firstChild;
+}
+
+/** `emitted` children of a table row with `w:tblPrEx` moved ahead of `w:trPr` (§ 17.4.78). */
+function rowChildrenInSchemaOrder(container: WmlElement, emitted: WmlElement[]): WmlElement[] {
+  if (container.localName !== 'tr') return emitted;
+  const properties = emitted.findIndex((child) => child.namespaceURI === W_NS && child.localName === 'trPr');
+  const exceptions = emitted.findIndex((child) => child.namespaceURI === W_NS && child.localName === 'tblPrEx');
+  if (properties < 0 || exceptions < properties) return emitted;
+  const ordered = [...emitted];
+  const [moved] = ordered.splice(exceptions, 1);
+  ordered.splice(properties, 0, moved!);
+  return ordered;
+}
+
 function replaceDescendantVocabulary(
   root: WmlElement,
   sourceLocalName: string,
@@ -926,7 +951,7 @@ function markWholeTableRow(
   let trPr = childElements(row).find((child) => child.localName === 'trPr');
   if (!trPr) {
     trPr = row.ownerDocument!.createElementNS(W_NS, 'w:trPr') as WmlElement;
-    row.insertBefore(trPr, row.firstChild);
+    row.insertBefore(trPr, propertyInsertionPoint(row));
   }
   const marker = row.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
   marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
@@ -1051,7 +1076,7 @@ function applyPropertyDelta(
       original!.namespaceURI,
       original!.tagName,
     ) as WmlElement;
-    node.insertBefore(property, node.firstChild);
+    node.insertBefore(property, propertyInsertionPoint(node));
   }
   if (!property) return;
   while (property.firstChild) property.removeChild(property.firstChild);
@@ -2279,7 +2304,7 @@ function emitNode(
         emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'End', plan.comparison));
       } else emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds, revisionGrouping));
     }
-    replaceElementChildren(base, emitted);
+    replaceElementChildren(base, rowChildrenInSchemaOrder(base, emitted));
   }
   if (node.tag === 'both') {
     splitSharedBookmarkBoundaries(

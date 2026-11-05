@@ -87,7 +87,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-4-38` | w:tblBorders table border collection | 5 | 1 | 17.4.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblBorders` | packages/docx-core/src/generation/emit/table.ts |
 | `ECMA-PART1-17-4-48` | w:tblGrid table grid emission | 5 | 1 | 17.4.48 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGrid` | packages/docx-core/src/generation/emit/table.ts; packages/docx-core/src/generation/validate-spec.ts |
 | `ECMA-PART1-17-4-16` | w:gridCol grid-column definition | 5 | 1 | 17.4.16 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:gridCol` | packages/docx-core/src/generation/emit/table.ts |
-| `ECMA-PART1-17-4-78` | w:tr table-row emission | 5 | 1 | 17.4.78 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tr` | packages/docx-core/src/generation/emit/table.ts |
+| `ECMA-PART1-17-4-78` | w:tr table-row emission | 5 | 1 | 17.4.78 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tr` | packages/docx-core/src/generation/emit/table.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts |
 | `ECMA-PART1-17-4-81` | w:trPr row-properties ordering | 5 | 1 | 17.4.81 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPr` | packages/docx-core/src/generation/ordering.ts |
 | `ECMA-PART1-17-4-80` | w:trHeight row height | 5 | 1 | 17.4.80 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trHeight` | packages/docx-core/src/generation/emit/table.ts |
 | `ECMA-PART1-17-4-49` | w:tblHeader repeating header row | 5 | 1 | 17.4.49 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblHeader` | packages/docx-core/src/generation/emit/table.ts |
@@ -1304,11 +1304,13 @@ normalized by the compiler.
 - **Part / Section:** Part 1 § 17.4.78
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tr`
-- **Verified by:** packages/docx-core/src/generation/emit/table.ts
+- **Verified by:** packages/docx-core/src/generation/emit/table.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts
 
 Rows emit as `w:tr` with optional row properties followed by cells. Cell
 grid offsets are tracked during emission so unspecified cell widths can be
-derived from the columns each cell actually spans.
+derived from the columns each cell actually spans. The comparison
+serializer keeps a row's `w:tblPrEx` ahead of its `w:trPr`, as `CT_Row`
+orders them, when it keeps, adds or creates row properties.
 
 ### ECMA-PART1-17-4-81 — w:trPr row-properties ordering
 

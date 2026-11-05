@@ -1205,28 +1205,20 @@ function enclosingRun(element: Element): Element {
 }
 
 /**
- * The run holding a field's `begin` (side `before`) or `end` (side `after`)
- * marker, split so that nothing outside the field shares it: content before
- * a `begin` marker, or after an `end` marker, in the same run moves to a run
- * of its own with the same properties. A run placed next to the returned run
- * then sits exactly at the field's edge.
+ * Whether the run holding a field's `begin` marker (side `before`) or `end`
+ * marker (side `after`) also holds content outside the field: anything but
+ * run properties before `begin`, or after `end`. Word writes each marker in a
+ * run of its own; a merged run would leave text outside the field sharing a
+ * run with it, which the redline cannot mark without splitting the run.
  */
-function isolatedMarkerRun(marker: Element, side: 'after' | 'before'): Element {
+function markerRunSharesContent(marker: Element, side: 'after' | 'before'): boolean {
   const run = enclosingRun(marker);
   let child: Node = marker;
   while (child.parentNode !== run) child = child.parentNode!;
-  const isProperties = (node: Node) => node.nodeType === 1 && (node as Element).namespaceURI === OOXML.W_NS && (node as Element).localName === W.rPr;
-  const outside: Node[] = [];
   for (let node = side === 'before' ? child.previousSibling : child.nextSibling; node; node = side === 'before' ? node.previousSibling : node.nextSibling) {
-    if (!isProperties(node)) outside.push(node);
+    if (!(node.nodeType === 1 && (node as Element).namespaceURI === OOXML.W_NS && (node as Element).localName === W.rPr)) return true;
   }
-  if (outside.length === 0) return run;
-  const split = run.cloneNode(false) as Element;
-  const properties = Array.from(run.childNodes).find(isProperties);
-  if (properties) split.appendChild(properties.cloneNode(true));
-  for (const node of side === 'before' ? outside.reverse() : outside) split.appendChild(node);
-  run.parentNode!.insertBefore(split, side === 'before' ? run : run.nextSibling);
-  return run;
+  return false;
 }
 
 /**
@@ -1261,6 +1253,15 @@ function replaceAroundCrossReferences(
       `Paragraph ${id} contains unsupported ${encountered.length > 0 ? [...new Set(encountered)].sort().join(', ') : 'field'} structure beside its cross-references.`,
     );
   }
+  for (const field of buildParagraphIndex(paragraph).fields) {
+    if (markerRunSharesContent(field.begin.element, 'before') || (field.end && markerRunSharesContent(field.end.element, 'after'))) {
+      throw new DocxMarkdocError(
+        'XREF_EDIT_UNSUPPORTED',
+        `Paragraph ${id} holds a REF field whose marker shares its run with text outside the field; the edit was refused.`,
+        { paragraphId: id, reason: 'shared-marker-run' },
+      );
+    }
+  }
   const spans = runSpans(paragraph);
   const ownerDocument = paragraph.ownerDocument!;
   for (const hunk of [...hunks].reverse()) {
@@ -1277,7 +1278,7 @@ function replaceAroundCrossReferences(
     const text = ownerDocument.createElementNS(OOXML.W_NS, 'w:t');
     text.appendChild(ownerDocument.createTextNode('\u2060'));
     placeholder.appendChild(text);
-    const marker = isolatedMarkerRun(hunk.boundary.side === 'after' ? field.end.element : field.begin.element, hunk.boundary.side);
+    const marker = enclosingRun(hunk.boundary.side === 'after' ? field.end.element : field.begin.element);
     marker.parentNode!.insertBefore(placeholder, hunk.boundary.side === 'after' ? marker.nextSibling : marker);
     document.replaceTextAtRange({ targetParagraphId: id, start: hunk.start, end: hunk.start + 1, replaceText: replacement });
   }

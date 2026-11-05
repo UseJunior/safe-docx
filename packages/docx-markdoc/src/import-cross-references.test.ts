@@ -257,23 +257,19 @@ describe('Traceability: cross-references survive import and compile', () => {
       expect(await acceptedText(compiled.tracked, 'reject')).toBe(await acceptedText(imported.anchoredSource, 'reject'));
       expect(await acceptedText(compiled.tracked, 'accept')).toContain('Subject to Section 1.01(b), as adjusted, sets the price.');
 
-      // A field marker may share its run with the text beside it (Word merges runs on save): an insertion at that
-      // edge still lands outside the field, and the paragraph's text is exactly the after state.
+      // Word writes each field marker in a run of its own. A marker merged into a run with the text beside it would
+      // leave that text sharing a run with the field, so an edit of its paragraph is refused; left unedited, it compiles.
       const shared = await rewrite(created.docx, 'word/document.xml', (xml) => xml
-        .replace('Deliveries follow </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r>', 'Deliveries follow </w:t><w:fldChar w:fldCharType="begin"/></w:r>')
-        .replace('<w:fldChar w:fldCharType="end"/></w:r><w:r><w:t xml:space="preserve"> and clause </w:t></w:r>', '<w:fldChar w:fldCharType="end"/><w:t xml:space="preserve"> and clause </w:t></w:r>'));
+        .replace('Deliveries follow </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r>', 'Deliveries follow </w:t><w:fldChar w:fldCharType="begin"/></w:r>'));
       const sharedImport = await importDocxToMarkdoc(shared);
-      const sharedEdit = change(sharedImport.markdoc, 'Deliveries follow', (body) => replaceOnce(
-        replaceOnce(body, '&#32;{% xref to="defined-terms" %}', '&#32;NEW{% xref to="defined-terms" %}'),
-        'Section 1.01{% /xref %}&#32;and clause', 'Section 1.01{% /xref %}NEW&#32;and clause',
-      ));
-      const sharedCompiled = await compileMarkdoc(sharedImport.anchoredSource, sharedEdit, PRESERVE);
-      expect(sharedCompiled.certificate.passed).toBe(true);
-      const sharedFields = await fieldsOf(sharedCompiled.clean);
-      expect(sharedFields.slice(0, 2).map(({ instruction, result, paragraph }) => [instruction, result, paragraph])).toEqual([
-        ['REF defined_terms \\w \\h', 'Section 1.01', 'Deliveries follow NEWSection 1.01NEW and clause (i) of it.'],
-        ['REF price_adjustment \\n \\h', '(i)', 'Deliveries follow NEWSection 1.01NEW and clause (i) of it.'],
-      ]);
+      expect(await failure(compileMarkdoc(sharedImport.anchoredSource, sharedImport.markdoc, PRESERVE))).toBe('succeeded');
+      const sharedEdit = change(sharedImport.markdoc, 'Deliveries follow', (body) => replaceOnce(body, '&#32;{% xref to="defined-terms" %}', '&#32;NEW{% xref to="defined-terms" %}'));
+      expect(await failure(compileMarkdoc(sharedImport.anchoredSource, sharedEdit, PRESERVE))).toBe('XREF_EDIT_UNSUPPORTED:shared-marker-run');
+      const sharedEnd = await rewrite(created.docx, 'word/document.xml', (xml) => xml
+        .replace('<w:fldChar w:fldCharType="end"/></w:r><w:r><w:t xml:space="preserve"> and clause </w:t></w:r>', '<w:fldChar w:fldCharType="end"/><w:t xml:space="preserve"> and clause </w:t></w:r>'));
+      const sharedEndImport = await importDocxToMarkdoc(sharedEnd);
+      const sharedEndEdit = change(sharedEndImport.markdoc, 'Deliveries follow', (body) => replaceOnce(body, 'of it.', 'of it, as amended.'));
+      expect(await failure(compileMarkdoc(sharedEndImport.anchoredSource, sharedEndEdit, PRESERVE))).toBe('XREF_EDIT_UNSUPPORTED:shared-marker-run');
 
       // The edited document imports again with the same references in the edited paragraphs.
       const again = await importDocxToMarkdoc(compiled.clean);
