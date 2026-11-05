@@ -15,7 +15,8 @@ be computed from the target alone.
   ` REF <name> \r \h `. `show` stays `number | text` (the #1277 design): a
   relative number is a number form. `docx-core`'s `resolveReferenceNumber`
   takes the position as a new `context` argument
-  (`RelativeReferenceContext`), and gains the refusal `relativeStartValue`.
+  (`RelativeReferenceContext`). (#1258 also added a `relativeStartValue`
+  refusal; #1284 removed it after measuring Word.)
 - What Word 16.114 does, measured on 106 probe fields and two created
   documents (`scripts/oracle/word/evidence/issue-1258-word-16.114.json`):
   - `\r` shows the `\w` number less the leading levels whose values the
