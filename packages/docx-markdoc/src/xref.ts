@@ -27,12 +27,13 @@ import type { AnchoredCrossReference, CrossReferenceNumber } from './types.js';
  * is one {@link bookmarkNameForSlug} produces from a kebab-case id, and by the
  * bookmark name itself (`bookmark=`) otherwise. Its form mirrors the creation
  * grammar: `show="number"` (the default) with `number="full"` (`\w`, the
- * default) or `number="paragraph"` (`\n`), or `show="text"` (no number
- * switch). `hyperlink=false` records a REF without `\h`.
+ * default), `number="paragraph"` (`\n`) or `number="relative"` (`\r`), or
+ * `show="text"` (no number switch). `hyperlink=false` records a REF without
+ * `\h`.
  *
- * A REF field this dialect cannot carry fails closed with
- * `XREF_IMPORT_UNSUPPORTED` (on import) or `XREF_SOURCE_UNSUPPORTED` (when
- * compile reads the source), whose `details.reason` names the cause.
+ * Import keeps a REF field this dialect cannot carry as its text and reports
+ * it with a reason; compile refuses to rewrite it with
+ * `XREF_SOURCE_UNSUPPORTED`, whose `details.reason` names the cause.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
@@ -48,12 +49,13 @@ const HASHED_NAME_RE = /_[0-9a-f]{8}$/u;
 /**
  * Number forms and the REF switch each writes. A REF field carries at most
  * one of them; a text reference carries none.
- *
- * #1258 (`\r`, relative numbers) extends this table with its `number` value.
+ * `relative` is Word's `\r`, the number less the levels the target shares
+ * with where the field sits (#1258).
  */
 export const XREF_NUMBER_SWITCHES: Readonly<Record<CrossReferenceNumber, string>> = {
   full: '\\w',
   paragraph: '\\n',
+  relative: '\\r',
 };
 
 const SWITCH_NUMBERS = new Map<string, CrossReferenceNumber>(

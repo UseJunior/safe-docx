@@ -50,8 +50,8 @@ export type AnnotationRunStyle = {
  */
 export type AnnotationHyperlink = { destination: string };
 
-/** `{% xref number="…" %}` values in the anchored dialect: the REF number switch (`\w`, `\n`). */
-export type CrossReferenceNumber = 'full' | 'paragraph';
+/** `{% xref number="…" %}` values in the anchored dialect: the REF number switch (`\w`, `\n`, `\r`). */
+export type CrossReferenceNumber = 'full' | 'paragraph' | 'relative';
 
 /**
  * A Word REF field to a bookmarked paragraph, as the anchored dialect's

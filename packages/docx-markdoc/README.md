@@ -138,8 +138,8 @@ The {% xref to="delivery-terms" show="text" %}Delivery Terms{% /xref %} section 
 Under {% xref bookmark="_Ref201812345" number="paragraph" hyperlink=false %}(i){% /xref %}, …
 ```
 
-` REF <name> \w \h ` is the full number, ` \n ` is `number="paragraph"`, and
-no number switch is `show="text"`. A field without `\h` adds
+` REF <name> \w \h ` is the full number, ` \n ` is `number="paragraph"`,
+` \r ` is `number="relative"`, and no number switch is `show="text"`. A field without `\h` adds
 `hyperlink=false`. The tag names its target with `to="id"` when the bookmark
 is the one `create` writes for that id (hyphens turned into underscores),
 and keeps the bookmark name with `bookmark="name"` otherwise, as for Word's
@@ -154,7 +154,9 @@ that when it updates fields. Compile fails before writing anything with:
 - `XREF_DRIFT`: a `{% para %}` or `before` state whose tags disagree with the
   source's fields (another target, another form, or a tag removed);
 - `XREF_EDIT_UNSUPPORTED`: an `after` state that changes, adds or drops a
-  reference, or uses `run-format` in a paragraph holding one;
+  reference, or uses `run-format` in a paragraph holding one, or an edit of
+  a paragraph whose REF marker shares its run with text outside the field
+  (Word writes each marker in a run of its own);
 - `XREF_SOURCE_UNSUPPORTED`: an edit of a paragraph, or any rewrite of a
   footnote or comment, holding a REF field that import kept as text;
 - `XREF_TARGET_MISSING`: a note's reference to no bookmarked paragraph, or an
@@ -167,7 +169,7 @@ that when it updates fields. Compile fails before writing anything with:
 
 A REF field the tag cannot carry stays text, as before:
 
-- a switch other than one `\w` or `\n` and `\h`, such as `\r`, `\p` or
+- a switch other than one of `\w`, `\n` or `\r` and `\h`, such as `\p` or
   `\* MERGEFORMAT`;
 - a bookmark that is missing, repeated, or marks no paragraph;
 - a nested or unterminated field, or one with no result;

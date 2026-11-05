@@ -2,7 +2,7 @@
 
 - [x] 1.1 Rewrite `SDX-MDOC-XREF-05` and `SDX-MDOC-XREFTEXT-05` for restored references.
 - [x] 1.2 Add the `Cross-references in imported documents` requirement
-      (`SDX-MDOC-XREFIMPORT-01`–`SDX-MDOC-XREFIMPORT-06`).
+      (`SDX-MDOC-XREFIMPORT-01`–`SDX-MDOC-XREFIMPORT-07`).
 
 ## 2. Word oracle
 
@@ -21,3 +21,8 @@
 - [x] 4.3 Compile: check tags against the source's fields, edit around fields,
       write note fields again, and verify the output's fields.
 - [x] 4.4 README: the xref tag in anchored Markdoc and its error codes.
+- [x] 4.5 Import `\r` as `number="relative"` (#1258).
+
+## 5. docx-compare
+
+- [x] 5.1 Keep `w:tblPrEx` ahead of `w:trPr` in serialized rows.

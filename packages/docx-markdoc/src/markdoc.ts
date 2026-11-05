@@ -86,7 +86,7 @@ export const markdocConfig: Config = {
         to: { type: String },
         bookmark: { type: String },
         show: { type: String, matches: ['number', 'text'] },
-        number: { type: String, matches: ['full', 'paragraph'] },
+        number: { type: String, matches: ['full', 'paragraph', 'relative'] },
         hyperlink: { type: Boolean },
       },
     },

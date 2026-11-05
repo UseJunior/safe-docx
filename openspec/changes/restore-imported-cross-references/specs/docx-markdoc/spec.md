@@ -110,9 +110,9 @@ text reference against text the oracle reads from the source.
 Import SHALL restore a REF field whose bookmark marks one paragraph, in a body
 paragraph, a table cell, a footnote or a comment, as an inline
 `{% xref %}…{% /xref %}` tag over the field's cached result: ` REF <name> \w \h `
-as the full number, ` REF <name> \n \h ` as `number="paragraph"`, and
-` REF <name> \h ` as `show="text"`, with `hyperlink=false` for a field without
-`\h`. The tag SHALL name its target by `to="id"` where the bookmark name maps
+as the full number, ` REF <name> \n \h ` as `number="paragraph"`,
+` REF <name> \r \h ` as `number="relative"`, and ` REF <name> \h ` as
+`show="text"`, with `hyperlink=false` for a field without `\h`. The tag SHALL name its target by `to="id"` where the bookmark name maps
 back to one kebab-case id, and by `bookmark="name"` otherwise. A REF field
 the dialect cannot carry SHALL stay text and be reported with a reason, and
 compile SHALL refuse to rewrite a paragraph or note that holds one. Compile
@@ -134,6 +134,7 @@ source or that it cannot write.
 - **THEN** the certificate SHALL pass, and the clean document SHALL hold the source's fields, with the same instructions and results, in the edited paragraphs
 - **AND** the tracked document's inserted words SHALL sit outside every field result
 - **AND** the clean document SHALL import again with the references in the edited paragraphs
+- **AND** an edit of a paragraph whose REF field marker shares its run with text outside the field SHALL fail with `XREF_EDIT_UNSUPPORTED` (reason `shared-marker-run`), while the paragraph left unedited SHALL compile
 
 #### Scenario: [SDX-MDOC-XREFIMPORT-03] the tag names its target by id where the bookmark name maps back, and by the bookmark name otherwise
 - **GIVEN** fields naming a kebab-case id's bookmark, Word's hidden `_Ref…` bookmark (one without `\h`), and the shortened, hashed bookmark of a long id
@@ -143,10 +144,11 @@ source or that it cannot write.
 - **AND** compile SHALL write each field back with its instruction, and `to="id"` and `bookmark="name"` SHALL denote the same reference
 
 #### Scenario: [SDX-MDOC-XREFIMPORT-04] a REF field the dialect cannot carry stays text, and compile refuses to rewrite it
-- **GIVEN** copies of the created agreement whose REF field has a `\r`, `\p` or `\* MERGEFORMAT` switch or two number switches, names a missing or a repeated bookmark, nests a field, holds a tracked insertion or a tab, or has an empty result or none
+- **GIVEN** copies of the created agreement whose REF field has a `\p` or `\* MERGEFORMAT` switch or two number switches (`\w \n`, `\r \w`), names a missing or a repeated bookmark, nests a field, holds a tracked insertion or a tab, or has an empty result or none
 - **WHEN** each is imported and compiled, unedited and with an edit to the field's paragraph
 - **THEN** import SHALL keep the field as text and report it in `crossReferences.keptAsText` with its reason
 - **AND** an unedited compile SHALL keep the field as it is, and an edit of its paragraph SHALL fail with `XREF_SOURCE_UNSUPPORTED` naming the reason
+- **AND** a source whose REF field sits in its own tracked deletion SHALL compile unedited
 - **AND** such a field in a footnote SHALL fail with `XREF_SOURCE_UNSUPPORTED` even unedited, a non-REF field in a footnote SHALL still fail import with `ANNOTATION_IMPORT_UNSUPPORTED`, and a reference unlinked to plain text SHALL import as text
 
 #### Scenario: [SDX-MDOC-XREFIMPORT-05] compile fails closed on xref tags that disagree with the source or that it cannot write
@@ -160,3 +162,10 @@ source or that it cannot write.
 - **THEN** the results `create` cached SHALL equal Word's results for the unedited document
 - **AND** every field SHALL import as a tag over the renumbered result Word wrote (`Section 1.01(c)`), with none kept as text
 - **AND** the compiled document SHALL hold every field with its instruction and result, and every bookmark on its paragraph
+
+#### Scenario: [SDX-MDOC-XREFIMPORT-07] relative references import as number="relative" beside full and text references, and compile keeps each field
+- **GIVEN** the legal-headings source of `scripts/oracle/word/evidence/issue-1258-word-16.114.json`, with relative references in clauses, a table cell and a footnote, and a paragraph holding a full, a text and a relative reference to the same Section's clause
+- **WHEN** it is created, imported, and compiled with edits beside references
+- **THEN** every REF field SHALL be restored, each ` REF <name> \r \h ` as `number="relative"` over its cached result (`(b)` inside the target's Section, `Section 2.02(b)` elsewhere)
+- **AND** the compiled document SHALL hold every field with its instruction and result, the footnote's ` REF adjustment_b \r \h ` included, and every bookmark on its paragraph
+- **AND** the compiled document SHALL import again with the same relative tags

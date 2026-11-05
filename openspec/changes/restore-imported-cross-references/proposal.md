@@ -19,6 +19,8 @@ target. `[SDX-MDOC-XREF-05]` and `[SDX-MDOC-XREFTEXT-05]` pinned that loss
   the anchored dialect:
   - ` REF <name> \w \h ` → `{% xref to="id" %}`;
   - ` REF <name> \n \h ` → `{% xref to="id" number="paragraph" %}`;
+  - ` REF <name> \r \h ` → `{% xref to="id" number="relative" %}` (#1258,
+    #1278), over the cached number Word showed where the field sits;
   - ` REF <name> \h ` → `{% xref to="id" show="text" %}` (#1277);
   - a field without `\h` adds `hyperlink=false`.
 
@@ -26,12 +28,11 @@ target. `[SDX-MDOC-XREF-05]` and `[SDX-MDOC-XREFTEXT-05]` pinned that loss
   the id back to the bookmark name. Otherwise it keeps the bookmark name as
   `bookmark="name"`, as for Word's hidden `_Ref…` bookmarks and for a
   shortened, hashed name. The number switches live in one table,
-  `XREF_NUMBER_SWITCHES` in `packages/docx-markdoc/src/xref.ts`; the
-  relative-number form (`\r`, #1258) extends that table.
+  `XREF_NUMBER_SWITCHES` in `packages/docx-markdoc/src/xref.ts`.
 - A REF field the dialect cannot carry stays text, as before, and import
   reports it in `ImportResult.crossReferences.keptAsText` with a reason
   (and the CLI prints `warning XREF_KEPT_AS_TEXT`). The reasons are:
-  - an unknown or repeated switch (`\r`, `\p`, `\* MERGEFORMAT`, two number
+  - an unknown or repeated switch (`\p`, `\* MERGEFORMAT`, two number
     switches);
   - a bookmark that is missing, repeated, or marks no paragraph;
   - a nested field, an unterminated field, or a field without a result;
@@ -39,6 +40,10 @@ target. `[SDX-MDOC-XREF-05]` and `[SDX-MDOC-XREFTEXT-05]` pinned that loss
     change, a drawing).
 
   Real Word documents (`REF _Ref… \r \h \* MERGEFORMAT`) import unchanged.
+  An edit of a paragraph whose REF marker shares its run with text outside
+  the field fails with `XREF_EDIT_UNSUPPORTED` (`shared-marker-run`): Word
+  writes each marker in its own run, and the redline could not mark the
+  shared text without splitting it.
   Compile refuses to rewrite a paragraph or note that holds such a field,
   with `XREF_SOURCE_UNSUPPORTED`, so the field is never flattened. A note
   holding one fails even unedited, since compile writes every note again.
@@ -64,6 +69,10 @@ target. `[SDX-MDOC-XREF-05]` and `[SDX-MDOC-XREFTEXT-05]` pinned that loss
   same field are written as one complex field (`begin`, `instrText`,
   `separate`, results, `end`). Footnote and comment bodies that compile
   writes again keep their REF fields.
+- docx-compare: the tagged-tree serializer keeps a row's `w:tblPrEx` ahead of
+  its `w:trPr` (ECMA-376 Part 1 § 17.4.78). It emitted them the other way
+  round for kept or created row properties, so every edited compile of the
+  Word-saved evidence document below was schema-invalid.
 - `[SDX-MDOC-XREF-05]` and `[SDX-MDOC-XREFTEXT-05]` change from "imports as
   text" to "imports as an xref tag and compiles back to the same field".
 - Word oracle: `scripts/oracle/word/evidence/issue-1260-word-16.114.json`
@@ -79,10 +88,12 @@ target. `[SDX-MDOC-XREF-05]` and `[SDX-MDOC-XREFTEXT-05]` pinned that loss
 - Archive ordering: `add-generated-cross-references` and
   `add-text-cross-references` add the two modified requirements and MUST
   archive before this delta.
+- Related change: `add-relative-cross-references` (#1278) creates the
+  relative form this change imports.
 - Affected code: `packages/docx-markdoc/src/` (`xref.ts`, `import.ts`,
   `markdoc.ts`, `compile.ts`, `presentation.ts`, `types.ts`, `cli.ts`) and
   `packages/docx-core/src/primitives/` (`body_fields.ts`, `footnotes.ts`,
-  `comments.ts`).
+  `comments.ts`), and `packages/docx-compare/src/tagged/taggedTreeSerializer.ts`.
 - Compatibility: imports of documents with restorable REF fields now hold
   `{% xref %}` tags where they held plain text, and `ImportResult` gains
   `crossReferences`. Documents without REF fields import as before.

@@ -348,11 +348,11 @@ describe('Traceability: cross-references survive import and compile', () => {
       const separate = '<w:fldChar w:fldCharType="separate"/></w:r>';
       const original = await importDocxToMarkdoc(created.docx);
       expect(original.crossReferences).toEqual({ restored: 7, keptAsText: [] });
-      // Switches outside \w, \n and \h: a relative number (\r), a page-position switch, a format switch, two number switches.
-      expect(await probe('word/document.xml', (xml) => xml.replace(field, ' REF price \\r \\h '))).toBe('unknown-switch | succeeded | XREF_SOURCE_UNSUPPORTED:unknown-switch');
+      // Switches outside \w, \n, \r and \h: a page-position switch, a format switch, two number switches.
       expect(await probe('word/document.xml', (xml) => xml.replace(field, ' REF price \\p \\h '))).toBe('unknown-switch | succeeded | XREF_SOURCE_UNSUPPORTED:unknown-switch');
       expect(await probe('word/document.xml', (xml) => xml.replace(field, ' REF price \\w \\h \\* MERGEFORMAT '))).toBe('unknown-switch | succeeded | XREF_SOURCE_UNSUPPORTED:unknown-switch');
       expect(await probe('word/document.xml', (xml) => xml.replace(field, ' REF price \\w \\n \\h '))).toBe('duplicate-switch | succeeded | XREF_SOURCE_UNSUPPORTED:duplicate-switch');
+      expect(await probe('word/document.xml', (xml) => xml.replace(field, ' REF price \\r \\w \\h '))).toBe('duplicate-switch | succeeded | XREF_SOURCE_UNSUPPORTED:duplicate-switch');
       // A bookmark that is missing, or named twice.
       expect(await probe('word/document.xml', (xml) => xml.replace(field, ' REF nowhere \\w \\h '))).toBe('missing-bookmark | succeeded | XREF_SOURCE_UNSUPPORTED:missing-bookmark');
       expect(await probe('word/document.xml', (xml) => xml.replace('w:name="definitions"', 'w:name="price"'))).toBe('duplicate-bookmark | succeeded | XREF_SOURCE_UNSUPPORTED:duplicate-bookmark');
@@ -424,7 +424,8 @@ describe('Traceability: cross-references survive import and compile', () => {
         '{% xref to="price" bookmark="price" %}Section 1.01(b){% /xref %}',
         '{% xref %}Section 1.01(b){% /xref %}',
         '{% xref to="price" show="text" number="full" %}Section 1.01(b){% /xref %}',
-        '{% xref to="price" number="relative" %}Section 1.01(b){% /xref %}',
+        '{% xref to="price" number="page" %}Section 1.01(b){% /xref %}',
+        '{% xref to="price" show="text" number="relative" %}Section 1.01(b){% /xref %}',
       ]) {
         expect(await compile(imported.markdoc.replace(price.body, price.body.replace(/\{% xref to="price" %\}Section 1\.01\(b\)\{% \/xref %\}/u, tag))), tag).toMatch(/^INVALID_MARKDOC:/u);
       }
@@ -475,6 +476,39 @@ describe('Traceability: cross-references survive import and compile', () => {
       const again = await importDocxToMarkdoc(compiled.clean);
       expect(again.crossReferences.restored).toBe(7);
       expect(block(again.markdoc, 'sets the price').body).toBe('Subject to&#32;{% xref to="price" %}Section 1.01(c){% /xref %}&#32;sets the price.');
+    },
+    LOAD_SENSITIVE_TIMEOUT_MS,
+  );
+  conforming.openspec('[SDX-MDOC-XREFIMPORT-07] relative references import as number="relative" beside full and text references, and compile keeps each field')(
+    'Scenario: relative references import as number="relative" beside full and text references, and compile keeps each field',
+    async () => {
+      // The legal-headings source Word 16.114 checked for #1258, with full and text references beside a relative one.
+      const evidence = JSON.parse(readFileSync(path.join(EVIDENCE_DIR, 'issue-1258-word-16.114.json'), 'utf8')) as { create: Array<{ name: string; source: string }> };
+      const source = `${evidence.create.find((entry) => entry.name === 'legal headings')!.source.trimEnd()}\n\nCompare {% xref to="adjustment-b" /%}, the {% xref to="adjustment" show="text" /%} section and {% xref to="adjustment-b" number="relative" /%}.\n`;
+      const created = await createDocumentFromMarkdoc(source);
+      expect(created.certificate.passed).toBe(true);
+      const createdFields = await fieldsOf(created.docx);
+      const imported = await importDocxToMarkdoc(created.docx);
+      expect(imported.crossReferences).toEqual({ restored: createdFields.length, keptAsText: [] });
+      expect(block(imported.markdoc, 'Compare').body).toBe(
+        'Compare&#32;{% xref to="adjustment-b" %}Section 2.02(b){% /xref %}, the&#32;{% xref to="adjustment" show="text" %}Adjustment{% /xref %}&#32;section and&#32;{% xref to="adjustment-b" number="relative" %}Section 2.02(b){% /xref %}.',
+      );
+      // A relative number is the field's cached result where it sits: the same target shows (b) inside its Section.
+      expect(block(imported.markdoc, 'Third, after').body).toContain('{% xref to="adjustment-b" number="relative" %}(b){% /xref %}');
+      expect(block(imported.markdoc, 'Two, as').body).toContain('{% xref to="adjustment-b-ii" number="relative" %}(ii){% /xref %}');
+      expect(imported.markdoc).toMatch(/\{% xref to="adjustment-b" number="relative" %\}(\{% annotation-run [^%]*%\})?Section 2\.02\(b\)/u);
+
+      // An edit beside the references compiles, and every field keeps its instruction, cached result and target.
+      const edited = change(change(imported.markdoc, 'Compare', (body) => `For clarity, ${body}`), 'Third, after', (body) => replaceOnce(body, 'Third, after', 'Third, only after'), 'edit-2');
+      const compiled = await compileMarkdoc(imported.anchoredSource, edited, PRESERVE);
+      expect(compiled.certificate.passed).toBe(true);
+      const compiledFields = await fieldsOf(compiled.clean);
+      expect(compiledFields.map(({ part, instruction, result }) => [part, instruction, result])).toEqual(createdFields.map(({ part, instruction, result }) => [part, instruction, result]));
+      expect(compiledFields.filter((field) => field.instruction.includes('\\r'))).toHaveLength(createdFields.filter((field) => field.instruction.includes('\\r')).length);
+      expect(compiledFields.filter((field) => field.part === 'word/footnotes.xml').map((field) => field.instruction)).toEqual(['REF adjustment_b \\r \\h']);
+      expect(await bookmarkTargets(compiled.clean)).toEqual(await bookmarkTargets(created.docx));
+      const again = await importDocxToMarkdoc(compiled.clean);
+      expect(block(again.markdoc, 'For clarity').body).toContain('{% xref to="adjustment-b" number="relative" %}Section 2.02(b){% /xref %}');
     },
     LOAD_SENSITIVE_TIMEOUT_MS,
   );
