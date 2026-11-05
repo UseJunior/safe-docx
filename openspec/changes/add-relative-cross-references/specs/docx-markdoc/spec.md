@@ -22,9 +22,9 @@ against a number the oracle reads from the source and the xref's place.
 - **THEN** each field's cached result SHALL equal Word's result after the insertion
 
 #### Scenario: [SDX-MDOC-XREFREL-03] relative cross-references Word and LibreOffice would number differently fail closed with a code and a line
-- **GIVEN** relative references after a restarted list or another list, in or after clauses directly under an Article, to a clause under an Article, with `format`, with `show="text"`, and to a bullet item
+- **GIVEN** relative references after a restarted list or another list, to a clause directly under an Article from outside that Article's clauses, with `format`, with `show="text"`, and to a bullet item
 - **WHEN** each is created
-- **THEN** creation SHALL fail with `XREF_RELATIVE_ACROSS_LISTS`, `XREF_RELATIVE_AFTER_ARTICLE_CLAUSES`, `XREF_FULL_NUMBER_UNDER_ARTICLE`, `INVALID_CROSS_REFERENCE` or `XREF_TARGET_NOT_NUMBERED` and the line of the reference
+- **THEN** creation SHALL fail with `XREF_RELATIVE_ACROSS_LISTS`, `XREF_FULL_NUMBER_UNDER_ARTICLE`, `INVALID_CROSS_REFERENCE` or `XREF_TARGET_NOT_NUMBERED` and the line of the reference
 - **AND** relative references before every list, in a continuing list, in a footnote, or after the next heading SHALL be created
 
 #### Scenario: [SDX-MDOC-XREFREL-04] verification checks each relative cross-reference against the number the oracle reads from where it sits
@@ -43,3 +43,9 @@ against a number the oracle reads from the source and the xref's place.
 - **GIVEN** the two recorded created sources
 - **WHEN** each is created with `--require-pdf`
 - **THEN** the PDF render and the PDF word check SHALL pass
+
+#### Scenario: [SDX-MDOC-XREFREL-07] relative cross-references in or after clauses directly under an Article show the numbers Word shows
+- **GIVEN** `heading-numbers: legal` clauses directly under an Article, which show the Section level at its start value, holding and followed by relative references to a clause of an earlier Section, to their Article, and to those clauses themselves
+- **WHEN** the source is created
+- **THEN** the certificate SHALL pass, and each cached result SHALL be the number Word shows per the #1284 oracle evidence (the start-value Section level compared at its value: `(a)`, `(a)(i)` among the Article's clauses; `Section 1.01(a)` and `ARTICLE II` elsewhere)
+- **AND** a relative reference to such a clause from another Article SHALL still fail with `XREF_FULL_NUMBER_UNDER_ARTICLE`, because there Word shows `ARTICLE II(a)` and LibreOffice `Section 2.01(a)`

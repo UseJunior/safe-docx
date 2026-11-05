@@ -558,13 +558,7 @@ export type ReferenceNumberRefusal =
   /** The paragraph's own level text names a deeper level: Word then shows no number at all (a REF field shows 0). */
   | 'deeperLevel'
   /** The level or numbering instance is not defined. */
-  | 'undefinedLevel'
-  /**
-   * A relative (`\r`) number whose target or position shows a level at its
-   * start value ({@link ListLabelSnapshot.levelsAtStartValue}): what Word
-   * shows for it is not measured.
-   */
-  | 'relativeStartValue';
+  | 'undefinedLevel';
 
 /**
  * The number a `REF` field shows for a numbered paragraph, as Word for Mac
@@ -616,12 +610,19 @@ export type ReferenceNumberRefusal =
  * issue-1254-word-16.114.json; for `\r`, issue-1258-word-16.114.json, whose
  * probes show the position is the target list's (`w:numId`) last paragraph
  * before the field, not the field's own paragraph, and that a field in a
- * footnote shows the full number. § 17.9.11 says a placeholder naming a deeper
+ * footnote shows the full number. A level shown at its start value, in the
+ * target or at the position, takes part in the comparison with that start
+ * value and is then passed over as in the full number:
+ * issue-1284-word-16.114.json records "(a)" for "ARTICLE II(a)" from the
+ * Article's next clause, "(i)" for "ARTICLE IV(i)" from "Section 4.02(a)",
+ * and "Section 3.02(i)" from another Article (47 fields, every one equal to
+ * this function's result). LibreOffice 26.2 instead shows the start-value
+ * level ("Section 2.01(a)", "(a)(i)"). § 17.9.11 says a placeholder naming a deeper
  * level is ignored, but Word 16.114 shows no number for such a level (its REF
  * fields show 0), so a reference to it is refused. LibreOffice 26.2
  * recalculates these fields on load and keeps the period before "(" ("2.(b)").
  *
- * @conformance-gap ECMA-376 edition 5, Part 1 § 17.16.5.51 — follows Word: one trailing period is removed, a period before "(" inside a full-context number, and silent or unnumbered ancestor levels are passed over; a relative number is measured against the target list's last paragraph before the field
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.16.5.51 — follows Word: one trailing period is removed, a period before "(" inside a full-context number, and silent or unnumbered ancestor levels are passed over; a relative number is measured against the target list's last paragraph before the field, a level at its start value compared at that value
  * @conformance-gap ECMA-376 edition 5, Part 1 § 17.9.11 — follows Word: a level text naming a deeper level shows no number, so no reference number to it is offered
  */
 export function resolveReferenceNumber(
@@ -640,9 +641,6 @@ export function resolveReferenceNumber(
   // not share with the target, and always the target's own level.
   let keepFrom = 0;
   if (form === 'relative' && context !== null && context.numId === snapshot.numId) {
-    if ((snapshot.levelsAtStartValue?.length ?? 0) > 0 || (context.levelsAtStartValue?.length ?? 0) > 0) {
-      return { refused: 'relativeStartValue' };
-    }
     const shared = Math.min(context.ilvl, snapshot.ilvl) + 1;
     while (keepFrom < shared && context.levelValues[keepFrom] === snapshot.levelValues[keepFrom]) keepFrom += 1;
     keepFrom = Math.min(keepFrom, snapshot.ilvl);
