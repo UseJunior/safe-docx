@@ -58,10 +58,18 @@ function buildFieldRuns(doc: Document, field: FieldSpec, ctx?: BlockEmitContext)
   ];
 }
 
+/** The number switch of each number form. */
+const NUMBER_SWITCHES: Record<NonNullable<CrossReferenceSpec['number']>, string> = {
+  fullContext: '\\w',
+  paragraph: '\\n',
+  relative: '\\r',
+};
+
 /**
  * The REF instruction of a cross-reference, with canonical surrounding
- * spaces. A number reference carries its number switch, `\w` (full context)
- * or `\n` (paragraph number); a text reference carries none, so its result
+ * spaces. A number reference carries its number switch, `\w` (full context),
+ * `\n` (paragraph number) or `\r` (relative context); a text reference
+ * carries none, so its result
  * is the bookmarked text. Every form ends with `\h`, a hyperlink to the
  * bookmark. Each shape names one {@link CrossReferenceSpec} form, so the
  * instruction alone tells a reader which was written.
@@ -70,7 +78,7 @@ function buildFieldRuns(doc: Document, field: FieldSpec, ctx?: BlockEmitContext)
  */
 export function crossReferenceInstruction(reference: Pick<CrossReferenceSpec, 'bookmark' | 'show' | 'number'>): string {
   if (reference.show === 'text') return ` REF ${reference.bookmark} \\h `;
-  return ` REF ${reference.bookmark} ${reference.number === 'paragraph' ? '\\n' : '\\w'} \\h `;
+  return ` REF ${reference.bookmark} ${NUMBER_SWITCHES[reference.number ?? 'fullContext']} \\h `;
 }
 
 /**

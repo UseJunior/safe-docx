@@ -210,7 +210,14 @@ export function collectBookmarkPaths(spec: DocumentSpec): Map<string, string> {
 function validateCrossReferences(spec: DocumentSpec): void {
   const bookmarks = new Map<string, ParagraphSpec>();
   const folded = new Map<string, string>();
+  const numberedStyles = numberLinkedStyleIds(spec);
+  // The first numbered footnote paragraph: a relative reference in a footnote is then refused.
+  let numberedFootnoteParagraph: string | undefined;
   walkDocumentParagraphs(spec, (paragraph, path, story) => {
+    if (story === 'footnote' && numberedFootnoteParagraph === undefined
+      && (paragraph.list !== undefined || (paragraph.styleId !== undefined && numberedStyles.has(paragraph.styleId)))) {
+      numberedFootnoteParagraph = path;
+    }
     if (paragraph.bookmark === undefined) return;
     const bookmarkPath = `${path}/bookmark`;
     if (story !== 'body') {
@@ -247,8 +254,43 @@ function validateCrossReferences(spec: DocumentSpec): void {
         throw new GenerationSpecError('dangling_bookmark_reference', `${runPath}/bookmark`, `Cross-reference names undeclared bookmark '${String(run.bookmark)}'`);
       }
       if (run.show === 'text') validateTextReferenceTarget(run.bookmark, target, `${runPath}/show`);
+      if (run.number === 'relative' && story === 'footnote' && numberedFootnoteParagraph !== undefined) {
+        // Word shows a relative reference in a footnote in full when no footnote paragraph is numbered
+        // (issue-1258 evidence); what a numbered footnote paragraph changes is not measured.
+        throw new GenerationSpecError(
+          'invalid_value',
+          `${runPath}/number`,
+          `A relative cross-reference in a footnote shows the full number only while no footnote paragraph is numbered; ${numberedFootnoteParagraph} is, and what Word shows then is not measured`,
+        );
+      }
     });
   });
+}
+
+/**
+ * The paragraph styles that number their paragraphs: each style a numbering
+ * level links (`pStyle`), and every style based on one of them, which
+ * inherits its numbering through `w:basedOn` (§ 17.7.4.3).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.23
+ */
+function numberLinkedStyleIds(spec: DocumentSpec): Set<string> {
+  const linked = new Set<string>();
+  for (const definition of spec.numbering ?? []) for (const level of definition.levels ?? []) if (level.pStyle) linked.add(level.pStyle);
+  const basedOn = new Map((spec.styles ?? []).map((style) => [style.styleId, style.basedOn]));
+  const numbered = new Set<string>();
+  for (const styleId of basedOn.keys()) {
+    const seen = new Set<string>();
+    for (let id: string | undefined = styleId; id !== undefined && !seen.has(id); id = basedOn.get(id)) {
+      seen.add(id);
+      if (linked.has(id)) {
+        numbered.add(styleId);
+        break;
+      }
+    }
+  }
+  for (const id of linked) numbered.add(id);
+  return numbered;
 }
 
 /**

@@ -1923,7 +1923,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText",
-      "claimRationale": "Tagged main-document publication classifies a self-contained REF instruction with\none bookmark argument and a bounded switch vocabulary; the `\\d` switch requires\nand consumes one separator argument. When the complete field range is unchanged,\ncomparison preserves its ordered XML topology as a SafeDocX metamorphic\ninvariant. The scoped refresh primitive resolves a unique, ID-paired bookmark\nand refreshes the cached result only for the admitted bookmarked-text\nprojection; numbering, position, separator, and unknown projections remain\nunsupported. Because Word writes a REF result structurally, the primitive also\ndeclines any projection carrying a tab, a break, or a paragraph transition\nrather than flattening it into literal characters. That separately tested\ncapability does not broaden unchanged publication preservation into complete\nfield-engine equivalence.\n\nGeneration (#1236) emits REF fields with the `\\w` (full context) or `\\n`\n(paragraph number) switch and `\\h`, the instructions Word's own Insert →\nCross-reference writes. The clause defines what the switches ask for: `\\n`\nthe paragraph number \"without trailing periods\", `\\w` the number \"in full\ncontext\". It does not say how the context is assembled or which periods go\nbetween its parts, so `renderReferenceNumber` follows Word 16.114 as recorded\nin `scripts/oracle/word/evidence/issue-1236-word-16.114.json`: the target's\nlevel text is preceded by its ancestors' level texts up to the one naming\nlevel 0, one final period is removed, and a period before a part that starts\nwith `(` is removed (`2.` + `(b)` → `2(b)`, but `2.` + `b.` → `2.b`). The\ncached result equals Word's for all recorded fields. LibreOffice keeps a\nperiod before `(` that Word removes. `\\r`, whose result depends on where the\nfield sits, is not emitted.",
+      "claimRationale": "Tagged main-document publication classifies a self-contained REF instruction with\none bookmark argument and a bounded switch vocabulary; the `\\d` switch requires\nand consumes one separator argument. When the complete field range is unchanged,\ncomparison preserves its ordered XML topology as a SafeDocX metamorphic\ninvariant. The scoped refresh primitive resolves a unique, ID-paired bookmark\nand refreshes the cached result only for the admitted bookmarked-text\nprojection; numbering, position, separator, and unknown projections remain\nunsupported. Because Word writes a REF result structurally, the primitive also\ndeclines any projection carrying a tab, a break, or a paragraph transition\nrather than flattening it into literal characters. That separately tested\ncapability does not broaden unchanged publication preservation into complete\nfield-engine equivalence.\n\nGeneration (#1236) emits REF fields with the `\\w` (full context) or `\\n`\n(paragraph number) switch and `\\h`, the instructions Word's own Insert →\nCross-reference writes. The clause defines what the switches ask for: `\\n`\nthe paragraph number \"without trailing periods\", `\\w` the number \"in full\ncontext\". It does not say how the context is assembled or which periods go\nbetween its parts, so `renderReferenceNumber` follows Word 16.114 as recorded\nin `scripts/oracle/word/evidence/issue-1236-word-16.114.json`: the target's\nlevel text is preceded by its ancestors' level texts up to the one naming\nlevel 0, one final period is removed, and a period before a part that starts\nwith `(` is removed (`2.` + `(b)` → `2(b)`, but `2.` + `b.` → `2.b`). The\ncached result equals Word's for all recorded fields. LibreOffice keeps a\nperiod before `(` that Word removes.\n\nGeneration (#1258) also emits `\\r`, which the clause describes as \"the entire\nparagraph number of the bookmarked paragraph in relative context—or relative\nto its position in the numbering scheme\". It does not say what the position\nis. `resolveReferenceNumber` follows Word 16.114 as recorded in\n`scripts/oracle/word/evidence/issue-1258-word-16.114.json`: the `\\w` number\nless the leading levels whose values the target shares with the last\nparagraph of the target's list (`w:numId`) at or before the field's\nparagraph, keeping the target's own level, and the full number in a\nfootnote.",
       "evidence": [
         {
           "kind": "source",
@@ -1982,12 +1982,20 @@
           "path": "packages/docx-core/src/generation/generation-cross-references.test.ts"
         },
         {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-relative-cross-references.test.ts"
+        },
+        {
           "kind": "source",
           "path": "packages/docx-markdoc/src/import.ts"
         },
         {
           "kind": "test",
           "path": "packages/docx-markdoc/src/create/cross-references.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/relative-cross-references.test.ts"
         }
       ]
     },

@@ -28,9 +28,10 @@ export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
  * places the reference mark of the `{% footnote %}` block with the same id;
  * `xref` places a cross-reference to the heading or list item whose `{% #id %}`
  * it names (`to`). It shows the target's number (`show="number"`, the
- * default): its full number (`number="full"`, the default) or its own level's
- * number (`number="paragraph"`), optionally preceded by the word "Section "
- * (`format="section"`). Or it shows the target's text (`show="text"`), which
+ * default): its full number (`number="full"`, the default), its own level's
+ * number (`number="paragraph"`) or its number relative to where the xref sits
+ * (`number="relative"`), the first two optionally preceded by the word
+ * "Section " (`format="section"`). Or it shows the target's text (`show="text"`), which
  * takes neither `number` nor `format`. A new inline tag needs an entry here, a branch in `visit()` below, a renderer
  * (an engine branch or a creation theme plugin) and, when it changes the text,
  * a case in the round-trip oracle.
@@ -49,8 +50,12 @@ const INLINE_TAGS: Record<string, ReadonlySet<string>> = {
  * apart from the instruction alone.
  */
 export const XREF_SHOWS: ReadonlySet<string> = new Set(['number', 'text']);
-/** `{% xref number="…" %}` values: the full number ("2(b)") or the target level's own ("(b)"). */
-export const XREF_NUMBERS: ReadonlySet<string> = new Set(['full', 'paragraph']);
+/**
+ * `{% xref number="…" %}` values: the full number ("2(b)"), the target
+ * level's own ("(b)"), or the number relative to where the xref sits (Word's
+ * `\r`: "(b)" from inside "2(a)", "2(b)" from inside "3(a)").
+ */
+export const XREF_NUMBERS: ReadonlySet<string> = new Set(['full', 'paragraph', 'relative']);
 /** `{% xref format="…" %}` values: "section" puts the word "Section " before the number. */
 export const XREF_FORMATS: ReadonlySet<string> = new Set(['section']);
 /** A target id: lowercase kebab-case starting with a letter, such as `purchase-price-adjustment`. */
@@ -294,7 +299,11 @@ function checkCrossReferenceTag(node: MarkdocNode, line: number | undefined, ins
     creationError('INVALID_CROSS_REFERENCE', '{% xref show="text" /%} shows the target\'s text with the target\'s formatting, and Word drops bold, italic or underline around it when fields update; move it outside the emphasis.', node, line);
   }
   if (number !== undefined && (typeof number !== 'string' || !XREF_NUMBERS.has(number))) {
-    creationError('INVALID_CROSS_REFERENCE', `{% xref /%} number must be "full" or "paragraph", got ${JSON.stringify(number)}.`, node, line);
+    creationError('INVALID_CROSS_REFERENCE', `{% xref /%} number must be "full", "paragraph" or "relative", got ${JSON.stringify(number)}.`, node, line);
+  }
+  if (number === 'relative' && format !== undefined) {
+    // A relative number reads "(b)" in one place and "2(b)" in another, so one fixed word before it does not fit both.
+    creationError('INVALID_CROSS_REFERENCE', '{% xref number="relative" /%} changes with where it sits ("(b)" here, "2(b)" elsewhere), so it takes no format; write the word before it yourself, or use number="full".', node, line);
   }
   if (format !== undefined && (typeof format !== 'string' || !XREF_FORMATS.has(format))) {
     creationError('INVALID_CROSS_REFERENCE', `{% xref /%} format must be "section", got ${JSON.stringify(format)}.`, node, line);
@@ -680,13 +689,14 @@ function collectTargets(node: MarkdocNode, ordered: boolean, line: number | unde
 }
 
 /** Every `{% xref /%}` under `node`, in document order, with the line of its nearest block. */
-type CrossReferenceSite = { to: string; show?: string; number?: string; format?: string; line?: number };
+type CrossReferenceSite = { to: string; show?: string; number?: string; format?: string; line?: number; node: MarkdocNode };
 
 function collectCrossReferences(node: MarkdocNode, line: number | undefined, out: CrossReferenceSite[]): void {
   const here = lineOf(node) ?? line;
   if (node.type === 'tag' && node.tag === 'xref') {
     const { show, number, format } = node.attributes;
     out.push({
+      node,
       to: String(node.attributes.to),
       ...(show === undefined ? {} : { show: String(show) }),
       ...(number === undefined ? {} : { number: String(number) }),
@@ -748,6 +758,119 @@ function checkTextReferenceTarget(reference: CrossReferenceSite, target: TargetS
   if (!text.trim()) fail('has no text to show');
 }
 
+/**
+ * Where each relative reference sits, as Word and LibreOffice number it, for
+ * the rules in {@link checkRelativeReference}. Word numbers a `\r` field
+ * relative to the last paragraph of its target's own list (`w:numId`) at or
+ * before the field; LibreOffice relative to the last paragraph of any list
+ * sharing the target's definition. A field in a footnote shows the full
+ * number in both (scripts/oracle/word/evidence/issue-1258-word-16.114.json).
+ *
+ * The ordered lists outside numbered headings share one definition. A list
+ * continues the one before it when its first marker is the next number,
+ * and otherwise restarts as a new Word list (`list-numbering.ts`), so each
+ * chain of continuing lists is one Word list. Under numbered headings, the
+ * headings and their clauses are one list of their own definition.
+ */
+type RelativeSites = {
+  /** The chain of continuing ordered lists each target outside numbered headings belongs to, by id. */
+  targetChain: Map<string, number>;
+  /** Per relative xref: the chain of the last ordered list item outside numbered headings at or before it (undefined before the first). */
+  chainAt: Map<MarkdocNode, number | undefined>;
+  /** Relative xrefs in a footnote. */
+  inFootnote: Set<MarkdocNode>;
+  /** Per relative xref sitting in or after clauses directly under an Article (before the next heading): those clauses' line. */
+  afterArticleClauses: Map<MarkdocNode, number | undefined>;
+};
+
+function relativeSites(children: MarkdocNode[], headingNumbers: boolean): RelativeSites {
+  const sites: RelativeSites = { targetChain: new Map(), chainAt: new Map(), inFootnote: new Set(), afterArticleClauses: new Map() };
+  let headingsBegun = false;
+  let chain: number | undefined;
+  let chains = 0;
+  let next: number | null = null;
+  let articleScope = false;
+  let articleClauses: number | undefined | null = null;
+  const ids = (node: MarkdocNode, out: string[] = []): string[] => {
+    if (node.type !== 'tag' && node.type !== 'document' && typeof node.attributes.id === 'string') out.push(node.attributes.id);
+    for (const child of node.children) ids(child, out);
+    return out;
+  };
+  const relativeXrefs = (node: MarkdocNode, out: MarkdocNode[] = []): MarkdocNode[] => {
+    if (node.type === 'tag' && node.tag === 'xref' && node.attributes.number === 'relative') out.push(node);
+    for (const child of node.children) relativeXrefs(child, out);
+    return out;
+  };
+  for (const node of children) {
+    const footnote = (node.type === 'tag' ? node : soleInlineTag(node))?.tag === 'footnote';
+    if (headingNumbers && node.type === 'heading' && Number(node.attributes.level) >= 2) {
+      headingsBegun = true;
+      articleScope = node.attributes.level === 2;
+      articleClauses = null;
+    }
+    if (node.type === 'list' && node.attributes.ordered === true) {
+      if (!headingsBegun) {
+        const start = Number.isInteger(node.attributes.start) ? Number(node.attributes.start) : 1;
+        if (next === null || start !== next) chain = chains++;
+        next = start + node.children.length;
+        for (const id of ids(node)) sites.targetChain.set(id, chain!);
+      } else if (articleScope && articleClauses === null) {
+        articleClauses = lineOf(node);
+      }
+    }
+    for (const xref of relativeXrefs(node)) {
+      if (footnote) {
+        sites.inFootnote.add(xref);
+        continue;
+      }
+      sites.chainAt.set(xref, chain);
+      if (articleClauses !== null) sites.afterArticleClauses.set(xref, articleClauses);
+    }
+  }
+  return sites;
+}
+
+/**
+ * A relative reference shows what Word shows only where Word and LibreOffice
+ * (which renders the PDF) agree and Word's result is measured:
+ *
+ * - to an item of an ordered list outside numbered headings, it must sit
+ *   before every such list, or after an item of its target's own list with
+ *   no other such list starting in between. Elsewhere Word numbers it
+ *   relative to the target's list ("2(b)") and LibreOffice relative to the
+ *   latest list ("(b)");
+ * - to a numbered heading or a clause under one, it must not sit in or after
+ *   clauses placed directly under an Article (before the next heading):
+ *   those clauses show the Section level at its start value, and what Word
+ *   shows relative to them is not measured.
+ *
+ * In a footnote a relative reference shows the full number, in both.
+ */
+function checkRelativeReference(reference: CrossReferenceSite, target: TargetSite, sites: RelativeSites): void {
+  if (reference.number !== 'relative' || sites.inFootnote.has(reference.node)) return;
+  if (target.headingNumbered) {
+    if (sites.afterArticleClauses.has(reference.node)) {
+      creationError(
+        'XREF_RELATIVE_AFTER_ARTICLE_CLAUSES',
+        `{% xref to="${reference.to}" number="relative" /%} sits in or after clauses placed directly under an Article (line ${sites.afterArticleClauses.get(reference.node) ?? '?'}), which number the Section level at its start value; what Word shows relative to them is not measured. Use number="full", or put the clauses under a ### Section.`,
+        undefined,
+        reference.line,
+      );
+    }
+    return;
+  }
+  const own = sites.targetChain.get(reference.to);
+  const at = sites.chainAt.get(reference.node);
+  if (at !== undefined && at !== own) {
+    creationError(
+      'XREF_RELATIVE_ACROSS_LISTS',
+      `{% xref to="${reference.to}" number="relative" /%} sits after a numbered list other than its target's (line ${target.line ?? '?'}); Word numbers it relative to the target's list and LibreOffice relative to the latest list, so they show different numbers. Use number="full".`,
+      undefined,
+      reference.line,
+    );
+  }
+}
+
 function checkCrossReferenceTargets(children: MarkdocNode[], headingNumbers = false): void {
   const targets = new Map<string, TargetSite>();
   let scope: HeadingScope = 'none';
@@ -764,6 +887,7 @@ function checkCrossReferenceTargets(children: MarkdocNode[], headingNumbers = fa
   }
   const references: CrossReferenceSite[] = [];
   for (const node of children) collectCrossReferences(node, undefined, references);
+  const sites = relativeSites(children, headingNumbers);
   for (const reference of references) {
     const target = targets.get(reference.to);
     if (!target) {
@@ -794,10 +918,11 @@ function checkCrossReferenceTargets(children: MarkdocNode[], headingNumbers = fa
     if (target.articleClause && reference.number !== 'paragraph') {
       creationError(
         'XREF_FULL_NUMBER_UNDER_ARTICLE',
-        `{% xref to="${reference.to}" /%} names a clause directly under an Article (line ${target.line ?? '?'}), whose full number Word shows as "ARTICLE I(a)" and LibreOffice as "Section 1.01(a)"; use number="paragraph", or put the clause under a ### Section.`,
+        `{% xref to="${reference.to}"${reference.number === 'relative' ? ' number="relative"' : ''} /%} names a clause directly under an Article (line ${target.line ?? '?'}), whose full number Word shows as "ARTICLE I(a)" and LibreOffice as "Section 1.01(a)"; use number="paragraph", or put the clause under a ### Section.`,
         undefined,
         reference.line,
       );
     }
+    checkRelativeReference(reference, target, sites);
   }
 }

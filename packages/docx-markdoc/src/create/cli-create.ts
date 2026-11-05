@@ -100,9 +100,10 @@ function paragraphsAsLibreOfficeRenders(readback: CreatedDocument['readback']): 
   const add = (paragraph: number, offset: number, text: string) => inserts.set(paragraph, [...(inserts.get(paragraph) ?? []), { offset, text }]);
   readback.footnoteReferences.forEach(({ paragraph, offset }, index) => add(paragraph, offset, String(index + 1)));
   for (const { paragraph, offset, text, instruction } of readback.crossReferences ?? []) {
-    // Only a full-context number has the period; a text reference shows its
-    // target's text, which may itself start with "401(k)".
-    if (!/\\w\b/u.test(instruction)) continue;
+    // Only a full-context number, or a relative one that keeps its first
+    // level ("2(b)"), has the period; a text reference shows its target's
+    // text, which may itself start with "401(k)".
+    if (!/\\[wr]\b/u.test(instruction)) continue;
     const leadingNumber = /^\d+(?=\()/u.exec(text);
     if (leadingNumber) add(paragraph, offset + leadingNumber[0].length, '.');
   }
@@ -325,21 +326,27 @@ const plural = (count: number, noun: string): string => `${count} ${noun}${count
  * summarize a failed check) one that went undetected, is named with its status rather than counted as ok.
  */
 /**
- * The cross-references entry of the CLI summary. With text references it
- * counts them apart from number references and names the text-extent
- * control; without, it reads as before.
+ * The cross-references entry of the CLI summary. With text or relative
+ * references it counts them apart from the other number references and
+ * names the text-extent or relative-context control; without, it reads as
+ * before.
  */
 export function crossReferenceSummary(check: CrossReferenceCheck): string {
   const { references, negativeControls } = check;
-  const text = references.text;
-  const counts = text > 0
-    ? `${plural(references.actual, 'reference')}: ${references.actual - text} number, ${text} text`
+  const { text, relative } = references;
+  const counts = text > 0 || relative > 0
+    ? `${plural(references.actual, 'reference')}: ${[
+      `${references.actual - text - relative} number`,
+      ...(relative > 0 ? [`${relative} relative`] : []),
+      ...(text > 0 ? [`${text} text`] : []),
+    ].join(', ')}`
     : plural(references.actual, 'reference');
   const controls = {
     'changed switch': negativeControls.switchChanged,
     retargeted: negativeControls.retargeted,
     moved: negativeControls.moved,
     ...(text > 0 ? { 'text extent': negativeControls.textExtent } : {}),
+    ...(relative > 0 ? { 'relative context': negativeControls.relativeContext } : {}),
   };
   return `cross-references ok (${counts}; ${controlsSummary(controls)})`;
 }

@@ -1,0 +1,3795 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-04",
+  "issue": 1258,
+  "purpose": "What Microsoft Word shows for REF fields with the \\r (relative context) switch, by where the field sits, so generated relative cross-references carry the same cached result (#1258).",
+  "word": {
+    "platform": "Mac",
+    "version": "16.114.3"
+  },
+  "libreOffice": {
+    "version": "26.2.5.2"
+  },
+  "procedure": "Each probe `spec` was compiled with generateDocx (every cross-reference number: 'relative'; the probes were first written with \\w and rewritten to \\r, the same instruction). Word opened each DOCX bound by its name only, `update field` ran on every field of the document and of each footnote through AppleScript, and each field's code and result were read back; the document was closed by name without saving. The same DOCX was converted to PDF with headless LibreOffice and read with pdftotext. The `create` documents were built with `docx-markdoc create --require-pdf` from the recorded sources; every check passed. Their fields were updated in Word as above, and again after a Heading 2 paragraph was inserted and fields were updated.",
+  "finding": "\\r shows the \\w (full context) number less the leading levels whose values the target shares with a position, always keeping the target's own level (its \\n part, a trailing period dropped). The position is the last paragraph of the TARGET's list (w:numId) at or before the paragraph holding the field, not the field's own paragraph: an unnumbered paragraph or table cell after 2.03(c) shows (b) for 2.03(b); a field in a clause of the heading list shows (b) for a preface-list 2(b) whose list last numbered that 2(b); a field in a list of another definition, or of another w:num of the same definition, is not relative to its own list. With no paragraph of the target's list before the field, the full number is shown. A part that names level 0 (Section %1.%2) is kept whole: Section 2.03(b) from Section 2.04(a). A field in a footnote shows the full number wherever the footnote is anchored (none of the footnote stories holds a numbered paragraph). LibreOffice 26.2 agrees with Word on every field of probe1 (legal headings), and otherwise keeps the period before ( ('2.(b)') and is relative to the last paragraph of any w:num of the target's definition (probe2 b2a/c2a, probe3 y3/y3a), so it differs from Word when two w:num instances of one definition are used.",
+  "generation": "generateDocx's cached results equal Word's after-update results for all 106 probe fields and for both created documents; create's cached results equal Word's after the Section insertions too (the markdocEquivalent source). create refuses a relative reference to an item of an ordered list outside numbered headings unless it sits before every such list or after its target's own list with no other such list starting in between (XREF_RELATIVE_ACROSS_LISTS), because there Word and LibreOffice disagree.",
+  "spec": {
+    "section": "17.16.5.51",
+    "switch": "\\r",
+    "text": "Inserts the entire paragraph number of the bookmarked paragraph in relative context—or relative to its position in the numbering scheme—without trailing periods."
+  },
+  "probes": [
+    {
+      "name": "probe1-legal",
+      "layout": "create's heading definition (ARTICLE %1 / Section %1.%2 / (%3) / (%4) / (%5), headings numbered by style) after a preface list of create's ordered definition (%1. / (%2) / (%3)): fields in clauses of another Article, the same Article, the same Section, a sibling clause, the target itself, its parent, a heading, plain paragraphs, an unnumbered and a numbered table cell, and three footnotes.",
+      "spec": {
+        "meta": {
+          "title": "Relative xref probe 1 (#1258)",
+          "createdIso": "2026-11-04T00:00:00Z"
+        },
+        "styles": [
+          {
+            "styleId": "Heading1",
+            "name": "heading 1",
+            "type": "paragraph",
+            "basedOn": "Normal",
+            "next": "Normal",
+            "paragraph": {
+              "alignment": "center",
+              "keepNext": true
+            },
+            "run": {
+              "bold": true
+            }
+          },
+          {
+            "styleId": "Heading2",
+            "name": "heading 2",
+            "type": "paragraph",
+            "basedOn": "Normal",
+            "next": "Normal",
+            "paragraph": {
+              "keepNext": true
+            },
+            "run": {
+              "bold": true
+            }
+          }
+        ],
+        "numbering": [
+          {
+            "numId": "ol",
+            "levels": [
+              {
+                "ilvl": 0,
+                "numFmt": "decimal",
+                "lvlText": "%1.",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 720,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 1,
+                "numFmt": "lowerLetter",
+                "lvlText": "(%2)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 1440,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 2,
+                "numFmt": "lowerRoman",
+                "lvlText": "(%3)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 2160,
+                  "hanging": 720
+                }
+              }
+            ]
+          },
+          {
+            "numId": "headings",
+            "levels": [
+              {
+                "ilvl": 0,
+                "numFmt": "upperRoman",
+                "lvlText": "ARTICLE %1",
+                "pStyle": "Heading1",
+                "suff": "space",
+                "indentTwips": {
+                  "left": 0,
+                  "firstLine": 0
+                }
+              },
+              {
+                "ilvl": 1,
+                "numFmt": "decimalZero",
+                "lvlText": "Section %1.%2",
+                "pStyle": "Heading2",
+                "isLgl": true,
+                "suff": "space",
+                "indentTwips": {
+                  "left": 0,
+                  "firstLine": 0
+                }
+              },
+              {
+                "ilvl": 2,
+                "numFmt": "lowerLetter",
+                "lvlText": "(%3)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 2160,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 3,
+                "numFmt": "lowerRoman",
+                "lvlText": "(%4)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 2880,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 4,
+                "numFmt": "upperLetter",
+                "lvlText": "(%5)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 3600,
+                  "hanging": 720
+                }
+              }
+            ]
+          }
+        ],
+        "sections": [
+          {
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Preface one."
+                  }
+                ],
+                "list": {
+                  "numId": "ol",
+                  "ilvl": 0
+                }
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Preface two."
+                  }
+                ],
+                "list": {
+                  "numId": "ol",
+                  "ilvl": 0
+                },
+                "bookmark": "pre2"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Preface two a."
+                  }
+                ],
+                "list": {
+                  "numId": "ol",
+                  "ilvl": 1
+                },
+                "bookmark": "pre2a"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Preface two b."
+                  }
+                ],
+                "list": {
+                  "numId": "ol",
+                  "ilvl": 1
+                },
+                "bookmark": "pre2b"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "DEFINITIONS"
+                  }
+                ],
+                "styleId": "Heading1",
+                "bookmark": "art1"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Defined Terms."
+                  }
+                ],
+                "styleId": "Heading2",
+                "bookmark": "s101"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In Section 1.01(a):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203bii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203bii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " art2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "art2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s101=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s101",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " art1=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "art1",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                }
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "PURCHASE AND SALE"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " art2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "art2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s201=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s201",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "styleId": "Heading1",
+                "bookmark": "art2"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Purchase."
+                  }
+                ],
+                "styleId": "Heading2",
+                "bookmark": "s201"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In Section 2.01(a):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203bii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203bii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " art2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "art2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s201=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s201",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                }
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Price."
+                  }
+                ],
+                "styleId": "Heading2"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Adjustment."
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203bii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203bii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " art2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "art2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "styleId": "Heading2",
+                "bookmark": "s203"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.03(a):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203bii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203bii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " art2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "art2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s203a"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.03(b):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203bi=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203bi",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203bii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203bii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s203b"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.03(b)(i):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203bii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203bii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203bi=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203bi",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " pre2b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "pre2b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " pre2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "pre2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s204a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s204a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203c=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203c",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 3
+                },
+                "bookmark": "s203bi"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.03(b)(ii):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203bii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203bii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203bi=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203bi",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 3
+                },
+                "bookmark": "s203bii"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.03(b)(iii), footnoted"
+                  },
+                  {
+                    "kind": "footnote",
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Footnote 1 (anchored in 2.03(b)(iii)):"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s203bii=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s203bii",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s203b=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s203b",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s203=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s203",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s204a=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s204a",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " art2=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "art2",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 3
+                }
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.03(c):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203bii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203bii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s203c"
+              },
+              {
+                "kind": "table",
+                "columnWidthsTwips": [
+                  4500,
+                  4500
+                ],
+                "rows": [
+                  {
+                    "cells": [
+                      {
+                        "blocks": [
+                          {
+                            "kind": "paragraph",
+                            "runs": [
+                              {
+                                "kind": "text",
+                                "text": "Cell unnumbered:"
+                              },
+                              {
+                                "kind": "text",
+                                "text": " s203b=["
+                              },
+                              {
+                                "kind": "crossReference",
+                                "bookmark": "s203b",
+                                "number": "relative"
+                              },
+                              {
+                                "kind": "text",
+                                "text": "]"
+                              },
+                              {
+                                "kind": "text",
+                                "text": " s203bii=["
+                              },
+                              {
+                                "kind": "crossReference",
+                                "bookmark": "s203bii",
+                                "number": "relative"
+                              },
+                              {
+                                "kind": "text",
+                                "text": "]"
+                              },
+                              {
+                                "kind": "text",
+                                "text": " s203c=["
+                              },
+                              {
+                                "kind": "crossReference",
+                                "bookmark": "s203c",
+                                "number": "relative"
+                              },
+                              {
+                                "kind": "text",
+                                "text": "]"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "blocks": [
+                          {
+                            "kind": "paragraph",
+                            "runs": [
+                              {
+                                "kind": "text",
+                                "text": "Cell numbered (d):"
+                              },
+                              {
+                                "kind": "text",
+                                "text": " s203b=["
+                              },
+                              {
+                                "kind": "crossReference",
+                                "bookmark": "s203b",
+                                "number": "relative"
+                              },
+                              {
+                                "kind": "text",
+                                "text": "]"
+                              },
+                              {
+                                "kind": "text",
+                                "text": " s203bii=["
+                              },
+                              {
+                                "kind": "crossReference",
+                                "bookmark": "s203bii",
+                                "number": "relative"
+                              },
+                              {
+                                "kind": "text",
+                                "text": "]"
+                              },
+                              {
+                                "kind": "text",
+                                "text": " s203c=["
+                              },
+                              {
+                                "kind": "crossReference",
+                                "bookmark": "s203c",
+                                "number": "relative"
+                              },
+                              {
+                                "kind": "text",
+                                "text": "]"
+                              },
+                              {
+                                "kind": "text",
+                                "text": " s203d=["
+                              },
+                              {
+                                "kind": "crossReference",
+                                "bookmark": "s203d",
+                                "number": "relative"
+                              },
+                              {
+                                "kind": "text",
+                                "text": "]"
+                              }
+                            ],
+                            "list": {
+                              "numId": "headings",
+                              "ilvl": 2
+                            },
+                            "bookmark": "s203d"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Plain after table:"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ]
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Closing."
+                  }
+                ],
+                "styleId": "Heading2",
+                "bookmark": "s204"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 2.04(a):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203bii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203bii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s204=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s204",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " art2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "art2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                },
+                "bookmark": "s204a"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Plain under 2.04:"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s204a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s204a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ]
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "MISCELLANEOUS"
+                  }
+                ],
+                "styleId": "Heading1",
+                "bookmark": "art3"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Notices."
+                  }
+                ],
+                "styleId": "Heading2",
+                "bookmark": "s301"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "In 3.01(a), footnoted"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s203b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s203b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " art2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "art2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s204=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s204",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " pre2b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "pre2b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " art3=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "art3",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " s301=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "s301",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "footnote",
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Footnote 2 (anchored in 3.01(a)):"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s203b=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s203b",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s301=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s301",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " art3=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "art3",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "list": {
+                  "numId": "headings",
+                  "ilvl": 2
+                }
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Plain, footnoted"
+                  },
+                  {
+                    "kind": "footnote",
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Footnote 3 (anchored in plain):"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " s203b=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "s203b",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "references": [
+        {
+          "site": "s101a",
+          "story": "body",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "Section 2.03(b)",
+          "libreOffice": "Section 2.03(b)"
+        },
+        {
+          "site": "s101a",
+          "story": "body",
+          "instruction": " REF s203bii \\r \\h ",
+          "word": "Section 2.03(b)(ii)",
+          "libreOffice": "Section 2.03(b)(ii)"
+        },
+        {
+          "site": "s101a",
+          "story": "body",
+          "instruction": " REF s203 \\r \\h ",
+          "word": "Section 2.03",
+          "libreOffice": "Section 2.03"
+        },
+        {
+          "site": "s101a",
+          "story": "body",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "s101a",
+          "story": "body",
+          "instruction": " REF s101 \\r \\h ",
+          "word": "Section 1.01",
+          "libreOffice": "Section 1.01"
+        },
+        {
+          "site": "s101a",
+          "story": "body",
+          "instruction": " REF art1 \\r \\h ",
+          "word": "ARTICLE I",
+          "libreOffice": "ARTICLE I"
+        },
+        {
+          "site": "art2-heading",
+          "story": "body",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "Section 2.03(b)",
+          "libreOffice": "Section 2.03(b)"
+        },
+        {
+          "site": "art2-heading",
+          "story": "body",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "art2-heading",
+          "story": "body",
+          "instruction": " REF s201 \\r \\h ",
+          "word": "Section 2.01",
+          "libreOffice": "Section 2.01"
+        },
+        {
+          "site": "s201a",
+          "story": "body",
+          "instruction": " REF s203 \\r \\h ",
+          "word": "Section 2.03",
+          "libreOffice": "Section 2.03"
+        },
+        {
+          "site": "s201a",
+          "story": "body",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "Section 2.03(b)",
+          "libreOffice": "Section 2.03(b)"
+        },
+        {
+          "site": "s201a",
+          "story": "body",
+          "instruction": " REF s203bii \\r \\h ",
+          "word": "Section 2.03(b)(ii)",
+          "libreOffice": "Section 2.03(b)(ii)"
+        },
+        {
+          "site": "s201a",
+          "story": "body",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "s201a",
+          "story": "body",
+          "instruction": " REF s201 \\r \\h ",
+          "word": "Section 2.01",
+          "libreOffice": "Section 2.01"
+        },
+        {
+          "site": "s203-heading",
+          "story": "body",
+          "instruction": " REF s203 \\r \\h ",
+          "word": "Section 2.03",
+          "libreOffice": "Section 2.03"
+        },
+        {
+          "site": "s203-heading",
+          "story": "body",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "s203-heading",
+          "story": "body",
+          "instruction": " REF s203bii \\r \\h ",
+          "word": "(b)(ii)",
+          "libreOffice": "(b)(ii)"
+        },
+        {
+          "site": "s203-heading",
+          "story": "body",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "s203a",
+          "story": "body",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "s203a",
+          "story": "body",
+          "instruction": " REF s203bii \\r \\h ",
+          "word": "(b)(ii)",
+          "libreOffice": "(b)(ii)"
+        },
+        {
+          "site": "s203a",
+          "story": "body",
+          "instruction": " REF s203 \\r \\h ",
+          "word": "Section 2.03",
+          "libreOffice": "Section 2.03"
+        },
+        {
+          "site": "s203a",
+          "story": "body",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "s203a",
+          "story": "body",
+          "instruction": " REF s203a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "(a)"
+        },
+        {
+          "site": "s203b",
+          "story": "body",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "s203b",
+          "story": "body",
+          "instruction": " REF s203bi \\r \\h ",
+          "word": "(i)",
+          "libreOffice": "(i)"
+        },
+        {
+          "site": "s203b",
+          "story": "body",
+          "instruction": " REF s203a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "(a)"
+        },
+        {
+          "site": "s203b",
+          "story": "body",
+          "instruction": " REF s203bii \\r \\h ",
+          "word": "(ii)",
+          "libreOffice": "(ii)"
+        },
+        {
+          "site": "s203bi",
+          "story": "body",
+          "instruction": " REF s203bii \\r \\h ",
+          "word": "(ii)",
+          "libreOffice": "(ii)"
+        },
+        {
+          "site": "s203bi",
+          "story": "body",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "s203bi",
+          "story": "body",
+          "instruction": " REF s203bi \\r \\h ",
+          "word": "(i)",
+          "libreOffice": "(i)"
+        },
+        {
+          "site": "s203bi",
+          "story": "body",
+          "instruction": " REF s203a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "(a)"
+        },
+        {
+          "site": "s203bi",
+          "story": "body",
+          "instruction": " REF s203 \\r \\h ",
+          "word": "Section 2.03",
+          "libreOffice": "Section 2.03"
+        },
+        {
+          "site": "s203bi",
+          "story": "body",
+          "instruction": " REF pre2b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "s203bi",
+          "story": "body",
+          "instruction": " REF pre2 \\r \\h ",
+          "word": "2",
+          "libreOffice": "2"
+        },
+        {
+          "site": "s203bi",
+          "story": "body",
+          "instruction": " REF s204a \\r \\h ",
+          "word": "Section 2.04(a)",
+          "libreOffice": "Section 2.04(a)"
+        },
+        {
+          "site": "s203bi",
+          "story": "body",
+          "instruction": " REF s203c \\r \\h ",
+          "word": "(c)",
+          "libreOffice": "(c)"
+        },
+        {
+          "site": "s203bii",
+          "story": "body",
+          "instruction": " REF s203bii \\r \\h ",
+          "word": "(ii)",
+          "libreOffice": "(ii)"
+        },
+        {
+          "site": "s203bii",
+          "story": "body",
+          "instruction": " REF s203bi \\r \\h ",
+          "word": "(i)",
+          "libreOffice": "(i)"
+        },
+        {
+          "site": "s203c",
+          "story": "body",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "s203c",
+          "story": "body",
+          "instruction": " REF s203bii \\r \\h ",
+          "word": "(b)(ii)",
+          "libreOffice": "(b)(ii)"
+        },
+        {
+          "site": "cell-plain",
+          "story": "body",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "cell-plain",
+          "story": "body",
+          "instruction": " REF s203bii \\r \\h ",
+          "word": "(b)(ii)",
+          "libreOffice": "(b)(ii)"
+        },
+        {
+          "site": "cell-plain",
+          "story": "body",
+          "instruction": " REF s203c \\r \\h ",
+          "word": "(c)",
+          "libreOffice": "(c)"
+        },
+        {
+          "site": "cell-s203d",
+          "story": "body",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "cell-s203d",
+          "story": "body",
+          "instruction": " REF s203bii \\r \\h ",
+          "word": "(b)(ii)",
+          "libreOffice": "(b)(ii)"
+        },
+        {
+          "site": "cell-s203d",
+          "story": "body",
+          "instruction": " REF s203c \\r \\h ",
+          "word": "(c)",
+          "libreOffice": "(c)"
+        },
+        {
+          "site": "cell-s203d",
+          "story": "body",
+          "instruction": " REF s203d \\r \\h ",
+          "word": "(d)",
+          "libreOffice": "(d)"
+        },
+        {
+          "site": "plain-after-table",
+          "story": "body",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "s204a",
+          "story": "body",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "Section 2.03(b)",
+          "libreOffice": "Section 2.03(b)"
+        },
+        {
+          "site": "s204a",
+          "story": "body",
+          "instruction": " REF s203bii \\r \\h ",
+          "word": "Section 2.03(b)(ii)",
+          "libreOffice": "Section 2.03(b)(ii)"
+        },
+        {
+          "site": "s204a",
+          "story": "body",
+          "instruction": " REF s204 \\r \\h ",
+          "word": "Section 2.04",
+          "libreOffice": "Section 2.04"
+        },
+        {
+          "site": "s204a",
+          "story": "body",
+          "instruction": " REF s203 \\r \\h ",
+          "word": "Section 2.03",
+          "libreOffice": "Section 2.03"
+        },
+        {
+          "site": "s204a",
+          "story": "body",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "plain-s204",
+          "story": "body",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "Section 2.03(b)",
+          "libreOffice": "Section 2.03(b)"
+        },
+        {
+          "site": "plain-s204",
+          "story": "body",
+          "instruction": " REF s204a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "(a)"
+        },
+        {
+          "site": "s301a",
+          "story": "body",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "Section 2.03(b)",
+          "libreOffice": "Section 2.03(b)"
+        },
+        {
+          "site": "s301a",
+          "story": "body",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "s301a",
+          "story": "body",
+          "instruction": " REF s204 \\r \\h ",
+          "word": "Section 2.04",
+          "libreOffice": "Section 2.04"
+        },
+        {
+          "site": "s301a",
+          "story": "body",
+          "instruction": " REF pre2b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "s301a",
+          "story": "body",
+          "instruction": " REF art3 \\r \\h ",
+          "word": "ARTICLE III",
+          "libreOffice": "ARTICLE III"
+        },
+        {
+          "site": "s301a",
+          "story": "body",
+          "instruction": " REF s301 \\r \\h ",
+          "word": "Section 3.01",
+          "libreOffice": "Section 3.01"
+        },
+        {
+          "site": "fn1-in-s203biii",
+          "story": "footnote",
+          "instruction": " REF s203bii \\r \\h ",
+          "word": "Section 2.03(b)(ii)",
+          "libreOffice": "Section 2.03(b)(ii)"
+        },
+        {
+          "site": "fn1-in-s203biii",
+          "story": "footnote",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "Section 2.03(b)",
+          "libreOffice": "Section 2.03(b)"
+        },
+        {
+          "site": "fn1-in-s203biii",
+          "story": "footnote",
+          "instruction": " REF s203 \\r \\h ",
+          "word": "Section 2.03",
+          "libreOffice": "Section 2.03"
+        },
+        {
+          "site": "fn1-in-s203biii",
+          "story": "footnote",
+          "instruction": " REF s204a \\r \\h ",
+          "word": "Section 2.04(a)",
+          "libreOffice": "Section 2.04(a)"
+        },
+        {
+          "site": "fn1-in-s203biii",
+          "story": "footnote",
+          "instruction": " REF art2 \\r \\h ",
+          "word": "ARTICLE II",
+          "libreOffice": "ARTICLE II"
+        },
+        {
+          "site": "fn2-in-s301a",
+          "story": "footnote",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "Section 2.03(b)",
+          "libreOffice": "Section 2.03(b)"
+        },
+        {
+          "site": "fn2-in-s301a",
+          "story": "footnote",
+          "instruction": " REF s301 \\r \\h ",
+          "word": "Section 3.01",
+          "libreOffice": "Section 3.01"
+        },
+        {
+          "site": "fn2-in-s301a",
+          "story": "footnote",
+          "instruction": " REF art3 \\r \\h ",
+          "word": "ARTICLE III",
+          "libreOffice": "ARTICLE III"
+        },
+        {
+          "site": "fn3-in-plain",
+          "story": "footnote",
+          "instruction": " REF s203b \\r \\h ",
+          "word": "Section 2.03(b)",
+          "libreOffice": "Section 2.03(b)"
+        }
+      ],
+      "wordParagraphs": [
+        {
+          "paragraph": 1,
+          "listString": "1.",
+          "text": "Preface one."
+        },
+        {
+          "paragraph": 2,
+          "listString": "2.",
+          "text": "Preface two."
+        },
+        {
+          "paragraph": 3,
+          "listString": "(a)",
+          "text": "Preface two a."
+        },
+        {
+          "paragraph": 4,
+          "listString": "(b)",
+          "text": "Preface two b."
+        },
+        {
+          "paragraph": 5,
+          "listString": "ARTICLE I",
+          "text": "DEFINITIONS"
+        },
+        {
+          "paragraph": 6,
+          "listString": "Section 1.01",
+          "text": "Defined Terms."
+        },
+        {
+          "paragraph": 7,
+          "listString": "(a)",
+          "text": "In Section 1.01(a): s203b=[Section 2.03(b)] s203bii=[Section"
+        },
+        {
+          "paragraph": 8,
+          "listString": "ARTICLE II",
+          "text": "PURCHASE AND SALE s203b=[Section 2.03(b)] art2=[ARTICLE II] "
+        },
+        {
+          "paragraph": 9,
+          "listString": "Section 2.01",
+          "text": "Purchase."
+        },
+        {
+          "paragraph": 10,
+          "listString": "(a)",
+          "text": "In Section 2.01(a): s203=[Section 2.03] s203b=[Section 2.03("
+        },
+        {
+          "paragraph": 11,
+          "listString": "Section 2.02",
+          "text": "Price."
+        },
+        {
+          "paragraph": 12,
+          "listString": "Section 2.03",
+          "text": "Adjustment. s203=[Section 2.03] s203b=[(b)] s203bii=[(b)(ii)"
+        },
+        {
+          "paragraph": 13,
+          "listString": "(a)",
+          "text": "In 2.03(a): s203b=[(b)] s203bii=[(b)(ii)] s203=[Section 2.03"
+        },
+        {
+          "paragraph": 14,
+          "listString": "(b)",
+          "text": "In 2.03(b): s203b=[(b)] s203bi=[(i)] s203a=[(a)] s203bii=[(i"
+        },
+        {
+          "paragraph": 15,
+          "listString": "(i)",
+          "text": "In 2.03(b)(i): s203bii=[(ii)] s203b=[(b)] s203bi=[(i)] s203a"
+        },
+        {
+          "paragraph": 16,
+          "listString": "(ii)",
+          "text": "In 2.03(b)(ii): s203bii=[(ii)] s203bi=[(i)]"
+        },
+        {
+          "paragraph": 17,
+          "listString": "(iii)",
+          "text": "In 2.03(b)(iii), footnoted\u0002"
+        },
+        {
+          "paragraph": 18,
+          "listString": "(c)",
+          "text": "In 2.03(c): s203b=[(b)] s203bii=[(b)(ii)]"
+        },
+        {
+          "paragraph": 19,
+          "listString": "",
+          "text": "Cell unnumbered: s203b=[(b)] s203bii=[(b)(ii)] s203c=[(c)]"
+        },
+        {
+          "paragraph": 20,
+          "listString": "(d)",
+          "text": "Cell numbered (d): s203b=[(b)] s203bii=[(b)(ii)] s203c=[(c)]"
+        },
+        {
+          "paragraph": 21,
+          "listString": "",
+          "text": ""
+        },
+        {
+          "paragraph": 22,
+          "listString": "",
+          "text": "Plain after table: s203b=[(b)]"
+        },
+        {
+          "paragraph": 23,
+          "listString": "Section 2.04",
+          "text": "Closing."
+        },
+        {
+          "paragraph": 24,
+          "listString": "(a)",
+          "text": "In 2.04(a): s203b=[Section 2.03(b)] s203bii=[Section 2.03(b)"
+        },
+        {
+          "paragraph": 25,
+          "listString": "",
+          "text": "Plain under 2.04: s203b=[Section 2.03(b)] s204a=[(a)]"
+        },
+        {
+          "paragraph": 26,
+          "listString": "ARTICLE III",
+          "text": "MISCELLANEOUS"
+        },
+        {
+          "paragraph": 27,
+          "listString": "Section 3.01",
+          "text": "Notices."
+        },
+        {
+          "paragraph": 28,
+          "listString": "(a)",
+          "text": "In 3.01(a), footnoted s203b=[Section 2.03(b)] art2=[ARTICLE "
+        },
+        {
+          "paragraph": 29,
+          "listString": "",
+          "text": "Plain, footnoted\u0002"
+        }
+      ]
+    },
+    {
+      "name": "probe2-lists",
+      "layout": "create's ordered definition without heading numbers: one list, a list restarted on the same definition (a new w:num with a level-0 startOverride, as create restarts a list), and a list of a separate definition.",
+      "spec": {
+        "meta": {
+          "title": "Relative xref probe 2 (#1258)",
+          "createdIso": "2026-11-04T00:00:00Z"
+        },
+        "styles": [
+          {
+            "styleId": "Heading1",
+            "name": "heading 1",
+            "type": "paragraph",
+            "basedOn": "Normal",
+            "next": "Normal",
+            "paragraph": {
+              "alignment": "center",
+              "keepNext": true
+            },
+            "run": {
+              "bold": true
+            }
+          },
+          {
+            "styleId": "Heading2",
+            "name": "heading 2",
+            "type": "paragraph",
+            "basedOn": "Normal",
+            "next": "Normal",
+            "paragraph": {
+              "keepNext": true
+            },
+            "run": {
+              "bold": true
+            }
+          }
+        ],
+        "numbering": [
+          {
+            "numId": "ol",
+            "levels": [
+              {
+                "ilvl": 0,
+                "numFmt": "decimal",
+                "lvlText": "%1.",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 720,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 1,
+                "numFmt": "lowerLetter",
+                "lvlText": "(%2)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 1440,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 2,
+                "numFmt": "lowerRoman",
+                "lvlText": "(%3)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 2160,
+                  "hanging": 720
+                }
+              }
+            ],
+            "instances": [
+              {
+                "numId": "ol-restart-1",
+                "levelOverrides": [
+                  {
+                    "ilvl": 0,
+                    "startOverride": 1
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "numId": "other",
+            "levels": [
+              {
+                "ilvl": 0,
+                "numFmt": "decimal",
+                "lvlText": "%1.",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 720,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 1,
+                "numFmt": "lowerLetter",
+                "lvlText": "(%2)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 1440,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 2,
+                "numFmt": "lowerRoman",
+                "lvlText": "(%3)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 2160,
+                  "hanging": 720
+                }
+              }
+            ]
+          }
+        ],
+        "sections": [
+          {
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "A one."
+                  }
+                ],
+                "list": {
+                  "numId": "ol",
+                  "ilvl": 0
+                }
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "A two."
+                  }
+                ],
+                "list": {
+                  "numId": "ol",
+                  "ilvl": 0
+                },
+                "bookmark": "a2"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "A two a."
+                  }
+                ],
+                "list": {
+                  "numId": "ol",
+                  "ilvl": 1
+                },
+                "bookmark": "a2a"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "A two b."
+                  }
+                ],
+                "list": {
+                  "numId": "ol",
+                  "ilvl": 1
+                },
+                "bookmark": "a2b"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "A two b i."
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2bii=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2bii",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2bi=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2bi",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "ol",
+                  "ilvl": 2
+                },
+                "bookmark": "a2bi"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "A two b ii."
+                  }
+                ],
+                "list": {
+                  "numId": "ol",
+                  "ilvl": 2
+                },
+                "bookmark": "a2bii"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "A three."
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a3=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a3",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "ol",
+                  "ilvl": 0
+                },
+                "bookmark": "a3"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "A three a:"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2bi=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2bi",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a3=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a3",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "ol",
+                  "ilvl": 1
+                }
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Interlude:"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ]
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "B one."
+                  }
+                ],
+                "list": {
+                  "numId": "ol-restart-1",
+                  "ilvl": 0
+                }
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "B two."
+                  }
+                ],
+                "list": {
+                  "numId": "ol-restart-1",
+                  "ilvl": 0
+                }
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "B two a (restarted list, same abstract):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2bi=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2bi",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " b2b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "b2b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "footnote",
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Footnote in B 2(a):"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " a2b=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "a2b",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " b2b=["
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "b2b",
+                            "number": "relative"
+                          },
+                          {
+                            "kind": "text",
+                            "text": "]"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "list": {
+                  "numId": "ol-restart-1",
+                  "ilvl": 1
+                }
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "B two b."
+                  }
+                ],
+                "list": {
+                  "numId": "ol-restart-1",
+                  "ilvl": 1
+                },
+                "bookmark": "b2b"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Interlude 2."
+                  }
+                ]
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "C one."
+                  }
+                ],
+                "list": {
+                  "numId": "other",
+                  "ilvl": 0
+                }
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "C two."
+                  }
+                ],
+                "list": {
+                  "numId": "other",
+                  "ilvl": 0
+                }
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "C two a (separate definition):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2bi=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2bi",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " b2b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "b2b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " a2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "a2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "other",
+                  "ilvl": 1
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "references": [
+        {
+          "site": "a2bi",
+          "story": "body",
+          "instruction": " REF a2bii \\r \\h ",
+          "word": "(ii)",
+          "libreOffice": "(ii)"
+        },
+        {
+          "site": "a2bi",
+          "story": "body",
+          "instruction": " REF a2b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "a2bi",
+          "story": "body",
+          "instruction": " REF a2 \\r \\h ",
+          "word": "2",
+          "libreOffice": "2"
+        },
+        {
+          "site": "a2bi",
+          "story": "body",
+          "instruction": " REF a2a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "(a)"
+        },
+        {
+          "site": "a2bi",
+          "story": "body",
+          "instruction": " REF a2bi \\r \\h ",
+          "word": "(i)",
+          "libreOffice": "(i)"
+        },
+        {
+          "site": "a3",
+          "story": "body",
+          "instruction": " REF a2b \\r \\h ",
+          "word": "2(b)",
+          "libreOffice": "2.(b)"
+        },
+        {
+          "site": "a3",
+          "story": "body",
+          "instruction": " REF a3 \\r \\h ",
+          "word": "3",
+          "libreOffice": "3"
+        },
+        {
+          "site": "a3",
+          "story": "body",
+          "instruction": " REF a2 \\r \\h ",
+          "word": "2",
+          "libreOffice": "2"
+        },
+        {
+          "site": "a3a",
+          "story": "body",
+          "instruction": " REF a2b \\r \\h ",
+          "word": "2(b)",
+          "libreOffice": "2.(b)"
+        },
+        {
+          "site": "a3a",
+          "story": "body",
+          "instruction": " REF a2bi \\r \\h ",
+          "word": "2(b)(i)",
+          "libreOffice": "2.(b)(i)"
+        },
+        {
+          "site": "a3a",
+          "story": "body",
+          "instruction": " REF a2 \\r \\h ",
+          "word": "2",
+          "libreOffice": "2"
+        },
+        {
+          "site": "a3a",
+          "story": "body",
+          "instruction": " REF a3 \\r \\h ",
+          "word": "3",
+          "libreOffice": "3"
+        },
+        {
+          "site": "plain",
+          "story": "body",
+          "instruction": " REF a2b \\r \\h ",
+          "word": "2(b)",
+          "libreOffice": "2.(b)"
+        },
+        {
+          "site": "b2a",
+          "story": "body",
+          "instruction": " REF a2b \\r \\h ",
+          "word": "2(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "b2a",
+          "story": "body",
+          "instruction": " REF a2bi \\r \\h ",
+          "word": "2(b)(i)",
+          "libreOffice": "(b)(i)"
+        },
+        {
+          "site": "b2a",
+          "story": "body",
+          "instruction": " REF a2 \\r \\h ",
+          "word": "2",
+          "libreOffice": "2"
+        },
+        {
+          "site": "b2a",
+          "story": "body",
+          "instruction": " REF a2a \\r \\h ",
+          "word": "2(a)",
+          "libreOffice": "(a)"
+        },
+        {
+          "site": "b2a",
+          "story": "body",
+          "instruction": " REF b2b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "c2a",
+          "story": "body",
+          "instruction": " REF a2b \\r \\h ",
+          "word": "2(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "c2a",
+          "story": "body",
+          "instruction": " REF a2bi \\r \\h ",
+          "word": "2(b)(i)",
+          "libreOffice": "(i)"
+        },
+        {
+          "site": "c2a",
+          "story": "body",
+          "instruction": " REF b2b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "(b)"
+        },
+        {
+          "site": "c2a",
+          "story": "body",
+          "instruction": " REF a2 \\r \\h ",
+          "word": "2",
+          "libreOffice": "2"
+        },
+        {
+          "site": "fn-in-b2a",
+          "story": "footnote",
+          "instruction": " REF a2b \\r \\h ",
+          "word": "2(b)",
+          "libreOffice": "2.(b)"
+        },
+        {
+          "site": "fn-in-b2a",
+          "story": "footnote",
+          "instruction": " REF b2b \\r \\h ",
+          "word": "2(b)",
+          "libreOffice": "2.(b)"
+        }
+      ],
+      "wordParagraphs": [
+        {
+          "paragraph": 1,
+          "listString": "1.",
+          "text": "A one."
+        },
+        {
+          "paragraph": 2,
+          "listString": "2.",
+          "text": "A two."
+        },
+        {
+          "paragraph": 3,
+          "listString": "(a)",
+          "text": "A two a."
+        },
+        {
+          "paragraph": 4,
+          "listString": "(b)",
+          "text": "A two b."
+        },
+        {
+          "paragraph": 5,
+          "listString": "(i)",
+          "text": "A two b i. a2bii=[(ii)] a2b=[(b)] a2=[2] a2a=[(a)] a2bi=[(i)"
+        },
+        {
+          "paragraph": 6,
+          "listString": "(ii)",
+          "text": "A two b ii."
+        },
+        {
+          "paragraph": 7,
+          "listString": "3.",
+          "text": "A three. a2b=[2(b)] a3=[3] a2=[2]"
+        },
+        {
+          "paragraph": 8,
+          "listString": "(a)",
+          "text": "A three a: a2b=[2(b)] a2bi=[2(b)(i)] a2=[2] a3=[3]"
+        },
+        {
+          "paragraph": 9,
+          "listString": "",
+          "text": "Interlude: a2b=[2(b)]"
+        },
+        {
+          "paragraph": 10,
+          "listString": "1.",
+          "text": "B one."
+        },
+        {
+          "paragraph": 11,
+          "listString": "2.",
+          "text": "B two."
+        },
+        {
+          "paragraph": 12,
+          "listString": "(a)",
+          "text": "B two a (restarted list, same abstract): a2b=[2(b)] a2bi=[2("
+        },
+        {
+          "paragraph": 13,
+          "listString": "(b)",
+          "text": "B two b."
+        },
+        {
+          "paragraph": 14,
+          "listString": "",
+          "text": "Interlude 2."
+        },
+        {
+          "paragraph": 15,
+          "listString": "1.",
+          "text": "C one."
+        },
+        {
+          "paragraph": 16,
+          "listString": "2.",
+          "text": "C two."
+        },
+        {
+          "paragraph": 17,
+          "listString": "(a)",
+          "text": "C two a (separate definition): a2b=[2(b)] a2bi=[2(b)(i)] b2b"
+        }
+      ]
+    },
+    {
+      "name": "probe3-instances",
+      "layout": "Two w:num instances of one definition whose counts continue (Y overrides only level 2, which it never uses): which list a field is relative to.",
+      "spec": {
+        "meta": {
+          "title": "Relative xref probe 3 (#1258)",
+          "createdIso": "2026-11-04T00:00:00Z"
+        },
+        "styles": [
+          {
+            "styleId": "Heading1",
+            "name": "heading 1",
+            "type": "paragraph",
+            "basedOn": "Normal",
+            "next": "Normal",
+            "paragraph": {
+              "alignment": "center",
+              "keepNext": true
+            },
+            "run": {
+              "bold": true
+            }
+          },
+          {
+            "styleId": "Heading2",
+            "name": "heading 2",
+            "type": "paragraph",
+            "basedOn": "Normal",
+            "next": "Normal",
+            "paragraph": {
+              "keepNext": true
+            },
+            "run": {
+              "bold": true
+            }
+          }
+        ],
+        "numbering": [
+          {
+            "numId": "X",
+            "levels": [
+              {
+                "ilvl": 0,
+                "numFmt": "decimal",
+                "lvlText": "%1.",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 720,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 1,
+                "numFmt": "lowerLetter",
+                "lvlText": "(%2)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 1440,
+                  "hanging": 720
+                }
+              },
+              {
+                "ilvl": 2,
+                "numFmt": "lowerRoman",
+                "lvlText": "(%3)",
+                "suff": "tab",
+                "indentTwips": {
+                  "left": 2160,
+                  "hanging": 720
+                }
+              }
+            ],
+            "instances": [
+              {
+                "numId": "Y",
+                "levelOverrides": [
+                  {
+                    "ilvl": 2,
+                    "startOverride": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "sections": [
+          {
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "X one."
+                  }
+                ],
+                "list": {
+                  "numId": "X",
+                  "ilvl": 0
+                }
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "X two."
+                  }
+                ],
+                "list": {
+                  "numId": "X",
+                  "ilvl": 0
+                },
+                "bookmark": "x2"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "X two a."
+                  }
+                ],
+                "list": {
+                  "numId": "X",
+                  "ilvl": 1
+                },
+                "bookmark": "x2a"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "X two b."
+                  }
+                ],
+                "list": {
+                  "numId": "X",
+                  "ilvl": 1
+                },
+                "bookmark": "x2b"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Between."
+                  }
+                ]
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Y three (shared count):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " x2b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "x2b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " x2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "x2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " y3=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "y3",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "Y",
+                  "ilvl": 0
+                },
+                "bookmark": "y3"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "Y three a:"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " x2b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "x2b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " x2a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "x2a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " x2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "x2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " y3=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "y3",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " y3a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "y3a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "Y",
+                  "ilvl": 1
+                },
+                "bookmark": "y3a"
+              },
+              {
+                "kind": "paragraph",
+                "runs": [
+                  {
+                    "kind": "text",
+                    "text": "X again (b):"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " x2b=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "x2b",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " y3a=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "y3a",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " y3=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "y3",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  },
+                  {
+                    "kind": "text",
+                    "text": " x2=["
+                  },
+                  {
+                    "kind": "crossReference",
+                    "bookmark": "x2",
+                    "number": "relative"
+                  },
+                  {
+                    "kind": "text",
+                    "text": "]"
+                  }
+                ],
+                "list": {
+                  "numId": "X",
+                  "ilvl": 1
+                },
+                "bookmark": "x3b"
+              }
+            ]
+          }
+        ]
+      },
+      "references": [
+        {
+          "site": "y3",
+          "story": "body",
+          "instruction": " REF x2b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "2.(b)"
+        },
+        {
+          "site": "y3",
+          "story": "body",
+          "instruction": " REF x2 \\r \\h ",
+          "word": "2",
+          "libreOffice": "2"
+        },
+        {
+          "site": "y3",
+          "story": "body",
+          "instruction": " REF y3 \\r \\h ",
+          "word": "3",
+          "libreOffice": "3"
+        },
+        {
+          "site": "y3a",
+          "story": "body",
+          "instruction": " REF x2b \\r \\h ",
+          "word": "(b)",
+          "libreOffice": "2.(b)"
+        },
+        {
+          "site": "y3a",
+          "story": "body",
+          "instruction": " REF x2a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "2.(a)"
+        },
+        {
+          "site": "y3a",
+          "story": "body",
+          "instruction": " REF x2 \\r \\h ",
+          "word": "2",
+          "libreOffice": "2"
+        },
+        {
+          "site": "y3a",
+          "story": "body",
+          "instruction": " REF y3 \\r \\h ",
+          "word": "3",
+          "libreOffice": "3"
+        },
+        {
+          "site": "y3a",
+          "story": "body",
+          "instruction": " REF y3a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "(a)"
+        },
+        {
+          "site": "x3b",
+          "story": "body",
+          "instruction": " REF x2b \\r \\h ",
+          "word": "2(b)",
+          "libreOffice": "2.(b)"
+        },
+        {
+          "site": "x3b",
+          "story": "body",
+          "instruction": " REF y3a \\r \\h ",
+          "word": "(a)",
+          "libreOffice": "(a)"
+        },
+        {
+          "site": "x3b",
+          "story": "body",
+          "instruction": " REF y3 \\r \\h ",
+          "word": "3",
+          "libreOffice": "3"
+        },
+        {
+          "site": "x3b",
+          "story": "body",
+          "instruction": " REF x2 \\r \\h ",
+          "word": "2",
+          "libreOffice": "2"
+        }
+      ],
+      "wordParagraphs": [
+        {
+          "paragraph": 1,
+          "listString": "1.",
+          "text": "X one."
+        },
+        {
+          "paragraph": 2,
+          "listString": "2.",
+          "text": "X two."
+        },
+        {
+          "paragraph": 3,
+          "listString": "(a)",
+          "text": "X two a."
+        },
+        {
+          "paragraph": 4,
+          "listString": "(b)",
+          "text": "X two b."
+        },
+        {
+          "paragraph": 5,
+          "listString": "",
+          "text": "Between."
+        },
+        {
+          "paragraph": 6,
+          "listString": "3.",
+          "text": "Y three (shared count): x2b=[(b)] x2=[2] y3=[3]"
+        },
+        {
+          "paragraph": 7,
+          "listString": "(a)",
+          "text": "Y three a: x2b=[(b)] x2a=[(a)] x2=[2] y3=[3] y3a=[(a)]"
+        },
+        {
+          "paragraph": 8,
+          "listString": "(b)",
+          "text": "X again (b): x2b=[2(b)] y3a=[(a)] y3=[3] x2=[2]"
+        }
+      ]
+    }
+  ],
+  "create": [
+    {
+      "name": "legal headings",
+      "source": "---\ntitle: Relative probe\nheading-numbers: legal\n---\n\n# Asset Purchase Agreement\n\n1. Recital one. {% #recital-one %}\n2. Recital two. {% #recital-two %}\n   1. Recital two a. {% #recital-two-a %}\n   2. Recital two b, see {% xref to=\"recital-two-a\" number=\"relative\" /%}. {% #recital-two-b %}\n\n## Definitions {% #definitions %}\n\n### Defined Terms {% #defined-terms %}\n\n1. Terms apply, except as {% xref to=\"adjustment-b-ii\" number=\"relative\" /%} says.\n\n## Purchase and Sale {% #purchase-and-sale %}\n\n### Purchase {% #purchase %}\n\n1. The Buyer buys, subject to {% xref to=\"adjustment-b\" number=\"relative\" /%}.\n\n### Adjustment {% #adjustment %}\n\nSee {% xref to=\"adjustment-b\" number=\"relative\" /%} below.\n\n1. First, under {% xref to=\"adjustment-b-ii\" number=\"relative\" /%}. {% #adjustment-a %}\n2. Second. {% #adjustment-b %}\n   1. One, unlike {% xref to=\"adjustment-b-ii\" number=\"relative\" /%} and {% xref to=\"adjustment\" number=\"relative\" /%}. {% #adjustment-b-i %}\n   2. Two, as {% xref to=\"adjustment-b-ii\" number=\"relative\" /%} itself.{% fnref id=\"n1\" /%} {% #adjustment-b-ii %}\n3. Third, after {% xref to=\"adjustment-b\" number=\"relative\" /%}.\n\n{% table %}\n| Item | Rule |\n|---|---|\n| Cap | Per {% xref to=\"adjustment-b-ii\" number=\"relative\" /%} |\n{% /table %}\n\n{% footnote id=\"n1\" %}\nAs {% xref to=\"adjustment-b\" number=\"relative\" /%} provides.\n{% /footnote %}\n\n### Closing {% #closing %}\n\n1. Close per {% xref to=\"adjustment-b-ii\" number=\"relative\" /%} and {% xref to=\"purchase-and-sale\" number=\"relative\" /%}.\n\n## Miscellaneous\n\n### Notices\n\n1. Notices under {% xref to=\"adjustment-b\" number=\"relative\" /%}, {% xref to=\"recital-two-b\" number=\"relative\" /%}.\n",
+      "references": [
+        {
+          "instruction": " REF recital_two_a \\r \\h ",
+          "cached": "(a)",
+          "word": "(a)"
+        },
+        {
+          "instruction": " REF adjustment_b_ii \\r \\h ",
+          "cached": "Section 2.02(b)(ii)",
+          "word": "Section 2.02(b)(ii)"
+        },
+        {
+          "instruction": " REF adjustment_b \\r \\h ",
+          "cached": "Section 2.02(b)",
+          "word": "Section 2.02(b)"
+        },
+        {
+          "instruction": " REF adjustment_b \\r \\h ",
+          "cached": "(b)",
+          "word": "(b)"
+        },
+        {
+          "instruction": " REF adjustment_b_ii \\r \\h ",
+          "cached": "(b)(ii)",
+          "word": "(b)(ii)"
+        },
+        {
+          "instruction": " REF adjustment_b_ii \\r \\h ",
+          "cached": "(ii)",
+          "word": "(ii)"
+        },
+        {
+          "instruction": " REF adjustment \\r \\h ",
+          "cached": "Section 2.02",
+          "word": "Section 2.02"
+        },
+        {
+          "instruction": " REF adjustment_b_ii \\r \\h ",
+          "cached": "(ii)",
+          "word": "(ii)"
+        },
+        {
+          "instruction": " REF adjustment_b \\r \\h ",
+          "cached": "(b)",
+          "word": "(b)"
+        },
+        {
+          "instruction": " REF adjustment_b_ii \\r \\h ",
+          "cached": "(b)(ii)",
+          "word": "(b)(ii)"
+        },
+        {
+          "instruction": " REF adjustment_b_ii \\r \\h ",
+          "cached": "Section 2.02(b)(ii)",
+          "word": "Section 2.02(b)(ii)"
+        },
+        {
+          "instruction": " REF purchase_and_sale \\r \\h ",
+          "cached": "ARTICLE II",
+          "word": "ARTICLE II"
+        },
+        {
+          "instruction": " REF adjustment_b \\r \\h ",
+          "cached": "Section 2.02(b)",
+          "word": "Section 2.02(b)"
+        },
+        {
+          "instruction": " REF recital_two_b \\r \\h ",
+          "cached": "(b)",
+          "word": "(b)"
+        },
+        {
+          "instruction": " REF adjustment_b \\r \\h ",
+          "cached": "Section 2.02(b)",
+          "word": "Section 2.02(b)"
+        }
+      ],
+      "afterInsertingSection": [
+        {
+          "insertedBeforeParagraph": "Adjustment",
+          "insertedText": "Inserted Section.",
+          "style": "Heading 2",
+          "markdocEquivalent": "A \"### Inserted Section\" heading before \"### Adjustment {% #adjustment %}\"",
+          "references": [
+            {
+              "instruction": " REF recital_two_a \\r \\h ",
+              "word": "(a)"
+            },
+            {
+              "instruction": " REF adjustment_b_ii \\r \\h ",
+              "word": "Section 2.03(b)(ii)"
+            },
+            {
+              "instruction": " REF adjustment_b \\r \\h ",
+              "word": "Section 2.03(b)"
+            },
+            {
+              "instruction": " REF adjustment_b \\r \\h ",
+              "word": "(b)"
+            },
+            {
+              "instruction": " REF adjustment_b_ii \\r \\h ",
+              "word": "(b)(ii)"
+            },
+            {
+              "instruction": " REF adjustment_b_ii \\r \\h ",
+              "word": "(ii)"
+            },
+            {
+              "instruction": " REF adjustment \\r \\h ",
+              "word": "Section 2.03"
+            },
+            {
+              "instruction": " REF adjustment_b_ii \\r \\h ",
+              "word": "(ii)"
+            },
+            {
+              "instruction": " REF adjustment_b \\r \\h ",
+              "word": "(b)"
+            },
+            {
+              "instruction": " REF adjustment_b_ii \\r \\h ",
+              "word": "(b)(ii)"
+            },
+            {
+              "instruction": " REF adjustment_b_ii \\r \\h ",
+              "word": "Section 2.03(b)(ii)"
+            },
+            {
+              "instruction": " REF purchase_and_sale \\r \\h ",
+              "word": "ARTICLE II"
+            },
+            {
+              "instruction": " REF adjustment_b \\r \\h ",
+              "word": "Section 2.03(b)"
+            },
+            {
+              "instruction": " REF recital_two_b \\r \\h ",
+              "word": "(b)"
+            },
+            {
+              "instruction": " REF adjustment_b \\r \\h ",
+              "word": "Section 2.03(b)"
+            }
+          ]
+        },
+        {
+          "insertedBeforeParagraph": "First, under (b)(ii).",
+          "insertedText": "Inserted Section.",
+          "style": "Heading 2",
+          "markdocEquivalent": "A \"### Inserted Section\" heading between \"See ... below.\" and the list under \"### Adjustment\"",
+          "references": [
+            {
+              "instruction": " REF recital_two_a \\r \\h ",
+              "word": "(a)"
+            },
+            {
+              "instruction": " REF adjustment_b_ii \\r \\h ",
+              "word": "Section 2.03(b)(ii)"
+            },
+            {
+              "instruction": " REF adjustment_b \\r \\h ",
+              "word": "Section 2.03(b)"
+            },
+            {
+              "instruction": " REF adjustment_b \\r \\h ",
+              "word": "Section 2.03(b)"
+            },
+            {
+              "instruction": " REF adjustment_b_ii \\r \\h ",
+              "word": "(b)(ii)"
+            },
+            {
+              "instruction": " REF adjustment_b_ii \\r \\h ",
+              "word": "(ii)"
+            },
+            {
+              "instruction": " REF adjustment \\r \\h ",
+              "word": "Section 2.02"
+            },
+            {
+              "instruction": " REF adjustment_b_ii \\r \\h ",
+              "word": "(ii)"
+            },
+            {
+              "instruction": " REF adjustment_b \\r \\h ",
+              "word": "(b)"
+            },
+            {
+              "instruction": " REF adjustment_b_ii \\r \\h ",
+              "word": "(b)(ii)"
+            },
+            {
+              "instruction": " REF adjustment_b_ii \\r \\h ",
+              "word": "Section 2.03(b)(ii)"
+            },
+            {
+              "instruction": " REF purchase_and_sale \\r \\h ",
+              "word": "ARTICLE II"
+            },
+            {
+              "instruction": " REF adjustment_b \\r \\h ",
+              "word": "Section 2.03(b)"
+            },
+            {
+              "instruction": " REF recital_two_b \\r \\h ",
+              "word": "(b)"
+            },
+            {
+              "instruction": " REF adjustment_b \\r \\h ",
+              "word": "Section 2.03(b)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "plain lists",
+      "source": "# Plain Lists\n\nBefore any list: {% xref to=\"two-b\" number=\"relative\" /%}.\n\n1. One.\n2. Two. {% #two %}\n   1. Two a, see {% xref to=\"two-b\" number=\"relative\" /%}. {% #two-a %}\n   2. Two b. {% #two-b %}\n      1. Two b i, see {% xref to=\"two-b-ii\" number=\"relative\" /%} and {% xref to=\"two\" number=\"relative\" /%}.\n      2. Two b ii. {% #two-b-ii %}\n\nBetween: {% xref to=\"two-b\" number=\"relative\" /%}.\n\n3. Three, continuing: {% xref to=\"two-b\" number=\"relative\" /%}.{% fnref id=\"n\" /%}\n   1. Three a: {% xref to=\"two-b-ii\" number=\"relative\" /%}.\n\n{% footnote id=\"n\" %}\nNote: {% xref to=\"two-b\" number=\"relative\" /%}.\n{% /footnote %}\n",
+      "references": [
+        {
+          "instruction": " REF two_b \\r \\h ",
+          "cached": "2(b)",
+          "word": "2(b)"
+        },
+        {
+          "instruction": " REF two_b \\r \\h ",
+          "cached": "(b)",
+          "word": "(b)"
+        },
+        {
+          "instruction": " REF two_b_ii \\r \\h ",
+          "cached": "(ii)",
+          "word": "(ii)"
+        },
+        {
+          "instruction": " REF two \\r \\h ",
+          "cached": "2",
+          "word": "2"
+        },
+        {
+          "instruction": " REF two_b \\r \\h ",
+          "cached": "(b)",
+          "word": "(b)"
+        },
+        {
+          "instruction": " REF two_b \\r \\h ",
+          "cached": "2(b)",
+          "word": "2(b)"
+        },
+        {
+          "instruction": " REF two_b_ii \\r \\h ",
+          "cached": "2(b)(ii)",
+          "word": "2(b)(ii)"
+        },
+        {
+          "instruction": " REF two_b \\r \\h ",
+          "cached": "2(b)",
+          "word": "2(b)"
+        }
+      ]
+    }
+  ]
+}
