@@ -324,6 +324,90 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
   }
 }
 
+const RUN_REVISION_WRAPPERS = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
+
+function isRunRevisionWrapper(node: Node): node is WmlElement {
+  return node.nodeType === 1 &&
+    (node as WmlElement).namespaceURI === W_NS &&
+    RUN_REVISION_WRAPPERS.has((node as WmlElement).localName);
+}
+
+/**
+ * Split a run whose aligned content (typically a `w:fldChar` sharing the run
+ * with edited text) was emitted beside side-only run content. CT_R admits no
+ * revision particle, so each `w:ins`/`w:del` emitted inside a `w:r` is lifted
+ * out to the paragraph level around a run fragment that repeats the run's
+ * properties; the run's live content stays in unwrapped fragments in order.
+ * A cloned `w:rPrChange` gets a fresh revision ID so IDs stay unique (#1283).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.25
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @see https://github.com/UseJunior/safe-docx/issues/1283
+ */
+function splitRunsAroundRevisionWrappers(
+  root: WmlElement,
+  allocateRevision: () => ComparisonRevision,
+): void {
+  const runs = Array.from(root.getElementsByTagNameNS(W_NS, 'r')) as WmlElement[];
+  for (const run of runs) {
+    const parent = run.parentNode;
+    if (!parent || !Array.from(run.childNodes).some(isRunRevisionWrapper)) continue;
+    const properties = childElements(run).find((child) => child.localName === 'rPr');
+    let fragmentCount = 0;
+    const newFragment = (): WmlElement => {
+      const fragment = run.cloneNode(false) as WmlElement;
+      if (properties) {
+        const clone = properties.cloneNode(true) as WmlElement;
+        if (fragmentCount > 0) {
+          for (const change of Array.from(clone.getElementsByTagNameNS(W_NS, 'rPrChange'))) {
+            (change as WmlElement).setAttributeNS(W_NS, 'w:id', String(allocateRevision().id));
+          }
+        }
+        fragment.appendChild(clone);
+      }
+      fragmentCount++;
+      return fragment;
+    };
+    // Re-home a wrapper's run content into run fragments, recursing through
+    // nested (preserved-provenance) wrappers.
+    const rehome = (wrapper: WmlElement): void => {
+      let fragment: WmlElement | undefined;
+      for (const child of Array.from(wrapper.childNodes)) {
+        if (isRunRevisionWrapper(child)) {
+          fragment = undefined;
+          rehome(child);
+          continue;
+        }
+        if (child.nodeType !== 1) continue;
+        if (!fragment) {
+          fragment = newFragment();
+          wrapper.insertBefore(fragment, child);
+        }
+        fragment.appendChild(child);
+      }
+    };
+    const replacement: WmlElement[] = [];
+    let live: WmlElement | undefined;
+    for (const child of Array.from(run.childNodes)) {
+      if (child === properties || child.nodeType !== 1) continue;
+      if (isRunRevisionWrapper(child)) {
+        live = undefined;
+        rehome(child);
+        replacement.push(child);
+        continue;
+      }
+      if (!live) {
+        live = newFragment();
+        replacement.push(live);
+      }
+      live.appendChild(child);
+    }
+    for (const item of replacement) parent.insertBefore(item, run);
+    parent.removeChild(run);
+  }
+}
+
 /**
  * Keep literal replacement content outside a deleted complex-field
  * instruction. A live field skeleton may remain for consumer compatibility,
@@ -2488,6 +2572,7 @@ export function serializeTaggedTree(
     splitBookmarkIds,
     options.revisionGrouping ?? 'token-minimal',
   );
+  splitRunsAroundRevisionWrappers(emitted, allocateRevision);
   insertSectionBoundaryParagraphs(emitted);
   splitCrossParagraphBookmarkCounterparts(emitted, originalBookmarkIds, allocateRevision);
   normalizeTerminalWholeParagraphMoveOwnership(emitted, options.moves ?? [], generatedRevisionIds);

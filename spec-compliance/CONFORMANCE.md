@@ -15,6 +15,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | --- | --- | --- | --- | --- | --- | --- |
 | `ECMA-PART1-17-2-2` | Main document body | 5 | 1 | 17.2.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:body` | packages/docx-markdoc/src/greenfield.ts; packages/docx-markdoc/src/greenfield.test.ts |
 | `ECMA-PART1-17-3-1-27` | Paragraph style reference | 5 | 1 | 17.3.1.27 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle` | packages/docx-markdoc/src/greenfield.ts; packages/docx-markdoc/src/greenfield.test.ts |
+| `ECMA-PART1-17-3-2-25` | w:r run content model excludes revision wrappers | 5 | 1 | 17.3.2.25 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_R` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/sharedFieldMarkerRun.test.ts |
 | `ECMA-PART1-17-3-2-29` | Run style | 5 | 1 | 17.3.2.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rStyle` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
 | `ECMA-PART1-17-3-2-38` | Run font size | 5 | 1 | 17.3.2.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sz` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
 | `ECMA-PART4-14-9-1-1` | VML rich text-box content (w:txbxContent) | 5 | 4 | 14.9.1.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
@@ -183,6 +184,21 @@ Part 1 §17.3.1.27 defines `w:pStyle` as a paragraph's referenced style. The
 greenfield compiler resolves each canonical body role to an explicit style ID,
 requires that ID in the template style table, emits it under `w:pPr`, and
 reloads the package to verify the resolved body/style projection.
+
+### ECMA-PART1-17-3-2-25 — w:r run content model excludes revision wrappers
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.2.25
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_R`
+- **Verified by:** packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/sharedFieldMarkerRun.test.ts
+
+Part 1 §17.3.2.25 defines `w:r` as a run of content with common properties.
+Its CT_R content model admits run properties and run content such as `w:t`
+and `w:fldChar`, but no `w:ins`, `w:del`, `w:moveFrom` or `w:moveTo`; those
+revision particles wrap whole runs. When compared text shares a run with a
+field character, safe-docx splits the run so each revision wraps a run
+fragment that repeats the source run properties.
 
 ### ECMA-PART1-17-3-2-29 — Run style
 

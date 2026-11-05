@@ -45,6 +45,24 @@ greenfield compiler resolves each canonical body role to an explicit style ID,
 requires that ID in the template style table, emits it under `w:pPr`, and
 reloads the package to verify the resolved body/style projection.
 
+## [ECMA-PART1-17-3-2-25] w:r run content model excludes revision wrappers
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.2.25"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_R
+verifiedBy: packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/sharedFieldMarkerRun.test.ts
+```
+
+Part 1 §17.3.2.25 defines `w:r` as a run of content with common properties.
+Its CT_R content model admits run properties and run content such as `w:t`
+and `w:fldChar`, but no `w:ins`, `w:del`, `w:moveFrom` or `w:moveTo`; those
+revision particles wrap whole runs. When compared text shares a run with a
+field character, safe-docx splits the run so each revision wraps a run
+fragment that repeats the source run properties.
+
 ## [ECMA-PART1-17-3-2-29] Run style
 
 ```yaml
