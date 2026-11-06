@@ -50,10 +50,13 @@ import { findUniqueSubstringMatch } from './matching.js';
 import { parseDocumentRels, relationshipPartPath, type RelsMap } from './relationships.js';
 import {
   setParagraphSpacing,
+  setParagraphProperties,
   setTableCellPadding,
   setTableRowHeight,
   type ParagraphSpacingMutation,
   type ParagraphSpacingMutationResult,
+  type ParagraphPropertiesMutation,
+  type ParagraphPropertiesMutationResult,
   type TableCellPaddingMutation,
   type TableCellPaddingMutationResult,
   type TableRowHeightMutation,
@@ -1384,6 +1387,18 @@ export class DocxDocument {
       newParagraphIds: insertedIds,
     };
     if (styleSourceFallback) result.styleSourceFallback = true;
+    return result;
+  }
+
+  setParagraphProperties(
+    mutation: ParagraphPropertiesMutation,
+    ctx?: RevisionContext,
+  ): ParagraphPropertiesMutationResult {
+    const result = setParagraphProperties(this.documentXml, mutation, ctx);
+    if (result.affectedParagraphs > 0) {
+      this.dirty = true;
+      this.documentViewCache = null;
+    }
     return result;
   }
 

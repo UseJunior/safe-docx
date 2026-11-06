@@ -132,6 +132,7 @@ const REVISIONABLE_EDITORS: Array<{
       formatLayout(mgr, {
         file_path: filePath,
         paragraph_spacing: { paragraph_ids: [firstParaId], before_twips: 240 },
+        paragraph_properties: { paragraph_ids: [firstParaId], alignment: 'center', keep_next: true },
       }),
   },
   {

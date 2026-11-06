@@ -310,7 +310,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'format_layout',
     surface: 'revisionable',
-    description: 'Apply layout controls (paragraph spacing, table row height, cell padding). Google Docs supports paragraph spacing only. Surface: revisionable — DOCX geometry edits emit native property-change revisions (w:pPrChange/w:trPrChange/w:tcPrChange).',
+    description: 'Apply layout controls (paragraph spacing, paragraph alignment and pagination flags, table row height, cell padding). paragraph_properties sets alignment (w:jc) and sets (true) or removes (false) direct pageBreakBefore/keepNext/keepLines; requests that change nothing are no-ops. Google Docs supports paragraph spacing only. Surface: revisionable — DOCX geometry edits emit native property-change revisions (w:pPrChange/w:trPrChange/w:tcPrChange).',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
@@ -322,6 +322,15 @@ export const SAFE_DOCX_TOOL_CATALOG = [
           after_twips: z.number().optional(),
           line_twips: z.number().optional(),
           line_rule: z.enum(['auto', 'exact', 'atLeast']).optional(),
+        })
+        .optional(),
+      paragraph_properties: z
+        .object({
+          paragraph_ids: z.array(z.string()).optional(),
+          alignment: z.enum(['left', 'center', 'right', 'both']).optional(),
+          page_break_before: z.boolean().optional(),
+          keep_next: z.boolean().optional(),
+          keep_lines: z.boolean().optional(),
         })
         .optional(),
       row_height: z

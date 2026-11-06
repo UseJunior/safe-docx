@@ -55,6 +55,10 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-6-11` | w:pgMar page margin emission | 5 | 1 | 17.6.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgMar` | packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/generation/emit/section.ts |
 | `ECMA-PART1-17-3-1-24` | w:pBdr paragraph border collection | 5 | 1 | 17.3.1.24 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pBdr` | packages/docx-core/src/generation/emit/borders.ts; packages/docx-core/src/generation/generation-paragraph-borders.test.ts |
 | `ECMA-PART1-17-3-1-26` | w:pPr child-element ordering | 5 | 1 | 17.3.1.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr` | packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts |
+| `ECMA-PART1-17-3-1-13` | w:jc paragraph alignment | 5 | 1 | 17.3.1.13 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:jc` | packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts |
+| `ECMA-PART1-17-3-1-14` | w:keepLines keep paragraph lines together | 5 | 1 | 17.3.1.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepLines` | packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts |
+| `ECMA-PART1-17-3-1-15` | w:keepNext keep paragraph with next | 5 | 1 | 17.3.1.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepNext` | packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts |
+| `ECMA-PART1-17-3-1-23` | w:pageBreakBefore start paragraph on next page | 5 | 1 | 17.3.1.23 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pageBreakBefore` | packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts |
 | `ECMA-PART1-17-3-1-20` | w:outlineLvl paragraph outline level | 5 | 1 | 17.3.1.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:outlineLvl` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts |
 | `ECMA-PART1-17-3-2-28` | w:rPr direct-property uniqueness | 5 | 1 | 17.3.2.28 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPr` | packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/primitives/text.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts; packages/docx-core/test-primitives/text.test.ts; packages/docx-markdoc/src/retained-format.test.ts |
 | `ECMA-PART1-17-7-3` | Toggle-property evaluation | 5 | 1 | 17.7.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_RPr` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-toggle.test.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts; scripts/check_docx_formatting_loss.test.mjs |
@@ -813,6 +817,57 @@ subset of that sequence as `PPR_ORDER` and routes every paragraph
 property through `appendInOrder`, which throws on any property name
 missing from the table so new properties force a conscious ordering
 decision.
+
+### ECMA-PART1-17-3-1-13 — w:jc paragraph alignment
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.1.13
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:jc`
+- **Verified by:** packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts
+
+`w:jc` sets a paragraph's alignment. The `format_layout` tool writes the
+transitional `ST_Jc` values `left`, `center`, `right` and `both` (the values
+Word writes) at the `w:jc` position in the `CT_PPrBase` sequence and records
+the prior properties in a `w:pPrChange`. Strict-only `start`/`end` are not
+offered.
+
+### ECMA-PART1-17-3-1-14 — w:keepLines keep paragraph lines together
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.1.14
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepLines`
+- **Verified by:** packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts
+
+`w:keepLines` is a `CT_OnOff` property that keeps all lines of a paragraph on
+one page. `format_layout` sets it as a bare element (on) or removes a direct
+element that is on, so the style hierarchy decides the value again; a direct
+element that is already explicitly off is left alone.
+
+### ECMA-PART1-17-3-1-15 — w:keepNext keep paragraph with next
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.1.15
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepNext`
+- **Verified by:** packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts
+
+`w:keepNext` is a `CT_OnOff` property that keeps a paragraph on the same page
+as the next paragraph. `format_layout` sets or removes the direct element with
+the same on/off rules as `w:keepLines`.
+
+### ECMA-PART1-17-3-1-23 — w:pageBreakBefore start paragraph on next page
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.1.23
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pageBreakBefore`
+- **Verified by:** packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts
+
+`w:pageBreakBefore` is a `CT_OnOff` property that starts the paragraph on a
+new page. `format_layout` sets or removes the direct element, which lets a
+caller drop a property made redundant by a preceding `nextPage` section break.
 
 ### ECMA-PART1-17-3-1-20 — w:outlineLvl paragraph outline level
 

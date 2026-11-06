@@ -171,7 +171,7 @@ Convert a DOCX document to OpenDocument Text (.odt) using the native model-to-mo
 
 ## `format_layout`
 
-Apply layout controls (paragraph spacing, table row height, cell padding). Google Docs supports paragraph spacing only. Surface: revisionable — DOCX geometry edits emit native property-change revisions (w:pPrChange/w:trPrChange/w:tcPrChange).
+Apply layout controls (paragraph spacing, paragraph alignment and pagination flags, table row height, cell padding). paragraph_properties sets alignment (w:jc) and sets (true) or removes (false) direct pageBreakBefore/keepNext/keepLines; requests that change nothing are no-ops. Google Docs supports paragraph spacing only. Surface: revisionable — DOCX geometry edits emit native property-change revisions (w:pPrChange/w:trPrChange/w:tcPrChange).
 
 - readOnly: `false`
 - destructive: `true`
@@ -182,6 +182,7 @@ Apply layout controls (paragraph spacing, table row height, cell padding). Googl
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `strict` | `boolean` | no |  |
 | `paragraph_spacing` | `object` | no |  |
+| `paragraph_properties` | `object` | no |  |
 | `row_height` | `object` | no |  |
 | `cell_padding` | `object` | no |  |
 

@@ -344,3 +344,171 @@ export function setTableCellPadding(
     missingCellIndexes,
   };
 }
+
+export type ParagraphJustification = 'left' | 'center' | 'right' | 'both';
+
+export type ParagraphPropertiesMutation = {
+  paragraphIds: string[];
+  /** Direct `w:jc` value to set. */
+  alignment?: ParagraphJustification;
+  /** `true` sets a direct `<w:pageBreakBefore/>`; `false` removes a direct one. */
+  pageBreakBefore?: boolean;
+  /** `true` sets a direct `<w:keepNext/>`; `false` removes a direct one. */
+  keepNext?: boolean;
+  /** `true` sets a direct `<w:keepLines/>`; `false` removes a direct one. */
+  keepLines?: boolean;
+};
+
+export type ParagraphPropertiesMutationResult = {
+  /** Paragraphs whose direct properties actually changed. */
+  affectedParagraphs: number;
+  /** Paragraphs that already had every requested value (no markup emitted). */
+  unchangedParagraphIds: string[];
+  missingParagraphIds: string[];
+};
+
+const PARAGRAPH_ALIGNMENTS = new Set<ParagraphJustification>(['left', 'center', 'right', 'both']);
+
+/**
+ * CT_PPrBase child sequence followed by the CT_PPr tail (rPr, sectPr,
+ * pPrChange). Used to insert a property at its schema position.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.26
+ */
+const PPR_CHILD_ORDER: readonly string[] = [
+  'pStyle', 'keepNext', 'keepLines', 'pageBreakBefore', 'framePr', 'widowControl', 'numPr',
+  'suppressLineNumbers', 'pBdr', 'shd', 'tabs', 'suppressAutoHyphens', 'kinsoku', 'wordWrap',
+  'overflowPunct', 'topLinePunct', 'autoSpaceDE', 'autoSpaceDN', 'bidi', 'adjustRightInd',
+  'snapToGrid', 'spacing', 'ind', 'contextualSpacing', 'mirrorIndents', 'suppressOverlap', 'jc',
+  'textDirection', 'textAlignment', 'textboxTightWrap', 'outlineLvl', 'divId', 'cnfStyle',
+  'rPr', 'sectPr', 'pPrChange',
+];
+
+function insertInPPrOrder(pPr: Element, child: Element): void {
+  const rank = PPR_CHILD_ORDER.indexOf(child.localName);
+  const successor = Array.from(pPr.children).find((existing) => {
+    const el = existing as Element;
+    if (el.namespaceURI !== OOXML.W_NS) return false;
+    const r = PPR_CHILD_ORDER.indexOf(el.localName);
+    return r > rank;
+  });
+  if (successor) pPr.insertBefore(child, successor);
+  else pPr.appendChild(child);
+}
+
+/** CT_OnOff: absent `w:val` means on; `0`, `false` and `off` mean off. */
+function isOnOffElementOn(el: Element): boolean {
+  const val = el.getAttributeNS(OOXML.W_NS, W.val) ?? el.getAttribute(`w:${W.val}`);
+  if (val === null || val === '') return true;
+  return !['0', 'false', 'off'].includes(val);
+}
+
+/**
+ * Apply one on/off paragraph property. Returns true when the direct markup changed.
+ *
+ * `true` leaves exactly one bare element (the CT_OnOff "on" form). `false`
+ * removes the direct element, so the style hierarchy decides the value again;
+ * a direct element that is already explicitly off is left alone.
+ */
+function applyOnOffProperty(pPr: Element, localName: string, value: boolean): boolean {
+  const existing = getDirectChildrenByName(pPr, localName);
+  if (value) {
+    if (existing.length === 1 && isOnOffElementOn(existing[0]!) && existing[0]!.attributes.length === 0) {
+      return false;
+    }
+    for (const stale of existing) pPr.removeChild(stale);
+    const created = pPr.ownerDocument!.createElementNS(OOXML.W_NS, `w:${localName}`);
+    insertInPPrOrder(pPr, created);
+    return true;
+  }
+  const on = existing.filter((el) => isOnOffElementOn(el));
+  if (on.length === 0) return false;
+  for (const stale of on) pPr.removeChild(stale);
+  return true;
+}
+
+function applyAlignment(pPr: Element, alignment: ParagraphJustification): boolean {
+  const existing = getDirectChildrenByName(pPr, W.jc);
+  if (existing.length === 1) {
+    const current = existing[0]!.getAttributeNS(OOXML.W_NS, W.val) ?? existing[0]!.getAttribute(`w:${W.val}`);
+    if (current === alignment) return false;
+  }
+  for (const stale of existing) pPr.removeChild(stale);
+  const created = pPr.ownerDocument!.createElementNS(OOXML.W_NS, `w:${W.jc}`);
+  setWAttr(created, W.val, alignment);
+  insertInPPrOrder(pPr, created);
+  return true;
+}
+
+/**
+ * Set or clear direct paragraph alignment and pagination properties
+ * (`w:jc`, `w:pageBreakBefore`, `w:keepNext`, `w:keepLines`) on existing
+ * paragraphs. With a revision context each changed paragraph records its
+ * prior properties in one `w:pPrChange`. A paragraph that already carries a
+ * `w:pPrChange` keeps it: its snapshot is the older baseline, so rejecting
+ * restores the state before every tracked change, as Word does when a tracked
+ * paragraph is reformatted again. Requests that change nothing emit no markup.
+ *
+ * `left`/`right` are the transitional ST_Jc values Word writes; strict-only
+ * `start`/`end` are not offered.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.13
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.15
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.23
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @see #1199
+ */
+export function setParagraphProperties(
+  doc: Document,
+  mutation: ParagraphPropertiesMutation,
+  ctx?: RevisionContext,
+): ParagraphPropertiesMutationResult {
+  if (mutation.alignment !== undefined && !PARAGRAPH_ALIGNMENTS.has(mutation.alignment)) {
+    throw new RangeError(`Unsupported alignment '${String(mutation.alignment)}'`);
+  }
+  for (const key of ['pageBreakBefore', 'keepNext', 'keepLines'] as const) {
+    const value = mutation[key];
+    if (value !== undefined && typeof value !== 'boolean') {
+      throw new TypeError(`${key} must be a boolean`);
+    }
+  }
+
+  const paragraphIds = [...new Set(mutation.paragraphIds)];
+  const missingParagraphIds: string[] = [];
+  const unchangedParagraphIds: string[] = [];
+  let affectedParagraphs = 0;
+
+  for (const paragraphId of paragraphIds) {
+    const paragraph = findParagraphByBookmarkId(doc, paragraphId);
+    if (!paragraph) {
+      missingParagraphIds.push(paragraphId);
+      continue;
+    }
+
+    const existingPPr = getDirectChildrenByName(paragraph, W.pPr)[0] ?? null;
+    const oldPPr = existingPPr ? (existingPPr.cloneNode(true) as Element) : null;
+    const pPr = existingPPr ?? doc.createElementNS(OOXML.W_NS, `w:${W.pPr}`);
+
+    let changed = false;
+    if (mutation.alignment !== undefined) changed = applyAlignment(pPr, mutation.alignment) || changed;
+    if (mutation.keepNext !== undefined) changed = applyOnOffProperty(pPr, 'keepNext', mutation.keepNext) || changed;
+    if (mutation.keepLines !== undefined) changed = applyOnOffProperty(pPr, 'keepLines', mutation.keepLines) || changed;
+    if (mutation.pageBreakBefore !== undefined) {
+      changed = applyOnOffProperty(pPr, 'pageBreakBefore', mutation.pageBreakBefore) || changed;
+    }
+
+    if (!changed) {
+      unchangedParagraphIds.push(paragraphId);
+      continue;
+    }
+
+    if (!existingPPr) paragraph.insertBefore(pPr, paragraph.firstChild);
+    if (ctx && getDirectChildrenByName(pPr, 'pPrChange').length === 0) {
+      pPr.appendChild(buildPPrChangeElement(oldPPr, ctx));
+    }
+    affectedParagraphs += 1;
+  }
+
+  return { affectedParagraphs, unchangedParagraphIds, missingParagraphIds };
+}
