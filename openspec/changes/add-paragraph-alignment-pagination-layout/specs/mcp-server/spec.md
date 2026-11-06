@@ -36,7 +36,7 @@ and `w:keepLines` properties, without changing paragraph text or count.
 - **THEN** the paragraph SHALL keep one `w:pPrChange` whose snapshot is the state before the first change
 - **AND** rejecting the AI edits SHALL restore that state
 - **WHEN** the existing `w:pPrChange` belongs to a different author
-- **THEN** a `paragraph_properties` request for that paragraph SHALL fail with `FOREIGN_PARAGRAPH_REVISION` without mutating the session
+- **THEN** a `paragraph_properties` request for that paragraph, alone or combined with `paragraph_spacing`, SHALL fail with `FOREIGN_PARAGRAPH_REVISION` without mutating the session
 
 #### Scenario: Pagination flags are set in schema order
 

@@ -444,8 +444,10 @@ export async function formatLayout(
       ctx,
       (previewDoc, previewCtx) => {
         const previewParagraphCountBefore = previewDoc.getParagraphs().length;
-        if (paragraphSpacing) previewDoc.setParagraphSpacing(paragraphSpacing, previewCtx);
+        // paragraph_properties runs first so its foreign-revision check sees
+        // the original w:pPrChange before spacing could replace it.
         if (paragraphProperties) previewDoc.setParagraphProperties(paragraphProperties, previewCtx);
+        if (paragraphSpacing) previewDoc.setParagraphSpacing(paragraphSpacing, previewCtx);
         if (rowHeight) previewDoc.setTableRowHeight(rowHeight, previewCtx);
         if (cellPadding) previewDoc.setTableCellPadding(cellPadding, previewCtx);
         const previewParagraphCountAfter = previewDoc.getParagraphs().length;
@@ -458,10 +460,10 @@ export async function formatLayout(
     );
     if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
-    const paragraphSpacingResult = paragraphSpacing ? session.doc.setParagraphSpacing(paragraphSpacing, ctx) : null;
     const paragraphPropertiesResult = paragraphProperties
       ? session.doc.setParagraphProperties(paragraphProperties, ctx)
       : null;
+    const paragraphSpacingResult = paragraphSpacing ? session.doc.setParagraphSpacing(paragraphSpacing, ctx) : null;
     const rowHeightResult = rowHeight ? session.doc.setTableRowHeight(rowHeight, ctx) : null;
     const cellPaddingResult = cellPadding ? session.doc.setTableCellPadding(cellPadding, ctx) : null;
 

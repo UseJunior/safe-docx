@@ -183,7 +183,14 @@ describe('OpenSpec traceability: paragraph alignment and pagination layout contr
         paragraph_properties: { paragraph_ids: [foreign.paraIds[0]!], alignment: 'center' },
       });
       assertFailure(refused, 'FOREIGN_PARAGRAPH_REVISION');
+      const refusedCombined = await formatLayout(foreign.mgr, {
+        file_path: foreign.inputPath,
+        paragraph_spacing: { paragraph_ids: [foreign.paraIds[0]!], after_twips: 240 },
+        paragraph_properties: { paragraph_ids: [foreign.paraIds[0]!], alignment: 'center' },
+      });
+      assertFailure(refusedCombined, 'FOREIGN_PARAGRAPH_REVISION');
       const untouched = await paragraphPPr(foreign, 'Reviewed paragraph');
+      expect(child(untouched, 'spacing')).toBeUndefined();
       expect(jcVal(untouched)).toBe('right');
       expect(child(untouched, 'pPrChange')?.getAttributeNS(W_NS, 'author')).toBe('Human Reviewer');
     },
