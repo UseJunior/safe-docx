@@ -822,8 +822,9 @@ verifiedBy: packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/t
 `w:jc` sets a paragraph's alignment. The `format_layout` tool writes the
 transitional `ST_Jc` values `left`, `center`, `right` and `both` (the values
 Word writes) at the `w:jc` position in the `CT_PPrBase` sequence and records
-the prior properties in a `w:pPrChange`. Strict-only `start`/`end` are not
-offered.
+the prior properties in a `w:pPrChange`. The bidi-relative `start`/`end` and
+the distribution values, which the transitional schema also permits, are out
+of scope.
 
 ## [ECMA-PART1-17-3-1-14] w:keepLines keep paragraph lines together
 
