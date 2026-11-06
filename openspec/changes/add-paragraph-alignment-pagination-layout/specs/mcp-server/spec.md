@@ -29,6 +29,15 @@ and `w:keepLines` properties, without changing paragraph text or count.
 - **WHEN** the same change is rejected instead
 - **THEN** the prior paragraph properties SHALL be restored
 
+#### Scenario: Existing paragraph-property revisions keep a sound baseline
+
+- **GIVEN** a paragraph whose alignment the same AI author already changed in a tracked `w:pPrChange`
+- **WHEN** a later `format_layout` call changes its spacing or pagination flags
+- **THEN** the paragraph SHALL keep one `w:pPrChange` whose snapshot is the state before the first change
+- **AND** rejecting the AI edits SHALL restore that state
+- **WHEN** the existing `w:pPrChange` belongs to a different author
+- **THEN** a `paragraph_properties` request for that paragraph SHALL fail with `FOREIGN_PARAGRAPH_REVISION` without mutating the session
+
 #### Scenario: Pagination flags are set in schema order
 
 - **WHEN** `keep_next`, `keep_lines` and `page_break_before` are set on a paragraph that already has a style, spacing and alignment
@@ -36,7 +45,7 @@ and `w:keepLines` properties, without changing paragraph text or count.
 
 #### Scenario: Unchanged paragraph properties are a no-op
 
-- **WHEN** every requested property already has the requested direct value
+- **WHEN** every requested property already has the requested direct value, including an explicit on value such as `w:val="1"`
 - **THEN** the tool SHALL report zero affected paragraphs
 - **AND** it SHALL emit no revision markup and leave edit accounting unchanged
 

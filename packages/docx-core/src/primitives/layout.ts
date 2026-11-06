@@ -1,8 +1,9 @@
 import { findParagraphByBookmarkId } from './bookmarks.js';
 import { OOXML, W } from './namespaces.js';
 import {
-  buildPPrChangeElement,
   buildTcPrChangeElement,
+  foreignPPrChangeAuthor,
+  recordPPrChange,
   buildTrPrChangeElement,
   type RevisionContext,
 } from './track-changes-emitter.js';
@@ -204,14 +205,7 @@ export function setParagraphSpacing(
     if (typeof mutation.afterTwips === 'number') setWAttr(spacing, W.after, String(mutation.afterTwips));
     if (typeof mutation.lineTwips === 'number') setWAttr(spacing, W.line, String(mutation.lineTwips));
     if (typeof mutation.lineRule === 'string') setWAttr(spacing, W.lineRule, mutation.lineRule);
-    if (ctx) {
-      // CT_PPr permits at most one <w:pPrChange> child. Strip any stale
-      // wrapper from prior history before appending the new one.
-      for (const stale of getDirectChildrenByName(pPr, 'pPrChange')) {
-        pPr.removeChild(stale);
-      }
-      pPr.appendChild(buildPPrChangeElement(oldPPr, ctx));
-    }
+    if (ctx) recordPPrChange(pPr, oldPPr, ctx);
 
     affectedParagraphs += 1;
   }
@@ -362,10 +356,21 @@ export type ParagraphPropertiesMutation = {
 export type ParagraphPropertiesMutationResult = {
   /** Paragraphs whose direct properties actually changed. */
   affectedParagraphs: number;
+  affectedParagraphIds: string[];
   /** Paragraphs that already had every requested value (no markup emitted). */
   unchangedParagraphIds: string[];
   missingParagraphIds: string[];
 };
+
+export class ParagraphPropertiesMutationError extends Error {
+  constructor(
+    readonly code: 'FOREIGN_PARAGRAPH_REVISION',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ParagraphPropertiesMutationError';
+  }
+}
 
 const PARAGRAPH_ALIGNMENTS = new Set<ParagraphJustification>(['left', 'center', 'right', 'both']);
 
@@ -413,9 +418,7 @@ function isOnOffElementOn(el: Element): boolean {
 function applyOnOffProperty(pPr: Element, localName: string, value: boolean): boolean {
   const existing = getDirectChildrenByName(pPr, localName);
   if (value) {
-    if (existing.length === 1 && isOnOffElementOn(existing[0]!) && existing[0]!.attributes.length === 0) {
-      return false;
-    }
+    if (existing.length === 1 && isOnOffElementOn(existing[0]!)) return false;
     for (const stale of existing) pPr.removeChild(stale);
     const created = pPr.ownerDocument!.createElementNS(OOXML.W_NS, `w:${localName}`);
     insertInPPrOrder(pPr, created);
@@ -444,13 +447,15 @@ function applyAlignment(pPr: Element, alignment: ParagraphJustification): boolea
  * Set or clear direct paragraph alignment and pagination properties
  * (`w:jc`, `w:pageBreakBefore`, `w:keepNext`, `w:keepLines`) on existing
  * paragraphs. With a revision context each changed paragraph records its
- * prior properties in one `w:pPrChange`. A paragraph that already carries a
- * `w:pPrChange` keeps it: its snapshot is the older baseline, so rejecting
- * restores the state before every tracked change, as Word does when a tracked
- * paragraph is reformatted again. Requests that change nothing emit no markup.
+ * prior properties in one `w:pPrChange` (see `recordPPrChange`: an existing
+ * same-author wrapper keeps its older snapshot). A target that already has a
+ * `w:pPrChange` by another author is refused before any mutation, so an edit
+ * is never attributed to someone else's revision. Requests that change
+ * nothing emit no markup.
  *
- * `left`/`right` are the transitional ST_Jc values Word writes; strict-only
- * `start`/`end` are not offered.
+ * Only `left`, `center`, `right` and `both` are offered; these are the
+ * `ST_Jc` values Word writes for ordinary alignment. The bidi-relative
+ * `start`/`end` and the distribution values are out of scope.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.13
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.14
@@ -477,14 +482,29 @@ export function setParagraphProperties(
   const paragraphIds = [...new Set(mutation.paragraphIds)];
   const missingParagraphIds: string[] = [];
   const unchangedParagraphIds: string[] = [];
-  let affectedParagraphs = 0;
+  const affectedParagraphIds: string[] = [];
 
+  const targets: Array<{ paragraphId: string; paragraph: Element }> = [];
   for (const paragraphId of paragraphIds) {
     const paragraph = findParagraphByBookmarkId(doc, paragraphId);
     if (!paragraph) {
       missingParagraphIds.push(paragraphId);
       continue;
     }
+    if (ctx) {
+      const foreign = foreignPPrChangeAuthor(getDirectChildrenByName(paragraph, W.pPr)[0] ?? null, ctx);
+      if (foreign !== null) {
+        throw new ParagraphPropertiesMutationError(
+          'FOREIGN_PARAGRAPH_REVISION',
+          `Paragraph '${paragraphId}' already has a tracked paragraph-property change by '${foreign}'. `
+            + 'Accept or reject that revision before changing its alignment or pagination.',
+        );
+      }
+    }
+    targets.push({ paragraphId, paragraph });
+  }
+
+  for (const { paragraphId, paragraph } of targets) {
 
     const existingPPr = getDirectChildrenByName(paragraph, W.pPr)[0] ?? null;
     const oldPPr = existingPPr ? (existingPPr.cloneNode(true) as Element) : null;
@@ -504,11 +524,14 @@ export function setParagraphProperties(
     }
 
     if (!existingPPr) paragraph.insertBefore(pPr, paragraph.firstChild);
-    if (ctx && getDirectChildrenByName(pPr, 'pPrChange').length === 0) {
-      pPr.appendChild(buildPPrChangeElement(oldPPr, ctx));
-    }
-    affectedParagraphs += 1;
+    if (ctx) recordPPrChange(pPr, oldPPr, ctx);
+    affectedParagraphIds.push(paragraphId);
   }
 
-  return { affectedParagraphs, unchangedParagraphIds, missingParagraphIds };
+  return {
+    affectedParagraphs: affectedParagraphIds.length,
+    affectedParagraphIds,
+    unchangedParagraphIds,
+    missingParagraphIds,
+  };
 }

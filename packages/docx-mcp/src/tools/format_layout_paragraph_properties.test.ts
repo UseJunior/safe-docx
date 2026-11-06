@@ -142,6 +142,53 @@ describe('OpenSpec traceability: paragraph alignment and pagination layout contr
     },
   );
 
+  test.openspec('Existing paragraph-property revisions keep a sound baseline')(
+    'keeps the first snapshot across later AI edits and refuses foreign-authored revisions',
+    async () => {
+      const opened = await openAiSession();
+      const id = opened.paraIds[1]!;
+      assertSuccess(await formatLayout(opened.mgr, {
+        file_path: opened.inputPath,
+        paragraph_properties: { paragraph_ids: [id], alignment: 'center' },
+      }), 'format_layout alignment');
+      const combined = await formatLayout(opened.mgr, {
+        file_path: opened.inputPath,
+        paragraph_spacing: { paragraph_ids: [id], after_twips: 240 },
+        paragraph_properties: { paragraph_ids: [id], keep_lines: true },
+      });
+      assertSuccess(combined, 'format_layout spacing + flags');
+      expect(combined.mutation_summary).toEqual({ affected_paragraphs: 1, affected_rows: 0, affected_cells: 0 });
+      assertSuccess(await formatLayout(opened.mgr, {
+        file_path: opened.inputPath,
+        paragraph_spacing: { paragraph_ids: [id], before_twips: 120 },
+      }), 'format_layout spacing');
+
+      const pPr = await paragraphPPr(opened, 'Body paragraph');
+      const changes = Array.from(pPr.children).filter((c) => c.localName === 'pPrChange');
+      expect(changes).toHaveLength(1);
+      expect(childNames(child(changes[0]!, 'pPr'))).toEqual(['pageBreakBefore', 'jc']);
+      assertSuccess(await rejectAiEdits(opened.mgr, { file_path: opened.inputPath, author: AI_AUTHOR }), 'reject_ai_edits');
+      const restored = await paragraphPPr(opened, 'Body paragraph');
+      expect(childNames(restored)).toEqual(['pageBreakBefore', 'jc']);
+      expect(jcVal(restored)).toBe('left');
+
+      const foreignXml =
+        `<w:document xmlns:w="${W_NS}"><w:body>`
+        + '<w:p><w:pPr><w:jc w:val="right"/><w:pPrChange w:id="7" w:author="Human Reviewer" w:date="2026-01-01T00:00:00Z">'
+        + '<w:pPr><w:jc w:val="left"/></w:pPr></w:pPrChange></w:pPr><w:r><w:t>Reviewed paragraph</w:t></w:r></w:p>'
+        + '</w:body></w:document>';
+      const foreign = await openAiSession(foreignXml);
+      const refused = await formatLayout(foreign.mgr, {
+        file_path: foreign.inputPath,
+        paragraph_properties: { paragraph_ids: [foreign.paraIds[0]!], alignment: 'center' },
+      });
+      assertFailure(refused, 'FOREIGN_PARAGRAPH_REVISION');
+      const untouched = await paragraphPPr(foreign, 'Reviewed paragraph');
+      expect(jcVal(untouched)).toBe('right');
+      expect(child(untouched, 'pPrChange')?.getAttributeNS(W_NS, 'author')).toBe('Human Reviewer');
+    },
+  );
+
   test.openspec('Pagination flags are set in schema order')(
     'inserts keepNext, keepLines and pageBreakBefore at their CT_PPrBase positions',
     async () => {
@@ -189,6 +236,19 @@ describe('OpenSpec traceability: paragraph alignment and pagination layout contr
       expect(session?.editCount).toBe(editCount);
       const pPr = await paragraphPPr(opened, 'Body paragraph');
       expect(child(pPr, 'pPrChange')).toBeUndefined();
+
+      const explicitOn = await openAiSession(
+        `<w:document xmlns:w="${W_NS}"><w:body>`
+        + '<w:p><w:pPr><w:keepNext w:val="1"/><w:keepLines w:val="0"/></w:pPr><w:r><w:t>Flagged paragraph</w:t></w:r></w:p>'
+        + '</w:body></w:document>',
+      );
+      const flagged = await formatLayout(explicitOn.mgr, {
+        file_path: explicitOn.inputPath,
+        paragraph_properties: { paragraph_ids: [explicitOn.paraIds[0]!], keep_next: true, keep_lines: false },
+      });
+      assertSuccess(flagged, 'format_layout explicit on/off');
+      expect(flagged.mutation_summary).toEqual({ affected_paragraphs: 0, affected_rows: 0, affected_cells: 0 });
+      expect(child(await paragraphPPr(explicitOn, 'Flagged paragraph'), 'pPrChange')).toBeUndefined();
     },
   );
 

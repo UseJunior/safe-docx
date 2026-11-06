@@ -12,7 +12,7 @@ import type {
   TableCellPaddingMutation,
   TableRowHeightMutation,
 } from '@usejunior/docx-core';
-import { DocxDocument } from '@usejunior/docx-core';
+import { DocxDocument, ParagraphPropertiesMutationError } from '@usejunior/docx-core';
 
 type ParagraphSpacingInput = {
   paragraph_ids?: unknown;
@@ -524,8 +524,13 @@ export async function formatLayout(
       }
     }
 
-    const affectedParagraphs = (paragraphSpacingResult?.affectedParagraphs ?? 0)
-      + (paragraphPropertiesResult?.affectedParagraphs ?? 0);
+    // A paragraph touched by both paragraph groups counts once.
+    const affectedParagraphIds = new Set<string>(paragraphPropertiesResult?.affectedParagraphIds ?? []);
+    if (paragraphSpacing && paragraphSpacingResult) {
+      const missing = new Set(paragraphSpacingResult.missingParagraphIds);
+      for (const id of paragraphSpacing.paragraphIds) if (!missing.has(id)) affectedParagraphIds.add(id);
+    }
+    const affectedParagraphs = affectedParagraphIds.size;
     const affectedRows = rowHeightResult?.affectedRows ?? 0;
     const affectedCells = cellPaddingResult?.affectedCells ?? 0;
     const totalAffected = affectedParagraphs + affectedRows + affectedCells;
@@ -555,6 +560,9 @@ export async function formatLayout(
         : 'No document nodes matched the provided selectors.',
     }, metadata));
   } catch (e: unknown) {
+    if (e instanceof ParagraphPropertiesMutationError) {
+      return err(e.code, e.message, 'Resolve the existing paragraph-property revision (for example with accept_changes), then retry.');
+    }
     const message = errorMessage(e);
     return err('FORMAT_LAYOUT_ERROR', `Failed to apply layout formatting: ${message}`, 'Check selector inputs and retry.');
   }

@@ -16,8 +16,10 @@ redundant property, so the document risks an empty page (issue #1199).
   on/off flags `page_break_before`, `keep_next` and `keep_lines` (`true` sets
   the direct property, `false` removes it).
 - Record each effective change as one native `w:pPrChange` holding the prior
-  paragraph properties. An existing `w:pPrChange` is kept, so its older
-  snapshot stays the reject baseline.
+  paragraph properties. An existing `w:pPrChange` by the same author is kept,
+  so its older snapshot stays the reject baseline; `paragraph_spacing` and
+  `format_numbering` now share this rule. A target whose `w:pPrChange` belongs
+  to another author is refused with `FOREIGN_PARAGRAPH_REVISION`.
 - Requests that change nothing are no-ops and emit no revision markup.
 - Reject the group for Google Docs sessions.
 
@@ -25,6 +27,7 @@ redundant property, so the document risks an empty page (issue #1199).
 
 - Affected specs: `mcp-server`
 - Affected code: `packages/docx-core/src/primitives/layout.ts`,
+  `track-changes-emitter.ts` (`recordPPrChange`), `paragraph_numbering.ts`,
   `DocxDocument`, `packages/docx-mcp/src/tools/format_layout.ts`,
   `tool_catalog.ts`, the Google Docs `format_layout` adapter and generated
   tool documentation
