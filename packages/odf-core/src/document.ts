@@ -19,7 +19,12 @@ import { collectBlocks } from './shared/odf/blocks.js';
 import { addAnnotation, readAnnotations, type AddAnnotationResult, type OdfComment } from './comments.js';
 
 export type OdfParagraph = {
-  /** Deterministic structural ID (document-order ordinal), stable for identical bytes. */
+  /**
+   * Deterministic structural ID (session-stable p0..pN). Initial paragraphs are assigned
+   * p0..pN-1 in document order, existing IDs remain stable across session insertions,
+   * and new paragraphs are allocated monotonically. Reopening the document deterministically
+   * renumbers stored document order.
+   */
   id: string;
   /** Visible text with `text:s` expanded to spaces and `text:tab` to a tab. */
   text: string;
@@ -49,12 +54,26 @@ export type AddCommentResult =
 
 export class OdfDocument {
   private doc: Document;
-  /** Block-level text elements in document order; index is the structural ID ordinal. */
+  /** Block-level text elements in document order. */
   private blocks: Element[];
+  /** Bidirectional mapping between element and session paragraph ID. */
+  private idToBlock: Map<string, Element>;
+  private blockToId: Map<Element, string>;
+  /** Monotonic counter for allocating new session paragraph IDs. */
+  private nextIdIndex: number;
 
-  private constructor(doc: Document, blocks: Element[]) {
+  private constructor(
+    doc: Document,
+    blocks: Element[],
+    idToBlock: Map<string, Element>,
+    blockToId: Map<Element, string>,
+    nextIdIndex: number,
+  ) {
     this.doc = doc;
     this.blocks = blocks;
+    this.idToBlock = idToBlock;
+    this.blockToId = blockToId;
+    this.nextIdIndex = nextIdIndex;
   }
 
   /** Parse a `content.xml` string into a document view. */
@@ -62,24 +81,24 @@ export class OdfDocument {
     const doc = parseXml(contentXml);
     const blocks: Element[] = [];
     collectBlocks(doc.documentElement, blocks);
-    return new OdfDocument(doc, blocks);
-  }
-
-  private idForIndex(index: number): string {
-    return `p${index}`;
+    const idToBlock = new Map<string, Element>();
+    const blockToId = new Map<Element, string>();
+    blocks.forEach((el, i) => {
+      const id = `p${i}`;
+      idToBlock.set(id, el);
+      blockToId.set(el, id);
+    });
+    return new OdfDocument(doc, blocks, idToBlock, blockToId, blocks.length);
   }
 
   private blockForId(id: string): Element | null {
-    const m = /^p(\d+)$/.exec(id);
-    if (!m) return null;
-    const idx = Number.parseInt(m[1]!, 10);
-    return this.blocks[idx] ?? null;
+    return this.idToBlock.get(id) ?? null;
   }
 
-  /** All paragraphs in document order. */
+  /** All paragraphs in document order with session-stable paragraph IDs. */
   getParagraphs(): OdfParagraph[] {
-    return this.blocks.map((el, i) => ({
-      id: this.idForIndex(i),
+    return this.blocks.map((el) => ({
+      id: this.blockToId.get(el)!,
       text: buildSegments(el).visible,
     }));
   }
@@ -132,13 +151,13 @@ export class OdfDocument {
    * `text` is split on blank lines (`\n{2,}`) into separate `text:p` blocks (parity with
    * the DOCX `insert_paragraph` tool); a single `\n` within a block becomes a
    * `text:line-break`. Inserted blocks inherit the anchor's `text:style-name` ONLY when
-   * the anchor is itself a `text:p` — inserting after a heading (`text:h`) produces
+   * the anchor is itself a `text:p` - inserting after a heading (`text:h`) produces
    * default body paragraphs, never more headings.
    *
-   * Paragraph IDs are positional ordinals, so every ID at or after the insertion point
-   * shifts by the number of inserted blocks. Returns the inserted blocks' freshly
-   * recomputed IDs in document order; callers must re-read before issuing further edits
-   * that target IDs near or after the insertion point.
+   * Initial p0..pN identities on existing elements are preserved across session insertions
+   * without retargeting IDs, while newly inserted blocks are allocated fresh IDs monotonically.
+   * Insertion updates document order, and reopening the document deterministically renumbers
+   * stored document order.
    */
   insertParagraph(id: string, text: string, position: 'BEFORE' | 'AFTER'): InsertResult {
     const anchor = this.blockForId(id);
@@ -175,12 +194,21 @@ export class OdfDocument {
       parent.insertBefore(el, refNode);
     }
 
-    // Rebuild the structural block index; positional IDs shift accordingly.
+    // Rebuild the structural block index to reflect the updated document order.
     const blocks: Element[] = [];
     collectBlocks(this.doc.documentElement, blocks);
     this.blocks = blocks;
 
-    const newIds = newEls.map((el) => this.idForIndex(blocks.indexOf(el)));
+    // Existing paragraph IDs are preserved across session insertions.
+    // Allocate new IDs monotonically for the newly inserted elements.
+    const newIds: string[] = [];
+    for (const el of newEls) {
+      const newId = `p${this.nextIdIndex++}`;
+      this.idToBlock.set(newId, el);
+      this.blockToId.set(el, newId);
+      newIds.push(newId);
+    }
+
     return { ok: true, newIds };
   }
 
