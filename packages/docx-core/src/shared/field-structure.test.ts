@@ -10,6 +10,7 @@ import {
   validateFieldStructure,
   validateStrictFieldStructure,
   collectFieldStructureIssues,
+  FieldTracker,
 } from './field-structure.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 
@@ -116,3 +117,101 @@ test(
     });
   },
 );
+
+test('FieldTracker tracks nested fields, code/result regions, and text visibility', () => {
+  const tracker = new FieldTracker({ strict: true });
+  expect(tracker.depth).toBe(0);
+  expect(tracker.isInsideField).toBe(false);
+  expect(tracker.isTextVisible()).toBe(true);
+
+  // Begin outer field
+  tracker.advanceFieldChar('begin');
+  expect(tracker.depth).toBe(1);
+  expect(tracker.isInsideFieldCode()).toBe(true);
+  expect(tracker.isInsideFieldResult()).toBe(false);
+  expect(tracker.isTextVisible()).toBe(false);
+
+  // Begin nested inner field inside instruction
+  tracker.advanceFieldChar('begin');
+  expect(tracker.depth).toBe(2);
+  expect(tracker.isInsideFieldCode()).toBe(true);
+  expect(tracker.isTextVisible()).toBe(false);
+
+  // Inner field separate & end
+  tracker.advanceFieldChar('separate');
+  expect(tracker.isInsideFieldCode()).toBe(true); // Outer is still in code!
+  expect(tracker.isTextVisible()).toBe(false);
+
+  tracker.advanceFieldChar('end');
+  expect(tracker.depth).toBe(1);
+  expect(tracker.isInsideFieldCode()).toBe(true);
+
+  // Outer field separate
+  tracker.advanceFieldChar('separate');
+  expect(tracker.depth).toBe(1);
+  expect(tracker.isInsideFieldCode()).toBe(false);
+  expect(tracker.isInsideFieldResult()).toBe(true);
+  expect(tracker.isTextVisible()).toBe(true);
+
+  // Outer field end
+  tracker.advanceFieldChar('end');
+  expect(tracker.depth).toBe(0);
+  expect(tracker.isInsideField).toBe(false);
+  expect(tracker.isTextVisible()).toBe(true);
+});
+
+test('FieldTracker handles optional separators and recovers in tolerant mode', () => {
+  const tolerantTracker = new FieldTracker({ strict: false });
+
+  // Optional separator field (e.g. { PAGE })
+  tolerantTracker.advanceFieldChar('begin');
+  expect(tolerantTracker.depth).toBe(1);
+  expect(tolerantTracker.isInsideFieldCode()).toBe(true);
+  tolerantTracker.advanceFieldChar('end');
+  expect(tolerantTracker.depth).toBe(0);
+  expect(tolerantTracker.isTextVisible()).toBe(true);
+
+  // Stray separate in tolerant mode
+  tolerantTracker.advanceFieldChar('separate');
+  expect(tolerantTracker.depth).toBe(0);
+
+  // Stray end in tolerant mode
+  tolerantTracker.advanceFieldChar('end');
+  expect(tolerantTracker.depth).toBe(0);
+
+  // Duplicate separate in tolerant mode
+  tolerantTracker.advanceFieldChar('begin');
+  tolerantTracker.advanceFieldChar('separate');
+  expect(tolerantTracker.isInsideFieldResult()).toBe(true);
+  tolerantTracker.advanceFieldChar('separate'); // Duplicate
+  expect(tolerantTracker.isInsideFieldResult()).toBe(true);
+  tolerantTracker.advanceFieldChar('end');
+  expect(tolerantTracker.depth).toBe(0);
+});
+
+test('FieldTracker reports stray, duplicate, and unclosed markers in strict mode', () => {
+  const issues: string[] = [];
+  const strictTracker = new FieldTracker({
+    strict: true,
+    story: 'test-story',
+    onIssue: (i) => issues.push(i.code),
+  });
+
+  strictTracker.advanceFieldChar('separate');
+  expect(issues).toContain('FIELD_STRAY_SEPARATOR');
+
+  strictTracker.advanceFieldChar('end');
+  expect(issues).toContain('FIELD_STRAY_END');
+
+  strictTracker.advanceFieldChar('begin');
+  strictTracker.advanceFieldChar('separate');
+  strictTracker.advanceFieldChar('separate');
+  expect(issues).toContain('FIELD_DUPLICATE_SEPARATOR');
+
+  strictTracker.advanceFieldChar('begin');
+  strictTracker.finishStory();
+  expect(issues).toContain('FIELD_UNCLOSED_DEPTH');
+
+  strictTracker.reset();
+  expect(strictTracker.depth).toBe(0);
+});

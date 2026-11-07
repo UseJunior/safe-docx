@@ -13,6 +13,165 @@ export type FieldStructureIssue = {
   element?: string;
 };
 
+export interface FieldTrackerOptions {
+  /**
+   * If true, records structural issues on stray, duplicate, or unclosed field markers,
+   * or misplaced instruction text. If false (tolerant mode), recovers gracefully without recording issues.
+   */
+  strict?: boolean;
+  story?: string;
+  onIssue?: (issue: FieldStructureIssue) => void;
+}
+
+/**
+ * Shared stack machinery tracking nested complex-field state transitions across document order.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ */
+export class FieldTracker {
+  private separators: boolean[] = [];
+  readonly strict: boolean;
+  readonly story: string;
+  private readonly onIssue?: (issue: FieldStructureIssue) => void;
+
+  constructor(options: FieldTrackerOptions = {}) {
+    this.strict = options.strict ?? false;
+    this.story = options.story ?? 'document';
+    this.onIssue = options.onIssue;
+  }
+
+  get depth(): number {
+    return this.separators.length;
+  }
+
+  get isInsideField(): boolean {
+    return this.separators.length > 0;
+  }
+
+  /**
+   * Returns true when the traversal is currently inside an open field's code / instruction
+   * region (i.e. at least one enclosing open field has not passed its separator).
+   */
+  isInsideFieldCode(): boolean {
+    for (let i = 0; i < this.separators.length; i++) {
+      if (!this.separators[i]) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Returns true when the traversal is inside a field result region (depth > 0 and all
+   * open field levels have passed their separator).
+   */
+  isInsideFieldResult(): boolean {
+    return this.separators.length > 0 && !this.isInsideFieldCode();
+  }
+
+  /**
+   * True if run text (w:t, w:tab, w:br) at this location is visible in reading output.
+   * Invisible if inside any enclosing field's instruction code.
+   */
+  isTextVisible(): boolean {
+    return !this.isInsideFieldCode();
+  }
+
+  /**
+   * Advance tracker on encountering a w:fldChar element or its fldCharType attribute.
+   */
+  advanceFieldChar(fldCharType: string | null | undefined, element: string = 'w:fldChar'): void {
+    if (fldCharType === 'begin') {
+      this.separators.push(false);
+    } else if (fldCharType === 'separate') {
+      if (this.separators.length === 0) {
+        if (this.strict) {
+          this.report(
+            'FIELD_STRAY_SEPARATOR',
+            `Field separator appears outside an open field in ${this.story}`,
+            element,
+          );
+        }
+      } else {
+        const depthIndex = this.separators.length - 1;
+        if (this.separators[depthIndex]) {
+          if (this.strict) {
+            this.report(
+              'FIELD_DUPLICATE_SEPARATOR',
+              `Field at depth ${this.separators.length} has more than one separator in ${this.story}`,
+              element,
+            );
+          }
+        } else {
+          this.separators[depthIndex] = true;
+        }
+      }
+    } else if (fldCharType === 'end') {
+      if (this.separators.length === 0) {
+        if (this.strict) {
+          this.report(
+            'FIELD_STRAY_END',
+            `Field end appears outside an open field in ${this.story}`,
+            element,
+          );
+        }
+      } else {
+        this.separators.pop();
+      }
+    } else {
+      if (this.strict) {
+        this.report(
+          'FIELD_UNKNOWN_CHAR_TYPE',
+          `w:fldChar has missing or unknown w:fldCharType '${fldCharType ?? '(missing)'}' in ${this.story}`,
+          element,
+        );
+      }
+    }
+  }
+
+  /**
+   * Check w:instrText placement. In strict mode, w:instrText must appear inside an open field code region.
+   */
+  checkInstructionText(element: string = 'w:instrText'): void {
+    if (!this.isInsideFieldCode()) {
+      if (this.strict) {
+        this.report(
+          'INSTRUCTION_TEXT_OUTSIDE_FIELD_CODE',
+          'w:instrText must appear inside an open field code region',
+          element,
+        );
+      }
+    }
+  }
+
+  /**
+   * Finalize the story part. Reports any unclosed field depth in strict mode.
+   */
+  finishStory(): void {
+    if (this.separators.length > 0 && this.strict) {
+      this.report(
+        'FIELD_UNCLOSED_DEPTH',
+        `Field story ${this.story} ends with ${this.separators.length} unclosed field level(s)`,
+        'w:fldChar',
+      );
+    }
+  }
+
+  /**
+   * Reset the tracker stack to outside of all fields (e.g. at story boundaries).
+   */
+  reset(): void {
+    this.separators = [];
+  }
+
+  private report(code: string, message: string, element: string): void {
+    this.onIssue?.({
+      code,
+      message,
+      story: this.story,
+      element,
+    });
+  }
+}
+
 function isW(el: Element, localName: string): boolean {
   return el.namespaceURI === OOXML.W_NS && el.localName === localName;
 }
@@ -101,11 +260,11 @@ export function validateFieldStructure(input: string | FieldStory[]): boolean {
 function collectStrictStackIssuesForStory(xml: string, story: string): FieldStructureIssue[] {
   const root = parseXml(xml).documentElement;
   const issues: FieldStructureIssue[] = [];
-  const separators: boolean[] = [];
-
-  function push(code: string, message: string): void {
-    issues.push({ code, message, story, element: 'w:fldChar' });
-  }
+  const tracker = new FieldTracker({
+    strict: true,
+    story,
+    onIssue: (issue) => issues.push(issue),
+  });
 
   function scan(node: Element): void {
     for (let child = node.firstChild; child; child = child.nextSibling) {
@@ -113,46 +272,14 @@ function collectStrictStackIssuesForStory(xml: string, story: string): FieldStru
       const element = child as Element;
       if (isW(element, 'fldChar')) {
         const type = getWAttr(element, 'fldCharType');
-        if (type === 'begin') {
-          separators.push(false);
-        } else if (type === 'separate') {
-          if (separators.length === 0) {
-            push('FIELD_STRAY_SEPARATOR', `Field separator appears outside an open field in ${story}`);
-          } else {
-            const depthIndex = separators.length - 1;
-            if (separators[depthIndex]) {
-              push(
-                'FIELD_DUPLICATE_SEPARATOR',
-                `Field at depth ${separators.length} has more than one separator in ${story}`,
-              );
-            } else {
-              separators[depthIndex] = true;
-            }
-          }
-        } else if (type === 'end') {
-          if (separators.length === 0) {
-            push('FIELD_STRAY_END', `Field end appears outside an open field in ${story}`);
-          } else {
-            separators.pop();
-          }
-        } else {
-          push(
-            'FIELD_UNKNOWN_CHAR_TYPE',
-            `w:fldChar has missing or unknown w:fldCharType '${type ?? '(missing)'}' in ${story}`,
-          );
-        }
+        tracker.advanceFieldChar(type);
       }
       scan(element);
     }
   }
 
   scan(root);
-  if (separators.length > 0) {
-    push(
-      'FIELD_UNCLOSED_DEPTH',
-      `Field story ${story} ends with ${separators.length} unclosed field level(s)`,
-    );
-  }
+  tracker.finishStory();
   return issues;
 }
 
@@ -216,8 +343,7 @@ function collectFieldStructureIssuesForStory(documentXml: string, story: string)
     return issues;
   }
 
-  let depth = 0;
-  const pastSeparatorAtDepth: number[] = [];
+  const tracker = new FieldTracker({ strict: false, story });
   let insideDelDepth = 0;
   // Move sources may retain ordinary w:t. Continue accepting legacy delText
   // there, but only a true deletion requires deletion text vocabulary.
@@ -225,13 +351,6 @@ function collectFieldStructureIssuesForStory(documentXml: string, story: string)
 
   function push(code: string, message: string, element: string): void {
     issues.push({ code, message, story, element });
-  }
-
-  function isInsideOpenFieldCodeRegion(): boolean {
-    for (let fieldDepth = 1; fieldDepth <= depth; fieldDepth++) {
-      if (!pastSeparatorAtDepth[fieldDepth]) return true;
-    }
-    return false;
   }
 
   function scan(node: Element): void {
@@ -262,23 +381,16 @@ function collectFieldStructureIssuesForStory(documentXml: string, story: string)
         // from a research summary rather than the standard; enforcing it left
         // deleted fields as unrenderable husks. See insertWholeDeletedField.
         const type = getWAttr(el, 'fldCharType');
-        if (type === 'begin') {
-          depth++;
-          pastSeparatorAtDepth[depth] = 0;
-        } else if (type === 'separate') {
-          if (depth > 0) pastSeparatorAtDepth[depth] = 1;
-        } else if (type === 'end') {
-          if (depth > 0) depth--;
-        }
+        tracker.advanceFieldChar(type);
       } else if (isW(el, 'instrText')) {
-        if (!isInsideOpenFieldCodeRegion()) {
+        if (!tracker.isInsideFieldCode()) {
           push('INSTRUCTION_TEXT_OUTSIDE_FIELD_CODE', 'w:instrText must appear inside an open field code region', 'w:instrText');
         }
       } else if (isW(el, 'delInstrText')) {
         if (insideDelDepth === 0) {
           push('DELETED_INSTRUCTION_TEXT_OUTSIDE_DELETION', 'w:delInstrText must appear inside w:del', 'w:delInstrText');
         }
-        if (!isInsideOpenFieldCodeRegion()) {
+        if (!tracker.isInsideFieldCode()) {
           push('DELETED_INSTRUCTION_TEXT_OUTSIDE_FIELD_CODE', 'w:delInstrText must appear inside an open field code region', 'w:delInstrText');
         }
       } else if (isW(el, 't') && insideDelDepth > 0) {

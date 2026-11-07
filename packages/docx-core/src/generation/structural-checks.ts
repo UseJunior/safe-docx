@@ -16,6 +16,7 @@ import { NODE_TYPE } from '../primitives/dom-helpers.js';
 import { OOXML } from '../primitives/namespaces.js';
 import { parseXml } from '../primitives/xml.js';
 import { DocxZip } from '../primitives/zip.js';
+import { FieldTracker } from '../shared/field-structure.js';
 
 export type StructuralIssue = {
   check:
@@ -268,46 +269,51 @@ function checkFieldPairing(contents: Map<string, string>): StructuralIssue[] {
   for (const [name, text] of contents) {
     if (!isStoryPart(name)) continue;
     const doc = parseXml(text);
-    // Document-order walk over field-relevant leaves; fldChar transitions
-    // drive a begin → separate → end state machine per story part.
-    let state: 'idle' | 'instr' | 'result' = 'idle';
+    const tracker = new FieldTracker({
+      strict: true,
+      story: name,
+      onIssue: (issue) => {
+        let message = issue.message;
+        if (issue.code === 'FIELD_STRAY_SEPARATOR') {
+          message = 'fldChar separate without a matching begin';
+        } else if (issue.code === 'FIELD_DUPLICATE_SEPARATOR') {
+          message = 'fldChar separate duplicate on already-separated field';
+        } else if (issue.code === 'FIELD_STRAY_END') {
+          message = 'fldChar end without a matching begin';
+        } else if (issue.code === 'FIELD_UNCLOSED_DEPTH') {
+          message = 'Unclosed field at end of story part';
+        } else if (issue.code === 'INSTRUCTION_TEXT_OUTSIDE_FIELD_CODE') {
+          message = 'w:instrText outside a begin→separate range';
+        }
+        issues.push({
+          check: 'field_pairing',
+          part: name,
+          message,
+        });
+      },
+    });
+
     const visit = (el: Element) => {
-      if (el.tagName === 'w:fldChar') {
-        const type = el.getAttribute('w:fldCharType');
-        if (type === 'begin') {
-          if (state !== 'idle') {
-            issues.push({ check: 'field_pairing', part: name, message: 'fldChar begin while a field is already open' });
-          }
-          state = 'instr';
-        } else if (type === 'separate') {
-          if (state !== 'instr') {
-            issues.push({ check: 'field_pairing', part: name, message: 'fldChar separate without a matching begin' });
-          }
-          state = 'result';
-        } else if (type === 'end') {
-          if (state === 'idle') {
-            issues.push({ check: 'field_pairing', part: name, message: 'fldChar end without a matching begin' });
-          }
-          state = 'idle';
-        }
-      } else if (el.tagName === 'w:instrText') {
-        if (state !== 'instr') {
-          issues.push({
-            check: 'field_pairing',
-            part: name,
-            message: 'w:instrText outside a begin→separate range',
-          });
-        }
+      const isFldChar = el.tagName === 'w:fldChar' || (el.namespaceURI === OOXML.W_NS && el.localName === 'fldChar');
+      const isInstrText = el.tagName === 'w:instrText' || (el.namespaceURI === OOXML.W_NS && el.localName === 'instrText');
+
+      if (isFldChar) {
+        const type = el.getAttributeNS(OOXML.W_NS, 'fldCharType') ??
+          el.getAttribute('w:fldCharType') ??
+          el.getAttribute('fldCharType');
+        tracker.advanceFieldChar(type);
+      } else if (isInstrText) {
+        tracker.checkInstructionText();
       }
+
       for (let i = 0; i < el.childNodes.length; i++) {
         const child = el.childNodes[i]!;
         if (child.nodeType === NODE_TYPE.ELEMENT) visit(child as Element);
       }
     };
+
     if (doc.documentElement) visit(doc.documentElement);
-    if (state !== 'idle') {
-      issues.push({ check: 'field_pairing', part: name, message: 'Unclosed field at end of story part' });
-    }
+    tracker.finishStory();
   }
   return issues;
 }
