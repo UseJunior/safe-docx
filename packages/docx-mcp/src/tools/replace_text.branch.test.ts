@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { getParagraphRuns, readZipText } from '@usejunior/docx-core';
+import { getParagraphRuns, readZipText, serializeXml } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { replaceText } from './replace_text.js';
 import { readFile } from './read_file.js';
@@ -65,6 +65,38 @@ describe('replace_text branch coverage', () => {
         instruction: tc.expected,
       });
       assertFailure(result, tc.expected, tc.newString);
+    }
+  });
+
+  test('rejects invalid replacement font sizes and leaves document XML and edit counters unchanged', async () => {
+    const opened = await openSession(['replace target text']);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
+    const paraId = firstParaIdFromToon(opened.content);
+    const xmlBefore = serializeXml(session.doc.getDocumentXmlClone());
+    const editCountBefore = session.editCount;
+    const editRevisionBefore = session.editRevision;
+
+    const invalidFontMarkup = [
+      '<font size="0">invalid</font>',
+      '<font size="-1">invalid</font>',
+      '<font size="NaN">invalid</font>',
+      '<font size="Infinity">invalid</font>',
+      '<font size="1e308">invalid</font>',
+      '<font size="">invalid</font>',
+    ];
+
+    for (const markup of invalidFontMarkup) {
+      const result = await replaceText(opened.mgr, {
+        file_path: opened.filePath,
+        target_paragraph_id: paraId,
+        old_string: 'replace target text',
+        new_string: markup,
+        instruction: 'reject invalid font size',
+      });
+      assertFailure(result, 'INVALID_FONT_SIZE', markup);
+      expect(serializeXml(session.doc.getDocumentXmlClone())).toBe(xmlBefore);
+      expect(session.editCount).toBe(editCountBefore);
+      expect(session.editRevision).toBe(editRevisionBefore);
     }
   });
 

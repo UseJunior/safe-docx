@@ -1,3 +1,4 @@
+import { serializeXml } from '@usejunior/docx-core';
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { insertParagraph } from './insert_paragraph.js';
@@ -77,6 +78,41 @@ describe('insert_paragraph branch coverage', () => {
       });
       assertFailure(result, tc.expected, tc.newString);
     }
+  });
+
+  test('rejects invalid font sizes and leaves document XML and edit counters unchanged, including later paragraph', async () => {
+    const opened = await openSession(['Anchor paragraph.']);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
+    const paraId = firstParaIdFromToon(opened.content);
+    const xmlBefore = serializeXml(session.doc.getDocumentXmlClone());
+    const editCountBefore = session.editCount;
+    const editRevisionBefore = session.editRevision;
+
+    // Single paragraph with invalid font size
+    const singleResult = await insertParagraph(opened.mgr, {
+      file_path: opened.filePath,
+      positional_anchor_node_id: paraId,
+      new_string: '<font size="0">invalid size</font>',
+      instruction: 'reject invalid font size',
+      position: 'AFTER',
+    });
+    assertFailure(singleResult, 'INVALID_FONT_SIZE', 'single paragraph invalid font size');
+    expect(serializeXml(session.doc.getDocumentXmlClone())).toBe(xmlBefore);
+    expect(session.editCount).toBe(editCountBefore);
+    expect(session.editRevision).toBe(editRevisionBefore);
+
+    // Multi-paragraph where the second/later paragraph has invalid font size
+    const multiResult = await insertParagraph(opened.mgr, {
+      file_path: opened.filePath,
+      positional_anchor_node_id: paraId,
+      new_string: 'Valid first paragraph.\n\n<font size="-1">Invalid second paragraph.</font>',
+      instruction: 'reject invalid font size in second paragraph',
+      position: 'AFTER',
+    });
+    assertFailure(multiResult, 'INVALID_FONT_SIZE', 'later paragraph invalid font size');
+    expect(serializeXml(session.doc.getDocumentXmlClone())).toBe(xmlBefore);
+    expect(session.editCount).toBe(editCountBefore);
+    expect(session.editRevision).toBe(editRevisionBefore);
   });
 
   test('applies <font> tags in inserted paragraph text', async () => {

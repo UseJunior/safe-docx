@@ -401,13 +401,31 @@ function walkNode(
         // additional emitter-owned entity layer here; getAttribute returns ""
         // for absent attrs, so use || null to normalize empty strings.
         const colorAttr = decodeFormattingAttribute(el.getAttribute('color') || null);
-        const sizeAttr = decodeFormattingAttribute(el.getAttribute('size') || null);
         const faceAttr = decodeFormattingAttribute(el.getAttribute('face') || null);
+
+        let fontSize = state.fontSize;
+        if (el.hasAttribute('size')) {
+          const rawSize = el.getAttribute('size');
+          const decoded = decodeFormattingAttribute(rawSize);
+          const trimmed = decoded !== null ? decoded.trim() : '';
+          const num = trimmed.length > 0 ? Number(trimmed) : Number.NaN;
+          const halfPoints = num * 2;
+          if (
+            Number.isNaN(num) ||
+            !Number.isFinite(num) ||
+            num <= 0 ||
+            !Number.isFinite(halfPoints) ||
+            halfPoints <= 0
+          ) {
+            throw new Error('INVALID_FONT_SIZE');
+          }
+          fontSize = halfPoints;
+        }
 
         const newState: ParsedSegmentState = {
           ...state,
           color: colorAttr ?? state.color,
-          fontSize: sizeAttr ? Number(sizeAttr) * 2 : state.fontSize, // pt → half-points
+          fontSize,
           fontName: faceAttr ?? state.fontName,
         };
         walkNode(el, newState, out);
