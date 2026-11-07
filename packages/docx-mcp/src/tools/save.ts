@@ -10,7 +10,208 @@ import {
 } from '@usejunior/docx-core';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
 import { getAiRevisionBaseline, splitIntroducedDiagnostics } from './ai_revision_guard.js';
-import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
+import { randomUUID } from 'node:crypto';
+import { enforceWritePathPolicy, resolvesToSamePath, type PathPolicyOutcome } from './path_policy.js';
+
+export type RollbackFailure = {
+  path: string;
+  error: string;
+};
+
+export type SaveWriteHooks = {
+  /** Hook called right before publishing a staged file to its destination. */
+  beforePublish?: (info: { destination: string; stagingPath: string; index: number }) => Promise<void> | void;
+  /** Hook called right before restoring an existing file from backup during rollback. */
+  beforeRestore?: (info: { destination: string; backupPath: string }) => Promise<void> | void;
+  /** Hook called right before unlinking a new file during rollback. */
+  beforeRemoveNew?: (info: { destination: string }) => Promise<void> | void;
+  /** Hook called right before writing a staging file. */
+  beforeStage?: (info: { destination: string; stagingPath: string; index: number }) => Promise<void> | void;
+};
+
+export class SaveStageError extends Error {
+  rollbackFailures: RollbackFailure[];
+  originalError: unknown;
+
+  constructor(message: string, originalError: unknown, rollbackFailures: RollbackFailure[] = []) {
+    super(message);
+    this.name = 'SaveStageError';
+    this.originalError = originalError;
+    this.rollbackFailures = rollbackFailures;
+  }
+}
+
+/**
+ * Stages paired save writes in destination directories and publishes them with backups,
+ * restoring original files and removing newly created files on ordinary failure.
+ *
+ * Atomicity note: Staging and renaming within each destination's directory provides atomic
+ * directory entry replacement on supported filesystems. However, when paired outputs (clean
+ * and tracked) reside on different filesystems or mount points, cross-filesystem crash
+ * atomicity cannot be guaranteed across power-loss or kernel crash events.
+ */
+export async function stageAndPublishFiles(
+  files: Array<{ destination: string; buffer: Buffer }>,
+  hooks?: SaveWriteHooks,
+): Promise<void> {
+  if (files.length === 0) return;
+
+  const stagedEntries: Array<{
+    destination: string;
+    stagingPath: string;
+    buffer: Buffer;
+  }> = [];
+
+  // Stage 1: Stage all files in their respective destination directories
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]!;
+      const destDir = path.dirname(file.destination);
+      await fs.mkdir(destDir, { recursive: true });
+      const stagingName = `.${path.basename(file.destination)}.staging-${process.pid}-${Date.now()}-${randomUUID()}`;
+      const stagingPath = path.join(destDir, stagingName);
+      if (hooks?.beforeStage) {
+        await hooks.beforeStage({ destination: file.destination, stagingPath, index: i });
+      }
+      await fs.writeFile(stagingPath, new Uint8Array(file.buffer));
+      stagedEntries.push({
+        destination: file.destination,
+        stagingPath,
+        buffer: file.buffer,
+      });
+    }
+  } catch (stageErr) {
+    for (const entry of stagedEntries) {
+      try {
+        await fs.unlink(entry.stagingPath);
+      } catch {
+        // ignore cleanup error
+      }
+    }
+    throw new SaveStageError(errorMessage(stageErr), stageErr, []);
+  }
+
+  // Stage 2: Publish staged files with backups
+  const publishedEntries: Array<{
+    destination: string;
+    stagingPath: string;
+    backupPath: string | null;
+    existed: boolean;
+  }> = [];
+
+  const backupsToCleanup: string[] = [];
+
+  try {
+    for (let i = 0; i < stagedEntries.length; i++) {
+      const entry = stagedEntries[i]!;
+      const dest = entry.destination;
+      const stagingPath = entry.stagingPath;
+
+      if (hooks?.beforePublish) {
+        await hooks.beforePublish({ destination: dest, stagingPath, index: i });
+      }
+
+      let existed = false;
+      try {
+        await fs.stat(dest);
+        existed = true;
+      } catch {
+        existed = false;
+      }
+
+      let backupPath: string | null = null;
+      if (existed) {
+        const backupName = `.${path.basename(dest)}.backup-${process.pid}-${Date.now()}-${randomUUID()}`;
+        backupPath = path.join(path.dirname(dest), backupName);
+        await fs.rename(dest, backupPath);
+        backupsToCleanup.push(backupPath);
+      }
+
+      await fs.rename(stagingPath, dest);
+
+      publishedEntries.push({
+        destination: dest,
+        stagingPath,
+        backupPath,
+        existed,
+      });
+    }
+
+    // Success: clean up backups
+    for (const backup of backupsToCleanup) {
+      try {
+        await fs.unlink(backup);
+      } catch {
+        // ignore backup removal error on success
+      }
+    }
+  } catch (publishErr) {
+    // Ordinary failure during publish: execute rollback recovery
+    const rollbackFailures: RollbackFailure[] = [];
+
+    // Roll back already-published items in reverse order
+    for (const pub of [...publishedEntries].reverse()) {
+      if (pub.existed && pub.backupPath) {
+        try {
+          if (hooks?.beforeRestore) {
+            await hooks.beforeRestore({ destination: pub.destination, backupPath: pub.backupPath });
+          }
+          try {
+            await fs.unlink(pub.destination);
+          } catch {
+            // might not exist if rename had failed
+          }
+          await fs.rename(pub.backupPath, pub.destination);
+        } catch (restoreErr) {
+          rollbackFailures.push({
+            path: pub.destination,
+            error: `Failed to restore original file from backup (${pub.backupPath}): ${errorMessage(restoreErr)}`,
+          });
+        }
+      } else {
+        try {
+          if (hooks?.beforeRemoveNew) {
+            await hooks.beforeRemoveNew({ destination: pub.destination });
+          }
+          await fs.unlink(pub.destination);
+        } catch (removeErr) {
+          try {
+            await fs.stat(pub.destination);
+            rollbackFailures.push({
+              path: pub.destination,
+              error: `Failed to remove new file during rollback: ${errorMessage(removeErr)}`,
+            });
+          } catch {
+            // file removed or doesn't exist
+          }
+        }
+      }
+    }
+
+    // Clean up any remaining staging files
+    for (const entry of stagedEntries) {
+      try {
+        await fs.unlink(entry.stagingPath);
+      } catch {
+        // already moved or unlinked
+      }
+    }
+
+    // Clean up any remaining backups that were not restored
+    for (const backup of backupsToCleanup) {
+      const isFailedBackup = rollbackFailures.some((rf) => rf.error.includes(backup));
+      if (!isFailedBackup) {
+        try {
+          await fs.unlink(backup);
+        } catch {
+          // already restored or deleted
+        }
+      }
+    }
+
+    throw new SaveStageError(errorMessage(publishErr), publishErr, rollbackFailures);
+  }
+}
 
 type SaveFormat = 'clean' | 'tracked' | 'both';
 type SaveRevisionSummary = { count: number; author: string; ids?: number[] };
@@ -136,6 +337,7 @@ export async function save(
     // tool. Accepted for backward compatibility but no longer affect the save path.
     tracked_changes_engine?: 'auto' | 'atomizer';
     fail_on_rebuild_fallback?: boolean;
+    _testHooks?: SaveWriteHooks;
   },
 ): Promise<ToolResponse> {
   try {
@@ -342,6 +544,19 @@ export async function save(
           : defaultTrackedPath(savePath, exportTimestamp);
     }
 
+    // Preflight both destinations before any writes or directory creation.
+    let cleanPolicy: PathPolicyOutcome | undefined;
+    if (format === 'clean' || format === 'both') {
+      cleanPolicy = await enforceWritePathPolicy(savePath);
+      if (!cleanPolicy.ok) return cleanPolicy.response;
+    }
+
+    let trackedPolicy: PathPolicyOutcome | undefined;
+    if ((format === 'tracked' || format === 'both') && trackedPath) {
+      trackedPolicy = await enforceWritePathPolicy(trackedPath);
+      if (!trackedPolicy.ok) return trackedPolicy.response;
+    }
+
     // Compare against the original via realpath (issue #313) so a symlinked save_to_local_path pointing
     // back at the source can't slip past a purely lexical check and overwrite the original through the link.
     if (!allowOverwrite) {
@@ -361,18 +576,31 @@ export async function save(
       }
     }
 
+    // Preflight destinations: reject aliased outputs before any writes.
+    if (
+      format === 'both'
+      && trackedPath
+      && (
+        (cleanPolicy?.ok && trackedPolicy?.ok && cleanPolicy.resolvedPath === trackedPolicy.resolvedPath)
+        || await resolvesToSamePath(savePath, trackedPath)
+      )
+    ) {
+      return err(
+        'ALIASED_OUTPUT_PATHS',
+        `Refusing to save: clean and tracked output destinations resolve to the same path (${savePath})`,
+        "Provide distinct paths for clean and tracked outputs, or set save_format='clean' or 'tracked'.",
+      );
+    }
+
+    const filesToWrite: Array<{ destination: string; buffer: Buffer }> = [];
     if (format === 'clean' || format === 'both') {
-      const cleanPolicy = await enforceWritePathPolicy(savePath);
-      if (!cleanPolicy.ok) return cleanPolicy.response;
-      await fs.mkdir(path.dirname(savePath), { recursive: true });
-      await fs.writeFile(savePath, new Uint8Array(revisedBuffer));
+      filesToWrite.push({ destination: savePath, buffer: revisedBuffer });
     }
-    if (trackedPath && trackedBuffer) {
-      const trackedPolicy = await enforceWritePathPolicy(trackedPath);
-      if (!trackedPolicy.ok) return trackedPolicy.response;
-      await fs.mkdir(path.dirname(trackedPath), { recursive: true });
-      await fs.writeFile(trackedPath, new Uint8Array(trackedBuffer));
+    if ((format === 'tracked' || format === 'both') && trackedPath && trackedBuffer) {
+      filesToWrite.push({ destination: trackedPath, buffer: trackedBuffer });
     }
+
+    await stageAndPublishFiles(filesToWrite, params._testHooks);
 
     // Summarize the AI's revisions from the session's write-time markup (#126).
     // The clean artifact has accepted them away, so summarize the tracked
@@ -442,6 +670,25 @@ export async function save(
             : `${cacheHit ? 'Cached ' : ''}clean document saved to ${savePath} and tracked changes document saved to ${trackedPath}`),
     }, metadata));
   } catch (e: unknown) {
+    if (e instanceof SaveStageError) {
+      if (e.rollbackFailures.length > 0) {
+        const failedPaths = e.rollbackFailures.map((r) => r.path);
+        return {
+          ...err(
+            'SAVE_ERROR',
+            `Failed to save (${e.message}) and rollback failed for path(s): ${failedPaths.join(', ')}`,
+            'Manual recovery may be required for the affected paths.',
+          ),
+          rollback_failures: e.rollbackFailures,
+        };
+      }
+      const origCode = String(errorCode(e.originalError) ?? '').toUpperCase();
+      if (origCode === 'EACCES') {
+        return err('PERMISSION_DENIED', `Cannot write to: ${params.save_to_local_path}`, 'Try saving to ~/Downloads/ or ~/Documents/ instead.');
+      }
+      return err('SAVE_ERROR', `Failed to save: ${e.message}`, 'Check the path is valid and writable.');
+    }
+
     const msg = errorMessage(e);
     if (String(errorCode(e) ?? '').toUpperCase() === 'EACCES') {
       return err('PERMISSION_DENIED', `Cannot write to: ${params.save_to_local_path}`, 'Try saving to ~/Downloads/ or ~/Documents/ instead.');
