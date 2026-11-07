@@ -1,6 +1,6 @@
 import { describe, expect, afterEach } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { SessionManager, getRevisionContextForSession } from './manager.js';
+import { SessionManager, getRevisionContextForSession, type DocxSession } from './manager.js';
 import { makeDocxWithDocumentXml, makeMinimalDocx } from '../testing/docx_test_utils.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -97,6 +97,92 @@ describe('SessionManager.createSession', () => {
     expect(exists).toBe(false);
 
     tmpDirs.push(path.dirname(s2.tmpPath));
+  });
+
+  test('failed replacement preserves the old session and its artifacts', async () => {
+    const mgr = new SessionManager();
+    const filePath = await createTestFile(['initial text']);
+    const buf = await fs.readFile(filePath);
+    const s1 = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+    const s1TmpDir = path.dirname(s1.tmpPath);
+
+    // Attempt to replace with corrupt / invalid buffer
+    const badBuf = Buffer.from('PK\x03\x04corrupted-docx-archive');
+    await expect(mgr.createSession(badBuf, 'test.docx', filePath)).rejects.toThrow();
+
+    // Verify s1 is still the active published session
+    const current = mgr.getSessionByPath(filePath);
+    expect(current).not.toBeNull();
+    expect(current?.sessionId).toBe(s1.sessionId);
+
+    // Verify s1 temp directory is still alive
+    const s1Exists = await fs.stat(s1TmpDir).then(() => true).catch(() => false);
+    expect(s1Exists).toBe(true);
+
+    tmpDirs.push(s1TmpDir);
+  });
+
+  test('failed creation cleans up candidate directory', async () => {
+    const mgr = new SessionManager();
+    const nonExistentPath = path.join(os.tmpdir(), 'non-existent-file.docx');
+    const badBuf = Buffer.from('invalid-docx-payload');
+
+    await expect(mgr.createSession(badBuf, 'test.docx', nonExistentPath)).rejects.toThrow();
+    expect(mgr.getSessionByPath(nonExistentPath)).toBeNull();
+  });
+
+  test('candidate session is finalized before publication', async () => {
+    const mgr = new SessionManager();
+    const filePath = await createTestFile(['paragraph 1', 'paragraph 2']);
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+
+    // Published session must have normalization stats and bookmarks ready immediately
+    expect(session.normalizationStats).toBeDefined();
+    const published = mgr.getSessionByPath(filePath) as DocxSession;
+    expect(published).toBe(session);
+
+    const paragraphs = session.doc.getParagraphs();
+    expect(paragraphs.length).toBe(2);
+    tmpDirs.push(path.dirname(session.tmpPath));
+  });
+
+  test('expiry releases artifacts idempotently', async () => {
+    const mgr = new SessionManager({ ttlMs: 25 });
+    const filePath = await createTestFile(['expiring session']);
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+    const tmpDir = path.dirname(session.tmpPath);
+
+    expect(await fs.stat(tmpDir).then(() => true).catch(() => false)).toBe(true);
+
+    // Wait for TTL expiration
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    // Accessing expired session deletes it and cleans up artifacts
+    const retrieved = mgr.getSessionByPath(filePath);
+    expect(retrieved).toBeNull();
+    // Give async cleanup a tick to complete
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await fs.stat(tmpDir).then(() => true).catch(() => false)).toBe(false);
+
+    // Repeated cleanup is idempotent
+    await expect((mgr as any).cleanupSessionArtifacts(session)).resolves.not.toThrow();
+  });
+
+  test('cleanExpiredSessions purges expired sessions and releases artifacts', async () => {
+    const mgr = new SessionManager({ ttlMs: 25 });
+    const filePath = await createTestFile(['sweep session']);
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+    const tmpDir = path.dirname(session.tmpPath);
+
+    expect(await fs.stat(tmpDir).then(() => true).catch(() => false)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    const cleaned = await mgr.cleanExpiredSessions();
+    expect(cleaned).toContain(await mgr.canonicalizePath(filePath));
+    expect(await fs.stat(tmpDir).then(() => true).catch(() => false)).toBe(false);
   });
 });
 
