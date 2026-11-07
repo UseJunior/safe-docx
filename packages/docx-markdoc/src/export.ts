@@ -71,6 +71,10 @@ export function exportAdjacentRevisionPairs(
   after: MarkdocEditIR,
   options: { contextParagraphs?: number; labels?: Record<string, string> } = {},
 ): AdjacentRevisionPair[] {
+  if ([before, after].some((ir) => [...ir.scaffold, ...(ir.storyScaffold ?? [])]
+    .some((paragraph) => paragraph.originalTextFromSource))) {
+    throw new DocxMarkdocError('UNRESOLVED_SOURCE_TEXT', 'Resolve source-only edits before exporting adjacent revision pairs.');
+  }
   if (before.source.sha256 !== after.source.sha256) {
     throw new Error('Adjacent revisions must reference the same pinned source DOCX.');
   }

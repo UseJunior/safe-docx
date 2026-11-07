@@ -471,6 +471,11 @@ The same attribute applies to `insert-before` and `insert-after` when their
 anchor or `style-source` paragraph has mixed character formatting; without it,
 such an insertion fails closed rather than choosing the longest source run.
 
+Insertions consume their formatting donors before source edits are applied,
+while keeping the relative order of insertion declarations. An insertion cannot
+use a paragraph deleted by the same compilation as its anchor or style donor;
+preflight rejects that dependency with `CONFLICTING_INSERT_DEPENDENCY`.
+
 `format-source` only selects the inherited source template. It never authors
 new formatting. One generated replacement hunk may instead declare an explicit
 additive overlay using the closed `underline="single"` and
@@ -644,8 +649,15 @@ package, determinism, read-back and brownfield-import checks:
   token); the certificate lists it under `knownGenerated.joinedLines`. A word
   dropped from, added to or moved within that line still fails, unless the
   page's layout text shows the source reading in another place where the raw
-  text does not (the evidence is counted per page, not tied to the line). The
-  certificate's `pdf.words.limitations` states what the comparison cannot
+  text does not (the evidence is counted per page, not tied to the line). A
+  word that holds a dash, such as `re-evaluate`, can wrap right after the
+  dash, so the raw text ends one line with `re-` and starts the next with
+  `evaluate`. These are rejoined only when the dash token ends its raw line
+  and the alignment left exactly the joined word missing at that place; the
+  certificate lists them under `knownGenerated.wrappedHyphens`. A stray dash,
+  or one whose joined form is not that source word, still fails, and so does
+  a word wrapped across a page break or one whose fragment the alignment
+  matched to a neighbouring word spelled the same. The certificate's `pdf.words.limitations` states what the comparison cannot
   catch.
 - **Footnotes.** Each note read back from `word/footnotes.xml`, and where
   its reference sits, must match the source, with a negative control. The
@@ -951,3 +963,11 @@ const verdict = await renderPlainPdf({
 });
 // verdict.status: 'passed' | 'failed' | 'not_run'; verdict.pageTexts: each page's text, when extraction ran
 ```
+
+Annotation replies may be declared before their parents. Projection schedules
+parents first and rejects cyclic reply graphs. A reply projected as a comment
+requires its parent to be projected as a comment too.
+
+Both edit-pair export functions reject source-only IR whose omitted before text
+has not yet been resolved against the pinned source. Compile it first and export
+from the resulting IR.
