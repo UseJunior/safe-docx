@@ -13,6 +13,7 @@ import {
   formatTrackedInsertionTextRange,
   applyDocumentQuoteStyle,
   buildParagraphIndex,
+  getParagraphBookmarkId,
   getParagraphRuns,
   hasHighlightTags,
   hasHyperlinkTags,
@@ -123,6 +124,115 @@ function hiddenConstructRemovalWarning(label: string, tracked: boolean): string 
     : '';
   const article = /^[aeiou]/iu.test(label) ? 'an' : 'a';
   return `The replaced range spanned ${article} ${label} not shown in the paragraph text; it was ${outcome}.${aftermath}`;
+}
+
+export type AffectedRefField = {
+  bookmark: string;
+  instruction: string;
+  paragraph_id: string | null;
+};
+
+function collectLocalUserBookmarks(paragraph: Element): string[] {
+  const endIds = new Set<string>();
+  for (const endEl of Array.from(paragraph.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkEnd))) {
+    const id = endEl.getAttributeNS(OOXML.W_NS, 'id') ?? endEl.getAttribute('w:id');
+    if (id) endIds.add(id);
+  }
+  const names: string[] = [];
+  for (const startEl of Array.from(paragraph.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkStart))) {
+    const id = startEl.getAttributeNS(OOXML.W_NS, 'id') ?? startEl.getAttribute('w:id');
+    const name = startEl.getAttributeNS(OOXML.W_NS, 'name') ?? startEl.getAttribute('w:name');
+    if (!id || !name || !endIds.has(id)) continue;
+    if (name.startsWith('_bk_') || name === '_GoBack') continue;
+    if (!names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+function hasDeletedParagraphMark(paragraph: Element): boolean {
+  for (const child of Array.from(paragraph.childNodes)) {
+    if (child.nodeType !== 1 || (child as Element).namespaceURI !== OOXML.W_NS || (child as Element).localName !== W.pPr) {
+      continue;
+    }
+    for (const pPrChild of Array.from(child.childNodes)) {
+      if (pPrChild.nodeType !== 1 || (pPrChild as Element).namespaceURI !== OOXML.W_NS || (pPrChild as Element).localName !== W.rPr) {
+        continue;
+      }
+      for (const rPrChild of Array.from(pPrChild.childNodes)) {
+        if (
+          rPrChild.nodeType === 1 &&
+          (rPrChild as Element).namespaceURI === OOXML.W_NS &&
+          ((rPrChild as Element).localName === W.del || (rPrChild as Element).localName === W.moveFrom)
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function extractTargetedBookmark(instruction: string, candidateBookmarks: ReadonlySet<string>): string | null {
+  const explicit = /^\s*(?:REF|PAGEREF|NOTEREF)\s+(?:"([^"]+)"|([^\s\\]+))/iu.exec(instruction);
+  if (explicit) {
+    const target = explicit[1] ?? explicit[2] ?? null;
+    return target && candidateBookmarks.has(target) ? target : null;
+  }
+  const implicit = /^\s*(?:"([^"]+)"|([^\s\\]+))(?:\s+\\|$)/u.exec(instruction);
+  if (implicit) {
+    const target = implicit[1] ?? implicit[2] ?? null;
+    return target && candidateBookmarks.has(target) ? target : null;
+  }
+  return null;
+}
+
+function collectTargetingRefFields(
+  doc: DocxDocument,
+  removedParagraph: Element,
+  bookmarks: readonly string[],
+): AffectedRefField[] {
+  if (bookmarks.length === 0) return [];
+  const candidateSet = new Set(bookmarks);
+  const results: AffectedRefField[] = [];
+  for (const p of doc.getParagraphs()) {
+    if (p === removedParagraph) continue;
+    const paraId = getParagraphBookmarkId(p);
+    const index = buildParagraphIndex(p, { skipTrackedDeletions: true });
+    for (const field of index.fields) {
+      const bookmark = extractTargetedBookmark(field.instruction, candidateSet);
+      if (bookmark) {
+        results.push({
+          bookmark,
+          instruction: field.instruction.trim(),
+          paragraph_id: paraId,
+        });
+      }
+    }
+    for (const simple of Array.from(p.getElementsByTagNameNS(OOXML.W_NS, 'fldSimple'))) {
+      let inDel = false;
+      for (let cur = simple.parentNode; cur && cur !== p; cur = cur.parentNode) {
+        if (
+          cur.nodeType === 1 &&
+          (cur as Element).namespaceURI === OOXML.W_NS &&
+          ((cur as Element).localName === W.del || (cur as Element).localName === W.moveFrom)
+        ) {
+          inDel = true;
+          break;
+        }
+      }
+      if (inDel) continue;
+      const instr = simple.getAttributeNS(OOXML.W_NS, 'instr') ?? simple.getAttribute('w:instr') ?? '';
+      const bookmark = extractTargetedBookmark(instr, candidateSet);
+      if (bookmark) {
+        results.push({
+          bookmark,
+          instruction: instr.trim(),
+          paragraph_id: paraId,
+        });
+      }
+    }
+  }
+  return results;
 }
 
 function mergeAddRunProps(
@@ -335,9 +445,11 @@ export async function replaceText(
     // Filled by the last run of `mutate` (the preflight preview runs it on a
     // copy first; the session run comes last and is the one reported).
     const editWarnings: string[] = [];
+    let affectedRefFields: AffectedRefField[] = [];
 
     const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined): void => {
       editWarnings.length = 0;
+      affectedRefFields = [];
       if (params.normalize_first) {
         doc.mergeRunsOnly();
       }
@@ -346,6 +458,8 @@ export async function replaceText(
       if (!pEl) {
         throw new Error(`Paragraph ID ${pid} not found in document`);
       }
+      const paragraphIsNumbered = doc.isParagraphNumbered(pEl);
+      const localBookmarksBefore = collectLocalUserBookmarks(pEl);
       const liveSymbolsBefore = countLiveSymbolCharacters(pEl);
       const hiddenBefore = collectLiveHiddenConstructs(pEl);
       const reportRemovedSymbols = (): void => {
@@ -353,6 +467,25 @@ export async function replaceText(
         if (removed > 0) editWarnings.push(symbolRemovalWarning(removed, !!activeCtx));
         for (const label of removedHiddenConstructs(hiddenBefore, collectLiveHiddenConstructs(pEl))) {
           editWarnings.push(hiddenConstructRemovalWarning(label, !!activeCtx));
+        }
+        if (
+          localBookmarksBefore.length > 0 &&
+          (!pEl.parentNode || hasDeletedParagraphMark(pEl))
+        ) {
+          affectedRefFields = collectTargetingRefFields(doc, pEl, localBookmarksBefore);
+          if (affectedRefFields.length > 0) {
+            for (const ref of affectedRefFields) {
+              editWarnings.push(
+                `The deleted paragraph held bookmark "${ref.bookmark}", which is targeted by field "${ref.instruction}"${ref.paragraph_id ? ` in paragraph ${ref.paragraph_id}` : ''}; update or remove the cross-reference.`,
+              );
+            }
+          } else {
+            for (const bm of localBookmarksBefore) {
+              editWarnings.push(
+                `The deleted paragraph held bookmark "${bm}", which was ${activeCtx ? 'marked for deletion with the paragraph' : 'removed with the paragraph'}.`,
+              );
+            }
+          }
         }
       };
 
@@ -383,7 +516,11 @@ export async function replaceText(
               parts.map((part) => ({ length: part.text.length, addRunProps: part.addRunProps, clearHighlight: part.clearHighlight })),
               activeCtx,
             );
-          if (!formattedInPlace) replaceParagraphTextRange(pEl, matchStart, matchEnd, parts, activeCtx);
+          if (!formattedInPlace) {
+            replaceParagraphTextRange(pEl, matchStart, matchEnd, parts, activeCtx, {
+              paragraphIsNumbered,
+            });
+          }
           invalidateDocumentCaches(doc);
         } else {
           doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText: parts });
@@ -414,7 +551,9 @@ export async function replaceText(
       }
 
       if (activeCtx) {
-        replaceParagraphTextRange(pEl, trimmedStart, trimmedEnd, trimmedReplace, activeCtx);
+        replaceParagraphTextRange(pEl, trimmedStart, trimmedEnd, trimmedReplace, activeCtx, {
+          paragraphIsNumbered,
+        });
         invalidateDocumentCaches(doc);
       } else {
         doc.replaceTextAtRange({ targetParagraphId: pid, start: trimmedStart, end: trimmedEnd, replaceText: trimmedReplace });
@@ -446,6 +585,7 @@ export async function replaceText(
       before_text: previewText(paraText.trim(), RESULT_PREVIEW_CHARS),
       after_text: previewText((session.doc.getParagraphTextById(pid) ?? '').trim(), RESULT_PREVIEW_CHARS),
       ...(warnings.length > 0 ? { warnings } : {}),
+      ...(affectedRefFields.length > 0 ? { affected_ref_fields: affectedRefFields } : {}),
     }, metadata));
   } catch (e: unknown) {
     if (e instanceof SafeDocxError) {
