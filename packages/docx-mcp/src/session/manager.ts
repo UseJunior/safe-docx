@@ -8,8 +8,13 @@ import {
   REVISION_ID_ELEMENT_NAME_SET,
   enumerateSelectedRevisionStoryPartPaths,
   createRevisionContext,
+  createRevisionIdAllocator,
   createRevisionIdState,
+  getSidePartRevisionSeedDocs,
+  inferStartingRevisionId,
+  inferStartingRevisionIdState,
   parseXml,
+  RevisionIdAllocator,
   type NormalizationResult,
   type ParagraphRevision,
   type RevisionContext,
@@ -104,6 +109,7 @@ export type DocxSession = {
   doc: DocxDocument;
   aiAuthor: string | null;
   revisionIdState: RevisionIdState | null;
+  revisionIdAllocator?: RevisionIdAllocator;
   editCount: number;
   editRevision: number;
   saveCache: Map<string, SaveCacheEntry>;
@@ -170,110 +176,47 @@ function normalizeAiAuthor(author: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function getWordIdValue(element: Element): number | null {
-  const raw =
-    element.getAttributeNS(WORDPROCESSING_ML_NS, 'id')
-    ?? element.getAttribute('w:id')
-    ?? element.getAttribute('id');
-  if (raw === null) return null;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-/**
- * Compute a starting `RevisionIdState` whose first allocated `w:id` is
- * higher than any existing revision id found in the supplied documents.
- *
- * Only `w:id` attributes on revision-bearing elements
- * (`REVISION_ID_ELEMENT_LOCAL_NAMES`) are considered. Non-revision IDs such
- * as `<w:comment w:id>` or `<w:footnote w:id>` share the attribute name but
- * occupy a different ID space and must not influence the counter.
- *
- * Callers should pass every available story/metadata part that can contain
- * package-wide revision attributes, not just `document.xml`.
- */
-export function inferStartingRevisionIdState(...docs: Document[]): RevisionIdState {
-  let maxId = 0;
-
-  for (const doc of docs) {
-    for (const node of Array.from(doc.getElementsByTagName('*'))) {
-      const localName = node.localName ?? '';
-      if (!REVISION_ID_ELEMENT_NAME_SET.has(localName)) continue;
-      if (node.namespaceURI && node.namespaceURI !== WORDPROCESSING_ML_NS) continue;
-      const value = getWordIdValue(node);
-      if (value !== null && value > maxId) {
-        maxId = value;
-      }
-    }
-  }
-
-  return createRevisionIdState(maxId + 1);
-}
-
-export async function getSidePartRevisionSeedDocs(buffer: Buffer): Promise<Document[]> {
-  const docs: Document[] = [];
-
-  let zip: DocxZip;
-  try {
-    zip = await DocxZip.load(buffer);
-  } catch {
-    return docs;
-  }
-
-  for (const partPath of await enumerateSelectedRevisionStoryPartPaths(zip)) {
-    if (!zip.hasFile(partPath)) continue;
-    let xml: string | null;
-    try {
-      xml = await zip.readTextOrNull(partPath);
-    } catch {
-      continue;
-    }
-    if (!xml) continue;
-    try {
-      docs.push(parseXml(xml));
-    } catch {
-      // Malformed optional side part — skip so an unrelated parse failure
-      // does not block every tracked edit on the session.
-    }
-  }
-
-  return docs;
-}
-
-/**
- * Single-flight guard around the first revision-id seed scan per session.
- * Concurrent first callers await the same in-flight scan and assign the same
- * result, preventing a slower scan from clobbering a counter that a faster
- * caller has already advanced via emitted revisions.
- */
-const revisionIdSeedPromises = new WeakMap<DocxSession, Promise<RevisionIdState>>();
+export {
+  inferStartingRevisionIdState,
+  getSidePartRevisionSeedDocs,
+};
 
 export async function getRevisionContextForSession(session: DocxSession): Promise<RevisionContext | undefined> {
   if (!session.aiAuthor) return undefined;
 
-  if (!session.revisionIdState) {
-    let pending = revisionIdSeedPromises.get(session);
-    if (!pending) {
-      pending = (async () => {
-        const sideDocs = await getSidePartRevisionSeedDocs(session.originalBuffer);
-        return inferStartingRevisionIdState(session.doc.getDocumentXmlClone(), ...sideDocs);
-      })();
-      revisionIdSeedPromises.set(session, pending);
+  let allocator = session.revisionIdAllocator;
+  if (!allocator) {
+    if (session.revisionIdState instanceof RevisionIdAllocator) {
+      allocator = session.revisionIdState;
+    } else if (session.revisionIdState) {
+      allocator = createRevisionIdAllocator({
+        startId: session.revisionIdState.nextId,
+        moveRangeIds: session.revisionIdState.moveRangeIds,
+        status: 'ready',
+      });
+    } else {
+      allocator = createRevisionIdAllocator();
     }
-    try {
-      const seeded = await pending;
-      if (!session.revisionIdState) {
-        session.revisionIdState = seeded;
-      }
-    } finally {
-      revisionIdSeedPromises.delete(session);
-    }
+    session.revisionIdAllocator = allocator;
   }
+
+  if (!allocator.isReady) {
+    await allocator.seed(async () => {
+      if (typeof (session.doc as any).getRevisionSeedDocuments === 'function') {
+        const docs = await (session.doc as any).getRevisionSeedDocuments();
+        return inferStartingRevisionId(...docs);
+      }
+      const sideDocs = await getSidePartRevisionSeedDocs(session.originalBuffer);
+      return inferStartingRevisionId(session.doc.getDocumentXmlClone(), ...sideDocs);
+    });
+  }
+
+  session.revisionIdState = allocator;
 
   return createRevisionContext({
     author: session.aiAuthor,
     date: new Date(),
-    idState: session.revisionIdState,
+    idState: allocator,
   });
 }
 

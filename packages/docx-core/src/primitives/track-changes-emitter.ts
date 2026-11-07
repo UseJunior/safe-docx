@@ -1,6 +1,7 @@
 import { parseXml, serializeXml } from './xml.js';
 import { childElements, createWmlElement, renameElement } from './dom-helpers.js';
 import { OOXML, W } from './namespaces.js';
+import { REVISION_ID_ELEMENT_NAME_SET } from './revision-vocabulary.js';
 
 const SYNTHETIC_DOC = parseXml(
   '<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
@@ -32,7 +33,7 @@ const SECTPR_BASE_ATTRIBUTE_NAMES = new Set([
 /**
  * State for allocating monotonically increasing revision IDs.
  *
- * `moveRangeIds` exists so comparison-time emitters can reserve paired source
+ * moveRangeIds exists so comparison-time emitters can reserve paired source
  * and destination IDs for move ranges while sharing the same counter.
  */
 export interface RevisionIdState {
@@ -40,22 +41,221 @@ export interface RevisionIdState {
   moveRangeIds: Map<string, { sourceRangeId: number; destRangeId: number }>;
 }
 
+export type RevisionIdAllocatorStatus = 'unseeded' | 'seeding' | 'ready';
+
+export interface RevisionIdAllocatorOptions {
+  startId?: number;
+  moveRangeIds?: Map<string, { sourceRangeId: number; destRangeId: number }>;
+  status?: RevisionIdAllocatorStatus;
+}
+
+export type RevisionIdSeeder =
+  | number
+  | (Document | Element)[]
+  | (() => number | (Document | Element)[] | Promise<number | (Document | Element)[]>);
+
+/**
+ * Encapsulated revision ID allocator representing unseeded, seeding, and ready
+ * lifecycle states behind the allocator boundary.
+ */
+export class RevisionIdAllocator implements RevisionIdState {
+  private _nextId: number;
+  private _status: RevisionIdAllocatorStatus;
+  private _seedPromise: Promise<this> | null = null;
+  readonly moveRangeIds: Map<string, { sourceRangeId: number; destRangeId: number }>;
+
+  constructor(options?: RevisionIdAllocatorOptions) {
+    this._nextId = options?.startId ?? 1;
+    this.moveRangeIds = options?.moveRangeIds ?? new Map();
+    if (options?.status) {
+      this._status = options.status;
+    } else if (options?.startId !== undefined) {
+      this._status = 'ready';
+    } else {
+      this._status = 'unseeded';
+    }
+  }
+
+  get status(): RevisionIdAllocatorStatus {
+    return this._status;
+  }
+
+  get isReady(): boolean {
+    return this._status === 'ready';
+  }
+
+  get nextId(): number {
+    return this._nextId;
+  }
+
+  set nextId(val: number) {
+    this._nextId = val;
+  }
+
+  /**
+   * Allocate the next revision ID.
+   * Throws if the allocator is not yet in 'ready' status.
+   */
+  allocate(): number {
+    if (this._status !== 'ready') {
+      throw new Error('Revision ID allocator is not ready (status: ' + this._status + ')');
+    }
+    return this._nextId++;
+  }
+
+  /**
+   * Reserve paired source and destination range IDs for move operations.
+   */
+  reserveMoveRange(key: string): { sourceRangeId: number; destRangeId: number } {
+    if (this._status !== 'ready') {
+      throw new Error('Revision ID allocator is not ready (status: ' + this._status + ')');
+    }
+    let pair = this.moveRangeIds.get(key);
+    if (!pair) {
+      pair = {
+        sourceRangeId: this.allocate(),
+        destRangeId: this.allocate(),
+      };
+      this.moveRangeIds.set(key, pair);
+    }
+    return pair;
+  }
+
+  /**
+   * Reset the allocator back to unseeded status.
+   */
+  reset(): void {
+    this._status = 'unseeded';
+    this._seedPromise = null;
+  }
+
+  /**
+   * Seed the allocator.
+   * - Shares concurrent in-flight seed operations.
+   * - Retries after failed seeds.
+   * - Resolves immediately if already ready (unless force=true).
+   */
+  async seed(
+    seeder: RevisionIdSeeder,
+    options?: { force?: boolean },
+  ): Promise<this> {
+    if (this._status === 'ready' && !options?.force) {
+      return this;
+    }
+
+    if (this._status === 'seeding' && this._seedPromise) {
+      return this._seedPromise;
+    }
+
+    this._status = 'seeding';
+    const seedOp = async (): Promise<this> => {
+      try {
+        const result = typeof seeder === 'function' ? await seeder() : await seeder;
+        if (typeof result === 'number') {
+          this._nextId = Math.max(this._nextId, result);
+        } else if (Array.isArray(result)) {
+          const startingId = inferStartingRevisionId(...result);
+          this._nextId = Math.max(this._nextId, startingId);
+        }
+        this._status = 'ready';
+        return this;
+      } catch (err) {
+        this._status = 'unseeded';
+        throw err;
+      } finally {
+        this._seedPromise = null;
+      }
+    };
+
+    const promise = seedOp();
+    this._seedPromise = promise;
+    return promise;
+  }
+
+  /**
+   * Ensure the allocator is ready. If unseeded, runs the provided seeder or defaults to 1.
+   */
+  async ensureReady(seeder?: RevisionIdSeeder): Promise<this> {
+    if (this.isReady) return this;
+    if (seeder !== undefined) {
+      return this.seed(seeder);
+    }
+    return this.seed(1);
+  }
+}
+
+/**
+ * WordprocessingML elements that carry package-wide revision w:id attributes.
+ */
+function getRevisionWordIdValue(element: Element): number | null {
+  const raw =
+    element.getAttributeNS(OOXML.W_NS, 'id')
+    ?? element.getAttribute('w:id')
+    ?? element.getAttribute('id');
+  if (raw === null) return null;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Compute the first unused revision ID that is strictly higher than any
+ * existing revision ID found across the supplied documents.
+ */
+export function inferStartingRevisionId(...docs: (Document | Element)[]): number {
+  let maxId = 0;
+
+  for (const doc of docs) {
+    if (!doc) continue;
+    const elements: Element[] = typeof (doc as any).getElementsByTagName === 'function'
+      ? Array.from((doc as Document | Element).getElementsByTagName('*'))
+      : [(doc as Element)];
+
+    for (const node of elements) {
+      const localName = node.localName ?? '';
+      if (!REVISION_ID_ELEMENT_NAME_SET.has(localName)) continue;
+      if (node.namespaceURI && node.namespaceURI !== OOXML.W_NS) continue;
+      const value = getRevisionWordIdValue(node);
+      if (value !== null && value > maxId) {
+        maxId = value;
+      }
+    }
+  }
+
+  return maxId + 1;
+}
+
+/**
+ * Compute a starting RevisionIdAllocator whose first allocated w:id is
+ * higher than any existing revision id found in the supplied documents.
+ */
+export function inferStartingRevisionIdState(...docs: (Document | Element)[]): RevisionIdAllocator {
+  const startId = inferStartingRevisionId(...docs);
+  return createRevisionIdAllocator({ startId, status: 'ready' });
+}
+
+/**
+ * Create a revision ID allocator with lifecycle management.
+ */
+export function createRevisionIdAllocator(options?: RevisionIdAllocatorOptions): RevisionIdAllocator {
+  return new RevisionIdAllocator(options);
+}
+
 /**
  * Create a revision ID allocator.
  *
- * @param startId - First ID to allocate. Defaults to `1`.
+ * @param startId - First ID to allocate. Defaults to 1.
  */
-export function createRevisionIdState(startId: number = 1): RevisionIdState {
-  return {
-    nextId: startId,
-    moveRangeIds: new Map(),
-  };
+export function createRevisionIdState(startId: number = 1): RevisionIdAllocator {
+  return new RevisionIdAllocator({ startId, status: 'ready' });
 }
 
 /**
  * Allocate the next revision ID from a shared state object.
  */
 export function allocateRevisionId(state: RevisionIdState): number {
+  if (state instanceof RevisionIdAllocator) {
+    return state.allocate();
+  }
   return state.nextId++;
 }
 
