@@ -19,6 +19,7 @@
 // a "just give me the text" rendering.
 
 import type { DocumentViewNode } from './document_view.js';
+import { iterateSerializerBlocks } from './serialize_blocks.js';
 import { stripAllInlineTags } from './semantic_tags.js';
 import type { Footnote } from './footnotes.js';
 
@@ -114,40 +115,33 @@ export function serializeToPlainText(
 ): string {
   const blocks: string[] = [];
 
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i]!;
-
-    // ── Tables: consume the whole run of same-table_id nodes at once ──
-    if (node.table_context) {
-      const tableId = node.table_context.table_id;
-      const group: DocumentViewNode[] = [];
-      while (i < nodes.length && nodes[i]!.table_context?.table_id === tableId) {
-        group.push(nodes[i]!);
-        i++;
+  for (const block of iterateSerializerBlocks(nodes, { isHeading: () => false })) {
+    switch (block.kind) {
+      case 'table': {
+        const tableLines = renderTable(block.nodes);
+        if (tableLines.length > 0) {
+          blocks.push(tableLines.join('\n'));
+          blocks.push('');
+        }
+        break;
       }
-      i--; // for-loop will re-increment
-      const tableLines = renderTable(group);
-      if (tableLines.length > 0) {
-        blocks.push(tableLines.join('\n'));
-        blocks.push('');
+      case 'list': {
+        for (const node of block.nodes) {
+          blocks.push(renderListItem(node));
+        }
+        break;
       }
-      continue;
-    }
-
-    // ── List items: a bullet per item, no surrounding blank lines ──
-    if (node.list_metadata.list_level >= 0) {
-      blocks.push(renderListItem(node));
-      continue;
-    }
-
-    // ── Headings and normal paragraphs alike: plain text, blank line between blocks ──
-    // Plain text has no heading syntax, so a Word-styled heading is just its text.
-    const text = toPlainInline(node.tagged_text).trim();
-    if (text === '') {
-      blocks.push('');
-    } else {
-      blocks.push(text);
-      blocks.push('');
+      case 'heading':
+      case 'paragraph': {
+        const text = toPlainInline(block.node.tagged_text).trim();
+        if (text === '') {
+          blocks.push('');
+        } else {
+          blocks.push(text);
+          blocks.push('');
+        }
+        break;
+      }
     }
   }
 

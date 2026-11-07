@@ -22,6 +22,7 @@ import {
   serializeXml,
   W_NS,
   type DocumentViewNode,
+  iterateSerializerBlocks,
 } from '@usejunior/docx-core';
 
 import { OdfArchive } from '../shared/odf/OdfArchive.js';
@@ -162,87 +163,88 @@ export async function convertDocxToOdt(
   let listBuilder: ListDomBuilder | null = null;
   let tableCount = 0;
 
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i]!;
-
-    // ── Preserved vertical spacing: unsurfaced empty body paragraphs before this node ──
-    const emptyCount = emptyBefore.get(node.id) ?? 0;
-    if (emptyCount > 0) {
-      listBuilder = null;
-      appendEmptyParagraphs(emptyCount);
-    }
-
-    // ── Tables: consume the whole run of same-table_id nodes at once ──
-    if (node.table_context) {
-      listBuilder = null;
-      const tableId = node.table_context.table_id;
-      const sourceTbl = sourceTables[node.table_context.table_index] ?? null;
-      const group: DocumentViewNode[] = [];
-      while (i < nodes.length && nodes[i]!.table_context?.table_id === tableId) {
-        group.push(nodes[i]!);
-        i++;
-      }
-      i--; // for-loop re-increments
-      tableCount += 1;
-      appendTable(
-        doc,
-        body,
-        group,
-        tableCount,
-        sourceTbl,
-        tableStyles,
-        fillParagraph,
-        (n) => paragraphStyles.styleFor('Standard', n),
-        lossiness,
-      );
-      continue;
-    }
-
-    // ── Word-styled headings ──
-    if (isStructuralHeading(node)) {
-      listBuilder = null;
-      const level = node.heading!.level as number;
-      const h = doc.createElementNS(ODF_NS.TEXT, 'text:h');
-      h.setAttributeNS(ODF_NS.TEXT, 'text:outline-level', String(level));
-      h.setAttributeNS(ODF_NS.TEXT, 'text:style-name', paragraphStyles.styleFor(`Heading_20_${level}`, node));
-      body.appendChild(h);
-      fillParagraph(h, node);
-      continue;
-    }
-
-    if (node.list_metadata.list_level >= 0) {
-      // ── Auto-numbered / bullet items (any numPr): nested text:list ──
-      if (node.list_metadata.is_auto_numbered) {
-        const numId = node.numbering.num_id;
-        // Bullet vs number comes from the numbering model's numFmt — `LabelType` has no
-        // bullet member, so the label classification can't signal it.
-        const bulletHint = listStyles.isBulletLevel(numId, node.numbering.ilvl);
-        const styleName = listStyles.styleFor(numId, bulletHint);
-        if (!listBuilder) listBuilder = new ListDomBuilder(doc, body);
-        // Alignment only: the nested text:list supplies indentation, and re-applying the
-        // source margins would double-indent the item.
-        const p = listBuilder.item(
-          node.list_metadata.list_level,
-          styleName,
-          paragraphStyles.styleFor('Standard', node, { indents: false }),
+  for (const block of iterateSerializerBlocks(nodes, {
+    isHeading: isStructuralHeading,
+  })) {
+    switch (block.kind) {
+      case 'table': {
+        listBuilder = null;
+        const firstNode = block.nodes[0]!;
+        const emptyCount = emptyBefore.get(firstNode.id) ?? 0;
+        if (emptyCount > 0) {
+          appendEmptyParagraphs(emptyCount);
+        }
+        tableCount += 1;
+        const sourceTbl = sourceTables[firstNode.table_context!.table_index] ?? null;
+        appendTable(
+          doc,
+          body,
+          block.nodes,
+          tableCount,
+          sourceTbl,
+          tableStyles,
+          fillParagraph,
+          (n) => paragraphStyles.styleFor('Standard', n),
+          lossiness,
         );
-        fillParagraph(p, node);
-        continue;
+        break;
       }
-      // ── Manual/legal labels (`Section 2.1`, `(a)`): literal paragraph text, NO text:list.
-      //    Deliberate divergence from the HTML serializer's <ul><li> wrapping — an ODF list
-      //    renderer would print its own number next to the legal label. ──
-      listBuilder = null;
-      const p = newParagraph(paragraphStyles.styleFor('Standard', node));
-      const label = node.list_metadata.label_string.trim();
-      if (label) appendTextWithWhitespace(doc, p, `${label} `);
-      fillParagraph(p, node);
-      continue;
-    }
 
-    // ── Normal paragraphs (heuristic headings land here; empty paragraphs are kept) ──
-    listBuilder = null;
-    fillParagraph(newParagraph(paragraphStyles.styleFor('Standard', node)), node);
+      case 'heading': {
+        listBuilder = null;
+        const emptyCount = emptyBefore.get(block.node.id) ?? 0;
+        if (emptyCount > 0) {
+          appendEmptyParagraphs(emptyCount);
+        }
+        const level = block.level;
+        const h = doc.createElementNS(ODF_NS.TEXT, 'text:h');
+        h.setAttributeNS(ODF_NS.TEXT, 'text:outline-level', String(level));
+        h.setAttributeNS(ODF_NS.TEXT, 'text:style-name', paragraphStyles.styleFor(`Heading_20_${level}`, block.node));
+        body.appendChild(h);
+        fillParagraph(h, block.node);
+        break;
+      }
+
+      case 'list': {
+        for (const node of block.nodes) {
+          const emptyCount = emptyBefore.get(node.id) ?? 0;
+          if (emptyCount > 0) {
+            listBuilder = null;
+            appendEmptyParagraphs(emptyCount);
+          }
+          if (node.list_metadata.is_auto_numbered) {
+            const numId = node.numbering.num_id;
+            const bulletHint = listStyles.isBulletLevel(numId, node.numbering.ilvl);
+            const styleName = listStyles.styleFor(numId, bulletHint);
+            if (!listBuilder) listBuilder = new ListDomBuilder(doc, body);
+            const p = listBuilder.item(
+              node.list_metadata.list_level,
+              styleName,
+              paragraphStyles.styleFor('Standard', node, { indents: false }),
+            );
+            fillParagraph(p, node);
+          } else {
+            listBuilder = null;
+            const p = newParagraph(paragraphStyles.styleFor('Standard', node));
+            const label = node.list_metadata.label_string.trim();
+            if (label) appendTextWithWhitespace(doc, p, `${label} `);
+            fillParagraph(p, node);
+          }
+        }
+        listBuilder = null;
+        break;
+      }
+
+      case 'paragraph': {
+        listBuilder = null;
+        const emptyCount = emptyBefore.get(block.node.id) ?? 0;
+        if (emptyCount > 0) {
+          appendEmptyParagraphs(emptyCount);
+        }
+        fillParagraph(newParagraph(paragraphStyles.styleFor('Standard', block.node)), block.node);
+        break;
+      }
+    }
   }
 
   appendEmptyParagraphs(trailingEmpty);
