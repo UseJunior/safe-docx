@@ -317,10 +317,11 @@ export async function replaceText(
     if (params.color !== undefined) explicitAddProps.color = params.color;
     
     const hasMarkup = hasAnyMarkupTags(newStr);
-    
+    let parsedSegments: ReturnType<typeof splitTaggedText> | null = null;
+
     if (hasMarkup) {
       try {
-        splitTaggedText(newStr);
+        parsedSegments = splitTaggedText(newStr);
       } catch (e: unknown) {
         return err(errorMessage(e), `Tag parse error in new_string: ${errorMessage(e)}`);
       }
@@ -329,8 +330,13 @@ export async function replaceText(
       if (textMatch.mode !== 'exact' && textMatch.mode !== 'clean') {
         newStr = applyDocumentQuoteStyle(matchedOldStr, newStr);
       }
-
     }
+
+    const expectedReplacementText = parsedSegments
+      ? parsedSegments.map((s) => s.text).join('')
+      : newStr;
+    const expectedAfterFullText =
+      paraText.slice(0, matchStart) + expectedReplacementText + paraText.slice(matchEnd);
 
     // Filled by the last run of `mutate` (the preflight preview runs it on a
     // copy first; the session run comes last and is the one reported).
@@ -355,13 +361,22 @@ export async function replaceText(
           editWarnings.push(hiddenConstructRemovalWarning(label, !!activeCtx));
         }
       };
+      const verifyPostCondition = (): void => {
+        const actualAfterFullText = doc.getParagraphTextById(pid) ?? '';
+        if (actualAfterFullText !== expectedAfterFullText) {
+          throw new SafeDocxError(
+            'REPLACE_POSTCONDITION_FAILED',
+            `Post-condition failed for paragraph ${pid}: paragraph text after replacement did not match expected substitution.`,
+          );
+        }
+      };
 
       const paraRuns = getParagraphRuns(pEl);
       const { templateRun: contextTemplateRun, allOverlappedRunsHighlighted } = chooseContextTemplateRun(paraRuns, matchStart, matchEnd);
       const localShouldClearHighlight = params.clear_highlight || (allOverlappedRunsHighlighted && !hasHighlightTags(newStr) && isLikelyFieldPlaceholder(oldStr));
 
       if (hasMarkup) {
-        const segs = splitTaggedText(newStr);
+        const segs = parsedSegments ?? splitTaggedText(newStr);
         const headerAddProps = segs.some((s) => s.header) ? findHeaderRoleModelAddRunProps(doc, pid) : null;
         const parts: ReplacementPart[] = [];
         for (const s of segs) {
@@ -389,6 +404,7 @@ export async function replaceText(
           doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText: parts });
         }
         reportRemovedSymbols();
+        verifyPostCondition();
         return;
       }
 
@@ -398,7 +414,10 @@ export async function replaceText(
       const trimmedStart = matchStart + prefixLen;
       const trimmedEnd = matchEnd - suffixLen;
 
-      if (trimmedStart >= trimmedEnd && trimmedNewStr.length === 0) return;
+      if (trimmedStart >= trimmedEnd && trimmedNewStr.length === 0) {
+        verifyPostCondition();
+        return;
+      }
 
       let trimmedReplace: string | ReplacementPart[];
       if (localShouldClearHighlight || Object.keys(explicitAddProps).length > 0) {
@@ -421,6 +440,7 @@ export async function replaceText(
       }
       reportRemovedSymbols();
       doc.mergeRunsOnly({ preserveRsidIdentity: true });
+      verifyPostCondition();
     };
 
     const revisionPreflight = params.skip_ai_revision_preflight
