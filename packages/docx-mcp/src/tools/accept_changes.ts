@@ -1,5 +1,5 @@
 import { SessionManager } from '../session/manager.js';
-import { errorCode, errorMessage } from "../error_utils.js";
+import { errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
 import { revisionResultChangedDocument } from './revision_result.js';
@@ -15,7 +15,10 @@ export async function acceptChanges(
   try {
     const stats = await session.doc.acceptChanges();
     // A no-op sweep must not look like an edit or drop cached views (#1084).
-    if (revisionResultChangedDocument(stats)) manager.markEdited(session);
+    if (revisionResultChangedDocument(stats)) {
+      manager.markEdited(session);
+      manager.clearSelectiveRevisionPolicy(session);
+    }
     return ok(mergeSessionResolutionMetadata({
       ...stats,
       file_path: manager.normalizePath(session.originalPath),

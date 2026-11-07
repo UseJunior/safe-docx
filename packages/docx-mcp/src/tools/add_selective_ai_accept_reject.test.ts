@@ -7,7 +7,8 @@ import { acceptAiEdits } from './accept_ai_edits.js';
 import { rejectAiEdits } from './reject_ai_edits.js';
 import { acceptChanges } from './accept_changes.js';
 import { getFileStatus } from './get_file_status.js';
-import { save } from './save.js';
+import { replaceText } from './replace_text.js';
+import { evaluateSelectiveRevisionPolicy, save } from './save.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { assertFailure, assertSuccess, openSession, registerCleanup } from '../testing/session-test-utils.js';
 
@@ -526,6 +527,164 @@ describe('No-op accept/reject by unknown revision id has nothing to persist (#10
       expect(rejected.next_step).toMatch(/save_format='tracked'/u);
       expect(session.selectiveRevisionAction).toMatchObject({ tool: 'reject_ai_edits', selector: 'revision_ids', selectedRevisionIds: ['103'] });
       assertFailure(blocked, 'SELECTIVE_REVISIONS_WOULD_BE_DISCARDED');
+    });
+  });
+});
+
+describe('Explicit selective revision preservation policy (#1303)', () => {
+  registerCleanup();
+
+  test('separates active preservation policy from last-action metadata', async ({ given, when, then }: AllureBddContext) => {
+    const opened = await given('a session with AI and third-party reviewer revisions', () =>
+      openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) }),
+    );
+    const session = await docxSession(opened.mgr, opened.filePath);
+
+    expect(session.selectiveRevisionPolicy).toEqual({
+      state: 'unarmed',
+      armedAtRevision: null,
+    });
+    expect(session.selectiveRevisionAction).toBeNull();
+
+    await when('accept_ai_edits resolves one AI revision and accept_changes later resolves all remaining revisions', async () => {
+      assertSuccess(
+        await acceptAiEdits(opened.mgr, { file_path: opened.filePath, revision_ids: [101] }),
+        'accept_ai_edits',
+      );
+      expect(session.selectiveRevisionPolicy).toEqual({
+        state: 'require_clean_export_acknowledgement',
+        armedAtRevision: 1,
+      });
+      expect(session.selectiveRevisionAction).toMatchObject({
+        tool: 'accept_ai_edits',
+        selector: 'revision_ids',
+        selectedRevisionIds: ['101'],
+        editRevision: 1,
+      });
+
+      assertSuccess(
+        await acceptChanges(opened.mgr, { file_path: opened.filePath }),
+        'accept_changes',
+      );
+    });
+
+    await then('the policy disarms while last-action metadata remains intact and clean save succeeds', async () => {
+      expect(session.selectiveRevisionPolicy).toEqual({
+        state: 'unarmed',
+        armedAtRevision: null,
+      });
+      expect(session.selectiveRevisionAction).toMatchObject({
+        tool: 'accept_ai_edits',
+        selector: 'revision_ids',
+        selectedRevisionIds: ['101'],
+        editRevision: 1,
+      });
+
+      const cleanPath = path.join(opened.tmpDir, 'after-accept-all-clean.docx');
+      const saved = await save(opened.mgr, {
+        file_path: opened.filePath,
+        save_to_local_path: cleanPath,
+        save_format: 'clean',
+      });
+      assertSuccess(saved, 'clean save after accept_changes');
+    });
+  });
+
+  test('complete selective resolution across multiple calls derives zero remaining AI revisions and preserves third-party history', async ({ given, when, then }: AllureBddContext) => {
+    const opened = await given('a session with two AI revisions and two third-party reviewer revisions', () =>
+      openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) }),
+    );
+    const session = await docxSession(opened.mgr, opened.filePath);
+    const cleanPath = path.join(opened.tmpDir, 'complete-resolution-clean.docx');
+
+    await when('all AI revisions are resolved across separate accept_ai_edits and reject_ai_edits calls', async () => {
+      assertSuccess(
+        await acceptAiEdits(opened.mgr, { file_path: opened.filePath, revision_ids: [101] }),
+        'accept 101',
+      );
+      assertSuccess(
+        await rejectAiEdits(opened.mgr, { file_path: opened.filePath, revision_ids: [103] }),
+        'reject 103',
+      );
+    });
+
+    await then('policy remains armed, live document derivation finds no remaining AI revisions, and clean save preserves third-party revisions', async () => {
+      expect(session.selectiveRevisionPolicy.state).toBe('require_clean_export_acknowledgement');
+      expect(session.selectiveRevisionAction).toMatchObject({
+        tool: 'reject_ai_edits',
+        selectedRevisionIds: ['103'],
+      });
+
+      const evaluation = await evaluateSelectiveRevisionPolicy(opened.mgr, session, {
+        format: 'clean',
+      });
+      expect(evaluation.status).toBe('no_remaining_revisions');
+
+      const saved = await save(opened.mgr, {
+        file_path: opened.filePath,
+        save_to_local_path: cleanPath,
+        save_format: 'clean',
+      });
+      assertSuccess(saved, 'clean save after complete AI resolution');
+      expect(saved.selective_revision_disposition).toBeUndefined();
+
+      const cleanXml = await (await DocxZip.load(await fs.readFile(cleanPath))).readText('word/document.xml');
+      expect(cleanXml).toContain('w:id="102"');
+      expect(cleanXml).toContain('w:id="104"');
+      expect(cleanXml).toContain('human-add');
+      expect(cleanXml).toContain('human-del');
+    });
+  });
+
+  test('later edits after selective resolution are derived from live document contents and require acknowledgement on clean save', async ({ given, when, then }: AllureBddContext) => {
+    const opened = await given('a session with AI and reviewer revisions', () =>
+      openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) }),
+    );
+    const cleanPath = path.join(opened.tmpDir, 'later-edits-clean.docx');
+
+    await when('all existing AI revisions are resolved selectively and a subsequent replace_text creates a new AI revision', async () => {
+      assertSuccess(
+        await acceptAiEdits(opened.mgr, { file_path: opened.filePath, author: AI }),
+        'accept all AI edits',
+      );
+      const paraId = opened.paraIds[0]!;
+      assertSuccess(
+        await replaceText(opened.mgr, {
+          file_path: opened.filePath,
+          target_paragraph_id: paraId,
+          old_string: 'base',
+          new_string: 'updated-base',
+          instruction: 'Introduce a new AI tracked edit after selective resolution',
+        }),
+        'later replace_text',
+      );
+    });
+
+    await then('clean export detects the newly authored AI revision from document contents and requires acknowledgement', async () => {
+      const blocked = await save(opened.mgr, {
+        file_path: opened.filePath,
+        save_to_local_path: cleanPath,
+        save_format: 'clean',
+      });
+      assertFailure(blocked, 'SELECTIVE_REVISIONS_WOULD_BE_DISCARDED');
+      expect(blocked.selective_revision_policy).toMatchObject({
+        state: 'require_clean_export_acknowledgement',
+      });
+      expect(blocked.preserved_revisions).toMatchObject({
+        author: AI,
+      });
+      expect((blocked.preserved_revisions as { count: number }).count).toBeGreaterThanOrEqual(1);
+
+      const acknowledged = await save(opened.mgr, {
+        file_path: opened.filePath,
+        save_to_local_path: cleanPath,
+        save_format: 'clean',
+        allow_discard_preserved_revisions: true,
+      });
+      assertSuccess(acknowledged, 'acknowledged clean save after later edit');
+      expect(acknowledged.selective_revision_disposition).toMatchObject({
+        acknowledged: true,
+      });
     });
   });
 });
