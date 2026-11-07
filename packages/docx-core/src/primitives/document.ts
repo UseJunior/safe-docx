@@ -1867,6 +1867,9 @@ export class DocxDocument {
    * Falls back to full re-serialization (blocksRestored: 0) when no original
    * text was captured or reconciliation fails.
    *
+   * Each call captures an isolated archive snapshot before yielding. Bookmark
+   * cleanup and serialization failures leave the live document and ZIP intact.
+   *
    * With `fileDate`, every ZIP entry is written with that date instead of the
    * wall clock, so the bytes depend only on the document's content.
    *
@@ -1880,11 +1883,10 @@ export class DocxDocument {
     fileDate?: Date;
   }): Promise<{ buffer: Buffer; bookmarksRemoved: number; blocksRestored: number }> {
     const zipOptions = opts?.fileDate ? { fileDate: opts.fileDate } : undefined;
-    // Always write the latest document.xml when saving.
-    // Important: when cleanBookmarks=true (download), we must NOT mutate session state.
+    // Capture the latest DOM for this export without writing output-only XML
+    // into the live archive, including when ZIP generation rejects.
     const xmlWithBookmarks = serializeXml(this.documentXml);
     maybeCaptureEmittedDocumentXml(xmlWithBookmarks);
-    this.zip.writeText('word/document.xml', xmlWithBookmarks);
 
     if (opts?.cleanBookmarks) {
       const cloned = parseXml(xmlWithBookmarks);
@@ -1905,15 +1907,13 @@ export class DocxDocument {
       }
       const cleanedXml = serializeXml(cloned);
 
-      // Temporarily swap document.xml in the zip for output, then restore.
+      // Apply output-only XML to an isolated archive snapshot.
       maybeCaptureEmittedDocumentXml(cleanedXml);
-      this.zip.writeText('word/document.xml', cleanedXml);
-      const buffer = await this.zip.toBuffer(zipOptions);
-      this.zip.writeText('word/document.xml', xmlWithBookmarks);
+      const buffer = await this.zip.toBuffer({ ...zipOptions, textOverrides: { 'word/document.xml': cleanedXml } });
       return { buffer, bookmarksRemoved, blocksRestored };
     }
 
-    const buffer = await this.zip.toBuffer(zipOptions);
+    const buffer = await this.zip.toBuffer({ ...zipOptions, textOverrides: { 'word/document.xml': xmlWithBookmarks } });
     return { buffer, bookmarksRemoved: 0, blocksRestored: 0 };
   }
 
