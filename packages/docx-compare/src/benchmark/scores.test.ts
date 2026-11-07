@@ -194,7 +194,7 @@ describe('Manifest loading', () => {
 
       compactView = doc.buildDocumentView({ showFormatting: true, formattingMode: 'compact' });
       // Force cache miss for different mode
-      (doc as any).dirty = true;
+      doc.markMutated();
       fullView = doc.buildDocumentView({ showFormatting: true, formattingMode: 'full' });
     });
 
