@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { DocxZip } from './zip.js';
 import { attributeXmlParseError, parseXml, serializeXml } from './xml.js';
 import { maybeCaptureEmittedDocumentXml } from './schema-corpus-capture.js';
@@ -10,6 +11,7 @@ import {
   cleanupInternalBookmarks,
   collectBookmarkReservation,
   getParagraphBookmarkId,
+  getW14ParaId,
   insertSingleParagraphBookmark,
   type BookmarkReservation,
 } from './bookmarks.js';
@@ -1202,9 +1204,59 @@ export class DocxDocument {
       flush();
     }
 
-    function cloneParagraphShell(anchorPara: Element): Element {
+    const usedW14ParaIds = new Set<string>();
+    const existingParagraphs = doc.getElementsByTagNameNS(OOXML.W_NS, W.p);
+    for (let i = 0; i < existingParagraphs.length; i++) {
+      const p = existingParagraphs.item(i);
+      if (!p) continue;
+      const existingParaId = getW14ParaId(p);
+      if (existingParaId) {
+        usedW14ParaIds.add(existingParaId.toUpperCase());
+      }
+    }
+    const shouldAssignW14ParaId =
+      usedW14ParaIds.size > 0 ||
+      getW14ParaId(formattingSource) !== null ||
+      getW14ParaId(anchorP) !== null;
+
+    function allocateFreshW14ParaId(seedText: string, ordinal: number): string {
+      let attempt = 0;
+      while (attempt < 100_000) {
+        const digest = createHash('sha1')
+          .update(`w14:paraId:${usedW14ParaIds.size}:${ordinal}:${seedText}:${attempt}`)
+          .digest('hex')
+          .slice(0, 8);
+        // MS-DOCX § 2.5.3.1: ST_LongHexNumber for paraId must be > 0 and < 0x80000000.
+        const numeric = (Number.parseInt(digest, 16) & 0x7fffffff) || 1;
+        const candidate = numeric.toString(16).toUpperCase().padStart(8, '0');
+        if (!usedW14ParaIds.has(candidate) && candidate !== '77777777') {
+          usedW14ParaIds.add(candidate);
+          return candidate;
+        }
+        attempt += 1;
+      }
+      throw new Error('Unable to allocate unique w14:paraId');
+    }
+
+    function stripClonedParagraphIdentityAttributes(paragraph: Element): void {
+      paragraph.removeAttributeNS(OOXML.W14_NS, 'paraId');
+      paragraph.removeAttribute('w14:paraId');
+      paragraph.removeAttribute('paraId');
+      paragraph.removeAttributeNS(OOXML.W14_NS, 'textId');
+      paragraph.removeAttribute('w14:textId');
+      paragraph.removeAttribute('textId');
+    }
+
+    function cloneParagraphShell(anchorPara: Element, seedText: string, ordinal: number): Element {
       // Clone anchor paragraph to preserve formatting; then wipe its runs and keep pPr only.
       const newP = anchorPara.cloneNode(true) as Element;
+      stripClonedParagraphIdentityAttributes(newP);
+      if (shouldAssignW14ParaId) {
+        if (doc.documentElement && doc.documentElement.lookupNamespaceURI('w14') !== OOXML.W14_NS) {
+          doc.documentElement.setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:w14', OOXML.W14_NS);
+        }
+        newP.setAttributeNS(OOXML.W14_NS, 'w14:paraId', allocateFreshW14ParaId(seedText, ordinal));
+      }
       const children = Array.from(newP.childNodes);
       for (const child of children) {
         if (child.nodeType === 1 && isWTag(child as Element, W.pPr)) continue;
@@ -1350,11 +1402,12 @@ export class DocxDocument {
 
     const paragraphsToInsert = newText.replace(/\r\n/g, '\n').split(/\n{2,}/);
 
-    const insertedIds: string[] = [];
-    let cursor: Node | null = getInsertionRefNode();
+    const insertedParagraphs: Element[] = [];
+    const cursor: Node | null = getInsertionRefNode();
 
-    for (const paraText of paragraphsToInsert) {
-      const newP = cloneParagraphShell(formattingSource);
+    for (let i = 0; i < paragraphsToInsert.length; i++) {
+      const paraText = paragraphsToInsert[i]!;
+      const newP = cloneParagraphShell(formattingSource, paraText, i);
       const newRun = cloneRunFormattingOnly(templateRun);
       appendTextToRun(newRun, paraText);
 
@@ -1370,14 +1423,13 @@ export class DocxDocument {
       }
 
       parent.insertBefore(newP, cursor);
+      insertedParagraphs.push(newP);
+    }
 
+    const insertedIds: string[] = [];
+    for (const newP of insertedParagraphs) {
       const id = insertSingleParagraphBookmark(doc, newP, this.paragraphBookmarkReservation);
       insertedIds.push(id);
-
-      if (relativePosition === 'AFTER') {
-        const endEl = nextElementSibling(newP);
-        cursor = endEl && isW(endEl, W.bookmarkEnd) ? endEl.nextSibling : newP.nextSibling;
-      }
     }
 
     this.dirty = true;
