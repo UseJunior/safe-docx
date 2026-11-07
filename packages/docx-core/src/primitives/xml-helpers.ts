@@ -45,10 +45,18 @@ export function getAttributeSafe(
 }
 
 /**
- * Return the first descendant element matching namespace/local-name, or null.
+ * Return the first direct child element matching namespace/local-name, or null.
+ * When `parent` is a Document, inspects direct children of `documentElement`
+ * (or the document root).
  */
 export function getFirstChild(parent: Element | Document, ns: string, localName: string): Element | null {
-  return parent.getElementsByTagNameNS(ns, localName).item(0) as Element | null;
+  const root: Node = parent.nodeType === 9 ? ((parent as Document).documentElement ?? parent) : parent;
+  for (let child = root.firstChild; child; child = child.nextSibling) {
+    if (child.nodeType !== 1) continue;
+    const el = child as Element;
+    if (el.localName === localName && el.namespaceURI === ns) return el;
+  }
+  return null;
 }
 
 /**

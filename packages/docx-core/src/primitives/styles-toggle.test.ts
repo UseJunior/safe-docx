@@ -83,4 +83,71 @@ describe('effective toggle-property evaluation', () => {
         });
       },
     );
+
+  test(
+    'tracked rPrChange and pPrChange snapshots are not read as current formatting across direct runs, paragraph styles, and character styles (#1179)',
+    async ({ given, when, then }: AllureBddContext) => {
+      let directFormatting!: RunFormatting;
+      let paragraphStyleFormatting!: RunFormatting;
+      let characterStyleFormatting!: RunFormatting;
+
+      await given('runs and styles whose current properties are off or unset while w:rPrChange records old bold, font, size, color, underline, and highlight', async () => {});
+
+      await when('effective run formatting is resolved for direct run rPr, paragraph style rPr, and character style rPr', async () => {
+        const oldRPrChange =
+          `<w:rPrChange w:id="1" w:author="Reviewer" w:date="2026-01-01T00:00:00Z">` +
+          `<w:rPr><w:b/><w:i/><w:u w:val="single"/><w:rFonts w:ascii="Courier New"/><w:sz w:val="32"/><w:color w:val="FF0000"/><w:highlight w:val="yellow"/></w:rPr>` +
+          `</w:rPrChange>`;
+
+        directFormatting = evaluate('', oldRPrChange);
+
+        const paraStyleDoc = parseXml(
+          `<w:document xmlns:w="${OOXML.W_NS}"><w:body>` +
+            `<w:p>` +
+            `<w:pPr>` +
+            `<w:pStyle w:val="BodyCurrent"/>` +
+            `<w:pPrChange w:id="2" w:author="Reviewer" w:date="2026-01-01T00:00:00Z">` +
+            `<w:pPr><w:pStyle w:val="OldBoldHeading"/><w:rPr><w:b/><w:color w:val="00FF00"/></w:rPr></w:pPr>` +
+            `</w:pPrChange>` +
+            `</w:pPr>` +
+            `<w:r><w:t>x</w:t></w:r>` +
+            `</w:p>` +
+            `</w:body></w:document>`,
+        );
+        const paraStyles = parseStylesXml(
+          parseXml(
+            `<w:styles xmlns:w="${OOXML.W_NS}">` +
+              `<w:style w:type="paragraph" w:styleId="BodyCurrent"><w:name w:val="Body Current"/><w:rPr>${oldRPrChange}</w:rPr></w:style>` +
+              `<w:style w:type="paragraph" w:styleId="OldBoldHeading"><w:name w:val="Old Bold Heading"/><w:rPr><w:b/></w:rPr></w:style>` +
+              `</w:styles>`,
+          ),
+        );
+        const pEl = paraStyleDoc.getElementsByTagNameNS(OOXML.W_NS, 'p').item(0)!;
+        const pPrEl = pEl.getElementsByTagNameNS(OOXML.W_NS, 'pPr').item(0)!;
+        paragraphStyleFormatting = extractEffectiveRunFormatting({
+          run: pEl.getElementsByTagNameNS(OOXML.W_NS, 'r').item(0)!,
+          paragraphPPr: pPrEl,
+          paragraphStyleId: 'BodyCurrent',
+          styles: paraStyles,
+        });
+
+        characterStyleFormatting = evaluate(
+          style('EmphasisCurrent', oldRPrChange),
+          `<w:rStyle w:val="EmphasisCurrent"/><w:rPrChange w:id="3" w:author="Reviewer" w:date="2026-01-01T00:00:00Z"><w:rPr><w:rStyle w:val="OldCharStyle"/><w:b/></w:rPr></w:rPrChange>`,
+        );
+      });
+
+      await then('every layer reports the current state instead of the pre-revision w:rPrChange / w:pPrChange state', () => {
+        for (const resolved of [directFormatting, paragraphStyleFormatting, characterStyleFormatting]) {
+          expect(resolved.bold).toBe(false);
+          expect(resolved.italic).toBe(false);
+          expect(resolved.underline).toBe(false);
+          expect(resolved.fontName).toBeNull();
+          expect(resolved.fontSizePt).toBeNull();
+          expect(resolved.colorHex).toBe('auto');
+          expect(resolved.highlightVal).toBe(false);
+        }
+      });
+    },
+  );
 });
