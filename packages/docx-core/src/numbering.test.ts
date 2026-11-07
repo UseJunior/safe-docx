@@ -190,6 +190,39 @@ describe('NumberingState', () => {
 });
 
 describe('processNumberedParagraph', () => {
+  test('interleaved documents reset their own nested counters', async ({ given, when, then }: AllureBddContext) => {
+    const first = createNumberingState();
+    const second = createNumberingState();
+    const level = { start: 1 } as ListLevelInfo;
+    await given('a document with a used nested level', () => {
+      processNumberedParagraph(first, 1, 0, level);
+      processNumberedParagraph(first, 1, 1, level);
+      expect(processNumberedParagraph(first, 1, 1, level)).toBe(2);
+    });
+    await when('another document uses the same numbering identity before the first returns to its parent', () => {
+      processNumberedParagraph(second, 1, 0, level);
+      processNumberedParagraph(first, 1, 0, level);
+    });
+    await then('only the first document resets its nested sequence', () => {
+      expect(processNumberedParagraph(first, 1, 1, level)).toBe(1);
+      expect(processNumberedParagraph(second, 1, 0, level)).toBe(2);
+    });
+  });
+
+  test('initializes prior-level state for legacy structural callers', async ({ given, when, then }: AllureBddContext) => {
+    const state = { counters: new Map<string, number[]>(), levelUsed: new Map<string, boolean[]>() };
+    const level = { start: 1 } as ListLevelInfo;
+    await given('a caller-created legacy numbering state', () => {});
+    await when('the caller traverses a nested list and returns to its parent', () => {
+      processNumberedParagraph(state, 2, 0, level);
+      processNumberedParagraph(state, 2, 1, level);
+      processNumberedParagraph(state, 2, 0, level);
+    });
+    await then('the nested sequence restarts', () => {
+      expect(processNumberedParagraph(state, 2, 1, level)).toBe(1);
+    });
+  });
+
   test('starts at start value on first use', async ({ given, when, then }: AllureBddContext) => {
     let state: ReturnType<typeof createNumberingState>;
     let result: number;
