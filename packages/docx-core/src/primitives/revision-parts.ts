@@ -1,5 +1,6 @@
 import { DocxZip } from './zip.js';
 import { auditSectPr } from './sectPrAudit.js';
+import { parseXml } from './xml.js';
 
 export const REVISION_STORY_PART_PATHS = [
   'word/footnotes.xml',
@@ -60,4 +61,42 @@ export async function enumerateSelectedHeaderFooterPartPaths(zip: DocxZip): Prom
     }
   }
   return [...paths].sort();
+}
+
+/**
+ * Load XML documents for all relationship-selected and standard revision-bearing
+ * side story parts in a DOCX archive.
+ */
+export async function getSidePartRevisionSeedDocs(archive: Buffer | DocxZip): Promise<Document[]> {
+  const docs: Document[] = [];
+
+  let zip: DocxZip;
+  if (archive instanceof DocxZip) {
+    zip = archive;
+  } else {
+    try {
+      zip = await DocxZip.load(archive);
+    } catch {
+      return docs;
+    }
+  }
+
+  for (const partPath of await enumerateSelectedRevisionStoryPartPaths(zip)) {
+    if (!zip.hasFile(partPath)) continue;
+    let xml: string | null;
+    try {
+      xml = await zip.readTextOrNull(partPath);
+    } catch {
+      continue;
+    }
+    if (!xml) continue;
+    try {
+      docs.push(parseXml(xml));
+    } catch {
+      // Malformed optional side part — skip so an unrelated parse failure
+      // does not block every tracked edit on the session.
+    }
+  }
+
+  return docs;
 }

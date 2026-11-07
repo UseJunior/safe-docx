@@ -15,7 +15,11 @@ import {
   convertSerializedDeletionContent,
   createRevisionContainer,
   createRevisionContext,
+  createRevisionIdAllocator,
   createRevisionIdState,
+  inferStartingRevisionId,
+  inferStartingRevisionIdState,
+  RevisionIdAllocator,
   wrapElementWithDel,
   wrapElementWithIns,
   wrapSerializedContentWithDel,
@@ -470,4 +474,177 @@ describe('track-changes-emitter', () => {
           .toEqual(['pgSz', 'titlePg']);
       },
     );
+});
+
+
+describe('RevisionIdAllocator', () => {
+  test('starts in unseeded status and throws when allocated before seeding', async () => {
+    const allocator = createRevisionIdAllocator();
+    expect(allocator instanceof RevisionIdAllocator).toBe(true);
+    expect(allocator.status).toBe('unseeded');
+    expect(allocator.isReady).toBe(false);
+
+    expect(() => allocator.allocate()).toThrow('Revision ID allocator is not ready (status: unseeded)');
+    expect(() => allocator.reserveMoveRange('key1')).toThrow('Revision ID allocator is not ready (status: unseeded)');
+    expect(() => allocateRevisionId(allocator)).toThrow('Revision ID allocator is not ready (status: unseeded)');
+  });
+
+  test('constructor with startId initializes directly into ready status', async () => {
+    const allocator = createRevisionIdAllocator({ startId: 42 });
+    expect(allocator.status).toBe('ready');
+    expect(allocator.isReady).toBe(true);
+    expect(allocator.nextId).toBe(42);
+    expect(allocator.allocate()).toBe(42);
+    expect(allocator.nextId).toBe(43);
+  });
+
+  test('seeds from a starting number, document elements, or resolver function', async () => {
+    const allocNum = createRevisionIdAllocator();
+    await allocNum.seed(100);
+    expect(allocNum.status).toBe('ready');
+    expect(allocNum.allocate()).toBe(100);
+
+    const allocDoc = createRevisionIdAllocator();
+    const doc = parseXml(
+      '<w:document xmlns:w="' + OOXML.W_NS + '">' +
+        '<w:body><w:p><w:ins w:id="75" w:author="Tester" w:date="2026-01-01T00:00:00Z"><w:r><w:t>A</w:t></w:r></w:ins></w:p></w:body>' +
+      '</w:document>'
+    );
+    await allocDoc.seed([doc]);
+    expect(allocDoc.status).toBe('ready');
+    expect(allocDoc.allocate()).toBe(76);
+
+    const allocFn = createRevisionIdAllocator();
+    await allocFn.seed(async () => 500);
+    expect(allocFn.status).toBe('ready');
+    expect(allocFn.allocate()).toBe(500);
+  });
+
+  test('shares concurrent in-flight seed operations across multiple callers', async () => {
+    const allocator = createRevisionIdAllocator();
+    let invocations = 0;
+
+    const slowSeeder = async () => {
+      invocations++;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return 200;
+    };
+
+    const [r1, r2, r3] = await Promise.all([
+      allocator.seed(slowSeeder),
+      allocator.seed(slowSeeder),
+      allocator.seed(slowSeeder),
+    ]);
+
+    expect(invocations).toBe(1);
+    expect(r1).toBe(allocator);
+    expect(r2).toBe(allocator);
+    expect(r3).toBe(allocator);
+    expect(allocator.status).toBe('ready');
+    expect(allocator.allocate()).toBe(200);
+    expect(allocator.allocate()).toBe(201);
+  });
+
+  test('retries failed seeds and transitions back to unseeded on error', async () => {
+    const allocator = createRevisionIdAllocator();
+    let attempts = 0;
+
+    const flakySeeder = async () => {
+      attempts++;
+      if (attempts === 1) {
+        throw new Error('Seed I/O failure');
+      }
+      return 350;
+    };
+
+    await expect(allocator.seed(flakySeeder)).rejects.toThrow('Seed I/O failure');
+    expect(allocator.status).toBe('unseeded');
+    expect(allocator.isReady).toBe(false);
+
+    // Second call retries
+    await allocator.seed(flakySeeder);
+    expect(attempts).toBe(2);
+    expect(allocator.status).toBe('ready');
+    expect(allocator.allocate()).toBe(350);
+  });
+
+  test('ensureReady is idempotent when already ready and defaults to startId 1', async () => {
+    const allocator = createRevisionIdAllocator();
+    await allocator.ensureReady();
+    expect(allocator.status).toBe('ready');
+    expect(allocator.allocate()).toBe(1);
+
+    // Idempotent second call
+    await allocator.ensureReady(999);
+    expect(allocator.allocate()).toBe(2);
+  });
+
+  test('reserveMoveRange pairs source and destination IDs and caches by key', async () => {
+    const allocator = createRevisionIdAllocator({ startId: 10 });
+    const pair1 = allocator.reserveMoveRange('moveA');
+    expect(pair1.sourceRangeId).toBe(10);
+    expect(pair1.destRangeId).toBe(11);
+
+    // Same key returns the same reservation
+    const pair2 = allocator.reserveMoveRange('moveA');
+    expect(pair2).toBe(pair1);
+
+    // Different key allocates new pair
+    const pair3 = allocator.reserveMoveRange('moveB');
+    expect(pair3.sourceRangeId).toBe(12);
+    expect(pair3.destRangeId).toBe(13);
+  });
+
+  test('preserves revision grouping policy (#926) without logical revision collisions', async () => {
+    // Sibling wrappers of one logical edit (e.g. deletion split across bookmark)
+    // share the same allocated ID under the same revision signature.
+    // Distinct logical revisions receive incremented, non-colliding IDs.
+    const allocator = createRevisionIdAllocator({ startId: 1 });
+    const logicalRev1Id = allocator.allocate();
+    expect(logicalRev1Id).toBe(1);
+
+    // Sibling fragment uses the same ID
+    const fragment1Id = logicalRev1Id;
+    const fragment2Id = logicalRev1Id;
+    expect(fragment1Id).toBe(fragment2Id);
+
+    // Next logical revision gets the next unique ID
+    const logicalRev2Id = allocator.allocate();
+    expect(logicalRev2Id).toBe(2);
+    expect(logicalRev2Id).not.toBe(logicalRev1Id);
+  });
+
+  test('scans supported stories and ignores non-revision element w:id attributes', async () => {
+    const mainDoc = parseXml(
+      '<w:document xmlns:w="' + OOXML.W_NS + '">' +
+        '<w:body><w:p>' +
+          '<w:bookmarkStart w:id="9999" w:name="b1"/>' +
+          '<w:ins w:id="20" w:author="Tester" w:date="2026-01-01T00:00:00Z"><w:r><w:t>M</w:t></w:r></w:ins>' +
+        '</w:p></w:body>' +
+      '</w:document>'
+    );
+    const commentsDoc = parseXml(
+      '<w:comments xmlns:w="' + OOXML.W_NS + '">' +
+        '<w:comment w:id="8888" w:author="Reviewer" w:date="2026-01-01T00:00:00Z">' +
+          '<w:p><w:del w:id="45" w:author="Reviewer" w:date="2026-01-01T00:00:00Z"><w:delText>D</w:delText></w:del></w:p>' +
+        '</w:comment>' +
+      '</w:comments>'
+    );
+    const footnotesDoc = parseXml(
+      '<w:footnotes xmlns:w="' + OOXML.W_NS + '">' +
+        '<w:footnote w:id="7777" w:type="normal">' +
+          '<w:p><w:pPr><w:pPrChange w:id="60" w:author="Writer" w:date="2026-01-01T00:00:00Z"><w:pPr/></w:pPrChange></w:pPr></w:p>' +
+        '</w:footnote>' +
+      '</w:footnotes>'
+    );
+
+    const startingId = inferStartingRevisionId(mainDoc, commentsDoc, footnotesDoc);
+    // Highest revision id is 60 (pPrChange in footnotes).
+    // Bookmark 9999, comment 8888, footnote 7777 are ignored because they are not in REVISION_ID_ELEMENT_NAME_SET.
+    expect(startingId).toBe(61);
+
+    const allocator = inferStartingRevisionIdState(mainDoc, commentsDoc, footnotesDoc);
+    expect(allocator.status).toBe('ready');
+    expect(allocator.allocate()).toBe(61);
+  });
 });

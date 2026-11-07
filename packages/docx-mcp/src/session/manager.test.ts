@@ -279,6 +279,42 @@ describe('revision context helpers', () => {
     expect(c).toBeDefined();
     expect(session.revisionIdState?.nextId).toBe(11);
   });
+
+  test('retries failed revision id seed on subsequent calls', async () => {
+    const mgr = new SessionManager({ defaultAiAuthor: 'SafeDocX' });
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mgr-revision-retry-test-'));
+    tmpDirs.push(dir);
+    const filePath = path.join(dir, 'retry.docx');
+    const documentXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:body><w:p><w:ins w:id="55" w:author="x" w:date="2026-01-01T00:00:00Z"><w:r><w:t>Hi</w:t></w:r></w:ins></w:p></w:body></w:document>';
+    const buf = await makeDocxWithDocumentXml(documentXml);
+    await fs.writeFile(filePath, new Uint8Array(buf));
+
+    const session = await mgr.createSession(buf, 'retry.docx', filePath);
+
+    // Inject temporary failure into session.doc.getRevisionSeedDocuments
+    const originalMethod = (session.doc as any).getRevisionSeedDocuments;
+    let callCount = 0;
+    (session.doc as any).getRevisionSeedDocuments = async () => {
+      callCount++;
+      if (callCount === 1) {
+        throw new Error('Simulated transient storage failure');
+      }
+      return originalMethod ? originalMethod.call(session.doc) : [session.doc.getDocumentXmlClone()];
+    };
+
+    // First attempt fails and leaves allocator unseeded
+    await expect(getRevisionContextForSession(session)).rejects.toThrow('Simulated transient storage failure');
+    expect(session.revisionIdAllocator?.status).toBe('unseeded');
+
+    // Second attempt retries and succeeds behind the allocator boundary
+    const ctx = await getRevisionContextForSession(session);
+    expect(ctx).toBeDefined();
+    expect(session.revisionIdAllocator?.status).toBe('ready');
+    expect(session.revisionIdState?.nextId).toBe(56);
+  });
 });
 
 // ── getSessionByPath ────────────────────────────────────────────────
@@ -518,7 +554,7 @@ describe('SessionManager.normalizePath', () => {
   test('resolves parent directory references', () => {
     const mgr = new SessionManager();
     const result = mgr.normalizePath('/tmp/foo/../bar');
-    expect(result).toBe('/tmp/bar');
+    expect(result).toBe(path.resolve('/tmp/bar'));
   });
 });
 

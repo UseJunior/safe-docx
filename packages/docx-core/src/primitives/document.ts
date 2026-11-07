@@ -17,6 +17,7 @@ import { formatParagraphTextRange, getParagraphRuns, getParagraphText, replacePa
 import {
   allocateRevisionId,
   createRevisionContainer,
+  inferStartingRevisionId,
   type RevisionContext,
 } from './track-changes-emitter.js';
 import { buildNodesForDocumentView, collectViewParagraphs, type DocumentStyles, type DocumentViewNode } from './document_view.js';
@@ -80,6 +81,7 @@ import {
 import {
   enumerateSelectedHeaderFooterPartPaths,
   enumerateSelectedRevisionStoryPartPaths,
+  getSidePartRevisionSeedDocs,
 } from './revision-parts.js';
 import { acceptChanges as acceptChangesImpl, type AcceptChangesResult } from './accept_changes.js';
 import { rejectChanges as rejectChangesImpl, type RejectChangesResult } from './reject_changes.js';
@@ -771,6 +773,26 @@ export class DocxDocument {
    */
   validate(): ValidateDocumentResult {
     return validateDocument(this.documentXml);
+  }
+
+  /**
+   * Collect all supported story XML documents (document.xml plus supported side parts)
+   * used for revision ID seeding and package-wide revision analysis.
+   */
+  async getRevisionSeedDocuments(): Promise<Document[]> {
+    const docs: Document[] = [this.getDocumentXmlClone()];
+    const sideDocs = await getSidePartRevisionSeedDocs(this.zip);
+    docs.push(...sideDocs);
+    return docs;
+  }
+
+  /**
+   * Calculate the first available package-wide revision ID that avoids collisions
+   * across all supported stories in the document.
+   */
+  async inferStartingRevisionId(): Promise<number> {
+    const docs = await this.getRevisionSeedDocuments();
+    return inferStartingRevisionId(...docs);
   }
 
   async validateAiRevisions(

@@ -30,11 +30,15 @@ export {
   buildRPrChangeElement,
   createRevisionContainer,
   createRevisionContext,
+  createRevisionIdAllocator,
   createRevisionIdState,
   escapeXmlAttr,
   formatDate,
+  inferStartingRevisionId,
+  inferStartingRevisionIdState,
   prepareElementForDeletion,
   convertSerializedDeletionContent,
+  RevisionIdAllocator,
   wrapSerializedContentWithDel,
   wrapSerializedContentWithIns,
   wrapElementWithDel,
@@ -43,8 +47,12 @@ export {
 export type {
   RevisionContext,
   RevisionContextOptions,
+  RevisionIdAllocatorOptions,
+  RevisionIdAllocatorStatus,
+  RevisionIdSeeder,
   RevisionIdState,
 } from './primitives/track-changes-emitter.js';
+export { getSidePartRevisionSeedDocs } from './primitives/revision-parts.js';
 
 // Effective run-formatting resolution (issue #684). These names already reach
 // the entry point through the star exports above; they are restated explicitly
