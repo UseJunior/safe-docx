@@ -239,68 +239,70 @@ export async function formatSection(
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
 
-    const sectionsBefore = session.doc.getSections();
-    const targetBefore = sectionsBefore[params.section_index];
-    if (!targetBefore) {
-      return err(
-        'SECTION_NOT_FOUND',
-        `Section index ${params.section_index} was not found.`,
-        'Call get_sections again and choose a current section_index.',
+    const sectionIndex = params.section_index;
+    return await manager.mutateSession(session, async (tx) => {
+      const sectionsBefore = session.doc.getSections();
+      const targetBefore = sectionsBefore[sectionIndex];
+      if (!targetBefore) {
+        return err(
+          'SECTION_NOT_FOUND',
+          `Section index ${sectionIndex} was not found.`,
+          'Call get_sections again and choose a current section_index.',
+        );
+      }
+
+      const paragraphCountBefore = session.doc.getParagraphs().length;
+      const ctx = await getRevisionContextForSession(session);
+      const mutation = {
+        sectionIndex,
+        pageNumberStart: params.page_number_start as number | undefined,
+        pageSize: parsedPageSize.value,
+        margins: parsedMargins.value,
+      };
+      const revisionPreflight = await preflightAiRevisionMutation(
+        session,
+        ctx,
+        (previewDoc, previewCtx) => {
+          previewDoc.updateSectionProperties(mutation, previewCtx);
+        },
       );
-    }
+      if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
-    const paragraphCountBefore = session.doc.getParagraphs().length;
-    const ctx = await getRevisionContextForSession(session);
-    const mutation = {
-      sectionIndex: params.section_index,
-      pageNumberStart: params.page_number_start as number | undefined,
-      pageSize: parsedPageSize.value,
-      margins: parsedMargins.value,
-    };
-    const revisionPreflight = await preflightAiRevisionMutation(
-      session,
-      ctx,
-      (previewDoc, previewCtx) => {
-        previewDoc.updateSectionProperties(mutation, previewCtx);
-      },
-    );
-    if (revisionPreflight.blocked) return revisionPreflight.blocked;
+      const result = session.doc.updateSectionProperties(mutation, ctx);
+      const sectionsAfter = session.doc.getSections();
+      const paragraphCountAfter = session.doc.getParagraphs().length;
+      if (
+        sectionsBefore.length !== sectionsAfter.length
+        || paragraphCountBefore !== paragraphCountAfter
+      ) {
+        return err(
+          'INVARIANT_VIOLATION',
+          'Section formatting changed section or paragraph count.',
+          'Section page-number formatting must preserve document topology.',
+        );
+      }
 
-    const result = session.doc.updateSectionProperties(mutation, ctx);
-    const sectionsAfter = session.doc.getSections();
-    const paragraphCountAfter = session.doc.getParagraphs().length;
-    if (
-      sectionsBefore.length !== sectionsAfter.length
-      || paragraphCountBefore !== paragraphCountAfter
-    ) {
-      return err(
-        'INVARIANT_VIOLATION',
-        'Section formatting changed section or paragraph count.',
-        'Section page-number formatting must preserve document topology.',
-      );
-    }
+      tx.commit({ changed: result.changed, touch: true });
 
-    if (result.changed) manager.markEdited(session);
-    manager.touch(session);
-
-    return ok(mergeSessionResolutionMetadata({
-      file_path: manager.normalizePath(session.originalPath),
-      section_index: result.sectionIndex,
-      changed: result.changed,
-      previous_page_number_start: result.previousSection.pageNumberStart,
-      resulting_page_number_start: result.currentSection.pageNumberStart,
-      previous_page_size: projectSectionForTool(result.previousSection).page_size,
-      resulting_page_size: projectSectionForTool(result.currentSection).page_size,
-      previous_margins: projectSectionForTool(result.previousSection).margins,
-      resulting_margins: projectSectionForTool(result.currentSection).margins,
-      section_count_before: sectionsBefore.length,
-      section_count_after: sectionsAfter.length,
-      paragraph_count_before: paragraphCountBefore,
-      paragraph_count_after: paragraphCountAfter,
-      message: result.changed
-        ? 'Section page setup updated with a tracked property change.'
-        : 'Section page setup already matched the requested state; no edit was recorded.',
-    }, metadata));
+      return ok(mergeSessionResolutionMetadata({
+        file_path: manager.normalizePath(session.originalPath),
+        section_index: result.sectionIndex,
+        changed: result.changed,
+        previous_page_number_start: result.previousSection.pageNumberStart,
+        resulting_page_number_start: result.currentSection.pageNumberStart,
+        previous_page_size: projectSectionForTool(result.previousSection).page_size,
+        resulting_page_size: projectSectionForTool(result.currentSection).page_size,
+        previous_margins: projectSectionForTool(result.previousSection).margins,
+        resulting_margins: projectSectionForTool(result.currentSection).margins,
+        section_count_before: sectionsBefore.length,
+        section_count_after: sectionsAfter.length,
+        paragraph_count_before: paragraphCountBefore,
+        paragraph_count_after: paragraphCountAfter,
+        message: result.changed
+          ? 'Section page setup updated with a tracked property change.'
+          : 'Section page setup already matched the requested state; no edit was recorded.',
+      }, metadata));
+    });
   } catch (error: unknown) {
     if (error instanceof SectionMutationError) {
       return err(error.code, error.message, mutationHint(error.code));

@@ -136,48 +136,11 @@ export async function insertParagraph(
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'insert_paragraph' });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
-    const revisionCtx = ctx ?? await getRevisionContextForSession(session);
 
     const positionUpper = (params.position ?? 'AFTER').toUpperCase();
     if (positionUpper !== 'BEFORE' && positionUpper !== 'AFTER') {
       return err('INVALID_POSITION', `Invalid position: ${params.position}. Must be 'BEFORE' or 'AFTER'.`);
     }
-
-    const anchorText = session.doc.getParagraphTextById(params.positional_anchor_node_id);
-    if (anchorText === null) {
-      return err('ANCHOR_NOT_FOUND', `Paragraph ID ${params.positional_anchor_node_id} not found in document`);
-    }
-
-    let styleSourceId = params.style_source_id;
-    if (!styleSourceId && params.target_style) {
-      const { nodes } = session.doc.buildDocumentView({ includeSemanticTags: false });
-      const anchorIdx = nodes.findIndex((n) => n.id === params.positional_anchor_node_id);
-      if (anchorIdx >= 0) {
-        let bestDist = Infinity;
-        let bestId: string | null = null;
-        for (let i = 0; i < nodes.length; i++) {
-          if (nodes[i]!.style === params.target_style) {
-            const dist = Math.abs(i - anchorIdx);
-            if (dist < bestDist) {
-              bestDist = dist;
-              bestId = nodes[i]!.id;
-            }
-          }
-        }
-        if (bestId) styleSourceId = bestId;
-      }
-    }
-
-    const structuralWarnings = validateStructuralInsertions(
-      session.doc.buildDocumentView({ includeSemanticTags: false, showFormatting: true }).nodes,
-      [{
-        operationId: 'insert_paragraph',
-        position: positionUpper as 'BEFORE' | 'AFTER',
-        anchorId: params.positional_anchor_node_id,
-        styleSourceId,
-      }],
-      { runInHeadingIds: collectRunInHeadingIds(session.doc.getParagraphs()) },
-    );
 
     let inputText = params.new_string;
     if (hasHyperlinkTags(inputText)) inputText = stripHyperlinkTags(inputText);
@@ -191,73 +154,112 @@ export async function insertParagraph(
     }
     const plainParagraphs = paragraphInputs.map((p) => stripAllInlineTags(p));
 
-    const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined) => {
-      const res = doc.insertParagraph({
-        positionalAnchorNodeId: params.positional_anchor_node_id,
-        relativePosition: positionUpper as 'BEFORE' | 'AFTER',
-        newText: plainParagraphs.join('\n\n'),
-        styleSourceId: styleSourceId,
-      }, activeCtx);
+    return await manager.mutateSession(session, async (tx) => {
+      const revisionCtx = ctx ?? await getRevisionContextForSession(session);
 
-      const needsHeaderRoleModel = parsedParagraphs.some((segs) => segs.some((s) => s.header));
-      const headerAddProps = needsHeaderRoleModel
-        ? findHeaderRoleModelAddRunProps(doc, params.positional_anchor_node_id)
-        : null;
-
-      for (let i = 0; i < res.newParagraphIds.length; i++) {
-        const newPid = res.newParagraphIds[i]!;
-        const segs = parsedParagraphs[i] ?? [];
-        const plainText = plainParagraphs[i] ?? '';
-        const pEl = doc.getParagraphElementById(newPid);
-        if (!pEl) continue;
-        const runs = getParagraphRuns(pEl);
-        const templateRun = chooseRunByOverlap(runs, 0, Math.max(plainText.length, 1)) ?? runs[0]?.r ?? null;
-
-        const replacementParts = buildReplacementPartsForInsert(segs, templateRun, headerAddProps);
-        if (!replacementParts || replacementParts.length === 0) continue;
-        doc.replaceText({ targetParagraphId: newPid, findText: plainText, replaceText: replacementParts });
+      const anchorText = session.doc.getParagraphTextById(params.positional_anchor_node_id);
+      if (anchorText === null) {
+        return err('ANCHOR_NOT_FOUND', `Paragraph ID ${params.positional_anchor_node_id} not found in document`);
       }
 
-      return res;
-    };
+      let styleSourceId = params.style_source_id;
+      if (!styleSourceId && params.target_style) {
+        const { nodes } = session.doc.buildDocumentView({ includeSemanticTags: false });
+        const anchorIdx = nodes.findIndex((n) => n.id === params.positional_anchor_node_id);
+        if (anchorIdx >= 0) {
+          let bestDist = Infinity;
+          let bestId: string | null = null;
+          for (let i = 0; i < nodes.length; i++) {
+            if (nodes[i]!.style === params.target_style) {
+              const dist = Math.abs(i - anchorIdx);
+              if (dist < bestDist) {
+                bestDist = dist;
+                bestId = nodes[i]!.id;
+              }
+            }
+          }
+          if (bestId) styleSourceId = bestId;
+        }
+      }
 
-    const revisionPreflight = params.skip_ai_revision_preflight
-      ? null
-      : await preflightAiRevisionMutation(
-          session,
-          revisionCtx,
-          (doc, activeCtx) => { mutate(doc, activeCtx); },
-          undefined,
-          // Formatting markup is not part of the construct match, so the gate
-          // reads the plain text this insertion adds (issue #687).
-          { insertedText: stripAllInlineTags(params.new_string) },
-        );
-    if (revisionPreflight?.blocked) return revisionPreflight.blocked;
+      const structuralWarnings = validateStructuralInsertions(
+        session.doc.buildDocumentView({ includeSemanticTags: false, showFormatting: true }).nodes,
+        [{
+          operationId: 'insert_paragraph',
+          position: positionUpper as 'BEFORE' | 'AFTER',
+          anchorId: params.positional_anchor_node_id,
+          styleSourceId,
+        }],
+        { runInHeadingIds: collectRunInHeadingIds(session.doc.getParagraphs()) },
+      );
 
-    const res = mutate(session.doc, revisionCtx);
+      const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined) => {
+        const res = doc.insertParagraph({
+          positionalAnchorNodeId: params.positional_anchor_node_id,
+          relativePosition: positionUpper as 'BEFORE' | 'AFTER',
+          newText: plainParagraphs.join('\n\n'),
+          styleSourceId: styleSourceId,
+        }, activeCtx);
 
-    manager.markEdited(session);
+        const needsHeaderRoleModel = parsedParagraphs.some((segs) => segs.some((s) => s.header));
+        const headerAddProps = needsHeaderRoleModel
+          ? findHeaderRoleModelAddRunProps(doc, params.positional_anchor_node_id)
+          : null;
 
-    const responseData: Record<string, unknown> = {
-      success: true,
-      file_path: manager.normalizePath(session.originalPath),
-      edit_count: session.editCount,
-      anchor_paragraph_id: params.positional_anchor_node_id,
-      new_paragraph_id: res.newParagraphId,
-      new_paragraph_ids: res.newParagraphIds,
-      position: positionUpper,
-      inserted_text: previewText(plainParagraphs.join('\n\n'), RESULT_PREVIEW_CHARS),
-    };
-    if (structuralWarnings.length > 0) responseData.structural_warnings = structuralWarnings;
-    if (res.styleSourceFallback) {
-      responseData.style_source_warning = `style_source_id '${params.style_source_id}' not found; fell back to anchor paragraph formatting.`;
-    }
-    // Same optional `warnings?: string[]` channel #701 gave the other mutating
-    // tools; insert_paragraph was left without one, which would have made the
-    // convention check unobservable on this path.
-    const warnings = revisionPreflight?.warnings ?? [];
-    if (warnings.length > 0) responseData.warnings = warnings;
-    return ok(mergeSessionResolutionMetadata(responseData, metadata));
+        for (let i = 0; i < res.newParagraphIds.length; i++) {
+          const newPid = res.newParagraphIds[i]!;
+          const segs = parsedParagraphs[i] ?? [];
+          const plainText = plainParagraphs[i] ?? '';
+          const pEl = doc.getParagraphElementById(newPid);
+          if (!pEl) continue;
+          const runs = getParagraphRuns(pEl);
+          const templateRun = chooseRunByOverlap(runs, 0, Math.max(plainText.length, 1)) ?? runs[0]?.r ?? null;
+
+          const replacementParts = buildReplacementPartsForInsert(segs, templateRun, headerAddProps);
+          if (!replacementParts || replacementParts.length === 0) continue;
+          doc.replaceText({ targetParagraphId: newPid, findText: plainText, replaceText: replacementParts });
+        }
+
+        return res;
+      };
+
+      const revisionPreflight = params.skip_ai_revision_preflight
+        ? null
+        : await preflightAiRevisionMutation(
+            session,
+            revisionCtx,
+            (doc, activeCtx) => { mutate(doc, activeCtx); },
+            undefined,
+            // Formatting markup is not part of the construct match, so the gate
+            // reads the plain text this insertion adds (issue #687).
+            { insertedText: stripAllInlineTags(params.new_string) },
+          );
+      if (revisionPreflight?.blocked) return revisionPreflight.blocked;
+
+      const res = mutate(session.doc, revisionCtx);
+      tx.commit();
+
+      const responseData: Record<string, unknown> = {
+        success: true,
+        file_path: manager.normalizePath(session.originalPath),
+        edit_count: session.editCount,
+        anchor_paragraph_id: params.positional_anchor_node_id,
+        new_paragraph_id: res.newParagraphId,
+        new_paragraph_ids: res.newParagraphIds,
+        position: positionUpper,
+        inserted_text: previewText(plainParagraphs.join('\n\n'), RESULT_PREVIEW_CHARS),
+      };
+      if (structuralWarnings.length > 0) responseData.structural_warnings = structuralWarnings;
+      if (res.styleSourceFallback) {
+        responseData.style_source_warning = `style_source_id '${params.style_source_id}' not found; fell back to anchor paragraph formatting.`;
+      }
+      // Same optional `warnings?: string[]` channel #701 gave the other mutating
+      // tools; insert_paragraph was left without one, which would have made the
+      // convention check unobservable on this path.
+      const warnings = revisionPreflight?.warnings ?? [];
+      if (warnings.length > 0) responseData.warnings = warnings;
+      return ok(mergeSessionResolutionMetadata(responseData, metadata));
+    });
   } catch (e: unknown) {
     return err('INSERT_ERROR', `Failed to insert paragraph: ${errorMessage(e)}`);
   }

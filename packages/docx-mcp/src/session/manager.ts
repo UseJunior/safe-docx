@@ -289,6 +289,79 @@ export function isOdfSession(s: Session): s is OdfSession {
   return s.provider === 'odf';
 }
 
+export type PendingNonRevisionChange = Omit<NonRevisionChange, 'editRevision'>;
+export type PendingSelectiveRevisionAction = Omit<SelectiveRevisionAction, 'editRevision'>;
+
+export type SessionMutationCommitOptions = {
+  changed?: boolean;
+  touch?: boolean;
+  nonRevisionChanges?: PendingNonRevisionChange[];
+  selectiveRevisionAction?: PendingSelectiveRevisionAction;
+};
+
+export interface SessionMutationTransaction {
+  readonly committed: boolean;
+  commit(opts?: SessionMutationCommitOptions): void;
+}
+
+type DocxStateCheckpoint = {
+  documentXml: Node | null;
+  stylesXml: Node | null;
+  themeXml: Node | null;
+  numberingXml: Node | null;
+  footnotesXml: Node | null;
+  relsMap: Map<string, string> | null;
+  dirty: unknown;
+  documentViewCache: unknown;
+  paragraphBookmarkReservation:
+    | { nextId: number; usedIds: Set<number>; usedNames: Set<string> }
+    | undefined;
+  originalDocumentXmlText: string | null;
+  zipFiles: Record<string, unknown> | null;
+};
+
+type SessionStateCheckpoint = {
+  editCount: number;
+  editRevision: number;
+  docx?: {
+    docState: DocxStateCheckpoint;
+    revisionIdState: RevisionIdState | null;
+    saveCache: Map<string, SaveCacheEntry>;
+    extractionCache: ExtractionCacheEntry | null;
+    nonRevisionManifest: NonRevisionChange[];
+    selectiveRevisionAction: SelectiveRevisionAction | null;
+  };
+  odfXmlDoc?: Node | null;
+};
+
+function validatePendingNonRevisionChange(change: PendingNonRevisionChange): NonRevisionChange['parts'] {
+  if (!change || typeof change.tool !== 'string' || change.tool.trim().length === 0) {
+    throw new Error('Invalid non-revision change attribution: tool name is required.');
+  }
+  if (!Array.isArray(change.parts) || change.parts.some((p) => typeof p !== 'string' || p.trim().length === 0)) {
+    throw new Error('Invalid non-revision change attribution: parts must be a non-empty string list.');
+  }
+  if (typeof change.description !== 'string' || change.description.trim().length === 0) {
+    throw new Error('Invalid non-revision change attribution: description is required.');
+  }
+  return [...change.parts];
+}
+
+function validatePendingSelectiveRevisionAction(
+  action: PendingSelectiveRevisionAction,
+): SelectiveRevisionAction['selectedRevisionIds'] {
+  if (
+    !action
+    || (action.tool !== 'accept_ai_edits' && action.tool !== 'reject_ai_edits')
+    || (action.selector !== 'revision_ids' && action.selector !== 'author')
+    || !Array.isArray(action.selectedRevisionIds)
+    || action.selectedRevisionIds.some((id) => typeof id !== 'string' || id.trim().length === 0)
+  ) {
+    throw new Error('Invalid selective revision action attribution.');
+  }
+  return [...action.selectedRevisionIds];
+}
+
 export class SessionManager {
   /** Sessions keyed by canonical file path (realpath). */
   private sessions = new Map<string, Session>();
@@ -297,6 +370,9 @@ export class SessionManager {
 
   /** Concurrency guard: prevents double-generation of baselines for the same session. */
   private baselinePromises = new WeakMap<DocxSession, Promise<void>>();
+
+  /** Per-session FIFO mutation lock (#1301). */
+  private mutationQueues = new WeakMap<Session, Promise<void>>();
 
   constructor(opts?: { ttlMs?: number; defaultAiAuthor?: string | null }) {
     this.ttlMs = opts?.ttlMs ?? 60 * 60 * 1000;
@@ -558,15 +634,263 @@ export class SessionManager {
     session.expiresAt = new Date(now.getTime() + this.ttlMs);
   }
 
-  markEdited(session: Session): void {
+  private captureSessionCheckpoint(session: Session): SessionStateCheckpoint {
+    const base: SessionStateCheckpoint = {
+      editCount: session.editCount,
+      editRevision: session.editRevision,
+    };
+
+    if (isDocxSession(session)) {
+      const docAny = session.doc as unknown as Record<string, any>;
+      const reservation = docAny.paragraphBookmarkReservation as
+        | { nextId: number; usedIds: Set<number>; usedNames: Set<string> }
+        | undefined;
+      const zipInner = docAny.zip?.zip as { files?: Record<string, unknown> } | undefined;
+
+      base.docx = {
+        docState: {
+          documentXml: docAny.documentXml?.cloneNode ? docAny.documentXml.cloneNode(true) : null,
+          stylesXml: docAny.stylesXml?.cloneNode ? docAny.stylesXml.cloneNode(true) : null,
+          themeXml: docAny.themeXml?.cloneNode ? docAny.themeXml.cloneNode(true) : null,
+          numberingXml: docAny.numberingXml?.cloneNode ? docAny.numberingXml.cloneNode(true) : null,
+          footnotesXml: docAny.footnotesXml?.cloneNode ? docAny.footnotesXml.cloneNode(true) : null,
+          relsMap: docAny.relsMap instanceof Map ? new Map(docAny.relsMap) : null,
+          dirty: docAny.dirty,
+          documentViewCache: docAny.documentViewCache,
+          paragraphBookmarkReservation: reservation
+            ? {
+                nextId: reservation.nextId,
+                usedIds: new Set(reservation.usedIds),
+                usedNames: new Set(reservation.usedNames),
+              }
+            : undefined,
+          originalDocumentXmlText: docAny.originalDocumentXmlText ?? null,
+          zipFiles: zipInner?.files ? { ...zipInner.files } : null,
+        },
+        revisionIdState: session.revisionIdState
+          ? {
+              nextId: session.revisionIdState.nextId,
+              moveRangeIds: new Map(session.revisionIdState.moveRangeIds),
+            }
+          : null,
+        saveCache: new Map(session.saveCache),
+        extractionCache: session.extractionCache
+          ? { revision: session.extractionCache.revision, changes: [...session.extractionCache.changes] }
+          : null,
+        nonRevisionManifest: session.nonRevisionManifest.map((entry) => ({
+          ...entry,
+          parts: [...entry.parts],
+        })),
+        selectiveRevisionAction: session.selectiveRevisionAction
+          ? {
+              ...session.selectiveRevisionAction,
+              selectedRevisionIds: [...session.selectiveRevisionAction.selectedRevisionIds],
+            }
+          : null,
+      };
+    } else if (isOdfSession(session)) {
+      const odfDocAny = session.doc as Record<string, any> | undefined;
+      base.odfXmlDoc = odfDocAny?.xmlDoc?.cloneNode ? odfDocAny.xmlDoc.cloneNode(true) : null;
+    }
+
+    return base;
+  }
+
+  private restoreSessionCheckpoint(session: Session, checkpoint: SessionStateCheckpoint): void {
+    session.editCount = checkpoint.editCount;
+    session.editRevision = checkpoint.editRevision;
+
+    if (isDocxSession(session) && checkpoint.docx) {
+      const { docState } = checkpoint.docx;
+      const docAny = session.doc as unknown as Record<string, any>;
+      if (docState.documentXml) docAny.documentXml = docState.documentXml;
+      docAny.stylesXml = docState.stylesXml;
+      docAny.themeXml = docState.themeXml;
+      docAny.numberingXml = docState.numberingXml;
+      docAny.footnotesXml = docState.footnotesXml;
+      if (docState.relsMap) docAny.relsMap = new Map(docState.relsMap);
+      docAny.dirty = docState.dirty;
+      docAny.documentViewCache = docState.documentViewCache;
+      docAny.paragraphBookmarkReservation = docState.paragraphBookmarkReservation
+        ? {
+            nextId: docState.paragraphBookmarkReservation.nextId,
+            usedIds: new Set(docState.paragraphBookmarkReservation.usedIds),
+            usedNames: new Set(docState.paragraphBookmarkReservation.usedNames),
+          }
+        : undefined;
+      docAny.originalDocumentXmlText = docState.originalDocumentXmlText;
+      if (docState.zipFiles && docAny.zip?.zip) {
+        docAny.zip.zip.files = { ...docState.zipFiles };
+      }
+
+      if (checkpoint.docx.revisionIdState) {
+        if (session.revisionIdState) {
+          session.revisionIdState.nextId = checkpoint.docx.revisionIdState.nextId;
+          session.revisionIdState.moveRangeIds = new Map(checkpoint.docx.revisionIdState.moveRangeIds);
+        } else {
+          session.revisionIdState = {
+            nextId: checkpoint.docx.revisionIdState.nextId,
+            moveRangeIds: new Map(checkpoint.docx.revisionIdState.moveRangeIds),
+          };
+        }
+      } else {
+        session.revisionIdState = null;
+      }
+
+      session.saveCache.clear();
+      for (const [k, v] of checkpoint.docx.saveCache.entries()) {
+        session.saveCache.set(k, v);
+      }
+      session.extractionCache = checkpoint.docx.extractionCache
+        ? {
+            revision: checkpoint.docx.extractionCache.revision,
+            changes: [...checkpoint.docx.extractionCache.changes],
+          }
+        : null;
+      session.nonRevisionManifest = checkpoint.docx.nonRevisionManifest.map((entry) => ({
+        ...entry,
+        parts: [...entry.parts],
+      }));
+      session.selectiveRevisionAction = checkpoint.docx.selectiveRevisionAction
+        ? {
+            ...checkpoint.docx.selectiveRevisionAction,
+            selectedRevisionIds: [...checkpoint.docx.selectiveRevisionAction.selectedRevisionIds],
+          }
+        : null;
+    } else if (isOdfSession(session) && checkpoint.odfXmlDoc) {
+      const odfDocAny = session.doc as Record<string, any> | undefined;
+      if (odfDocAny) {
+        odfDocAny.xmlDoc = checkpoint.odfXmlDoc;
+      }
+    }
+  }
+
+  /**
+   * Atomically commit a session mutation's edit counters, cache invalidation,
+   * and manifest/selective-revision attribution (#1301).
+   *
+   * Precommit validation of attribution payloads runs before any counter or
+   * cache is modified. No-op operations (`changed === false`, #1084) preserve
+   * counters, caches, and manifests untouched.
+   */
+  commitMutation(session: Session, opts?: SessionMutationCommitOptions): void {
+    const changed = opts?.changed ?? true;
+    const hasNonRevision = Boolean(opts?.nonRevisionChanges && opts.nonRevisionChanges.length > 0);
+    const hasSelectiveAction = Boolean(opts?.selectiveRevisionAction);
+
+    if ((hasNonRevision || hasSelectiveAction) && !isDocxSession(session)) {
+      throw new Error('Revision attribution can only be recorded on DOCX sessions.');
+    }
+
+    const validatedNonRevision = hasNonRevision
+      ? opts!.nonRevisionChanges!.map((change) => ({
+          tool: change.tool,
+          parts: validatePendingNonRevisionChange(change),
+          description: change.description,
+        }))
+      : [];
+
+    const validatedSelectiveIds = hasSelectiveAction
+      ? validatePendingSelectiveRevisionAction(opts!.selectiveRevisionAction!)
+      : null;
+
+    if (!changed) {
+      if (opts?.touch) {
+        this.touch(session);
+      }
+      return;
+    }
+
+    const nextRevision = session.editRevision + 1;
     session.editCount += 1;
-    session.editRevision += 1;
+    session.editRevision = nextRevision;
+
     if (isDocxSession(session)) {
       // Any edit creates a new canonical revision; previously generated artifacts
       // are no longer current and should not be reused by default.
       session.saveCache.clear();
       session.extractionCache = null;
+
+      for (const change of validatedNonRevision) {
+        session.nonRevisionManifest.push({
+          ...change,
+          editRevision: nextRevision,
+        });
+      }
+
+      if (hasSelectiveAction && validatedSelectiveIds) {
+        session.selectiveRevisionAction = {
+          tool: opts!.selectiveRevisionAction!.tool,
+          selector: opts!.selectiveRevisionAction!.selector,
+          selectedRevisionIds: validatedSelectiveIds,
+          editRevision: nextRevision,
+        };
+      }
     }
+
+    if (opts?.touch) {
+      this.touch(session);
+    }
+  }
+
+  /**
+   * Serialize session mutations per session and commit document changes, edit
+   * counters, cache invalidation, and manifest attribution together (#1301).
+   *
+   * If the callback returns without calling `tx.commit(...)` (e.g., preflight
+   * refusal, selector validation failure, or invariant violation) or throws an
+   * error, the active session state (including DOM/ZIP state, revision ID
+   * state, counters, caches, and manifests) is rolled back to its pre-mutation
+   * checkpoint.
+   */
+  async mutateSession<T>(
+    session: Session,
+    fn: (tx: SessionMutationTransaction) => Promise<T> | T,
+  ): Promise<T> {
+    const previous = this.mutationQueues.get(session) ?? Promise.resolve();
+    let releaseCurrent!: () => void;
+    const currentGate = new Promise<void>((resolve) => {
+      releaseCurrent = resolve;
+    });
+    const nextQueue = previous.then(() => currentGate, () => currentGate);
+    this.mutationQueues.set(session, nextQueue);
+
+    await previous.catch(() => undefined);
+
+    const checkpoint = this.captureSessionCheckpoint(session);
+    let committed = false;
+    const tx: SessionMutationTransaction = {
+      get committed() {
+        return committed;
+      },
+      commit: (opts?: SessionMutationCommitOptions) => {
+        if (committed) {
+          throw new Error('Session mutation transaction has already been committed.');
+        }
+        this.commitMutation(session, opts);
+        committed = true;
+      },
+    };
+
+    try {
+      const result = await fn(tx);
+      if (!committed) {
+        this.restoreSessionCheckpoint(session, checkpoint);
+      }
+      return result;
+    } catch (error) {
+      this.restoreSessionCheckpoint(session, checkpoint);
+      throw error;
+    } finally {
+      releaseCurrent();
+      if (this.mutationQueues.get(session) === nextQueue) {
+        this.mutationQueues.delete(session);
+      }
+    }
+  }
+
+  markEdited(session: Session): void {
+    this.commitMutation(session, { changed: true });
   }
 
   /**
@@ -579,15 +903,18 @@ export class SessionManager {
     session: DocxSession,
     change: Omit<NonRevisionChange, 'editRevision'>,
   ): void {
-    session.nonRevisionManifest.push({ ...change, editRevision: session.editRevision });
+    const parts = validatePendingNonRevisionChange(change);
+    session.nonRevisionManifest.push({ ...change, parts, editRevision: session.editRevision });
   }
 
   recordSelectiveRevisionAction(
     session: DocxSession,
     action: Omit<SelectiveRevisionAction, 'editRevision'>,
   ): void {
+    const selectedRevisionIds = validatePendingSelectiveRevisionAction(action);
     session.selectiveRevisionAction = {
       ...action,
+      selectedRevisionIds,
       editRevision: session.editRevision,
     };
   }

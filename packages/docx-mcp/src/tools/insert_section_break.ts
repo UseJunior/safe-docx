@@ -185,55 +185,57 @@ export async function insertSectionBreakTool(
     });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
-    const sectionsBefore = session.doc.getSections();
-    const paragraphCountBefore = session.doc.getParagraphs().length;
-    const ctx = await getRevisionContextForSession(session);
-    const mutation: InsertSectionBreakMutation = {
-      anchorParagraphId: params.paragraph_id,
-      breakType: params.break_type as SectionBreakType,
-      inheritProperties: params.inherit_properties as boolean | undefined,
-      newSection: newSection.value,
-    };
+    const anchorParagraphId = params.paragraph_id;
+    return await manager.mutateSession(session, async (tx) => {
+      const sectionsBefore = session.doc.getSections();
+      const paragraphCountBefore = session.doc.getParagraphs().length;
+      const ctx = await getRevisionContextForSession(session);
+      const mutation: InsertSectionBreakMutation = {
+        anchorParagraphId,
+        breakType: params.break_type as SectionBreakType,
+        inheritProperties: params.inherit_properties as boolean | undefined,
+        newSection: newSection.value,
+      };
 
-    const revisionPreflight = await preflightAiRevisionMutation(
-      session,
-      ctx,
-      (previewDoc, previewCtx) => {
-        previewDoc.insertSectionBreak(mutation, previewCtx);
-      },
-    );
-    if (revisionPreflight.blocked) return revisionPreflight.blocked;
-
-    const result = session.doc.insertSectionBreak(mutation, ctx);
-    const sectionsAfter = session.doc.getSections();
-    const paragraphCountAfter = session.doc.getParagraphs().length;
-    if (
-      sectionsAfter.length !== sectionsBefore.length + 1
-      || paragraphCountAfter !== paragraphCountBefore + 1
-    ) {
-      return err(
-        'INVARIANT_VIOLATION',
-        'Section-break insertion did not add exactly one section and one boundary paragraph.',
-        'Reopen the document and retry with a current direct-body paragraph id.',
+      const revisionPreflight = await preflightAiRevisionMutation(
+        session,
+        ctx,
+        (previewDoc, previewCtx) => {
+          previewDoc.insertSectionBreak(mutation, previewCtx);
+        },
       );
-    }
+      if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
-    manager.markEdited(session);
-    manager.touch(session);
-    return ok(mergeSessionResolutionMetadata({
-      file_path: manager.normalizePath(session.originalPath),
-      changed: true,
-      inserted_boundary_paragraph_id: result.insertedBoundaryParagraphId,
-      preceding_section_index: result.precedingSectionIndex,
-      following_section_index: result.followingSectionIndex,
-      preceding_section: projectSectionForTool(result.precedingSection),
-      following_section: projectSectionForTool(result.followingSection),
-      section_count_before: result.sectionCountBefore,
-      section_count_after: result.sectionCountAfter,
-      paragraph_count_before: paragraphCountBefore,
-      paragraph_count_after: paragraphCountAfter,
-      message: 'Section break inserted with tracked topology and property changes.',
-    }, metadata));
+      const result = session.doc.insertSectionBreak(mutation, ctx);
+      const sectionsAfter = session.doc.getSections();
+      const paragraphCountAfter = session.doc.getParagraphs().length;
+      if (
+        sectionsAfter.length !== sectionsBefore.length + 1
+        || paragraphCountAfter !== paragraphCountBefore + 1
+      ) {
+        return err(
+          'INVARIANT_VIOLATION',
+          'Section-break insertion did not add exactly one section and one boundary paragraph.',
+          'Reopen the document and retry with a current direct-body paragraph id.',
+        );
+      }
+
+      tx.commit({ changed: true, touch: true });
+      return ok(mergeSessionResolutionMetadata({
+        file_path: manager.normalizePath(session.originalPath),
+        changed: true,
+        inserted_boundary_paragraph_id: result.insertedBoundaryParagraphId,
+        preceding_section_index: result.precedingSectionIndex,
+        following_section_index: result.followingSectionIndex,
+        preceding_section: projectSectionForTool(result.precedingSection),
+        following_section: projectSectionForTool(result.followingSection),
+        section_count_before: result.sectionCountBefore,
+        section_count_after: result.sectionCountAfter,
+        paragraph_count_before: paragraphCountBefore,
+        paragraph_count_after: paragraphCountAfter,
+        message: 'Section break inserted with tracked topology and property changes.',
+      }, metadata));
+    });
   } catch (error: unknown) {
     if (error instanceof SectionMutationError) {
       return err(error.code, error.message, sectionErrorHint(error.code));

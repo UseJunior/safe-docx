@@ -29,29 +29,31 @@ export async function odfInsertParagraph(
 
     const text = stripAllInlineTags(params.new_string ?? '');
 
-    const result = session.doc.insertParagraph(anchorId, text, positionUpper as 'BEFORE' | 'AFTER');
-    if (!result.ok) {
-      return err(result.code, result.message);
-    }
-    manager.markEdited(session);
+    return await manager.mutateSession(session, async (tx) => {
+      const result = session.doc.insertParagraph(anchorId, text, positionUpper as 'BEFORE' | 'AFTER');
+      if (!result.ok) {
+        return err(result.code, result.message);
+      }
+      tx.commit();
 
-    const newIds = result.newIds;
-    return ok({
-      success: true,
-      file_path: session.originalPath,
-      provider: 'odf',
-      edit_count: session.editCount,
-      anchor_paragraph_id: anchorId,
-      new_paragraph_id: newIds[0] ?? null,
-      new_paragraph_ids: newIds,
-      position: positionUpper,
-      inserted_text: previewText(text, RESULT_PREVIEW_CHARS),
-      // ODF IDs are positional; everything at/after the insertion point has shifted.
-      invalidates_paragraph_ids_after: anchorId,
-      requires_reread_before_next_edit: true,
-      ids_note:
-        'ODF paragraph IDs are positional and have shifted after this insertion. Call read_file or grep again to get current IDs before your next edit.',
-      ...metadata,
+      const newIds = result.newIds;
+      return ok({
+        success: true,
+        file_path: session.originalPath,
+        provider: 'odf',
+        edit_count: session.editCount,
+        anchor_paragraph_id: anchorId,
+        new_paragraph_id: newIds[0] ?? null,
+        new_paragraph_ids: newIds,
+        position: positionUpper,
+        inserted_text: previewText(text, RESULT_PREVIEW_CHARS),
+        // ODF IDs are positional; everything at/after the insertion point has shifted.
+        invalidates_paragraph_ids_after: anchorId,
+        requires_reread_before_next_edit: true,
+        ids_note:
+          'ODF paragraph IDs are positional and have shifted after this insertion. Call read_file or grep again to get current IDs before your next edit.',
+        ...metadata,
+      });
     });
   } catch (e: unknown) {
     return err('INSERT_ERROR', `Failed to insert paragraph into ODF document: ${errorMessage(e)}`);

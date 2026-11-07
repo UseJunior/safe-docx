@@ -621,3 +621,190 @@ describe('SessionManager extraction cache', () => {
     expect(session.extractionCache).toBeNull();
   });
 });
+
+// ── Atomic mutation bookkeeping (#1301) ─────────────────────────────
+
+describe('SessionManager.mutateSession', () => {
+  test('serializes concurrent mutations on the same session and commits counters, cache invalidation, and attribution together (#1301)', async () => {
+    const mgr = new SessionManager();
+    const filePath = await createTestFile(['First paragraph', 'Second paragraph']);
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+    await mgr.finalizeNewSession(session);
+
+    const nodes = session.doc.buildDocumentView({ includeSemanticTags: false }).nodes;
+    const firstId = nodes[0]!.id;
+    const secondId = nodes[1]!.id;
+
+    const order: string[] = [];
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((r) => {
+      releaseFirst = r;
+    });
+
+    const p1 = mgr.mutateSession(session, async (tx) => {
+      order.push('m1:start');
+      await firstGate;
+      session.doc.replaceText({ targetParagraphId: firstId, findText: 'First', replaceText: 'Alpha' });
+      tx.commit({
+        nonRevisionChanges: [{
+          tool: 'add_comment',
+          parts: ['word/comments.xml'],
+          description: 'first package mutation',
+        }],
+      });
+      order.push('m1:end');
+      return session.editRevision;
+    });
+
+    const p2 = mgr.mutateSession(session, async (tx) => {
+      order.push('m2:start');
+      // Because m2 is serialized after m1, m1's edit is already committed
+      expect(session.doc.getParagraphTextById(firstId)).toBe('Alpha paragraph');
+      session.doc.replaceText({ targetParagraphId: secondId, findText: 'Second', replaceText: 'Beta' });
+      tx.commit({
+        selectiveRevisionAction: {
+          tool: 'accept_ai_edits',
+          selector: 'author',
+          selectedRevisionIds: ['101'],
+        },
+      });
+      order.push('m2:end');
+      return session.editRevision;
+    });
+
+    // Yield a microtask so m1 enters and blocks at firstGate while m2 queues behind it
+    await new Promise((r) => setTimeout(r, 10));
+    expect(order).toEqual(['m1:start']);
+
+    releaseFirst();
+    const [rev1, rev2] = await Promise.all([p1, p2]);
+
+    expect(order).toEqual(['m1:start', 'm1:end', 'm2:start', 'm2:end']);
+    expect(rev1).toBe(1);
+    expect(rev2).toBe(2);
+    expect(session.editCount).toBe(2);
+    expect(session.editRevision).toBe(2);
+    expect(session.nonRevisionManifest).toEqual([
+      {
+        tool: 'add_comment',
+        parts: ['word/comments.xml'],
+        description: 'first package mutation',
+        editRevision: 1,
+      },
+    ]);
+    expect(session.selectiveRevisionAction).toEqual({
+      tool: 'accept_ai_edits',
+      selector: 'author',
+      selectedRevisionIds: ['101'],
+      editRevision: 2,
+    });
+  });
+
+  test('no-op operations preserve counters, caches, and manifests (#1084, #1301)', async () => {
+    const mgr = new SessionManager();
+    const filePath = await createTestFile(['Unchanged paragraph']);
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+    await mgr.finalizeNewSession(session);
+
+    mgr.setSaveCache(session, {
+      cacheKey: 'k1',
+      revision: 0,
+      format: 'clean',
+      cleanBookmarks: true,
+      trackedAuthor: '',
+      revisedBuffer: Buffer.from('cached'),
+      trackedBuffer: null,
+      trackedStats: null,
+      bookmarksRemoved: 0,
+      blocksRestored: 0,
+      exportedAtUtc: new Date().toISOString(),
+      cachedAtIso: new Date().toISOString(),
+    });
+    mgr.setExtractionCache(session, []);
+
+    await mgr.mutateSession(session, (tx) => {
+      tx.commit({ changed: false, touch: true });
+    });
+
+    expect(session.editCount).toBe(0);
+    expect(session.editRevision).toBe(0);
+    expect(mgr.getSaveCache(session, 'k1')).not.toBeNull();
+    expect(mgr.getExtractionCache(session)).not.toBeNull();
+    expect(session.nonRevisionManifest).toEqual([]);
+    expect(session.selectiveRevisionAction).toBeNull();
+  });
+
+  test('precommit failures roll back DOM, ZIP side parts, revision ID state, counters, caches, and manifests (#1301)', async () => {
+    const mgr = new SessionManager({ defaultAiAuthor: 'Safe-Docx' });
+    const filePath = await createTestFile(['Original text']);
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+    await mgr.finalizeNewSession(session);
+
+    const pid = session.doc.buildDocumentView({ includeSemanticTags: false }).nodes[0]!.id;
+    await getRevisionContextForSession(session);
+    const startingNextId = session.revisionIdState!.nextId;
+
+    mgr.setSaveCache(session, {
+      cacheKey: 'k1',
+      revision: 0,
+      format: 'clean',
+      cleanBookmarks: true,
+      trackedAuthor: '',
+      revisedBuffer: Buffer.from('cached'),
+      trackedBuffer: null,
+      trackedStats: null,
+      bookmarksRemoved: 0,
+      blocksRestored: 0,
+      exportedAtUtc: new Date().toISOString(),
+      cachedAtIso: new Date().toISOString(),
+    });
+    mgr.setExtractionCache(session, []);
+
+    // Case 1: Early return without tx.commit after mutating DOM, side parts, and revisionIdState
+    const earlyReturn = await mgr.mutateSession(session, async () => {
+      session.doc.replaceText({ targetParagraphId: pid, findText: 'Original', replaceText: 'Mutated' });
+      await session.doc.addComment({
+        paragraphId: pid,
+        start: 0,
+        end: 7,
+        author: 'Reviewer',
+        text: 'Transient comment',
+      });
+      session.revisionIdState!.nextId += 5;
+      return { ok: false };
+    });
+
+    expect(earlyReturn).toEqual({ ok: false });
+    expect(session.doc.getParagraphTextById(pid)).toBe('Original text');
+    expect(await session.doc.getComments()).toEqual([]);
+    expect(session.revisionIdState!.nextId).toBe(startingNextId);
+    expect(session.editCount).toBe(0);
+    expect(session.editRevision).toBe(0);
+    expect(mgr.getSaveCache(session, 'k1')).not.toBeNull();
+    expect(mgr.getExtractionCache(session)).not.toBeNull();
+
+    // Case 2: Invalid attribution rejected during commit rolls back all state
+    await expect(
+      mgr.mutateSession(session, (tx) => {
+        session.doc.replaceText({ targetParagraphId: pid, findText: 'Original', replaceText: 'BrokenCommit' });
+        tx.commit({
+          nonRevisionChanges: [{
+            tool: '',
+            parts: [],
+            description: '',
+          }],
+        });
+      }),
+    ).rejects.toThrow(/Invalid non-revision change attribution/);
+
+    expect(session.doc.getParagraphTextById(pid)).toBe('Original text');
+    expect(session.editCount).toBe(0);
+    expect(session.editRevision).toBe(0);
+    expect(mgr.getSaveCache(session, 'k1')).not.toBeNull();
+    expect(mgr.getExtractionCache(session)).not.toBeNull();
+    expect(session.nonRevisionManifest).toEqual([]);
+  });
+});
