@@ -483,9 +483,9 @@ async function executeSteps(
 }
 
 function invalidateDocumentCaches(doc: unknown): void {
-  const mutableDoc = doc as { dirty?: boolean; documentViewCache?: unknown };
-  mutableDoc.dirty = true;
-  mutableDoc.documentViewCache = null;
+  if (doc && typeof (doc as { markMutated?: () => number }).markMutated === 'function') {
+    (doc as { markMutated: () => number }).markMutated();
+  }
 }
 
 function executeStepOnDoc(doc: DocxDocument, step: NormalizedStep, ctx?: RevisionContext): void {
