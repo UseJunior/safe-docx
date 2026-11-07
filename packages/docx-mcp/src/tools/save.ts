@@ -1,7 +1,12 @@
 import path from 'node:path';
 import { errorCode, errorMessage } from "../error_utils.js";
 import fs from 'node:fs/promises';
-import { SessionManager } from '../session/manager.js';
+import {
+  SessionManager,
+  type SaveCacheEntry,
+  type SaveFormat,
+  type TrackedChangesStats,
+} from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
 import {
   DocxZip,
@@ -12,9 +17,47 @@ import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session
 import { getAiRevisionBaseline, splitIntroducedDiagnostics } from './ai_revision_guard.js';
 import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
 
-type SaveFormat = 'clean' | 'tracked' | 'both';
-type SaveRevisionSummary = { count: number; author: string; ids?: number[] };
-type TrackedChangesStats = { insertions: number; deletions: number; modifications: number };
+export type { SaveFormat, TrackedChangesStats };
+export type SaveRevisionSummary = { count: number; author: string; ids?: number[] };
+export type SaveFormatSource =
+  | 'save_format'
+  | 'tracked_save_to_local_path'
+  | 'track_changes_alias'
+  | 'default_both';
+
+type SaveArtifactsCommon = {
+  bookmarksRemoved: number;
+  blocksRestored: number;
+  exportedAtUtc: string;
+};
+
+export type CleanSaveArtifacts = SaveArtifactsCommon & {
+  format: 'clean';
+  cleanBuffer: Buffer;
+  revisedBuffer: Buffer;
+  trackedBuffer?: null;
+  trackedStats?: null;
+};
+
+export type TrackedSaveArtifacts = SaveArtifactsCommon & {
+  format: 'tracked';
+  revisedBuffer?: Buffer;
+  trackedBuffer: Buffer;
+  trackedStats: TrackedChangesStats;
+};
+
+export type BothSaveArtifacts = SaveArtifactsCommon & {
+  format: 'both';
+  cleanBuffer: Buffer;
+  revisedBuffer: Buffer;
+  trackedBuffer: Buffer;
+  trackedStats: TrackedChangesStats;
+};
+
+export type SaveArtifactBundle =
+  | CleanSaveArtifacts
+  | TrackedSaveArtifacts
+  | BothSaveArtifacts;
 
 const WORDPROCESSING_ML_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
@@ -24,6 +67,207 @@ function expandPath(inputPath: string): string {
 
 function isSaveFormat(value: string): value is SaveFormat {
   return value === 'clean' || value === 'tracked' || value === 'both';
+}
+
+function isValidBuffer(value: unknown): value is Buffer {
+  return Buffer.isBuffer(value) && value.length > 0;
+}
+
+function isValidTrackedStats(value: unknown): value is TrackedChangesStats {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.insertions === 'number'
+    && Number.isFinite(candidate.insertions)
+    && typeof candidate.deletions === 'number'
+    && Number.isFinite(candidate.deletions)
+    && typeof candidate.modifications === 'number'
+    && Number.isFinite(candidate.modifications)
+  );
+}
+
+export function resolveSaveFormat(params: {
+  save_format?: SaveFormat;
+  track_changes?: boolean;
+  tracked_save_to_local_path?: string;
+}):
+  | {
+      ok: true;
+      format: SaveFormat;
+      formatSource: SaveFormatSource;
+      parameterWarning?: string;
+    }
+  | {
+      ok: false;
+      response: ToolResponse;
+    } {
+  const explicitFormat = params.save_format;
+  const hasTrackedSavePath =
+    typeof params.tracked_save_to_local_path === 'string'
+    && params.tracked_save_to_local_path.trim().length > 0;
+
+  let formatSource: SaveFormatSource;
+  let formatRaw: string;
+  let parameterWarning: string | undefined;
+
+  if (explicitFormat !== undefined) {
+    formatRaw = explicitFormat;
+    formatSource = 'save_format';
+  } else if (hasTrackedSavePath) {
+    // If caller asks for explicit tracked path, always emit both variants unless
+    // they explicitly override save_format.
+    formatRaw = 'both';
+    formatSource = 'tracked_save_to_local_path';
+    if (params.track_changes === false) {
+      parameterWarning =
+        "track_changes=false was ignored because tracked_save_to_local_path was provided. Using save_format='both'.";
+    }
+  } else if (typeof params.track_changes === 'boolean') {
+    formatRaw = params.track_changes ? 'tracked' : 'clean';
+    formatSource = 'track_changes_alias';
+  } else {
+    formatRaw = 'both';
+    formatSource = 'default_both';
+  }
+
+  if (!isSaveFormat(formatRaw)) {
+    return {
+      ok: false,
+      response: err(
+        'INVALID_SAVE_FORMAT',
+        `Invalid save_format: ${String(formatRaw)}`,
+        "Use one of: 'clean', 'tracked', or 'both'.",
+      ),
+    };
+  }
+
+  return {
+    ok: true,
+    format: formatRaw,
+    formatSource,
+    parameterWarning,
+  };
+}
+
+export function assertSaveArtifactsForFormat(
+  entry: {
+    format: SaveFormat;
+    revisedBuffer?: Buffer | null;
+    trackedBuffer?: Buffer | null;
+    trackedStats?: TrackedChangesStats | null;
+    bookmarksRemoved: number;
+    blocksRestored: number;
+    exportedAtUtc: string;
+  },
+  expectedFormat: SaveFormat,
+): SaveArtifactBundle {
+  if (entry.format !== expectedFormat) {
+    throw new Error(
+      `Save artifact format mismatch: expected '${expectedFormat}', got '${String(entry.format)}'.`,
+    );
+  }
+
+  if (expectedFormat === 'clean') {
+    if (!isValidBuffer(entry.revisedBuffer)) {
+      throw new Error("Missing required clean artifact buffer for save_format='clean'.");
+    }
+    return {
+      format: 'clean',
+      cleanBuffer: entry.revisedBuffer,
+      revisedBuffer: entry.revisedBuffer,
+      trackedBuffer: null,
+      trackedStats: null,
+      bookmarksRemoved: entry.bookmarksRemoved,
+      blocksRestored: entry.blocksRestored,
+      exportedAtUtc: entry.exportedAtUtc,
+    };
+  }
+
+  if (expectedFormat === 'tracked') {
+    if (!isValidBuffer(entry.trackedBuffer)) {
+      throw new Error("Missing required tracked artifact buffer for save_format='tracked'.");
+    }
+    if (!isValidTrackedStats(entry.trackedStats)) {
+      throw new Error("Missing required tracked changes stats for save_format='tracked'.");
+    }
+    return {
+      format: 'tracked',
+      revisedBuffer: isValidBuffer(entry.revisedBuffer) ? entry.revisedBuffer : undefined,
+      trackedBuffer: entry.trackedBuffer,
+      trackedStats: entry.trackedStats,
+      bookmarksRemoved: entry.bookmarksRemoved,
+      blocksRestored: entry.blocksRestored,
+      exportedAtUtc: entry.exportedAtUtc,
+    };
+  }
+
+  if (!isValidBuffer(entry.revisedBuffer)) {
+    throw new Error("Missing required clean artifact buffer for save_format='both'.");
+  }
+  if (!isValidBuffer(entry.trackedBuffer)) {
+    throw new Error("Missing required tracked artifact buffer for save_format='both'.");
+  }
+  if (!isValidTrackedStats(entry.trackedStats)) {
+    throw new Error("Missing required tracked changes stats for save_format='both'.");
+  }
+  return {
+    format: 'both',
+    cleanBuffer: entry.revisedBuffer,
+    revisedBuffer: entry.revisedBuffer,
+    trackedBuffer: entry.trackedBuffer,
+    trackedStats: entry.trackedStats,
+    bookmarksRemoved: entry.bookmarksRemoved,
+    blocksRestored: entry.blocksRestored,
+    exportedAtUtc: entry.exportedAtUtc,
+  };
+}
+
+function toSaveCacheEntry(
+  cacheKey: string,
+  revision: number,
+  cleanBookmarks: boolean,
+  trackedAuthor: string,
+  artifacts: SaveArtifactBundle,
+  cachedAtIso: string,
+): SaveCacheEntry {
+  const common = {
+    cacheKey,
+    revision,
+    cleanBookmarks,
+    trackedAuthor,
+    bookmarksRemoved: artifacts.bookmarksRemoved,
+    blocksRestored: artifacts.blocksRestored,
+    exportedAtUtc: artifacts.exportedAtUtc,
+    cachedAtIso,
+  };
+
+  if (artifacts.format === 'clean') {
+    return {
+      ...common,
+      format: 'clean',
+      revisedBuffer: artifacts.cleanBuffer,
+      trackedBuffer: null,
+      trackedStats: null,
+    };
+  }
+
+  if (artifacts.format === 'tracked') {
+    return {
+      ...common,
+      format: 'tracked',
+      revisedBuffer: artifacts.revisedBuffer,
+      trackedBuffer: artifacts.trackedBuffer,
+      trackedStats: artifacts.trackedStats,
+    };
+  }
+
+  return {
+    ...common,
+    format: 'both',
+    revisedBuffer: artifacts.cleanBuffer,
+    trackedBuffer: artifacts.trackedBuffer,
+    trackedStats: artifacts.trackedStats,
+  };
 }
 
 function formatUtcTimestamp(d: Date): string {
@@ -144,36 +388,9 @@ export async function save(
     const { session, metadata } = resolved;
 
     const savePath = expandPath(params.save_to_local_path);
-    const explicitFormat = params.save_format;
-    const hasTrackedSavePath =
-      typeof params.tracked_save_to_local_path === 'string'
-      && params.tracked_save_to_local_path.trim().length > 0;
-    let formatSource: 'save_format' | 'tracked_save_to_local_path' | 'track_changes_alias' | 'default_both';
-    let formatRaw: string;
-    let parameterWarning: string | undefined;
-    if (explicitFormat) {
-      formatRaw = explicitFormat;
-      formatSource = 'save_format';
-    } else if (hasTrackedSavePath) {
-      // If caller asks for explicit tracked path, always emit both variants unless
-      // they explicitly override save_format.
-      formatRaw = 'both';
-      formatSource = 'tracked_save_to_local_path';
-      if (params.track_changes === false) {
-        parameterWarning =
-          "track_changes=false was ignored because tracked_save_to_local_path was provided. Using save_format='both'.";
-      }
-    } else if (typeof params.track_changes === 'boolean') {
-      formatRaw = params.track_changes ? 'tracked' : 'clean';
-      formatSource = 'track_changes_alias';
-    } else {
-      formatRaw = 'both';
-      formatSource = 'default_both';
-    }
-    if (!isSaveFormat(formatRaw)) {
-      return err('INVALID_SAVE_FORMAT', `Invalid save_format: ${String(formatRaw)}`, "Use one of: 'clean', 'tracked', or 'both'.");
-    }
-    const format: SaveFormat = formatRaw;
+    const formatResolved = resolveSaveFormat(params);
+    if (!formatResolved.ok) return formatResolved.response;
+    const { format, formatSource, parameterWarning } = formatResolved;
 
     const clean = params.clean_bookmarks ?? true;
     const preserveOriginalBookmarksInTracked = params.clean_bookmarks === undefined;
@@ -216,13 +433,6 @@ export async function save(
     const cached = manager.getSaveCache(session, cacheKey);
     const cacheHit = cached !== null;
 
-    let revisedBuffer: Buffer;
-    let trackedBuffer: Buffer | null;
-    let trackedStats: TrackedChangesStats | null;
-    let bookmarksRemoved: number;
-    let blocksRestored: number;
-    let exportTimestamp: string;
-
     // Run implicit validation before producing save artifacts.
     const validation = session.doc.validate();
     let aiRevisionValidation = session.aiAuthor
@@ -262,17 +472,11 @@ export async function save(
       }
     }
 
+    let artifacts: SaveArtifactBundle;
     if (cached) {
-      revisedBuffer = cached.revisedBuffer;
-      trackedBuffer = cached.trackedBuffer;
-      trackedStats = cached.trackedStats;
-      bookmarksRemoved = cached.bookmarksRemoved;
-      blocksRestored = cached.blocksRestored;
-      exportTimestamp = cached.exportedAtUtc;
+      artifacts = assertSaveArtifactsForFormat(cached, format);
     } else {
-      exportTimestamp = formatUtcTimestamp(new Date());
-      trackedBuffer = null;
-      trackedStats = null;
+      const exportTimestamp = formatUtcTimestamp(new Date());
 
       // CLEAN artifact (#126): accept the AI actor's write-time edits so the
       // artifact is a genuinely clean document. Pre-existing third-party tracked
@@ -281,6 +485,9 @@ export async function save(
       // never hard-errors on an unusual overlap during finalization). With no AI
       // author there is no write-time AI markup, so the document serializes as-is
       // with a minimal, blast-radius-matching diff.
+      let revisedBuffer: Buffer;
+      let bookmarksRemoved: number;
+      let blocksRestored: number;
       if (session.aiAuthor) {
         // Accept the AI actor's write-time edits on an isolated copy so the
         // session (and its tracked artifact) keep the markup, while untouched
@@ -300,59 +507,191 @@ export async function save(
         blocksRestored = revised.blocksRestored;
       }
 
-      // TRACKED artifact (#126): the session's write-time tracked markup,
-      // serialized directly. No comparison, no reconstruction — the redline is
-      // exactly what the write-time emitter authored (author, stable ids, and any
-      // pre-existing reviewer revisions preserved). Comparison-based redlining is
-      // available only via the compare_documents tool.
-      if (format === 'tracked' || format === 'both') {
+      if (format === 'clean') {
+        artifacts = assertSaveArtifactsForFormat(
+          {
+            format: 'clean',
+            revisedBuffer,
+            trackedBuffer: null,
+            trackedStats: null,
+            bookmarksRemoved: clean ? bookmarksRemoved : 0,
+            blocksRestored,
+            exportedAtUtc: exportTimestamp,
+          },
+          'clean',
+        );
+      } else {
+        // TRACKED artifact (#126): the session's write-time tracked markup,
+        // serialized directly. No comparison, no reconstruction — the redline is
+        // exactly what the write-time emitter authored (author, stable ids, and any
+        // pre-existing reviewer revisions preserved). Comparison-based redlining is
+        // available only via the compare_documents tool.
         const tracked = await session.doc.toBuffer({
           cleanBookmarks: clean,
           preserveOriginalBookmarks: preserveOriginalBookmarksInTracked,
         });
-        trackedBuffer = tracked.buffer;
-        trackedStats = await collectTrackedStats(trackedBuffer, session.aiAuthor);
-        if (format === 'tracked') {
-          bookmarksRemoved = tracked.bookmarksRemoved;
-        }
+        const trackedStats = await collectTrackedStats(tracked.buffer, session.aiAuthor);
+        const effectiveBookmarksRemoved = format === 'tracked' ? tracked.bookmarksRemoved : bookmarksRemoved;
+
+        artifacts = assertSaveArtifactsForFormat(
+          {
+            format,
+            revisedBuffer,
+            trackedBuffer: tracked.buffer,
+            trackedStats,
+            bookmarksRemoved: clean ? effectiveBookmarksRemoved : 0,
+            blocksRestored,
+            exportedAtUtc: exportTimestamp,
+          },
+          format,
+        );
       }
 
-      manager.setSaveCache(session, {
-        cacheKey,
-        revision: session.editRevision,
-        format,
-        cleanBookmarks: clean,
-        trackedAuthor: author,
-        revisedBuffer,
-        trackedBuffer,
-        trackedStats,
-        bookmarksRemoved: clean ? bookmarksRemoved : 0,
-        blocksRestored,
-        exportedAtUtc: exportTimestamp,
-        cachedAtIso: new Date().toISOString(),
-      });
+      manager.setSaveCache(
+        session,
+        toSaveCacheEntry(
+          cacheKey,
+          session.editRevision,
+          clean,
+          author,
+          artifacts,
+          new Date().toISOString(),
+        ),
+      );
     }
 
-    let trackedPath: string | null = null;
-    if (format === 'tracked' || format === 'both') {
-      trackedPath = format === 'tracked'
-        ? savePath
-        : params.tracked_save_to_local_path
-          ? expandPath(params.tracked_save_to_local_path)
-          : defaultTrackedPath(savePath, exportTimestamp);
-    }
-
-    // Compare against the original via realpath (issue #313) so a symlinked save_to_local_path pointing
-    // back at the source can't slip past a purely lexical check and overwrite the original through the link.
-    if (!allowOverwrite) {
-      if ((format === 'clean' || format === 'both') && await resolvesToSamePath(savePath, session.originalPath)) {
+    if (artifacts.format === 'clean') {
+      const cleanPath = savePath;
+      if (!allowOverwrite && await resolvesToSamePath(cleanPath, session.originalPath)) {
         return err(
           'OVERWRITE_BLOCKED',
-          `Refusing to overwrite original file: ${savePath}`,
+          `Refusing to overwrite original file: ${cleanPath}`,
           "Save to a different path, or set allow_overwrite=true if you explicitly want in-place overwrite.",
         );
       }
-      if ((format === 'tracked' || format === 'both') && trackedPath && await resolvesToSamePath(trackedPath, session.originalPath)) {
+
+      const cleanPolicy = await enforceWritePathPolicy(cleanPath);
+      if (!cleanPolicy.ok) return cleanPolicy.response;
+      await fs.mkdir(path.dirname(cleanPath), { recursive: true });
+      await fs.writeFile(cleanPath, new Uint8Array(artifacts.cleanBuffer));
+
+      const revisionSummarySource = (await session.doc.toBuffer({ cleanBookmarks: false })).buffer;
+      const revisions = await collectAiRevisionSummary(revisionSummarySource, session.aiAuthor);
+
+      return ok(mergeSessionResolutionMetadata({
+        file_path: manager.normalizePath(session.originalPath),
+        original_filename: session.filename,
+        edit_count: session.editCount,
+        edit_revision: session.editRevision,
+        save_format: 'clean',
+        saved_to: cleanPath,
+        clean_saved_to: undefined,
+        tracked_saved_to: null,
+        size_bytes: artifacts.cleanBuffer.length,
+        tracked_size_bytes: undefined,
+        tracked_changes_source: undefined,
+        tracked_changes_author: undefined,
+        tracked_changes_stats: undefined,
+        revisions,
+        non_revision_changes: session.nonRevisionManifest.length > 0
+          ? session.nonRevisionManifest
+          : undefined,
+        exported_at_utc: artifacts.exportedAtUtc,
+        bookmarks_removed: clean ? artifacts.bookmarksRemoved : 0,
+        blocks_restored: artifacts.blocksRestored,
+        returned_variants: ['clean'],
+        available_variants: ['clean', 'redline'],
+        cache_hit: cacheHit,
+        format_source: formatSource,
+        parameter_warning: parameterWarning,
+        selective_revision_disposition: cleanArtifactDiscardedRevisions
+          ? {
+              acknowledged: true,
+              clean_artifact_accepted_remaining_author_revisions: cleanArtifactDiscardedRevisions,
+            }
+          : undefined,
+        validation: validation.warnings.length > 0 || (aiRevisionValidation?.warnings.length ?? 0) > 0
+          ? {
+              warnings: [
+                ...validation.warnings.map(w => ({ code: w.code, message: w.message })),
+                ...(aiRevisionValidation?.warnings ?? []),
+              ],
+            }
+          : { valid: true },
+        message: `${cacheHit ? 'Cached ' : ''}document saved to ${cleanPath}`,
+      }, metadata));
+    }
+
+    if (artifacts.format === 'tracked') {
+      const trackedPath = savePath;
+      if (!allowOverwrite && await resolvesToSamePath(trackedPath, session.originalPath)) {
+        return err(
+          'OVERWRITE_BLOCKED',
+          `Refusing to overwrite original file with tracked output: ${trackedPath}`,
+          "Use tracked_save_to_local_path to write redline elsewhere, or set allow_overwrite=true to force overwrite.",
+        );
+      }
+
+      const trackedPolicy = await enforceWritePathPolicy(trackedPath);
+      if (!trackedPolicy.ok) return trackedPolicy.response;
+      await fs.mkdir(path.dirname(trackedPath), { recursive: true });
+      await fs.writeFile(trackedPath, new Uint8Array(artifacts.trackedBuffer));
+
+      const revisions = await collectAiRevisionSummary(artifacts.trackedBuffer, session.aiAuthor);
+
+      return ok(mergeSessionResolutionMetadata({
+        file_path: manager.normalizePath(session.originalPath),
+        original_filename: session.filename,
+        edit_count: session.editCount,
+        edit_revision: session.editRevision,
+        save_format: 'tracked',
+        saved_to: trackedPath,
+        clean_saved_to: undefined,
+        tracked_saved_to: trackedPath,
+        size_bytes: artifacts.trackedBuffer.length,
+        tracked_size_bytes: artifacts.trackedBuffer.length,
+        tracked_changes_source: 'write-time',
+        tracked_changes_author: author,
+        tracked_changes_stats: artifacts.trackedStats,
+        revisions,
+        non_revision_changes: session.nonRevisionManifest.length > 0
+          ? session.nonRevisionManifest
+          : undefined,
+        exported_at_utc: artifacts.exportedAtUtc,
+        bookmarks_removed: clean ? artifacts.bookmarksRemoved : 0,
+        blocks_restored: artifacts.blocksRestored,
+        returned_variants: ['redline'],
+        available_variants: ['clean', 'redline'],
+        cache_hit: cacheHit,
+        format_source: formatSource,
+        parameter_warning: parameterWarning,
+        selective_revision_disposition: undefined,
+        validation: validation.warnings.length > 0 || (aiRevisionValidation?.warnings.length ?? 0) > 0
+          ? {
+              warnings: [
+                ...validation.warnings.map(w => ({ code: w.code, message: w.message })),
+                ...(aiRevisionValidation?.warnings ?? []),
+              ],
+            }
+          : { valid: true },
+        message: `${cacheHit ? 'Cached ' : ''}tracked changes document saved to ${trackedPath}`,
+      }, metadata));
+    }
+
+    const cleanPath = savePath;
+    const trackedPath = params.tracked_save_to_local_path
+      ? expandPath(params.tracked_save_to_local_path)
+      : defaultTrackedPath(savePath, artifacts.exportedAtUtc);
+
+    if (!allowOverwrite) {
+      if (await resolvesToSamePath(cleanPath, session.originalPath)) {
+        return err(
+          'OVERWRITE_BLOCKED',
+          `Refusing to overwrite original file: ${cleanPath}`,
+          "Save to a different path, or set allow_overwrite=true if you explicitly want in-place overwrite.",
+        );
+      }
+      if (await resolvesToSamePath(trackedPath, session.originalPath)) {
         return err(
           'OVERWRITE_BLOCKED',
           `Refusing to overwrite original file with tracked output: ${trackedPath}`,
@@ -361,61 +700,40 @@ export async function save(
       }
     }
 
-    if (format === 'clean' || format === 'both') {
-      const cleanPolicy = await enforceWritePathPolicy(savePath);
-      if (!cleanPolicy.ok) return cleanPolicy.response;
-      await fs.mkdir(path.dirname(savePath), { recursive: true });
-      await fs.writeFile(savePath, new Uint8Array(revisedBuffer));
-    }
-    if (trackedPath && trackedBuffer) {
-      const trackedPolicy = await enforceWritePathPolicy(trackedPath);
-      if (!trackedPolicy.ok) return trackedPolicy.response;
-      await fs.mkdir(path.dirname(trackedPath), { recursive: true });
-      await fs.writeFile(trackedPath, new Uint8Array(trackedBuffer));
-    }
+    const cleanPolicy = await enforceWritePathPolicy(cleanPath);
+    if (!cleanPolicy.ok) return cleanPolicy.response;
+    const trackedPolicy = await enforceWritePathPolicy(trackedPath);
+    if (!trackedPolicy.ok) return trackedPolicy.response;
 
-    // Summarize the AI's revisions from the session's write-time markup (#126).
-    // The clean artifact has accepted them away, so summarize the tracked
-    // artifact when present, else the session document directly.
-    const revisionSummarySource = trackedBuffer
-      ?? (await session.doc.toBuffer({ cleanBookmarks: false })).buffer;
-    const revisions = await collectAiRevisionSummary(revisionSummarySource, session.aiAuthor);
+    await fs.mkdir(path.dirname(cleanPath), { recursive: true });
+    await fs.writeFile(cleanPath, new Uint8Array(artifacts.cleanBuffer));
+    await fs.mkdir(path.dirname(trackedPath), { recursive: true });
+    await fs.writeFile(trackedPath, new Uint8Array(artifacts.trackedBuffer));
 
-    const returnedVariants =
-      format === 'clean'
-        ? ['clean']
-        : format === 'tracked'
-          ? ['redline']
-          : ['clean', 'redline'];
+    const revisions = await collectAiRevisionSummary(artifacts.trackedBuffer, session.aiAuthor);
 
     return ok(mergeSessionResolutionMetadata({
       file_path: manager.normalizePath(session.originalPath),
       original_filename: session.filename,
       edit_count: session.editCount,
       edit_revision: session.editRevision,
-      save_format: format,
-      saved_to: format === 'tracked' ? trackedPath : savePath,
-      clean_saved_to: format === 'both' ? savePath : undefined,
+      save_format: 'both',
+      saved_to: cleanPath,
+      clean_saved_to: cleanPath,
       tracked_saved_to: trackedPath,
-      size_bytes: format === 'tracked' ? trackedBuffer?.length : revisedBuffer.length,
-      tracked_size_bytes: trackedBuffer?.length,
-      // The redline is the write-time markup as authored — no comparison engine
-      // or reconstruction is involved (#126).
-      tracked_changes_source: format === 'tracked' || format === 'both' ? 'write-time' : undefined,
-      tracked_changes_author: format === 'tracked' || format === 'both' ? author : undefined,
-      tracked_changes_stats: trackedStats ?? undefined,
+      size_bytes: artifacts.cleanBuffer.length,
+      tracked_size_bytes: artifacts.trackedBuffer.length,
+      tracked_changes_source: 'write-time',
+      tracked_changes_author: author,
+      tracked_changes_stats: artifacts.trackedStats,
       revisions,
-      // #122: package-level mutations with no native OOXML revision wrapper
-      // (comment/footnote side parts, relationships, content types) are not
-      // tracked changes, so surface them explicitly alongside the revisions
-      // list rather than letting them land silently.
       non_revision_changes: session.nonRevisionManifest.length > 0
         ? session.nonRevisionManifest
         : undefined,
-      exported_at_utc: exportTimestamp,
-      bookmarks_removed: clean ? bookmarksRemoved : 0,
-      blocks_restored: blocksRestored,
-      returned_variants: returnedVariants,
+      exported_at_utc: artifacts.exportedAtUtc,
+      bookmarks_removed: clean ? artifacts.bookmarksRemoved : 0,
+      blocks_restored: artifacts.blocksRestored,
+      returned_variants: ['clean', 'redline'],
       available_variants: ['clean', 'redline'],
       cache_hit: cacheHit,
       format_source: formatSource,
@@ -434,12 +752,7 @@ export async function save(
             ],
           }
         : { valid: true },
-      message:
-        (format === 'clean'
-          ? `${cacheHit ? 'Cached ' : ''}document saved to ${savePath}`
-          : format === 'tracked'
-            ? `${cacheHit ? 'Cached ' : ''}tracked changes document saved to ${trackedPath}`
-            : `${cacheHit ? 'Cached ' : ''}clean document saved to ${savePath} and tracked changes document saved to ${trackedPath}`),
+      message: `${cacheHit ? 'Cached ' : ''}clean document saved to ${cleanPath} and tracked changes document saved to ${trackedPath}`,
     }, metadata));
   } catch (e: unknown) {
     const msg = errorMessage(e);

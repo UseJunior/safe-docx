@@ -1,7 +1,7 @@
 import { describe, expect } from 'vitest';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { save } from './save.js';
+import { assertSaveArtifactsForFormat, resolveSaveFormat, save } from './save.js';
 import { SessionManager } from '../session/manager.js';
 import { openDocument } from './open_document.js';
 import { grep } from './grep.js';
@@ -487,5 +487,170 @@ describe('save', () => {
     });
     assertFailure(result, 'OVERWRITE_BLOCKED', 'symlink to source');
     expect(Buffer.compare(await fs.readFile(inputPath), sourceBytes)).toBe(0);
+  });
+  test('preserves format precedence, track_changes aliases, and warning semantics (#1304)', async () => {
+    expect(resolveSaveFormat({})).toEqual({
+      ok: true,
+      format: 'both',
+      formatSource: 'default_both',
+      parameterWarning: undefined,
+    });
+    expect(resolveSaveFormat({ track_changes: false })).toEqual({
+      ok: true,
+      format: 'clean',
+      formatSource: 'track_changes_alias',
+      parameterWarning: undefined,
+    });
+    expect(resolveSaveFormat({ track_changes: true })).toEqual({
+      ok: true,
+      format: 'tracked',
+      formatSource: 'track_changes_alias',
+      parameterWarning: undefined,
+    });
+    expect(
+      resolveSaveFormat({
+        tracked_save_to_local_path: '/tmp/redline.docx',
+        track_changes: false,
+      }),
+    ).toEqual({
+      ok: true,
+      format: 'both',
+      formatSource: 'tracked_save_to_local_path',
+      parameterWarning:
+        "track_changes=false was ignored because tracked_save_to_local_path was provided. Using save_format='both'.",
+    });
+    expect(
+      resolveSaveFormat({
+        save_format: 'clean',
+        tracked_save_to_local_path: '/tmp/redline.docx',
+        track_changes: true,
+      }),
+    ).toEqual({
+      ok: true,
+      format: 'clean',
+      formatSource: 'save_format',
+      parameterWarning: undefined,
+    });
+  });
+
+  test('discriminates clean, tracked, and both artifact bundles and rejects missing buffers or stats (#1304)', async () => {
+    const cleanBuf = Buffer.from('clean-bytes');
+    const trackedBuf = Buffer.from('tracked-bytes');
+    const stats = { insertions: 2, deletions: 1, modifications: 0 };
+
+    const cleanBundle = assertSaveArtifactsForFormat(
+      {
+        format: 'clean',
+        revisedBuffer: cleanBuf,
+        trackedBuffer: null,
+        trackedStats: null,
+        bookmarksRemoved: 1,
+        blocksRestored: 2,
+        exportedAtUtc: '20261107-000000Z',
+      },
+      'clean',
+    );
+    expect(cleanBundle.format).toBe('clean');
+    if (cleanBundle.format === 'clean') {
+      expect(cleanBundle.cleanBuffer).toBe(cleanBuf);
+      expect(cleanBundle.trackedBuffer).toBeNull();
+    }
+
+    const trackedBundle = assertSaveArtifactsForFormat(
+      {
+        format: 'tracked',
+        trackedBuffer: trackedBuf,
+        trackedStats: stats,
+        bookmarksRemoved: 0,
+        blocksRestored: 2,
+        exportedAtUtc: '20261107-000000Z',
+      },
+      'tracked',
+    );
+    expect(trackedBundle.format).toBe('tracked');
+    if (trackedBundle.format === 'tracked') {
+      expect(trackedBundle.trackedBuffer).toBe(trackedBuf);
+      expect(trackedBundle.trackedStats).toEqual(stats);
+    }
+
+    const bothBundle = assertSaveArtifactsForFormat(
+      {
+        format: 'both',
+        revisedBuffer: cleanBuf,
+        trackedBuffer: trackedBuf,
+        trackedStats: stats,
+        bookmarksRemoved: 1,
+        blocksRestored: 2,
+        exportedAtUtc: '20261107-000000Z',
+      },
+      'both',
+    );
+    expect(bothBundle.format).toBe('both');
+    if (bothBundle.format === 'both') {
+      expect(bothBundle.cleanBuffer).toBe(cleanBuf);
+      expect(bothBundle.trackedBuffer).toBe(trackedBuf);
+      expect(bothBundle.trackedStats).toEqual(stats);
+    }
+
+    expect(() =>
+      assertSaveArtifactsForFormat(
+        {
+          format: 'tracked',
+          trackedBuffer: null,
+          trackedStats: stats,
+          bookmarksRemoved: 0,
+          blocksRestored: 0,
+          exportedAtUtc: '20261107-000000Z',
+        },
+        'tracked',
+      ),
+    ).toThrow(/Missing required tracked artifact buffer/);
+
+    expect(() =>
+      assertSaveArtifactsForFormat(
+        {
+          format: 'both',
+          revisedBuffer: cleanBuf,
+          trackedBuffer: trackedBuf,
+          trackedStats: null,
+          bookmarksRemoved: 0,
+          blocksRestored: 0,
+          exportedAtUtc: '20261107-000000Z',
+        },
+        'both',
+      ),
+    ).toThrow(/Missing required tracked changes stats/);
+  });
+
+  test('fails closed instead of silently skipping file writes when a cached artifact entry is missing required buffers (#1304)', async () => {
+    const { mgr, tmpDir, inputPath } = await openTestDoc();
+    const outCleanPath = path.join(tmpDir, 'both-clean.docx');
+    const outTrackedPath = path.join(tmpDir, 'both-tracked.docx');
+
+    const first = await save(mgr, {
+      file_path: inputPath,
+      save_to_local_path: outCleanPath,
+      tracked_save_to_local_path: outTrackedPath,
+      save_format: 'both',
+    });
+    assertSuccess(first, 'initial both save');
+
+    // Remove the tracked output file and corrupt the cached entry's trackedBuffer to null.
+    await fs.rm(outTrackedPath, { force: true });
+    const session = await mgr.getSessionByFilePath(inputPath);
+    expect(session && session.provider === 'docx').toBe(true);
+    if (session && session.provider === 'docx') {
+      for (const entry of session.saveCache.values()) {
+        (entry as Record<string, unknown>).trackedBuffer = null;
+      }
+    }
+
+    const corruptedSave = await save(mgr, {
+      file_path: inputPath,
+      save_to_local_path: outCleanPath,
+      tracked_save_to_local_path: outTrackedPath,
+      save_format: 'both',
+    });
+    assertFailure(corruptedSave, 'SAVE_ERROR', 'corrupted cache entry must fail closed');
   });
 });
