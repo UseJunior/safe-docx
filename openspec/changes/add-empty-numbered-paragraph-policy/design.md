@@ -109,3 +109,12 @@ tracked deletion of that paragraph's mark.
 
 - None blocking. If #1352 lands first, the bookmark scenario's paragraph is
   removed by the blanking rules and that warning no longer fires.
+
+## Reconciliation with #1352 (#1222)
+
+The default `warn`, `error`, and `ignore` preserve bookmarks as before. Explicit
+`remove_paragraph` may remove a local bookmark together with an empty numbered
+paragraph and reports targeting REF fields. Spanning bookmarks, comments, fields,
+section properties and required table-cell paragraphs remain protected. Batch
+removal remains deferred until all steps finish; both tools retain main's shared
+replacement planner, atomic mutation and cache-generation bookkeeping.

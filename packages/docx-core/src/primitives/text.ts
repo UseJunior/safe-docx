@@ -750,6 +750,15 @@ function addParagraphMarkDeletion(p: Element, ctx: RevisionContext): void {
   }
 }
 
+function hasDirectParagraphNumbering(p: Element): boolean {
+  const pPr = getDirectChild(p, W.pPr);
+  const numPr = pPr ? getDirectChild(pPr, W.numPr) : null;
+  const numId = numPr ? getDirectChild(numPr, W.numId) : null;
+  if (!numId) return false;
+  const val = (numId.getAttributeNS(OOXML.W_NS, W.val) ?? numId.getAttribute('w:val') ?? '').trim();
+  return val.length > 0 && val !== '0';
+}
+
 /**
  * True when `p` is a paragraph its table cell cannot lose: the cell's only
  * block-level content, or the paragraph that must close a cell ending in a
@@ -768,7 +777,14 @@ function isRequiredTableCellParagraph(p: Element): boolean {
  * True when a blanking edit left nothing in the paragraph that renders or
  * anchors: only w:pPr, proofing marks, and runs or hyperlinks whose content
  * was removed. Range markers (bookmarks, comment anchors), embedded content,
- * and every other child count as content.
+ * and every other child count as content for unnumbered paragraphs.
+ *
+ * For a numbered paragraph (`bookmarksAreInert = true`), keeping an emptied
+ * paragraph solely because it holds a bookmark leaves a bare list label in
+ * the document and prevents following sections from renumbering (issue #1222).
+ * Treating bookmarks as inert on numbered paragraphs allows the paragraph mark
+ * to be deleted (tracked) or the paragraph removed (clean), matching Word's
+ * behavior when a bookmarked heading's entire range is deleted.
  *
  * Under tracked changes the blanked text is still in the paragraph, inside
  * the `w:del` the edit emitted, and accept-all removes it; so with
@@ -776,10 +792,15 @@ function isRequiredTableCellParagraph(p: Element): boolean {
  * `w:ins` counts as whatever it wraps. The tracked and clean paths then ask
  * the same question of the same paragraph (issue #1098).
  */
-function isParagraphInertAfterBlanking(p: Element, deletionsAreInert = false): boolean {
+function isParagraphInertAfterBlanking(
+  p: Element,
+  deletionsAreInert = false,
+  bookmarksAreInert = false,
+): boolean {
   const isInert = (el: Element): boolean => {
     if (isW(el, W.pPr) || isW(el, 'proofErr')) return true;
     if (deletionsAreInert && (isW(el, W.del) || isW(el, W.moveFrom))) return true;
+    if (bookmarksAreInert && (isW(el, W.bookmarkStart) || isW(el, W.bookmarkEnd))) return true;
     if (isW(el, W.r)) {
       return Array.from(el.childNodes).every((c) => c.nodeType !== 1 || isW(c as Element, W.rPr));
     }
@@ -791,25 +812,36 @@ function isParagraphInertAfterBlanking(p: Element, deletionsAreInert = false): b
   return Array.from(p.childNodes).every((c) => c.nodeType !== 1 || isInert(c as Element));
 }
 
+function hasSpanningBookmarks(p: Element): boolean {
+  const starts = new Set(Array.from(p.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkStart)).map(el => el.getAttributeNS(OOXML.W_NS, 'id')));
+  const ends = new Set(Array.from(p.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkEnd)).map(el => el.getAttributeNS(OOXML.W_NS, 'id')));
+  return starts.size !== ends.size || [...starts].some(id => !ends.has(id));
+}
+
 /**
- * Remove a paragraph that an untracked edit has blanked. Untracked mode has no
- * paragraph-mark revision for a clean save to resolve, so the emptied `w:p`
- * used to survive with its `w:numPr` and render as a bare list label
- * (issue #740). Mirrors the outcome of accepting a paragraph-mark deletion,
- * keeping the tool reference's exclusions: the paragraph stays when it
- * carries section properties, when its parent needs it to remain structurally
- * valid (a table cell's only paragraph, a trailing table), or when it still
- * owns range markers or other non-text content.
- *
- * @see https://github.com/UseJunior/safe-docx/issues/740
+ * Finish an explicitly requested deletion of an emptied numbered paragraph.
+ * Range endpoints outside the paragraph, section properties, other anchors,
+ * fields and required table-cell paragraphs remain protected.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @see https://github.com/UseJunior/safe-docx/issues/1222
  */
-function removeBlankedParagraph(p: Element): void {
+export function removeEmptyBookmarkedNumberedParagraph(p: Element, ctx: RevisionContext | undefined, paragraphIsNumbered: boolean): void {
+  if (!paragraphIsNumbered || hasSpanningBookmarks(p) || isRequiredTableCellParagraph(p)) return;
+  const pPr = getDirectChild(p, W.pPr);
+  if (pPr && getDirectChild(pPr, W.sectPr)) return;
+  if (!isParagraphInertAfterBlanking(p, !!ctx, true)) return;
+  if (ctx) addParagraphMarkDeletion(p, ctx);
+  else removeBlankedParagraph(p, true);
+}
+
+function removeBlankedParagraph(p: Element, bookmarksAreInert = false): void {
   const parent = p.parentNode;
   if (!parent) return;
   const pPr = getDirectChild(p, W.pPr);
   if (pPr && getDirectChild(pPr, W.sectPr)) return;
-  if (!isParagraphInertAfterBlanking(p)) return;
+  if (!isParagraphInertAfterBlanking(p, false, bookmarksAreInert)) return;
   if (!canSafelyRemoveEmptyParagraph(p)) return;
+  if (bookmarksAreInert && hasSpanningBookmarks(p)) return;
   parent.removeChild(p);
 }
 
@@ -1128,12 +1160,18 @@ function createDeletionSegmentBuilder(doc: Document, ctx?: RevisionContext) {
  * @see #1083
  * @see #1098
  */
+export type ReplaceParagraphTextRangeOptions = {
+  paragraphIsNumbered?: boolean;
+  removeBookmarkedNumberedParagraph?: boolean;
+};
+
 export function replaceParagraphTextRange(
   p: Element,
   start: number,
   end: number,
   replacement: string | ReplacementPart[],
   ctx?: RevisionContext,
+  options?: ReplaceParagraphTextRangeOptions,
 ): void {
   // Replace visible text in [start, end) in paragraph by operating on w:t nodes.
   // Strategy:
@@ -1404,6 +1442,8 @@ export function replaceParagraphTextRange(
     }
   }
 
+  const paragraphIsNumbered = !!options?.removeBookmarkedNumberedParagraph && (options.paragraphIsNumbered ?? hasDirectParagraphNumbering(p));
+
   if (ctx) {
     if (removedRuns.length > 0) {
       const deletion = createRevisionContainer(doc, 'del', ctx);
@@ -1425,18 +1465,18 @@ export function replaceParagraphTextRange(
     // Preserved embedded content keeps the paragraph meaningful, and merging
     // it into the following paragraph on accept would move the image the user
     // never touched (issue #739). Range markers the paragraph still carries —
-    // a bookmark, a comment anchor — keep it the same way: accepting a
-    // deleted mark would merge the comment's markers into the next paragraph,
-    // or drop a bookmark whose whole content was deleted and with it a
-    // cross-reference target, while the untracked edit below keeps the
-    // paragraph with its markers. Tracked and clean must agree on whether the
-    // paragraph survives, so this asks the same question removeBlankedParagraph
-    // asks (issue #1098). A table cell must keep a paragraph, so a cell's
-    // last remaining paragraph keeps its mark: Word records only the run
-    // deletion there (issue #1524).
+    // a bookmark (for unnumbered paragraphs), a comment anchor — keep it the
+    // same way: accepting a deleted mark would merge the comment's markers into
+    // the next paragraph, or drop a bookmark whose whole content was deleted
+    // and with it a cross-reference target, while the untracked edit below
+    // keeps the paragraph with its markers. For numbered paragraphs, bookmarks
+    // do not keep the paragraph alive so an empty numbered heading does not
+    // survive as a bare section label (#1222). Tracked and clean must agree on
+    // whether the paragraph survives, so this asks the same question
+    // removeBlankedParagraph asks (issue #1098).
     if (
       start === 0 && end === fullText.length && replacementRuns.length === 0 && !preservedEmbeddedContent &&
-      isParagraphInertAfterBlanking(p, true) &&
+      isParagraphInertAfterBlanking(p, true, paragraphIsNumbered && !hasSpanningBookmarks(p)) &&
       !isRequiredTableCellParagraph(p)
     ) {
       addParagraphMarkDeletion(p, ctx);
@@ -1451,8 +1491,8 @@ export function replaceParagraphTextRange(
 
   // Untracked counterpart of the paragraph-mark deletion above: with no
   // revision for a clean save to resolve, the emptied paragraph is removed
-  // here so it cannot survive as a bare list label (issue #740).
+  // here so it cannot survive as a bare list label (issue #740, #1222).
   if (!ctx && start === 0 && end === fullText.length && replacementRuns.length === 0 && !preservedEmbeddedContent) {
-    removeBlankedParagraph(p);
+    removeBlankedParagraph(p, paragraphIsNumbered);
   }
 }

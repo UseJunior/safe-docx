@@ -44,6 +44,7 @@ import { serializeToPlainText, type SerializePlainTextOptions } from './serializ
 import type { FormattingMode } from './formatting_tags.js';
 import { parseStylesXml, parseThemeXml, type StylesModel } from './styles.js';
 import { parseNumberingXml, type NumberingModel } from './numbering.js';
+import { resolveParagraphNumbering } from './paragraph_list_numbering.js';
 import {
   getDirectParagraphNumbering,
   setDirectParagraphNumbering,
@@ -1193,8 +1194,20 @@ export class DocxDocument {
         `Multiple matches (${match.matchCount}) found in paragraph ${targetParagraphId} using ${match.mode} matching`,
       );
     }
-    replaceParagraphTextRange(p, match.start, match.end, replaceText);
+    replaceParagraphTextRange(p, match.start, match.end, replaceText, undefined, {
+      paragraphIsNumbered: this.isParagraphNumbered(p),
+    });
     this.markMutated();
+  }
+
+  /**
+   * True when `p` displays a list or outline number, either via its own
+   * `w:pPr/w:numPr` or inherited through its paragraph style chain.
+   */
+  isParagraphNumbered(p: Element): boolean {
+    const styles = parseStylesXml(this.stylesXml);
+    const numbering = parseNumberingXml(this.numberingXml);
+    return resolveParagraphNumbering(p, styles, numbering) !== null;
   }
 
   /**
@@ -1205,7 +1218,9 @@ export class DocxDocument {
     const { targetParagraphId, start, end, replaceText } = params;
     const p = findParagraphByBookmarkId(this.documentXml, targetParagraphId);
     if (!p) throw new Error(`Paragraph not found: ${targetParagraphId}`);
-    replaceParagraphTextRange(p, start, end, replaceText);
+    replaceParagraphTextRange(p, start, end, replaceText, undefined, {
+      paragraphIsNumbered: this.isParagraphNumbered(p),
+    });
     this.markMutated();
   }
 

@@ -165,6 +165,33 @@ export function resolveParagraphNumbering(
 export type ParagraphListLabel = ListLabelSnapshot & { source: ParagraphNumberingSource };
 
 /**
+ * True when `p`'s paragraph mark has a tracked deletion (`w:pPr/w:rPr/w:del` or
+ * `w:moveFrom`) and the paragraph has no surviving live `w:t` text. Such a
+ * paragraph is a tracked whole-paragraph deletion and does not advance list
+ * counters in the live document view.
+ */
+export function isBlankedParagraphWithDeletedMark(p: Element): boolean {
+  const pPr = directChild(p, W.pPr);
+  const rPr = pPr ? directChild(pPr, W.rPr) : null;
+  if (!rPr || (directChild(rPr, W.del) === null && directChild(rPr, W.moveFrom) === null)) {
+    return false;
+  }
+  const hasLiveText = Array.from(p.getElementsByTagNameNS(OOXML.W_NS, W.t)).some((t) => {
+    for (let cur = t.parentNode; cur && cur !== p; cur = cur.parentNode) {
+      if (
+        cur.nodeType === 1 &&
+        (cur as Element).namespaceURI === OOXML.W_NS &&
+        ((cur as Element).localName === W.del || (cur as Element).localName === W.moveFrom)
+      ) {
+        return false;
+      }
+    }
+    return (t.textContent ?? '').trim().length > 0;
+  });
+  return !hasLiveText;
+}
+
+/**
  * Number a run of paragraphs in document order and return each numbered
  * paragraph's label and counter snapshot. Paragraphs whose numbering comes
  * from their style advance the same shared counters as directly numbered
@@ -180,6 +207,7 @@ export function computeParagraphListLabels(
   const linked = linkedStyleIds(numbering);
   const labels = new Map<Element, ParagraphListLabel>();
   for (const p of paragraphs) {
+    if (isBlankedParagraphWithDeletedMark(p)) continue;
     const resolved = resolveParagraphNumbering(p, styles, numbering, linked);
     if (!resolved) continue;
     const snapshot = advanceListLabel(numbering, counters, resolved);
