@@ -17,8 +17,10 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { DocxArchive } from '@usejunior/docx-core';
+import { vi } from 'vitest';
 import {
   AUXILIARY_PARTS,
+  LazyArchiveXml,
   parseEntries,
   renumberCollidingAuxiliaryIds,
   restampCollidingCommentParaIds,
@@ -798,6 +800,207 @@ describe('restampCollidingCommentParaIds', () => {
     await then('the case-different paraId is recognized as a collision and restamped', () => {
       expect(result).toHaveLength(1);
       expect(result[0]!.fromParaId).toBe('ABCD1234');
+    });
+  });
+});
+
+describe('LazyArchiveXml flush state transitions (issue #1314)', () => {
+  test('initial state is clean and unparsed, and flush does not write', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    let archive: DocxArchive;
+    let lazy: LazyArchiveXml;
+    let setFileSpy: any;
+
+    await given('a DocxArchive and a clean LazyArchiveXml instance', async () => {
+      archive = await archiveWith({
+        'word/footnotes.xml': footnotesPart('<w:footnote w:id="1"><w:p><w:r><w:t>Note</w:t></w:r></w:p></w:footnote>'),
+      });
+      setFileSpy = vi.spyOn(archive, 'setFile');
+      lazy = new LazyArchiveXml(
+        archive,
+        'word/footnotes.xml',
+        (await archive.getFile('word/footnotes.xml'))!,
+      );
+    });
+
+    await then('the instance is clean and unparsed', () => {
+      expect(lazy.isDirty()).toBe(false);
+      expect(lazy.hasParsed()).toBe(false);
+    });
+
+    await when('flush is called on the clean instance', () => {
+      lazy.flush();
+    });
+
+    await and('archive.setFile was not called', () => {
+      expect(setFileSpy).not.toHaveBeenCalled();
+      expect(lazy.isDirty()).toBe(false);
+    });
+  });
+
+  test('scanMaxNumericAttribute parses without dirtying, and flush still does not write', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    let archive: DocxArchive;
+    let lazy: LazyArchiveXml;
+    let setFileSpy: any;
+    let maxId: number;
+
+    await given('a LazyArchiveXml instance', async () => {
+      archive = await archiveWith({
+        'word/footnotes.xml': footnotesPart('<w:footnote w:id="42"><w:p><w:r><w:t>Note</w:t></w:r></w:p></w:footnote>'),
+      });
+      setFileSpy = vi.spyOn(archive, 'setFile');
+      lazy = new LazyArchiveXml(
+        archive,
+        'word/footnotes.xml',
+        (await archive.getFile('word/footnotes.xml'))!,
+      );
+    });
+
+    await when('scanMaxNumericAttribute is invoked to inspect existing IDs', () => {
+      maxId = lazy.scanMaxNumericAttribute(['w:footnote'], 'w:id', 0);
+    });
+
+    await then('the correct maximum ID was returned and DOM was parsed', () => {
+      expect(maxId).toBe(42);
+      expect(lazy.hasParsed()).toBe(true);
+      expect(lazy.isDirty()).toBe(false);
+    });
+
+    await and('flush does not write to the archive', () => {
+      lazy.flush();
+      expect(setFileSpy).not.toHaveBeenCalled();
+      expect(lazy.isDirty()).toBe(false);
+    });
+  });
+
+  test('mutation dirties, flush writes and clears dirty, repeated flush does not rewrite, and later mutation dirties again', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    let archive: DocxArchive;
+    let lazy: LazyArchiveXml;
+    let setFileSpy: any;
+
+    await given('a LazyArchiveXml instance', async () => {
+      archive = await archiveWith({
+        'word/footnotes.xml': footnotesPart('<w:footnote w:id="1"><w:p><w:r><w:t>Note</w:t></w:r></w:p></w:footnote>'),
+      });
+      setFileSpy = vi.spyOn(archive, 'setFile');
+      lazy = new LazyArchiveXml(
+        archive,
+        'word/footnotes.xml',
+        (await archive.getFile('word/footnotes.xml'))!,
+      );
+    });
+
+    await when('a mutation is applied through applyIdMap', () => {
+      lazy.applyIdMap(['w:footnote'], new Map([['1', '100']]));
+    });
+
+    await then('the instance transitions to dirty', () => {
+      expect(lazy.isDirty()).toBe(true);
+    });
+
+    await when('flush is called', () => {
+      lazy.flush();
+    });
+
+    await then('archive.setFile was called once with the updated XML and dirty is cleared', async () => {
+      expect(setFileSpy).toHaveBeenCalledTimes(1);
+      expect(lazy.isDirty()).toBe(false);
+      const updated = (await archive.getFile('word/footnotes.xml'))!;
+      expect(updated).toContain('w:id="100"');
+    });
+
+    await when('repeated clean flush is called', () => {
+      lazy.flush();
+    });
+
+    await then('archive.setFile was not called again', () => {
+      expect(setFileSpy).toHaveBeenCalledTimes(1);
+      expect(lazy.isDirty()).toBe(false);
+    });
+
+    await when('a later mutation is applied', () => {
+      lazy.applyIdMap(['w:footnote'], new Map([['100', '200']]));
+    });
+
+    await then('the instance dirties again', () => {
+      expect(lazy.isDirty()).toBe(true);
+    });
+
+    await when('flush is called following the second mutation', () => {
+      lazy.flush();
+    });
+
+    await and('archive.setFile was called a second time and dirty is cleared', async () => {
+      expect(setFileSpy).toHaveBeenCalledTimes(2);
+      expect(lazy.isDirty()).toBe(false);
+      const updated = (await archive.getFile('word/footnotes.xml'))!;
+      expect(updated).toContain('w:id="200"');
+    });
+  });
+
+  test('failed flush remains retryable and leaves dirty state intact until successful', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    let archive: DocxArchive;
+    let lazy: LazyArchiveXml;
+    let caughtError: Error | null = null;
+
+    await given('a dirty LazyArchiveXml instance with a failing archive.setFile', async () => {
+      archive = await archiveWith({
+        'word/footnotes.xml': footnotesPart('<w:footnote w:id="5"><w:p><w:r><w:t>Note</w:t></w:r></w:p></w:footnote>'),
+      });
+      lazy = new LazyArchiveXml(
+        archive,
+        'word/footnotes.xml',
+        (await archive.getFile('word/footnotes.xml'))!,
+      );
+      lazy.applyIdMap(['w:footnote'], new Map([['5', '50']]));
+      expect(lazy.isDirty()).toBe(true);
+    });
+
+    await when('flush fails due to an archive I/O failure', () => {
+      const setFileSpy = vi.spyOn(archive, 'setFile').mockImplementationOnce(() => {
+        throw new Error('Disk full / archive failure');
+      });
+
+      try {
+        lazy.flush();
+      } catch (err) {
+        caughtError = err as Error;
+      }
+    });
+
+    await then('the error is thrown and dirty is NOT cleared', () => {
+      expect(caughtError).not.toBeNull();
+      expect(caughtError?.message).toBe('Disk full / archive failure');
+      expect(lazy.isDirty()).toBe(true);
+    });
+
+    await when('flush is retried after transient failure resolves', () => {
+      lazy.flush();
+    });
+
+    await and('the retry succeeds, the archive is updated, and dirty is cleared', async () => {
+      expect(lazy.isDirty()).toBe(false);
+      const updated = (await archive.getFile('word/footnotes.xml'))!;
+      expect(updated).toContain('w:id="50"');
     });
   });
 });

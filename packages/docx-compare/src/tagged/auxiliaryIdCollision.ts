@@ -133,7 +133,7 @@ function trackMaxNumericId(value: string | null, current: number): number {
 }
 
 /** Lazily-parsed XML file inside an archive, serialized back only if touched. */
-class LazyArchiveXml {
+export class LazyArchiveXml {
   private parsed: Document | null = null;
   private dirty = false;
 
@@ -143,9 +143,29 @@ class LazyArchiveXml {
     private readonly xml: string,
   ) {}
 
-  doc(): Document {
+  private doc(): Document {
     if (!this.parsed) this.parsed = parseXml(this.xml);
     return this.parsed;
+  }
+
+  isDirty(): boolean {
+    return this.dirty;
+  }
+
+  hasParsed(): boolean {
+    return this.parsed !== null;
+  }
+
+  /** Scan and return the maximum numeric attribute value matching `attrName` on elements with `tags`. */
+  scanMaxNumericAttribute(tags: string[], attrName: string, currentMax: number): number {
+    let max = currentMax;
+    for (const tag of tags) {
+      const elements = this.doc().getElementsByTagName(tag);
+      for (let i = 0; i < elements.length; i++) {
+        max = trackMaxNumericId((elements[i] as Element).getAttribute(attrName), max);
+      }
+    }
+    return max;
   }
 
   /** Rewrite matching attributes on every `tag` element per `valueMap`. */
@@ -181,6 +201,7 @@ class LazyArchiveXml {
     // xmldom 0.9 keeps the source's XML declaration as a document child, so
     // plain serialization round-trips it.
     this.archive.setFile(this.path, serializer.serializeToString(this.parsed));
+    this.dirty = false;
   }
 }
 
@@ -271,21 +292,18 @@ export async function renumberCollidingAuxiliaryIds(
     // the merged output part will contain the union of both sides.
     let maxUsedId = 0;
     const revisedPart = rewriteFiles.get(descriptor.partPath)!;
-    const entryElements = revisedPart.doc().getElementsByTagName(descriptor.entryTag);
-    for (let i = 0; i < entryElements.length; i++) {
-      maxUsedId = trackMaxNumericId((entryElements[i] as Element).getAttribute('w:id'), maxUsedId);
-    }
+    maxUsedId = revisedPart.scanMaxNumericAttribute([descriptor.entryTag], 'w:id', maxUsedId);
     for (const id of originalEntryIds.get(descriptor.label) ?? []) {
       maxUsedId = trackMaxNumericId(id, maxUsedId);
     }
-    const anchorDocs = [originalDocumentDoc, ...Array.from(rewriteFiles.values(), (f) => f.doc())];
-    for (const doc of anchorDocs) {
-      for (const tag of descriptor.idBearingTags) {
-        const refs = doc.getElementsByTagName(tag);
-        for (let i = 0; i < refs.length; i++) {
-          maxUsedId = trackMaxNumericId((refs[i] as Element).getAttribute('w:id'), maxUsedId);
-        }
+    for (const tag of descriptor.idBearingTags) {
+      const refs = originalDocumentDoc.getElementsByTagName(tag);
+      for (let i = 0; i < refs.length; i++) {
+        maxUsedId = trackMaxNumericId((refs[i] as Element).getAttribute('w:id'), maxUsedId);
       }
+    }
+    for (const file of rewriteFiles.values()) {
+      maxUsedId = file.scanMaxNumericAttribute(descriptor.idBearingTags, 'w:id', maxUsedId);
     }
 
     let nextId = maxUsedId + 1;
