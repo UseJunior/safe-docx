@@ -1879,12 +1879,13 @@ export class DocxDocument {
     preserveOriginalBookmarks?: boolean;
     fileDate?: Date;
   }): Promise<{ buffer: Buffer; bookmarksRemoved: number; blocksRestored: number }> {
-    const zipOptions = opts?.fileDate ? { fileDate: opts.fileDate } : undefined;
-    // Always write the latest document.xml when saving.
-    // Important: when cleanBookmarks=true (download), we must NOT mutate session state.
+    // Always keep the live package state synchronized with the latest DOM.
     const xmlWithBookmarks = serializeXml(this.documentXml);
-    maybeCaptureEmittedDocumentXml(xmlWithBookmarks);
     this.zip.writeText('word/document.xml', xmlWithBookmarks);
+
+    let targetXml = xmlWithBookmarks;
+    let bookmarksRemoved = 0;
+    let blocksRestored = 0;
 
     if (opts?.cleanBookmarks) {
       const cloned = parseXml(xmlWithBookmarks);
@@ -1892,8 +1893,7 @@ export class DocxDocument {
         opts.preserveOriginalBookmarks && this.originalDocumentXmlText !== null
           ? collectNamedBookmarkIds(parseXml(this.originalDocumentXmlText))
           : undefined;
-      const bookmarksRemoved = cleanupInternalBookmarks(cloned, { preserveBookmarkIds });
-      let blocksRestored = 0;
+      bookmarksRemoved = cleanupInternalBookmarks(cloned, { preserveBookmarkIds });
       if (opts.minimalReserialization && this.originalDocumentXmlText !== null) {
         try {
           blocksRestored = restoreUntouchedBlocks(cloned, this.originalDocumentXmlText);
@@ -1903,18 +1903,16 @@ export class DocxDocument {
           blocksRestored = 0;
         }
       }
-      const cleanedXml = serializeXml(cloned);
-
-      // Temporarily swap document.xml in the zip for output, then restore.
-      maybeCaptureEmittedDocumentXml(cleanedXml);
-      this.zip.writeText('word/document.xml', cleanedXml);
-      const buffer = await this.zip.toBuffer(zipOptions);
-      this.zip.writeText('word/document.xml', xmlWithBookmarks);
-      return { buffer, bookmarksRemoved, blocksRestored };
+      targetXml = serializeXml(cloned);
     }
 
-    const buffer = await this.zip.toBuffer(zipOptions);
-    return { buffer, bookmarksRemoved: 0, blocksRestored: 0 };
+    maybeCaptureEmittedDocumentXml(targetXml);
+
+    const buffer = await this.zip.toBuffer({
+      fileDate: opts?.fileDate,
+      overrides: { 'word/document.xml': targetXml },
+    });
+    return { buffer, bookmarksRemoved, blocksRestored };
   }
 
   /**
