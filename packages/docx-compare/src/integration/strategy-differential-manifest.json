@@ -52,7 +52,8 @@
           "word/styles.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -161,7 +162,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -199,7 +201,8 @@
           "word/styles.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -308,7 +311,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -402,7 +406,8 @@
             "part": "word/document.xml",
             "message": "fldChar end without a matching begin"
           }
-        ]
+        ],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [
         "TD-ILPA-SECTION-REL-001"
@@ -488,8 +493,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 1204474,
-            "sha256": "a340a92fe5b7b1b8b62c4765df846a4fbf52ed30a419aa4fb3622777a87777af",
+            "bytes": 1204138,
+            "sha256": "47afb99fccff3c0310416cf11720f6751908b80b1e559180e85bb32de10391e4",
             "kind": "xml"
           },
           {
@@ -717,11 +722,11 @@
         ],
         "stats": {
           "atomMetricVersion": "tagged-token-v1",
-          "insertions": 816,
-          "deletions": 736,
+          "insertions": 814,
+          "deletions": 734,
           "modifications": 491,
-          "insertedRanges": 816,
-          "deletedRanges": 736,
+          "insertedRanges": 814,
+          "deletedRanges": 734,
           "insertedAtoms": 2932,
           "deletedAtoms": 1385,
           "modifiedParagraphs": 491,
@@ -885,7 +890,8 @@
               "message": "fldChar end without a matching begin"
             }
           ],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 0.75,
@@ -923,7 +929,8 @@
           "word/styles.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -1032,7 +1039,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -1070,7 +1078,8 @@
           "word/styles.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -1179,7 +1188,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -1221,7 +1231,8 @@
           "word/theme/theme1.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -1336,7 +1347,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -1383,7 +1395,8 @@
           "word/theme/theme1.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -1528,7 +1541,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -1566,7 +1580,8 @@
           "word/styles.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -1675,7 +1690,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -1713,7 +1729,8 @@
           "word/styles.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -1822,7 +1839,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -1860,7 +1878,8 @@
           "word/styles.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -1969,7 +1988,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -2016,7 +2036,8 @@
           "word/theme/theme1.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -2167,7 +2188,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -2205,7 +2227,8 @@
           "word/styles.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -2314,7 +2337,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -2352,7 +2376,8 @@
           "word/styles.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -2461,7 +2486,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -2545,7 +2571,8 @@
             "part": "customXml/item2.xml",
             "message": "XML part does not begin with an <?xml declaration"
           }
-        ]
+        ],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -2864,7 +2891,8 @@
               "message": "XML part does not begin with an <?xml declaration"
             }
           ],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -2970,7 +2998,8 @@
             "part": "word/footer7.xml",
             "message": "fldChar end without a matching begin"
           }
-        ]
+        ],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -3251,7 +3280,8 @@
               "message": "fldChar end without a matching begin"
             }
           ],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -3317,7 +3347,8 @@
           "word/theme/theme1.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -3558,7 +3589,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -3613,7 +3645,8 @@
           "word/theme/theme1.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -3788,7 +3821,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -3867,7 +3901,8 @@
             "part": "customXml/item2.xml",
             "message": "XML part does not begin with an <?xml declaration"
           }
-        ]
+        ],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -4156,7 +4191,8 @@
               "message": "XML part does not begin with an <?xml declaration"
             }
           ],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -4175,9 +4211,9 @@
     {
       "fixture": {
         "id": "real/nvca-stock-purchase-agreement/paragraph-deletion",
-        "pairSha256": "b8a10adfb5b79a88fd19cad31a2e5a4476bd6bd970b7cd13bf87d53032dc3411",
+        "pairSha256": "3c3ac82963096839fd4c8c726a8615fdf9bb8ac211f7ac160c4f1e9ee3e9d2e7",
         "originalSha256": "4f3aecc698a5e11600739df48efdae548ad21c64c7cbca6dedbc9fd100631ee7",
-        "revisedSha256": "98a11e59ec0eb3b2efb411ac1c3269d02e8fee8615d5aa7befb6edd327bf526f",
+        "revisedSha256": "0b00f9338b35596e98059ddc2b597b3b3a6aafa3385b6948e0f8c6b5d5620043",
         "capabilityTags": [
           "bookmarks",
           "contract",
@@ -4221,21 +4257,22 @@
           "word/theme/theme1.xml",
           "word/webSettings.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
         "strategy": "tagged-tree",
         "projections": {
           "accept": {
-            "xmlSha256": "179423a3feb19ff06ec60cf15206fe69d2c73e119dc680d9e11e825452658c1d",
+            "xmlSha256": "c8ba3383ac1dff39add5660eeb4f48c2a174de36ca6ef178753a556129b2edf1",
             "textSha256": "717f95238c38c63ff13ed1158d897d7f6c2aa3d7da9190a6f19203a140fd00f7",
             "sourceTextSha256": "717f95238c38c63ff13ed1158d897d7f6c2aa3d7da9190a6f19203a140fd00f7",
             "matchesSourceText": true,
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "a64cf26da534cbda28d5bab5aee3c79c2429b0a03089af39846ba89cd7bf75e0",
+            "xmlSha256": "1c992fabd7d01914cb1e9e6c24ad2e398a15b702cda36920445243f944c627b2",
             "textSha256": "fc797aa399edd9b2d49a37283f709a368da07074fe4f525e4ca893c086cb694a",
             "sourceTextSha256": "fc797aa399edd9b2d49a37283f709a368da07074fe4f525e4ca893c086cb694a",
             "matchesSourceText": true,
@@ -4293,8 +4330,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 387513,
-            "sha256": "44362c56d68248e6b7881cd3aefa4700cbb99153a4be1cb6b5360ba84ad92c68",
+            "bytes": 387321,
+            "sha256": "f1f95322233dec8e3be34b100ab9e6dd82ca21ff178fe5754a79503932c2246f",
             "kind": "xml"
           },
           {
@@ -4432,14 +4469,14 @@
         ],
         "stats": {
           "atomMetricVersion": "tagged-token-v1",
-          "insertions": 1,
-          "deletions": 4,
-          "modifications": 1,
-          "insertedRanges": 1,
-          "deletedRanges": 4,
+          "insertions": 0,
+          "deletions": 3,
+          "modifications": 0,
+          "insertedRanges": 0,
+          "deletedRanges": 3,
           "insertedAtoms": 0,
           "deletedAtoms": 290,
-          "modifiedParagraphs": 1,
+          "modifiedParagraphs": 0,
           "formatChanges": 0,
           "formatChangeAtoms": 0,
           "insertedTableRows": 0,
@@ -4456,7 +4493,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -4532,7 +4570,8 @@
             "part": "customXml/item2.xml",
             "message": "XML part does not begin with an <?xml declaration"
           }
-        ]
+        ],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -4803,7 +4842,8 @@
               "message": "XML part does not begin with an <?xml declaration"
             }
           ],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -4844,7 +4884,8 @@
           "word/footnotes.xml",
           "word/people.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -4947,7 +4988,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -4980,7 +5022,8 @@
           "word/_rels/document.xml.rels",
           "word/document.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -5053,7 +5096,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,
@@ -5086,7 +5130,8 @@
           "word/_rels/document.xml.rels",
           "word/document.xml"
         ],
-        "sourceStructuralIssues": []
+        "sourceStructuralIssues": [],
+        "sourceStructuralWarnings": []
       },
       "approvedDivergenceIds": [],
       "taggedTree": {
@@ -5159,7 +5204,8 @@
         "schema": {
           "packageStructural": "passed",
           "issues": [],
-          "introducedIssues": []
+          "introducedIssues": [],
+          "warnings": []
         },
         "formatting": {
           "score": 1,

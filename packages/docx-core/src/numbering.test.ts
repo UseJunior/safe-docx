@@ -190,6 +190,39 @@ describe('NumberingState', () => {
 });
 
 describe('processNumberedParagraph', () => {
+  test('interleaved documents reset their own nested counters', async ({ given, when, then }: AllureBddContext) => {
+    const first = createNumberingState();
+    const second = createNumberingState();
+    const level = { start: 1 } as ListLevelInfo;
+    await given('a document with a used nested level', () => {
+      processNumberedParagraph(first, 1, 0, level);
+      processNumberedParagraph(first, 1, 1, level);
+      expect(processNumberedParagraph(first, 1, 1, level)).toBe(2);
+    });
+    await when('another document uses the same numbering identity before the first returns to its parent', () => {
+      processNumberedParagraph(second, 1, 0, level);
+      processNumberedParagraph(first, 1, 0, level);
+    });
+    await then('only the first document resets its nested sequence', () => {
+      expect(processNumberedParagraph(first, 1, 1, level)).toBe(1);
+      expect(processNumberedParagraph(second, 1, 0, level)).toBe(2);
+    });
+  });
+
+  test('initializes prior-level state for legacy structural callers', async ({ given, when, then }: AllureBddContext) => {
+    const state = { counters: new Map<string, number[]>(), levelUsed: new Map<string, boolean[]>() };
+    const level = { start: 1 } as ListLevelInfo;
+    await given('a caller-created legacy numbering state', () => {});
+    await when('the caller traverses a nested list and returns to its parent', () => {
+      processNumberedParagraph(state, 2, 0, level);
+      processNumberedParagraph(state, 2, 1, level);
+      processNumberedParagraph(state, 2, 0, level);
+    });
+    await then('the nested sequence restarts', () => {
+      expect(processNumberedParagraph(state, 2, 1, level)).toBe(1);
+    });
+  });
+
   test('starts at start value on first use', async ({ given, when, then }: AllureBddContext) => {
     let state: ReturnType<typeof createNumberingState>;
     let result: number;
@@ -304,11 +337,15 @@ describe('formatNumber', () => {
     });
 
     test('formats double letters', async ({ given, when, then }: AllureBddContext) => {
-      await given('numbers 27 and 28', () => {});
+      await given('numbers 27, 28, 52 and 53', () => {});
       await when('formatNumber is called with lowerLetter', () => {});
-      await then('aa and ab are returned', () => {
+      await then('aa and bb are returned, as Word numbers them', () => {
+        testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.18.59' });
         expect(formatNumber(27, 'lowerLetter')).toBe('aa');
-        expect(formatNumber(28, 'lowerLetter')).toBe('ab');
+        expect(formatNumber(28, 'lowerLetter')).toBe('bb');
+        expect(formatNumber(52, 'lowerLetter')).toBe('zz');
+        expect(formatNumber(53, 'lowerLetter')).toBe('aaa');
+        expect(formatNumber(28, 'upperLetter')).toBe('BB');
       });
     });
   });
@@ -596,7 +633,9 @@ describe('additional numbering branches', () => {
       expect(formatNumber(12, 'ordinalText')).toBe('twelfth');
       expect(formatNumber(32, 'ordinalText')).toBe('32nd');
       expect(formatNumber(7, 'unknown-format')).toBe('7');
-      expect(formatNumber(9, 'decimalZero')).toBe('9');
+      expect(formatNumber(9, 'decimalZero')).toBe('09');
+      expect(formatNumber(10, 'decimalZero')).toBe('10');
+      expect(formatNumber(0, 'decimalZero')).toBe('0');
     });
   });
 

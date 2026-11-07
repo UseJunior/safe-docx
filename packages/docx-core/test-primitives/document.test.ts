@@ -140,8 +140,8 @@ describe('DocxDocument', () => {
 
     await then('two new paragraph IDs with correct bookmark format are returned', () => {
       expect(after.newParagraphIds).toHaveLength(2);
-      expect(after.newParagraphIds[0]).toMatch(/^_bk_[0-9a-f]{12}$/);
-      expect(after.newParagraphIds[1]).toMatch(/^_bk_[0-9a-f]{12}$/);
+      expect(after.newParagraphIds[0]).toMatch(/^_bk_[0-9a-f]{10}$/);
+      expect(after.newParagraphIds[1]).toMatch(/^_bk_[0-9a-f]{10}$/);
     });
 
     await when('insertParagraph BEFORE anchor with one new paragraph', () => {

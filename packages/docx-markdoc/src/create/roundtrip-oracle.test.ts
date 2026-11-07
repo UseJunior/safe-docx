@@ -195,6 +195,125 @@ describe('Traceability: independent round-trip oracle for created documents', ()
     },
   );
 
+  test.openspec('[SDX-MDOC-CREATE-12] a justified line exported without spaces still matches, and a real change on it still fails')(
+    'Scenario: a justified line exported without spaces still matches, and a real change on it still fails',
+    async () => {
+      // LibreOffice exported this justified line of the #1239 purchase agreement without space glyphs: pdftotext
+      // -raw reads it as one token, while -layout, which places words by glyph position, keeps the spaces (#1242).
+      const source: SourceProjection = {
+        body: [{ text: '"Purchase Price") shall be an amount equal to (a) the Base Purchase Price, plus (b) the Closing Cash, less (c) the Closing Debt Amount, less (d) the amount, if any.' }],
+        footers: [null],
+      };
+      const page = (line: string) => `"Purchase Price") shall be\n${line}\nless (d) the amount, if any.\n`;
+      const spaced = 'an amount equal to (a) the Base Purchase Price, plus (b) the Closing Cash, less (c) the Closing Debt Amount,';
+      const joinedLine = spaced.replace(/ /gu, '');
+      const joined = comparePdfWords(source, [page(joinedLine)], [page(spaced)]);
+      expect(joined).toMatchObject({ passed: true, missing: [], unexplainedExtra: [] });
+      expect(joined.knownGenerated.joinedLines).toEqual([{ page: 1, words: spaced }]);
+      // Without layout text there is no evidence of the word boundaries, so nothing is split.
+      expect(comparePdfWords(source, [page(joinedLine)])).toMatchObject({ passed: false, unexplainedExtra: [{ words: joinedLine }], knownGenerated: { joinedLines: [] } });
+      // A spaced line is unchanged.
+      expect(comparePdfWords(source, [page(spaced)], [page(spaced)])).toMatchObject({ passed: true, knownGenerated: { joinedLines: [] } });
+
+      // A word really dropped from, added to or moved within the run-together line still fails: the layout text
+      // shows the changed line, which is no run of source words, so the token stays whole.
+      for (const changed of [
+        spaced.replace('Debt ', ''),
+        spaced.replace('the Closing Cash', 'the Net Closing Cash'),
+        spaced.replace('Closing Debt', 'Debt Closing'),
+      ]) {
+        const result = comparePdfWords(source, [page(changed.replace(/ /gu, ''))], [page(changed)]);
+        expect(result.passed).toBe(false);
+        expect(result.knownGenerated.joinedLines).toEqual([]);
+        expect(result.unexplainedExtra.map((span) => span.words)).toEqual([changed.replace(/ /gu, '')]);
+      }
+      // A run-together line that lost a whole word at its edge splits into what it does show, and the word is missing.
+      const edge = spaced.replace(/^an /u, '');
+      expect(comparePdfWords(source, [page(edge.replace(/ /gu, ''))], [page(edge)])).toMatchObject({ passed: false, missing: [{ words: 'an' }] });
+
+      // Words reordered so that the run-together text is unchanged ("in to into" printed as "into in to") fail:
+      // the layout text shows the reordered words, not the source reading.
+      const reorder: SourceProjection = { body: [{ text: 'Put in to into place.' }], footers: [null] };
+      expect(comparePdfWords(reorder, ['Put\nintointo\nplace.\n'], ['Put into in to place.\n'])).toMatchObject({ passed: false, knownGenerated: { joinedLines: [] } });
+      expect(comparePdfWords(reorder, ['Put\nintointo\nplace.\n'], ['Put in to into place.\n'])).toMatchObject({ passed: true, knownGenerated: { joinedLines: [{ page: 1, words: 'in to into' }] } });
+
+      // A token that is also a source word elsewhere is still split when the layout shows the source reading.
+      const aside: SourceProjection = { body: [{ text: 'We set a side panel aside today.' }], footers: [null] };
+      expect(comparePdfWords(aside, ['We set aside panel aside today.\n'], ['We set a side panel aside today.\n'])).toMatchObject({ passed: true, knownGenerated: { joinedLines: [{ page: 1, words: 'a side' }] } });
+      expect(comparePdfWords(aside, ['We set aside panel aside today.\n'], ['We set aside panel aside today.\n'])).toMatchObject({ passed: false, missing: [{ words: 'a side' }] });
+
+      // The reading comes from the token's own page, not its position: a table header set aside at the top of
+      // page 2 does not make the paragraph on page 1 ("a bc") the reading of the cell on page 2 ("ab c").
+      const header = 'H0 H1 H2 H3 H4 H5 H6 H7 H8 H9';
+      const twoPage: SourceProjection = { body: [{ text: 'a bc gap' }, { text: header, cell: true, table: { id: 0, row: 0 } }, { text: 'ab c', cell: true, table: { id: 0, row: 1 } }], footers: [null] };
+      expect(comparePdfWords(twoPage, ['a bc gap\n', `${header}\nab c\n`], ['a bc gap\n', `${header}\nab c\n`]).passed).toBe(true);
+      expect(comparePdfWords(twoPage, ['a bc gap\n', `${header}\nabc\n`], ['a bc gap\n', `${header}\nab c\n`])).toMatchObject({ passed: true, knownGenerated: { joinedLines: [{ page: 2, words: 'ab c' }] } });
+      // Two readings shown on the token's page leave it whole.
+      expect(comparePdfWords(twoPage, ['a bc gap\n', `${header}\nabc\n`], ['a bc gap\n', `${header}\nab c a bc\n`]).knownGenerated.joinedLines).toEqual([]);
+
+      // Evidence is counted, not just found: the source reading shown elsewhere on the page, where the raw text
+      // shows it too, cannot vouch for a reordered run-together line.
+      const twice: SourceProjection = { body: [{ text: 'Put in to into place. Copy in to into again.' }], footers: [null] };
+      expect(comparePdfWords(twice, ['Put\nintointo\nplace. Copy in to into again.\n'], ['Put into in to place. Copy in to into again.\n'])).toMatchObject({ passed: false, knownGenerated: { joinedLines: [] } });
+      expect(comparePdfWords(twice, ['Put\nintointo\nplace. Copy in to into again.\n'], ['Put in to into place. Copy in to into again.\n'])).toMatchObject({ passed: true, knownGenerated: { joinedLines: [{ page: 1, words: 'in to into' }] } });
+      // Two run-together lines on one page need two surplus occurrences.
+      expect(comparePdfWords(twice, ['Put\nintointo\nplace. Copy\nintointo\nagain.\n'], ['Put in to into place. Copy into in to again.\n']).passed).toBe(false);
+      expect(comparePdfWords(twice, ['Put\nintointo\nplace. Copy\nintointo\nagain.\n'], ['Put in to into place. Copy in to into again.\n']).passed).toBe(true);
+      // Layout text with a different page count is not evidence.
+      expect(comparePdfWords(twice, ['Put\nintointo\nplace. Copy in to into again.\n'], ['Put in to into place. Copy in to into again.\n', 'extra\n']).passed).toBe(false);
+
+      // A run-together line inside a table row split across pages: the row is rebuilt from the split words.
+      const leftWords = Array.from({ length: 10 }, (_, index) => `l${index}`);
+      const rightWords = Array.from({ length: 10 }, (_, index) => `r${index}`);
+      const rowCell = (text: string, row: number): SourceBodyEntry => ({ text, cell: true, table: { id: 0, row } });
+      const rowSource: SourceProjection = { body: [{ text: 'T' }, rowCell('LEFT', 0), rowCell('RIGHT', 0), rowCell(leftWords.join(' '), 1), rowCell(rightWords.join(' '), 1), { text: 'END' }], footers: [null] };
+      const rowPages = (left: string) => [`T LEFT RIGHT ${left} ${rightWords.slice(0, 3).join(' ')}\n`, `LEFT RIGHT ${leftWords.slice(4).join(' ')} ${rightWords.slice(3).join(' ')} END\n`];
+      expect(comparePdfWords(rowSource, rowPages('l0 l1l2 l3'), rowPages('l0 l1 l2 l3'))).toMatchObject({ passed: true, knownGenerated: { joinedLines: [{ page: 1, words: 'l1 l2' }], splitRows: [{ table: 0, row: 1, pages: [1, 2] }] } });
+      expect(comparePdfWords(rowSource, rowPages('l0 l1l2'), rowPages('l0 l1 l2')).passed).toBe(false);
+
+      // A long document whose run-together lines put the first alignment over budget is still recovered, and a
+      // real change among them still fails.
+      const long = Array.from({ length: 10000 }, (_, index) => `w${index}`);
+      const joinedLong = (change: boolean) => long.map((word, index) => (index % 10 === 0 ? `${word}${change && index === 5000 ? 'x' : ''}` : index % 10 === 1 ? `\u0001${word}` : word)).join(' ').replace(/ \u0001/gu, '');
+      const longSource: SourceProjection = { body: [{ text: long.join(' ') }], footers: [null] };
+      const recovered = comparePdfWords(longSource, [`${joinedLong(false)}\n`], [`${long.join(' ')}\n`]);
+      expect(recovered).toMatchObject({ passed: true, alignment: 'complete' });
+      expect(recovered.knownGenerated.joinedLines).toHaveLength(1000);
+      const changedLong = comparePdfWords(longSource, [`${joinedLong(true)}\n`], [`${long.join(' ').replace('w5000 ', 'w5000x ')}\n`]);
+      expect(changedLong).toMatchObject({ passed: false, unexplainedExtra: [{ words: 'w5000xw5001' }] });
+      // Over budget, a run-together token that is also a source word elsewhere is still recovered; the literal
+      // word keeps its place, because only tokens whose neighbours stand around the reading in the layout split.
+      const phrases = Array.from({ length: 700 }, (_, index) => `start${index} a side end${index}`).join(' ');
+      const asideSource: SourceProjection = { body: [{ text: `${phrases} Literal aside tail.` }], footers: [null] };
+      const asideRaw = (layout: string) => `${layout.replace(/ a side /gu, ' aside ')}\n`;
+      const asideLayout = `${phrases} Literal aside tail.`;
+      const asideRecovered = comparePdfWords(asideSource, [asideRaw(asideLayout)], [`${asideLayout}\n`]);
+      expect(asideRecovered).toMatchObject({ passed: true, alignment: 'complete' });
+      expect(asideRecovered.knownGenerated.joinedLines).toHaveLength(700);
+      const asideChanged = asideLayout.replace('start350 a side end350', 'start350 a sided end350');
+      const changedAside = comparePdfWords(asideSource, [asideRaw(asideLayout).replace('start350 aside end350', 'start350 asided end350')], [`${asideChanged}\n`]);
+      expect(changedAside).toMatchObject({ passed: false, unexplainedExtra: [{ words: 'asided' }] });
+      expect(changedAside.knownGenerated.joinedLines).toHaveLength(699);
+      // A neighbour that is itself a run-together token counts as split once its own claim is certified.
+      const adjacent = Array.from({ length: 700 }, (_, index) => `start${index} a side next word end${index}`).join(' ');
+      const adjacentSource: SourceProjection = { body: [{ text: `${adjacent} Literal aside tail.` }], footers: [null] };
+      const adjacentLayout = `${adjacent} Literal aside tail.`;
+      const adjacentRaw = adjacentLayout.replace(/ a side next word /gu, ' aside nextword ');
+      const adjacentRecovered = comparePdfWords(adjacentSource, [`${adjacentRaw}\n`], [`${adjacentLayout}\n`]);
+      expect(adjacentRecovered).toMatchObject({ passed: true, alignment: 'complete' });
+      expect(adjacentRecovered.knownGenerated.joinedLines).toHaveLength(1400);
+      const adjacentChangedLayout = adjacentLayout.replace('start350 a side next word', 'start350 a side next wrd');
+      const adjacentChanged = comparePdfWords(adjacentSource, [`${adjacentRaw.replace('start350 aside nextword', 'start350 aside nextwrd')}\n`], [`${adjacentChangedLayout}\n`]);
+      expect(adjacentChanged.passed).toBe(false);
+
+      // Stated limitation (pinned so the advertised guarantee is not strengthened by accident): evidence is counted
+      // per page, so a source reading the layout shows where the raw text placed a single source word can vouch
+      // for a reordered run-together line elsewhere on the page.
+      const residual: SourceProjection = { body: [{ text: 'Put in to into place. Copy into into again.' }], footers: [null] };
+      expect(comparePdfWords(residual, ['Put\nintointo\nplace. Copy into into again.\n'], ['Put into in to place. Copy in to into again.\n'])).toMatchObject({ passed: true, knownGenerated: { joinedLines: [{ page: 1, words: 'in to into' }] } });
+    },
+  );
+
   test.openspec('[SDX-MDOC-CREATE-12] each page carries the footer of its own section, and only a continuing table repeats its header')(
     'Scenario: each page carries the footer of its own section, and only a continuing table repeats its header',
     async () => {

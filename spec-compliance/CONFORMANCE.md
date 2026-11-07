@@ -15,6 +15,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | --- | --- | --- | --- | --- | --- | --- |
 | `ECMA-PART1-17-2-2` | Main document body | 5 | 1 | 17.2.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:body` | packages/docx-markdoc/src/greenfield.ts; packages/docx-markdoc/src/greenfield.test.ts |
 | `ECMA-PART1-17-3-1-27` | Paragraph style reference | 5 | 1 | 17.3.1.27 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle` | packages/docx-markdoc/src/greenfield.ts; packages/docx-markdoc/src/greenfield.test.ts |
+| `ECMA-PART1-17-3-2-25` | w:r run content model excludes revision wrappers | 5 | 1 | 17.3.2.25 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_R` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/sharedFieldMarkerRun.test.ts |
 | `ECMA-PART1-17-3-2-29` | Run style | 5 | 1 | 17.3.2.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rStyle` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
 | `ECMA-PART1-17-3-2-38` | Run font size | 5 | 1 | 17.3.2.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sz` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
 | `ECMA-PART4-14-9-1-1` | VML rich text-box content (w:txbxContent) | 5 | 4 | 14.9.1.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
@@ -23,12 +24,22 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-5-18` | Inserted run content | 5 | 1 | 17.13.5.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
 | `ECMA-PART1-17-16-13` | w:delInstrText containment in tracked deletions | 5 | 1 | 17.16.13 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:delInstrText` | packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/pipeline.field-validation.test.ts |
 | `ECMA-PART1-17-13-5` | Paragraph-level OOXML markers | 5 | 1 | 17.13.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts; packages/docx-core/src/integration/libreoffice-oracle-trust-boundary.test.ts |
-| `ECMA-PART1-17-13-6-1` | Bookmark end | 5 | 1 | 17.13.6.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
-| `ECMA-PART1-17-13-6-2` | Bookmark start | 5 | 1 | 17.13.6.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-6-1` | Bookmark end | 5 | 1 | 17.13.6.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/generation/generation-cross-references.test.ts |
+| `ECMA-PART1-17-13-6-2` | Bookmark start | 5 | 1 | 17.13.6.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/generation/bookmark-names.ts; packages/docx-core/src/generation/generation-cross-references.test.ts; packages/docx-markdoc/src/create/cross-references.test.ts |
 | `ECMA-PART1-17-13-7-1` | Permission range end | 5 | 1 | 17.13.7.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:permEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-7-2` | Permission range start | 5 | 1 | 17.13.7.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:permStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-8-1` | Proofing error anchors | 5 | 1 | 17.13.8.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:proofErr` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts |
 | `ECMA-PART1-17-11-14` | w:footnoteReference identifier vs display number | 5 | 1 | 17.11.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteReference` | packages/docx-core/src/footnotes.ts; packages/docx-core/src/footnotes.test.ts |
+| `ECMA-PART1-17-11-1` | w:continuationSeparator continuation separator note | 5 | 1 | 17.11.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:continuationSeparator` | packages/docx-core/src/primitives/footnote-shapes.ts; packages/docx-core/src/generation/generation-footnotes.test.ts |
+| `ECMA-PART1-17-11-9` | w:footnote special footnote list in document settings | 5 | 1 | 17.11.9 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnote` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-footnotes.test.ts |
+| `ECMA-PART1-17-11-10` | w:footnote footnote content | 5 | 1 | 17.11.10 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnote` | packages/docx-core/src/generation/emit/footnotes-part.ts; packages/docx-core/src/generation/validate-spec.ts; packages/docx-core/src/generation/generation-footnotes.test.ts; packages/docx-markdoc/src/create/footnotes.test.ts |
+| `ECMA-PART1-17-11-12` | w:footnotePr document-wide footnote properties | 5 | 1 | 17.11.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotePr` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-footnotes.test.ts |
+| `ECMA-PART1-17-11-13` | w:footnoteRef footnote reference mark | 5 | 1 | 17.11.13 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteRef` | packages/docx-core/src/primitives/footnote-shapes.ts; packages/docx-core/src/generation/emit/footnotes-part.ts; packages/docx-markdoc/src/import.ts; packages/docx-core/src/generation/generation-footnotes.test.ts; packages/docx-markdoc/src/create/footnotes.test.ts |
+| `ECMA-PART1-17-11-15` | w:footnotes footnotes part root | 5 | 1 | 17.11.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotes` | packages/docx-core/src/primitives/footnote-shapes.ts; packages/docx-core/src/generation/emit/footnotes-part.ts; packages/docx-core/src/generation/generation-footnotes.test.ts |
+| `ECMA-PART1-17-11-23` | w:separator footnote separator note | 5 | 1 | 17.11.23 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:separator` | packages/docx-core/src/primitives/footnote-shapes.ts; packages/docx-core/src/generation/generation-footnotes.test.ts |
+| `ECMA-PART1-17-3-2-2` | w:bCs complex script bold in imported annotation bodies | 5 | 1 | 17.3.2.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bCs` | packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/create/footnotes.test.ts |
+| `ECMA-PART1-17-3-2-17` | w:iCs complex script italics in imported annotation bodies | 5 | 1 | 17.3.2.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:iCs` | packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/create/footnotes.test.ts |
+| `ECMA-PART1-17-3-2-39` | w:szCs complex script font size in imported annotation bodies | 5 | 1 | 17.3.2.39 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:szCs` | packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
 | `ECMA-PART1-17-16-22` | w:hyperlink container preservation under tracked changes | 5 | 1 | 17.16.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-core/src/primitives/text.ts; packages/docx-markdoc/src/import.ts |
 | `ECMA-PART2-6-5-2-3` | part Relationships part ownership and naming | 5 | 2 | 6.5.2.3 | `spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#element:Relationships` | packages/docx-core/src/primitives/relationships.ts; packages/docx-markdoc/src/import.ts |
 | `ECMA-PART2-6-5-3-4` | relationship identity, type, target, and target mode | 5 | 2 | 6.5.3.4 | `spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#type:CT_Relationship` | packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/import.ts |
@@ -44,6 +55,10 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-6-11` | w:pgMar page margin emission | 5 | 1 | 17.6.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgMar` | packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/generation/emit/section.ts |
 | `ECMA-PART1-17-3-1-24` | w:pBdr paragraph border collection | 5 | 1 | 17.3.1.24 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pBdr` | packages/docx-core/src/generation/emit/borders.ts; packages/docx-core/src/generation/generation-paragraph-borders.test.ts |
 | `ECMA-PART1-17-3-1-26` | w:pPr child-element ordering | 5 | 1 | 17.3.1.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr` | packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts |
+| `ECMA-PART1-17-3-1-13` | w:jc paragraph alignment | 5 | 1 | 17.3.1.13 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:jc` | packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts |
+| `ECMA-PART1-17-3-1-14` | w:keepLines keep paragraph lines together | 5 | 1 | 17.3.1.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepLines` | packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts |
+| `ECMA-PART1-17-3-1-15` | w:keepNext keep paragraph with next | 5 | 1 | 17.3.1.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepNext` | packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts |
+| `ECMA-PART1-17-3-1-23` | w:pageBreakBefore start paragraph on next page | 5 | 1 | 17.3.1.23 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pageBreakBefore` | packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts |
 | `ECMA-PART1-17-3-1-20` | w:outlineLvl paragraph outline level | 5 | 1 | 17.3.1.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:outlineLvl` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts |
 | `ECMA-PART1-17-3-2-28` | w:rPr direct-property uniqueness | 5 | 1 | 17.3.2.28 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPr` | packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/primitives/text.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts; packages/docx-core/test-primitives/text.test.ts; packages/docx-markdoc/src/retained-format.test.ts |
 | `ECMA-PART1-17-7-3` | Toggle-property evaluation | 5 | 1 | 17.7.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_RPr` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-toggle.test.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts; scripts/check_docx_formatting_loss.test.mjs |
@@ -65,11 +80,11 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-11-3-3` | Document Settings part | 5 | 1 | 11.3.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:settings` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts |
 | `ECMA-PART1-17-15-3-4` | w:compatSetting custom compatibility setting | 5 | 1 | 17.15.3.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:compatSetting` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts |
 | `ECMA-PART1-17-10-1` | w:evenAndOddHeaders setting | 5 | 1 | 17.10.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:evenAndOddHeaders` | packages/docx-core/src/generation/emit/settings-part.ts |
-| `ECMA-PART1-17-16-18` | w:fldChar five-part complex-field emission | 5 | 1 | 17.16.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/shared/field-structure.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/pipeline.field-validation.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts |
+| `ECMA-PART1-17-16-18` | w:fldChar five-part complex-field emission | 5 | 1 | 17.16.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/shared/field-structure.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/pipeline.field-validation.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/generation/generation-cross-references.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts; packages/docx-core/src/primitives/body_fields.ts; packages/docx-core/src/primitives/body_fields.test.ts |
 | `ECMA-PART1-17-16-5-44` | PAGE field instruction emission | 5 | 1 | 17.16.5.44 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts |
 | `ECMA-PART1-17-16-5-42` | NUMPAGES field instruction emission | 5 | 1 | 17.16.5.42 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts |
 | `ECMA-PART1-17-16-5-45` | PAGEREF field instruction classification and preservation | 5 | 1 | 17.16.5.45 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-core/src/shared/field-semantics.ts; packages/docx-core/src/shared/field-semantics.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts |
-| `ECMA-PART1-17-16-5-51` | REF field instruction classification and preservation | 5 | 1 | 17.16.5.51 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-core/src/shared/field-semantics.ts; packages/docx-core/src/shared/field-semantics.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts |
+| `ECMA-PART1-17-16-5-51` | REF field instruction classification and preservation | 5 | 1 | 17.16.5.51 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-core/src/shared/field-semantics.ts; packages/docx-core/src/shared/field-semantics.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts; packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/src/generation/generation-cross-references.test.ts; packages/docx-core/src/generation/generation-relative-cross-references.test.ts; packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/create/cross-references.test.ts; packages/docx-markdoc/src/create/relative-cross-references.test.ts |
 | `ECMA-PART1-17-4-37` | w:tbl table emission | 5 | 1 | 17.4.37 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tbl` | packages/docx-core/src/generation/emit/table.ts; packages/docx-core/src/generation/validate-spec.ts |
 | `ECMA-PART1-17-4-59` | w:tblPr table-properties emission | 5 | 1 | 17.4.59 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPr` | packages/docx-core/src/generation/emit/table.ts |
 | `ECMA-PART1-17-4-63` | w:tblW preferred-width consistency | 5 | 1 | 17.4.63 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblW` | packages/docx-core/src/generation/emit/table.ts |
@@ -77,7 +92,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-4-38` | w:tblBorders table border collection | 5 | 1 | 17.4.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblBorders` | packages/docx-core/src/generation/emit/table.ts |
 | `ECMA-PART1-17-4-48` | w:tblGrid table grid emission | 5 | 1 | 17.4.48 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGrid` | packages/docx-core/src/generation/emit/table.ts; packages/docx-core/src/generation/validate-spec.ts |
 | `ECMA-PART1-17-4-16` | w:gridCol grid-column definition | 5 | 1 | 17.4.16 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:gridCol` | packages/docx-core/src/generation/emit/table.ts |
-| `ECMA-PART1-17-4-78` | w:tr table-row emission | 5 | 1 | 17.4.78 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tr` | packages/docx-core/src/generation/emit/table.ts |
+| `ECMA-PART1-17-4-78` | w:tr table-row emission | 5 | 1 | 17.4.78 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tr` | packages/docx-core/src/generation/emit/table.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts |
 | `ECMA-PART1-17-4-81` | w:trPr row-properties ordering | 5 | 1 | 17.4.81 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPr` | packages/docx-core/src/generation/ordering.ts |
 | `ECMA-PART1-17-4-80` | w:trHeight row height | 5 | 1 | 17.4.80 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trHeight` | packages/docx-core/src/generation/emit/table.ts |
 | `ECMA-PART1-17-4-49` | w:tblHeader repeating header row | 5 | 1 | 17.4.49 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblHeader` | packages/docx-core/src/generation/emit/table.ts |
@@ -94,18 +109,24 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-9-16` | w:numbering numbering-definitions part emission | 5 | 1 | 17.9.16 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numbering` | packages/docx-core/src/generation/emit/numbering-part.ts |
 | `ECMA-PART1-17-9-1` | w:abstractNum abstract numbering definition | 5 | 1 | 17.9.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:abstractNum` | packages/docx-core/src/generation/emit/numbering-part.ts |
 | `ECMA-PART1-17-9-2` | w:abstractNumId abstract definition reference | 5 | 1 | 17.9.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:abstractNumId` | packages/docx-core/src/generation/emit/numbering-part.ts |
-| `ECMA-PART1-17-9-15` | w:num numbering definition instance | 5 | 1 | 17.9.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num` | packages/docx-core/src/generation/emit/numbering-part.ts |
+| `ECMA-PART1-17-9-15` | w:num numbering definition instance | 5 | 1 | 17.9.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts |
 | `ECMA-PART1-17-9-18` | w:numId numbering instance reference | 5 | 1 | 17.9.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numId` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts |
 | `ECMA-PART1-17-9-3` | w:ilvl numbering level reference | 5 | 1 | 17.9.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ilvl` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts |
 | `ECMA-PART1-17-9-6` | w:lvl numbering level definition | 5 | 1 | 17.9.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvl` | packages/docx-core/src/primitives/numbering.ts; packages/docx-core/src/generation/emit/numbering-part.ts |
-| `ECMA-PART1-17-9-22` | w:pStyle numbering-level paragraph style | 5 | 1 | 17.9.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle` | packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts |
+| `ECMA-PART1-17-9-23` | w:pStyle numbering-level paragraph style | 5 | 1 | 17.9.23 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle` | packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/emit/styles-part.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts |
+| `ECMA-PART1-17-9-22` | w:pPr numbering-level paragraph properties | 5 | 1 | 17.9.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr` | packages/docx-core/src/generation/emit/numbering-part.ts |
+| `ECMA-PART1-17-9-4` | w:isLgl legal numbering | 5 | 1 | 17.9.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:isLgl` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts |
+| `ECMA-PART1-17-9-10` | w:lvlRestart numbering level restart threshold | 5 | 1 | 17.9.10 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlRestart` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts; packages/docx-core/src/primitives/numbering.ts |
+| `ECMA-PART1-17-9-8` | w:lvlOverride numbering level override | 5 | 1 | 17.9.8 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlOverride` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts |
+| `ECMA-PART1-17-9-26` | w:startOverride numbering level start override | 5 | 1 | 17.9.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts |
 | `ECMA-PART1-17-9-17` | w:numFmt numbering format | 5 | 1 | 17.9.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numFmt` | packages/docx-core/src/generation/schema-enum-domains.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts |
 | `ECMA-PART1-17-9-11` | w:lvlText numbering level text | 5 | 1 | 17.9.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlText` | packages/docx-core/src/generation/emit/numbering-part.ts |
+| `ECMA-PART1-17-18-59` | ST_NumberFormat alphabetic list numbers | 5 | 1 | 17.18.59 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_NumberFormat` | packages/docx-core/src/primitives/numbering.ts; packages/docx-core/src/generation/generation-cross-references.test.ts |
 | `ECMA-PART1-17-9-25` | w:start numbering level starting value | 5 | 1 | 17.9.25 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:start` | packages/docx-core/src/generation/emit/numbering-part.ts |
 | `ECMA-PART1-17-9-28` | w:suff content between numbering symbol and text | 5 | 1 | 17.9.28 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:suff` | packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts |
 | `ECMA-PART1-17-9-12` | w:multiLevelType abstract definition type | 5 | 1 | 17.9.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:multiLevelType` | packages/docx-core/src/generation/emit/numbering-part.ts |
 | `ECMA-PART1-17-9-7` | w:lvlJc numbering level justification | 5 | 1 | 17.9.7 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlJc` | packages/docx-core/src/generation/emit/numbering-part.ts |
-| `ECMA-PART1-17-3-1-19` | w:numPr paragraph numbering reference | 5 | 1 | 17.3.1.19 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts |
+| `ECMA-PART1-17-3-1-19` | w:numPr paragraph numbering reference | 5 | 1 | 17.3.1.19 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts; packages/docx-core/test-primitives/paragraph_list_numbering.test.ts |
 | `ECMA-PART1-17-13-4-6` | w:comments comment-collection part emission | 5 | 1 | 17.13.4.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comments` | packages/docx-core/src/generation/emit/comments-part.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
 | `ECMA-PART1-17-13-4-2` | w:comment comment content emission | 5 | 1 | 17.13.4.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comment` | packages/docx-core/src/generation/emit/comments-part.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
 | `ECMA-PART1-17-13-4-4` | w:commentRangeStart comment anchor opening | 5 | 1 | 17.13.4.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeStart` | packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
@@ -167,6 +188,21 @@ Part 1 §17.3.1.27 defines `w:pStyle` as a paragraph's referenced style. The
 greenfield compiler resolves each canonical body role to an explicit style ID,
 requires that ID in the template style table, emits it under `w:pPr`, and
 reloads the package to verify the resolved body/style projection.
+
+### ECMA-PART1-17-3-2-25 — w:r run content model excludes revision wrappers
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.2.25
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_R`
+- **Verified by:** packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/sharedFieldMarkerRun.test.ts
+
+Part 1 §17.3.2.25 defines `w:r` as a run of content with common properties.
+Its CT_R content model admits run properties and run content such as `w:t`
+and `w:fldChar`, but no `w:ins`, `w:del`, `w:moveFrom` or `w:moveTo`; those
+revision particles wrap whole runs. When compared text shares a run with a
+field character, safe-docx splits the run so each revision wraps a run
+fragment that repeats the source run properties.
 
 ### ECMA-PART1-17-3-2-29 — Run style
 
@@ -323,11 +359,14 @@ authoritative list lives in `packages/docx-compare/src/tagged/taggedTreeSerializ
 - **Part / Section:** Part 1 § 17.13.6.1
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkEnd`
-- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/generation/generation-cross-references.test.ts
 
 `w:bookmarkEnd` closes a bookmark range. safe-docx's advanced-record matrix
 claims only bounded preservation around accept/reject and comparison, not
-bookmark identity or consumer semantics.
+bookmark identity or consumer semantics. Generation (#1236) closes each
+bookmark it emits after the paragraph's content, with the `w:id` of its
+`w:bookmarkStart`, and the generated-package structural check verifies that
+every end follows a start with the same id.
 
 ### ECMA-PART1-17-13-6-2 — Bookmark start
 
@@ -335,10 +374,21 @@ bookmark identity or consumer semantics.
 - **Part / Section:** Part 1 § 17.13.6.2
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkStart`
-- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/generation/bookmark-names.ts; packages/docx-core/src/generation/generation-cross-references.test.ts; packages/docx-markdoc/src/create/cross-references.test.ts
 
 `w:bookmarkStart` opens a bookmark range. The matrix records sampled
 preservation only; range identity and bookmark semantics are separate gaps.
+Generation (#1236) opens a bookmark after a body paragraph's properties. Its
+`w:id` comes from the sequence comment ranges use, since the clause calls the
+id unique within the document. Its `w:name` keeps to what Word's Bookmark
+dialog accepts (at most 40 characters, a leading letter, letters, digits and
+underscores), unique without regard to case. The structural check verifies
+unique ids and names and that no bookmark id equals a comment-range id.
+Unique names are a safe-docx policy stricter than the clause, which lets a
+document repeat a name and keeps the first range; Word 16.114 keeps the last
+(#1264). The comparison harness therefore records a repeat in an input, or
+one an output keeps from an input no more often than that input has it, as
+a warning, and fails a repeat the comparison introduces or multiplies.
 
 ### ECMA-PART1-17-13-7-1 — Permission range end
 
@@ -399,6 +449,144 @@ full `w:type` interpretation, and complete `w:customMarkFollows` display-mark
 semantics are outside the present numbering claim.
 
 This claim is bounded to the runtime and test evidence listed above.
+
+### ECMA-PART1-17-11-1 — w:continuationSeparator continuation separator note
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.1
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:continuationSeparator`
+- **Verified by:** packages/docx-core/src/primitives/footnote-shapes.ts; packages/docx-core/src/generation/generation-footnotes.test.ts
+
+Part 1 §17.11.1 defines `w:continuationSeparator` as the mark that
+separates the main story from a footnote continued from the previous page.
+The footnotes part that `add_footnote` bootstraps and that generation emits
+holds a `w:type="continuationSeparator"` note (id 0) whose run is this
+mark, as Word writes it.
+
+### ECMA-PART1-17-11-9 — w:footnote special footnote list in document settings
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.9
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnote`
+- **Verified by:** packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-footnotes.test.ts
+
+Part 1 §17.11.9 requires every footnote that is not of type normal to be
+listed under the document-wide `w:footnotePr`, or it shall not be loaded.
+When a generated document has footnotes, `settings.xml` lists the separator
+(id -1) and continuation-separator (id 0) notes there. Documents edited with
+`add_footnote` keep whatever settings they already had; this claim covers
+generated documents.
+
+### ECMA-PART1-17-11-10 — w:footnote footnote content
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.10
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnote`
+- **Verified by:** packages/docx-core/src/generation/emit/footnotes-part.ts; packages/docx-core/src/generation/validate-spec.ts; packages/docx-core/src/generation/generation-footnotes.test.ts; packages/docx-markdoc/src/create/footnotes.test.ts
+
+Part 1 §17.11.10 defines `w:footnote` as one footnote's content, which can
+be any block-level content. Generation emits one `w:footnote` per
+`FootnoteSpec`, with ids 1, 2, 3, … in document order. The supported
+content is a subset: one or more paragraphs, with tables and other block
+content rejected at validation. Each paragraph without a `styleId` takes the
+`FootnoteText` style.
+
+### ECMA-PART1-17-11-12 — w:footnotePr document-wide footnote properties
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.12
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotePr`
+- **Verified by:** packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-footnotes.test.ts
+
+Part 1 §17.11.12 defines the document-wide `w:footnotePr` in the settings
+part. Generation writes it only when the document has a footnote, holding
+the special-note list of §17.11.9 and no other property, in its `CT_Settings`
+slot after `w:evenAndOddHeaders` and before `w:compat`. Numbering format,
+position and restart are left at their defaults.
+
+### ECMA-PART1-17-11-13 — w:footnoteRef footnote reference mark
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.13
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteRef`
+- **Verified by:** packages/docx-core/src/primitives/footnote-shapes.ts; packages/docx-core/src/generation/emit/footnotes-part.ts; packages/docx-markdoc/src/import.ts; packages/docx-core/src/generation/generation-footnotes.test.ts; packages/docx-markdoc/src/create/footnotes.test.ts
+
+Part 1 §17.11.13 defines `w:footnoteRef` as the automatically numbered mark
+inside a footnote. Generated and added notes open their first paragraph with
+a `FootnoteReference` run holding this mark, then a run holding one space,
+as Word writes them. `docx-markdoc import` treats that space run as part of
+the mark's presentation and leaves it out of the imported note body, so
+compile, which writes it again, does not double it.
+
+### ECMA-PART1-17-11-15 — w:footnotes footnotes part root
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.15
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotes`
+- **Verified by:** packages/docx-core/src/primitives/footnote-shapes.ts; packages/docx-core/src/generation/emit/footnotes-part.ts; packages/docx-core/src/generation/generation-footnotes.test.ts
+
+Part 1 §17.11.15 defines `w:footnotes` as the root of the footnotes part,
+holding every footnote including the separator and continuation notices.
+Generation emits `word/footnotes.xml` only when the document has a footnote,
+with its content type and a footnotes relationship from the main document
+part. The part starts from the same separator and continuation-separator
+template that `add_footnote` bootstraps.
+
+### ECMA-PART1-17-11-23 — w:separator footnote separator note
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.23
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:separator`
+- **Verified by:** packages/docx-core/src/primitives/footnote-shapes.ts; packages/docx-core/src/generation/generation-footnotes.test.ts
+
+Part 1 §17.11.23 defines `w:separator` as the mark that separates the main
+story from the footnotes on a page. The footnotes part template holds a
+`w:type="separator"` note (id -1) whose run is this mark, as Word writes it.
+
+### ECMA-PART1-17-3-2-2 — w:bCs complex script bold in imported annotation bodies
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.2.2
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bCs`
+- **Verified by:** packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/create/footnotes.test.ts
+
+Part 1 §17.3.2.2 defines `w:bCs` as bold for complex-script characters only.
+Generation writes it beside every `w:b`. `docx-markdoc import` admits it in
+an annotation body when the run or paragraph holds no complex-script text,
+where it changes nothing; with complex-script text it still fails closed.
+
+### ECMA-PART1-17-3-2-17 — w:iCs complex script italics in imported annotation bodies
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.2.17
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:iCs`
+- **Verified by:** packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/create/footnotes.test.ts
+
+Part 1 §17.3.2.17 defines `w:iCs` as italics for complex-script characters
+only. Generation writes it beside every `w:i`. `docx-markdoc import` admits
+it in an annotation body under the same rule as `w:bCs` (§17.3.2.2).
+
+### ECMA-PART1-17-3-2-39 — w:szCs complex script font size in imported annotation bodies
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.2.39
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:szCs`
+- **Verified by:** packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts
+
+Part 1 §17.3.2.39 defines `w:szCs` as the font size for complex-script
+characters only. `docx-markdoc import` admits it in an annotation body when
+the run or paragraph holds no complex-script text, where it changes
+nothing.
 
 ### ECMA-PART1-17-16-22 — w:hyperlink container preservation under tracked changes
 
@@ -629,6 +817,58 @@ subset of that sequence as `PPR_ORDER` and routes every paragraph
 property through `appendInOrder`, which throws on any property name
 missing from the table so new properties force a conscious ordering
 decision.
+
+### ECMA-PART1-17-3-1-13 — w:jc paragraph alignment
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.1.13
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:jc`
+- **Verified by:** packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts
+
+`w:jc` sets a paragraph's alignment. The `format_layout` tool writes the
+transitional `ST_Jc` values `left`, `center`, `right` and `both` (the values
+Word writes) at the `w:jc` position in the `CT_PPrBase` sequence and records
+the prior properties in a `w:pPrChange`. The bidi-relative `start`/`end` and
+the distribution values, which the transitional schema also permits, are out
+of scope.
+
+### ECMA-PART1-17-3-1-14 — w:keepLines keep paragraph lines together
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.1.14
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepLines`
+- **Verified by:** packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts
+
+`w:keepLines` is a `CT_OnOff` property that keeps all lines of a paragraph on
+one page. `format_layout` sets it as a bare element (on) or removes a direct
+element that is on, so the style hierarchy decides the value again; a direct
+element that is already explicitly off is left alone.
+
+### ECMA-PART1-17-3-1-15 — w:keepNext keep paragraph with next
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.1.15
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepNext`
+- **Verified by:** packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts
+
+`w:keepNext` is a `CT_OnOff` property that keeps a paragraph on the same page
+as the next paragraph. `format_layout` sets or removes the direct element with
+the same on/off rules as `w:keepLines`.
+
+### ECMA-PART1-17-3-1-23 — w:pageBreakBefore start paragraph on next page
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.1.23
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pageBreakBefore`
+- **Verified by:** packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts
+
+`w:pageBreakBefore` is a `CT_OnOff` property that starts the paragraph on a
+new page. `format_layout` sets or removes the direct element, which lets a
+caller drop a property made redundant by a preceding `nextPage` section break.
 
 ### ECMA-PART1-17-3-1-20 — w:outlineLvl paragraph outline level
 
@@ -961,7 +1201,7 @@ and conditionally adds this switch exactly when some section declares an
 - **Part / Section:** Part 1 § 17.16.18
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar`
-- **Verified by:** packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/shared/field-structure.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/pipeline.field-validation.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
+- **Verified by:** packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/shared/field-structure.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/pipeline.field-validation.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/generation/generation-cross-references.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts; packages/docx-core/src/primitives/body_fields.ts; packages/docx-core/src/primitives/body_fields.test.ts
 
 This claim is bounded to the runtime and test evidence listed above.
 In particular, §17.16.18 does not prohibit `w:fldChar` below `<w:del>`: the
@@ -1016,7 +1256,7 @@ pagination, cached-result correctness, or complete field-engine equivalence.
 - **Part / Section:** Part 1 § 17.16.5.51
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText`
-- **Verified by:** packages/docx-core/src/shared/field-semantics.ts; packages/docx-core/src/shared/field-semantics.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
+- **Verified by:** packages/docx-core/src/shared/field-semantics.ts; packages/docx-core/src/shared/field-semantics.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/fieldComparisonSemantics.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts; packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/src/generation/generation-cross-references.test.ts; packages/docx-core/src/generation/generation-relative-cross-references.test.ts; packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/create/cross-references.test.ts; packages/docx-markdoc/src/create/relative-cross-references.test.ts
 
 Tagged main-document publication classifies a self-contained REF instruction with
 one bookmark argument and a bounded switch vocabulary; the `\d` switch requires
@@ -1030,6 +1270,29 @@ declines any projection carrying a tab, a break, or a paragraph transition
 rather than flattening it into literal characters. That separately tested
 capability does not broaden unchanged publication preservation into complete
 field-engine equivalence.
+
+Generation (#1236) emits REF fields with the `\w` (full context) or `\n`
+(paragraph number) switch and `\h`, the instructions Word's own Insert →
+Cross-reference writes. The clause defines what the switches ask for: `\n`
+the paragraph number "without trailing periods", `\w` the number "in full
+context". It does not say how the context is assembled or which periods go
+between its parts, so `renderReferenceNumber` follows Word 16.114 as recorded
+in `scripts/oracle/word/evidence/issue-1236-word-16.114.json`: the target's
+level text is preceded by its ancestors' level texts up to the one naming
+level 0, one final period is removed, and a period before a part that starts
+with `(` is removed (`2.` + `(b)` → `2(b)`, but `2.` + `b.` → `2.b`). The
+cached result equals Word's for all recorded fields. LibreOffice keeps a
+period before `(` that Word removes.
+
+Generation (#1258) also emits `\r`, which the clause describes as "the entire
+paragraph number of the bookmarked paragraph in relative context—or relative
+to its position in the numbering scheme". It does not say what the position
+is. `resolveReferenceNumber` follows Word 16.114 as recorded in
+`scripts/oracle/word/evidence/issue-1258-word-16.114.json`: the `\w` number
+less the leading levels whose values the target shares with the last
+paragraph of the target's list (`w:numId`) at or before the field's
+paragraph, keeping the target's own level, and the full number in a
+footnote.
 
 ### ECMA-PART1-17-4-37 — w:tbl table emission
 
@@ -1122,11 +1385,13 @@ normalized by the compiler.
 - **Part / Section:** Part 1 § 17.4.78
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tr`
-- **Verified by:** packages/docx-core/src/generation/emit/table.ts
+- **Verified by:** packages/docx-core/src/generation/emit/table.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts
 
 Rows emit as `w:tr` with optional row properties followed by cells. Cell
 grid offsets are tracked during emission so unspecified cell widths can be
-derived from the columns each cell actually spans.
+derived from the columns each cell actually spans. The comparison
+serializer keeps a row's `w:tblPrEx` ahead of its `w:trPr`, as `CT_Row`
+orders them, when it keeps, adds or creates row properties.
 
 ### ECMA-PART1-17-4-81 — w:trPr row-properties ordering
 
@@ -1318,8 +1583,9 @@ deterministic compile output, never random.
 - **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts
 
 Every emitted instance references its abstract definition through
-`w:abstractNumId`; the pairing is 1:1 by construction so the reference can
-never dangle.
+`w:abstractNumId`. A definition's default instance and each of its
+additional instances name the definition's own id, which exists by
+construction, so the reference can never dangle.
 
 ### ECMA-PART1-17-9-15 — w:num numbering definition instance
 
@@ -1327,11 +1593,15 @@ never dangle.
 - **Part / Section:** Part 1 § 17.9.15
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num`
-- **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts
+- **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts
 
-Instances carry sequential numeric `w:numId` values (starting at 1) in
-declaration order; the spec-level string handle → numeric id map is what
-paragraph references bind through.
+Instances carry sequential numeric `w:numId` values: default instances take
+1..N in declaration order, and additional instances (`NumberingSpec.instances`)
+follow from N+1, so adding an instance never renumbers a default instance.
+Additional instances' ids depend on the instances declared before them, so
+numeric ids are compile-local; the spec-level string handle → numeric id map
+is what paragraph references bind through. On the read side, every instance of one
+abstract definition continues a single list, as Word displays it.
 
 ### ECMA-PART1-17-9-18 — w:numId numbering instance reference
 
@@ -1365,22 +1635,107 @@ level to exist in the bound definition.
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvl`
 - **Verified by:** packages/docx-core/src/primitives/numbering.ts; packages/docx-core/src/generation/emit/numbering-part.ts
 
-Level definitions follow the CT_Lvl child sequence (start, numFmt, suff,
-lvlText, lvlJc, pPr, rPr); level indents emit through `w:pPr`/`w:ind` and
-level run properties reuse the shared rPr builder.
+Level definitions follow the CT_Lvl child sequence (start, numFmt,
+lvlRestart, pStyle, isLgl, suff, lvlText, lvlJc, pPr, rPr) through the
+`LVL_ORDER` table, which a test checks against the vendored schema; level
+indents and tab stops emit through `w:pPr` and level run properties reuse the
+shared rPr builder.
 
-### ECMA-PART1-17-9-22 — w:pStyle numbering-level paragraph style
+### ECMA-PART1-17-9-23 — w:pStyle numbering-level paragraph style
 
 - **Edition:** ECMA-376 5
-- **Part / Section:** Part 1 § 17.9.22
+- **Part / Section:** Part 1 § 17.9.23
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle`
-- **Verified by:** packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts
+- **Verified by:** packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/emit/styles-part.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts
 
 An optional `w:pStyle` on `w:lvl` associates that exact numbering level with
 a paragraph style. The numbering model retains the association and exposes a
 read-only active-level lookup so heading classification never consults an
-unrelated level or mutates list counters.
+unrelated level or mutates list counters. Generation emits a level's `pStyle`
+only for a declared paragraph style that no other level links, and writes the
+reverse link (`w:numPr` naming the definition's default instance and the
+level) into that style's `w:pPr`, so a paragraph that only applies the style is
+numbered at that level. Label resolution honors a style-derived number only
+when this link agrees with the paragraph's nearest numbered style; a level
+`w:pStyle` without the style's own `w:numPr` numbers nothing.
+
+### ECMA-PART1-17-9-22 — w:pPr numbering-level paragraph properties
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.9.22
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr`
+- **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts
+
+A level's paragraph properties carry its tab stops (`w:tabs`) and indentation
+(`w:ind` with `left` plus either `hanging` or `firstLine`) in CT_PPrBase
+order, through the shared paragraph-property builder. They apply to every
+paragraph numbered at that level unless the paragraph overrides them.
+
+### ECMA-PART1-17-9-4 — w:isLgl legal numbering
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.9.4
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:isLgl`
+- **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts
+
+A level authored with `isLgl: true` emits a bare `w:isLgl`, so every level
+placeholder in its level text displays as an Arabic numeral: "Section %1.%2"
+under an `upperRoman` article level reads "Section 2.01", not "Section II.01".
+The read-side label computation applies the same conversion and keeps a
+`decimalZero` level's zero padding, as Word and LibreOffice display it.
+
+### ECMA-PART1-17-9-10 — w:lvlRestart numbering level restart threshold
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.9.10
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlRestart`
+- **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts; packages/docx-core/src/primitives/numbering.ts
+
+A level's one-based restart threshold emits as `w:lvlRestart`. Validation
+accepts 0 (never restart) or a value below the level's own `ilvl`: the value
+`ilvl` restates the default (restart after the previous level), and Word for
+Mac drops the level's numbering when it is written explicitly; larger values
+name the level itself or a later one, which readers ignore. The read-side
+label computation follows Word: it restarts a deeper level only when a level
+within its threshold is used. LibreOffice 26.2 ignores `w:lvlRestart`, so a
+non-default threshold renders differently there.
+
+### ECMA-PART1-17-9-8 — w:lvlOverride numbering level override
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.9.8
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlOverride`
+- **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts
+
+Each additional numbering instance emits one `w:lvlOverride` per overridden
+level, in ascending `ilvl` after `w:abstractNumId` per the CT_Num sequence.
+Validation requires at least one override per additional instance, each
+naming a declared level at most once.
+
+### ECMA-PART1-17-9-26 — w:startOverride numbering level start override
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.9.26
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride`
+- **Verified by:** packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/numbering.test.ts
+
+A level override carries only `w:startOverride`, so an additional instance of
+a definition restarts that level at the given value. The read-side label
+computation follows Word: it keeps one running sequence per abstract
+definition, shared by every instance at every level; an override restarts the
+shared level the first time a paragraph of its instance uses that level, and
+paragraphs on any instance then continue from there. A deeper level restarted
+by a paragraph resumes at that paragraph's instance's start value (its
+override, if any). LibreOffice 26.2 agrees on the sharing and the first-use
+restart, but restarts deeper levels at the abstract start and ignores
+`w:lvlRestart`. The Word observations are recorded in
+`scripts/oracle/word/evidence/issue-1243-word-16.114.json`.
 
 ### ECMA-PART1-17-9-17 — w:numFmt numbering format
 
@@ -1390,8 +1745,8 @@ unrelated level or mutates list counters.
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numFmt`
 - **Verified by:** packages/docx-core/src/generation/schema-enum-domains.ts; packages/docx-core/src/generation/emit/numbering-part.ts; packages/docx-core/src/generation/validate-spec.ts
 
-Each level carries its declared format verbatim (decimal, letter, roman,
-bullet, none); the generated formats round-trip through the read-side
+Each level carries its declared format verbatim (decimal, decimalZero,
+letter, roman, bullet, none); the generated formats round-trip through the read-side
 label computation in `packages/docx-core/src/primitives/numbering.ts`.
 
 ### ECMA-PART1-17-9-11 — w:lvlText numbering level text
@@ -1405,6 +1760,28 @@ label computation in `packages/docx-core/src/primitives/numbering.ts`.
 The level text pattern (e.g. `%1.` / `%1.%2` / a literal bullet glyph) is
 emitted verbatim from the spec; validation requires a non-empty pattern on
 every level.
+
+The clause says a placeholder naming a level deeper than its own is ignored.
+Word 16.114 instead shows no number for such a level, and a REF field to it
+shows `0` (recorded in `scripts/oracle/word/evidence/issue-1236-word-16.114.json`,
+`deeperLevelPlaceholders`), so generated cross-references to such a level are
+refused (`resolveReferenceNumber` in `packages/docx-core/src/primitives/numbering.ts`).
+
+### ECMA-PART1-17-18-59 — ST_NumberFormat alphabetic list numbers
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.18.59
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_NumberFormat`
+- **Verified by:** packages/docx-core/src/primitives/numbering.ts; packages/docx-core/src/generation/generation-cross-references.test.ts
+
+Bounded to the `lowerLetter` and `upperLetter` values as the list-label read
+side formats them: past the size of the alphabet the same letter is written
+once more for each further pass (27 → `aa`, 28 → `bb`, 53 → `aaa`), as the
+clause describes. Word 16.114 shows the same labels and REF results, recorded
+in `scripts/oracle/word/evidence/issue-1236-word-16.114.json`
+(`alphabeticPastZ`). The language-dependent alphabets the clause also
+describes are not implemented; the Latin a–z set is always used.
 
 ### ECMA-PART1-17-9-25 — w:start numbering level starting value
 
@@ -1460,11 +1837,24 @@ differing widths on their right edge — the standard legal-outline convention.
 - **Part / Section:** Part 1 § 17.3.1.19
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr`
-- **Verified by:** packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts
+- **Verified by:** packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts; packages/docx-core/src/primitives/paragraph_list_numbering.ts; packages/docx-core/test-primitives/paragraph_list_numbering.test.ts
 
 List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot.
 Generation binds deterministic handles; paragraph mutation can remove or
 re-point a direct reference while preserving the numbering definitions.
+
+When reading list labels, a paragraph's numbering is resolved per element:
+`w:numId` and `w:ilvl` each come from the nearest layer that sets them — the
+paragraph's own `w:numPr`, then its style chain through `w:basedOn` (the
+default paragraph style when there is no `w:pStyle`). A missing `w:ilvl`
+means level 0, and `w:numId` 0 at the winning layer removes numbering.
+Conformance gap, following Microsoft Word: this clause says a style's
+`w:ilvl` is ignored and the level is found through the numbering level's
+`w:pStyle`; Word instead uses the style's `w:ilvl` and shows style-derived
+numbering only when the resolved level links back to the nearest numbered
+style in the paragraph's chain. LibreOffice follows the clause text. The
+Word 16.114 and LibreOffice 26.2 results are recorded in
+`scripts/oracle/word/evidence/issue-1244-word-16.114.json`.
 
 ### ECMA-PART1-17-13-4-6 — w:comments comment-collection part emission
 

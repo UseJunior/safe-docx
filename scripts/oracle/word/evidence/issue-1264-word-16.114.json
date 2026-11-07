@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-04",
+  "issue": 1264,
+  "purpose": "Which range Word gives a bookmark name that a document repeats, and which range a REF field naming it resolves to after a field update, compared with ECMA-376 Part 1 § 17.13.6.2, whose name attribute says the first bookmark in document order shall be maintained and later ones should be ignored (#1264).",
+  "word": {
+    "platform": "Mac",
+    "version": "16.114.3"
+  },
+  "procedure": "Each `bodyXml` was packaged with `buildDocxFromBodyXml` (packages/docx-core/src/testing/ooxml-fixtures.ts), so no other part names a bookmark. Each REF field was written with the cached result `stale`. The DOCX was staged in Word's sandbox container and opened in the background, and then, through AppleScript bound to that document by name: the name and text of every member of its `bookmarks` collection were read, `update field` ran on every field, each field's code and result were read, and the document was closed without saving. The `repeatedNames` run was made twice with identical output.",
+  "finding": "Word keeps one bookmark per repeated name, and it is the last range in document order, not the first: `Target` names the second of its two ranges, and `Probe`, repeated three times with descending w:id values, names the third. A REF field resolves to that last range after a field update. Word compares names without regard to case: `Other` and `OTHER` become one bookmark named `OTHER` holding the later range, and both `REF OTHER` and `REF other` resolve to it. Word therefore does not follow the § 17.13.6.2 sentence about repeated names, and the spec and Word disagree about which range a repeated name denotes.",
+  "repeatedNames": {
+    "bodyXml": "<w:p><w:bookmarkStart w:id=\"1\" w:name=\"Target\"/><w:r><w:t>First Target range.</w:t></w:r><w:bookmarkEnd w:id=\"1\"/></w:p><w:p><w:bookmarkStart w:id=\"2\" w:name=\"Target\"/><w:r><w:t>Second Target range.</w:t></w:r><w:bookmarkEnd w:id=\"2\"/></w:p><w:p><w:bookmarkStart w:id=\"3\" w:name=\"Other\"/><w:r><w:t>First Other range.</w:t></w:r><w:bookmarkEnd w:id=\"3\"/></w:p><w:p><w:bookmarkStart w:id=\"4\" w:name=\"OTHER\"/><w:r><w:t>Second OTHER range.</w:t></w:r><w:bookmarkEnd w:id=\"4\"/></w:p><w:p><w:r><w:t xml:space=\"preserve\">Ref Target: </w:t></w:r><w:r><w:fldChar w:fldCharType=\"begin\"/></w:r><w:r><w:instrText xml:space=\"preserve\"> REF Target \\h </w:instrText></w:r><w:r><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r><w:t>stale</w:t></w:r><w:r><w:fldChar w:fldCharType=\"end\"/></w:r></w:p><w:p><w:r><w:t xml:space=\"preserve\">Ref OTHER: </w:t></w:r><w:r><w:fldChar w:fldCharType=\"begin\"/></w:r><w:r><w:instrText xml:space=\"preserve\"> REF OTHER \\h </w:instrText></w:r><w:r><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r><w:t>stale</w:t></w:r><w:r><w:fldChar w:fldCharType=\"end\"/></w:r></w:p><w:p><w:r><w:t xml:space=\"preserve\">Ref other: </w:t></w:r><w:r><w:fldChar w:fldCharType=\"begin\"/></w:r><w:r><w:instrText xml:space=\"preserve\"> REF other \\h </w:instrText></w:r><w:r><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r><w:t>stale</w:t></w:r><w:r><w:fldChar w:fldCharType=\"end\"/></w:r></w:p><w:sectPr/>",
+    "bookmarks": [
+      {
+        "name": "OTHER",
+        "text": "Second OTHER range."
+      },
+      {
+        "name": "Target",
+        "text": "Second Target range."
+      }
+    ],
+    "references": [
+      {
+        "instruction": " REF Target \\h ",
+        "word": "Second Target range."
+      },
+      {
+        "instruction": " REF OTHER \\h ",
+        "word": "Second OTHER range."
+      },
+      {
+        "instruction": " REF other \\h ",
+        "word": "Second OTHER range."
+      }
+    ]
+  },
+  "documentOrderVersusId": {
+    "bodyXml": "<w:p><w:bookmarkStart w:id=\"9\" w:name=\"Probe\"/><w:r><w:t>First Probe range.</w:t></w:r><w:bookmarkEnd w:id=\"9\"/></w:p><w:p><w:bookmarkStart w:id=\"8\" w:name=\"Probe\"/><w:r><w:t>Second Probe range.</w:t></w:r><w:bookmarkEnd w:id=\"8\"/></w:p><w:p><w:bookmarkStart w:id=\"7\" w:name=\"Probe\"/><w:r><w:t>Third Probe range.</w:t></w:r><w:bookmarkEnd w:id=\"7\"/></w:p><w:p><w:r><w:t xml:space=\"preserve\">Ref Probe: </w:t></w:r><w:r><w:fldChar w:fldCharType=\"begin\"/></w:r><w:r><w:instrText xml:space=\"preserve\"> REF Probe \\h </w:instrText></w:r><w:r><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r><w:t>stale</w:t></w:r><w:r><w:fldChar w:fldCharType=\"end\"/></w:r></w:p><w:sectPr/>",
+    "bookmarks": [
+      {
+        "name": "Probe",
+        "text": "Third Probe range."
+      }
+    ],
+    "references": [
+      {
+        "instruction": " REF Probe \\h ",
+        "word": "Third Probe range."
+      }
+    ]
+  }
+}

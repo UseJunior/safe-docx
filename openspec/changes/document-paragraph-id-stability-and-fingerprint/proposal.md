@@ -10,15 +10,15 @@ Downstream consumers (`UseJunior/legal-context` PR #213) read the stale doc, dis
 2. Renaming the legacy `jr_para_*` identifier still referenced throughout `openspec/` to the actual `_bk_*` form the implementation has used since v0.3.
 3. Adding an opt-in `content_fingerprint` field on `read_file(format="json")` so citation/archival systems get a portable, recomputable hash without forking safe-docx's internal seed format.
 
-Tracks issue #156.
+Tracks issues #156 and #1229.
 
 ## What Changes
 
 - **Documentation correction (SKILL.md, READMEs)**: replace the "Paragraph IDs are session-scoped" warning with an accurate identifier contract. Consumers MAY persist `_bk_*` IDs across reads of the same document.
 - **Spec drift cleanup (OpenSpec)**: rename `jr_para_*` → `_bk_*` everywhere it still appears in `openspec/project.md`, `openspec/specs/mcp-server/spec.md`, and `openspec/specs/docx-primitives/spec.md`. The implementation moved to `_bk_*` long ago; only the specs lagged.
-- **README.md example fix**: `_bk_1, _bk_2, ...` → real 12-char hex hashes (`_bk_a3f29c10b8e4`, ...).
-- **New: opt-in `content_fingerprint`**: `read_file(format="json", include_fingerprint=true)` adds `content_fingerprint: "sha256:nfkc:<32hex>"` to each paragraph node.
-  - Algorithm: `sha256(NFKC(visibleText).replace(/\s+/g, " ").trim())`, hex-truncated to 32 chars (128 bits), prefixed `sha256:nfkc:` for forward compatibility.
+- **Compact paragraph IDs**: newly minted DOCX and Google Docs anchors use 10 hex characters (40 bits), while existing `_bk_*` anchors of any length remain canonical and resolvable. DOCX keeps deterministic salted collision retry; Google Docs skips occupied compact names deterministically.
+- **New: opt-in `content_fingerprint`**: `read_file(format="json", include_fingerprint=true)` adds `content_fingerprint: "sha256:nfkc:<16hex>"` to each paragraph node.
+  - Algorithm: `sha256(NFKC(visibleText).replace(/\s+/g, " ").trim())`, hex-truncated to 16 chars (64 bits), prefixed `sha256:nfkc:` for forward compatibility. Legacy 32-hex fingerprints remain accepted when resolving persisted locators and Markdoc.
   - Input is the raw paragraph visible text (same `getParagraphText()` surface used by the `_bk_*` fallback seed) — NOT post-processed `clean_text` (which strips list labels and gets enriched with footnote display markers in `read_file.ts`).
   - Read-only metadata. Edit tools (`replace_text`, `insert_paragraph`, `batch_edit`, etc.) continue to accept ONLY `_bk_*` IDs as anchors. `content_fingerprint` is never an edit anchor.
   - Off by default — JSON mode is already token-budgeted.
@@ -37,4 +37,4 @@ Tracks issue #156.
 - **New tests**:
   - `packages/docx-core/src/primitives/content_fingerprint.test.ts` (algorithm invariants, golden values).
   - `packages/docx-mcp/src/tools/read_file_content_fingerprint.test.ts` (opt-in semantics, gdocs ignores).
-- **Backward compatibility**: fully additive. Existing `_bk_*` ID contract is unchanged. Existing JSON consumers continue to work; `content_fingerprint` only appears when explicitly requested.
+- **Backward compatibility**: existing `_bk_*` bookmarks are never renamed and remain resolvable. Legacy 32-hex `sha256:nfkc:` fingerprints remain valid inputs even though new output uses 16 hex characters.

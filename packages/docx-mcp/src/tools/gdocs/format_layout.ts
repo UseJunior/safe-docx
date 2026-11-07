@@ -13,12 +13,16 @@ export async function gdocsFormatLayout(
       line_twips?: number;
       line_rule?: string;
     };
+    paragraph_properties?: unknown;
     row_height?: unknown;
     cell_padding?: unknown;
   },
   metadata: Record<string, unknown>,
 ): Promise<ToolResponse> {
   try {
+    if (params.paragraph_properties) {
+      return err('UNSUPPORTED_FOR_PROVIDER', 'paragraph_properties is not supported for Google Docs.', 'This parameter is only available for DOCX files.');
+    }
     if (params.row_height) {
       return err('UNSUPPORTED_FOR_PROVIDER', 'row_height is not supported for Google Docs.', 'This parameter is only available for DOCX files.');
     }

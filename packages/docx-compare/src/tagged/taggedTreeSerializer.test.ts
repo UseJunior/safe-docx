@@ -568,6 +568,28 @@ describe('tagged-tree shadow serializer', () => {
   });
 
   for (const scenario of [
+    { name: 'kept row properties beside an edited cell', originalRow: '<w:trPr><w:tblHeader/></w:trPr>', revisedRow: '<w:trPr><w:tblHeader/></w:trPr>', revisedText: 'changed' },
+    { name: 'added row properties', originalRow: '', revisedRow: '<w:trPr><w:tblHeader/></w:trPr>', revisedText: 'same' },
+  ]) {
+    test(`keeps w:tblPrEx ahead of w:trPr in a row with ${scenario.name}`, () => {
+      // Word writes property exceptions on rows of a table whose cell margins differ from the style's.
+      const exceptions = '<w:tblPrEx><w:tblCellMar><w:top w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPrEx>';
+      const table = (row: string, cellText: string) =>
+        `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>` +
+        `<w:tr>${exceptions}${row}<w:tc><w:p><w:r><w:t>${cellText}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+      const original = documentBody(table(scenario.originalRow, 'same'));
+      const revised = documentBody(table(scenario.revisedRow, scenario.revisedText));
+      const constructed = constructTaggedTree(original, revised);
+      const output = serializeTaggedTree(
+        constructed.tree,
+        createPreservePlan(original, revised, constructed.tree, { author: 'Comparator', date: '2026-11-04T12:00:00Z' }),
+      );
+      const row = parseXml(output).getElementsByTagNameNS(W_NS, 'tr')[0]!;
+      expect(elementChildren(row).map((child) => child.localName)).toEqual(['tblPrEx', 'trPr', 'tc']);
+    });
+  }
+
+  for (const scenario of [
     {
       name: 'addition',
       originalRow: '',

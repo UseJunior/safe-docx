@@ -160,6 +160,31 @@ function replaceElementChildren(target: WmlElement, children: readonly WmlElemen
   for (const child of children) target.appendChild(child);
 }
 
+/**
+ * A table row's content model opens with `w:tblPrEx`, then `w:trPr`, then its
+ * cells, so the row properties go after the property exceptions rather than
+ * first. Other containers take their properties first.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.78
+ */
+function propertyInsertionPoint(container: WmlElement): Node | null {
+  if (container.localName !== 'tr') return container.firstChild;
+  const exceptions = childElements(container).find((child) => child.namespaceURI === W_NS && child.localName === 'tblPrEx');
+  return exceptions ? exceptions.nextSibling : container.firstChild;
+}
+
+/** `emitted` children of a table row with `w:tblPrEx` moved ahead of `w:trPr` (§ 17.4.78). */
+function rowChildrenInSchemaOrder(container: WmlElement, emitted: WmlElement[]): WmlElement[] {
+  if (container.localName !== 'tr') return emitted;
+  const properties = emitted.findIndex((child) => child.namespaceURI === W_NS && child.localName === 'trPr');
+  const exceptions = emitted.findIndex((child) => child.namespaceURI === W_NS && child.localName === 'tblPrEx');
+  if (properties < 0 || exceptions < properties) return emitted;
+  const ordered = [...emitted];
+  const [moved] = ordered.splice(exceptions, 1);
+  ordered.splice(properties, 0, moved!);
+  return ordered;
+}
+
 function replaceDescendantVocabulary(
   root: WmlElement,
   sourceLocalName: string,
@@ -296,6 +321,90 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
     flush();
     for (const item of replacement) parent.insertBefore(item, deletion);
     parent.removeChild(deletion);
+  }
+}
+
+const RUN_REVISION_WRAPPERS = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
+
+function isRunRevisionWrapper(node: Node): node is WmlElement {
+  return node.nodeType === 1 &&
+    (node as WmlElement).namespaceURI === W_NS &&
+    RUN_REVISION_WRAPPERS.has((node as WmlElement).localName);
+}
+
+/**
+ * Split a run whose aligned content (typically a `w:fldChar` sharing the run
+ * with edited text) was emitted beside side-only run content. CT_R admits no
+ * revision particle, so each `w:ins`/`w:del` emitted inside a `w:r` is lifted
+ * out to the paragraph level around a run fragment that repeats the run's
+ * properties; the run's live content stays in unwrapped fragments in order.
+ * A cloned `w:rPrChange` gets a fresh revision ID so IDs stay unique (#1283).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.25
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @see https://github.com/UseJunior/safe-docx/issues/1283
+ */
+function splitRunsAroundRevisionWrappers(
+  root: WmlElement,
+  allocateRevision: () => ComparisonRevision,
+): void {
+  const runs = Array.from(root.getElementsByTagNameNS(W_NS, 'r')) as WmlElement[];
+  for (const run of runs) {
+    const parent = run.parentNode;
+    if (!parent || !Array.from(run.childNodes).some(isRunRevisionWrapper)) continue;
+    const properties = childElements(run).find((child) => child.localName === 'rPr');
+    let fragmentCount = 0;
+    const newFragment = (): WmlElement => {
+      const fragment = run.cloneNode(false) as WmlElement;
+      if (properties) {
+        const clone = properties.cloneNode(true) as WmlElement;
+        if (fragmentCount > 0) {
+          for (const change of Array.from(clone.getElementsByTagNameNS(W_NS, 'rPrChange'))) {
+            (change as WmlElement).setAttributeNS(W_NS, 'w:id', String(allocateRevision().id));
+          }
+        }
+        fragment.appendChild(clone);
+      }
+      fragmentCount++;
+      return fragment;
+    };
+    // Re-home a wrapper's run content into run fragments, recursing through
+    // nested (preserved-provenance) wrappers.
+    const rehome = (wrapper: WmlElement): void => {
+      let fragment: WmlElement | undefined;
+      for (const child of Array.from(wrapper.childNodes)) {
+        if (isRunRevisionWrapper(child)) {
+          fragment = undefined;
+          rehome(child);
+          continue;
+        }
+        if (child.nodeType !== 1) continue;
+        if (!fragment) {
+          fragment = newFragment();
+          wrapper.insertBefore(fragment, child);
+        }
+        fragment.appendChild(child);
+      }
+    };
+    const replacement: WmlElement[] = [];
+    let live: WmlElement | undefined;
+    for (const child of Array.from(run.childNodes)) {
+      if (child === properties || child.nodeType !== 1) continue;
+      if (isRunRevisionWrapper(child)) {
+        live = undefined;
+        rehome(child);
+        replacement.push(child);
+        continue;
+      }
+      if (!live) {
+        live = newFragment();
+        replacement.push(live);
+      }
+      live.appendChild(child);
+    }
+    for (const item of replacement) parent.insertBefore(item, run);
+    parent.removeChild(run);
   }
 }
 
@@ -926,7 +1035,7 @@ function markWholeTableRow(
   let trPr = childElements(row).find((child) => child.localName === 'trPr');
   if (!trPr) {
     trPr = row.ownerDocument!.createElementNS(W_NS, 'w:trPr') as WmlElement;
-    row.insertBefore(trPr, row.firstChild);
+    row.insertBefore(trPr, propertyInsertionPoint(row));
   }
   const marker = row.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
   marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
@@ -1051,7 +1160,7 @@ function applyPropertyDelta(
       original!.namespaceURI,
       original!.tagName,
     ) as WmlElement;
-    node.insertBefore(property, node.firstChild);
+    node.insertBefore(property, propertyInsertionPoint(node));
   }
   if (!property) return;
   while (property.firstChild) property.removeChild(property.firstChild);
@@ -2279,7 +2388,7 @@ function emitNode(
         emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'End', plan.comparison));
       } else emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds, revisionGrouping));
     }
-    replaceElementChildren(base, emitted);
+    replaceElementChildren(base, rowChildrenInSchemaOrder(base, emitted));
   }
   if (node.tag === 'both') {
     splitSharedBookmarkBoundaries(
@@ -2463,6 +2572,7 @@ export function serializeTaggedTree(
     splitBookmarkIds,
     options.revisionGrouping ?? 'token-minimal',
   );
+  splitRunsAroundRevisionWrappers(emitted, allocateRevision);
   insertSectionBoundaryParagraphs(emitted);
   splitCrossParagraphBookmarkCounterparts(emitted, originalBookmarkIds, allocateRevision);
   normalizeTerminalWholeParagraphMoveOwnership(emitted, options.moves ?? [], generatedRevisionIds);

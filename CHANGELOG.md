@@ -2,6 +2,61 @@
 
 ## Unreleased
 
+- Generated documents can cross-reference their own numbered provisions. In
+  docx-core, a body `ParagraphSpec` takes a `bookmark` name, and a
+  `{ kind: 'crossReference', bookmark, number?: 'fullContext' | 'paragraph' }`
+  inline emits ` REF <name> \w \h ` or ` REF <name> \n \h `, the
+  instructions Word's own Insert → Cross-reference writes. Its cached result
+  is the number Word shows after updating fields, such as `Section 2.06(b)`
+  or `(b)`. That number is computed from the generated body and checked
+  against 97 results recorded from Word 16.114. Bookmark ids share the
+  comment-id sequence. Names follow Word's Bookmark dialog, and generation
+  refuses a target Word would show as `0` or at an unused level's start
+  value. `bookmarkNameForSlug` maps kebab-case ids to bookmark names. In
+  `docx-markdoc create`, end a numbered list item with `{% #id %}` and write
+  `{% xref to="id" /%}`, with optional `number="paragraph"` and
+  `format="section"`. An unknown id fails with the id and the line. The
+  read-back, round-trip and PDF checks verify each number. "As provided in
+  Section 2.06(b)" used to be literal text that went stale when a section was
+  inserted; after Word updates fields, every reference shows the new number.
+  `docx-markdoc import` now admits REF fields in footnotes and keeps their
+  numbers as text. List labels past `z` now read `aa`, `bb`, …, `zz`, `aaa`,
+  as Word shows them; 28 used to read `ab`. (#1236)
+- `docx-markdoc create` no longer fails its PDF word check when LibreOffice
+  exports a justified line without spaces, which it can do when the line
+  holds an underlined word. The raw text layer reads such a line as one
+  token. The PDF render now also extracts `pdftotext -layout` text, which
+  keeps the spaces, and the check splits the token back into words only when
+  it spells a run of consecutive source words exactly and the page's layout
+  text shows that one reading in a place the raw text does not. It lists the
+  line under `knownGenerated.joinedLines`. A word dropped from, added to or
+  moved within the line still fails, unless the page's layout text shows the
+  source reading in another place where the raw text does not. Required text
+  may match a page's layout text. (#1242)
+- Generated documents can have footnotes. In docx-core, `generateDocx`
+  accepts a `{ kind: 'footnote', blocks: ParagraphSpec[] }` inline in body
+  paragraphs and table cells. It writes `word/footnotes.xml` with Word's
+  separator notes, `FootnoteReference` reference marks, `FootnoteText` note
+  paragraphs and the `footnotePr` list in settings, so the notes number,
+  continue across pages and read back through `get_footnotes`. In
+  `docx-markdoc create`, `{% fnref id="1" /%}` places a reference and a
+  top-level `{% footnote id="1" %}…{% /footnote %}` block holds a one-line
+  or multi-paragraph note. Notes are numbered by reference order, and the
+  build checks them in its read-back, round-trip and PDF word checks.
+  Annotated model forms and memos that cite authority used to need
+  `add_footnote` on the finished file, one plain-text note at a time.
+  `add_footnote` now also gives every paragraph of a multi-paragraph note the
+  `FootnoteText` style; before, only the first paragraph had it. When
+  `docx-markdoc import` reads a footnote, it no longer keeps the space after
+  the note's number as body text, so import then compile no longer adds a
+  second space. (#1237)
+- `docx-markdoc create` can underline. Wrap inline text in
+  `{% u %}…{% /u %}` to give it a single underline (`w:u w:val="single"`);
+  text outside the tag, such as the period after a defined term or a run-in
+  heading, stays plain. It nests with bold, italic and fill-ins. The generic
+  markdocx engine renders the same tag for any theme. Agreements underline
+  defined terms, run-in headings and operator words such as "less"; until now
+  a created document had to use bold for them. (#1238)
 - Comparison stats now report detected moves. A comparison whose only change
   is a moved paragraph used to report zero for every stats field, so it looked
   identical to an unchanged document. `CompareStats` (and the MCP

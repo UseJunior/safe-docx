@@ -79,5 +79,7 @@ export function emitDocumentPart(spec: DocumentSpec, refs?: SectionHeaderFooterR
     }
   });
 
+  // Cross-reference results depend on every list number in the body.
+  ctx?.crossReferences?.resolveBody(body);
   return XML_DECL + serializeXml(doc);
 }

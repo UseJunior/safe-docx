@@ -1,6 +1,6 @@
 import type { DocumentViewNode } from './document_view-types.js';
 import { buildCleanToRawOffsetMap } from './document_view.js';
-import { computeContentFingerprint } from './content_fingerprint.js';
+import { contentFingerprintMatches } from './content_fingerprint.js';
 
 /**
  * Deterministic locator primitive over a `DocumentView`.
@@ -123,7 +123,7 @@ function collectContextualSpans(nodes: DocumentViewNode[], step: Extract<Locator
 }
 
 function collectFingerprintNodes(nodes: DocumentViewNode[], fingerprint: string): DocumentViewNode[] {
-  return nodes.filter((n) => computeContentFingerprint(rawTextOf(n)) === fingerprint);
+  return nodes.filter((n) => contentFingerprintMatches(rawTextOf(n), fingerprint));
 }
 
 function headingMatches(node: DocumentViewNode, step: Extract<LocatorStep, { kind: 'section' }>): boolean {

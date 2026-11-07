@@ -38,12 +38,12 @@ describe('document-paragraph-id-stability-and-fingerprint — Optional Content F
         return result;
       });
 
-      await then('each paragraph carries a sha256:nfkc:<32hex> fingerprint', async () => {
+      await then('each paragraph carries a sha256:nfkc:<16hex> fingerprint', async () => {
         const nodes = JSON.parse(String(read.content)) as Array<Record<string, unknown>>;
         expect(nodes.length).toBeGreaterThan(0);
         for (const node of nodes) {
           expect(typeof node.content_fingerprint).toBe('string');
-          expect(String(node.content_fingerprint)).toMatch(/^sha256:nfkc:[0-9a-f]{32}$/);
+          expect(String(node.content_fingerprint)).toMatch(/^sha256:nfkc:[0-9a-f]{16}$/);
         }
       });
     },
@@ -144,7 +144,7 @@ describe('document-paragraph-id-stability-and-fingerprint — Optional Content F
         const shared = fingerprintsA.filter((fp) => fingerprintsB.includes(fp));
         expect(shared.length).toBeGreaterThanOrEqual(1);
         for (const fp of shared) {
-          expect(fp).toMatch(/^sha256:nfkc:[0-9a-f]{32}$/);
+          expect(fp).toMatch(/^sha256:nfkc:[0-9a-f]{16}$/);
         }
       });
     },
@@ -263,7 +263,7 @@ describe('document-paragraph-id-stability-and-fingerprint — Optional Content F
     await then(
       'the fingerprints match (list label is not part of the hashed surface)',
       async () => {
-        expect(listFp).toMatch(/^sha256:nfkc:[0-9a-f]{32}$/);
+        expect(listFp).toMatch(/^sha256:nfkc:[0-9a-f]{16}$/);
         expect(listFp).toBe(plainFp);
       },
     );
@@ -323,7 +323,7 @@ describe('document-paragraph-id-stability-and-fingerprint — Optional Content F
     await then(
       'the fingerprints match ([^N] display marker is not part of the hashed surface)',
       async () => {
-        expect(footnoteFp).toMatch(/^sha256:nfkc:[0-9a-f]{32}$/);
+        expect(footnoteFp).toMatch(/^sha256:nfkc:[0-9a-f]{16}$/);
         expect(footnoteFp).toBe(plainFp);
       },
     );
@@ -521,8 +521,8 @@ describe('document-paragraph-id-stability-and-fingerprint — Optional Content F
     await then(
       'the post-edit fingerprint differs from the pre-edit fingerprint',
       async () => {
-        expect(beforeFp).toMatch(/^sha256:nfkc:[0-9a-f]{32}$/);
-        expect(afterFp).toMatch(/^sha256:nfkc:[0-9a-f]{32}$/);
+        expect(beforeFp).toMatch(/^sha256:nfkc:[0-9a-f]{16}$/);
+        expect(afterFp).toMatch(/^sha256:nfkc:[0-9a-f]{16}$/);
         expect(afterFp).not.toBe(beforeFp);
       },
     );

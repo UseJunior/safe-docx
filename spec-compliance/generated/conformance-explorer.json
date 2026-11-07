@@ -213,6 +213,122 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-11-1",
+      "title": "w:continuationSeparator continuation separator note",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.1"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:continuationSeparator",
+      "claimRationale": "Part 1 §17.11.1 defines `w:continuationSeparator` as the mark that\nseparates the main story from a footnote continued from the previous page.\nThe footnotes part that `add_footnote` bootstraps and that generation emits\nholds a `w:type=\"continuationSeparator\"` note (id 0) whose run is this\nmark, as Word writes it.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/footnote-shapes.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-11-10",
+      "title": "w:footnote footnote content",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.10"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnote",
+      "claimRationale": "Part 1 §17.11.10 defines `w:footnote` as one footnote's content, which can\nbe any block-level content. Generation emits one `w:footnote` per\n`FootnoteSpec`, with ids 1, 2, 3, … in document order. The supported\ncontent is a subset: one or more paragraphs, with tables and other block\ncontent rejected at validation. Each paragraph without a `styleId` takes the\n`FootnoteText` style.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/footnotes-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/validate-spec.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-footnotes.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-11-12",
+      "title": "w:footnotePr document-wide footnote properties",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.12"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotePr",
+      "claimRationale": "Part 1 §17.11.12 defines the document-wide `w:footnotePr` in the settings\npart. Generation writes it only when the document has a footnote, holding\nthe special-note list of §17.11.9 and no other property, in its `CT_Settings`\nslot after `w:evenAndOddHeaders` and before `w:compat`. Numbering format,\nposition and restart are left at their defaults.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/settings-part.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-11-13",
+      "title": "w:footnoteRef footnote reference mark",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.13"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteRef",
+      "claimRationale": "Part 1 §17.11.13 defines `w:footnoteRef` as the automatically numbered mark\ninside a footnote. Generated and added notes open their first paragraph with\na `FootnoteReference` run holding this mark, then a run holding one space,\nas Word writes them. `docx-markdoc import` treats that space run as part of\nthe mark's presentation and leaves it out of the imported note body, so\ncompile, which writes it again, does not double it.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/footnote-shapes.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/footnotes-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/import.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-footnotes.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/footnotes.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-11-14",
       "title": "w:footnoteReference identifier vs display number",
       "classification": "targeted",
@@ -233,6 +349,82 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-11-15",
+      "title": "w:footnotes footnotes part root",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.15"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotes",
+      "claimRationale": "Part 1 §17.11.15 defines `w:footnotes` as the root of the footnotes part,\nholding every footnote including the separator and continuation notices.\nGeneration emits `word/footnotes.xml` only when the document has a footnote,\nwith its content type and a footnotes relationship from the main document\npart. The part starts from the same separator and continuation-separator\ntemplate that `add_footnote` bootstraps.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/footnote-shapes.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/footnotes-part.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-11-23",
+      "title": "w:separator footnote separator note",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.23"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:separator",
+      "claimRationale": "Part 1 §17.11.23 defines `w:separator` as the mark that separates the main\nstory from the footnotes on a page. The footnotes part template holds a\n`w:type=\"separator\"` note (id -1) whose run is this mark, as Word writes it.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/footnote-shapes.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-11-9",
+      "title": "w:footnote special footnote list in document settings",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.9"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnote",
+      "claimRationale": "Part 1 §17.11.9 requires every footnote that is not of type normal to be\nlisted under the document-wide `w:footnotePr`, or it shall not be loaded.\nWhen a generated document has footnotes, `settings.xml` lists the separator\n(id -1) and continuation-separator (id 0) notes there. Documents edited with\n`add_footnote` keep whatever settings they already had; this claim covers\ngenerated documents.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/settings-part.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-footnotes.test.ts"
         }
       ]
     },
@@ -1271,11 +1463,23 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkEnd",
-      "claimRationale": "`w:bookmarkEnd` closes a bookmark range. safe-docx's advanced-record matrix\nclaims only bounded preservation around accept/reject and comparison, not\nbookmark identity or consumer semantics.",
+      "claimRationale": "`w:bookmarkEnd` closes a bookmark range. safe-docx's advanced-record matrix\nclaims only bounded preservation around accept/reject and comparison, not\nbookmark identity or consumer semantics. Generation (#1236) closes each\nbookmark it emits after the paragraph's content, with the `w:id` of its\n`w:bookmarkStart`, and the generated-package structural check verifies that\nevery end follows a start with the same id.",
       "evidence": [
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/paragraph.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/structural-checks.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-cross-references.test.ts"
         }
       ]
     },
@@ -1291,11 +1495,31 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkStart",
-      "claimRationale": "`w:bookmarkStart` opens a bookmark range. The matrix records sampled\npreservation only; range identity and bookmark semantics are separate gaps.",
+      "claimRationale": "`w:bookmarkStart` opens a bookmark range. The matrix records sampled\npreservation only; range identity and bookmark semantics are separate gaps.\nGeneration (#1236) opens a bookmark after a body paragraph's properties. Its\n`w:id` comes from the sequence comment ranges use, since the clause calls the\nid unique within the document. Its `w:name` keeps to what Word's Bookmark\ndialog accepts (at most 40 characters, a leading letter, letters, digits and\nunderscores), unique without regard to case. The structural check verifies\nunique ids and names and that no bookmark id equals a comment-range id.\nUnique names are a safe-docx policy stricter than the clause, which lets a\ndocument repeat a name and keeps the first range; Word 16.114 keeps the last\n(#1264). The comparison harness therefore records a repeat in an input, or\none an output keeps from an input no more often than that input has it, as\na warning, and fails a repeat the comparison introduces or multiplies.",
       "evidence": [
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/paragraph.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/structural-checks.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/bookmark-names.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-cross-references.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/cross-references.test.ts"
         }
       ]
     },
@@ -1479,7 +1703,19 @@
         },
         {
           "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-cross-references.test.ts"
+        },
+        {
+          "kind": "test",
           "path": "packages/docx-core/src/integration/nvca-coi-regression.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/body_fields.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/body_fields.test.ts"
         }
       ]
     },
@@ -1695,7 +1931,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText",
-      "claimRationale": "Tagged main-document publication classifies a self-contained REF instruction with\none bookmark argument and a bounded switch vocabulary; the `\\d` switch requires\nand consumes one separator argument. When the complete field range is unchanged,\ncomparison preserves its ordered XML topology as a SafeDocX metamorphic\ninvariant. The scoped refresh primitive resolves a unique, ID-paired bookmark\nand refreshes the cached result only for the admitted bookmarked-text\nprojection; numbering, position, separator, and unknown projections remain\nunsupported. Because Word writes a REF result structurally, the primitive also\ndeclines any projection carrying a tab, a break, or a paragraph transition\nrather than flattening it into literal characters. That separately tested\ncapability does not broaden unchanged publication preservation into complete\nfield-engine equivalence.",
+      "claimRationale": "Tagged main-document publication classifies a self-contained REF instruction with\none bookmark argument and a bounded switch vocabulary; the `\\d` switch requires\nand consumes one separator argument. When the complete field range is unchanged,\ncomparison preserves its ordered XML topology as a SafeDocX metamorphic\ninvariant. The scoped refresh primitive resolves a unique, ID-paired bookmark\nand refreshes the cached result only for the admitted bookmarked-text\nprojection; numbering, position, separator, and unknown projections remain\nunsupported. Because Word writes a REF result structurally, the primitive also\ndeclines any projection carrying a tab, a break, or a paragraph transition\nrather than flattening it into literal characters. That separately tested\ncapability does not broaden unchanged publication preservation into complete\nfield-engine equivalence.\n\nGeneration (#1236) emits REF fields with the `\\w` (full context) or `\\n`\n(paragraph number) switch and `\\h`, the instructions Word's own Insert →\nCross-reference writes. The clause defines what the switches ask for: `\\n`\nthe paragraph number \"without trailing periods\", `\\w` the number \"in full\ncontext\". It does not say how the context is assembled or which periods go\nbetween its parts, so `renderReferenceNumber` follows Word 16.114 as recorded\nin `scripts/oracle/word/evidence/issue-1236-word-16.114.json`: the target's\nlevel text is preceded by its ancestors' level texts up to the one naming\nlevel 0, one final period is removed, and a period before a part that starts\nwith `(` is removed (`2.` + `(b)` → `2(b)`, but `2.` + `b.` → `2.b`). The\ncached result equals Word's for all recorded fields. LibreOffice keeps a\nperiod before `(` that Word removes.\n\nGeneration (#1258) also emits `\\r`, which the clause describes as \"the entire\nparagraph number of the bookmarked paragraph in relative context—or relative\nto its position in the numbering scheme\". It does not say what the position\nis. `resolveReferenceNumber` follows Word 16.114 as recorded in\n`scripts/oracle/word/evidence/issue-1258-word-16.114.json`: the `\\w` number\nless the leading levels whose values the target shares with the last\nparagraph of the target's list (`w:numId`) at or before the field's\nparagraph, keeping the target's own level, and the full number in a\nfootnote.",
       "evidence": [
         {
           "kind": "source",
@@ -1740,6 +1976,58 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/nvca-coi-regression.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/run.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/numbering.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-cross-references.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-relative-cross-references.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/import.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/cross-references.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/relative-cross-references.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-18-59",
+      "title": "ST_NumberFormat alphabetic list numbers",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.18.59"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_NumberFormat",
+      "claimRationale": "Bounded to the `lowerLetter` and `upperLetter` values as the list-label read\nside formats them: past the size of the alphabet the same letter is written\nonce more for each further pass (27 → `aa`, 28 → `bb`, 53 → `aaa`), as the\nclause describes. Word 16.114 shows the same labels and REF results, recorded\nin `scripts/oracle/word/evidence/issue-1236-word-16.114.json`\n(`alphabeticPastZ`). The language-dependent alphabets the clause also\ndescribes are not implemented; the Latin a–z set is always used.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/numbering.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-cross-references.test.ts"
         }
       ]
     },
@@ -1779,7 +2067,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr",
-      "claimRationale": "List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot.\nGeneration binds deterministic handles; paragraph mutation can remove or\nre-point a direct reference while preserving the numbering definitions.",
+      "claimRationale": "List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot.\nGeneration binds deterministic handles; paragraph mutation can remove or\nre-point a direct reference while preserving the numbering definitions.\n\nWhen reading list labels, a paragraph's numbering is resolved per element:\n`w:numId` and `w:ilvl` each come from the nearest layer that sets them — the\nparagraph's own `w:numPr`, then its style chain through `w:basedOn` (the\ndefault paragraph style when there is no `w:pStyle`). A missing `w:ilvl`\nmeans level 0, and `w:numId` 0 at the winning layer removes numbering.\nConformance gap, following Microsoft Word: this clause says a style's\n`w:ilvl` is ignored and the level is found through the numbering level's\n`w:pStyle`; Word instead uses the style's `w:ilvl` and shows style-derived\nnumbering only when the resolved level links back to the nearest numbered\nstyle in the paragraph's chain. LibreOffice follows the clause text. The\nWord 16.114 and LibreOffice 26.2 results are recorded in\n`scripts/oracle/word/evidence/issue-1244-word-16.114.json`.",
       "evidence": [
         {
           "kind": "source",
@@ -1788,6 +2076,14 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/primitives/paragraph_numbering.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/paragraph_list_numbering.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/paragraph_list_numbering.test.ts"
         }
       ]
     },
@@ -1892,6 +2188,54 @@
         {
           "kind": "test",
           "path": "packages/docx-markdoc/src/greenfield.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-2-17",
+      "title": "w:iCs complex script italics in imported annotation bodies",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.2.17"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:iCs",
+      "claimRationale": "Part 1 §17.3.2.17 defines `w:iCs` as italics for complex-script characters\nonly. Generation writes it beside every `w:i`. `docx-markdoc import` admits\nit in an annotation body under the same rule as `w:bCs` (§17.3.2.2).",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/import.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-2-2",
+      "title": "w:bCs complex script bold in imported annotation bodies",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.2.2"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bCs",
+      "claimRationale": "Part 1 §17.3.2.2 defines `w:bCs` as bold for complex-script characters only.\nGeneration writes it beside every `w:b`. `docx-markdoc import` admits it in\nan annotation body when the run or paragraph holds no complex-script text,\nwhere it changes nothing; with complex-script text it still fails closed.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/import.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/footnotes.test.ts"
         }
       ]
     },
@@ -2024,6 +2368,30 @@
         {
           "kind": "source",
           "path": "packages/docx-core/src/primitives/footnotes.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/annotation-roundtrip.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-2-39",
+      "title": "w:szCs complex script font size in imported annotation bodies",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.2.39"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:szCs",
+      "claimRationale": "Part 1 §17.3.2.39 defines `w:szCs` as the font size for complex-script\ncharacters only. `docx-markdoc import` admits it in an annotation body when\nthe run or paragraph holds no complex-script text, where it changes\nnothing.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/import.ts"
         },
         {
           "kind": "test",
@@ -2447,11 +2815,19 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tr",
-      "claimRationale": "Rows emit as `w:tr` with optional row properties followed by cells. Cell\ngrid offsets are tracked during emission so unspecified cell widths can be\nderived from the columns each cell actually spans.",
+      "claimRationale": "Rows emit as `w:tr` with optional row properties followed by cells. Cell\ngrid offsets are tracked during emission so unspecified cell widths can be\nderived from the columns each cell actually spans. The comparison\nserializer keeps a row's `w:tblPrEx` ahead of its `w:trPr`, as `CT_Row`\norders them, when it keeps, adds or creates row properties.",
       "evidence": [
         {
           "kind": "source",
           "path": "packages/docx-core/src/generation/emit/table.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts"
         }
       ]
     },
@@ -3080,6 +3456,34 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-9-10",
+      "title": "w:lvlRestart numbering level restart threshold",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.9.10"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlRestart",
+      "claimRationale": "A level's one-based restart threshold emits as `w:lvlRestart`. Validation\naccepts 0 (never restart) or a value below the level's own `ilvl`: the value\n`ilvl` restates the default (restart after the previous level), and Word for\nMac drops the level's numbering when it is written explicitly; larger values\nname the level itself or a later one, which readers ignore. The read-side\nlabel computation follows Word: it restarts a deeper level only when a level\nwithin its threshold is used. LibreOffice 26.2 ignores `w:lvlRestart`, so a\nnon-default threshold renders differently there.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/validate-spec.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/numbering.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-9-11",
       "title": "w:lvlText numbering level text",
       "classification": "targeted",
@@ -3091,7 +3495,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlText",
-      "claimRationale": "The level text pattern (e.g. `%1.` / `%1.%2` / a literal bullet glyph) is\nemitted verbatim from the spec; validation requires a non-empty pattern on\nevery level.",
+      "claimRationale": "The level text pattern (e.g. `%1.` / `%1.%2` / a literal bullet glyph) is\nemitted verbatim from the spec; validation requires a non-empty pattern on\nevery level.\n\nThe clause says a placeholder naming a level deeper than its own is ignored.\nWord 16.114 instead shows no number for such a level, and a REF field to it\nshows `0` (recorded in `scripts/oracle/word/evidence/issue-1236-word-16.114.json`,\n`deeperLevelPlaceholders`), so generated cross-references to such a level are\nrefused (`resolveReferenceNumber` in `packages/docx-core/src/primitives/numbering.ts`).",
       "evidence": [
         {
           "kind": "source",
@@ -3131,11 +3535,19 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num",
-      "claimRationale": "Instances carry sequential numeric `w:numId` values (starting at 1) in\ndeclaration order; the spec-level string handle → numeric id map is what\nparagraph references bind through.",
+      "claimRationale": "Instances carry sequential numeric `w:numId` values: default instances take\n1..N in declaration order, and additional instances (`NumberingSpec.instances`)\nfollow from N+1, so adding an instance never renumbers a default instance.\nAdditional instances' ids depend on the instances declared before them, so\nnumeric ids are compile-local; the spec-level string handle → numeric id map\nis what paragraph references bind through. On the read side, every instance of one\nabstract definition continues a single list, as Word displays it.",
       "evidence": [
         {
           "kind": "source",
           "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/numbering.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/numbering.test.ts"
         }
       ]
     },
@@ -3171,7 +3583,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numFmt",
-      "claimRationale": "Each level carries its declared format verbatim (decimal, letter, roman,\nbullet, none); the generated formats round-trip through the read-side\nlabel computation in `packages/docx-core/src/primitives/numbering.ts`.",
+      "claimRationale": "Each level carries its declared format verbatim (decimal, decimalZero,\nletter, roman, bullet, none); the generated formats round-trip through the read-side\nlabel computation in `packages/docx-core/src/primitives/numbering.ts`.",
       "evidence": [
         {
           "kind": "source",
@@ -3223,7 +3635,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:abstractNumId",
-      "claimRationale": "Every emitted instance references its abstract definition through\n`w:abstractNumId`; the pairing is 1:1 by construction so the reference can\nnever dangle.",
+      "claimRationale": "Every emitted instance references its abstract definition through\n`w:abstractNumId`. A definition's default instance and each of its\nadditional instances name the definition's own id, which exists by\nconstruction, so the reference can never dangle.",
       "evidence": [
         {
           "kind": "source",
@@ -3233,7 +3645,7 @@
     },
     {
       "id": "ECMA-PART1-17-9-22",
-      "title": "w:pStyle numbering-level paragraph style",
+      "title": "w:pPr numbering-level paragraph properties",
       "classification": "targeted",
       "citation": {
         "standard": "ECMA-376",
@@ -3242,8 +3654,28 @@
         "section": "17.9.22"
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr",
+      "claimRationale": "A level's paragraph properties carry its tab stops (`w:tabs`) and indentation\n(`w:ind` with `left` plus either `hanging` or `firstLine`) in CT_PPrBase\norder, through the shared paragraph-property builder. They apply to every\nparagraph numbered at that level unless the paragraph overrides them.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-9-23",
+      "title": "w:pStyle numbering-level paragraph style",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.9.23"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle",
-      "claimRationale": "An optional `w:pStyle` on `w:lvl` associates that exact numbering level with\na paragraph style. The numbering model retains the association and exposes a\nread-only active-level lookup so heading classification never consults an\nunrelated level or mutates list counters.",
+      "claimRationale": "An optional `w:pStyle` on `w:lvl` associates that exact numbering level with\na paragraph style. The numbering model retains the association and exposes a\nread-only active-level lookup so heading classification never consults an\nunrelated level or mutates list counters. Generation emits a level's `pStyle`\nonly for a declared paragraph style that no other level links, and writes the\nreverse link (`w:numPr` naming the definition's default instance and the\nlevel) into that style's `w:pPr`, so a paragraph that only applies the style is\nnumbered at that level. Label resolution honors a style-derived number only\nwhen this link agrees with the paragraph's nearest numbered style; a level\n`w:pStyle` without the style's own `w:numPr` numbers nothing.",
       "evidence": [
         {
           "kind": "source",
@@ -3252,6 +3684,18 @@
         {
           "kind": "test",
           "path": "packages/docx-core/test-primitives/heading_provenance.traceability.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/styles-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/paragraph_list_numbering.ts"
         }
       ]
     },
@@ -3272,6 +3716,34 @@
         {
           "kind": "source",
           "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-9-26",
+      "title": "w:startOverride numbering level start override",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.9.26"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride",
+      "claimRationale": "A level override carries only `w:startOverride`, so an additional instance of\na definition restarts that level at the given value. The read-side label\ncomputation follows Word: it keeps one running sequence per abstract\ndefinition, shared by every instance at every level; an override restarts the\nshared level the first time a paragraph of its instance uses that level, and\nparagraphs on any instance then continue from there. A deeper level restarted\nby a paragraph resumes at that paragraph's instance's start value (its\noverride, if any). LibreOffice 26.2 agrees on the sharing and the first-use\nrestart, but restarts deeper levels at the abstract start and ignores\n`w:lvlRestart`. The Word observations are recorded in\n`scripts/oracle/word/evidence/issue-1243-word-16.114.json`.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/numbering.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/test-primitives/numbering.test.ts"
         }
       ]
     },
@@ -3324,6 +3796,30 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-9-4",
+      "title": "w:isLgl legal numbering",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.9.4"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:isLgl",
+      "claimRationale": "A level authored with `isLgl: true` emits a bare `w:isLgl`, so every level\nplaceholder in its level text displays as an Arabic numeral: \"Section %1.%2\"\nunder an `upperRoman` article level reads \"Section 2.01\", not \"Section II.01\".\nThe read-side label computation applies the same conversion and keeps a\n`decimalZero` level's zero padding, as Word and LibreOffice display it.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/numbering.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-9-6",
       "title": "w:lvl numbering level definition",
       "classification": "targeted",
@@ -3335,7 +3831,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvl",
-      "claimRationale": "Level definitions follow the CT_Lvl child sequence (start, numFmt, suff,\nlvlText, lvlJc, pPr, rPr); level indents emit through `w:pPr`/`w:ind` and\nlevel run properties reuse the shared rPr builder.",
+      "claimRationale": "Level definitions follow the CT_Lvl child sequence (start, numFmt,\nlvlRestart, pStyle, isLgl, suff, lvlText, lvlJc, pPr, rPr) through the\n`LVL_ORDER` table, which a test checks against the vendored schema; level\nindents and tab stops emit through `w:pPr` and level run properties reuse the\nshared rPr builder.",
       "evidence": [
         {
           "kind": "source",
@@ -3364,6 +3860,30 @@
         {
           "kind": "source",
           "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-9-8",
+      "title": "w:lvlOverride numbering level override",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.9.8"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlOverride",
+      "claimRationale": "Each additional numbering instance emits one `w:lvlOverride` per overridden\nlevel, in ascending `ilvl` after `w:abstractNumId` per the CT_Num sequence.\nValidation requires at least one override per additional instance, each\nnaming a declared level at most once.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/numbering-part.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/validate-spec.ts"
         }
       ]
     },
@@ -3595,6 +4115,20 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bCs",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "bCs",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RPrBase/choice/element:bCs",
+          "declaredType": "CT_OnOff"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:body",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -3768,6 +4302,21 @@
           "declaredType": "CT_CompatSetting",
           "minOccurs": "0",
           "maxOccurs": "unbounded"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:continuationSeparator",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "continuationSeparator",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RunInnerContent/choice/element:continuationSeparator",
+          "declaredType": "CT_Empty",
+          "minOccurs": "0"
         }
       ]
     },
@@ -3991,6 +4540,62 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnote",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "footnote",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Footnotes/sequence/element:footnote",
+          "declaredType": "CT_FtnEdn",
+          "minOccurs": "0"
+        },
+        {
+          "contextPath": "schema/type:CT_FtnDocProps/complexContent/extension/sequence/element:footnote",
+          "declaredType": "CT_FtnEdnSepRef",
+          "minOccurs": "0",
+          "maxOccurs": "3"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotePr",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "footnotePr",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_SectPrContents/sequence/element:footnotePr",
+          "declaredType": "CT_FtnProps",
+          "minOccurs": "0"
+        },
+        {
+          "contextPath": "schema/type:CT_Settings/sequence/element:footnotePr",
+          "declaredType": "CT_FtnDocProps",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteRef",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "footnoteRef",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RunInnerContent/choice/element:footnoteRef",
+          "declaredType": "CT_Empty",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteReference",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -4001,6 +4606,20 @@
         {
           "contextPath": "schema/group:EG_RunInnerContent/choice/element:footnoteReference",
           "declaredType": "CT_FtnEdnRef"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotes",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "footnotes",
+      "occurrences": [
+        {
+          "contextPath": "schema/element:footnotes",
+          "declaredType": "CT_Footnotes"
         }
       ]
     },
@@ -4112,6 +4731,20 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:iCs",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "iCs",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RPrBase/choice/element:iCs",
+          "declaredType": "CT_OnOff"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ilvl",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -4175,6 +4808,21 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:isLgl",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "isLgl",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Lvl/sequence/element:isLgl",
+          "declaredType": "CT_OnOff",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvl",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -4207,6 +4855,37 @@
         {
           "contextPath": "schema/type:CT_Lvl/sequence/element:lvlJc",
           "declaredType": "CT_Jc",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlOverride",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "lvlOverride",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Num/sequence/element:lvlOverride",
+          "declaredType": "CT_NumLvl",
+          "minOccurs": "0",
+          "maxOccurs": "9"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlRestart",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "lvlRestart",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Lvl/sequence/element:lvlRestart",
+          "declaredType": "CT_DecimalNumber",
           "minOccurs": "0"
         }
       ]
@@ -4768,6 +5447,21 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:separator",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "separator",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RunInnerContent/choice/element:separator",
+          "declaredType": "CT_Empty",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:settings",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -4855,6 +5549,21 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:startOverride",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "startOverride",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_NumLvl/sequence/element:startOverride",
+          "declaredType": "CT_DecimalNumber",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:style",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -4925,6 +5634,20 @@
           "contextPath": "schema/type:CT_Frameset/sequence/element:sz",
           "declaredType": "CT_String",
           "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:szCs",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "szCs",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RPrBase/choice/element:szCs",
+          "declaredType": "CT_HpsMeasure"
         }
       ]
     },
@@ -5551,6 +6274,19 @@
       "occurrences": [
         {
           "contextPath": "schema/type:CT_TblStylePr"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_NumberFormat",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "type",
+      "name": "ST_NumberFormat",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:ST_NumberFormat"
         }
       ]
     }

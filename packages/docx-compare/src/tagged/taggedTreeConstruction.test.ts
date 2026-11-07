@@ -408,28 +408,30 @@ describe('complete tagged-tree construction', () => {
     const numberedParagraph = (text: string) => '<w:p><w:pPr><w:numPr>'
       + '<w:ilvl w:val="0"/><w:numId w:val="1"/>'
       + `</w:numPr></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+    const plainParagraph = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`;
     const numberingXml = `<w:numbering xmlns:w="${W_NS}">`
       + '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0">'
       + '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>'
       + '</w:lvl></w:abstractNum>'
       + '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>'
       + '</w:numbering>';
-    const originalDocument = documentWithBody(numberedParagraph('Same clause'));
-    const revisedDocument = documentWithBody(
-      numberedParagraph('New clause') + numberedParagraph('Same clause'),
-    );
+    // "1. Notices" and an unnumbered "Notices" have the same text; only the
+    // rendered list label tells them apart. The revision keeps the unnumbered one.
+    const originalDocument = documentWithBody(numberedParagraph('Notices') + plainParagraph('Notices'));
+    const revisedDocument = documentWithBody(plainParagraph('Notices'));
     const original = originalDocument.getElementsByTagNameNS(W_NS, 'body')[0]!;
     const revised = revisedDocument.getElementsByTagNameNS(W_NS, 'body')[0]!;
+    const [numberedOriginal, plainOriginal] = Array.from(original.getElementsByTagNameNS(W_NS, 'p'));
     const withoutVirtualization = constructTaggedTree(original, revised, {
       detectMoves: false,
       numberingEnabled: false,
       originalNumberingXml: numberingXml,
       revisedNumberingXml: numberingXml,
     });
-    expect(withoutVirtualization.tree.children.map((child) => child.tag)).toEqual([
-      'revised',
-      'both',
-    ]);
+    expect(withoutVirtualization.tree.children.map((child) => child.tag)).toEqual(['both', 'original']);
+    expect(withoutVirtualization.tree.children[0]?.tag === 'both'
+      ? withoutVirtualization.tree.children[0].original
+      : undefined).toBe(numberedOriginal);
 
     const result = constructTaggedTree(original, revised, {
       detectMoves: false,
@@ -437,13 +439,11 @@ describe('complete tagged-tree construction', () => {
       originalNumberingXml: numberingXml,
       revisedNumberingXml: numberingXml,
     });
-    expect(result.tree.children.map((child) => child.tag)).toEqual(['both', 'revised']);
-    expect(result.tree.children[0]?.tag === 'both'
-      ? result.tree.children[0].original.textContent
-      : undefined).toBe('Same clause');
-    expect(result.tree.children[0]?.tag === 'both'
-      ? result.tree.children[0].revised.textContent
-      : undefined).toBe('New clause');
+    expect(result.tree.children.map((child) => child.tag)).toEqual(['original', 'both']);
+    expect(result.tree.children[0]?.tag === 'original' ? result.tree.children[0].node : undefined)
+      .toBe(numberedOriginal);
+    expect(result.tree.children[1]?.tag === 'both' ? result.tree.children[1].original : undefined)
+      .toBe(plainOriginal);
     const output = serializeTaggedTree(
       result.tree,
       createPreservePlan(original, revised, result.tree, {

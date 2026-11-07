@@ -1,5 +1,5 @@
 import Markdoc, { type Node as MarkdocNode } from '@markdoc/markdoc';
-import type { BlockSpec, DocumentSpec, HeaderFooterSpec, InlineSpec, ParagraphSpec, SectionSpec } from '@usejunior/docx-core';
+import { bookmarkNameForSlug, type BlockSpec, type DocumentSpec, type HeaderFooterSpec, type InlineSpec, type NumberingSpec, type ParagraphSpec, type SectionSpec } from '@usejunior/docx-core';
 import { createMarkdocxRenderer, type RenderApi } from '../markdocx/engine.js';
 import {
   CREATION_STYLE,
@@ -13,8 +13,10 @@ import {
   twipsFromPt,
   type CreationProfile,
 } from './profile.js';
+import { HEADING_CLAUSE_ILVL } from './list-numbering.js';
 import { CreationTheme, creationPlugins } from './theme.js';
 import {
+  checkCreationSourceCharacters,
   creationError,
   lineOf,
   parseCreationFrontmatter,
@@ -37,8 +39,25 @@ export const PAGE_FIELD_TOKEN = '<PAGE>';
  */
 export type FooterProjection = string[] | null;
 
-/** Plain-text projection of the lowered document, compared against read-back from the DOCX bytes. */
-export type CreationProjection = { paragraphs: string[]; footers: FooterProjection[] };
+/** Where a footnote reference sits: its body paragraph (index into `paragraphs`) and character offset. */
+export type FootnoteReferencePosition = { paragraph: number; offset: number };
+
+/**
+ * Plain-text projection of the lowered document, compared against read-back
+ * from the DOCX bytes. A footnote reference adds no text to its paragraph;
+ * `footnoteReferences` records where each one sits, in document order, and
+ * `footnotes` holds the matching notes' paragraph texts, the first starting
+ * with the space between the note number and its text.
+ */
+export type CreationProjection = {
+  paragraphs: string[];
+  footers: FooterProjection[];
+  footnoteReferences: FootnoteReferencePosition[];
+  footnotes: string[][];
+};
+
+/** The space docx-core writes between a note's number and its text. */
+export const FOOTNOTE_MARK_SPACE = ' ';
 
 export type CreationBlockKind =
   | 'title' | 'heading' | 'body' | 'quote' | 'centered' | 'legend' | 'signer' | 'list' | 'table';
@@ -84,20 +103,235 @@ function paragraphsOf(blocks: BlockSpec[]): ParagraphSpec[] {
   return blocks.filter((block): block is ParagraphSpec => block.kind === 'paragraph');
 }
 
-function runText(runs: InlineSpec[]): string {
+/**
+ * What a cross-reference to a bookmark shows: its number in each form (for a
+ * numbered target) and its text (for every target). A numbered target also
+ * has its list (`numId`), the value of each of its levels, and the parts of
+ * its full number with the level each stands for, so a relative number can
+ * drop the leading parts it shares with where the reference sits.
+ */
+type ReferenceText = {
+  full?: string;
+  paragraph?: string;
+  text: string;
+  numId?: string;
+  values?: number[];
+  parts?: Array<{ level: number; text: string }>;
+};
+/**
+ * Every bookmark's reference texts, and for each paragraph holding a
+ * relative reference the values of each list's (`numId`'s) last numbered
+ * paragraph at or before it.
+ */
+type ReferenceTexts = { texts: ReadonlyMap<string, ReferenceText>; positions: ReadonlyMap<ParagraphSpec, ReadonlyMap<string, readonly number[]>> };
+const NO_REFERENCES: ReferenceTexts = { texts: new Map(), positions: new Map() };
+
+/**
+ * A relative number as Word shows it (`\r`): the full number less the
+ * leading levels the target shares with its list's last paragraph at or
+ * before the reference, always keeping the target's own level; the full
+ * number when its list has no paragraph there yet, and in a footnote.
+ */
+function relativeText(target: ReferenceText, position: ReadonlyMap<string, readonly number[]> | undefined): string | undefined {
+  const at = target.numId === undefined ? undefined : position?.get(target.numId);
+  if (!at || !target.values || !target.parts) return target.full;
+  const own = target.values.length - 1;
+  let shared = 0;
+  while (shared < Math.min(at.length, own + 1) && at[shared] === target.values[shared]) shared += 1;
+  return target.parts.filter((part) => part.level >= Math.min(shared, own)).map((part) => part.text).join('');
+}
+
+/** `position` is the list positions at the paragraph holding `runs`: absent in a footnote. */
+function runText(runs: InlineSpec[], references: ReferenceTexts = NO_REFERENCES, position?: ReadonlyMap<string, readonly number[]>): string {
   return runs.map((run) => {
     if (run.kind === 'text') return run.text;
     if (run.kind === 'tab') return '\t';
     if (run.kind === 'break') return '\n';
+    if (run.kind === 'footnote') return '';
+    if (run.kind === 'crossReference') {
+      const target = references.texts.get(run.bookmark);
+      const shown = run.show === 'text' ? target?.text
+        : run.number === 'paragraph' ? target?.paragraph
+        : run.number === 'relative' ? (target ? relativeText(target, position) : undefined)
+        : target?.full;
+      if (shown === undefined) throw new Error(`cross-reference to '${run.bookmark}' has no ${run.show === 'text' ? 'target' : 'numbered target'} in the lowering`);
+      return shown;
+    }
     return PAGE_FIELD_TOKEN;
   }).join('');
 }
 
-/** Body paragraphs in document order, table cells included, as read-back must find them. */
-function projectBlocks(blocks: BlockSpec[]): string[] {
-  return blocks.flatMap((block) => (block.kind === 'paragraph'
-    ? [runText(block.runs)]
-    : block.rows.flatMap((row) => row.cells.flatMap((cell) => projectBlocks(cell.blocks)))));
+function letters(n: number): string {
+  return String.fromCharCode(97 + ((n - 1) % 26)).repeat(Math.floor((n - 1) / 26) + 1);
+}
+
+function roman(n: number): string {
+  const table: Array<[number, string]> = [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']];
+  let out = '';
+  for (const [value, symbol] of table) {
+    while (n >= value) { out += symbol; n -= value; }
+  }
+  return out;
+}
+
+/**
+ * What a cross-reference to a paragraph of the heading definition shows:
+ * "ARTICLE II", "Section 2.06", and a clause in full as "Section 2.06(b)(ii)",
+ * or as "ARTICLE II(b)" when no Section has been numbered under the Article
+ * since it began (Word passes over a level shown at its start value). The
+ * paragraph form of a heading is its whole label; of a clause, its own "(b)".
+ */
+function headingReferenceText(values: readonly number[], ilvl: number, sectionNumbered: boolean): { full: string; paragraph: string; parts: Array<{ level: number; text: string }> } {
+  const own = [
+    `ARTICLE ${roman(values[0]!).toUpperCase()}`,
+    `Section ${values[0]}.${String(values[1]).padStart(2, '0')}`,
+    `(${letters(values[2]!)})`,
+    `(${roman(values[3]!)})`,
+    `(${letters(values[4]!).toUpperCase()})`,
+  ];
+  if (ilvl < HEADING_CLAUSE_ILVL) return { full: own[ilvl]!, paragraph: own[ilvl]!, parts: [{ level: ilvl, text: own[ilvl]! }] };
+  const context = sectionNumbered ? 1 : 0;
+  const parts = [{ level: context, text: own[context]! }, ...own.slice(HEADING_CLAUSE_ILVL, ilvl + 1).map((text, index) => ({ level: HEADING_CLAUSE_ILVL + index, text }))];
+  return { full: parts.map((part) => part.text).join(''), paragraph: own[ilvl]!, parts };
+}
+
+/**
+ * What each bookmarked paragraph's cross-references show: its text runs, and for a numbered paragraph its number, counted
+ * from the lowering's own lists and numbered headings. Each ordered list
+ * numbers `1.`, `(a)`, `(i)` and restarts deeper levels under a new item.
+ * Word shows the full number as "2", "2(b)", "2(b)(ii)" (the period before
+ * "(" dropped) and the paragraph number as "2", "(b)", "(ii)". Numbered
+ * headings and the clauses under them follow {@link headingReferenceText}.
+ * docx-core computes the cached result from the OOXML; read-back compares
+ * the two.
+ *
+ * Counting follows Word's list model, as the numbering decisions in
+ * `list-numbering.ts` rely on: every instance of one definition shares a
+ * running count, and an instance's `startOverride` restarts it at that
+ * instance's first paragraph on the level. A heading is numbered through its
+ * paragraph style's link to a level (`w:pStyle`), so it counts on that level
+ * although it carries no `list` of its own.
+ */
+function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSpec[]): ReferenceTexts {
+  const instances = new Map<string, { definition: NumberingSpec; overrides: ReadonlyMap<number, number> }>();
+  const styleLinks = new Map<string, { numId: string; ilvl: number }>();
+  for (const definition of numbering) {
+    instances.set(definition.numId, { definition, overrides: new Map() });
+    for (const instance of definition.instances ?? []) {
+      instances.set(instance.numId, { definition, overrides: new Map(instance.levelOverrides.map((override) => [override.ilvl, override.startOverride])) });
+    }
+    for (const level of definition.levels) if (level.pStyle) styleLinks.set(level.pStyle, { numId: definition.numId, ilvl: level.ilvl });
+  }
+  const counters = new Map<string, number[]>();
+  const usedLevels = new Map<string, Set<number>>();
+  // Per heading definition: whether a Section has been numbered since the current Article began.
+  const sectionSinceArticle = new Map<string, boolean>();
+  const texts = new Map<string, ReferenceText>();
+  // Each list's (numId's) last numbered paragraph so far, and the copy each paragraph holding a relative reference sees.
+  const lists = new Map<string, number[]>();
+  const positions = new Map<ParagraphSpec, ReadonlyMap<string, readonly number[]>>();
+  const visit = (blocks: BlockSpec[]) => {
+    for (const block of blocks) {
+      if (block.kind === 'table') {
+        for (const row of block.rows) for (const cell of row.cells) visit(cell.blocks);
+        continue;
+      }
+      const relative = block.runs.some((run) => run.kind === 'crossReference' && run.number === 'relative');
+      // A text reference shows the paragraph's text runs; the list label and
+      // any footnote reference mark are not part of it.
+      if (block.bookmark !== undefined) texts.set(block.bookmark, { text: runText(block.runs.filter((run) => run.kind === 'text')) });
+      const list = block.list ?? (block.styleId === undefined ? undefined : styleLinks.get(block.styleId));
+      if (!list) {
+        if (relative) positions.set(block, new Map(lists));
+        continue;
+      }
+      const { numId, ilvl } = list;
+      const { definition, overrides } = instances.get(numId)!;
+      const { levels } = definition;
+      const values = counters.get(definition.numId) ?? [];
+      const used = usedLevels.get(numId) ?? new Set<number>();
+      const override = overrides.get(ilvl);
+      if (override !== undefined && !used.has(ilvl)) values[ilvl] = override - 1;
+      used.add(ilvl);
+      usedLevels.set(numId, used);
+      values[ilvl] = (values[ilvl] ?? (levels[ilvl]!.start ?? 1) - 1) + 1;
+      values.length = ilvl + 1;
+      counters.set(definition.numId, values);
+      lists.set(numId, [...values]);
+      if (relative) positions.set(block, new Map(lists));
+      if (ilvl < HEADING_CLAUSE_ILVL) sectionSinceArticle.set(definition.numId, ilvl === 1);
+      if (block.bookmark === undefined) continue;
+      const place = { numId, values: [...values] };
+      if (levels[0]!.pStyle !== undefined) {
+        texts.set(block.bookmark, { ...texts.get(block.bookmark)!, ...place, ...headingReferenceText(values, ilvl, sectionSinceArticle.get(definition.numId) === true) });
+        continue;
+      }
+      if (levels[0]!.numFmt !== 'decimal') continue;
+      const own = [String(values[0]), `(${letters(values[1]!)})`, `(${roman(values[2]!)})`];
+      const parts = own.slice(0, ilvl + 1).map((text, level) => ({ level, text }));
+      texts.set(block.bookmark, { ...texts.get(block.bookmark)!, ...place, parts, full: own.slice(0, ilvl + 1).join(''), paragraph: own[ilvl]! });
+    }
+  };
+  for (const section of sections) visit(section.blocks);
+  return { texts, positions };
+}
+
+/** Drop the space a trailing `{% #id %}` annotation leaves at the end of its heading or list item text. */
+function trimAnnotationSpace(node: MarkdocNode): void {
+  if (node.attributes.id !== undefined && (node.type === 'heading' || node.type === 'item')) {
+    const inline = node.children.find((child) => child.type === 'inline' || child.type === 'paragraph');
+    const holder = inline?.type === 'paragraph' ? inline.children.find((child) => child.type === 'inline') : inline;
+    const last = holder?.children.at(-1);
+    if (last?.type === 'text') last.attributes.content = String(last.attributes.content ?? '').replace(/\s+$/u, '');
+  }
+  node.children.forEach(trimAnnotationSpace);
+}
+
+/** Every list item under `list`, depth first: the order in which its paragraphs are rendered. */
+function listItems(list: MarkdocNode): MarkdocNode[] {
+  return list.children.flatMap((item) => [item, ...item.children.filter((child) => child.type === 'list').flatMap(listItems)]);
+}
+
+/** Put each `{% #id %}` on the paragraph its heading or list item rendered to, as a bookmark. */
+function bookmarkTargets(node: MarkdocNode, blocks: BlockSpec[]): void {
+  const mark = (target: MarkdocNode, block: BlockSpec | undefined) => {
+    if (target.attributes.id === undefined) return;
+    if (block?.kind !== 'paragraph') throw new Error(`id '${String(target.attributes.id)}' did not render to a paragraph`);
+    block.bookmark = bookmarkNameForSlug(String(target.attributes.id));
+  };
+  if (node.type === 'heading') mark(node, blocks[0]);
+  if (node.type === 'list') {
+    const items = listItems(node);
+    if (items.length !== blocks.length) throw new Error('a list did not render one paragraph per item');
+    items.forEach((item, index) => mark(item, blocks[index]));
+  }
+}
+
+type BlockProjection = Pick<CreationProjection, 'paragraphs' | 'footnoteReferences' | 'footnotes'>;
+
+/**
+ * Body paragraphs in document order, table cells included, as read-back must
+ * find them, with each footnote reference's position and its note's text.
+ */
+function projectBlocks(blocks: BlockSpec[], out: BlockProjection = { paragraphs: [], footnoteReferences: [], footnotes: [] }, references: ReferenceTexts = NO_REFERENCES): BlockProjection {
+  for (const block of blocks) {
+    if (block.kind === 'table') {
+      for (const row of block.rows) for (const cell of row.cells) projectBlocks(cell.blocks, out, references);
+      continue;
+    }
+    const position = references.positions.get(block);
+    let offset = 0;
+    for (const run of block.runs) {
+      if (run.kind === 'footnote') {
+        out.footnoteReferences.push({ paragraph: out.paragraphs.length, offset });
+        // A footnote has no list position: a relative reference in it shows the full number.
+        out.footnotes.push(run.blocks.map((paragraph, index) => (index === 0 ? FOOTNOTE_MARK_SPACE : '') + runText(paragraph.runs, references)));
+      }
+      offset += runText([run], references, position).length;
+    }
+    out.paragraphs.push(runText(block.runs, references, position));
+  }
+  return out;
 }
 
 function footerSpec(footer: FooterDeclaration): HeaderFooterSpec {
@@ -141,13 +375,23 @@ function applyNeighbourRules(section: SectionState, profile: CreationProfile): v
  */
 export function lowerCreationMarkdoc(source: string, profileInput?: unknown): CreationLowering {
   const profile = resolveCreationProfile(profileInput);
+  checkCreationSourceCharacters(source);
   const ast = Markdoc.parse(source);
   const frontmatter = parseCreationFrontmatter(ast.attributes.frontmatter as string | undefined);
-  validateCreationAst(ast.children, { fillIns: frontmatter.fillIns ?? 'markup' });
+  validateCreationAst(ast.children, { fillIns: frontmatter.fillIns ?? 'markup', ...(frontmatter.headingNumbers ? { headingNumbers: frontmatter.headingNumbers } : {}) });
   normalizeSoftBreaks(ast);
+  trimAnnotationSpace(ast);
 
-  const theme = new CreationTheme(profile, frontmatter.fillIns ?? 'markup');
-  const plugins = creationPlugins(theme);
+  // Footnote bodies render where their {% fnref /%} sits; the blocks
+  // themselves add nothing to the body. Validation paired every id.
+  const footnoteBodies = new Map<string, MarkdocNode>();
+  for (const node of ast.children) {
+    const tag = node.type === 'tag' ? node : soleInlineTag(node);
+    if (tag?.tag === 'footnote') footnoteBodies.set(String(tag.attributes.id), tag);
+  }
+
+  const theme = new CreationTheme(profile, frontmatter.fillIns ?? 'markup', frontmatter.headingNumbers);
+  const plugins = creationPlugins(theme, footnoteBodies);
   let api!: RenderApi;
   api = createMarkdocxRenderer({
     theme,
@@ -169,10 +413,13 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     : undefined;
   const sections: SectionState[] = [{ entries: [], ...(firstFooter ? { footer: firstFooter } : {}) }];
   let pendingPageBreak: MarkdocNode | null = null;
-  let titleText: string | undefined;
+  let titleBlocks: BlockSpec[] | undefined;
   for (const node of ast.children) {
     const tag = node.type === 'tag' ? node : soleInlineTag(node);
     const current = sections.at(-1)!;
+    // A footnote body is not a block of the body: a pending page break
+    // carries over it to the next block.
+    if (tag?.tag === 'footnote') continue;
     if (tag?.tag === 'page-break') {
       if (pendingPageBreak) creationError('DUPLICATE_PAGE_BREAK', 'Two consecutive {% page-break /%} tags.', node);
       pendingPageBreak = node;
@@ -189,8 +436,9 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
       continue;
     }
     const blocks = api.renderBlocks([node], { listDepth: 0 });
+    bookmarkTargets(node, blocks);
     const kind = kindOf(node);
-    if (kind === 'title' && titleText === undefined) titleText = projectBlocks(blocks)[0];
+    if (kind === 'title' && titleBlocks === undefined) titleBlocks = blocks;
     current.entries.push({ kind, ...(lineOf(node) === undefined ? {} : { line: lineOf(node)! }), blocks, pageBreakBefore: pendingPageBreak !== null });
     pendingPageBreak = null;
   }
@@ -216,7 +464,14 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
   });
   // A section ending in a table gets one empty paragraph after it from docx-core
   // (the dedicated break paragraph, or the closing paragraph of the body).
-  const paragraphs = specSections.flatMap((section) => [...projectBlocks(section.blocks), ...(section.blocks.at(-1)?.kind === 'table' ? [''] : [])]);
+  const references = referenceTexts(specSections, theme.numbering);
+  const titleText = titleBlocks ? projectBlocks(titleBlocks, undefined, references).paragraphs[0] : undefined;
+  const projected: BlockProjection = { paragraphs: [], footnoteReferences: [], footnotes: [] };
+  for (const section of specSections) {
+    projectBlocks(section.blocks, projected, references);
+    if (section.blocks.at(-1)?.kind === 'table') projected.paragraphs.push('');
+  }
+  const { paragraphs } = projected;
   const title = frontmatter.title ?? titleText;
   const spec: DocumentSpec = {
     meta: {
@@ -226,13 +481,15 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     },
     defaults: creationDefaults(profile),
     styles: creationStyles(profile),
-    ...(theme.numbering.length > 0 ? { numbering: theme.numbering } : {}),
+    ...(theme.numbering.length > 0 ? { numbering: [...theme.numbering] } : {}),
     sections: specSections,
   };
   return {
     spec,
     projection: {
       paragraphs,
+      footnoteReferences: projected.footnoteReferences,
+      footnotes: projected.footnotes,
       footers: sections.map((section) => (section.footer
         ? (section.footer.text || section.footer.pageNumbers
           ? [...(section.footer.text ? [section.footer.text] : []), ...(section.footer.pageNumbers ? [PAGE_FIELD_TOKEN] : [])]

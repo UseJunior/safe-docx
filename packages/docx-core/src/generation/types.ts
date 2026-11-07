@@ -146,17 +146,36 @@ export type ParagraphSpec = {
   keepNext?: boolean;
   /** Keep every line of this paragraph on one page (w:keepLines). */
   keepLines?: boolean;
-  tabs?: Array<{
-    posTwips: number;
-    align: 'left' | 'center' | 'right';
-    leader?: 'none' | 'dot' | 'underscore';
-  }>;
+  tabs?: TabStopSpec[];
+  /**
+   * Bookmark name for this paragraph: a `w:bookmarkStart`/`w:bookmarkEnd`
+   * pair around its content, which a {@link CrossReferenceSpec} names. Word's
+   * Bookmark dialog rules apply: at most 40 characters, a letter first, then
+   * only letters, digits and underscores (`bookmarkNameForSlug` maps a
+   * kebab-case id to one). Names are unique in the document, compared without
+   * regard to case. Body story only, table cells included.
+   *
+   * The bookmark encloses every run of the paragraph and stops before its
+   * paragraph mark: the extent Word gives a heading's own bookmark (Word's
+   * Insert > Cross-reference to that heading's text reuses it). What a Word
+   * user's edit does to it, measured in Word 16.114 (#1259): text typed at
+   * the start of the paragraph, or inside it, stays inside the bookmark, so
+   * a text reference follows it. Text typed at the very end of the
+   * paragraph lands after the bookmark, and so does a word typed over the
+   * paragraph's last word, so a text reference keeps showing the old text
+   * (or loses the replaced word). Selecting the whole text and typing over it deletes the
+   * bookmark, and every reference to it then shows "Error! Reference source
+   * not found." when fields update. Ending the bookmark after the paragraph
+   * mark would not help: a text reference would then carry the mark and
+   * restyle its own paragraph (§ 17.16.5.51).
+   */
+  bookmark?: string;
   runs: InlineSpec[];
   /** Drafting-note annotation anchored to this paragraph (separable layer). */
   note?: DraftingNoteSpec;
 };
 
-export type InlineSpec = RunSpec | FieldSpec | TabSpec | BreakSpec;
+export type InlineSpec = RunSpec | FieldSpec | TabSpec | BreakSpec | FootnoteSpec | CrossReferenceSpec;
 
 /**
  * The fixed set of text-highlight values (CT_HighlightColor). Single source of
@@ -221,9 +240,88 @@ export type FieldSpec = {
   cachedResult: string;
 } & RunProps;
 
+/**
+ * A cross-reference to a bookmarked paragraph: a REF field that Word
+ * recomputes when fields are updated and that Ctrl-click follows to the
+ * target. It shows one of two things ({@link CrossReferenceShow}):
+ *
+ * - `show: 'number'` (the default): the target's list number, as
+ *   `REF <bookmark> \w \h` (`\n` for `number: 'paragraph'`, `\r` for
+ *   `number: 'relative'`). The cached result is the number Word shows after
+ *   updating fields: `fullContext` gives the number with its context
+ *   ("Section 2.06(b)", "2(b)"), `paragraph` the target's own level text
+ *   ("(b)"), each less a trailing period. `relative` gives the full number
+ *   less the leading levels the target shares with where the reference
+ *   sits: the last paragraph of the target's list at or before the
+ *   reference's paragraph ("(ii)" from inside "Section 2.06(b)(i)",
+ *   "(b)(ii)" from "Section 2.06(a)", "Section 2.06(b)(ii)" from "Section
+ *   2.07"), and the full number in a footnote. The target must be a numbered
+ *   paragraph whose number depends only on levels the list has used;
+ *   otherwise generation fails. A level shown at its start value (a clause
+ *   directly under an Article) is compared at that value: "(a)" from the
+ *   Article's next clause. A relative reference in a footnote is refused
+ *   when a footnote paragraph is numbered by its target's list: Word then
+ *   counts from the footnotes' own paragraphs of that list, which is not
+ *   modelled.
+ * - `show: 'text'`: the target's bookmarked text, as `REF <bookmark> \h`
+ *   with no number switch, the instruction Word's Insert > Cross-reference
+ *   writes for "Bookmark text". The cached result is a copy of the target
+ *   paragraph's text runs, each with its own formatting, which is what Word
+ *   writes when it updates the field. The list label is not part of it, nor
+ *   is a footnote reference mark, so a reference to "Section 1.01 Purchase
+ *   Price." shows "Purchase Price.". `number` does not apply, and the
+ *   reference carries no run formatting of its own (Word would replace it
+ *   with the target's). The target paragraph may hold text runs and
+ *   footnote references only, and its text may not be blank.
+ *
+ * Allowed in the body story (table cells included) and in footnotes; not in
+ * headers or footers.
+ */
+export type CrossReferenceSpec = {
+  kind: 'crossReference';
+  /** The `bookmark` of a body paragraph. */
+  bookmark: string;
+  /** Defaults to 'number'. */
+  show?: CrossReferenceShow;
+  /** For `show: 'number'`: defaults to 'fullContext' (`\w`); 'paragraph' is `\n`, 'relative' is `\r`. */
+  number?: CrossReferenceNumber;
+} & RunProps;
+
+/**
+ * What a cross-reference shows; see {@link CrossReferenceSpec}. Each value is
+ * one REF instruction shape, so a reader can tell them apart: a number switch
+ * (`\w`, `\n`, `\r`) for 'number', none for 'text'.
+ */
+export const CROSS_REFERENCE_SHOWS = ['number', 'text'] as const;
+
+export type CrossReferenceShow = (typeof CROSS_REFERENCE_SHOWS)[number];
+
+/** The number a number cross-reference shows; see {@link CrossReferenceSpec}. */
+export const CROSS_REFERENCE_NUMBERS = ['fullContext', 'paragraph', 'relative'] as const;
+
+export type CrossReferenceNumber = (typeof CROSS_REFERENCE_NUMBERS)[number];
+
 export type TabSpec = { kind: 'tab' };
 
 export type BreakSpec = { kind: 'break'; breakType?: 'line' | 'page' };
+
+/**
+ * A footnote: a reference mark at this point of the paragraph and a note body
+ * at the foot of the page. Word numbers notes 1, 2, 3, … in document order;
+ * the compiler assigns the note ids. The reference mark is a run in the
+ * FootnoteReference character style, and each body paragraph without a
+ * `styleId` takes the FootnoteText paragraph style. Both styles are emitted
+ * when the document has a footnote and does not declare them itself.
+ *
+ * Footnotes are allowed only in the body story (table cells included): not in
+ * headers or footers, and not inside another footnote. Body paragraphs may not
+ * carry a drafting note, `pageBreakBefore`, or a page break.
+ */
+export type FootnoteSpec = {
+  kind: 'footnote';
+  /** The note's paragraphs, at least one. */
+  blocks: ParagraphSpec[];
+};
 
 export type TableSpec = {
   kind: 'table';
@@ -286,7 +384,7 @@ export type StyleSpec = {
   type: 'paragraph' | 'character';
   basedOn?: string;
   next?: string;
-  paragraph?: Omit<ParagraphSpec, 'kind' | 'runs' | 'list' | 'note' | 'styleId'>;
+  paragraph?: Omit<ParagraphSpec, 'kind' | 'runs' | 'list' | 'note' | 'styleId' | 'bookmark'>;
   run?: RunProps;
 };
 
@@ -302,24 +400,133 @@ export const NUMBERING_LEVEL_JUSTIFICATIONS = ['left', 'center', 'right'] as con
 
 export type NumberingLevelJustification = (typeof NUMBERING_LEVEL_JUSTIFICATIONS)[number];
 
-export type NumberingSpec = {
-  /** Spec-level handle; the compiler assigns numeric w:numId / abstractNumId. */
+/**
+ * The level number formats we author for `w:numFmt` — the ST_NumberFormat
+ * subset the numbering generator emits. Single source of truth: the
+ * {@link NumberingLevelFormat} union is derived from this array, and
+ * validation reuses it as a runtime whitelist. `decimalZero` pads one through
+ * nine with a leading zero (`01`, `02`, … `10`), the format of the "Section
+ * 1.01" level in US legal outlines.
+ */
+export const NUMBERING_LEVEL_FORMATS = [
+  'decimal',
+  'decimalZero',
+  'lowerLetter',
+  'upperLetter',
+  'lowerRoman',
+  'upperRoman',
+  'bullet',
+  'none',
+] as const;
+
+export type NumberingLevelFormat = (typeof NUMBERING_LEVEL_FORMATS)[number];
+
+/** A tab stop, as authored on a paragraph, a style, or a numbering level. */
+export type TabStopSpec = {
+  posTwips: number;
+  align: 'left' | 'center' | 'right';
+  leader?: 'none' | 'dot' | 'underscore';
+};
+
+/** One level (`w:lvl`) of an abstract numbering definition. */
+export type NumberingLevelSpec = {
+  ilvl: number;
+  start?: number;
+  numFmt: NumberingLevelFormat;
+  /**
+   * One-based restart threshold (`w:lvlRestart`): this level restarts only
+   * when level `lvlRestart` (one-based, so `1` is `ilvl` 0) or an earlier
+   * level is used; `0` never restarts it. Omitted, the level restarts after
+   * any earlier level, which is already what "(a) restarts in each Section"
+   * needs. Must be `0` or below `ilvl`: the value `ilvl` names the previous
+   * level (the default), and Word drops the level's numbering when it is
+   * written explicitly. LibreOffice (26.2) ignores `w:lvlRestart` and always
+   * applies the default, so a non-default threshold renders differently there.
+   */
+  lvlRestart?: number;
+  /**
+   * Paragraph style linked to this level (`w:pStyle`), e.g. `Heading2` for
+   * the "Section 1.01" level. Must name a declared paragraph style, and each
+   * style links to at most one level. The compiler also emits the reverse
+   * link — a `w:numPr` naming this definition's default instance and this
+   * level — in the style's `w:pPr`, so a paragraph that only sets
+   * `styleId` is numbered at this level.
+   */
+  pStyle?: string;
+  /**
+   * Legal numbering (`w:isLgl`): every level placeholder in `lvlText` shows
+   * as an Arabic numeral, so `'Section %1.%2'` under an `upperRoman` article
+   * level prints "Section 2.01", not "Section II.01".
+   */
+  isLgl?: boolean;
+  /** Level text pattern, e.g. '%1.' or '%1.%2' or a bullet glyph. */
+  lvlText: string;
+  suff?: 'tab' | 'space' | 'nothing';
+  /**
+   * Level number justification against the text indent (`w:lvlJc`); defaults
+   * to `left`. `right` aligns labels of differing widths on their right edge.
+   */
+  lvlJc?: NumberingLevelJustification;
+  /**
+   * Level indentation (`w:pPr/w:ind`). `firstLine` and `hanging` are
+   * mutually exclusive: `{ left: 0, firstLine: 720 }` puts the label at
+   * 0.5" and wraps lines back to the margin.
+   */
+  indentTwips?: { left?: number; hanging?: number; firstLine?: number };
+  /**
+   * Level tab stops (`w:pPr/w:tabs`). With `suff: 'tab'` (the default) the
+   * text after the label starts at the first stop past the label, e.g. a
+   * left stop at 1440 puts the text at 1".
+   */
+  tabs?: TabStopSpec[];
+  runProps?: RunProps;
+};
+
+/**
+ * Per-level override inside a numbering instance (`w:lvlOverride`). Only
+ * `startOverride` is supported: the level restarts at that value when a
+ * paragraph first uses the instance.
+ */
+export type NumberingLevelOverrideSpec = {
+  ilvl: number;
+  startOverride: number;
+};
+
+/**
+ * An additional numbering instance (`w:num`) of a definition's abstract
+ * numbering. Paragraphs reference it through `list.numId` exactly like the
+ * definition's own handle.
+ *
+ * Every instance of one definition shares a single running sequence in Word
+ * and LibreOffice: an instance's `startOverride` restarts that sequence at
+ * the given value the first time a paragraph uses the instance, and later
+ * paragraphs on any instance of the definition continue from there. So an
+ * instance is the way to restart a list ("1, 2" then "1, 2" again), not to
+ * interleave two lists that count separately. Each additional instance needs
+ * at least one level override; without one it would simply continue the
+ * shared sequence, exactly like the definition's own handle.
+ */
+export type NumberingInstanceSpec = {
+  /** Spec-level handle, unique across every definition and instance handle. */
   numId: string;
-  levels: Array<{
-    ilvl: number;
-    start?: number;
-    numFmt: 'decimal' | 'lowerLetter' | 'upperLetter' | 'lowerRoman' | 'upperRoman' | 'bullet' | 'none';
-    /** Level text pattern, e.g. '%1.' or '%1.%2' or a bullet glyph. */
-    lvlText: string;
-    suff?: 'tab' | 'space' | 'nothing';
-    /**
-     * Level number justification against the text indent (`w:lvlJc`); defaults
-     * to `left`. `right` aligns labels of differing widths on their right edge.
-     */
-    lvlJc?: NumberingLevelJustification;
-    indentTwips?: { left?: number; hanging?: number };
-    runProps?: RunProps;
-  }>;
+  levelOverrides: NumberingLevelOverrideSpec[];
+};
+
+export type NumberingSpec = {
+  /**
+   * Spec-level handle of the definition's default instance; the compiler
+   * assigns numeric w:numId / abstractNumId. Default instances take numeric
+   * ids 1..N in declaration order; additional `instances` follow from N+1.
+   * Numeric ids are compile-local: reference lists by these string handles.
+   */
+  numId: string;
+  levels: NumberingLevelSpec[];
+  /**
+   * Additional instances of the same abstract definition, each restarting
+   * the definition's shared sequence (e.g. a second list that starts again
+   * at 1). Emitted after every default instance, in declaration order.
+   */
+  instances?: NumberingInstanceSpec[];
 };
 
 export type DraftingNoteSpec = {

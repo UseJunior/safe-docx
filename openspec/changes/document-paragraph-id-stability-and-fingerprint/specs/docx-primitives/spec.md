@@ -6,11 +6,16 @@
 
 The bookmark engine SHALL mint and persist stable `_bk_*` identifiers for paragraphs, ensuring unique addressability and idempotent allocation.
 
-`_bk_*` identifiers are deterministic. The engine SHALL prefer the document's intrinsic Word `w14:paraId` when present, and SHALL otherwise derive identifiers from a deterministic hash of the paragraph's normalized visible text together with neighbor and ancestor context. Collision resolution SHALL append a deterministic salt suffix (`|salt:N` for `N=1..9999`) to the seed prior to hashing, ensuring unique addressability for duplicate-content paragraphs.
+`_bk_*` identifiers are deterministic. The engine SHALL prefer the document's intrinsic Word `w14:paraId` when present, and SHALL otherwise derive identifiers from a deterministic hash of the paragraph's normalized visible text together with neighbor and ancestor context. New identifiers SHALL contain 10 lowercase hexadecimal characters (40 bits). Collision resolution SHALL append a deterministic salt suffix (`|salt:N` for `N=1..9999`) to the seed prior to hashing, ensuring unique addressability for duplicate-content paragraphs. Existing `_bk_*` bookmarks, including the prior 12-hex form, SHALL remain canonical and resolvable and SHALL NOT be renamed when a document is reopened.
 
 #### Scenario: insertParagraphBookmarks mints IDs matching expected pattern
 - **WHEN** `insertParagraphBookmarks` is called on a document with paragraphs lacking bookmarks
-- **THEN** each paragraph SHALL receive a `_bk_*` identifier matching the pattern `_bk_[0-9a-f]{12}`
+- **THEN** each paragraph SHALL receive a `_bk_*` identifier matching the pattern `_bk_[0-9a-f]{10}`
+
+#### Scenario: Legacy identifiers remain canonical
+- **GIVEN** a paragraph carrying a previously minted 12-hex `_bk_*` bookmark
+- **WHEN** the document is reopened and paragraph bookmarks are allocated
+- **THEN** the existing bookmark SHALL remain unchanged and resolvable
 
 #### Scenario: getParagraphBookmarkId retrieves minted ID
 - **GIVEN** a paragraph with a previously minted `_bk_*` bookmark

@@ -29,11 +29,11 @@ describe('Traceability: document-paragraph-id-stability-and-fingerprint — Para
         insertParagraphBookmarks(doc, 'test-attachment');
       });
 
-      await then('each paragraph receives an identifier matching _bk_[0-9a-f]{12}', () => {
+      await then('each paragraph receives an identifier matching _bk_[0-9a-f]{10}', () => {
         const paras = doc.getElementsByTagNameNS(OOXML.W_NS, 'p');
         for (let i = 0; i < paras.length; i++) {
           const id = getParagraphBookmarkId(paras[i]);
-          expect(id).toMatch(/^_bk_[0-9a-f]{12}$/);
+          expect(id).toMatch(/^_bk_[0-9a-f]{10}$/);
         }
       });
     },
@@ -55,7 +55,26 @@ describe('Traceability: document-paragraph-id-stability-and-fingerprint — Para
       });
 
       await then('the result returns the stable identifier', () => {
-        expect(id).toMatch(/^_bk_[0-9a-f]{12}$/);
+        expect(id).toMatch(/^_bk_[0-9a-f]{10}$/);
+      });
+    },
+  );
+
+  test.openspec('Legacy identifiers remain canonical')(
+    'preserves and resolves a legacy 12-hex paragraph bookmark',
+    async ({ given, when, then }: AllureBddContext) => {
+      const legacyId = '_bk_a3f29c10b8e4';
+      const doc = makeDoc(
+        `<w:p><w:bookmarkStart w:id="1" w:name="${legacyId}"/><w:r><w:t>Legacy</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>`,
+      );
+
+      await given('a paragraph carrying a legacy 12-hex safe-docx bookmark', async () => {});
+      await when('paragraph bookmarks are allocated again', async () => {
+        insertParagraphBookmarks(doc, 'test-attachment');
+      });
+      await then('the legacy bookmark remains canonical and resolvable', () => {
+        const paragraph = doc.getElementsByTagNameNS(OOXML.W_NS, 'p')[0]!;
+        expect(getParagraphBookmarkId(paragraph)).toBe(legacyId);
       });
     },
   );
@@ -93,7 +112,7 @@ describe('Traceability: document-paragraph-id-stability-and-fingerprint — Para
         expect(firstOpenIds.length).toBe(3);
         expect(secondOpenIds).toEqual(firstOpenIds);
         for (const id of firstOpenIds) {
-          expect(id).toMatch(/^_bk_[0-9a-f]{12}$/);
+          expect(id).toMatch(/^_bk_[0-9a-f]{10}$/);
         }
       });
     },
@@ -130,15 +149,15 @@ describe('Traceability: document-paragraph-id-stability-and-fingerprint — Para
 
       await then('the colliding paragraphs receive the unsalted hash then the |salt:1 hash', () => {
         expect(duplicateIds.length).toBe(2);
-        expect(duplicateIds[0]).toMatch(/^_bk_[0-9a-f]{12}$/);
-        expect(duplicateIds[1]).toMatch(/^_bk_[0-9a-f]{12}$/);
+        expect(duplicateIds[0]).toMatch(/^_bk_[0-9a-f]{10}$/);
+        expect(duplicateIds[1]).toMatch(/^_bk_[0-9a-f]{10}$/);
         expect(duplicateIds[1]).not.toEqual(duplicateIds[0]);
         // Pin the exact derivation so the test characterizes the salt-loop, not
         // just "two distinct IDs". If buildParagraphSeed later includes sibling
         // position or wider context, both IDs would still be distinct without
         // the salt loop ever running — this assertion fails loudly in that case.
-        expect(duplicateIds[0]).toBe('_bk_04c5b72c79f7'); // sha12(seed)
-        expect(duplicateIds[1]).toBe('_bk_a2abd088979b'); // sha12(seed|salt:1)
+        expect(duplicateIds[0]).toBe('_bk_04c5b72c79'); // sha10(seed)
+        expect(duplicateIds[1]).toBe('_bk_a2abd08897'); // sha10(seed|salt:1)
       });
     },
   );
@@ -191,13 +210,13 @@ describe('Traceability: document-paragraph-id-stability-and-fingerprint — Para
         expect(firstOpenIds.length).toBe(2);
         expect(secondOpenIds).toEqual(firstOpenIds);
         for (const id of firstOpenIds) {
-          expect(id).toMatch(/^_bk_[0-9a-f]{12}$/);
+          expect(id).toMatch(/^_bk_[0-9a-f]{10}$/);
         }
         expect(firstOpenIds[1]).not.toEqual(firstOpenIds[0]);
         // Pin the cross-open salt assignment so any drift in salt-loop iteration
         // order (e.g., if derivation later considered prior-document state)
         // would fail the test loudly. See companion scenario for the seed math.
-        expect(firstOpenIds).toEqual(['_bk_04c5b72c79f7', '_bk_a2abd088979b']);
+        expect(firstOpenIds).toEqual(['_bk_04c5b72c79', '_bk_a2abd08897']);
       });
     },
   );

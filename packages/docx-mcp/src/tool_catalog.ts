@@ -92,7 +92,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .boolean()
         .optional()
         .describe(
-          'When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph\'s normalized visible text; NOT an edit anchor. Edit tools accept a `_bk_*` ID, or (DOCX only) any other bookmark name whose w:id-paired range covers exactly that one paragraph. No effect on TOON/simple output. Ignored for Google Docs and ODT.',
+          'When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<16hex>") on each paragraph. Read-only metadata derived from the paragraph\'s normalized visible text; NOT an edit anchor. Edit tools accept a `_bk_*` ID, or (DOCX only) any other bookmark name whose w:id-paired range covers exactly that one paragraph. No effect on TOON/simple output. Ignored for Google Docs and ODT.',
         ),
       include_fingerprint_ordinal: z
         .boolean()
@@ -113,7 +113,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'get_document_outline',
     surface: 'internal',
     description:
-      'Get a compact structural map of a document\'s headings (DOCX only). Each entry is `{paragraph_id, text, level, source}`. Deterministic sources are `word_style`, `list_metadata`, and `outline_level`, selected in that precedence order and included by default. Heuristic sources are `run_in_header`, `title_with_period`, `title_with_colon`, `title_caps_centered`, and `title_bare`; set include_heuristic_headings=true to include them. JSON preserves levels 1-9; Markdown clamps visual ATX depth to 6. Read-only.',
+      'Get a compact structural map of a document\'s headings (DOCX only). Each entry is `{paragraph_id, text, level, source}`, plus `list_label` (e.g. "Section 1.01") when the heading is numbered; Markdown puts the label before the text. Deterministic sources are `word_style`, `list_metadata`, and `outline_level`, selected in that precedence order and included by default. Heuristic sources are `run_in_header`, `title_with_period`, `title_with_colon`, `title_caps_centered`, and `title_bare`; set include_heuristic_headings=true to include them. JSON preserves levels 1-9; Markdown clamps visual ATX depth to 6. Read-only.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL_DOCX_ONLY,
       format: z
@@ -310,7 +310,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'format_layout',
     surface: 'revisionable',
-    description: 'Apply layout controls (paragraph spacing, table row height, cell padding). Google Docs supports paragraph spacing only. Surface: revisionable — DOCX geometry edits emit native property-change revisions (w:pPrChange/w:trPrChange/w:tcPrChange).',
+    description: 'Apply layout controls (paragraph spacing, paragraph alignment and pagination flags, table row height, cell padding). paragraph_properties sets alignment (w:jc) and sets (true) or removes (false) direct pageBreakBefore/keepNext/keepLines; requests that change nothing are no-ops. Google Docs supports paragraph spacing only. Surface: revisionable — DOCX geometry edits emit native property-change revisions (w:pPrChange/w:trPrChange/w:tcPrChange).',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
@@ -322,6 +322,15 @@ export const SAFE_DOCX_TOOL_CATALOG = [
           after_twips: z.number().optional(),
           line_twips: z.number().optional(),
           line_rule: z.enum(['auto', 'exact', 'atLeast']).optional(),
+        })
+        .optional(),
+      paragraph_properties: z
+        .object({
+          paragraph_ids: z.array(z.string()).optional(),
+          alignment: z.enum(['left', 'center', 'right', 'both']).optional(),
+          page_break_before: z.boolean().optional(),
+          keep_next: z.boolean().optional(),
+          keep_lines: z.boolean().optional(),
         })
         .optional(),
       row_height: z

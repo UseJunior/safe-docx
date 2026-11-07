@@ -10,7 +10,7 @@
 
 - [x] Create `packages/docx-core/src/primitives/content_fingerprint.ts` exporting `computeContentFingerprint(rawVisibleText: string): string`.
 - [x] Re-export from `packages/docx-core/src/primitives/index.ts` (and therefore from the package barrel `packages/docx-core/src/index.ts`).
-- [x] Algorithm: `sha256(text.normalize('NFKC').replace(/\s+/g, ' ').trim())`, take first 32 hex chars, prefix `sha256:nfkc:`.
+- [x] Algorithm: `sha256(text.normalize('NFKC').replace(/\s+/g, ' ').trim())`, take first 16 hex chars, prefix `sha256:nfkc:`.
 
 ## 3. Code: read_file wiring
 
@@ -22,7 +22,7 @@
 ## 4. Tests
 
 - [x] `packages/docx-core/src/primitives/content_fingerprint.test.ts`:
-  - Output format: starts with `sha256:nfkc:` and has exactly 32 hex chars after.
+  - Output format: starts with `sha256:nfkc:` and has exactly 16 hex chars after.
   - NFKC normalization: ligatures (`ﬁ` → `fi`) produce the same fingerprint as the spelled-out form.
   - Compatibility whitespace: NBSP collapses to single space (NFKC-then-`\s+`-collapse).
   - Whitespace collapse: multiple spaces, tabs, line breaks → single space.
@@ -38,8 +38,8 @@
 
 ## 5. Documentation
 
-- [x] Replace `skills/docx-editing/SKILL.md:187-189` ("Paragraph IDs are session-scoped") with the accurate identifier contract: intrinsic `w14:paraId` → `_bk_<hex12>`; deterministic; consumers MAY persist; document the opt-in `content_fingerprint`.
-- [x] Fix `README.md:66` example so it shows real 12-char hex hashes (`_bk_a3f29c10b8e4`, `_bk_7d2e8f1a4c5b`) instead of the misleading `_bk_1, _bk_2, ...`.
+- [x] Replace `skills/docx-editing/SKILL.md:187-189` ("Paragraph IDs are session-scoped") with the accurate identifier contract: intrinsic `w14:paraId` → `_bk_<hex10>`; deterministic; consumers MAY persist; document the opt-in `content_fingerprint`.
+- [x] Fix `README.md:66` example so it shows real compact hex hashes instead of the misleading `_bk_1, _bk_2, ...`.
 - [x] Add a "Paragraph identity" section to `packages/docx-mcp/README.md` documenting the contract and the `include_fingerprint` flag.
 - [x] Rename `jr_para_*` → `_bk_*` in `openspec/project.md:40,71`.
 
@@ -52,8 +52,16 @@
 - [x] `npm run check:tool-docs` passes.
 - [x] `npm run check:spec-coverage` passes.
 - [x] `openspec validate document-paragraph-id-stability-and-fingerprint --strict` passes.
-- [x] Manual smoke: `read_file(file_path, format="json", include_fingerprint=true)` against a real DOCX confirms 32-hex `sha256:nfkc:` fingerprints.
+- [x] Manual smoke: `read_file(file_path, format="json", include_fingerprint=true)` against a real DOCX confirms 16-hex `sha256:nfkc:` fingerprints.
 
 ## 7. Cross-repo follow-up (post-merge)
 
 - [ ] Comment on `UseJunior/legal-context` PR #213 noting (a) corrected stability semantics for `_bk_*`, and (b) availability of `content_fingerprint` for portable hashes.
+
+## 8. Compact identifiers (#1229)
+
+- [x] Mint new DOCX and Google Docs paragraph identifiers with 10 hex characters.
+- [x] Preserve deterministic collision handling and legacy 12-hex bookmark resolution.
+- [x] Emit 16-hex content fingerprints while accepting legacy 32-hex locator and Markdoc inputs.
+- [x] Update tool output examples, docs, OpenSpec requirements, tests, and generated reference material.
+- [x] Run the complete repository pre-submit verification chain.

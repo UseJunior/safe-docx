@@ -14,8 +14,9 @@
  * documents with per-section page setup, page numbering, break types,
  * default/first/even headers and footers, tables (grid, spans, vertical
  * merges, cell decoration, nesting), multi-level numbering with w:numPr
- * list references, and drafting notes compiled to anchored comments (body
- * story only — header/footer paragraphs cannot carry notes).
+ * list references, drafting notes compiled to anchored comments (body
+ * story only — header/footer paragraphs cannot carry notes), and footnotes
+ * (body story only, table cells included; paragraphs only, never nested).
  *
  * Every declared feature now has an emitter; the loud-rejection contract
  * (SDX-GEN-003) lives on as runtime guards against unrecognized block and
@@ -23,12 +24,15 @@
  * surface never saw.
  */
 
+import { isWordBookmarkName } from './bookmark-names.js';
 import { GenerationSpecError } from './errors.js';
 import { WML_SCHEMA_ENUM_SETS, type WmlSchemaEnumType } from './schema-enum-domains.js';
+import { FOOTNOTE_REFERENCE_STYLE_ID, FOOTNOTE_TEXT_STYLE_ID } from '../primitives/footnote-shapes.js';
 import type {
   BlockSpec,
   BorderSpec,
   DocumentSpec,
+  FootnoteSpec,
   InlineSpec,
   NumberingSpec,
   ParagraphSpec,
@@ -39,7 +43,15 @@ import type {
   TableBorders,
   TableSpec,
 } from './types.js';
-import { HIGHLIGHT_COLORS, NUMBERING_LEVEL_JUSTIFICATIONS, THEME_COLOR_SLOTS } from './types.js';
+import {
+  CROSS_REFERENCE_NUMBERS,
+  CROSS_REFERENCE_SHOWS,
+  HIGHLIGHT_COLORS,
+  NUMBERING_LEVEL_FORMATS,
+  NUMBERING_LEVEL_JUSTIFICATIONS,
+  THEME_COLOR_SLOTS,
+  type TabStopSpec,
+} from './types.js';
 
 const COLOR_HEX_RE = /^[0-9A-Fa-f]{6}$/;
 const TWO_HEX_RE = /^[0-9A-Fa-f]{2}$/;
@@ -57,8 +69,10 @@ const ROW_HEIGHT_RULES = new Set(['atLeast', 'exact']);
 const CELL_VERTICAL_ALIGNMENTS = new Set(['top', 'center', 'bottom']);
 const VERTICAL_MERGES = new Set(['restart', 'continue']);
 const STYLE_TYPES = new Set(['paragraph', 'character']);
-const NUMBER_FORMATS = new Set(['decimal', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman', 'bullet', 'none']);
+const NUMBER_FORMATS: ReadonlySet<string> = new Set(NUMBERING_LEVEL_FORMATS);
 const NUMBER_SUFFIXES = new Set(['tab', 'space', 'nothing']);
+const CROSS_REFERENCE_NUMBER_SET: ReadonlySet<string> = new Set(CROSS_REFERENCE_NUMBERS);
+const CROSS_REFERENCE_SHOW_SET: ReadonlySet<string> = new Set(CROSS_REFERENCE_SHOWS);
 
 function requireInteger(value: unknown, path: string, description: string, minimum?: number, maximum?: number): void {
   if (
@@ -124,12 +138,217 @@ export function validateSpec(spec: DocumentSpec): void {
   if (spec.defaults?.run) validateRunProps(spec.defaults.run, '/defaults/run');
   if (spec.defaults?.paragraph) validateParagraphProps(spec.defaults.paragraph, '/defaults/paragraph');
   const declaredStyleIds = validateStyles(spec.styles ?? []);
-  const numbering = validateNumbering(spec.numbering ?? []);
+  if (specHasFootnotes(spec)) {
+    validateFootnoteStyles(spec.styles ?? []);
+    declaredStyleIds.add(FOOTNOTE_TEXT_STYLE_ID);
+    declaredStyleIds.add(FOOTNOTE_REFERENCE_STYLE_ID);
+  }
+  const numbering = validateNumbering(spec.numbering ?? [], spec.styles ?? []);
 
   spec.sections.forEach((section, sectionIndex) => {
     validateSection(section, `/sections/${sectionIndex}`, declaredStyleIds, numbering);
     validateBreakPlacement(section, `/sections/${sectionIndex}`, sectionIndex === spec.sections.length - 1);
   });
+  validateCrossReferences(spec);
+}
+
+type ParagraphVisitor = (paragraph: ParagraphSpec, path: string, story: StoryContext) => void;
+
+/** Every paragraph of `blocks`, table cells and footnote bodies included, with its path and story. */
+function walkParagraphs(blocks: BlockSpec[], path: string, story: StoryContext, visit: ParagraphVisitor): void {
+  blocks.forEach((block, blockIndex) => {
+    const blockPath = `${path}/${blockIndex}`;
+    if (block.kind === 'table') {
+      block.rows.forEach((row, rowIndex) => row.cells.forEach((cell, cellIndex) => {
+        walkParagraphs(cell.blocks, `${blockPath}/rows/${rowIndex}/cells/${cellIndex}/blocks`, story, visit);
+      }));
+      return;
+    }
+    visit(block, blockPath, story);
+    block.runs.forEach((run, runIndex) => {
+      if (run.kind === 'footnote') walkParagraphs(run.blocks, `${blockPath}/runs/${runIndex}/blocks`, 'footnote', visit);
+    });
+  });
+}
+
+/** Every paragraph of the document: body (with footnotes), then headers and footers. */
+function walkDocumentParagraphs(spec: DocumentSpec, visit: ParagraphVisitor): void {
+  spec.sections.forEach((section, sectionIndex) => {
+    const path = `/sections/${sectionIndex}`;
+    walkParagraphs(section.blocks, `${path}/blocks`, 'body', visit);
+    for (const [kind, set] of [['headers', section.headers], ['footers', section.footers]] as const) {
+      for (const slot of ['default', 'first', 'even'] as const) {
+        const content = set?.[slot];
+        if (content) walkParagraphs(content.blocks, `${path}/${kind}/${slot}/blocks`, 'headerFooter', visit);
+      }
+    }
+  });
+}
+
+/**
+ * The spec path of each body paragraph's bookmark, keyed by name. Run after
+ * {@link validateSpec}, which guarantees names are unique and body-only.
+ */
+export function collectBookmarkPaths(spec: DocumentSpec): Map<string, string> {
+  const paths = new Map<string, string>();
+  walkDocumentParagraphs(spec, (paragraph, path, story) => {
+    if (story === 'body' && paragraph.bookmark !== undefined && !paths.has(paragraph.bookmark)) paths.set(paragraph.bookmark, path);
+  });
+  return paths;
+}
+
+/**
+ * Bookmarks sit only on body paragraphs (table cells included) and follow
+ * Word's Bookmark dialog rules: at most 40 characters, a letter first, then
+ * letters, digits and underscores, so none is hidden. Names are unique
+ * without regard to case. A cross-reference sits in the body or a footnote,
+ * never a header or footer, and names a declared bookmark exactly. A
+ * relative reference in a footnote is refused while a footnote paragraph is
+ * numbered by its target's numbering definition (scripts/oracle/word/evidence/issue-1284-word-16.114.json:
+ * Word then shows "(a)" for "Section 1.01(a)" after a footnote "(a)" of the
+ * heading list, and the full number before it or beside another list).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.16.5.51 — follows Word: a relative reference in a footnote counts from the footnotes' own paragraphs of the target's list, not the body, so it is refused while such a paragraph exists
+ */
+function validateCrossReferences(spec: DocumentSpec): void {
+  const bookmarks = new Map<string, ParagraphSpec>();
+  const folded = new Map<string, string>();
+  const definitions = numberingDefinitions(spec);
+  // The first footnote paragraph each numbering definition numbers: a relative reference in a
+  // footnote to a paragraph of that definition is then refused.
+  const numberedFootnoteParagraphs = new Map<string, string>();
+  walkDocumentParagraphs(spec, (paragraph, path, story) => {
+    // A footnote paragraph without a styleId is emitted with FootnoteText, so that style counts too.
+    if (story !== 'footnote') return;
+    for (const definition of definitions.of(paragraph, FOOTNOTE_TEXT_STYLE_ID)) {
+      if (!numberedFootnoteParagraphs.has(definition)) numberedFootnoteParagraphs.set(definition, path);
+    }
+  });
+  walkDocumentParagraphs(spec, (paragraph, path, story) => {
+    if (paragraph.bookmark === undefined) return;
+    const bookmarkPath = `${path}/bookmark`;
+    if (story !== 'body') {
+      throw new GenerationSpecError(
+        'invalid_value',
+        bookmarkPath,
+        story === 'footnote' ? 'Bookmarks may sit only on body paragraphs, not in footnotes' : 'Bookmarks may sit only on body paragraphs, not in headers or footers',
+      );
+    }
+    if (typeof paragraph.bookmark !== 'string' || !isWordBookmarkName(paragraph.bookmark)) {
+      throw new GenerationSpecError(
+        'invalid_value',
+        bookmarkPath,
+        `Bookmark name '${String(paragraph.bookmark)}' must be at most 40 characters, start with a letter and hold only letters, digits and underscores`,
+      );
+    }
+    const key = paragraph.bookmark.toLowerCase();
+    const earlier = folded.get(key);
+    if (earlier !== undefined) {
+      throw new GenerationSpecError('invalid_value', bookmarkPath, `Bookmark name '${paragraph.bookmark}' repeats '${earlier}'; bookmark names are unique regardless of case`);
+    }
+    folded.set(key, paragraph.bookmark);
+    bookmarks.set(paragraph.bookmark, paragraph);
+  });
+  walkDocumentParagraphs(spec, (paragraph, path, story) => {
+    paragraph.runs.forEach((run, runIndex) => {
+      if (run.kind !== 'crossReference') return;
+      const runPath = `${path}/runs/${runIndex}`;
+      if (story === 'headerFooter') {
+        throw new GenerationSpecError('invalid_value', runPath, 'Cross-references may appear in the body and in footnotes, not in headers or footers');
+      }
+      const target = bookmarks.get(run.bookmark);
+      if (!target) {
+        throw new GenerationSpecError('dangling_bookmark_reference', `${runPath}/bookmark`, `Cross-reference names undeclared bookmark '${String(run.bookmark)}'`);
+      }
+      if (run.show === 'text') validateTextReferenceTarget(run.bookmark, target, `${runPath}/show`);
+      if (run.number === 'relative' && story === 'footnote') {
+        // Word shows a relative reference in a footnote in full while no footnote paragraph is
+        // numbered by the target's list; a footnote paragraph of another list changes nothing
+        // (issue-1258 and issue-1284 evidence). Footnote paragraphs of the target's list number in a
+        // sequence of their own, from which Word then measures, and that sequence is not modelled.
+        for (const definition of definitions.of(target, undefined)) {
+          const numbered = numberedFootnoteParagraphs.get(definition);
+          if (numbered === undefined) continue;
+          throw new GenerationSpecError(
+            'invalid_value',
+            `${runPath}/number`,
+            `A relative cross-reference in a footnote to a paragraph of list '${definition}' is refused while a footnote paragraph is numbered by that list (${numbered}): Word then numbers it relative to the footnotes' own count of the list, which is not modelled`,
+          );
+        }
+      }
+    });
+  });
+}
+
+/**
+ * The numbering definitions that number a paragraph, each named by its
+ * default instance's `numId`: its own `list` (an additional instance counts
+ * as its definition), or else the definitions whose levels link its
+ * paragraph style (`pStyle`) or a style it is based on, which it inherits
+ * through `w:basedOn` (§ 17.7.4.3). A paragraph without a `styleId` takes
+ * `defaultStyleId`.
+ */
+function numberingDefinitions(spec: DocumentSpec): { of(paragraph: ParagraphSpec, defaultStyleId: string | undefined): string[] } {
+  const byNumId = new Map<string, string>();
+  const linked = new Map<string, Set<string>>();
+  for (const definition of spec.numbering ?? []) {
+    byNumId.set(definition.numId, definition.numId);
+    for (const instance of definition.instances ?? []) byNumId.set(instance.numId, definition.numId);
+    for (const level of definition.levels ?? []) {
+      if (!level.pStyle) continue;
+      const set = linked.get(level.pStyle) ?? new Set<string>();
+      set.add(definition.numId);
+      linked.set(level.pStyle, set);
+    }
+  }
+  const basedOn = new Map((spec.styles ?? []).map((style) => [style.styleId, style.basedOn]));
+  const ofStyle = (styleId: string): string[] => {
+    const seen = new Set<string>();
+    for (let id: string | undefined = styleId; id !== undefined && !seen.has(id); id = basedOn.get(id)) {
+      seen.add(id);
+      const set = linked.get(id);
+      if (set) return [...set];
+    }
+    return [];
+  };
+  return {
+    of(paragraph, defaultStyleId) {
+      if (paragraph.list !== undefined) {
+        const definition = byNumId.get(paragraph.list.numId);
+        return definition === undefined ? [] : [definition];
+      }
+      const styleId = paragraph.styleId ?? defaultStyleId;
+      return styleId === undefined ? [] : ofStyle(styleId);
+    },
+  };
+}
+
+/**
+ * A text cross-reference shows its target paragraph's text: REF "inserts the
+ * text or graphics represented by the bookmark" (§ 17.16.5.51). The result
+ * is the target's text runs; Word leaves a footnote reference mark out of it
+ * (without the `\f` switch) and the list label is not bookmarked content
+ * (#1259 Word evidence). A tab, break, field or nested cross-reference in the
+ * target is refused: what Word shows for it in a REF result is not
+ * measured. A blank target would show nothing.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
+ */
+function validateTextReferenceTarget(bookmark: string, target: ParagraphSpec, path: string): void {
+  const unsupportedRun = target.runs.find((inline) => inline.kind !== 'text' && inline.kind !== 'footnote');
+  if (unsupportedRun) {
+    throw new GenerationSpecError(
+      'invalid_value',
+      path,
+      `A text cross-reference to bookmark '${bookmark}' needs a target holding only text and footnote references; its paragraph holds a ${unsupportedRun.kind}`,
+    );
+  }
+  const shown = target.runs.map((inline) => (inline.kind === 'text' ? inline.text : '')).join('');
+  if (shown.trim().length === 0) {
+    throw new GenerationSpecError('invalid_value', path, `A text cross-reference to bookmark '${bookmark}' would show empty text`);
+  }
 }
 
 function validateTheme(spec: DocumentSpec): void {
@@ -146,12 +365,19 @@ function validateTheme(spec: DocumentSpec): void {
 
 /**
  * Returns numId handle -> set of declared levels, for list-reference checks.
+ * Every instance handle (a definition's own and each additional instance's)
+ * maps to its definition's level set.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.28
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.10
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.23
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.8
  */
-function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number>> {
+function validateNumbering(definitions: NumberingSpec[], styles: StyleSpec[]): Map<string, Set<number>> {
   const declared = new Map<string, Set<number>>();
+  const styleTypes = new Map(styles.map((style) => [style.styleId, style.type]));
+  const linkedStyles = new Map<string, string>();
   definitions.forEach((definition, index) => {
     const path = `/numbering/${index}`;
     if (!definition.numId) {
@@ -187,10 +413,34 @@ function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number
           'Level start must be a signed safe integer in the API-representable subset of ST_DecimalNumber',
         );
       }
+      if (level.lvlRestart !== undefined) {
+        // One-based threshold (§ 17.9.10): 0 (never restart) or a level
+        // above this one's predecessor. A value of ilvl restates the default
+        // and Word drops the level's numbering when it sees it; larger values
+        // name this level or a later one, which readers ignore.
+        const maxRestart = Math.max(level.ilvl - 1, 0);
+        requireInteger(
+          level.lvlRestart,
+          `${levelPath}/lvlRestart`,
+          (maxRestart === 0
+            ? 'lvlRestart must be 0 (never restart) at this level'
+            : `lvlRestart must be 0 (never restart) or an integer from 1 to ${maxRestart}`) +
+            `; omit it to restart after the previous level`,
+          0,
+          maxRestart,
+        );
+      }
+      if (level.isLgl !== undefined && typeof level.isLgl !== 'boolean') {
+        throw new GenerationSpecError('invalid_value', `${levelPath}/isLgl`, 'isLgl must be a boolean');
+      }
+      if (level.pStyle !== undefined) {
+        validateLevelStyleLink(level.pStyle, `${levelPath}/pStyle`, styleTypes, linkedStyles, `${definition.numId}/${level.ilvl}`);
+      }
       if (level.lvlJc !== undefined) {
         requireSupportedSchemaEnum(level.lvlJc, `${levelPath}/lvlJc`, 'ST_Jc', LVL_JC_SET);
       }
       if (level.runProps) validateRunProps(level.runProps, `${levelPath}/runProps`);
+      if (level.tabs !== undefined) validateTabStops(level.tabs, `${levelPath}/tabs`);
       if (level.indentTwips) {
         if (level.indentTwips.left !== undefined) {
           requireInteger(
@@ -199,19 +449,127 @@ function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number
             'Numbering left indentation must be a signed safe integer in the API-representable subset of ST_SignedTwipsMeasure',
           );
         }
-        if (level.indentTwips.hanging !== undefined) {
-          requireInteger(
-            level.indentTwips.hanging,
-            `${levelPath}/indentTwips/hanging`,
-            'Numbering hanging indentation must be a non-negative safe integer in the API-representable subset of ST_TwipsMeasure',
-            0,
-          );
+        for (const key of ['hanging', 'firstLine'] as const) {
+          const value = level.indentTwips[key];
+          if (value !== undefined) {
+            requireInteger(
+              value,
+              `${levelPath}/indentTwips/${key}`,
+              `Numbering ${key} indentation must be a non-negative safe integer in the API-representable subset of ST_TwipsMeasure`,
+              0,
+            );
+          }
+        }
+        if (level.indentTwips.hanging !== undefined && level.indentTwips.firstLine !== undefined) {
+          throw new GenerationSpecError('invalid_value', `${levelPath}/indentTwips`, 'firstLine and hanging are mutually exclusive');
         }
       }
     });
     declared.set(definition.numId, levels);
   });
+  // Additional instances: checked after every definition handle is known, so
+  // an instance cannot reuse a later definition's handle either.
+  definitions.forEach((definition, index) => {
+    const levels = declared.get(definition.numId)!;
+    if (definition.instances === undefined) return;
+    if (!Array.isArray(definition.instances)) {
+      throw new GenerationSpecError('invalid_value', `/numbering/${index}/instances`, 'instances must be an array');
+    }
+    definition.instances.forEach((instance, instanceIndex) => {
+      const instancePath = `/numbering/${index}/instances/${instanceIndex}`;
+      if (typeof instance !== 'object' || instance === null) {
+        throw new GenerationSpecError('invalid_value', instancePath, 'Numbering instances must be objects');
+      }
+      if (!instance.numId) {
+        throw new GenerationSpecError('invalid_value', `${instancePath}/numId`, 'Numbering instances require a numId handle');
+      }
+      if (declared.has(instance.numId)) {
+        throw new GenerationSpecError('invalid_value', `${instancePath}/numId`, `Duplicate numbering handle '${instance.numId}'`);
+      }
+      validateLevelOverrides(instance.levelOverrides, `${instancePath}/levelOverrides`, levels, definition.numId);
+      declared.set(instance.numId, levels);
+    });
+  });
   return declared;
+}
+
+/**
+ * A level's linked style must be a declared paragraph style, linked by no
+ * other level: one style cannot start two numbering levels.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.23
+ */
+function validateLevelStyleLink(
+  styleId: unknown,
+  path: string,
+  styleTypes: ReadonlyMap<string, StyleSpec['type']>,
+  linkedStyles: Map<string, string>,
+  levelKey: string,
+): void {
+  if (typeof styleId !== 'string' || styleId.length === 0) {
+    throw new GenerationSpecError('invalid_value', path, 'pStyle must be a non-empty styleId');
+  }
+  const type = styleTypes.get(styleId);
+  if (type === undefined) {
+    throw new GenerationSpecError(
+      'dangling_style_reference',
+      path,
+      `Numbering level links undeclared style '${styleId}'; pStyle must name a style declared in DocumentSpec.styles`,
+    );
+  }
+  if (type !== 'paragraph') {
+    throw new GenerationSpecError('invalid_value', path, `Numbering level links '${styleId}', which is not a paragraph style`);
+  }
+  const previous = linkedStyles.get(styleId);
+  if (previous !== undefined) {
+    throw new GenerationSpecError(
+      'invalid_value',
+      path,
+      `Style '${styleId}' is already linked to numbering level ${previous}; a style links to at most one level`,
+    );
+  }
+  linkedStyles.set(styleId, levelKey);
+}
+
+/**
+ * An additional instance restarts at least one declared level, each at most
+ * once (CT_Num allows at most nine overrides, one per level).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.8
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.26
+ */
+function validateLevelOverrides(overrides: unknown, path: string, levels: ReadonlySet<number>, definitionId: string): void {
+  if (!Array.isArray(overrides) || overrides.length === 0) {
+    throw new GenerationSpecError(
+      'invalid_value',
+      path,
+      "Numbering instances require at least one level override; without one an instance only continues the definition's shared sequence",
+    );
+  }
+  const seen = new Set<number>();
+  overrides.forEach((override: { ilvl?: unknown; startOverride?: unknown } | null, overrideIndex) => {
+    const overridePath = `${path}/${overrideIndex}`;
+    if (typeof override !== 'object' || override === null) {
+      throw new GenerationSpecError('invalid_value', overridePath, 'Level overrides must be objects');
+    }
+    const ilvl = override.ilvl;
+    if (typeof ilvl !== 'number' || !levels.has(ilvl)) {
+      throw new GenerationSpecError(
+        'dangling_numbering_reference',
+        `${overridePath}/ilvl`,
+        `Level override names ilvl ${String(ilvl)}, which numbering '${definitionId}' does not declare`,
+      );
+    }
+    if (seen.has(ilvl)) {
+      throw new GenerationSpecError('invalid_value', `${overridePath}/ilvl`, `Duplicate level override for ilvl ${ilvl}`);
+    }
+    seen.add(ilvl);
+    requireInteger(
+      override.startOverride,
+      `${overridePath}/startOverride`,
+      'startOverride must be a signed safe integer in the API-representable subset of ST_DecimalNumber',
+    );
+  });
 }
 
 /**
@@ -315,8 +673,95 @@ function validateBreakPlacement(section: SectionSpec, path: string, isFinal: boo
   }
 }
 
-/** Story kind: drafting notes may only anchor in the body story. */
-type StoryContext = 'body' | 'headerFooter';
+/**
+ * Story kind: drafting notes may only anchor in the body story, footnote
+ * references may only sit in the body story, and a footnote's own paragraphs
+ * form the 'footnote' story.
+ */
+type StoryContext = 'body' | 'headerFooter' | 'footnote';
+
+/** Whether any body block, table cells included, holds a footnote. */
+export function specHasFootnotes(spec: DocumentSpec): boolean {
+  return spec.sections.some((section) => Array.isArray(section.blocks) && section.blocks.some(blockHasFootnote));
+}
+
+function blockHasFootnote(block: BlockSpec): boolean {
+  if (block?.kind === 'paragraph') return Array.isArray(block.runs) && block.runs.some((run) => run?.kind === 'footnote');
+  if (block?.kind === 'table') {
+    return Array.isArray(block.rows) && block.rows.some((row) => Array.isArray(row?.cells)
+      && row.cells.some((cell) => Array.isArray(cell?.blocks) && cell.blocks.some(blockHasFootnote)));
+  }
+  return false;
+}
+
+/**
+ * A document with footnotes gets the FootnoteText paragraph style and the
+ * FootnoteReference character style unless it declares them; a declaration
+ * under either id must then have that style type, because the compiler
+ * applies it as one.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.4.17
+ */
+function validateFootnoteStyles(styles: StyleSpec[]): void {
+  const expected: Array<[string, StyleSpec['type']]> = [
+    [FOOTNOTE_TEXT_STYLE_ID, 'paragraph'],
+    [FOOTNOTE_REFERENCE_STYLE_ID, 'character'],
+  ];
+  for (const [styleId, type] of expected) {
+    const index = styles.findIndex((style) => style.styleId === styleId);
+    if (index !== -1 && styles[index]!.type !== type) {
+      throw new GenerationSpecError(
+        'invalid_value',
+        `/styles/${index}/type`,
+        `Style '${styleId}' is applied to footnotes as a ${type} style, so it must be declared with type '${type}'`,
+      );
+    }
+  }
+}
+
+/**
+ * A footnote's body: one or more paragraphs, validated as their own story.
+ * A footnote reference may not appear inside a footnote (§ 17.11.14), and the
+ * body cannot carry a drafting note or force a page break.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.10
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ */
+function validateFootnote(
+  footnote: FootnoteSpec,
+  path: string,
+  styleIds: Set<string>,
+  numbering: Map<string, Set<number>>,
+  story: StoryContext,
+): void {
+  if (story === 'headerFooter') {
+    throw new GenerationSpecError(
+      'invalid_value',
+      path,
+      'Footnote references may appear only in the body story, not in headers or footers',
+    );
+  }
+  if (story === 'footnote') {
+    throw new GenerationSpecError('invalid_value', path, 'A footnote cannot contain another footnote');
+  }
+  if (!Array.isArray(footnote.blocks) || footnote.blocks.length === 0) {
+    throw new GenerationSpecError('invalid_value', `${path}/blocks`, 'A footnote needs at least one paragraph');
+  }
+  footnote.blocks.forEach((block, blockIndex) => {
+    const blockPath = `${path}/blocks/${blockIndex}`;
+    if (block?.kind !== 'paragraph') {
+      throw new GenerationSpecError(
+        'unsupported_feature',
+        blockPath,
+        `Footnote blocks must be paragraphs; block kind '${String((block as { kind?: unknown } | undefined)?.kind)}' is not supported in a footnote`,
+      );
+    }
+    if (block.pageBreakBefore) {
+      throw new GenerationSpecError('invalid_value', `${blockPath}/pageBreakBefore`, 'A footnote paragraph cannot start a new page');
+    }
+    validateParagraph(block, blockPath, styleIds, numbering, 'footnote');
+  });
+}
 
 function validateBlock(
   block: BlockSpec,
@@ -490,11 +935,13 @@ function validateParagraph(
   story: StoryContext,
 ): void {
   if (paragraph.note !== undefined) {
-    if (story === 'headerFooter') {
+    if (story !== 'body') {
       throw new GenerationSpecError(
         'invalid_value',
         `${path}/note`,
-        'Drafting notes anchor as document-story comments and cannot live in headers or footers',
+        story === 'footnote'
+          ? 'Drafting notes anchor as document-story comments and cannot live in footnotes'
+          : 'Drafting notes anchor as document-story comments and cannot live in headers or footers',
       );
     }
     if (typeof paragraph.note.text !== 'string' || paragraph.note.text.length === 0) {
@@ -533,7 +980,7 @@ function validateParagraph(
     throw new GenerationSpecError('invalid_value', `${path}/runs`, 'Paragraph runs must be an array');
   }
   paragraph.runs.forEach((run, runIndex) => {
-    validateInline(run, `${path}/runs/${runIndex}`);
+    validateInline(run, `${path}/runs/${runIndex}`, styleIds, numbering, story);
   });
 }
 
@@ -542,13 +989,7 @@ type ParagraphProperties = NonNullable<StyleSpec['paragraph']>;
 /** Validate the paragraph-property subset shared by body paragraphs and styles. */
 function validateParagraphProps(props: ParagraphProperties, path: string): void {
   if (props.borders) validateBorders(props.borders, `${path}/borders`);
-  if (props.tabs) {
-    props.tabs.forEach((stop, i) => {
-      requireInteger(stop.posTwips, `${path}/tabs/${i}/posTwips`, 'Tab stop position must be a non-negative safe integer in twips', 0);
-      if (!TAB_ALIGNMENTS.has(stop.align)) throw new GenerationSpecError('invalid_value', `${path}/tabs/${i}/align`, `Unsupported tab alignment '${stop.align}'`);
-      if (stop.leader !== undefined && !TAB_LEADERS.has(stop.leader)) throw new GenerationSpecError('invalid_value', `${path}/tabs/${i}/leader`, `Unsupported tab leader '${stop.leader}'`);
-    });
-  }
+  if (props.tabs) validateTabStops(props.tabs, `${path}/tabs`);
   if (props.alignment !== undefined && !ALIGNMENTS.has(props.alignment)) {
     throw new GenerationSpecError('invalid_value', `${path}/alignment`, `Unsupported paragraph alignment '${props.alignment}'`);
   }
@@ -577,9 +1018,66 @@ function validateParagraphProps(props: ParagraphProperties, path: string): void 
   }
 }
 
-function validateInline(run: InlineSpec, path: string): void {
-  if (run.kind !== 'tab' && run.kind !== 'break' && run.kind !== 'field' && run.kind !== 'text') {
+/** Tab stops shared by paragraphs, styles, and numbering levels. */
+function validateTabStops(tabs: TabStopSpec[], path: string): void {
+  if (!Array.isArray(tabs)) {
+    throw new GenerationSpecError('invalid_value', path, 'tabs must be an array of tab stops');
+  }
+  tabs.forEach((stop, i) => {
+    if (typeof stop !== 'object' || stop === null) {
+      throw new GenerationSpecError('invalid_value', `${path}/${i}`, 'Tab stops must be objects');
+    }
+    requireInteger(stop.posTwips, `${path}/${i}/posTwips`, 'Tab stop position must be a non-negative safe integer in twips', 0);
+    if (!TAB_ALIGNMENTS.has(stop.align)) throw new GenerationSpecError('invalid_value', `${path}/${i}/align`, `Unsupported tab alignment '${stop.align}'`);
+    if (stop.leader !== undefined && !TAB_LEADERS.has(stop.leader)) throw new GenerationSpecError('invalid_value', `${path}/${i}/leader`, `Unsupported tab leader '${stop.leader}'`);
+  });
+}
+
+function validateInline(
+  run: InlineSpec,
+  path: string,
+  styleIds: Set<string>,
+  numbering: Map<string, Set<number>>,
+  story: StoryContext,
+): void {
+  if (run.kind !== 'tab' && run.kind !== 'break' && run.kind !== 'field' && run.kind !== 'text' && run.kind !== 'footnote' && run.kind !== 'crossReference') {
     unsupported(path, `inline kind '${(run as { kind: string }).kind}'`);
+  }
+  if (run.kind === 'crossReference') {
+    if (typeof run.bookmark !== 'string' || run.bookmark.length === 0) {
+      throw new GenerationSpecError('invalid_value', `${path}/bookmark`, 'Cross-references name a bookmark');
+    }
+    if (run.show !== undefined && !CROSS_REFERENCE_SHOW_SET.has(run.show)) {
+      throw new GenerationSpecError('invalid_value', `${path}/show`, `Cross-reference show must be one of ${CROSS_REFERENCE_SHOWS.join(', ')}, got '${String(run.show)}'`);
+    }
+    if (run.show === 'text' && run.number !== undefined) {
+      throw new GenerationSpecError('invalid_value', `${path}/number`, 'A text cross-reference shows no number; drop number or show the number');
+    }
+    if (run.show === 'text') {
+      // Word writes a text reference's result as the target's runs with their
+      // own formatting, whatever formatting the field carries (#1259 Word
+      // evidence), so formatting on the reference would vanish on update.
+      const formatting = Object.keys(run).filter((key) => key !== 'kind' && key !== 'bookmark' && key !== 'show' && key !== 'number');
+      if (formatting.length > 0) {
+        throw new GenerationSpecError(
+          'invalid_value',
+          `${path}/${formatting[0]}`,
+          'A text cross-reference takes its target\'s formatting: Word replaces its result with the target\'s runs when fields update, so it carries no run formatting of its own',
+        );
+      }
+    }
+    if (run.number !== undefined && !CROSS_REFERENCE_NUMBER_SET.has(run.number)) {
+      throw new GenerationSpecError('invalid_value', `${path}/number`, `Cross-reference number must be one of ${CROSS_REFERENCE_NUMBERS.join(', ')}, got '${String(run.number)}'`);
+    }
+    validateRunProps(run, path);
+    return;
+  }
+  if (run.kind === 'footnote') {
+    validateFootnote(run, path, styleIds, numbering, story);
+    return;
+  }
+  if (run.kind === 'break' && run.breakType === 'page' && story === 'footnote') {
+    throw new GenerationSpecError('invalid_value', `${path}/breakType`, 'A footnote cannot contain a page break');
   }
   if (run.kind === 'tab' || run.kind === 'break') return;
   if (run.kind === 'field') {

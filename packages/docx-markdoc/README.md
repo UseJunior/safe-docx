@@ -126,6 +126,61 @@ those boundaries are preserved in the DOCX. Rationale, requirement, and waiver
 bodies likewise use one plain-text block; multiple Markdown blocks are rejected
 rather than concatenated.
 
+### Cross-references in imported documents
+
+Import restores a Word cross-reference (a REF field to a bookmarked
+paragraph) as an inline tag over the result Word last showed, in body
+paragraphs, table cells, footnotes and comments:
+
+```markdoc
+See {% xref to="price-adjustment" %}Section 1.01(b)(i){% /xref %}.
+The {% xref to="delivery-terms" show="text" %}Delivery Terms{% /xref %} section governs.
+Under {% xref bookmark="_Ref201812345" number="paragraph" hyperlink=false %}(i){% /xref %}, …
+```
+
+` REF <name> \w \h ` is the full number, ` \n ` is `number="paragraph"`,
+` \r ` is `number="relative"`, and no number switch is `show="text"`. A field without `\h` adds
+`hyperlink=false`. The tag names its target with `to="id"` when the bookmark
+is the one `create` writes for that id (hyphens turned into underscores),
+and keeps the bookmark name with `bookmark="name"` otherwise, as for Word's
+hidden `_Ref…` bookmarks. Both name the same field.
+
+Compile writes each tag back as the source's field, with the same
+instruction, bookmark and target. An edit may change the text around a
+reference, including words typed right before or after it, but not the
+reference itself, and compile does not refresh the field's result: Word does
+that when it updates fields. Compile fails before writing anything with:
+
+- `XREF_DRIFT`: a `{% para %}` or `before` state whose tags disagree with the
+  source's fields (another target, another form, or a tag removed);
+- `XREF_EDIT_UNSUPPORTED`: an `after` state that changes, adds or drops a
+  reference, or uses `run-format` in a paragraph holding one, or an edit of
+  a paragraph whose REF marker shares its run with text outside the field
+  (Word writes each marker in a run of its own);
+- `XREF_SOURCE_UNSUPPORTED`: an edit of a paragraph, or any rewrite of a
+  footnote or comment, holding a REF field that import kept as text;
+- `XREF_TARGET_MISSING`: a note's reference to no bookmarked paragraph, or an
+  edit that deletes a paragraph a reference points at;
+- `XREF_PROJECTION_FAILED`: output whose REF fields do not match the
+  source's;
+- `INVALID_MARKDOC` with `XREF_UNSUPPORTED_LOCATION`, for a tag in an
+  inserted paragraph or a header or footer paragraph, or with
+  `INVALID_CROSS_REFERENCE`, for a malformed tag.
+
+A REF field the tag cannot carry stays text, as before:
+
+- a switch other than one of `\w`, `\n` or `\r` and `\h`, such as `\p` or
+  `\* MERGEFORMAT`;
+- a bookmark that is missing, repeated, or marks no paragraph;
+- a nested or unterminated field, or one with no result;
+- a result that is empty or holds a tab, a tracked change or other
+  non-text content.
+
+`ImportResult.crossReferences` counts the restored fields and lists those
+kept as text, with a reason, and the CLI prints a
+`warning XREF_KEPT_AS_TEXT` line for each. An edit of a paragraph that holds
+one fails with `XREF_SOURCE_UNSUPPORTED` rather than flattening the field.
+
 `anchored.docx` differs from `source.docx` in content only where Safe DOCX had
 to add stable `_bk_*` paragraph bookmarks; its ZIP entries also all carry one
 fixed date, so importing the same `source.docx` again reproduces the same
@@ -416,6 +471,11 @@ The same attribute applies to `insert-before` and `insert-after` when their
 anchor or `style-source` paragraph has mixed character formatting; without it,
 such an insertion fails closed rather than choosing the longest source run.
 
+Insertions consume their formatting donors before source edits are applied,
+while keeping the relative order of insertion declarations. An insertion cannot
+use a paragraph deleted by the same compilation as its anchor or style donor;
+preflight rejects that dependency with `CONFLICTING_INSERT_DEPENDENCY`.
+
 `format-source` only selects the inherited source template. It never authors
 new formatting. One generated replacement hunk may instead declare an explicit
 additive overlay using the closed `underline="single"` and
@@ -577,8 +637,40 @@ package, determinism, read-back and brownfield-import checks:
   footer and page number and any table header repeated at its top. Anything
   else, missing or extra, fails with `CREATION_PDF_WORDS_MISMATCH`, and so
   does a page break the text cannot pin down, such as a table with empty
-  trailing rows followed by a table with the same header. The certificate's `pdf.words.limitations`
-  states what the comparison cannot catch.
+  trailing rows followed by a table with the same header. Each footnote
+  number is expected where its reference sits, and each note's text is read
+  from the foot of the page (a long note may continue at the foot of the
+  next); a note must start on the page that holds its reference. LibreOffice
+  sometimes exports a justified line without spaces, so the raw text layer
+  reads it as one long token. Such a token is split back into words only when
+  it spells a run of consecutive source words exactly and the page's
+  `pdftotext -layout` text, which places words by glyph position, shows that
+  reading spaced in a place the raw text does not (one such place per split
+  token); the certificate lists it under `knownGenerated.joinedLines`. A word
+  dropped from, added to or moved within that line still fails, unless the
+  page's layout text shows the source reading in another place where the raw
+  text does not (the evidence is counted per page, not tied to the line). The
+  certificate's `pdf.words.limitations` states what the comparison cannot
+  catch.
+- **Footnotes.** Each note read back from `word/footnotes.xml`, and where
+  its reference sits, must match the source, with a negative control. The
+  round trip re-imports the notes as footnote annotations and compares their
+  paragraphs, and where each reference sits (which non-empty body paragraph,
+  and the text on either side of it), with the source.
+  The text mirror lists the notes after the body.
+- **Cross-references.** The read-back reads each REF field as its cached
+  number or text. The round trip compares it with the number the source gives its
+  target, counted from the source's own lists, or with the target's text as
+  the source has it. For a text reference, the check also compares the text
+  the bookmark encloses with the target's source text, and the field's cached
+  result with that text; its negative control shortens one bookmark by a
+  character. A separate check compares
+  each field's bookmark name, number switch and position with its
+  `{% xref /%}`, and the paragraph each bookmark opens in with the item
+  marked with that id. A field that points at another item showing the same
+  number, or that sits somewhere else, also fails. LibreOffice recalculates REF fields when it renders the
+  PDF and keeps the period that Word drops (`2.(a)(i)`), so the PDF checks
+  expect that form.
 
 A check that finds a mismatch publishes nothing and leaves existing outputs,
 including an earlier `<stem>.verification.json`, as they were. It writes
@@ -631,6 +723,135 @@ such as an unclosed tag, and headings below `###`.
   may nest and may sit inside bold or italic text. A signer's name can hold
   one when written as content:
   `{% signer date="Date: ___" %}{% fill %}Name{% /fill %}, Director{% /signer %}`.
+  Signer content is one line of text. A second line, a line break, or a tag
+  on its own line after the name fails with `INVALID_SIGNER`.
+- `{% u %}Purchase Price{% /u %}` underlines its content (single underline)
+  and nothing outside it, so `{% u %}Purchase Price{% /u %}.` leaves the
+  period plain. Use it for defined terms where they are defined, run-in
+  headings (`Section 2.04` then a tab, then
+  `{% u %}Closing Deliveries and Payments{% /u %}.`) and operator words
+  (`{% u %}less{% /u %} the Closing Debt Amount`). It nests with bold,
+  italic, fill-ins and `{% literal %}`, and takes no attributes. An empty
+  `{% u %}` fails with `INVALID_UNDERLINE`; `<u>…</u>` fails as HTML.
+- `{% fnref id="price" /%}` places a footnote reference, and a top-level
+  `{% footnote id="price" %}See Schedule A.{% /footnote %}` block holds its
+  text. Put each block anywhere at the top level, such as after the paragraph
+  that references it. A note with several paragraphs puts the tags on their
+  own lines and the paragraphs, separated by blank lines, between them. The id
+  only pairs a reference with its block: notes are numbered 1, 2, 3 in the
+  order of their references. A note may hold bold, italic, `{% u %}`,
+  `{% fill %}` and `{% literal %}` text, but no line break, list, table,
+  heading or other footnote. Each reference needs exactly one block and each
+  block exactly one reference; a reference may sit in a heading, list item,
+  quote or table cell, but not inside `{% fill %}` or `{% literal %}`. Errors
+  are `INVALID_FOOTNOTE`, `NESTED_FOOTNOTE`, `DUPLICATE_FOOTNOTE_ID`,
+  `DUPLICATE_FOOTNOTE_REFERENCE`, `FOOTNOTE_REFERENCE_WITHOUT_BODY` and
+  `FOOTNOTE_BODY_WITHOUT_REFERENCE`, each with its line. Markdown `[^1]`
+  footnotes are not part of the grammar.
+- `{% xref to="escrow-release" /%}` is a cross-reference: a Word REF field
+  that shows the number of the list item marked `{% #escrow-release %}` and
+  updates when the document is renumbered. Mark the target by ending a
+  numbered list item (or a heading, which becomes a bookmark only) with
+  `{% #id %}`, where the id is lowercase kebab-case and unique in the
+  document. In the output, each id is a Word bookmark with its hyphens turned
+  into underscores (`escrow_release`). A longer id than Word's 40-character
+  limit keeps 31 characters plus an 8-digit hash. The field shows the full
+  number by default, `2(a)(i)`, as Word writes it (the period of `2.` is
+  dropped before `(`). `number="paragraph"` shows the item's own number,
+  `(i)`. `format="section"` puts `Section ` in front, as plain text. The
+  field is a hyperlink to its target (Ctrl-click in Word) and carries the
+  number as its cached result, so the document reads correctly before
+  anyone updates fields. An xref must name a numbered list item or, with
+  `heading-numbers: legal` (below), a numbered heading. An xref may sit in body text, a list item, a quote, a
+  table cell or a footnote, but not inside `{% fill %}` or `{% literal %}`.
+  Errors are `XREF_UNKNOWN_ID` (naming the missing id),
+  `XREF_TARGET_NOT_NUMBERED`, `INVALID_CROSS_REFERENCE`, `INVALID_ID`,
+  `ID_PLACEMENT`, `DUPLICATE_ID` and `ID_COLLISION`, each with its line.
+- `{% xref to="adjustment-b-ii" number="relative" /%}` shows the number
+  relative to where the xref sits: Word's `\r` switch
+  (` REF adjustment_b_ii \r \h `). It is the full number less the leading
+  levels the target shares with that place, and the target's own level is
+  always kept. From inside `Section 2.02(a)` it reads `(b)(ii)`, from
+  `2.02(b)(i)` or the target itself `(ii)`, and from `Section 2.03(a)` or
+  another Article `Section 2.02(b)(ii)`. Word measures the place from the
+  last numbered paragraph of the target's own list at or before the xref's
+  paragraph, not from the xref's paragraph. So a plain paragraph or table
+  cell under `Section 2.02` reads `(b)`, and an xref under the headings to
+  an item of a list before them reads `(b)` when that list last numbered
+  `2(b)`. In a footnote the number is full. When the document is
+  renumbered, the field follows once fields are updated (measured in Word
+  16.114, `scripts/oracle/word/evidence/issue-1258-word-16.114.json`).
+  `number="relative"` takes no `format`. LibreOffice, which renders the PDF,
+  numbers some places differently, so these fail with their line:
+  - `XREF_RELATIVE_ACROSS_LISTS`: to an item of an ordered list outside
+    numbered headings, the xref must sit before every such list, or after an
+    item of its target's own list (lists that continue each other count as
+    one), with no other list starting in between;
+  - `XREF_FULL_NUMBER_UNDER_ARTICLE`: to a clause placed directly under an
+    Article, the xref must sit in or after that Article's clauses, before
+    the next heading, where both show `(a)`; elsewhere Word shows
+    `ARTICLE II(a)` and LibreOffice `Section 2.01(a)`. Relative xrefs to
+    other targets may sit among such clauses (measured in
+    `scripts/oracle/word/evidence/issue-1284-word-16.114.json`).
+- `{% xref to="purchase-price-adjustment" show="text" /%}` shows the target's
+  text instead of its number. This is a REF field with no number switch
+  (` REF purchase_price_adjustment \h `), the field Word's Insert >
+  Cross-reference writes for "Bookmark text". It shows the text of the heading
+  or list item without its number, so a text reference to
+  `Section 1.01 Purchase Price Adjustment` shows `Purchase Price Adjustment`.
+  Footnote reference marks are left out too, and a fill keeps its brackets.
+  The target may be any heading or list item with an id, numbered or not.
+  Word copies the target's own formatting into the result, keeping an
+  italic word italic and a fill highlighted, so the cached result does the
+  same. `show="text"` takes no `number` or `format`. It cannot sit inside
+  bold, italic or `{% u %}`, because Word drops that formatting when it
+  updates the field (`INVALID_CROSS_REFERENCE`). In a bold table header row
+  it is not bolded. A text target that holds an xref or a line break, or has
+  no text, fails with `XREF_TEXT_TARGET_UNSUPPORTED`. When the heading is
+  reworded in Word, the reference follows once fields are updated, with two
+  exceptions measured in Word 16.114
+  (`scripts/oracle/word/evidence/issue-1259-word-16.114.json`). The bookmark
+  covers the heading's text but stops before its paragraph mark, the same
+  extent Word gives a heading of its own:
+  - Text typed at the start of the heading, or anywhere inside it, stays in
+    the bookmark.
+  - Text typed at the very end of the heading lands after the bookmark, so
+    the reference keeps the old text. Replacing the heading's last word
+    does the same: "Purchase Price Adjustment" edited to "Purchase Price
+    True-Up" leaves the reference showing "Purchase Price". Type new words
+    before the heading's last character, and delete old ones afterwards.
+    Word's own heading-text cross-reference uses a bookmark of the same
+    extent and behaves the same way.
+  - Selecting the whole heading text and typing over it deletes the
+    bookmark. Every reference to the heading, number or text, then shows
+    "Error! Reference source not found." Edit inside the text instead.
+- Frontmatter `heading-numbers: legal` numbers the headings. Each `##` is
+  `ARTICLE I`, `ARTICLE II`, …, and each `###` is `Section 1.01`,
+  `Section 1.02`, …, restarting under each Article. The title (`#`) is not
+  numbered. Write only the heading text: `## ARTICLE IV Definitions` fails
+  with `DUPLICATE_HEADING_NUMBER`. The numbers come from the Heading 1 and
+  Heading 2 styles, so a paragraph set to Heading 2 in Word becomes the next
+  Section, and every later number and cross-reference follows when fields
+  are updated. Ordered lists under a numbered heading are its clauses:
+  `1.` is `(a)`, a nested list `(i)`, then `(A)`. They start again at `(a)`
+  under each heading. The first list under a heading starts at `1.`, and a
+  later list under the same heading continues the one before it
+  (`HEADING_LIST_START` otherwise). An xref to a heading shows its label in
+  both forms (`Section 2.04`). An xref to a clause shows `Section 2.04(b)(i)`,
+  or `(i)` with `number="paragraph"`. `format="section"` is refused for these
+  targets, because their number already includes the word. A `###` needs a
+  `##` before it (`HEADING_NUMBER_SKIPS_LEVEL`). Clauses may sit directly
+  under an Article only when no Section of it follows
+  (`SECTION_AFTER_ARTICLE_CLAUSES`: Word would number that Section N.02).
+  An xref to such a clause must use `number="paragraph"`
+  (`XREF_FULL_NUMBER_UNDER_ARTICLE`), because Word shows its full number as
+  `ARTICLE II(a)` and LibreOffice as `Section 2.01(a)`. Use
+  `{% center %}**EXHIBIT A**{% /center %}` for a heading that should not be
+  numbered. Without the key, headings are unnumbered and a literal number
+  (`## 2.04 Purchase Price`) is plain text.
+- A source holding a control character that a Word document cannot hold
+  (U+0000–U+001F other than tab, line feed and carriage return) fails with
+  `INVALID_CHARACTER` and its line.
 - Bare brackets are ordinary text, never highlighted and never an error, even
   when unbalanced: `"[t]he Company"`, `[sic]`, `Section 2[(b)]`. A legend is
   never highlighted, so `{% fill %}` is not allowed inside it.
@@ -695,6 +916,7 @@ discard those edits.
 | `<!-- page-numbers -->` | frontmatter `page-numbers: true` |
 | `<!-- section: x footer="…" -->` | `{% section footer="…" /%}` |
 | `## 1. Heading` with a literal number, `(a) text` | `## Heading` plus an ordered list (real numbering) |
+| `<u>Purchase Price</u>` | `{% u %}Purchase Price{% /u %}` |
 | `[Effective Date]` as a highlighted blank | `{% fill %}Effective Date{% /fill %}` (or frontmatter `fill-ins: brackets`) |
 | `document_id:` frontmatter | `title:` / `author:` / `date:` |
 
@@ -711,10 +933,12 @@ template-backed `compile-greenfield` command is unchanged.
 disposable profile, then checks the `pdftotext -raw` text layer
 (content-stream order, which for LibreOffice output is document order page by
 page; a table row split across pages comes out cell fragment by cell
-fragment). Each
+fragment). It also extracts the `pdftotext -layout` text of each page
+(`layoutPageTexts`), which keeps word boundaries that the raw text can lose
+when LibreOffice exports a justified line without space glyphs. Each
 `requiredText` entry must appear within a single rendered page (anywhere on
-it, headers and footers included), compared with whitespace collapsed and no
-other normalization. An empty PDF or an empty text layer fails. Missing
+it, headers and footers included, in either its raw or its layout text),
+compared with whitespace collapsed and no other normalization. An empty PDF or an empty text layer fails. Missing
 tools report `not_run`, never a pass. The input DOCX is copied, never
 modified; an `outputPdfPath` that aliases it is refused. The PDF reaches
 `outputPdfPath` only when every check passes, through a staged file renamed
@@ -732,3 +956,11 @@ const verdict = await renderPlainPdf({
 });
 // verdict.status: 'passed' | 'failed' | 'not_run'; verdict.pageTexts: each page's text, when extraction ran
 ```
+
+Annotation replies may be declared before their parents. Projection schedules
+parents first and rejects cyclic reply graphs. A reply projected as a comment
+requires its parent to be projected as a comment too.
+
+Both edit-pair export functions reject source-only IR whose omitted before text
+has not yet been resolved against the pinned source. Compile it first and export
+from the resulting IR.

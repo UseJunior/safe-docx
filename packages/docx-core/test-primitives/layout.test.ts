@@ -33,7 +33,7 @@ describe('layout mutations', () => {
       insertParagraphBookmarks(doc, 'mcp_test');
       const p = doc.getElementsByTagNameNS(OOXML.W_NS, W.p).item(0)!;
       paraId = getParagraphBookmarkId(p)!;
-      expect(paraId).toMatch(/^_bk_[0-9a-f]{12}$/);
+      expect(paraId).toMatch(/^_bk_[0-9a-f]{10}$/);
       beforeCount = doc.getElementsByTagNameNS(OOXML.W_NS, W.p).length;
     });
 

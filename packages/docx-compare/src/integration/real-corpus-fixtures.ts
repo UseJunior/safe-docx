@@ -183,6 +183,71 @@ function selectDeletionParagraph(
   };
 }
 
+function bookmarkId(marker: XmlElement): string | null {
+  return marker.getAttribute('w:id') ?? marker.getAttributeNS(W_NS, 'id');
+}
+
+/**
+ * Bookmark boundaries inside `paragraph` whose partner lies outside it, in
+ * document order: a `w:bookmarkStart` whose `w:bookmarkEnd` follows the
+ * paragraph, or a `w:bookmarkEnd` whose `w:bookmarkStart` precedes it.
+ * Removing the paragraph together with one of these leaves its partner
+ * unpaired.
+ */
+export function spanningBookmarkBoundaries(paragraph: XmlElement): XmlElement[] {
+  const markers = Array.from(paragraph.getElementsByTagName('*')).filter(
+    (node) => node.tagName === 'w:bookmarkStart' || node.tagName === 'w:bookmarkEnd',
+  );
+  const idsOf = (tagName: string): Set<string | null> =>
+    new Set(markers.filter((node) => node.tagName === tagName).map(bookmarkId));
+  const startIds = idsOf('w:bookmarkStart');
+  const endIds = idsOf('w:bookmarkEnd');
+  return markers.filter((marker) =>
+    marker.tagName === 'w:bookmarkStart'
+      ? !endIds.has(bookmarkId(marker))
+      : !startIds.has(bookmarkId(marker)),
+  );
+}
+
+/**
+ * Remove a body-level paragraph without unpairing a bookmark that crosses its
+ * boundary. Each spanning `w:bookmarkStart`/`w:bookmarkEnd` moves to the
+ * deletion point: the start of the next body paragraph (after its `w:pPr`), or
+ * the deleted paragraph's own place in `w:body` when a table, section
+ * properties or nothing follows it. The bookmark survives, its id and name are
+ * unchanged, and every end still closes an earlier start.
+ *
+ * Bookmarks wholly inside the paragraph are deleted with it, which removes
+ * both boundaries and so keeps the rest of the document paired.
+ *
+ * This preserves valid pairs; it does not repair malformed input (missing or
+ * duplicate ids, an end before its own start). A moved boundary also leaves
+ * any wrapper it sat in (w:hyperlink, w:ins, w:sdt, ...), so the helper suits
+ * the pinned NVCA fixtures, whose spanning boundaries are direct w:p children,
+ * rather than revision-bearing documents.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+ * @see https://github.com/UseJunior/safe-docx/issues/1255
+ */
+export function removeParagraphKeepingBookmarksPaired(paragraph: XmlElement): void {
+  const parent = paragraph.parentNode;
+  if (!parent) throw new Error('paragraph to delete has no parent');
+  const boundaries = spanningBookmarkBoundaries(paragraph);
+  let next = paragraph.nextSibling;
+  while (next && next.nodeType !== 1) next = next.nextSibling;
+  if (next && (next as XmlElement).tagName === 'w:p') {
+    const properties = Array.from(next.childNodes).find(
+      (child) => child.nodeType === 1 && (child as XmlElement).tagName === 'w:pPr',
+    );
+    const anchor = properties ? properties.nextSibling : next.firstChild;
+    for (const boundary of boundaries) next.insertBefore(boundary, anchor);
+  } else {
+    for (const boundary of boundaries) parent.insertBefore(boundary, paragraph);
+  }
+  parent.removeChild(paragraph);
+}
+
 export async function deleteOneRealParagraph(
   original: Buffer,
   entryId?: string,
@@ -197,7 +262,7 @@ export async function deleteOneRealParagraph(
     fieldTargetNames(documentXml),
     entryId ? preferredDeletionTargets[entryId] : undefined,
   );
-  selected.paragraph.parentNode?.removeChild(selected.paragraph);
+  removeParagraphKeepingBookmarksPaired(selected.paragraph);
   zip.file('word/document.xml', new XMLSerializer().serializeToString(document));
   return {
     revised: await zip.generateAsync({ type: 'nodebuffer' }),

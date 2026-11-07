@@ -1,0 +1,251 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-04",
+  "issue": 1260,
+  "purpose": "Whether the REF fields `create` writes for {% xref %} tags stay live through a Word edit that renumbers their targets, so that importing the edited document restores each field as an xref tag over the result Word wrote, and compile writes the same field back (#1260).",
+  "word": {
+    "platform": "Mac",
+    "version": "16.114.3"
+  },
+  "procedure": "`sourceMarkdoc` was compiled with `createDocumentFromMarkdoc` (packages/docx-markdoc/src/create/create.ts). The DOCX was staged in Word's sandbox container and opened in the background, and then, through AppleScript bound to that document by name: a paragraph `Services` was inserted after the list paragraph `Products`, `update field` ran on every field of the main story and of each footnote, the list label and text of each paragraph and the code and result of each field were read (`after`), the document was saved as a copy (`issue-1260-word-16.114.docx`, beside this file), and the copy was closed by name. `before` is the same read of the unedited document after `update field`, closed without saving.",
+  "finding": "Before the edit, Word's field results equal the cached results `create` wrote for all seven REF fields. Inserting `Services` as clause (b) renumbers Price to (c), and after `update field` the `\\w` references to Price and to its subclause read `Section 1.01(c)` and `Section 1.01(c)(i)` in the body, the table cell and the footnote. Word keeps every field instruction and bookmark name, so the saved copy holds the same seven REF fields with refreshed results.",
+  "sourceMarkdoc": "---\ntitle: Supply Agreement\nheading-numbers: legal\n---\n\n# SUPPLY AGREEMENT\n\n## Definitions {% #definitions %}\n\n### Defined Terms {% #defined-terms %}\n\n1. Products {% #products %}\n2. Price {% #price %}\n   1. Adjustment {% #price-adjustment %}\n\n## Delivery {% #delivery %}\n\n### Delivery Terms {% #delivery-terms %}\n\nDeliveries follow {% xref to=\"defined-terms\" /%} and clause {% xref to=\"price-adjustment\" number=\"paragraph\" /%} of it.\n\nThe {% xref to=\"delivery-terms\" show=\"text\" /%} section governs.\n\n{% xref to=\"price\" /%} sets the price.\n\nNotes apply.{% fnref id=\"note\" /%}\n\n{% table %}\n* Term\n* Reference\n---\n* Adjustment\n* {% xref to=\"price-adjustment\" /%}\n{% /table %}\n\n{% footnote id=\"note\" %}Compare {% xref to=\"price-adjustment\" /%} and the {% xref to=\"products\" show=\"text\" /%} clause.{% /footnote %}\n",
+  "before": {
+    "paragraphs": [
+      {
+        "label": "",
+        "text": "SUPPLY AGREEMENT\r"
+      },
+      {
+        "label": "ARTICLE I",
+        "text": "Definitions\r"
+      },
+      {
+        "label": "Section 1.01",
+        "text": "Defined Terms\r"
+      },
+      {
+        "label": "(a)",
+        "text": "Products\r"
+      },
+      {
+        "label": "(b)",
+        "text": "Price\r"
+      },
+      {
+        "label": "(i)",
+        "text": "Adjustment\r"
+      },
+      {
+        "label": "ARTICLE II",
+        "text": "Delivery\r"
+      },
+      {
+        "label": "Section 2.01",
+        "text": "Delivery Terms\r"
+      },
+      {
+        "label": "",
+        "text": "Deliveries follow Section 1.01 and clause (i) of it.\r"
+      },
+      {
+        "label": "",
+        "text": "The Delivery Terms section governs.\r"
+      },
+      {
+        "label": "",
+        "text": "Section 1.01(b) sets the price.\r"
+      },
+      {
+        "label": "",
+        "text": "Notes apply.\u0002\r"
+      },
+      {
+        "label": "",
+        "text": "Term\r\u0007"
+      },
+      {
+        "label": "",
+        "text": "Reference\r\u0007"
+      },
+      {
+        "label": "",
+        "text": "\r\u0007"
+      },
+      {
+        "label": "",
+        "text": "Adjustment\r\u0007"
+      },
+      {
+        "label": "",
+        "text": "Section 1.01(b)(i)\r\u0007"
+      },
+      {
+        "label": "",
+        "text": "\r\u0007"
+      },
+      {
+        "label": "",
+        "text": "\r"
+      }
+    ],
+    "fields": [
+      {
+        "story": "body",
+        "instruction": " REF defined_terms \\w \\h ",
+        "result": "Section 1.01"
+      },
+      {
+        "story": "body",
+        "instruction": " REF price_adjustment \\n \\h ",
+        "result": "(i)"
+      },
+      {
+        "story": "body",
+        "instruction": " REF delivery_terms \\h ",
+        "result": "Delivery Terms"
+      },
+      {
+        "story": "body",
+        "instruction": " REF price \\w \\h ",
+        "result": "Section 1.01(b)"
+      },
+      {
+        "story": "body",
+        "instruction": " REF price_adjustment \\w \\h ",
+        "result": "Section 1.01(b)(i)"
+      },
+      {
+        "story": "footnote",
+        "instruction": " REF price_adjustment \\w \\h ",
+        "result": "Section 1.01(b)(i)"
+      },
+      {
+        "story": "footnote",
+        "instruction": " REF products \\h ",
+        "result": "Products"
+      }
+    ]
+  },
+  "after": {
+    "paragraphs": [
+      {
+        "label": "",
+        "text": "SUPPLY AGREEMENT\r"
+      },
+      {
+        "label": "ARTICLE I",
+        "text": "Definitions\r"
+      },
+      {
+        "label": "Section 1.01",
+        "text": "Defined Terms\r"
+      },
+      {
+        "label": "(a)",
+        "text": "Products\r"
+      },
+      {
+        "label": "(b)",
+        "text": "Services\r"
+      },
+      {
+        "label": "(c)",
+        "text": "Price\r"
+      },
+      {
+        "label": "(i)",
+        "text": "Adjustment\r"
+      },
+      {
+        "label": "ARTICLE II",
+        "text": "Delivery\r"
+      },
+      {
+        "label": "Section 2.01",
+        "text": "Delivery Terms\r"
+      },
+      {
+        "label": "",
+        "text": "Deliveries follow Section 1.01 and clause (i) of it.\r"
+      },
+      {
+        "label": "",
+        "text": "The Delivery Terms section governs.\r"
+      },
+      {
+        "label": "",
+        "text": "Section 1.01(c) sets the price.\r"
+      },
+      {
+        "label": "",
+        "text": "Notes apply.\u0002\r"
+      },
+      {
+        "label": "",
+        "text": "Term\r\u0007"
+      },
+      {
+        "label": "",
+        "text": "Reference\r\u0007"
+      },
+      {
+        "label": "",
+        "text": "\r\u0007"
+      },
+      {
+        "label": "",
+        "text": "Adjustment\r\u0007"
+      },
+      {
+        "label": "",
+        "text": "Section 1.01(c)(i)\r\u0007"
+      },
+      {
+        "label": "",
+        "text": "\r\u0007"
+      },
+      {
+        "label": "",
+        "text": "\r"
+      }
+    ],
+    "fields": [
+      {
+        "story": "body",
+        "instruction": " REF defined_terms \\w \\h ",
+        "result": "Section 1.01"
+      },
+      {
+        "story": "body",
+        "instruction": " REF price_adjustment \\n \\h ",
+        "result": "(i)"
+      },
+      {
+        "story": "body",
+        "instruction": " REF delivery_terms \\h ",
+        "result": "Delivery Terms"
+      },
+      {
+        "story": "body",
+        "instruction": " REF price \\w \\h ",
+        "result": "Section 1.01(c)"
+      },
+      {
+        "story": "body",
+        "instruction": " REF price_adjustment \\w \\h ",
+        "result": "Section 1.01(c)(i)"
+      },
+      {
+        "story": "footnote",
+        "instruction": " REF price_adjustment \\w \\h ",
+        "result": "Section 1.01(c)(i)"
+      },
+      {
+        "story": "footnote",
+        "instruction": " REF products \\h ",
+        "result": "Products"
+      }
+    ]
+  }
+}

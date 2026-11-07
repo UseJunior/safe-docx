@@ -22,13 +22,13 @@ Read document content (DOCX, ODT, or Google Doc). Output is token-limited (~14k 
 | `format` | `enum("toon", "json", "simple")` | no |  |
 | `comment_rendering` | `enum("none", "paragraph_notes", "endnotes", "inline_markers")` | no | How to render comments in read_file output. Use "paragraph_notes" (default) for paragraph-local comment threads, "inline_markers" to add `[cm-start:N]`/`[cm-end:N]` milestones in TOON output (combined with the thread blocks), "endnotes" to collect threaded comments into a trailing #COMMENTS block in TOON output, or "none" for the legacy output with no comment rendering. |
 | `show_formatting` | `boolean` | no | When true (default), shows inline formatting tags (<b>, <i>, <u>, <highlighting>, <a>). When false, emits plain text with no inline tags. |
-| `include_fingerprint` | `boolean` | no | When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph's normalized visible text; NOT an edit anchor. Edit tools accept a `_bk_*` ID, or (DOCX only) any other bookmark name whose w:id-paired range covers exactly that one paragraph. No effect on TOON/simple output. Ignored for Google Docs and ODT. |
+| `include_fingerprint` | `boolean` | no | When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<16hex>") on each paragraph. Read-only metadata derived from the paragraph's normalized visible text; NOT an edit anchor. Edit tools accept a `_bk_*` ID, or (DOCX only) any other bookmark name whose w:id-paired range covers exactly that one paragraph. No effect on TOON/simple output. Ignored for Google Docs and ODT. |
 | `include_fingerprint_ordinal` | `boolean` | no | When true together with include_fingerprint and format="json", add duplicate-disambiguation metadata to each paragraph: `content_fingerprint_ordinal` (1-based document-order position among paragraphs sharing the same content_fingerprint), `content_fingerprint_count_in_document` (total paragraphs sharing it, document-wide even under pagination), and `portable_paragraph_ref` ("<content_fingerprint>#<ordinal>"). Read-only disambiguator, NOT an edit anchor; reordering duplicates may change ordinals. No effect without include_fingerprint, and no effect on TOON/simple output. Ignored for Google Docs and ODT. Default: false. |
 | `include_footnotes` | `boolean` | no | Single-call body + footnotes retrieval. When true and format="json", the response gains a document-wide TOP-LEVEL `footnotes` array — each entry is {id, display_number, ref_paragraph_ids (an ARRAY of the paragraph ids that reference it), paragraphs[] ({text, tagged_text with run-level formatting tags, style})} — preserving multi-paragraph bodies and footnote-internal bold/italic/citation formatting. This top-level array is NOT inlined into content[], so the 1:1 content[] index invariant is preserved. For backward compatibility a lightweight per-node `footnotes` array ({id, display_number, text}) is ALSO attached to each paragraph node it anchors, windowed to the returned slice. When true and format="toon", a trailing `#FOOTNOTES` sidecar block is appended (symmetric with `#COMMENTS`). Footnotes with an empty body or display_number 0 are excluded. No effect on simple output. Ignored for Google Docs and ODT. Default: false. |
 
 ## `get_document_outline`
 
-Get a compact structural map of a document's headings (DOCX only). Each entry is `{paragraph_id, text, level, source}`. Deterministic sources are `word_style`, `list_metadata`, and `outline_level`, selected in that precedence order and included by default. Heuristic sources are `run_in_header`, `title_with_period`, `title_with_colon`, `title_caps_centered`, and `title_bare`; set include_heuristic_headings=true to include them. JSON preserves levels 1-9; Markdown clamps visual ATX depth to 6. Read-only.
+Get a compact structural map of a document's headings (DOCX only). Each entry is `{paragraph_id, text, level, source}`, plus `list_label` (e.g. "Section 1.01") when the heading is numbered; Markdown puts the label before the text. Deterministic sources are `word_style`, `list_metadata`, and `outline_level`, selected in that precedence order and included by default. Heuristic sources are `run_in_header`, `title_with_period`, `title_with_colon`, `title_caps_centered`, and `title_bare`; set include_heuristic_headings=true to include them. JSON preserves levels 1-9; Markdown clamps visual ATX depth to 6. Read-only.
 
 - readOnly: `true`
 - destructive: `false`
@@ -171,7 +171,7 @@ Convert a DOCX document to OpenDocument Text (.odt) using the native model-to-mo
 
 ## `format_layout`
 
-Apply layout controls (paragraph spacing, table row height, cell padding). Google Docs supports paragraph spacing only. Surface: revisionable — DOCX geometry edits emit native property-change revisions (w:pPrChange/w:trPrChange/w:tcPrChange).
+Apply layout controls (paragraph spacing, paragraph alignment and pagination flags, table row height, cell padding). paragraph_properties sets alignment (w:jc) and sets (true) or removes (false) direct pageBreakBefore/keepNext/keepLines; requests that change nothing are no-ops. Google Docs supports paragraph spacing only. Surface: revisionable — DOCX geometry edits emit native property-change revisions (w:pPrChange/w:trPrChange/w:tcPrChange).
 
 - readOnly: `false`
 - destructive: `true`
@@ -182,6 +182,7 @@ Apply layout controls (paragraph spacing, table row height, cell padding). Googl
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `strict` | `boolean` | no |  |
 | `paragraph_spacing` | `object` | no |  |
+| `paragraph_properties` | `object` | no |  |
 | `row_height` | `object` | no |  |
 | `cell_padding` | `object` | no |  |
 

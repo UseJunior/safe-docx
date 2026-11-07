@@ -191,6 +191,44 @@ export function buildPPrChangeElement(oldPPr: Element | null, ctx: RevisionConte
   return pPrChange;
 }
 
+function revisionAuthor(el: Element): string | null {
+  return el.getAttributeNS(OOXML.W_NS, 'author') || el.getAttribute('w:author') || null;
+}
+
+/**
+ * The author of a paragraph's existing direct `w:pPrChange` when it differs
+ * from `ctx.author`, otherwise `null`.
+ */
+export function foreignPPrChangeAuthor(pPr: Element | null, ctx: RevisionContext): string | null {
+  if (!pPr) return null;
+  for (const child of childElements(pPr)) {
+    if (child.namespaceURI === OOXML.W_NS && child.localName === 'pPrChange') {
+      const author = revisionAuthor(child);
+      if (author !== ctx.author) return author ?? '';
+    }
+  }
+  return null;
+}
+
+/**
+ * Record a paragraph-property edit on `pPr` as a `w:pPrChange`.
+ *
+ * CT_PPr permits at most one `w:pPrChange`. When the paragraph already has one
+ * by the same author, it is kept: its snapshot is the older baseline, so a
+ * reject restores the state before every edit in the series (Word likewise
+ * keeps the original snapshot when a tracked paragraph is reformatted). Any
+ * other wrapper is replaced by a new snapshot of `oldPPr`.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ */
+export function recordPPrChange(pPr: Element, oldPPr: Element | null, ctx: RevisionContext): void {
+  const existing = childElements(pPr)
+    .filter((child) => child.namespaceURI === OOXML.W_NS && child.localName === 'pPrChange');
+  if (existing.length === 1 && revisionAuthor(existing[0]!) === ctx.author) return;
+  for (const stale of existing) pPr.removeChild(stale);
+  pPr.appendChild(buildPPrChangeElement(oldPPr, ctx));
+}
+
 /**
  * Build a `<w:trPrChange>` wrapper containing the previous row properties.
  *

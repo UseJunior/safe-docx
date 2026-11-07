@@ -29,7 +29,7 @@ const document = await generateDocx({
 await writeFile('hello.docx', document);
 ```
 
-`DocumentSpec` supports sections, headers and footers, fields, styles, tables, numbering, and comments. The supported runtime uses `jszip` and `@xmldom/xmldom`; it does not require Word, LibreOffice, Python, or .NET.
+`DocumentSpec` supports sections, headers and footers, fields, styles, tables, numbering, footnotes, and comments. The supported runtime uses `jszip` and `@xmldom/xmldom`; it does not require Word, LibreOffice, Python, or .NET.
 
 For two-document comparison, use [`@usejunior/docx-compare`](../docx-compare). For agent-driven editing, use [`@usejunior/safe-docx`](../safe-docx).
 

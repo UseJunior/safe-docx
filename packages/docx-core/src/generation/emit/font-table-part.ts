@@ -69,6 +69,7 @@ function walkBlocks(blocks: BlockSpec[], add: (props?: Pick<RunProps, 'font'>) =
     if (block.kind === 'paragraph') {
       for (const run of block.runs) {
         if (run.kind === 'text' || run.kind === 'field') add(run);
+        else if (run.kind === 'footnote') walkBlocks(run.blocks, add);
       }
     } else {
       for (const row of block.rows) {

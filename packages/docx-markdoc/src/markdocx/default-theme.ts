@@ -51,11 +51,11 @@ function paragraph(
 }
 
 function renderText(text: string, style: InlineStyle): InlineSpec[] {
-  return [{kind: 'text', text, bold: style.bold, italic: style.italic}];
+  return [{kind: 'text', text, bold: style.bold, italic: style.italic, ...(style.underline ? {underline: style.underline} : {})}];
 }
 
 function fieldRuns(text: string, filled: boolean, style: InlineStyle): InlineSpec[] {
-  return [{kind: 'text', text: filled ? text : `[${text}]`, bold: true, italic: style.italic}];
+  return [{kind: 'text', text: filled ? text : `[${text}]`, bold: true, italic: style.italic, ...(style.underline ? {underline: style.underline} : {})}];
 }
 
 const styles: StyleSpec[] = [

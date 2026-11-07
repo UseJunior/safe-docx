@@ -1,5 +1,5 @@
 import type { Node as MarkdocNode } from '@markdoc/markdoc';
-import type { InlineSpec, NumberingSpec, ParagraphSpec, TableSpec } from '@usejunior/docx-core';
+import { bookmarkNameForSlug, type CrossReferenceNumber, type InlineSpec, type NumberingSpec, type ParagraphSpec, type TableSpec } from '@usejunior/docx-core';
 import type { BlockTagPlugin, InlineStyle, InlineTagPlugin, RenderApi, Theme } from '../markdocx/engine.js';
 import {
   CREATION_STYLE,
@@ -8,8 +8,12 @@ import {
   twipsFromPt,
   type CreationProfile,
 } from './profile.js';
+import { CreationListNumbering, type HeadingNumberScheme } from './list-numbering.js';
 
 type TextRun = Extract<InlineSpec, { kind: 'text' }>;
+
+/** The generation number form of each `{% xref number="…" %}` value (`XREF_NUMBERS`). */
+const XREF_NUMBER_FORMS: Readonly<Record<string, CrossReferenceNumber>> = { full: 'fullContext', paragraph: 'paragraph', relative: 'relative' };
 
 /** Merge adjacent text runs with identical formatting. */
 function coalesce(runs: InlineSpec[]): InlineSpec[] {
@@ -19,6 +23,7 @@ function coalesce(runs: InlineSpec[]): InlineSpec[] {
     if (run.kind === 'text' && previous?.kind === 'text'
       && Boolean(previous.bold) === Boolean(run.bold)
       && Boolean(previous.italic) === Boolean(run.italic)
+      && previous.underline === run.underline
       && previous.highlight === run.highlight) {
       previous.text += run.text;
       continue;
@@ -34,6 +39,7 @@ function textRun(text: string, style: InlineStyle, highlighted: boolean): TextRu
     text,
     ...(style.bold ? { bold: true } : {}),
     ...(style.italic ? { italic: true } : {}),
+    ...(style.underline ? { underline: style.underline } : {}),
     ...(highlighted ? { highlight: 'yellow' as const } : {}),
   };
 }
@@ -48,9 +54,13 @@ function textRun(text: string, style: InlineStyle, highlighted: boolean): TextRu
  * legends switch highlighting off.
  */
 export class CreationTheme implements Theme {
-  readonly numbering: NumberingSpec[] = [];
-  /** Numbering instance for the top-level list being rendered (one per list, so each list restarts). */
-  private currentList: { numId: string } | null = null;
+  private readonly lists: CreationListNumbering;
+  /** Numbering definitions the rendered lists and numbered headings use, for `DocumentSpec.numbering`. */
+  get numbering(): readonly NumberingSpec[] {
+    return this.lists.definitions;
+  }
+  /** Numbering instance for the top-level list being rendered, and the level its top items take. */
+  private currentList: { numId: string; ilvl: number } | null = null;
   private depth = 0;
   private literalDepth = 0;
   private highlightOff = 0;
@@ -60,8 +70,12 @@ export class CreationTheme implements Theme {
    * @param fillIns 'markup' (default): only {% fill %} content is highlighted
    * and bare brackets are literal. 'brackets': the v0.24 behaviour, where every
    * […] is highlighted.
+   * @param headingNumbers frontmatter `heading-numbers`: how `##` and `###`
+   * headings are numbered, or undefined for unnumbered headings.
    */
-  constructor(readonly profile: CreationProfile, readonly fillIns: 'markup' | 'brackets' = 'markup') {}
+  constructor(readonly profile: CreationProfile, readonly fillIns: 'markup' | 'brackets' = 'markup', headingNumbers?: HeadingNumberScheme) {
+    this.lists = new CreationListNumbering(headingNumbers);
+  }
 
   private paragraph(styleId: string, runs: InlineSpec[], overrides: Partial<Omit<ParagraphSpec, 'kind' | 'runs'>> = {}): ParagraphSpec {
     this.depth = 0;
@@ -82,11 +96,15 @@ export class CreationTheme implements Theme {
     return this.paragraph(CREATION_STYLE.title, runs);
   }
 
+  /** A `##` heading; with heading numbering, its style numbers it ("ARTICLE I"). */
   sectionHeadingParagraph(runs: InlineSpec[]): ParagraphSpec {
+    this.lists.placeHeading();
     return this.paragraph(CREATION_STYLE.heading1, runs);
   }
 
+  /** A `###` heading; with heading numbering, its style numbers it ("Section 1.01"). */
   subHeadingParagraph(runs: InlineSpec[]): ParagraphSpec {
+    this.lists.placeHeading();
     return this.paragraph(CREATION_STYLE.heading2, runs);
   }
 
@@ -141,29 +159,20 @@ export class CreationTheme implements Theme {
 
   listLevel(level: number, _ordered: boolean): { numId: string; ilvl: number; continuationIndentTwips: number; itemAfterTwips: number } {
     if (!this.currentList) throw new Error('list rendered outside a top-level list');
-    return { numId: this.currentList.numId, ilvl: Math.min(level, 2), continuationIndentTwips: 720 * (level + 1), itemAfterTwips: twipsFromPt(this.profile.spacingAfterPt) };
+    return { numId: this.currentList.numId, ilvl: this.currentList.ilvl + Math.min(level, 2), continuationIndentTwips: 720 * (level + 1), itemAfterTwips: twipsFromPt(this.profile.spacingAfterPt) };
   }
 
-  /** Allocate the numbering instance for a top-level list: legal 1./(a)/(i) or bullets, starting at its first marker. */
+  /**
+   * Bind a top-level list to its numbering instance: legal 1./(a)/(i),
+   * bullets, or the clause levels of the heading definition under a
+   * numbered heading. Whether an ordered list continues the previous one or
+   * restarts is decided by {@link CreationListNumbering}.
+   */
   beginList(list: MarkdocNode): void {
     const ordered = list.attributes.ordered === true;
-    const numId = `${ordered ? 'ol' : 'ul'}-${this.numbering.length + 1}`;
     const start = ordered && Number.isInteger(list.attributes.start) ? Number(list.attributes.start) : 1;
-    const formats = ordered
-      ? ([['decimal', '%1.'], ['lowerLetter', '(%2)'], ['lowerRoman', '(%3)']] as const)
-      : ([['bullet', '•'], ['bullet', '◦'], ['bullet', '▪']] as const);
-    this.numbering.push({
-      numId,
-      levels: formats.map(([numFmt, lvlText], ilvl) => ({
-        ilvl,
-        start: ilvl === 0 ? start : 1,
-        numFmt,
-        lvlText,
-        suff: 'tab' as const,
-        indentTwips: { left: 720 * (ilvl + 1), hanging: ordered ? 720 : 360 },
-      })),
-    });
-    this.currentList = { numId };
+    const decision = this.lists.placeTopLevelList(ordered, start, list.children.length);
+    this.currentList = { numId: decision.numId, ilvl: decision.kind === 'heading-level' ? decision.ilvl : 0 };
   }
 
   withoutHighlight<T>(render: () => T): T {
@@ -183,6 +192,31 @@ export class CreationTheme implements Theme {
     } finally {
       this.fillDepth -= 1;
     }
+  }
+
+  /**
+   * Render a footnote body as its own story: fill-in, literal and highlight
+   * state start fresh inside the note and the surrounding paragraph's state is
+   * restored afterwards, so a note never changes how the text around its mark
+   * is highlighted.
+   */
+  footnote<T>(render: () => T): T {
+    const saved = { depth: this.depth, literalDepth: this.literalDepth, highlightOff: this.highlightOff, fillDepth: this.fillDepth };
+    this.depth = 0;
+    this.literalDepth = 0;
+    this.highlightOff = 0;
+    this.fillDepth = 0;
+    try {
+      return render();
+    } finally {
+      ({ depth: this.depth, literalDepth: this.literalDepth, highlightOff: this.highlightOff, fillDepth: this.fillDepth } = saved);
+    }
+  }
+
+  /** A footnote paragraph: no styleId, so docx-core applies FootnoteText. */
+  footnoteParagraph(runs: InlineSpec[]): ParagraphSpec {
+    this.depth = 0;
+    return { kind: 'paragraph', runs: coalesce(runs) };
   }
 
   withLiteral<T>(render: () => T): T {
@@ -208,8 +242,15 @@ function columnWidths(raw: unknown, columns: number, total: number): number[] {
   return widths;
 }
 
-/** Block and inline tag plugins for the creation grammar, closed over one theme instance. */
-export function creationPlugins(theme: CreationTheme): { blockTags: BlockTagPlugin[]; inlineTags: InlineTagPlugin[] } {
+/**
+ * Block and inline tag plugins for the creation grammar, closed over one theme
+ * instance. `footnotes` maps each `{% footnote %}` id to its block, for the
+ * `{% fnref /%}` plugin; validation has already paired every id.
+ */
+export function creationPlugins(
+  theme: CreationTheme,
+  footnotes: ReadonlyMap<string, MarkdocNode> = new Map(),
+): { blockTags: BlockTagPlugin[]; inlineTags: InlineTagPlugin[] } {
   const signerSegment = (api: RenderApi, value: string): InlineSpec[] =>
     api.renderInlineChildren({ type: 'inline', attributes: {}, children: [{ type: 'text', attributes: { content: value }, children: [] }] } as unknown as MarkdocNode, {});
   const blockTags: BlockTagPlugin[] = [
@@ -267,6 +308,41 @@ export function creationPlugins(theme: CreationTheme): { blockTags: BlockTagPlug
   const inlineTags: InlineTagPlugin[] = [
     { tag: 'literal', renderInline: (node, api, style) => theme.withLiteral(() => api.renderInlineChildren(node, style)) },
     { tag: 'fill', renderInline: (node, api, style) => theme.fill(style, () => api.renderInlineChildren(node, style)) },
+    {
+      // The mark carries no run formatting of its own: it takes the
+      // FootnoteReference style whatever bold or underline surrounds it.
+      tag: 'fnref',
+      renderInline: (node, api) => {
+        const body = footnotes.get(String(node.attributes.id));
+        if (!body) throw new Error(`footnote id="${String(node.attributes.id)}" reached rendering without a body`);
+        const blocks = theme.footnote(() => contentParagraphs(body).map((paragraph) =>
+          theme.footnoteParagraph(api.renderInlineChildren(paragraph, {}))));
+        return [{ kind: 'footnote', blocks }];
+      },
+    },
+    {
+      // A REF field to the target's bookmark; docx-core sets its cached
+      // result: the target's number (with number="relative", relative to
+      // where the field sits), or with show="text" its text runs.
+      // "Section " is plain text before the field, so updating the field
+      // never removes it. A text reference carries no formatting of its own:
+      // Word writes its result with the target's formatting (validation
+      // refuses emphasis around one; a bold table header row does not bold it).
+      tag: 'xref',
+      renderInline: (node, _api, style) => {
+        const bookmark = bookmarkNameForSlug(String(node.attributes.to));
+        if (node.attributes.show === 'text') return [{ kind: 'crossReference', bookmark, show: 'text' }];
+        const formatting = {
+          ...(style.bold ? { bold: true } : {}),
+          ...(style.italic ? { italic: true } : {}),
+          ...(style.underline ? { underline: style.underline } : {}),
+        };
+        return [
+          ...(node.attributes.format === 'section' ? theme.renderText('Section ', style) : []),
+          { kind: 'crossReference', bookmark, number: XREF_NUMBER_FORMS[String(node.attributes.number ?? 'full')] ?? 'fullContext', ...formatting },
+        ];
+      },
+    },
   ];
   return { blockTags, inlineTags };
 }

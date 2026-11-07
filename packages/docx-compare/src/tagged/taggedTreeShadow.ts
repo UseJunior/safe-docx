@@ -52,6 +52,8 @@ export interface TaggedTreeShadowInput {
   numberingEnabled?: boolean;
   originalNumberingXml?: string;
   revisedNumberingXml?: string;
+  originalStylesXml?: string;
+  revisedStylesXml?: string;
   /** @internal Operation ranges whose emitted revisions require exact attribution. */
   revisionAttributionRanges?: readonly RevisionAttributionRange[];
   /** @internal Markdoc readability policy for simple replacement gaps. */
@@ -490,6 +492,8 @@ export function buildTaggedTreePublication(
     numberingEnabled: input.numberingEnabled,
     originalNumberingXml: input.originalNumberingXml,
     revisedNumberingXml: input.revisedNumberingXml,
+    originalStylesXml: input.originalStylesXml,
+    revisedStylesXml: input.revisedStylesXml,
     revisionAttributionRanges: input.revisionAttributionRanges,
     minimumRevisionId: input.minimumRevisionId,
   });
@@ -562,6 +566,8 @@ export function runTaggedTreeShadow(input: TaggedTreeShadowInput): TaggedTreeSha
     numberingEnabled: input.numberingEnabled,
     originalNumberingXml: input.originalNumberingXml,
     revisedNumberingXml: input.revisedNumberingXml,
+    originalStylesXml: input.originalStylesXml,
+    revisedStylesXml: input.revisedStylesXml,
   });
   const diagnostics = verifyGlobalEqualContentInvariant(constructed.tree, constructed.moves);
   const shadowXml = buildTaggedTreeShadowXml(input);

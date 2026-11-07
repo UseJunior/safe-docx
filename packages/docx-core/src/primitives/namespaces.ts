@@ -76,6 +76,8 @@ export const W = {
   lvl: 'lvl',
   start: 'start',
   numFmt: 'numFmt',
+  lvlRestart: 'lvlRestart',
+  isLgl: 'isLgl',
   lvlText: 'lvlText',
   suff: 'suff',
   num: 'num',
@@ -134,6 +136,9 @@ export const W = {
   clrSchemeMapping: 'clrSchemeMapping',
   compat: 'compat',
   compatSetting: 'compatSetting',
+  uiPriority: 'uiPriority',
+  semiHidden: 'semiHidden',
+  unhideWhenUsed: 'unhideWhenUsed',
 
   // Styles part + paragraph/run formatting (generation emitters)
   docDefaults: 'docDefaults',
@@ -174,6 +179,7 @@ export const W = {
   footnoteRef: 'footnoteRef',
   separator: 'separator',
   continuationSeparator: 'continuationSeparator',
+  footnotePr: 'footnotePr',
 
   // Endnotes
   endnoteReference: 'endnoteReference',

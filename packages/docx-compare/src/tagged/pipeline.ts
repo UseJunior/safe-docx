@@ -93,6 +93,7 @@ import {
 } from './formattingFidelity.js';
 import { resolveTaggedRevisionAttributions } from './taggedTreeSerializer.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
+import { coalesceProjectionEquivalentBookmarkSplits } from './bookmarkSplitCoalescing.js';
 import { canonicalizeNoteArchiveIds, copiedParagraphNoteIds, separateRepeatedNoteReferences } from './noteReferenceIdentity.js';
 import { alignedInlineFootnoteAnchorPair } from './inlineFootnoteAnchorPair.js';
 import {
@@ -328,7 +329,9 @@ function finalizeTaggedDocumentXml(documentXml: string): string {
     () => allocateRevisionId(revisionIds),
     { repairBookmarkInventory: false },
   );
-  const serialized = new XMLSerializer().serializeToString(document);
+  const serialized = coalesceProjectionEquivalentBookmarkSplits(
+    new XMLSerializer().serializeToString(document),
+  );
   return suppressVolatileTocPagerefCacheRevisions(
     serialized.startsWith('<?xml') ? serialized : XML_DECLARATION + serialized,
   );
@@ -363,12 +366,15 @@ export async function buildStandaloneTaggedPackage(
   await restampCollidingCommentParaIds(originalArchive, revisedArchive);
   await renumberCollidingRelationshipIds(originalArchive, revisedArchive);
 
-  let [originalXml, revisedXml, originalNumberingXml, revisedNumberingXml] = await Promise.all([
-    originalArchive.getDocumentXml(),
-    revisedArchive.getDocumentXml(),
-    originalArchive.getNumberingXml(),
-    revisedArchive.getNumberingXml(),
-  ]);
+  let [originalXml, revisedXml, originalNumberingXml, revisedNumberingXml, originalStylesXml, revisedStylesXml] =
+    await Promise.all([
+      originalArchive.getDocumentXml(),
+      revisedArchive.getDocumentXml(),
+      originalArchive.getNumberingXml(),
+      revisedArchive.getNumberingXml(),
+      originalArchive.getStylesXml(),
+      revisedArchive.getStylesXml(),
+    ]);
   const disambiguatedBookmarks = disambiguateOriginalBookmarkIds(originalXml, revisedXml);
   if (disambiguatedBookmarks.remappedRanges > 0) {
     originalXml = disambiguatedBookmarks.xml;
@@ -408,6 +414,8 @@ export async function buildStandaloneTaggedPackage(
       numberingEnabled: options.numbering.enabled,
       originalNumberingXml: originalNumberingXml ?? undefined,
       revisedNumberingXml: revisedNumberingXml ?? undefined,
+      originalStylesXml: originalStylesXml ?? undefined,
+      revisedStylesXml: revisedStylesXml ?? undefined,
       revisionAttributionRanges: options.revisionAttributionRanges,
       revisionGrouping: options.revisionGrouping,
       retainStatisticsMarkers: true,

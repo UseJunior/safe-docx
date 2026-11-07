@@ -86,21 +86,36 @@ export function getEffectiveLevel(
 
 /**
  * State of numbering counters for a document.
+ *
+ * @deprecated Counts per `w:num` instance, where Word counts per
+ * `w:abstractNum`, and reads no style-inherited numbering. Use
+ * `computeParagraphListLabels` / `advanceListLabel` from the primitives
+ * numbering model, which follow Word; docx-compare no longer uses this
+ * (#1253).
  */
 export interface NumberingState {
   /** Current counter values per numId and ilvl */
   counters: Map<string, number[]>;
   /** Track whether each level has been used in current sequence */
   levelUsed: Map<string, boolean[]>;
+  /** Previous level per numbering definition, isolated to this document. */
+  lastUsedLevel?: Map<string, number>;
 }
 
 /**
  * Create initial numbering state.
+ *
+ * @deprecated Counts per `w:num` instance, where Word counts per
+ * `w:abstractNum`, and reads no style-inherited numbering. Use
+ * `computeParagraphListLabels` / `advanceListLabel` from the primitives
+ * numbering model, which follow Word; docx-compare no longer uses this
+ * (#1253).
  */
 export function createNumberingState(): NumberingState {
   return {
     counters: new Map(),
     levelUsed: new Map(),
+    lastUsedLevel: new Map(),
   };
 }
 
@@ -118,6 +133,12 @@ function getNumKey(numId: number): string {
  * @param numId - The numbering definition ID
  * @param maxLevels - Maximum number of levels (default 9)
  * @returns The counter array for this numbering definition
+ *
+ * @deprecated Counts per `w:num` instance, where Word counts per
+ * `w:abstractNum`, and reads no style-inherited numbering. Use
+ * `computeParagraphListLabels` / `advanceListLabel` from the primitives
+ * numbering model, which follow Word; docx-compare no longer uses this
+ * (#1253).
  */
 export function getCounters(
   state: NumberingState,
@@ -151,11 +172,6 @@ function getLevelUsed(
 }
 
 /**
- * Track the last used level for each numbering definition.
- */
-const lastUsedLevel = new Map<string, number>();
-
-/**
  * Process a numbered paragraph and return its display number.
  *
  * Updates the numbering state and returns the appropriate number to display,
@@ -166,6 +182,12 @@ const lastUsedLevel = new Map<string, number>();
  * @param ilvl - The indentation level
  * @param levelInfo - Level properties from the numbering definition
  * @returns The number to display at this level
+ *
+ * @deprecated Counts per `w:num` instance, where Word counts per
+ * `w:abstractNum`, and reads no style-inherited numbering. Use
+ * `computeParagraphListLabels` / `advanceListLabel` from the primitives
+ * numbering model, which follow Word; docx-compare no longer uses this
+ * (#1253).
  */
 export function processNumberedParagraph(
   state: NumberingState,
@@ -176,6 +198,8 @@ export function processNumberedParagraph(
   const counters = getCounters(state, numId);
   const levelUsed = getLevelUsed(state, numId);
   const key = `num:${numId}`;
+  // Lazily initialize for callers that constructed the legacy two-map shape.
+  const lastUsedLevel = state.lastUsedLevel ??= new Map<string, number>();
 
   // Check for continuation pattern
   const continuation = detectContinuationPattern(
@@ -224,15 +248,27 @@ export function processNumberedParagraph(
 /**
  * Convert a number to the specified format.
  *
+ * Letters and zero-padded decimals follow § 17.18.59 as Word shows them, the
+ * same as the read side's list labels (`renderListLevelText`): `decimalZero`
+ * pads one through nine ("09"), and `lowerLetter`/`upperLetter` repeat the
+ * letter past z (27 is "aa", 28 is "bb", 53 is "aaa"; Word 16.114 evidence in
+ * scripts/oracle/word/evidence/issue-1236-word-16.114.json).
+ *
  * @param value - The numeric value
  * @param format - The number format (decimal, lowerLetter, upperLetter, lowerRoman, upperRoman, etc.)
  * @returns The formatted string
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.18.59
+ * @see https://github.com/UseJunior/safe-docx/issues/1253
  */
 export function formatNumber(value: number, format: string): string {
   switch (format) {
     case 'decimal':
-    case 'decimalZero':
       return value.toString();
+
+    case 'decimalZero':
+      // A leading zero only for one through nine: 0 and 10+ stay as they are.
+      return value >= 1 && value <= 9 ? `0${value}` : value.toString();
 
     case 'lowerLetter':
       return toLowerLetter(value);
@@ -267,21 +303,17 @@ export function formatNumber(value: number, format: string): string {
 }
 
 /**
- * Convert number to lowercase letter (a, b, c, ... z, aa, ab, ...).
+ * Convert number to lowercase letters: a…z, then the letter repeated (aa, bb,
+ * …, zz), then aaa, bbb, … (§ 17.18.59, as Word numbers them). Not the
+ * spreadsheet-column sequence (aa, ab, …).
  */
 function toLowerLetter(value: number): string {
-  let result = '';
-  let n = value;
-  while (n > 0) {
-    n--;
-    result = String.fromCharCode(97 + (n % 26)) + result;
-    n = Math.floor(n / 26);
-  }
-  return result;
+  if (value <= 0) return '';
+  return String.fromCharCode(97 + ((value - 1) % 26)).repeat(Math.floor((value - 1) / 26) + 1);
 }
 
 /**
- * Convert number to uppercase letter (A, B, C, ... Z, AA, AB, ...).
+ * Convert number to uppercase letters (A, B, C, ... Z, AA, BB, ...).
  */
 function toUpperLetter(value: number): string {
   return toLowerLetter(value).toUpperCase();

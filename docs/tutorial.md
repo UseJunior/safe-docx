@@ -54,7 +54,7 @@ read_file(file_path="~/docs/NDA.docx", format="toon")
 | `file_path` | The existing document to read. It also identifies the session used by later calls. |
 | `format` | The response representation. `toon` is compact and preserves paragraph IDs for agent use. |
 
-The result includes paragraph IDs such as `_bk_e4c8a91f2d36`. Those IDs let later operations target one paragraph without rewriting the whole document.
+The result includes paragraph IDs such as `_bk_e4c8a91f2d`. Those IDs let later operations target one paragraph without rewriting the whole document.
 
 ## Step 4: Find The Clause
 
@@ -76,7 +76,7 @@ If the search returns no match or several ambiguous matches, the agent should re
 ```text
 replace_text(
   file_path="~/docs/NDA.docx",
-  target_paragraph_id="_bk_e4c8a91f2d36",
+  target_paragraph_id="_bk_e4c8a91f2d",
   old_string="State of New York",
   new_string="State of Delaware",
   instruction="Change governing law to Delaware"
@@ -101,7 +101,7 @@ paragraph, target its exact full visible text and replace it with an empty strin
 ```text
 replace_text(
   file_path="~/docs/NDA.docx",
-  target_paragraph_id="_bk_7d130acfe245",
+  target_paragraph_id="_bk_7d130acfe2",
   old_string="This duplicated paragraph should be removed.",
   new_string="",
   instruction="Delete the duplicated paragraph"
@@ -121,7 +121,7 @@ Use `format_numbering` when a paragraph has a stray direct list label:
 ```text
 format_numbering(
   file_path="~/docs/NDA.docx",
-  target_paragraph_id="_bk_4d71f33e924a",
+  target_paragraph_id="_bk_4d71f33e92",
   remove=true
 )
 ```
@@ -132,8 +132,8 @@ explicit numbering:
 ```text
 format_numbering(
   file_path="~/docs/NDA.docx",
-  target_paragraph_id="_bk_9fc26ad74408",
-  match_paragraph_id="_bk_d39ac1a3b3f0"
+  target_paragraph_id="_bk_9fc26ad744",
+  match_paragraph_id="_bk_d39ac1a3b3"
 )
 ```
 
@@ -190,7 +190,7 @@ from `read_file`:
 ```text
 insert_section_break(
   file_path="~/docs/NDA.docx",
-  paragraph_id="_bk_9fc26ad74408",
+  paragraph_id="_bk_9fc26ad744",
   break_type="nextPage",
   new_section={"page_number_start": 1}
 )

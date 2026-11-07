@@ -1,13 +1,28 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 import { parseXml } from '../src/primitives/xml.js';
 import {
+  advanceListLabel,
   computeListLabelForParagraph,
   parseNumberingXml,
+  renderListLevelText,
+  resolveReferenceNumber,
   type NumberingCounters,
 } from '../src/primitives/numbering.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const EVIDENCE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../scripts/oracle/word/evidence');
+
+/** Word for Mac 16.114 list strings and REF results for start-value and silent levels (#1254, #1262, #1263). */
+type StartValueEvidence = {
+  numberingXml: string;
+  fixtures: Record<string, {
+    paragraphs: Array<{ text: string; numId: string; ilvl: number; word: { listString: string; fullContext: string; paragraph: string } }>;
+  }>;
+};
 
 const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Numbering' });
 
@@ -199,6 +214,234 @@ describe('numbering primitives', () => {
 
     await then('invalid placeholder %0 is dropped, %1 resolves, and %10 falls back to decimal 0', () => {
       expect(computeListLabelForParagraph(model, counters, { numId: '16', ilvl: 0 })).toBe('.1.0.');
+    });
+  });
+
+  /**
+   * Two `w:num` instances over one `w:abstractNum` share one running list.
+   * Expected labels are what Word for Mac 16.114 showed for the same
+   * numbering part and paragraph sequences (list string per paragraph via
+   * AppleScript); the raw evidence is in
+   * scripts/oracle/word/evidence/issue-1243-word-16.114.json.
+   */
+  const sharedListTest = test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.26' });
+  const lvl = (ilvl: number, fmt: string, text: string, extra = '') =>
+    `<w:lvl w:ilvl="${ilvl}"><w:start w:val="1"/><w:numFmt w:val="${fmt}"/>${extra}<w:lvlText w:val="${text}"/></w:lvl>`;
+  const override = (numId: number, abs: number, ilvl: number, start: number) =>
+    `<w:num w:numId="${numId}"><w:abstractNumId w:val="${abs}"/>` +
+    `<w:lvlOverride w:ilvl="${ilvl}"><w:startOverride w:val="${start}"/></w:lvlOverride></w:num>`;
+  const plain = (numId: number, abs: number) => `<w:num w:numId="${numId}"><w:abstractNumId w:val="${abs}"/></w:num>`;
+  const sharedModel = () =>
+    parseNumberingXml(
+      makeNumberingDoc(
+        `<w:abstractNum w:abstractNumId="0">${lvl(0, 'decimal', '%1.')}${lvl(1, 'lowerLetter', '%1(%2)')}${lvl(2, 'lowerRoman', '%1(%2)(%3)')}</w:abstractNum>` +
+          `<w:abstractNum w:abstractNumId="1">${lvl(0, 'decimal', '%1.')}${lvl(1, 'decimal', '%1.%2', '<w:lvlRestart w:val="0"/>')}</w:abstractNum>` +
+          plain(1, 0) + plain(2, 0) + override(3, 0, 0, 5) + override(4, 0, 1, 5) + override(6, 0, 0, 1) +
+          plain(7, 1) + plain(8, 1) + override(12, 0, 0, 5) + override(21, 1, 1, 5),
+      ),
+    );
+  // [numId, ilvl] per paragraph, and the label Word showed for each.
+  const WORD_ORACLE: Array<{ name: string; seq: Array<[number, number]>; word: string[] }> = [
+    { name: 'a second instance without an override continues the list', seq: [[1, 0], [1, 0], [2, 0], [1, 0], [2, 0]], word: ['1.', '2.', '3.', '4.', '5.'] },
+    {
+      name: 'an override restarts the shared list only at its instance\'s first paragraph',
+      seq: [[1, 0], [1, 0], [1, 0], [3, 0], [3, 0], [1, 0], [3, 0]],
+      word: ['1.', '2.', '3.', '5.', '6.', '7.', '8.'],
+    },
+    { name: 'an override instance used first, then the plain instances continue it', seq: [[3, 0], [3, 0], [1, 0], [1, 0], [3, 0], [2, 0]], word: ['5.', '6.', '7.', '8.', '9.', '10.'] },
+    { name: 'interleaved override and plain instances', seq: [[1, 0], [3, 0], [1, 0], [3, 0], [1, 0]], word: ['1.', '5.', '6.', '7.', '8.'] },
+    { name: 'a startOverride of 1 is Word\'s "Restart numbering"', seq: [[1, 0], [1, 0], [1, 0], [6, 0], [6, 0], [1, 0], [6, 0]], word: ['1.', '2.', '3.', '1.', '2.', '3.', '4.'] },
+    { name: 'each override instance restarts once', seq: [[3, 0], [3, 0], [12, 0], [12, 0], [3, 0], [1, 0]], word: ['5.', '6.', '5.', '6.', '7.', '8.'] },
+    {
+      name: 'an override restart may move the count backwards',
+      seq: [[1, 0], [1, 0], [1, 0], [1, 0], [1, 0], [1, 0], [3, 0], [1, 0]],
+      word: ['1.', '2.', '3.', '4.', '5.', '6.', '5.', '6.'],
+    },
+    {
+      name: 'deeper levels are shared too',
+      seq: [[1, 0], [1, 1], [1, 1], [2, 1], [2, 0], [2, 1], [1, 1]],
+      word: ['1.', '1(a)', '1(b)', '1(c)', '2.', '2(a)', '2(b)'],
+    },
+    {
+      name: 'a level-1 override applies at the instance\'s first level-1 paragraph',
+      seq: [[1, 0], [1, 1], [1, 1], [4, 1], [4, 1], [1, 1], [1, 0], [4, 1], [4, 0]],
+      word: ['1.', '1(a)', '1(b)', '1(e)', '1(f)', '1(g)', '2.', '2(a)', '3.'],
+    },
+    {
+      name: 'a level-0 override waits for its instance\'s first level-0 paragraph',
+      seq: [[1, 0], [1, 1], [1, 1], [3, 1], [3, 0], [3, 1], [1, 1]],
+      word: ['1.', '1(a)', '1(b)', '1(c)', '5.', '5(a)', '5(b)'],
+    },
+    {
+      name: 'a restart caused by an override instance uses that instance\'s start',
+      seq: [[1, 0], [1, 1], [4, 0], [4, 1], [4, 1], [1, 1]],
+      word: ['1.', '1(a)', '2.', '2(e)', '2(f)', '2(g)'],
+    },
+    {
+      name: 'an override instance used only on level 0 still restarts level 1 at its override',
+      seq: [[1, 0], [4, 0], [1, 1], [4, 1], [1, 1]],
+      word: ['1.', '2.', '2(e)', '2(e)', '2(f)'],
+    },
+    {
+      name: 'a restart caused by an override instance after its first level-1 paragraph still uses its override',
+      seq: [[1, 0], [1, 1], [4, 1], [4, 0], [4, 1], [1, 0], [1, 1]],
+      word: ['1.', '1(a)', '1(e)', '2.', '2(e)', '3.', '3(a)'],
+    },
+    {
+      name: 'an instance first used below its overridden level does not restart that level',
+      seq: [[1, 0], [1, 1], [4, 2], [1, 1], [4, 1]],
+      word: ['1.', '1(a)', '1(a)(i)', '1(b)', '1(e)'],
+    },
+    {
+      name: 'lvlRestart 0 keeps a level counting through an override instance until its first paragraph on that level',
+      seq: [[7, 0], [7, 1], [21, 0], [7, 1], [21, 1], [7, 1]],
+      word: ['1.', '1.1', '2.', '2.2', '2.5', '2.6'],
+    },
+    { name: 'lvlRestart 0 levels continue across instances', seq: [[7, 0], [7, 1], [8, 0], [8, 1], [7, 0], [7, 1]], word: ['1.', '1.1', '2.', '2.2', '3.', '3.3'] },
+    {
+      name: 'a skipped intermediate level shows its start value and counts as used',
+      seq: [[1, 0], [1, 2], [1, 1], [1, 1], [1, 0], [1, 2]],
+      word: ['1.', '1(a)(i)', '1(b)', '1(c)', '2.', '2(a)(i)'],
+    },
+    { name: 'a list opening at level 1 shows level 0 at its start value and counts it', seq: [[1, 1], [1, 1], [1, 0], [1, 1]], word: ['1(a)', '1(b)', '2.', '2(a)'] },
+  ];
+
+  for (const { name, seq, word } of WORD_ORACLE) {
+    sharedListTest(`shared abstractNum list (Word oracle): ${name}`, async ({ given, when, then }: AllureBddContext) => {
+      let model!: ReturnType<typeof parseNumberingXml>;
+      let labels!: string[];
+      await given(`w:num instances over one w:abstractNum and the paragraph sequence ${JSON.stringify(seq)}`, async () => {
+        model = sharedModel();
+      });
+      await when('labels are computed in document order with one counters map', async () => {
+        const counters: NumberingCounters = new Map();
+        labels = seq.map(([numId, ilvl]) => computeListLabelForParagraph(model, counters, { numId: String(numId), ilvl }));
+      });
+      await then(`the labels match Word: ${word.join(' ')}`, () => {
+        expect(labels).toEqual(word);
+      });
+    });
+  }
+
+  test('an ancestor level no paragraph has used shows its start value in snapshots and labels', async ({ given, when, then, and }: AllureBddContext) => {
+    let model!: ReturnType<typeof parseNumberingXml>;
+    let labels!: string[];
+    let snapshot!: ReturnType<typeof advanceListLabel>;
+    await given('decimal levels starting at 1, 5 and 1', async () => {
+      model = parseNumberingXml(
+        makeNumberingDoc(
+          '<w:abstractNum w:abstractNumId="0">' +
+            '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>' +
+            '<w:lvl w:ilvl="1"><w:start w:val="5"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2"/></w:lvl>' +
+            '<w:lvl w:ilvl="2"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2.%3"/></w:lvl>' +
+            '</w:abstractNum>' +
+            plain(1, 0),
+        ),
+      );
+    });
+    await when('levels 0, 2 and 1 are numbered in that order', async () => {
+      const counters: NumberingCounters = new Map();
+      labels = [computeListLabelForParagraph(model, counters, { numId: '1', ilvl: 0 })];
+      snapshot = advanceListLabel(model, counters, { numId: '1', ilvl: 2 });
+      labels.push(snapshot!.label, computeListLabelForParagraph(model, counters, { numId: '1', ilvl: 1 }));
+    });
+    await then('the skipped level carries its start value and is named as shown at its start value', () => {
+      expect(snapshot!.levelValues).toEqual([1, 5, 1]);
+      expect(snapshot!.levelsAtStartValue).toEqual([1]);
+    });
+    await and('the skipped level counts as used, so its own next paragraph continues from it, as Word shows', () => {
+      expect(labels).toEqual(['1.', '1.5.1', '1.6']);
+    });
+  });
+
+  /**
+   * Word's list strings and REF \w / \n results for every probe in
+   * scripts/oracle/word/evidence/issue-1254-word-16.114.json: ancestors shown
+   * at a start value, silent levels (a level text naming a deeper level), and
+   * their combinations. A reference Word shows as "0" must be refused.
+   */
+  const startValueTest = test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.11' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.5.51' });
+  const startValueEvidence = JSON.parse(readFileSync(path.join(EVIDENCE_DIR, 'issue-1254-word-16.114.json'), 'utf8')) as StartValueEvidence;
+  for (const [name, fixture] of Object.entries(startValueEvidence.fixtures)) {
+    startValueTest(`start-value and silent levels (Word oracle): ${name}`, async ({ given, when, then }: AllureBddContext) => {
+      let model!: ReturnType<typeof parseNumberingXml>;
+      let measured!: Array<{ listString: string; fullContext: string; paragraph: string }>;
+      await given(`the probe's numbering part and paragraph sequence ${fixture.paragraphs.map((p) => p.text).join(', ')}`, async () => {
+        model = parseNumberingXml(parseXml(startValueEvidence.numberingXml));
+      });
+      await when('each paragraph is numbered in document order and its reference numbers resolved', async () => {
+        const counters: NumberingCounters = new Map();
+        const refText = (result: ReturnType<typeof resolveReferenceNumber>) => ('text' in result ? result.text : '0');
+        measured = fixture.paragraphs.map(({ numId, ilvl }) => {
+          const snapshot = advanceListLabel(model, counters, { numId, ilvl })!;
+          return {
+            listString: snapshot.label,
+            fullContext: refText(resolveReferenceNumber(model, snapshot, 'fullContext')),
+            paragraph: refText(resolveReferenceNumber(model, snapshot, 'paragraph')),
+          };
+        });
+      });
+      await then('labels and REF results match Word, and only references Word shows as 0 are refused', () => {
+        expect(measured).toEqual(fixture.paragraphs.map((p) => p.word));
+      });
+    });
+  }
+
+  test('a level whose text names a deeper level gets no label while its counters advance (Word: issue-1236 deep0/deep1)', async ({ given, when, then, and }: AllureBddContext) => {
+    let model!: ReturnType<typeof parseNumberingXml>;
+    let labels!: string[];
+    let deeper!: ReturnType<typeof resolveReferenceNumber>[];
+    await given('the issue-1236 deeperLevelPlaceholders levels "%1 %2", "%1.%2.%3" and "(%3)"', async () => {
+      const deep = (JSON.parse(readFileSync(path.join(EVIDENCE_DIR, 'issue-1236-word-16.114.json'), 'utf8')) as {
+        deeperLevelPlaceholders: { numbering: { levels: Array<{ ilvl: number; numFmt: string; lvlText: string }> } };
+      }).deeperLevelPlaceholders.numbering.levels;
+      model = parseNumberingXml(
+        makeNumberingDoc(`<w:abstractNum w:abstractNumId="0">${deep.map((l) => lvl(l.ilvl, l.numFmt, l.lvlText)).join('')}</w:abstractNum>${plain(1, 0)}`),
+      );
+    });
+    await when('levels 0, 1, 2, then 0 and 1 again are numbered', async () => {
+      const counters: NumberingCounters = new Map();
+      const snapshots = [0, 1, 2, 0, 1].map((ilvl) => advanceListLabel(model, counters, { numId: '1', ilvl })!);
+      labels = snapshots.map((s) => s.label);
+      deeper = [snapshots[0]!, snapshots[1]!].flatMap((s) => [resolveReferenceNumber(model, s, 'fullContext'), resolveReferenceNumber(model, s, 'paragraph')]);
+      expect(snapshots.map((s) => s.levelValues)).toEqual([[1], [1, 1], [1, 1, 1], [2], [2, 1]]);
+    });
+    await then('the silent levels show no label, as Word does, and the clause under them shows "(a)"', () => {
+      expect(labels).toEqual(['', '', '(a)', '', '']);
+    });
+    await and('references to the silent paragraphs stay refused: Word shows 0 for them', () => {
+      expect(deeper).toEqual(Array(4).fill({ refused: 'deeperLevel' }));
+    });
+  });
+
+  test('a label snapshot carries every ancestor level value for full-context rendering', async ({ given, when, then, and }: AllureBddContext) => {
+    let model!: ReturnType<typeof parseNumberingXml>;
+    let snapshot!: ReturnType<typeof advanceListLabel>;
+    await given('an ARTICLE / Section / (a) outline with a second instance', async () => {
+      model = parseNumberingXml(
+        makeNumberingDoc(
+          `<w:abstractNum w:abstractNumId="0">${lvl(0, 'upperRoman', 'ARTICLE %1')}${lvl(1, 'decimalZero', 'Section %1.%2', '<w:isLgl/>')}${lvl(2, 'lowerLetter', '(%3)')}</w:abstractNum>` +
+            plain(1, 0) + plain(2, 0),
+        ),
+      );
+    });
+    await when('ARTICLE I, II, Section 2.01, 2.02, (a), (b) are numbered, the clause through the second instance', async () => {
+      const counters: NumberingCounters = new Map();
+      for (const ilvl of [0, 0, 1, 1, 2]) advanceListLabel(model, counters, { numId: '1', ilvl });
+      snapshot = advanceListLabel(model, counters, { numId: '2', ilvl: 2 });
+    });
+    await then('the snapshot names the shared abstract list and its level values', () => {
+      expect(snapshot).toEqual({ numId: '2', abstractNumId: '0', ilvl: 2, label: '(b)', levelValues: [2, 2, 2] });
+    });
+    await and('each ancestor level renders from the snapshot without advancing counters', () => {
+      expect(renderListLevelText(model, '2', 0, snapshot!.levelValues)).toBe('ARTICLE II');
+      expect(renderListLevelText(model, '2', 1, snapshot!.levelValues)).toBe('Section 2.02');
+      expect(renderListLevelText(model, '2', 5, snapshot!.levelValues)).toBe('');
+    });
+    await and('an undefined instance yields no snapshot', () => {
+      expect(advanceListLabel(model, new Map(), { numId: '99', ilvl: 0 })).toBeNull();
     });
   });
 });

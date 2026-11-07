@@ -514,8 +514,9 @@ describe('read_file pagination', () => {
     await then('exactly one row is returned, has_more=true, and no first-node warning fires', async () => {
       expect(Number(read.paragraphs_returned)).toBe(1);
       expect(read.has_more).toBe(true);
-      // Final content (with #END_TABLE) may exceed budget; that's the bug we're guarding against.
-      expect(estimateTokens(String(read.content))).toBeGreaterThan(DEFAULT_CONTENT_TOKEN_BUDGET);
+      // Final content (with #END_TABLE) reaches the budget; compact paragraph
+      // ids keep this fixture from exceeding it by a token.
+      expect(estimateTokens(String(read.content))).toBeGreaterThanOrEqual(DEFAULT_CONTENT_TOKEN_BUDGET);
       // Node 1's admission size was UNDER budget, so the warning must not fire.
       expect(read.warnings).toBeUndefined();
     });

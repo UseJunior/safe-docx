@@ -98,6 +98,17 @@ export const COMPLETE_PAGEREF_FIELD = completeField(FIELD_INSTRUCTIONS.PAGEREF, 
 
 export const COMPLETE_REF_FIELD = completeField(FIELD_INSTRUCTIONS.REF, 'Section 1');
 
+/** Number switch of a generated cross-reference: `\w` full context, `\n` paragraph number. */
+export type RefNumberSwitch = 'w' | 'n';
+
+/**
+ * The REF instruction a generated cross-reference writes, the same text Word's
+ * Insert Cross-reference (as hyperlink) writes: ` REF <bookmark> \w \h `.
+ */
+export function refFieldInstruction(bookmark: string, numberSwitch: RefNumberSwitch = 'w'): string {
+  return ` REF ${bookmark} \\${numberSwitch} \\h `;
+}
+
 /**
  * Word/DMS serialization of an inner field result while the enclosing field is
  * still in its instruction-code region. Although the inner field is past its

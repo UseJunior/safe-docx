@@ -31,6 +31,12 @@ export type PlainPdfVerdict = {
   pageCount?: number;
   /** The pdftotext text of each page, uncollapsed, when extraction ran (for word-level checks). */
   pageTexts?: string[];
+  /**
+   * The `pdftotext -layout` text of each page, when that extraction succeeded. Layout mode places words by glyph
+   * position, so it shows word boundaries that the raw text can lose (LibreOffice can export a justified line
+   * without space glyphs); its reading order is not used.
+   */
+  layoutPageTexts?: string[];
   missingText?: string[];
   pdfSha256?: string;
 };
@@ -111,15 +117,22 @@ export async function renderPlainPdf(request: PlainPdfRequest): Promise<PlainPdf
     if (extracted.code !== 0) return { status: 'failed', reason: `pdftotext failed: ${(extracted.stderr || extracted.stdout).trim()}` };
     const pageTexts = splitPdfTextPages(extracted.stdout);
     const pages = pageTexts.map(collapse);
+    // Word boundaries by glyph position, for lines the raw text reads without spaces. Optional evidence: a
+    // failed layout extraction only means such lines cannot be split.
+    const layout = await tools.run(pdftotext!, ['-layout', pdfPath, '-']);
+    const layoutPageTexts = layout.code === 0 ? splitPdfTextPages(layout.stdout) : undefined;
+    const layoutPages = layoutPageTexts?.length === pageTexts.length ? layoutPageTexts.map(collapse) : [];
+    const texts = { pageTexts, ...(layoutPageTexts ? { layoutPageTexts } : {}) };
     const pdfSha256 = createHash('sha256').update(pdf).digest('hex');
-    if (pages.every((page) => page.length === 0)) return { status: 'failed', reason: 'PDF text layer is empty', pageCount: pages.length, pdfSha256, pageTexts };
-    // A needle must sit inside one page: matching across a page break could join unrelated text.
-    const missingText = request.requiredText.map(collapse).filter((needle) => needle.length > 0 && !pages.some((page) => page.includes(needle)));
+    if (pages.every((page) => page.length === 0)) return { status: 'failed', reason: 'PDF text layer is empty', pageCount: pages.length, pdfSha256, ...texts };
+    // A needle must sit inside one page: matching across a page break could join unrelated text. The page's
+    // layout text counts too, so a line exported without spaces still shows its words.
+    const missingText = request.requiredText.map(collapse).filter((needle) => needle.length > 0 && !pages.some((page, index) => page.includes(needle) || layoutPages[index]?.includes(needle)));
     if (missingText.length > 0) {
-      return { status: 'failed', reason: 'required text missing from the PDF text layer', pageCount: pages.length, pdfSha256, missingText, pageTexts };
+      return { status: 'failed', reason: 'required text missing from the PDF text layer', pageCount: pages.length, pdfSha256, missingText, ...texts };
     }
     await publishPdf(pdfPath, request.outputPdfPath);
-    return { status: 'passed', pageCount: pages.length, pdfSha256, pageTexts };
+    return { status: 'passed', pageCount: pages.length, pdfSha256, ...texts };
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

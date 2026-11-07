@@ -192,6 +192,41 @@ describe('Traceability: Markdoc document creation without a template', () => {
     },
   );
 
+  test.openspec('[SDX-MDOC-CREATE-15] signer content is one line of text')(
+    'Scenario: signer content is one line of text',
+    async () => {
+      const note = '\n\n{% footnote id="a" %}Signs as Chief Executive Officer.{% /footnote %}';
+      // Content the signature block would never render (#1261): a tag or text after the name's line, a block fill,
+      // a line break (block or inline form), a lone tag in place of the name, or a list or heading.
+      for (const [source, line] of [
+        ['{% signer %}\nJane Doe\n{% fnref id="a" /%}\n{% /signer %}' + note, 3],
+        ['1. Price. {% #price %}\n\n{% signer %}\nJane Doe\n{% xref to="price" /%}\n{% /signer %}', 5],
+        ['{% signer %}\nJane Doe\n{% fill %}\nTitle\n{% /fill %}\n{% /signer %}', 3],
+        ['{% signer %}\nJane Doe\n{% fill %}Title{% /fill %}\n{% /signer %}', 1],
+        ['{% signer %}\nJane Doe\nChief Executive Officer\n{% /signer %}', 1],
+        ['{% signer %}\nJane Doe  \nChief Executive Officer\n{% /signer %}', 1],
+        ['{% signer %}\n{% fnref id="a" /%}\n{% /signer %}' + note, 2],
+        ['{% signer %}Jane\nDoe{% /signer %}', 1],
+        ['{% signer %}Jane  \nDoe{% /signer %}', 1],
+        ['{% signer %}\n- Jane Doe\n{% /signer %}', 2],
+        ['{% signer %}\n# Jane Doe\n{% /signer %}', 2],
+      ] as const) {
+        const error = await createDocumentFromMarkdoc(source).then(() => null, (caught: unknown) => caught as { code?: string; details?: { line?: number } });
+        expect(error?.code, source).toBe('INVALID_SIGNER');
+        expect(error?.details?.line, source).toBe(line);
+      }
+      // One line, in block or inline form, with a reference, a fill or formatting, still creates its signature block.
+      for (const [source, name] of [
+        ['{% signer %}\nJane Doe{% fnref id="a" /%}\n{% /signer %}' + note, 'Jane Doe'],
+        ['{% signer date="Date: ___" %}Jane Doe{% fnref id="a" /%}{% /signer %}' + note, 'Jane Doe\tDate: ___'],
+        ['{% signer %}\n{% fill %}Name{% /fill %}, **Director**\n{% /signer %}', '[Name], Director'],
+      ] as const) {
+        const created = await createDocumentFromMarkdoc(source);
+        expect(created.readback.paragraphs.at(-1), source).toBe(`${'_'.repeat(30)}\n${name}`);
+      }
+    },
+  );
+
   test.openspec('[SDX-MDOC-CREATE-05] sections carry linked or unlinked footers and page numbers')(
     'Scenario: sections carry linked or unlinked footers and page numbers',
     async () => {
@@ -231,15 +266,18 @@ describe('Traceability: Markdoc document creation without a template', () => {
       expect(listed.map((paragraph) => wAttr(paragraph.getElementsByTagNameNS(W, 'ilvl').item(0), 'val'))).toEqual(['0', '1', '2', '0', '0']);
       const numbering = await part(docx, 'word/numbering.xml');
       const abstracts = Array.from(numbering.getElementsByTagNameNS(W, 'abstractNum'));
-      expect(abstracts).toHaveLength(3);
+      // Every ordered list shares one definition (#1252); `3.` does not continue the
+      // one-item list before it, so it restarts through a start override.
+      expect(abstracts).toHaveLength(2);
       const levels = (abstract: Element) => Array.from(abstract.getElementsByTagNameNS(W, 'lvl')).map((lvl) => [
         wAttr(lvl.getElementsByTagNameNS(W, 'start').item(0), 'val'),
         wAttr(lvl.getElementsByTagNameNS(W, 'numFmt').item(0), 'val'),
         wAttr(lvl.getElementsByTagNameNS(W, 'lvlText').item(0), 'val'),
       ]);
       expect(levels(abstracts[0]!)).toEqual([['1', 'decimal', '%1.'], ['1', 'lowerLetter', '(%2)'], ['1', 'lowerRoman', '(%3)']]);
-      expect(levels(abstracts[1]!)[0]).toEqual(['3', 'decimal', '%1.']);
-      expect(levels(abstracts[2]!)[0]![1]).toBe('bullet');
+      const overrides = Array.from(numbering.getElementsByTagNameNS(W, 'startOverride')).map((override) => wAttr(override, 'val'));
+      expect(overrides).toEqual(['3']);
+      expect(levels(abstracts[1]!)[0]![1]).toBe('bullet');
       await expectCode('1. A\n   - b', 'MIXED_LIST_NESTING');
     },
   );

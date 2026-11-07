@@ -4,7 +4,7 @@ import path from 'node:path';
 import { renderPlainPdf, type PlainPdfVerdict } from '../pdf/plain-render.js';
 import type { PdfRenderTools } from '../pdf/tools.js';
 import { DocxMarkdocError } from '../errors.js';
-import { createDocumentFromMarkdoc, type CreatedDocument } from './create.js';
+import { createDocumentFromMarkdoc, type CreatedDocument, type CrossReferenceCheck } from './create.js';
 import { PAGE_FIELD_TOKEN } from './lower.js';
 import { comparePdfWords, projectSourceText, type PdfWordComparison } from './oracle.js';
 
@@ -21,7 +21,7 @@ export type CreateCliArgs = {
 };
 
 /** The PDF verdict as recorded: page texts are dropped, and `words` holds the word-level comparison when the PDF rendered. */
-export type RecordedPdfVerdict = Omit<PlainPdfVerdict, 'pageTexts'> & { words?: PdfWordComparison };
+export type RecordedPdfVerdict = Omit<PlainPdfVerdict, 'pageTexts' | 'layoutPageTexts'> & { words?: PdfWordComparison };
 
 export type CreateCliResult = {
   outputs: { docx: string; text: string; certificate: string; pdf?: string };
@@ -87,9 +87,40 @@ async function existingKind(target: string): Promise<'file' | 'symlink' | 'other
   }
 }
 
+/**
+ * Body paragraphs as a LibreOffice PDF shows them: each footnote reference's
+ * number sits where the reference is, joined to the text around it, and each
+ * cross-reference shows LibreOffice's form of its number. LibreOffice
+ * recalculates REF fields on load and keeps the period of `1.` before `(`, so
+ * Word's cached `2(b)` renders as `2.(b)` (see
+ * scripts/oracle/word/evidence/issue-1236-word-16.114.json).
+ */
+function paragraphsAsLibreOfficeRenders(readback: CreatedDocument['readback']): string[] {
+  const inserts = new Map<number, Array<{ offset: number; text: string }>>();
+  const add = (paragraph: number, offset: number, text: string) => inserts.set(paragraph, [...(inserts.get(paragraph) ?? []), { offset, text }]);
+  readback.footnoteReferences.forEach(({ paragraph, offset }, index) => add(paragraph, offset, String(index + 1)));
+  for (const { paragraph, offset, text, instruction } of readback.crossReferences ?? []) {
+    // Only a full-context number, or a relative one that keeps its first
+    // level ("2(b)"), has the period; a text reference shows its target's
+    // text, which may itself start with "401(k)".
+    if (!/\\[wr]\b/u.test(instruction)) continue;
+    const leadingNumber = /^\d+(?=\()/u.exec(text);
+    if (leadingNumber) add(paragraph, offset + leadingNumber[0].length, '.');
+  }
+  return readback.paragraphs.map((text, index) => {
+    let out = '';
+    let at = 0;
+    for (const { offset, text: inserted } of (inserts.get(index) ?? []).sort((a, b) => a.offset - b.offset)) {
+      out += `${text.slice(at, offset)}${inserted}`;
+      at = offset;
+    }
+    return out + text.slice(at);
+  });
+}
+
 /** Text a rendered PDF must contain: the first and last paragraphs and every footer text. */
 export function requiredPdfText(created: CreatedDocument): string[] {
-  const paragraphs = created.readback.paragraphs.filter((paragraph) => paragraph.trim());
+  const paragraphs = paragraphsAsLibreOfficeRenders(created.readback).filter((paragraph) => paragraph.trim());
   const title = paragraphs[0];
   const last = paragraphs.at(-1) ?? '';
   const lastNeedle = last.length > 120 ? last.slice(0, 80) : last;
@@ -288,6 +319,51 @@ async function sameFile(a: string, b: string): Promise<boolean> {
  * this build does not produce (for example a PDF under --no-pdf) is retired so
  * the directory reflects this build only.
  */
+const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+/**
+ * The negative controls of a check, for the summary line. A control that is not applicable, or (should a caller
+ * summarize a failed check) one that went undetected, is named with its status rather than counted as ok.
+ */
+/**
+ * The cross-references entry of the CLI summary. With text or relative
+ * references it counts them apart from the other number references and
+ * names the text-extent or relative-context control; without, it reads as
+ * before.
+ */
+export function crossReferenceSummary(check: CrossReferenceCheck): string {
+  const { references, negativeControls } = check;
+  const { text, relative } = references;
+  const counts = text > 0 || relative > 0
+    ? `${plural(references.actual, 'reference')}: ${[
+      `${references.actual - text - relative} number`,
+      ...(relative > 0 ? [`${relative} relative`] : []),
+      ...(text > 0 ? [`${text} text`] : []),
+    ].join(', ')}`
+    : plural(references.actual, 'reference');
+  const controls = {
+    'changed switch': negativeControls.switchChanged,
+    retargeted: negativeControls.retargeted,
+    moved: negativeControls.moved,
+    ...(text > 0 ? { 'text extent': negativeControls.textExtent } : {}),
+    ...(relative > 0 ? { 'relative context': negativeControls.relativeContext } : {}),
+  };
+  return `cross-references ok (${counts}; ${controlsSummary(controls)})`;
+}
+
+export function controlsSummary(controls: Record<string, boolean | 'not applicable'>): string {
+  const names = Object.keys(controls);
+  const noun = names.length === 1 ? 'negative control' : 'negative controls';
+  const ok = names.filter((name) => controls[name] === true);
+  if (ok.length === names.length) return `${noun} ok`;
+  const groups = ([[false, 'failed'], ['not applicable', 'not applicable']] as const)
+    .map(([value, status]) => ({ status, named: names.filter((name) => controls[name] === value) }))
+    .filter(({ named }) => named.length > 0);
+  if (ok.length === 0 && groups.length === 1) return `${noun} ${groups[0]!.status}`;
+  const exceptions = groups.map(({ status, named }) => `${named.join(', ')}: ${status}`).join(', ');
+  return ok.length === 0 ? `${noun}: ${exceptions}` : `${noun} ok, except ${exceptions}`;
+}
+
 export async function runCreateCommand(
   args: string[],
   deps: { renderTools?: PdfRenderTools; fileOps?: Partial<PublishFileOps> } = {},
@@ -327,7 +403,7 @@ export async function runCreateCommand(
 
 /** Drop the bulky per-page text from a PDF verdict before recording it. */
 function recordedPdf(verdict: PlainPdfVerdict, words?: PdfWordComparison): RecordedPdfVerdict {
-  const { pageTexts: _pageTexts, ...rest } = verdict;
+  const { pageTexts: _pageTexts, layoutPageTexts: _layoutPageTexts, ...rest } = verdict;
   return { ...rest, ...(words ? { words } : {}) };
 }
 
@@ -437,7 +513,7 @@ async function createLocked(
         throw new DocxMarkdocError('CREATION_PDF_FAILED', `PDF check ${verdict.status}: ${verdict.reason ?? 'unknown'}${verdict.missingText ? ` (missing: ${verdict.missingText.join(' | ')})` : ''}.`, recordedPdf(verdict));
       }
       // Every source word must reach the PDF text layer, and the PDF may add only known generated text.
-      const words = verdict.status === 'passed' ? comparePdfWords(projectSourceText(source), verdict.pageTexts ?? []) : undefined;
+      const words = verdict.status === 'passed' ? comparePdfWords(projectSourceText(source, { reader: 'libreoffice' }), verdict.pageTexts ?? [], verdict.layoutPageTexts) : undefined;
       pdf = recordedPdf(verdict, words);
       if (words && !words.passed) {
         const first = words.missing[0] ?? words.unexplainedExtra[0];
@@ -485,6 +561,10 @@ async function createLocked(
       `created ${path.basename(outputs.docx)}: ${checks.readback.paragraphs} paragraphs, ${checks.footers.sections} section(s)`,
       `readback ok (negative control ok)`,
       `footers ok (negative control ok)`,
+      ...(checks.footnotes.notes > 0 || checks.footnotes.references.expected > 0
+        ? [`footnotes ok (${plural(checks.footnotes.notes, 'note')}, ${plural(checks.footnotes.references.actual, 'reference')}; ${controlsSummary({ 'note text': checks.footnotes.negativeControlDetected, 'dropped reference': checks.footnotes.references.negativeControlDetected })})`]
+        : []),
+      ...(checks.crossReferences ? [crossReferenceSummary(checks.crossReferences)] : []),
       'deterministic',
       `brownfield ok (${checks.brownfield.anchoredParagraphs} anchored)`,
       `round trip ok (${checks.roundTrip.body.expected} paragraphs; negative controls ok)`,
