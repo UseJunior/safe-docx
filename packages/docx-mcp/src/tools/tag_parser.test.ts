@@ -123,6 +123,72 @@ describe('tag_parser', () => {
         seg('serif', { fontName: 'Literal &quot; entity' }),
       ]);
     });
+
+    test('preserves valid fractional sizes and converts to half-points', () => {
+      expect(splitTaggedText('<font size="10.5">half</font>')).toEqual([
+        seg('half', { fontSize: 21 }),
+      ]);
+      expect(splitTaggedText('<font size="12.25">quarter</font>')).toEqual([
+        seg('quarter', { fontSize: 24.5 }),
+      ]);
+    });
+
+    test('nested font tags inherit outer size when inner does not specify size', () => {
+      const result = splitTaggedText(
+        '<font size="14">outer <font color="FF0000">red</font> after</font>',
+      );
+      expect(result).toEqual([
+        seg('outer ', { fontSize: 28 }),
+        seg('red', { fontSize: 28, color: 'FF0000' }),
+        seg(' after', { fontSize: 28 }),
+      ]);
+    });
+
+    test('nested font tags restore outer size after inner override', () => {
+      const result = splitTaggedText(
+        '<font size="14">outer <font size="18">inner</font> after</font>',
+      );
+      expect(result).toEqual([
+        seg('outer ', { fontSize: 28 }),
+        seg('inner', { fontSize: 36 }),
+        seg(' after', { fontSize: 28 }),
+      ]);
+    });
+
+    test('rejects NaN, Infinity, zero and negative font sizes', () => {
+      const invalidSizes = [
+        '0',
+        '-0',
+        '-1',
+        '-0.5',
+        'NaN',
+        'Infinity',
+        '-Infinity',
+        '+Infinity',
+        '',
+        '   ',
+        'abc',
+        '12pt',
+        '1e308',
+        '1e-324',
+      ];
+      for (const size of invalidSizes) {
+        expect(
+          () => splitTaggedText(`<font size="${size}">bad</font>`),
+          `Expected size="${size}" to throw INVALID_FONT_SIZE`,
+        ).toThrow('INVALID_FONT_SIZE');
+      }
+    });
+
+    test('rejects invalid font sizes in empty or nested tags', () => {
+      expect(() => splitTaggedText('<font size="0"></font>')).toThrow('INVALID_FONT_SIZE');
+      expect(() => splitTaggedText('<font size="NaN"></font>')).toThrow('INVALID_FONT_SIZE');
+      expect(() => splitTaggedText('<font size=""></font>')).toThrow('INVALID_FONT_SIZE');
+      expect(() => splitTaggedText('<font size="14">outer <font size="0">inner</font></font>')).toThrow('INVALID_FONT_SIZE');
+      expect(() => splitTaggedText('<font size="14">outer <font size="-5">inner</font></font>')).toThrow('INVALID_FONT_SIZE');
+      expect(() => splitTaggedText('<font size="14">outer <font size="NaN">inner</font></font>')).toThrow('INVALID_FONT_SIZE');
+      expect(() => splitTaggedText('<font size="14">outer <font size="1e308">inner</font></font>')).toThrow('INVALID_FONT_SIZE');
+    });
   });
 
   // ─── splitTaggedText: mixed and nested tags ────────────────────
