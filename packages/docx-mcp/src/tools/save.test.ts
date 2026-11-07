@@ -488,4 +488,175 @@ describe('save', () => {
     assertFailure(result, 'OVERWRITE_BLOCKED', 'symlink to source');
     expect(Buffer.compare(await fs.readFile(inputPath), sourceBytes)).toBe(0);
   });
+
+  // Issue #1305: Preflight both destinations and reject aliased outputs before any writes.
+  test('rejects aliased outputs when saving both clean and tracked variants', async () => {
+    const { mgr, tmpDir, inputPath } = await openTestDoc();
+    const samePath = path.join(tmpDir, 'same-destination.docx');
+
+    const result = await save(mgr, {
+      file_path: inputPath,
+      save_to_local_path: samePath,
+      tracked_save_to_local_path: samePath,
+      save_format: 'both',
+    });
+    assertFailure(result, 'ALIASED_OUTPUT_PATHS', 'aliased outputs');
+    // Ensure no files or staging artifacts were written
+    expect(await fs.readdir(tmpDir)).toEqual([path.basename(inputPath)]);
+  });
+
+  test('preflights destinations and avoids partial writes when tracked path policy fails', async () => {
+    const { mgr, tmpDir, inputPath } = await openTestDoc();
+    const cleanPath = path.join(tmpDir, 'clean-output.docx');
+    const outsideDir = await createTrackedTempDir('save-disallowed-');
+    const trackedOutside = path.join(outsideDir, 'tracked-output.docx');
+
+    const previousRoots = process.env.SAFE_DOCX_ALLOWED_ROOTS;
+    process.env.SAFE_DOCX_ALLOWED_ROOTS = tmpDir;
+    try {
+      const result = await save(mgr, {
+        file_path: inputPath,
+        save_to_local_path: cleanPath,
+        tracked_save_to_local_path: trackedOutside,
+        save_format: 'both',
+      });
+      assertFailure(result, 'PATH_NOT_ALLOWED', 'tracked destination outside allowed roots');
+      // Verify cleanPath was NOT created because preflight failed before any writes
+      await expect(fs.access(cleanPath)).rejects.toThrow();
+    } finally {
+      if (previousRoots === undefined) delete process.env.SAFE_DOCX_ALLOWED_ROOTS;
+      else process.env.SAFE_DOCX_ALLOWED_ROOTS = previousRoots;
+    }
+  });
+
+  test('stages paired save writes and cleans up staging files on success', async () => {
+    const { mgr, tmpDir, inputPath } = await openTestDoc();
+    const cleanPath = path.join(tmpDir, 'clean-success.docx');
+    const trackedPath = path.join(tmpDir, 'tracked-success.docx');
+
+    const result = await save(mgr, {
+      file_path: inputPath,
+      save_to_local_path: cleanPath,
+      tracked_save_to_local_path: trackedPath,
+      save_format: 'both',
+    });
+    assertSuccess(result, 'paired save success');
+
+    // Both destination files exist
+    expect(await fs.stat(cleanPath)).toBeTruthy();
+    expect(await fs.stat(trackedPath)).toBeTruthy();
+
+    // No temporary staging or backup files left in directory
+    const dirEntries = await fs.readdir(tmpDir);
+    expect(dirEntries.some((f) => f.includes('staging'))).toBe(false);
+    expect(dirEntries.some((f) => f.includes('backup'))).toBe(false);
+  });
+
+  test('rolls back newly created clean file when tracked write fails during paired save', async () => {
+    const { mgr, tmpDir, inputPath } = await openTestDoc();
+    const cleanPath = path.join(tmpDir, 'clean-rollback-new.docx');
+    const trackedPath = path.join(tmpDir, 'tracked-rollback-new.docx');
+
+    const result = await save(mgr, {
+      file_path: inputPath,
+      save_to_local_path: cleanPath,
+      tracked_save_to_local_path: trackedPath,
+      save_format: 'both',
+      _testHooks: {
+        beforePublish: ({ index }) => {
+          if (index === 1) {
+            throw new Error('Simulated publish failure on tracked destination');
+          }
+        },
+      },
+    });
+
+    assertFailure(result, 'SAVE_ERROR', 'publish failure on tracked destination');
+    // Clean file was newly created, so rollback must remove it
+    await expect(fs.access(cleanPath)).rejects.toThrow();
+    await expect(fs.access(trackedPath)).rejects.toThrow();
+
+    // No staging or backup files left behind
+    const dirEntries = await fs.readdir(tmpDir);
+    expect(dirEntries.some((f) => f.includes('staging'))).toBe(false);
+    expect(dirEntries.some((f) => f.includes('backup'))).toBe(false);
+  });
+
+  test('restores pre-existing clean file from backup when tracked write fails during overwrite', async () => {
+    const { mgr, tmpDir, inputPath } = await openTestDoc();
+    const cleanPath = path.join(tmpDir, 'clean-existing.docx');
+    const trackedPath = path.join(tmpDir, 'tracked-destination.docx');
+
+    // Write original content to cleanPath
+    const originalContent = 'ORIGINAL_UNTOUCHED_CLEAN_DOCUMENT';
+    await fs.writeFile(cleanPath, originalContent);
+
+    const result = await save(mgr, {
+      file_path: inputPath,
+      save_to_local_path: cleanPath,
+      tracked_save_to_local_path: trackedPath,
+      save_format: 'both',
+      allow_overwrite: true,
+      _testHooks: {
+        beforePublish: ({ index }) => {
+          if (index === 1) {
+            throw new Error('Simulated publish failure on tracked destination during overwrite');
+          }
+        },
+      },
+    });
+
+    assertFailure(result, 'SAVE_ERROR', 'publish failure during overwrite');
+
+    // Clean file must be restored to its original pre-existing content!
+    const restoredContent = await fs.readFile(cleanPath, 'utf8');
+    expect(restoredContent).toBe(originalContent);
+
+    // Tracked path was not published
+    await expect(fs.access(trackedPath)).rejects.toThrow();
+
+    // No staging or backup files left behind
+    const dirEntries = await fs.readdir(tmpDir);
+    expect(dirEntries.some((f) => f.includes('staging'))).toBe(false);
+    expect(dirEntries.some((f) => f.includes('backup'))).toBe(false);
+  });
+
+  test('reports rollback failures with exact paths when recovery restore fails', async () => {
+    const { mgr, tmpDir, inputPath } = await openTestDoc();
+    const cleanPath = path.join(tmpDir, 'clean-rollback-failure.docx');
+    const trackedPath = path.join(tmpDir, 'tracked-rollback-failure.docx');
+
+    await fs.writeFile(cleanPath, 'INITIAL_DATA');
+
+    const result = await save(mgr, {
+      file_path: inputPath,
+      save_to_local_path: cleanPath,
+      tracked_save_to_local_path: trackedPath,
+      save_format: 'both',
+      allow_overwrite: true,
+      _testHooks: {
+        beforePublish: ({ index }) => {
+          if (index === 1) {
+            throw new Error('Simulated tracked publish failure');
+          }
+        },
+        beforeRestore: ({ destination }) => {
+          if (destination === cleanPath) {
+            throw new Error('Simulated unrecoverable disk failure during backup restore');
+          }
+        },
+      },
+    });
+
+    assertFailure(result, 'SAVE_ERROR', 'rollback failure');
+    const errObj = (result as Record<string, unknown>).error as Record<string, unknown>;
+    expect(String(errObj.message)).toContain(cleanPath);
+    expect(String(errObj.message)).toContain('rollback failed for path(s)');
+
+    const rollbackFailures = (result as Record<string, unknown>).rollback_failures as Array<{ path: string; error: string }>;
+    expect(rollbackFailures).toBeDefined();
+    expect(rollbackFailures.length).toBeGreaterThan(0);
+    expect(rollbackFailures[0]?.path).toBe(cleanPath);
+  });
 });
+
