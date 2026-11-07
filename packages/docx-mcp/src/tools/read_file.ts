@@ -55,12 +55,27 @@ function getCommentAnchorParagraphId(comment: Comment): string | null {
   return comment.anchoredParagraphId ?? comment.endParagraphId ?? null;
 }
 
+function isRunInsideRemovedRevision(runEl: Element, paragraphEl: Element): boolean {
+  let cur = runEl.parentNode as Element | null;
+  while (cur && cur !== paragraphEl) {
+    if (cur.namespaceURI === OOXML.W_NS && (cur.localName === W.del || cur.localName === W.moveFrom)) {
+      return true;
+    }
+    cur = cur.parentNode as Element | null;
+  }
+  return false;
+}
+
 function getParagraphRunVisibleLengths(paragraphEl: Element): number[] {
   const runLengths: number[] = [];
   const runElements = Array.from(paragraphEl.getElementsByTagNameNS(OOXML.W_NS, W.r));
   let fieldState = FieldState.OUTSIDE_FIELD;
 
   for (const runEl of runElements) {
+    if (isRunInsideRemovedRevision(runEl, paragraphEl)) {
+      runLengths.push(0);
+      continue;
+    }
     let visibleLength = 0;
 
     for (const child of Array.from(runEl.childNodes)) {
