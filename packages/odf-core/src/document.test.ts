@@ -127,24 +127,28 @@ describe('OdfDocument — replaceTextById', () => {
 });
 
 describe('OdfDocument — insertParagraph', () => {
-  it('[OINS-01] inserts a body paragraph AFTER the anchor, inheriting its style', () => {
+  it('[OINS-01] inserts a body paragraph AFTER the anchor, inheriting its style with monotonic ID', () => {
     const doc = OdfDocument.fromContentXml(
       contentXml('<text:p text:style-name="Standard">First</text:p><text:p>Second</text:p>'),
     );
     const res = doc.insertParagraph('p0', 'Inserted', 'AFTER');
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.newIds).toEqual(['p1']);
-    expect(doc.getParagraphs().map((p) => p.text)).toEqual(['First', 'Inserted', 'Second']);
+    if (res.ok) expect(res.newIds).toEqual(['p2']);
+    expect(doc.getParagraphs().map((p) => `${p.id}:${p.text}`)).toEqual([
+      'p0:First',
+      'p2:Inserted',
+      'p1:Second',
+    ]);
     // Inherited the anchor's body-paragraph style.
     expect(doc.toXml()).toContain('text:style-name="Standard">Inserted');
   });
 
-  it('inserts BEFORE the anchor', () => {
+  it('inserts BEFORE the anchor with monotonic ID and preserves existing IDs', () => {
     const doc = OdfDocument.fromContentXml(contentXml('<text:p>Only</text:p>'));
     const res = doc.insertParagraph('p0', 'New first', 'BEFORE');
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.newIds).toEqual(['p0']);
-    expect(doc.getParagraphs().map((p) => p.text)).toEqual(['New first', 'Only']);
+    if (res.ok) expect(res.newIds).toEqual(['p1']);
+    expect(doc.getParagraphs().map((p) => `${p.id}:${p.text}`)).toEqual(['p1:New first', 'p0:Only']);
   });
 
   it('[OINS-02] does NOT propagate heading style when the anchor is a text:h', () => {
@@ -179,13 +183,51 @@ describe('OdfDocument — insertParagraph', () => {
     expect(doc.getParagraphs()).toHaveLength(1);
   });
 
-  it('shifts positional IDs after the insertion point', () => {
+  it('[OINS-05] preserves initial p0..pN identities, allocates new IDs monotonically, and renumbers on reopen', () => {
     const doc = OdfDocument.fromContentXml(
       contentXml('<text:p>A</text:p><text:p>B</text:p><text:p>C</text:p>'),
     );
-    // Insert after p0 — old p1/p2 (B/C) shift to p2/p3.
-    doc.insertParagraph('p0', 'NEW', 'AFTER');
-    const paras = doc.getParagraphs();
-    expect(paras.map((p) => `${p.id}:${p.text}`)).toEqual(['p0:A', 'p1:NEW', 'p2:B', 'p3:C']);
+    // Initial: p0:A, p1:B, p2:C. Next monotonic ID is p3.
+    // Insert after p0: order changes without retargeting existing IDs; NEW1 gets p3.
+    const res1 = doc.insertParagraph('p0', 'NEW1', 'AFTER');
+    expect(res1.ok).toBe(true);
+    if (res1.ok) expect(res1.newIds).toEqual(['p3']);
+
+    expect(doc.getParagraphs().map((p) => `${p.id}:${p.text}`)).toEqual([
+      'p0:A',
+      'p3:NEW1',
+      'p1:B',
+      'p2:C',
+    ]);
+
+    // Insert another paragraph after p1 (B): NEW2 gets p4.
+    const res2 = doc.insertParagraph('p1', 'NEW2', 'AFTER');
+    expect(res2.ok).toBe(true);
+    if (res2.ok) expect(res2.newIds).toEqual(['p4']);
+
+    expect(doc.getParagraphs().map((p) => `${p.id}:${p.text}`)).toEqual([
+      'p0:A',
+      'p3:NEW1',
+      'p1:B',
+      'p4:NEW2',
+      'p2:C',
+    ]);
+
+    // Bidirectional map: can query text by all IDs (initial and allocated)
+    expect(doc.getParagraphTextById('p0')).toBe('A');
+    expect(doc.getParagraphTextById('p1')).toBe('B');
+    expect(doc.getParagraphTextById('p2')).toBe('C');
+    expect(doc.getParagraphTextById('p3')).toBe('NEW1');
+    expect(doc.getParagraphTextById('p4')).toBe('NEW2');
+
+    // Reopen deterministically renumbers stored document order to p0..pN-1
+    const reopened = OdfDocument.fromContentXml(doc.toXml());
+    expect(reopened.getParagraphs().map((p) => `${p.id}:${p.text}`)).toEqual([
+      'p0:A',
+      'p1:NEW1',
+      'p2:B',
+      'p3:NEW2',
+      'p4:C',
+    ]);
   });
 });
