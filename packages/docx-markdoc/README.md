@@ -471,6 +471,11 @@ The same attribute applies to `insert-before` and `insert-after` when their
 anchor or `style-source` paragraph has mixed character formatting; without it,
 such an insertion fails closed rather than choosing the longest source run.
 
+Insertions consume their formatting donors before source edits are applied,
+while keeping the relative order of insertion declarations. An insertion cannot
+use a paragraph deleted by the same compilation as its anchor or style donor;
+preflight rejects that dependency with `CONFLICTING_INSERT_DEPENDENCY`.
+
 `format-source` only selects the inherited source template. It never authors
 new formatting. One generated replacement hunk may instead declare an explicit
 additive overlay using the closed `underline="single"` and
@@ -951,3 +956,11 @@ const verdict = await renderPlainPdf({
 });
 // verdict.status: 'passed' | 'failed' | 'not_run'; verdict.pageTexts: each page's text, when extraction ran
 ```
+
+Annotation replies may be declared before their parents. Projection schedules
+parents first and rejects cyclic reply graphs. A reply projected as a comment
+requires its parent to be projected as a comment too.
+
+Both edit-pair export functions reject source-only IR whose omitted before text
+has not yet been resolved against the pinned source. Compile it first and export
+from the resulting IR.
