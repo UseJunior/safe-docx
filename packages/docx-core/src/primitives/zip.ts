@@ -19,6 +19,11 @@ export type ZipEntryInfo = {
   uncompressedSize: number;
 };
 
+export type DocxZipBufferOptions = {
+  fileDate?: Date;
+  overrides?: Record<string, string | Buffer | Uint8Array | null>;
+};
+
 type ZipEntryStats = {
   compressedSize?: unknown;
   uncompressedSize?: unknown;
@@ -41,9 +46,6 @@ function normalizePartText(path: string, text: string): string {
 
 export class DocxZip {
   private zip: JSZip;
-  /** Tail of the in-flight `toBuffer` chain; see `toBuffer`. */
-  private serialization: Promise<void> = Promise.resolve();
-
   private constructor(zip: JSZip) {
     this.zip = zip;
   }
@@ -84,48 +86,62 @@ export class DocxZip {
   }
 
   /**
-   * Serialize the archive. With `fileDate`, every entry is written with that
-   * date instead of the time it was (re)written, so the output depends only on
-   * the entries' content; the in-memory dates are restored afterwards so a
-   * later save without the option behaves as before. Overlapping calls on one
-   * instance run one at a time, so a concurrent save without the option never
-   * observes another call's fixed date.
+   * Return an isolated DocxZip snapshot of the archive. Subsequent writes to
+   * the snapshot or to this instance do not affect each other.
+   * If `overrides` are provided, those entries are written (or deleted if null).
    */
-  toBuffer(opts?: { fileDate?: Date }): Promise<Buffer> {
-    const run = this.serialization.then(() => this.serialize(opts));
-    this.serialization = run.then(() => undefined, () => undefined);
-    return run;
+  snapshot(overrides?: Record<string, string | Buffer | Uint8Array | null>): DocxZip {
+    const cloned = new JSZip();
+    for (const [name, file] of Object.entries(this.zip.files)) {
+      if (file.dir) continue;
+      cloned.files[name] = Object.assign(Object.create(Object.getPrototypeOf(file)), file);
+    }
+    if (overrides) {
+      for (const [path, content] of Object.entries(overrides)) {
+        if (content === null || content === undefined) {
+          delete cloned.files[path];
+        } else {
+          cloned.file(path, content, { createFolders: false });
+        }
+      }
+    }
+    return new DocxZip(cloned);
   }
 
-  private async serialize(opts?: { fileDate?: Date }): Promise<Buffer> {
-    // OPC packages never need directory entries (Word does not emit them);
-    // drop any that came in via the source archive or earlier writes so the
-    // output contract is simply "zero directory entries". NOT zip.remove():
-    // that deletes a folder's contents recursively.
-    for (const file of Object.values(this.zip.files)) {
-      if (file.dir) delete this.zip.files[file.name];
-    }
-    const savedDates = new Map<string, Date>();
-    if (opts?.fileDate) {
+  clone(overrides?: Record<string, string | Buffer | Uint8Array | null>): DocxZip {
+    return this.snapshot(overrides);
+  }
+
+  /**
+   * Serialize the archive.
+   *
+   * Serialization is fully isolated: it serializes an isolated snapshot of the
+   * archive with any caller-supplied `overrides` applied, leaving this archive
+   * and its in-memory entry dates completely unmodified even if serialization
+   * throws an error.
+   *
+   * With `fileDate`, every entry in the output archive is written with that
+   * date instead of the time it was (re)written, so the output depends only on
+   * the entries' content.
+   */
+  toBuffer(opts?: DocxZipBufferOptions): Promise<Buffer> {
+    const snapshot = this.snapshot(opts?.overrides);
+    return snapshot.serializeDirect(opts?.fileDate);
+  }
+
+  private async serializeDirect(fileDate?: Date): Promise<Buffer> {
+    if (fileDate) {
       for (const file of Object.values(this.zip.files)) {
-        savedDates.set(file.name, file.date);
-        file.date = opts.fileDate;
+        file.date = fileDate;
       }
     }
-    try {
-      // jszip defaults to STORE, which inflated saves ~6x.
-      const out = await this.zip.generateAsync({
-        type: 'nodebuffer',
-        compression: 'DEFLATE',
-        compressionOptions: { level: 6 },
-      });
-      return out as Buffer;
-    } finally {
-      for (const [name, date] of savedDates) {
-        const file = this.zip.files[name];
-        if (file) file.date = date;
-      }
-    }
+    // jszip defaults to STORE, which inflated saves ~6x.
+    const out = await this.zip.generateAsync({
+      type: 'nodebuffer',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 },
+    });
+    return out as Buffer;
   }
 }
 
