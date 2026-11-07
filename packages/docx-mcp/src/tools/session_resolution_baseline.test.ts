@@ -8,6 +8,7 @@ import { save } from './save.js';
 import { compareDocuments_tool } from './compare_documents.js';
 import { createTestSessionManager, createTrackedTempDir, registerCleanup } from '../testing/session-test-utils.js';
 import { makeDocxWithDocumentXml } from '../testing/docx_test_utils.js';
+import { DocxDocument, DocxZip } from '@usejunior/docx-core';
 
 const test = testAllure.epic('Document Editing').withLabels({ feature: 'Session Resolution Baseline' });
 
@@ -171,6 +172,113 @@ describe('auto-open baseline capture regression', () => {
       expect(Buffer.isBuffer(session.comparisonBaselineWithBookmarks)).toBe(true);
       expect(session.comparisonBaseline!.length).toBeGreaterThan(0);
       expect(session.comparisonBaselineWithBookmarks!.length).toBeGreaterThan(0);
+    });
+  });
+  test('publishes clean and bookmarked baselines as an atomic pair, shares in-flight generation, and retries failures (#1300)', async ({ given, when, then }: AllureBddContext) => {
+    let mgr: ReturnType<typeof createTestSessionManager>;
+    let inputPath: string;
+    let resolved: Awaited<ReturnType<typeof resolveSessionForTool>>;
+
+    await given('a session opened via resolveSessionForTool', async () => {
+      mgr = createTestSessionManager();
+      const tmpDir = await createTrackedTempDir('safe-docx-baseline-paired-');
+      inputPath = await createFragmentedDoc(tmpDir);
+      resolved = await resolveSessionForTool(mgr, { file_path: inputPath }, { toolName: 'read_file' });
+      expect(resolved.ok).toBe(true);
+    });
+
+    await when('baseline generation fails on the second buffer serialization during the first attempt', async () => {
+      if (!resolved.ok) return;
+      const session = resolved.session;
+      const originalLoad = DocxDocument.load.bind(DocxDocument);
+      let loadCalls = 0;
+
+      DocxDocument.load = (async (buf: Buffer) => {
+        loadCalls += 1;
+        const doc = await originalLoad(buf);
+        if (loadCalls === 1) {
+          const origToBuffer = doc.toBuffer.bind(doc);
+          let toBufferCalls = 0;
+          doc.toBuffer = (async (opts?: Parameters<typeof origToBuffer>[0]) => {
+            toBufferCalls += 1;
+            if (toBufferCalls === 2) {
+              throw new Error('Simulated bookmarked baseline serialization failure');
+            }
+            return origToBuffer(opts);
+          }) as typeof doc.toBuffer;
+        }
+        return doc;
+      }) as typeof DocxDocument.load;
+
+      try {
+        await expect(mgr.ensureBaselines(session)).rejects.toThrow(
+          'Simulated bookmarked baseline serialization failure',
+        );
+        // Neither baseline buffer may be published when the paired generation fails midway
+        expect(session.comparisonBaselines).toBeNull();
+        expect(session.comparisonBaseline).toBeNull();
+        expect(session.comparisonBaselineWithBookmarks).toBeNull();
+
+        // Subsequent concurrent callers share a single retry and receive the paired resource
+        const [b1, b2] = await Promise.all([
+          mgr.ensureBaselines(session),
+          mgr.ensureBaselines(session),
+        ]);
+        expect(loadCalls).toBe(2);
+        expect(b1).toBe(b2);
+        expect(session.comparisonBaselines).toBe(b1);
+        expect(session.comparisonBaseline).toBe(b1.clean);
+        expect(session.comparisonBaselineWithBookmarks).toBe(b1.withBookmarks);
+      } finally {
+        DocxDocument.load = originalLoad;
+      }
+    });
+
+    await then('a half-populated baseline state is rejected and regenerated as a complete pair', async () => {
+      if (!resolved.ok) return;
+      const session = resolved.session;
+      // Corrupt one half of the pair
+      session.comparisonBaselineWithBookmarks = null;
+      const repaired = await mgr.ensureBaselines(session);
+      expect(Buffer.isBuffer(repaired.clean)).toBe(true);
+      expect(Buffer.isBuffer(repaired.withBookmarks)).toBe(true);
+      expect(session.comparisonBaseline).toBe(repaired.clean);
+      expect(session.comparisonBaselineWithBookmarks).toBe(repaired.withBookmarks);
+    });
+  });
+
+  test('preserves normalized comparison baselines even when the live session uses skipNormalization (#1300)', async ({ given, when, then }: AllureBddContext) => {
+    let mgr: ReturnType<typeof createTestSessionManager>;
+    let inputPath: string;
+    let buf: Buffer;
+
+    await given('a document with fragmented runs opened with skipNormalization: true', async () => {
+      mgr = createTestSessionManager();
+      const tmpDir = await createTrackedTempDir('safe-docx-baseline-skipnorm-');
+      inputPath = await createFragmentedDoc(tmpDir);
+      buf = await fs.readFile(inputPath);
+    });
+
+    await when('finalizeNewSession is called with skipNormalization: true and ensureBaselines runs', async () => {
+      const session = await mgr.createSession(buf, 'fragmented.docx', inputPath);
+      const finalized = await mgr.finalizeNewSession(session, { skipNormalization: true });
+      expect(finalized.normalizationStats).toBeNull();
+
+      const baselines = await mgr.ensureBaselines(session);
+      const cleanZip = await DocxZip.load(baselines.clean);
+      const cleanXml = await cleanZip.readText('word/document.xml');
+      const bookmarkedZip = await DocxZip.load(baselines.withBookmarks);
+      const bookmarkedXml = await bookmarkedZip.readText('word/document.xml');
+
+      expect(cleanXml).toContain('<w:t>Bylaws</w:t>');
+      expect(cleanXml).toContain('<w:t>Amendment</w:t>');
+      expect(cleanXml).not.toContain('_bk_');
+      expect(bookmarkedXml).toContain('<w:t>Bylaws</w:t>');
+      expect(bookmarkedXml).toContain('_bk_');
+    });
+
+    await then('both baseline buffers are normalized independently of the live session option', () => {
+      expect(true).toBe(true);
     });
   });
 });
