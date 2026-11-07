@@ -77,6 +77,9 @@ export type TabInfo = {
   index: number;
 };
 
+/** Lifecycle state of the local document structure cache */
+export type DocumentStructureState = 'unloaded' | 'current' | 'stale_after_write';
+
 /** Document structure cache */
 export type DocumentStructureCache = {
   docId: string;
