@@ -808,6 +808,70 @@ property through `appendInOrder`, which throws on any property name
 missing from the table so new properties force a conscious ordering
 decision.
 
+## [ECMA-PART1-17-3-1-13] w:jc paragraph alignment
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.1.13"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:jc
+verifiedBy: packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts
+```
+
+`w:jc` sets a paragraph's alignment. The `format_layout` tool writes the
+transitional `ST_Jc` values `left`, `center`, `right` and `both` (the values
+Word writes) at the `w:jc` position in the `CT_PPrBase` sequence and records
+the prior properties in a `w:pPrChange`. The bidi-relative `start`/`end` and
+the distribution values, which the transitional schema also permits, are out
+of scope.
+
+## [ECMA-PART1-17-3-1-14] w:keepLines keep paragraph lines together
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.1.14"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepLines
+verifiedBy: packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts
+```
+
+`w:keepLines` is a `CT_OnOff` property that keeps all lines of a paragraph on
+one page. `format_layout` sets it as a bare element (on) or removes a direct
+element that is on, so the style hierarchy decides the value again; a direct
+element that is already explicitly off is left alone.
+
+## [ECMA-PART1-17-3-1-15] w:keepNext keep paragraph with next
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.1.15"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepNext
+verifiedBy: packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts
+```
+
+`w:keepNext` is a `CT_OnOff` property that keeps a paragraph on the same page
+as the next paragraph. `format_layout` sets or removes the direct element with
+the same on/off rules as `w:keepLines`.
+
+## [ECMA-PART1-17-3-1-23] w:pageBreakBefore start paragraph on next page
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.1.23"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pageBreakBefore
+verifiedBy: packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts
+```
+
+`w:pageBreakBefore` is a `CT_OnOff` property that starts the paragraph on a
+new page. `format_layout` sets or removes the direct element, which lets a
+caller drop a property made redundant by a preceding `nextPage` section break.
+
 ## [ECMA-PART1-17-3-1-20] w:outlineLvl paragraph outline level
 
 ```yaml

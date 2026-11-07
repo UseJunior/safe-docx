@@ -4,13 +4,15 @@ import { err, ok, type ToolResponse } from './types.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
 import { preflightAiRevisionMutation } from './ai_revision_guard.js';
 import type {
+  ParagraphJustification,
+  ParagraphPropertiesMutation,
   ParagraphSpacingMutation,
   SpacingLineRule,
   RowHeightRule,
   TableCellPaddingMutation,
   TableRowHeightMutation,
 } from '@usejunior/docx-core';
-import { DocxDocument } from '@usejunior/docx-core';
+import { DocxDocument, ParagraphPropertiesMutationError } from '@usejunior/docx-core';
 
 type ParagraphSpacingInput = {
   paragraph_ids?: unknown;
@@ -18,6 +20,14 @@ type ParagraphSpacingInput = {
   after_twips?: unknown;
   line_twips?: unknown;
   line_rule?: unknown;
+};
+
+type ParagraphPropertiesInput = {
+  paragraph_ids?: unknown;
+  alignment?: unknown;
+  page_break_before?: unknown;
+  keep_next?: unknown;
+  keep_lines?: unknown;
 };
 
 type RowHeightInput = {
@@ -41,11 +51,13 @@ type FormatLayoutParams = {
   file_path?: string;
   strict?: boolean;
   paragraph_spacing?: ParagraphSpacingInput;
+  paragraph_properties?: ParagraphPropertiesInput;
   row_height?: RowHeightInput;
   cell_padding?: CellPaddingInput;
 };
 
 const LINE_RULES = new Set<SpacingLineRule>(['auto', 'exact', 'atLeast']);
+const PARAGRAPH_ALIGNMENTS = new Set<ParagraphJustification>(['left', 'center', 'right', 'both']);
 const ROW_HEIGHT_RULES = new Set<RowHeightRule>(['auto', 'exact', 'atLeast']);
 
 type ValidationError = {
@@ -111,22 +123,16 @@ function parseOptionalIndexArray(name: string, value: unknown): number[] | undef
   return parseIndexArray(name, value);
 }
 
-function parseParagraphSpacingMutation(input: unknown): ParagraphSpacingMutation | ValidationError | null {
-  if (typeof input === 'undefined') return null;
-  if (!isRecord(input)) {
-    return validationError('paragraph_spacing must be an object.', 'Provide paragraph_spacing with paragraph_ids and spacing fields.');
-  }
-
-  const idsRaw = input.paragraph_ids;
+function parseParagraphIds(group: string, idsRaw: unknown): string[] | ValidationError {
   if (!Array.isArray(idsRaw) || idsRaw.length === 0) {
-    return validationError('paragraph_spacing.paragraph_ids must be a non-empty array.', 'Pass one or more _bk_* identifiers.');
+    return validationError(`${group}.paragraph_ids must be a non-empty array.`, 'Pass one or more _bk_* identifiers.');
   }
   const paragraphIds: string[] = [];
   const seen = new Set<string>();
   for (let i = 0; i < idsRaw.length; i++) {
     const id = idsRaw[i];
     if (typeof id !== 'string' || id.trim().length === 0) {
-      return validationError(`paragraph_spacing.paragraph_ids[${i}] must be a non-empty string.`, 'Use paragraph ids like _bk_123abc...');
+      return validationError(`${group}.paragraph_ids[${i}] must be a non-empty string.`, 'Use paragraph ids like _bk_123abc...');
     }
     const trimmed = id.trim();
     if (!seen.has(trimmed)) {
@@ -134,6 +140,67 @@ function parseParagraphSpacingMutation(input: unknown): ParagraphSpacingMutation
       paragraphIds.push(trimmed);
     }
   }
+  return paragraphIds;
+}
+
+function parseOptionalBoolean(name: string, value: unknown): boolean | undefined | ValidationError {
+  if (typeof value === 'undefined') return undefined;
+  if (typeof value !== 'boolean') {
+    return validationError(`${name} must be a boolean.`, `Pass true to set the property or false to remove it.`);
+  }
+  return value;
+}
+
+function parseParagraphPropertiesMutation(input: unknown): ParagraphPropertiesMutation | ValidationError | null {
+  if (typeof input === 'undefined') return null;
+  if (!isRecord(input)) {
+    return validationError(
+      'paragraph_properties must be an object.',
+      'Provide paragraph_properties with paragraph_ids and alignment/pagination fields.',
+    );
+  }
+
+  const paragraphIds = parseParagraphIds('paragraph_properties', input.paragraph_ids);
+  if (isValidationError(paragraphIds)) return paragraphIds;
+
+  let alignment: ParagraphJustification | undefined;
+  if (typeof input.alignment !== 'undefined') {
+    if (typeof input.alignment !== 'string' || !PARAGRAPH_ALIGNMENTS.has(input.alignment as ParagraphJustification)) {
+      return validationError('paragraph_properties.alignment is invalid.', "Use one of: 'left', 'center', 'right', 'both'.");
+    }
+    alignment = input.alignment as ParagraphJustification;
+  }
+
+  const pageBreakBefore = parseOptionalBoolean('paragraph_properties.page_break_before', input.page_break_before);
+  if (isValidationError(pageBreakBefore)) return pageBreakBefore;
+  const keepNext = parseOptionalBoolean('paragraph_properties.keep_next', input.keep_next);
+  if (isValidationError(keepNext)) return keepNext;
+  const keepLines = parseOptionalBoolean('paragraph_properties.keep_lines', input.keep_lines);
+  if (isValidationError(keepLines)) return keepLines;
+
+  if (
+    typeof alignment === 'undefined'
+    && typeof pageBreakBefore === 'undefined'
+    && typeof keepNext === 'undefined'
+    && typeof keepLines === 'undefined'
+  ) {
+    return validationError(
+      'paragraph_properties requires at least one property.',
+      'Provide one or more of alignment, page_break_before, keep_next, keep_lines.',
+    );
+  }
+
+  return { paragraphIds, alignment, pageBreakBefore, keepNext, keepLines };
+}
+
+function parseParagraphSpacingMutation(input: unknown): ParagraphSpacingMutation | ValidationError | null {
+  if (typeof input === 'undefined') return null;
+  if (!isRecord(input)) {
+    return validationError('paragraph_spacing must be an object.', 'Provide paragraph_spacing with paragraph_ids and spacing fields.');
+  }
+
+  const paragraphIds = parseParagraphIds('paragraph_spacing', input.paragraph_ids);
+  if (isValidationError(paragraphIds)) return paragraphIds;
 
   const beforeTwips = parseOptionalNonNegativeInteger('paragraph_spacing.before_twips', input.before_twips);
   if (isValidationError(beforeTwips)) return beforeTwips;
@@ -268,6 +335,11 @@ export async function formatLayout(
       return err('VALIDATION_ERROR', paragraphSpacing.message, paragraphSpacing.hint);
     }
 
+    const paragraphProperties = parseParagraphPropertiesMutation(params.paragraph_properties);
+    if (isValidationError(paragraphProperties)) {
+      return err('VALIDATION_ERROR', paragraphProperties.message, paragraphProperties.hint);
+    }
+
     const rowHeight = parseRowHeightMutation(params.row_height);
     if (isValidationError(rowHeight)) {
       return err('VALIDATION_ERROR', rowHeight.message, rowHeight.hint);
@@ -278,11 +350,11 @@ export async function formatLayout(
       return err('VALIDATION_ERROR', cellPadding.message, cellPadding.hint);
     }
 
-    if (!paragraphSpacing && !rowHeight && !cellPadding) {
+    if (!paragraphSpacing && !paragraphProperties && !rowHeight && !cellPadding) {
       return err(
         'VALIDATION_ERROR',
         'No layout operation was provided.',
-        'Provide at least one of paragraph_spacing, row_height, or cell_padding.',
+        'Provide at least one of paragraph_spacing, paragraph_properties, row_height, or cell_padding.',
       );
     }
 
@@ -292,6 +364,17 @@ export async function formatLayout(
         return err(
           'INVALID_SELECTOR',
           `paragraph_spacing references missing paragraph IDs: ${missing.join(', ')}`,
+          'Set strict=false to ignore missing selectors and apply best-effort changes.',
+        );
+      }
+    }
+
+    if (paragraphProperties && strict) {
+      const missing = paragraphProperties.paragraphIds.filter((id) => session.doc.getParagraphElementById(id) === null);
+      if (missing.length > 0) {
+        return err(
+          'INVALID_SELECTOR',
+          `paragraph_properties references missing paragraph IDs: ${missing.join(', ')}`,
           'Set strict=false to ignore missing selectors and apply best-effort changes.',
         );
       }
@@ -361,6 +444,9 @@ export async function formatLayout(
       ctx,
       (previewDoc, previewCtx) => {
         const previewParagraphCountBefore = previewDoc.getParagraphs().length;
+        // paragraph_properties runs first so its foreign-revision check sees
+        // the original w:pPrChange before spacing could replace it.
+        if (paragraphProperties) previewDoc.setParagraphProperties(paragraphProperties, previewCtx);
         if (paragraphSpacing) previewDoc.setParagraphSpacing(paragraphSpacing, previewCtx);
         if (rowHeight) previewDoc.setTableRowHeight(rowHeight, previewCtx);
         if (cellPadding) previewDoc.setTableCellPadding(cellPadding, previewCtx);
@@ -374,6 +460,9 @@ export async function formatLayout(
     );
     if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
+    const paragraphPropertiesResult = paragraphProperties
+      ? session.doc.setParagraphProperties(paragraphProperties, ctx)
+      : null;
     const paragraphSpacingResult = paragraphSpacing ? session.doc.setParagraphSpacing(paragraphSpacing, ctx) : null;
     const rowHeightResult = rowHeight ? session.doc.setTableRowHeight(rowHeight, ctx) : null;
     const cellPaddingResult = cellPadding ? session.doc.setTableCellPadding(cellPadding, ctx) : null;
@@ -389,6 +478,13 @@ export async function formatLayout(
 
     if (paragraphSpacingResult && paragraphSpacingResult.missingParagraphIds.length > 0) {
       const message = `paragraph_spacing skipped missing paragraph IDs: ${paragraphSpacingResult.missingParagraphIds.join(', ')}`;
+      if (strict) {
+        return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+      }
+      warnings.push(message);
+    }
+    if (paragraphPropertiesResult && paragraphPropertiesResult.missingParagraphIds.length > 0) {
+      const message = `paragraph_properties skipped missing paragraph IDs: ${paragraphPropertiesResult.missingParagraphIds.join(', ')}`;
       if (strict) {
         return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
       }
@@ -430,7 +526,13 @@ export async function formatLayout(
       }
     }
 
-    const affectedParagraphs = paragraphSpacingResult?.affectedParagraphs ?? 0;
+    // A paragraph touched by both paragraph groups counts once.
+    const affectedParagraphIds = new Set<string>(paragraphPropertiesResult?.affectedParagraphIds ?? []);
+    if (paragraphSpacing && paragraphSpacingResult) {
+      const missing = new Set(paragraphSpacingResult.missingParagraphIds);
+      for (const id of paragraphSpacing.paragraphIds) if (!missing.has(id)) affectedParagraphIds.add(id);
+    }
+    const affectedParagraphs = affectedParagraphIds.size;
     const affectedRows = rowHeightResult?.affectedRows ?? 0;
     const affectedCells = cellPaddingResult?.affectedCells ?? 0;
     const totalAffected = affectedParagraphs + affectedRows + affectedCells;
@@ -448,6 +550,7 @@ export async function formatLayout(
         affected_cells: affectedCells,
       },
       paragraph_spacing_result: paragraphSpacingResult ?? undefined,
+      paragraph_properties_result: paragraphPropertiesResult ?? undefined,
       row_height_result: rowHeightResult ?? undefined,
       cell_padding_result: cellPaddingResult ?? undefined,
       no_spacer_paragraphs: paragraphCountBefore === paragraphCountAfter,
@@ -459,6 +562,9 @@ export async function formatLayout(
         : 'No document nodes matched the provided selectors.',
     }, metadata));
   } catch (e: unknown) {
+    if (e instanceof ParagraphPropertiesMutationError) {
+      return err(e.code, e.message, 'Resolve the existing paragraph-property revision (for example with accept_changes), then retry.');
+    }
     const message = errorMessage(e);
     return err('FORMAT_LAYOUT_ERROR', `Failed to apply layout formatting: ${message}`, 'Check selector inputs and retry.');
   }
