@@ -4,6 +4,7 @@ import { err, ok, type ToolResponse } from './types.js';
 import {
   OOXML,
   W,
+  FieldTracker,
   INLINE_COMMENT_MARKER_RUNTIME,
   renderToon,
   renderToonWithCommentEndnotes,
@@ -31,11 +32,7 @@ function getWAttr(el: Element, localName: string): string | null {
   return el.getAttributeNS(OOXML.W_NS, localName) ?? el.getAttribute(`w:${localName}`) ?? el.getAttribute(localName);
 }
 
-enum FieldState {
-  OUTSIDE_FIELD = 0,
-  IN_FIELD_CODE = 1,
-  IN_FIELD_RESULT = 2,
-}
+
 
 function escapeCommentSuffixText(text: string): string {
   return text
@@ -55,10 +52,12 @@ function getCommentAnchorParagraphId(comment: Comment): string | null {
   return comment.anchoredParagraphId ?? comment.endParagraphId ?? null;
 }
 
-function getParagraphRunVisibleLengths(paragraphEl: Element): number[] {
+function getParagraphRunVisibleLengths(
+  paragraphEl: Element,
+  tracker: FieldTracker = new FieldTracker({ strict: false, story: 'document' }),
+): number[] {
   const runLengths: number[] = [];
   const runElements = Array.from(paragraphEl.getElementsByTagNameNS(OOXML.W_NS, W.r));
-  let fieldState = FieldState.OUTSIDE_FIELD;
 
   for (const runEl of runElements) {
     let visibleLength = 0;
@@ -69,14 +68,12 @@ function getParagraphRunVisibleLengths(paragraphEl: Element): number[] {
       if (el.namespaceURI !== OOXML.W_NS) continue;
 
       if (el.localName === W.fldChar) {
-        const type = getWAttr(el, 'fldCharType') ?? '';
-        if (type === 'begin') fieldState = FieldState.IN_FIELD_CODE;
-        else if (type === 'separate') fieldState = FieldState.IN_FIELD_RESULT;
-        else if (type === 'end') fieldState = FieldState.OUTSIDE_FIELD;
+        const type = getWAttr(el, 'fldCharType');
+        tracker.advanceFieldChar(type);
         continue;
       }
 
-      if (fieldState === FieldState.IN_FIELD_CODE) continue;
+      if (tracker.isInsideFieldCode()) continue;
 
       if (el.localName === W.t) {
         visibleLength += (el.textContent ?? '').length;
@@ -89,6 +86,26 @@ function getParagraphRunVisibleLengths(paragraphEl: Element): number[] {
   }
 
   return runLengths;
+}
+
+function buildParagraphRunLengthsMap(
+  paragraphs: ReadonlyMap<string, Element> | Iterable<Element>,
+): Map<string, number[]> {
+  const map = new Map<string, number[]>();
+  const tracker = new FieldTracker({ strict: false, story: 'document' });
+  if (paragraphs instanceof Map || (typeof (paragraphs as any).entries === 'function' && typeof (paragraphs as any).get === 'function')) {
+    for (const [id, el] of (paragraphs as ReadonlyMap<string, Element>).entries()) {
+      const runLengths = getParagraphRunVisibleLengths(el, tracker);
+      if (id) map.set(id, runLengths);
+    }
+  } else {
+    for (const el of paragraphs as Iterable<Element>) {
+      const runLengths = getParagraphRunVisibleLengths(el, tracker);
+      const id = getParagraphBookmarkId(el);
+      if (id) map.set(id, runLengths);
+    }
+  }
+  return map;
 }
 
 function resolveCommentVisibleOffset(
@@ -213,10 +230,18 @@ function mapDocumentViewComment(
 function attachParagraphComments(
   nodes: readonly DocumentViewNode[],
   comments: readonly Comment[],
-  options?: { includeInlineMarkers?: boolean; paragraphElementsById?: ReadonlyMap<string, Element> },
+  options?: {
+    includeInlineMarkers?: boolean;
+    paragraphElementsById?: ReadonlyMap<string, Element>;
+    paragraphRunLengthsById?: Map<string, number[]>;
+  },
 ): DocumentViewNode[] {
   const commentsByParagraph = new Map<string, DocumentViewComment[]>();
-  const paragraphRunLengthsById = new Map<string, number[]>();
+  const paragraphRunLengthsById =
+    options?.paragraphRunLengthsById ??
+    (options?.paragraphElementsById
+      ? buildParagraphRunLengthsMap(options.paragraphElementsById)
+      : new Map<string, number[]>());
   for (const comment of comments) {
     const paragraphId = getCommentAnchorParagraphId(comment);
     if (!paragraphId) continue;
@@ -414,14 +439,17 @@ export async function readFile(
     // passes (comment inline markers, content_fingerprint) consult this map
     // instead of calling getParagraphElementById() per node, which would be
     // a linear scan and turn the read into O(N^2) on large documents.
-    const paragraphElementsById = (() => {
-      const map = new Map<string, Element>();
-      for (const p of session.doc.getParagraphs()) {
-        const id = getParagraphBookmarkId(p);
-        if (id) map.set(id, p);
+    const paragraphElementsById = new Map<string, Element>();
+    const paragraphRunLengthsById = new Map<string, number[]>();
+    const storyFieldTracker = new FieldTracker({ strict: false, story: 'document' });
+    for (const p of session.doc.getParagraphs()) {
+      const runLengths = getParagraphRunVisibleLengths(p, storyFieldTracker);
+      const id = getParagraphBookmarkId(p);
+      if (id) {
+        paragraphElementsById.set(id, p);
+        paragraphRunLengthsById.set(id, runLengths);
       }
-      return map;
-    })();
+    }
 
     // Footnote [^N] markers: the document view already injects them into
     // tagged_text/text at the reference's visible offset AND exposes the same
@@ -457,6 +485,8 @@ export async function readFile(
           includeInlineMarkers: commentRendering === 'inline_markers',
           paragraphElementsById:
             commentRendering === 'inline_markers' ? paragraphElementsById : undefined,
+          paragraphRunLengthsById:
+            commentRendering === 'inline_markers' ? paragraphRunLengthsById : undefined,
         });
       } catch (e: unknown) {
         commentLoadError = errorMessage(e);

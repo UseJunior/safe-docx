@@ -605,6 +605,74 @@ describe('Traceability: multi-section documents, headers/footers, and fields', (
           expect(result.ok).toBe(false);
           expect(result.issues.some((i) => i.check === 'field_pairing' && i.part === 'word/footer1.xml')).toBe(true);
         });
+
+        await then('nested fields in story parts pass the structural check without error', async () => {
+          const zip = await JSZip.loadAsync(buffer);
+          const docXml = await zip.file('word/document.xml')!.async('text');
+          const nestedFieldXml =
+            '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+            '<w:r><w:instrText xml:space="preserve"> IF </w:instrText></w:r>' +
+            '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+            '<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>' +
+            '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+            '<w:r><w:t>1</w:t></w:r>' +
+            '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+            '<w:r><w:instrText xml:space="preserve"> = 1 "first" "other" </w:instrText></w:r>' +
+            '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+            '<w:r><w:t>first</w:t></w:r>' +
+            '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>';
+          const injected = docXml.replace('<w:sectPr', `${nestedFieldXml}<w:sectPr`);
+          zip.file('word/document.xml', injected);
+          const result = await checkGeneratedPackage((await zip.generateAsync({ type: 'nodebuffer' })) as Buffer);
+          expect(result.ok, JSON.stringify(result.issues)).toBe(true);
+        });
+
+        await then('fields spanning paragraphs in story parts pass the structural check', async () => {
+          const zip = await JSZip.loadAsync(buffer);
+          const docXml = await zip.file('word/document.xml')!.async('text');
+          const spanningFieldXml =
+            '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+            '<w:r><w:instrText xml:space="preserve"> IF 1 = 1 </w:instrText></w:r></w:p>' +
+            '<w:p><w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+            '<w:r><w:t>True</w:t></w:r>' +
+            '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>';
+          const injected = docXml.replace('<w:sectPr', `${spanningFieldXml}<w:sectPr`);
+          zip.file('word/document.xml', injected);
+          const result = await checkGeneratedPackage((await zip.generateAsync({ type: 'nodebuffer' })) as Buffer);
+          expect(result.ok, JSON.stringify(result.issues)).toBe(true);
+        });
+
+        await then('optional separator fields pass the structural check', async () => {
+          const zip = await JSZip.loadAsync(buffer);
+          const docXml = await zip.file('word/document.xml')!.async('text');
+          const noSeparateFieldXml =
+            '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+            '<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>' +
+            '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>';
+          const injected = docXml.replace('<w:sectPr', `${noSeparateFieldXml}<w:sectPr`);
+          zip.file('word/document.xml', injected);
+          const result = await checkGeneratedPackage((await zip.generateAsync({ type: 'nodebuffer' })) as Buffer);
+          expect(result.ok, JSON.stringify(result.issues)).toBe(true);
+        });
+
+        await then('stray and duplicate markers in story parts are detected as field_pairing issues', async () => {
+          const zip = await JSZip.loadAsync(buffer);
+          const docXml = await zip.file('word/document.xml')!.async('text');
+          // Stray separate
+          const straySep = docXml.replace('<w:sectPr', '<w:p><w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p><w:sectPr');
+          zip.file('word/document.xml', straySep);
+          let res = await checkGeneratedPackage((await zip.generateAsync({ type: 'nodebuffer' })) as Buffer);
+          expect(res.ok).toBe(false);
+          expect(res.issues.some((i) => i.check === 'field_pairing' && i.message.includes('separate without a matching begin'))).toBe(true);
+
+          // Duplicate separate
+          const dupSep = docXml.replace('<w:sectPr',
+            '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:sectPr');
+          zip.file('word/document.xml', dupSep);
+          res = await checkGeneratedPackage((await zip.generateAsync({ type: 'nodebuffer' })) as Buffer);
+          expect(res.ok).toBe(false);
+          expect(res.issues.some((i) => i.check === 'field_pairing' && i.message.includes('separate duplicate'))).toBe(true);
+        });
       },
     );
 
