@@ -756,6 +756,11 @@ export type PdfWordComparison = {
     splitRows: Array<{ table: number; row: number; pages: number[] }>;
     /** Lines LibreOffice exported without space glyphs (one PDF token), split back into source words on the evidence of the page's layout text. */
     joinedLines: Array<{ page: number; words: string }>;
+    /**
+     * Source words holding a dash that LibreOffice wrapped right after the dash at a line end ("re-" ending one
+     * line, "evaluate" starting the next, for "re-evaluate"), rejoined; the tokens as read.
+     */
+    wrappedHyphens: Array<{ page: number; words: string }>;
     /** Source words holding a footnote number that came out broken right after the number ("Closing1 ."); the tokens as read. */
     markSplits: Array<{ page: number; words: string }>;
   };
@@ -831,6 +836,7 @@ export const PDF_WORD_LIMITATIONS =
   'List labels are expected words, and so is each footnote number, joined to the text around its reference (LibreOffice sets it as a superscript with no space). pdftotext can break such a word right after the number when text follows it on the baseline ("Closing1 ." for "Closing1."); such a word, and any word spelled like it or like a run of its pieces, is compared on both sides as pieces broken after its numbers, and then each must come out as pdftotext can print it: a word holding the numbers whole or broken only there, into consecutive tokens on one page; any other such word whole. A word holding a footnote number in a table row split across pages must come out whole, or the row is not read back. Footnote text is read from the foot of each page, after the body: the rest of a note continued from the page before, then each note that starts there (its number, then its text); read in page order these areas must spell every note exactly once and in order, and each note must start on the page holding its reference (for a table row split across pages, the page where the mark is printed). A page holding nothing but the rest of a continued note belongs to the content before it and must show that section\'s footer. A repeated table header is expected without its footnote numbers, as LibreOffice draws it. ' +
   'Every page break is explained from the source: the checker searches for where each page can start between the source words around it (including inside wordless content such as empty table rows), and a start fixes what the page must show first, namely its section\'s footer and page number, the table header LibreOffice repeats when a table continues across the break, and the source words at the top of the page. Sections start on new pages. ' +
   'A justified line that LibreOffice exported without space glyphs reads back as one token. Such a token is split back into words only when it spells, character for character, a run of two or more consecutive source words and that is its one reading which the pdftotext -layout text of the same page (word boundaries by glyph position) shows more often than the raw text does, each split needing an occurrence of its own; without layout text, or with a different page count, nothing is split. The evidence is counted per page rather than tied to the line\'s position, so a changed run-together line passes only if the page\'s layout text shows the source reading in a place the raw text does not, which another run-together line that alignment placed as a single source word could supply. ' +
+  'A source word holding a dash (Unicode Pd, as in "re-evaluate") can wrap right after the dash, so that one raw line ends with "re-" and the next starts with "evaluate". Such tokens are rejoined only when they are consecutive in one page\'s body (not in a table row read back across pages, and not compared as pieces), every one but the last ends in a dash and is the last word of its raw line, and, within one stretch of the alignment between two matched words, none of them was placed and a missing source word is exactly their concatenation; each missing word is used once, and the whole comparison is then repeated on the rejoined words. A dash followed by a space on one line, a dash at a line end whose joined form is not the missing source word, and a word wrapped across a page break are not rejoined and fail. The raw text cannot tell such a wrap from a line break after the dash, just as no line break between words is checked. ' +
   'Two observed LibreOffice behaviours are assumed: a header row is never left alone at a page bottom (it stays with the first body row), and a table\'s last row can spill its empty remainder onto the next page, repeating the header there. ' +
   'The check passes only when every start that fits explains the same source words; if none fits, or starts that fit disagree (for example, a table with empty trailing rows followed by a table with the same header, or two such tables back to back at a page start), it fails. The text alone cannot always show layout, so such cases fail even when the PDF is right (a false failure); an ambiguity is never settled by a guess.';
 
@@ -960,8 +966,9 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
   };
 
   // Align the PDF words with the source, then explain page breaks and footnote placement.
-  type Evaluation = { result: PdfWordComparison; extraIdx: number[]; pdf: PdfPiece[] };
-  const evaluate = (read: readonly PdfToken[], split: ReturnType<typeof joinSplitRows>, joinedLines: PdfWordComparison['knownGenerated']['joinedLines']): Evaluation => {
+  type Recovered = Pick<PdfWordComparison['knownGenerated'], 'joinedLines' | 'wrappedHyphens'>;
+  type Evaluation = { result: PdfWordComparison; extraIdx: number[]; pdf: PdfPiece[]; ops: Array<Op<ExpectedToken, PdfPiece>> | null };
+  const evaluate = (read: readonly PdfToken[], split: ReturnType<typeof joinSplitRows>, recovered: Recovered): Evaluation => {
     const pdf: PdfPiece[] = read.flatMap((token, index) => {
       const pieces = spellings.get(token.word);
       return pieces ? pieces.map((word, at) => ({ ...token, word, token: index, piece: { at, of: pieces.length } })) : [{ ...token, token: index }];
@@ -1053,33 +1060,144 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
         listMarkers,
         repeatedTableHeaders,
         splitRows: split.rows.map(({ table, row, pages: spanned }) => ({ table, row, pages: spanned.map((page) => page + 1) })),
-        joinedLines,
+        joinedLines: recovered.joinedLines,
+        wrappedHyphens: recovered.wrappedHyphens,
         markSplits,
       },
       limitations: PDF_WORD_LIMITATIONS,
     };
-    return { result, extraIdx, pdf };
+    return { result, extraIdx, pdf, ops };
   };
 
-  const first = readBodies(bodies);
-  const unsplit = evaluate(first.read, first.split, []);
+  // Per page body word: whether it is the last word of its line in the raw text. pdftotext builds raw lines from
+  // glyph baselines, so a line end there is where the PDF breaks the line. If a page's lines do not tokenize to its
+  // words, no word on it counts as ending a line.
+  const bodyLineEnds = pageTexts.map((text, page) => {
+    const ends = text.normalize('NFKC').split('\n').flatMap((line) => words(line).map((_, at, all) => at === all.length - 1));
+    if (ends.length !== words(text).length) return bodies[page]!.map(() => false);
+    const offset = regions[page]!.length + headRuns[page]!.length;
+    return ends.slice(offset, offset + bodies[page]!.length);
+  });
+
+  // A reading of the page bodies: the words as read (possibly split or rejoined below), where their lines end, and
+  // the evaluation rebuilt from them (split rows, alignment, page model, footnotes).
+  type Reading = { bodies: string[][]; lineEnds: boolean[][]; recovered: Recovered; evaluation: Evaluation };
+  const evaluateBodies = (pageBodies: string[][], lineEnds: boolean[][], recovered: Recovered): Reading => {
+    const read = readBodies(pageBodies);
+    return { bodies: pageBodies, lineEnds, recovered, evaluation: evaluate(read.read, read.split, recovered) };
+  };
+  let reading = evaluateBodies(bodies, bodyLineEnds, { joinedLines: [], wrappedHyphens: [] });
+  if (reading.evaluation.result.passed) return reading.evaluation.result;
   // Layout text is evidence only page for page; with a different page count it is not used at all.
   const layout = layoutTexts?.length === pageTexts.length ? layoutTexts : undefined;
-  if (unsplit.result.passed || !layout) return unsplit.result;
-  // A justified line LibreOffice exported without space glyphs reads back as one token. The candidates are the
-  // tokens the first alignment could not place or, when it was over budget, every token; never a word of a
-  // rejoined row, which matched the source exactly, nor a word compared as pieces. The readings, and the raw and
-  // layout text they are counted in, are in pieces too, so a run-together line can end in a word that pdftotext
-  // also broke after its footnote number ("TheClosing1" then ".").
-  const joinable = (unsplit.result.alignment === 'complete' ? unsplit.extraIdx.map((index) => unsplit.pdf[index]!) : unsplit.pdf)
-    .filter((token) => token.origin >= 0 && !token.piece);
-  const splits = splitJoinedTokens(joinable, expected.map((token) => token.word), bodies, pageTexts.map((text) => asPieces(words(text))), layout.map((text) => asPieces(words(text))));
-  if (splits.size === 0) return unsplit.result;
-  // Split the page bodies as read, then rebuild everything from them: split rows, alignment, page model, footnotes.
-  const resplit = bodies.map((tokens, page) => tokens.flatMap((word, index) => splits.get(`${page}:${index}`) ?? [word]));
-  const second = readBodies(resplit);
-  const joinedLines = [...splits].map(([key, split]) => ({ page: Number(key.split(':')[0]) + 1, words: split.join(' ') }));
-  return evaluate(second.read, second.split, joinedLines).result;
+  if (layout) {
+    // A justified line LibreOffice exported without space glyphs reads back as one token. The candidates are the
+    // tokens the first alignment could not place or, when it was over budget, every token; never a word of a
+    // rejoined row, which matched the source exactly, nor a word compared as pieces. The readings, and the raw and
+    // layout text they are counted in, are in pieces too, so a run-together line can end in a word that pdftotext
+    // also broke after its footnote number ("TheClosing1" then ".").
+    const unsplit = reading.evaluation;
+    const joinable = (unsplit.ops ? unsplit.extraIdx.map((index) => unsplit.pdf[index]!) : unsplit.pdf)
+      .filter((token) => token.origin >= 0 && !token.piece);
+    const splits = splitJoinedTokens(joinable, expected.map((token) => token.word), reading.bodies, pageTexts.map((text) => asPieces(words(text))), layout.map((text) => asPieces(words(text))));
+    if (splits.size > 0) {
+      // Split the page bodies as read; only the last word of a split token can end its line.
+      const resplit = reading.bodies.map((tokens, page) => tokens.flatMap((word, index) => splits.get(`${page}:${index}`) ?? [word]));
+      const ends = reading.bodies.map((tokens, page) => tokens.flatMap((_, index) => {
+        const end = reading.lineEnds[page]![index]!;
+        const split = splits.get(`${page}:${index}`);
+        return split ? split.map((__, at) => at === split.length - 1 && end) : [end];
+      }));
+      const joinedLines = [...splits].map(([key, split]) => ({ page: Number(key.split(':')[0]) + 1, words: split.join(' ') }));
+      reading = evaluateBodies(resplit, ends, { ...reading.recovered, joinedLines });
+      if (reading.evaluation.result.passed) return reading.evaluation.result;
+    }
+  }
+  // A word holding a dash that LibreOffice wrapped right after the dash reads back as two tokens, one ending its
+  // line. Rejoin them only where the alignment left exactly that source word missing (see `wrappedDashJoins`).
+  const { ops, pdf } = reading.evaluation;
+  const joins = ops ? wrappedDashJoins(ops, expected, pdf, reading.lineEnds) : new Map<string, number>();
+  if (joins.size === 0) return reading.evaluation.result;
+  const rejoined: string[][] = [];
+  const rejoinedEnds: boolean[][] = [];
+  const wrappedHyphens: Recovered['wrappedHyphens'] = [];
+  reading.bodies.forEach((tokens, page) => {
+    const out: string[] = [];
+    const ends: boolean[] = [];
+    for (let index = 0; index < tokens.length;) {
+      const count = joins.get(`${page}:${index}`) ?? 1;
+      if (count > 1) wrappedHyphens.push({ page: page + 1, words: tokens.slice(index, index + count).join(' ') });
+      out.push(tokens.slice(index, index + count).join(''));
+      ends.push(reading.lineEnds[page]![index + count - 1]!);
+      index += count;
+    }
+    rejoined.push(out);
+    rejoinedEnds.push(ends);
+  });
+  return evaluateBodies(rejoined, rejoinedEnds, { ...reading.recovered, wrappedHyphens }).evaluation.result;
+}
+
+/**
+ * A source word holding a dash ("re-evaluate", "1990–2000") can wrap right after the dash: LibreOffice ends one
+ * line with "re-" and starts the next with "evaluate", and `pdftotext -raw` reads two tokens. The raw text alone
+ * cannot tell that wrap from a stray dash, so a rejoin needs both of these: the tokens are consecutive on one page
+ * in the body as read (never in a rejoined table row, never compared as pieces), every token but the last ends in
+ * a dash (Unicode Pd) and is the last word of its raw line; and, within one stretch of the alignment between two
+ * matched words, the alignment left every one of them unplaced and left a source word missing that is, character
+ * for character, their concatenation. Each missing source word is used once. Returns, by `page:index` of the first
+ * token in the page bodies as read, how many tokens to join. The caller then rebuilds the whole comparison from
+ * the joined bodies, so a join passes only if the joined word then aligns.
+ */
+function wrappedDashJoins(
+  ops: ReadonlyArray<Op<ExpectedToken, PdfPiece>>,
+  expected: readonly ExpectedToken[],
+  pdf: readonly PdfPiece[],
+  lineEnds: readonly (readonly boolean[])[],
+): Map<string, number> {
+  const joins = new Map<string, number>();
+  const plain = (index: number) => {
+    const token = pdf[index];
+    return token && !token.piece && token.origin >= 0 ? token : undefined;
+  };
+  // A token that can continue onto the next line: it ends in a dash and ends its raw line.
+  const wraps = (token: PdfPiece) => /\p{Pd}$/u.test(token.word) && lineEnds[token.page]?.[token.origin] === true;
+  for (let start = 0; start < ops.length;) {
+    if (ops[start]!.kind === 'equal') {
+      start += 1;
+      continue;
+    }
+    let end = start;
+    while (end < ops.length && ops[end]!.kind !== 'equal') end += 1;
+    const stretch = ops.slice(start, end);
+    start = end;
+    const missing = new Map<string, number>();
+    for (const op of stretch) {
+      if (op.kind !== 'delete' || expected[op.ai!]!.piece) continue;
+      const word = expected[op.ai!]!.word;
+      missing.set(word, (missing.get(word) ?? 0) + 1);
+    }
+    const unplaced = new Set(stretch.flatMap((op) => (op.kind === 'insert' ? [op.bi!] : [])));
+    const order = [...unplaced].sort((a, b) => a - b);
+    for (let at = 0; at < order.length; at += 1) {
+      const first = plain(order[at]!);
+      if (!first) continue;
+      let joined = first.word;
+      for (let next = order[at]! + 1; ; next += 1) {
+        const before = pdf[next - 1]!;
+        const token = plain(next);
+        if (!wraps(before) || !token || !unplaced.has(next) || token.page !== before.page || token.origin !== before.origin + 1) break;
+        joined += token.word;
+        const left = missing.get(joined) ?? 0;
+        if (left > 0) {
+          missing.set(joined, left - 1);
+          joins.set(`${first.page}:${first.origin}`, next - order[at]! + 1);
+          at = order.indexOf(next);
+          break;
+        }
+      }
+    }
+  }
+  return joins;
 }
 
 /** A body word as read: its page in the reading (after split rows are rejoined), where it is printed, and its index in its page's body (-1 in a rejoined row). */
