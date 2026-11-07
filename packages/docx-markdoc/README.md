@@ -649,8 +649,15 @@ package, determinism, read-back and brownfield-import checks:
   token); the certificate lists it under `knownGenerated.joinedLines`. A word
   dropped from, added to or moved within that line still fails, unless the
   page's layout text shows the source reading in another place where the raw
-  text does not (the evidence is counted per page, not tied to the line). The
-  certificate's `pdf.words.limitations` states what the comparison cannot
+  text does not (the evidence is counted per page, not tied to the line). A
+  word that holds a dash, such as `re-evaluate`, can wrap right after the
+  dash, so the raw text ends one line with `re-` and starts the next with
+  `evaluate`. These are rejoined only when the dash token ends its raw line
+  and the alignment left exactly the joined word missing at that place; the
+  certificate lists them under `knownGenerated.wrappedHyphens`. A stray dash,
+  or one whose joined form is not that source word, still fails, and so does
+  a word wrapped across a page break or one whose fragment the alignment
+  matched to a neighbouring word spelled the same. The certificate's `pdf.words.limitations` states what the comparison cannot
   catch.
 - **Footnotes.** Each note read back from `word/footnotes.xml`, and where
   its reference sits, must match the source, with a negative control. The
