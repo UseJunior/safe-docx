@@ -394,6 +394,10 @@ describe('Traceability: independent round-trip oracle for created documents', ()
       // A fragment that equals the word before it does not confuse the alignment.
       const echo: SourceProjection = { body: [{ text: 'We evaluate and re-evaluate it.' }, { text: 'Then evaluate re-evaluate evaluate.' }], footers: [null] };
       expect(comparePdfWords(echo, ['We evaluate and re-\nevaluate it.\nThen evaluate re-\nevaluate evaluate.\n']).passed).toBe(true);
+      // Stated limitation (pinned so the guarantee is not widened by accident): only tokens the first alignment left
+      // unplaced are rejoined, so a fragment it matched to the next source word, spelled the same, stays a false failure.
+      const placed: SourceProjection = { body: [{ text: 're-evaluate evaluate' }], footers: [null] };
+      expect(comparePdfWords(placed, ['re-\nevaluate evaluate\n'])).toMatchObject({ passed: false, missing: [{ words: 're-evaluate' }], knownGenerated: { wrappedHyphens: [] } });
     },
   );
 

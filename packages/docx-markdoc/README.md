@@ -656,7 +656,8 @@ package, determinism, read-back and brownfield-import checks:
   and the alignment left exactly the joined word missing at that place; the
   certificate lists them under `knownGenerated.wrappedHyphens`. A stray dash,
   or one whose joined form is not that source word, still fails, and so does
-  a word wrapped across a page break. The certificate's `pdf.words.limitations` states what the comparison cannot
+  a word wrapped across a page break or one whose fragment the alignment
+  matched to a neighbouring word spelled the same. The certificate's `pdf.words.limitations` states what the comparison cannot
   catch.
 - **Footnotes.** Each note read back from `word/footnotes.xml`, and where
   its reference sits, must match the source, with a negative control. The

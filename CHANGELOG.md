@@ -8,7 +8,10 @@
   now rejoins such tokens only when the hyphen token ends its raw line and
   the alignment left exactly the joined word missing at that place, so a
   stray hyphen, or a joined form that differs from the source, still fails.
-  Rejoined words are listed under `knownGenerated.wrappedHyphens`. (#1289)
+  Rejoined words are listed under `knownGenerated.wrappedHyphens`. A wrap
+  across a page break, or one whose fragment the alignment matched to a
+  neighbouring word spelled the same (`re-` `evaluate` before the source
+  word `evaluate`), is not rejoined and still fails. (#1289)
   A justified first line that `pdftotext -raw` reads with only some of its
   spaces missing (`alphabravo charliedelta…`, #1291) already passes since
   #1246; a regression test now pins that shape.
