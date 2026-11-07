@@ -335,49 +335,72 @@ export class SessionManager {
     return `ses_${out}`;
   }
 
-  async createSession(documentContent: Buffer, filename: string, originalPath: string): Promise<DocxSession> {
+  async createSession(
+    documentContent: Buffer,
+    filename: string,
+    originalPath: string,
+    opts?: { skipNormalization?: boolean },
+  ): Promise<DocxSession> {
     const canonicalPath = await this.canonicalizePath(originalPath);
-
-    // One-session-per-file: clean up existing session for this path if any
-    const existing = this.sessions.get(canonicalPath);
-    if (existing) {
-      await this.cleanupSessionArtifacts(existing);
-    }
 
     const sessionId = this.newSessionId();
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-docx-'));
     const tmpPath = path.join(dir, filename);
-    // Ensure we pass an ArrayBufferView to satisfy Node's type signature across TS lib setups.
-    await fs.writeFile(tmpPath, new Uint8Array(documentContent));
+    let candidateDir: string | null = dir;
+    try {
+      // Ensure we pass an ArrayBufferView to satisfy Node's type signature across TS lib setups.
+      await fs.writeFile(tmpPath, new Uint8Array(documentContent));
 
-    const doc = await DocxDocument.load(documentContent);
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + this.ttlMs);
-    const session: DocxSession = {
-      provider: 'docx',
-      sessionId,
-      filename,
-      tmpPath,
-      originalPath,
-      originalBuffer: Buffer.from(documentContent),
-      comparisonBaseline: null,
-      comparisonBaselineWithBookmarks: null,
-      doc,
-      aiAuthor: this.defaultAiAuthor,
-      revisionIdState: null,
-      editCount: 0,
-      editRevision: 0,
-      saveCache: new Map<string, SaveCacheEntry>(),
-      extractionCache: null,
-      nonRevisionManifest: [],
-      selectiveRevisionAction: null,
-      createdAt: now,
-      lastAccessedAt: now,
-      expiresAt,
-      normalizationStats: null,
-    };
-    this.sessions.set(canonicalPath, session);
-    return session;
+      const doc = await DocxDocument.load(documentContent);
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + this.ttlMs);
+      const session: DocxSession = {
+        provider: 'docx',
+        sessionId,
+        filename,
+        tmpPath,
+        originalPath,
+        originalBuffer: Buffer.from(documentContent),
+        comparisonBaseline: null,
+        comparisonBaselineWithBookmarks: null,
+        doc,
+        aiAuthor: this.defaultAiAuthor,
+        revisionIdState: null,
+        editCount: 0,
+        editRevision: 0,
+        saveCache: new Map<string, SaveCacheEntry>(),
+        extractionCache: null,
+        nonRevisionManifest: [],
+        selectiveRevisionAction: null,
+        createdAt: now,
+        lastAccessedAt: now,
+        expiresAt,
+        normalizationStats: null,
+      };
+
+      // Load and finalize candidate before publication
+      if (!opts?.skipNormalization) {
+        session.normalizationStats = session.doc.normalize();
+      }
+      session.doc.insertParagraphBookmarks(`mcp_${session.sessionId}`);
+      this.touch(session);
+
+      // Candidate finalized; publish and clean up replaced session
+      const existing = this.sessions.get(canonicalPath);
+      this.sessions.set(canonicalPath, session);
+      candidateDir = null;
+
+      if (existing) {
+        await this.cleanupSessionArtifacts(existing);
+      }
+
+      return session;
+    } catch (e) {
+      if (candidateDir) {
+        await fs.rm(candidateDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+      throw e;
+    }
   }
 
   /**
@@ -395,53 +418,62 @@ export class SessionManager {
   ): Promise<OdfSession> {
     const canonicalPath = await this.canonicalizePath(originalPath);
 
-    const existing = this.sessions.get(canonicalPath);
-    if (existing) {
-      await this.cleanupSessionArtifacts(existing);
-    }
-
     const sessionId = this.newSessionId();
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-odf-'));
     const tmpPath = path.join(dir, filename);
-    await fs.writeFile(tmpPath, new Uint8Array(documentContent));
+    let candidateDir: string | null = dir;
+    try {
+      await fs.writeFile(tmpPath, new Uint8Array(documentContent));
 
-    const now = new Date();
-    const session: OdfSession = {
-      provider: 'odf',
-      sessionId,
-      filename,
-      tmpPath,
-      originalPath,
-      originalBuffer: Buffer.from(documentContent),
-      archive,
-      doc,
-      editCount: 0,
-      editRevision: 0,
-      createdAt: now,
-      lastAccessedAt: now,
-      expiresAt: new Date(now.getTime() + this.ttlMs),
-    };
-    this.sessions.set(canonicalPath, session);
-    return session;
+      const now = new Date();
+      const session: OdfSession = {
+        provider: 'odf',
+        sessionId,
+        filename,
+        tmpPath,
+        originalPath,
+        originalBuffer: Buffer.from(documentContent),
+        archive,
+        doc,
+        editCount: 0,
+        editRevision: 0,
+        createdAt: now,
+        lastAccessedAt: now,
+        expiresAt: new Date(now.getTime() + this.ttlMs),
+      };
+
+      const existing = this.sessions.get(canonicalPath);
+      this.sessions.set(canonicalPath, session);
+      candidateDir = null;
+
+      if (existing) {
+        await this.cleanupSessionArtifacts(existing);
+      }
+
+      return session;
+    } catch (e) {
+      if (candidateDir) {
+        await fs.rm(candidateDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+      throw e;
+    }
   }
 
   /**
    * Finalize a newly created session by normalizing the document and inserting
    * paragraph bookmarks. Baselines are lazily generated on first save/compare.
    *
-   * INVARIANT: All production session creation paths must call
-   * `finalizeNewSession` before returning a session. `createSession` alone
-   * leaves baselines null and is incomplete for tool use.
+   * INVARIANT: All production session creation paths return active, finalized sessions.
    */
   async finalizeNewSession(
     session: DocxSession,
     opts?: { skipNormalization?: boolean },
   ): Promise<{ normalizationStats: NormalizationResult | null; paragraphCount: number }> {
-    if (!opts?.skipNormalization) {
+    if (!opts?.skipNormalization && !session.normalizationStats) {
       session.normalizationStats = session.doc.normalize();
     }
     const info = session.doc.insertParagraphBookmarks(`mcp_${session.sessionId}`);
-    // Baselines are lazily generated — skip the two toBuffer() calls here
+    // Baselines are lazily generated: skip the two toBuffer() calls here
     this.touch(session);
     return { normalizationStats: session.normalizationStats, paragraphCount: info.paragraphCount };
   }
@@ -493,6 +525,7 @@ export class SessionManager {
     const now = Date.now();
     if (ses.expiresAt.getTime() < now) {
       this.sessions.delete(canonicalPath);
+      void this.cleanupSessionArtifacts(ses);
       return null;
     }
     return ses;
@@ -503,19 +536,52 @@ export class SessionManager {
    * edits it would otherwise discard when the process exits (#1048).
    */
   listSessions(): Session[] {
-    return [...this.sessions.values()];
+    const now = Date.now();
+    const active: Session[] = [];
+    for (const [key, session] of this.sessions.entries()) {
+      if (session.expiresAt.getTime() < now) {
+        this.sessions.delete(key);
+        void this.cleanupSessionArtifacts(session);
+      } else {
+        active.push(session);
+      }
+    }
+    return active;
+  }
+
+  /**
+   * Release artifacts and purge all expired sessions from the registry idempotently.
+   * Returns list of canonical keys that were cleaned.
+   */
+  async cleanExpiredSessions(): Promise<string[]> {
+    const now = Date.now();
+    const expiredKeys: string[] = [];
+    for (const [key, session] of this.sessions.entries()) {
+      if (session.expiresAt.getTime() < now) {
+        expiredKeys.push(key);
+      }
+    }
+    for (const key of expiredKeys) {
+      const session = this.sessions.get(key);
+      if (session) {
+        this.sessions.delete(key);
+        await this.cleanupSessionArtifacts(session);
+      }
+    }
+    return expiredKeys;
   }
 
   /**
    * @deprecated Use getSessionByPath instead. Kept only for backward compatibility during migration.
    */
   getSession(sessionId: string): Session {
-    // Linear scan by sessionId — only used by legacy code paths
+    // Linear scan by sessionId: only used by legacy code paths
     for (const [key, ses] of this.sessions.entries()) {
       if (ses.sessionId === sessionId) {
         const now = Date.now();
         if (ses.expiresAt.getTime() < now) {
           this.sessions.delete(key);
+          void this.cleanupSessionArtifacts(ses);
           throw new Error(`SESSION_EXPIRED:${sessionId}`);
         }
         return ses;
@@ -526,7 +592,9 @@ export class SessionManager {
 
   private async cleanupSessionArtifacts(session: Session): Promise<void> {
     if (isDocxSession(session) || isOdfSession(session)) {
+      if (!session.tmpPath) return;
       const tmpDir = path.dirname(session.tmpPath);
+      session.tmpPath = '';
       await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
     }
     // GDocs sessions have no tmp dir to clean up

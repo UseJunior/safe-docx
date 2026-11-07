@@ -118,7 +118,9 @@ export async function openDocument(
     if (!archiveGuard.ok) return archiveGuard.response;
 
     const filename = path.basename(safePath);
-    const session = await manager.createSession(content as Buffer, filename, safePath);
+    const session = await manager.createSession(content as Buffer, filename, safePath, {
+      skipNormalization: params.skip_normalization,
+    });
 
     const { paragraphCount } = await manager.finalizeNewSession(session, {
       skipNormalization: params.skip_normalization,
