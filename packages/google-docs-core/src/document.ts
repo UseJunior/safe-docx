@@ -10,6 +10,7 @@ import type {
   CachedParagraph,
   CachedTable,
   DocumentStructureCache,
+  DocumentStructureState,
   GoogleDocsCredentials,
   TabInfo,
 } from './types.js';
@@ -44,6 +45,9 @@ export class GoogleDocsDocument {
   /** _bk_ name -> Google namedRangeId */
   private reverseAnchorMapping: Map<string, string> = new Map();
   private documentViewCache: { revisionId: string; nodes: DocumentViewNodeGdocs[] } | null = null;
+  private structureState: DocumentStructureState = 'unloaded';
+  private writeChain: Promise<void> = Promise.resolve();
+  private activeWriteDepth = 0;
   private editCount = 0;
   private editRevision = 0;
 
@@ -109,7 +113,52 @@ export class GoogleDocsDocument {
     };
 
     this.concurrency = { revisionId, fetchedAt: new Date() };
+    this.structureState = 'current';
     this.documentViewCache = null; // Invalidate view cache
+  }
+
+  /** Serialize write operations on this document instance while allowing nested internal steps. */
+  private async runSerializedWrite<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.activeWriteDepth > 0) {
+      return operation();
+    }
+
+    const previous = this.writeChain;
+    let release!: () => void;
+    this.writeChain = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await previous;
+    this.activeWriteDepth += 1;
+    try {
+      return await operation();
+    } finally {
+      this.activeWriteDepth -= 1;
+      release();
+    }
+  }
+
+  /** Refresh cached structure when a prior raw write or failed refresh left indices stale. */
+  async ensureCurrentStructure(): Promise<void> {
+    if (this.structureState === 'stale_after_write') {
+      await this.fetchDocument();
+    }
+  }
+
+  /** Get the current local structure cache state ('unloaded' | 'current' | 'stale_after_write'). */
+  getStructureState(): DocumentStructureState {
+    return this.structureState;
+  }
+
+  /** Return true when a remote write has occurred since the last successful structure fetch. */
+  isStructureStale(): boolean {
+    return this.structureState === 'stale_after_write';
+  }
+
+  /** Return true when the local structure cache matches the latest known remote state. */
+  isStructureCurrent(): boolean {
+    return this.structureState === 'current';
   }
 
   /** Find the named range anchor for a paragraph by matching startIndex */
@@ -130,60 +179,67 @@ export class GoogleDocsDocument {
 
   /** Inject named range anchors into all paragraphs that don't have one */
   async injectAnchors(tabId?: string): Promise<{ injectedCount: number }> {
-    if (!this.cache) throw new Error('Document not loaded');
+    return this.runSerializedWrite(async () => {
+      if (!this.cache) throw new Error('Document not loaded');
+      await this.ensureCurrentStructure();
 
-    const paragraphs = tabId
-      ? this.cache.paragraphs.filter(p => p.tabId === tabId)
-      : this.cache.paragraphs;
+      const paragraphs = tabId
+        ? this.cache.paragraphs.filter(p => p.tabId === tabId)
+        : this.cache.paragraphs;
 
-    const unanchored = paragraphs.filter(p => !p.anchorName);
-    if (unanchored.length === 0) return { injectedCount: 0 };
+      const unanchored = paragraphs.filter(p => !p.anchorName);
+      if (unanchored.length === 0) return { injectedCount: 0 };
 
-    const occupiedNames = new Set(this.reverseAnchorMapping.keys());
-    const requests = buildNamedRangeInjectionRequests(unanchored, this.anchorMapping.size, occupiedNames);
-    if (requests.length === 0) return { injectedCount: 0 };
+      const occupiedNames = new Set(this.reverseAnchorMapping.keys());
+      const requests = buildNamedRangeInjectionRequests(unanchored, this.anchorMapping.size, occupiedNames);
+      if (requests.length === 0) return { injectedCount: 0 };
 
-    const response = await withRetry(() =>
-      this.client.batchUpdate(this.docId, {
-        requests,
-        writeControl: this.concurrency
-          ? buildWriteControl(this.concurrency.revisionId)
-          : undefined,
-      }),
-    );
+      const response = await withRetry(() =>
+        this.client.batchUpdate(this.docId, {
+          requests,
+          writeControl: this.concurrency
+            ? buildWriteControl(this.concurrency.revisionId)
+            : undefined,
+        }),
+      );
 
-    // Map responses to _bk_ names
-    const startCounter = this.anchorMapping.size;
-    const newMappings = mapNamedRangeResponses(
-      (response.replies ?? []) as Array<{ createNamedRange?: { namedRangeId?: string } }>,
-      startCounter,
-      occupiedNames,
-    );
+      // Remote write succeeded; cached indices are now stale until fetchDocument completes.
+      this.structureState = 'stale_after_write';
+      this.documentViewCache = null;
 
-    // Update our mappings
-    let idx = 0;
-    for (const [googleId, bkName] of newMappings) {
-      this.anchorMapping.set(googleId, bkName);
-      this.reverseAnchorMapping.set(bkName, googleId);
-      if (idx < unanchored.length) {
-        unanchored[idx]!.anchorName = bkName;
-        unanchored[idx]!.anchorId = createAnchorId(unanchored[idx]!.tabId, bkName);
+      // Map responses to _bk_ names
+      const startCounter = this.anchorMapping.size;
+      const newMappings = mapNamedRangeResponses(
+        (response.replies ?? []) as Array<{ createNamedRange?: { namedRangeId?: string } }>,
+        startCounter,
+        occupiedNames,
+      );
+
+      // Update our mappings
+      let idx = 0;
+      for (const [googleId, bkName] of newMappings) {
+        this.anchorMapping.set(googleId, bkName);
+        this.reverseAnchorMapping.set(bkName, googleId);
+        if (idx < unanchored.length) {
+          unanchored[idx]!.anchorName = bkName;
+          unanchored[idx]!.anchorId = createAnchorId(unanchored[idx]!.tabId, bkName);
+        }
+        idx++;
       }
-      idx++;
-    }
 
-    // Update revision
-    if (response.writeControl?.requiredRevisionId) {
-      this.concurrency = {
-        revisionId: response.writeControl.requiredRevisionId,
-        fetchedAt: new Date(),
-      };
-    }
+      // Update revision
+      if (response.writeControl?.requiredRevisionId) {
+        this.concurrency = {
+          revisionId: response.writeControl.requiredRevisionId,
+          fetchedAt: new Date(),
+        };
+      }
 
-    // Re-fetch to get updated indices
-    await this.fetchDocument();
+      // Re-fetch to get updated indices
+      await this.fetchDocument();
 
-    return { injectedCount: newMappings.size };
+      return { injectedCount: newMappings.size };
+    });
   }
 
   /**
@@ -191,39 +247,43 @@ export class GoogleDocsDocument {
    * Finds `findText` within the paragraph and replaces it with `replaceWith`.
    */
   async replaceText(anchorId: AnchorId, findText: string, replaceWith: string): Promise<void> {
-    const para = this.getParagraphByAnchorId(anchorId);
-    if (!para) throw new Error(`ANCHOR_NOT_FOUND: No paragraph for anchor ${anchorId}`);
+    return this.runSerializedWrite(async () => {
+      await this.ensureCurrentStructure();
 
-    const offset = para.text.indexOf(findText);
-    if (offset === -1) throw new Error(`TEXT_NOT_FOUND: "${findText}" not found in paragraph`);
+      const para = this.getParagraphByAnchorId(anchorId);
+      if (!para) throw new Error(`ANCHOR_NOT_FOUND: No paragraph for anchor ${anchorId}`);
 
-    const startIndex = para.startIndex + offset;
-    const endIndex = startIndex + findText.length;
+      const offset = para.text.indexOf(findText);
+      if (offset === -1) throw new Error(`TEXT_NOT_FOUND: "${findText}" not found in paragraph`);
 
-    const requests: GDocsRequest[] = [
-      {
-        deleteContentRange: {
-          range: {
-            startIndex,
-            endIndex,
-            ...(para.tabId ? { tabId: para.tabId } : {}),
+      const startIndex = para.startIndex + offset;
+      const endIndex = startIndex + findText.length;
+
+      const requests: GDocsRequest[] = [
+        {
+          deleteContentRange: {
+            range: {
+              startIndex,
+              endIndex,
+              ...(para.tabId ? { tabId: para.tabId } : {}),
+            },
           },
         },
-      },
-      {
-        insertText: {
-          location: {
-            index: startIndex,
-            ...(para.tabId ? { tabId: para.tabId } : {}),
+        {
+          insertText: {
+            location: {
+              index: startIndex,
+              ...(para.tabId ? { tabId: para.tabId } : {}),
+            },
+            text: replaceWith,
           },
-          text: replaceWith,
         },
-      },
-    ];
+      ];
 
-    await this.executeBatchUpdate(requests);
-    this.markEdited();
-    await this.fetchDocument();
+      await this.executeBatchUpdate(requests);
+      this.markEdited();
+      await this.fetchDocument();
+    });
   }
 
   /**
@@ -234,63 +294,73 @@ export class GoogleDocsDocument {
     position: 'BEFORE' | 'AFTER',
     text: string,
   ): Promise<{ newAnchorId: AnchorId }> {
-    const para = this.getParagraphByAnchorId(anchorId);
-    if (!para) throw new Error(`ANCHOR_NOT_FOUND: No paragraph for anchor ${anchorId}`);
+    return this.runSerializedWrite(async () => {
+      await this.ensureCurrentStructure();
 
-    // BEFORE: insert text+\n at startIndex (pushes paragraph down)
-    // AFTER: insert \n+text at endIndex-1 (before trailing \n, stays within paragraph bounds)
-    const insertIndex = position === 'BEFORE' ? para.startIndex : para.endIndex - 1;
-    const insertText = position === 'BEFORE' ? `${text}\n` : `\n${text}`;
+      const para = this.getParagraphByAnchorId(anchorId);
+      if (!para) throw new Error(`ANCHOR_NOT_FOUND: No paragraph for anchor ${anchorId}`);
 
-    const requests: GDocsRequest[] = [
-      {
-        insertText: {
-          location: {
-            index: insertIndex,
-            ...(para.tabId ? { tabId: para.tabId } : {}),
+      // BEFORE: insert text+\n at startIndex (pushes paragraph down)
+      // AFTER: insert \n+text at endIndex-1 (before trailing \n, stays within paragraph bounds)
+      const insertIndex = position === 'BEFORE' ? para.startIndex : para.endIndex - 1;
+      const insertText = position === 'BEFORE' ? `${text}\n` : `\n${text}`;
+
+      const requests: GDocsRequest[] = [
+        {
+          insertText: {
+            location: {
+              index: insertIndex,
+              ...(para.tabId ? { tabId: para.tabId } : {}),
+            },
+            text: insertText,
           },
-          text: insertText,
         },
-      },
-    ];
+      ];
 
-    await this.executeBatchUpdate(requests);
-    this.markEdited();
-    await this.fetchDocument();
+      await this.executeBatchUpdate(requests);
+      this.markEdited();
+      await this.fetchDocument();
 
-    // After re-fetch, inject anchor for the new paragraph
-    await this.injectAnchors(para.tabId);
+      // After re-fetch, inject anchor for the new paragraph
+      await this.injectAnchors(para.tabId);
 
-    // Find the newly created paragraph by text
-    const newPara = this.cache?.paragraphs.find(
-      p => p.text.trim() === text.trim() && p.tabId === para.tabId,
-    );
+      // Find the newly created paragraph by text
+      const newPara = this.cache?.paragraphs.find(
+        p => p.text.trim() === text.trim() && p.tabId === para.tabId,
+      );
 
-    return { newAnchorId: newPara?.anchorId ?? '' };
+      return { newAnchorId: newPara?.anchorId ?? '' };
+    });
   }
 
   /** Execute a raw batchUpdate with write control */
   async executeBatchUpdate(
     requests: GDocsRequest[],
   ): Promise<GDocsBatchUpdateResponse> {
-    const response = await withRetry(() =>
-      this.client.batchUpdate(this.docId, {
-        requests,
-        writeControl: this.concurrency
-          ? buildWriteControl(this.concurrency.revisionId)
-          : undefined,
-      }),
-    );
+    return this.runSerializedWrite(async () => {
+      const response = await withRetry(() =>
+        this.client.batchUpdate(this.docId, {
+          requests,
+          writeControl: this.concurrency
+            ? buildWriteControl(this.concurrency.revisionId)
+            : undefined,
+        }),
+      );
 
-    // Update revision
-    if (response.writeControl?.requiredRevisionId) {
-      this.concurrency = {
-        revisionId: response.writeControl.requiredRevisionId,
-        fetchedAt: new Date(),
-      };
-    }
+      // Mark cached structure stale immediately after remote mutation succeeds.
+      this.structureState = 'stale_after_write';
+      this.documentViewCache = null;
 
-    return response;
+      // Update revision
+      if (response.writeControl?.requiredRevisionId) {
+        this.concurrency = {
+          revisionId: response.writeControl.requiredRevisionId,
+          fetchedAt: new Date(),
+        };
+      }
+
+      return response;
+    });
   }
 
   /** Get cached paragraphs */

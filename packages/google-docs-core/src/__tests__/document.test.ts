@@ -398,4 +398,270 @@ describe('GoogleDocsDocument', () => {
       expect(insertReq.insertText.text).toBe('New para\n');
     });
   });
+  // ── Stale structure tracking & write serialization (#1306) ──────────
+
+  describe('stale structure tracking and write serialization (#1306)', () => {
+    const anchorName = '_bk_0000000000';
+    const namedRanges = {
+      [anchorName]: {
+        namedRanges: [{
+          namedRangeId: 'nr1',
+          name: anchorName,
+          ranges: [{ startIndex: 1, endIndex: 2, tabId: 't.0' }],
+        }],
+      },
+    };
+
+    it('marks structure stale_after_write after executeBatchUpdate and refreshes before index-based edits', async () => {
+      const initialDoc = buildMockDocument([
+        {
+          paragraph: {
+            elements: [{ textRun: { content: 'Hello world\n' } }],
+            paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+          },
+          startIndex: 1,
+          endIndex: 13,
+        },
+      ], namedRanges);
+
+      // After a raw write prepends "PREFIX " (7 chars), paragraph shifts to startIndex 8..20
+      const shiftedNamedRanges = {
+        [anchorName]: {
+          namedRanges: [{
+            namedRangeId: 'nr1',
+            name: anchorName,
+            ranges: [{ startIndex: 8, endIndex: 9, tabId: 't.0' }],
+          }],
+        },
+      };
+      const shiftedDoc = buildMockDocument([
+        {
+          paragraph: {
+            elements: [{ textRun: { content: 'Hello world\n' } }],
+            paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+          },
+          startIndex: 8,
+          endIndex: 20,
+        },
+      ], shiftedNamedRanges);
+
+      const postReplaceDoc = buildMockDocument([
+        {
+          paragraph: {
+            elements: [{ textRun: { content: 'Hello universe\n' } }],
+            paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+          },
+          startIndex: 8,
+          endIndex: 23,
+        },
+      ], shiftedNamedRanges);
+
+      const batchUpdateFn = vi.fn()
+        .mockResolvedValueOnce({ replies: [], writeControl: { requiredRevisionId: 'rev-after-raw' } })
+        .mockResolvedValueOnce({ replies: [], writeControl: { requiredRevisionId: 'rev-after-replace' } });
+      const getDocumentFn = vi.fn()
+        .mockResolvedValueOnce(initialDoc)
+        .mockResolvedValueOnce(shiftedDoc)
+        .mockResolvedValueOnce(postReplaceDoc);
+
+      const client = {
+        getDocument: getDocumentFn,
+        batchUpdate: batchUpdateFn,
+        createFile: vi.fn(),
+        deleteFile: vi.fn(),
+        shareFile: vi.fn(),
+        exportAsDocx: vi.fn(),
+      } as unknown as GoogleApiClient;
+      mockResolveCredentials.mockResolvedValue(client);
+
+      const doc = await GoogleDocsDocument.load('test-doc-id');
+      expect(doc.getStructureState()).toBe('current');
+      expect(doc.isStructureCurrent()).toBe(true);
+      expect(doc.isStructureStale()).toBe(false);
+
+      // Raw write leaves cached indices stale
+      await doc.executeBatchUpdate([
+        { insertText: { location: { index: 1, tabId: 't.0' }, text: 'PREFIX ' } },
+      ]);
+      expect(doc.getStructureState()).toBe('stale_after_write');
+      expect(doc.isStructureStale()).toBe(true);
+      expect(doc.isStructureCurrent()).toBe(false);
+      expect(doc.getRevisionId()).toBe('rev-after-raw');
+
+      // Subsequent replaceText must refresh before computing startIndex/endIndex
+      const anchorId = doc.getParagraphs()[0]!.anchorId;
+      await doc.replaceText(anchorId, 'world', 'universe');
+
+      expect(getDocumentFn).toHaveBeenCalledTimes(3);
+      // Shifted paragraph starts at 8; "world" is at offset 6 -> startIndex 14..19
+      const replaceBatchCall = batchUpdateFn.mock.calls[1]![1];
+      expect(replaceBatchCall.requests[0].deleteContentRange.range).toMatchObject({
+        startIndex: 14,
+        endIndex: 19,
+      });
+      expect(doc.getStructureState()).toBe('current');
+      expect(doc.isStructureStale()).toBe(false);
+    });
+
+    it('keeps remote mutation recorded with stale_after_write state when post-write refresh fails', async () => {
+      const initialDoc = buildMockDocument([
+        {
+          paragraph: {
+            elements: [{ textRun: { content: 'Hello world\n' } }],
+            paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+          },
+          startIndex: 1,
+          endIndex: 13,
+        },
+      ], namedRanges);
+
+      const refreshedDoc = buildMockDocument([
+        {
+          paragraph: {
+            elements: [{ textRun: { content: 'Hello planet\n' } }],
+            paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+          },
+          startIndex: 1,
+          endIndex: 14,
+        },
+      ], namedRanges);
+
+      const finalDoc = buildMockDocument([
+        {
+          paragraph: {
+            elements: [{ textRun: { content: 'Hello galaxy\n' } }],
+            paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+          },
+          startIndex: 1,
+          endIndex: 14,
+        },
+      ], namedRanges);
+
+      const batchUpdateFn = vi.fn()
+        .mockResolvedValueOnce({ replies: [], writeControl: { requiredRevisionId: 'rev-remote-ok' } })
+        .mockResolvedValueOnce({ replies: [], writeControl: { requiredRevisionId: 'rev-second-ok' } });
+      const getDocumentFn = vi.fn()
+        .mockResolvedValueOnce(initialDoc)
+        .mockRejectedValueOnce(new Error('Transient refresh network error'))
+        .mockResolvedValueOnce(refreshedDoc)
+        .mockResolvedValueOnce(finalDoc);
+
+      const client = {
+        getDocument: getDocumentFn,
+        batchUpdate: batchUpdateFn,
+        createFile: vi.fn(),
+        deleteFile: vi.fn(),
+        shareFile: vi.fn(),
+        exportAsDocx: vi.fn(),
+      } as unknown as GoogleApiClient;
+      mockResolveCredentials.mockResolvedValue(client);
+
+      const doc = await GoogleDocsDocument.load('test-doc-id');
+      const anchorId = doc.getParagraphs()[0]!.anchorId;
+
+      await expect(doc.replaceText(anchorId, 'world', 'planet')).rejects.toThrow(
+        'Transient refresh network error',
+      );
+
+      // Remote write succeeded before refresh failed: mutation counters and revisionId are recorded,
+      // and local structure remains marked stale_after_write.
+      expect(doc.getEditCount()).toBe(1);
+      expect(doc.getEditRevision()).toBe(1);
+      expect(doc.getRevisionId()).toBe('rev-remote-ok');
+      expect(doc.getStructureState()).toBe('stale_after_write');
+      expect(doc.isStructureStale()).toBe(true);
+
+      // Next index-based edit refreshes stale structure first and succeeds against 'planet'
+      await doc.replaceText(anchorId, 'planet', 'galaxy');
+      expect(doc.getEditCount()).toBe(2);
+      expect(doc.getEditRevision()).toBe(2);
+      expect(doc.getStructureState()).toBe('current');
+      expect(doc.getParagraphs()[0]!.text).toBe('Hello galaxy');
+    });
+
+    it('serializes concurrent write operations so later writes see refreshed structure and revisionId', async () => {
+      const initialDoc = buildMockDocument([
+        {
+          paragraph: {
+            elements: [{ textRun: { content: 'Alpha Beta\n' } }],
+            paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+          },
+          startIndex: 1,
+          endIndex: 12,
+        },
+      ], namedRanges);
+
+      const afterFirstEditDoc = { ...buildMockDocument([
+        {
+          paragraph: {
+            elements: [{ textRun: { content: 'AlphaLonger Beta\n' } }],
+            paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+          },
+          startIndex: 1,
+          endIndex: 18,
+        },
+      ], namedRanges), revisionId: 'rev-2' };
+
+      const afterSecondEditDoc = buildMockDocument([
+        {
+          paragraph: {
+            elements: [{ textRun: { content: 'AlphaLonger Gamma\n' } }],
+            paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+          },
+          startIndex: 1,
+          endIndex: 19,
+        },
+      ], namedRanges);
+
+      const order: string[] = [];
+      const batchUpdateFn = vi.fn()
+        .mockImplementationOnce(async () => {
+          order.push('batch-1');
+          await new Promise((r) => setTimeout(r, 20));
+          return { replies: [], writeControl: { requiredRevisionId: 'rev-2' } };
+        })
+        .mockImplementationOnce(async () => {
+          order.push('batch-2');
+          return { replies: [], writeControl: { requiredRevisionId: 'rev-3' } };
+        });
+
+      const getDocumentFn = vi.fn()
+        .mockResolvedValueOnce(initialDoc)
+        .mockImplementationOnce(async () => {
+          order.push('fetch-1');
+          return afterFirstEditDoc;
+        })
+        .mockImplementationOnce(async () => {
+          order.push('fetch-2');
+          return afterSecondEditDoc;
+        });
+
+      const client = {
+        getDocument: getDocumentFn,
+        batchUpdate: batchUpdateFn,
+        createFile: vi.fn(),
+        deleteFile: vi.fn(),
+        shareFile: vi.fn(),
+        exportAsDocx: vi.fn(),
+      } as unknown as GoogleApiClient;
+      mockResolveCredentials.mockResolvedValue(client);
+
+      const doc = await GoogleDocsDocument.load('test-doc-id');
+      const anchorId = doc.getParagraphs()[0]!.anchorId;
+
+      await Promise.all([
+        doc.replaceText(anchorId, 'Alpha', 'AlphaLonger'),
+        doc.replaceText(anchorId, 'Beta', 'Gamma'),
+      ]);
+
+      expect(order).toEqual(['batch-1', 'fetch-1', 'batch-2', 'fetch-2']);
+      // Second batchUpdate must use rev-2 from first edit and the updated offset of 'Beta' (index 13..17)
+      const secondBatchArgs = batchUpdateFn.mock.calls[1]![1];
+      expect(secondBatchArgs.writeControl).toEqual({ requiredRevisionId: 'rev-2' });
+      expect(secondBatchArgs.requests[0].deleteContentRange.range).toMatchObject({
+        startIndex: 13,
+        endIndex: 17,
+      });
+    });
+  });
 });
