@@ -985,6 +985,83 @@ function getContainerBoundaryError(
  * @see #1083
  * @see #1098
  */
+/**
+ * Local builder managing in-place deletion segments around preserved content
+ * and sibling markers (issue #1312).
+ */
+/**
+ * Validate that `endEl` is reachable from `startEl` by following `nextSibling`
+ * within the same container, and check whether the range contains non-run markers
+ * or embedded objects (issue #1312).
+ */
+export function validateSiblingRangeReachability(
+  startEl: Node,
+  endEl: Node,
+): { isReachable: boolean; containsEmbeddedContent: boolean } {
+  let isReachable = false;
+  let containsEmbeddedContent = false;
+  for (let node: Node | null = startEl; node; node = node.nextSibling) {
+    if (
+      node.nodeType === 1 &&
+      (!isW(node as Element, W.r) || getEmbeddedContentElements(node as Element).length > 0)
+    ) {
+      containsEmbeddedContent = true;
+    }
+    if (node === endEl) {
+      isReachable = true;
+      break;
+    }
+  }
+  return { isReachable, containsEmbeddedContent };
+}
+
+export class DeletionSegmentBuilder {
+  private currentDeletion: Element | null = null;
+  private segmentCount = 0;
+
+  constructor(
+    private readonly doc: Document,
+    private readonly ctx?: RevisionContext,
+  ) {}
+
+  /**
+   * Terminate the open deletion segment so subsequent removals start a fresh
+   * w:del at their own DOM position.
+   */
+  terminateSegment(): void {
+    this.currentDeletion = null;
+  }
+
+  /**
+   * Remove a run in place. If revision tracking is active and the run carries
+   * deletable content, it is appended to the current w:del segment (opening a
+   * new segment at run's position if none is currently open).
+   */
+  removeRunInPlace(runEl: Element): void {
+    const parentNode = runEl.parentNode;
+    if (!parentNode) return;
+    if (this.ctx && runCarriesDeletableContent(runEl)) {
+      if (!this.currentDeletion) {
+        this.currentDeletion = createRevisionContainer(this.doc, 'del', this.ctx);
+        parentNode.insertBefore(this.currentDeletion, runEl);
+        this.segmentCount++;
+      }
+      parentNode.removeChild(runEl);
+      this.currentDeletion.appendChild(prepareElementForDeletion(runEl));
+    } else {
+      parentNode.removeChild(runEl);
+    }
+  }
+
+  getActiveDeletion(): Element | null {
+    return this.currentDeletion;
+  }
+
+  getSegmentCount(): number {
+    return this.segmentCount;
+  }
+}
+
 export function replaceParagraphTextRange(
   p: Element,
   start: number,
@@ -1141,15 +1218,15 @@ export function replaceParagraphTextRange(
   // would still move the removed text past them, so reject-all would restore
   // the text on the wrong side of each marker (issue #1083). They take the
   // in-place segment emission too, and each one closes the open segment.
-  let rangeContainsEmbeddedContent = false;
-  for (let node: Node | null = rangeStartRunEl; node; node = node.nextSibling) {
-    if (
-      node.nodeType === 1 &&
-      (!isW(node as Element, W.r) || getEmbeddedContentElements(node as Element).length > 0)
-    ) {
-      rangeContainsEmbeddedContent = true;
-    }
-    if (node === rangeEndRunEl) break;
+  // Validate sibling range reachability before mutation: rangeEndRunEl must be
+  // reachable by following nextSibling from rangeStartRunEl within the same container.
+  const { isReachable: isEndReachable, containsEmbeddedContent: rangeContainsEmbeddedContent } =
+    validateSiblingRangeReachability(rangeStartRunEl, rangeEndRunEl);
+  if (!isEndReachable) {
+    throw new SafeDocxError(
+      'UNSAFE_CONTAINER_BOUNDARY',
+      'Replacement range start and end runs are not reachable siblings',
+    );
   }
 
   const removedRuns: Element[] = [];
@@ -1170,25 +1247,7 @@ export function replaceParagraphTextRange(
       cur = nextNode;
     }
   } else {
-    // The open deletion segment; reset to null whenever preserved embedded
-    // content interrupts the removed stretch so the next removed run starts
-    // a new w:del at its own position.
-    let currentDeletion: Element | null = null;
-
-    const removeRunInPlace = (runEl: Element): void => {
-      const parentNode = runEl.parentNode;
-      if (!parentNode) return;
-      if (ctx && runCarriesDeletableContent(runEl)) {
-        if (!currentDeletion) {
-          currentDeletion = createRevisionContainer(doc, 'del', ctx);
-          parentNode.insertBefore(currentDeletion, runEl);
-        }
-        parentNode.removeChild(runEl);
-        currentDeletion.appendChild(prepareElementForDeletion(runEl));
-      } else {
-        parentNode.removeChild(runEl);
-      }
-    };
+    const segmentBuilder = new DeletionSegmentBuilder(doc, ctx);
 
     // Split a run holding both text and embedded content into consecutive
     // homogeneous runs (formatting cloned), inserted at the run's position in
@@ -1218,28 +1277,27 @@ export function replaceParagraphTextRange(
       const nextNode: Node | null = cur.nextSibling as Node | null;
       const atRangeEnd = cur === rangeEndRunEl;
       if (cur.nodeType === 1 && !isW(cur as Element, W.r)) {
-        // A sibling marker stays where it is; the next removed run opens a
-        // new w:del after it (issue #1083).
-        currentDeletion = null;
+        // A sibling marker (comment anchor, bookmark, etc.) stays where it is;
+        // it terminates the open deletion segment so subsequent removed runs
+        // open a new w:del after it (issue #1083).
+        segmentBuilder.terminateSegment();
       } else if (cur.nodeType === 1) {
         const runEl = cur as Element;
         const embeddedContent = getEmbeddedContentElements(runEl);
         if (embeddedContent.length === 0) {
-          removeRunInPlace(runEl);
+          segmentBuilder.removeRunInPlace(runEl);
         } else if (!runCarriesDeletableContent(runEl)) {
-          // Embedded-only run: the replaced text lives entirely in sibling
-          // runs. Leave it in the paragraph as-is. A run that also holds a
-          // w:sym is mixed, not embedded-only: the split below keeps the
-          // embedded content live and deletes the symbol with the range.
+          // Embedded-only run: the replaced text lives entirely in sibling runs.
+          // Leave it in the paragraph as-is. Objects terminate segments without moving.
           preservedEmbeddedContent = true;
-          currentDeletion = null;
+          segmentBuilder.terminateSegment();
         } else {
           for (const piece of splitMixedRun(runEl)) {
             if (piece.embedded) {
               preservedEmbeddedContent = true;
-              currentDeletion = null;
+              segmentBuilder.terminateSegment();
             } else {
-              removeRunInPlace(piece.el);
+              segmentBuilder.removeRunInPlace(piece.el);
             }
           }
         }
