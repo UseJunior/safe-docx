@@ -72,6 +72,8 @@ export async function openDocument(
     const policy = await enforceReadPathPolicy(filePath);
     if (!policy.ok) return policy.response;
     const safePath = policy.normalizedPath;
+    const canonicalPath = await manager.canonicalizePath(safePath);
+    const generation = manager.captureOpenGeneration(canonicalPath);
 
     const content = await fs.readFile(safePath);
     if (content.length > 50 * 1024 * 1024) {
@@ -92,7 +94,13 @@ export async function openDocument(
       const filename = path.basename(safePath);
       const archive = await odf.OdfArchive.load(content as Buffer);
       const doc = odf.OdfDocument.fromContentXml(await archive.getContentXml());
-      const session = await manager.createOdfSession(content as Buffer, filename, safePath, archive, doc);
+      const session = await manager.createOdfSession(content as Buffer, filename, safePath, archive, doc, {
+        openGeneration: generation,
+      });
+      if (!manager.isOpenGenerationValid(generation) || manager.getSessionByPath(canonicalPath) !== session) {
+        await manager.discardInvalidatedSession(canonicalPath, session);
+        return err('SESSION_CLOSED', `Session for '${filePath}' was closed while opening.`, 'Re-run open_document to open a new session.');
+      }
       const paragraphCount = session.doc.getParagraphs().length;
 
       return ok({
@@ -118,11 +126,21 @@ export async function openDocument(
     if (!archiveGuard.ok) return archiveGuard.response;
 
     const filename = path.basename(safePath);
-    const session = await manager.createSession(content as Buffer, filename, safePath);
+    const session = await manager.createSession(content as Buffer, filename, safePath, {
+      openGeneration: generation,
+    });
+    if (!manager.isOpenGenerationValid(generation) || manager.getSessionByPath(canonicalPath) !== session) {
+      await manager.discardInvalidatedSession(canonicalPath, session);
+      return err('SESSION_CLOSED', `Session for '${filePath}' was closed while opening.`, 'Re-run open_document to open a new session.');
+    }
 
     const { paragraphCount } = await manager.finalizeNewSession(session, {
       skipNormalization: params.skip_normalization,
     });
+    if (!manager.isOpenGenerationValid(generation) || manager.getSessionByPath(canonicalPath) !== session) {
+      await manager.discardInvalidatedSession(canonicalPath, session);
+      return err('SESSION_CLOSED', `Session for '${filePath}' was closed while opening.`, 'Re-run open_document to open a new session.');
+    }
 
     return ok({
       file_path: manager.normalizePath(session.originalPath),

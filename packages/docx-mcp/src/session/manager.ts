@@ -289,6 +289,12 @@ export function isOdfSession(s: Session): s is OdfSession {
   return s.provider === 'odf';
 }
 
+export interface SessionOpenGeneration {
+  readonly sessionKey: string;
+  readonly globalGeneration: number;
+  readonly keyGeneration: number;
+}
+
 export class SessionManager {
   /** Sessions keyed by canonical file path (realpath). */
   private sessions = new Map<string, Session>();
@@ -298,9 +304,58 @@ export class SessionManager {
   /** Concurrency guard: prevents double-generation of baselines for the same session. */
   private baselinePromises = new WeakMap<DocxSession, Promise<void>>();
 
+  /** Close epochs used to invalidate in-flight session opens across close/clear operations (#1298). */
+  private globalCloseGeneration = 0;
+  private keyCloseGenerations = new Map<string, number>();
+  private closeInvalidationListeners = new Set<(sessionKey: string | null) => void>();
+
   constructor(opts?: { ttlMs?: number; defaultAiAuthor?: string | null }) {
     this.ttlMs = opts?.ttlMs ?? 60 * 60 * 1000;
     this.defaultAiAuthor = normalizeAiAuthor(opts?.defaultAiAuthor);
+  }
+
+  captureOpenGeneration(sessionKey: string): SessionOpenGeneration {
+    return {
+      sessionKey,
+      globalGeneration: this.globalCloseGeneration,
+      keyGeneration: this.keyCloseGenerations.get(sessionKey) ?? 0,
+    };
+  }
+
+  isOpenGenerationValid(generation: SessionOpenGeneration): boolean {
+    return (
+      this.globalCloseGeneration === generation.globalGeneration
+      && (this.keyCloseGenerations.get(generation.sessionKey) ?? 0) === generation.keyGeneration
+    );
+  }
+
+  invalidateOpenGeneration(sessionKey: string): void {
+    const next = (this.keyCloseGenerations.get(sessionKey) ?? 0) + 1;
+    this.keyCloseGenerations.set(sessionKey, next);
+    for (const listener of this.closeInvalidationListeners) {
+      listener(sessionKey);
+    }
+  }
+
+  invalidateAllOpenGenerations(): void {
+    this.globalCloseGeneration += 1;
+    for (const listener of this.closeInvalidationListeners) {
+      listener(null);
+    }
+  }
+
+  onCloseInvalidation(listener: (sessionKey: string | null) => void): () => void {
+    this.closeInvalidationListeners.add(listener);
+    return () => {
+      this.closeInvalidationListeners.delete(listener);
+    };
+  }
+
+  async discardInvalidatedSession(sessionKey: string, session: Session): Promise<void> {
+    if (this.sessions.get(sessionKey) === session) {
+      this.sessions.delete(sessionKey);
+    }
+    await this.cleanupSessionArtifacts(session);
   }
 
   private expandPath(inputPath: string): string {
@@ -335,22 +390,28 @@ export class SessionManager {
     return `ses_${out}`;
   }
 
-  async createSession(documentContent: Buffer, filename: string, originalPath: string): Promise<DocxSession> {
+  async createSession(
+    documentContent: Buffer,
+    filename: string,
+    originalPath: string,
+    opts?: { openGeneration?: SessionOpenGeneration },
+  ): Promise<DocxSession> {
     const canonicalPath = await this.canonicalizePath(originalPath);
-
-    // One-session-per-file: clean up existing session for this path if any
-    const existing = this.sessions.get(canonicalPath);
-    if (existing) {
-      await this.cleanupSessionArtifacts(existing);
-    }
+    const generation = opts?.openGeneration ?? this.captureOpenGeneration(canonicalPath);
 
     const sessionId = this.newSessionId();
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-docx-'));
     const tmpPath = path.join(dir, filename);
-    // Ensure we pass an ArrayBufferView to satisfy Node's type signature across TS lib setups.
-    await fs.writeFile(tmpPath, new Uint8Array(documentContent));
+    let doc: DocxDocument;
+    try {
+      // Ensure we pass an ArrayBufferView to satisfy Node's type signature across TS lib setups.
+      await fs.writeFile(tmpPath, new Uint8Array(documentContent));
+      doc = await DocxDocument.load(documentContent);
+    } catch (e) {
+      await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+      throw e;
+    }
 
-    const doc = await DocxDocument.load(documentContent);
     const now = new Date();
     const expiresAt = new Date(now.getTime() + this.ttlMs);
     const session: DocxSession = {
@@ -376,6 +437,18 @@ export class SessionManager {
       expiresAt,
       normalizationStats: null,
     };
+
+    if (!this.isOpenGenerationValid(generation)) {
+      await this.cleanupSessionArtifacts(session);
+      return session;
+    }
+
+    // One-session-per-file: clean up existing session for this path if any
+    const existing = this.sessions.get(canonicalPath);
+    if (existing && existing !== session) {
+      await this.cleanupSessionArtifacts(existing);
+    }
+
     this.sessions.set(canonicalPath, session);
     return session;
   }
@@ -392,18 +465,20 @@ export class SessionManager {
     originalPath: string,
     archive: any,
     doc: any,
+    opts?: { openGeneration?: SessionOpenGeneration },
   ): Promise<OdfSession> {
     const canonicalPath = await this.canonicalizePath(originalPath);
-
-    const existing = this.sessions.get(canonicalPath);
-    if (existing) {
-      await this.cleanupSessionArtifacts(existing);
-    }
+    const generation = opts?.openGeneration ?? this.captureOpenGeneration(canonicalPath);
 
     const sessionId = this.newSessionId();
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-odf-'));
     const tmpPath = path.join(dir, filename);
-    await fs.writeFile(tmpPath, new Uint8Array(documentContent));
+    try {
+      await fs.writeFile(tmpPath, new Uint8Array(documentContent));
+    } catch (e) {
+      await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+      throw e;
+    }
 
     const now = new Date();
     const session: OdfSession = {
@@ -421,6 +496,17 @@ export class SessionManager {
       lastAccessedAt: now,
       expiresAt: new Date(now.getTime() + this.ttlMs),
     };
+
+    if (!this.isOpenGenerationValid(generation)) {
+      await this.cleanupSessionArtifacts(session);
+      return session;
+    }
+
+    const existing = this.sessions.get(canonicalPath);
+    if (existing && existing !== session) {
+      await this.cleanupSessionArtifacts(existing);
+    }
+
     this.sessions.set(canonicalPath, session);
     return session;
   }
@@ -537,6 +623,7 @@ export class SessionManager {
     const sessionKey = filePath.startsWith('gdocs:')
       ? filePath
       : await this.canonicalizePath(filePath);
+    this.invalidateOpenGeneration(sessionKey);
     const session = this.sessions.get(sessionKey);
     if (!session) return null;
     this.sessions.delete(sessionKey);
@@ -545,6 +632,7 @@ export class SessionManager {
   }
 
   async clearAllSessions(): Promise<string[]> {
+    this.invalidateAllOpenGenerations();
     const allSessions = [...this.sessions.entries()];
     const clearedPaths = allSessions.map(([key]) => key);
     this.sessions.clear();
@@ -617,12 +705,19 @@ export class SessionManager {
    * Create a Google Docs session. The `doc` is an already-loaded
    * GoogleDocsDocument instance (created via dynamic import in the handler layer).
    */
-  createGDocsSession(docId: string, doc: any): GDocsSession {
+  createGDocsSession(
+    docId: string,
+    doc: any,
+    opts?: { openGeneration?: SessionOpenGeneration },
+  ): GDocsSession {
     const sessionKey = `gdocs:${docId}`;
-    const existing = this.sessions.get(sessionKey);
-    if (existing) {
-      this.touch(existing);
-      return existing as GDocsSession;
+    const generation = opts?.openGeneration ?? this.captureOpenGeneration(sessionKey);
+    if (this.isOpenGenerationValid(generation)) {
+      const existing = this.sessions.get(sessionKey);
+      if (existing) {
+        this.touch(existing);
+        return existing as GDocsSession;
+      }
     }
 
     const sessionId = this.newSessionId();
@@ -638,7 +733,9 @@ export class SessionManager {
       lastAccessedAt: now,
       expiresAt: new Date(now.getTime() + this.ttlMs),
     };
-    this.sessions.set(sessionKey, session);
+    if (this.isOpenGenerationValid(generation)) {
+      this.sessions.set(sessionKey, session);
+    }
     return session;
   }
 
