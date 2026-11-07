@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { errorCode, errorMessage } from "../error_utils.js";
 import fs from 'node:fs/promises';
-import { SessionManager } from '../session/manager.js';
+import { SessionManager, type DocxSession, type SelectiveRevisionAction, type SelectiveRevisionPolicy } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
 import {
   DocxZip,
@@ -49,6 +49,81 @@ function getWordAttr(element: Element, localName: string): string | null {
     ?? element.getAttribute(`w:${localName}`)
     ?? element.getAttribute(localName)
   );
+}
+
+export type SelectiveRevisionPolicyEvaluation =
+  | {
+      status: 'not_applicable';
+      policy: SelectiveRevisionPolicy;
+      lastAction: SelectiveRevisionAction | null;
+    }
+  | {
+      status: 'no_remaining_revisions';
+      policy: SelectiveRevisionPolicy;
+      lastAction: SelectiveRevisionAction | null;
+    }
+  | {
+      status: 'blocked';
+      policy: SelectiveRevisionPolicy;
+      lastAction: SelectiveRevisionAction | null;
+      remainingRevisions: SaveRevisionSummary;
+    }
+  | {
+      status: 'acknowledged';
+      policy: SelectiveRevisionPolicy;
+      lastAction: SelectiveRevisionAction | null;
+      remainingRevisions: SaveRevisionSummary;
+    };
+
+export async function evaluateSelectiveRevisionPolicy(
+  manager: SessionManager,
+  session: DocxSession,
+  opts: {
+    format: SaveFormat;
+    allowDiscardPreservedRevisions?: boolean;
+  },
+): Promise<SelectiveRevisionPolicyEvaluation> {
+  const policy = session.selectiveRevisionPolicy;
+  const lastAction = session.selectiveRevisionAction;
+  const exportsClean = opts.format === 'clean' || opts.format === 'both';
+
+  if (
+    !exportsClean
+    || !session.aiAuthor
+    || !manager.requiresSelectiveRevisionAcknowledgement(session)
+  ) {
+    return {
+      status: 'not_applicable',
+      policy,
+      lastAction,
+    };
+  }
+
+  const current = await session.doc.toBuffer({ cleanBookmarks: false });
+  const remaining = await collectAiRevisionSummary(current.buffer, session.aiAuthor);
+  if (!remaining) {
+    return {
+      status: 'no_remaining_revisions',
+      policy,
+      lastAction,
+    };
+  }
+
+  if (!opts.allowDiscardPreservedRevisions) {
+    return {
+      status: 'blocked',
+      policy,
+      lastAction,
+      remainingRevisions: remaining,
+    };
+  }
+
+  return {
+    status: 'acknowledged',
+    policy,
+    lastAction,
+    remainingRevisions: remaining,
+  };
 }
 
 async function collectAiRevisionSummary(
@@ -183,27 +258,26 @@ export async function save(
     const author = params.tracked_changes_author ?? params.author ?? session.aiAuthor ?? 'SafeDocX';
     const allowOverwrite = params.allow_overwrite ?? false;
 
-    let cleanArtifactDiscardedRevisions: SaveRevisionSummary | undefined;
-    if (
-      (format === 'clean' || format === 'both')
-      && session.selectiveRevisionAction
-      && session.aiAuthor
-    ) {
-      const current = await session.doc.toBuffer({ cleanBookmarks: false });
-      const remaining = await collectAiRevisionSummary(current.buffer, session.aiAuthor);
-      if (remaining && !params.allow_discard_preserved_revisions) {
-        return {
-          ...err(
-            'SELECTIVE_REVISIONS_WOULD_BE_DISCARDED',
-            `Clean output would auto-accept ${remaining.count} remaining revision(s) by ${session.aiAuthor} after a selective revision operation.`,
-            "Use save_format='tracked', finish accepting/rejecting the remaining revisions, or explicitly set allow_discard_preserved_revisions=true.",
-          ),
-          selective_revision_action: session.selectiveRevisionAction,
-          preserved_revisions: remaining,
-        };
-      }
-      cleanArtifactDiscardedRevisions = remaining;
+    const policyEvaluation = await evaluateSelectiveRevisionPolicy(manager, session, {
+      format,
+      allowDiscardPreservedRevisions: params.allow_discard_preserved_revisions,
+    });
+    if (policyEvaluation.status === 'blocked') {
+      return {
+        ...err(
+          'SELECTIVE_REVISIONS_WOULD_BE_DISCARDED',
+          `Clean output would auto-accept ${policyEvaluation.remainingRevisions.count} remaining revision(s) by ${session.aiAuthor} after a selective revision operation.`,
+          "Use save_format='tracked', finish accepting/rejecting the remaining revisions, or explicitly set allow_discard_preserved_revisions=true.",
+        ),
+        selective_revision_policy: policyEvaluation.policy,
+        selective_revision_action: policyEvaluation.lastAction,
+        preserved_revisions: policyEvaluation.remainingRevisions,
+      };
     }
+    const cleanArtifactDiscardedRevisions =
+      policyEvaluation.status === 'acknowledged'
+        ? policyEvaluation.remainingRevisions
+        : undefined;
 
     const cacheKey = JSON.stringify({
       revision: session.editRevision,

@@ -58,6 +58,15 @@ export type SelectiveRevisionAction = {
   editRevision: number;
 };
 
+export type SelectiveRevisionPolicyState =
+  | 'unarmed'
+  | 'require_clean_export_acknowledgement';
+
+export type SelectiveRevisionPolicy = {
+  state: SelectiveRevisionPolicyState;
+  armedAtRevision: number | null;
+};
+
 /**
  * A package-level (non-revision) mutation recorded during a session.
  *
@@ -115,9 +124,14 @@ export type DocxSession = {
    */
   nonRevisionManifest: NonRevisionChange[];
   /**
-   * Most recent selective revision disposition in this in-memory session.
-   * A later clean save uses this marker to prevent automatically accepting
-   * remaining revisions that the caller deliberately left unresolved.
+   * Explicit policy governing whether clean export must require caller
+   * acknowledgement before auto-accepting remaining AI revisions (#1303).
+   */
+  selectiveRevisionPolicy: SelectiveRevisionPolicy;
+  /**
+   * Most recent selective revision action metadata in this in-memory session.
+   * Kept separate from selectiveRevisionPolicy so action history and active
+   * preservation policy are modeled independently (#586, #1303).
    */
   selectiveRevisionAction: SelectiveRevisionAction | null;
   createdAt: Date;
@@ -370,6 +384,7 @@ export class SessionManager {
       saveCache: new Map<string, SaveCacheEntry>(),
       extractionCache: null,
       nonRevisionManifest: [],
+      selectiveRevisionPolicy: { state: 'unarmed', armedAtRevision: null },
       selectiveRevisionAction: null,
       createdAt: now,
       lastAccessedAt: now,
@@ -590,6 +605,31 @@ export class SessionManager {
       ...action,
       editRevision: session.editRevision,
     };
+    session.selectiveRevisionPolicy = {
+      state: 'require_clean_export_acknowledgement',
+      armedAtRevision: session.editRevision,
+    };
+  }
+
+  setSelectiveRevisionPolicy(
+    session: DocxSession,
+    state: SelectiveRevisionPolicyState,
+  ): void {
+    session.selectiveRevisionPolicy = {
+      state,
+      armedAtRevision:
+        state === 'require_clean_export_acknowledgement'
+          ? (session.selectiveRevisionPolicy.armedAtRevision ?? session.editRevision)
+          : null,
+    };
+  }
+
+  clearSelectiveRevisionPolicy(session: DocxSession): void {
+    this.setSelectiveRevisionPolicy(session, 'unarmed');
+  }
+
+  requiresSelectiveRevisionAcknowledgement(session: DocxSession): boolean {
+    return session.selectiveRevisionPolicy.state === 'require_clean_export_acknowledgement';
   }
 
   getSaveCache(session: DocxSession, cacheKey: string): SaveCacheEntry | null {
