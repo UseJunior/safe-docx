@@ -7,6 +7,7 @@
  */
 
 export { generateDocx, type GenerateDocxOptions } from './compile.js';
+export { CompileContext, type RegisteredPart } from './context.js';
 export { GenerationSpecError, GenerationInternalError, type GenerationSpecErrorCode } from './errors.js';
 export { checkGeneratedPackage, type StructuralCheckOptions, type StructuralCheckResult, type StructuralIssue } from './structural-checks.js';
 export {
