@@ -42,8 +42,8 @@ function makeMockParagraphs() {
   ];
 }
 
-function makeMockDoc() {
-  const paragraphs = makeMockParagraphs();
+function makeMockDoc(customParagraphs?: any[]) {
+  const paragraphs = customParagraphs ?? makeMockParagraphs();
   return {
     getParagraphs: vi.fn(() => paragraphs),
     getParagraphTextById: vi.fn((anchorId: string) => {
@@ -127,6 +127,12 @@ function setupGDocsSession(manager: SessionManager): GDocsSession {
   return session;
 }
 
+function setupGDocsSessionWithParagraphs(manager: SessionManager, paragraphs: any[]): GDocsSession {
+  const mockDoc = makeMockDoc(paragraphs);
+  const session = manager.createGDocsSession('test-doc-id-123', mockDoc);
+  return session;
+}
+
 type SuccessResult = { success: true; [key: string]: unknown };
 type ErrorResult = { success: false; error: { code: string; message: string; hint?: string } };
 
@@ -183,6 +189,91 @@ describe('Google Docs MCP tool dispatch', () => {
       });
       assertSuccess(result);
       expect(result.paragraphs_returned).toBe(1);
+    });
+
+    it('returns document content in simple format', async () => {
+      setupGDocsSession(manager);
+      const result = await dispatchToolCall(manager, 'read_file', {
+        google_doc_id: 'test-doc-id-123',
+        format: 'simple',
+      });
+      assertSuccess(result);
+      expect(result.paragraphs_returned).toBe(3);
+      expect(result.content as string).toContain('#TOON id | text');
+      expect(result.content as string).toContain('Hello world');
+    });
+
+    it('returns document content in json format', async () => {
+      setupGDocsSession(manager);
+      const result = await dispatchToolCall(manager, 'read_file', {
+        google_doc_id: 'test-doc-id-123',
+        format: 'json',
+      });
+      assertSuccess(result);
+      expect(result.paragraphs_returned).toBe(3);
+      const parsed = JSON.parse(result.content as string);
+      expect(Array.isArray(parsed)).toBe(true);
+      expect(parsed).toHaveLength(3);
+      expect(parsed[0].clean_text).toBe('Hello world');
+    });
+
+    it('emits budget warning when first node overflows budget', async () => {
+      const hugeParagraphs = [
+        {
+          paragraphId: 'p1',
+          anchorName: '_bk_0',
+          anchorId: 't.0:_bk_0',
+          startIndex: 1,
+          endIndex: 70000,
+          tabId: 't.0',
+          text: 'Giant paragraph content. '.repeat(3000),
+          inTable: false,
+        },
+      ];
+      setupGDocsSessionWithParagraphs(manager, hugeParagraphs);
+      const result = await dispatchToolCall(manager, 'read_file', {
+        google_doc_id: 'test-doc-id-123',
+      });
+      assertSuccess(result);
+      expect(result.paragraphs_returned).toBe(1);
+      expect(result.warnings).toEqual(['budget_exceeded_by_first_node']);
+    });
+
+    it('advances through pages with next_offset without skipping or duplicating', async () => {
+      const manyParagraphs = Array.from({ length: 100 }, (_, i) => ({
+        paragraphId: `p${i + 1}`,
+        anchorName: `_bk_${i}`,
+        anchorId: `t.0:_bk_${i}`,
+        startIndex: i * 1000 + 1,
+        endIndex: (i + 1) * 1000,
+        tabId: 't.0',
+        text: `Paragraph ${i + 1}: ` + 'X'.repeat(800),
+        inTable: false,
+      }));
+      setupGDocsSessionWithParagraphs(manager, manyParagraphs);
+      const firstPage = await dispatchToolCall(manager, 'read_file', {
+        google_doc_id: 'test-doc-id-123',
+      });
+      assertSuccess(firstPage);
+      expect(firstPage.has_more).toBe(true);
+      expect(firstPage.next_offset).toBeDefined();
+      expect(Number(firstPage.next_offset)).toBe(Number(firstPage.paragraphs_returned) + 1);
+
+      const secondPage = await dispatchToolCall(manager, 'read_file', {
+        google_doc_id: 'test-doc-id-123',
+        offset: Number(firstPage.next_offset),
+      });
+      assertSuccess(secondPage);
+      expect(Number(secondPage.paragraphs_returned)).toBeGreaterThan(0);
+
+      // Verify no overlap
+      const firstLines = (firstPage.content as string).split('\n').filter((l) => l.startsWith('t.0:_bk_'));
+      const secondLines = (secondPage.content as string).split('\n').filter((l) => l.startsWith('t.0:_bk_'));
+      const firstIds = new Set(firstLines.map((l) => l.split('|')[0]!.trim()));
+      for (const line of secondLines) {
+        const id = line.split('|')[0]!.trim();
+        expect(firstIds.has(id)).toBe(false);
+      }
     });
   });
 

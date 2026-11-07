@@ -1,12 +1,15 @@
 import {
-  formatToonDataLine,
   renderToon,
   type DocumentViewNode,
 } from '@usejunior/docx-core';
 import { type OdfSession, SessionManager } from '../../session/manager.js';
 import { err, ok, type ToolResponse } from '../types.js';
-import { buildPaginationMeta, DEFAULT_CONTENT_TOKEN_BUDGET, estimateTokens } from '../pagination.js';
-import { READ_SIMPLE_PREVIEW_CHARS, previewText } from '../preview.js';
+import {
+  buildPaginationMeta,
+  DEFAULT_CONTENT_TOKEN_BUDGET,
+  renderWithBudget,
+  renderSimpleWithTableMarkers,
+} from '../pagination.js';
 
 function odfParagraphsToDocumentViewNodes(session: OdfSession): DocumentViewNode[] {
   return session.doc.getParagraphs().map((paragraph: { id: string; text: string }) => ({
@@ -79,20 +82,22 @@ export async function odfReadFile(
 
     let content: string;
     let paragraphsReturned: number;
+    let warnings: string[] | undefined;
 
     if (!budgetActive) {
       if (format === 'json') {
         content = JSON.stringify(filtered, null, 2);
       } else if (format === 'simple') {
-        content = renderSimpleOdf(filtered);
+        content = renderSimpleWithTableMarkers(filtered);
       } else {
         content = renderToon(filtered);
       }
       paragraphsReturned = filtered.length;
     } else {
-      const result = renderToonWithBudgetOdf(filtered, DEFAULT_CONTENT_TOKEN_BUDGET);
+      const result = renderWithBudget(filtered, format, DEFAULT_CONTENT_TOKEN_BUDGET, 'none');
       content = result.content;
       paragraphsReturned = result.count;
+      warnings = result.warnings;
     }
 
     const paginationMeta = buildPaginationMeta(totalParagraphs, paragraphsReturned, startIdx);
@@ -103,39 +108,11 @@ export async function odfReadFile(
       content,
       total_paragraphs: totalParagraphs,
       paragraphs_returned: paragraphsReturned,
+      ...(warnings ? { warnings } : {}),
       ...paginationMeta,
       ...metadata,
     });
   } catch (e: unknown) {
     return err('READ_ERROR', e instanceof Error ? e.message : String(e), 'Check session status and try again.');
   }
-}
-
-function renderSimpleOdf(nodes: readonly DocumentViewNode[]): string {
-  const lines: string[] = ['#TOON id | text'];
-  for (const n of nodes) {
-    lines.push(`${n.id} | ${previewText(n.clean_text, READ_SIMPLE_PREVIEW_CHARS)}`);
-  }
-  return lines.join('\n');
-}
-
-// ODF Phase 1 flattens table cells to body paragraphs, so nodes never carry
-// `table_context`. The budget renderer therefore has no table-marker handling
-// (unlike the DOCX/gdocs renderers) — keeping it free of structurally-unreachable
-// branches.
-function renderToonWithBudgetOdf(
-  nodes: readonly DocumentViewNode[],
-  budget: number,
-): { content: string; count: number } {
-  let accumulated = '#SCHEMA id | list_label | header | style | text';
-  let count = 0;
-
-  for (const node of nodes) {
-    const candidate = accumulated + '\n' + formatToonDataLine(node);
-    if (count > 0 && estimateTokens(candidate) > budget) break;
-    accumulated = candidate;
-    count++;
-  }
-
-  return { content: accumulated, count };
 }
