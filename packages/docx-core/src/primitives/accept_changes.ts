@@ -97,7 +97,16 @@ function isRowPropertyRevisionMarker(el: Element): boolean {
   return parent !== null && isW(parent, 'trPr');
 }
 
-function acceptSelectedRowRevisions(root: Element, filter: RevisionFilter): { insertions: number; deletions: number } {
+/**
+ * Pass 1: Rows/cells
+ * Resolve row topology before collecting paragraph-mark revisions: a selected
+ * deleted row disappears as one revision, while an inserted row is retained
+ * and only its row marker is stripped.
+ */
+function resolveTableRowRevisionsPass(
+  root: Element,
+  filter: RevisionFilter,
+): { insertions: number; deletions: number } {
   let insertions = 0;
   let deletions = 0;
   for (const marker of collectByLocalName(root, 'del').filter(filter).filter(isRowPropertyRevisionMarker)) {
@@ -434,29 +443,15 @@ function rescueBookmarksFromUnmergedEmptyParagraph(
  * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.table-properties
  * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.table-cell-properties
  */
-export function acceptChanges(
-  doc: Document,
-  opts?: { filter?: RevisionFilter },
-): AcceptChangesResult {
-  const filter = opts?.filter ?? ACCEPT_ALL;
-  const selective = filter !== ACCEPT_ALL;
-  const root = doc.getElementsByTagNameNS(W_NS, 'body').item(0) ?? doc.documentElement;
-  if (!root) {
-    return {
-      insertionsAccepted: 0,
-      deletionsAccepted: 0,
-      movesResolved: 0,
-      propertyChangesResolved: 0,
-      unresolvedRowRevisions: 0,
-    };
-  }
-
-  // Resolve row topology before collecting paragraph-mark revisions: a selected
-  // deleted row disappears as one revision, while an inserted row is retained
-  // and only its row marker is stripped.
-  const rowRevisions = acceptSelectedRowRevisions(root, filter);
-
-  // Phase A — Identify deleted or moved-from paragraph marks.
+/**
+ * Pass 2: Paragraph marks identification
+ * Identify deleted or moved-from paragraph marks, capturing selected direct
+ * mark/property histories before other phases remove them.
+ */
+function identifyParagraphMarkRevisionsPass(
+  root: Element,
+  filter: RevisionFilter,
+): { markDeletedParagraphs: Element[]; resolvedMarkProperties: Element[] } {
   const markDeletedParagraphs: Element[] = [];
   const allParagraphs = collectByLocalName(root, 'p');
   // Capture selected direct mark/property histories before other phases remove
@@ -479,11 +474,21 @@ export function acceptChanges(
       markDeletedParagraphs.push(p);
     }
   }
+  return { markDeletedParagraphs, resolvedMarkProperties };
+}
 
-  // A bookmark endpoint inside a selected deletion can have its paired endpoint
-  // live outside that wrapper so the combined redline visibly brackets deleted
-  // text. Accepting the deletion must remove that live original-side endpoint
-  // as well; otherwise a cross-paragraph range becomes orphaned.
+/**
+ * Pass 3: Deleted bookmark boundaries
+ * A bookmark endpoint inside a selected deletion can have its paired endpoint
+ * live outside that wrapper so the combined redline visibly brackets deleted
+ * text. Accepting the deletion must remove that live original-side endpoint
+ * as well; otherwise a cross-paragraph range becomes orphaned.
+ */
+function resolveDeletedBookmarkBoundariesPass(
+  root: Element,
+  filter: RevisionFilter,
+  markDeletedParagraphs: Element[],
+): void {
   const deletedBookmarkIds = new Set<string>();
   for (const deletion of [...collectByLocalName(root, 'del'), ...collectByLocalName(root, 'moveFrom')].filter(filter)) {
     for (const localName of ['bookmarkStart', 'bookmarkEnd']) {
@@ -533,22 +538,56 @@ export function acceptChanges(
       }
     }
   }
+}
 
-  // Phase B — Remove deletions and move sources.
-  const deletionsAccepted = rowRevisions.deletions + removeAllByLocalName(root, 'del', filter, isRowPropertyRevisionMarker);
+/**
+ * Pass 4: Deletions and move sources (moves)
+ * Remove deletions, move sources, and move range markers.
+ *
+ * Link #1020: Selective author accept removes authored move starts but leaves
+ * authorless range ends behind. Pair-aware resolution is tracked separately in #1020
+ * without changing selector semantics here.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1020
+ */
+function removeDeletionsAndMoveSourcesPass(
+  root: Element,
+  filter: RevisionFilter,
+  rowDeletions: number,
+): { deletionsAccepted: number; moveFromRemoved: number } {
+  const deletionsAccepted = rowDeletions + removeAllByLocalName(root, 'del', filter, isRowPropertyRevisionMarker);
   const moveFromRemoved = removeAllByLocalName(root, 'moveFrom', filter);
   removeAllByLocalName(root, 'moveFromRangeStart', filter);
   removeAllByLocalName(root, 'moveFromRangeEnd', filter);
   removeAllByLocalName(root, 'moveToRangeStart', filter);
   removeAllByLocalName(root, 'moveToRangeEnd', filter);
+  return { deletionsAccepted, moveFromRemoved };
+}
 
-  // Phase C — Unwrap insertions and move destinations (depth-sorted)
-  const insertionsAccepted = rowRevisions.insertions + unwrapAllByLocalName(root, 'ins', filter);
+/**
+ * Pass 5: Nested wrappers and move destinations (nested wrappers, moves)
+ * Unwrap insertions and move destinations in depth-first order to handle
+ * nested wrappers correctly.
+ */
+function unwrapInsertionsAndMoveDestinationsPass(
+  root: Element,
+  filter: RevisionFilter,
+  rowInsertions: number,
+): { insertionsAccepted: number; moveToUnwrapped: number } {
+  const insertionsAccepted = rowInsertions + unwrapAllByLocalName(root, 'ins', filter);
   const moveToUnwrapped = unwrapAllByLocalName(root, 'moveTo', filter);
+  return { insertionsAccepted, moveToUnwrapped };
+}
 
-  // Phase D — Remove property change records. A selected section-break
-  // removal takes its now-empty paragraph-level w:sectPr with it (#1143);
-  // identify those containers before their change records are removed.
+/**
+ * Pass 6: Property change records (properties)
+ * Remove property change records and empty paragraph-level w:sectPr containers
+ * from accepted section-break removals.
+ */
+function resolvePropertyChangesPass(
+  root: Element,
+  filter: RevisionFilter,
+): number {
   const acceptedSectionBreakRemovals = collectByLocalName(root, 'sectPrChange')
     .filter(filter)
     .map(acceptedSectionBreakRemovalContainer)
@@ -560,8 +599,22 @@ export function acceptChanges(
   for (const section of acceptedSectionBreakRemovals) {
     section.parentNode?.removeChild(section);
   }
+  return propertyChangesResolved;
+}
 
-  // Phase E — Cleanup
+/**
+ * Pass 7: Paragraph marks and cleanup (paragraph marks)
+ * Strip paragraph-level revision markers, resolve paragraph-mark merges into
+ * following paragraphs (rescuing bookmarks), remove empty paragraph mark
+ * properties, and strip rsidDel attributes.
+ */
+function cleanupParagraphMarksAndRevisionsPass(
+  root: Element,
+  filter: RevisionFilter,
+  selective: boolean,
+  markDeletedParagraphs: Element[],
+  resolvedMarkProperties: Element[],
+): void {
   // Strip paragraph-level revision markers from w:pPr/w:rPr (only those the
   // filter selects, so a selective accept leaves foreign paragraph-mark
   // revisions byte-untouched).
@@ -624,6 +677,32 @@ export function acceptChanges(
       }
     }
   }
+}
+
+export function acceptChanges(
+  doc: Document,
+  opts?: { filter?: RevisionFilter },
+): AcceptChangesResult {
+  const filter = opts?.filter ?? ACCEPT_ALL;
+  const selective = filter !== ACCEPT_ALL;
+  const root = doc.getElementsByTagNameNS(W_NS, 'body').item(0) ?? doc.documentElement;
+  if (!root) {
+    return {
+      insertionsAccepted: 0,
+      deletionsAccepted: 0,
+      movesResolved: 0,
+      propertyChangesResolved: 0,
+      unresolvedRowRevisions: 0,
+    };
+  }
+
+  const rowRevisions = resolveTableRowRevisionsPass(root, filter);
+  const { markDeletedParagraphs, resolvedMarkProperties } = identifyParagraphMarkRevisionsPass(root, filter);
+  resolveDeletedBookmarkBoundariesPass(root, filter, markDeletedParagraphs);
+  const { deletionsAccepted, moveFromRemoved } = removeDeletionsAndMoveSourcesPass(root, filter, rowRevisions.deletions);
+  const { insertionsAccepted, moveToUnwrapped } = unwrapInsertionsAndMoveDestinationsPass(root, filter, rowRevisions.insertions);
+  const propertyChangesResolved = resolvePropertyChangesPass(root, filter);
+  cleanupParagraphMarksAndRevisionsPass(root, filter, selective, markDeletedParagraphs, resolvedMarkProperties);
 
   return {
     insertionsAccepted,
