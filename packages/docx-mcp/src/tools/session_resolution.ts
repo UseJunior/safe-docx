@@ -1,7 +1,14 @@
 import fs from 'node:fs/promises';
 import { errorCode, errorMessage } from "../error_utils.js";
 import path from 'node:path';
-import { type DocxSession, type GDocsSession, type OdfSession, type Session, SessionManager } from '../session/manager.js';
+import {
+  type DocxSession,
+  type GDocsSession,
+  type OdfSession,
+  type Session,
+  type SessionOpenGeneration,
+  SessionManager,
+} from '../session/manager.js';
 import { err, type ToolResponse } from './types.js';
 import { enforceReadPathPolicy } from './path_policy.js';
 import { validateDocxArchiveSafety } from './docx_archive_guard.js';
@@ -37,18 +44,144 @@ export type OdfSessionResolutionOutcome =
   | { ok: false; response: ToolResponse };
 
 // ---------------------------------------------------------------------------
-// Concurrent auto-open deduplication
+// Centralized provider single-flight coordination & close-generation guard
 // ---------------------------------------------------------------------------
 
-const pendingByManager = new WeakMap<SessionManager, Map<string, Promise<SessionResolutionOutcome>>>();
+type ProviderResolutionOutcome<TSession extends Session> =
+  | { ok: true; session: TSession; metadata: Record<string, unknown> }
+  | { ok: false; response: ToolResponse };
 
-function getPendingMap(manager: SessionManager): Map<string, Promise<SessionResolutionOutcome>> {
-  let map = pendingByManager.get(manager);
-  if (!map) {
-    map = new Map();
-    pendingByManager.set(manager, map);
+interface PendingOpenEntry<TSession extends Session = Session> {
+  readonly pendingKey: string;
+  readonly sessionKey: string;
+  readonly generation: SessionOpenGeneration;
+  readonly promise: Promise<ProviderResolutionOutcome<TSession>>;
+}
+
+interface ManagerSingleFlightState {
+  readonly pendingByKey: Map<string, PendingOpenEntry<any>>;
+}
+
+const singleFlightByManager = new WeakMap<SessionManager, ManagerSingleFlightState>();
+
+function getSingleFlightState(manager: SessionManager): ManagerSingleFlightState {
+  let state = singleFlightByManager.get(manager);
+  if (!state) {
+    const pendingByKey = new Map<string, PendingOpenEntry<any>>();
+    manager.onCloseInvalidation((closedSessionKey) => {
+      if (closedSessionKey === null) {
+        pendingByKey.clear();
+        return;
+      }
+      for (const [pendingKey, entry] of pendingByKey.entries()) {
+        if (entry.sessionKey === closedSessionKey) {
+          pendingByKey.delete(pendingKey);
+        }
+      }
+    });
+    state = { pendingByKey };
+    singleFlightByManager.set(manager, state);
   }
-  return map;
+  return state;
+}
+
+function closedDuringOpenResponse(target: string): ToolResponse {
+  return err(
+    'SESSION_CLOSED',
+    `Session for '${target}' was closed while opening.`,
+    'Re-run the tool call to open a new session.',
+  );
+}
+
+async function coordinateSingleFlightOpen<TSession extends Session>(opts: {
+  manager: SessionManager;
+  provider: TSession['provider'];
+  sessionKey: string;
+  targetLabel: string;
+  waiterMetadata?: Record<string, unknown>;
+  executeOpen: (generation: SessionOpenGeneration) => Promise<ProviderResolutionOutcome<TSession>>;
+}): Promise<ProviderResolutionOutcome<TSession>> {
+  const { manager, provider, sessionKey, targetLabel, waiterMetadata, executeOpen } = opts;
+  const pendingKey = `${provider}:${sessionKey}`;
+  const { pendingByKey } = getSingleFlightState(manager);
+
+  const existing = pendingByKey.get(pendingKey) as PendingOpenEntry<TSession> | undefined;
+  if (existing) {
+    if (manager.isOpenGenerationValid(existing.generation)) {
+      const outcome = await existing.promise;
+      if (outcome.ok) {
+        if (
+          !manager.isOpenGenerationValid(existing.generation)
+          || manager.getSessionByPath(sessionKey) !== outcome.session
+        ) {
+          await manager.discardInvalidatedSession(sessionKey, outcome.session);
+          return { ok: false, response: closedDuringOpenResponse(targetLabel) };
+        }
+        manager.touch(outcome.session);
+        return {
+          ok: true,
+          session: outcome.session,
+          metadata: {
+            ...outcome.metadata,
+            session_resolution: 'reused' as SessionResolutionMode,
+            session_resolution_detail: 'awaited_concurrent_open',
+            ...(waiterMetadata ?? {}),
+          },
+        };
+      }
+      return outcome;
+    }
+    if (pendingByKey.get(pendingKey) === existing) {
+      pendingByKey.delete(pendingKey);
+    }
+  }
+
+  const generation = manager.captureOpenGeneration(sessionKey);
+  let releaseStart!: () => void;
+  const startGate = new Promise<void>((resolve) => {
+    releaseStart = resolve;
+  });
+
+  let registeredEntry!: PendingOpenEntry<TSession>;
+  const outcomePromise: Promise<ProviderResolutionOutcome<TSession>> = (async () => {
+    await startGate;
+    try {
+      if (!manager.isOpenGenerationValid(generation)) {
+        return { ok: false, response: closedDuringOpenResponse(targetLabel) };
+      }
+      const outcome = await executeOpen(generation);
+      if (outcome.ok) {
+        if (
+          !manager.isOpenGenerationValid(generation)
+          || manager.getSessionByPath(sessionKey) !== outcome.session
+        ) {
+          await manager.discardInvalidatedSession(sessionKey, outcome.session);
+          return { ok: false, response: closedDuringOpenResponse(targetLabel) };
+        }
+      }
+      return outcome;
+    } finally {
+      if (pendingByKey.get(pendingKey) === registeredEntry) {
+        pendingByKey.delete(pendingKey);
+      }
+    }
+  })();
+
+  // Prevent unhandled rejection warnings for exceptional throws
+  outcomePromise.catch(() => {});
+
+  // Register pending entry before releasing execution gate so synchronous/fast
+  // settlement cannot run its finally cleanup before registration.
+  registeredEntry = {
+    pendingKey,
+    sessionKey,
+    generation,
+    promise: outcomePromise,
+  };
+  pendingByKey.set(pendingKey, registeredEntry);
+  releaseStart();
+
+  return await outcomePromise;
 }
 
 export async function validateAndLoadDocxFromPath(
@@ -309,39 +442,21 @@ export async function resolveSessionForTool(
   }
 
   // --- Concurrent auto-open deduplication ---
-  const pendingMap = getPendingMap(manager);
-  const pending = pendingMap.get(canonicalPath);
-
-  if (pending) {
-    // Waiter: another request is already creating a session for this path
-    const outcome = await pending;
-    if (outcome.ok) {
-      manager.touch(outcome.session);
-      return {
-        ok: true,
-        session: outcome.session,
-        metadata: {
-          ...outcome.metadata,
-          session_resolution: 'reused' as SessionResolutionMode,
-          session_resolution_detail: 'awaited_concurrent_open',
-          resolved_file_path: canonicalPath,
-        },
-      };
-    }
-    // Leader failed — return the same structured error to the waiter
-    return outcome;
-  }
-
-  // Leader: first concurrent request for this path
-  let storedPromise!: Promise<SessionResolutionOutcome>;
-
-  const outcomePromise: Promise<SessionResolutionOutcome> = (async () => {
-    try {
+  return await coordinateSingleFlightOpen<DocxSession>({
+    manager,
+    provider: 'docx',
+    sessionKey: canonicalPath,
+    targetLabel: filePath,
+    waiterMetadata: { resolved_file_path: canonicalPath },
+    executeOpen: async (generation) => {
       // `.odt` is already handled by the synchronous early return above, so by here
       // the path is a non-`.odt` DOCX candidate.
       const loaded = await validateAndLoadDocxFromPath(manager, filePath);
       if (!loaded.ok) {
         return { ok: false as const, response: loaded.response };
+      }
+      if (!manager.isOpenGenerationValid(generation)) {
+        return { ok: false as const, response: closedDuringOpenResponse(filePath) };
       }
 
       let session: DocxSession;
@@ -350,6 +465,7 @@ export async function resolveSessionForTool(
           loaded.content,
           loaded.filename,
           loaded.normalizedPath,
+          { openGeneration: generation },
         );
       } catch (e: unknown) {
         // A WML Strict package is refused by DocxDocument.load; return the typed
@@ -358,7 +474,18 @@ export async function resolveSessionForTool(
         if (refusal) return { ok: false as const, response: refusal };
         throw e;
       }
+
+      if (!manager.isOpenGenerationValid(generation)) {
+        await manager.discardInvalidatedSession(canonicalPath, session);
+        return { ok: false as const, response: closedDuringOpenResponse(filePath) };
+      }
+
       await manager.finalizeNewSession(session);
+
+      if (!manager.isOpenGenerationValid(generation)) {
+        await manager.discardInvalidatedSession(canonicalPath, session);
+        return { ok: false as const, response: closedDuringOpenResponse(filePath) };
+      }
 
       return {
         ok: true as const,
@@ -368,37 +495,13 @@ export async function resolveSessionForTool(
           resolved_file_path: canonicalPath,
         },
       };
-    } finally {
-      // Identity-guarded cleanup
-      if (pendingMap.get(canonicalPath) === storedPromise) {
-        pendingMap.delete(canonicalPath);
-      }
-    }
-  })();
-
-  storedPromise = outcomePromise;
-
-  // Prevent unhandled rejection warnings for exceptional throws
-  outcomePromise.catch(() => {});
-
-  pendingMap.set(canonicalPath, outcomePromise);
-  return await outcomePromise;
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
 // ODF session resolution
 // ---------------------------------------------------------------------------
-
-const odfPendingByManager = new WeakMap<SessionManager, Map<string, Promise<OdfSessionResolutionOutcome>>>();
-
-function getOdfPendingMap(manager: SessionManager): Map<string, Promise<OdfSessionResolutionOutcome>> {
-  let map = odfPendingByManager.get(manager);
-  if (!map) {
-    map = new Map();
-    odfPendingByManager.set(manager, map);
-  }
-  return map;
-}
 
 export async function resolveOdfSessionForTool(
   manager: SessionManager,
@@ -453,34 +556,19 @@ export async function resolveOdfSessionForTool(
     };
   }
 
-  const pendingMap = getOdfPendingMap(manager);
-  const pending = pendingMap.get(canonicalPath);
-
-  if (pending) {
-    const outcome = await pending;
-    if (outcome.ok) {
-      manager.touch(outcome.session);
-      return {
-        ok: true,
-        session: outcome.session,
-        metadata: {
-          ...outcome.metadata,
-          session_resolution: 'reused' as SessionResolutionMode,
-          session_resolution_detail: 'awaited_concurrent_open',
-          resolved_file_path: canonicalPath,
-        },
-      };
-    }
-    return outcome;
-  }
-
-  let storedPromise!: Promise<OdfSessionResolutionOutcome>;
-
-  const outcomePromise: Promise<OdfSessionResolutionOutcome> = (async () => {
-    try {
+  return await coordinateSingleFlightOpen<OdfSession>({
+    manager,
+    provider: 'odf',
+    sessionKey: canonicalPath,
+    targetLabel: filePath,
+    waiterMetadata: { resolved_file_path: canonicalPath },
+    executeOpen: async (generation) => {
       const loaded = await validateAndLoadOdfFromPath(manager, filePath);
       if (!loaded.ok) {
         return { ok: false as const, response: loaded.response };
+      }
+      if (!manager.isOpenGenerationValid(generation)) {
+        return { ok: false as const, response: closedDuringOpenResponse(filePath) };
       }
 
       const session = await manager.createOdfSession(
@@ -489,7 +577,13 @@ export async function resolveOdfSessionForTool(
         loaded.normalizedPath,
         loaded.archive,
         loaded.doc,
+        { openGeneration: generation },
       );
+
+      if (!manager.isOpenGenerationValid(generation)) {
+        await manager.discardInvalidatedSession(canonicalPath, session);
+        return { ok: false as const, response: closedDuringOpenResponse(filePath) };
+      }
 
       return {
         ok: true as const,
@@ -499,17 +593,8 @@ export async function resolveOdfSessionForTool(
           resolved_file_path: canonicalPath,
         },
       };
-    } finally {
-      if (pendingMap.get(canonicalPath) === storedPromise) {
-        pendingMap.delete(canonicalPath);
-      }
-    }
-  })();
-
-  storedPromise = outcomePromise;
-  outcomePromise.catch(() => {});
-  pendingMap.set(canonicalPath, outcomePromise);
-  return await outcomePromise;
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -520,17 +605,6 @@ function extractGoogleDocId(input: string): string {
   const urlMatch = input.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
   if (urlMatch) return urlMatch[1]!;
   return input.trim();
-}
-
-const gdocsPendingByManager = new WeakMap<SessionManager, Map<string, Promise<GDocsSessionResolutionOutcome>>>();
-
-function getGDocsPendingMap(manager: SessionManager): Map<string, Promise<GDocsSessionResolutionOutcome>> {
-  let map = gdocsPendingByManager.get(manager);
-  if (!map) {
-    map = new Map();
-    gdocsPendingByManager.set(manager, map);
-  }
-  return map;
 }
 
 export async function resolveGDocsSessionForTool(
@@ -569,29 +643,12 @@ export async function resolveGDocsSessionForTool(
     };
   }
 
-  // Concurrent dedup
-  const pendingMap = getGDocsPendingMap(manager);
-  const pending = pendingMap.get(sessionKey);
-  if (pending) {
-    const outcome = await pending;
-    if (outcome.ok) {
-      manager.touch(outcome.session);
-      return {
-        ok: true,
-        session: outcome.session,
-        metadata: {
-          ...outcome.metadata,
-          session_resolution: 'reused' as SessionResolutionMode,
-          session_resolution_detail: 'awaited_concurrent_open',
-        },
-      };
-    }
-    return outcome;
-  }
-
-  let storedPromise!: Promise<GDocsSessionResolutionOutcome>;
-  const outcomePromise: Promise<GDocsSessionResolutionOutcome> = (async () => {
-    try {
+  return await coordinateSingleFlightOpen<GDocsSession>({
+    manager,
+    provider: 'gdocs',
+    sessionKey,
+    targetLabel: docId,
+    executeOpen: async (generation) => {
       const gdocsCore = await loadGDocsCore();
       if (!gdocsCore) {
         return {
@@ -607,7 +664,15 @@ export async function resolveGDocsSessionForTool(
       const doc = await gdocsCore.GoogleDocsDocument.load(docId);
       await doc.injectAnchors();
 
-      const session = manager.createGDocsSession(docId, doc);
+      if (!manager.isOpenGenerationValid(generation)) {
+        return { ok: false as const, response: closedDuringOpenResponse(docId) };
+      }
+
+      const session = manager.createGDocsSession(docId, doc, { openGeneration: generation });
+      if (!manager.isOpenGenerationValid(generation)) {
+        await manager.discardInvalidatedSession(sessionKey, session);
+        return { ok: false as const, response: closedDuringOpenResponse(docId) };
+      }
 
       return {
         ok: true as const,
@@ -617,15 +682,6 @@ export async function resolveGDocsSessionForTool(
           google_doc_id: docId,
         },
       };
-    } finally {
-      if (pendingMap.get(sessionKey) === storedPromise) {
-        pendingMap.delete(sessionKey);
-      }
-    }
-  })();
-
-  storedPromise = outcomePromise;
-  outcomePromise.catch(() => {});
-  pendingMap.set(sessionKey, outcomePromise);
-  return await outcomePromise;
+    },
+  });
 }

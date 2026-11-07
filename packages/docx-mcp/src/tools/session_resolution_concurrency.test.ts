@@ -5,6 +5,8 @@ import path from 'node:path';
 
 import { readFile } from './read_file.js';
 import { replaceText } from './replace_text.js';
+import { closeFile } from './close_file.js';
+import { resolveSessionForTool, resolveOdfSessionForTool } from './session_resolution.js';
 import {
   createTestSessionManager,
   createTrackedTempDir,
@@ -247,6 +249,228 @@ describe(FEATURE, () => {
       // Both managers resolve the same canonical path but maintain separate sessions
       expect(r1.resolved_file_path).toBeTruthy();
       expect(r2.resolved_file_path).toBeTruthy();
+    });
+  });
+
+  test('in-flight opener cannot publish after close_file targets the path (#1298)', async ({ given, when, then }: AllureBddContext) => {
+    let docPath: string;
+    let mgr: ReturnType<typeof createTestSessionManager>;
+    let createdTmpDir: string | null = null;
+    let openResult: Awaited<ReturnType<typeof readFile>>;
+
+    await given('a document file and a session manager where createSession pauses in flight', async () => {
+      docPath = await createDoc(['Close during open']);
+      mgr = createTestSessionManager();
+    });
+
+    await when('close_file runs while readFile is opening the session', async () => {
+      const origCreate = mgr.createSession.bind(mgr);
+      let enteredCreate!: () => void;
+      const enteredCreatePromise = new Promise<void>((r) => {
+        enteredCreate = r;
+      });
+      let resumeCreate!: () => void;
+      const resumeCreatePromise = new Promise<void>((r) => {
+        resumeCreate = r;
+      });
+
+      mgr.createSession = async (content, filename, originalPath, opts) => {
+        enteredCreate();
+        await resumeCreatePromise;
+        const session = await origCreate(content, filename, originalPath, opts);
+        createdTmpDir = path.dirname(session.tmpPath);
+        return session;
+      };
+
+      try {
+        const inFlightRead = readFile(mgr, { file_path: docPath });
+        await enteredCreatePromise;
+
+        const closeRes = await closeFile(mgr, { file_path: docPath });
+        expect(closeRes.success).toBe(true);
+
+        resumeCreate();
+        openResult = await inFlightRead;
+      } finally {
+        mgr.createSession = origCreate;
+      }
+    });
+
+    await then('the pre-close opener is rejected, cleans up its artifacts, and leaves no published session', async () => {
+      expect(openResult.success).toBe(false);
+      expect(getErrorCode(openResult)).toBe('SESSION_CLOSED');
+      expect(await mgr.getSessionByFilePath(docPath)).toBeNull();
+      expect(mgr.listSessions()).toHaveLength(0);
+      if (createdTmpDir) {
+        const stat = await fs.stat(createdTmpDir).catch(() => null);
+        expect(stat).toBeNull();
+      }
+    });
+  });
+
+  test('in-flight opener cannot publish after clearAllSessions runs (#1298)', async ({ given, when, then }: AllureBddContext) => {
+    let docPath: string;
+    let mgr: ReturnType<typeof createTestSessionManager>;
+    let openOutcome: Awaited<ReturnType<typeof resolveSessionForTool>>;
+
+    await given('a document file and a session manager where finalizeNewSession pauses in flight', async () => {
+      docPath = await createDoc(['Clear all during open']);
+      mgr = createTestSessionManager();
+    });
+
+    await when('clearAllSessions runs while resolveSessionForTool is finalizing a session', async () => {
+      const origFinalize = mgr.finalizeNewSession.bind(mgr);
+      let enteredFinalize!: () => void;
+      const enteredFinalizePromise = new Promise<void>((r) => {
+        enteredFinalize = r;
+      });
+      let resumeFinalize!: () => void;
+      const resumeFinalizePromise = new Promise<void>((r) => {
+        resumeFinalize = r;
+      });
+
+      mgr.finalizeNewSession = async (session, opts) => {
+        enteredFinalize();
+        await resumeFinalizePromise;
+        return origFinalize(session, opts);
+      };
+
+      try {
+        const inFlightOpen = resolveSessionForTool(mgr, { file_path: docPath }, { toolName: 'read_file' });
+        await enteredFinalizePromise;
+
+        const closeRes = await closeFile(mgr, { clear_all: true, confirm: true });
+        expect(closeRes.success).toBe(true);
+
+        resumeFinalize();
+        openOutcome = await inFlightOpen;
+      } finally {
+        mgr.finalizeNewSession = origFinalize;
+      }
+    });
+
+    await then('the pre-close opener does not publish after clearAllSessions', async () => {
+      expect(openOutcome.ok).toBe(false);
+      if (!openOutcome.ok) {
+        expect(getErrorCode(openOutcome.response)).toBe('SESSION_CLOSED');
+      }
+      expect(await mgr.getSessionByFilePath(docPath)).toBeNull();
+      expect(mgr.listSessions()).toHaveLength(0);
+    });
+  });
+
+  test('post-close opener succeeds and is not clobbered by a slower pre-close opener (#1298)', async ({ given, when, then }: AllureBddContext) => {
+    let docPath: string;
+    let mgr: ReturnType<typeof createTestSessionManager>;
+    let preCloseOutcome: Awaited<ReturnType<typeof resolveSessionForTool>>;
+    let postCloseOutcome1: Awaited<ReturnType<typeof resolveSessionForTool>>;
+    let postCloseOutcome2: Awaited<ReturnType<typeof resolveSessionForTool>>;
+
+    await given('a document file and a session manager with a controllable first open', async () => {
+      docPath = await createDoc(['Generation handoff']);
+      mgr = createTestSessionManager();
+    });
+
+    await when('close_file invalidates the first opener and a new opener starts before the first settles', async () => {
+      const origCreate = mgr.createSession.bind(mgr);
+      let callCount = 0;
+      let firstEntered!: () => void;
+      const firstEnteredPromise = new Promise<void>((r) => {
+        firstEntered = r;
+      });
+      let releaseFirst!: () => void;
+      const releaseFirstPromise = new Promise<void>((r) => {
+        releaseFirst = r;
+      });
+
+      mgr.createSession = async (content, filename, originalPath, opts) => {
+        callCount += 1;
+        if (callCount === 1) {
+          firstEntered();
+          await releaseFirstPromise;
+        }
+        return origCreate(content, filename, originalPath, opts);
+      };
+
+      try {
+        const preClosePromise = resolveSessionForTool(mgr, { file_path: docPath }, { toolName: 'read_file' });
+        await firstEnteredPromise;
+
+        // Close invalidates generation 0 and evicts the pre-close pending entry
+        await mgr.clearSessionByPath(docPath);
+
+        // Start two concurrent post-close openers while the pre-close opener is still blocked
+        const postClosePromise1 = resolveSessionForTool(mgr, { file_path: docPath }, { toolName: 'read_file' });
+        const postClosePromise2 = resolveSessionForTool(mgr, { file_path: docPath }, { toolName: 'read_file' });
+
+        // Now release the slower pre-close opener and let all settle
+        releaseFirst();
+        [preCloseOutcome, postCloseOutcome1, postCloseOutcome2] = await Promise.all([
+          preClosePromise,
+          postClosePromise1,
+          postClosePromise2,
+        ]);
+      } finally {
+        mgr.createSession = origCreate;
+      }
+    });
+
+    await then('the pre-close opener fails with SESSION_CLOSED while the post-close openers converge on the active session', async () => {
+      expect(preCloseOutcome.ok).toBe(false);
+      if (!preCloseOutcome.ok) {
+        expect(getErrorCode(preCloseOutcome.response)).toBe('SESSION_CLOSED');
+      }
+      expect(postCloseOutcome1.ok).toBe(true);
+      expect(postCloseOutcome2.ok).toBe(true);
+      if (postCloseOutcome1.ok && postCloseOutcome2.ok) {
+        expect(postCloseOutcome1.session).toBe(postCloseOutcome2.session);
+        const active = await mgr.getSessionByFilePath(docPath);
+        expect(active).toBe(postCloseOutcome1.session);
+      }
+    });
+  });
+
+  test('synchronous or immediate leader failure cleans pending entry by identity so subsequent opens succeed (#1298)', async ({ given, when, then }: AllureBddContext) => {
+    let docPath: string;
+    let mgr: ReturnType<typeof createTestSessionManager>;
+    let secondOutcome: Awaited<ReturnType<typeof resolveSessionForTool>>;
+
+    await given('a document file and a session manager where the first createSession throws synchronously', async () => {
+      docPath = await createDoc(['Sync failure recovery']);
+      mgr = createTestSessionManager();
+    });
+
+    await when('the first resolveSessionForTool call throws synchronously and a second call follows', async () => {
+      const origCreate = mgr.createSession.bind(mgr);
+      let failedOnce = false;
+      mgr.createSession = ((content: Buffer, filename: string, originalPath: string, opts?: any) => {
+        if (!failedOnce) {
+          failedOnce = true;
+          throw new Error('SYNCHRONOUS_CREATE_FAILURE');
+        }
+        return origCreate(content, filename, originalPath, opts);
+      }) as typeof mgr.createSession;
+
+      try {
+        await expect(
+          resolveSessionForTool(mgr, { file_path: docPath }, { toolName: 'read_file' }),
+        ).rejects.toThrow('SYNCHRONOUS_CREATE_FAILURE');
+
+        // Also verify ODF resolver does not poison DOCX pending state for the same path
+        const odfMismatch = await resolveOdfSessionForTool(mgr, { file_path: docPath }, { toolName: 'read_file' });
+        expect(odfMismatch.ok).toBe(false);
+
+        secondOutcome = await resolveSessionForTool(mgr, { file_path: docPath }, { toolName: 'read_file' });
+      } finally {
+        mgr.createSession = origCreate;
+      }
+    });
+
+    await then('the pending entry was cleaned up and the subsequent open succeeds', async () => {
+      expect(secondOutcome.ok).toBe(true);
+      if (secondOutcome.ok) {
+        expect(await mgr.getSessionByFilePath(docPath)).toBe(secondOutcome.session);
+      }
     });
   });
 });
