@@ -13,13 +13,15 @@ export async function acceptChanges(
   const { session, metadata } = resolved;
 
   try {
-    const stats = await session.doc.acceptChanges();
-    // A no-op sweep must not look like an edit or drop cached views (#1084).
-    if (revisionResultChangedDocument(stats)) manager.markEdited(session);
-    return ok(mergeSessionResolutionMetadata({
-      ...stats,
-      file_path: manager.normalizePath(session.originalPath),
-    }, metadata));
+    return await manager.mutateSession(session, async (tx) => {
+      const stats = await session.doc.acceptChanges();
+      // A no-op sweep must not look like an edit or drop cached views (#1084).
+      tx.commit({ changed: revisionResultChangedDocument(stats) });
+      return ok(mergeSessionResolutionMetadata({
+        ...stats,
+        file_path: manager.normalizePath(session.originalPath),
+      }, metadata));
+    });
   } catch (e: unknown) {
     return err('ACCEPT_CHANGES_ERROR', errorMessage(e));
   }

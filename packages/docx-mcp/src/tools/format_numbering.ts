@@ -163,64 +163,65 @@ export async function formatNumbering(
 
     // Resolve the target before allocating revision metadata, and validate the
     // requested numbering through the same primitive used for the live edit.
-    if (!session.doc.getParagraphElementById(targetParagraphId)) {
-      return err(
-        'PARAGRAPH_NOT_FOUND',
-        `Paragraph '${targetParagraphId}' was not found.`,
-        'Re-read the document and pass a current paragraph anchor.',
-      );
-    }
-    const ctx = await getRevisionContextForSession(session);
-    const revisionPreflight = await preflightAiRevisionMutation(
-      session,
-      ctx,
-      (previewDoc, previewCtx) => {
-        previewDoc.setDirectParagraphNumbering(
-          { paragraphId: targetParagraphId, numbering: operation.numbering },
-          previewCtx,
+    return await manager.mutateSession(session, async (tx) => {
+      if (!session.doc.getParagraphElementById(targetParagraphId)) {
+        return err(
+          'PARAGRAPH_NOT_FOUND',
+          `Paragraph '${targetParagraphId}' was not found.`,
+          'Re-read the document and pass a current paragraph anchor.',
         );
-      },
-    );
-    if (revisionPreflight.blocked) return revisionPreflight.blocked;
-
-    const paragraphCountBefore = session.doc.getParagraphs().length;
-    const result = session.doc.setDirectParagraphNumbering(
-      { paragraphId: targetParagraphId, numbering: operation.numbering },
-      ctx,
-    );
-    const paragraphCountAfter = session.doc.getParagraphs().length;
-    if (paragraphCountBefore !== paragraphCountAfter) {
-      return err(
-        'INVARIANT_VIOLATION',
-        `Numbering formatting changed paragraph count (${paragraphCountBefore} -> ${paragraphCountAfter}).`,
-        'Paragraph numbering mutations must preserve document structure.',
+      }
+      const ctx = await getRevisionContextForSession(session);
+      const revisionPreflight = await preflightAiRevisionMutation(
+        session,
+        ctx,
+        (previewDoc, previewCtx) => {
+          previewDoc.setDirectParagraphNumbering(
+            { paragraphId: targetParagraphId, numbering: operation.numbering },
+            previewCtx,
+          );
+        },
       );
-    }
+      if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
-    if (result.changed) manager.markEdited(session);
-    manager.touch(session);
+      const paragraphCountBefore = session.doc.getParagraphs().length;
+      const result = session.doc.setDirectParagraphNumbering(
+        { paragraphId: targetParagraphId, numbering: operation.numbering },
+        ctx,
+      );
+      const paragraphCountAfter = session.doc.getParagraphs().length;
+      if (paragraphCountBefore !== paragraphCountAfter) {
+        return err(
+          'INVARIANT_VIOLATION',
+          `Numbering formatting changed paragraph count (${paragraphCountBefore} -> ${paragraphCountAfter}).`,
+          'Paragraph numbering mutations must preserve document structure.',
+        );
+      }
 
-    return ok(mergeSessionResolutionMetadata({
-      file_path: manager.normalizePath(session.originalPath),
-      target_paragraph_id: targetParagraphId,
-      operation: operation.kind,
-      match_paragraph_id: operation.kind === 'match'
-        ? operation.sourceParagraphId
-        : undefined,
-      changed: result.changed,
-      previous_numbering: result.previous
-        ? { num_id: result.previous.numId, ilvl: result.previous.ilvl }
-        : null,
-      resulting_numbering: result.current
-        ? { num_id: result.current.numId, ilvl: result.current.ilvl }
-        : null,
-      warning: result.warning,
-      paragraph_count_before: paragraphCountBefore,
-      paragraph_count_after: paragraphCountAfter,
-      message: result.changed
-        ? 'Paragraph direct numbering updated with a tracked property change.'
-        : 'Paragraph direct numbering already matched the requested state; no edit was recorded.',
-    }, metadata));
+      tx.commit({ changed: result.changed, touch: true });
+
+      return ok(mergeSessionResolutionMetadata({
+        file_path: manager.normalizePath(session.originalPath),
+        target_paragraph_id: targetParagraphId,
+        operation: operation.kind,
+        match_paragraph_id: operation.kind === 'match'
+          ? operation.sourceParagraphId
+          : undefined,
+        changed: result.changed,
+        previous_numbering: result.previous
+          ? { num_id: result.previous.numId, ilvl: result.previous.ilvl }
+          : null,
+        resulting_numbering: result.current
+          ? { num_id: result.current.numId, ilvl: result.current.ilvl }
+          : null,
+        warning: result.warning,
+        paragraph_count_before: paragraphCountBefore,
+        paragraph_count_after: paragraphCountAfter,
+        message: result.changed
+          ? 'Paragraph direct numbering updated with a tracked property change.'
+          : 'Paragraph direct numbering already matched the requested state; no edit was recorded.',
+      }, metadata));
+    });
   } catch (error: unknown) {
     if (error instanceof ParagraphNumberingMutationError) {
       return err(error.code, error.message, mutationHint(error.code));

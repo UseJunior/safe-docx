@@ -43,58 +43,60 @@ export async function odfAddComment(
       );
     }
 
-    const pid = params.target_paragraph_id;
-    const paraText = session.doc.getParagraphTextById(pid);
-    if (paraText == null) {
-      return err(
-        'ANCHOR_NOT_FOUND',
-        `Paragraph ID ${pid} not found in document`,
-        'Use grep or read_file to find valid paragraph IDs.',
-      );
-    }
-
-    let range: { start?: number; end?: number } = {};
-    if (params.anchor_text) {
-      const match = findUniqueSubstringMatch(paraText, params.anchor_text);
-      if (match.status === 'not_found') {
+    return await manager.mutateSession(session, async (tx) => {
+      const pid = params.target_paragraph_id!;
+      const paraText = session.doc.getParagraphTextById(pid);
+      if (paraText == null) {
         return err(
-          'TEXT_NOT_FOUND',
-          `anchor_text '${params.anchor_text}' not found in paragraph ${pid}`,
-          'Verify anchor_text is present in the target paragraph.',
+          'ANCHOR_NOT_FOUND',
+          `Paragraph ID ${pid} not found in document`,
+          'Use grep or read_file to find valid paragraph IDs.',
         );
       }
-      if (match.status === 'multiple') {
-        return err(
-          'MULTIPLE_MATCHES',
-          `Found ${match.matchCount} matches for anchor_text in paragraph ${pid}`,
-          'Provide more specific anchor_text for a unique match.',
-        );
+
+      let range: { start?: number; end?: number } = {};
+      if (params.anchor_text) {
+        const match = findUniqueSubstringMatch(paraText, params.anchor_text);
+        if (match.status === 'not_found') {
+          return err(
+            'TEXT_NOT_FOUND',
+            `anchor_text '${params.anchor_text}' not found in paragraph ${pid}`,
+            'Verify anchor_text is present in the target paragraph.',
+          );
+        }
+        if (match.status === 'multiple') {
+          return err(
+            'MULTIPLE_MATCHES',
+            `Found ${match.matchCount} matches for anchor_text in paragraph ${pid}`,
+            'Provide more specific anchor_text for a unique match.',
+          );
+        }
+        range = { start: match.start, end: match.end };
       }
-      range = { start: match.start, end: match.end };
-    }
 
-    const result = session.doc.addComment({
-      paragraphId: pid,
-      ...range,
-      author: params.author,
-      text: params.text,
-      initials: params.initials,
-    });
-    if (!result.ok) {
-      return err(result.code, result.message);
-    }
-    manager.markEdited(session);
+      const result = session.doc.addComment({
+        paragraphId: pid,
+        ...range,
+        author: params.author,
+        text: params.text,
+        initials: params.initials,
+      });
+      if (!result.ok) {
+        return err(result.code, result.message);
+      }
+      tx.commit();
 
-    return ok({
-      success: true,
-      comment_id: result.commentId,
-      anchor_paragraph_id: pid,
-      anchor_text: params.anchor_text ?? null,
-      mode: 'root',
-      provider: 'odf',
-      file_path: session.originalPath,
-      edit_count: session.editCount,
-      ...metadata,
+      return ok({
+        success: true,
+        comment_id: result.commentId,
+        anchor_paragraph_id: pid,
+        anchor_text: params.anchor_text ?? null,
+        mode: 'root',
+        provider: 'odf',
+        file_path: session.originalPath,
+        edit_count: session.editCount,
+        ...metadata,
+      });
     });
   } catch (e: unknown) {
     return err('COMMENT_ERROR', `Failed to add comment to ODF document: ${errorMessage(e)}`);

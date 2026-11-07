@@ -32,36 +32,42 @@ export async function acceptAiEdits(
   }
 
   try {
-    const { result, selectedIds } = await session.doc.acceptAIEdits({
-      revisionIds: params.revision_ids,
-      author: params.author,
-      normalizeFirst: params.normalize_first,
-    });
-    // A selector that resolved nothing must not look like an edit (#1084), and
-    // a call that changed nothing has nothing to persist: it records no
-    // selective action (which would make a later clean save fail with
-    // SELECTIVE_REVISIONS_WOULD_BE_DISCARDED) and echoes no ids as selected.
-    // The result counts are what prove a change; selectedIds lists only the
-    // requested ids that named a revision present in the document (#1099).
-    const changed = revisionResultChangedDocument(result);
-    const effectiveIds = changed ? selectedIds : [];
-    if (changed) {
-      manager.markEdited(session);
-      manager.recordSelectiveRevisionAction(session, {
-        tool: 'accept_ai_edits',
-        selector: hasIds ? 'revision_ids' : 'author',
-        selectedRevisionIds: effectiveIds,
+    return await manager.mutateSession(session, async (tx) => {
+      const { result, selectedIds } = await session.doc.acceptAIEdits({
+        revisionIds: params.revision_ids,
+        author: params.author,
+        normalizeFirst: params.normalize_first,
       });
-    }
-    return ok(mergeSessionResolutionMetadata({
-      ...result,
-      selected_revision_ids: effectiveIds,
-      file_path: manager.normalizePath(session.originalPath),
-      persistence_required: changed,
-      ...(changed
-        ? { next_step: "Call save with save_format='tracked' or 'both' to persist this session-scoped mutation." }
-        : {}),
-    }, metadata));
+      // A selector that resolved nothing must not look like an edit (#1084), and
+      // a call that changed nothing has nothing to persist: it records no
+      // selective action (which would make a later clean save fail with
+      // SELECTIVE_REVISIONS_WOULD_BE_DISCARDED) and echoes no ids as selected.
+      // The result counts are what prove a change; selectedIds lists only the
+      // requested ids that named a revision present in the document (#1099).
+      const changed = revisionResultChangedDocument(result);
+      const effectiveIds = changed ? selectedIds : [];
+      tx.commit({
+        changed,
+        ...(changed
+          ? {
+              selectiveRevisionAction: {
+                tool: 'accept_ai_edits',
+                selector: hasIds ? 'revision_ids' : 'author',
+                selectedRevisionIds: effectiveIds,
+              },
+            }
+          : {}),
+      });
+      return ok(mergeSessionResolutionMetadata({
+        ...result,
+        selected_revision_ids: effectiveIds,
+        file_path: manager.normalizePath(session.originalPath),
+        persistence_required: changed,
+        ...(changed
+          ? { next_step: "Call save with save_format='tracked' or 'both' to persist this session-scoped mutation." }
+          : {}),
+      }, metadata));
+    });
   } catch (e: unknown) {
     if (e instanceof AmbiguousRevisionOverlapError) {
       return {

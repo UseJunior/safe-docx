@@ -10,28 +10,30 @@ export async function gdocsReplaceText(
   metadata: Record<string, unknown>,
 ): Promise<ToolResponse> {
   try {
-    const pid = params.target_paragraph_id;
-    const oldStr = stripAllInlineTags(params.old_string);
-    const newStr = stripAllInlineTags(params.new_string);
+    return await manager.mutateSession(session, async (tx) => {
+      const pid = params.target_paragraph_id;
+      const oldStr = stripAllInlineTags(params.old_string);
+      const newStr = stripAllInlineTags(params.new_string);
 
-    const beforeText = session.doc.getParagraphTextById(pid);
-    if (beforeText === null) {
-      return err('ANCHOR_NOT_FOUND', `Paragraph ID ${pid} not found in document`);
-    }
+      const beforeText = session.doc.getParagraphTextById(pid);
+      if (beforeText === null) {
+        return err('ANCHOR_NOT_FOUND', `Paragraph ID ${pid} not found in document`);
+      }
 
-    await session.doc.replaceText(pid, oldStr, newStr);
-    manager.markEdited(session);
+      await session.doc.replaceText(pid, oldStr, newStr);
+      tx.commit();
 
-    const afterText = session.doc.getParagraphTextById(pid) ?? '';
+      const afterText = session.doc.getParagraphTextById(pid) ?? '';
 
-    return ok({
-      google_doc_id: session.docId,
-      edit_count: session.editCount,
-      target_paragraph_id: pid,
-      replacements_made: 1,
-      before_text: previewText(beforeText.trim(), RESULT_PREVIEW_CHARS),
-      after_text: previewText(afterText.trim(), RESULT_PREVIEW_CHARS),
-      ...metadata,
+      return ok({
+        google_doc_id: session.docId,
+        edit_count: session.editCount,
+        target_paragraph_id: pid,
+        replacements_made: 1,
+        before_text: previewText(beforeText.trim(), RESULT_PREVIEW_CHARS),
+        after_text: previewText(afterText.trim(), RESULT_PREVIEW_CHARS),
+        ...metadata,
+      });
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);

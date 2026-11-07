@@ -280,9 +280,11 @@ export async function replaceText(
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'replace_text' });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
-    const revisionCtx = ctx ?? await getRevisionContextForSession(session);
 
-    const { target_paragraph_id: pid } = params;
+    return await manager.mutateSession(session, async (tx) => {
+      const revisionCtx = ctx ?? await getRevisionContextForSession(session);
+
+      const { target_paragraph_id: pid } = params;
     const oldStr = stripSearchTags(params.old_string);
     let newStr = params.new_string;
     if (hasHyperlinkTags(newStr)) newStr = stripHyperlinkTags(newStr);
@@ -434,7 +436,7 @@ export async function replaceText(
     const preflightWarnings = revisionPreflight?.warnings ?? [];
 
     mutate(session.doc, revisionCtx);
-    manager.markEdited(session);
+    tx.commit();
     const warnings = [...preflightWarnings, ...editWarnings];
 
     return ok(mergeSessionResolutionMetadata({
@@ -447,6 +449,7 @@ export async function replaceText(
       after_text: previewText((session.doc.getParagraphTextById(pid) ?? '').trim(), RESULT_PREVIEW_CHARS),
       ...(warnings.length > 0 ? { warnings } : {}),
     }, metadata));
+    });
   } catch (e: unknown) {
     if (e instanceof SafeDocxError) {
       return err(e.code, e.message, e.hint);

@@ -20,26 +20,28 @@ export async function deleteFootnote(
   const resolved = await resolveSessionForTool(manager, params, { toolName: 'delete_footnote' });
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
-  const ctx = await getRevisionContextForSession(session);
 
   if (params.note_id == null) {
     return err('MISSING_PARAMETER', 'note_id is required.', 'Provide the footnote ID to delete.');
   }
 
   try {
-    const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined) =>
-      doc.deleteFootnote({ noteId: params.note_id! }, activeCtx);
+    return await manager.mutateSession(session, async (tx) => {
+      const ctx = await getRevisionContextForSession(session);
+      const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined) =>
+        doc.deleteFootnote({ noteId: params.note_id! }, activeCtx);
 
-    const revisionPreflight = await preflightAiRevisionMutation(session, ctx, mutate, FOOTNOTE_TOUCHED_CONTEXT);
-    if (revisionPreflight.blocked) return revisionPreflight.blocked;
+      const revisionPreflight = await preflightAiRevisionMutation(session, ctx, mutate, FOOTNOTE_TOUCHED_CONTEXT);
+      if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
-    await mutate(session.doc, ctx);
+      await mutate(session.doc, ctx);
 
-    manager.markEdited(session);
-    return ok(mergeSessionResolutionMetadata({
-      note_id: params.note_id,
-      file_path: manager.normalizePath(session.originalPath),
-    }, metadata));
+      tx.commit();
+      return ok(mergeSessionResolutionMetadata({
+        note_id: params.note_id,
+        file_path: manager.normalizePath(session.originalPath),
+      }, metadata));
+    });
   } catch (e: unknown) {
     const msg = errorMessage(e);
     if (msg.includes('reserved')) {
