@@ -500,7 +500,9 @@ function executeStepOnDoc(doc: DocxDocument, step: NormalizedStep, ctx?: Revisio
     const match = findUniqueSubstringMatch(text, oldString);
     if (match.status !== 'unique') throw new Error(`replace_text preview failed for paragraph ${targetParagraphId}`);
     if (ctx) {
-      replaceParagraphTextRange(pEl, match.start, match.end, newString, ctx);
+      replaceParagraphTextRange(pEl, match.start, match.end, newString, ctx, {
+        paragraphIsNumbered: doc.isParagraphNumbered(pEl),
+      });
       invalidateDocumentCaches(doc);
     } else {
       doc.replaceText({ targetParagraphId, findText: match.matchedText, replaceText: newString });

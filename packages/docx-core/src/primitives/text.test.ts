@@ -2221,14 +2221,13 @@ describe('replaceParagraphTextRange — untracked full blanking (#740)', () => {
     });
   });
 
-  test('untracked: a paragraph that owns bookmark or comment anchors is kept', async ({ given, when, then }: AllureBddContext) => {
+  test('untracked: an unnumbered paragraph with a bookmark or a numbered paragraph with comment anchors is kept', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
 
-    await given('two numbered paragraphs owning a bookmark and a comment range respectively, between plain items', () => {
+    await given('an unnumbered paragraph owning a bookmark and a numbered paragraph owning a comment range, between plain items', () => {
       doc = makeDoc(
         numbered('first') +
         '<w:p>' +
-          '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
           '<w:bookmarkStart w:id="5" w:name="ClauseRef"/>' +
           '<w:r><w:t>bookmarked</w:t></w:r>' +
           '<w:bookmarkEnd w:id="5"/>' +
@@ -2256,6 +2255,41 @@ describe('replaceParagraphTextRange — untracked full blanking (#740)', () => {
       expect(doc.getElementsByTagNameNS(W_NS, 'commentRangeStart')).toHaveLength(1);
       expect(doc.getElementsByTagNameNS(W_NS, 'commentRangeEnd')).toHaveLength(1);
       expect(doc.getElementsByTagNameNS(W_NS, 'commentReference')).toHaveLength(1);
+    });
+  });
+
+  test('numbered paragraph owning a bookmark is removed on untracked blanking and mark-deleted on tracked blanking (#1222)', async ({ given, when, then }: AllureBddContext) => {
+    let cleanDoc: Document;
+    let trackedDoc: Document;
+    const xml =
+      numbered('first') +
+      '<w:p>' +
+        '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
+        '<w:bookmarkStart w:id="5" w:name="_Ref100000001"/>' +
+        '<w:r><w:t>bookmarked</w:t></w:r>' +
+        '<w:bookmarkEnd w:id="5"/>' +
+      '</w:p>' +
+      numbered('last');
+
+    await given('a three-item numbered list whose middle item holds a _Ref bookmark', () => {
+      cleanDoc = makeDoc(xml);
+      trackedDoc = makeDoc(xml);
+    });
+
+    await when('the middle item is blanked untracked and tracked', () => {
+      replaceParagraphTextRange(paragraphAt(cleanDoc, 1), 0, 'bookmarked'.length, '');
+      const ctx = createRevisionContext({ author: 'AI', date: '2026-01-01T00:00:00Z', idState: createRevisionIdState(10) });
+      replaceParagraphTextRange(paragraphAt(trackedDoc, 1), 0, 'bookmarked'.length, '', ctx);
+    });
+
+    await then('the untracked edit removes the numbered paragraph, and the tracked edit marks its paragraph break deleted', () => {
+      expect(cleanDoc.getElementsByTagNameNS(W_NS, W.p)).toHaveLength(2);
+      expect(Array.from(cleanDoc.getElementsByTagNameNS(W_NS, W.p)).map(getParagraphText)).toEqual(['first', 'last']);
+
+      const middleTracked = paragraphAt(trackedDoc, 1);
+      const pPr = getDirectChildrenByName(middleTracked, W.pPr)[0]!;
+      const rPr = getDirectChildrenByName(pPr, W.rPr)[0]!;
+      expect(getDirectChildrenByName(rPr, 'del')).toHaveLength(1);
     });
   });
 
