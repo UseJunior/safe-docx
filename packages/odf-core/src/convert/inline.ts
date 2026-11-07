@@ -166,21 +166,36 @@ export function appendInlineContent(
   styles: TextStyleRegistry,
   lossiness: LossinessCollector,
 ): void {
-  const formats: InlineFormats = {
-    bold: false,
-    italic: false,
-    underline: false,
-    highlight: null,
-    fontColor: null,
-    fontSizePt: null,
-    fontFace: null,
-  };
+  const boldStack: boolean[] = [false];
+  const italicStack: boolean[] = [false];
+  const underlineStack: boolean[] = [false];
+  const highlightStack: (string | null)[] = [null];
+  const fontStack: Array<{
+    color: string | null;
+    sizePt: number | null;
+    face: string | null;
+  }> = [{ color: null, sizePt: null, face: null }];
+
   let openAnchor: Element | null = null;
+  let anchorDepth = 0;
   // The currently open span and the format key it was created for: consecutive text tokens with
   // an unchanged format set share one span instead of fragmenting into adjacent twins.
   let openSpan: { el: Element; key: string } | null = null;
 
-  const formatKey = (): string =>
+  const currentFormats = (): InlineFormats => {
+    const f = fontStack[fontStack.length - 1]!;
+    return {
+      bold: boldStack[boldStack.length - 1]!,
+      italic: italicStack[italicStack.length - 1]!,
+      underline: underlineStack[underlineStack.length - 1]!,
+      highlight: highlightStack[highlightStack.length - 1]!,
+      fontColor: f.color,
+      fontSizePt: f.sizePt,
+      fontFace: f.face,
+    };
+  };
+
+  const formatKey = (formats: InlineFormats): string =>
     [
       formats.bold ? 'b' : '',
       formats.italic ? 'i' : '',
@@ -196,7 +211,8 @@ export function appendInlineContent(
   for (const token of tokenizeToonInline(taggedText)) {
     if (token.kind === 'text') {
       const container = openAnchor ?? parent;
-      const key = formatKey();
+      const formats = currentFormats();
+      const key = formatKey(formats);
       if (key === EMPTY_KEY) {
         openSpan = null;
         appendTextWithWhitespace(doc, container, token.value);
@@ -213,59 +229,92 @@ export function appendInlineContent(
     }
 
     const tag = token.value;
-    if (tag === '<b>') { formats.bold = true; openSpan = null; }
-    else if (tag === '</b>') { formats.bold = false; openSpan = null; }
-    else if (tag === '<i>') { formats.italic = true; openSpan = null; }
-    else if (tag === '</i>') { formats.italic = false; openSpan = null; }
-    else if (tag === '<u>') { formats.underline = true; openSpan = null; }
-    else if (tag === '</u>') { formats.underline = false; openSpan = null; }
-    else if (tag === '<highlight>' || tag.startsWith('<highlight ')) {
-      formats.highlight = highlightHexFor(tag, lossiness);
+    if (tag === '<b>') {
+      boldStack.push(true);
       openSpan = null;
-    } else if (tag === '</highlight>') { formats.highlight = null; openSpan = null; }
-    else if (tag.startsWith('<a ')) {
+    } else if (tag === '</b>') {
+      if (boldStack.length > 1) boldStack.pop();
+      openSpan = null;
+    } else if (tag === '<i>') {
+      italicStack.push(true);
+      openSpan = null;
+    } else if (tag === '</i>') {
+      if (italicStack.length > 1) italicStack.pop();
+      openSpan = null;
+    } else if (tag === '<u>') {
+      underlineStack.push(true);
+      openSpan = null;
+    } else if (tag === '</u>') {
+      if (underlineStack.length > 1) underlineStack.pop();
+      openSpan = null;
+    } else if (tag === '<highlight>' || tag.startsWith('<highlight ')) {
+      highlightStack.push(highlightHexFor(tag, lossiness));
+      openSpan = null;
+    } else if (tag === '</highlight>') {
+      if (highlightStack.length > 1) highlightStack.pop();
+      openSpan = null;
+    } else if (tag.startsWith('<a ')) {
       const escapedHref = /href="([^"]*)"/.exec(tag)?.[1] ?? '';
       // The TOON attribute value is escaped by emitFormattingTags; setAttributeNS escapes
       // again on serialize, so assign the DECODED value or `&amp;` doubles.
       const href = unescapeAttributeValue(escapedHref);
-      if (isSafeHref(href)) {
+      if (!isSafeHref(href)) {
+        lossiness.add('unsafe-hyperlink-href', href);
+        anchorDepth++;
+      } else if (openAnchor !== null) {
+        // Nested hyperlink inside an already open anchor: degrade safely with lossiness reporting
+        lossiness.add('nested-hyperlink', href);
+        anchorDepth++;
+      } else {
         const anchor = doc.createElementNS(ODF_NS.TEXT, 'text:a');
         anchor.setAttributeNS(ODF_NS.XLINK, 'xlink:type', 'simple');
         anchor.setAttributeNS(ODF_NS.XLINK, 'xlink:href', href);
         parent.appendChild(anchor);
         openAnchor = anchor;
-      } else {
-        lossiness.add('unsafe-hyperlink-href', href);
-        openAnchor = null;
+        anchorDepth = 1;
       }
       openSpan = null;
     } else if (tag === '</a>') {
-      openAnchor = null;
+      if (anchorDepth > 0) {
+        anchorDepth--;
+        if (anchorDepth === 0) {
+          openAnchor = null;
+        }
+      } else {
+        openAnchor = null;
+      }
       openSpan = null;
     } else if (tag.startsWith('<font ')) {
       // Full-mode font runs: color is the raw w:color hex (no '#'), size is points, face is
-      // the font name. A malformed color degrades to the default color, reported.
+      // the font name. Inherits unstated attributes from current outer font frame.
+      const current = fontStack[fontStack.length - 1]!;
+      const next = { ...current };
+
       const color = attributeValue(tag, 'color');
       if (color !== null) {
         if (/^[0-9A-Fa-f]{6}$/.test(color)) {
-          formats.fontColor = `#${color.toLowerCase()}`;
+          next.color = `#${color.toLowerCase()}`;
         } else {
           lossiness.add('unmappable-font-color', color);
-          formats.fontColor = null;
+          next.color = null;
         }
-      } else {
-        formats.fontColor = null;
       }
+
       const size = attributeValue(tag, 'size');
-      const sizePt = size !== null ? Number(size) : NaN;
-      formats.fontSizePt = Number.isFinite(sizePt) && sizePt > 0 ? sizePt : null;
+      if (size !== null) {
+        const sizePt = Number(size);
+        next.sizePt = Number.isFinite(sizePt) && sizePt > 0 ? sizePt : null;
+      }
+
       const face = attributeValue(tag, 'face');
-      formats.fontFace = face !== null && face.trim() !== '' ? face : null;
+      if (face !== null) {
+        next.face = face.trim() !== '' ? face : null;
+      }
+
+      fontStack.push(next);
       openSpan = null;
     } else if (tag === '</font>') {
-      formats.fontColor = null;
-      formats.fontSizePt = null;
-      formats.fontFace = null;
+      if (fontStack.length > 1) fontStack.pop();
       openSpan = null;
     }
   }
