@@ -229,4 +229,25 @@ describe('convertDocxToOdt — style fidelity (phase 3, #406)', () => {
     expect(texts).toEqual(['', 'First', '', '', 'Second', '']);
     expect(lossiness.some((e) => e.construct === 'unsurfaced-paragraphs-dropped')).toBe(false);
   });
+
+  it('[CONV-20] scoped formatting frames restore outer formatting after nested inline tags', async () => {
+    const bodyXml =
+      '<w:p>' +
+      r('Red outer ', '<w:color w:val="FF0000"/><w:sz w:val="28"/>') +
+      r('Blue inner', '<w:color w:val="0000FF"/><w:sz w:val="36"/>') +
+      r(' Red restored', '<w:color w:val="FF0000"/><w:sz w:val="28"/>') +
+      '</w:p>';
+    const docx = await buildDocxFromParts({ bodyXml });
+    const { odt } = await convertDocxToOdt(docx);
+    const { doc } = await contentDocOf(odt);
+
+    const props = spanProperties(doc);
+    const redOuter = props.get('Red outer ');
+    const blueInner = props.get('Blue inner');
+    const redRestored = props.get(' Red restored') ?? props.get('Red restored');
+
+    expect(redOuter?.getAttributeNS(ODF_NS.FO, 'color')).toBe('#ff0000');
+    expect(blueInner?.getAttributeNS(ODF_NS.FO, 'color')).toBe('#0000ff');
+    expect(redRestored?.getAttributeNS(ODF_NS.FO, 'color')).toBe('#ff0000');
+  });
 });
