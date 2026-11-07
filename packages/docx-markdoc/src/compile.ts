@@ -1401,6 +1401,18 @@ async function verifyCrossReferenceOutput(
 
 function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsupported: string[]; structuralDiagnostics: StructuralDiagnostic[] } {
   const bodyOperations = ir.operations.filter((operation) => !('story' in operation && operation.story));
+  // Formatting donors are source-state dependencies; reject conflicts rather
+  // than letting authored operation order choose the formatting snapshot.
+  for (const operation of ir.operations.filter(isInsertOperation)) {
+    const story = operationStory(operation);
+    const donor = operation.styleSourceId ?? operation.anchorId;
+    const conflict = ir.operations.find((candidate) =>
+      !isInsertOperation(candidate) && !isTableRowOperation(candidate)
+      && operationStory(candidate) === story
+      && candidate.kind === 'delete-source'
+      && (candidate.id === operation.anchorId || candidate.id === donor));
+    if (conflict) throw new DocxMarkdocError('CONFLICTING_INSERT_DEPENDENCY', `Insertion ${operation.operationId} depends on paragraph modified by ${conflict.operationId}.`);
+  }
   const { nodes } = source.buildDocumentView({ includeSemanticTags: false, showFormatting: true });
   if (nodes.length !== ir.source.paragraphs || ir.scaffold.length !== nodes.length) {
     throw new DocxMarkdocError('SCAFFOLD_DRIFT', `Expected ${nodes.length} source paragraphs, found ${ir.scaffold.length}.`);
@@ -1817,7 +1829,13 @@ async function applyOperations(
   const sourceZip = await DocxZip.load(sourceBuffer);
   const sourceStoryDocs = new Map<string, Document>();
   const ranges: AttributedRange[] = [];
-  for (const operation of ir.operations) {
+  // Insertions consume source formatting before any authored source edits.
+  // Keep relative insertion order stable within this explicit first phase.
+  const executionPlan = [
+    ...ir.operations.filter(isInsertOperation),
+    ...ir.operations.filter((operation) => !isInsertOperation(operation)),
+  ];
+  for (const operation of executionPlan) {
     const storyId = operationStory(operation);
     if (storyId) {
       const story = stories.get(storyId);
