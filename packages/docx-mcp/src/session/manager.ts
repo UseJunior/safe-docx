@@ -46,6 +46,11 @@ export type SaveCacheEntry = {
   cachedAtIso: string;
 };
 
+export type ComparisonBaselines = {
+  clean: Buffer;
+  withBookmarks: Buffer;
+};
+
 export type ExtractionCacheEntry = {
   revision: number;
   changes: ParagraphRevision[];
@@ -89,6 +94,11 @@ export type DocxSession = {
   tmpPath: string;
   originalPath: string;
   originalBuffer: Buffer;
+  /**
+   * Paired clean and bookmarked post-normalization comparison baselines.
+   * Published atomically via ensureBaselines().
+   */
+  comparisonBaselines: ComparisonBaselines | null;
   /**
    * Post-normalization + bookmark-cleaned buffer used as comparison baseline for tracked output.
    * Comparing against this instead of originalBuffer prevents normalization artifacts from
@@ -296,7 +306,7 @@ export class SessionManager {
   private defaultAiAuthor: string | null;
 
   /** Concurrency guard: prevents double-generation of baselines for the same session. */
-  private baselinePromises = new WeakMap<DocxSession, Promise<void>>();
+  private baselinePromises = new WeakMap<DocxSession, Promise<ComparisonBaselines>>();
 
   constructor(opts?: { ttlMs?: number; defaultAiAuthor?: string | null }) {
     this.ttlMs = opts?.ttlMs ?? 60 * 60 * 1000;
@@ -360,6 +370,7 @@ export class SessionManager {
       tmpPath,
       originalPath,
       originalBuffer: Buffer.from(documentContent),
+      comparisonBaselines: null,
       comparisonBaseline: null,
       comparisonBaselineWithBookmarks: null,
       doc,
@@ -451,22 +462,81 @@ export class SessionManager {
    * Safe to call multiple times — returns immediately if baselines already exist.
    * Uses a concurrency guard to prevent double-generation from parallel calls.
    */
-  async ensureBaselines(session: DocxSession): Promise<void> {
-    if (session.comparisonBaseline !== null) return;
+  private resolvePublishedBaselines(session: DocxSession): ComparisonBaselines | null {
+    const paired = session.comparisonBaselines;
+    if (
+      paired
+      && Buffer.isBuffer(paired.clean)
+      && paired.clean.length > 0
+      && Buffer.isBuffer(paired.withBookmarks)
+      && paired.withBookmarks.length > 0
+      && session.comparisonBaseline === paired.clean
+      && session.comparisonBaselineWithBookmarks === paired.withBookmarks
+    ) {
+      return paired;
+    }
+
+    if (
+      Buffer.isBuffer(session.comparisonBaseline)
+      && session.comparisonBaseline.length > 0
+      && Buffer.isBuffer(session.comparisonBaselineWithBookmarks)
+      && session.comparisonBaselineWithBookmarks.length > 0
+    ) {
+      const synthesized: ComparisonBaselines = {
+        clean: session.comparisonBaseline,
+        withBookmarks: session.comparisonBaselineWithBookmarks,
+      };
+      session.comparisonBaselines = synthesized;
+      return synthesized;
+    }
+
+    // Half-published or uninitialized state is invalid; reset so both buffers publish together.
+    session.comparisonBaselines = null;
+    session.comparisonBaseline = null;
+    session.comparisonBaselineWithBookmarks = null;
+    return null;
+  }
+
+  private publishBaselines(session: DocxSession, baselines: ComparisonBaselines): ComparisonBaselines {
+    if (
+      !Buffer.isBuffer(baselines.clean)
+      || baselines.clean.length === 0
+      || !Buffer.isBuffer(baselines.withBookmarks)
+      || baselines.withBookmarks.length === 0
+    ) {
+      throw new Error('Comparison baselines must include non-empty clean and bookmarked buffers.');
+    }
+    const paired: ComparisonBaselines = {
+      clean: baselines.clean,
+      withBookmarks: baselines.withBookmarks,
+    };
+    session.comparisonBaselines = paired;
+    session.comparisonBaseline = paired.clean;
+    session.comparisonBaselineWithBookmarks = paired.withBookmarks;
+    return paired;
+  }
+
+  async ensureBaselines(session: DocxSession): Promise<ComparisonBaselines> {
+    const existingPair = this.resolvePublishedBaselines(session);
+    if (existingPair) return existingPair;
+
     const existing = this.baselinePromises.get(session);
     if (existing) return existing;
+
     const promise = this._generateBaselines(session);
     this.baselinePromises.set(session, promise);
     try {
-      await promise;
+      return await promise;
     } finally {
-      this.baselinePromises.delete(session);
+      if (this.baselinePromises.get(session) === promise) {
+        this.baselinePromises.delete(session);
+      }
     }
   }
 
-  private async _generateBaselines(session: DocxSession): Promise<void> {
+  private async _generateBaselines(session: DocxSession): Promise<ComparisonBaselines> {
     // Reconstruct from immutable open-time source, NOT from the live session.doc
-    // which may have been edited.
+    // which may have been edited or opened with skipNormalization.
     const doc = await DocxDocument.load(session.originalBuffer);
     doc.normalize();
     doc.insertParagraphBookmarks('_baseline');
@@ -476,8 +546,10 @@ export class SessionManager {
     // comparison pipeline expects normalized-vs-normalized inputs.
     const clean = await doc.toBuffer({ cleanBookmarks: true });
     const bookmarked = await doc.toBuffer({ cleanBookmarks: false });
-    session.comparisonBaseline = clean.buffer;
-    session.comparisonBaselineWithBookmarks = bookmarked.buffer;
+    return this.publishBaselines(session, {
+      clean: clean.buffer,
+      withBookmarks: bookmarked.buffer,
+    });
   }
 
   /** Get session by file path (auto-canonicalizes). */
