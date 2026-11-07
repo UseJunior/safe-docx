@@ -31,20 +31,42 @@ export type TrackedChangesStats = {
   modifications: number;
 };
 
-export type SaveCacheEntry = {
+type SaveCacheEntryCommon = {
   cacheKey: string;
   revision: number;
-  format: SaveFormat;
   cleanBookmarks: boolean;
   trackedAuthor: string;
-  revisedBuffer: Buffer;
-  trackedBuffer: Buffer | null;
-  trackedStats: TrackedChangesStats | null;
   bookmarksRemoved: number;
   blocksRestored: number;
   exportedAtUtc: string;
   cachedAtIso: string;
 };
+
+export type CleanSaveCacheEntry = SaveCacheEntryCommon & {
+  format: 'clean';
+  revisedBuffer: Buffer;
+  trackedBuffer?: null;
+  trackedStats?: null;
+};
+
+export type TrackedSaveCacheEntry = SaveCacheEntryCommon & {
+  format: 'tracked';
+  revisedBuffer?: Buffer;
+  trackedBuffer: Buffer;
+  trackedStats: TrackedChangesStats;
+};
+
+export type BothSaveCacheEntry = SaveCacheEntryCommon & {
+  format: 'both';
+  revisedBuffer: Buffer;
+  trackedBuffer: Buffer;
+  trackedStats: TrackedChangesStats;
+};
+
+export type SaveCacheEntry =
+  | CleanSaveCacheEntry
+  | TrackedSaveCacheEntry
+  | BothSaveCacheEntry;
 
 export type ExtractionCacheEntry = {
   revision: number;
