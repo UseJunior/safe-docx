@@ -94,7 +94,7 @@ describe('shared budget admission', () => {
       input[5]!.list_metadata.list_level = 0;
       input[6] = cell(input[6]!);
       const before = structuredClone(input);
-      const reference = ids(render(input, format, Infinity).content, format);
+      const reference = input.map((node) => node.id);
       const seen: string[] = [];
       let start = 0;
       let iterations = 0;
@@ -126,14 +126,21 @@ describe('shared budget admission', () => {
       expect(page.warnings).toEqual(['budget_exceeded_by_first_node']);
       if (format !== 'json') balanced(page.content);
       const small = nodes(['a', 'b']);
-      const full = render(small, format, Infinity);
+      // Build the oracle independently of the renderer under test. JSON's
+      // per-object indentation and both text schemas are public read contracts.
+      const expectedContent = format === 'json'
+        ? '[\n' + small.map((node) => JSON.stringify(node, null, 2)).join(',\n') + '\n]'
+        : format === 'simple'
+          ? '#TOON id | text\n_bk_0 | a\n_bk_1 | b'
+          : '#SCHEMA id | list_label | header | style | text\n_bk_0 |  |  | body | a\n_bk_1 |  |  | body | b';
+      expect(render(small, format, Infinity).content).toBe(expectedContent);
       // JSON historically omits two closing framing characters for admission.
-      const threshold = Math.ceil((full.content.length - (format === 'json' ? 2 : 0)) / 4);
+      const threshold = Math.ceil((expectedContent.length - (format === 'json' ? 2 : 0)) / 4);
       expect(render(small, format, threshold).count).toBe(2);
       expect(render(small, format, threshold - 1).count).toBe(1);
     });
 
-    test.openspec('Google formats and explicit selectors')(
+    test(
       `${format}: local cursor walks match the unpaginated order and explicit selectors bypass budgets`, async () => {
         const { mgr, filePath } = await openSession(Array.from({ length: 150 }, (_, i) => `${i}: ${'text '.repeat(120)}`));
         const reference = await readFile(mgr, { file_path: filePath, format, offset: 1 });
@@ -163,7 +170,7 @@ describe('shared budget admission', () => {
       },
     );
 
-    test(`${format}: Google fakes render the selected format and walk exact cursors with no remote writes`, async () => {
+    test.openspec('Google formats and explicit selectors')(`${format}: Google fakes render the selected format and walk exact cursors with no remote writes`, async () => {
       const input = paragraphs(Array.from({ length: 150 }, (_, i) => `${i}: ${'text '.repeat(120)}`));
       const write = vi.fn(() => { throw new Error('remote write forbidden'); });
       const doc = { getParagraphs: () => input, executeBatchUpdate: write, replaceText: write };
