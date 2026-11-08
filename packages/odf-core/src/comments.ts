@@ -227,8 +227,9 @@ function childText(el: Element, ns: string, local: string): string | null {
  * Read every `office:annotation` across `blocks` (document order) into structured comments.
  * Numeric ids are parsed from `__Annot__<n>` names; annotations whose names don't match the
  * convention are assigned ids sequentially after the max parsed value (a documented limitation).
+ * OdfDocument supplies its session identity mapping; standalone callers default to block order.
  */
-export function readAnnotations(blocks: Element[]): OdfComment[] {
+export function readAnnotations(blocks: Element[], paragraphId?: (block: Element) => string): OdfComment[] {
   type Raw = { parsedId: number | null; author: string; date: string | null; text: string; anchor: string };
   const raw: Raw[] = [];
   let maxParsed = 0;
@@ -246,7 +247,7 @@ export function readAnnotations(blocks: Element[]): OdfComment[] {
         author: childText(annot, ODF_NS.DC, 'creator') ?? '',
         date: childText(annot, ODF_NS.DC, 'date'),
         text: annotationBodyText(annot),
-        anchor: `p${i}`,
+        anchor: paragraphId ? paragraphId(block) : `p${i}`,
       });
     }
   });

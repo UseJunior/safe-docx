@@ -16,7 +16,7 @@ The server SHALL serialize local session mutations and publish document changes,
 
 #### Scenario: ODF identity across transaction forks
 - **WHEN** insertion is followed by a transaction fork in an ODF session
-- **THEN** the fork preserves the current positional IDs and existing insertion invalidation response
+- **THEN** the fork preserves current session paragraph identities, allocator state and insertion response keys, with no existing IDs invalidated (see `preserve-odf-session-paragraph-ids`)
 
 ### Requirement: Confirmed remote mutation accounting
 The server SHALL serialize Google mutations and retain bookkeeping for confirmed remote writes even when refresh fails, while marking the structure stale until successful refresh.

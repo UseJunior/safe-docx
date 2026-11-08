@@ -116,12 +116,12 @@ describe('ODF grep + insert_paragraph lane', () => {
           position: 'AFTER',
         });
       });
-      await then('the response reports the new positional id and ID-invalidation contract', () => {
+      await then('the response reports a new ID without invalidating existing IDs', () => {
         assertSuccess(result, 'insert_paragraph');
         expect(result.provider).toBe('odf');
         expect(result.new_paragraph_id as string).toMatch(/^p\d+$/);
-        expect(result.invalidates_paragraph_ids_after).toBe(anchorId);
-        expect(result.requires_reread_before_next_edit).toBe(true);
+        expect(result.invalidates_paragraph_ids_after).toBeNull();
+        expect(result.requires_reread_before_next_edit).toBe(false);
       });
       await and('re-reading the document reflects the inserted text', async () => {
         const read = await dispatchToolCall(manager, 'read_file', { file_path: filePath, format: 'json', limit: 500 });

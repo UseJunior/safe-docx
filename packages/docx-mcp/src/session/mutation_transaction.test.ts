@@ -345,21 +345,21 @@ describe('local mutation boundary', () => {
   });
 });
 
-test.openspec('ODF identity across transaction forks')('ODF forks preserve current positional IDs and insertion invalidation contract', async () => {
+test.openspec('ODF identity across transaction forks')('ODF forks preserve stable session IDs and insertion response keys', async () => {
   const { manager, file } = await setup();
   const xml = '<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:text><text:p>First</text:p><text:p>Second</text:p></office:text></office:body></office:document-content>';
   const archive = OdfArchive.create({ contentXml: xml });
   const session = await manager.createOdfSession(await archive.save(), 'input.odt', file + '.odt', archive, OdfDocument.fromContentXml(xml));
-  expect(await odfInsertParagraph(manager, session, { positional_anchor_node_id: 'p0', new_string: 'Inserted', instruction: 'insert', position: 'BEFORE' }, {})).toMatchObject({ success: true, invalidates_paragraph_ids_after: 'p0', requires_reread_before_next_edit: true });
+  expect(await odfInsertParagraph(manager, session, { positional_anchor_node_id: 'p0', new_string: 'Inserted', instruction: 'insert', position: 'BEFORE' }, {})).toMatchObject({ success: true, new_paragraph_id: 'p2', invalidates_paragraph_ids_after: null, requires_reread_before_next_edit: false });
   const inserted = session.doc.getParagraphs();
   expect(session.doc.fork().getParagraphs()).toEqual(inserted);
-  expect((await odfReplaceText(manager, session, { target_paragraph_id: 'p2', old_string: 'Second', new_string: 'Changed', instruction: 'replace' }, {})).success).toBe(true);
-  expect((await odfAddComment(manager, session, { target_paragraph_id: 'p1', author: 'Jane Doe', text: 'Original first' }, {})).success).toBe(true);
-  expect(session.doc.getParagraphs()).toEqual([{ id: 'p0', text: 'Inserted' }, { id: 'p1', text: 'First' }, { id: 'p2', text: 'Changed' }]);
-  expect(session.doc.getComments()[0].anchoredParagraphId).toBe('p1');
+  expect((await odfReplaceText(manager, session, { target_paragraph_id: 'p1', old_string: 'Second', new_string: 'Changed', instruction: 'replace' }, {})).success).toBe(true);
+  expect((await odfAddComment(manager, session, { target_paragraph_id: 'p0', author: 'Jane Doe', text: 'Original first' }, {})).success).toBe(true);
+  expect(session.doc.getParagraphs()).toEqual([{ id: 'p2', text: 'Inserted' }, { id: 'p0', text: 'First' }, { id: 'p1', text: 'Changed' }]);
+  expect(session.doc.getComments()[0].anchoredParagraphId).toBe('p0');
   expect(session.editRevision).toBe(3);
   const original = session.doc;
-  expect((await odfReplaceText(manager, session, { target_paragraph_id: 'p2', old_string: 'Changed', new_string: 'Changed', instruction: 'no-op' }, {})).success).toBe(true);
+  expect((await odfReplaceText(manager, session, { target_paragraph_id: 'p1', old_string: 'Changed', new_string: 'Changed', instruction: 'no-op' }, {})).success).toBe(true);
   expect(session.doc).toBe(original);
   expect(session.editRevision).toBe(3);
   const before = session.doc.toXml();
@@ -370,7 +370,7 @@ test.openspec('ODF identity across transaction forks')('ODF forks preserve curre
       replace.apply(this, args);
       throw new Error(code);
     });
-    expect(await odfReplaceText(manager, session, { target_paragraph_id: 'p2', old_string: 'Changed', new_string: 'Discarded', instruction: 'failure injection' }, {})).toMatchObject({ success: false, error: { code: code === 'INJECTED_FAILURE' ? 'EDIT_ERROR' : code } });
+    expect(await odfReplaceText(manager, session, { target_paragraph_id: 'p1', old_string: 'Changed', new_string: 'Discarded', instruction: 'failure injection' }, {})).toMatchObject({ success: false, error: { code: code === 'INJECTED_FAILURE' ? 'EDIT_ERROR' : code } });
     expect(session.doc).toBe(original);
     expect(session.doc.toXml()).toBe(before);
     expect(session.archive).toBe(originalArchive);
