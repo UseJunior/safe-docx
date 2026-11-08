@@ -16,6 +16,7 @@ import { NODE_TYPE } from '../primitives/dom-helpers.js';
 import { OOXML } from '../primitives/namespaces.js';
 import { parseXml } from '../primitives/xml.js';
 import { DocxZip } from '../primitives/zip.js';
+import { FieldTraversal } from '../shared/field-structure.js';
 
 export type StructuralIssue = {
   check:
@@ -49,6 +50,12 @@ export type StructuralCheckOptions = {
    * not write, such as comparison inputs, where a repeat is legal.
    */
   duplicateBookmarkNames?: 'error' | 'warning';
+  /**
+   * Generation uses nested field traversal. The differential characterization
+   * explicitly selects its frozen historical diagnostics, including false
+   * positives for nested fields, so reviewed corpus evidence stays comparable.
+   */
+  fieldPairing?: 'nested' | 'legacy-differential';
 };
 
 /** Run every structural check against a generated package buffer. */
@@ -69,7 +76,9 @@ export async function checkGeneratedPackage(
     ...checkRelationshipTargets(contents),
     ...checkRidResolution(contents),
     ...checkSectPr(contents),
-    ...checkFieldPairing(contents),
+    ...(options.fieldPairing === 'legacy-differential'
+      ? checkLegacyDifferentialFieldPairing(contents)
+      : checkFieldPairing(contents)),
     ...checkBookmarks(contents),
     ...checkTables(contents),
   ];
@@ -258,18 +267,17 @@ function isStoryPart(name: string): boolean {
 }
 
 /**
- * Validate begin → separate → end field structure independently in each
- * generated WordprocessingML story part.
+ * Frozen compatibility diagnostics used only by differential characterization.
+ * Keep the historical phase transitions, story-part scope, prefix matching,
+ * ordering, and messages; this is not the policy for validating new packages.
  *
- * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.16.18 — the pinned differential diagnostic contract intentionally retains historical false positives for nested fields
  */
-function checkFieldPairing(contents: Map<string, string>): StructuralIssue[] {
+function checkLegacyDifferentialFieldPairing(contents: Map<string, string>): StructuralIssue[] {
   const issues: StructuralIssue[] = [];
   for (const [name, text] of contents) {
     if (!isStoryPart(name)) continue;
     const doc = parseXml(text);
-    // Document-order walk over field-relevant leaves; fldChar transitions
-    // drive a begin → separate → end state machine per story part.
     let state: 'idle' | 'instr' | 'result' = 'idle';
     const visit = (el: Element) => {
       if (el.tagName === 'w:fldChar') {
@@ -292,11 +300,7 @@ function checkFieldPairing(contents: Map<string, string>): StructuralIssue[] {
         }
       } else if (el.tagName === 'w:instrText') {
         if (state !== 'instr') {
-          issues.push({
-            check: 'field_pairing',
-            part: name,
-            message: 'w:instrText outside a begin→separate range',
-          });
+          issues.push({ check: 'field_pairing', part: name, message: 'w:instrText outside a begin→separate range' });
         }
       }
       for (let i = 0; i < el.childNodes.length; i++) {
@@ -308,6 +312,53 @@ function checkFieldPairing(contents: Map<string, string>): StructuralIssue[] {
     if (state !== 'idle') {
       issues.push({ check: 'field_pairing', part: name, message: 'Unclosed field at end of story part' });
     }
+  }
+  return issues;
+}
+
+/**
+ * Validate begin → separate → end field structure independently in each
+ * generated WordprocessingML story part.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ */
+function checkFieldPairing(contents: Map<string, string>): StructuralIssue[] {
+  const issues: StructuralIssue[] = [];
+  for (const [name, text] of contents) {
+    if (!isStoryPart(name)) continue;
+    const doc = parseXml(text);
+    const checkStory = (root: Element) => {
+      const traversal = new FieldTraversal(name, (issue) => {
+        issues.push({ check: 'field_pairing', part: name, message: issue.message });
+      });
+      const visit = (el: Element) => {
+        // Notes, comments, and text boxes contain independent stories, even
+        // when they share a package part or are embedded in the body story.
+        if (el !== root && el.namespaceURI === OOXML.W_NS &&
+          ['footnote', 'endnote', 'comment', 'txbxContent'].includes(el.localName)) {
+          checkStory(el);
+          return;
+        }
+        if (el.namespaceURI === OOXML.W_NS && el.localName === 'fldChar') {
+          traversal.advance(el.getAttributeNS(OOXML.W_NS, 'fldCharType') ?? el.getAttribute('w:fldCharType'));
+        } else if (el.namespaceURI === OOXML.W_NS && el.localName === 'instrText') {
+          if (!traversal.isInsideFieldCode()) {
+            issues.push({
+              check: 'field_pairing',
+              part: name,
+              message: 'w:instrText outside a begin→separate range',
+            });
+          }
+        }
+        for (let i = 0; i < el.childNodes.length; i++) {
+          const child = el.childNodes[i]!;
+          if (child.nodeType === NODE_TYPE.ELEMENT) visit(child as Element);
+        }
+      };
+      visit(root);
+      traversal.finish();
+    };
+    if (doc.documentElement) checkStory(doc.documentElement);
   }
   return issues;
 }
