@@ -127,6 +127,8 @@ Comments, footnotes, relationships, and other DOCX package parts are handled aut
 
 Pre-existing revisions from other authors remain distinct from the current session's changes.
 
+DOCX serialization captures the archive entries and current document XML synchronously before asynchronous ZIP generation. Each export applies its bookmark policy and optional fixed entry date to an isolated snapshot. Overlapping exports can therefore use different policies without changing the live document or archive; a failed export leaves the session available for subsequent edits and saves.
+
 For a fresh comparison between an original and a revised document, use `compare_documents`. It produces a DOCX whose tracked changes describe the difference between those two files.
 
 ## Conversion
