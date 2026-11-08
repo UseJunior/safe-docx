@@ -19,6 +19,13 @@ The output package always starts from the revised DOCX archive. Safe DOCX adds t
 
 Publication fails closed with `TaggedPublicationSafetyError` when the tagged result cannot satisfy its safety gates. The public API does not silently switch to a legacy reconstruction result.
 
+Auxiliary ID collision repair keeps each part's parsed DOM private and exposes
+attribute values for allocation scans. Only an attribute change marks a part
+dirty. A flush clears that flag after the synchronous archive update succeeds;
+serialization or write errors propagate and leave the pending edits retryable.
+Clean flushes do not rewrite the part, and later attribute changes make it dirty
+again.
+
 ## Breaking migration
 
 The public `CompareOptions` surface no longer accepts `engine`, `comparisonStrategy`, `reconstructionMode`, `premergeRuns`, or `maxWordRefinementChangeRanges`. JavaScript callers that pass one of those retired keys receive a `TypeError`; TypeScript callers receive a type error.

@@ -973,6 +973,19 @@ export function parseMarkdoc(source: string): ValidationResult {
     if (annotation.operationId && !operationIds.has(annotation.operationId)) issues.push(issue('ORPHAN_ANNOTATION_EDIT', `Annotation ${annotation.id} targets unknown edit ${annotation.operationId}.`));
     if (annotation.replyParentId && !annotations.some((parent) => parent.id === annotation.replyParentId)) issues.push(issue('ORPHAN_ANNOTATION_REPLY', `Annotation ${annotation.id} targets unknown reply parent ${annotation.replyParentId}.`));
   }
+  const annotationById = new Map(annotations.map((annotation) => [annotation.id, annotation]));
+  for (const annotation of annotations) {
+    const seen = new Set<string>();
+    let current: CanonicalAnnotation | undefined = annotation;
+    while (current) {
+      if (seen.has(current.id)) {
+        issues.push(issue('ANNOTATION_REPLY_CYCLE', `Annotation ${annotation.id} belongs to a cyclic reply thread.`));
+        break;
+      }
+      seen.add(current.id);
+      current = current.replyParentId ? annotationById.get(current.replyParentId) : undefined;
+    }
+  }
   const waiverTargets = new Set<string>();
   for (const waiver of waivers) {
     if (!requirementIds.has(waiver.requirementId)) issues.push(issue('ORPHAN_WAIVER', `Waiver targets unknown requirement ${waiver.requirementId}.`));

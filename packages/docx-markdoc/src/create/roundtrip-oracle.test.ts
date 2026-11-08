@@ -314,6 +314,93 @@ describe('Traceability: independent round-trip oracle for created documents', ()
     },
   );
 
+  test.openspec('[SDX-MDOC-CREATE-12] the first line of a justified paragraph that lost only some of its spaces still matches')(
+    'Scenario: the first line of a justified paragraph that lost only some of its spaces still matches',
+    async () => {
+      // Captured from LibreOffice 25.8 and pdftotext 26.04 for the #1291 repro (Letter, default body style):
+      // LibreOffice squeezed the gaps on the paragraph's first line, and -raw read some of them back as no space.
+      const paragraph = 'alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar iiiiii papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu, and so on to the end of the paragraph.';
+      const source: SourceProjection = { body: [{ text: 'Repro' }, { text: paragraph }], footers: [null] };
+      const tail = 'romeo sierra tango uniform victor whiskey xray yankee zulu, and so on to the end of the paragraph.';
+      const raw = `Repro\nalpha bravo charliedelta echo foxtrot golfhotel india juliet kilolimamikenovemberoscariiiiiipapaquebec\n${tail}\n`;
+      const layout = `${' '.repeat(51)}Repro\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar iiiiii papa quebec\n${tail}\n`;
+      const result = comparePdfWords(source, [raw], [layout]);
+      expect(result).toMatchObject({ passed: true, missing: [], unexplainedExtra: [] });
+      expect(result.knownGenerated.joinedLines).toEqual([
+        { page: 1, words: 'charlie delta' },
+        { page: 1, words: 'golf hotel' },
+        { page: 1, words: 'kilo lima mike november oscar iiiiii papa quebec' },
+      ]);
+      // Without the layout text (v0.25.0 read only -raw) the same PDF fails.
+      expect(comparePdfWords(source, [raw])).toMatchObject({ passed: false, knownGenerated: { joinedLines: [] } });
+      // A word dropped from a partly run-together line still fails when the layout text shows the drop.
+      const dropped = comparePdfWords(source, [raw.replace('golfhotel', 'golf')], [layout.replace('golf hotel', 'golf')]);
+      expect(dropped).toMatchObject({ passed: false, missing: [{ words: 'hotel' }] });
+    },
+  );
+
+  test.openspec('[SDX-MDOC-CREATE-12] a word wrapped after its own hyphen at a line end still matches, and a stray hyphen still fails')(
+    'Scenario: a word wrapped after its own hyphen at a line end still matches, and a stray hyphen still fails',
+    async () => {
+      // Captured from LibreOffice 25.8 and pdftotext 26.04 for the #1289 repro: "re-evaluate" wrapped after its
+      // hyphen, so -raw ends one line with "re-" and starts the next with "evaluate".
+      const filler = 'Filler words to push the next word to the right margin, adjusted until it wraps there: aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj kkkk llll mmmm nnnn oooo pppp the committee xxxxxxxxxxxxx may';
+      const paragraph = (middle: string) => `${filler} ${middle} the plan at any time.`;
+      const source: SourceProjection = { body: [{ text: 'Repro' }, { text: paragraph('re-evaluate') }], footers: [null] };
+      const raw = 'Repro\nFiller words to push the next word to the right margin, adjusted until it wraps there: aaaa bbbb cccc dddd\neeee ffff gggg hhhh iiii jjjj kkkk llll mmmm nnnn oooo pppp the committee xxxxxxxxxxxxx may re-\nevaluate the plan at any time.\n';
+      const wrapped = comparePdfWords(source, [raw]);
+      expect(wrapped).toMatchObject({ passed: true, missing: [], unexplainedExtra: [], knownGenerated: { wrappedHyphens: [{ page: 1, words: 're- evaluate' }] } });
+      // The layout text changes nothing here.
+      expect(comparePdfWords(source, [raw], [raw])).toMatchObject({ passed: true, knownGenerated: { wrappedHyphens: [{ page: 1, words: 're- evaluate' }], joinedLines: [] } });
+      // An unwrapped line is unchanged.
+      expect(comparePdfWords(source, [raw.replace('re-\nevaluate', 're-evaluate\n')])).toMatchObject({ passed: true, knownGenerated: { wrappedHyphens: [] } });
+
+      // Negative controls. A stray "re-" with no source word holding it fails.
+      const plainSource: SourceProjection = { body: [{ text: 'Repro' }, { text: paragraph('evaluate') }], footers: [null] };
+      expect(comparePdfWords(plainSource, [raw])).toMatchObject({ passed: false, missing: [], unexplainedExtra: [{ words: 're-' }], knownGenerated: { wrappedHyphens: [] } });
+      // A joined form that differs from the source word fails, whichever side changed.
+      for (const changed of ['pre-\nevaluate', 're-\nevaluated', 're-\nvaluate']) {
+        const result = comparePdfWords(source, [raw.replace('re-\nevaluate', changed)]);
+        expect(result).toMatchObject({ passed: false, missing: [{ words: 're-evaluate' }], knownGenerated: { wrappedHyphens: [] } });
+      }
+      // A dash followed by a space on one line is a visible gap, not a wrap.
+      expect(comparePdfWords(source, [raw.replace('re-\nevaluate the', 're- evaluate the\n')])).toMatchObject({ passed: false, knownGenerated: { wrappedHyphens: [] } });
+      // A break without the dash ("re" then "evaluate") is not rejoined, even where the source word has no dash.
+      const undashed: SourceProjection = { body: [{ text: 'Repro' }, { text: paragraph('reevaluate') }], footers: [null] };
+      expect(comparePdfWords(undashed, [raw.replace('re-\nevaluate', 're\nevaluate')])).toMatchObject({ passed: false, knownGenerated: { wrappedHyphens: [] } });
+      // The fragments printed twice: the source word is used once, so the second copy fails.
+      expect(comparePdfWords(source, [raw.replace('re-\nevaluate', 're-\nevaluate re-\nevaluate')])).toMatchObject({ passed: false, unexplainedExtra: [{ words: 're- evaluate' }] });
+      // A source that really has the two words "re- evaluate" matches them as they are, without a join.
+      const twoWords: SourceProjection = { body: [{ text: 'Repro' }, { text: paragraph('re- evaluate') }], footers: [null] };
+      expect(comparePdfWords(twoWords, [raw])).toMatchObject({ passed: true, knownGenerated: { wrappedHyphens: [] } });
+
+      // Other dashes and repeated wraps: "state-of-the-art" in a narrow column, and an en dash range.
+      const short: SourceProjection = { body: [{ text: 'A state-of-the-art plan for 1990–2000 only.' }], footers: [null] };
+      expect(comparePdfWords(short, ['A state-\nof-\nthe-art plan for 1990–\n2000 only.\n'])).toMatchObject({
+        passed: true,
+        knownGenerated: { wrappedHyphens: [{ page: 1, words: 'state- of- the-art' }, { page: 1, words: '1990– 2000' }] },
+      });
+      // Every fragment but the last must end its line.
+      expect(comparePdfWords(short, ['A state- of-\nthe-art plan for 1990–2000 only.\n']).passed).toBe(false);
+      // A word wrapped across a page break is not rejoined (stated limitation: a false failure, never a guess).
+      expect(comparePdfWords(short, ['A state-of-the-art plan for 1990–\n', '2000 only.\n']).passed).toBe(false);
+
+      // A wrap next to a run-together justified line: both are recovered.
+      const both: SourceProjection = { body: [{ text: 'alpha bravo charlie may re-evaluate it.' }], footers: [null] };
+      expect(comparePdfWords(both, ['alphabravo charlie may re-\nevaluate it.\n'], ['alpha bravo charlie may re-\nevaluate it.\n'])).toMatchObject({
+        passed: true,
+        knownGenerated: { joinedLines: [{ page: 1, words: 'alpha bravo' }], wrappedHyphens: [{ page: 1, words: 're- evaluate' }] },
+      });
+      // A fragment that equals the word before it does not confuse the alignment.
+      const echo: SourceProjection = { body: [{ text: 'We evaluate and re-evaluate it.' }, { text: 'Then evaluate re-evaluate evaluate.' }], footers: [null] };
+      expect(comparePdfWords(echo, ['We evaluate and re-\nevaluate it.\nThen evaluate re-\nevaluate evaluate.\n']).passed).toBe(true);
+      // Stated limitation (pinned so the guarantee is not widened by accident): only tokens the first alignment left
+      // unplaced are rejoined, so a fragment it matched to the next source word, spelled the same, stays a false failure.
+      const placed: SourceProjection = { body: [{ text: 're-evaluate evaluate' }], footers: [null] };
+      expect(comparePdfWords(placed, ['re-\nevaluate evaluate\n'])).toMatchObject({ passed: false, missing: [{ words: 're-evaluate' }], knownGenerated: { wrappedHyphens: [] } });
+    },
+  );
+
   test.openspec('[SDX-MDOC-CREATE-12] each page carries the footer of its own section, and only a continuing table repeats its header')(
     'Scenario: each page carries the footer of its own section, and only a continuing table repeats its header',
     async () => {
