@@ -61,6 +61,14 @@ coverage, a closed relationship graph, well-formed parts, and exactly one body-l
 - **WHEN** it is compiled twice
 - **THEN** the two buffers SHALL be byte-identical (no wall-clock or random inputs)
 
+#### Scenario: [SDX-GEN-014] registered parts require content before assembly
+- **GIVEN** a greenfield compilation context with a registered part
+- **WHEN** the final file record is assembled before that part has content
+- **THEN** assembly SHALL fail with `GenerationInternalError` naming the part
+- **AND** supplying its content and retrying SHALL preserve relationship IDs and file ordering
+- **AND** allocated but unregistered names SHALL reserve names without requiring content
+- **AND** identical registrations SHALL be idempotent while conflicting content types or relationship types SHALL fail without consuming IDs
+
 ### Requirement: Sections, page setup, and headers/footers
 
 The compiler SHALL emit per-section page size, margins, page-numbering properties, and
