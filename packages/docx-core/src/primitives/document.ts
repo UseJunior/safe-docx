@@ -1,4 +1,4 @@
-import { DocxZip } from './zip.js';
+import { DocxZip, ZIP_EPOCH } from './zip.js';
 import { attributeXmlParseError, parseXml, serializeXml } from './xml.js';
 import { maybeCaptureEmittedDocumentXml } from './schema-corpus-capture.js';
 import { OOXML, W } from './namespaces.js';
@@ -477,6 +477,18 @@ export class DocxDocument {
       };
     }
     return fork;
+  }
+
+  /**
+   * Deterministic internal editing state for mutation comparison. Candidates
+   * may contain malformed input being validated/refused; they are not emitted
+   * artifacts. Actual exports continue through toBuffer and its schema capture.
+   */
+  async getMutationSnapshot(): Promise<Buffer> {
+    return this.zip.toBuffer({
+      fileDate: ZIP_EPOCH,
+      textOverrides: { 'word/document.xml': serializeXml(this.documentXml) },
+    });
   }
 
   private static async loadUnattributed(buffer: Buffer): Promise<DocxDocument> {

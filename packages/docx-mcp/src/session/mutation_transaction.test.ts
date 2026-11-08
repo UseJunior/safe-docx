@@ -26,6 +26,7 @@ const managers: SessionManager[] = [];
 const dirs: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   await Promise.all(managers.splice(0).map(manager => manager.clearAllSessions()));
   await Promise.all(dirs.splice(0).map(dir => fs.rm(dir, { recursive: true, force: true })));
 });
@@ -65,6 +66,21 @@ function seedMetadata(session: DocxSession) {
 }
 
 describe('local mutation boundary', () => {
+  test('internal candidates do not register as emitted artifacts, while actual exports still do', async () => {
+    const { manager, session } = await setup();
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mutation-schema-capture-'));
+    dirs.push(dir);
+    vi.stubEnv('SDX_SCHEMA_CORPUS_DIR', dir);
+    const snapshot = await session.doc.getMutationSnapshot();
+    expect(Buffer.isBuffer(snapshot)).toBe(true);
+    expect(await manager.mutateSession(session, async () => err('VALIDATION_REFUSED', 'candidate is not an export'))).toMatchObject({ success: false });
+    expect(await fs.readdir(dir)).toEqual([]);
+    await session.doc.toBuffer({ cleanBookmarks: false });
+    const emitted = await fs.readdir(dir);
+    expect(emitted).toHaveLength(1);
+    expect(await fs.readFile(path.join(dir, emitted[0]!), 'utf8')).toContain('First');
+  });
+
   test.openspec('Precommit candidate remains invisible')('reads see the old document until atomic publication; queued writes see the committed predecessor', async () => {
     const { manager, session, file, ids } = await setup();
     const metadata = seedMetadata(session);

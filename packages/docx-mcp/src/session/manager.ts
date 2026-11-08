@@ -360,7 +360,7 @@ export class SessionManager {
     if (isDocxSession(session)) {
       // Ignore ZIP timestamps. No-op detection includes every package part,
       // rather than trusting selected revision IDs or handler edit counters.
-      return (await session.doc.toBuffer({ cleanBookmarks: false, fileDate: new Date('2006-01-01T00:00:00Z') })).buffer;
+      return session.doc.getMutationSnapshot();
     }
     // ODF handlers mutate content.xml; the archive is staged separately.
     return Buffer.from(session.doc.toXml());
