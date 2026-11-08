@@ -66,10 +66,11 @@ function seedMetadata(session: DocxSession) {
   });
   session.extractionCache = { revision: 0, changes: [] };
   session.revisionIdState = createRevisionIdState(40);
-  session.selectiveRevisionAction = {
-    tool: 'reject_ai_edits', selector: 'revision_ids', selectedRevisionIds: ['3'], editRevision: 0,
+  session.selectiveRevisionPolicy = {
+    mode: 'preserve',
+    lastAction: { tool: 'reject_ai_edits', selector: 'revision_ids', selectedRevisionIds: ['3'], editRevision: 0 },
   };
-  return { doc: session.doc, extraction: session.extractionCache, allocator: session.revisionIdState, policy: session.selectiveRevisionAction };
+  return { doc: session.doc, extraction: session.extractionCache, allocator: session.revisionIdState, policy: session.selectiveRevisionPolicy };
 }
 
 describe('local mutation boundary', () => {
@@ -112,7 +113,7 @@ describe('local mutation boundary', () => {
     expect(session.editRevision).toBe(1);
     expect(session.saveCache.size).toBe(0);
     expect(session.extractionCache).toBeNull();
-    expect(session.selectiveRevisionAction).toEqual(metadata.policy);
+    expect(session.selectiveRevisionPolicy).toEqual(metadata.policy);
   });
 
   test('style-selected insertion resolves candidate nodes and discards a failed insertion', async () => {
@@ -212,7 +213,7 @@ describe('local mutation boundary', () => {
     expect(session.extractionCache).toBeNull();
     expect(session.saveCache.size).toBe(0);
     expect(session.nonRevisionManifest).toEqual([{ tool: 'test', parts: ['word/document.xml'], description: 'synthetic attribution', editRevision: 1 }]);
-    expect(session.selectiveRevisionAction).toEqual(metadata.policy);
+    expect(session.selectiveRevisionPolicy).toEqual(metadata.policy);
   });
 
   test.openspec('Precommit candidate remains invisible')('a direct-DOM tool failure preserves active XML, allocator, cache and usable temp resource', async () => {
@@ -266,7 +267,7 @@ describe('local mutation boundary', () => {
     expect(session.saveCache.get('sentinel')?.revisedBuffer.toString()).toBe('cached');
     expect(session.extractionCache).toBe(metadata.extraction);
     expect(session.revisionIdState).toBe(metadata.allocator);
-    expect(session.selectiveRevisionAction).toBe(metadata.policy);
+    expect(session.selectiveRevisionPolicy).toBe(metadata.policy);
     expect(session.editRevision).toBe(0);
   });
 
@@ -341,7 +342,7 @@ describe('local mutation boundary', () => {
     expect(session.doc).toBe(metadata.doc);
     expect(session.editCount).toBe(0);
     expect(session.extractionCache).toBe(metadata.extraction);
-    expect(session.selectiveRevisionAction).toBe(metadata.policy);
+    expect(session.selectiveRevisionPolicy).toBe(metadata.policy);
   });
 });
 
