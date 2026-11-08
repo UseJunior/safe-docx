@@ -17,6 +17,7 @@ export async function gdocsInsertParagraph(
         return err('INVALID_POSITION', `Invalid position: ${params.position}. Must be 'BEFORE' or 'AFTER'.`);
       }
 
+      await session.doc.ensureCurrentStructure();
       const anchorText = session.doc.getParagraphTextById(anchorId);
       if (anchorText === null) {
         return err('ANCHOR_NOT_FOUND', `Paragraph ID ${anchorId} not found in document`);
