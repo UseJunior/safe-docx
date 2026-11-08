@@ -4,4 +4,4 @@
 - [x] 1.3 Version caches and expose typed notification/history APIs.
 - [x] 1.4 Account for story writes and normalization-only edits.
 - [x] 1.5 Add read, write, temporary-context, and failure regressions.
-- [ ] 1.6 Run workspace and real-corpus gates and dynamic independent review.
+- [x] 1.6 Run workspace and real-corpus gates and dynamic independent review.
