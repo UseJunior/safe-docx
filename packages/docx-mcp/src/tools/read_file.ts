@@ -8,11 +8,7 @@ import {
   INLINE_COMMENT_MARKER_RUNTIME,
   renderToon,
   renderToonWithCommentEndnotes,
-  formatToonDataLine,
-  formatToonCommentLines,
-  formatToonCommentsEndnotesBlock,
   formatToonFootnotesEndnotesBlock,
-  collectInlineCommentMarkers,
   collectTableMarkerInfo,
   formatTableMarker,
   computeContentFingerprint,
@@ -24,20 +20,12 @@ import {
   type Footnote,
   type ToonFootnoteEndnote,
 } from '@usejunior/docx-core';
-import { READ_SIMPLE_PREVIEW_CHARS, previewText } from './preview.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
-import { estimateTokens, DEFAULT_CONTENT_TOKEN_BUDGET, buildPaginationMeta } from './pagination.js';
+import { buildPaginationMeta } from './pagination.js';
+import { formatSimpleDataLine, renderJsonWithBudget, renderTextWithBudget } from './read_budget.js';
 
 function getWAttr(el: Element, localName: string): string | null {
   return el.getAttributeNS(OOXML.W_NS, localName) ?? el.getAttribute(`w:${localName}`) ?? el.getAttribute(localName);
-}
-
-function escapeCommentSuffixText(text: string): string {
-  return text
-    .replaceAll('\r\n', '\\n')
-    .replaceAll('\r', '\\r')
-    .replaceAll('\n', '\\n')
-    .replaceAll('|', '\\|');
 }
 
 type InlineCommentMarkerRuntime = {
@@ -320,29 +308,6 @@ function buildToonFootnotes(footnotes: readonly Footnote[]): ToonFootnoteEndnote
   }));
 }
 
-function collectSimpleCommentSuffixes(
-  comments: readonly DocumentViewComment[],
-  parentId?: number,
-): string[] {
-  const suffixes: string[] = [];
-  for (const comment of comments) {
-    const text = escapeCommentSuffixText(comment.text);
-    suffixes.push(parentId == null
-      ? `[c${comment.id}: ${text}]`
-      : `[c${comment.id}->c${parentId}: ${text}]`);
-    suffixes.push(...collectSimpleCommentSuffixes(comment.replies, comment.id));
-  }
-  return suffixes;
-}
-
-function formatSimpleTextLine(node: DocumentViewNode): string {
-  const preview = previewText(node.clean_text, READ_SIMPLE_PREVIEW_CHARS);
-  const commentSuffixes = node.comments ? collectSimpleCommentSuffixes(node.comments) : [];
-  return commentSuffixes.length > 0
-    ? `${preview} ${commentSuffixes.join(' ')}`
-    : preview;
-}
-
 export async function readFile(
   manager: SessionManager,
   params: {
@@ -598,11 +563,10 @@ export async function readFile(
       paragraphsReturned = enriched.length;
     } else {
       // One-pass token-budget accumulation
-      const budget = DEFAULT_CONTENT_TOKEN_BUDGET;
       const result =
         format === 'json'
-          ? renderJsonWithBudget(jsonNodes, budget)
-          : renderWithBudget(enriched, format, budget, commentRendering);
+          ? renderJsonWithBudget(jsonNodes)
+          : renderTextWithBudget(enriched, format === 'simple' ? 'simple' : 'toon', undefined, commentRendering);
       // The #FOOTNOTES sidecar is document-wide and appended after budgeting —
       // like the top-level JSON `footnotes`, it is not subject to windowing.
       content = format === 'toon' ? result.content + toonFootnotesSuffix : result.content;
@@ -641,136 +605,6 @@ export async function readFile(
   }
 }
 
-interface BudgetResult {
-  content: string;
-  count: number;
-  warnings?: string[];
-}
-
-const BUDGET_EXCEEDED_BY_FIRST_NODE_WARNING = 'budget_exceeded_by_first_node';
-
-function firstNodeOverflowWarnings(firstNodeOverflow: boolean): string[] | undefined {
-  return firstNodeOverflow ? [BUDGET_EXCEEDED_BY_FIRST_NODE_WARNING] : undefined;
-}
-
-function renderWithBudget(
-  enriched: readonly DocumentViewNode[],
-  format: string,
-  budget: number,
-  commentRendering: string,
-): BudgetResult {
-  if (format === 'json') {
-    return renderJsonWithBudget(enriched, budget);
-  }
-  if (format === 'simple') {
-    return renderSimpleWithBudget(enriched, budget);
-  }
-  return renderToonWithBudget(enriched, budget, commentRendering);
-}
-
-function renderToonWithBudget(
-  enriched: readonly DocumentViewNode[],
-  budget: number,
-  commentRendering: string,
-): BudgetResult {
-  const headerLine = '#SCHEMA id | list_label | header | style | text';
-  let accumulated = headerLine;
-  let count = 0;
-  let currentTableIndex: number | null = null;
-  const includedNodes: DocumentViewNode[] = [];
-  const useInlineMarkers = commentRendering === 'inline_markers';
-  const commentMarkers = useInlineMarkers ? collectInlineCommentMarkers(enriched) : undefined;
-  // Captured the moment node 0 is admitted, BEFORE post-loop closures
-  // (#END_TABLE, endnotes block) inflate `accumulated`. Computing this
-  // after the loop produces false positives when row 1 of a table fits but
-  // we break at row 2 — the closing #END_TABLE bumps the final size over
-  // budget, but node 1 itself was fine.
-  let firstNodeOverflow = false;
-
-  // Pre-scan: collect table marker info for #TABLE lines
-  const tableInfo = collectTableMarkerInfo(enriched);
-
-  for (const node of enriched) {
-    const tc = node.table_context;
-    const nodeTableIndex = tc ? tc.table_index : null;
-
-    // Close previous table if we left it or moved to a different table
-    if (currentTableIndex !== null && nodeTableIndex !== currentTableIndex) {
-      accumulated += '\n#END_TABLE';
-      currentTableIndex = null;
-    }
-
-    // Open new table if entering one
-    if (nodeTableIndex !== null && currentTableIndex === null) {
-      const info = tableInfo.get(nodeTableIndex);
-      if (info) {
-        const marker = formatTableMarker(info);
-        const candidateWithMarker = accumulated + '\n' + marker;
-        if (count > 0 && estimateTokens(candidateWithMarker) > budget) {
-          break;
-        }
-        accumulated = candidateWithMarker;
-      }
-      currentTableIndex = nodeTableIndex;
-    }
-
-    const dataLine = useInlineMarkers
-      ? formatToonDataLine(node, { commentMarkers })
-      : formatToonDataLine(node);
-    const commentLines =
-      commentRendering === 'paragraph_notes' || useInlineMarkers
-        ? formatToonCommentLines(node)
-        : [];
-    const nodeLines = [dataLine, ...commentLines].join('\n');
-    const candidateBase = accumulated + '\n' + nodeLines;
-    let candidate = candidateBase;
-    if (commentRendering === 'endnotes') {
-      if (nodeTableIndex !== null) {
-        candidate += '\n#END_TABLE';
-      }
-      const endnotesBlock = formatToonCommentsEndnotesBlock([...includedNodes, node]);
-      if (endnotesBlock.length > 0) {
-        candidate += '\n' + endnotesBlock.join('\n');
-      }
-    }
-    if (count > 0 && estimateTokens(candidate) > budget) {
-      // Close table before breaking
-      if (currentTableIndex !== null) {
-        accumulated += '\n#END_TABLE';
-      }
-      break;
-    }
-    accumulated = candidateBase;
-    if (count === 0 && estimateTokens(candidate) > budget) {
-      // Use `candidate` (not `accumulated`) so endnotes-mode counts the
-      // endnotes block that's already part of node 1's first-page payload.
-      // This is substantive content, unlike the post-loop `#END_TABLE`
-      // structural closure that we deliberately exclude.
-      firstNodeOverflow = true;
-    }
-    includedNodes.push(node);
-    count++;
-  }
-
-  // Close any open table at end of loop
-  if (currentTableIndex !== null) {
-    accumulated += '\n#END_TABLE';
-  }
-
-  if (commentRendering === 'endnotes') {
-    const endnotesBlock = formatToonCommentsEndnotesBlock(includedNodes);
-    if (endnotesBlock.length > 0) {
-      accumulated += '\n' + endnotesBlock.join('\n');
-    }
-  }
-
-  return {
-    content: accumulated,
-    count,
-    warnings: firstNodeOverflowWarnings(firstNodeOverflow),
-  };
-}
-
 function renderSimpleWithTableMarkers(
   enriched: readonly DocumentViewNode[],
 ): string {
@@ -792,7 +626,7 @@ function renderSimpleWithTableMarkers(
       currentTableIndex = nodeTableIndex;
     }
 
-    lines.push(`${n.id} | ${formatSimpleTextLine(n)}`);
+    lines.push(formatSimpleDataLine(n));
   }
 
   if (currentTableIndex !== null) {
@@ -800,99 +634,4 @@ function renderSimpleWithTableMarkers(
   }
 
   return lines.join('\n');
-}
-
-function renderSimpleWithBudget(
-  enriched: readonly DocumentViewNode[],
-  budget: number,
-): BudgetResult {
-  const headerLine = '#TOON id | text';
-  let accumulated = headerLine;
-  let count = 0;
-  let currentTableIndex: number | null = null;
-  // Captured at admission of node 0; see comment in renderToonWithBudget.
-  let firstNodeOverflow = false;
-
-  const tableInfo = collectTableMarkerInfo(enriched);
-
-  for (const n of enriched) {
-    const tc = n.table_context;
-    const nodeTableIndex = tc ? tc.table_index : null;
-
-    if (currentTableIndex !== null && nodeTableIndex !== currentTableIndex) {
-      accumulated += '\n#END_TABLE';
-      currentTableIndex = null;
-    }
-    if (nodeTableIndex !== null && currentTableIndex === null) {
-      const info = tableInfo.get(nodeTableIndex);
-      if (info) {
-        const marker = formatTableMarker(info);
-        const candidateWithMarker = accumulated + '\n' + marker;
-        if (count > 0 && estimateTokens(candidateWithMarker) > budget) break;
-        accumulated = candidateWithMarker;
-      }
-      currentTableIndex = nodeTableIndex;
-    }
-
-    const dataLine = `${n.id} | ${formatSimpleTextLine(n)}`;
-    const candidate = accumulated + '\n' + dataLine;
-    if (count > 0 && estimateTokens(candidate) > budget) {
-      if (currentTableIndex !== null) {
-        accumulated += '\n#END_TABLE';
-      }
-      break;
-    }
-    accumulated = candidate;
-    if (count === 0 && estimateTokens(accumulated) > budget) {
-      firstNodeOverflow = true;
-    }
-    count++;
-  }
-
-  if (currentTableIndex !== null) {
-    accumulated += '\n#END_TABLE';
-  }
-
-  return {
-    content: accumulated,
-    count,
-    warnings: firstNodeOverflowWarnings(firstNodeOverflow),
-  };
-}
-
-function renderJsonWithBudget(
-  enriched: readonly Record<string, unknown>[],
-  budget: number,
-): BudgetResult {
-  const items: string[] = [];
-  let totalChars = 2; // for "[\n" and "]"
-  let count = 0;
-  // Captured at admission of node 0; see comment in renderToonWithBudget.
-  let firstNodeOverflow = false;
-
-  for (const node of enriched) {
-    const serialized = JSON.stringify(node, null, 2);
-    const overhead = items.length > 0 ? 2 : 0; // ",\n" between items
-    const candidateChars = totalChars + overhead + serialized.length;
-    if (count > 0 && Math.ceil(candidateChars / 4) > budget) break;
-    items.push(serialized);
-    totalChars = candidateChars;
-    if (count === 0) {
-      // Final render is `[\n${items.join(',\n')}\n]` — 4 chars of framing,
-      // not 2. The pagination break check uses the same approximation as
-      // the loop, but the warning needs to reflect the true final length.
-      const finalChars = candidateChars + 2; // closing `\n]`
-      if (Math.ceil(finalChars / 4) > budget) {
-        firstNodeOverflow = true;
-      }
-    }
-    count++;
-  }
-
-  const content = '[\n' + items.join(',\n') + '\n]';
-  return {
-    content,
-    count,
-    warnings: firstNodeOverflowWarnings(firstNodeOverflow),
-  };
 }
