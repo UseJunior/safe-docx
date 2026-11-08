@@ -80,6 +80,7 @@ import {
 import {
   enumerateSelectedHeaderFooterPartPaths,
   enumerateSelectedRevisionStoryPartPaths,
+  getSidePartRevisionSeedDocs,
 } from './revision-parts.js';
 import { acceptChanges as acceptChangesImpl, type AcceptChangesResult } from './accept_changes.js';
 import { rejectChanges as rejectChangesImpl, type RejectChangesResult } from './reject_changes.js';
@@ -1858,6 +1859,12 @@ export class DocxDocument {
    */
   getDocumentXmlClone(): Document {
     return this.documentXml.cloneNode(true) as Document;
+  }
+
+  /** Snapshot supported current stories for managed revision ID seeding. */
+  async getRevisionSeedDocuments(): Promise<Document[]> {
+    const main = this.getDocumentXmlClone();
+    return [main, ...await getSidePartRevisionSeedDocs(this.zip)];
   }
 
   /**

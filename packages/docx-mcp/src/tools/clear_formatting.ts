@@ -72,7 +72,7 @@ export async function clearFormatting(
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
     return await manager.mutateSession(session, async (session) => {
-      const revisionCtx = ctx ? { ...ctx, idState: session.revisionIdState ??= structuredClone(ctx.idState) } : await getRevisionContextForSession(session);
+      const revisionCtx = await getRevisionContextForSession(session, ctx);
 
       const { nodes } = session.doc.buildDocumentView({ includeSemanticTags: false });
       const pids = params.paragraph_ids ?? nodes.map((n) => n.id);
