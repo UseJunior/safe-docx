@@ -17,3 +17,20 @@ Google document helpers SHALL serialize writes and explicit refreshes per docume
 - **WHEN** multiple writes and explicit refreshes target the same document concurrently
 - **THEN** request planning, acknowledgement and normal refresh complete in queue order
 - **AND** a failed operation releases the queue for recovery
+
+### Requirement: User-facing Google reads own current structure
+Google MCP `read_file` and `grep` SHALL await current structure before returning content or matches. If refresh of known-stale structure fails, they SHALL return the existing structured read/search error rather than stale success. Current structure SHALL NOT trigger an extra fetch. Reads and searches SHALL NOT increment confirmed-write or session edit accounting and SHALL preserve existing response fields, selectors and budget semantics.
+
+#### Scenario: Known-stale Google reads refresh before returning content
+- **WHEN** a remote edit is acknowledged but its normal refresh fails
+- **THEN** subsequent read_file and grep refresh and return the acknowledged document content or matches
+- **AND** the confirmed write and session edit counts do not change
+
+#### Scenario: Known-stale Google reads fail rather than serve old content
+- **WHEN** the freshness retry fails before read_file or grep uses a stale snapshot
+- **THEN** the tool returns READ_ERROR or SEARCH_ERROR respectively without stale content or matches
+- **AND** the snapshot stays stale and the acknowledged edit remains recorded
+
+#### Scenario: Current Google reads do not refetch
+- **WHEN** read_file or grep reads already-current structure, including after a successful normal edit refresh
+- **THEN** it returns its usual response without another API fetch or write

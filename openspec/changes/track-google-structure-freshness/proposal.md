@@ -8,8 +8,11 @@ Raw Google writes already mark the structure stale on current main, but subseque
 - Distinguish unloaded, current and stale-after-write structure, refreshing before cached-index planning.
 - Preserve normal post-edit refreshes and foundation F's confirmed-write accounting.
 - Route MCP layout planning through the document queue and refresh insertion/replacement selector prechecks.
+- Refresh known-stale Google MCP reads/searches before returning user-facing content or matches; preserve current-state fetch counts and read/search error contracts.
 
 Implementation follows the user's approved remediation plan for K / #1306 in epic #1295; no additional approval is pending. MCP names, parameters and response fields stay compatible.
+
+Supervisor scope adjudication requires stale user-facing reads (review finding L1) within this same freshness state machine. The initial write-planning change merged in #1375 before that hold took effect; the focused follow-up completes read/search freshness without changing synchronous core snapshot getters.
 
 ## Impact
 - Affected specs: mcp-server

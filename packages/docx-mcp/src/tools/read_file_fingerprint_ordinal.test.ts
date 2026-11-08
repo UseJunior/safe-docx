@@ -432,6 +432,7 @@ describe('add-read-file-fingerprint-ordinal — Optional Fingerprint Ordinal Dis
           },
         ];
         const mockDoc = {
+          ensureCurrentStructure: vi.fn(async () => undefined),
           getParagraphs: vi.fn(() => mockParagraphs),
           getParagraphTextById: vi.fn(),
           getParagraphByAnchorId: vi.fn(),
