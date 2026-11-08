@@ -122,7 +122,7 @@ describe('local mutation boundary', () => {
     const buffer = await buildDocxFromBodyXml('<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>First</w:t></w:r></w:p>');
     const { manager, session, file, ids } = await setup(buffer);
     const metadata = seedMetadata(session);
-    const before = (await session.doc.toBuffer({ cleanBookmarks: false })).buffer;
+    const before = await session.doc.getMutationSnapshot();
     const mark = vi.spyOn(manager, 'markEdited').mockImplementation(candidate => {
       expect(candidate.doc.getParagraphElementById(ids[0]!)!.getElementsByTagNameNS(OOXML.W_NS, 'b').length).toBe(0);
       throw new Error('injected after DOM edit');
@@ -130,7 +130,8 @@ describe('local mutation boundary', () => {
     const response = await clearFormatting(manager, { file_path: file, clear_bold: true });
     expect(response.success).toBe(false);
     expect(session.doc).toBe(metadata.doc);
-    expect((await session.doc.toBuffer({ cleanBookmarks: false })).buffer).toEqual(before);
+    expect(await session.doc.getMutationSnapshot()).toEqual(before);
+    expect(session.doc.getParagraphElementById(ids[0]!)!.getElementsByTagNameNS(OOXML.W_NS, 'b').length).toBe(1);
     expect(session.editRevision).toBe(0);
     expect(session.extractionCache).toBe(metadata.extraction);
     expect(session.saveCache.get('sentinel')?.revisedBuffer.toString()).toBe('cached');
