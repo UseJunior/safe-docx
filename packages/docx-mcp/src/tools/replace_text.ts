@@ -244,10 +244,8 @@ function isLikelyFieldPlaceholder(text: string): boolean {
   return (t.startsWith('[') && t.endsWith(']')) || (t.startsWith('«') && t.endsWith('»'));
 }
 
-function invalidateDocumentCaches(doc: unknown): void {
-  const mutableDoc = doc as { dirty?: boolean; documentViewCache?: unknown };
-  mutableDoc.dirty = true;
-  mutableDoc.documentViewCache = null;
+function invalidateDocumentCaches(doc: DocxDocument): void {
+  doc.markMutated();
 }
 
 export async function replaceText(
