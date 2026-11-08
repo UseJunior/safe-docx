@@ -159,6 +159,10 @@ export class GoogleDocsDocument {
       }),
     );
 
+    // Anchor maintenance is not a user edit, but its refresh can fail too.
+    this.structureStale = true;
+    this.documentViewCache = null;
+
     // Map responses to _bk_ names
     const startCounter = this.anchorMapping.size;
     const newMappings = mapNamedRangeResponses(

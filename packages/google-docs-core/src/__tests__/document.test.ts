@@ -68,6 +68,21 @@ describe('GoogleDocsDocument', () => {
     expect(doc.isStructureStale()).toBe(false);
   });
 
+  it('marks failed post-insertion anchor refresh stale without counting anchor maintenance as a user edit', async () => {
+    const response = buildMockDocument([{
+      paragraph: { elements: [{ textRun: { content: 'Synthetic\n' } }], paragraphStyle: { namedStyleType: 'NORMAL_TEXT' } },
+      startIndex: 1, endIndex: 11,
+    }]);
+    const { client, getDocumentFn } = buildMockClient(response);
+    mockResolveCredentials.mockResolvedValue(client);
+    const doc = await GoogleDocsDocument.load('synthetic-doc');
+    getDocumentFn.mockRejectedValueOnce(new Error('anchor refresh failed'));
+    await expect(doc.injectAnchors()).rejects.toThrow('anchor refresh failed');
+    expect(doc.isStructureStale()).toBe(true);
+    expect(doc.getConfirmedWriteVersion()).toBe(0);
+    expect(doc.getEditCount()).toBe(0);
+  });
+
   // ── Bug fix: paraInCell always 0 ────────────────────────────────────
 
   describe('paraInCell counter', () => {
