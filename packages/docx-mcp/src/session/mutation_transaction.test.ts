@@ -15,6 +15,13 @@ import { odfReplaceText } from '../tools/odf/replace_text.js';
 import { odfAddComment } from '../tools/odf/add_comment.js';
 import { gdocsReplaceText } from '../tools/gdocs/replace_text.js';
 import { acceptAiEdits } from '../tools/accept_ai_edits.js';
+import { gdocsFormatLayout } from '../tools/gdocs/format_layout.js';
+import { gdocsInsertParagraph } from '../tools/gdocs/insert_paragraph.js';
+import { formatLayout } from '../tools/format_layout.js';
+import { insertParagraph } from '../tools/insert_paragraph.js';
+import { addFootnote } from '../tools/add_footnote.js';
+import { updateFootnote } from '../tools/update_footnote.js';
+import { deleteFootnote } from '../tools/delete_footnote.js';
 
 // Shared source fixtures are deliberately excluded from core's published build.
 const { buildDocxFromBodyXml }: { buildDocxFromBodyXml(body: string): Promise<Buffer> } =
@@ -66,6 +73,96 @@ function seedMetadata(session: DocxSession) {
 }
 
 describe('local mutation boundary', () => {
+  test('table selector refusals and partial application keep package state and counters consistent', async () => {
+    const buffer = await buildDocxFromBodyXml('<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>');
+    const { manager, session, file } = await setup(buffer);
+    const metadata = seedMetadata(session);
+    const before = await session.doc.getMutationSnapshot();
+    for (const selectors of [
+      { row_height: { table_indexes: [0], row_indexes: [9], value_twips: 400, rule: 'exact' } },
+      { cell_padding: { table_indexes: [9], top_dxa: 100 } },
+      { cell_padding: { table_indexes: [0], row_indexes: [9], top_dxa: 100 } },
+      { cell_padding: { table_indexes: [0], cell_indexes: [9], top_dxa: 100 } },
+    ]) {
+      expect(await formatLayout(manager, { file_path: file, ...selectors })).toMatchObject({ success: false, error: { code: 'INVALID_SELECTOR' } });
+      expect(session.doc).toBe(metadata.doc);
+      expect(await session.doc.getMutationSnapshot()).toEqual(before);
+      expect(session.editRevision).toBe(0);
+    }
+    const partial = {
+      file_path: file, strict: false,
+      row_height: { table_indexes: [0, 9], row_indexes: [0, 9], value_twips: 400, rule: 'exact' },
+      cell_padding: { table_indexes: [0, 9], row_indexes: [0, 9], cell_indexes: [0, 9], top_dxa: 100 },
+    };
+    expect(await formatLayout(manager, partial)).toMatchObject({
+      success: true, mutation_summary: { affected_rows: 1, affected_cells: 1 },
+      warnings: [
+        'row_height missing table indexes: 9', 'row_height missing row indexes: 0:9',
+        'cell_padding missing table indexes: 9', 'cell_padding missing row indexes: 0:9',
+        'cell_padding missing cell indexes: 0:0:9',
+      ],
+    });
+    const xml = session.doc.getDocumentXmlClone();
+    expect(xml.getElementsByTagNameNS(OOXML.W_NS, 'trHeight')[0]!.getAttributeNS(OOXML.W_NS, 'val')).toBe('400');
+    expect(xml.getElementsByTagNameNS(OOXML.W_NS, 'top')[0]!.getAttributeNS(OOXML.W_NS, 'w')).toBe('100');
+    expect(session.editRevision).toBe(1);
+    const committed = session.doc;
+    expect((await formatLayout(manager, partial)).success).toBe(true);
+    expect(session.doc).toBe(committed);
+    expect(session.editRevision).toBe(1);
+    expect(session.saveCache.size).toBe(0);
+    expect(session.extractionCache).toBeNull();
+    expect(session.selectiveRevisionAction).toEqual(metadata.policy);
+  });
+
+  test('style-selected insertion resolves candidate nodes and discards a failed insertion', async () => {
+    const buffer = await buildDocxFromBodyXml('<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Heading</w:t></w:r></w:p><w:p><w:r><w:t>Body</w:t></w:r></w:p>');
+    const { manager, session, file, ids } = await setup(buffer);
+    const params = { file_path: file, positional_anchor_node_id: ids[1]!, new_string: 'Inserted', instruction: 'synthetic', target_style: 'heading' };
+    const original = session.doc;
+    const mark = vi.spyOn(manager, 'markEdited').mockImplementation(() => { throw new Error('after insertion'); });
+    expect((await insertParagraph(manager, params)).success).toBe(false);
+    expect(session.doc).toBe(original);
+    expect(session.doc.getParagraphs()).toHaveLength(2);
+    mark.mockRestore();
+    expect((await insertParagraph(manager, params)).success).toBe(true);
+    expect(session.doc.buildDocumentView().nodes.map(node => [node.text, node.style])).toEqual([['Heading', 'heading'], ['Body', 'body'], ['Inserted', 'heading']]);
+    expect(session.editRevision).toBe(1);
+  });
+
+  test('footnote side-part edits roll back with body references and leave the queue usable', async () => {
+    const { manager, session, file, ids } = await setup();
+    const add = await addFootnote(manager, { file_path: file, target_paragraph_id: ids[0]!, text: 'Original note' });
+    expect(add.success).toBe(true);
+    const noteId = add.note_id as number;
+    const before = await session.doc.getMutationSnapshot();
+    const original = session.doc;
+    const mark = vi.spyOn(manager, 'markEdited').mockImplementation(() => { throw new Error('after side-part edit'); });
+    expect((await updateFootnote(manager, { file_path: file, note_id: noteId, new_text: 'Discarded' })).success).toBe(false);
+    expect((await deleteFootnote(manager, { file_path: file, note_id: noteId })).success).toBe(false);
+    expect(session.doc).toBe(original);
+    expect(await session.doc.getMutationSnapshot()).toEqual(before);
+    expect(session.editRevision).toBe(1);
+    mark.mockRestore();
+    expect(await addFootnote(manager, { file_path: file, target_paragraph_id: ids[0]!, text: 'Discarded', after_text: 'absent' })).toMatchObject({ success: false, error: { code: 'TEXT_NOT_FOUND' } });
+    for (const request of [
+      () => addFootnote(manager, { file_path: file }),
+      () => addFootnote(manager, { file_path: file, target_paragraph_id: ids[0] }),
+      () => updateFootnote(manager, { file_path: file }),
+      () => updateFootnote(manager, { file_path: file, note_id: noteId }),
+      () => deleteFootnote(manager, { file_path: file }),
+      () => deleteFootnote(manager, { file_path: file, note_id: -1 }),
+      () => deleteFootnote(manager, { file_path: file, note_id: 999 }),
+    ]) {
+      expect((await request()).success).toBe(false);
+      expect(session.doc).toBe(original);
+      expect(session.editRevision).toBe(1);
+    }
+    expect((await updateFootnote(manager, { file_path: file, note_id: noteId, new_text: 'Committed' })).success).toBe(true);
+    expect((await session.doc.getFootnote(noteId))?.text.trim()).toBe('Committed');
+    expect(session.editRevision).toBe(2);
+  });
+
   test('internal candidates do not register as emitted artifacts, while actual exports still do', async () => {
     const { manager, session } = await setup();
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mutation-schema-capture-'));
@@ -265,6 +362,21 @@ test.openspec('ODF identity across transaction forks')('ODF forks preserve curre
   expect((await odfReplaceText(manager, session, { target_paragraph_id: 'p2', old_string: 'Changed', new_string: 'Changed', instruction: 'no-op' }, {})).success).toBe(true);
   expect(session.doc).toBe(original);
   expect(session.editRevision).toBe(3);
+  const before = session.doc.toXml();
+  const originalArchive = session.archive;
+  const replace = OdfDocument.prototype.replaceTextById;
+  for (const code of ['ANCHOR_NOT_FOUND', 'TEXT_NOT_FOUND', 'MATCH_SPANS_MULTIPLE_NODES', 'INJECTED_FAILURE']) {
+    const failure = vi.spyOn(OdfDocument.prototype, 'replaceTextById').mockImplementation(function (this: OdfDocument, ...args) {
+      replace.apply(this, args);
+      throw new Error(code);
+    });
+    expect(await odfReplaceText(manager, session, { target_paragraph_id: 'p2', old_string: 'Changed', new_string: 'Discarded', instruction: 'failure injection' }, {})).toMatchObject({ success: false, error: { code: code === 'INJECTED_FAILURE' ? 'EDIT_ERROR' : code } });
+    expect(session.doc).toBe(original);
+    expect(session.doc.toXml()).toBe(before);
+    expect(session.archive).toBe(originalArchive);
+    expect(session.editRevision).toBe(3);
+    failure.mockRestore();
+  }
 });
 
 test.openspec('Remote write succeeds and refresh fails')('confirmed Google success is counted after failed refresh without claiming rollback', async () => {
@@ -327,4 +439,60 @@ test('Google writes serialize; rejected writes do not count and retired writes c
   expect(session.editCount).toBe(2);
   expect(replacement.editCount).toBe(0);
   expect(manager.getSessionByPath('gdocs:synthetic')).toBe(replacement);
+});
+
+test('Google layout validates all selectors before sending one acknowledged batch', async () => {
+  const manager = new SessionManager();
+  managers.push(manager);
+  let version = 0;
+  const execute = vi.fn(async (_requests: unknown[]) => { version++; });
+  const session = manager.createGDocsSession('layout', {
+    getConfirmedWriteVersion: () => version,
+    getParagraphByAnchorId: (id: string) => id === 'missing' ? null : { startIndex: 1, endIndex: 6, ...(id === 'tabbed' ? { tabId: 'tab-1' } : {}) },
+    executeBatchUpdate: execute,
+  });
+  for (const params of [{}, { paragraph_spacing: {} }, { paragraph_spacing: { paragraph_ids: [] } }, { paragraph_spacing: { paragraph_ids: ['tabbed', 'missing'], before_twips: 120 } }]) {
+    expect((await gdocsFormatLayout(manager, session, params, {})).success).toBe(false);
+    expect(execute).not.toHaveBeenCalled();
+    expect(session.editRevision).toBe(0);
+  }
+  // Assert only bookkeeping when no formatting fields request a remote write.
+  await gdocsFormatLayout(manager, session, { paragraph_spacing: { paragraph_ids: ['tabbed'] } }, {});
+  expect(execute).not.toHaveBeenCalled();
+  expect(session.editCount).toBe(0);
+  const params = { paragraph_spacing: { paragraph_ids: ['tabbed', 'plain'], before_twips: 120, after_twips: 240, line_twips: 480 } };
+  expect(await gdocsFormatLayout(manager, session, params, {})).toMatchObject({ success: true, affected_paragraphs: 2, warnings: [] });
+  expect(execute).toHaveBeenCalledWith([
+    { updateParagraphStyle: { range: { startIndex: 1, endIndex: 6, tabId: 'tab-1' }, paragraphStyle: { spaceAbove: { magnitude: 6, unit: 'PT' }, spaceBelow: { magnitude: 12, unit: 'PT' }, lineSpacing: 200 }, fields: 'spaceAbove,spaceBelow,lineSpacing' } },
+    { updateParagraphStyle: { range: { startIndex: 1, endIndex: 6 }, paragraphStyle: { spaceAbove: { magnitude: 6, unit: 'PT' }, spaceBelow: { magnitude: 12, unit: 'PT' }, lineSpacing: 200 }, fields: 'spaceAbove,spaceBelow,lineSpacing' } },
+  ]);
+  expect(session.editRevision).toBe(1);
+  execute.mockImplementationOnce(async () => { throw new Error('remote refused'); });
+  expect(await gdocsFormatLayout(manager, session, params, {})).toMatchObject({ success: false, error: { code: 'FORMAT_LAYOUT_ERROR' } });
+  expect(session.editRevision).toBe(1);
+  execute.mockImplementationOnce(async () => { version++; throw new Error('refresh failed after acknowledgement'); });
+  expect((await gdocsFormatLayout(manager, session, params, {})).success).toBe(false);
+  expect(session.editRevision).toBe(2);
+});
+
+test('Google insertion refusals and acknowledged failures preserve remote bookkeeping', async () => {
+  const manager = new SessionManager();
+  managers.push(manager);
+  let version = 0;
+  const insert = vi.fn(async () => { version++; throw new Error('refresh failed'); });
+  const session = manager.createGDocsSession('insert', {
+    getConfirmedWriteVersion: () => version,
+    getParagraphTextById: (id: string) => id === 'missing' ? null : 'First',
+    insertParagraph: insert,
+  });
+  const params = { positional_anchor_node_id: 'p0', new_string: 'Inserted', instruction: 'synthetic' };
+  expect(await gdocsInsertParagraph(manager, session, { ...params, position: 'INVALID' }, {})).toMatchObject({ success: false, error: { code: 'INVALID_POSITION' } });
+  expect(await gdocsInsertParagraph(manager, session, { ...params, positional_anchor_node_id: 'missing' }, {})).toMatchObject({ success: false, error: { code: 'ANCHOR_NOT_FOUND' } });
+  expect(insert).not.toHaveBeenCalled();
+  expect(session.editCount).toBe(0);
+  expect(await gdocsInsertParagraph(manager, session, params, {})).toMatchObject({ success: false, error: { code: 'INSERT_ERROR' } });
+  expect(session.editCount).toBe(1);
+  insert.mockImplementationOnce(async () => { throw new Error('ANCHOR_NOT_FOUND after queued predecessor'); });
+  expect(await gdocsInsertParagraph(manager, session, params, {})).toMatchObject({ success: false, error: { code: 'ANCHOR_NOT_FOUND' } });
+  expect(session.editCount).toBe(1);
 });
