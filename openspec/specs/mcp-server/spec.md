@@ -255,10 +255,21 @@ The server SHALL support semantic tags in inserted/replacement text and render t
 ### Requirement: Font Tag Support in Replacement Strings
 The server SHALL support `<font>` tags in `replace_text` and `insert_paragraph` `new_string` parameters to control font color, size, and face on sub-runs. The `size` attribute uses points (e.g., `<font size="14">` = 14pt). The `color` attribute is a hex string (e.g., `"FF0000"`). The `face` attribute is a font family name.
 
+Nonempty `size` attributes SHALL be finite positive numbers whose half-point conversion remains finite. Invalid sizes SHALL be rejected before document mutation. Positive fractional sizes SHALL be preserved without rounding. Nested font tags with omitted or empty sizes SHALL inherit the enclosing size; closing a nested tag SHALL restore the enclosing font properties.
+
 #### Scenario: font tag applies color, size, and face to OOXML runs
 - **WHEN** an edit includes `<font color="FF0000" size="14" face="Arial">text</font>`
 - **THEN** the server SHALL produce OOXML runs with `<w:color w:val="FF0000"/>`, `<w:sz w:val="28"/>`, and `<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>`
 - **AND** the saved `.docx` SHALL NOT contain the literal `<font>` tag text
+
+#### Scenario: invalid font sizes leave replacement and insertion sessions unchanged
+- **WHEN** `replace_text` or `insert_paragraph` receives a font size that is NaN, infinite, zero, negative, or overflows during half-point conversion
+- **THEN** the server SHALL return a tag parse error
+- **AND** the document content and edit counters SHALL remain unchanged, including when invalid markup occurs after valid text or in a later inserted paragraph
+
+#### Scenario: fractional font sizes preserve nested inheritance
+- **WHEN** replacement or insertion text contains an outer fractional font size, a nested size override, and a nested font tag without a size
+- **THEN** the server SHALL preserve the fractional size, inherit omitted sizes, and restore the outer size after the override
 
 ### Requirement: Font Tag Emission in read_file Output
 The server SHALL emit `<font>` tags in `read_file` output (with `show_formatting=true`) when font properties vary within a paragraph, using paragraph-local baselines.
