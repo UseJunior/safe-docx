@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   checkGeneratedPackage,
   type StructuralCheckResult,
+  type StructuralCheckOptions,
   collectFieldStructureIssues,
   parseXml,
   REVISION_ID_ELEMENT_NAMES,
@@ -25,6 +26,14 @@ const AUTHOR = 'Strategy Differential';
 const DATE = new Date('2026-08-17T12:00:00Z');
 const XML_PART_PATTERN = /(?:\.xml|\.rels)$/u;
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+/** Preserve the reviewed diagnostic contract independently of generation policy. */
+function checkDifferentialPackage(
+  buffer: Buffer,
+  options: StructuralCheckOptions = {},
+): Promise<StructuralCheckResult> {
+  return checkGeneratedPackage(buffer, { ...options, fieldPairing: 'legacy-differential' });
+}
 type TaggedStrategy = 'tagged-tree';
 
 export interface StrategyDifferentialFixture {
@@ -575,8 +584,9 @@ async function characterizeStrategy(
     revisedXml,
     candidateXml,
   );
-  // The output is checked strictly, then classified against its inputs.
-  const structural = await checkGeneratedPackage(result.document);
+  // Keep the reviewed differential diagnostic policy for both output and
+  // inputs, independently of generation's corrected nested-field checks.
+  const structural = await checkDifferentialPackage(result.document);
   const relationshipIssues = structural.issues
     .filter((issue) =>
       ['content_type_coverage', 'relationship_target', 'rid_resolution'].includes(issue.check),
@@ -650,8 +660,8 @@ export async function characterizeStrategyDifferential(
     packagePartSummaries(fixture.revised),
     // Inputs are third-party packages: a repeated bookmark name is legal
     // there (ECMA-376 Part 1 § 17.13.6.2), so it is a warning, not an issue.
-    checkGeneratedPackage(fixture.original, { duplicateBookmarkNames: 'warning' }),
-    checkGeneratedPackage(fixture.revised, { duplicateBookmarkNames: 'warning' }),
+    checkDifferentialPackage(fixture.original, { duplicateBookmarkNames: 'warning' }),
+    checkDifferentialPackage(fixture.revised, { duplicateBookmarkNames: 'warning' }),
   ]);
   const sourceStructuralIssues = uniqueStructuralIssues([
     ...originalStructural.issues,

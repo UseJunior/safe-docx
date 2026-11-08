@@ -4,6 +4,7 @@ import { err, ok, type ToolResponse } from './types.js';
 import {
   OOXML,
   W,
+  FieldTraversal,
   INLINE_COMMENT_MARKER_RUNTIME,
   renderToon,
   renderToonWithCommentEndnotes,
@@ -31,12 +32,6 @@ function getWAttr(el: Element, localName: string): string | null {
   return el.getAttributeNS(OOXML.W_NS, localName) ?? el.getAttribute(`w:${localName}`) ?? el.getAttribute(localName);
 }
 
-enum FieldState {
-  OUTSIDE_FIELD = 0,
-  IN_FIELD_CODE = 1,
-  IN_FIELD_RESULT = 2,
-}
-
 function escapeCommentSuffixText(text: string): string {
   return text
     .replaceAll('\r\n', '\\n')
@@ -55,12 +50,18 @@ function getCommentAnchorParagraphId(comment: Comment): string | null {
   return comment.anchoredParagraphId ?? comment.endParagraphId ?? null;
 }
 
-function getParagraphRunVisibleLengths(paragraphEl: Element): number[] {
+function getParagraphRunVisibleLengths(paragraphEl: Element, traversal: FieldTraversal): number[] {
   const runLengths: number[] = [];
   const runElements = Array.from(paragraphEl.getElementsByTagNameNS(OOXML.W_NS, W.r));
-  let fieldState = FieldState.OUTSIDE_FIELD;
 
   for (const runEl of runElements) {
+    // A text-box paragraph is a different story and is indexed on its own.
+    let parent = runEl.parentNode;
+    while (parent && parent !== paragraphEl && !(parent.nodeType === 1 &&
+      (parent as Element).namespaceURI === OOXML.W_NS && (parent as Element).localName === W.p)) {
+      parent = parent.parentNode;
+    }
+    if (parent !== paragraphEl) continue;
     let visibleLength = 0;
 
     for (const child of Array.from(runEl.childNodes)) {
@@ -70,13 +71,11 @@ function getParagraphRunVisibleLengths(paragraphEl: Element): number[] {
 
       if (el.localName === W.fldChar) {
         const type = getWAttr(el, 'fldCharType') ?? '';
-        if (type === 'begin') fieldState = FieldState.IN_FIELD_CODE;
-        else if (type === 'separate') fieldState = FieldState.IN_FIELD_RESULT;
-        else if (type === 'end') fieldState = FieldState.OUTSIDE_FIELD;
+        traversal.advance(type);
         continue;
       }
 
-      if (fieldState === FieldState.IN_FIELD_CODE) continue;
+      if (traversal.isInsideFieldCode()) continue;
 
       if (el.localName === W.t) {
         visibleLength += (el.textContent ?? '').length;
@@ -89,6 +88,30 @@ function getParagraphRunVisibleLengths(paragraphEl: Element): number[] {
   }
 
   return runLengths;
+}
+
+/** @internal Visible comment coordinates, retaining field state within each story. */
+export function buildParagraphRunLengths(
+  paragraphs: Iterable<Element>,
+): Map<string, number[]> {
+  const lengths = new Map<string, number[]>();
+  const stories = new Map<Node | null, FieldTraversal>();
+  for (const paragraph of paragraphs) {
+    let story: Node | null = paragraph.parentNode;
+    while (story && !(story.nodeType === 1 && (story as Element).namespaceURI === OOXML.W_NS &&
+      ['body', 'txbxContent'].includes((story as Element).localName))) {
+      story = story.parentNode;
+    }
+    let traversal = stories.get(story);
+    if (!traversal) {
+      traversal = new FieldTraversal();
+      stories.set(story, traversal);
+    }
+    const runLengths = getParagraphRunVisibleLengths(paragraph, traversal);
+    const id = getParagraphBookmarkId(paragraph);
+    if (id) lengths.set(id, runLengths);
+  }
+  return lengths;
 }
 
 function resolveCommentVisibleOffset(
@@ -113,7 +136,6 @@ function resolveCommentVisibleOffset(
 
 function buildInlineCommentMarkerRuntime(
   comment: Comment,
-  paragraphElementsById: ReadonlyMap<string, Element>,
   paragraphRunLengthsById: Map<string, number[]>,
 ): InlineCommentMarkerRuntime | undefined {
   if (
@@ -127,18 +149,8 @@ function buildInlineCommentMarkerRuntime(
     return undefined;
   }
 
-  const getRunLengths = (paragraphId: string): number[] | undefined => {
-    const cached = paragraphRunLengthsById.get(paragraphId);
-    if (cached) return cached;
-    const paragraphEl = paragraphElementsById.get(paragraphId);
-    if (!paragraphEl) return undefined;
-    const runLengths = getParagraphRunVisibleLengths(paragraphEl);
-    paragraphRunLengthsById.set(paragraphId, runLengths);
-    return runLengths;
-  };
-
-  const startRunLengths = getRunLengths(comment.anchoredParagraphId);
-  const endRunLengths = getRunLengths(comment.endParagraphId);
+  const startRunLengths = paragraphRunLengthsById.get(comment.anchoredParagraphId);
+  const endRunLengths = paragraphRunLengthsById.get(comment.endParagraphId);
   if (!startRunLengths || !endRunLengths) return undefined;
 
   const startVisibleOffset = resolveCommentVisibleOffset(
@@ -168,7 +180,6 @@ function mapDocumentViewComment(
   comment: Comment,
   options?: {
     includeRange?: boolean;
-    paragraphElementsById?: ReadonlyMap<string, Element>;
     paragraphRunLengthsById?: Map<string, number[]>;
   },
 ): DocumentViewComment {
@@ -191,10 +202,9 @@ function mapDocumentViewComment(
       endCharOffset: comment.endCharOffset,
     };
 
-    const runtime = options.paragraphElementsById && options.paragraphRunLengthsById
+    const runtime = options.paragraphRunLengthsById
       ? buildInlineCommentMarkerRuntime(
           comment,
-          options.paragraphElementsById,
           options.paragraphRunLengthsById,
         )
       : undefined;
@@ -213,17 +223,21 @@ function mapDocumentViewComment(
 function attachParagraphComments(
   nodes: readonly DocumentViewNode[],
   comments: readonly Comment[],
-  options?: { includeInlineMarkers?: boolean; paragraphElementsById?: ReadonlyMap<string, Element> },
+  options?: {
+    includeInlineMarkers?: boolean;
+    paragraphRunLengthsById?: Map<string, number[]>;
+  },
 ): DocumentViewNode[] {
   const commentsByParagraph = new Map<string, DocumentViewComment[]>();
-  const paragraphRunLengthsById = new Map<string, number[]>();
+  // Index the full story before windowing: a field may begin before the first
+  // returned paragraph or close after the last comment anchor.
+  const paragraphRunLengthsById = options?.paragraphRunLengthsById ?? new Map<string, number[]>();
   for (const comment of comments) {
     const paragraphId = getCommentAnchorParagraphId(comment);
     if (!paragraphId) continue;
     const rootComments = commentsByParagraph.get(paragraphId) ?? [];
     rootComments.push(mapDocumentViewComment(comment, {
       includeRange: options?.includeInlineMarkers,
-      paragraphElementsById: options?.paragraphElementsById,
       paragraphRunLengthsById,
     }));
     commentsByParagraph.set(paragraphId, rootComments);
@@ -455,8 +469,8 @@ export async function readFile(
         // those because we built it from the full document above.
         enriched = attachParagraphComments(enriched, comments, {
           includeInlineMarkers: commentRendering === 'inline_markers',
-          paragraphElementsById:
-            commentRendering === 'inline_markers' ? paragraphElementsById : undefined,
+          paragraphRunLengthsById: commentRendering === 'inline_markers'
+            ? buildParagraphRunLengths(session.doc.getParagraphs()) : undefined,
         });
       } catch (e: unknown) {
         commentLoadError = errorMessage(e);
