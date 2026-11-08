@@ -35,6 +35,21 @@ For two-document comparison, use [`@usejunior/docx-compare`](../docx-compare). F
 
 See the repository [architecture](../../docs/architecture.md), [support contract](SUPPORT.md), and [package source and examples](https://github.com/UseJunior/safe-docx/tree/main/packages/docx-core).
 
+## Semantic serializer boundaries
+
+`iterateSerializerBlocks(nodes, options)` and `collectSerializerBlocks(nodes, options)`
+are exported from the package root. They traverse a document view in order, grouping
+only contiguous nodes with the same table ID and contiguous list items. A table ID
+that reappears after another block starts a new table group. Table classification
+precedes headings, then lists, then paragraphs; empty paragraphs remain boundaries.
+
+HTML and Markdown use Word-style headings and retain their existing nesting and
+empty-paragraph rendering. ODF supplies its own heading and list predicates:
+manual labels stay literal paragraphs, and unsurfaced body spacing splits lists via
+`shouldBreakList(currentNode, previousNode)`. Renderers still own table-cell
+paragraphs, list nesting, inline formatting, and output syntax. The iterator does
+not mutate the input nodes. See [the proposal](../../openspec/changes/refactor-serializer-block-boundaries/proposal.md).
+
 ## Bounded table-row editing
 
 `DocxDocument.insertTableRow(...)` and `deleteTableRow(...)` edit existing body-level tables in clean or tracked mode. By default they accept only rectangular, unmerged tables with direct rows and cells; the experimental `mergeAware: true` option also admits validated horizontal `gridSpan` rows. Vertical merges, row offsets, nested tables, wrapped topology, table-property exceptions, and topology revisions still fail with a typed `SafeDocxError.detail`. Insertions return fresh paragraph anchors for chaining, and accept/reject resolve the emitted row revisions in body and supported side-story parts. For tracked edits, callers must seed `RevisionContext.idState` above existing package revision IDs; the MCP session layer performs that scan automatically.
