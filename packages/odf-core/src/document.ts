@@ -2,8 +2,8 @@
  * Minimal ODF (.odt) document view over `content.xml`.
  *
  * Phase 1 scope: enumerate block-level text elements (`text:p` / `text:h`) in
- * document order — including those nested in `table:table-cell` — with deterministic
- * structural paragraph IDs, read a paragraph's visible text, and replace text within
+ * document order — including those nested in `table:table-cell` — with session-stable
+ * paragraph IDs, read a paragraph's visible text, and replace text within
  * a paragraph when the match lies in a single `#text` node. See the `add-odf-core`
  * OpenSpec change for the full rationale.
  *
@@ -55,21 +55,32 @@ export class OdfDocument {
   private readonly elements = new Map<string, Element>();
   private nextId = 0;
 
-  private constructor(doc: Document, blocks: Element[]) {
+  private constructor(
+    doc: Document,
+    blocks: Element[],
+    paragraphIds: string[] = blocks.map((_, index) => `p${index}`),
+    nextId = blocks.length,
+  ) {
     this.doc = doc;
     this.blocks = blocks;
-    for (const block of blocks) this.idForBlock(block);
+    blocks.forEach((block, index) => {
+      const id = paragraphIds[index]!;
+      this.ids.set(block, id);
+      this.elements.set(id, block);
+    });
+    this.nextId = nextId;
   }
 
   /**
-   * Clone the editing state without reopening a session. Current positional IDs
-   * are preserved by document order; future session identity belongs here too.
+   * Clone editing state without reopening the session. The exact DOM clone has
+   * the same block order, so pair cloned elements with the current IDs and retain
+   * the allocator. Only an actual fromContentXml reopen renumbers stored order.
    */
   fork(): OdfDocument {
     const doc = this.doc.cloneNode(true) as Document;
     const blocks: Element[] = [];
     collectBlocks(doc.documentElement, blocks);
-    return new OdfDocument(doc, blocks);
+    return new OdfDocument(doc, blocks, this.blocks.map(block => this.ids.get(block)!), this.nextId);
   }
 
   /** Parse a `content.xml` string into a document view. */

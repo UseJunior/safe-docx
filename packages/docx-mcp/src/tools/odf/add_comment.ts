@@ -10,7 +10,7 @@ import { err, ok, type ToolResponse } from '../types.js';
  *
  * Replies (`parent_comment_id`) are NOT supported for ODF — ODF has no first-class reply graph, so a
  * reply request returns `UNSUPPORTED_FOR_ODF` (a documented Phase-2b limitation). Annotations are
- * inline children, so positional paragraph IDs do not shift; no ID-invalidation fields are emitted.
+ * inline children and preserve session paragraph IDs; no ID-invalidation fields are emitted.
  */
 export async function odfAddComment(
   manager: SessionManager,

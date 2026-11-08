@@ -192,6 +192,38 @@ describe('OdfDocument — insertParagraph', () => {
     expect(doc.getParagraphTextById('p4')).toBe('BEFORE B');
     expect(doc.getParagraphTextById('p2')).toBe('CHANGED');
     const reopened = OdfDocument.fromContentXml(doc.toXml());
-    expect(reopened.getParagraphs().map(p => p.id)).toEqual(['p0', 'p1', 'p2', 'p3', 'p4']);
+    expect(reopened.getParagraphs()).toEqual([
+      { id: 'p0', text: 'A' }, { id: 'p1', text: 'NEW' },
+      { id: 'p2', text: 'BEFORE B' }, { id: 'p3', text: 'B' }, { id: 'p4', text: 'CHANGED' },
+    ]);
+    expect(OdfDocument.fromContentXml(doc.toXml()).getParagraphs()).toEqual(reopened.getParagraphs());
+  });
+
+  it('forks preserve non-positional IDs, allocator state and independent elements', () => {
+    const doc = OdfDocument.fromContentXml(contentXml(
+      '<text:h>Same</text:h><table:table><table:table-row><table:table-cell>' +
+      '<text:p>Same</text:p></table:table-cell></table:table-row></table:table><text:p>Same</text:p>',
+    ));
+    expect(doc.insertParagraph('p1', 'New cell\n\nAnother cell', 'BEFORE')).toEqual({ ok: true, newIds: ['p3', 'p4'] });
+    const fork = doc.fork();
+    expect(fork.getParagraphs()).toEqual(doc.getParagraphs());
+    expect(fork.insertParagraph('p0', 'New body', 'AFTER')).toEqual({ ok: true, newIds: ['p5'] });
+    expect(fork.replaceTextById('p1', 'Same', 'Changed cell')).toEqual({ ok: true });
+    expect(fork.getParagraphTextById('p1')).toBe('Changed cell');
+    expect(doc.getParagraphTextById('p1')).toBe('Same');
+    expect(doc.getParagraphTextById('p5')).toBeNull();
+    expect(doc.insertParagraph('p2', 'Independent', 'AFTER')).toEqual({ ok: true, newIds: ['p5'] });
+    expect(fork.fork().getParagraphs()).toEqual(fork.getParagraphs());
+    expect(fork.toXml()).not.toMatch(/xml:id|text:id|bookmark|p[0-5]/);
+  });
+
+  it('unknown anchors do not consume IDs or mutate serialized content', () => {
+    const doc = OdfDocument.fromContentXml(contentXml('<text:p>Only</text:p>'));
+    const before = doc.toXml();
+    for (const id of ['p9', 'p00', 'p-1', 'p1x']) {
+      expect(doc.insertParagraph(id, 'Discarded', 'BEFORE').ok).toBe(false);
+      expect(doc.toXml()).toBe(before);
+    }
+    expect(doc.insertParagraph('p0', 'Next', 'AFTER')).toEqual({ ok: true, newIds: ['p1'] });
   });
 });
