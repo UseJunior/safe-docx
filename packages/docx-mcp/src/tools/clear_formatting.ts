@@ -49,10 +49,8 @@ function removeDirectChildrenByName(parent: Element, localNames: readonly string
   return matches.length > 0;
 }
 
-function invalidateDocumentCaches(doc: unknown): void {
-  const mutableDoc = doc as { dirty?: boolean; documentViewCache?: unknown };
-  mutableDoc.dirty = true;
-  mutableDoc.documentViewCache = null;
+function invalidateDocumentCaches(doc: DocxDocument): void {
+  doc.markMutated();
 }
 
 export async function clearFormatting(
