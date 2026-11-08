@@ -1,0 +1,11 @@
+# Session mutation publication (#1301)
+
+Local tools call `SessionManager.mutateSession` after session resolution and before deriving any mutable nodes or ranges. The callback receives an unpublished candidate. Returning an error or throwing discards it; successful changed contents publish document and bookkeeping synchronously after generation validation. `markEdited` and attribution helpers inside callbacks stage metadata only. The active session owns the same identity and temporary directory throughout. No-op candidates preserve the active document, counters, allocator, caches and selective policy.
+
+DOCX forks retain original source XML for untouched-block restoration. ODF forks preserve current positional IDs by keeping document order; insertion still invalidates shifted IDs. Stable session IDs remain separate issue #1316. Google tools call `mutateRemoteSession`: confirmed remote writes cannot be rolled back and remain counted after refresh failure. `isStructureStale()` exposes that distinction. Save artifact capture/publication remains governed by the existing save generation guard.
+
+## Contributor reconciliation
+
+Reviewed cocvn157's [PR #1346](https://github.com/UseJunior/safe-docx/pull/1346) at `eac060bce54a374594c1cc5a83604bd39fff2930`. Credit: it identifies the full mutator inventory, a per-session FIFO queue, atomic attribution, and failure/no-op tests. Its checkpoint-and-restore approach operates on the active object and reaches into private document/ZIP state. This implementation independently uses official unpublished forks, so concurrent readers never observe tentative DOM changes, source metadata is preserved through supported APIs, and close/replace/expiry validation protects publication. Google confirmation accounting is separate from local rollback semantics. ODF forks preserve current positional lookup and insertion response contracts; stable session IDs remain separate issue #1316. The contributor branch and PR are unchanged; their reported validation is not treated as evidence for this branch.
+
+Revalidation base: `5b91db73` (B/C lifecycle and G cache fixes already merged). Production mutators still called `markEdited`, attribution and document primitives separately. No existing candidate edits were present in this worktree at handoff.

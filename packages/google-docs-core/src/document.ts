@@ -46,6 +46,12 @@ export class GoogleDocsDocument {
   private documentViewCache: { revisionId: string; nodes: DocumentViewNodeGdocs[] } | null = null;
   private editCount = 0;
   private editRevision = 0;
+  private confirmedWriteVersion = 0;
+  private structureStale = false;
+
+  /** Confirmed remote writes survive a subsequent failed structure refresh. */
+  getConfirmedWriteVersion(): number { return this.confirmedWriteVersion; }
+  isStructureStale(): boolean { return this.structureStale; }
 
   private constructor(
     client: GoogleApiClient,
@@ -110,6 +116,7 @@ export class GoogleDocsDocument {
 
     this.concurrency = { revisionId, fetchedAt: new Date() };
     this.documentViewCache = null; // Invalidate view cache
+    this.structureStale = false;
   }
 
   /** Find the named range anchor for a paragraph by matching startIndex */
@@ -196,6 +203,7 @@ export class GoogleDocsDocument {
 
     const offset = para.text.indexOf(findText);
     if (offset === -1) throw new Error(`TEXT_NOT_FOUND: "${findText}" not found in paragraph`);
+    if (findText === replaceWith) return;
 
     const startIndex = para.startIndex + offset;
     const endIndex = startIndex + findText.length;
@@ -281,6 +289,10 @@ export class GoogleDocsDocument {
           : undefined,
       }),
     );
+
+    this.confirmedWriteVersion++;
+    this.structureStale = true;
+    this.documentViewCache = null;
 
     // Update revision
     if (response.writeControl?.requiredRevisionId) {

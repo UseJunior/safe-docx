@@ -458,6 +458,27 @@ export class DocxDocument {
     }
   }
 
+  /**
+   * Fork an editing candidate without reopening the package. In particular the
+   * original source text remains the minimal-reserialization baseline, and
+   * bookmark reservations survive even when their blocks have been removed.
+   */
+  fork(): DocxDocument {
+    const clone = (doc: Document | null): Document | null => doc ? doc.cloneNode(true) as Document : null;
+    const fork = new DocxDocument(
+      this.zip.fork(), clone(this.documentXml)!, clone(this.stylesXml), clone(this.themeXml),
+      clone(this.numberingXml), clone(this.footnotesXml), new Map(this.relsMap), this.originalDocumentXmlText,
+    );
+    fork.mutationVersion = this.mutationVersion;
+    if (this.paragraphBookmarkReservation) {
+      fork.paragraphBookmarkReservation = {
+        usedNames: new Set(this.paragraphBookmarkReservation.usedNames),
+        nextNumericId: this.paragraphBookmarkReservation.nextNumericId,
+      };
+    }
+    return fork;
+  }
+
   private static async loadUnattributed(buffer: Buffer): Promise<DocxDocument> {
     const zip = await DocxZip.load(buffer);
     const xml = await zip.readText('word/document.xml');

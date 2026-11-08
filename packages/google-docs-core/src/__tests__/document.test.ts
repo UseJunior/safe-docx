@@ -49,6 +49,25 @@ describe('GoogleDocsDocument', () => {
     vi.clearAllMocks();
   });
 
+  it('retains confirmed remote writes and stale structure after refresh failure, then clears stale on refresh', async () => {
+    const { client, getDocumentFn, batchUpdateFn } = buildMockClient(buildMockDocument([]));
+    mockResolveCredentials.mockResolvedValue(client);
+    const doc = await GoogleDocsDocument.load('synthetic-doc');
+    expect(doc.getConfirmedWriteVersion()).toBe(0);
+    expect(doc.isStructureStale()).toBe(false);
+    await doc.executeBatchUpdate([{ insertText: { location: { index: 1 }, text: 'Synthetic' } }]);
+    getDocumentFn.mockRejectedValueOnce(new Error('refresh failed'));
+    await expect(doc.fetchDocument()).rejects.toThrow('refresh failed');
+    expect(doc.getConfirmedWriteVersion()).toBe(1);
+    expect(doc.isStructureStale()).toBe(true);
+    await doc.fetchDocument();
+    expect(doc.isStructureStale()).toBe(false);
+    batchUpdateFn.mockRejectedValueOnce(new Error('write rejected'));
+    await expect(doc.executeBatchUpdate([{ insertText: { location: { index: 1 }, text: 'Rejected' } }])).rejects.toThrow('write rejected');
+    expect(doc.getConfirmedWriteVersion()).toBe(1);
+    expect(doc.isStructureStale()).toBe(false);
+  });
+
   // ── Bug fix: paraInCell always 0 ────────────────────────────────────
 
   describe('paraInCell counter', () => {
