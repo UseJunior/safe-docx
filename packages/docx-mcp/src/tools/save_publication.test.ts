@@ -9,7 +9,7 @@ const TEST_FEATURE = 'stage-save-publication';
 const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
 
 async function fixture(existing: readonly boolean[] = [true, true]) {
-  const root = await createTrackedTempDir('save-publication-');
+  const root = await fs.realpath(await createTrackedTempDir('save-publication-'));
   const outputs = [0, 1].map(i => ({ destination: path.join(root, `dir-${i}`, 'output.docx'), buffer: Buffer.from(`new-${i}`) }));
   for (const [i, output] of outputs.entries()) {
     await fs.mkdir(path.dirname(output.destination));
@@ -159,7 +159,7 @@ describe('bounded filesystem save publication', () => {
         return rename(from, to);
       });
       const real = fs[operation].bind(fs);
-      vi.spyOn(fs, operation).mockImplementation(async target => {
+      vi.spyOn(fs, operation).mockImplementation(async (target: Parameters<typeof fs.unlink>[0]) => {
         if (String(target).includes('/dir-0/.safe-docx-save-')) throw new Error('cleanup failed');
         return real(target);
       });

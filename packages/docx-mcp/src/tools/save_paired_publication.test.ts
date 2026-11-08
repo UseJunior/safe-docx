@@ -56,8 +56,9 @@ describe('save destination coordination', () => {
 
   test.openspec('Recovery needs attention')('surfaces exact rollback paths in the public error', async () => {
     const { mgr, inputPath, tmpDir } = await openSession(['Synthetic'], { mgr: createTestSessionManager() });
-    const clean = path.join(tmpDir, 'clean.docx');
-    const tracked = path.join(tmpDir, 'tracked.docx');
+    const canonicalDir = await fs.realpath(tmpDir);
+    const clean = path.join(canonicalDir, 'clean.docx');
+    const tracked = path.join(canonicalDir, 'tracked.docx');
     await fs.writeFile(clean, 'original');
     const rename = fs.rename.bind(fs);
     vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {

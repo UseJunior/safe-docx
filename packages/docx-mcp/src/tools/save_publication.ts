@@ -80,14 +80,15 @@ export async function publishSaveOutputs(outputs: SaveOutput[]): Promise<Recover
   const report = (entry: Entry, operation: string, filePath: string, e: unknown) => {
     failures.push({ path: filePath, operation, error: errorMessage(e),
       ...(entry.backup ? { backup_path: entry.backup } : {}),
-      ...(entry.stage ? { staging_path: entry.stage } : {}) });
+      ...(operation === 'remove-stage' && entry.stage ? { staging_path: entry.stage } : {}) });
   };
   const cleanup = async (entry: Entry) => {
     if (entry.stage) {
-      try { await fs.unlink(entry.stage); entry.stage = undefined; }
+      const stage = entry.stage;
+      try { await fs.unlink(stage); entry.stage = undefined; }
       catch (e) {
         if (errorCode(e) === 'ENOENT') entry.stage = undefined;
-        else report(entry, 'remove-stage', entry.stage, e);
+        else report(entry, 'remove-stage', stage, e);
       }
     }
     if (entry.directory && !entry.stage && !entry.backup) {
@@ -143,8 +144,9 @@ export async function publishSaveOutputs(outputs: SaveOutput[]): Promise<Recover
   // cannot be called a rolled-back save after some backups have been discarded.
   for (const entry of entries) {
     if (entry.backup) {
-      try { await fs.unlink(entry.backup); entry.backup = undefined; }
-      catch (e) { report(entry, 'remove-backup', entry.backup, e); }
+      const backup = entry.backup;
+      try { await fs.unlink(backup); entry.backup = undefined; }
+      catch (e) { report(entry, 'remove-backup', backup, e); }
     }
     await cleanup(entry);
   }
