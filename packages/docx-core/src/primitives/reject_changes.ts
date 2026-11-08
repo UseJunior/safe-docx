@@ -126,7 +126,16 @@ function isRowPropertyRevisionMarker(el: Element): boolean {
   return parent !== null && isW(parent, 'trPr');
 }
 
-function rejectSelectedRowRevisions(root: Element, filter: RevisionFilter): { insertions: number; deletions: number } {
+/**
+ * Pass 1: Row topology (cell-topology records remain deferred).
+ * Resolve row topology before paragraph-mark analysis, mirroring Word's
+ * accept/reject semantics for direct w:trPr row revision markers.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ */
+function resolveTableRowRevisionsPass(
+  root: Element,
+  filter: RevisionFilter,
+): { insertions: number; deletions: number } {
   let insertions = 0;
   let deletions = 0;
   for (const marker of collectByLocalName(root, 'ins').filter(filter).filter(isRowPropertyRevisionMarker)) {
@@ -366,7 +375,7 @@ function resolveParagraphMarkRevision(p: Element): void {
  * Relocate orphaned bookmarks from a paragraph being removed to an
  * adjacent kept paragraph. This preserves cross-paragraph bookmark boundaries.
  */
-function relocateBookmarks(p: Element, paragraphsToRemove: Set<Element>): void {
+function relocateBookmarks(p: Element, paragraphsToRemove: ReadonlySet<Element>): void {
   const parent = p.parentNode;
   if (!parent) return;
 
@@ -462,50 +471,21 @@ function relocateBookmarks(p: Element, paragraphsToRemove: Set<Element>): void {
   }
 }
 
-// ── Public API ──────────────────────────────────────────────────────
-
+// ── Ordered private passes ────────────────────────────────────────────
 /**
- * Reject all tracked changes in the document body or story root, restoring
- * the document to its pre-edit state.
- *
- * Mutates the Document in place (same convention as acceptChanges).
- *
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.22
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.25
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.34
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.36
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
+ * Pass 2: Paragraph marks identification
+ * Identify inserted or moved-to paragraph marks and paragraph-local bookmark
+ * endpoint candidates.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
  */
-export function rejectChanges(
-  doc: Document,
-  opts?: { filter?: RevisionFilter },
-): RejectChangesResult {
-  const filter = opts?.filter ?? ACCEPT_ALL;
-  const selective = filter !== ACCEPT_ALL;
-  const root = doc.getElementsByTagNameNS(W_NS, 'body').item(0) ?? doc.documentElement;
-  if (!root) {
-    return {
-      insertionsRemoved: 0,
-      deletionsRestored: 0,
-      movesReverted: 0,
-      propertyChangesReverted: 0,
-      unresolvedRowRevisions: 0,
-    };
-  }
-
-  // Resolve row topology before paragraph-mark analysis, mirroring Word's
-  // accept/reject semantics for direct w:trPr row revision markers.
-  const rowRevisions = rejectSelectedRowRevisions(root, filter);
-
-  // Phase A — Identify inserted or moved-to paragraph marks.
+function identifyParagraphMarkRevisionsPass(
+  root: Element,
+  filter: RevisionFilter,
+): {
+  markInsertedParagraphs: Set<Element>;
+  removedMoveToBookmarkIds: Set<string>;
+  resolvedMarkProperties: Element[];
+} {
   const markInsertedParagraphs = new Set<Element>();
   const removedMoveToBookmarkIds = new Set<string>();
   const allParagraphs = collectByLocalName(root, 'p');
@@ -539,18 +519,29 @@ export function rejectChanges(
       }
     }
   }
+  return { markInsertedParagraphs, removedMoveToBookmarkIds, resolvedMarkProperties };
+}
 
-  // Phase B — Preserve cross-paragraph bookmark boundaries. Direct-child
-  // bookmarks of a paragraph that will merge ride the Phase-G merge in
-  // document order; relocateBookmarks rescues the rest (direct children of a
-  // paragraph with no merge target, which may be removed outright, plus
-  // adjacent sibling-style markers).
+/**
+ * Pass 3: Preserve cross-paragraph bookmark boundaries
+ * Direct-child bookmarks of a paragraph that will merge ride the merge in
+ * document order; relocateBookmarks rescues the rest. Additionally removes
+ * revised-side bookmark endpoints outside wrappers.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+ */
+function preserveCrossParagraphBookmarksPass(
+  root: Element,
+  filter: RevisionFilter,
+  markInsertedParagraphs: ReadonlySet<Element>,
+  removedMoveToBookmarkIds: ReadonlySet<string>,
+): void {
   for (const p of markInsertedParagraphs) {
     relocateBookmarks(p, markInsertedParagraphs);
   }
 
   // Mirror Accept All's projection-aware bookmark cleanup: an endpoint inside
-  // a selected insertion can have a live counterpart outside the wrapper so
+  // a selected insertion can have its live counterpart outside the wrapper so
   // the combined redline visibly brackets inserted text. Rejecting the
   // insertion must remove that revised-side counterpart as well.
   const insertedBookmarkIds = new Set<string>(removedMoveToBookmarkIds);
@@ -582,17 +573,49 @@ export function rejectChanges(
       }
     }
   }
+}
 
-  // Phase C — Remove insertions and move destinations
-  const insertionsRemoved = rowRevisions.insertions + removeAllByLocalName(root, 'ins', filter, isRowPropertyRevisionMarker);
+/**
+ * Pass 4: Insertions and move destinations (moves)
+ * Remove insertions, move destinations, and move range markers.
+ *
+ * Link #1020: Selective author reject removes authored move starts but leaves
+ * authorless range ends behind. Pair-aware resolution is tracked separately in #1020
+ * without changing selector semantics here.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.25
+ * @see https://github.com/UseJunior/safe-docx/issues/1020
+ */
+function removeInsertionsAndMoveDestinationsPass(
+  root: Element,
+  filter: RevisionFilter,
+  rowInsertions: number,
+): { insertionsRemoved: number; moveToRemoved: number } {
+  const insertionsRemoved = rowInsertions + removeAllByLocalName(root, 'ins', filter, isRowPropertyRevisionMarker);
   const moveToRemoved = removeAllByLocalName(root, 'moveTo', filter);
   removeAllByLocalName(root, 'moveToRangeStart', filter);
   removeAllByLocalName(root, 'moveToRangeEnd', filter);
   removeAllByLocalName(root, 'moveFromRangeStart', filter);
   removeAllByLocalName(root, 'moveFromRangeEnd', filter);
+  return { insertionsRemoved, moveToRemoved };
+}
 
-  // Phase D — Unwrap deletions and convert w:delText → w:t
-  const deletionsRestored = rowRevisions.deletions + unwrapAllByLocalName(root, 'del', filter);
+/**
+ * Pass 5: Nested wrappers and deletions (nested wrappers)
+ * Unwrap deletions depth-first, convert w:delText -> w:t, and restore deleted
+ * instruction text.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
+ */
+function unwrapDeletionsAndRestoreTextPass(
+  doc: Document,
+  root: Element,
+  filter: RevisionFilter,
+  selective: boolean,
+  rowDeletions: number,
+): number {
+  const deletionsRestored = rowDeletions + unwrapAllByLocalName(root, 'del', filter);
 
   // Rename w:delText → w:t so getParagraphText() sees the restored text — but
   // only for delTexts whose w:del wrapper was just unwrapped (no surviving w:del
@@ -620,11 +643,37 @@ export function rejectChanges(
     parent.replaceChild(t, dt);
   }
   restoreDeletedInstructionText(doc, root, selective);
+  return deletionsRestored;
+}
 
-  // Phase E — Unwrap move sources (keep content at original position)
-  const moveFromUnwrapped = unwrapAllByLocalName(root, 'moveFrom', filter);
+/**
+ * Pass 6: Move sources (moves)
+ * Unwrap move sources depth-first, keeping content at its original position.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ */
+function unwrapMoveSourcesPass(
+  root: Element,
+  filter: RevisionFilter,
+): number {
+  return unwrapAllByLocalName(root, 'moveFrom', filter);
+}
 
-  // Phase F — Restore original properties from *PrChange records
+/**
+ * Pass 7: Property change records (properties)
+ * Restore original properties from *PrChange records depth-first.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.34
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.36
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
+ */
+function restorePropertyChangesPass(
+  doc: Document,
+  root: Element,
+  filter: RevisionFilter,
+): number {
   let propertyChangesReverted = 0;
   for (const localName of PR_CHANGE_LOCALS) {
     const changes = collectByLocalName(root, localName).filter(filter);
@@ -735,8 +784,23 @@ export function rejectChanges(
       propertyChangesReverted++;
     }
   }
+  return propertyChangesReverted;
+}
 
-  // Phase G — Cleanup
+/**
+ * Pass 8: Paragraph marks and cleanup (paragraph marks)
+ * Strip paragraph-level revision markers, resolve paragraph-mark merges into
+ * following paragraphs, remove empty paragraph mark properties, and strip
+ * rsidDel attributes.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ */
+function cleanupParagraphMarksAndRevisionsPass(
+  root: Element,
+  filter: RevisionFilter,
+  selective: boolean,
+  markInsertedParagraphs: ReadonlySet<Element>,
+  resolvedMarkProperties: readonly Element[],
+): void {
   // Strip paragraph-level revision markers from w:pPr/w:rPr
   for (const p of collectByLocalName(root, 'p')) {
     for (let i = 0; i < p.childNodes.length; i++) {
@@ -781,7 +845,62 @@ export function rejectChanges(
       }
     }
   }
+}
 
+// ── Public API ──────────────────────────────────────────────────────
+
+/**
+ * Reject all tracked changes in the document body or story root, restoring
+ * the document to its pre-edit state.
+ *
+ * Mutates the Document in place (same convention as acceptChanges).
+ * Exceptions propagate; this low-level API does not roll back.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.22
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.25
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.34
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.36
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
+ */
+export function rejectChanges(
+  doc: Document,
+  opts?: { filter?: RevisionFilter },
+): RejectChangesResult {
+  const filter = opts?.filter ?? ACCEPT_ALL;
+  const selective = filter !== ACCEPT_ALL;
+  const root = doc.getElementsByTagNameNS(W_NS, 'body').item(0) ?? doc.documentElement;
+  if (!root) {
+    return {
+      insertionsRemoved: 0,
+      deletionsRestored: 0,
+      movesReverted: 0,
+      propertyChangesReverted: 0,
+      unresolvedRowRevisions: 0,
+    };
+  }
+
+  // Keep calls explicit and ordered. Capture marks/bookmarks before wrappers
+  // disappear; restore deleted text before unwrapping moves; restore properties
+  // before merging paragraphs. Selectors must retain their live-DOM call order.
+  const rowRevisions = resolveTableRowRevisionsPass(root, filter);
+  const { markInsertedParagraphs, removedMoveToBookmarkIds, resolvedMarkProperties } =
+    identifyParagraphMarkRevisionsPass(root, filter);
+  preserveCrossParagraphBookmarksPass(root, filter, markInsertedParagraphs, removedMoveToBookmarkIds);
+  const { insertionsRemoved, moveToRemoved } =
+    removeInsertionsAndMoveDestinationsPass(root, filter, rowRevisions.insertions);
+  const deletionsRestored =
+    unwrapDeletionsAndRestoreTextPass(doc, root, filter, selective, rowRevisions.deletions);
+  const moveFromUnwrapped = unwrapMoveSourcesPass(root, filter);
+  const propertyChangesReverted = restorePropertyChangesPass(doc, root, filter);
+  cleanupParagraphMarksAndRevisionsPass(root, filter, selective, markInsertedParagraphs, resolvedMarkProperties);
   return {
     insertionsRemoved,
     deletionsRestored,
