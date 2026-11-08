@@ -272,6 +272,40 @@ describe('session selective revision policy', () => {
   });
 
   for (const cacheHit of [false, true]) {
+    test.openspec('Save captures policy and document generation together')(`ordinary ${cacheHit ? 'cached' : 'fresh'} save uses captured mode while the first selective resolution commits`, async () => {
+      const f = await fixture();
+      expect(f.session.selectiveRevisionPolicy.mode).toBe('ordinary');
+      if (cacheHit) assertSuccess(await f.exportTo('warm-ordinary', 'both'), 'warm ordinary cache');
+      const entered = deferred();
+      const release = deferred();
+      const serialize = f.session.doc.toBuffer.bind(f.session.doc);
+      vi.spyOn(f.session.doc, 'toBuffer').mockImplementationOnce(options => serialize(options).then(async result => {
+        entered.resolve();
+        await release.promise;
+        return result;
+      }));
+      const pending = f.exportTo('ordinary-captured', 'both');
+      await entered.promise;
+      try { await f.select(); } finally { release.resolve(); }
+      const saved = await pending;
+      assertSuccess(saved, 'captured ordinary export');
+      expect(saved.cache_hit).toBe(cacheHit);
+      expect(saved.edit_revision).toBe(0);
+      expect(saved.selective_revision_disposition).toBeUndefined();
+      const cleanXml = await xmlAt(String(saved.saved_to));
+      expect(cleanXml).not.toContain('w:id="101"');
+      expect(cleanXml).not.toContain('w:id="103"');
+      expect(cleanXml).toContain('w:id="102"');
+      const trackedXml = await xmlAt(String(saved.tracked_saved_to));
+      expect(trackedXml).toContain('w:id="101"');
+      expect(trackedXml).toContain('w:id="103"');
+      expect(f.session.selectiveRevisionPolicy.mode).toBe('preserve');
+      expect(f.session.saveCache.size).toBe(0);
+      const current = await f.exportTo('ordinary-now-preserved', 'both');
+      assertFailure(current, 'SELECTIVE_REVISIONS_WOULD_BE_DISCARDED');
+      expect(current.preserved_revisions).toEqual({ count: 1, author: AI, ids: [103] });
+    });
+
     test.openspec('Save captures policy and document generation together')(`captured ${cacheHit ? 'cached' : 'fresh'} policy and diagnostics survive a concurrent selective action`, async () => {
       const f = await fixture();
       await f.select();
