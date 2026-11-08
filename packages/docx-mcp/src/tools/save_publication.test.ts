@@ -104,6 +104,90 @@ describe('bounded filesystem save publication', () => {
     }
   });
 
+  for (const parentKind of ['none', 'missing', 'existing']) {
+    test.openspec('Destination preflight')(`uses actual filesystem name rules for absent case-alias outputs with ${parentKind} parents`, async () => {
+      const { root } = await fixture([false, false]);
+      // Independently observe this volume. On case-sensitive CI both outputs must
+      // succeed; on this case-insensitive Mac they must be rejected, not merged.
+      const marker = path.join(root, 'CaseSensitivity');
+      await fs.writeFile(marker, 'probe', { flag: 'wx' });
+      const caseSensitive = !(await fs.stat(path.join(root, 'casesensitivity')).then(() => true, () => false));
+      await fs.unlink(marker);
+      if (parentKind === 'existing') await fs.mkdir(path.join(root, 'NewParent'));
+      const destinations = parentKind !== 'none'
+        ? [path.join(root, 'NewParent', 'output.docx'), path.join(root, 'newparent', 'output.docx')]
+        : [path.join(root, 'Clean.docx'), path.join(root, 'clean.docx')];
+      const outputs = destinations.map((destination, i) => ({ destination, buffer: Buffer.from(`case-${i}`) }));
+      const before = await fs.readdir(root);
+      const rename = vi.spyOn(fs, 'rename');
+      if (caseSensitive) {
+        expect(await publishSaveOutputs(outputs)).toEqual([]);
+        for (const [i, destination] of destinations.entries()) expect(await fs.readFile(destination, 'utf8')).toBe(`case-${i}`);
+      } else {
+        await expect(publishSaveOutputs(outputs)).rejects.toMatchObject({ code: 'ALIASED_OUTPUT_PATHS' });
+        expect(rename).not.toHaveBeenCalled();
+        expect(await fs.readdir(root)).toEqual(before);
+        for (const destination of destinations) await expect(fs.stat(destination)).rejects.toMatchObject({ code: 'ENOENT' });
+      }
+    });
+  }
+
+  test.openspec('Destination preflight')('allows distinct names in a shared missing parent and removes all private probes', async () => {
+    const { root } = await fixture([false, false]);
+    const outputs = ['clean.docx', 'tracked.docx'].map(name => ({ destination: path.join(root, 'new', name), buffer: Buffer.from(name) }));
+    expect(await publishSaveOutputs(outputs)).toEqual([]);
+    for (const output of outputs) expect(await fs.readFile(output.destination)).toEqual(output.buffer);
+    expect(await fs.readdir(path.join(root, 'new'))).toEqual(['clean.docx', 'tracked.docx']);
+    expect((await fs.readdir(root)).some(name => name.startsWith('.safe-docx-'))).toBe(false);
+  });
+
+  for (const operation of ['open', 'unlink', 'rmdir'] as const) {
+    test.openspec('Recovery needs attention')(`alias probe ${operation} failure preserves destinations and reports surviving probe paths`, async () => {
+      const { root } = await fixture([false, false]);
+      const outputs = ['clean.docx', 'tracked.docx'].map(name => ({ destination: path.join(root, name), buffer: Buffer.from(name) }));
+      const rename = vi.spyOn(fs, 'rename');
+      if (operation === 'open') {
+        const open = fs.open.bind(fs);
+        let count = 0;
+        vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+          if (count++ === 1) throw new Error('injected probe open failure');
+          return open(...args);
+        });
+        await expect(publishSaveOutputs(outputs)).rejects.toThrow('injected probe open failure');
+        expect((await fs.readdir(root)).some(name => name.startsWith('.safe-docx-'))).toBe(false);
+      } else {
+        const real = fs[operation].bind(fs);
+        vi.spyOn(fs, operation).mockImplementation(async (target: Parameters<typeof fs.unlink>[0]) => {
+          if (String(target).includes('.safe-docx-probe-')) throw new Error('injected probe cleanup failure');
+          return real(target);
+        });
+        const error = await publishSaveOutputs(outputs).catch(e => e) as SavePublicationError;
+        expect(error).toBeInstanceOf(SavePublicationError);
+        expect(error.rollbackFailures.length).toBeGreaterThan(0);
+        for (const failure of error.rollbackFailures) {
+          expect(failure.path).toContain('.safe-docx-probe-');
+          expect(error.message).toContain(failure.path);
+          expect(await fs.stat(failure.path)).toBeTruthy();
+        }
+      }
+      expect(rename).not.toHaveBeenCalled();
+      for (const output of outputs) await expect(fs.stat(output.destination)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  }
+
+  test.openspec('Destination preflight')('refuses special-file stat shapes before backup and leaves original bytes untouched', async () => {
+    const { outputs } = await fixture();
+    const lstat = fs.lstat.bind(fs);
+    vi.spyOn(fs, 'lstat').mockImplementation((async (target: Parameters<typeof fs.lstat>[0]) => {
+      const info = await lstat(target);
+      return String(target) === outputs[1]!.destination ? Object.assign(Object.create(info), { isFile: () => false }) : info;
+    }) as typeof fs.lstat);
+    const rename = vi.spyOn(fs, 'rename');
+    await expect(publishSaveOutputs(outputs)).rejects.toThrow('not a regular file');
+    expect(rename).not.toHaveBeenCalled();
+    await assertRestored(outputs, [true, true]);
+  });
+
   test.openspec('Destination preflight')('preserves modes and does not overwrite a read-only file through writable parent permissions', async () => {
     const { outputs } = await fixture();
     await fs.chmod(outputs[0]!.destination, 0o640);

@@ -3,9 +3,10 @@
 The save tool SHALL preflight all requested destinations before filesystem writes, reject aliased outputs, stage on each destination filesystem and recover original contents after ordinary publication failures. It SHALL report exact remaining recovery paths if rollback fails. It SHALL NOT claim crash atomicity across filesystems.
 
 #### Scenario: Destination preflight
-- **WHEN** either destination fails policy or filesystem checks, or outputs alias by canonical path or inode
+- **WHEN** either destination fails policy or filesystem checks, or outputs alias by canonical path, inode or filesystem name comparison for missing targets/parents
 - **THEN** neither requested artifact is written
 - **AND** existing symlink write-through and POSIX modes are preserved on supported targets; multiply linked targets are rejected before writing
+- **AND** safe private probes are cleaned before publication and distinct names remain supported on case-sensitive filesystems
 
 #### Scenario: Staging and publication recovery
 - **WHEN** staging, backup or either publication fails

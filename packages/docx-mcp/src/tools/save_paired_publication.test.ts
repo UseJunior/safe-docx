@@ -54,6 +54,19 @@ describe('save destination coordination', () => {
     });
   }
 
+  test.openspec('Destination preflight')('refuses a symlink to a directory before any publication', async () => {
+    const { mgr, inputPath, tmpDir } = await openSession(['Synthetic'], { mgr: createTestSessionManager() });
+    const alias = path.join(tmpDir, 'directory-link.docx');
+    const output = path.join(tmpDir, 'clean.docx');
+    await fs.symlink(tmpDir, alias, 'dir');
+    const rename = vi.spyOn(fs, 'rename');
+    assertFailure(await save(mgr, { file_path: inputPath, save_to_local_path: output, tracked_save_to_local_path: alias }), 'SAVE_ERROR');
+    expect(rename).not.toHaveBeenCalled();
+    expect((await fs.lstat(alias)).isSymbolicLink()).toBe(true);
+    expect((await fs.stat(tmpDir)).isDirectory()).toBe(true);
+    await expect(fs.stat(output)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   test.openspec('Recovery needs attention')('surfaces exact rollback paths in the public error', async () => {
     const { mgr, inputPath, tmpDir } = await openSession(['Synthetic'], { mgr: createTestSessionManager() });
     const canonicalDir = await fs.realpath(tmpDir);

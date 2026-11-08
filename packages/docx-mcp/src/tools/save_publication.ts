@@ -28,22 +28,79 @@ type Entry = SaveOutput & {
   stage?: string;
   backup?: string;
 };
+type AliasProbeGroup = {
+  ancestor: string;
+  entries: { destination: string; original: Stats | null; suffix: string }[];
+};
 
 async function statOrMissing(destination: string): Promise<Stats | null> {
   try { return await fs.lstat(destination); }
   catch (e) { if (errorCode(e) === 'ENOENT') return null; throw e; }
 }
 
-async function checkParent(destination: string): Promise<void> {
+async function checkParent(destination: string): Promise<{ path: string; info: Stats }> {
   let parent = path.dirname(destination);
   while (true) {
     const info = await statOrMissing(parent);
     if (info) {
       if (!info.isDirectory()) throw new Error(`Output parent is not a directory: ${parent}`);
       await fs.access(parent, constants.W_OK | constants.X_OK);
-      return;
+      return { path: parent, info };
     }
     parent = path.dirname(parent);
+  }
+}
+
+/** Observe name equivalence on the target filesystem, including missing parents.
+ * Mirror only missing suffixes in a private directory under their actual existing
+ * ancestor. Exclusive creation detects case/normalization aliases without assuming
+ * that every volume (or directory) has the same name comparison rules.
+ */
+async function checkMissingAliases(groups: Map<string, AliasProbeGroup>): Promise<void> {
+  for (const { ancestor, entries } of groups.values()) {
+    if (entries.length < 2 || entries.every(entry => entry.original)) continue;
+    const directory = await fs.mkdtemp(path.join(ancestor, '.safe-docx-probe-'));
+    const files: string[] = [];
+    const directories = [directory];
+    const failures: RecoveryFailure[] = [];
+    let cause: unknown;
+    try {
+      for (const entry of entries) {
+        const parts = entry.suffix.split(path.sep);
+        let parent = directory;
+        for (const part of parts.slice(0, -1)) {
+          parent = path.join(parent, part);
+          try { await fs.mkdir(parent); directories.push(parent); }
+          catch (e) {
+            if (errorCode(e) !== 'EEXIST' || !(await fs.lstat(parent)).isDirectory()) throw e;
+          }
+        }
+        const probe = path.join(parent, parts[parts.length - 1]!);
+        let handle;
+        try { handle = await fs.open(probe, 'wx'); }
+        catch (e) {
+          if (errorCode(e) === 'EEXIST') {
+            throw new SavePublicationError(`Save outputs alias on the destination filesystem: ${entries.map(item => item.destination).join(', ')}`, 'ALIASED_OUTPUT_PATHS');
+          }
+          throw e;
+        }
+        files.push(probe);
+        await handle.close();
+      }
+    } catch (e) { cause = e; }
+    // Only remove names this probe created. Never recursively remove a path.
+    for (const file of files.reverse()) {
+      try { await fs.unlink(file); }
+      catch (e) { failures.push({ path: file, staging_path: file, operation: 'remove-alias-probe', error: errorMessage(e) }); }
+    }
+    for (const dir of directories.reverse()) {
+      try { await fs.rmdir(dir); }
+      catch (e) { failures.push({ path: dir, operation: 'remove-alias-probe-directory', error: errorMessage(e) }); }
+    }
+    if (failures.length) {
+      throw new SavePublicationError(`${cause ? errorMessage(cause) : 'Alias probe cleanup failed'}; recovery needed: ${JSON.stringify(failures)}`, 'SAVE_ERROR', failures, { cause });
+    }
+    if (cause) throw cause;
   }
 }
 
@@ -65,6 +122,7 @@ export async function publishSaveOutputs(outputs: SaveOutput[]): Promise<Recover
   }
   // Check aliases before rejecting multiply linked files to give paired aliases
   // their specific diagnostic. Reject other hardlinks rather than splitting them.
+  const groups = new Map<string, AliasProbeGroup>();
   for (const entry of entries) {
     if (entry.original) {
       if (!entry.original.isFile()) throw new Error(`Output is not a regular file: ${entry.destination}`);
@@ -73,8 +131,17 @@ export async function publishSaveOutputs(outputs: SaveOutput[]): Promise<Recover
       }
       await fs.access(entry.destination, constants.W_OK);
     }
-    await checkParent(entry.destination);
+    const parent = await checkParent(entry.destination);
+    const key = `${parent.info.dev}:${parent.info.ino}`;
+    const group = groups.get(key) ?? { ancestor: parent.path, entries: [] };
+    // Compute the suffix using this entry's own ancestor spelling. Two existing
+    // ancestor spellings may have one inode; relative paths between their lexical
+    // spellings could contain '..' and escape a private probe directory.
+    group.entries.push({ destination: entry.destination, original: entry.original,
+      suffix: path.relative(parent.path, entry.destination) });
+    groups.set(key, group);
   }
+  await checkMissingAliases(groups);
 
   const failures: RecoveryFailure[] = [];
   const report = (entry: Entry, operation: string, filePath: string, e: unknown) => {
