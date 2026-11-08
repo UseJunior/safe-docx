@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
 import {
+  DocxDocument,
   DocxZip,
   TRACKED_CHANGE_ELEMENT_NAME_SET,
   parseXml,
@@ -11,6 +12,7 @@ import {
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
 import { getAiRevisionBaseline, splitIntroducedDiagnostics } from './ai_revision_guard.js';
 import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
+import { artifactsFromCache, type SaveArtifacts } from './save_artifacts.js';
 
 type SaveFormat = 'clean' | 'tracked' | 'both';
 type SaveRevisionSummary = { count: number; author: string; ids?: number[] };
@@ -183,58 +185,82 @@ export async function save(
     const author = params.tracked_changes_author ?? params.author ?? session.aiAuthor ?? 'SafeDocX';
     const allowOverwrite = params.allow_overwrite ?? false;
 
+    // Capture metadata before starting exports. All serializers below capture
+    // their isolated ZIP/DOM synchronously, before any of them yields (#1318).
+    const doc = session.doc;
+    const revision = session.editRevision;
+    const editCount = session.editCount;
+    const aiAuthor = session.aiAuthor;
+    const selectivePolicy = session.selectiveRevisionAction;
+    const selectiveRevisionAction = selectivePolicy
+      ? { ...selectivePolicy, selectedRevisionIds: [...selectivePolicy.selectedRevisionIds] }
+      : null;
+    const nonRevisionManifest = session.nonRevisionManifest.map(change => ({
+      ...change, parts: [...change.parts],
+    }));
+    const cacheKey = JSON.stringify({
+      revision,
+      format,
+      clean_bookmarks: clean,
+      preserve_original_bookmarks_in_tracked: preserveOriginalBookmarksInTracked,
+      tracked_author: author,
+    });
+    const cached = manager.getSaveCache(session, cacheKey);
+    const cacheHit = cached !== null;
+    const cachedArtifacts = cached ? artifactsFromCache(cached, format) : undefined;
+    const exportTimestamp = cached?.exportedAtUtc ?? formatUtcTimestamp(new Date());
+    const [current, revised, tracked] = await Promise.all([
+      doc.toBuffer({ cleanBookmarks: false }),
+      // Accept only the AI actor on an isolated copy, retaining the original
+      // minimal-reserialization baseline and all third-party revisions.
+      // Tracked-only saves retain this export for legacy blocks_restored stats.
+      cached ? undefined : aiAuthor
+        ? doc.toAcceptedBuffer(
+          { author: aiAuthor, normalizeFirst: true },
+          { cleanBookmarks: clean },
+        )
+        : doc.toBuffer({ cleanBookmarks: clean, minimalReserialization: clean }),
+      // The redline is the write-time markup, never a comparison reconstruction.
+      cached || format === 'clean' ? undefined : doc.toBuffer({
+        cleanBookmarks: clean,
+        preserveOriginalBookmarks: preserveOriginalBookmarksInTracked,
+      }),
+    ]);
+
     let cleanArtifactDiscardedRevisions: SaveRevisionSummary | undefined;
     if (
       (format === 'clean' || format === 'both')
-      && session.selectiveRevisionAction
-      && session.aiAuthor
+      && selectiveRevisionAction
+      && aiAuthor
     ) {
-      const current = await session.doc.toBuffer({ cleanBookmarks: false });
-      const remaining = await collectAiRevisionSummary(current.buffer, session.aiAuthor);
+      const remaining = await collectAiRevisionSummary(current.buffer, aiAuthor);
       if (remaining && !params.allow_discard_preserved_revisions) {
         return {
           ...err(
             'SELECTIVE_REVISIONS_WOULD_BE_DISCARDED',
-            `Clean output would auto-accept ${remaining.count} remaining revision(s) by ${session.aiAuthor} after a selective revision operation.`,
+            `Clean output would auto-accept ${remaining.count} remaining revision(s) by ${aiAuthor} after a selective revision operation.`,
             "Use save_format='tracked', finish accepting/rejecting the remaining revisions, or explicitly set allow_discard_preserved_revisions=true.",
           ),
-          selective_revision_action: session.selectiveRevisionAction,
+          selective_revision_action: selectiveRevisionAction,
           preserved_revisions: remaining,
         };
       }
       cleanArtifactDiscardedRevisions = remaining;
     }
 
-    const cacheKey = JSON.stringify({
-      revision: session.editRevision,
-      format,
-      clean_bookmarks: clean,
-      preserve_original_bookmarks_in_tracked: preserveOriginalBookmarksInTracked,
-      tracked_author: author,
-    });
-
-    const cached = manager.getSaveCache(session, cacheKey);
-    const cacheHit = cached !== null;
-
-    let revisedBuffer: Buffer;
-    let trackedBuffer: Buffer | null;
-    let trackedStats: TrackedChangesStats | null;
-    let bookmarksRemoved: number;
-    let blocksRestored: number;
-    let exportTimestamp: string;
-
-    // Run implicit validation before producing save artifacts.
-    const validation = session.doc.validate();
-    let aiRevisionValidation = session.aiAuthor
-      ? await session.doc.validateAiRevisions(session.aiAuthor)
+    // Validate the same captured document that supplies all artifacts/stats.
+    const snapshot = await DocxDocument.load(current.buffer);
+    const validation = snapshot.validate();
+    let aiRevisionValidation = aiAuthor
+      ? await snapshot.validateAiRevisions(aiAuthor)
       : undefined;
     if (aiRevisionValidation && aiRevisionValidation.errors.length > 0) {
       // AI-attributed errors always fail the save. Unattributable errors
       // (field structure, package invariants — no w:author) fail only when
       // they were not already present in the originally-loaded file; the
       // session's AI edits did not introduce those.
-      const attributed = aiRevisionValidation.errors.filter((e) => e.author === session.aiAuthor);
-      const unattributed = aiRevisionValidation.errors.filter((e) => e.author !== session.aiAuthor);
+      const attributed = aiRevisionValidation.errors.filter((e) => e.author === aiAuthor);
+      const unattributed = aiRevisionValidation.errors.filter((e) => e.author !== aiAuthor);
       let introduced = unattributed;
       let demoted: typeof unattributed = [];
       if (unattributed.length > 0) {
@@ -262,85 +288,49 @@ export async function save(
       }
     }
 
-    if (cached) {
-      revisedBuffer = cached.revisedBuffer;
-      trackedBuffer = cached.trackedBuffer;
-      trackedStats = cached.trackedStats;
-      bookmarksRemoved = cached.bookmarksRemoved;
-      blocksRestored = cached.blocksRestored;
-      exportTimestamp = cached.exportedAtUtc;
+    let artifacts: SaveArtifacts;
+    if (cachedArtifacts) {
+      artifacts = cachedArtifacts;
     } else {
-      exportTimestamp = formatUtcTimestamp(new Date());
-      trackedBuffer = null;
-      trackedStats = null;
-
-      // CLEAN artifact (#126): accept the AI actor's write-time edits so the
-      // artifact is a genuinely clean document. Pre-existing third-party tracked
-      // changes are preserved — SafeDocX never silently accepts another
-      // reviewer's revisions (normalizeFirst keeps the accept best-effort and
-      // never hard-errors on an unusual overlap during finalization). With no AI
-      // author there is no write-time AI markup, so the document serializes as-is
-      // with a minimal, blast-radius-matching diff.
-      if (session.aiAuthor) {
-        // Accept the AI actor's write-time edits on an isolated copy so the
-        // session (and its tracked artifact) keep the markup, while untouched
-        // body blocks stay byte-identical to the source via minimal
-        // reserialization against the true original document.xml (#408).
-        const cleaned = await session.doc.toAcceptedBuffer(
-          { author: session.aiAuthor, normalizeFirst: true },
-          { cleanBookmarks: clean },
-        );
-        revisedBuffer = cleaned.buffer;
-        bookmarksRemoved = cleaned.bookmarksRemoved;
-        blocksRestored = cleaned.blocksRestored;
-      } else {
-        const revised = await session.doc.toBuffer({ cleanBookmarks: clean, minimalReserialization: clean });
-        revisedBuffer = revised.buffer;
-        bookmarksRemoved = revised.bookmarksRemoved;
-        blocksRestored = revised.blocksRestored;
-      }
-
-      // TRACKED artifact (#126): the session's write-time tracked markup,
-      // serialized directly. No comparison, no reconstruction — the redline is
-      // exactly what the write-time emitter authored (author, stable ids, and any
-      // pre-existing reviewer revisions preserved). Comparison-based redlining is
-      // available only via the compare_documents tool.
-      if (format === 'tracked' || format === 'both') {
-        const tracked = await session.doc.toBuffer({
-          cleanBookmarks: clean,
-          preserveOriginalBookmarks: preserveOriginalBookmarksInTracked,
-        });
-        trackedBuffer = tracked.buffer;
-        trackedStats = await collectTrackedStats(trackedBuffer, session.aiAuthor);
-        if (format === 'tracked') {
-          bookmarksRemoved = tracked.bookmarksRemoved;
-        }
-      }
-
-      manager.setSaveCache(session, {
-        cacheKey,
-        revision: session.editRevision,
-        format,
-        cleanBookmarks: clean,
-        trackedAuthor: author,
-        revisedBuffer,
-        trackedBuffer,
-        trackedStats,
-        bookmarksRemoved: clean ? bookmarksRemoved : 0,
-        blocksRestored,
+      if (!revised) throw new Error('Missing clean save artifact');
+      const common = {
+        revisedBuffer: revised.buffer,
+        bookmarksRemoved: clean
+          ? (format === 'tracked' && tracked ? tracked.bookmarksRemoved : revised.bookmarksRemoved)
+          : 0,
+        blocksRestored: revised.blocksRestored,
         exportedAtUtc: exportTimestamp,
-        cachedAtIso: new Date().toISOString(),
-      });
-    }
+      };
+      if (format === 'clean') {
+        artifacts = { ...common, format, trackedBuffer: null, trackedStats: null };
+      } else {
+        if (!tracked) throw new Error('Missing tracked save artifact');
+        artifacts = {
+          ...common, format, trackedBuffer: tracked.buffer,
+          trackedStats: await collectTrackedStats(tracked.buffer, aiAuthor),
+        };
+      }
+      artifacts = artifactsFromCache(artifacts, format);
 
-    let trackedPath: string | null = null;
-    if (format === 'tracked' || format === 'both') {
-      trackedPath = format === 'tracked'
-        ? savePath
-        : params.tracked_save_to_local_path
-          ? expandPath(params.tracked_save_to_local_path)
-          : defaultTrackedPath(savePath, exportTimestamp);
+      // An in-flight save may finish after a mutation invalidated the cache.
+      // Return its captured generation, but never publish it as current.
+      if (session.doc === doc && session.editRevision === revision
+        && session.aiAuthor === aiAuthor && session.selectiveRevisionAction === selectivePolicy) {
+        manager.setSaveCache(session, {
+          ...artifacts,
+          cacheKey,
+          revision,
+          cleanBookmarks: clean,
+          trackedAuthor: author,
+          cachedAtIso: new Date().toISOString(),
+        });
+      }
     }
+    const trackedPath = artifacts.format !== 'both'
+      ? savePath
+      : params.tracked_save_to_local_path
+        ? expandPath(params.tracked_save_to_local_path)
+        : defaultTrackedPath(savePath, exportTimestamp);
 
     // Compare against the original via realpath (issue #313) so a symlinked save_to_local_path pointing
     // back at the source can't slip past a purely lexical check and overwrite the original through the link.
@@ -352,7 +342,7 @@ export async function save(
           "Save to a different path, or set allow_overwrite=true if you explicitly want in-place overwrite.",
         );
       }
-      if ((format === 'tracked' || format === 'both') && trackedPath && await resolvesToSamePath(trackedPath, session.originalPath)) {
+      if (artifacts.format !== 'clean' && await resolvesToSamePath(trackedPath, session.originalPath)) {
         return err(
           'OVERWRITE_BLOCKED',
           `Refusing to overwrite original file with tracked output: ${trackedPath}`,
@@ -361,25 +351,24 @@ export async function save(
       }
     }
 
-    if (format === 'clean' || format === 'both') {
+    if (artifacts.format !== 'tracked') {
       const cleanPolicy = await enforceWritePathPolicy(savePath);
       if (!cleanPolicy.ok) return cleanPolicy.response;
       await fs.mkdir(path.dirname(savePath), { recursive: true });
-      await fs.writeFile(savePath, new Uint8Array(revisedBuffer));
+      await fs.writeFile(savePath, new Uint8Array(artifacts.revisedBuffer));
     }
-    if (trackedPath && trackedBuffer) {
+    if (artifacts.format !== 'clean') {
       const trackedPolicy = await enforceWritePathPolicy(trackedPath);
       if (!trackedPolicy.ok) return trackedPolicy.response;
       await fs.mkdir(path.dirname(trackedPath), { recursive: true });
-      await fs.writeFile(trackedPath, new Uint8Array(trackedBuffer));
+      await fs.writeFile(trackedPath, new Uint8Array(artifacts.trackedBuffer));
     }
 
     // Summarize the AI's revisions from the session's write-time markup (#126).
     // The clean artifact has accepted them away, so summarize the tracked
     // artifact when present, else the session document directly.
-    const revisionSummarySource = trackedBuffer
-      ?? (await session.doc.toBuffer({ cleanBookmarks: false })).buffer;
-    const revisions = await collectAiRevisionSummary(revisionSummarySource, session.aiAuthor);
+    const revisionSummarySource = artifacts.format === 'clean' ? current.buffer : artifacts.trackedBuffer;
+    const revisions = await collectAiRevisionSummary(revisionSummarySource, aiAuthor);
 
     const returnedVariants =
       format === 'clean'
@@ -391,30 +380,30 @@ export async function save(
     return ok(mergeSessionResolutionMetadata({
       file_path: manager.normalizePath(session.originalPath),
       original_filename: session.filename,
-      edit_count: session.editCount,
-      edit_revision: session.editRevision,
+      edit_count: editCount,
+      edit_revision: revision,
       save_format: format,
       saved_to: format === 'tracked' ? trackedPath : savePath,
       clean_saved_to: format === 'both' ? savePath : undefined,
-      tracked_saved_to: trackedPath,
-      size_bytes: format === 'tracked' ? trackedBuffer?.length : revisedBuffer.length,
-      tracked_size_bytes: trackedBuffer?.length,
+      tracked_saved_to: artifacts.format === 'clean' ? null : trackedPath,
+      size_bytes: artifacts.format === 'tracked' ? artifacts.trackedBuffer.length : artifacts.revisedBuffer.length,
+      tracked_size_bytes: artifacts.format === 'clean' ? undefined : artifacts.trackedBuffer.length,
       // The redline is the write-time markup as authored — no comparison engine
       // or reconstruction is involved (#126).
       tracked_changes_source: format === 'tracked' || format === 'both' ? 'write-time' : undefined,
       tracked_changes_author: format === 'tracked' || format === 'both' ? author : undefined,
-      tracked_changes_stats: trackedStats ?? undefined,
+      tracked_changes_stats: artifacts.format === 'clean' ? undefined : artifacts.trackedStats,
       revisions,
       // #122: package-level mutations with no native OOXML revision wrapper
       // (comment/footnote side parts, relationships, content types) are not
       // tracked changes, so surface them explicitly alongside the revisions
       // list rather than letting them land silently.
-      non_revision_changes: session.nonRevisionManifest.length > 0
-        ? session.nonRevisionManifest
+      non_revision_changes: nonRevisionManifest.length > 0
+        ? nonRevisionManifest
         : undefined,
       exported_at_utc: exportTimestamp,
-      bookmarks_removed: clean ? bookmarksRemoved : 0,
-      blocks_restored: blocksRestored,
+      bookmarks_removed: artifacts.bookmarksRemoved,
+      blocks_restored: artifacts.blocksRestored,
       returned_variants: returnedVariants,
       available_variants: ['clean', 'redline'],
       cache_hit: cacheHit,
