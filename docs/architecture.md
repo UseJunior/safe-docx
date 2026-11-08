@@ -139,6 +139,15 @@ For a fresh comparison between an original and a revised document, use `compare_
 
 ## Generation
 
+The greenfield generation compiler's `CompileContext` reserves allocated header/footer
+names separately from part registrations. Allocators skip reserved, registered, and
+written names. Identical registrations retain their relationship ID; conflicting
+content types or relationship types fail with `GenerationInternalError`. Final file
+assembly requires content for every registered part and places `[Content_Types].xml`
+first, retaining insertion order for the remaining files. A failed assembly can be
+retried after supplying missing content; assembly does not seal the context. This
+context does not load existing packages.
+
 `@usejunior/docx-core` exposes `generateDocx(DocumentSpec)` for creating a new DOCX from a JSON-serializable specification. Generation is currently a library API rather than an installed CLI command. [Issue #573](https://github.com/UseJunior/safe-docx/issues/573) tracks a first-class `safe-docx generate` command.
 
 ## Local Runtime Boundary
