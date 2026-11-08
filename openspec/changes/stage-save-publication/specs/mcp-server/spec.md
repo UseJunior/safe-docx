@@ -9,7 +9,7 @@ The save tool SHALL preflight all requested destinations before requested output
 - **AND** safe private probes are cleaned before publication and distinct names remain supported on case-sensitive filesystems
 
 #### Scenario: Staging and publication recovery
-- **WHEN** staging, backup or either publication fails
+- **WHEN** staging, backup, either publication or output-handle closing fails
 - **THEN** existing files are restored and newly published files removed if recovery succeeds
 - **AND** even a partially written target whose write rejects SHALL be restored through its existing inode using verified complete original bytes
 - **AND** unused staging files and private empty staging directories are cleaned

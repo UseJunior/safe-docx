@@ -189,10 +189,15 @@ export async function publishSaveOutputs(outputs: SaveOutput[]): Promise<Recover
     }
     await entry.handle!.truncate(bytes.length);
   };
-  const close = async (entry: Entry) => {
+  const closeHandle = async (entry: Entry) => {
     if (!entry.handle) return;
-    try { await entry.handle.close(); entry.handle = undefined; }
-    catch (e) { report(entry, 'close-output-handle', entry.destination, e); }
+    const handle = entry.handle;
+    try { await handle.close(); entry.handle = undefined; }
+    finally { if (handle.fd === -1) entry.handle = undefined; }
+  };
+  const closeDuringRecovery = async (entry: Entry) => {
+    try { await closeHandle(entry); }
+    catch (e) { entry.state = 'recovery-needed'; report(entry, 'close-output-handle', entry.destination, e); }
   };
   const removeBackup = async (entry: Entry) => {
     if (!entry.backup) return;
@@ -247,12 +252,19 @@ export async function publishSaveOutputs(outputs: SaveOutput[]): Promise<Recover
       await writeThrough(entry, entry.stagedBytes!);
       entry.state = 'published';
     }
+    // Closing a writable handle can itself fail. Keep verified backups until
+    // every output has closed successfully; only then is the pair committed.
+    for (const entry of entries) await closeHandle(entry);
   } catch (cause) {
     for (const entry of [...entries].reverse()) {
       if (entry.original && (entry.state === 'publishing' || entry.state === 'published')) {
         try {
           if (!entry.backupVerified || !entry.originalBytes) throw new Error('Missing verified original bytes');
           await checkIdentity(entry);
+          if (!entry.handle) {
+            entry.handle = await fs.open(entry.destination, 'r+');
+            if (!sameInode(await entry.handle.stat(), entry.original)) throw new Error(`Output identity changed during recovery: ${entry.destination}`);
+          }
           await writeThrough(entry, entry.originalBytes);
           entry.state = 'restored';
         } catch (e) { entry.state = 'recovery-needed'; report(entry, 'restore-original', entry.destination, e); }
@@ -260,14 +272,15 @@ export async function publishSaveOutputs(outputs: SaveOutput[]): Promise<Recover
         try {
           entry.created ??= await entry.handle!.stat();
           await checkIdentity(entry);
-          await close(entry);
+          try { await closeHandle(entry); }
+          catch (e) { if (entry.handle) throw e; }
           if (entry.handle) throw new Error(`Cannot remove new output with unclosed handle: ${entry.destination}`);
           await fs.unlink(entry.destination);
           entry.state = 'restored';
         }
         catch (e) { entry.state = 'recovery-needed'; report(entry, 'remove-new-output', entry.destination, e); }
       }
-      await close(entry);
+      await closeDuringRecovery(entry);
       if (entry.state !== 'recovery-needed' && !entry.handle) await removeBackup(entry);
       await cleanup(entry);
     }
@@ -280,7 +293,6 @@ export async function publishSaveOutputs(outputs: SaveOutput[]): Promise<Recover
   // Commit boundary: both files now contain requested bytes. Cleanup errors are
   // diagnostics; a failed restore's verified backup is never discarded.
   for (const entry of entries) {
-    await close(entry);
     if (!entry.handle) await removeBackup(entry);
     await cleanup(entry);
   }

@@ -254,7 +254,7 @@ describe('bounded filesystem save publication', () => {
         expect(await fs.stat(output.destination)).toMatchObject({ ino: before[i]!.ino, dev: before[i]!.dev, uid: before[i]!.uid, gid: before[i]!.gid, mode: before[i]!.mode });
       }
       interceptWrites(outputs.map(output => output.destination), async (index, attempt, perform) => {
-        if (index === 1 && attempt === 0) { await perform(1); throw new Error('metadata rollback probe'); }
+        if (index === 0 && attempt === 0) { await perform(1); throw new Error('metadata rollback probe'); }
         return perform();
       });
       await expect(publishSaveOutputs(outputs.map(output => ({ ...output, buffer: Buffer.from('replacement-not-to-keep') })))).rejects.toMatchObject({ rollbackFailures: [] });
@@ -344,6 +344,35 @@ describe('bounded filesystem save publication', () => {
         }
       }
     });
+  }
+
+  for (const existing of [[true, true], [false, false], [true, false], [false, true]]) {
+    for (const failedIndex of [0, 1]) {
+      for (const closedBeforeError of [false, true]) {
+        test.openspec('Staging and publication recovery')(`output close ${failedIndex + 1} error ${closedBeforeError ? 'after' : 'before'} closing restores original state ${existing}`, async () => {
+          const { outputs, originals } = await fixture(existing);
+          const open = fs.open.bind(fs);
+          let injected = false;
+          vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+            const handle = await open(...args);
+            if (String(args[0]) === outputs[failedIndex]!.destination) {
+              const close = handle.close.bind(handle);
+              vi.spyOn(handle, 'close').mockImplementation(async () => {
+                if (!injected) {
+                  injected = true;
+                  if (closedBeforeError) await close();
+                  throw Object.assign(new Error('injected output close failure'), { code: 'EIO' });
+                }
+                return close();
+              });
+            }
+            return handle;
+          });
+          await expect(publishSaveOutputs(outputs)).rejects.toMatchObject({ code: 'EIO', rollbackFailures: [] });
+          await assertRestored(outputs, existing, originals);
+        });
+      }
+    }
   }
 
   for (const existing of [[true, true], [false, false]]) {
