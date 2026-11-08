@@ -69,6 +69,8 @@ See the [tool reference](../packages/docx-mcp/docs/tool-reference.generated.md) 
 
 Most operations begin with a file path. Safe Docx detects the format, parses the document, and creates or reuses a session:
 
+The session manager finalizes DOCX candidates (normalization unless skipped, then paragraph anchors) before publishing them. Repeated finalization preserves the initial policy; comparison baselines stay lazy. Failed replacement preparation leaves the old session usable. Publication is the commit point: retirement of old artifacts cannot fail successful creation. Expiry lookups and listings retire artifacts asynchronously, and clear-all drains cleanup and retries directory removals that the filesystem previously refused.
+
 ```text
 file path
     |
