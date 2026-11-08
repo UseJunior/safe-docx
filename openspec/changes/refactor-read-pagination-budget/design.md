@@ -28,6 +28,11 @@ changes are introduced. Google keeps its existing warning-field behavior while
 using the same internal accounting. Local enrichment, field traversal and
 document-wide footnote sidecars stay in read_file.
 
+Google's explicit simple reads retain their historical marker-free previews;
+implicit budgeted text pages retain table markers and closures. Harmonizing
+that established explicit output is a separate compatibility decision. JSON's
+budgeted per-object indentation and explicit array indentation also stay intact.
+
 ## Risks and verification
 
 Consolidating renderers can hide policy drift. The tests retain the existing

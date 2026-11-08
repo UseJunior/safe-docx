@@ -20,21 +20,12 @@ import {
   type Footnote,
   type ToonFootnoteEndnote,
 } from '@usejunior/docx-core';
-import { READ_SIMPLE_PREVIEW_CHARS, previewText } from './preview.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
 import { buildPaginationMeta } from './pagination.js';
-import { renderJsonWithBudget, renderTextWithBudget } from './read_budget.js';
+import { formatSimpleDataLine, renderJsonWithBudget, renderTextWithBudget } from './read_budget.js';
 
 function getWAttr(el: Element, localName: string): string | null {
   return el.getAttributeNS(OOXML.W_NS, localName) ?? el.getAttribute(`w:${localName}`) ?? el.getAttribute(localName);
-}
-
-function escapeCommentSuffixText(text: string): string {
-  return text
-    .replaceAll('\r\n', '\\n')
-    .replaceAll('\r', '\\r')
-    .replaceAll('\n', '\\n')
-    .replaceAll('|', '\\|');
 }
 
 type InlineCommentMarkerRuntime = {
@@ -315,29 +306,6 @@ function buildToonFootnotes(footnotes: readonly Footnote[]): ToonFootnoteEndnote
     refParagraphIds: footnote.refParagraphIds,
     paragraphs: footnote.paragraphs.map((p) => ({ text: p.text })),
   }));
-}
-
-function collectSimpleCommentSuffixes(
-  comments: readonly DocumentViewComment[],
-  parentId?: number,
-): string[] {
-  const suffixes: string[] = [];
-  for (const comment of comments) {
-    const text = escapeCommentSuffixText(comment.text);
-    suffixes.push(parentId == null
-      ? `[c${comment.id}: ${text}]`
-      : `[c${comment.id}->c${parentId}: ${text}]`);
-    suffixes.push(...collectSimpleCommentSuffixes(comment.replies, comment.id));
-  }
-  return suffixes;
-}
-
-function formatSimpleTextLine(node: DocumentViewNode): string {
-  const preview = previewText(node.clean_text, READ_SIMPLE_PREVIEW_CHARS);
-  const commentSuffixes = node.comments ? collectSimpleCommentSuffixes(node.comments) : [];
-  return commentSuffixes.length > 0
-    ? `${preview} ${commentSuffixes.join(' ')}`
-    : preview;
 }
 
 export async function readFile(
@@ -658,7 +626,7 @@ function renderSimpleWithTableMarkers(
       currentTableIndex = nodeTableIndex;
     }
 
-    lines.push(`${n.id} | ${formatSimpleTextLine(n)}`);
+    lines.push(formatSimpleDataLine(n));
   }
 
   if (currentTableIndex !== null) {

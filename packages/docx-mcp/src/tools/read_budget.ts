@@ -65,7 +65,7 @@ function simpleCommentSuffixes(comments: readonly DocumentViewComment[], parentI
   });
 }
 
-function simpleLine(node: DocumentViewNode): string {
+export function formatSimpleDataLine(node: DocumentViewNode): string {
   const preview = previewText(node.clean_text, READ_SIMPLE_PREVIEW_CHARS);
   const suffixes = simpleCommentSuffixes(node.comments ?? []);
   return `${node.id} | ${suffixes.length ? `${preview} ${suffixes.join(' ')}` : preview}`;
@@ -98,7 +98,7 @@ export function renderTextWithBudget(
       opening = '\n' + formatTableMarker({ id: tc.table_id, totalRows: tc.total_rows, totalCols: tc.total_cols });
     }
     for (const node of blockNodes) {
-      const line = format === 'simple' ? simpleLine(node)
+      const line = format === 'simple' ? formatSimpleDataLine(node)
         : [formatToonDataLine(node, { commentMarkers }),
           ...(commentRendering === 'paragraph_notes' || inline ? formatToonCommentLines(node) : [])].join('\n');
       const candidateBase = content + opening + '\n' + line;

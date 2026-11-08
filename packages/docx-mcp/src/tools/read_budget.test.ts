@@ -198,7 +198,10 @@ describe('shared budget admission', () => {
       const oversized = await gdocsReadFile(mgr, session, { format }, {});
       assertSuccess(oversized);
       expect(oversized.paragraphs_returned).toBeGreaterThanOrEqual(1);
-      if (format !== 'simple') expect(oversized.paragraphs_returned).toBe(1);
+      // Simple previews cap the first 100k-character paragraph at 5,000 chars
+      // plus an ellipsis; that preview and the next 83 fixture lines fit.
+      expect(oversized.paragraphs_returned).toBe(format === 'simple' ? 84 : 1);
+      expect(oversized.next_offset).toBe(format === 'simple' ? 85 : 2);
       input.splice(0);
       const empty = await gdocsReadFile(mgr, session, { format }, {});
       assertSuccess(empty);

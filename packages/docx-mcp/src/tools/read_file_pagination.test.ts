@@ -493,7 +493,7 @@ describe('read_file pagination', () => {
     // own size at admission time, not the post-loop closed-out content.
     // Tune against one structural closure. The old loop emitted #END_TABLE
     // twice on rejection; retaining that artifact would mask the boundary.
-    const cellLen = 55_876;
+    const cellLen = 55_880;
     const cellText = 'X'.repeat(cellLen);
     const tableXml =
       `<w:tbl>` +
@@ -516,8 +516,8 @@ describe('read_file pagination', () => {
     await then('exactly one row is returned, has_more=true, and no first-node warning fires', async () => {
       expect(Number(read.paragraphs_returned)).toBe(1);
       expect(read.has_more).toBe(true);
-      // Final content (with #END_TABLE) reaches the budget; compact paragraph
-      // ids keep this fixture from exceeding it by a token.
+      // Final content exceeds the budget because of structural closure, while
+      // the first node's admission stays below it (14,001 vs 13,999 tokens).
       expect(estimateTokens(String(read.content))).toBeGreaterThanOrEqual(DEFAULT_CONTENT_TOKEN_BUDGET);
       // Node 1's admission size was UNDER budget, so the warning must not fire.
       expect(read.warnings).toBeUndefined();
