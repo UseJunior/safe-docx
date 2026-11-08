@@ -1864,7 +1864,11 @@ export class DocxDocument {
   /** Snapshot supported current stories for managed revision ID seeding. */
   async getRevisionSeedDocuments(): Promise<Document[]> {
     const main = this.getDocumentXmlClone();
-    return [main, ...await getSidePartRevisionSeedDocs(this.zip)];
+    // Select header/footer bindings from this same current DOM, not the ZIP's
+    // last flushed document.xml. Never flush seed-only reads into the live ZIP.
+    const stories = this.zip.fork();
+    stories.writeText('word/document.xml', serializeXml(main));
+    return [main, ...await getSidePartRevisionSeedDocs(stories)];
   }
 
   /**

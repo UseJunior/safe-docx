@@ -84,7 +84,7 @@ export class RevisionIdAllocator {
     const next = child.readyState;
     const checkpoint = child.checkpoint;
     if (!state || !next || !checkpoint || !sameState(state, checkpoint)) return false;
-    state.nextId = next.nextId;
+    state.nextId = Math.max(state.nextId, next.nextId);
     state.moveRangeIds.clear();
     for (const [key, pair] of next.moveRangeIds) state.moveRangeIds.set(key, { ...pair });
     return true;

@@ -132,6 +132,44 @@ describe('managed session revision readiness', () => {
     }
   });
 
+  test('legacy caller-seeded contexts stay detached while automatic seed high-water survives failure and no-op', async () => {
+    for (const outcome of ['failure', 'noop', 'success'] as const) {
+      const { manager, session, id } = await setup({
+        'word/comments.xml': `<w:comments xmlns:w="${OOXML.W_NS}"><w:comment w:id="0" w:author="Human"><w:p><w:ins w:id="77" w:author="Human"><w:r><w:t>Retained</w:t></w:r></w:ins></w:p></w:comment></w:comments>`,
+      });
+      session.aiAuthor = null;
+      const template = createRevisionContext({ author: 'Caller', idState: createRevisionIdState(1) });
+      const scan = vi.spyOn(session.doc, 'getRevisionSeedDocuments');
+      expect((await manager.mutateSession(session, async candidate => {
+        const ctx = await getRevisionContextForSession(candidate, template);
+        expect(allocateRevisionId(ctx!.idState)).toBe(1);
+        expect(template.idState.nextId).toBe(1);
+        if (outcome === 'success') candidate.doc.insertParagraph({ positionalAnchorNodeId: id, relativePosition: 'AFTER', newText: 'Caller edit' }, ctx);
+        return outcome === 'failure' ? err('INJECTED', 'discard caller state') : ok();
+      })).success).toBe(outcome !== 'failure');
+      if (outcome !== 'success') expect(session.revisionIdState).toBeNull();
+      session.aiAuthor = 'Agent';
+      const managed = await getRevisionContextForSession(session);
+      expect(managed!.idState.nextId).toBe(78);
+      expect(scan).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  test('failure during final candidate invalidation cannot publish tentative allocations', async () => {
+    const { manager, session, id } = await setup();
+    const direct = await getRevisionContextForSession(session);
+    await expect(manager.mutateSession(session, async candidate => {
+      const ctx = await getRevisionContextForSession(candidate);
+      candidate.doc.insertParagraph({ positionalAnchorNodeId: id, relativePosition: 'AFTER', newText: 'Discarded' }, ctx);
+      vi.spyOn(candidate.doc, 'markMutated').mockImplementation(() => { throw new Error('final invalidation failed'); });
+      return ok();
+    })).rejects.toThrow('final invalidation failed');
+    expect(session.revisionIdState).toBe(direct!.idState);
+    expect(direct!.idState.nextId).toBe(1);
+    expect(session.editRevision).toBe(0);
+    expect(session.doc.buildDocumentView().nodes).toHaveLength(1);
+  });
+
   test('a retired candidate finishing its seed cannot publish into a reopened session', async () => {
     const { manager, session, file, id } = await setup();
     const entered = barrier();
@@ -212,5 +250,24 @@ describe('managed session revision readiness', () => {
     const before = custom.idState.nextId;
     const ctx = await getRevisionContextForSession(session);
     expect(ctx!.idState.nextId).toBe(before);
+  });
+
+  test('selects headers from the current unflushed main-story DOM before the first seed', async () => {
+    const { session, id } = await setup({
+      'word/header9.xml': `<w:hdr xmlns:w="${OOXML.W_NS}"><w:p><w:ins w:id="900" w:author="Human"><w:r><w:t>Selected later</w:t></w:r></w:ins></w:p></w:hdr>`,
+      'word/_rels/document.xml.rels': '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rStory" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header9.xml"/></Relationships>',
+    });
+    const paragraph = session.doc.getParagraphElementById(id)!;
+    const dom = paragraph.ownerDocument!;
+    const section = dom.createElementNS(OOXML.W_NS, 'w:sectPr');
+    const reference = dom.createElementNS(OOXML.W_NS, 'w:headerReference');
+    reference.setAttributeNS(OOXML.W_NS, 'w:type', 'default');
+    reference.setAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'r:id', 'rStory');
+    section.appendChild(reference);
+    paragraph.parentNode!.appendChild(section);
+    const before = await session.doc.getMutationSnapshot();
+    const ctx = await getRevisionContextForSession(session);
+    expect(ctx!.idState.nextId).toBe(901);
+    expect(await session.doc.getMutationSnapshot()).toEqual(before);
   });
 });

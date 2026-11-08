@@ -5,6 +5,9 @@
 refuses calls while unseeded or seeding. A successful seed yields plain
 `RevisionIdState` for existing synchronous emitters. `createRevisionIdState()`
 and caller-supplied allocation callbacks keep their existing behavior.
+Legacy explicit contexts without a managed AI author remain caller-seeded: their
+plain counter is copied into the candidate. The scanned parent high-water mark
+survives failure and publication, so later automatic edits cannot rewind it.
 
 The MCP session stores controllers outside cloneable session data. Mutation
 candidates use `fork()` to copy ready allocation data or share the initial scan
@@ -14,9 +17,14 @@ publishes its counter only if its checkpoint still matches the active state.
 If a direct caller allocated in the meantime, the edit returns
 `REVISION_ID_CONFLICT` and can be retried. Publication updates the active plain
 object in place so previously issued contexts remain current.
+The session's `revisionIdState` is derived publication data, not a setter for
+replacing a controller after the first context or mutation. Mutation callbacks
+must await context readiness before emitting tracked changes.
 
 The scan covers the current main story, footnotes, endnotes, comments, glossary,
 and relationship-selected headers and footers, including nonstandard filenames.
+Header/footer selection uses the same current main-story DOM snapshot, including
+unflushed section bindings, without writing that snapshot into the live archive.
 Only revision-bearing IDs reserve counter values. Malformed optional stories
 retain the existing best-effort parse policy; they are not newly claimed as
 validated or editable. Readiness never rewrites source IDs or changes the

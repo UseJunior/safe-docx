@@ -102,6 +102,7 @@ export type DocxSession = {
   comparisonBaselineWithBookmarks: Buffer | null;
   doc: DocxDocument;
   aiAuthor: string | null;
+  /** Published plain data; after initialization the managed allocator owns it. */
   revisionIdState: RevisionIdState | null;
   editCount: number;
   editRevision: number;
@@ -185,10 +186,19 @@ export async function getRevisionContextForSession(
   template?: RevisionContext,
 ): Promise<RevisionContext | undefined> {
   if (!session.aiAuthor && !template) return undefined;
+  const unpublished = session.revisionIdState === null;
   const state = await revisionAllocator(session).ensureReady();
-  // Internal batch contexts may supply a higher caller-owned starting point.
-  // They never replace the managed state or introduce a controller into it.
-  if (!session.revisionIdState && template) state.nextId = Math.max(state.nextId, template.idState.nextId);
+  if (unpublished && template) {
+    // Legacy explicit contexts without a managed AI author are caller-seeded.
+    // Copy only their plain data into the detached candidate. The parent's
+    // scanned high-water mark survives failed/no-op candidates and publication.
+    if (!session.aiAuthor) {
+      state.nextId = template.idState.nextId;
+      state.moveRangeIds = structuredClone(template.idState.moveRangeIds);
+    } else {
+      state.nextId = Math.max(state.nextId, template.idState.nextId);
+    }
+  }
   session.revisionIdState = state;
 
   return createRevisionContext({
@@ -244,7 +254,7 @@ export class SessionManager {
         candidate.selectiveRevisionAction = structuredClone(active.selectiveRevisionAction);
         const allocator = revisionAllocator(active).fork();
         revisionIdAllocators.set(candidate, allocator);
-        candidate.revisionIdState = allocator.readyState;
+        candidate.revisionIdState = active.revisionIdState ? allocator.readyState : null;
       } else if (isOdfSession(active) && isOdfSession(candidate)) {
         candidate.archive = active.archive.fork();
       }
@@ -254,6 +264,8 @@ export class SessionManager {
       const after = await this.mutationContents(candidate);
       if (!this.isActiveSession(active)) return err('SESSION_CLOSED', 'Session was closed or replaced during mutation.');
       if (!before.equals(after)) {
+        // Finish all candidate work before publishing either resource.
+        if (isDocxSession(candidate)) candidate.doc.markMutated();
         if (isDocxSession(active) && isDocxSession(candidate)) {
           const allocator = revisionAllocator(active);
           if (!allocator.publish(revisionAllocator(candidate))) {
@@ -263,8 +275,6 @@ export class SessionManager {
           // contexts cannot issue IDs already published by this mutation.
           if (candidate.revisionIdState) active.revisionIdState = allocator.readyState;
         }
-        // Direct-DOM handlers must invalidate the candidate's view too.
-        if (isDocxSession(candidate)) candidate.doc.markMutated();
         active.doc = candidate.doc;
         active.editCount += 1;
         active.editRevision += 1;
