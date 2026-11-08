@@ -403,6 +403,16 @@ function collectNamedBookmarkIds(doc: Document): Set<string> {
 }
 
 export class DocxDocument {
+  /** Notify the document after a caller mutates an exposed paragraph DOM. */
+  markMutated(): void {
+    this.mutationVersion += 1;
+    this.documentViewCache = null;
+  }
+
+  getMutationVersion(): number {
+    return this.mutationVersion;
+  }
+
   private zip: DocxZip;
   private documentXml: Document;
   private stylesXml: Document | null;
@@ -410,8 +420,8 @@ export class DocxDocument {
   private numberingXml: Document | null;
   private footnotesXml: Document | null;
   private relsMap: RelsMap;
-  private dirty: boolean;
-  private documentViewCache: { includeSemanticTags: boolean; showFormatting: boolean; formattingMode: FormattingMode; nodes: DocumentViewNode[]; styles: DocumentStyles } | null;
+  private mutationVersion = 0;
+  private documentViewCache: { version: number; includeSemanticTags: boolean; showFormatting: boolean; formattingMode: FormattingMode; nodes: DocumentViewNode[]; styles: DocumentStyles } | null;
   private paragraphBookmarkReservation: BookmarkReservation | undefined;
   /**
    * Raw document.xml text as loaded, before normalize()/edits mutate the DOM.
@@ -428,7 +438,6 @@ export class DocxDocument {
     this.numberingXml = numberingXml;
     this.footnotesXml = footnotesXml;
     this.relsMap = relsMap;
-    this.dirty = false;
     this.documentViewCache = null;
     this.paragraphBookmarkReservation = undefined;
     this.originalDocumentXmlText = originalDocumentXmlText;
@@ -512,7 +521,7 @@ export class DocxDocument {
     bookmarkReservation?: BookmarkReservation,
   ): T {
     const bodyDocument = this.documentXml;
-    const dirty = this.dirty;
+    const mutationVersion = this.mutationVersion;
     const viewCache = this.documentViewCache;
     const previousReservation = this.paragraphBookmarkReservation;
     this.documentXml = story;
@@ -521,7 +530,7 @@ export class DocxDocument {
       return mutation();
     } finally {
       this.documentXml = bodyDocument;
-      this.dirty = dirty;
+      this.mutationVersion = mutationVersion;
       this.documentViewCache = viewCache;
       this.paragraphBookmarkReservation = previousReservation;
     }
@@ -681,14 +690,14 @@ export class DocxDocument {
       ctx,
       this.paragraphBookmarkReservation,
     );
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
     return result;
   }
 
   deleteTableRow(params: DeleteTableRowParams, ctx?: RevisionContext): DeleteTableRowResult {
     const result = deleteTableRowImpl(this.documentXml, params, ctx);
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
     return result;
   }
@@ -696,7 +705,7 @@ export class DocxDocument {
   /** Apply a planned clean column edit to the existing DOM, preserving held element references. */
   insertTableColumn(params: InsertTableColumnParams, ctx?: RevisionContext): InsertTableColumnResult {
     const result = insertTableColumnImpl(this.documentXml, params, ctx, this.paragraphBookmarkReservation);
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
     return result;
   }
@@ -704,7 +713,7 @@ export class DocxDocument {
   /** Apply a planned clean column deletion to the existing DOM. */
   deleteTableColumn(params: DeleteTableColumnParams, ctx?: RevisionContext): DeleteTableColumnResult {
     const result = deleteTableColumnImpl(this.documentXml, params, ctx);
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
     return result;
   }
@@ -712,7 +721,7 @@ export class DocxDocument {
   /** Split one horizontal-spanning physical cell, preserving its authored content on the chosen side. */
   splitTableCell(params: SplitTableCellParams, ctx?: RevisionContext): SplitTableCellResult {
     const result = splitTableCellImpl(this.documentXml, params, ctx, this.paragraphBookmarkReservation);
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
     return result;
   }
@@ -720,7 +729,7 @@ export class DocxDocument {
   /** Remove a physical cell and discard its content while an adjacent sibling absorbs its span. */
   absorbTableCell(params: AbsorbTableCellParams, ctx?: RevisionContext): AbsorbTableCellResult {
     const result = absorbTableCellImpl(this.documentXml, params, ctx);
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
     return result;
   }
@@ -731,7 +740,7 @@ export class DocxDocument {
       attachmentId,
       this.paragraphBookmarkReservation,
     );
-    if (res.indexedParagraphs > 0) this.dirty = true;
+    if (res.indexedParagraphs > 0) this.markMutated();
     return { paragraphCount: res.indexedParagraphs };
   }
 
@@ -754,7 +763,7 @@ export class DocxDocument {
     }
 
     if (mr.runsMerged > 0 || sr.wrappersConsolidated > 0 || de.doubleElevationsFixed > 0) {
-      this.dirty = true;
+      this.markMutated();
       this.documentViewCache = null;
     }
     return {
@@ -831,7 +840,7 @@ export class DocxDocument {
     }
 
     if (hasAcceptedChanges(total)) {
-      this.dirty = true;
+      this.markMutated();
       this.documentViewCache = null;
     }
     return total;
@@ -875,7 +884,7 @@ export class DocxDocument {
     }
 
     if (hasRejectedChanges(total)) {
-      this.dirty = true;
+      this.markMutated();
       this.documentViewCache = null;
     }
     return total;
@@ -948,7 +957,7 @@ export class DocxDocument {
     }
 
     if (hasAcceptedChanges(total)) {
-      this.dirty = true;
+      this.markMutated();
       this.documentViewCache = null;
     }
     return { result: total, selectedIds: matchedIds };
@@ -986,7 +995,7 @@ export class DocxDocument {
     }
 
     if (hasRejectedChanges(total)) {
-      this.dirty = true;
+      this.markMutated();
       this.documentViewCache = null;
     }
     return { result: total, selectedIds: matchedIds };
@@ -994,7 +1003,7 @@ export class DocxDocument {
 
   removeJuniorBookmarks(): number {
     const removed = cleanupInternalBookmarks(this.documentXml);
-    if (removed > 0) this.dirty = true;
+    if (removed > 0) this.markMutated();
     return removed;
   }
 
@@ -1054,7 +1063,7 @@ export class DocxDocument {
     const showFormatting = opts?.showFormatting ?? false;
     const formattingMode: FormattingMode = opts?.formattingMode ?? 'compact';
     const cached = this.documentViewCache;
-    if (!this.dirty && cached && cached.includeSemanticTags === includeSemanticTags && cached.showFormatting === showFormatting && cached.formattingMode === formattingMode) {
+    if (cached && cached.version === this.mutationVersion && cached.includeSemanticTags === includeSemanticTags && cached.showFormatting === showFormatting && cached.formattingMode === formattingMode) {
       return { nodes: cached.nodes, styles: cached.styles };
     }
 
@@ -1075,8 +1084,7 @@ export class DocxDocument {
       footnotesXml: this.footnotesXml,
     });
 
-    this.documentViewCache = { includeSemanticTags, showFormatting, formattingMode, nodes, styles };
-    this.dirty = false;
+    this.documentViewCache = { version: this.mutationVersion, includeSemanticTags, showFormatting, formattingMode, nodes, styles };
     return { nodes, styles };
   }
 
@@ -1095,7 +1103,7 @@ export class DocxDocument {
       );
     }
     replaceParagraphTextRange(p, match.start, match.end, replaceText);
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
   }
 
@@ -1108,7 +1116,7 @@ export class DocxDocument {
     const p = findParagraphByBookmarkId(this.documentXml, targetParagraphId);
     if (!p) throw new Error(`Paragraph not found: ${targetParagraphId}`);
     replaceParagraphTextRange(p, start, end, replaceText);
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
   }
 
@@ -1116,7 +1124,7 @@ export class DocxDocument {
     const paragraph = findParagraphByBookmarkId(this.documentXml, params.targetParagraphId);
     if (!paragraph) throw new Error(`Paragraph not found: ${params.targetParagraphId}`);
     formatParagraphTextRange(paragraph, params.start, params.end, params.format);
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
   }
 
@@ -1380,7 +1388,7 @@ export class DocxDocument {
       }
     }
 
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
     const result: { newParagraphId: string; newParagraphIds: string[]; styleSourceFallback?: boolean } = {
       newParagraphId: insertedIds[0]!,
@@ -1396,7 +1404,7 @@ export class DocxDocument {
   ): ParagraphPropertiesMutationResult {
     const result = setParagraphProperties(this.documentXml, mutation, ctx);
     if (result.affectedParagraphs > 0) {
-      this.dirty = true;
+      this.markMutated();
       this.documentViewCache = null;
     }
     return result;
@@ -1408,7 +1416,7 @@ export class DocxDocument {
   ): ParagraphSpacingMutationResult {
     const result = setParagraphSpacing(this.documentXml, mutation, ctx);
     if (result.affectedParagraphs > 0) {
-      this.dirty = true;
+      this.markMutated();
       this.documentViewCache = null;
     }
     return result;
@@ -1429,7 +1437,7 @@ export class DocxDocument {
       ctx,
     );
     if (result.changed) {
-      this.dirty = true;
+      this.markMutated();
       this.documentViewCache = null;
     }
     return result;
@@ -1449,7 +1457,7 @@ export class DocxDocument {
       ctx,
       this.paragraphBookmarkReservation,
     );
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
     return result;
   }
@@ -1460,7 +1468,7 @@ export class DocxDocument {
   ): SectionPageNumberMutationResult {
     const result = setSectionPageNumberStart(this.documentXml, mutation, ctx);
     if (result.changed) {
-      this.dirty = true;
+      this.markMutated();
       this.documentViewCache = null;
     }
     return result;
@@ -1472,7 +1480,7 @@ export class DocxDocument {
   ): SectionPropertiesMutationResult {
     const result = updateSectionProperties(this.documentXml, mutation, ctx);
     if (result.changed) {
-      this.dirty = true;
+      this.markMutated();
       this.documentViewCache = null;
     }
     return result;
@@ -1484,7 +1492,7 @@ export class DocxDocument {
   ): TableRowHeightMutationResult {
     const result = setTableRowHeight(this.documentXml, mutation, ctx);
     if (result.affectedRows > 0) {
-      this.dirty = true;
+      this.markMutated();
       this.documentViewCache = null;
     }
     return result;
@@ -1496,7 +1504,7 @@ export class DocxDocument {
   ): TableCellPaddingMutationResult {
     const result = setTableCellPadding(this.documentXml, mutation, ctx);
     if (result.affectedCells > 0) {
-      this.dirty = true;
+      this.markMutated();
       this.documentViewCache = null;
     }
     return result;
@@ -1519,7 +1527,7 @@ export class DocxDocument {
   mergeRunsOnly(opts: MergeRunsOptions = {}): MergeRunsResult {
     const result = mergeRuns(this.documentXml, opts);
     if (result.runsMerged > 0) {
-      this.dirty = true;
+      this.markMutated();
       this.documentViewCache = null;
     }
     return result;
@@ -1557,7 +1565,7 @@ export class DocxDocument {
       date: params.date,
     }, ctx);
 
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
     return result;
   }
@@ -1587,7 +1595,7 @@ export class DocxDocument {
       date: params.date,
     }, ctx);
 
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
     return result;
   }
@@ -1602,7 +1610,7 @@ export class DocxDocument {
 
   async deleteComment(params: { commentId: number }, ctx?: RevisionContext): Promise<void> {
     await deleteCommentImpl(this.documentXml, this.zip, params, ctx);
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
   }
 
@@ -1612,7 +1620,7 @@ export class DocxDocument {
     body?: import('./comments.js').CommentBodyParagraph[];
   }): Promise<void> {
     await updateCommentBodyImpl(this.zip, params);
-    this.dirty = true;
+    this.markMutated();
   }
 
   /**
@@ -1702,7 +1710,7 @@ export class DocxDocument {
       });
     }
     await this.refreshFootnotesXml();
-    this.dirty = converted.length > 0;
+    if (converted.length > 0) this.markMutated();
     this.documentViewCache = null;
     return {
       selected: selected.length,
@@ -1798,7 +1806,7 @@ export class DocxDocument {
     }, ctx);
 
     await this.refreshFootnotesXml();
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
     return result;
   }
@@ -1809,7 +1817,7 @@ export class DocxDocument {
   async updateFootnoteText(params: { noteId: number; newText: string }, ctx?: RevisionContext): Promise<void> {
     await updateFootnoteTextImpl(this.zip, params, ctx);
     await this.refreshFootnotesXml();
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
   }
 
@@ -1819,7 +1827,7 @@ export class DocxDocument {
   async deleteFootnote(params: { noteId: number }, ctx?: RevisionContext): Promise<void> {
     await deleteFootnoteImpl(this.documentXml, this.zip, params, ctx);
     await this.refreshFootnotesXml();
-    this.dirty = true;
+    this.markMutated();
     this.documentViewCache = null;
   }
 

@@ -245,9 +245,7 @@ function isLikelyFieldPlaceholder(text: string): boolean {
 }
 
 function invalidateDocumentCaches(doc: unknown): void {
-  const mutableDoc = doc as { dirty?: boolean; documentViewCache?: unknown };
-  mutableDoc.dirty = true;
-  mutableDoc.documentViewCache = null;
+  (doc as DocxDocument).markMutated();
 }
 
 export async function replaceText(
